@@ -23,7 +23,7 @@ La validación live del 2026-08-02 usó Packet Tracer `9.0.1.0858`, ambos
 canales del bridge disponibles al inicio y dispositivos temporales con prefijo
 `__MCP_PROBE_*`. El snapshot consolidado de `PC-PT`, `2911`, `2960-24TT` y
 `3560-24PS` terminó `clean`, con hash
-`62530cbc46627d5eaec95704ce5516889a61704ab94d8b53d9bad54789d96671`.
+`7134d42baeda7328fa324fb4fc5c690b85099e1ce425901e5a05da859fc1de00`.
 
 - Identidad y puertos: observados mediante create/read-back para los cuatro modelos.
 - Módulos, PoE, VLAN, trunk y L3: `UNKNOWN` cuando el runtime no tuvo un
