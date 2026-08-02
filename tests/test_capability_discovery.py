@@ -242,3 +242,62 @@ def test_bridge_probe_runtime_serializes_untrusted_model_and_probe_names():
 
     assert '\\";throw' in sent[0]
     assert 'var __model=' in sent[0]
+
+
+def test_bridge_runtime_vlan_probe_requires_configure_readback_and_cleanup():
+    sent: list[str] = []
+
+    def send_and_wait(js: str, timeout: float):
+        sent.append(js)
+        return '{"ready":true,"configured":true,"cleanup":true}'
+
+    definition = CapabilityProbeRegistry().definitions_for(["supports_vlan"])[-1]
+    result = PacketTracerBridgeProbeRuntime(send_and_wait).probe_capability("__MCP_PROBE_01", "supports_vlan", definition)
+
+    assert result.status is CapabilityStatus.SUPPORTED
+    assert result.configured and result.verified
+    assert "getCommandPrompt" in sent[0]
+    assert "enterCommand" in sent[0]
+    assert "getVlanAt" in sent[0]
+    assert "no vlan" in sent[0]
+
+
+def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
+    sent: list[str] = []
+
+    def send_and_wait(js: str, timeout: float):
+        sent.append(js)
+        return '{"ready":true,"configured":true,"cleanup":true,"model":"2911"}'
+
+    definition = CapabilityProbeRegistry().definitions_for(["layer3"])[-1]
+    result = PacketTracerBridgeProbeRuntime(send_and_wait).probe_capability("__MCP_PROBE_01", "layer3", definition)
+
+    assert result.status is CapabilityStatus.SUPPORTED
+    assert result.configured and result.verified
+    assert "ip address '+__ip" in sent[0]
+    assert "getCommandPrompt" in sent[0]
+    assert "no ip address" in sent[0]
+
+
+def test_scenario_readiness_does_not_require_endpoint_poe_or_routing(tmp_path):
+    runtime = FakePacketTracerProbeRuntime(
+        {"PC-PT": _observation("PC-PT"), "2911": _observation("2911")},
+        {
+            ("2911", "layer3"): CapabilityProbeResult(
+                probe_id="layer3-probe", model="2911", capability="layer3",
+                status=CapabilityStatus.SUPPORTED, execution_status=ProbeExecutionStatus.VERIFIED,
+                evidence_source=EvidenceSource.CONTROLLED_PROBE, verified=True,
+            ),
+        },
+    )
+    service = _service(tmp_path, runtime)
+    snapshot, _ = service.run(ProbeRequest(
+        models=["PC-PT", "2911"], capabilities=["layer3"], force=True,
+    ))
+
+    report = service.readiness_report(snapshot)
+
+    assert report.non_poe_e4.value == "ready"
+    assert report.full_poe_e4.value == "ready"
+    assert report.blockers_by_role == {}
+    assert report.required_capabilities_by_role["endpoint"] == ["model_exists", "port_inventory"]

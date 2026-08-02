@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
 from ...domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
@@ -33,6 +33,10 @@ from ...domain.enterprise.models.discovery import (
 
 
 DEFAULT_SAFE_MODELS = ("PC-PT", "2911", "2960-24TT", "3560-24PS")
+
+if TYPE_CHECKING:
+    from ...domain.enterprise.models.hardware import HardwarePlan
+    from ...domain.enterprise.models.roles import DeviceRole
 
 
 class PacketTracerProbeRuntime(Protocol):
@@ -223,7 +227,10 @@ class CapabilityDiscoveryService:
         self._snapshots.save_runtime(snapshot)
         return snapshot, False
 
-    def readiness_report(self, snapshot: CapabilitySnapshot) -> E4ReadinessReport:
+    def readiness_report(
+        self, snapshot: CapabilitySnapshot, hardware_plan: HardwarePlan | None = None,
+    ) -> E4ReadinessReport:
+        """Calcula readiness por rol; una capability no requerida no bloquea E4."""
         unknowns = snapshot.blocking_unknowns()
         result_map = {(item.model, item.capability): item.status for item in snapshot.session.results}
         models = {item.identity.canonical_id or item.identity.runtime_id or item.identity.display_name for item in snapshot.session.devices}
@@ -232,6 +239,39 @@ class CapabilityDiscoveryService:
         modules = _aggregate_state(result_map, models, "supports_modules")
         poe = _aggregate_state(result_map, models, "supports_poe")
         l3 = _aggregate_state(result_map, models, "layer3")
+        required_by_role, models_by_role = _scenario_requirements(hardware_plan, models)
+        blockers_by_role: dict[str, list[str]] = {}
+        non_poe_states: list[E4ReadinessState] = []
+        full_poe_states: list[E4ReadinessState] = []
+        for role, required in required_by_role.items():
+            role_states = [
+                _aggregate_state(result_map, {model}, capability)
+                for model in models_by_role.get(role, set())
+                for capability in required
+            ]
+            role_state = _combine_states(role_states)
+            non_poe_states.append(role_state)
+            missing = [
+                model + ":" + capability
+                for model in sorted(models_by_role.get(role, set()))
+                for capability in required
+                if result_map.get((model, capability), CapabilityStatus.UNKNOWN) is not CapabilityStatus.SUPPORTED
+            ]
+            if missing:
+                blockers_by_role[role] = missing
+            full_poe_states.append(role_state)
+
+        poe_models = models_by_role.get("access_switch", set())
+        poe_states = [_aggregate_state(result_map, {model}, "supports_poe") for model in poe_models]
+        if poe_states:
+            full_poe_states.extend(poe_states)
+            poe_missing = [
+                model + ":supports_poe" for model in sorted(poe_models)
+                if result_map.get((model, "supports_poe"), CapabilityStatus.UNKNOWN) is not CapabilityStatus.SUPPORTED
+            ]
+            if poe_missing:
+                blockers_by_role["access_switch_poe"] = poe_missing
+
         return E4ReadinessReport(
             model_identity=identity,
             port_inventory=ports,
@@ -242,6 +282,10 @@ class CapabilityDiscoveryService:
             core_l3=l3,
             edge_router=l3,
             blocking_unknowns=unknowns,
+            non_poe_e4=_combine_states(non_poe_states),
+            full_poe_e4=_combine_states(full_poe_states),
+            required_capabilities_by_role=required_by_role,
+            blockers_by_role=blockers_by_role,
         )
 
     @staticmethod
@@ -409,3 +453,57 @@ def _aggregate_state(
     if any(status is CapabilityStatus.UNSUPPORTED for status in statuses):
         return E4ReadinessState.BLOCKED
     return E4ReadinessState.PARTIAL
+
+
+def _combine_states(states: list[E4ReadinessState]) -> E4ReadinessState:
+    if states and all(state is E4ReadinessState.READY for state in states):
+        return E4ReadinessState.READY
+    if any(state is E4ReadinessState.BLOCKED for state in states):
+        return E4ReadinessState.BLOCKED
+    return E4ReadinessState.PARTIAL
+
+
+def _scenario_requirements(
+    hardware_plan: HardwarePlan | None, observed_models: set[str],
+) -> tuple[dict[str, list[str]], dict[str, set[str]]]:
+    """Devuelve requisitos mínimos sólo para los roles realmente planificados."""
+    from ...domain.enterprise.models.roles import DeviceRole
+
+    profiles = {
+        "endpoint": ["model_exists", "port_inventory"],
+        "access_switch": ["model_exists", "port_inventory", "layer2", "supports_vlan", "supports_trunk"],
+        "distribution_switch": ["model_exists", "port_inventory", "layer2", "supports_vlan", "supports_trunk", "layer3"],
+        "core_switch": ["model_exists", "port_inventory", "layer2", "supports_vlan", "supports_trunk", "layer3"],
+        "edge_router": ["model_exists", "port_inventory", "layer3"],
+    }
+    role_names = {
+        DeviceRole.ACCESS_SWITCH: "access_switch",
+        DeviceRole.DISTRIBUTION_SWITCH: "distribution_switch",
+        DeviceRole.CORE_SWITCH: "core_switch",
+        DeviceRole.EDGE_ROUTER: "edge_router",
+        DeviceRole.WAN_ROUTER: "edge_router",
+    }
+    models_by_role: dict[str, set[str]] = {}
+    if hardware_plan is not None:
+        for site in hardware_plan.site_hardware:
+            for device in site.devices:
+                role = role_names.get(device.role, "endpoint")
+                model = device.selected_model or device.provisional_model
+                if model:
+                    models_by_role.setdefault(role, set()).add(model)
+                if device.required_capabilities and device.required_capabilities.requires_modules:
+                    profiles.setdefault(role, []).append("supports_modules")
+    else:
+        for model in observed_models:
+            lowered = model.casefold()
+            if "2911" in lowered:
+                role = "edge_router"
+            elif "3560" in lowered:
+                role = "distribution_switch"
+            elif "2960" in lowered:
+                role = "access_switch"
+            else:
+                role = "endpoint"
+            models_by_role.setdefault(role, set()).add(model)
+    required = {role: list(dict.fromkeys(profiles[role])) for role in sorted(models_by_role)}
+    return required, models_by_role

@@ -32,6 +32,33 @@ canales del bridge disponibles al inicio y dispositivos temporales con prefijo
   `PC-PT` y `Server-PT`; no se reprodujo una inversión de argumentos en esa
   versión. DHCP no se promovió a verificado en este baseline.
 
+## E3.6.1: L2/L3 verificado y readiness por escenario
+
+La validación del 2026-08-02 sobre Packet Tracer `9.0.1.0858` produjo el
+snapshot `db16439e39bbea0b06cd9ff945e2fa25f53c13469034625c531875be33fa5ee8`.
+La sesión `probe-829e47044f34` terminó `clean`: cuatro dispositivos temporales
+creados y eliminados, 24 capabilities consultadas, 11 `SUPPORTED`, una
+`UNSUPPORTED`, 12 `UNKNOWN` y cero errores de ejecución.
+
+- L2 quedó verificado para `2960-24TT` y `3560-24PS`: ambos expusieron
+  `VlanManager` mediante lectura runtime controlada.
+- En dispositivos temporales, PT 9.0.1.0858 no expuso un `CommandPrompt`
+  utilizable. Por ello las sondas VLAN y L3 no pudieron completar
+  configure/read-back/cleanup y se conservaron como `UNKNOWN`/`SKIPPED` con
+  una razón explícita. No se publicó evidencia positiva.
+- Trunk permanece `UNKNOWN`: no hay getter de estado de trunk confirmado ni un
+  test de tráfico que el API de extensión permita originar de forma controlada.
+- PoE permanece `UNKNOWN`: no existe un estado de alimentación de puerto fiable
+  en la superficie confirmada. No se tocó el Power Distribution Device del
+  usuario ni se creó uno temporal como sustituto de evidencia.
+- El reporte de readiness ahora calcula perfiles por rol: endpoint sólo exige
+  identidad y puertos; access exige L2/VLAN/trunk y PoE sólo en el escenario
+  PoE; distribución/core exige L3; edge exige L3. Un `PC-PT` ya no bloquea
+  E4 por routing o PoE.
+- P0.1 continúa `still_pending`: la observación estática anterior es
+  `NOT_REPRODUCED_ON_PT_9.0.1.0858`, pero DHCP aún no tiene una lease
+  configure/read-back controlada para PC-PT y Server-PT.
+
 ## Si algo falla
 
 Un timeout, callback inválido o disconnect del bridge es `UNKNOWN` y debe conservar el nombre de la sesión para inspección. No cambiarlo a `UNSUPPORTED`. Si hay `DIRTY_SESSION`, eliminar manualmente sólo los nombres temporales indicados; nunca borrar dispositivos del usuario.

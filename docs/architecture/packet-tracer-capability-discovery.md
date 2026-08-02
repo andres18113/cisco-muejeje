@@ -61,3 +61,17 @@ Antes de explorar arquitectura o hacer cambios: `graphify update .`, una consult
 ## Límite hacia E4
 
 `E4ReadinessReport` conserva por separado identidad, puertos, módulos, PoE, L3 y P0.1. E4 sólo será apto cuando no queden unknowns bloqueantes para el hardware seleccionado. E3.5 no cierra P0.1: `setIpSubnetMask()` requiere aún prueba real independiente.
+
+## E3.6.1: readiness dependiente del escenario
+
+El nivel `logical` verifica L2 mediante la presencia real de `VlanManager`.
+VLAN y L3 tienen una ruta de configure/read-back/cleanup basada en el
+`CommandPrompt` ya usado por la tool de ping. Si el dispositivo temporal no
+expone ese prompt, el resultado queda `SKIPPED`/`UNKNOWN`, nunca inventado.
+Trunk continúa pendiente hasta contar con lectura de trunk o tráfico originable
+por la API.
+
+El readiness calcula `non_poe_e4` y `full_poe_e4` a partir de perfiles por rol:
+endpoint no requiere PoE ni routing; access requiere L2/VLAN/trunk; distribución
+y core requieren L3; edge requiere routing. PoE se exige sólo en el escenario
+que de verdad lo necesita.

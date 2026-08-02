@@ -296,14 +296,12 @@ class E4ReadinessReport(BaseModel):
     edge_router: E4ReadinessState
     blocking_unknowns: dict[str, list[str]] = Field(default_factory=dict)
     p01_status: str = "still_pending"
+    non_poe_e4: E4ReadinessState = E4ReadinessState.PARTIAL
+    full_poe_e4: E4ReadinessState = E4ReadinessState.PARTIAL
+    required_capabilities_by_role: dict[str, list[str]] = Field(default_factory=dict)
+    blockers_by_role: dict[str, list[str]] = Field(default_factory=dict)
 
     @property
     def e4_ready(self) -> bool:
-        return not self.blocking_unknowns and all(
-            value is E4ReadinessState.READY
-            for value in (
-                self.model_identity, self.port_inventory, self.module_support,
-                self.access_switch_selection, self.poe_selection, self.distribution_l3,
-                self.core_l3, self.edge_router,
-            )
-        )
+        """E4 base puede continuar si el escenario no-PoE está completamente listo."""
+        return self.non_poe_e4 is E4ReadinessState.READY
