@@ -12,7 +12,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     RuntimeDeviceObservation,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
-from src.packet_tracer_mcp.infrastructure.execution.device_lifecycle import DeviceReadinessWaiter
+from src.packet_tracer_mcp.infrastructure.execution.device_lifecycle import DeviceReadinessWaiter, StateConvergenceWaiter
 from src.packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import FakePacketTracerProbeRuntime
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 
@@ -48,6 +48,23 @@ def test_readiness_waiter_times_out_with_last_diagnostics():
     assert result.state is DeviceInitializationState.TIMEOUT
     assert result.attempts == 3
     assert not result.configuration_channel
+
+
+def test_state_convergence_waiter_observes_mutation_without_fixed_sleep():
+    values = iter((
+        {"found": True, "configuration_channel": False},
+        {"found": True, "configuration_channel": True},
+    ))
+    now = [0.0]
+    waiter = StateConvergenceWaiter(
+        lambda: next(values), timeout_seconds=1.0, interval_seconds=0.2,
+        clock=lambda: now[0], sleeper=lambda interval: now.__setitem__(0, now[0] + interval),
+    )
+
+    result = waiter.wait()
+
+    assert result.configuration_channel
+    assert result.attempts == 2
 
 
 def test_no_configurable_probe_runs_when_configuration_channel_is_unavailable(tmp_path):

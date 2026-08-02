@@ -93,15 +93,15 @@ class CapabilityProbeRegistry:
         ),
         "supports_vlan": ProbeDefinition(
             id="vlan-probe", capability="supports_vlan", prerequisites=["layer2", "configuration_channel"],
-            cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE, requires_fresh_device=True,
         ),
         "supports_trunk": ProbeDefinition(
             id="trunk-probe", capability="supports_trunk", prerequisites=["supports_vlan"],
-            cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE, requires_fresh_device=True,
         ),
         "layer3": ProbeDefinition(
             id="layer3-probe", capability="layer3", prerequisites=["port_inventory", "configuration_channel"],
-            cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE, requires_fresh_device=True,
         ),
         "supports_static_routes": ProbeDefinition(
             id="static-route-probe", capability="supports_static_routes", prerequisites=["layer3"],
@@ -199,7 +199,7 @@ class CapabilityDiscoveryService:
                 descriptors.append(descriptor)
                 if observation.found:
                     self._append_observed_results(descriptor, capabilities, results, version)
-                    self._run_runtime_probes(name, model, capabilities, results, version)
+                    self._run_runtime_probes(name, model, capabilities, results, version, session, deleted, failed)
                 else:
                     results.append(CapabilityProbeResult(
                         probe_id="model-exists", model=model, capability="model_exists",
@@ -383,7 +383,8 @@ class CapabilityDiscoveryService:
                 ))
 
     def _run_runtime_probes(
-        self, name: str, model: str, capabilities: list[str], results: list[CapabilityProbeResult], version: str | None
+        self, name: str, model: str, capabilities: list[str], results: list[CapabilityProbeResult], version: str | None,
+        session: ProbeSession, deleted: list[str], failed: list[str],
     ) -> None:
         observed = {item.capability: item.status for item in results if item.model == model}
         for definition in self._registry.definitions_for(capabilities):
@@ -401,9 +402,35 @@ class CapabilityDiscoveryService:
                     packet_tracer_version=version,
                 ))
                 continue
-            result = self._runtime.probe_capability(name, definition.capability, definition)
+            probe_name = name
+            if definition.requires_fresh_device:
+                probe_name = f"{name}_{definition.id}"
+                try:
+                    fresh = self._runtime.create_temporary_device(model, probe_name)
+                    if not fresh.found:
+                        results.append(CapabilityProbeResult(
+                            probe_id=definition.id, model=model, capability=definition.capability,
+                            execution_status=ProbeExecutionStatus.VERIFY_FAILED,
+                            evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+                            failure_reason=fresh.error or "Fresh temporary device was not created.",
+                            packet_tracer_version=version,
+                        ))
+                        continue
+                    session.created_devices.append(probe_name)
+                except Exception as exc:
+                    results.append(_error_result(model, definition.capability, ProbeExecutionStatus.EXECUTION_ERROR, str(exc), version))
+                    continue
+            result = self._runtime.probe_capability(probe_name, definition.capability, definition)
             results.append(result.model_copy(update={"model": model, "packet_tracer_version": version}))
             observed[definition.capability] = result.status
+            if definition.requires_fresh_device:
+                try:
+                    if self._runtime.delete_temporary_device(probe_name):
+                        deleted.append(probe_name)
+                    else:
+                        failed.append(probe_name)
+                except Exception:
+                    failed.append(probe_name)
 
 
 def _descriptor_name(descriptor: RuntimeDeviceDescriptor) -> str:

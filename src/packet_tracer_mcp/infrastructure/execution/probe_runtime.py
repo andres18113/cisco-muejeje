@@ -20,7 +20,7 @@ from ...domain.enterprise.models.discovery import (
 from ...infrastructure.catalog.devices import resolve_model
 from ...shared.constants import PT_DEVICE_TYPE, PT_DEVICE_TYPE_DEFAULT
 from .configuration_runtime import PacketTracerConfigurationRuntime
-from .device_lifecycle import DeviceReadinessWaiter
+from .device_lifecycle import DeviceReadinessWaiter, StateConvergenceWaiter
 from ...shared.constants import (
     CAPABILITY_PROBE_IPV4_ADDRESS,
     CAPABILITY_PROBE_IPV4_MASK,
@@ -231,7 +231,7 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
                 "reportResult(JSON.stringify({found:!!__d,configuration_channel:__found===", "true" if present else "false", "}));}catch(__e){reportResult('ERROR:'+__e);}",
             ))
             return self._json_result(js, timeout=3.0)
-        return DeviceReadinessWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
+        return StateConvergenceWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
 
     def _layer3_target(self, temporary_name: str) -> tuple[str, bool] | None:
         name = json.dumps(temporary_name)
@@ -250,11 +250,12 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         def inspect() -> dict:
             js = "".join((
                 "try{var __d=ipc.network().getDevice(", name, ");var __p=__d&&typeof __d.getPort==='function'?__d.getPort(", port, "):null;",
+                "if(!__p&&__d){for(var __i=0;__i<__d.getPortCount();__i++){var __candidate=__d.getPortAt(__i);if(__candidate&&String(__candidate.getName()).toLowerCase()===String(", port, ").toLowerCase()){__p=__candidate;break;}}}",
                 "var __match=!!__p&&__p.getIpAddress()===", json.dumps(CAPABILITY_PROBE_IPV4_ADDRESS), "&&__p.getSubnetMask()===", json.dumps(CAPABILITY_PROBE_IPV4_MASK), ";",
                 "reportResult(JSON.stringify({found:!!__d,configuration_channel:__match===", "true" if present else "false", "}));}catch(__e){reportResult('ERROR:'+__e);}",
             ))
             return self._json_result(js, timeout=3.0)
-        return DeviceReadinessWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
+        return StateConvergenceWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
 
     @staticmethod
     def _failure(

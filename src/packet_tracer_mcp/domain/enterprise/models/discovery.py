@@ -206,6 +206,7 @@ class ProbeDefinition(BaseModel):
     prerequisites: list[str] = Field(default_factory=list)
     safety: ProbeSafety = ProbeSafety.SAFE
     requires_power_cycle: bool = False
+    requires_fresh_device: bool = False
     cost: ProbeCost = ProbeCost.CHEAP
 
 

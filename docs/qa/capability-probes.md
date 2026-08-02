@@ -53,6 +53,14 @@ No se promueve evidencia de trunk, PoE, DHCP ni SVI L3 de 3560 cuando la lectura
 independiente falla. La secuencia combinada revelo una condicion de carrera del
 SVI 3560 despues de limpiar VLAN, que permanece como `UNKNOWN`.
 
+## E3.6.3: aislamiento y convergencia de estado
+
+Las definiciones mutantes de VLAN, trunk y L3 ahora exigen un device temporal
+fresco. `StateConvergenceWaiter` separa la disponibilidad del device de la
+convergencia de lectura posterior a una mutacion. El 3560 L3 no se promovio:
+el read-back de IPv4 falla incluso en un temporal aislado, por lo que requiere
+investigacion del runtime antes de habilitar el gate jerarquico.
+
 La validación del 2026-08-02 sobre Packet Tracer `9.0.1.0858` produjo el
 snapshot `db16439e39bbea0b06cd9ff945e2fa25f53c13469034625c531875be33fa5ee8`.
 La sesión `probe-829e47044f34` terminó `clean`: cuatro dispositivos temporales

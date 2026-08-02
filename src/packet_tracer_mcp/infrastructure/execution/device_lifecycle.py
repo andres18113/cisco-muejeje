@@ -56,3 +56,24 @@ class DeviceReadinessWaiter:
             components_seen=list(value.get("components_seen") or []),
             failure_reason=str(value.get("failure_reason") or ""),
         )
+
+
+class StateConvergenceWaiter:
+    """Espera la lectura independiente de una mutacion ya enviada a PT."""
+
+    def __init__(
+        self,
+        inspect: Callable[[], dict],
+        *,
+        timeout_seconds: float = 8.0,
+        interval_seconds: float = 0.25,
+        clock: Callable[[], float] = monotonic,
+        sleeper: Callable[[float], None] = sleep,
+    ) -> None:
+        self._readiness = DeviceReadinessWaiter(
+            inspect, timeout_seconds=timeout_seconds, interval_seconds=interval_seconds,
+            clock=clock, sleeper=sleeper,
+        )
+
+    def wait(self) -> DeviceInitializationResult:
+        return self._readiness.wait()

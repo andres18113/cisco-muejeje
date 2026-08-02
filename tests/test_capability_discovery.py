@@ -135,14 +135,14 @@ def test_runtime_only_and_catalog_identity_are_distinguished(tmp_path):
     assert identities["2911"].status.value == "catalog_matched"
 
 
-def test_single_session_batches_multiple_capabilities_without_recreating_device(tmp_path):
+def test_mutating_capability_uses_a_fresh_device_without_recreating_physical_inventory(tmp_path):
     runtime = FakePacketTracerProbeRuntime({"3560-24PS": _observation()})
     snapshot, _ = _service(tmp_path, runtime).run(ProbeRequest(
         models=["3560-24PS"], capabilities=["port_inventory", "supports_poe", "layer3"], force=True,
     ))
 
-    assert runtime.create_device_calls == 1
-    assert runtime.delete_device_calls == 1
+    assert runtime.create_device_calls == 2
+    assert runtime.delete_device_calls == 2
     assert {result.capability for result in snapshot.session.results} >= {"model_exists", "port_inventory", "supports_poe", "layer3"}
 
 
@@ -217,6 +217,7 @@ def test_registry_declares_dependencies_without_accepting_raw_user_commands():
 
     assert [item.capability for item in definitions] == ["model_exists", "port_inventory", "layer2", "configuration_channel", "supports_vlan", "supports_trunk"]
     assert all(not hasattr(item, "command") for item in definitions)
+    assert all(item.requires_fresh_device for item in definitions[-2:])
 
 
 def test_compact_summary_counts_large_snapshot_without_expanding_models(tmp_path):
