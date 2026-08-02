@@ -1,0 +1,75 @@
+"""Doble offline de PacketTracerProbeRuntime para pruebas de E3.5."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+
+from ...domain.enterprise.models.capabilities import EvidenceSource
+from ...domain.enterprise.models.discovery import (
+    CapabilityProbeResult,
+    ProbeDefinition,
+    ProbeExecutionStatus,
+    RuntimeDeviceDescriptor,
+    RuntimeDeviceObservation,
+)
+
+
+class FakePacketTracerProbeRuntime:
+    def __init__(
+        self,
+        observations: dict[str, RuntimeDeviceObservation] | None = None,
+        probe_results: dict[tuple[str, str], CapabilityProbeResult] | None = None,
+        packet_tracer_version: str | None = "PT-test",
+        enumerated_models: list[RuntimeDeviceDescriptor] | None = None,
+        cleanup_failures: set[str] | None = None,
+        create_failures: dict[str, Exception] | None = None,
+    ) -> None:
+        self.observations = observations or {}
+        self.probe_results = probe_results or {}
+        self._version = packet_tracer_version
+        self.enumerated_models = enumerated_models
+        self.cleanup_failures = cleanup_failures or set()
+        self.create_failures = create_failures or {}
+        self.create_device_calls = 0
+        self.delete_device_calls = 0
+        self.created_names: list[str] = []
+        self._models_by_name: dict[str, str] = {}
+        self.power_cycle_calls = 0
+
+    def packet_tracer_version(self) -> str | None:
+        return self._version
+
+    def discover_models(self) -> list[RuntimeDeviceDescriptor] | None:
+        return deepcopy(self.enumerated_models)
+
+    def create_temporary_device(self, runtime_model: str, temporary_name: str) -> RuntimeDeviceObservation:
+        self.create_device_calls += 1
+        if runtime_model in self.create_failures:
+            raise self.create_failures[runtime_model]
+        self.created_names.append(temporary_name)
+        self._models_by_name[temporary_name] = runtime_model
+        return deepcopy(self.observations.get(runtime_model, RuntimeDeviceObservation(found=False)))
+
+    def delete_temporary_device(self, temporary_name: str) -> bool:
+        self.delete_device_calls += 1
+        return temporary_name not in self.cleanup_failures
+
+    def power_cycle(self, temporary_name: str) -> bool:
+        """Hook explícito para tests futuros de módulos, sin sleeps reales."""
+        self.power_cycle_calls += 1
+        return temporary_name in self._models_by_name
+
+    def probe_capability(
+        self, temporary_name: str, capability: str, definition: ProbeDefinition
+    ) -> CapabilityProbeResult:
+        model = self._models_by_name.get(temporary_name, "")
+        result = self.probe_results.get((model, capability))
+        if result is not None:
+            return deepcopy(result)
+        return CapabilityProbeResult(
+            probe_id=definition.id,
+            model=model,
+            capability=capability,
+            execution_status=ProbeExecutionStatus.SKIPPED,
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+        )

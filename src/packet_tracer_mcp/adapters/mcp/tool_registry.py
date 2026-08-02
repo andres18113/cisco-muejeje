@@ -76,9 +76,15 @@ from ...infrastructure.catalog.cables import CABLE_TYPES, CABLE_RULES, infer_cab
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
+from ...infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
+from ...infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
+from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
+from ...application.use_cases.capability_discovery import CapabilityDiscoveryService
+from ...domain.enterprise.models.discovery import DetailLevel, ProbeLevel, ProbeRequest
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...shared.utils import (
     js_escape, safe_name_component, resolve_within, interpret_ping as _interpret_ping,
+    normalize_ip,
 )
 from ...domain.services.canvas import (
     CanvasImageError, decode_pt_image, normalize_format, validate_color,
@@ -87,6 +93,8 @@ from ...domain.services.canvas import (
 
 def register_tools(mcp: FastMCP) -> None:
     """Registra todas las tools en el servidor MCP."""
+
+    capability_discovery_service = None
 
     # ------------------------------------------------------------------
     # CONSULTA
@@ -292,7 +300,7 @@ def register_tools(mcp: FastMCP) -> None:
                 "warning_count": 0,
                 "errors": [{"code": "INVALID_JSON", "message": f"JSON inválido: {exc.msg}"}],
                 "warnings": [],
-                "summary": "❌ JSON inválido — no se pudo parsear el plan.",
+                "summary": "[ERROR] JSON inválido — no se pudo parsear el plan.",
             }, indent=2, ensure_ascii=False)
 
         if not isinstance(raw, dict) or "devices" not in raw or not raw.get("devices"):
@@ -305,7 +313,7 @@ def register_tools(mcp: FastMCP) -> None:
                     "message": "El JSON no contiene un plan válido (falta 'devices' o está vacío). Genera el plan con pt_plan_topology primero.",
                 }],
                 "warnings": [],
-                "summary": "❌ Plan vacío o sin estructura — debe incluir al menos un dispositivo.",
+                "summary": "[ERROR] Plan vacío o sin estructura — debe incluir al menos un dispositivo.",
             }, indent=2, ensure_ascii=False)
 
         plan = TopologyPlan.model_validate_json(plan_json)
@@ -313,9 +321,9 @@ def register_tools(mcp: FastMCP) -> None:
 
         output = result.to_dict()
         if result.is_valid:
-            output["summary"] = "✅ Plan válido. Sin errores."
+            output["summary"] = "[OK] Plan válido. Sin errores."
         else:
-            output["summary"] = f"❌ Plan con {len(result.errors)} error(es)."
+            output["summary"] = f"[ERROR] Plan con {len(result.errors)} error(es)."
         return json.dumps(output, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
@@ -501,14 +509,14 @@ def register_tools(mcp: FastMCP) -> None:
 
         # --- Validación ---
         if validation.is_valid:
-            parts.append("✅ Validación: PASS")
+            parts.append("[OK] Validación: PASS")
         else:
-            parts.append("❌ Validación: FAIL")
+            parts.append("[ERROR] Validación: FAIL")
             for err in validation.errors:
                 parts.append(f"  ERROR [{err.code.value}]: {err.message}")
         if validation.warnings:
             for warn in validation.warnings:
-                parts.append(f"  ⚠️ [{warn.code.value}]: {warn.message}")
+                parts.append(f"  [ADVERTENCIA] [{warn.code.value}]: {warn.message}")
         parts.append("")
 
         # --- Explicación ---
@@ -577,7 +585,7 @@ def register_tools(mcp: FastMCP) -> None:
             # Con un canal vivo hay que desplegar de verdad. Antes esto SIEMPRE
             # iba al portapapeles, así que el pipeline "completo" terminaba con
             # el canvas vacío aunque el bridge estuviera conectado: el usuario
-            # veía "✅ Validación: PASS" y en PT no había nada.
+            # veía "[OK] Validación: PASS" y en PT no había nada.
             if _pick_channel() != "":
                 parts.append(pt_live_deploy(plan.model_dump_json()))
                 parts.append("")
@@ -1003,7 +1011,7 @@ def register_tools(mcp: FastMCP) -> None:
         ]
         if reconciled["devices"] or reconciled["links"]:
             report.append(
-                f"  ♻ Reconciliados: {len(reconciled['devices'])} dispositivo(s), "
+                f"  [OK] Reconciliados: {len(reconciled['devices'])} dispositivo(s), "
                 f"{len(reconciled['links'])} enlace(s) re-agregados tras drop."
             )
         if dev_fail:
@@ -1137,12 +1145,17 @@ def register_tools(mcp: FastMCP) -> None:
           más que uno exitoso: cada paquete espera su propio timeout antes de
           declararse perdido (~13s medidos para 4 paquetes perdidos).
         """
+        try:
+            target_ip = normalize_ip(to_ip)
+        except ValueError:
+            return f"Destino IP inválido: {to_ip!r}. Indicá una dirección IPv4 o IPv6."
+
         err = _check_bridge()
         if err:
             return err
 
         dev = json.dumps(from_device)
-        target = json.dumps(to_ip.strip())
+        ping_command = json.dumps(f"ping {target_ip}")
 
         # 1) Baseline: cuántos bloques de estadística hay ya en la consola, y
         #    disparar el ping. La consola conserva histórico, así que contamos
@@ -1156,7 +1169,7 @@ def register_tools(mcp: FastMCP) -> None:
             "else{var o=String(cp.getOutput());"
             "var m=o.match(/Packets: Sent|Success rate/g);"
             "var base=m?m.length:0;"
-            f"cp.enterCommand('ping {json.loads(target)}');"
+            f"cp.enterCommand({ping_command});"
             "reportResult('BASE:'+base);}"
         )
         armed = _bridge_send_and_wait(arm, timeout=8.0)
@@ -1190,10 +1203,10 @@ def register_tools(mcp: FastMCP) -> None:
                 stat = r[5:]
                 ok = _interpret_ping(stat)
                 verdict = "CONECTIVIDAD OK" if ok else "SIN CONECTIVIDAD"
-                return f"{from_device} → {to_ip}: {verdict}\n{stat}"
+                return f"{from_device} → {target_ip}: {verdict}\n{stat}"
 
         return (
-            f"{from_device} → {to_ip}: sin resultado tras {timeout_s:.0f}s. "
+            f"{from_device} → {target_ip}: sin resultado tras {timeout_s:.0f}s. "
             "El ping puede seguir corriendo; reintentá o subí timeout_s."
         )
 
@@ -1328,6 +1341,19 @@ def register_tools(mcp: FastMCP) -> None:
             "Con la ventana abierta usa HTTP; si la cerrás, el canal por archivo "
             "toma el relevo mientras PT siga abierto."
         )
+
+    def _capability_discovery() -> CapabilityDiscoveryService:
+        """Composition root local: el adapter MCP no contiene probes ni parsers."""
+        nonlocal capability_discovery_service
+        if capability_discovery_service is None:
+            catalog = EnterpriseCapabilityAdapter()
+            runtime = PacketTracerBridgeProbeRuntime(_bridge_send_and_wait)
+            capability_discovery_service = CapabilityDiscoveryService(
+                runtime=runtime,
+                snapshots=CapabilitySnapshotStore(),
+                identity_for=catalog.identity_for,
+            )
+        return capability_discovery_service
 
     # ------------------------------------------------------------------
     # QUERY / INTERACT with existing topology in PT
@@ -2454,20 +2480,20 @@ def register_tools(mcp: FastMCP) -> None:
         # Resumen amigable
         summary_lines = []
         if result["valid"]:
-            summary_lines.append(f"✅ ACL '{plan.name_or_number}' válida ({len(plan.entries)} reglas).")
+            summary_lines.append(f"[OK] ACL '{plan.name_or_number}' válida ({len(plan.entries)} reglas).")
         else:
-            summary_lines.append(f"❌ ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).")
+            summary_lines.append(f"[ERROR] ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).")
 
         if dry_run:
             summary_lines.append("Modo dry_run — NO se envió al bridge.")
         elif result["sent"]:
-            summary_lines.append(f"📤 Aplicada en '{router}' vía bridge (configureIosDevice).")
+            summary_lines.append(f"[OK] Aplicada en '{router}' vía bridge (configureIosDevice).")
             if binding:
                 summary_lines.append(f"   Binding: {binding.interface} {binding.direction}")
         elif result["valid"] and not bridge_ok:
-            summary_lines.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary_lines.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
         elif result["valid"] and not result["sent"]:
-            summary_lines.append("⚠ Bridge OK pero envío falló.")
+            summary_lines.append("[ADVERTENCIA] Bridge OK pero envío falló.")
 
         return json.dumps({
             "summary": "\n".join(summary_lines),
@@ -2529,7 +2555,7 @@ def register_tools(mcp: FastMCP) -> None:
 
         if not result["valid"]:
             return json.dumps({
-                "summary": f"❌ ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).",
+                "summary": f"[ERROR] ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).",
                 "valid": False,
                 "errors": result["errors"],
                 "warnings": result["warnings"],
@@ -2602,7 +2628,7 @@ def register_tools(mcp: FastMCP) -> None:
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         if not bridge_ok:
-            payload["summary"] = "⚠ Bridge no conectado — payload generado pero NO enviado."
+            payload["summary"] = "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
@@ -2617,7 +2643,7 @@ def register_tools(mcp: FastMCP) -> None:
                 payload["added"] = r.get("added")
                 payload["cmd_count"] = r.get("cmdCount")
                 payload["summary"] = (
-                    f"📤 ACL '{plan.name_or_number}' aplicada en '{router}' vía AclProcess "
+                    f"[OK] ACL '{plan.name_or_number}' aplicada en '{router}' vía AclProcess "
                     f"({r.get('added')}/{len(statements)} statements). Binding={bound}."
                 )
             else:
@@ -2696,7 +2722,7 @@ def register_tools(mcp: FastMCP) -> None:
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         if not bridge_ok:
-            payload["summary"] = "⚠ Bridge no conectado — payload generado pero NO enviado."
+            payload["summary"] = "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
@@ -2710,7 +2736,7 @@ def register_tools(mcp: FastMCP) -> None:
                 payload["sent"] = True
                 payload["removed"] = r.get("removed")
                 payload["summary"] = (
-                    f"📤 ACL '{name_or_number}' removida en '{router}' vía AclProcess "
+                    f"[OK] ACL '{name_or_number}' removida en '{router}' vía AclProcess "
                     f"(removed={r.get('removed')}, binding={bound_label})."
                 )
             else:
@@ -2758,11 +2784,11 @@ def register_tools(mcp: FastMCP) -> None:
         if dry_run:
             summary.append(f"Modo dry_run — payload generado para eliminar ACL '{name_or_number}' en '{router}'.")
         elif result["sent"]:
-            summary.append(f"📤 ACL '{name_or_number}' eliminada en '{router}' vía bridge.")
+            summary.append(f"[OK] ACL '{name_or_number}' eliminada en '{router}' vía bridge.")
         elif not bridge_ok:
-            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
         else:
-            summary.append("⚠ Envío falló.")
+            summary.append("[ADVERTENCIA] Envío falló.")
 
         return json.dumps({
             "summary": "\n".join(summary),
@@ -2880,18 +2906,18 @@ def register_tools(mcp: FastMCP) -> None:
         summary_lines = []
         mode_label = {"static": "NAT Estático", "dynamic": "NAT Dinámico", "pat": "PAT/Overload"}.get(mode, mode)
         if result["valid"]:
-            summary_lines.append(f"✅ {mode_label} válido para router '{router}'.")
+            summary_lines.append(f"[OK] {mode_label} válido para router '{router}'.")
         else:
-            summary_lines.append(f"❌ {mode_label}: {len(result['errors'])} error(es).")
+            summary_lines.append(f"[ERROR] {mode_label}: {len(result['errors'])} error(es).")
 
         if dry_run:
             summary_lines.append("Modo dry_run — NO se envió al bridge.")
         elif result["sent"]:
-            summary_lines.append(f"📤 Aplicado en '{router}' vía bridge (configureIosDevice).")
+            summary_lines.append(f"[OK] Aplicado en '{router}' vía bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
-            summary_lines.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary_lines.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
         elif result["valid"] and not result["sent"]:
-            summary_lines.append("⚠ Bridge OK pero envío falló.")
+            summary_lines.append("[ADVERTENCIA] Bridge OK pero envío falló.")
 
         return json.dumps({
             "summary": "\n".join(summary_lines),
@@ -2952,11 +2978,11 @@ def register_tools(mcp: FastMCP) -> None:
         if dry_run:
             summary.append(f"Modo dry_run — payload generado para eliminar NAT '{mode}' en '{router}'.")
         elif result["sent"]:
-            summary.append(f"📤 NAT '{mode}' eliminado en '{router}' vía bridge.")
+            summary.append(f"[OK] NAT '{mode}' eliminado en '{router}' vía bridge.")
         elif not bridge_ok:
-            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
         else:
-            summary.append("⚠ Envío falló.")
+            summary.append("[ADVERTENCIA] Envío falló.")
 
         return json.dumps({
             "summary": "\n".join(summary),
@@ -3025,15 +3051,15 @@ def register_tools(mcp: FastMCP) -> None:
 
         summary = []
         if result["valid"]:
-            summary.append(f"✅ VLAN config válida ({len(plan.vlans)} VLAN(s)).")
+            summary.append(f"[OK] VLAN config válida ({len(plan.vlans)} VLAN(s)).")
         else:
-            summary.append(f"❌ VLAN: {len(result['errors'])} error(es).")
+            summary.append(f"[ERROR] VLAN: {len(result['errors'])} error(es).")
         if dry_run:
             summary.append("Modo dry_run — NO se envió al bridge.")
         elif result["sent"]:
-            summary.append("📤 Aplicado vía bridge (configureIosDevice).")
+            summary.append("[OK] Aplicado vía bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
-            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
 
         return json.dumps({
             "summary": "\n".join(summary),
@@ -3048,14 +3074,14 @@ def register_tools(mcp: FastMCP) -> None:
 
     def _switch_security_response(result: dict, label: str, bridge_ok: bool, dry_run: bool) -> str:
         summary = []
-        summary.append(f"✅ {label} válida." if result["valid"]
-                       else f"❌ {label}: {len(result['errors'])} error(es).")
+        summary.append(f"[OK] {label} válida." if result["valid"]
+                       else f"[ERROR] {label}: {len(result['errors'])} error(es).")
         if dry_run:
             summary.append("Modo dry_run — NO se envió al bridge.")
         elif result["sent"]:
-            summary.append("📤 Aplicado vía bridge (configureIosDevice).")
+            summary.append("[OK] Aplicado vía bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
-            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
         return json.dumps({
             "summary": "\n".join(summary),
             "valid": result["valid"],
@@ -3272,9 +3298,9 @@ def register_tools(mcp: FastMCP) -> None:
         live = _live_devices()
         result = topology_diff(plan, live)
         result["summary"] = (
-            "✅ Plan y PT en sincronía."
+            "[OK] Plan y PT en sincronía."
             if result["in_sync"]
-            else f"⚠ {len(result['missing_devices'])} faltante(s), "
+            else f"[ADVERTENCIA] {len(result['missing_devices'])} faltante(s), "
                  f"{len(result['extra_devices'])} extra(s), "
                  f"{len(result['ip_mismatches'])} IP mismatch(es)."
         )
@@ -3294,9 +3320,9 @@ def register_tools(mcp: FastMCP) -> None:
         live = _live_devices()
         result = health_check(live)
         result["summary"] = (
-            "✅ Topología saludable."
+            "[OK] Topología saludable."
             if result["healthy"]
-            else f"⚠ {len(result['down_links'])} link(s) caído(s), "
+            else f"[ADVERTENCIA] {len(result['down_links'])} link(s) caído(s), "
                  f"{len(result['duplicate_ips'])} IP(s) duplicada(s)."
         )
         return json.dumps(result, indent=2, ensure_ascii=False)
@@ -3424,12 +3450,12 @@ def register_tools(mcp: FastMCP) -> None:
             result["summary"] = "No hay dispositivos con configuración IOS en el canvas."
         elif result["secure"]:
             result["summary"] = (
-                f"✅ {result['devices_audited']} dispositivo(s) auditado(s), "
+                f"[OK] {result['devices_audited']} dispositivo(s) auditado(s), "
                 f"sin hallazgos altos ni medios ({counts['low']} bajo(s))."
             )
         else:
             result["summary"] = (
-                f"⚠ {counts['high']} hallazgo(s) alto(s), {counts['medium']} medio(s), "
+                f"[ADVERTENCIA] {counts['high']} hallazgo(s) alto(s), {counts['medium']} medio(s), "
                 f"{counts['low']} bajo(s) en {result['devices_audited']} dispositivo(s)."
             )
         return json.dumps(result, indent=2, ensure_ascii=False)
@@ -3550,10 +3576,10 @@ def register_tools(mcp: FastMCP) -> None:
         result["devices"] = devices
         anomalies = result["anomalies"]
         result["summary"] = (
-            f"✅ {result['ports_up']}/{result['ports_total']} puerto(s) up, "
+            f"[OK] {result['ports_up']}/{result['ports_total']} puerto(s) up, "
             f"{result['ports_linked']} cableado(s), sin anomalías."
             if not anomalies
-            else f"⚠ {len(anomalies)} anomalía(s) en {result['ports_total']} puerto(s)."
+            else f"[ADVERTENCIA] {len(anomalies)} anomalía(s) en {result['ports_total']} puerto(s)."
         )
         return json.dumps(result, indent=2, ensure_ascii=False)
 
@@ -3641,6 +3667,107 @@ def register_tools(mcp: FastMCP) -> None:
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
+    # E3.5 — capability discovery. Las tools son adaptadores compactos.
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_probe_capabilities(
+        models: list[str] | None = None,
+        categories: list[str] | None = None,
+        capabilities: list[str] | None = None,
+        probe_level: str = "physical",
+        detail_level: str = "compact",
+        force: bool = False,
+        packet_tracer_version: str = "",
+    ) -> str:
+        """Descubre capacidades usando devices temporales aislados y auto-limpiados.
+
+        Crea sólo dispositivos con prefijo `__MCP_PROBE_`, nunca modifica devices
+        existentes ni guarda el `.pkt`. El nivel `logical` puede ser más lento y
+        sólo ejecuta probes internos registrados; no acepta JavaScript o IOS del
+        usuario. La evidencia queda acotada a la versión de PT indicada/detectada.
+        """
+        err = _check_bridge()
+        if err:
+            return err
+        try:
+            level = ProbeLevel(probe_level.casefold())
+            detail = DetailLevel(detail_level.casefold())
+        except ValueError:
+            return "ERROR: probe_level debe ser discovery, physical o logical; detail_level compact, normal o debug."
+        service = _capability_discovery()
+        selected_models = list(models or [])
+        if categories and not selected_models:
+            categories_normalized = {category.casefold() for category in categories}
+            selected_models = [
+                model for model in ("PC-PT", "2911", "2960-24TT", "3560-24PS")
+                if (resolve_model(model) and resolve_model(model).category.casefold() in categories_normalized)
+            ]
+        unknown = set(capabilities or []) - set(service.known_capabilities)
+        if unknown:
+            return f"ERROR: capabilities no registradas: {', '.join(sorted(unknown))}."
+        snapshot, cached = service.run(ProbeRequest(
+            models=selected_models,
+            categories=categories or [],
+            capabilities=capabilities or [],
+            probe_level=level,
+            detail_level=detail,
+            force=force,
+            packet_tracer_version=packet_tracer_version.strip() or None,
+        ))
+        payload = {"cached": cached, "summary": snapshot.compact_summary()}
+        if detail is DetailLevel.NORMAL:
+            payload["models"] = [item.model_dump(mode="json") for item in snapshot.session.devices]
+            payload["blocking_unknowns"] = snapshot.blocking_unknowns()
+        elif detail is DetailLevel.DEBUG:
+            payload["snapshot"] = snapshot.model_dump(mode="json")
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_capability_report(
+        report: str = "summary",
+        model: str = "",
+        packet_tracer_version: str = "",
+        detail_level: str = "compact",
+    ) -> str:
+        """Consulta evidencia E3.5 almacenada sin tocar Packet Tracer.
+
+        `report` admite summary, model, unknown, readiness y catalog_gaps. Es una
+        lectura del snapshot server-side; usarla antes de pedir probes adicionales.
+        """
+        try:
+            detail = DetailLevel(detail_level.casefold())
+        except ValueError:
+            return "ERROR: detail_level debe ser compact, normal o debug."
+        store = CapabilitySnapshotStore()
+        snapshot = store.latest_runtime(packet_tracer_version.strip() or None)
+        if snapshot is None:
+            return json.dumps({"summary": "No hay snapshots runtime para ese scope de versión."}, ensure_ascii=False)
+        report_name = report.casefold()
+        if report_name == "summary":
+            payload = {"summary": snapshot.compact_summary(), "blocking_unknowns": snapshot.blocking_unknowns()}
+        elif report_name == "unknown":
+            payload = {"blocking_unknowns": snapshot.blocking_unknowns()}
+        elif report_name == "model":
+            wanted = model.strip()
+            payload = {
+                "models": [item.model_dump(mode="json") for item in snapshot.session.devices
+                           if not wanted or wanted in {item.identity.canonical_id, item.identity.runtime_id, item.identity.display_name}],
+                "results": [item.model_dump(mode="json") for item in snapshot.session.results if not wanted or item.model == wanted],
+            }
+        elif report_name == "readiness":
+            payload = _capability_discovery().readiness_report(snapshot).model_dump(mode="json")
+        elif report_name == "catalog_gaps":
+            payload = _capability_discovery().catalog_gap_report(
+                snapshot, ALL_MODELS.keys(),
+            ).model_dump(mode="json")
+        else:
+            return "ERROR: report debe ser summary, model, unknown, readiness o catalog_gaps."
+        if detail is DetailLevel.DEBUG:
+            payload["snapshot_hash"] = snapshot.stable_hash()
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
     # ENCENDIDO / APAGADO de dispositivos
     # ------------------------------------------------------------------
 
@@ -3712,13 +3839,13 @@ def register_tools(mcp: FastMCP) -> None:
         verb = "encendido" if on else "apagado"
         if data["after"] == on:
             data["summary"] = (
-                f"✅ '{device}' {verb}."
+                f"[OK] '{device}' {verb}."
                 if data["before"] != on
                 else f"'{device}' ya estaba {verb}; sin cambios."
             )
         else:
             data["summary"] = (
-                f"⚠ Se pidió {verb} pero PT reporta power={data['after']}. "
+                f"[ADVERTENCIA] Se pidió {verb} pero PT reporta power={data['after']}. "
                 "El modelo puede no soportar el cambio."
             )
         return json.dumps(data, indent=2, ensure_ascii=False)
@@ -3977,7 +4104,7 @@ def register_tools(mcp: FastMCP) -> None:
         else:
             reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])
             result["summary"] = (
-                f"⚠ {len(result['failures'])} frame(s) no llegaron a destino. {reasons}"
+                f"[ADVERTENCIA] {len(result['failures'])} frame(s) no llegaron a destino. {reasons}"
             )
         return json.dumps(result, indent=2, ensure_ascii=False)
 
@@ -4052,7 +4179,7 @@ def register_tools(mcp: FastMCP) -> None:
             "path": str(target),
             "format": image_fmt,
             "bytes": len(blob),
-            "summary": f"✅ Captura guardada en {target} ({len(blob):,} bytes).",
+            "summary": f"[OK] Captura guardada en {target} ({len(blob):,} bytes).",
         }, indent=2, ensure_ascii=False)
 
     @mcp.tool()
@@ -4101,7 +4228,7 @@ def register_tools(mcp: FastMCP) -> None:
             return f"PT error: {raw}"
         return json.dumps({
             "id": raw.strip(),
-            "summary": f"✅ Nota agregada en ({x},{y}).",
+            "summary": f"[OK] Nota agregada en ({x},{y}).",
         }, indent=2, ensure_ascii=False)
 
     @mcp.tool()
@@ -4186,7 +4313,7 @@ def register_tools(mcp: FastMCP) -> None:
         # queda visualmente limpio igual. Se mencionan sin alarmar.
         nota = f" ({stale} id(s) huérfano(s) que PT no libera)." if stale else "."
         data["summary"] = (
-            f"✅ {data['removed']} anotación(es) borrada(s){nota}"
+            f"[OK] {data['removed']} anotación(es) borrada(s){nota}"
             if data.get("removed")
             else f"No había anotaciones que borrar{nota}"
         )
@@ -4441,7 +4568,7 @@ def register_tools(mcp: FastMCP) -> None:
         if not data["auto_cabling"]:
             notes.append("auto-cabling APAGADO (los puertos los elegís vos)")
         if data["external_network_access"]:
-            notes.append("⚠ acceso a la red REAL habilitado")
+            notes.append("[ADVERTENCIA] acceso a la red REAL habilitado")
         data["summary"] = (
             f"{len(sets)} opción(es) cambiada(s). " if sets else "Solo lectura. "
         ) + ("; ".join(notes) if notes else "Configuración por defecto.")
@@ -4564,10 +4691,10 @@ def register_tools(mcp: FastMCP) -> None:
         }
 
         if errors:
-            payload["summary"] = f"❌ NetFlow: {len(errors)} error(es); no se envió nada."
+            payload["summary"] = f"[ERROR] NetFlow: {len(errors)} error(es); no se envió nada."
             return json.dumps(payload, indent=2, ensure_ascii=False)
         if dry_run:
-            payload["summary"] = "✅ NetFlow válido. Modo dry_run — NO se envió al bridge."
+            payload["summary"] = "[OK] NetFlow válido. Modo dry_run — NO se envió al bridge."
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         err = _check_bridge()
@@ -4595,15 +4722,15 @@ def register_tools(mcp: FastMCP) -> None:
         payload.update(data)
         payload["sent"] = True
         if remove:
-            payload["summary"] = f"✅ Exportador '{name}' eliminado de {device}."
+            payload["summary"] = f"[OK] Exportador '{name}' eliminado de {device}."
         elif data.get("fully_configured"):
             payload["summary"] = (
-                f"✅ '{name}' {'creado' if data.get('created') else 'actualizado'} en {device} "
+                f"[OK] '{name}' {'creado' if data.get('created') else 'actualizado'} en {device} "
                 f"→ {data.get('destination')}:{data.get('udp_port')} (v{data.get('version')})."
             )
         else:
             payload["summary"] = (
-                f"⚠ '{name}' existe en {device} pero PT lo reporta incompleto: "
+                f"[ADVERTENCIA] '{name}' existe en {device} pero PT lo reporta incompleto: "
                 "sin destino no exporta flujos."
             )
         return json.dumps(payload, indent=2, ensure_ascii=False)

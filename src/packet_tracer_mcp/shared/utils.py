@@ -79,6 +79,16 @@ def interpret_ping(stat_line: str) -> bool:
     return False
 
 
+def normalize_ip(value: str) -> str:
+    """Valida una IP de host y devuelve su representación canónica.
+
+    Esta validación se usa antes de construir comandos de consola para Packet
+    Tracer. Un destino de ``ping`` sólo puede ser una dirección IPv4 o IPv6, no
+    texto arbitrario que pueda alterar el comando o el literal JavaScript.
+    """
+    return str(ipaddress.ip_address(value.strip()))
+
+
 def resolve_within(base: Path, *parts: str) -> Path:
     """Resuelve `parts` bajo `base` y verifica que el resultado no se escape.
 

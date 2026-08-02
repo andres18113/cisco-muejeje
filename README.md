@@ -26,7 +26,7 @@
 </tr>
 </table>
 
-**🌐 Website:** https://www.mcpnetwork.top &nbsp;•&nbsp; **📚 Documentation:** https://mats2208.github.io/MCP-Packet-Tracer/
+** Website:** https://www.mcpnetwork.top &nbsp;•&nbsp; ** Documentation:** https://mats2208.github.io/MCP-Packet-Tracer/
 
 </div>
 
@@ -84,7 +84,7 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 | **Projects** | Save / open the real `.pkt` (`pt_save_project` / `pt_open_project`) | Persist the running topology, not just the plan JSON |
 | **Export** | Plans, JS scripts, CLI configs | Reusable project files on disk |
 
-👉 Full tool reference, device catalog, networking guides and architecture live in the **[documentation site](https://mats2208.github.io/MCP-Packet-Tracer/)**.
+ Full tool reference, device catalog, networking guides and architecture live in the **[documentation site](https://mats2208.github.io/MCP-Packet-Tracer/)**.
 
 ## Installation
 
@@ -110,7 +110,7 @@ _Windows PowerShell_ — quote the `--` separator, or PowerShell swallows it and
 claude mcp add --scope user --transport stdio packet-tracer "--" python -m packet_tracer_mcp --stdio
 ```
 
-Verify with `claude mcp list` (look for `packet-tracer … ✓ Connected`).
+Verify with `claude mcp list` (look for `packet-tracer … [OK] Connected`).
 
 **3. Install the live-deploy extension** — _only if you want real-time deploy into a running Packet Tracer_
 
@@ -162,7 +162,7 @@ own **MCP Control Center** extension once — the `.pts` from
 <p align="center"><img src="demo/install-demo.gif" alt="Installing the MCP Control Center extension in Packet Tracer" width="760"/></p>
 <p align="center"><sub>Installing the MCP Control Center extension (V5) in Packet Tracer</sub></p>
 
-📖 Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
+ Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
 
 ## Credits & Acknowledgements
 
@@ -171,7 +171,7 @@ Center** (the `.pts` in [Releases](https://github.com/Mats2208/MCP-Packet-Tracer
 Its Script-Engine helper layer was **inspired by**
 **[PTBuilder](https://github.com/kimmknight/PTBuilder)** by
 **Kim Knight ([@kimmknight](https://github.com/kimmknight))**, who pioneered driving
-Packet Tracer's Script Engine from JavaScript — thanks for the groundwork. 🙏
+Packet Tracer's Script Engine from JavaScript — thanks for the groundwork.
 
 > PTBuilder and Packet Tracer MCP are **separate, independent projects**. You install
 > *our* extension, not PTBuilder. Full

@@ -16,7 +16,7 @@ A Model Context Protocol server (`packet-tracer`) that drives **Cisco Packet Tra
 topology, validate it, generate IOS/PTBuilder artifacts, and **live-deploy** into a *running* PT
 over an HTTP bridge. The `pt_*` tools are your only interface — plus raw JS via `pt_send_raw`.
 
-## ⛔ Prime directive: DISCOVER, never invent
+## [ERROR] Prime directive: DISCOVER, never invent
 
 The single biggest failure mode for a model driving this MCP is **guessing** — a model name, a
 port name, a slot id, a cable type, a module name, or a Script-Engine API method. Every one of
@@ -115,7 +115,7 @@ There is **no `pt_send_pdu`**: PT does not let an extension originate a packet t
   → `Wireless0`, adds one `AccessPoint-PT` wired to the switch; laptops auto-associate on the default
   SSID (no SSID API). Logical-view RF range is global, so one AP serves all wireless laptops.
 
-## ⚠️ Verified PT Script-Engine API (for `pt_send_raw` / raw JS)
+## [ADVERTENCIA] Verified PT Script-Engine API (for `pt_send_raw` / raw JS)
 
 These are the **real** signatures (verified against the MCP's runtime patches and live testing).
 If a method is not here, do **not** assume it exists.
@@ -124,13 +124,13 @@ If a method is not here, do **not** assume it exists.
 - `getDevices(filter)` → **Array** (filter `""` = all, `"router"` = routers). ← the plural form
 - `allModuleTypes[name]` → module-type handle (passed to `addModule`)
 - `reportResult(data)` → exists **only when `wait_result=True`**; POSTs the result back
-- ❌ there is **no global `getDevice(...)`**; ❌ no `XMLHttpRequest` in the Script Engine
+- [ERROR] there is **no global `getDevice(...)`**; [ERROR] no `XMLHttpRequest` in the Script Engine
 
 **Network / device** — `var d = ipc.network().getDevice("R1");`  // ← correct singular lookup, may be null
 - `ipc.appWindow().getActiveWorkspace().getLogicalWorkspace()` → `lw`
   - `lw.addDevice(type, model, x, y)` → autoName · `lw.createLink(d1,p1,d2,p2,cableEnumInt)`
 - `d.getPorts()` → **Array of port-name strings** — use `.length`, `[i]`, `.join(",")`.
-  ❌ never `.size()`, `.at(i)`, `.getName()` on it (TypeError → modal → freeze).
+  [ERROR] never `.size()`, `.at(i)`, `.getName()` on it (TypeError → modal → freeze).
 - `d.getPort(name)` → Port | null · `d.getPower()/setPower(bool)/skipBoot()/setName(name)`
 - `d.addModule(slot, allModuleTypes[model], modelName)` → bool  (**slot is a STRING**)
 - `d.getProcess("AclProcess")` → AclProcess | null (routers) · `d.enterCommand(cmd, mode)`
@@ -148,7 +148,7 @@ If a method is not here, do **not** assume it exists.
 phone 8104 · cable 8105 · serial 8106 · auto 8107 · console 8108 · wireless 8109 · coaxial 8110 ·
 octal 8111 · cellular 8112 · usb 8113 · custom_io 8114.
 
-### 🔒 ALWAYS wrap raw JS in try/catch
+###  ALWAYS wrap raw JS in try/catch
 ```js
 try { var d = ipc.network().getDevice("R1"); reportResult("ports="+d.getPorts().join(",")); }
 catch (e) { reportResult("ERR: " + e); }
@@ -160,7 +160,7 @@ free insurance and keeps results clean.)
 
 ## Common mistakes → corrections (do not repeat these)
 
-| ❌ Wrong | ✅ Right | Why |
+| [ERROR] Wrong | [OK] Right | Why |
 |---|---|---|
 | `getDevice("R1")` | `ipc.network().getDevice("R1")` (or `getDevices("")` to list) | no global `getDevice` → ReferenceError → freeze |
 | `d.getPorts().size()` / `.at(i)` / `.getName()` | `d.getPorts()[i]` (string array) | getPorts returns strings |
@@ -192,12 +192,12 @@ incompatible module up front** when the module declares `compatible_with` (HWIC/
 
 | Router family | Module type | Slot (string) | Ports added | Status |
 |---|---|---|---|---|
-| ISR G2 — 1941/2901/2911 | HWIC (`HWIC-2T`, `HWIC-1GE-SFP`) | `"0/0".."0/3"` | `Serial0/x/0`,`Serial0/x/1` | ✅ verified 2911 & 1941 |
-| ISR 4000 — ISR4321/4331 | NIM (`NIM-2T`, `NIM-ES2-4`) | **`"0/1"`, `"0/2"`** | `Serial0/1/0`,`Serial0/1/1` | ✅ verified ISR4321 & ISR4331 |
-| 2811 / 2620XM / 2621XM | NM (`NM-4A/S`, `NM-2FE2W`,…) | **`"1"`** | `Serial1/0..1/3` | ✅ verified 2811 |
-| Router-PT (generic) | NM (`NM-*`, `PT-ROUTER-NM-*`) | `"1"` | ⚠️ non-standard ids (e.g. `Serial2/0`) | installs, odd port names |
+| ISR G2 — 1941/2901/2911 | HWIC (`HWIC-2T`, `HWIC-1GE-SFP`) | `"0/0".."0/3"` | `Serial0/x/0`,`Serial0/x/1` | [OK] verified 2911 & 1941 |
+| ISR 4000 — ISR4321/4331 | NIM (`NIM-2T`, `NIM-ES2-4`) | **`"0/1"`, `"0/2"`** | `Serial0/1/0`,`Serial0/1/1` | [OK] verified ISR4321 & ISR4331 |
+| 2811 / 2620XM / 2621XM | NM (`NM-4A/S`, `NM-2FE2W`,…) | **`"1"`** | `Serial1/0..1/3` | [OK] verified 2811 |
+| Router-PT (generic) | NM (`NM-*`, `PT-ROUTER-NM-*`) | `"1"` | [ADVERTENCIA] non-standard ids (e.g. `Serial2/0`) | installs, odd port names |
 
-> ⚠️ The `pt_add_module` docstring/SERVER_INSTRUCTIONS say NIM slots are `"0"`/`"1"` — **that is
+> [ADVERTENCIA] The `pt_add_module` docstring/SERVER_INSTRUCTIONS say NIM slots are `"0"`/`"1"` — **that is
 > wrong**; the working slot is **`"0/1"`** (chassis/subslot). HWIC = `"0/x"`, NM = `"1"`, NIM = `"0/1"`.
 > The install *mechanism* (`addModule`) is identical across routers — only the **slot string** differs
 > by family. Always confirm the result with `pt_query_topology`.

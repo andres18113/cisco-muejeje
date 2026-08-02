@@ -60,7 +60,7 @@ class TestFullBuildLiveDeploy:
     """pt_full_build(deploy=True) tiene que desplegar en PT cuando hay canal.
 
     Antes iba SIEMPRE al portapapeles: con el bridge conectado por HTTP y por
-    archivo, `pt_full_build` devolvía "✅ Validación: PASS" y dejaba el canvas
+    archivo, `pt_full_build` devolvía "[OK] Validación: PASS" y dejaba el canvas
     vacío (`pt_query_topology` → DEVICES:0|LINKS:0). El pipeline "completo"
     terminaba sin construir nada.
 

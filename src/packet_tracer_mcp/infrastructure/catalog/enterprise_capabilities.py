@@ -1,0 +1,206 @@
+"""Adapter del catálogo Packet Tracer existente al dominio Enterprise."""
+
+from __future__ import annotations
+
+import re
+
+from ...domain.enterprise.models.capabilities import DeviceCapabilities
+from ...domain.enterprise.models.hardware import (
+    CatalogCoverageReport,
+    HardwareCandidate,
+    NormalizedPortSpeed,
+    PortClass,
+    PortDescriptor,
+)
+from ...domain.enterprise.services.capability_resolver import (
+    CapabilityResolver,
+    CapabilityProvider,
+    CatalogDeviceFacts,
+)
+from .aliases import MODEL_ALIASES
+from .devices import ALL_MODELS, DeviceModel
+from .modules import ALL_MODULES
+
+
+def _normalization_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+class EnterpriseCapabilityAdapter:
+    """Expone el catálogo vigente sin copiarlo ni asumir capacidades IOS no verificadas."""
+
+    def __init__(
+        self,
+        resolver: CapabilityResolver | None = None,
+        providers: list[CapabilityProvider] | None = None,
+    ) -> None:
+        self._resolver = resolver or CapabilityResolver()
+        self._providers = providers or []
+        self._normalization_index = self._build_normalization_index()
+
+    def normalize_model_name(self, name: str) -> str | None:
+        """Devuelve el `pt_type` canónico reutilizando los aliases existentes."""
+        return self._normalization_index.get(_normalization_key(name))
+
+    def can_represent(self, model_name: str) -> bool:
+        return self.normalize_model_name(model_name) is not None
+
+    def capabilities_for(
+        self, model_name: str, packet_tracer_version: str | None = None,
+    ) -> DeviceCapabilities | None:
+        canonical = self.normalize_model_name(model_name)
+        if canonical is None:
+            return None
+        model = ALL_MODELS[canonical]
+        capabilities = self._resolver.resolve(self._facts_for(model))
+        return self._resolve_runtime_evidence(capabilities, packet_tracer_version)
+
+    def all_capabilities(
+        self, category: str | None = None, packet_tracer_version: str | None = None,
+    ) -> list[DeviceCapabilities]:
+        """Carga capacidades compactas y ordenadas; el llamador puede filtrar por categoría."""
+        models = (
+            model for model in ALL_MODELS.values()
+            if category is None or model.category == category
+        )
+        return [
+            self._resolve_runtime_evidence(self._resolver.resolve(self._facts_for(model)), packet_tracer_version)
+            for model in sorted(models, key=lambda item: item.pt_type.casefold())
+        ]
+
+    def port_descriptors_for(self, model_name: str) -> list[PortDescriptor]:
+        """Adapta nombres y velocidades reales del catálogo a clases físicas E3."""
+        canonical = self.normalize_model_name(model_name)
+        if canonical is None:
+            return []
+        model = ALL_MODELS[canonical]
+        return [self._port_descriptor(model, port) for port in model.ports]
+
+    def coverage_report(self, observed_models: list[str] | None = None) -> CatalogCoverageReport:
+        """Compara nombres observados con el catálogo sin incorporarlos automáticamente."""
+        base = sorted(ALL_MODELS)
+        capabilities = self.all_capabilities()
+        gaps = {
+            capability.model: [
+                name for name in ("supports_poe", "layer2", "layer3", "supports_routing")
+                if getattr(capability, name).value == "unknown"
+            ]
+            for capability in capabilities
+        }
+        observed = observed_models or []
+        return CatalogCoverageReport(
+            known_in_enterprise=base,
+            known_in_base_catalog=base,
+            unclassified=sorted(name for name in observed if not self.can_represent(name)),
+            aliases=dict(sorted(MODEL_ALIASES.items())),
+            capability_gaps=gaps,
+        )
+
+    def hardware_candidates(
+        self, category: str, packet_tracer_version: str | None = None,
+    ) -> list[HardwareCandidate]:
+        """Provee candidatos físicos al dominio sin que éste importe el catálogo PT."""
+        return [
+            HardwareCandidate(
+                model=capability.model,
+                capabilities=capability,
+                ports=self.port_descriptors_for(capability.model),
+            )
+            for capability in self.all_capabilities(category, packet_tracer_version)
+        ]
+
+    def identity_for(self, runtime_model: str, packet_tracer_version: str | None = None):
+        """Resuelve sólo matching exacto/alias ya declarado; no inventa aliases runtime."""
+        from ...domain.enterprise.models.discovery import DeviceIdentity, ModelIdentityStatus
+
+        canonical = self.normalize_model_name(runtime_model)
+        if canonical is None:
+            return DeviceIdentity(
+                runtime_id=runtime_model,
+                display_name=runtime_model,
+                packet_tracer_version=packet_tracer_version,
+                status=ModelIdentityStatus.UNRESOLVED_IDENTITY,
+            )
+        model = ALL_MODELS[canonical]
+        aliases = [alias for alias, target in MODEL_ALIASES.items() if target == canonical]
+        return DeviceIdentity(
+            canonical_id=canonical,
+            runtime_id=runtime_model,
+            display_name=model.display_name,
+            aliases=sorted(aliases, key=str.casefold),
+            category=model.category,
+            packet_tracer_version=packet_tracer_version,
+            status=ModelIdentityStatus.CATALOG_MATCHED,
+        )
+
+    def _resolve_runtime_evidence(
+        self,
+        capabilities: DeviceCapabilities,
+        packet_tracer_version: str | None,
+    ) -> DeviceCapabilities:
+        evidence = [
+            item
+            for provider in self._providers
+            for item in provider.evidence_for(capabilities.model, packet_tracer_version)
+        ]
+        return self._resolver.with_evidence(capabilities, evidence, packet_tracer_version)
+
+    def _facts_for(self, model: DeviceModel) -> CatalogDeviceFacts:
+        aliases = tuple(
+            alias for alias, canonical in MODEL_ALIASES.items()
+            if canonical == model.pt_type
+        ) + (model.pt_type, model.display_name)
+        compatible_modules = tuple(
+            spec.name for spec in ALL_MODULES.values()
+            if not spec.compatible_with or model.pt_type in spec.compatible_with
+        )
+        return CatalogDeviceFacts(
+            model=model.pt_type,
+            category=model.category,
+            aliases=aliases,
+            port_speeds=tuple(self._speed_value(port.speed) for port in model.ports),
+            compatible_modules=compatible_modules,
+            source="packet_tracer_catalog",
+        )
+
+    def _build_normalization_index(self) -> dict[str, str]:
+        index: dict[str, str] = {}
+        for model in ALL_MODELS.values():
+            variants = {model.pt_type, model.display_name}
+            if model.pt_type.casefold().startswith("isr"):
+                variants.add(model.pt_type[3:])
+            for variant in tuple(variants):
+                variants.add(re.sub(r"\bisr\s*", "", variant, flags=re.IGNORECASE))
+            for variant in variants:
+                index[_normalization_key(variant)] = model.pt_type
+        for alias, canonical in MODEL_ALIASES.items():
+            index[_normalization_key(alias)] = canonical
+        return index
+
+    @staticmethod
+    def _speed_value(speed: object) -> str:
+        return str(getattr(speed, "value", speed))
+
+    def _port_descriptor(self, model: DeviceModel, port) -> PortDescriptor:
+        speed = self._speed_value(port.speed)
+        normalized_speed = {
+            "Ethernet": NormalizedPortSpeed.SPEED_10M,
+            "FastEthernet": NormalizedPortSpeed.SPEED_100M,
+            "GigabitEthernet": NormalizedPortSpeed.SPEED_1G,
+            "TenGigabitEthernet": NormalizedPortSpeed.SPEED_10G,
+        }.get(speed, NormalizedPortSpeed.UNKNOWN)
+        classes: list[PortClass] = []
+        if speed == "Serial":
+            classes.extend([PortClass.SERIAL, PortClass.WAN])
+        elif model.category == "switch" and speed in {"Ethernet", "FastEthernet"}:
+            classes.append(PortClass.ACCESS_CAPABLE)
+        elif model.category == "switch" and speed in {"GigabitEthernet", "TenGigabitEthernet"}:
+            classes.append(PortClass.UPLINK_CAPABLE)
+        elif model.category == "router" and speed in {"Ethernet", "FastEthernet", "GigabitEthernet", "TenGigabitEthernet"}:
+            classes.extend([PortClass.WAN, PortClass.UPLINK_CAPABLE])
+        return PortDescriptor(
+            name=port.full_name,
+            classes=classes,
+            speed=normalized_speed,
+            slot=port.slot,
+        )

@@ -54,7 +54,7 @@ to `cd` into the repo or keep a server running.
 
     ```bash
     claude mcp list
-    # packet-tracer: python -m packet_tracer_mcp --stdio - ✓ Connected
+    # packet-tracer: python -m packet_tracer_mcp --stdio - [OK] Connected
     ```
 
     Remove later with `claude mcp remove packet-tracer --scope user`.

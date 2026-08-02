@@ -15,7 +15,7 @@ by **[PTBuilder](https://github.com/kimmknight/PTBuilder)**, by
 **Kim Knight ([@kimmknight](https://github.com/kimmknight))**. PTBuilder was used as
 the **starting point / reference** for this project's Script-Engine helper layer
 (the `addDevice`/`addLink`/`configureIosDevice`-style functions). Credit and thanks
-to Kim for that groundwork. 🙏
+to Kim for that groundwork.
 
 !!! info "Two separate, independent projects"
     - **PTBuilder** is its own project by Kim Knight. It is **not** affiliated with,

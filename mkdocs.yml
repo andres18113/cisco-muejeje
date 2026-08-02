@@ -87,5 +87,9 @@ nav:
       - Topology Templates: templates.md
   - Internals:
       - Architecture: architecture.md
+      - Enterprise Planning: architecture/enterprise-planning.md
+      - Enterprise Hardware Planner: architecture/enterprise-hardware.md
+      - Packet Tracer Capability Discovery: architecture/packet-tracer-capability-discovery.md
+      - Capability Probes QA: qa/capability-probes.md
       - Testing: testing.md
   - Credits & Attribution: credits.md
