@@ -26,6 +26,16 @@ class DiscoverySource(str, Enum):
     OBSERVED_SEED = "observed_seed"
 
 
+class CapabilityBackend(str, Enum):
+    """Backend que produjo la evidencia; no todos los laboratorios son PT."""
+
+    PACKET_TRACER = "packet_tracer"
+    CML = "cml"
+    EVE_NG = "eve_ng"
+    GNS3 = "gns3"
+    IOS_XE = "ios_xe"
+
+
 class ModelIdentityStatus(str, Enum):
     CATALOG_MATCHED = "catalog_matched"
     RUNTIME_ONLY = "runtime_only"
@@ -72,6 +82,33 @@ class CleanupStatus(str, Enum):
     CLEAN = "clean"
     DIRTY_SESSION = "dirty_session"
     NOT_REQUIRED = "not_required"
+
+
+class DeviceInitializationState(str, Enum):
+    CREATED = "created"
+    CONFIGURATION_READY = "configuration_ready"
+    NOT_FOUND = "not_found"
+    TIMEOUT = "timeout"
+
+
+class CapabilityVerificationMethod(str, Enum):
+    DIRECT_RUNTIME_API = "direct_runtime_api"
+    CLI_PLUS_READBACK = "cli_plus_readback"
+    OBJECT_STATE = "object_state"
+    SIMULATION_TRACE = "simulation_trace"
+    MANUAL_VERIFIED = "manual_verified"
+    UNOBSERVABLE = "unobservable"
+
+
+class DeviceInitializationResult(BaseModel):
+    state: DeviceInitializationState = DeviceInitializationState.CREATED
+    attempts: int = 0
+    elapsed_ms: int = 0
+    power: bool | None = None
+    command_prompt: bool = False
+    configuration_channel: bool = False
+    components_seen: list[str] = Field(default_factory=list)
+    failure_reason: str = ""
 
 
 class RuntimePortDescriptor(BaseModel):
@@ -124,6 +161,7 @@ class RuntimeDeviceObservation(BaseModel):
     category: str | None = None
     ports: list[RuntimePortDescriptor] = Field(default_factory=list)
     modules: list[RuntimeModuleDescriptor] = Field(default_factory=list)
+    initialization: DeviceInitializationResult | None = None
     error: str = ""
 
 
@@ -141,6 +179,7 @@ class CapabilityProbeResult(BaseModel):
     failure_reason: str = ""
     duration_ms: int = 0
     packet_tracer_version: str | None = None
+    verification_method: CapabilityVerificationMethod | None = None
 
     def evidence(self):
         """Convierte sólo resultados verificados en evidencia reusable."""
@@ -219,6 +258,7 @@ class CapabilitySnapshot(BaseModel):
     schema_version: int = SNAPSHOT_SCHEMA_VERSION
     probe_schema_version: int = PROBE_SCHEMA_VERSION
     packet_tracer_version: str | None = None
+    backend: CapabilityBackend = CapabilityBackend.PACKET_TRACER
     session: ProbeSessionResult
 
     def stable_hash(self) -> str:

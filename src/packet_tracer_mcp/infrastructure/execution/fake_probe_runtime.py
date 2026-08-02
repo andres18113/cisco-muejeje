@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from ...domain.enterprise.models.capabilities import EvidenceSource
+from ...domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
 from ...domain.enterprise.models.discovery import (
+    CapabilityVerificationMethod,
     CapabilityProbeResult,
     ProbeDefinition,
     ProbeExecutionStatus,
@@ -66,6 +67,13 @@ class FakePacketTracerProbeRuntime:
         result = self.probe_results.get((model, capability))
         if result is not None:
             return deepcopy(result)
+        if capability == "configuration_channel":
+            return CapabilityProbeResult(
+                probe_id=definition.id, model=model, capability=capability,
+                status=CapabilityStatus.SUPPORTED, execution_status=ProbeExecutionStatus.VERIFIED,
+                evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME, verified=True,
+                verification_method=CapabilityVerificationMethod.DIRECT_RUNTIME_API,
+            )
         return CapabilityProbeResult(
             probe_id=definition.id,
             model=model,

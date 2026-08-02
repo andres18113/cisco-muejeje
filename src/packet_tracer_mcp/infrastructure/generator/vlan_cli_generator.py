@@ -11,6 +11,7 @@ línea JS (los `\n` viajan como escapes literales, no como saltos de código que
 
 from __future__ import annotations
 
+from ...shared.ios_config import build_configure_ios_call
 from ...domain.models.vlans import (
     VLANConfig, AccessPortConfig, TrunkConfig, SubinterfaceConfig,
 )
@@ -112,11 +113,4 @@ def build_router_subinterface_payload(subinterfaces) -> str:
 
 def build_vlan_js_call(device: str, ios_payload: str) -> str:
     """Envuelve el payload IOS en `configureIosDevice` como una sola línea JS."""
-    safe_dev = device.replace("\\", "\\\\").replace('"', '\\"')
-    safe_payload = (
-        ios_payload
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-    )
-    return f'configureIosDevice("{safe_dev}", "{safe_payload}");'
+    return build_configure_ios_call(device, ios_payload)

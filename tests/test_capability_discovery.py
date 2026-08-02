@@ -215,7 +215,7 @@ def test_conflicting_evidence_keeps_warning_and_probe_wins_over_static_override(
 def test_registry_declares_dependencies_without_accepting_raw_user_commands():
     definitions = CapabilityProbeRegistry().definitions_for(["supports_trunk"])
 
-    assert [item.capability for item in definitions] == ["model_exists", "port_inventory", "layer2", "supports_vlan", "supports_trunk"]
+    assert [item.capability for item in definitions] == ["model_exists", "port_inventory", "layer2", "configuration_channel", "supports_vlan", "supports_trunk"]
     assert all(not hasattr(item, "command") for item in definitions)
 
 
@@ -247,36 +247,49 @@ def test_bridge_probe_runtime_serializes_untrusted_model_and_probe_names():
 def test_bridge_runtime_vlan_probe_requires_configure_readback_and_cleanup():
     sent: list[str] = []
 
+    responses = iter((
+        '{"found":true,"configuration_channel":true}',
+        '{"found":true,"configuration_channel":true}',
+        '{"found":true,"configuration_channel":true}',
+    ))
+
     def send_and_wait(js: str, timeout: float):
         sent.append(js)
-        return '{"ready":true,"configured":true,"cleanup":true}'
+        return next(responses)
 
     definition = CapabilityProbeRegistry().definitions_for(["supports_vlan"])[-1]
-    result = PacketTracerBridgeProbeRuntime(send_and_wait).probe_capability("__MCP_PROBE_01", "supports_vlan", definition)
+    configured: list[str] = []
+    result = PacketTracerBridgeProbeRuntime(send_and_wait, send=lambda js: configured.append(js) is None).probe_capability("__MCP_PROBE_01", "supports_vlan", definition)
 
     assert result.status is CapabilityStatus.SUPPORTED
     assert result.configured and result.verified
-    assert "getCommandPrompt" in sent[0]
-    assert "enterCommand" in sent[0]
+    assert "configureIosDevice" in configured[0]
     assert "getVlanAt" in sent[0]
-    assert "no vlan" in sent[0]
+    assert "no vlan" in configured[1]
 
 
 def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
     sent: list[str] = []
 
+    responses = iter((
+        '{"interface":"GigabitEthernet0/0","svi":false}',
+        '{"found":true,"configuration_channel":true}',
+        '{"found":true,"configuration_channel":true}',
+    ))
+
     def send_and_wait(js: str, timeout: float):
         sent.append(js)
-        return '{"ready":true,"configured":true,"cleanup":true,"model":"2911"}'
+        return next(responses)
 
     definition = CapabilityProbeRegistry().definitions_for(["layer3"])[-1]
-    result = PacketTracerBridgeProbeRuntime(send_and_wait).probe_capability("__MCP_PROBE_01", "layer3", definition)
+    configured: list[str] = []
+    result = PacketTracerBridgeProbeRuntime(send_and_wait, send=lambda js: configured.append(js) is None).probe_capability("__MCP_PROBE_01", "layer3", definition)
 
     assert result.status is CapabilityStatus.SUPPORTED
     assert result.configured and result.verified
-    assert "ip address '+__ip" in sent[0]
-    assert "getCommandPrompt" in sent[0]
-    assert "no ip address" in sent[0]
+    assert "ip address 198.18.36.1 255.255.255.252" in configured[0]
+    assert "getIpAddress" in sent[1]
+    assert "no ip address" in configured[1]
 
 
 def test_scenario_readiness_does_not_require_endpoint_poe_or_routing(tmp_path):

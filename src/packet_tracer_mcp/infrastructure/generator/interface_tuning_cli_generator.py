@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...shared.ios_config import build_configure_ios_call
 from ...domain.models.interface_tuning import InterfaceTuning
 
 
@@ -43,8 +44,4 @@ def build_interface_tuning_payload(cfg: InterfaceTuning) -> str:
 
 
 def build_interface_tuning_js_call(device: str, ios_payload: str) -> str:
-    safe_dev = device.replace("\\", "\\\\").replace('"', '\\"')
-    safe_payload = (
-        ios_payload.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-    )
-    return f'configureIosDevice("{safe_dev}", "{safe_payload}");'
+    return build_configure_ios_call(device, ios_payload)

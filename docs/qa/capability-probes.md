@@ -34,6 +34,25 @@ canales del bridge disponibles al inicio y dispositivos temporales con prefijo
 
 ## E3.6.1: L2/L3 verificado y readiness por escenario
 
+## E3.6.2: ciclo de vida temporal y canal de configuracion
+
+Los probes temporales usan `lwAddDevice`, igual que `pt_live_deploy`, en vez de
+crear directamente con `addDevice`. La disponibilidad de `CommandPrompt` no se
+usa como requisito: Packet Tracer 9.0.1.0858 puede exponer el device y el canal
+oficial `configureIosDevice` antes de exponer ese objeto.
+
+El probe espera como maximo 8 segundos, con polling de 250 ms y diagnostico
+compacto. Los comandos se envian fire-and-forget por el canal oficial y se
+verifican en una lectura separada. En la validacion live se verificaron:
+
+- 2911 IPv4 de una interfaz, con lectura y limpieza;
+- 2960-24TT y 3560-24PS VLAN 999, por `VlanManager`, con limpieza;
+- sesiones temporales limpias.
+
+No se promueve evidencia de trunk, PoE, DHCP ni SVI L3 de 3560 cuando la lectura
+independiente falla. La secuencia combinada revelo una condicion de carrera del
+SVI 3560 despues de limpiar VLAN, que permanece como `UNKNOWN`.
+
 La validación del 2026-08-02 sobre Packet Tracer `9.0.1.0858` produjo el
 snapshot `db16439e39bbea0b06cd9ff945e2fa25f53c13469034625c531875be33fa5ee8`.
 La sesión `probe-829e47044f34` terminó `clean`: cuatro dispositivos temporales

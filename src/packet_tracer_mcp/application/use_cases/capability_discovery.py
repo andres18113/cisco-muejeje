@@ -87,8 +87,12 @@ class CapabilityProbeRegistry:
             id="layer2-probe", capability="layer2", prerequisites=["port_inventory"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
         ),
+        "configuration_channel": ProbeDefinition(
+            id="configuration-channel", capability="configuration_channel", prerequisites=["model_exists"],
+            cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+        ),
         "supports_vlan": ProbeDefinition(
-            id="vlan-probe", capability="supports_vlan", prerequisites=["layer2"],
+            id="vlan-probe", capability="supports_vlan", prerequisites=["layer2", "configuration_channel"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
         ),
         "supports_trunk": ProbeDefinition(
@@ -96,7 +100,7 @@ class CapabilityProbeRegistry:
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
         ),
         "layer3": ProbeDefinition(
-            id="layer3-probe", capability="layer3", prerequisites=["port_inventory"],
+            id="layer3-probe", capability="layer3", prerequisites=["port_inventory", "configuration_channel"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
         ),
         "supports_static_routes": ProbeDefinition(
@@ -317,7 +321,7 @@ class CapabilityDiscoveryService:
         elif request.probe_level is ProbeLevel.DISCOVERY:
             requested = ["model_exists"]
         elif request.probe_level is ProbeLevel.LOGICAL:
-            requested = ["model_exists", "port_inventory", "layer2", "supports_vlan", "supports_trunk", "layer3"]
+            requested = ["model_exists", "port_inventory", "layer2", "configuration_channel", "supports_vlan", "supports_trunk", "layer3"]
         else:
             requested = ["model_exists", "port_inventory", "supports_modules", "supports_poe"]
         return [

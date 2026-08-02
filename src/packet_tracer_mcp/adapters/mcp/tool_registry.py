@@ -1360,7 +1360,7 @@ def register_tools(mcp: FastMCP) -> None:
         nonlocal capability_discovery_service
         if capability_discovery_service is None:
             catalog = EnterpriseCapabilityAdapter()
-            runtime = PacketTracerBridgeProbeRuntime(_bridge_send_and_wait)
+            runtime = PacketTracerBridgeProbeRuntime(_bridge_send_and_wait, send=_channel_send)
             capability_discovery_service = CapabilityDiscoveryService(
                 runtime=runtime,
                 snapshots=CapabilitySnapshotStore(),

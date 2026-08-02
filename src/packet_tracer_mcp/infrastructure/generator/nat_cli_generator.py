@@ -14,6 +14,7 @@ Restricción crítica: el payload DEBE viajar dentro de un solo statement JS
 """
 
 from __future__ import annotations
+from ...shared.ios_config import build_configure_ios_call
 from ...domain.models.nat import NATConfig
 
 
@@ -157,11 +158,4 @@ def build_nat_js_call(router: str, ios_payload: str) -> str:
     contenido del string literal JS — executeCode() stripea saltos REALES
     de código fuente, pero no las secuencias de escape dentro de strings.
     """
-    safe_router = router.replace("\\", "\\\\").replace('"', '\\"')
-    safe_payload = (
-        ios_payload
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-    )
-    return f'configureIosDevice("{safe_router}", "{safe_payload}");'
+    return build_configure_ios_call(router, ios_payload)

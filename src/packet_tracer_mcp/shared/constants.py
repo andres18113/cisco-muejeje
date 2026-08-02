@@ -123,7 +123,7 @@ PT_CONNECT_TYPE_DEFAULT = 8107  # AUTO — deja a PT detectar el tipo correcto
 
 # Valores reservados para sondas controladas de capacidades Enterprise. No se
 # aceptan desde MCP: evitan colisiones y hacen que el cleanup sea verificable.
-CAPABILITY_PROBE_VLAN_ID = 4093
+CAPABILITY_PROBE_VLAN_ID = 999
 CAPABILITY_PROBE_VLAN_NAME = "MCP_CAPABILITY_PROBE"
 CAPABILITY_PROBE_IPV4_ADDRESS = "198.18.36.1"
 CAPABILITY_PROBE_IPV4_MASK = "255.255.255.252"

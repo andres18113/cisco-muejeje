@@ -14,6 +14,7 @@ from ...shared.constants import (
     PT_CONNECT_TYPE,
     PT_CONNECT_TYPE_DEFAULT,
 )
+from ...shared.ios_config import build_configure_ios_call
 
 
 def generate_ptbuilder_script(plan: TopologyPlan) -> str:
@@ -69,7 +70,7 @@ def generate_executable_script(plan: TopologyPlan) -> str:
 
     configs = generate_all_configs(plan)
     for device_name, cli_block in configs.items():
-        lines.append(f'configureIosDevice({json.dumps(device_name)}, {json.dumps(cli_block)});')
+        lines.append(build_configure_ios_call(device_name, cli_block))
 
     from ...shared.utils import prefix_to_mask
     import ipaddress

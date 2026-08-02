@@ -9,6 +9,7 @@ from collections.abc import Callable
 from ...application.use_cases.capability_discovery import PacketTracerProbeRuntime
 from ...domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
 from ...domain.enterprise.models.discovery import (
+    CapabilityVerificationMethod,
     CapabilityProbeResult,
     ProbeDefinition,
     ProbeExecutionStatus,
@@ -16,6 +17,10 @@ from ...domain.enterprise.models.discovery import (
     RuntimeDeviceObservation,
     RuntimePortDescriptor,
 )
+from ...infrastructure.catalog.devices import resolve_model
+from ...shared.constants import PT_DEVICE_TYPE, PT_DEVICE_TYPE_DEFAULT
+from .configuration_runtime import PacketTracerConfigurationRuntime
+from .device_lifecycle import DeviceReadinessWaiter
 from ...shared.constants import (
     CAPABILITY_PROBE_IPV4_ADDRESS,
     CAPABILITY_PROBE_IPV4_MASK,
@@ -39,9 +44,11 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         self,
         send_and_wait: Callable[[str, float], str | None],
         packet_tracer_version: str | None = None,
+        send: Callable[[str], bool] | None = None,
     ) -> None:
         self._send_and_wait = send_and_wait
         self._packet_tracer_version = packet_tracer_version
+        self._configuration = PacketTracerConfigurationRuntime(send or (lambda _: False))
 
     def packet_tracer_version(self) -> str | None:
         return self._packet_tracer_version
@@ -52,12 +59,14 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
     def create_temporary_device(self, runtime_model: str, temporary_name: str) -> RuntimeDeviceObservation:
         model = json.dumps(runtime_model)
         name = json.dumps(temporary_name)
+        catalog_model = resolve_model(runtime_model)
+        device_type = PT_DEVICE_TYPE.get(catalog_model.category, PT_DEVICE_TYPE_DEFAULT) if catalog_model else PT_DEVICE_TYPE_DEFAULT
         js = (
             "try{"
-            f"var __model={model};var __name={name};var __net=ipc.network();"
+            f"var __model={model};var __name={name};var __type={device_type};var __net=ipc.network();"
             "if(__net.getDevice(__name)){reportResult(JSON.stringify({error:'duplicate probe name'}));}"
-            "else if(typeof addDevice!=='function'){reportResult(JSON.stringify({error:'addDevice unavailable'}));}"
-            "else{addDevice(__name,__model,9000,9000);var __d=__net.getDevice(__name);"
+            "else if(typeof lwAddDevice!=='function'){reportResult(JSON.stringify({error:'lwAddDevice unavailable'}));}"
+            "else{lwAddDevice(__name,__type,__model,9000,9000);var __d=__net.getDevice(__name);"
             "if(!__d){reportResult(JSON.stringify({found:false}));}else{var __ports=[];"
             "for(var __i=0;__i<__d.getPortCount();__i++){try{var __p=__d.getPortAt(__i);"
             "if(__p){__ports.push({name:__p.getName(),bandwidth_kbps:(typeof __p.getBandwidth==='function')?__p.getBandwidth():null});}}catch(__pe){}}"
@@ -67,12 +76,15 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         data = self._json_result(js, timeout=15.0)
         if data.get("error"):
             return RuntimeDeviceObservation(error=str(data["error"]))
-        return RuntimeDeviceObservation(
+        observation = RuntimeDeviceObservation(
             found=bool(data.get("found")),
             runtime_id=data.get("runtime_id"),
             display_name=data.get("display_name", ""),
             ports=[self._port_descriptor(item) for item in data.get("ports", [])],
         )
+        if observation.found:
+            return observation.model_copy(update={"initialization": self._wait_for_readiness(temporary_name)})
+        return observation
 
     def delete_temporary_device(self, temporary_name: str) -> bool:
         name = json.dumps(temporary_name)
@@ -93,6 +105,8 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         """Ejecuta sólo probes configure/read-back con APIs ya presentes en MCP."""
         if capability == "layer2":
             return self._probe_vlan_manager(temporary_name, definition)
+        if capability == "configuration_channel":
+            return self._probe_configuration_channel(temporary_name, definition)
         if capability == "supports_vlan":
             return self._probe_vlan(temporary_name, definition)
         if capability == "layer3":
@@ -106,6 +120,24 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             failure_reason=(
                 "No verified configure/read-back API is available for this logical probe "
                 "in the current PT bridge."
+            ),
+        )
+
+    def _probe_configuration_channel(self, temporary_name: str, definition: ProbeDefinition) -> CapabilityProbeResult:
+        readiness = self._wait_for_readiness(temporary_name)
+        if not readiness.configuration_channel:
+            return self._failure(
+                definition, ProbeExecutionStatus.TIMEOUT if readiness.state.value == "timeout" else ProbeExecutionStatus.SKIPPED,
+                readiness.failure_reason or "The official configureIosDevice channel was not ready for the temporary device.",
+            )
+        return CapabilityProbeResult(
+            probe_id=definition.id, model="", capability=definition.capability,
+            status=CapabilityStatus.SUPPORTED, execution_status=ProbeExecutionStatus.VERIFIED,
+            evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME, verified=True,
+            verification_method=CapabilityVerificationMethod.DIRECT_RUNTIME_API,
+            raw_summary=(
+                "Official configureIosDevice channel available after "
+                f"{readiness.attempts} readiness check(s); CommandPrompt present={readiness.command_prompt}."
             ),
         )
 
@@ -128,113 +160,101 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             probe_id=definition.id, model="", capability=definition.capability, status=status,
             execution_status=ProbeExecutionStatus.VERIFIED,
             evidence_source=EvidenceSource.CONTROLLED_PROBE, verified=True,
+            verification_method=CapabilityVerificationMethod.OBJECT_STATE,
             raw_summary="VlanManager present." if status is CapabilityStatus.SUPPORTED else "VlanManager is absent on the probe device.",
         )
 
     def _probe_vlan(self, temporary_name: str, definition: ProbeDefinition) -> CapabilityProbeResult:
-        name = json.dumps(temporary_name)
-        enable = json.dumps("enable")
-        configure = json.dumps("configure terminal")
-        create_vlan = json.dumps("vlan " + str(CAPABILITY_PROBE_VLAN_ID))
-        vlan_name = json.dumps("name " + CAPABILITY_PROBE_VLAN_NAME)
-        end = json.dumps("end")
-        remove_vlan = json.dumps("no vlan " + str(CAPABILITY_PROBE_VLAN_ID))
-        vlan_id = json.dumps(CAPABILITY_PROBE_VLAN_ID)
-        js = "".join((
-            "try{var __d=ipc.network().getDevice(", name, ");",
-            "var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;",
-            "var __cp=__d&&typeof __d.getCommandPrompt==='function'?__d.getCommandPrompt():null;",
-            "if(!__d||!__vm||!__cp||typeof __cp.enterCommand!=='function'){reportResult(JSON.stringify({ready:false,reason:'Temporary device lacks a usable CommandPrompt.'}));}",
-            "else{__cp.enterCommand(", enable, ");__cp.enterCommand(", configure, ");",
-            "__cp.enterCommand(", create_vlan, ");__cp.enterCommand(", vlan_name, ");__cp.enterCommand(", end, ");",
-            "var __present=false;for(var __i=0;__i<__vm.getVlanCount();__i++){",
-            "var __v=__vm.getVlanAt(__i);if(__v&&__v.getVlanNumber()===", vlan_id, "){__present=true;}}",
-            "__cp.enterCommand(", enable, ");__cp.enterCommand(", configure, ");__cp.enterCommand(", remove_vlan, ");__cp.enterCommand(", end, ");",
-            "var __left=false;for(var __j=0;__j<__vm.getVlanCount();__j++){",
-            "var __cv=__vm.getVlanAt(__j);if(__cv&&__cv.getVlanNumber()===", vlan_id, "){__left=true;}}",
-            "reportResult(JSON.stringify({ready:true,configured:__present,cleanup:!__left}));}",
-            "}catch(__e){reportResult('ERROR:'+__e);}",
-        ))
-        try:
-            data = self._json_result(js, timeout=20.0)
-        except TimeoutError as exc:
-            return self._failure(definition, ProbeExecutionStatus.TIMEOUT, str(exc))
-        except RuntimeError as exc:
-            return self._failure(definition, ProbeExecutionStatus.PACKET_TRACER_ERROR, str(exc))
-        if not data.get("ready"):
-            return self._failure(
-                definition, ProbeExecutionStatus.SKIPPED,
-                str(data.get("reason") or "VlanManager or CommandPrompt is unavailable."),
-            )
-        if not data.get("configured") or not data.get("cleanup"):
-            return self._failure(
-                definition, ProbeExecutionStatus.VERIFY_FAILED,
-                "VLAN configure/read-back/cleanup evidence was incomplete.", configured=bool(data.get("configured")),
-            )
+        create = "\n".join(("enable", "configure terminal", f"vlan {CAPABILITY_PROBE_VLAN_ID}", f"name {CAPABILITY_PROBE_VLAN_NAME}", "end"))
+        if not self._configuration.configure_ios(temporary_name, create):
+            return self._failure(definition, ProbeExecutionStatus.BRIDGE_ERROR, "Official configuration channel rejected the VLAN payload.")
+        configured = self._wait_for_vlan(temporary_name, present=True)
+        cleanup_payload = "\n".join(("enable", "configure terminal", f"no vlan {CAPABILITY_PROBE_VLAN_ID}", "end"))
+        cleanup_sent = self._configuration.configure_ios(temporary_name, cleanup_payload)
+        cleanup = cleanup_sent and self._wait_for_vlan(temporary_name, present=False)
+        if not configured or not cleanup:
+            return self._failure(definition, ProbeExecutionStatus.VERIFY_FAILED, "VLAN configure/read-back/cleanup evidence was incomplete.", configured=configured)
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability,
-            status=CapabilityStatus.SUPPORTED, execution_status=ProbeExecutionStatus.VERIFIED,
-            evidence_source=EvidenceSource.CONTROLLED_PROBE, configured=True, verified=True,
-            observed_value=CAPABILITY_PROBE_VLAN_ID,
-            raw_summary="VLAN configured, read back through VlanManager, and removed successfully.",
+            probe_id=definition.id, model="", capability=definition.capability, status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED, evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=True, verified=True, observed_value=CAPABILITY_PROBE_VLAN_ID,
+            verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
+            raw_summary="VLAN configured through configureIosDevice, read back through VlanManager, and removed successfully.",
         )
 
     def _probe_layer3(self, temporary_name: str, definition: ProbeDefinition) -> CapabilityProbeResult:
+        target = self._layer3_target(temporary_name)
+        if target is None:
+            return self._failure(definition, ProbeExecutionStatus.SKIPPED, "No model-specific IPv4 probe target is available for this device.")
+        interface, is_svi = target
+        lines = ["enable", "configure terminal"]
+        if is_svi:
+            lines.append(f"vlan {CAPABILITY_PROBE_VLAN_ID}")
+        lines.extend((f"interface {interface}", f"ip address {CAPABILITY_PROBE_IPV4_ADDRESS} {CAPABILITY_PROBE_IPV4_MASK}", "no shutdown", "end"))
+        if not self._configuration.configure_ios(temporary_name, "\n".join(lines)):
+            return self._failure(definition, ProbeExecutionStatus.BRIDGE_ERROR, "Official configuration channel rejected the IPv4 payload.")
+        configured = self._wait_for_ip(temporary_name, interface, present=True)
+        cleanup = "\n".join(("enable", "configure terminal", f"interface {interface}", "no ip address", "shutdown", "end"))
+        cleanup_sent = self._configuration.configure_ios(temporary_name, cleanup)
+        cleaned = cleanup_sent and self._wait_for_ip(temporary_name, interface, present=False)
+        if not configured or not cleaned:
+            return self._failure(definition, ProbeExecutionStatus.VERIFY_FAILED, "IPv4 configure/read-back/cleanup evidence was incomplete.", configured=configured)
+        return CapabilityProbeResult(
+            probe_id=definition.id, model="", capability=definition.capability, status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED, evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=True, verified=True, verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
+            raw_summary="IPv4 interface configured through configureIosDevice, read back through port state, and cleared successfully.",
+        )
+
+    def _wait_for_readiness(self, temporary_name: str):
+        return DeviceReadinessWaiter(lambda: self._initialization_state(temporary_name)).wait()
+
+    def _initialization_state(self, temporary_name: str) -> dict:
         name = json.dumps(temporary_name)
-        address = json.dumps(CAPABILITY_PROBE_IPV4_ADDRESS)
-        mask = json.dumps(CAPABILITY_PROBE_IPV4_MASK)
-        vlan_id = json.dumps(CAPABILITY_PROBE_VLAN_ID)
-        enable = json.dumps("enable")
-        configure = json.dumps("configure terminal")
-        end = json.dumps("end")
-        no_shutdown = json.dumps("no shutdown")
-        no_ip = json.dumps("no ip address")
-        shutdown = json.dumps("shutdown")
         js = "".join((
             "try{var __d=ipc.network().getDevice(", name, ");",
-            "var __model=__d&&typeof __d.getModel==='function'?String(__d.getModel()):'';",
-            "var __ip=", address, ";var __mask=", mask, ";var __vlanId=", vlan_id, ";",
             "var __cp=__d&&typeof __d.getCommandPrompt==='function'?__d.getCommandPrompt():null;",
-            "if(!__d||!__cp||typeof __cp.enterCommand!=='function'){reportResult(JSON.stringify({ready:false,reason:'Temporary device lacks a usable CommandPrompt.'}));}",
-            "else if(__model.indexOf('2911')>=0){var __p=null;for(var __n=0;__n<__d.getPortCount();__n++){var __candidate=__d.getPortAt(__n);if(__candidate&&String(__candidate.getName()).indexOf('Ethernet')>=0){__p=__candidate;break;}}var __if=__p&&__p.getName();",
-            "if(!__if){reportResult(JSON.stringify({ready:false}));}else{",
-            "__cp.enterCommand(", enable, ");__cp.enterCommand(", configure, ");__cp.enterCommand('interface '+__if);__cp.enterCommand('ip address '+__ip+' '+__mask);__cp.enterCommand(", no_shutdown, ");__cp.enterCommand(", end, ");",
-            "var __configured=__p.getIpAddress()===__ip&&__p.getSubnetMask()===__mask;",
-            "__cp.enterCommand(", enable, ");__cp.enterCommand(", configure, ");__cp.enterCommand('interface '+__if);__cp.enterCommand(", no_ip, ");__cp.enterCommand(", shutdown, ");__cp.enterCommand(", end, ");",
-            "var __cleanup=__p.getIpAddress()!==__ip;",
-            "reportResult(JSON.stringify({ready:true,configured:__configured,cleanup:__cleanup,model:__model}));}}",
-            "else if(__model.indexOf('3560')>=0){",
-            "__cp.enterCommand(", enable, ");__cp.enterCommand(", configure, ");__cp.enterCommand('vlan '+__vlanId);__cp.enterCommand('interface vlan '+__vlanId);__cp.enterCommand('ip address '+__ip+' '+__mask);__cp.enterCommand(", no_shutdown, ");__cp.enterCommand(", end, ");",
-            "var __vp=null;for(var __i=0;__i<__d.getPortCount();__i++){var __x=__d.getPortAt(__i);if(__x&&String(__x.getName()).toLowerCase()==='vlan'+__vlanId){__vp=__x;}}",
-            "var __configured=!!__vp&&__vp.getIpAddress()===__ip&&__vp.getSubnetMask()===__mask;",
-            "__cp.enterCommand(", enable, ");__cp.enterCommand(", configure, ");__cp.enterCommand('interface vlan '+__vlanId);__cp.enterCommand(", no_ip, ");__cp.enterCommand(", shutdown, ");__cp.enterCommand(", end, ");",
-            "var __cleanup=!__vp||__vp.getIpAddress()!==__ip;",
-            "reportResult(JSON.stringify({ready:true,configured:__configured,cleanup:__cleanup,model:__model}));}",
-            "else{reportResult(JSON.stringify({ready:false,model:__model}));}",
+            "var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;",
+            "var __power=__d&&typeof __d.getPower==='function'?!!__d.getPower():null;",
+            "reportResult(JSON.stringify({found:!!__d,power:__power,command_prompt:!!__cp,configuration_channel:!!__d&&typeof configureIosDevice==='function',components_seen:__vm?['VlanManager']:[]}));",
             "}catch(__e){reportResult('ERROR:'+__e);}",
         ))
-        try:
-            data = self._json_result(js, timeout=20.0)
-        except TimeoutError as exc:
-            return self._failure(definition, ProbeExecutionStatus.TIMEOUT, str(exc))
-        except RuntimeError as exc:
-            return self._failure(definition, ProbeExecutionStatus.PACKET_TRACER_ERROR, str(exc))
-        if not data.get("ready"):
-            return self._failure(
-                definition, ProbeExecutionStatus.SKIPPED,
-                str(data.get("reason") or "No model-specific IPv4 configure/read-back probe is registered for this device."),
-            )
-        if not data.get("configured") or not data.get("cleanup"):
-            return self._failure(
-                definition, ProbeExecutionStatus.VERIFY_FAILED,
-                "IPv4 configure/read-back/cleanup evidence was incomplete.", configured=bool(data.get("configured")),
-            )
-        return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability,
-            status=CapabilityStatus.SUPPORTED, execution_status=ProbeExecutionStatus.VERIFIED,
-            evidence_source=EvidenceSource.CONTROLLED_PROBE, configured=True, verified=True,
-            raw_summary="IPv4 interface configured, read back, and cleared successfully.",
-        )
+        return self._json_result(js, timeout=3.0)
+
+    def _wait_for_vlan(self, temporary_name: str, *, present: bool) -> bool:
+        name = json.dumps(temporary_name)
+        vlan = json.dumps(CAPABILITY_PROBE_VLAN_ID)
+        def inspect() -> dict:
+            js = "".join((
+                "try{var __d=ipc.network().getDevice(", name, ");var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;var __found=false;",
+                "if(__vm){for(var __i=0;__i<__vm.getVlanCount();__i++){var __v=__vm.getVlanAt(__i);if(__v&&__v.getVlanNumber()===", vlan, "){__found=true;}}}",
+                "reportResult(JSON.stringify({found:!!__d,configuration_channel:__found===", "true" if present else "false", "}));}catch(__e){reportResult('ERROR:'+__e);}",
+            ))
+            return self._json_result(js, timeout=3.0)
+        return DeviceReadinessWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
+
+    def _layer3_target(self, temporary_name: str) -> tuple[str, bool] | None:
+        name = json.dumps(temporary_name)
+        js = "".join((
+            "try{var __d=ipc.network().getDevice(", name, ");var __model=__d&&typeof __d.getModel==='function'?String(__d.getModel()):'';var __iface='';var __svi=false;",
+            "if(__model.indexOf('2911')>=0){for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);if(__p&&String(__p.getName()).indexOf('Ethernet')>=0){__iface=__p.getName();break;}}}",
+            "else if(__model.indexOf('3560')>=0){__iface='Vlan", str(CAPABILITY_PROBE_VLAN_ID), "';__svi=true;}",
+            "reportResult(JSON.stringify({interface:__iface,svi:__svi}));}catch(__e){reportResult('ERROR:'+__e);}",
+        ))
+        data = self._json_result(js, timeout=5.0)
+        interface = str(data.get("interface") or "")
+        return (interface, bool(data.get("svi"))) if interface else None
+
+    def _wait_for_ip(self, temporary_name: str, interface: str, *, present: bool) -> bool:
+        name, port = json.dumps(temporary_name), json.dumps(interface)
+        def inspect() -> dict:
+            js = "".join((
+                "try{var __d=ipc.network().getDevice(", name, ");var __p=__d&&typeof __d.getPort==='function'?__d.getPort(", port, "):null;",
+                "var __match=!!__p&&__p.getIpAddress()===", json.dumps(CAPABILITY_PROBE_IPV4_ADDRESS), "&&__p.getSubnetMask()===", json.dumps(CAPABILITY_PROBE_IPV4_MASK), ";",
+                "reportResult(JSON.stringify({found:!!__d,configuration_channel:__match===", "true" if present else "false", "}));}catch(__e){reportResult('ERROR:'+__e);}",
+            ))
+            return self._json_result(js, timeout=3.0)
+        return DeviceReadinessWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
 
     @staticmethod
     def _failure(
