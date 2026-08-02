@@ -67,9 +67,11 @@ from ...infrastructure.execution.live_bridge import (
     PTCommandBridge, DEFAULT_PORT, report_result_js,
 )
 from ...infrastructure.execution.bridge_token import (
-    get_bridge_token, token_fingerprint, token_was_rotated, token_is_ephemeral,
+    get_bridge_token, has_persisted_bridge_token, token_fingerprint,
+    token_was_rotated, token_is_ephemeral,
 )
 from ...infrastructure.execution.file_bridge import FileBridge
+from ...infrastructure.execution.bridge_preflight import BridgeReadinessPreflight
 from ...infrastructure.persistence.project_repository import ProjectRepository
 from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
 from ...infrastructure.catalog.cables import CABLE_TYPES, CABLE_RULES, infer_cable
@@ -1340,6 +1342,17 @@ def register_tools(mcp: FastMCP) -> None:
             "Abrí la extensión MCP Control Center en PT (Extensions > MCP BUILDER). "
             "Con la ventana abierta usa HTTP; si la cerrás, el canal por archivo "
             "toma el relevo mientras PT siga abierto."
+        )
+
+    def _capability_preflight() -> BridgeReadinessPreflight:
+        """Preflight E3.6: bootstrap, espera acotada y token antes de probes."""
+        # Llegar a esta MCP tool prueba que el servidor está disponible. Se
+        # reutiliza _ensure_bridge(), que también usa pt_bridge_status().
+        return BridgeReadinessPreflight(
+            mcp_server_ready=lambda: True,
+            bridge_ready=lambda: _pick_channel() in ("http", "file"),
+            bootstrap_bridge=_ensure_bridge,
+            token_ready=has_persisted_bridge_token,
         )
 
     def _capability_discovery() -> CapabilityDiscoveryService:
@@ -3687,9 +3700,6 @@ def register_tools(mcp: FastMCP) -> None:
         sólo ejecuta probes internos registrados; no acepta JavaScript o IOS del
         usuario. La evidencia queda acotada a la versión de PT indicada/detectada.
         """
-        err = _check_bridge()
-        if err:
-            return err
         try:
             level = ProbeLevel(probe_level.casefold())
             detail = DetailLevel(detail_level.casefold())
@@ -3706,7 +3716,7 @@ def register_tools(mcp: FastMCP) -> None:
         unknown = set(capabilities or []) - set(service.known_capabilities)
         if unknown:
             return f"ERROR: capabilities no registradas: {', '.join(sorted(unknown))}."
-        snapshot, cached = service.run(ProbeRequest(
+        request = ProbeRequest(
             models=selected_models,
             categories=categories or [],
             capabilities=capabilities or [],
@@ -3714,7 +3724,15 @@ def register_tools(mcp: FastMCP) -> None:
             detail_level=detail,
             force=force,
             packet_tracer_version=packet_tracer_version.strip() or None,
-        ))
+        )
+        readiness, executed = _capability_preflight().execute_if_ready(
+            lambda: service.run(request)
+        )
+        if not readiness.ready:
+            if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
+                return _stale_client_message()
+            return readiness.render()
+        snapshot, cached = executed
         payload = {"cached": cached, "summary": snapshot.compact_summary()}
         if detail is DetailLevel.NORMAL:
             payload["models"] = [item.model_dump(mode="json") for item in snapshot.session.devices]

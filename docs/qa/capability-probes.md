@@ -15,7 +15,22 @@ Si Packet Tracer no expone un estado de potencia fiable, conservar PoE como `UNK
 
 ## P0.1: `setIpSubnetMask()`
 
-Probar por separado una PC-PT con IP estática y un Server-PT con DHCP. Verificar en GUI y conectividad que IP y máscara persisten. Registrar versión PT, pasos, resultado y cualquier error. Esta prueba no altera `DeviceCapabilities` ni marca E4 como listo.
+Probar por separado una PC-PT y un Server-PT con IP estática. Verificar mediante getters/API real que IP y máscara persisten. Un escenario DHCP requiere un router, switch y parser/read-back de lease controlado; si no existe esa evidencia, queda pendiente y no altera `DeviceCapabilities` ni marca E4 como listo.
+
+## Baseline E3.6 registrado
+
+La validación live del 2026-08-02 usó Packet Tracer `9.0.1.0858`, ambos
+canales del bridge disponibles al inicio y dispositivos temporales con prefijo
+`__MCP_PROBE_*`. El snapshot consolidado de `PC-PT`, `2911`, `2960-24TT` y
+`3560-24PS` terminó `clean`, con hash
+`62530cbc46627d5eaec95704ce5516889a61704ab94d8b53d9bad54789d96671`.
+
+- Identidad y puertos: observados mediante create/read-back para los cuatro modelos.
+- Módulos, PoE, VLAN, trunk y L3: `UNKNOWN` cuando el runtime no tuvo un
+  configure/read-back controlado; no se dedujo soporte del nombre del modelo.
+- P0.1 estático: `configurePcIp()` conservó la IP y máscara configuradas en
+  `PC-PT` y `Server-PT`; no se reprodujo una inversión de argumentos en esa
+  versión. DHCP no se promovió a verificado en este baseline.
 
 ## Si algo falla
 

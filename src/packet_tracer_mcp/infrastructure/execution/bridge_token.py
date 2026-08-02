@@ -57,6 +57,11 @@ def token_path() -> Path:
     return token_dir() / _TOKEN_FILE
 
 
+def has_persisted_bridge_token() -> bool:
+    """Indica si Control Center puede leer un token válido sin crearlo."""
+    return _read_existing(token_path()) is not None
+
+
 def token_fingerprint(token: str) -> str:
     """Huella no invertible del token, para identificar el bridge sin filtrarlo."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]

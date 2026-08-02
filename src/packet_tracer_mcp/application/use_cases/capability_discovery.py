@@ -344,7 +344,10 @@ class CapabilityDiscoveryService:
             if any(observed.get(prerequisite) is not CapabilityStatus.SUPPORTED for prerequisite in definition.prerequisites):
                 results.append(CapabilityProbeResult(
                     probe_id=definition.id, model=model, capability=definition.capability,
-                    execution_status=ProbeExecutionStatus.PREREQUISITE_MISSING,
+                    # La ausencia de evidencia en un prerequisito no es un fallo
+                    # del bridge ni una capability no soportada. El dependiente no
+                    # se ejecutó y debe conservarse como UNKNOWN/SKIPPED.
+                    execution_status=ProbeExecutionStatus.SKIPPED,
                     evidence_source=EvidenceSource.CONTROLLED_PROBE,
                     failure_reason="Prerequisite capability was not verified.",
                     packet_tracer_version=version,

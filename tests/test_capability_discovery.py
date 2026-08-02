@@ -109,6 +109,20 @@ def test_probe_timeout_remains_unknown_not_unsupported(tmp_path):
     assert result.execution_status is ProbeExecutionStatus.TIMEOUT
 
 
+def test_logical_prerequisites_skipped_by_runtime_are_not_reported_as_errors(tmp_path):
+    runtime = FakePacketTracerProbeRuntime({"2960-24TT": _observation("2960-24TT")})
+
+    snapshot, _ = _service(tmp_path, runtime).run(ProbeRequest(
+        models=["2960-24TT"], probe_level=ProbeLevel.LOGICAL, force=True,
+    ))
+
+    results = {item.capability: item for item in snapshot.session.results}
+    assert results["layer2"].execution_status is ProbeExecutionStatus.SKIPPED
+    assert results["supports_vlan"].execution_status is ProbeExecutionStatus.SKIPPED
+    assert results["supports_trunk"].execution_status is ProbeExecutionStatus.SKIPPED
+    assert snapshot.compact_summary()["errors"] == 0
+
+
 def test_runtime_only_and_catalog_identity_are_distinguished(tmp_path):
     runtime = FakePacketTracerProbeRuntime({
         "IE-3400": _observation("IE-3400"),
