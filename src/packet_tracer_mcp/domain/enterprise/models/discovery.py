@@ -87,6 +87,7 @@ class CleanupStatus(str, Enum):
 class DeviceInitializationState(str, Enum):
     CREATED = "created"
     CONFIGURATION_READY = "configuration_ready"
+    OPERATIONAL_READY = "operational_ready"
     NOT_FOUND = "not_found"
     TIMEOUT = "timeout"
 
@@ -106,6 +107,9 @@ class DeviceInitializationResult(BaseModel):
     elapsed_ms: int = 0
     power: bool | None = None
     command_prompt: bool = False
+    terminal_available: bool = False
+    terminal_kind: str = "unavailable"
+    booting: bool | None = None
     configuration_channel: bool = False
     components_seen: list[str] = Field(default_factory=list)
     failure_reason: str = ""

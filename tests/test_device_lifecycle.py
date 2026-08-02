@@ -12,7 +12,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     RuntimeDeviceObservation,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
-from src.packet_tracer_mcp.infrastructure.execution.device_lifecycle import DeviceReadinessWaiter, StateConvergenceWaiter
+from src.packet_tracer_mcp.infrastructure.execution.device_lifecycle import DeviceOperationalReadinessWaiter, DeviceReadinessWaiter, StateConvergenceWaiter
 from src.packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import FakePacketTracerProbeRuntime
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 
@@ -65,6 +65,26 @@ def test_state_convergence_waiter_observes_mutation_without_fixed_sleep():
 
     assert result.configuration_channel
     assert result.attempts == 2
+
+
+def test_operational_readiness_waits_for_selected_terminal_and_boot_completion():
+    values = iter((
+        {"found": True, "booting": True, "terminal_available": True},
+        {"found": True, "booting": False, "terminal_available": False},
+        {"found": True, "booting": False, "terminal_available": True, "terminal_kind": "ios_command_line"},
+    ))
+    now = [0.0]
+    waiter = DeviceOperationalReadinessWaiter(
+        lambda: next(values), timeout_seconds=1.0, interval_seconds=0.1,
+        clock=lambda: now[0], sleeper=lambda interval: now.__setitem__(0, now[0] + interval),
+    )
+
+    result = waiter.wait()
+
+    assert result.state is DeviceInitializationState.OPERATIONAL_READY
+    assert result.attempts == 3
+    assert result.terminal_available
+    assert result.terminal_kind == "ios_command_line"
 
 
 def test_no_configurable_probe_runs_when_configuration_channel_is_unavailable(tmp_path):

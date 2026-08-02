@@ -20,7 +20,7 @@ from ...domain.enterprise.models.discovery import (
 from ...infrastructure.catalog.devices import resolve_model
 from ...shared.constants import PT_DEVICE_TYPE, PT_DEVICE_TYPE_DEFAULT
 from .configuration_runtime import PacketTracerConfigurationRuntime
-from .device_lifecycle import DeviceReadinessWaiter, StateConvergenceWaiter
+from .device_lifecycle import DeviceOperationalReadinessWaiter, DeviceReadinessWaiter, StateConvergenceWaiter
 from ...shared.constants import (
     CAPABILITY_PROBE_IPV4_ADDRESS,
     CAPABILITY_PROBE_IPV4_MASK,
@@ -83,7 +83,9 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             ports=[self._port_descriptor(item) for item in data.get("ports", [])],
         )
         if observation.found:
-            return observation.model_copy(update={"initialization": self._wait_for_readiness(temporary_name)})
+            return observation.model_copy(update={
+                "initialization": self._wait_for_operational_readiness(temporary_name, runtime_model),
+            })
         return observation
 
     def delete_temporary_device(self, temporary_name: str) -> bool:
@@ -137,7 +139,7 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             verification_method=CapabilityVerificationMethod.DIRECT_RUNTIME_API,
             raw_summary=(
                 "Official configureIosDevice channel available after "
-                f"{readiness.attempts} readiness check(s); CommandPrompt present={readiness.command_prompt}."
+                f"{readiness.attempts} readiness check(s); independent terminal observation is deferred to IOS/PC probes."
             ),
         )
 
@@ -209,14 +211,27 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
     def _wait_for_readiness(self, temporary_name: str):
         return DeviceReadinessWaiter(lambda: self._initialization_state(temporary_name)).wait()
 
-    def _initialization_state(self, temporary_name: str) -> dict:
+    def _wait_for_operational_readiness(self, temporary_name: str, runtime_model: str):
+        terminal_kind = self._terminal_kind_for(runtime_model)
+        return DeviceOperationalReadinessWaiter(
+            lambda: self._initialization_state(temporary_name, terminal_kind), timeout_seconds=20.0,
+        ).wait()
+
+    @staticmethod
+    def _terminal_kind_for(runtime_model: str) -> str:
+        model = resolve_model(runtime_model)
+        return "pc_command_prompt" if model and model.category in {"pc", "server", "laptop"} else "ios_command_line"
+
+    def _initialization_state(self, temporary_name: str, terminal_kind: str = "ios_command_line") -> dict:
         name = json.dumps(temporary_name)
+        getter = "getCommandPrompt" if terminal_kind == "pc_command_prompt" else "getCommandLine"
         js = "".join((
             "try{var __d=ipc.network().getDevice(", name, ");",
-            "var __cp=__d&&typeof __d.getCommandPrompt==='function'?__d.getCommandPrompt():null;",
+            "var __terminal=__d&&typeof __d.", getter, "==='function'?__d.", getter, "():null;",
             "var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;",
             "var __power=__d&&typeof __d.getPower==='function'?!!__d.getPower():null;",
-            "reportResult(JSON.stringify({found:!!__d,power:__power,command_prompt:!!__cp,configuration_channel:!!__d&&typeof configureIosDevice==='function',components_seen:__vm?['VlanManager']:[]}));",
+            "var __booting=__d&&typeof __d.isBooting==='function'?!!__d.isBooting():null;",
+            "reportResult(JSON.stringify({found:!!__d,power:__power,booting:__booting,command_prompt:", "true" if terminal_kind == "pc_command_prompt" else "false", "&&!!__terminal,terminal_available:!!__terminal,terminal_kind:", json.dumps(terminal_kind), ",configuration_channel:!!__d&&typeof configureIosDevice==='function',components_seen:__vm?['VlanManager']:[]}));",
             "}catch(__e){reportResult('ERROR:'+__e);}",
         ))
         return self._json_result(js, timeout=3.0)

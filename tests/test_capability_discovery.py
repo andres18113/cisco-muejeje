@@ -245,6 +245,15 @@ def test_bridge_probe_runtime_serializes_untrusted_model_and_probe_names():
     assert 'var __model=' in sent[0]
 
 
+def test_bridge_runtime_selects_the_documented_terminal_by_device_category():
+    runtime = PacketTracerBridgeProbeRuntime(lambda _js, _timeout: '{"found": false}')
+
+    assert runtime._terminal_kind_for("2911") == "ios_command_line"
+    assert runtime._terminal_kind_for("2960-24TT") == "ios_command_line"
+    assert runtime._terminal_kind_for("3560-24PS") == "ios_command_line"
+    assert runtime._terminal_kind_for("PC-PT") == "pc_command_prompt"
+
+
 def test_bridge_runtime_vlan_probe_requires_configure_readback_and_cleanup():
     sent: list[str] = []
 

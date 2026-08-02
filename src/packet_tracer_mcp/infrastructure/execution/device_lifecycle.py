@@ -52,6 +52,9 @@ class DeviceReadinessWaiter:
             elapsed_ms=int((self._clock() - started) * 1000),
             power=value.get("power"),
             command_prompt=bool(value.get("command_prompt")),
+            terminal_available=bool(value.get("terminal_available")),
+            terminal_kind=str(value.get("terminal_kind") or "unavailable"),
+            booting=value.get("booting"),
             configuration_channel=bool(value.get("configuration_channel")),
             components_seen=list(value.get("components_seen") or []),
             failure_reason=str(value.get("failure_reason") or ""),
@@ -77,3 +80,24 @@ class StateConvergenceWaiter:
 
     def wait(self) -> DeviceInitializationResult:
         return self._readiness.wait()
+
+
+class DeviceOperationalReadinessWaiter(DeviceReadinessWaiter):
+    """Espera un terminal elegido por tipo y el fin de arranque de PT."""
+
+    def wait(self) -> DeviceInitializationResult:
+        started = self._clock()
+        attempts = 0
+        last: dict = {}
+        while True:
+            attempts += 1
+            try:
+                last = self._inspect()
+            except Exception as exc:
+                last = {"found": False, "failure_reason": str(exc)}
+            if last.get("terminal_available") and last.get("booting") is not True:
+                return self._result(DeviceInitializationState.OPERATIONAL_READY, started, attempts, last)
+            if self._clock() - started >= self._timeout:
+                state = DeviceInitializationState.TIMEOUT if last.get("found") else DeviceInitializationState.NOT_FOUND
+                return self._result(state, started, attempts, last)
+            self._sleep(self._interval)
