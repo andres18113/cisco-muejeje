@@ -9,10 +9,19 @@ from .vlans import VLANConfig, AccessPortConfig, TrunkConfig, SubinterfaceConfig
 
 class DevicePlan(BaseModel):
     """Un dispositivo concreto en el plan."""
+    id: str = ""
     name: str
     model: str
     category: str
     role: DeviceRole = DeviceRole.END_HOST
+    enterprise_role: str = ""
+    site_id: str = ""
+    building_id: str = ""
+    floor_id: str = ""
+    zone_id: str = ""
+    network_layer: str = ""
+    requires_poe: bool = False
+    metadata: dict[str, str] = Field(default_factory=dict)
     x: int = 0
     y: int = 0
     interfaces: dict[str, str] = Field(default_factory=dict)
@@ -28,11 +37,18 @@ class DevicePlan(BaseModel):
 
 class LinkPlan(BaseModel):
     """Un enlace entre dos dispositivos."""
+    id: str = ""
     device_a: str
     port_a: str
     device_b: str
     port_b: str
     cable: str = "straight"
+    device_a_id: str = ""
+    device_b_id: str = ""
+    link_role: str = ""
+    network_layer: str = ""
+    redundancy_group: str = ""
+    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class ModulePlan(BaseModel):
@@ -115,7 +131,10 @@ class ValidationCheck(BaseModel):
 
 class TopologyPlan(BaseModel):
     """Plan completo, validado, listo para generar scripts."""
+    id: str = ""
     name: str = "topology"
+    semantic_hash: str = ""
+    metadata: dict[str, str] = Field(default_factory=dict)
     devices: list[DevicePlan] = Field(default_factory=list)
     modules: list[ModulePlan] = Field(default_factory=list)
     links: list[LinkPlan] = Field(default_factory=list)

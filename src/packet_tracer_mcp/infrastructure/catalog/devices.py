@@ -360,8 +360,9 @@ HOME_ROUTER_PT_AC = DeviceModel(
 IP_PHONE_7960 = DeviceModel(
     pt_type="7960", category="ip_phone", display_name="Cisco IP Phone 7960",
     ports=(
-        PortSpec(PortSpeed.FAST_ETHERNET, "0", full_name="Port 0"),
-        PortSpec(PortSpeed.FAST_ETHERNET, "1", full_name="PC Port"),
+        # PT 9.0.1.0858 runtime inventory exposes these physical names exactly.
+        PortSpec(PortSpeed.FAST_ETHERNET, "0", full_name="Switch"),
+        PortSpec(PortSpeed.FAST_ETHERNET, "1", full_name="PC"),
     ),
 )
 

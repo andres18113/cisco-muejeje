@@ -31,6 +31,7 @@ class NormalizedPortSpeed(str, Enum):
 
 class PortDescriptor(BaseModel):
     name: str
+    physical: bool = True
     classes: list[PortClass] = Field(default_factory=list)
     speed: NormalizedPortSpeed = NormalizedPortSpeed.UNKNOWN
     poe: bool | None = None

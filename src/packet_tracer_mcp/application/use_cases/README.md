@@ -75,3 +75,12 @@ Wrapper sobre `cli_config_generator.generate_all_configs()`. Retorna `{device_na
 export_artifacts_uc(plan: TopologyPlan, output_dir: str) → ExportResponse
 ```
 Wrapper sobre `ManualExecutor.execute()`. Exporta todos los artefactos a disco.
+
+---
+
+### `compile_enterprise.py`
+```python
+compile_enterprise_topology(EnterprisePlan, HardwarePlan, PhysicalCompilationProfile) -> EnterpriseCompileResult
+```
+Compila endpoints, hardware, puertos, enlaces y layout E4 de forma pura. No
+despliega Packet Tracer ni genera configuracion E5.

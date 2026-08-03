@@ -21,6 +21,21 @@ infrastructure/   adapters to the outside world
   persistence/   project_repository (save/load projects)
 ```
 
+## Enterprise E4 path
+
+The Enterprise path adds a backend-neutral planning pipeline above the same
+`TopologyPlan` contract:
+
+```text
+EnterpriseIntent -> EnterprisePlan -> HardwarePlan
+                  -> EnterpriseCompiler (E4) -> concrete TopologyPlan
+                  -> backend adapter -> Packet Tracer
+```
+
+E4 performs deterministic endpoint expansion, physical port/link allocation,
+and hierarchical layout. Configuration remains a separate E5 concern. See
+[`architecture/enterprise-compiler.md`](architecture/enterprise-compiler.md).
+
 ## Request flow
 
 ```text

@@ -11,6 +11,11 @@ from .capabilities import (
     EvidenceSource,
 )
 from .capacity import AccessCapacityRequirement, CapacityPlan, PortAttachmentPolicy
+from .compilation import (
+    CompilationIssue, CompilationIssueCode, CompilationIssueSeverity, ConcreteLinkRole,
+    EnterpriseCompileResult, EnterpriseCompileSummary, LayoutProfile, LayoutRegion,
+    PhysicalCompilationProfile, PhysicalModelProfile,
+)
 from .enterprise_plan import EnterprisePlan, SitePlan
 from .hierarchy import BuildingIntent, EndpointGroup, FloorIntent, ZoneIntent
 from .discovery import (
@@ -36,14 +41,16 @@ __all__ = [
     "AccessBlockPlan", "AccessCapacityRequirement", "BuildingIntent", "CapabilityConflict",
     "CapabilityEvidence", "CapabilityProbeResult", "CapabilitySnapshot", "CapabilityStatus",
     "CapacityPlan", "CatalogCoverageReport", "CatalogGapReport", "CleanupStatus", "DetailLevel", "DeviceCandidate",
+    "CompilationIssue", "CompilationIssueCode", "CompilationIssueSeverity", "ConcreteLinkRole",
     "DeviceCandidateStatus", "DeviceCapabilities", "DeviceIdentity", "DeviceRequirement",
     "DeviceRole", "DeviceSelectionResult", "EndpointRequirement",
     "DiscoverySource", "E4ReadinessReport", "E4ReadinessState", "EndpointGroup", "EnterpriseIntent",
     "EnterprisePlan", "EvidenceSource", "FloorIntent",
+    "EnterpriseCompileResult", "EnterpriseCompileSummary",
     "HardwareCandidate", "HardwareLinkRequirement", "HardwarePlan", "HardwarePlanStatus",
-    "HierarchyMode", "LinkRole", "ModelIdentityStatus", "ModuleInstallation", "NetworkLayer", "NormalizedPortSpeed",
+    "HierarchyMode", "LayoutProfile", "LayoutRegion", "LinkRole", "ModelIdentityStatus", "ModuleInstallation", "NetworkLayer", "NormalizedPortSpeed",
     "NetworkSegment", "PlannedNetworkDevice", "PortAssignmentRange", "PortAttachmentPolicy",
-    "PortClass", "PortDescriptor", "ProbeCost", "ProbeDefinition", "ProbeExecutionStatus",
+    "PhysicalCompilationProfile", "PhysicalModelProfile", "PortClass", "PortDescriptor", "ProbeCost", "ProbeDefinition", "ProbeExecutionStatus",
     "ProbeLevel", "ProbeRequest", "ProbeSafety", "ProbeSession", "ProbeSessionResult",
     "ResiliencyLevel", "RuntimeDeviceDescriptor", "RuntimePortDescriptor", "SegmentRequirement", "SegmentRole",
     "SiteHardwarePlan", "SiteIntent", "SitePlan", "SiteType", "TopologyDesign",
