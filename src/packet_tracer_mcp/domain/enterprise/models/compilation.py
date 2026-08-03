@@ -86,6 +86,7 @@ class ConcreteLinkRole(str, Enum):
 
 class LayoutProfile(BaseModel):
     horizontal_spacing: int = 140
+    site_horizontal_padding: int | None = None
     vertical_spacing: int = 130
     group_spacing: int = 360
     site_spacing: int = 800

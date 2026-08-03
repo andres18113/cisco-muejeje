@@ -72,6 +72,15 @@ access, and endpoints in stable rows. Endpoints use deterministic grids; paired
 phones and PCs share an x-axis with a small vertical offset. Major site and zone
 regions do not overlap.
 
+Every infrastructure and access row is positioned around the geometric center
+of its site or zone, for both even and odd device counts. The preferred spacing
+is reduced when necessary so a dense row remains inside the configured
+horizontal padding. Infrastructure layers are ordered by the barycenter of
+already positioned upstream neighbors, with stable IDs as the deterministic
+tie-breaker; this avoids crossings caused only by alphabetical device names.
+`site_horizontal_padding` can override the default padding, which otherwise
+tracks `horizontal_spacing`.
+
 The compiled coordinates can be sent through the existing production placement
 path. In PT 9.0.1.0858, `pt_export_topology` reads coordinates back, but the
 returned icon/canvas coordinates are transformed and do not equal the requested

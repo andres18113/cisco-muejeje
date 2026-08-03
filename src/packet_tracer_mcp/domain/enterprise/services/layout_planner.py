@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from ...models.plans import DevicePlan, TopologyPlan
+from ...models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ..models.compilation import LayoutProfile, LayoutRegion
 from ..models.roles import DeviceRole
 from ..models.topology import NetworkLayer
@@ -40,11 +40,13 @@ class LayoutPlanner:
                 zone_id: site_base_x + index * zone_width
                 for index, zone_id in enumerate(zones)
             }
-            self._place_site_infrastructure(devices, site_base_x, site_width, profile)
+            self._place_site_infrastructure(
+                devices, site_base_x, site_width, profile, plan.links,
+            )
             for zone_id in zones:
                 self._place_zone(
                     [device for device in devices if device.zone_id == zone_id],
-                    zone_origins[zone_id], profile,
+                    zone_origins[zone_id], zone_width, profile,
                 )
             self._place_unowned_access(devices, site_base_x, site_width, profile)
             site_base_x += site_width + profile.site_spacing
@@ -55,29 +57,67 @@ class LayoutPlanner:
     @staticmethod
     def _place_site_infrastructure(
         devices: list[DevicePlan], site_x: int, site_width: int, profile: LayoutProfile,
+        links: list[LinkPlan],
     ) -> None:
         layers: dict[str, list[DevicePlan]] = defaultdict(list)
         for device in devices:
             if device.network_layer and device.network_layer != NetworkLayer.ACCESS.value:
                 layers[device.network_layer].append(device)
-        for layer, layer_devices in sorted(layers.items(), key=lambda item: _LAYER_ROW.get(item[0], 99)):
-            ordered = sorted(layer_devices, key=lambda item: item.id)
-            total_width = max(0, len(ordered) - 1) * profile.horizontal_spacing
-            start_x = site_x + max(profile.horizontal_spacing, (site_width - total_width) // 2)
+
+        device_keys = {device.id or device.name for device in devices}
+        names_to_keys = {device.name: device.id or device.name for device in devices}
+        adjacency: dict[str, set[str]] = defaultdict(set)
+        for link in links:
+            endpoint_a = link.device_a_id or names_to_keys.get(link.device_a, "")
+            endpoint_b = link.device_b_id or names_to_keys.get(link.device_b, "")
+            if endpoint_a in device_keys and endpoint_b in device_keys:
+                adjacency[endpoint_a].add(endpoint_b)
+                adjacency[endpoint_b].add(endpoint_a)
+
+        center_x = site_x + site_width / 2
+        padding = LayoutPlanner._horizontal_padding(profile)
+        available_width = max(0, site_width - 2 * padding)
+        positioned_x: dict[str, int] = {}
+
+        for layer, layer_devices in sorted(
+            layers.items(), key=lambda item: _LAYER_ROW.get(item[0], 99),
+        ):
+            def order_key(device: DevicePlan) -> tuple[int, float, str, str]:
+                anchors = [
+                    positioned_x[neighbor]
+                    for neighbor in adjacency.get(device.id or device.name, set())
+                    if neighbor in positioned_x
+                ]
+                if anchors:
+                    return (0, sum(anchors) / len(anchors), device.id, device.name)
+                return (1, 0, device.id, device.name)
+
+            ordered = sorted(layer_devices, key=order_key)
+            spacing = LayoutPlanner._adaptive_spacing(
+                len(ordered), profile.horizontal_spacing, available_width,
+            )
             y = profile.origin_y + _LAYER_ROW.get(layer, 0) * profile.vertical_spacing
-            for index, device in enumerate(ordered):
-                device.x = start_x + index * profile.horizontal_spacing
-                device.y = y
+            LayoutPlanner._center_row(ordered, center_x, y, spacing)
+            positioned_x.update({device.id or device.name: device.x for device in ordered})
 
     @staticmethod
-    def _place_zone(devices: list[DevicePlan], zone_x: int, profile: LayoutProfile) -> None:
+    def _place_zone(
+        devices: list[DevicePlan], zone_x: int, zone_width: int, profile: LayoutProfile,
+    ) -> None:
         access = sorted(
             (device for device in devices if device.network_layer == NetworkLayer.ACCESS.value),
             key=lambda item: item.id,
         )
-        for index, device in enumerate(access):
-            device.x = zone_x + profile.horizontal_spacing + index * profile.horizontal_spacing
-            device.y = profile.origin_y + _LAYER_ROW[NetworkLayer.ACCESS.value] * profile.vertical_spacing
+        padding = LayoutPlanner._horizontal_padding(profile)
+        access_spacing = LayoutPlanner._adaptive_spacing(
+            len(access), profile.horizontal_spacing, max(0, zone_width - 2 * padding),
+        )
+        LayoutPlanner._center_row(
+            access,
+            zone_x + zone_width / 2,
+            profile.origin_y + _LAYER_ROW[NetworkLayer.ACCESS.value] * profile.vertical_spacing,
+            access_spacing,
+        )
 
         endpoints = sorted(
             (device for device in devices if not device.network_layer),
@@ -130,9 +170,40 @@ class LayoutPlanner:
             ),
             key=lambda item: item.id,
         )
-        for index, device in enumerate(unowned):
-            device.x = site_x + site_width // 2 + index * profile.horizontal_spacing
-            device.y = profile.origin_y + _LAYER_ROW[NetworkLayer.ACCESS.value] * profile.vertical_spacing
+        padding = LayoutPlanner._horizontal_padding(profile)
+        spacing = LayoutPlanner._adaptive_spacing(
+            len(unowned), profile.horizontal_spacing, max(0, site_width - 2 * padding),
+        )
+        LayoutPlanner._center_row(
+            unowned,
+            site_x + site_width / 2,
+            profile.origin_y + _LAYER_ROW[NetworkLayer.ACCESS.value] * profile.vertical_spacing,
+            spacing,
+        )
+
+    @staticmethod
+    def _adaptive_spacing(count: int, preferred: int, available_width: int) -> float:
+        if count <= 1:
+            return 0
+        return min(preferred, available_width / (count - 1))
+
+    @staticmethod
+    def _horizontal_padding(profile: LayoutProfile) -> int:
+        if profile.site_horizontal_padding is not None:
+            return profile.site_horizontal_padding
+        return profile.horizontal_spacing
+
+    @staticmethod
+    def _center_row(
+        devices: list[DevicePlan], center_x: float, y: float, spacing: float,
+    ) -> None:
+        if not devices:
+            return
+        row_width = (len(devices) - 1) * spacing
+        start_x = center_x - row_width / 2
+        for index, device in enumerate(devices):
+            device.x = round(start_x + index * spacing)
+            device.y = round(y)
 
     @staticmethod
     def _regions(devices: list[DevicePlan], profile: LayoutProfile) -> list[LayoutRegion]:

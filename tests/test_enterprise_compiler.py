@@ -34,12 +34,14 @@ from src.packet_tracer_mcp.domain.enterprise.models.requirements import Endpoint
 from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
 from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
 from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import HardwarePlanner
+from src.packet_tracer_mcp.domain.enterprise.services.layout_planner import LayoutPlanner
 from src.packet_tracer_mcp.domain.enterprise.services.naming import DeterministicNamingService
 from src.packet_tracer_mcp.domain.enterprise.services.physical_ports import (
     is_logical_interface,
     natural_interface_key,
     physical_ports,
 )
+from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
@@ -454,6 +456,126 @@ def test_layout_is_deterministic_unique_and_changes_only_with_explicit_profile()
     ]
     assert first.semantic_hash == second.semantic_hash
     assert wider.semantic_hash != first.semantic_hash
+
+
+@pytest.mark.parametrize("count", [1, 2, 3, 4])
+def test_site_infrastructure_rows_are_centered_for_even_and_odd_counts(count: int):
+    devices = [
+        DevicePlan(
+            id=f"core-{index:02d}",
+            name=f"CORE-{index:02d}",
+            model="2911",
+            category="router",
+            site_id="hq",
+            network_layer="core",
+        )
+        for index in range(1, count + 1)
+    ]
+
+    LayoutPlanner._place_site_infrastructure(
+        devices,
+        site_x=100,
+        site_width=1000,
+        profile=LayoutProfile(horizontal_spacing=100),
+        links=[],
+    )
+
+    coordinates = sorted(device.x for device in devices)
+    assert coordinates[0] + coordinates[-1] == 1200
+
+
+def test_site_infrastructure_compresses_dense_rows_inside_padded_site_bounds():
+    devices = [
+        DevicePlan(
+            id=f"distribution-{index:02d}",
+            name=f"DIST-{index:02d}",
+            model="3560-24PS",
+            category="switch",
+            site_id="hq",
+            network_layer="distribution",
+        )
+        for index in range(1, 13)
+    ]
+
+    LayoutPlanner._place_site_infrastructure(
+        devices,
+        site_x=100,
+        site_width=1000,
+        profile=LayoutProfile(horizontal_spacing=100),
+        links=[],
+    )
+
+    coordinates = sorted(device.x for device in devices)
+    assert coordinates[0] == 200
+    assert coordinates[-1] == 1000
+    assert coordinates[0] + coordinates[-1] == 1200
+
+
+def test_site_infrastructure_orders_each_lower_layer_by_upstream_connections():
+    devices = [
+        DevicePlan(
+            id="core-a",
+            name="CORE-A",
+            model="2911",
+            category="router",
+            site_id="hq",
+            network_layer="core",
+        ),
+        DevicePlan(
+            id="core-b",
+            name="CORE-B",
+            model="2911",
+            category="router",
+            site_id="hq",
+            network_layer="core",
+        ),
+        DevicePlan(
+            id="distribution-a",
+            name="DIST-RIGHT",
+            model="3560-24PS",
+            category="switch",
+            site_id="hq",
+            network_layer="distribution",
+        ),
+        DevicePlan(
+            id="distribution-z",
+            name="DIST-LEFT",
+            model="3560-24PS",
+            category="switch",
+            site_id="hq",
+            network_layer="distribution",
+        ),
+    ]
+    links = [
+        LinkPlan(
+            id="left",
+            device_a="CORE-A",
+            device_a_id="core-a",
+            port_a="GigabitEthernet0/0",
+            device_b="DIST-LEFT",
+            device_b_id="distribution-z",
+            port_b="GigabitEthernet0/1",
+        ),
+        LinkPlan(
+            id="right",
+            device_a="CORE-B",
+            device_a_id="core-b",
+            port_a="GigabitEthernet0/0",
+            device_b="DIST-RIGHT",
+            device_b_id="distribution-a",
+            port_b="GigabitEthernet0/1",
+        ),
+    ]
+
+    laid_out, _ = LayoutPlanner().plan(
+        TopologyPlan(name="connection-aware", devices=devices, links=links),
+        LayoutProfile(horizontal_spacing=100),
+    )
+    by_id = {device.id: device for device in laid_out.devices}
+
+    assert by_id["distribution-z"].x < by_id["distribution-a"].x
+    assert by_id["distribution-z"].x == by_id["core-a"].x
+    assert by_id["distribution-a"].x == by_id["core-b"].x
 
 
 def test_catalog_cable_policy_is_used_and_e5_configuration_remains_empty():
