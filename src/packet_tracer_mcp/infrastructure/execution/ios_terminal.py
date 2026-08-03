@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 from time import monotonic
 from collections.abc import Callable
+from typing import Never
 
 from ...domain.enterprise.models.discovery import DeviceInitializationResult
 from .device_lifecycle import IosBootWaiter, StateConvergenceWaiter
@@ -24,6 +25,12 @@ class OperationalQueryId(str, Enum):
     SHOW_PORT_SECURITY_INTERFACE = "show_port_security_interface"
     SHOW_IP_DHCP_SNOOPING = "show_ip_dhcp_snooping"
     SHOW_IP_ARP_INSPECTION = "show_ip_arp_inspection"
+    SHOW_SPANNING_TREE = "show_spanning_tree"
+    SHOW_ETHERCHANNEL_SUMMARY = "show_etherchannel_summary"
+    SHOW_IP_OSPF_NEIGHBOR = "show_ip_ospf_neighbor"
+    SHOW_IP_ROUTE_OSPF = "show_ip_route_ospf"
+    SHOW_IP_EIGRP_NEIGHBORS = "show_ip_eigrp_neighbors"
+    SHOW_IP_ROUTE_EIGRP = "show_ip_route_eigrp"
 
 
 class TrunkQueryClassification(str, Enum):
@@ -31,6 +38,33 @@ class TrunkQueryClassification(str, Enum):
     SUPPORTED_EMPTY = "supported_empty"
     INVALID_COMMAND = "invalid_command"
     UNIMPLEMENTED = "unimplemented"
+    QUERY_TIMEOUT = "query_timeout"
+    PARSER_UNAVAILABLE = "parser_unavailable"
+
+
+class StpQueryClassification(str, Enum):
+    SUPPORTED_WITH_INSTANCES = "supported_with_instances"
+    SUPPORTED_EMPTY = "supported_empty"
+    INVALID_COMMAND = "invalid_command"
+    UNIMPLEMENTED = "unimplemented"
+    QUERY_TIMEOUT = "query_timeout"
+    PARSER_UNAVAILABLE = "parser_unavailable"
+
+
+class EtherChannelQueryClassification(str, Enum):
+    SUPPORTED_WITH_GROUPS = "supported_with_groups"
+    QUERY_TIMEOUT = "query_timeout"
+    PARSER_UNAVAILABLE = "parser_unavailable"
+
+
+class OspfQueryClassification(str, Enum):
+    SUPPORTED_WITH_ROWS = "supported_with_rows"
+    QUERY_TIMEOUT = "query_timeout"
+    PARSER_UNAVAILABLE = "parser_unavailable"
+
+
+class EigrpQueryClassification(str, Enum):
+    SUPPORTED_EMPTY = "supported_empty"
     QUERY_TIMEOUT = "query_timeout"
     PARSER_UNAVAILABLE = "parser_unavailable"
 
@@ -56,6 +90,12 @@ _COMMANDS = {
     OperationalQueryId.SHOW_IP_NAT_STATISTICS: "show ip nat statistics",
     OperationalQueryId.SHOW_IP_DHCP_SNOOPING: "show ip dhcp snooping",
     OperationalQueryId.SHOW_IP_ARP_INSPECTION: "show ip arp inspection",
+    OperationalQueryId.SHOW_SPANNING_TREE: "show spanning-tree",
+    OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY: "show etherchannel summary",
+    OperationalQueryId.SHOW_IP_OSPF_NEIGHBOR: "show ip ospf neighbor",
+    OperationalQueryId.SHOW_IP_ROUTE_OSPF: "show ip route ospf",
+    OperationalQueryId.SHOW_IP_EIGRP_NEIGHBORS: "show ip eigrp neighbors",
+    OperationalQueryId.SHOW_IP_ROUTE_EIGRP: "show ip route eigrp",
 }
 _INTERFACE_COMMANDS = {
     OperationalQueryId.SHOW_IP_INTERFACE: "show ip interface {interface}",
@@ -74,6 +114,7 @@ _PRIVILEGED_QUERIES = {
 }
 _INTERFACE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9./:-]{0,79}$")
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"
+_PAGER_MARKER = "--More--"
 
 
 @dataclass(frozen=True)
@@ -118,6 +159,68 @@ class TrunkStatusRow:
 
 
 @dataclass(frozen=True)
+class StpPortStatusRow:
+    interface: str
+    role: str
+    state: str
+    cost: int
+    priority_number: str
+    link_type: str
+
+
+@dataclass(frozen=True)
+class StpInstanceStatus:
+    vlan_id: int
+    protocol: str
+    root_priority: int
+    root_address: str
+    root_is_local: bool
+    root_cost: int | None
+    root_port: str
+    bridge_priority: int
+    bridge_base_priority: int | None
+    bridge_address: str
+    interfaces: tuple[StpPortStatusRow, ...]
+
+
+@dataclass(frozen=True)
+class EtherChannelMemberStatus:
+    interface: str
+    flag: str
+
+
+@dataclass(frozen=True)
+class EtherChannelGroupStatus:
+    group_number: int
+    port_channel: str
+    port_channel_flags: str
+    protocol: str
+    members: tuple[EtherChannelMemberStatus, ...]
+
+
+@dataclass(frozen=True)
+class OspfNeighborStatusRow:
+    neighbor_id: str
+    priority: int
+    state: str
+    role: str
+    dead_time: str
+    address: str
+    interface: str
+
+
+@dataclass(frozen=True)
+class OspfRouteStatusRow:
+    code: str
+    prefix: str
+    administrative_distance: int
+    metric: int
+    next_hop: str
+    age: str
+    interface: str
+
+
+@dataclass(frozen=True)
 class TerminalOutputWindow:
     output: str
     fresh: bool
@@ -127,6 +230,10 @@ class TerminalOutputWindow:
 
 def normalize_terminal_output(value: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", value).replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _has_active_pager(value: str) -> bool:
+    return normalize_terminal_output(value).rstrip().endswith(_PAGER_MARKER)
 
 
 def parse_show_ip_interface_brief(value: str) -> list[InterfaceStatusRow]:
@@ -203,6 +310,278 @@ def classify_show_interfaces_trunk(value: str, *, executed: bool = True) -> Trun
     return TrunkQueryClassification.PARSER_UNAVAILABLE
 
 
+def parse_show_spanning_tree(value: str) -> list[StpInstanceStatus]:
+    """Parse the exact multi-instance layout emitted by PT 9.0.1.0858."""
+    normalized = normalize_terminal_output(value)
+    starts = list(re.finditer(r"(?m)^VLAN(?P<vlan>\d+)\s*$", normalized))
+    instances: list[StpInstanceStatus] = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(normalized)
+        block = normalized[start.start():end]
+        protocol = re.search(
+            r"(?m)^\s*Spanning tree enabled protocol\s+(?P<value>\S+)\s*$",
+            block,
+        )
+        root = re.search(
+            r"(?ms)^\s*Root ID\s+Priority\s+(?P<priority>\d+)\s*\n"
+            r"\s*Address\s+(?P<address>[0-9A-Fa-f.:-]+)(?P<body>.*?)"
+            r"^\s*Bridge ID\s+Priority",
+            block,
+        )
+        bridge = re.search(
+            r"(?m)^\s*Bridge ID\s+Priority\s+(?P<priority>\d+)"
+            r"(?:\s+\(priority\s+(?P<base>\d+)\s+sys-id-ext\s+\d+\))?\s*\n"
+            r"\s*Address\s+(?P<address>[0-9A-Fa-f.:-]+)",
+            block,
+        )
+        if protocol is None or root is None or bridge is None:
+            continue
+        root_body = root.group("body")
+        cost = re.search(r"(?m)^\s*Cost\s+(?P<value>\d+)\s*$", root_body)
+        port = re.search(
+            r"(?m)^\s*Port\s+\d+\((?P<value>[^)]+)\)\s*$",
+            root_body,
+        )
+        rows: list[StpPortStatusRow] = []
+        for line in block.splitlines():
+            parts = line.split()
+            if len(parts) < 6 or not re.fullmatch(
+                r"[A-Za-z]+[A-Za-z0-9/.-]*", parts[0]
+            ):
+                continue
+            if parts[1] not in {"Root", "Desg", "Altn", "Back", "Mstr"}:
+                continue
+            try:
+                row_cost = int(parts[3])
+            except ValueError:
+                continue
+            rows.append(StpPortStatusRow(
+                interface=parts[0],
+                role=parts[1],
+                state=parts[2],
+                cost=row_cost,
+                priority_number=parts[4],
+                link_type=" ".join(parts[5:]),
+            ))
+        instances.append(StpInstanceStatus(
+            vlan_id=int(start.group("vlan")),
+            protocol=protocol.group("value").casefold(),
+            root_priority=int(root.group("priority")),
+            root_address=root.group("address"),
+            root_is_local="this bridge is the root" in root_body.casefold(),
+            root_cost=int(cost.group("value")) if cost else None,
+            root_port=port.group("value") if port else "",
+            bridge_priority=int(bridge.group("priority")),
+            bridge_base_priority=(
+                int(bridge.group("base")) if bridge.group("base") else None
+            ),
+            bridge_address=bridge.group("address"),
+            interfaces=tuple(rows),
+        ))
+    return instances
+
+
+def classify_show_spanning_tree(
+    value: str,
+    *,
+    executed: bool = True,
+) -> StpQueryClassification:
+    if not executed:
+        return StpQueryClassification.QUERY_TIMEOUT
+    output = normalize_terminal_output(value).casefold()
+    if "invalid input" in output or "% unknown command" in output:
+        return StpQueryClassification.INVALID_COMMAND
+    if "unimplemented" in output or "not supported" in output:
+        return StpQueryClassification.UNIMPLEMENTED
+    if parse_show_spanning_tree(value):
+        return StpQueryClassification.SUPPORTED_WITH_INSTANCES
+    if "no spanning tree instance exists" in output:
+        return StpQueryClassification.SUPPORTED_EMPTY
+    if "show spanning-tree" in output:
+        return StpQueryClassification.PARSER_UNAVAILABLE
+    return StpQueryClassification.PARSER_UNAVAILABLE
+
+
+def parse_show_etherchannel_summary(
+    value: str,
+) -> list[EtherChannelGroupStatus]:
+    """Parse the group row observed in PT 9.0.1.0858."""
+    groups: list[EtherChannelGroupStatus] = []
+    group_row = re.compile(
+        r"\s*(?P<group>\d+)\s+"
+        r"(?P<port_channel>Po\d+)\((?P<flags>[A-Za-z]+)\)\s+"
+        r"(?P<protocol>[A-Za-z0-9-]+)\s+"
+        r"(?P<members>.+?)\s*"
+    )
+    member_value = re.compile(
+        r"(?P<interface>[A-Za-z]+[A-Za-z0-9/.-]*)"
+        r"\((?P<flag>[A-Za-z]+)\)"
+    )
+    for line in normalize_terminal_output(value).splitlines():
+        match = group_row.fullmatch(line)
+        if match is None:
+            continue
+        members = tuple(
+            EtherChannelMemberStatus(
+                interface=item.group("interface"),
+                flag=item.group("flag"),
+            )
+            for item in member_value.finditer(match.group("members"))
+        )
+        observed_members = " ".join(match.group("members").split())
+        parsed_members = " ".join(
+            f"{item.interface}({item.flag})" for item in members
+        )
+        if not members or parsed_members != observed_members:
+            continue
+        groups.append(EtherChannelGroupStatus(
+            group_number=int(match.group("group")),
+            port_channel=match.group("port_channel"),
+            port_channel_flags=match.group("flags"),
+            protocol=match.group("protocol"),
+            members=members,
+        ))
+    return groups
+
+
+def classify_show_etherchannel_summary(
+    value: str,
+    *,
+    executed: bool = True,
+) -> EtherChannelQueryClassification:
+    if not executed:
+        return EtherChannelQueryClassification.QUERY_TIMEOUT
+    if parse_show_etherchannel_summary(value):
+        return EtherChannelQueryClassification.SUPPORTED_WITH_GROUPS
+    return EtherChannelQueryClassification.PARSER_UNAVAILABLE
+
+
+def parse_show_ip_ospf_neighbor(value: str) -> list[OspfNeighborStatusRow]:
+    """Parse only the FULL DR/BDR rows observed in PT 9.0.1.0858."""
+    rows: list[OspfNeighborStatusRow] = []
+    row_pattern = re.compile(
+        r"\s*(?P<neighbor>\d{1,3}(?:\.\d{1,3}){3})\s+"
+        r"(?P<priority>\d+)\s+"
+        r"(?P<state>FULL)/(?P<role>DR|BDR)\s+"
+        r"(?P<dead_time>\d{2}:\d{2}:\d{2})\s+"
+        r"(?P<address>\d{1,3}(?:\.\d{1,3}){3})\s+"
+        r"(?P<interface>GigabitEthernet\d+/\d+)\s*"
+    )
+    for line in normalize_terminal_output(value).splitlines():
+        match = row_pattern.fullmatch(line)
+        if match is None:
+            continue
+        rows.append(OspfNeighborStatusRow(
+            neighbor_id=match.group("neighbor"),
+            priority=int(match.group("priority")),
+            state=match.group("state"),
+            role=match.group("role"),
+            dead_time=match.group("dead_time"),
+            address=match.group("address"),
+            interface=match.group("interface"),
+        ))
+    return rows
+
+
+def classify_show_ip_ospf_neighbor(
+    value: str,
+    *,
+    executed: bool = True,
+) -> OspfQueryClassification:
+    if not executed:
+        return OspfQueryClassification.QUERY_TIMEOUT
+    if parse_show_ip_ospf_neighbor(value):
+        return OspfQueryClassification.SUPPORTED_WITH_ROWS
+    return OspfQueryClassification.PARSER_UNAVAILABLE
+
+
+def parse_show_ip_route_ospf(value: str) -> list[OspfRouteStatusRow]:
+    """Parse only the OSPF route row observed in PT 9.0.1.0858."""
+    rows: list[OspfRouteStatusRow] = []
+    row_pattern = re.compile(
+        r"\s*(?P<code>O)\s+"
+        r"(?P<prefix>\d{1,3}(?:\.\d{1,3}){3})\s+"
+        r"\[(?P<distance>\d+)/(?P<metric>\d+)\]\s+"
+        r"via\s+(?P<next_hop>\d{1,3}(?:\.\d{1,3}){3}),\s+"
+        r"(?P<age>\d{2}:\d{2}:\d{2}),\s+"
+        r"(?P<interface>GigabitEthernet\d+/\d+)\s*"
+    )
+    for line in normalize_terminal_output(value).splitlines():
+        match = row_pattern.fullmatch(line)
+        if match is None:
+            continue
+        rows.append(OspfRouteStatusRow(
+            code=match.group("code"),
+            prefix=match.group("prefix"),
+            administrative_distance=int(match.group("distance")),
+            metric=int(match.group("metric")),
+            next_hop=match.group("next_hop"),
+            age=match.group("age"),
+            interface=match.group("interface"),
+        ))
+    return rows
+
+
+def classify_show_ip_route_ospf(
+    value: str,
+    *,
+    executed: bool = True,
+) -> OspfQueryClassification:
+    if not executed:
+        return OspfQueryClassification.QUERY_TIMEOUT
+    if parse_show_ip_route_ospf(value):
+        return OspfQueryClassification.SUPPORTED_WITH_ROWS
+    return OspfQueryClassification.PARSER_UNAVAILABLE
+
+
+def parse_show_ip_eigrp_neighbors(_value: str) -> list[Never]:
+    """No EIGRP neighbor row was observed in PT 9.0.1.0858."""
+    return []
+
+
+def classify_show_ip_eigrp_neighbors(
+    value: str,
+    *,
+    executed: bool = True,
+) -> EigrpQueryClassification:
+    if not executed:
+        return EigrpQueryClassification.QUERY_TIMEOUT
+    lines = tuple(
+        line.strip()
+        for line in normalize_terminal_output(value).splitlines()
+        if line.strip()
+    )
+    if lines == (
+        "show ip eigrp neighbors",
+        "IP-EIGRP neighbors for process 90",
+        "Router>",
+    ):
+        return EigrpQueryClassification.SUPPORTED_EMPTY
+    return EigrpQueryClassification.PARSER_UNAVAILABLE
+
+
+def parse_show_ip_route_eigrp(_value: str) -> list[Never]:
+    """No EIGRP route row was observed in PT 9.0.1.0858."""
+    return []
+
+
+def classify_show_ip_route_eigrp(
+    value: str,
+    *,
+    executed: bool = True,
+) -> EigrpQueryClassification:
+    if not executed:
+        return EigrpQueryClassification.QUERY_TIMEOUT
+    lines = tuple(
+        line.strip()
+        for line in normalize_terminal_output(value).splitlines()
+        if line.strip()
+    )
+    if lines == ("show ip route eigrp", "Router>"):
+        return EigrpQueryClassification.SUPPORTED_EMPTY
+    return EigrpQueryClassification.PARSER_UNAVAILABLE
+
+
 def extract_terminal_command_window(before: str, after: str, command: str) -> TerminalOutputWindow:
     """Aísla evidencia de la consulta actual sin confiar en historial IOS."""
     if after.startswith(before) and len(after) > len(before):
@@ -219,6 +598,7 @@ class ControlledIosExecutor:
 
     def __init__(self, send_and_wait: Callable[[str, float], str | None]) -> None:
         self._send_and_wait = send_and_wait
+        self._pager_quarantine: set[str] = set()
 
     def wait_until_ready(
         self,
@@ -315,12 +695,29 @@ class ControlledIosExecutor:
         elapsed = int((monotonic() - started) * 1000)
         output = str(observe().get("output") or "")
         window = extract_terminal_command_window(baseline, output, command)
-        truncated_by_pager = "--More--" in window.output
+        truncated_by_pager = _PAGER_MARKER in window.output
         if truncated_by_pager:
             # PT 9.0.1 rejects ``terminal length 0``. Cancel the documented
             # TerminalLine interaction so a paginated SHOW cannot poison the
             # next registered query. The captured first page remains evidence.
-            self._cancel_pager(name)
+            pager_isolated = self._cancel_pager(name, output)
+            if not pager_isolated:
+                self._pager_quarantine.add(name)
+                return IosCommandResult(
+                    device_name,
+                    query_id,
+                    False,
+                    output=normalize_terminal_output(window.output),
+                    failure_reason=(
+                        "IOS pager cancellation could not be confirmed; "
+                        "the terminal session remains isolated from new queries."
+                    ),
+                    duration_ms=elapsed,
+                    session_state=IosSessionState.FAILED,
+                    fresh_output_observed=window.fresh,
+                    window_strategy=window.strategy,
+                    truncated_by_pager=True,
+                )
         if not convergence.configuration_channel:
             return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager))
         if not window.fresh:
@@ -337,9 +734,18 @@ class ControlledIosExecutor:
             raise ValueError("This registered IOS query does not accept an interface.")
         return _COMMANDS[query_id]
 
-    def _cancel_pager(self, name: str) -> bool:
+    def _cancel_pager(self, name: str, paged_output: str) -> bool:
         js = "try{var d=ipc.network().getDevice(" + name + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}else{t.enterCommand(String.fromCharCode(3));reportResult('{\"ok\":true}');}}catch(e){reportResult('ERROR:'+e);}"
-        return self._send_and_wait(js, 5.0) == '{"ok":true}'
+        if self._send_and_wait(js, 5.0) != '{"ok":true}':
+            return False
+        return self._wait_for(
+            name,
+            lambda state: (
+                self._is_exec_prompt(state)
+                and str(state.get("output") or "") != paged_output
+                and not _has_active_pager(str(state.get("output") or ""))
+            ),
+        )
 
     def _prepare_session(self, name: str) -> IosSessionState:
         state = self._terminal_state(name)
@@ -347,6 +753,17 @@ class ControlledIosExecutor:
             return IosSessionState.FAILED
         if state.get("booting") is True:
             return IosSessionState.WAITING_FOR_BOOT
+        if name in self._pager_quarantine or _has_active_pager(
+            str(state.get("output") or ""),
+        ):
+            if not self._cancel_pager(name, str(state.get("output") or "")):
+                self._pager_quarantine.add(name)
+                return IosSessionState.FAILED
+            self._pager_quarantine.discard(name)
+            state = self._terminal_state(name)
+            if _has_active_pager(str(state.get("output") or "")):
+                self._pager_quarantine.add(name)
+                return IosSessionState.FAILED
         content = (str(state.get("prompt") or "") + "\n" + str(state.get("output") or "")).casefold()
         if self._is_exec_prompt(state):
             return IosSessionState.EXEC_PROMPT_READY

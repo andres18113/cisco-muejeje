@@ -80,6 +80,11 @@ from .control_plane import (
     EtherChannelProtocol, FirstHopRedundancyIntent, LinkFailureScenario,
     LinkFailureScenarioIntent, StpIntent, StpMode,
 )
+from .control_plane_runtime import (
+    ControlPlaneApplicationResult, ControlPlaneExecutionStage,
+    ControlPlaneVerificationResult, FailureScenarioResult,
+    RuntimeControlPlaneVerification, RuntimeFailureScenarioResult,
+)
 from .roles import DeviceRole
 from .segments import NetworkSegment, SegmentRequirement, SegmentRole
 from .topology import NetworkLayer, TopologyDesign, TopologyPattern
@@ -135,4 +140,7 @@ __all__ = [
     "DynamicRoutingProtocol", "EtherChannelIntent", "EtherChannelProtocol",
     "FirstHopRedundancyIntent", "LinkFailureScenario",
     "LinkFailureScenarioIntent", "StpIntent", "StpMode",
+    "ControlPlaneApplicationResult", "ControlPlaneExecutionStage",
+    "ControlPlaneVerificationResult", "FailureScenarioResult",
+    "RuntimeControlPlaneVerification", "RuntimeFailureScenarioResult",
 ]

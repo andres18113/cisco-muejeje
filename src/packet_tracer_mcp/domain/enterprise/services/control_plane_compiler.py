@@ -1382,6 +1382,7 @@ class ControlPlaneCompiler:
                         "peer_ipv4": peer.ipv4,
                         "peer_router_id": router_ids.get(peer.device_id, ""),
                         "protocol": policy.protocol.value,
+                        "adjacent": True,
                     },
                     depends_on=[action.id],
                 ))

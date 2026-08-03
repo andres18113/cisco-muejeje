@@ -95,6 +95,13 @@ def _ipv4(value: str, label: str) -> str:
         raise ValueError(f"Invalid compiled {label}: {value!r}") from exc
 
 
+def _exact_interface(value: str, label: str = "IOS interface") -> str:
+    interface = validate_ios_interface_name(value)
+    if interface != value:
+        raise ValueError(f"Invalid exact IOS interface for {label}: {value!r}")
+    return interface
+
+
 def _network(value: RoutingNetwork, *, ospf: bool) -> dict[str, str | int]:
     network_address = _ipv4(value.network, "routing network")
     wildcard = _ipv4(value.wildcard, "routing wildcard")
@@ -106,7 +113,7 @@ def _network(value: RoutingNetwork, *, ospf: bool) -> dict[str, str | int]:
         raise ValueError(
             f"Routing network {network_address}/{wildcard} is not canonical."
         ) from exc
-    interface = validate_ios_interface_name(value.interface)
+    interface = _exact_interface(value.interface, "routing network")
     _safe_reference(value.segment_id, "segment ID")
     _safe_reference(value.source_configuration_action_id, "configuration action ID")
     if ospf:
@@ -343,7 +350,7 @@ class PacketTracerControlPlaneRenderer:
 
     @staticmethod
     def _stp_edge(action: ConfigureStpEdgePort) -> tuple[str, str]:
-        interface = validate_ios_interface_name(action.interface)
+        interface = _exact_interface(action.interface, "STP edge port")
         _safe_reference(action.source_access_action_id, "source access action ID")
         body = [f"interface {interface}"]
         cleanup = [f"interface {interface}"]
@@ -373,11 +380,16 @@ class PacketTracerControlPlaneRenderer:
         if len(source_links) != len(set(source_links)) or len(source_trunks) != len(set(source_trunks)):
             raise ValueError("EtherChannel source IDs contain duplicates.")
         group = _bounded_int(action.channel_group, 1, 255, "EtherChannel group")
-        port_channel = validate_ios_interface_name(action.port_channel_interface)
+        port_channel = _exact_interface(
+            action.port_channel_interface, "EtherChannel logical interface"
+        )
         match = _PORT_CHANNEL.fullmatch(port_channel)
         if match is None or int(match.group("group")) != group:
             raise ValueError("Port-channel interface must match the compiled channel group.")
-        members = [validate_ios_interface_name(item) for item in action.member_interfaces]
+        members = [
+            _exact_interface(item, "EtherChannel member")
+            for item in action.member_interfaces
+        ]
         if len(members) < 2 or len(members) != len(set(item.casefold() for item in members)):
             raise ValueError("EtherChannel requires at least two unique member interfaces.")
         if any(_PORT_CHANNEL.fullmatch(item) for item in members):
@@ -428,7 +440,7 @@ class PacketTracerControlPlaneRenderer:
         _safe_reference(
             action.source_configuration_action_id, "source configuration action ID"
         )
-        interface = validate_ios_interface_name(action.interface)
+        interface = _exact_interface(action.interface, "HSRP interface")
         group = _bounded_int(action.group_number, 0, 255, "HSRP group")
         priority = _bounded_int(action.priority, 0, 255, "HSRP priority")
         virtual = _ipv4(action.virtual_ipv4, "HSRP virtual IPv4")
@@ -456,7 +468,10 @@ class PacketTracerControlPlaneRenderer:
         keys = [(item["network"], item["wildcard"], item["area"]) for item in networks]
         if not networks or len(keys) != len(set(keys)):
             raise ValueError("OSPF requires unique compiled networks.")
-        passive = [validate_ios_interface_name(item) for item in action.passive_interfaces]
+        passive = [
+            _exact_interface(item, "OSPF passive interface")
+            for item in action.passive_interfaces
+        ]
         if len(passive) != len(set(item.casefold() for item in passive)):
             raise ValueError("OSPF passive interfaces contain duplicates.")
         legacy = OSPFConfig(
@@ -485,7 +500,10 @@ class PacketTracerControlPlaneRenderer:
         keys = [(item["network"], item["wildcard"]) for item in networks]
         if not networks or len(keys) != len(set(keys)):
             raise ValueError("EIGRP requires unique compiled networks.")
-        passive = [validate_ios_interface_name(item) for item in action.passive_interfaces]
+        passive = [
+            _exact_interface(item, "EIGRP passive interface")
+            for item in action.passive_interfaces
+        ]
         if len(passive) != len(set(item.casefold() for item in passive)):
             raise ValueError("EIGRP passive interfaces contain duplicates.")
         legacy = EIGRPConfig(
@@ -520,10 +538,10 @@ class PacketTracerControlPlaneFaultRenderer:
             scenario.target_device_id, "fault target device ID"
         )
         device = _safe_device(scenario.target_device_name)
-        port = validate_ios_interface_name(scenario.target_interface)
+        port = _exact_interface(scenario.target_interface, "fault target")
         peer_device_id = _safe_reference(scenario.peer_device_id, "fault peer device ID")
         _safe_device(scenario.peer_device_name)
-        validate_ios_interface_name(scenario.peer_interface)
+        _exact_interface(scenario.peer_interface, "fault peer")
         cable = _safe_reference(scenario.cable, "fault cable")
         if cable not in ALL_LINK_TYPES:
             raise ValueError(f"Unknown compiled Packet Tracer cable type: {cable!r}")

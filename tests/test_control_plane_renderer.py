@@ -405,8 +405,14 @@ def test_fault_renderer_uses_only_the_compiled_target_and_never_persists_it():
 
     assert rendered.device_name == "R1"
     assert rendered.interface == "GigabitEthernet0/0"
-    assert " shutdown" in rendered.ios_payload
-    assert " no shutdown" in rendered.cleanup_payload
+    assert rendered.ios_payload == (
+        "enable\nconfigure terminal\ninterface GigabitEthernet0/0\n"
+        " shutdown\n exit\nend"
+    )
+    assert rendered.cleanup_payload == (
+        "enable\nconfigure terminal\ninterface GigabitEthernet0/0\n"
+        " no shutdown\n exit\nend"
+    )
     assert "write memory" not in rendered.ios_payload
     assert "write memory" not in rendered.cleanup_payload
 
@@ -439,4 +445,19 @@ def test_fault_renderer_rejects_a_noncanonical_probe_destination():
     )
 
     with pytest.raises(ValueError, match="probe destination IPv4"):
+        PacketTracerControlPlaneFaultRenderer().render_scenario(scenario)
+
+
+def test_fault_renderer_rejects_a_trimmed_instead_of_exact_target_interface():
+    scenario = LinkFailureScenario(
+        id="failure-1", link_id="link-1", device_a_id="r1", device_b_id="r2",
+        target_device_id="r1", target_device_name="R1",
+        target_interface=" GigabitEthernet0/0", peer_device_id="r2",
+        peer_device_name="R2", peer_interface="GigabitEthernet0/0", cable="cross",
+        probe_source_device_id="pc-1", probe_source_device_name="PC1",
+        probe_destination_device_id="pc-2", probe_destination_device_name="PC2",
+        probe_destination_ipv4="10.0.20.10", restore_required=True,
+    )
+
+    with pytest.raises(ValueError, match="exact IOS interface"):
         PacketTracerControlPlaneFaultRenderer().render_scenario(scenario)

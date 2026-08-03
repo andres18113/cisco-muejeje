@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import re
 from collections.abc import Callable, Sequence
 from time import monotonic, sleep
 
@@ -45,6 +44,7 @@ from .security_ios import (
     parse_show_ip_nat_translations,
     parse_show_port_security_interface,
 )
+from .typed_ping import TypedPingExecutor
 
 
 TypedBehaviorDriver = Callable[
@@ -83,6 +83,13 @@ class PacketTracerEnterpriseSecurityRuntime:
         self._interval = convergence_interval_seconds
         self._clock = clock
         self._sleep = sleeper
+        self._ping = TypedPingExecutor(
+            send_and_wait,
+            timeout_seconds=behavior_timeout_seconds,
+            interval_seconds=convergence_interval_seconds,
+            clock=clock,
+            sleeper=sleeper,
+        )
         self._targets: dict[str, RuntimeConfigurationTarget] = {}
         self._actions: dict[str, SecurityAction] = {}
         self._ready_ios_devices: set[str] = set()
@@ -450,44 +457,8 @@ class PacketTracerEnterpriseSecurityRuntime:
         target = self._destination_address(expectation)
         if not target:
             return False, False
-        source = json.dumps(expectation.source_device_name)
-        command = "ping " + target
-        started = self._json_result(
-            "try{var d=ipc.network().getDevice(" + source + ");"
-            "var cp=d&&typeof d.getCommandPrompt==='function'?d.getCommandPrompt():null;"
-            "var before=cp&&typeof cp.getOutput==='function'?String(cp.getOutput()):'';"
-            "var started=false;if(cp&&typeof cp.enterCommand==='function'){"
-            "cp.enterCommand(" + json.dumps(command) + ");started=true;}"
-            "reportResult(JSON.stringify({started:started,before:before}));}"
-            "catch(e){reportResult('ERROR:'+e);}",
-            5.0,
-        )
-        if not started.get("started"):
-            return False, False
-        before = str(started.get("before") or "")
-
-        def inspect() -> dict:
-            return self._json_result(
-                "try{var d=ipc.network().getDevice(" + source + ");"
-                "var cp=d&&typeof d.getCommandPrompt==='function'?d.getCommandPrompt():null;"
-                "reportResult(JSON.stringify({found:!!cp,output:cp?String(cp.getOutput()):''}));}"
-                "catch(e){reportResult('ERROR:'+e);}",
-                3.0,
-            )
-
-        observed = self._poll(
-            inspect,
-            lambda item: "packets: sent" in self._fresh_window(
-                before, str(item.get("output") or ""), command,
-            ).casefold(),
-        )
-        window = self._fresh_window(before, str(observed.get("output") or ""), command)
-        counts = re.search(
-            r"Packets:\s*Sent\s*=\s*(\d+),\s*Received\s*=\s*(\d+)",
-            window,
-            re.I,
-        )
-        return bool(counts and int(counts.group(2)) > 0), bool(counts)
+        result = self._ping.ping(expectation.source_device_name, target)
+        return result.reachable, result.fresh_output_observed
 
     def _typed_http(self, expectation) -> tuple[bool, bool]:
         target = self._destination_address(expectation)
@@ -594,13 +565,6 @@ class PacketTracerEnterpriseSecurityRuntime:
         except (json.JSONDecodeError, TypeError):
             return {}
         return value if isinstance(value, dict) else {}
-
-    @staticmethod
-    def _fresh_window(before: str, after: str, command: str) -> str:
-        if after.startswith(before) and len(after) > len(before):
-            return after[len(before):]
-        index = after.casefold().rfind(command.casefold())
-        return after[index:] if index >= 0 and after[index:] != before[index:] else ""
 
     @staticmethod
     def _field(matches: bool) -> FieldVerificationStatus:

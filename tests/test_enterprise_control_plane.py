@@ -25,6 +25,7 @@ from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityDimension,
     ControlPlaneCapabilityProfile,
     ControlPlaneIntent,
+    ControlPlaneVerificationKind,
     DynamicRoutingIntent,
     DynamicRoutingProtocol,
     EtherChannelIntent,
@@ -382,6 +383,11 @@ def test_actions_form_closed_shared_dag_and_expectations_cover_acceptance():
         ControlPlaneCapabilityDimension.ROUTING_NEIGHBOR_STATE,
         ControlPlaneCapabilityDimension.ETHERCHANNEL_FAILOVER,
     } <= {item.required_capability for item in plan.verification_expectations}
+    assert all(
+        item.expected.get("adjacent") is True
+        for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_NEIGHBOR
+    )
 
 
 def test_failure_scenario_keeps_exact_e4_fault_and_restore_identity():

@@ -1,0 +1,524 @@
+"""Runtime E9: mutaciones cerradas, evidencia tipada y restauración obligatoria."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+import pytest
+
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    FieldVerificationStatus,
+)
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
+    ControlPlaneVerificationKind,
+)
+from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
+    ControlPlaneExecutionStage,
+)
+from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+    PacketTracerEnterpriseControlPlaneRuntime,
+)
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    IosCommandResult,
+    IosSessionState,
+    OperationalQueryId,
+)
+from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
+from test_enterprise_control_plane import _compile
+from test_ios_terminal import (
+    _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY,
+    _PT_9_0_1_0858_OSPF_NEIGHBOR_R1,
+    _PT_9_0_1_0858_OSPF_ROUTE_R1,
+    _PT_9_0_1_0858_STP_NON_ROOT,
+    _PT_9_0_1_0858_STP_ROOT,
+)
+
+
+class SequencePing:
+    def __init__(self, outcomes: Iterable[TypedPingResult | Exception]) -> None:
+        self.outcomes = iter(outcomes)
+        self.calls: list[tuple[str, str]] = []
+
+    def ping(self, source_device: str, destination: str) -> TypedPingResult:
+        self.calls.append((source_device, destination))
+        outcome = next(self.outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class FakeControlPlaneIos:
+    def __init__(self, outputs) -> None:
+        self.outputs = outputs
+        self.calls: list[tuple[str, OperationalQueryId]] = []
+
+    def execute(self, device_name, query_id, *, interface=""):
+        assert not interface
+        self.calls.append((device_name, query_id))
+        value = self.outputs[(device_name, query_id)]
+        if isinstance(value, IosCommandResult):
+            return value
+        return IosCommandResult(
+            device_name=device_name,
+            query_id=query_id,
+            executed=True,
+            output=value,
+            session_state=IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=True,
+            window_strategy="prefix_delta",
+        )
+
+
+def _stp_output(*, root_vlans: set[int]) -> str:
+    blocks: list[str] = []
+    for vlan_id in (10, 20):
+        fixture = (
+            _PT_9_0_1_0858_STP_ROOT
+            if vlan_id in root_vlans else _PT_9_0_1_0858_STP_NON_ROOT
+        )
+        block = fixture.split("show spanning-tree\n", 1)[1].rsplit("Switch>", 1)[0]
+        blocks.append(block.replace("VLAN0001", f"VLAN{vlan_id:04d}"))
+    return "show spanning-tree\n" + "".join(blocks) + "Switch>"
+
+
+def _ping(reachable: bool, *, fresh: bool = True) -> TypedPingResult:
+    return TypedPingResult(
+        reachable=reachable,
+        fresh_output_observed=fresh,
+        window_strategy="prefix_delta" if fresh else "none",
+        failure_reason="" if fresh else "no_fresh_ping_result",
+    )
+
+
+def _failure_parts(plan):
+    scenario = plan.failure_scenarios[0]
+    expectations = {
+        item.id: item for item in plan.verification_expectations
+        if item.id in scenario.verification_expectation_ids
+    }
+    failure = next(
+        item for item in expectations.values()
+        if item.kind is ControlPlaneVerificationKind.LINK_FAILURE_CONVERGENCE
+    )
+    recovery = next(
+        item for item in expectations.values()
+        if item.kind is ControlPlaneVerificationKind.RESTORE_RECOVERY
+    )
+    return scenario, failure, recovery
+
+
+def test_runtime_applies_every_compiled_action_through_closed_ios_route():
+    plan = _compile().plan
+    sent: list[str] = []
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [],
+        lambda script: sent.append(script) or True,
+        lambda _script, _timeout: None,
+    )
+
+    results = runtime.apply_actions(plan.actions)
+
+    assert len(results) == len(plan.actions)
+    assert all(item.applied for item in results)
+    assert len(sent) == len(plan.actions)
+    assert all("configureIosDevice" in script for script in sent)
+    assert not any("getCommandPrompt" in script for script in sent)
+
+
+def test_only_typed_reachability_can_be_verified():
+    plan = _compile().plan
+    actions = {item.id: item for item in plan.actions}
+    reachability = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+        and item.expected.get("destination_ipv4")
+        and actions[item.action_id].device_id == item.device_id
+    )
+    direct = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+    )
+    ping = SequencePing([_ping(True)])
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=ping,
+    )
+    runtime.apply_actions(plan.actions)
+
+    verified, unobservable = runtime.verify([reachability, direct])
+
+    source = actions[reachability.action_id].device_name
+    assert ping.calls == [(source, reachability.expected["destination_ipv4"])]
+    assert verified.stage is ControlPlaneExecutionStage.BEHAVIOR
+    assert verified.status is ActionExecutionStatus.VERIFIED
+    assert verified.fresh_evidence
+    assert verified.fields == {"reachable": FieldVerificationStatus.VERIFIED}
+    assert unobservable.stage is ControlPlaneExecutionStage.OBSERVED
+    assert unobservable.status is ActionExecutionStatus.UNOBSERVABLE
+    assert not unobservable.fresh_evidence
+
+
+def test_reachability_without_fresh_ping_evidence_is_unobservable_not_verified():
+    plan = _compile().plan
+    actions = {item.id: item for item in plan.actions}
+    reachability = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+        and item.expected.get("destination_ipv4")
+        and actions[item.action_id].device_id == item.device_id
+    )
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([_ping(False, fresh=False)]),
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([reachability])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.fields["reachable"] is FieldVerificationStatus.UNOBSERVABLE
+
+
+def test_nonboolean_reachability_expectation_is_never_promoted():
+    plan = _compile().plan
+    actions = {item.id: item for item in plan.actions}
+    reachability = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+        and item.expected.get("destination_ipv4")
+        and actions[item.action_id].device_id == item.device_id
+    ).model_copy(deep=True)
+    reachability.expected["reachable"] = "false"
+    ping = SequencePing([_ping(True)])
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=ping,
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([reachability])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert ping.calls == []
+
+
+def test_direct_control_plane_state_uses_only_fresh_registered_ios_evidence():
+    plan = _compile().plan
+    expectations = [
+        next(item for item in plan.verification_expectations
+             if item.kind is ControlPlaneVerificationKind.STP_STATE
+             and item.device_id == "sw1"),
+        next(item for item in plan.verification_expectations
+             if item.kind is ControlPlaneVerificationKind.ETHERCHANNEL_STATE
+             and item.device_id == "sw1"),
+        next(item for item in plan.verification_expectations
+             if item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+             and item.device_id == "r1"),
+        next(item for item in plan.verification_expectations
+             if item.kind is ControlPlaneVerificationKind.ROUTING_NEIGHBOR
+             and item.device_id == "r1"),
+        next(item for item in plan.verification_expectations
+             if item.kind is ControlPlaneVerificationKind.ROUTE_PRESENT
+             and item.device_id == "r1"),
+        next(item for item in plan.verification_expectations
+             if item.kind is ControlPlaneVerificationKind.HSRP_STATE
+             and item.device_id == "r1"),
+        next(item for item in plan.verification_expectations
+             if item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+             and item.device_id == "b1"),
+    ]
+    ios = FakeControlPlaneIos({
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE):
+            _stp_output(root_vlans={10}),
+        ("HQ-SW1", OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY):
+            _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY
+            .replace("Fa0/1", "Gi0/1").replace("Fa0/2", "Gi0/2"),
+        ("HQ-R1", OperationalQueryId.SHOW_IP_OSPF_NEIGHBOR):
+            _PT_9_0_1_0858_OSPF_NEIGHBOR_R1
+            .replace("2.2.2.2", "10.0.10.3")
+            .replace("198.18.100.2", "10.255.0.2"),
+        ("HQ-R1", OperationalQueryId.SHOW_IP_ROUTE_OSPF):
+            _PT_9_0_1_0858_OSPF_ROUTE_R1
+            .replace("198.18.102.0", "10.0.102.0"),
+    })
+    ping = SequencePing([])
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=ping, ios_executor=ios,
+    )
+    runtime.apply_actions(plan.actions)
+
+    results = runtime.verify(expectations)
+
+    stp, channel, process, neighbor, route, hsrp, eigrp = results
+    assert stp.status is ActionExecutionStatus.VERIFIED
+    assert all(item is FieldVerificationStatus.VERIFIED for item in stp.fields.values())
+    assert channel.status is ActionExecutionStatus.VERIFIED
+    assert all(item is FieldVerificationStatus.VERIFIED for item in channel.fields.values())
+    assert process.status is ActionExecutionStatus.UNOBSERVABLE
+    assert process.fields == {
+        "protocol": FieldVerificationStatus.VERIFIED,
+        "router_id": FieldVerificationStatus.UNOBSERVABLE,
+    }
+    assert neighbor.status is ActionExecutionStatus.VERIFIED
+    assert all(item is FieldVerificationStatus.VERIFIED for item in neighbor.fields.values())
+    assert neighbor.fields["adjacent"] is FieldVerificationStatus.VERIFIED
+    assert route.status is ActionExecutionStatus.UNOBSERVABLE
+    assert route.fields["network"] is FieldVerificationStatus.VERIFIED
+    assert route.fields["protocol"] is FieldVerificationStatus.VERIFIED
+    assert route.fields["prefix_length"] is FieldVerificationStatus.UNOBSERVABLE
+    assert route.fields["wildcard"] is FieldVerificationStatus.UNOBSERVABLE
+    assert route.fields["segment_id"] is FieldVerificationStatus.UNOBSERVABLE
+    assert hsrp.status is ActionExecutionStatus.UNOBSERVABLE
+    assert eigrp.status is ActionExecutionStatus.UNOBSERVABLE
+    assert all(item.stage is ControlPlaneExecutionStage.OBSERVED for item in results)
+    assert ping.calls == []
+    assert ios.calls == [
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE),
+        ("HQ-SW1", OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY),
+        ("HQ-R1", OperationalQueryId.SHOW_IP_OSPF_NEIGHBOR),
+        ("HQ-R1", OperationalQueryId.SHOW_IP_ROUTE_OSPF),
+    ]
+
+
+def test_stale_or_unparseable_ios_output_never_promotes_direct_state():
+    plan = _compile().plan
+    stp = next(item for item in plan.verification_expectations
+               if item.kind is ControlPlaneVerificationKind.STP_STATE
+               and item.device_id == "sw1")
+    channel = next(item for item in plan.verification_expectations
+                   if item.kind is ControlPlaneVerificationKind.ETHERCHANNEL_STATE
+                   and item.device_id == "sw1")
+    ios = FakeControlPlaneIos({
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE): IosCommandResult(
+            device_name="HQ-SW1",
+            query_id=OperationalQueryId.SHOW_SPANNING_TREE,
+            executed=True,
+            output=_stp_output(root_vlans={10}),
+            fresh_output_observed=False,
+        ),
+        ("HQ-SW1", OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY):
+            "show etherchannel summary\n% Invalid input detected at '^' marker.",
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions(plan.actions)
+
+    results = runtime.verify([stp, channel])
+
+    assert all(item.status is ActionExecutionStatus.UNOBSERVABLE for item in results)
+    assert all(not item.fresh_evidence for item in results)
+    assert all(
+        status is FieldVerificationStatus.UNOBSERVABLE
+        for item in results for status in item.fields.values()
+    )
+
+
+def test_fresh_ospf_rows_must_match_the_expected_neighbor_instance():
+    plan = _compile().plan
+    neighbor = next(item for item in plan.verification_expectations
+                    if item.kind is ControlPlaneVerificationKind.ROUTING_NEIGHBOR
+                    and item.device_id == "r1")
+    ios = FakeControlPlaneIos({
+        ("HQ-R1", OperationalQueryId.SHOW_IP_OSPF_NEIGHBOR):
+            _PT_9_0_1_0858_OSPF_NEIGHBOR_R1,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([neighbor])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.fields["peer_router_id"] is FieldVerificationStatus.FAILED
+    assert result.fields["peer_ipv4"] is FieldVerificationStatus.FAILED
+    assert result.fields["protocol"] is FieldVerificationStatus.VERIFIED
+
+
+def test_ospf_neighbor_fields_are_typed_from_the_same_parser_row():
+    plan = _compile().plan
+    neighbor = next(item for item in plan.verification_expectations
+                    if item.kind is ControlPlaneVerificationKind.ROUTING_NEIGHBOR
+                    and item.device_id == "r1")
+    output = _PT_9_0_1_0858_OSPF_NEIGHBOR_R1.replace(
+        "2.2.2.2", neighbor.expected["peer_router_id"],
+    )
+    ios = FakeControlPlaneIos({
+        ("HQ-R1", OperationalQueryId.SHOW_IP_OSPF_NEIGHBOR): output,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([neighbor])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.fields["peer_router_id"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["peer_ipv4"] is FieldVerificationStatus.FAILED
+
+
+def test_failure_scenario_requires_stable_before_during_and_after_samples():
+    plan = _compile().plan
+    scenario, failure, recovery = _failure_parts(plan)
+    ping = SequencePing([_ping(True) for _ in range(6)])
+    sent: list[str] = []
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda script: sent.append(script) or True,
+        lambda _script, _timeout: None, ping_executor=ping, stable_samples=2,
+    )
+
+    result = runtime.execute_failure_scenario(scenario, failure, recovery)
+
+    assert result.before.status is ActionExecutionStatus.VERIFIED
+    assert result.before.convergence.attempts == 2
+    assert result.injection.applied
+    assert result.during.status is ActionExecutionStatus.VERIFIED
+    assert result.during.convergence.attempts == 2
+    assert result.restore_attempted
+    assert result.restore.applied
+    assert result.after.status is ActionExecutionStatus.VERIFIED
+    assert result.after.convergence.attempts == 2
+    assert len(ping.calls) == 6
+    assert len(sent) == 2
+    assert " shutdown" in sent[0]
+    assert " no shutdown" in sent[1]
+    assert all("write memory" not in script for script in sent)
+
+
+def test_unstable_baseline_prevents_fault_injection():
+    plan = _compile().plan
+    scenario, failure, recovery = _failure_parts(plan)
+    ping = SequencePing([_ping(False) for _ in range(6)])
+    sent: list[str] = []
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda script: sent.append(script) or True,
+        lambda _script, _timeout: None, ping_executor=ping,
+        stable_samples=2, max_probe_attempts=6,
+    )
+
+    result = runtime.execute_failure_scenario(scenario, failure, recovery)
+
+    assert result.before.status is ActionExecutionStatus.FAILED
+    assert result.injection is None
+    assert not result.restore_attempted
+    assert result.during is None
+    assert result.after is None
+    assert sent == []
+
+
+def test_failure_scenario_rejects_nonboolean_reachability_before_shutdown():
+    plan = _compile().plan
+    scenario, failure, recovery = _failure_parts(plan)
+    failure = failure.model_copy(deep=True)
+    failure.expected["reachable"] = "false"
+    sent: list[str] = []
+    ping = SequencePing([])
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda script: sent.append(script) or True,
+        lambda _script, _timeout: None, ping_executor=ping,
+    )
+
+    with pytest.raises(ValueError, match="reachable"):
+        runtime.execute_failure_scenario(scenario, failure, recovery)
+
+    assert sent == []
+    assert ping.calls == []
+
+
+def test_failure_restore_runs_in_finally_when_shutdown_send_raises():
+    plan = _compile().plan
+    scenario, failure, recovery = _failure_parts(plan)
+    ping = SequencePing([_ping(True), _ping(True), _ping(True), _ping(True)])
+    sent: list[str] = []
+
+    def send(script: str) -> bool:
+        sent.append(script)
+        if len(sent) == 1:
+            raise TimeoutError("bridge timeout after dispatch")
+        return True
+
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], send, lambda _script, _timeout: None,
+        ping_executor=ping, stable_samples=2,
+    )
+
+    result = runtime.execute_failure_scenario(scenario, failure, recovery)
+
+    assert not result.injection.applied
+    assert result.restore_attempted
+    assert result.restore.applied
+    assert result.after.status is ActionExecutionStatus.VERIFIED
+    assert len(sent) == 2
+    assert " shutdown" in sent[0]
+    assert " no shutdown" in sent[1]
+
+
+def test_failure_restore_runs_after_unobservable_convergence_timeout():
+    plan = _compile().plan
+    scenario, failure, recovery = _failure_parts(plan)
+    timeout_samples = [_ping(False, fresh=False) for _ in range(6)]
+    ping = SequencePing([
+        _ping(True), _ping(True), *timeout_samples, _ping(True), _ping(True),
+    ])
+    sent: list[str] = []
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda script: sent.append(script) or True,
+        lambda _script, _timeout: None, ping_executor=ping,
+        stable_samples=2, max_probe_attempts=6,
+    )
+
+    result = runtime.execute_failure_scenario(scenario, failure, recovery)
+
+    assert result.during.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.restore_attempted
+    assert result.restore.applied
+    assert result.after.status is ActionExecutionStatus.VERIFIED
+    assert len(sent) == 2
+
+
+def test_recovery_is_not_claimed_when_restore_is_rejected():
+    plan = _compile().plan
+    scenario, failure, recovery = _failure_parts(plan)
+    ping = SequencePing([_ping(True) for _ in range(4)])
+    sent: list[str] = []
+
+    def send(script: str) -> bool:
+        sent.append(script)
+        return len(sent) == 1
+
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], send, lambda _script, _timeout: None,
+        ping_executor=ping, stable_samples=2,
+    )
+
+    result = runtime.execute_failure_scenario(scenario, failure, recovery)
+
+    assert result.restore_attempted
+    assert not result.restore.applied
+    assert result.after is None
+    assert len(ping.calls) == 4
+
+
+@pytest.mark.parametrize("stable_samples", [1, 2.5, True])
+def test_failure_scenario_rejects_invalid_stable_samples(stable_samples):
+    with pytest.raises(ValueError, match="stable_samples"):
+        PacketTracerEnterpriseControlPlaneRuntime(
+            lambda: [], lambda _script: True, lambda _script, _timeout: None,
+            stable_samples=stable_samples,
+        )
+
+
+@pytest.mark.parametrize("max_probe_attempts", [1.5, True])
+def test_failure_scenario_rejects_noninteger_probe_attempts(max_probe_attempts):
+    with pytest.raises(ValueError, match="max_probe_attempts"):
+        PacketTracerEnterpriseControlPlaneRuntime(
+            lambda: [], lambda _script: True, lambda _script, _timeout: None,
+            max_probe_attempts=max_probe_attempts,
+        )

@@ -2,10 +2,126 @@ import json
 from pathlib import Path
 
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
-    ControlledIosExecutor, OperationalQueryId, TrunkQueryClassification, classify_show_interfaces_trunk,
+    ControlledIosExecutor, EigrpQueryClassification,
+    EtherChannelQueryClassification, OperationalQueryId, OspfQueryClassification,
+    StpQueryClassification,
+    TrunkQueryClassification, classify_show_interfaces_trunk,
+    classify_show_etherchannel_summary, classify_show_ip_eigrp_neighbors,
+    classify_show_ip_ospf_neighbor, classify_show_ip_route_eigrp,
+    classify_show_ip_route_ospf, classify_show_spanning_tree,
     extract_terminal_command_window, normalize_terminal_output, parse_show_ephone,
-    parse_show_interfaces_trunk, parse_show_ip_interface_brief,
+    parse_show_etherchannel_summary, parse_show_interfaces_trunk,
+    parse_show_ip_eigrp_neighbors, parse_show_ip_interface_brief,
+    parse_show_ip_ospf_neighbor, parse_show_ip_route_eigrp,
+    parse_show_ip_route_ospf, parse_show_spanning_tree,
 )
+
+
+_PT_9_0_1_0858_STP_ROOT = """show spanning-tree
+VLAN0001
+  Spanning tree enabled protocol rstp
+  Root ID    Priority    24577
+             Address     0060.5C2C.521E
+             This bridge is the root
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    24577  (priority 24576 sys-id-ext 1)
+             Address     0060.5C2C.521E
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  20
+
+Interface        Role Sts Cost      Prio.Nbr Type
+---------------- ---- --- --------- -------- --------------------------------
+Fa0/1            Desg FWD 19        128.1    P2p
+
+Switch>"""
+
+_PT_9_0_1_0858_STP_NON_ROOT = """show spanning-tree
+VLAN0001
+  Spanning tree enabled protocol rstp
+  Root ID    Priority    24577
+             Address     0060.5C2C.521E
+             Cost        19
+             Port        1(FastEthernet0/1)
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    28673  (priority 28672 sys-id-ext 1)
+             Address     0001.9663.8714
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  20
+
+Interface        Role Sts Cost      Prio.Nbr Type
+---------------- ---- --- --------- -------- --------------------------------
+Fa0/1            Root FWD 19        128.1    P2p
+
+Switch>"""
+
+_PT_9_0_1_0858_STP_EMPTY = """show spanning-tree
+
+No spanning tree instance exists.
+
+Switch>"""
+
+_PT_9_0_1_0858_ETHERCHANNEL_SUMMARY = (
+    """show etherchannel summary
+Flags:  D - down        P - in port-channel
+        I - stand-alone s - suspended
+        H - Hot-standby (LACP only)
+        R - Layer3      S - Layer2
+        U - in use      f - failed to allocate aggregator
+        u - unsuitable for bundling
+        w - waiting to be aggregated
+        d - default port
+
+
+Number of channel-groups in use: 1
+Number of aggregators:           1
+
+Group  Port-channel  Protocol    Ports
+------+-------------+-----------+----------------------------------------------
+
+"""
+    "1      Po1(SU)           LACP   Fa0/1(P) Fa0/2(P) \n"
+    "Switch>"
+)
+
+_PT_9_0_1_0858_ETHERCHANNEL_MEMBER_DOWN = (
+    _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY.replace("Fa0/2(P)", "Fa0/2(D)")
+)
+
+_PT_9_0_1_0858_OSPF_NEIGHBOR_R1 = """show ip ospf neighbor
+
+
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+2.2.2.2           1   FULL/DR         00:00:37    198.18.100.2    GigabitEthernet0/0
+Router>"""
+
+_PT_9_0_1_0858_OSPF_NEIGHBOR_R2 = """show ip ospf neighbor
+
+
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+1.1.1.1           1   FULL/BDR        00:00:35    198.18.100.1    GigabitEthernet0/0
+Router>"""
+
+_PT_9_0_1_0858_OSPF_ROUTE_R1 = """show ip route ospf
+O    198.18.102.0 [110/2] via 198.18.100.2, 00:00:13, GigabitEthernet0/0
+
+Router>"""
+
+_PT_9_0_1_0858_OSPF_ROUTE_R2 = """show ip route ospf
+O    198.18.101.0 [110/2] via 198.18.100.1, 00:00:16, GigabitEthernet0/0
+
+Router>"""
+
+_PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY = """show ip eigrp neighbors
+IP-EIGRP neighbors for process 90
+
+Router>"""
+
+_PT_9_0_1_0858_EIGRP_ROUTES_EMPTY = """show ip route eigrp
+
+
+Router>"""
 
 
 def test_ios_executor_only_emits_registered_query():
@@ -87,6 +203,463 @@ def test_packet_tracer_trunk_parser_reads_configured_rows_from_current_window_on
     assert window.fresh and window.strategy == "prefix_delta"
     assert [(row.interface, row.status) for row in rows] == [("Gi0/1", "trunking")]
     assert classify_show_interfaces_trunk(window.output) is TrunkQueryClassification.SUPPORTED_WITH_ROWS
+
+
+def test_packet_tracer_rpvst_root_output_parses_exact_live_state():
+    instances = parse_show_spanning_tree(_PT_9_0_1_0858_STP_ROOT)
+
+    assert classify_show_spanning_tree(
+        _PT_9_0_1_0858_STP_ROOT,
+    ) is StpQueryClassification.SUPPORTED_WITH_INSTANCES
+    assert len(instances) == 1
+    instance = instances[0]
+    assert (
+        instance.vlan_id,
+        instance.protocol,
+        instance.root_priority,
+        instance.root_address,
+        instance.root_is_local,
+        instance.root_cost,
+        instance.root_port,
+    ) == (1, "rstp", 24577, "0060.5C2C.521E", True, None, "")
+    assert (
+        instance.bridge_priority,
+        instance.bridge_base_priority,
+        instance.bridge_address,
+    ) == (24577, 24576, "0060.5C2C.521E")
+    assert [
+        (
+            row.interface,
+            row.role,
+            row.state,
+            row.cost,
+            row.priority_number,
+            row.link_type,
+        )
+        for row in instance.interfaces
+    ] == [("Fa0/1", "Desg", "FWD", 19, "128.1", "P2p")]
+
+
+def test_packet_tracer_rpvst_non_root_output_parses_exact_live_state():
+    instances = parse_show_spanning_tree(_PT_9_0_1_0858_STP_NON_ROOT)
+
+    assert classify_show_spanning_tree(
+        _PT_9_0_1_0858_STP_NON_ROOT,
+    ) is StpQueryClassification.SUPPORTED_WITH_INSTANCES
+    assert len(instances) == 1
+    instance = instances[0]
+    assert (
+        instance.vlan_id,
+        instance.protocol,
+        instance.root_priority,
+        instance.root_address,
+        instance.root_is_local,
+        instance.root_cost,
+        instance.root_port,
+    ) == (
+        1,
+        "rstp",
+        24577,
+        "0060.5C2C.521E",
+        False,
+        19,
+        "FastEthernet0/1",
+    )
+    assert (
+        instance.bridge_priority,
+        instance.bridge_base_priority,
+        instance.bridge_address,
+    ) == (28673, 28672, "0001.9663.8714")
+    assert [
+        (
+            row.interface,
+            row.role,
+            row.state,
+            row.cost,
+            row.priority_number,
+            row.link_type,
+        )
+        for row in instance.interfaces
+    ] == [("Fa0/1", "Root", "FWD", 19, "128.1", "P2p")]
+
+
+def test_packet_tracer_spanning_tree_empty_output_is_supported_empty():
+    assert parse_show_spanning_tree(_PT_9_0_1_0858_STP_EMPTY) == []
+    assert classify_show_spanning_tree(
+        _PT_9_0_1_0858_STP_EMPTY,
+    ) is StpQueryClassification.SUPPORTED_EMPTY
+
+
+def test_show_spanning_tree_is_a_registered_fresh_query():
+    sent = []
+    before = "Switch>"
+    after = before + "\n" + _PT_9_0_1_0858_STP_ROOT
+    responses = iter((
+        json.dumps({
+            "found": True,
+            "booting": False,
+            "terminal": True,
+            "prompt": "Switch>",
+            "output": before,
+        }),
+        json.dumps({"ok": True, "before": before}),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+    ))
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or next(responses),
+    ).execute("SW1", OperationalQueryId.SHOW_SPANNING_TREE)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.window_strategy == "prefix_delta"
+    assert classify_show_spanning_tree(
+        result.output,
+    ) is StpQueryClassification.SUPPORTED_WITH_INSTANCES
+    assert any('enterCommand("show spanning-tree")' in item for item in sent)
+
+
+def test_packet_tracer_etherchannel_summary_parses_exact_live_bundle():
+    groups = parse_show_etherchannel_summary(
+        _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY,
+    )
+
+    assert classify_show_etherchannel_summary(
+        _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY,
+    ) is EtherChannelQueryClassification.SUPPORTED_WITH_GROUPS
+    assert len(groups) == 1
+    group = groups[0]
+    assert (
+        group.group_number,
+        group.port_channel,
+        group.port_channel_flags,
+        group.protocol,
+    ) == (1, "Po1", "SU", "LACP")
+    assert [
+        (member.interface, member.flag)
+        for member in group.members
+    ] == [("Fa0/1", "P"), ("Fa0/2", "P")]
+
+
+def test_packet_tracer_etherchannel_summary_preserves_member_failure_flag():
+    groups = parse_show_etherchannel_summary(
+        _PT_9_0_1_0858_ETHERCHANNEL_MEMBER_DOWN,
+    )
+
+    assert classify_show_etherchannel_summary(
+        _PT_9_0_1_0858_ETHERCHANNEL_MEMBER_DOWN,
+    ) is EtherChannelQueryClassification.SUPPORTED_WITH_GROUPS
+    assert len(groups) == 1
+    assert [
+        (member.interface, member.flag)
+        for member in groups[0].members
+    ] == [("Fa0/1", "P"), ("Fa0/2", "D")]
+
+
+def test_show_etherchannel_summary_is_a_registered_fresh_query():
+    sent = []
+    before = "Switch>"
+    after = before + "\n" + _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY
+    responses = iter((
+        json.dumps({
+            "found": True,
+            "booting": False,
+            "terminal": True,
+            "prompt": "Switch>",
+            "output": before,
+        }),
+        json.dumps({"ok": True, "before": before}),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+    ))
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or next(responses),
+    ).execute("SW1", OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.window_strategy == "prefix_delta"
+    assert classify_show_etherchannel_summary(
+        result.output,
+    ) is EtherChannelQueryClassification.SUPPORTED_WITH_GROUPS
+    assert any(
+        'enterCommand("show etherchannel summary")' in item
+        for item in sent
+    )
+
+
+def test_packet_tracer_ospf_neighbor_parses_both_exact_live_rows():
+    r1 = parse_show_ip_ospf_neighbor(_PT_9_0_1_0858_OSPF_NEIGHBOR_R1)
+    r2 = parse_show_ip_ospf_neighbor(_PT_9_0_1_0858_OSPF_NEIGHBOR_R2)
+
+    assert classify_show_ip_ospf_neighbor(
+        _PT_9_0_1_0858_OSPF_NEIGHBOR_R1,
+    ) is OspfQueryClassification.SUPPORTED_WITH_ROWS
+    assert [
+        (
+            row.neighbor_id,
+            row.priority,
+            row.state,
+            row.role,
+            row.dead_time,
+            row.address,
+            row.interface,
+        )
+        for row in r1 + r2
+    ] == [
+        (
+            "2.2.2.2", 1, "FULL", "DR", "00:00:37",
+            "198.18.100.2", "GigabitEthernet0/0",
+        ),
+        (
+            "1.1.1.1", 1, "FULL", "BDR", "00:00:35",
+            "198.18.100.1", "GigabitEthernet0/0",
+        ),
+    ]
+
+
+def test_packet_tracer_ospf_routes_parse_both_exact_live_rows():
+    r1 = parse_show_ip_route_ospf(_PT_9_0_1_0858_OSPF_ROUTE_R1)
+    r2 = parse_show_ip_route_ospf(_PT_9_0_1_0858_OSPF_ROUTE_R2)
+
+    assert classify_show_ip_route_ospf(
+        _PT_9_0_1_0858_OSPF_ROUTE_R1,
+    ) is OspfQueryClassification.SUPPORTED_WITH_ROWS
+    assert [
+        (
+            row.code,
+            row.prefix,
+            row.administrative_distance,
+            row.metric,
+            row.next_hop,
+            row.age,
+            row.interface,
+        )
+        for row in r1 + r2
+    ] == [
+        (
+            "O", "198.18.102.0", 110, 2, "198.18.100.2",
+            "00:00:13", "GigabitEthernet0/0",
+        ),
+        (
+            "O", "198.18.101.0", 110, 2, "198.18.100.1",
+            "00:00:16", "GigabitEthernet0/0",
+        ),
+    ]
+
+
+def test_show_ip_ospf_neighbor_is_a_registered_fresh_query():
+    sent = []
+    before = "Router>"
+    after = before + "\n" + _PT_9_0_1_0858_OSPF_NEIGHBOR_R1
+    responses = iter((
+        json.dumps({
+            "found": True,
+            "booting": False,
+            "terminal": True,
+            "prompt": "Router>",
+            "output": before,
+        }),
+        json.dumps({"ok": True, "before": before}),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+    ))
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or next(responses),
+    ).execute("R1", OperationalQueryId.SHOW_IP_OSPF_NEIGHBOR)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.window_strategy == "prefix_delta"
+    assert [row.neighbor_id for row in parse_show_ip_ospf_neighbor(result.output)] == [
+        "2.2.2.2",
+    ]
+    assert any(
+        'enterCommand("show ip ospf neighbor")' in item for item in sent
+    )
+
+
+def test_show_ip_route_ospf_is_a_registered_fresh_query():
+    sent = []
+    before = "Router>"
+    after = before + "\n" + _PT_9_0_1_0858_OSPF_ROUTE_R1
+    responses = iter((
+        json.dumps({
+            "found": True,
+            "booting": False,
+            "terminal": True,
+            "prompt": "Router>",
+            "output": before,
+        }),
+        json.dumps({"ok": True, "before": before}),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+    ))
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or next(responses),
+    ).execute("R1", OperationalQueryId.SHOW_IP_ROUTE_OSPF)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.window_strategy == "prefix_delta"
+    assert [row.prefix for row in parse_show_ip_route_ospf(result.output)] == [
+        "198.18.102.0",
+    ]
+    assert any('enterCommand("show ip route ospf")' in item for item in sent)
+
+
+def test_ospf_neighbor_parser_excludes_stale_previous_query_window():
+    before = _PT_9_0_1_0858_OSPF_NEIGHBOR_R1
+    after = before + "\n" + _PT_9_0_1_0858_OSPF_NEIGHBOR_R2
+
+    window = extract_terminal_command_window(
+        before, after, "show ip ospf neighbor",
+    )
+
+    assert window.fresh and window.strategy == "prefix_delta"
+    assert [
+        row.neighbor_id for row in parse_show_ip_ospf_neighbor(window.output)
+    ] == ["1.1.1.1"]
+
+
+def test_packet_tracer_eigrp_live_outputs_are_supported_empty():
+    assert parse_show_ip_eigrp_neighbors(
+        _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY,
+    ) == []
+    assert classify_show_ip_eigrp_neighbors(
+        _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY,
+    ) is EigrpQueryClassification.SUPPORTED_EMPTY
+    assert parse_show_ip_route_eigrp(
+        _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY,
+    ) == []
+    assert classify_show_ip_route_eigrp(
+        _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY,
+    ) is EigrpQueryClassification.SUPPORTED_EMPTY
+
+
+def test_show_ip_eigrp_neighbors_is_a_registered_fresh_query():
+    sent = []
+    before = "Router>"
+    after = before + "\n" + _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY
+    responses = iter((
+        json.dumps({
+            "found": True,
+            "booting": False,
+            "terminal": True,
+            "prompt": "Router>",
+            "output": before,
+        }),
+        json.dumps({"ok": True, "before": before}),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+    ))
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or next(responses),
+    ).execute("R1", OperationalQueryId.SHOW_IP_EIGRP_NEIGHBORS)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.window_strategy == "prefix_delta"
+    assert classify_show_ip_eigrp_neighbors(
+        result.output,
+    ) is EigrpQueryClassification.SUPPORTED_EMPTY
+    assert any(
+        'enterCommand("show ip eigrp neighbors")' in item for item in sent
+    )
+
+
+def test_show_ip_route_eigrp_is_a_registered_fresh_query():
+    sent = []
+    before = "Router>"
+    after = before + "\n" + _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY
+    responses = iter((
+        json.dumps({
+            "found": True,
+            "booting": False,
+            "terminal": True,
+            "prompt": "Router>",
+            "output": before,
+        }),
+        json.dumps({"ok": True, "before": before}),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+        json.dumps({
+            "found": True,
+            "configuration_channel": True,
+            "output": after,
+        }),
+    ))
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or next(responses),
+    ).execute("R1", OperationalQueryId.SHOW_IP_ROUTE_EIGRP)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.window_strategy == "prefix_delta"
+    assert classify_show_ip_route_eigrp(
+        result.output,
+    ) is EigrpQueryClassification.SUPPORTED_EMPTY
+    assert any('enterCommand("show ip route eigrp")' in item for item in sent)
+
+
+def test_eigrp_empty_classifier_excludes_stale_previous_query_window():
+    before = _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY
+    after = before + "\n" + _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY
+
+    window = extract_terminal_command_window(
+        before, after, "show ip route eigrp",
+    )
+
+    assert window.fresh and window.strategy == "prefix_delta"
+    assert classify_show_ip_route_eigrp(
+        window.output,
+    ) is EigrpQueryClassification.SUPPORTED_EMPTY
+    assert classify_show_ip_eigrp_neighbors(
+        window.output,
+    ) is EigrpQueryClassification.PARSER_UNAVAILABLE
 
 
 def test_parse_show_ephone_reads_registration_identity_and_idle_state():
@@ -175,6 +748,8 @@ def test_paginated_registered_query_captures_first_page_and_cancels_pager():
         json.dumps({"found": True, "configuration_channel": True,
                     "output": output}),
         '{"ok":true}',
+        json.dumps({"found": True, "booting": False, "terminal": True,
+                    "prompt": "Router#", "output": output + "\n^C\nRouter#"}),
     ))
 
     result = ControlledIosExecutor(
@@ -191,3 +766,100 @@ def test_paginated_registered_query_captures_first_page_and_cancels_pager():
         'enterCommand("show ip interface GigabitEthernet0/0")' in item
         for item in sent
     )
+
+
+def test_paginated_query_is_isolated_before_the_next_registered_query():
+    class AsynchronousPagerTerminal:
+        def __init__(self):
+            self.output = "Router#"
+            self.cancel_pending = False
+            self.cancel_polls = 0
+            self.contaminated = False
+            self.sent = []
+
+        def __call__(self, js, _timeout):
+            self.sent.append(js)
+            if "String.fromCharCode(3)" in js:
+                self.cancel_pending = True
+                return '{"ok":true}'
+            if "terminal_kind:'ios_command_line'" in js:
+                current = self.output
+                if self.cancel_pending:
+                    self.cancel_polls += 1
+                    if self.cancel_polls >= 2:
+                        self.output += "\n^C\nRouter#"
+                        self.cancel_pending = False
+                return json.dumps({
+                    "found": True,
+                    "booting": False,
+                    "terminal": True,
+                    "prompt": "Router#",
+                    "output": current,
+                })
+            if "var before=String(t.getOutput())" in js:
+                before = self.output
+                if self.output.rstrip().endswith("--More--"):
+                    self.contaminated = True
+                    self.output += "\n[pager consumed registered query]"
+                elif 'enterCommand("show ip interface brief")' in js:
+                    self.output += (
+                        "show ip interface brief\n"
+                        "Interface IP-Address OK? Method Status Protocol\n"
+                        "GigabitEthernet0/0 192.0.2.1 YES manual up up\n"
+                        "--More--"
+                    )
+                else:
+                    assert 'enterCommand("show interfaces trunk")' in js
+                    self.output += (
+                        "show interfaces trunk\n"
+                        "Gi0/1 on 802.1q trunking 1\nRouter#"
+                    )
+                return json.dumps({"ok": True, "before": before})
+            if "configuration_channel" in js:
+                return json.dumps({
+                    "found": True,
+                    "configuration_channel": True,
+                    "output": self.output,
+                })
+            raise AssertionError(f"Unexpected terminal interaction: {js}")
+
+    terminal = AsynchronousPagerTerminal()
+    executor = ControlledIosExecutor(terminal)
+
+    first = executor.execute(
+        "R1", OperationalQueryId.SHOW_IP_INTERFACE_BRIEF,
+    )
+    second = executor.execute(
+        "R1", OperationalQueryId.SHOW_INTERFACES_TRUNK,
+    )
+
+    assert first.executed and first.truncated_by_pager
+    assert second.executed and second.fresh_output_observed
+    assert "show interfaces trunk" in second.output
+    assert not terminal.contaminated
+    assert not any("terminal length 0" in item for item in terminal.sent)
+
+
+def test_unconfirmed_pager_cancellation_fails_closed_and_keeps_truncation():
+    before = "Router#"
+    output = before + "show ip interface brief\nGi0/0 192.0.2.1\n--More--"
+    responses = iter((
+        json.dumps({"found": True, "booting": False, "terminal": True,
+                    "prompt": "Router#", "output": before}),
+        json.dumps({"ok": True, "before": before}),
+        json.dumps({"found": True, "configuration_channel": True,
+                    "output": output}),
+        json.dumps({"found": True, "configuration_channel": True,
+                    "output": output}),
+        '{"ok":true}',
+    ))
+    executor = ControlledIosExecutor(lambda _js, _timeout: next(responses))
+    executor._wait_for = lambda _name, _predicate: False
+
+    result = executor.execute(
+        "R1", OperationalQueryId.SHOW_IP_INTERFACE_BRIEF,
+    )
+
+    assert not result.executed
+    assert result.truncated_by_pager
+    assert "pager cancellation" in result.failure_reason.casefold()
