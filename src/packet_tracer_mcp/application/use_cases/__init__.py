@@ -9,3 +9,4 @@ from .generate_configs import generate_configs_uc
 from .export_artifacts import export_artifacts_uc
 from .full_build import full_build
 from .compile_enterprise import compile_enterprise_topology
+from .compile_configuration import compile_enterprise_configuration

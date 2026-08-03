@@ -15,7 +15,11 @@ from ...shared.ios_config import build_configure_ios_call
 from ...domain.models.vlans import (
     VLANConfig, AccessPortConfig, TrunkConfig, SubinterfaceConfig,
 )
-from ...shared.utils import prefix_to_mask
+from ...shared.utils import (
+    prefix_to_mask,
+    safe_ios_identifier,
+    validate_ios_interface_name,
+)
 
 
 # Modelos de switch que soportan múltiples encapsulaciones y por tanto REQUIEREN
@@ -42,26 +46,30 @@ def generate_switch_vlan_cli(
     for v in vlans:
         lines.append(f"vlan {v.vlan_id}")
         if v.name:
-            lines.append(f" name {v.name}")
+            lines.append(f" name {safe_ios_identifier(v.name)}")
         lines.append(" exit")
 
     # Puertos access
     for ap in access_ports:
-        lines.append(f"interface {ap.port}")
+        lines.append(f"interface {validate_ios_interface_name(ap.port)}")
         lines.append(" switchport mode access")
         lines.append(f" switchport access vlan {ap.vlan_id}")
+        if ap.voice_vlan_id is not None:
+            lines.append(f" switchport voice vlan {ap.voice_vlan_id}")
         lines.append(" exit")
 
     # Trunks
     for t in trunks:
-        lines.append(f"interface {t.port}")
+        lines.append(f"interface {validate_ios_interface_name(t.port)}")
         if supports_encap:
-            lines.append(f" switchport trunk encapsulation {t.encapsulation}")
+            if t.encapsulation.casefold() != "dot1q":
+                raise ValueError(f"Unsupported trunk encapsulation: {t.encapsulation!r}")
+            lines.append(" switchport trunk encapsulation dot1q")
         lines.append(" switchport mode trunk")
         if t.native_vlan and t.native_vlan != 1:
             lines.append(f" switchport trunk native vlan {t.native_vlan}")
         if t.allowed_vlans:
-            allowed = ",".join(str(v) for v in t.allowed_vlans)
+            allowed = ",".join(str(v) for v in sorted(set(t.allowed_vlans)))
             lines.append(f" switchport trunk allowed vlan {allowed}")
         lines.append(" exit")
 
@@ -77,12 +85,15 @@ def generate_router_subinterface_cli(subinterfaces: list[SubinterfaceConfig]) ->
         if s.parent_port not in parents:
             parents.append(s.parent_port)
     for p in parents:
-        lines.append(f"interface {p}")
+        lines.append(f"interface {validate_ios_interface_name(p)}")
         lines.append(" no shutdown")
         lines.append(" exit")
     for s in subinterfaces:
-        lines.append(f"interface {s.parent_port}.{s.vlan_id}")
-        lines.append(f" encapsulation {s.encapsulation} {s.vlan_id}")
+        parent = validate_ios_interface_name(s.parent_port)
+        if s.encapsulation.casefold() != "dot1q":
+            raise ValueError(f"Unsupported subinterface encapsulation: {s.encapsulation!r}")
+        lines.append(f"interface {parent}.{s.vlan_id}")
+        lines.append(f" encapsulation dot1Q {s.vlan_id}")
         if s.ip_cidr:
             ip, prefix = s.ip_cidr.split("/")
             mask = prefix_to_mask(int(prefix))

@@ -9,6 +9,8 @@ from .constants import PREFIX_TO_MASK
 # Caracteres permitidos en un componente de ruta. Todo lo demás se reemplaza por "_",
 # incluidos los separadores (/ \), los dos puntos de unidad (C:) y los NUL.
 _UNSAFE_PATH_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+_UNSAFE_IOS_IDENTIFIER_CHARS = re.compile(r"[^A-Za-z0-9_.-]")
+_IOS_INTERFACE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*[0-9][A-Za-z0-9/.-]*$")
 
 # Nombres reservados por Windows: crear "CON.txt" o "NUL" falla de forma opaca.
 _WINDOWS_RESERVED = {
@@ -56,6 +58,20 @@ def js_escape(s: str) -> str:
         .replace("\u2028", "\\u2028")
         .replace("\u2029", "\\u2029")
     )
+
+
+def safe_ios_identifier(value: str, fallback: str = "ITEM", max_length: int = 32) -> str:
+    """Normaliza nombres internos que ocupan un único token IOS."""
+    cleaned = _UNSAFE_IOS_IDENTIFIER_CHARS.sub("_", (value or "").strip())
+    return (cleaned.strip("._-") or fallback)[:max_length]
+
+
+def validate_ios_interface_name(value: str) -> str:
+    """Rechaza interfaces que podrían transformarse en comandos IOS adicionales."""
+    candidate = (value or "").strip()
+    if len(candidate) > 64 or not _IOS_INTERFACE.fullmatch(candidate):
+        raise ValueError(f"Invalid IOS interface name: {value!r}")
+    return candidate
 
 
 def interpret_ping(stat_line: str) -> bool:

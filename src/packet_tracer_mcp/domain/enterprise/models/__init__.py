@@ -16,6 +16,10 @@ from .compilation import (
     EnterpriseCompileResult, EnterpriseCompileSummary, LayoutProfile, LayoutRegion,
     PhysicalCompilationProfile, PhysicalModelProfile,
 )
+from .configuration import (
+    ConfigurationActionType, ConfigurationCompileResult, ConfigurationIssue,
+    ConfigurationIssueCode, ConfigurationPhase, ConfigurationPlan, ConfigurationPolicy,
+)
 from .enterprise_plan import EnterprisePlan, SitePlan
 from .hierarchy import BuildingIntent, EndpointGroup, FloorIntent, ZoneIntent
 from .discovery import (
@@ -42,6 +46,8 @@ __all__ = [
     "CapabilityEvidence", "CapabilityProbeResult", "CapabilitySnapshot", "CapabilityStatus",
     "CapacityPlan", "CatalogCoverageReport", "CatalogGapReport", "CleanupStatus", "DetailLevel", "DeviceCandidate",
     "CompilationIssue", "CompilationIssueCode", "CompilationIssueSeverity", "ConcreteLinkRole",
+    "ConfigurationActionType", "ConfigurationCompileResult", "ConfigurationIssue",
+    "ConfigurationIssueCode", "ConfigurationPhase", "ConfigurationPlan", "ConfigurationPolicy",
     "DeviceCandidateStatus", "DeviceCapabilities", "DeviceIdentity", "DeviceRequirement",
     "DeviceRole", "DeviceSelectionResult", "EndpointRequirement",
     "DiscoverySource", "E4ReadinessReport", "E4ReadinessState", "EndpointGroup", "EnterpriseIntent",

@@ -16,6 +16,7 @@ class AccessPortConfig(BaseModel):
     switch: str
     port: str
     vlan_id: int
+    voice_vlan_id: int | None = None
 
 
 class TrunkConfig(BaseModel):
