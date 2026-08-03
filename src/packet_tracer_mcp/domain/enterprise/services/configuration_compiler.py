@@ -751,7 +751,12 @@ class ConfigurationCompiler:
             ):
                 device = devices.get(device_id)
                 if device and not device.network_layer:
-                    interfaces.setdefault(device_id, port)
+                    interface = (
+                        "Vlan1"
+                        if device.enterprise_role == DeviceRole.IP_PHONE.value
+                        else port
+                    )
+                    interfaces.setdefault(device_id, interface)
         return interfaces
 
     def _dhcp_actions(

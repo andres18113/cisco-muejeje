@@ -199,8 +199,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
     @staticmethod
     def _endpoint_call(action: SetEndpointStaticAddress | SetEndpointDhcp) -> str:
         name = json.dumps(action.device_name)
+        interface = json.dumps(action.interface)
         if isinstance(action, SetEndpointDhcp):
-            call = f"configurePcIp({name},true);"
+            call = "configurePcIp(" + ",".join((name, "true", "null", "null", "null", "null", interface)) + ");"
         else:
             arguments = ",".join((
                 name,
@@ -209,6 +210,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 json.dumps(action.netmask),
                 json.dumps(action.gateway),
                 json.dumps(action.dns_server or ""),
+                interface,
             ))
             call = "configurePcIp(" + arguments + ");"
         return "try{" + call + "}catch(__e){}"

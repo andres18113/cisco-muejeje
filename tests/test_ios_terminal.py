@@ -2,7 +2,8 @@ from pathlib import Path
 
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor, OperationalQueryId, TrunkQueryClassification, classify_show_interfaces_trunk,
-    extract_terminal_command_window, normalize_terminal_output, parse_show_interfaces_trunk, parse_show_ip_interface_brief,
+    extract_terminal_command_window, normalize_terminal_output, parse_show_ephone,
+    parse_show_interfaces_trunk, parse_show_ip_interface_brief,
 )
 
 
@@ -85,3 +86,53 @@ def test_packet_tracer_trunk_parser_reads_configured_rows_from_current_window_on
     assert window.fresh and window.strategy == "prefix_delta"
     assert [(row.interface, row.status) for row in rows] == [("Gi0/1", "trunking")]
     assert classify_show_interfaces_trunk(window.output) is TrunkQueryClassification.SUPPORTED_WITH_ROWS
+
+
+def test_parse_show_ephone_reads_registration_identity_and_idle_state():
+    output = """show ephone
+
+ephone-1 Mac:00D0.9709.202C TCP socket:[1] activeLine:0 REGISTERED in SCCP ver 12 and Server in ver 8
+mediaActive:0 offhook:0 ringing:0
+IP:198.18.170.3 1025 7960 keepalive 43 max_line 2
+ button 1: dn 1 number 3101 CH1 IDLE
+
+ephone-2 Mac:000D.BD9E.153C TCP socket:[1] activeLine:1 UNREGISTERED
+IP:0.0.0.0 0 7960 keepalive 43 max_line 2
+ button 1: dn 2 number 3102 CH1 DOWN
+Router#"""
+
+    rows = parse_show_ephone(output)
+
+    assert [row.extension for row in rows] == ["3101", "3102"]
+    assert rows[0].registered and rows[0].ip_address == "198.18.170.3"
+    assert rows[0].line_state == "IDLE"
+    assert not rows[1].registered and rows[1].line_state == "DOWN"
+
+
+def test_privileged_ephone_query_enters_enable_and_restores_user_exec():
+    sent = []
+    output = (
+        "Router#show ephone\n"
+        "ephone-1 Mac:0011.2233.4455 REGISTERED in SCCP ver 12\n"
+        "IP:198.18.170.2 1025 7960\n"
+        " button 1: dn 1 number 3101 CH1 IDLE\nRouter#"
+    )
+    responses = iter((
+        '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":"Router>"}',
+        '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":"Router>"}',
+        '{"ok":true}',
+        '{"found":true,"booting":false,"terminal":true,"prompt":"Router#","output":"Router#"}',
+        '{"ok":true,"before":"Router#"}',
+        '{"found":true,"configuration_channel":true,"output":' + repr(output).replace("'", '"') + '}',
+        '{"found":true,"configuration_channel":true,"output":' + repr(output).replace("'", '"') + '}',
+        '{"ok":true}',
+    ))
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or next(responses),
+    ).execute("R1", OperationalQueryId.SHOW_EPHONE)
+
+    assert result.executed and result.fresh_output_observed
+    assert any('enterCommand("enable")' in item for item in sent)
+    assert any('enterCommand("show ephone")' in item for item in sent)
+    assert any('enterCommand("disable")' in item for item in sent)

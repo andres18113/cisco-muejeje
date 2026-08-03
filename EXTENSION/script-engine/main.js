@@ -277,11 +277,14 @@ function installMcpHelpers() {
 
     // configurePcIp — no hardcodea FastEthernet0: busca el primer puerto ethernet
     // (o Wireless0) iterando getPorts(). Funciona con PC/Server/Laptop.
-    GLOBAL.configurePcIp = function (deviceName, dhcpEnabled, ipaddress, subnetMask, defaultGateway, dnsServer) {
+    GLOBAL.configurePcIp = function (deviceName, dhcpEnabled, ipaddress, subnetMask, defaultGateway, dnsServer, interfaceName) {
         var device = ipc.network().getDevice(deviceName);
         if (!device) { return false; }
         var port = null;
-        if (typeof device.getPorts === "function") {
+        if (interfaceName && typeof device.getPort === "function") {
+            port = device.getPort(interfaceName);
+        }
+        if (!port && typeof device.getPorts === "function") {
             var ports = device.getPorts();
             for (var i = 0; i < ports.length; i++) {
                 var pn = ports[i];

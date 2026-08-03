@@ -372,6 +372,23 @@ def test_dhcp_pool_excludes_gateway_and_static_assignments_and_client_depends_on
     assert pool.id in client.depends_on
 
 
+def test_phone_addressing_targets_logical_vlan1_not_a_cable_port():
+    plan = _compile().plan
+    phone = next(
+        action for action in plan.actions
+        if action.action_type is ConfigurationActionType.SET_ENDPOINT_STATIC
+        and action.device_id == "phone-1"
+    )
+    pc = next(
+        action for action in plan.actions
+        if action.action_type is ConfigurationActionType.SET_ENDPOINT_DHCP
+        and action.device_id == "pc-1"
+    )
+
+    assert phone.interface == "Vlan1"
+    assert pc.interface == "FastEthernet0"
+
+
 def test_validator_detects_duplicate_static_ip_and_unexcluded_dhcp_overlap():
     actions = [
         SetEndpointStaticAddress(

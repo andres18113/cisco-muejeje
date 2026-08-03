@@ -12,6 +12,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigurationPlan,
     ConfigureAccessPort,
+    ConfigureDhcpPool,
     ConfigureSubinterface,
     CreateVlan,
     SetEndpointDhcp,
@@ -21,7 +22,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.intent import SiteType
 from src.packet_tracer_mcp.domain.enterprise.models.service_plan import ServicePlan
 from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     CallExpectationResult,
+    ConfigureVoiceDhcpOption,
     ExtensionRange,
+    GeneratePhoneConfigurationFiles,
     VoiceActionType,
     VoiceCapabilityDimension,
     VoiceCapabilityProfile,
@@ -78,6 +81,14 @@ def _fixture(phone_count: int = 2):
             parent_interface="GigabitEthernet0/0", vlan_id=20,
             ipv4="198.18.170.1", prefix=24, netmask="255.255.255.0",
             segment_id="hq-voice", required_capability="layer3",
+        ),
+        ConfigureDhcpPool(
+            id="cfg/dhcp-pool/r1/voice", phase=ConfigurationPhase.SERVICES,
+            device_id="r1", device_name="HQ-R1", site_id="hq",
+            pool_name="E7_VOICE", segment_id="hq-voice",
+            network="198.18.170.0", prefix=24, netmask="255.255.255.0",
+            gateway="198.18.170.1", lease_start="198.18.170.2",
+            lease_end="198.18.170.254", required_capability="dhcp_server",
         ),
     ]
     for index, phone in enumerate(phones, 1):
@@ -301,6 +312,29 @@ def test_voice_actions_form_a_closed_dag_and_do_not_recompile_switch_ports():
     )
 
 
+def test_voice_bootstrap_reuses_e5_dhcp_pool_and_generates_phone_files_after_bindings():
+    plan = _compile().plan
+    option = next(item for item in plan.actions if isinstance(item, ConfigureVoiceDhcpOption))
+    files = next(
+        item for item in plan.actions if isinstance(item, GeneratePhoneConfigurationFiles)
+    )
+    bindings = [
+        item for item in plan.actions
+        if item.action_type is VoiceActionType.BIND_PHONE_TO_EXTENSION
+    ]
+
+    assert option.pool_name == "E7_VOICE"
+    assert option.tftp_address == "198.18.170.1"
+    assert option.source_configuration_action_id == "cfg/dhcp-pool/r1/voice"
+    assert any(
+        item.kind == "voice_dhcp_pool"
+        and item.source_id == option.source_configuration_action_id
+        for item in plan.foundational_requirements
+    )
+    assert option.id in files.depends_on
+    assert {item.id for item in bindings} <= set(files.depends_on)
+
+
 def test_compact_summary_omits_full_actions_and_extensions():
     result = _compile(30)
     summary = result.compact_summary()
@@ -330,6 +364,22 @@ def test_capability_unknown_is_warning_and_unsupported_call_control_is_error():
     )
     assert not unsupported.is_valid
     assert any(item.code.value == "VOICE_CAPABILITY_UNSUPPORTED" for item in unsupported.issues)
+
+
+def test_unobservable_ntp_is_recorded_without_blocking_local_voice_compile():
+    enterprise, topology, configuration, intent, capabilities = _fixture()
+    capabilities["2911"].dimensions[
+        VoiceCapabilityDimension.VOICE_NTP
+    ] = VoiceCapabilityStatus.UNOBSERVABLE
+
+    result = compile_enterprise_voice(
+        intent, enterprise, topology, configuration, capabilities=capabilities,
+    )
+
+    assert result.is_valid
+    assert capabilities["2911"].status(
+        VoiceCapabilityDimension.VOICE_NTP,
+    ) is VoiceCapabilityStatus.UNOBSERVABLE
 
 
 def test_multisite_extensions_are_namespaced_and_intersite_rules_compile_offline():

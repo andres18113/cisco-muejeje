@@ -16,6 +16,7 @@ from .device_lifecycle import IosBootWaiter, StateConvergenceWaiter
 class OperationalQueryId(str, Enum):
     SHOW_IP_INTERFACE_BRIEF = "show_ip_interface_brief"
     SHOW_INTERFACES_TRUNK = "show_interfaces_trunk"
+    SHOW_EPHONE = "show_ephone"
 
 
 class TrunkQueryClassification(str, Enum):
@@ -42,7 +43,9 @@ class IosSessionState(str, Enum):
 _COMMANDS = {
     OperationalQueryId.SHOW_IP_INTERFACE_BRIEF: "show ip interface brief",
     OperationalQueryId.SHOW_INTERFACES_TRUNK: "show interfaces trunk",
+    OperationalQueryId.SHOW_EPHONE: "show ephone",
 }
+_PRIVILEGED_QUERIES = {OperationalQueryId.SHOW_EPHONE}
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"
 
 
@@ -65,6 +68,16 @@ class InterfaceStatusRow:
     ip_address: str
     status: str
     protocol: str
+
+
+@dataclass(frozen=True)
+class EphoneStatusRow:
+    index: int
+    mac_address: str
+    registered: bool
+    ip_address: str
+    extension: str
+    line_state: str
 
 
 @dataclass(frozen=True)
@@ -97,6 +110,38 @@ def parse_show_ip_interface_brief(value: str) -> list[InterfaceStatusRow]:
         if not re.match(r"^[A-Za-z]+[A-Za-z0-9/.-]*$", parts[0]):
             continue
         rows.append(InterfaceStatusRow(parts[0], parts[1], " ".join(parts[4:-1]), parts[-1]))
+    return rows
+
+
+def parse_show_ephone(value: str) -> list[EphoneStatusRow]:
+    """Extrae el estado vigente de cada bloque de ``show ephone`` de PT."""
+    normalized = normalize_terminal_output(value)
+    starts = list(re.finditer(
+        r"(?m)^ephone-(?P<index>\d+)\s+Mac:(?P<mac>[0-9A-Fa-f.:-]+).*?"
+        r"(?P<registration>UNREGISTERED|REGISTERED)(?:\s|$)",
+        normalized,
+    ))
+    rows: list[EphoneStatusRow] = []
+    for position, match in enumerate(starts):
+        end = starts[position + 1].start() if position + 1 < len(starts) else len(normalized)
+        block = normalized[match.start():end]
+        ip_match = re.search(r"(?m)^IP:(?P<ip>\S+)", block)
+        line_match = re.search(
+            r"(?m)^\s*button\s+\d+:\s+dn\s+\d+\s+number\s+"
+            r"(?P<extension>\d+)\s+CH\d+\s+(?P<state>\S+)",
+            block,
+            re.IGNORECASE,
+        )
+        if ip_match is None or line_match is None:
+            continue
+        rows.append(EphoneStatusRow(
+            index=int(match.group("index")),
+            mac_address=match.group("mac"),
+            registered=match.group("registration").upper() == "REGISTERED",
+            ip_address=ip_match.group("ip"),
+            extension=line_match.group("extension"),
+            line_state=line_match.group("state").upper(),
+        ))
     return rows
 
 
@@ -169,6 +214,27 @@ class ControlledIosExecutor:
         session = self._prepare_session(name)
         if session is not IosSessionState.EXEC_PROMPT_READY:
             return IosCommandResult(device_name, query_id, False, failure_reason="IOS session state: " + session.value, duration_ms=int((monotonic() - started) * 1000), session_state=session)
+        restore_user_mode = False
+        if query_id in _PRIVILEGED_QUERIES:
+            current = self._terminal_state(name)
+            if str(current.get("prompt") or "").strip().endswith(">"):
+                if not self._enter(name, "enable") or not self._wait_for(
+                    name,
+                    lambda state: str(state.get("prompt") or "").strip().endswith("#"),
+                ):
+                    return IosCommandResult(
+                        device_name, query_id, False,
+                        failure_reason="IOS privileged EXEC mode was unavailable.",
+                        duration_ms=int((monotonic() - started) * 1000),
+                        session_state=session,
+                    )
+                restore_user_mode = True
+
+        def complete(result: IosCommandResult) -> IosCommandResult:
+            if restore_user_mode:
+                self._enter(name, "disable")
+            return result
+
         js = "".join((
             "try{var d=ipc.network().getDevice(", name, ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
             "if(!t||typeof t.enterCommand!=='function'||typeof t.getOutput!=='function'){reportResult(JSON.stringify({ok:false,reason:'IOS terminal unavailable'}));}",
@@ -178,15 +244,15 @@ class ControlledIosExecutor:
         raw = self._send_and_wait(js, 10.0)
         elapsed = int((monotonic() - started) * 1000)
         if raw is None:
-            return IosCommandResult(device_name, query_id, False, failure_reason="IOS command submission timed out.", duration_ms=elapsed, session_state=session)
+            return complete(IosCommandResult(device_name, query_id, False, failure_reason="IOS command submission timed out.", duration_ms=elapsed, session_state=session))
         if raw.startswith("ERROR:"):
-            return IosCommandResult(device_name, query_id, False, failure_reason=raw, duration_ms=elapsed, session_state=session)
+            return complete(IosCommandResult(device_name, query_id, False, failure_reason=raw, duration_ms=elapsed, session_state=session))
         try:
             state = json.loads(raw)
         except json.JSONDecodeError:
-            return IosCommandResult(device_name, query_id, False, failure_reason="IOS terminal returned malformed JSON.", duration_ms=elapsed, session_state=session)
+            return complete(IosCommandResult(device_name, query_id, False, failure_reason="IOS terminal returned malformed JSON.", duration_ms=elapsed, session_state=session))
         if not state.get("ok"):
-            return IosCommandResult(device_name, query_id, False, failure_reason=str(state.get("reason") or "IOS terminal unavailable."), duration_ms=elapsed, session_state=session)
+            return complete(IosCommandResult(device_name, query_id, False, failure_reason=str(state.get("reason") or "IOS terminal unavailable."), duration_ms=elapsed, session_state=session))
         baseline = str(state.get("before") or "")
         def observe() -> dict:
             read_js = "".join((
@@ -207,10 +273,10 @@ class ControlledIosExecutor:
         output = str(observe().get("output") or "")
         window = extract_terminal_command_window(baseline, output, command)
         if not convergence.configuration_channel:
-            return IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy)
+            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy))
         if not window.fresh:
-            return IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy)
-        return IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(window.output), duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy)
+            return complete(IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy))
+        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(window.output), duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy))
 
     def _prepare_session(self, name: str) -> IosSessionState:
         state = self._terminal_state(name)

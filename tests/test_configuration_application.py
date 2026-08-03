@@ -45,7 +45,7 @@ class FakeConfigurationRuntime:
                         (link.device_a_id, link.port_a), (link.device_b_id, link.port_b),
                     )
                     if endpoint_id == device.id
-                }),
+                } | ({"Vlan1"} if device.enterprise_role == "ip_phone" else set())),
             )
             for device in topology.devices
         ]

@@ -53,6 +53,10 @@ from .voice_plan import (
     ExtensionRange, VoiceActionType, VoiceCapabilityDimension, VoiceCapabilityProfile,
     VoiceCapabilityStatus, VoiceCompileResult, VoiceIntent, VoicePlan, VoicePolicy,
 )
+from .voice_runtime import (
+    CallState, CallVerificationResult, PhoneRegistrationResult, PhoneVoiceOutcome,
+    RuntimeCallObservation, RuntimePhoneRegistration, VoiceApplicationResult,
+)
 from .roles import DeviceRole
 from .segments import NetworkSegment, SegmentRequirement, SegmentRole
 from .topology import NetworkLayer, TopologyDesign, TopologyPattern
@@ -87,4 +91,7 @@ __all__ = [
     "ExtensionRange", "VoiceActionType", "VoiceCapabilityDimension",
     "VoiceCapabilityProfile", "VoiceCapabilityStatus", "VoiceCompileResult",
     "VoiceIntent", "VoicePlan", "VoicePolicy",
+    "CallState", "CallVerificationResult", "PhoneRegistrationResult",
+    "PhoneVoiceOutcome", "RuntimeCallObservation", "RuntimePhoneRegistration",
+    "VoiceApplicationResult",
 ]

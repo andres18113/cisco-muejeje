@@ -65,6 +65,7 @@ def test_runtime_batches_ios_per_device_phase_and_endpoints_in_one_safe_call():
     assert "198.18.151.2" in endpoint_payload
     assert "255.255.255.0" in endpoint_payload
     assert "198.18.151.1" in endpoint_payload
+    assert '"Vlan1"' in endpoint_payload
 
 
 def test_runtime_inventory_normalizes_port_objects_and_strings():

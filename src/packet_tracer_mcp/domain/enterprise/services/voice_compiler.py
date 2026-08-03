@@ -14,9 +14,11 @@ from ..models.configuration import (
     ConfigurationIssueSeverity,
     ConfigurationPlan,
     ConfigureAccessPort,
+    ConfigureDhcpPool,
     ConfigureRoutedInterface,
     ConfigureSubinterface,
     ConfigureSvi,
+    CreateVlan,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
@@ -30,10 +32,12 @@ from ..models.voice_plan import (
     CallExpectationResult,
     ConfigureCallControlSource,
     ConfigureDialRule,
+    ConfigureVoiceDhcpOption,
     CreateExtension,
     DialRule,
     EnableCallControl,
     ExtensionRange,
+    GeneratePhoneConfigurationFiles,
     PhoneAssignment,
     VoiceAction,
     VoiceCapabilityDimension,
@@ -128,28 +132,26 @@ class VoiceCompiler:
         access_by_phone: dict[str, list[ConfigureAccessPort]] = defaultdict(list)
         addressing_by_phone: dict[str, list[SetEndpointStaticAddress | SetEndpointDhcp]] = defaultdict(list)
         l3_by_device_segment: dict[tuple[str, str], list[object]] = defaultdict(list)
+        dhcp_by_segment: dict[str, list[ConfigureDhcpPool]] = defaultdict(list)
+        vlan_by_segment: dict[str, int] = {}
         for action in configuration.actions:
-            if isinstance(action, ConfigureAccessPort):
+            if isinstance(action, CreateVlan):
+                vlan_by_segment[action.segment_id] = action.vlan_id
+            elif isinstance(action, ConfigureAccessPort):
                 for endpoint_id in action.endpoint_ids:
                     access_by_phone[endpoint_id].append(action)
             elif isinstance(action, _ADDRESSING_ACTIONS):
                 addressing_by_phone[action.device_id].append(action)
             elif isinstance(action, _L3_ACTIONS):
                 l3_by_device_segment[(action.device_id, action.segment_id)].append(action)
+            elif isinstance(action, ConfigureDhcpPool):
+                dhcp_by_segment[action.segment_id].append(action)
 
         foundations: list[VoiceFoundationRequirement] = []
         usable: list[tuple[DevicePlan, ConfigureAccessPort, object]] = []
         for phone in phones:
             phone_id = phone.id or phone.name
             access = sorted(access_by_phone.get(phone_id, []), key=lambda item: item.id)
-            voice_access = [item for item in access if item.voice_vlan_id is not None]
-            if not voice_access:
-                issues.append(_error(
-                    ConfigurationIssueCode.FOUNDATIONAL_VOICE_VLAN_MISSING,
-                    f"Phone {phone.name} has no E5 switch-facing voice VLAN action.",
-                    phone_id,
-                ))
-                continue
             addressing = sorted(addressing_by_phone.get(phone_id, []), key=lambda item: item.id)
             if not addressing:
                 issues.append(_error(
@@ -158,8 +160,21 @@ class VoiceCompiler:
                     phone_id,
                 ))
                 continue
-            selected_access = voice_access[0]
             selected_addressing = addressing[0]
+            expected_vlan = vlan_by_segment.get(selected_addressing.segment_id)
+            voice_access = [
+                item for item in access
+                if item.voice_vlan_id is not None
+                and (expected_vlan is None or item.voice_vlan_id == expected_vlan)
+            ]
+            if not voice_access:
+                issues.append(_error(
+                    ConfigurationIssueCode.FOUNDATIONAL_VOICE_VLAN_MISSING,
+                    f"Phone {phone.name} has no E5 switch-facing voice VLAN action.",
+                    phone_id,
+                ))
+                continue
+            selected_access = voice_access[0]
             usable.append((phone, selected_access, selected_addressing))
             foundations.extend([
                 VoiceFoundationRequirement(
@@ -254,6 +269,7 @@ class VoiceCompiler:
         assignments: list[PhoneAssignment] = []
         dial_rules: list[DialRule] = []
         extension_action_by_phone: dict[str, str] = {}
+        directory_index_by_phone: dict[str, int] = {}
         binding_action_by_phone: dict[str, str] = {}
         source_action_by_control: dict[str, str] = {}
 
@@ -292,6 +308,7 @@ class VoiceCompiler:
             for directory_index, phone_id in enumerate(hosted_phone_ids, 1):
                 extension_id = _stable_id("extension", call_control_id, phone_id, extensions[phone_id])
                 extension_action_by_phone[phone_id] = extension_id
+                directory_index_by_phone[phone_id] = directory_index
                 actions.append(CreateExtension(
                     id=extension_id, phase=VoicePhase.EXTENSIONS,
                     call_control_id=call_control_id,
@@ -316,18 +333,72 @@ class VoiceCompiler:
                 depends_on=[extension_action_by_phone[phone_id]],
                 required_capability=VoiceCapabilityDimension.PHONE_EXTENSION_CONFIG,
                 phone_id=phone_id, physical_device_name=phone.name,
+                phone_model=phone.model,
                 extension=extensions[phone_id], registration_required=intent.registration_required,
+                directory_index=directory_index_by_phone[phone_id],
             ))
             assignments.append(PhoneAssignment(
                 phone_id=phone_id, physical_device_name=phone.name, model=phone.model,
                 site_id=phone.site_id, floor_id=phone.floor_id, zone_id=phone.zone_id,
                 extension=extensions[phone_id], call_control_id=call_control_id,
-                voice_vlan_id=int(access.voice_vlan_id),
+                voice_vlan_id=int(
+                    access.voice_vlan_id
+                    if access.voice_vlan_id is not None else access.data_vlan_id
+                ),
                 voice_segment_id=addressing.segment_id,
                 access_configuration_action_id=access.id,
                 addressing_configuration_action_id=addressing.id,
                 binding_action_id=binding_id,
                 metadata=dict(sorted(phone.metadata.items())),
+            ))
+
+        for call_control_id in sorted(call_control_data, key=natural_identity_key):
+            host, source, _ = call_control_data[call_control_id]
+            hosted = [
+                item for item in assignments if item.call_control_id == call_control_id
+            ]
+            option_ids: list[str] = []
+            for segment_id in sorted({item.voice_segment_id for item in hosted}):
+                pools = sorted(dhcp_by_segment.get(segment_id, []), key=lambda item: item.id)
+                pool = next(
+                    (item for item in pools if item.device_id == (host.id or host.name)),
+                    None,
+                )
+                if pool is None:
+                    continue
+                option_id = _stable_id(
+                    "voice-dhcp-option", call_control_id, pool.id, source.ipv4,
+                )
+                option_ids.append(option_id)
+                foundations.append(VoiceFoundationRequirement(
+                    id=_stable_id(
+                        "foundation-voice-dhcp", call_control_id, pool.id,
+                    ),
+                    kind="voice_dhcp_pool", source_id=pool.id,
+                    device_id=host.id or host.name, site_id=hosted[0].site_id,
+                ))
+                actions.append(ConfigureVoiceDhcpOption(
+                    id=option_id, phase=VoicePhase.PHONE_BOOTSTRAP,
+                    call_control_id=call_control_id,
+                    host_device_id=host.id or host.name,
+                    host_device_name=host.name, host_model=host.model,
+                    site_id=hosted[0].site_id, depends_on=[source_action_by_control[call_control_id]],
+                    required_capability=VoiceCapabilityDimension.VOICE_DHCP_OPTIONS,
+                    pool_name=pool.pool_name, tftp_address=source.ipv4,
+                    source_configuration_action_id=pool.id,
+                ))
+            binding_ids = sorted(
+                (item.binding_action_id for item in hosted), key=natural_identity_key,
+            )
+            actions.append(GeneratePhoneConfigurationFiles(
+                id=_stable_id("phone-files", call_control_id),
+                phase=VoicePhase.PHONE_BOOTSTRAP,
+                call_control_id=call_control_id,
+                host_device_id=host.id or host.name,
+                host_device_name=host.name, host_model=host.model,
+                site_id=hosted[0].site_id,
+                depends_on=sorted(binding_ids + option_ids, key=natural_identity_key),
+                required_capability=VoiceCapabilityDimension.TFTP_PHONE_BOOTSTRAP,
             ))
 
         for site_id in sorted(phones_by_site, key=natural_identity_key):

@@ -74,6 +74,7 @@ class VoicePhase(IntEnum):
     CALL_CONTROL = 20
     EXTENSIONS = 30
     PHONE_BINDINGS = 40
+    PHONE_BOOTSTRAP = 45
     DIAL_PLAN = 50
 
 
@@ -82,6 +83,8 @@ class VoiceActionType(str, Enum):
     CONFIGURE_CALL_CONTROL_SOURCE = "configure_call_control_source"
     CREATE_EXTENSION = "create_extension"
     BIND_PHONE_TO_EXTENSION = "bind_phone_to_extension"
+    CONFIGURE_VOICE_DHCP_OPTION = "configure_voice_dhcp_option"
+    GENERATE_PHONE_CONFIGURATION_FILES = "generate_phone_configuration_files"
     CONFIGURE_DIAL_RULE = "configure_dial_rule"
 
 
@@ -131,8 +134,25 @@ class BindPhoneToExtension(BaseVoiceAction):
     ] = VoiceActionType.BIND_PHONE_TO_EXTENSION
     phone_id: str
     physical_device_name: str
+    phone_model: str
     extension: str
+    directory_index: int
     registration_required: bool = True
+
+
+class ConfigureVoiceDhcpOption(BaseVoiceAction):
+    action_type: Literal[
+        VoiceActionType.CONFIGURE_VOICE_DHCP_OPTION
+    ] = VoiceActionType.CONFIGURE_VOICE_DHCP_OPTION
+    pool_name: str
+    tftp_address: str
+    source_configuration_action_id: str
+
+
+class GeneratePhoneConfigurationFiles(BaseVoiceAction):
+    action_type: Literal[
+        VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES
+    ] = VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES
 
 
 class ConfigureDialRule(BaseVoiceAction):
@@ -151,6 +171,8 @@ VoiceAction = Annotated[
     | ConfigureCallControlSource
     | CreateExtension
     | BindPhoneToExtension
+    | ConfigureVoiceDhcpOption
+    | GeneratePhoneConfigurationFiles
     | ConfigureDialRule,
     Field(discriminator="action_type"),
 ]
@@ -232,7 +254,8 @@ class VoiceVerificationExpectation(BaseModel):
 class VoiceFoundationRequirement(BaseModel):
     id: str
     kind: Literal[
-        "voice_vlan", "phone_addressing", "call_control_addressing", "service"
+        "voice_vlan", "phone_addressing", "call_control_addressing",
+        "voice_dhcp_pool", "service"
     ]
     source_id: str
     device_id: str = ""

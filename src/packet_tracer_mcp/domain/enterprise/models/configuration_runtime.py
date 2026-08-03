@@ -48,6 +48,13 @@ class ConfigurationFailureCode(str, Enum):
     BEHAVIORAL_VERIFICATION_FAILED = "behavioral_verification_failed"
     DIRECT_READBACK_UNOBSERVABLE = "direct_readback_unobservable"
     CLEANUP_FAILED = "cleanup_failed"
+    VOICE_COMPILE_ERROR = "voice_compile_error"
+    CALL_CONTROL_APPLICATION_FAILED = "call_control_application_failed"
+    PHONE_REGISTRATION_TIMEOUT = "phone_registration_timeout"
+    PHONE_REGISTRATION_UNOBSERVABLE = "phone_registration_unobservable"
+    CALL_SETUP_FAILED = "call_setup_failed"
+    CALL_CONNECT_TIMEOUT = "call_connect_timeout"
+    CALL_TEARDOWN_FAILED = "call_teardown_failed"
 
 
 class FieldVerificationStatus(str, Enum):
