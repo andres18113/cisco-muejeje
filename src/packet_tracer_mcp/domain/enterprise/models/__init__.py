@@ -49,6 +49,10 @@ from .service_plan import (
     TftpFileRequirement,
 )
 from .service_runtime import ServiceApplicationResult, ServiceOutcome
+from .voice_plan import (
+    ExtensionRange, VoiceActionType, VoiceCapabilityDimension, VoiceCapabilityProfile,
+    VoiceCapabilityStatus, VoiceCompileResult, VoiceIntent, VoicePlan, VoicePolicy,
+)
 from .roles import DeviceRole
 from .segments import NetworkSegment, SegmentRequirement, SegmentRole
 from .topology import NetworkLayer, TopologyDesign, TopologyPattern
@@ -80,4 +84,7 @@ __all__ = [
     "DnsRecordRequirement", "ServiceActionType", "ServiceApplicationResult",
     "ServiceCapabilityProfile", "ServiceCompileResult", "ServiceEvidenceKind",
     "ServiceOutcome", "ServicePlan", "ServiceType", "TftpFileRequirement",
+    "ExtensionRange", "VoiceActionType", "VoiceCapabilityDimension",
+    "VoiceCapabilityProfile", "VoiceCapabilityStatus", "VoiceCompileResult",
+    "VoiceIntent", "VoicePlan", "VoicePolicy",
 ]
