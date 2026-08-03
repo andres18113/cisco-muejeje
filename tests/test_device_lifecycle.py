@@ -12,7 +12,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     RuntimeDeviceObservation,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
-from src.packet_tracer_mcp.infrastructure.execution.device_lifecycle import DeviceOperationalReadinessWaiter, DeviceReadinessWaiter, StateConvergenceWaiter
+from src.packet_tracer_mcp.infrastructure.execution.device_lifecycle import DeviceOperationalReadinessWaiter, DeviceReadinessWaiter, IosBootWaiter, StateConvergenceWaiter
 from src.packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import FakePacketTracerProbeRuntime
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 
@@ -85,6 +85,12 @@ def test_operational_readiness_waits_for_selected_terminal_and_boot_completion()
     assert result.attempts == 3
     assert result.terminal_available
     assert result.terminal_kind == "ios_command_line"
+
+
+def test_ios_boot_waiter_has_a_separate_generous_default_budget():
+    waiter = IosBootWaiter(lambda: {"found": True, "booting": False, "terminal_available": True})
+
+    assert waiter._timeout == 90.0
 
 
 def test_no_configurable_probe_runs_when_configuration_channel_is_unavailable(tmp_path):

@@ -101,3 +101,10 @@ class DeviceOperationalReadinessWaiter(DeviceReadinessWaiter):
                 state = DeviceInitializationState.TIMEOUT if last.get("found") else DeviceInitializationState.NOT_FOUND
                 return self._result(state, started, attempts, last)
             self._sleep(self._interval)
+
+
+class IosBootWaiter(DeviceOperationalReadinessWaiter):
+    """Espera el boot IOS con presupuesto propio, separado de una query SHOW."""
+
+    def __init__(self, inspect: Callable[[], dict], **kwargs) -> None:
+        super().__init__(inspect, timeout_seconds=90.0, **kwargs)

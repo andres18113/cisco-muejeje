@@ -254,6 +254,14 @@ def test_bridge_runtime_selects_the_documented_terminal_by_device_category():
     assert runtime._terminal_kind_for("PC-PT") == "pc_command_prompt"
 
 
+def test_runtime_port_descriptor_marks_svis_as_logical_interfaces():
+    vlan = PacketTracerBridgeProbeRuntime._port_descriptor({"name": "Vlan1", "bandwidth_kbps": 100000})
+    ethernet = PacketTracerBridgeProbeRuntime._port_descriptor({"name": "GigabitEthernet0/0", "bandwidth_kbps": 1000000})
+
+    assert vlan.logical and not vlan.physical
+    assert ethernet.physical and not ethernet.logical
+
+
 def test_bridge_runtime_vlan_probe_requires_configure_readback_and_cleanup():
     sent: list[str] = []
 
@@ -283,8 +291,14 @@ def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
 
     responses = iter((
         '{"interface":"GigabitEthernet0/0","svi":false}',
-        '{"found":true,"configuration_channel":true}',
-        '{"found":true,"configuration_channel":true}',
+        '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
+        '{"ok":true,"before":""}',
+        '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 198.18.36.1 YES manual up up"}',
+        '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 198.18.36.1 YES manual up up"}',
+        '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
+        '{"ok":true,"before":""}',
+        '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 unassigned YES unset administratively down down"}',
+        '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 unassigned YES unset administratively down down"}',
     ))
 
     def send_and_wait(js: str, timeout: float):
@@ -298,7 +312,7 @@ def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
     assert result.status is CapabilityStatus.SUPPORTED
     assert result.configured and result.verified
     assert "ip address 198.18.36.1 255.255.255.252" in configured[0]
-    assert "getIpAddress" in sent[1]
+    assert any("getCommandLine" in item for item in sent)
     assert "no ip address" in configured[1]
 
 

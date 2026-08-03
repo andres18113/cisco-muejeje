@@ -20,7 +20,8 @@ from ...domain.enterprise.models.discovery import (
 from ...infrastructure.catalog.devices import resolve_model
 from ...shared.constants import PT_DEVICE_TYPE, PT_DEVICE_TYPE_DEFAULT
 from .configuration_runtime import PacketTracerConfigurationRuntime
-from .device_lifecycle import DeviceOperationalReadinessWaiter, DeviceReadinessWaiter, StateConvergenceWaiter
+from .device_lifecycle import DeviceReadinessWaiter, IosBootWaiter, StateConvergenceWaiter
+from .ios_terminal import ControlledIosExecutor, OperationalQueryId, parse_show_ip_interface_brief
 from ...shared.constants import (
     CAPABILITY_PROBE_IPV4_ADDRESS,
     CAPABILITY_PROBE_IPV4_MASK,
@@ -49,6 +50,7 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         self._send_and_wait = send_and_wait
         self._packet_tracer_version = packet_tracer_version
         self._configuration = PacketTracerConfigurationRuntime(send or (lambda _: False))
+        self._ios = ControlledIosExecutor(send_and_wait)
 
     def packet_tracer_version(self) -> str | None:
         return self._packet_tracer_version
@@ -195,17 +197,24 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         lines.extend((f"interface {interface}", f"ip address {CAPABILITY_PROBE_IPV4_ADDRESS} {CAPABILITY_PROBE_IPV4_MASK}", "no shutdown", "end"))
         if not self._configuration.configure_ios(temporary_name, "\n".join(lines)):
             return self._failure(definition, ProbeExecutionStatus.BRIDGE_ERROR, "Official configuration channel rejected the IPv4 payload.")
-        configured = self._wait_for_ip(temporary_name, interface, present=True)
+        show_configured = self._ios.execute(temporary_name, OperationalQueryId.SHOW_IP_INTERFACE_BRIEF)
+        configured = any(row.interface.casefold() == interface.casefold() and row.ip_address == CAPABILITY_PROBE_IPV4_ADDRESS for row in parse_show_ip_interface_brief(show_configured.output))
         cleanup = "\n".join(("enable", "configure terminal", f"interface {interface}", "no ip address", "shutdown", "end"))
         cleanup_sent = self._configuration.configure_ios(temporary_name, cleanup)
-        cleaned = cleanup_sent and self._wait_for_ip(temporary_name, interface, present=False)
+        show_cleaned = self._ios.execute(temporary_name, OperationalQueryId.SHOW_IP_INTERFACE_BRIEF) if cleanup_sent else None
+        cleaned = bool(show_cleaned and not any(row.ip_address == CAPABILITY_PROBE_IPV4_ADDRESS for row in parse_show_ip_interface_brief(show_cleaned.output)))
         if not configured or not cleaned:
-            return self._failure(definition, ProbeExecutionStatus.VERIFY_FAILED, "IPv4 configure/read-back/cleanup evidence was incomplete.", configured=configured)
+            details = ["IPv4 configure/read-back/cleanup evidence was incomplete."]
+            if not show_configured.executed:
+                details.append("configured show: " + show_configured.failure_reason)
+            if show_cleaned is not None and not show_cleaned.executed:
+                details.append("cleanup show: " + show_cleaned.failure_reason)
+            return self._failure(definition, ProbeExecutionStatus.VERIFY_FAILED, " ".join(details), configured=configured)
         return CapabilityProbeResult(
             probe_id=definition.id, model="", capability=definition.capability, status=CapabilityStatus.SUPPORTED,
             execution_status=ProbeExecutionStatus.VERIFIED, evidence_source=EvidenceSource.CONTROLLED_PROBE,
             configured=True, verified=True, verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
-            raw_summary="IPv4 interface configured through configureIosDevice, read back through port state, and cleared successfully.",
+            raw_summary="IPv4 interface configured through configureIosDevice, read back through registered IOS show, and cleared successfully.",
         )
 
     def _wait_for_readiness(self, temporary_name: str):
@@ -213,9 +222,7 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
 
     def _wait_for_operational_readiness(self, temporary_name: str, runtime_model: str):
         terminal_kind = self._terminal_kind_for(runtime_model)
-        return DeviceOperationalReadinessWaiter(
-            lambda: self._initialization_state(temporary_name, terminal_kind), timeout_seconds=20.0,
-        ).wait()
+        return IosBootWaiter(lambda: self._initialization_state(temporary_name, terminal_kind)).wait()
 
     @staticmethod
     def _terminal_kind_for(runtime_model: str) -> str:
@@ -302,10 +309,13 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         name = str(value.get("name", ""))
         match = _INTERFACE_TYPE.match(name)
         bandwidth = value.get("bandwidth_kbps")
+        logical = bool(re.match(r"^(Vlan|Loopback|Tunnel|Port-channel|BVI)", name, re.IGNORECASE))
         return RuntimePortDescriptor(
             name=name,
             interface_type=match.group(0) if match else "",
             speed=f"{bandwidth}kbps" if isinstance(bandwidth, (int, float)) else "",
+            physical=not logical,
+            logical=logical,
             evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
             poe_status=CapabilityStatus.UNKNOWN,
         )
