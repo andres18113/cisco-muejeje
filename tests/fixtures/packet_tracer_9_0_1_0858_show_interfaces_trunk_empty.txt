@@ -1,0 +1,4 @@
+show interfaces trunk
+
+
+Switch>

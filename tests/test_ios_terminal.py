@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
-    ControlledIosExecutor, OperationalQueryId, extract_terminal_command_window, normalize_terminal_output, parse_show_ip_interface_brief,
+    ControlledIosExecutor, OperationalQueryId, TrunkQueryClassification, classify_show_interfaces_trunk,
+    extract_terminal_command_window, normalize_terminal_output, parse_show_interfaces_trunk, parse_show_ip_interface_brief,
 )
 
 
@@ -46,3 +49,24 @@ def test_current_command_window_rejects_unchanged_history():
     window = extract_terminal_command_window("Router>show ip interface brief", "Router>show ip interface brief", "show ip interface brief")
 
     assert not window.fresh
+
+
+def test_packet_tracer_trunk_empty_fixture_is_a_supported_empty_query():
+    fixture = Path(__file__).parent / "fixtures" / "packet_tracer_9_0_1_0858_show_interfaces_trunk_empty.txt"
+
+    output = fixture.read_text(encoding="utf-8")
+
+    assert parse_show_interfaces_trunk(output) == []
+    assert classify_show_interfaces_trunk(output) is TrunkQueryClassification.SUPPORTED_EMPTY
+
+
+def test_packet_tracer_trunk_parser_reads_configured_rows_from_current_window_only():
+    current = "show interfaces trunk\nGi0/1 on 802.1q trunking 999\nSwitch>"
+    stale = "Gi0/2 on 802.1q trunking 1\nSwitch>"
+    window = extract_terminal_command_window(stale, stale + current, "show interfaces trunk")
+
+    rows = parse_show_interfaces_trunk(window.output)
+
+    assert window.fresh and window.strategy == "prefix_delta"
+    assert [(row.interface, row.status) for row in rows] == [("Gi0/1", "trunking")]
+    assert classify_show_interfaces_trunk(window.output) is TrunkQueryClassification.SUPPORTED_WITH_ROWS

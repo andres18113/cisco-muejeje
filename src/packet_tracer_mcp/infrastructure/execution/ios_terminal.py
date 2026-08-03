@@ -17,6 +17,15 @@ class OperationalQueryId(str, Enum):
     SHOW_INTERFACES_TRUNK = "show_interfaces_trunk"
 
 
+class TrunkQueryClassification(str, Enum):
+    SUPPORTED_WITH_ROWS = "supported_with_rows"
+    SUPPORTED_EMPTY = "supported_empty"
+    INVALID_COMMAND = "invalid_command"
+    UNIMPLEMENTED = "unimplemented"
+    QUERY_TIMEOUT = "query_timeout"
+    PARSER_UNAVAILABLE = "parser_unavailable"
+
+
 class IosSessionState(str, Enum):
     WAITING_FOR_BOOT = "waiting_for_boot"
     BOOT_COMPLETE = "boot_complete"
@@ -58,6 +67,15 @@ class InterfaceStatusRow:
 
 
 @dataclass(frozen=True)
+class TrunkStatusRow:
+    interface: str
+    mode: str
+    encapsulation: str
+    status: str
+    native_vlan: str
+
+
+@dataclass(frozen=True)
 class TerminalOutputWindow:
     output: str
     fresh: bool
@@ -79,6 +97,36 @@ def parse_show_ip_interface_brief(value: str) -> list[InterfaceStatusRow]:
             continue
         rows.append(InterfaceStatusRow(parts[0], parts[1], " ".join(parts[4:-1]), parts[-1]))
     return rows
+
+
+def parse_show_interfaces_trunk(value: str) -> list[TrunkStatusRow]:
+    """Parsea solamente filas de trunk del SHOW actual de Packet Tracer."""
+    rows: list[TrunkStatusRow] = []
+    for line in normalize_terminal_output(value).splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[0].casefold() in {"port", "switch>"}:
+            continue
+        if not re.match(r"^[A-Za-z]+[A-Za-z0-9/.-]*$", parts[0]):
+            continue
+        if parts[1].casefold() not in {"on", "desirable", "auto", "trunk"}:
+            continue
+        rows.append(TrunkStatusRow(parts[0], parts[1], parts[2], parts[3], parts[4]))
+    return rows
+
+
+def classify_show_interfaces_trunk(value: str, *, executed: bool = True) -> TrunkQueryClassification:
+    if not executed:
+        return TrunkQueryClassification.QUERY_TIMEOUT
+    output = normalize_terminal_output(value).casefold()
+    if "invalid input" in output or "% unknown command" in output:
+        return TrunkQueryClassification.INVALID_COMMAND
+    if "unimplemented" in output or "not supported" in output:
+        return TrunkQueryClassification.UNIMPLEMENTED
+    if parse_show_interfaces_trunk(value):
+        return TrunkQueryClassification.SUPPORTED_WITH_ROWS
+    if "show interfaces trunk" in output:
+        return TrunkQueryClassification.SUPPORTED_EMPTY
+    return TrunkQueryClassification.PARSER_UNAVAILABLE
 
 
 def extract_terminal_command_window(before: str, after: str, command: str) -> TerminalOutputWindow:

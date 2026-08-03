@@ -34,6 +34,7 @@ from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
 from src.packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import FakePacketTracerProbeRuntime
 from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
+from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import IosCommandResult, IosSessionState, OperationalQueryId
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
     compare_snapshots,
@@ -293,6 +294,10 @@ def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
         '{"interface":"GigabitEthernet0/0","svi":false}',
         '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
         '{"ok":true,"before":""}',
+        '{"found":true,"configuration_channel":true,"output":"Interface IP-Address"}',
+        '{"found":true,"configuration_channel":true,"output":"Interface IP-Address"}',
+        '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
+        '{"ok":true,"before":""}',
         '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 198.18.36.1 YES manual up up"}',
         '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 198.18.36.1 YES manual up up"}',
         '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
@@ -314,6 +319,30 @@ def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
     assert "ip address 198.18.36.1 255.255.255.252" in configured[0]
     assert any("getCommandLine" in item for item in sent)
     assert "no ip address" in configured[1]
+
+
+def test_ios_address_wait_retries_until_fresh_show_observes_the_new_address():
+    class DelayedIos:
+        def __init__(self):
+            self.outputs = iter((
+                "GigabitEthernet0/0 unassigned YES unset administratively down down",
+                "GigabitEthernet0/0 198.18.36.1 YES manual up up",
+            ))
+
+        def execute(self, _device, _query):
+            return IosCommandResult(
+                device_name="R1", query_id=OperationalQueryId.SHOW_IP_INTERFACE_BRIEF,
+                executed=True, output=next(self.outputs), session_state=IosSessionState.EXEC_PROMPT_READY,
+                fresh_output_observed=True, window_strategy="prefix_delta",
+            )
+
+    runtime = PacketTracerBridgeProbeRuntime(lambda _js, _timeout: '{"found": true}')
+    runtime._ios = DelayedIos()
+
+    observed = runtime._wait_for_ios_address("R1", "GigabitEthernet0/0", "198.18.36.1", present=True)
+
+    assert observed is not None
+    assert "198.18.36.1" in observed.output
 
 
 def test_scenario_readiness_does_not_require_endpoint_poe_or_routing(tmp_path):
