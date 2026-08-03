@@ -1,0 +1,8 @@
+show ip nat statistics
+Total translations: 0 (0 static, 0 dynamic, 0 extended)
+Outside Interfaces: GigabitEthernet0/1
+Inside Interfaces: GigabitEthernet0/0
+Hits: 0 Misses: 0
+Expired translations: 0
+Dynamic mappings:
+Router#

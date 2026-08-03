@@ -57,6 +57,19 @@ from .voice_runtime import (
     CallState, CallVerificationResult, PhoneRegistrationResult, PhoneVoiceOutcome,
     RuntimeCallObservation, RuntimePhoneRegistration, VoiceApplicationResult,
 )
+from .security_plan import (
+    DeviceHardeningIntent, DhcpInspectionPolicyIntent, DynamicNatPoolIntent,
+    NatMode, NatPolicyIntent,
+    PortSecurityPolicyIntent, SecurityActionType, SecurityCapabilityDimension,
+    SecurityCapabilityProfile, SecurityCapabilityStatus, SecurityCompileResult,
+    SecurityDecision, SecurityIntent, SecurityPlan, SecurityPolicyIntent, SecurityProbeKind,
+    SecurityVerificationExpectation, SecurityVerificationKind,
+    StaticNatMappingIntent,
+)
+from .security_runtime import (
+    RuntimeSecurityVerification, SecurityApplicationResult,
+    SecurityVerificationResult, SecurityVerificationStage,
+)
 from .roles import DeviceRole
 from .segments import NetworkSegment, SegmentRequirement, SegmentRole
 from .topology import NetworkLayer, TopologyDesign, TopologyPattern
@@ -94,4 +107,13 @@ __all__ = [
     "CallState", "CallVerificationResult", "PhoneRegistrationResult",
     "PhoneVoiceOutcome", "RuntimeCallObservation", "RuntimePhoneRegistration",
     "VoiceApplicationResult",
+    "DeviceHardeningIntent", "DhcpInspectionPolicyIntent", "DynamicNatPoolIntent",
+    "NatMode", "NatPolicyIntent",
+    "PortSecurityPolicyIntent", "SecurityActionType", "SecurityCapabilityDimension",
+    "SecurityCapabilityProfile", "SecurityCapabilityStatus", "SecurityCompileResult",
+    "SecurityDecision", "SecurityIntent", "SecurityPlan", "SecurityPolicyIntent", "SecurityProbeKind",
+    "SecurityVerificationExpectation", "SecurityVerificationKind",
+    "StaticNatMappingIntent",
+    "RuntimeSecurityVerification", "SecurityApplicationResult",
+    "SecurityVerificationResult", "SecurityVerificationStage",
 ]

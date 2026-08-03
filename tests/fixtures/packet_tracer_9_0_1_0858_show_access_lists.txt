@@ -1,0 +1,6 @@
+show access-lists
+Extended IP access list 101
+    10 deny icmp host 10.8.1.10 host 10.8.2.10
+    20 permit ip any any
+
+Router#

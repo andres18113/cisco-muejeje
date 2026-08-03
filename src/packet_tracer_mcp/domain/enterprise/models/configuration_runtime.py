@@ -17,6 +17,7 @@ class ActionExecutionStatus(str, Enum):
     SKIPPED = "skipped"
     UNKNOWN = "unknown"
     DEPENDENCY_BLOCKED = "dependency_blocked"
+    UNOBSERVABLE = "unobservable"
 
 
 class ConfigurationApplicationStatus(str, Enum):
@@ -55,6 +56,13 @@ class ConfigurationFailureCode(str, Enum):
     CALL_SETUP_FAILED = "call_setup_failed"
     CALL_CONNECT_TIMEOUT = "call_connect_timeout"
     CALL_TEARDOWN_FAILED = "call_teardown_failed"
+    SECURITY_COMPILE_ERROR = "security_compile_error"
+    SECURITY_BASELINE_FAILED = "security_baseline_failed"
+    SECURITY_APPLICATION_FAILED = "security_application_failed"
+    SECURITY_DIRECT_READBACK_FAILED = "security_direct_readback_failed"
+    SECURITY_ENFORCEMENT_FAILED = "security_enforcement_failed"
+    SECURITY_BEHAVIOR_UNOBSERVABLE = "security_behavior_unobservable"
+    SECURITY_CLEANUP_FAILED = "security_cleanup_failed"
 
 
 class FieldVerificationStatus(str, Enum):

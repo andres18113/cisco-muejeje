@@ -1,0 +1,10 @@
+show ip dhcp snooping
+Switch DHCP snooping is enabled
+DHCP snooping is configured on following VLANs:
+10
+DHCP snooping is operational on following VLANs:
+none
+Interface                  Trusted    Rate limit (pps)
+-----------------------    -------    ----------------
+GigabitEthernet0/1         yes        unlimited
+Switch#

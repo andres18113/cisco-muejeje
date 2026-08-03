@@ -1,0 +1,7 @@
+show ip interface GigabitEthernet0/0
+GigabitEthernet0/0 is up, line protocol is down (disabled)
+  Internet address is 10.8.1.1/24
+  Outgoing access list is not set
+  Inbound  access list is 101
+  Proxy ARP is enabled
+--More--

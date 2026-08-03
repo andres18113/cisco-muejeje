@@ -7,3 +7,4 @@ from .live_bridge import PTCommandBridge
 from .enterprise_configuration_runtime import PacketTracerEnterpriseConfigurationRuntime
 from .enterprise_service_runtime import PacketTracerEnterpriseServiceRuntime
 from .enterprise_voice_runtime import PacketTracerEnterpriseVoiceRuntime
+from .enterprise_security_runtime import PacketTracerEnterpriseSecurityRuntime

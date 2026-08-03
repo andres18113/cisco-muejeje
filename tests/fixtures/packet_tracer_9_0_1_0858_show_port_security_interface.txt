@@ -1,0 +1,10 @@
+show port-security interface FastEthernet0/1
+Port Security              : Enabled
+Port Status                : Secure-down
+Violation Mode             : Restrict
+Aging Time                 : 0 mins
+Maximum MAC Addresses      : 1
+Sticky MAC Addresses       : 0
+Security Violation Count   : 0
+
+Switch#

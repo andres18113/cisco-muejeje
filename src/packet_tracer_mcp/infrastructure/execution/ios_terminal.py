@@ -17,6 +17,13 @@ class OperationalQueryId(str, Enum):
     SHOW_IP_INTERFACE_BRIEF = "show_ip_interface_brief"
     SHOW_INTERFACES_TRUNK = "show_interfaces_trunk"
     SHOW_EPHONE = "show_ephone"
+    SHOW_ACCESS_LISTS = "show_access_lists"
+    SHOW_IP_INTERFACE = "show_ip_interface"
+    SHOW_IP_NAT_TRANSLATIONS = "show_ip_nat_translations"
+    SHOW_IP_NAT_STATISTICS = "show_ip_nat_statistics"
+    SHOW_PORT_SECURITY_INTERFACE = "show_port_security_interface"
+    SHOW_IP_DHCP_SNOOPING = "show_ip_dhcp_snooping"
+    SHOW_IP_ARP_INSPECTION = "show_ip_arp_inspection"
 
 
 class TrunkQueryClassification(str, Enum):
@@ -44,8 +51,28 @@ _COMMANDS = {
     OperationalQueryId.SHOW_IP_INTERFACE_BRIEF: "show ip interface brief",
     OperationalQueryId.SHOW_INTERFACES_TRUNK: "show interfaces trunk",
     OperationalQueryId.SHOW_EPHONE: "show ephone",
+    OperationalQueryId.SHOW_ACCESS_LISTS: "show access-lists",
+    OperationalQueryId.SHOW_IP_NAT_TRANSLATIONS: "show ip nat translations",
+    OperationalQueryId.SHOW_IP_NAT_STATISTICS: "show ip nat statistics",
+    OperationalQueryId.SHOW_IP_DHCP_SNOOPING: "show ip dhcp snooping",
+    OperationalQueryId.SHOW_IP_ARP_INSPECTION: "show ip arp inspection",
 }
-_PRIVILEGED_QUERIES = {OperationalQueryId.SHOW_EPHONE}
+_INTERFACE_COMMANDS = {
+    OperationalQueryId.SHOW_IP_INTERFACE: "show ip interface {interface}",
+    OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE:
+        "show port-security interface {interface}",
+}
+_PRIVILEGED_QUERIES = {
+    OperationalQueryId.SHOW_EPHONE,
+    OperationalQueryId.SHOW_ACCESS_LISTS,
+    OperationalQueryId.SHOW_IP_INTERFACE,
+    OperationalQueryId.SHOW_IP_NAT_TRANSLATIONS,
+    OperationalQueryId.SHOW_IP_NAT_STATISTICS,
+    OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE,
+    OperationalQueryId.SHOW_IP_DHCP_SNOOPING,
+    OperationalQueryId.SHOW_IP_ARP_INSPECTION,
+}
+_INTERFACE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9./:-]{0,79}$")
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"
 
 
@@ -60,6 +87,7 @@ class IosCommandResult:
     session_state: IosSessionState = IosSessionState.FAILED
     fresh_output_observed: bool = False
     window_strategy: str = "none"
+    truncated_by_pager: bool = False
 
 
 @dataclass(frozen=True)
@@ -207,9 +235,24 @@ class ControlledIosExecutor:
             interval_seconds=interval_seconds,
         ).wait()
 
-    def execute(self, device_name: str, query_id: OperationalQueryId) -> IosCommandResult:
+    def execute(
+        self,
+        device_name: str,
+        query_id: OperationalQueryId,
+        *,
+        interface: str = "",
+    ) -> IosCommandResult:
         started = monotonic()
-        command = _COMMANDS[query_id]
+        try:
+            command = self._registered_command(query_id, interface=interface)
+        except ValueError as exc:
+            return IosCommandResult(
+                device_name,
+                query_id,
+                False,
+                failure_reason=str(exc),
+                duration_ms=int((monotonic() - started) * 1000),
+            )
         name, command_json = json.dumps(device_name), json.dumps(command)
         session = self._prepare_session(name)
         if session is not IosSessionState.EXEC_PROMPT_READY:
@@ -272,11 +315,31 @@ class ControlledIosExecutor:
         elapsed = int((monotonic() - started) * 1000)
         output = str(observe().get("output") or "")
         window = extract_terminal_command_window(baseline, output, command)
+        truncated_by_pager = "--More--" in window.output
+        if truncated_by_pager:
+            # PT 9.0.1 rejects ``terminal length 0``. Cancel the documented
+            # TerminalLine interaction so a paginated SHOW cannot poison the
+            # next registered query. The captured first page remains evidence.
+            self._cancel_pager(name)
         if not convergence.configuration_channel:
-            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy))
+            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager))
         if not window.fresh:
             return complete(IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy))
-        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(window.output), duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy))
+        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(window.output), duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager))
+
+    @staticmethod
+    def _registered_command(query_id: OperationalQueryId, *, interface: str) -> str:
+        if query_id in _INTERFACE_COMMANDS:
+            if not _INTERFACE_NAME.fullmatch(interface):
+                raise ValueError("A registered interface query requires a valid interface name.")
+            return _INTERFACE_COMMANDS[query_id].format(interface=interface)
+        if interface:
+            raise ValueError("This registered IOS query does not accept an interface.")
+        return _COMMANDS[query_id]
+
+    def _cancel_pager(self, name: str) -> bool:
+        js = "try{var d=ipc.network().getDevice(" + name + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}else{t.enterCommand(String.fromCharCode(3));reportResult('{\"ok\":true}');}}catch(e){reportResult('ERROR:'+e);}"
+        return self._send_and_wait(js, 5.0) == '{"ok":true}'
 
     def _prepare_session(self, name: str) -> IosSessionState:
         state = self._terminal_state(name)

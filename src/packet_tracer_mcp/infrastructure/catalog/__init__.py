@@ -9,3 +9,4 @@ from .aliases import MODEL_ALIASES
 from .templates import TEMPLATES, get_template, list_templates, TemplateSpec
 from .modules import ALL_MODULES, ModuleSpec, resolve_module, get_serial_module, SERIAL_MODULES
 from .service_capabilities import packet_tracer_service_capabilities
+from .security_capabilities import packet_tracer_security_capabilities

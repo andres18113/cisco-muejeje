@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
@@ -136,3 +137,57 @@ def test_privileged_ephone_query_enters_enable_and_restores_user_exec():
     assert any('enterCommand("enable")' in item for item in sent)
     assert any('enterCommand("show ephone")' in item for item in sent)
     assert any('enterCommand("disable")' in item for item in sent)
+
+
+def test_typed_interface_query_rejects_cli_injection_before_bridge_call():
+    sent = []
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or None,
+    ).execute(
+        "R1",
+        OperationalQueryId.SHOW_IP_INTERFACE,
+        interface="GigabitEthernet0/0\nconfigure terminal",
+    )
+
+    assert not result.executed
+    assert "valid interface name" in result.failure_reason
+    assert sent == []
+
+
+def test_paginated_registered_query_captures_first_page_and_cancels_pager():
+    sent = []
+    before = "Router#"
+    output = (
+        before
+        + "show ip interface GigabitEthernet0/0\n"
+        + "GigabitEthernet0/0 is up, line protocol is down\n"
+        + "  Inbound  access list is 101\n--More--"
+    )
+    responses = iter((
+        json.dumps({"found": True, "booting": False, "terminal": True,
+                    "prompt": "Router#", "output": before}),
+        json.dumps({"found": True, "booting": False, "terminal": True,
+                    "prompt": "Router#", "output": before}),
+        json.dumps({"ok": True, "before": before}),
+        json.dumps({"found": True, "configuration_channel": True,
+                    "output": output}),
+        json.dumps({"found": True, "configuration_channel": True,
+                    "output": output}),
+        '{"ok":true}',
+    ))
+
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or next(responses),
+    ).execute(
+        "R1", OperationalQueryId.SHOW_IP_INTERFACE,
+        interface="GigabitEthernet0/0",
+    )
+
+    assert result.executed and result.truncated_by_pager
+    assert result.window_strategy == "prefix_delta"
+    assert any("String.fromCharCode(3)" in item for item in sent)
+    assert any(
+        'enterCommand("show ip interface GigabitEthernet0/0")' in item
+        for item in sent
+    )
