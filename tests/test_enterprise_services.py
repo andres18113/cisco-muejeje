@@ -12,6 +12,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationIssueCode,
     ConfigurationPhase,
     ConfigurationPlan,
+    ConfigureRoutedInterface,
     SetEndpointStaticAddress,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import (
@@ -104,7 +105,7 @@ def _fixture(services: list[ServiceRequirement] | None = None):
         semantic_hash="e5-semantic-hash",
         actions=[
             _foundation_action("srv-1", "HQ-SERVER-01", "198.18.160.10"),
-            _foundation_action("pc-1", "HQ-PC-01", "198.18.160.20", "hq-data"),
+            _foundation_action("pc-1", "HQ-PC-01", "198.18.160.20"),
         ],
     )
     capabilities = {
@@ -244,6 +245,59 @@ def test_missing_or_mismatched_foundational_configuration_never_invokes_e5():
     }
 
 
+def test_cross_segment_service_requires_and_binds_e5_l3_foundation():
+    enterprise, topology, configuration, capabilities = _fixture()
+    client = next(action for action in configuration.actions if action.device_id == "pc-1")
+    client.segment_id = "hq-data"
+    client.ipv4 = "198.18.161.20"
+    client.gateway = "198.18.161.1"
+    topology.devices.append(DevicePlan(
+        id="r1", name="HQ-R1", model="2911", category="router",
+        enterprise_role="wan_router", site_id="hq",
+    ))
+    configuration.actions.extend([
+        ConfigureRoutedInterface(
+            id="cfg/l3/r1/data", phase=ConfigurationPhase.L3_INTERFACES,
+            device_id="r1", device_name="HQ-R1", site_id="hq",
+            interface="GigabitEthernet0/0", ipv4="198.18.161.1", prefix=24,
+            netmask="255.255.255.0", segment_id="hq-data",
+            required_capability="layer3",
+        ),
+        ConfigureRoutedInterface(
+            id="cfg/l3/r1/servers", phase=ConfigurationPhase.L3_INTERFACES,
+            device_id="r1", device_name="HQ-R1", site_id="hq",
+            interface="GigabitEthernet0/1", ipv4="198.18.160.1", prefix=24,
+            netmask="255.255.255.0", segment_id="hq-servers",
+            required_capability="layer3",
+        ),
+    ])
+
+    result = compile_enterprise_services(
+        enterprise, topology, configuration, capabilities=capabilities,
+    )
+    foundation_ids = {
+        item.configuration_action_id for item in result.plan.foundational_requirements
+    }
+
+    assert result.is_valid
+    assert {"cfg/l3/r1/data", "cfg/l3/r1/servers"} <= foundation_ids
+
+
+def test_cross_segment_service_without_e5_l3_foundation_is_rejected():
+    enterprise, topology, configuration, capabilities = _fixture()
+    client = next(action for action in configuration.actions if action.device_id == "pc-1")
+    client.segment_id = "hq-data"
+
+    result = compile_enterprise_services(
+        enterprise, topology, configuration, capabilities=capabilities,
+    )
+
+    assert not result.is_valid
+    assert ConfigurationIssueCode.FOUNDATIONAL_CONFIGURATION_MISSING in {
+        item.code for item in result.issues
+    }
+
+
 def test_stale_e5_topology_binding_is_rejected():
     enterprise, topology, configuration, capabilities = _fixture()
     configuration.source_topology_hash = "other-topology"
@@ -295,6 +349,63 @@ def test_tftp_rejects_paths_and_hashes_safe_content_without_host_file_access():
     assert not hasattr(publish, "source_path")
 
 
+def test_reference_enterprise_services_compile_dns_http_ntp_and_tftp_together():
+    services = [
+        *_fixture()[0].sites[0].services,
+        ServiceRequirement(
+            name="central-ntp", service_type=ServiceType.NTP,
+            host_device_id="srv-1", client_device_ids=["pc-1"],
+        ),
+        ServiceRequirement(
+            name="config-backup", service_type=ServiceType.TFTP,
+            host_device_id="srv-1", client_device_ids=["pc-1"],
+            tftp_files=[TftpFileRequirement(
+                filename="e6-reference.txt", content="MCP_E6_TFTP_REFERENCE",
+            )],
+        ),
+    ]
+    enterprise, topology, configuration, capabilities = _fixture(services)
+    capabilities.update({
+        "Server-PT:ntp": ServiceCapabilityProfile(
+            service_type=ServiceType.NTP,
+            application_support=CapabilityStatus.SUPPORTED,
+            direct_readback_support=CapabilityStatus.SUPPORTED,
+            behavioral_verification_support=CapabilityStatus.UNKNOWN,
+        ),
+        "Server-PT:tftp": ServiceCapabilityProfile(
+            service_type=ServiceType.TFTP,
+            application_support=CapabilityStatus.SUPPORTED,
+            action_application_support={
+                ServiceActionType.PUBLISH_TFTP_FILE.value: CapabilityStatus.UNKNOWN,
+            },
+            direct_readback_support=CapabilityStatus.SUPPORTED,
+            behavioral_verification_support=CapabilityStatus.UNKNOWN,
+        ),
+    })
+
+    result = compile_enterprise_services(
+        enterprise, topology, configuration, capabilities=capabilities,
+    )
+
+    assert result.is_valid
+    assert {item.service_type for item in result.plan.services} == {
+        ServiceType.DNS, ServiceType.HTTP, ServiceType.NTP, ServiceType.TFTP,
+    }
+    assert result.summary.actions_by_type == {
+        "add_dns_record": 1,
+        "configure_ntp_service": 1,
+        "enable_dns_service": 1,
+        "enable_http_service": 1,
+        "enable_tftp_service": 1,
+        "publish_tftp_file": 1,
+        "set_http_content": 1,
+    }
+    assert ConfigurationIssueCode.CAPABILITY_UNVERIFIED in {
+        item.code for item in result.issues
+    }
+    assert len(result.semantic_hash) == 64
+
+
 def test_service_dependency_cycle_is_reported_without_a_plan():
     services = [
         ServiceRequirement(
@@ -325,6 +436,29 @@ def test_unknown_application_capability_is_warning_not_fabricated_support():
 
 def test_compilation_stays_interactive_for_137_devices():
     enterprise, topology, configuration, capabilities = _fixture()
+    enterprise.sites[0].services.extend([
+        ServiceRequirement(
+            name="central-ntp", service_type=ServiceType.NTP,
+            host_device_id="srv-1", client_device_ids=["pc-1"],
+        ),
+        ServiceRequirement(
+            name="config-backup", service_type=ServiceType.TFTP,
+            host_device_id="srv-1", client_device_ids=["pc-1"],
+            tftp_files=[TftpFileRequirement(
+                filename="e6-large.txt", content="MCP_E6_TFTP_LARGE",
+            )],
+        ),
+    ])
+    capabilities.update({
+        "Server-PT:ntp": ServiceCapabilityProfile(
+            service_type=ServiceType.NTP,
+            application_support=CapabilityStatus.SUPPORTED,
+        ),
+        "Server-PT:tftp": ServiceCapabilityProfile(
+            service_type=ServiceType.TFTP,
+            application_support=CapabilityStatus.SUPPORTED,
+        ),
+    })
     for index in range(2, 137):
         device_id = f"pc-{index}"
         name = f"HQ-PC-{index:03d}"
@@ -333,7 +467,7 @@ def test_compilation_stays_interactive_for_137_devices():
             enterprise_role="user_pc", site_id="hq",
         ))
         configuration.actions.append(_foundation_action(
-            device_id, name, f"198.19.{index // 250}.{index % 250 + 1}", "hq-data",
+            device_id, name, f"198.19.{index // 250}.{index % 250 + 1}", "hq-servers",
         ))
     enterprise.sites[0].services[0].client_device_ids = [
         device.id for device in topology.devices if device.id.startswith("pc-")
@@ -345,5 +479,5 @@ def test_compilation_stays_interactive_for_137_devices():
     elapsed = perf_counter() - started
 
     assert result.is_valid
-    assert result.summary.service_count == 2
+    assert result.summary.service_count == 4
     assert elapsed < 2.0

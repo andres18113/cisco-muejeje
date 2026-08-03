@@ -13,6 +13,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 )
 from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceCapabilityProfile,
+    ServiceActionType,
     ServiceEvidenceKind,
     ServiceType,
 )
@@ -130,6 +131,66 @@ def test_unknown_application_capability_is_skipped_not_attempted():
 
     assert result.status is ConfigurationApplicationStatus.PARTIAL
     assert not dns_ids.intersection(attempted)
+
+
+def test_unsupported_application_capability_is_skipped_with_distinct_reason():
+    plan, capabilities = _compiled()
+    runtime = FakeServiceRuntime()
+    capabilities["Server-PT:dns"].application_support = CapabilityStatus.UNSUPPORTED
+
+    result = ServiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses=_foundation(plan),
+        capabilities=capabilities,
+    )
+    dns_results = [
+        item for item in result.action_results
+        if next(action for action in plan.actions if action.id == item.action_id).service_type
+        is ServiceType.DNS
+    ]
+
+    assert dns_results
+    assert all(item.status is ActionExecutionStatus.SKIPPED for item in dns_results)
+    assert all(
+        item.failure_code is ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
+        for item in dns_results
+    )
+
+
+def test_action_capability_override_gates_only_the_unverified_action():
+    plan, capabilities = _compiled()
+    runtime = FakeServiceRuntime()
+    http = capabilities["Server-PT:http"]
+    http.application_support = CapabilityStatus.SUPPORTED
+    http.action_application_support = {
+        ServiceActionType.SET_HTTP_CONTENT.value: CapabilityStatus.UNKNOWN,
+    }
+
+    result = ServiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses=_foundation(plan),
+        capabilities=capabilities,
+    )
+    http_actions = [
+        item for item in result.action_results
+        if next(action for action in plan.actions if action.id == item.action_id).service_type
+        is ServiceType.HTTP
+    ]
+    by_type = {
+        next(action for action in plan.actions if action.id == item.action_id).action_type: item
+        for item in http_actions
+    }
+
+    assert by_type[ServiceActionType.ENABLE_HTTP].status is ActionExecutionStatus.APPLIED
+    assert by_type[ServiceActionType.SET_HTTP_CONTENT].status is ActionExecutionStatus.SKIPPED
+    assert (
+        by_type[ServiceActionType.SET_HTTP_CONTENT].failure_code
+        is ConfigurationFailureCode.CAPABILITY_UNKNOWN
+    )
 
 
 def test_behavioral_success_can_prove_usability_when_direct_getter_is_unobservable():

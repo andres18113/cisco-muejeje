@@ -134,7 +134,10 @@ class ServiceApplicator:
         for action in plan.actions:
             profile = capabilities.get(f"{action.host_model}:{action.service_type.value}")
             support = (
-                profile.application_support if profile else CapabilityStatus.UNKNOWN
+                profile.action_application_support.get(
+                    action.action_type.value, profile.application_support,
+                )
+                if profile else CapabilityStatus.UNKNOWN
             )
             if support is CapabilityStatus.SUPPORTED:
                 continue
@@ -147,7 +150,10 @@ class ServiceApplicator:
                 action_id=action.id,
                 status=ActionExecutionStatus.SKIPPED,
                 failure_code=failure,
-                message=f"{action.host_model}:{action.service_type.value} is {support.value}.",
+                message=(
+                    f"{action.host_model}:{action.service_type.value}:"
+                    f"{action.action_type.value} is {support.value}."
+                ),
             )
 
         pending = [item for item in plan.actions if item.id not in results]

@@ -98,3 +98,31 @@ Packet Tracer limitations are per service. DNS or HTTP success is not revoked
 by an NTP, TFTP, or HTTPS limitation. Telephony, ACL/NAT, STP tuning,
 EtherChannel, first-hop redundancy, dynamic routing, IPv6 routing,
 redistribution, and QoS remain outside E6.
+
+## Packet Tracer 9.0.1.0858 baseline
+
+The bundled IpcAPI reference and controlled live probes establish this
+conservative baseline for `Server-PT`:
+
+| Service | Apply | Direct read-back | Behavioral verification |
+| --- | --- | --- | --- |
+| DNS A record | supported | supported | supported by fresh PC ping plus negative control |
+| HTTP content | supported | supported | supported by a fresh background HTTP client |
+| HTTPS enable | supported | supported | unknown |
+| NTP enable | supported | supported | synchronization unobservable |
+| TFTP enable | supported | supported | transfer unobservable |
+| TFTP file publication | unknown | unknown | unobservable |
+
+DNS uses `addARecordToNameServerDb` and `getARecordWithAddress`. The older
+`addIpAddress` path updates a legacy table but did not produce a wire-operational
+record in the controlled runtime, so it is not used as DNS acceptance evidence.
+HTTP clients are created per expectation and released after the fresh response
+window is evaluated, preventing prior content from satisfying a later check.
+
+Packet progression is paused while Packet Tracer is in Simulation mode. A
+bounded behavioral probe may temporarily select Realtime mode, but it records
+and restores the previous mode during cleanup. Controlled same-subnet and
+routed PC-to-Server scenarios both verified DNS resolution, HTTP by address,
+and composed HTTP by hostname. Cross-segment service compilation therefore
+requires the already compiled E5 L3 actions for both endpoint segments; E6
+references those actions but never recompiles or reapplies them.

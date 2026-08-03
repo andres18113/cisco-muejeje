@@ -70,6 +70,7 @@ class ServiceCapabilityProfile(BaseModel):
     service_type: ServiceType
     compile_support: CapabilityStatus = CapabilityStatus.SUPPORTED
     application_support: CapabilityStatus = CapabilityStatus.UNKNOWN
+    action_application_support: dict[str, CapabilityStatus] = Field(default_factory=dict)
     direct_readback_support: CapabilityStatus = CapabilityStatus.UNKNOWN
     behavioral_verification_support: CapabilityStatus = CapabilityStatus.UNKNOWN
     source: str = ""

@@ -15,6 +15,9 @@ from ..models.configuration import (
     ConfigurationIssueCode,
     ConfigurationIssueSeverity,
     ConfigurationPlan,
+    ConfigureRoutedInterface,
+    ConfigureSubinterface,
+    ConfigureSvi,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
@@ -136,6 +139,10 @@ class ServiceCompiler:
             for item in configuration.actions
             if isinstance(item, (SetEndpointStaticAddress, SetEndpointDhcp))
         }
+        l3_foundations: dict[str, list[object]] = defaultdict(list)
+        for item in configuration.actions:
+            if isinstance(item, (ConfigureRoutedInterface, ConfigureSvi, ConfigureSubinterface)):
+                l3_foundations[item.segment_id].append(item)
         requirements = self._requirements(enterprise)
         services: list[ServiceDefinition] = []
         actions: list[ServiceAction] = []
@@ -203,6 +210,33 @@ class ServiceCompiler:
                 self._add_foundation(
                     foundation_requirements, devices[client_id], foundations[client_id],
                 )
+                client_foundation = foundations[client_id]
+                if client_foundation.segment_id != host_foundation.segment_id:
+                    for segment_id in sorted({
+                        client_foundation.segment_id, host_foundation.segment_id,
+                    }):
+                        candidates = sorted(
+                            l3_foundations.get(segment_id, []), key=lambda item: item.id,
+                        )
+                        if not candidates:
+                            issues.append(_error(
+                                ConfigurationIssueCode.FOUNDATIONAL_CONFIGURATION_MISSING,
+                                f"Cross-segment service path lacks an E5 L3 action for {segment_id!r}.",
+                                f"{service_id}:{segment_id}",
+                            ))
+                            continue
+                        gateway_action = candidates[0]
+                        gateway_device = devices.get(gateway_action.device_id)
+                        if gateway_device is None:
+                            issues.append(_error(
+                                ConfigurationIssueCode.FOUNDATIONAL_CONFIGURATION_MISSING,
+                                f"E5 L3 action {gateway_action.id} has no E4 device.",
+                                gateway_action.id,
+                            ))
+                            continue
+                        self._add_foundation(
+                            foundation_requirements, gateway_device, gateway_action,
+                        )
 
             profile = capabilities.get(f"{host.model}:{service_type.value}")
             if profile and profile.compile_support is CapabilityStatus.UNSUPPORTED:
@@ -227,6 +261,23 @@ class ServiceCompiler:
             service_actions = self._actions(
                 service_id, requirement, service_type, host, host_foundation, devices, issues,
             )
+            if profile is not None:
+                for action in service_actions:
+                    action_support = profile.action_application_support.get(
+                        action.action_type.value, profile.application_support,
+                    )
+                    if action_support is CapabilityStatus.UNKNOWN:
+                        issues.append(_warning(
+                            ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                            f"Runtime application support for {action.action_type.value} is unknown.",
+                            action.id,
+                        ))
+                    elif action_support is CapabilityStatus.UNSUPPORTED:
+                        issues.append(_warning(
+                            ConfigurationIssueCode.CAPABILITY_UNSUPPORTED,
+                            f"Runtime application support for {action.action_type.value} is unsupported.",
+                            action.id,
+                        ))
             actions.extend(service_actions)
             action_ids_by_service[service_id] = [item.id for item in service_actions]
             source_requirements[service_id] = requirement
@@ -298,7 +349,8 @@ class ServiceCompiler:
             services=sorted(services, key=lambda item: item.id),
             actions=actions,
             foundational_requirements=sorted(
-                foundation_requirements.values(), key=lambda item: item.device_id,
+                foundation_requirements.values(),
+                key=lambda item: (item.device_id, item.configuration_action_id),
             ),
             verification_expectations=expectations,
         )
@@ -389,7 +441,7 @@ class ServiceCompiler:
     @staticmethod
     def _add_foundation(target, device: DevicePlan, action) -> None:
         device_id = device.id or device.name
-        target[device_id] = FoundationalServiceRequirement(
+        target[action.id] = FoundationalServiceRequirement(
             id=_stable_id("foundation", device_id, action.id),
             device_id=device_id,
             device_name=device.name,
@@ -545,6 +597,20 @@ class ServiceCompiler:
                 host_device_name=service.host_device_name,
                 expected={"enabled": True, "service_type": service.service_type.value},
             )
+            if service.service_type is ServiceType.DNS:
+                direct.expected["records_json"] = json.dumps(
+                    {
+                        item.hostname: item.address
+                        for item in service_actions if isinstance(item, AddDnsRecord)
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            elif service.service_type in {ServiceType.HTTP, ServiceType.HTTPS}:
+                direct.expected["marker"] = next(
+                    (item.content for item in service_actions if isinstance(item, SetHttpContent)),
+                    "",
+                )
             expectations.append(direct)
             requirement = requirements[service.id]
             if not requirement.verification_required:
