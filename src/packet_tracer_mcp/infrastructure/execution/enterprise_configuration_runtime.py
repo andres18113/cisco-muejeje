@@ -325,6 +325,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 if self._same_interface(item.interface, expected_interface)
             ), None) if show.executed else None
 
+        def status_matches(row) -> bool:
+            if row is None:
+                return False
+            status = row.status.casefold()
+            protocol = row.protocol.casefold()
+            if expected_up:
+                return status == "up" and protocol == "up"
+            return status == "administratively down" and protocol == "down"
+
         show, convergence, converged = self._converged_ios_query(
             expectation,
             OperationalQueryId.SHOW_IP_INTERFACE_BRIEF,
@@ -332,11 +341,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             lambda value: bool(
                 (row := find_row(value))
                 and row.ip_address == expected_ip
-                and (
-                    not expected_up
-                    or row.status.casefold() == "up"
-                    and row.protocol.casefold() == "up"
-                )
+                and status_matches(row)
             ),
             timeout_seconds=self._l3_timeout,
         )
@@ -348,12 +353,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             converged and row and row.ip_address == expected_ip
             and show.fresh_output_observed
         )
-        status_verified = bool(
-            row and (
-                not expected_up
-                or row.status.casefold() == "up" and row.protocol.casefold() == "up"
-            )
-        )
+        status_verified = status_matches(row)
         verified = address_verified and status_verified
         return RuntimeVerification(
             expectation_id=expectation.id,

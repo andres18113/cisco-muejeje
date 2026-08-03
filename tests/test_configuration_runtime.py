@@ -171,6 +171,71 @@ def test_l3_verifier_does_not_promote_an_address_on_a_down_link():
     assert result.fields["protocol"] is FieldVerificationStatus.FAILED
 
 
+def test_l3_verifier_requires_administratively_down_state_when_requested():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_ip_interface_brief"
+    )
+    expectation.expected["administrative_up"] = False
+    current = (
+        '{"found":true,"configuration_channel":true,'
+        '"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\n'
+        'Gig0/0.10 198.18.150.1 YES manual up up\\nR1#"}'
+    )
+    responses = iter((
+        '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
+        '{"ok":true,"before":"R1#"}',
+        current,
+        current,
+    ))
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: next(responses),
+        l3_timeout_seconds=0,
+        convergence_interval_seconds=0,
+    )
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.fields["status"] is FieldVerificationStatus.FAILED
+    assert result.fields["protocol"] is FieldVerificationStatus.FAILED
+
+
+def test_l3_verifier_accepts_fresh_administratively_down_state_when_requested():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_ip_interface_brief"
+    )
+    expectation.expected["administrative_up"] = False
+    current = (
+        '{"found":true,"configuration_channel":true,'
+        '"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\n'
+        'Gig0/0.10 198.18.150.1 YES manual administratively down down\\nR1#"}'
+    )
+    responses = iter((
+        '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
+        '{"ok":true,"before":"R1#"}',
+        current,
+        current,
+    ))
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: next(responses),
+        convergence_interval_seconds=0,
+    )
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.fields["status"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["protocol"] is FieldVerificationStatus.VERIFIED
+
+
 def test_trunk_verifier_uses_existing_typed_parser_and_current_query_only():
     _, plan = _plan()
     expectation = next(
