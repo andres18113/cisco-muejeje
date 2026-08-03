@@ -42,7 +42,13 @@ from .hardware import (
     PortDescriptor, ResiliencyLevel, SiteHardwarePlan,
 )
 from .intent import EnterpriseIntent, SiteIntent, SiteType
-from .requirements import EndpointRequirement
+from .requirements import EndpointRequirement, ServiceRequirement
+from .service_plan import (
+    DnsRecordRequirement, ServiceActionType, ServiceCapabilityProfile,
+    ServiceCompileResult, ServiceEvidenceKind, ServicePlan, ServiceType,
+    TftpFileRequirement,
+)
+from .service_runtime import ServiceApplicationResult, ServiceOutcome
 from .roles import DeviceRole
 from .segments import NetworkSegment, SegmentRequirement, SegmentRole
 from .topology import NetworkLayer, TopologyDesign, TopologyPattern
@@ -59,7 +65,7 @@ __all__ = [
     "ConfigurationRuntimeContext", "FieldVerificationStatus", "RuntimeActionMutation", "RuntimeConfigurationTarget",
     "RuntimeVerification", "VerificationResult",
     "DeviceCandidateStatus", "DeviceCapabilities", "DeviceIdentity", "DeviceRequirement",
-    "DeviceRole", "DeviceSelectionResult", "EndpointRequirement",
+    "DeviceRole", "DeviceSelectionResult", "EndpointRequirement", "ServiceRequirement",
     "DiscoverySource", "E4ReadinessReport", "E4ReadinessState", "EndpointGroup", "EnterpriseIntent",
     "EnterprisePlan", "EvidenceSource", "FloorIntent",
     "EnterpriseCompileResult", "EnterpriseCompileSummary",
@@ -71,4 +77,7 @@ __all__ = [
     "ResiliencyLevel", "RuntimeDeviceDescriptor", "RuntimePortDescriptor", "SegmentRequirement", "SegmentRole",
     "SiteHardwarePlan", "SiteIntent", "SitePlan", "SiteType", "TopologyDesign",
     "SnapshotDiff", "TopologyPattern", "ZoneIntent",
+    "DnsRecordRequirement", "ServiceActionType", "ServiceApplicationResult",
+    "ServiceCapabilityProfile", "ServiceCompileResult", "ServiceEvidenceKind",
+    "ServiceOutcome", "ServicePlan", "ServiceType", "TftpFileRequirement",
 ]

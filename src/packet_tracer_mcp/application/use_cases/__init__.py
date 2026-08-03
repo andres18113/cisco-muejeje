@@ -11,3 +11,5 @@ from .full_build import full_build
 from .compile_enterprise import compile_enterprise_topology
 from .compile_configuration import compile_enterprise_configuration
 from .apply_configuration import ConfigurationApplicator, ConfigurationRuntime
+from .compile_services import compile_enterprise_services
+from .apply_services import ServiceApplicator, ServiceRuntime

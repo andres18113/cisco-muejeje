@@ -7,6 +7,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 from .roles import DeviceRole
+from .service_plan import DnsRecordRequirement, ServiceType, TftpFileRequirement
 
 
 class AddressingPreference(str, Enum):
@@ -33,4 +34,16 @@ class ServiceRequirement(BaseModel):
 
     name: str
     required: bool = True
+    service_type: ServiceType | None = None
+    host_device_id: str = ""
+    segment_id: str = ""
+    address: str = ""
+    client_device_ids: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
+    verification_required: bool = True
+    dns_records: list[DnsRecordRequirement] = Field(default_factory=list)
+    hostname: str = ""
+    http_content: str = ""
+    ntp_authoritative: bool = True
+    tftp_files: list[TftpFileRequirement] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)

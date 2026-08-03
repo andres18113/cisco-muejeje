@@ -41,6 +41,13 @@ class ConfigurationFailureCode(str, Enum):
     VERIFICATION_FAILED = "verification_failed"
     OBSERVABILITY_LIMITATION = "observability_limitation"
     DEPENDENCY_BLOCKED = "dependency_blocked"
+    SOURCE_CONFIGURATION_MISMATCH = "source_configuration_mismatch"
+    FOUNDATIONAL_CONFIGURATION_MISSING = "foundational_configuration_missing"
+    SERVICE_COMPILE_ERROR = "service_compile_error"
+    SERVICE_HOST_MISSING = "service_host_missing"
+    BEHAVIORAL_VERIFICATION_FAILED = "behavioral_verification_failed"
+    DIRECT_READBACK_UNOBSERVABLE = "direct_readback_unobservable"
+    CLEANUP_FAILED = "cleanup_failed"
 
 
 class FieldVerificationStatus(str, Enum):

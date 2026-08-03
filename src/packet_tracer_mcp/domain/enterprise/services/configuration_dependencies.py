@@ -1,8 +1,9 @@
-"""Orden topológico determinista para acciones E5."""
+"""Orden topológico determinista compartido por acciones E5 y E6."""
 
 from __future__ import annotations
 
 import heapq
+from typing import Protocol, TypeVar
 
 from ..models.configuration import ConfigurationAction
 
@@ -13,21 +14,32 @@ class ConfigurationDependencyError(ValueError):
         self.action_ids = action_ids
 
 
-def _stable_key(action: ConfigurationAction) -> tuple[int, str, str, str]:
-    return (int(action.phase), action.device_id, action.action_type.value, action.id)
+class DependencyAction(Protocol):
+    id: str
+    phase: int
+    depends_on: list[str]
+
+    @property
+    def action_type(self): ...
 
 
-def order_configuration_actions(
-    actions: list[ConfigurationAction],
-) -> list[ConfigurationAction]:
-    """Kahn + heap: respeta el DAG y desempata siempre por semántica estable."""
+ActionT = TypeVar("ActionT", bound=DependencyAction)
+
+
+def _stable_key(action: DependencyAction) -> tuple[int, str, str, str]:
+    target_id = getattr(action, "device_id", getattr(action, "host_device_id", ""))
+    return (int(action.phase), target_id, action.action_type.value, action.id)
+
+
+def order_dependency_actions(actions: list[ActionT]) -> list[ActionT]:
+    """Kahn + heap: respeta el DAG y desempata por semántica estable."""
     by_id = {action.id: action for action in actions}
     if len(by_id) != len(actions):
         duplicates = sorted(
             action_id for action_id in by_id
             if sum(action.id == action_id for action in actions) > 1
         )
-        raise ConfigurationDependencyError("Duplicate configuration action IDs.", duplicates)
+        raise ConfigurationDependencyError("Duplicate action IDs.", duplicates)
 
     missing = sorted({
         dependency
@@ -36,7 +48,7 @@ def order_configuration_actions(
         if dependency not in by_id
     })
     if missing:
-        raise ConfigurationDependencyError("Missing configuration dependencies.", missing)
+        raise ConfigurationDependencyError("Missing action dependencies.", missing)
 
     indegree = {action.id: len(set(action.depends_on)) for action in actions}
     dependents: dict[str, list[str]] = {action.id: [] for action in actions}
@@ -49,7 +61,7 @@ def order_configuration_actions(
         if indegree[action.id] == 0:
             heapq.heappush(ready, (_stable_key(action), action.id))
 
-    ordered: list[ConfigurationAction] = []
+    ordered: list[ActionT] = []
     while ready:
         _, action_id = heapq.heappop(ready)
         action = by_id[action_id]
@@ -62,5 +74,12 @@ def order_configuration_actions(
 
     if len(ordered) != len(actions):
         cycle = sorted(action_id for action_id, degree in indegree.items() if degree > 0)
-        raise ConfigurationDependencyError("Configuration dependency cycle detected.", cycle)
+        raise ConfigurationDependencyError("Action dependency cycle detected.", cycle)
     return ordered
+
+
+def order_configuration_actions(
+    actions: list[ConfigurationAction],
+) -> list[ConfigurationAction]:
+    """Nombre público histórico de E5 sobre el sorter compartido."""
+    return order_dependency_actions(actions)
