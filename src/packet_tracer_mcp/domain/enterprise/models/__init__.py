@@ -20,6 +20,12 @@ from .configuration import (
     ConfigurationActionType, ConfigurationCompileResult, ConfigurationIssue,
     ConfigurationIssueCode, ConfigurationPhase, ConfigurationPlan, ConfigurationPolicy,
 )
+from .configuration_runtime import (
+    ActionApplicationResult, ActionExecutionStatus, ConfigurationApplicationResult,
+    ConfigurationApplicationStatus, ConfigurationFailureCode, ConvergenceReport,
+    ConfigurationRuntimeContext, FieldVerificationStatus, RuntimeActionMutation, RuntimeConfigurationTarget,
+    RuntimeVerification, VerificationResult,
+)
 from .enterprise_plan import EnterprisePlan, SitePlan
 from .hierarchy import BuildingIntent, EndpointGroup, FloorIntent, ZoneIntent
 from .discovery import (
@@ -48,6 +54,10 @@ __all__ = [
     "CompilationIssue", "CompilationIssueCode", "CompilationIssueSeverity", "ConcreteLinkRole",
     "ConfigurationActionType", "ConfigurationCompileResult", "ConfigurationIssue",
     "ConfigurationIssueCode", "ConfigurationPhase", "ConfigurationPlan", "ConfigurationPolicy",
+    "ActionApplicationResult", "ActionExecutionStatus", "ConfigurationApplicationResult",
+    "ConfigurationApplicationStatus", "ConfigurationFailureCode", "ConvergenceReport",
+    "ConfigurationRuntimeContext", "FieldVerificationStatus", "RuntimeActionMutation", "RuntimeConfigurationTarget",
+    "RuntimeVerification", "VerificationResult",
     "DeviceCandidateStatus", "DeviceCapabilities", "DeviceIdentity", "DeviceRequirement",
     "DeviceRole", "DeviceSelectionResult", "EndpointRequirement",
     "DiscoverySource", "E4ReadinessReport", "E4ReadinessState", "EndpointGroup", "EnterpriseIntent",

@@ -202,6 +202,11 @@ class SetEndpointDhcp(BaseConfigurationAction):
     ] = ConfigurationActionType.SET_ENDPOINT_DHCP
     interface: str
     segment_id: str
+    network: str
+    prefix: int
+    netmask: str
+    gateway: str
+    dns_server: str | None = None
 
 
 ConfigurationAction = Annotated[

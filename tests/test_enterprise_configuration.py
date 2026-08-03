@@ -451,3 +451,105 @@ def test_compact_summary_omits_actions_and_compilation_stays_interactive():
     assert summary["source_topology_hash"] == "e4-source-hash"
     assert summary["action_count"] == len(result.plan.actions)
     assert elapsed < 1.0
+
+
+def test_configuration_compilation_stays_interactive_for_137_device_topology():
+    segment = NetworkSegment(
+        name="large-data",
+        role=SegmentRole.DATA,
+        site="large",
+        host_requirement=131,
+        dhcp=False,
+        vlan_id=910,
+    )
+    allocation = _allocation("large-data", "198.18.160.0", "198.18.160.1")
+    allocation.required_hosts = 131
+    enterprise = EnterprisePlan(
+        id="ent-large-137",
+        name="Large 137",
+        address_space="198.18.0.0/15",
+        sites=[SitePlan(
+            name="Large",
+            site_id="large",
+            type=SiteType.HQ,
+            segments=[segment],
+        )],
+        addressing=AddressingPlan(
+            address_space=AddressSpace(network="198.18.0.0/15"),
+            allocations=[allocation],
+        ),
+    )
+    switches = [
+        DevicePlan(
+            id=f"sw-{index:02d}",
+            name=f"LARGE-SW-{index:02d}",
+            model="2960-24TT",
+            category="switch",
+            enterprise_role="access_switch",
+            site_id="large",
+            network_layer="access",
+        )
+        for index in range(1, 7)
+    ]
+    endpoints = [
+        DevicePlan(
+            id=f"pc-{index:03d}",
+            name=f"LARGE-PC-{index:03d}",
+            model="PC-PT",
+            category="pc",
+            enterprise_role="user_pc",
+            site_id="large",
+            metadata={"addressing_preference": "static"},
+        )
+        for index in range(1, 132)
+    ]
+    links = []
+    switch_port_counts = [0] * len(switches)
+    for index, endpoint in enumerate(endpoints):
+        switch_index = index % len(switches)
+        switch_port_counts[switch_index] += 1
+        switch = switches[switch_index]
+        links.append(LinkPlan(
+            id=f"access-{endpoint.id}",
+            device_a=switch.name,
+            device_a_id=switch.id,
+            port_a=f"FastEthernet0/{switch_port_counts[switch_index]}",
+            device_b=endpoint.name,
+            device_b_id=endpoint.id,
+            port_b="FastEthernet0",
+            link_role="endpoint_access",
+        ))
+    for index, (left, right) in enumerate(zip(switches, switches[1:]), start=1):
+        links.append(LinkPlan(
+            id=f"uplink-{index:02d}",
+            device_a=left.name,
+            device_a_id=left.id,
+            port_a="GigabitEthernet0/2",
+            device_b=right.name,
+            device_b_id=right.id,
+            port_b="GigabitEthernet0/1",
+            link_role="access_uplink",
+        ))
+    topology = TopologyPlan(
+        id="topology-large-137",
+        name="Large 137 physical",
+        semantic_hash="large-e4-hash",
+        devices=[*switches, *endpoints],
+        links=links,
+    )
+
+    started = perf_counter()
+    result = compile_enterprise_configuration(
+        enterprise, topology, ConfigurationPolicy(),
+    )
+    elapsed = perf_counter() - started
+
+    assert result.is_valid
+    assert result.plan is not None
+    assert len(topology.devices) == 137
+    assert len(result.plan.devices) == 137
+    assert len(result.plan.actions_of_type(ConfigurationActionType.CREATE_VLAN)) == 6
+    assert len(result.plan.actions_of_type(ConfigurationActionType.CONFIGURE_ACCESS_PORT)) == 131
+    assert len(result.plan.actions_of_type(ConfigurationActionType.CONFIGURE_TRUNK)) == 10
+    assert len(result.plan.actions_of_type(ConfigurationActionType.SET_ENDPOINT_STATIC)) == 131
+    assert elapsed < 2.0

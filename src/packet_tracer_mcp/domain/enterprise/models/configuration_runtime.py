@@ -1,0 +1,141 @@
+"""Resultados E5 que mantienen COMPILED, APPLIED y VERIFIED separados."""
+
+from __future__ import annotations
+
+from enum import Enum
+
+from pydantic import BaseModel, Field
+
+
+class ActionExecutionStatus(str, Enum):
+    INTENDED = "intended"
+    COMPILED = "compiled"
+    APPLIED = "applied"
+    VERIFIED = "verified"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    UNKNOWN = "unknown"
+    DEPENDENCY_BLOCKED = "dependency_blocked"
+
+
+class ConfigurationApplicationStatus(str, Enum):
+    APPLIED = "applied"
+    VERIFIED = "verified"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class ConfigurationFailureCode(str, Enum):
+    NONE = "none"
+    SOURCE_TOPOLOGY_MISMATCH = "source_topology_mismatch"
+    TARGET_NOT_FOUND = "target_not_found"
+    TARGET_IDENTITY_MISMATCH = "target_identity_mismatch"
+    INTERFACE_NOT_FOUND = "interface_not_found"
+    CAPABILITY_UNKNOWN = "capability_unknown"
+    CAPABILITY_UNSUPPORTED = "capability_unsupported"
+    APPLICATION_FAILED = "application_failed"
+    SESSION_FAILED = "session_failed"
+    CONVERGENCE_TIMEOUT = "convergence_timeout"
+    VERIFICATION_FAILED = "verification_failed"
+    OBSERVABILITY_LIMITATION = "observability_limitation"
+    DEPENDENCY_BLOCKED = "dependency_blocked"
+
+
+class FieldVerificationStatus(str, Enum):
+    VERIFIED = "verified"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+    UNOBSERVABLE = "unobservable"
+
+
+class ConvergenceReport(BaseModel):
+    attempts: int = 0
+    elapsed_ms: int = 0
+    final_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
+    last_observable_state: str = ""
+
+
+class RuntimeConfigurationTarget(BaseModel):
+    device_name: str
+    model: str
+    interfaces: list[str] = Field(default_factory=list)
+
+
+class ConfigurationRuntimeContext(BaseModel):
+    backend: str = ""
+    backend_version: str = ""
+    capability_snapshot_hash: str = ""
+
+
+class RuntimeActionMutation(BaseModel):
+    action_id: str
+    applied: bool
+    message: str = ""
+    failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
+    batch_id: str = ""
+
+
+class RuntimeVerification(BaseModel):
+    expectation_id: str
+    status: ActionExecutionStatus
+    evidence_method: str = ""
+    fresh_evidence: bool = False
+    fields: dict[str, FieldVerificationStatus] = Field(default_factory=dict)
+    message: str = ""
+    convergence: ConvergenceReport | None = None
+
+
+class ActionApplicationResult(BaseModel):
+    action_id: str
+    status: ActionExecutionStatus
+    failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
+    message: str = ""
+    batch_id: str = ""
+
+
+class VerificationResult(BaseModel):
+    expectation_id: str
+    action_id: str
+    status: ActionExecutionStatus
+    evidence_method: str = ""
+    fresh_evidence: bool = False
+    fields: dict[str, FieldVerificationStatus] = Field(default_factory=dict)
+    message: str = ""
+    convergence: ConvergenceReport | None = None
+
+
+class ConfigurationApplicationResult(BaseModel):
+    config_plan_id: str
+    config_semantic_hash: str
+    source_topology_hash: str
+    runtime_context: ConfigurationRuntimeContext = Field(
+        default_factory=ConfigurationRuntimeContext,
+    )
+    status: ConfigurationApplicationStatus
+    failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
+    action_results: list[ActionApplicationResult] = Field(default_factory=list)
+    verification_results: list[VerificationResult] = Field(default_factory=list)
+    preflight_errors: list[str] = Field(default_factory=list)
+    duration_ms: int = 0
+
+    def compact_summary(self) -> dict[str, object]:
+        action_counts: dict[str, int] = {}
+        for item in self.action_results:
+            action_counts[item.status.value] = action_counts.get(item.status.value, 0) + 1
+        verification_counts: dict[str, int] = {}
+        for item in self.verification_results:
+            verification_counts[item.status.value] = verification_counts.get(item.status.value, 0) + 1
+        return {
+            "config_plan_id": self.config_plan_id,
+            "config_semantic_hash": self.config_semantic_hash,
+            "source_topology_hash": self.source_topology_hash,
+            "runtime_context": self.runtime_context.model_dump(mode="json"),
+            "status": self.status.value,
+            "failure_code": self.failure_code.value,
+            "actions": dict(sorted(action_counts.items())),
+            "verification": dict(sorted(verification_counts.items())),
+            "preflight_errors": self.preflight_errors,
+            "duration_ms": self.duration_ms,
+        }

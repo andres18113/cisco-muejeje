@@ -20,6 +20,21 @@ def test_ios_executor_only_emits_registered_query():
     assert 'getCommandLine' in sent[0]
 
 
+def test_ios_executor_reuses_boot_waiter_before_configuration():
+    responses = iter((
+        '{"found":true,"booting":true,"terminal":true,"terminal_available":true,"prompt":"","output":"boot"}',
+        '{"found":true,"booting":false,"terminal":true,"terminal_available":true,"prompt":"Router>","output":"Router>"}',
+    ))
+    executor = ControlledIosExecutor(lambda _js, _timeout: next(responses))
+
+    result = executor.wait_until_ready(
+        "R1", timeout_seconds=1.0, interval_seconds=0,
+    )
+
+    assert result.state.value == "operational_ready"
+    assert result.attempts == 2
+
+
 def test_parse_show_ip_interface_brief_handles_packet_tracer_spacing():
     rows = parse_show_ip_interface_brief("Interface              IP-Address      OK? Method Status                Protocol\r\nGigabitEthernet0/0     198.18.40.1    YES manual up                    up\nGigabitEthernet0/1     unassigned      YES unset  administratively down down")
     assert [(row.interface, row.ip_address, row.status, row.protocol) for row in rows] == [

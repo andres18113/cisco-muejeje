@@ -178,6 +178,7 @@ class ConfigurationCompiler:
             pool = pool_by_segment.get(segment.name)
             if pool is None:
                 continue
+            allocation = allocations[segment.name]
             dependencies = [pool.id]
             if access_dependency:
                 dependencies.append(access_dependency)
@@ -189,6 +190,11 @@ class ConfigurationCompiler:
                 site_id=endpoint.site_id,
                 interface=interface,
                 segment_id=segment.name,
+                network=allocation.network,
+                prefix=allocation.prefix,
+                netmask=allocation.netmask,
+                gateway=allocation.gateway,
+                dns_server=policy.dns_server,
                 depends_on=sorted(set(dependencies)),
                 required_capability="endpoint_dhcp",
             ))
@@ -882,14 +888,26 @@ class ConfigurationCompiler:
                     else f"Vlan{action.vlan_id}" if isinstance(action, ConfigureSvi)
                     else f"{action.parent_interface}.{action.vlan_id}"
                 )
-                expected = {"interface": interface, "ipv4": action.ipv4}
+                expected = {
+                    "interface": interface,
+                    "ipv4": action.ipv4,
+                    "administrative_up": getattr(action, "administrative_up", True),
+                }
             elif isinstance(action, ConfigureDhcpPool):
                 kind = VerificationKind.DHCP_POOL
                 expected = {"network": action.network, "gateway": action.gateway}
             else:
                 kind = VerificationKind.ENDPOINT_ADDRESSING
                 expected = {"mode": "dhcp" if isinstance(action, SetEndpointDhcp) else "static"}
-                if isinstance(action, SetEndpointStaticAddress):
+                if isinstance(action, SetEndpointDhcp):
+                    expected.update({
+                        "network": action.network,
+                        "prefix": action.prefix,
+                        "netmask": action.netmask,
+                        "gateway": action.gateway,
+                        "dns": action.dns_server or "",
+                    })
+                elif isinstance(action, SetEndpointStaticAddress):
                     expected.update({"ipv4": action.ipv4, "netmask": action.netmask})
             expectations.append(VerificationExpectation(
                 id=_action_id("verify", action.id), action_id=action.id, kind=kind,

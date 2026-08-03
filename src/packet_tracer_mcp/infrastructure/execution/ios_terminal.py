@@ -9,7 +9,8 @@ from enum import Enum
 from time import monotonic
 from collections.abc import Callable
 
-from .device_lifecycle import StateConvergenceWaiter
+from ...domain.enterprise.models.discovery import DeviceInitializationResult
+from .device_lifecycle import IosBootWaiter, StateConvergenceWaiter
 
 
 class OperationalQueryId(str, Enum):
@@ -146,6 +147,21 @@ class ControlledIosExecutor:
     def __init__(self, send_and_wait: Callable[[str, float], str | None]) -> None:
         self._send_and_wait = send_and_wait
 
+    def wait_until_ready(
+        self,
+        device_name: str,
+        *,
+        timeout_seconds: float = 90.0,
+        interval_seconds: float = 0.25,
+    ) -> DeviceInitializationResult:
+        """Espera el boot IOS con el waiter compartido, separado del SHOW."""
+        name = json.dumps(device_name)
+        return IosBootWaiter(
+            lambda: self._terminal_state(name),
+            timeout_seconds=timeout_seconds,
+            interval_seconds=interval_seconds,
+        ).wait()
+
     def execute(self, device_name: str, query_id: OperationalQueryId) -> IosCommandResult:
         started = monotonic()
         command = _COMMANDS[query_id]
@@ -233,7 +249,7 @@ class ControlledIosExecutor:
         return response == '{"ok":true}'
 
     def _terminal_state(self, name: str) -> dict:
-        js = "try{var d=ipc.network().getDevice(" + name + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;reportResult(JSON.stringify({found:!!d,booting:d&&typeof d.isBooting==='function'?!!d.isBooting():null,terminal:!!t,prompt:t&&typeof t.getPrompt==='function'?String(t.getPrompt()):'',output:t&&typeof t.getOutput==='function'?String(t.getOutput()):''}));}catch(e){reportResult('ERROR:'+e);}"
+        js = "try{var d=ipc.network().getDevice(" + name + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;reportResult(JSON.stringify({found:!!d,booting:d&&typeof d.isBooting==='function'?!!d.isBooting():null,terminal:!!t,terminal_available:!!t,terminal_kind:'ios_command_line',prompt:t&&typeof t.getPrompt==='function'?String(t.getPrompt()):'',output:t&&typeof t.getOutput==='function'?String(t.getOutput()):''}));}catch(e){reportResult('ERROR:'+e);}"
         raw = self._send_and_wait(js, 3.0)
         try:
             return json.loads(raw or "{}")

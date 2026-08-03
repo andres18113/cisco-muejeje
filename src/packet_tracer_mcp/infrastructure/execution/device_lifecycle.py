@@ -106,5 +106,11 @@ class DeviceOperationalReadinessWaiter(DeviceReadinessWaiter):
 class IosBootWaiter(DeviceOperationalReadinessWaiter):
     """Espera el boot IOS con presupuesto propio, separado de una query SHOW."""
 
-    def __init__(self, inspect: Callable[[], dict], **kwargs) -> None:
-        super().__init__(inspect, timeout_seconds=90.0, **kwargs)
+    def __init__(
+        self,
+        inspect: Callable[[], dict],
+        *,
+        timeout_seconds: float = 90.0,
+        **kwargs,
+    ) -> None:
+        super().__init__(inspect, timeout_seconds=timeout_seconds, **kwargs)

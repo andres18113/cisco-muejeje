@@ -55,6 +55,55 @@ verification must use independent current-query evidence. Packet Tracer bridge,
 TerminalLine, IOS session readiness, convergence, and runtime results do not
 enter the Enterprise compiler.
 
+Before mutation, `ConfigurationApplicator` checks the E4 semantic hash, runtime
+device name/model identity, referenced physical interfaces, dependency graph,
+and required capability status. Actions are submitted sequentially by phase and
+batched per device. A failed prerequisite becomes `DEPENDENCY_BLOCKED`; an
+unknown or explicitly unsupported capability becomes a structured `SKIPPED`
+result and is never silently attempted.
+
+IOS devices must reach the shared E3 `IosBootWaiter` state
+`OPERATIONAL_READY` before their first configuration batch. Boot has its own
+bounded budget and is not charged to a SHOW query. Trunk, L3, VLAN, and endpoint
+state then use feature-specific convergence budgets; DHCP endpoint convergence
+allows 30 seconds in Packet Tracer, while an individual IOS query retains its
+shorter budget.
+
+The Packet Tracer adapter reuses `configureIosDevice`, `configurePcIp`,
+`StateConvergenceWaiter`, `ControlledIosExecutor`, and the existing typed SHOW
+parsers. VLAN object state and endpoint IPv4/mask use bounded polling. Trunk and
+L3 observations require a fresh current-query IOS window, so accumulated console
+history cannot promote a feature. Packet Tracer 9.0.1 has no confirmed gateway
+or DNS endpoint getter in this codebase; those DHCP fields remain explicitly
+`UNOBSERVABLE` rather than inferred. Access-port and DHCP-pool getters are also
+reported as observability limitations until independent APIs or behavioral
+evidence are registered.
+
+The default result is compact: it returns plan identity, source/config hashes,
+counts by action/verification state, preflight errors, and duration. The plan
+itself supports focused queries by device or typed action without dumping all
+generated IOS. Application results also carry a backend-neutral runtime context
+(`backend`, `backend_version`, and `capability_snapshot_hash`) for reproducible
+evidence gates.
+
+## Packet Tracer 9.0.1.0858 live baseline
+
+The E5 controlled slices use only fresh `__MCP_E5_TEST_*` devices and restore
+the original inventory after each run.
+
+- L2: VLAN 910 was read back on both 2960 switches, both trunk endpoints were
+  observed as 802.1Q `trunking` with VLAN 910 allowed/active, both endpoint
+  IPv4/masks were read through structured getters, and a four-packet PC-to-PC
+  ping had zero loss.
+- Routed DHCP: a 2911 physical `GigabitEthernet0/0` was observed as
+  `198.18.151.1`, `up/up`; the client obtained `198.18.151.2/24`; and a
+  four-packet ping to the gateway had zero loss.
+- DHCP gateway/DNS getters, direct DHCP-pool read-back, and direct access-port
+  read-back remain `UNOBSERVABLE`. The successful behavioral paths complement
+  but do not rewrite those field-level statuses.
+- The 3560 SVI runtime remains `UNKNOWN`; compilation is supported, application
+  stays capability-gated, and no unsupported inference is made.
+
 Deferred features include DNS/HTTP/NTP/TFTP service hosting, telephony, ACL,
 NAT, STP tuning, EtherChannel, first-hop redundancy, dynamic routing, IPv6
 routing, redistribution, and QoS.
