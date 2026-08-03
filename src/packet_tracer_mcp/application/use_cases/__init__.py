@@ -17,3 +17,4 @@ from .compile_voice import compile_enterprise_voice
 from .apply_voice import VoiceApplicator, VoiceRuntime
 from .compile_security import compile_enterprise_security
 from .apply_security import SecurityApplicator, SecurityRuntime
+from .compile_control_plane import compile_enterprise_control_plane

@@ -70,6 +70,16 @@ from .security_runtime import (
     RuntimeSecurityVerification, SecurityApplicationResult,
     SecurityVerificationResult, SecurityVerificationStage,
 )
+from .control_plane import (
+    ConfigureEigrpIpv4, ConfigureEtherChannel, ConfigureHsrp, ConfigureOspfv2,
+    ConfigureSpanningTree, ConfigureStpEdgePort, ControlPlaneActionType,
+    ControlPlaneCapabilityDimension, ControlPlaneCapabilityProfile,
+    ControlPlaneCompileResult, ControlPlaneIntent, ControlPlanePlan,
+    ControlPlaneVerificationExpectation, ControlPlaneVerificationKind,
+    DynamicRoutingIntent, DynamicRoutingProtocol, EtherChannelIntent,
+    EtherChannelProtocol, FirstHopRedundancyIntent, LinkFailureScenario,
+    LinkFailureScenarioIntent, StpIntent, StpMode,
+)
 from .roles import DeviceRole
 from .segments import NetworkSegment, SegmentRequirement, SegmentRole
 from .topology import NetworkLayer, TopologyDesign, TopologyPattern
@@ -116,4 +126,13 @@ __all__ = [
     "StaticNatMappingIntent",
     "RuntimeSecurityVerification", "SecurityApplicationResult",
     "SecurityVerificationResult", "SecurityVerificationStage",
+    "ConfigureEigrpIpv4", "ConfigureEtherChannel", "ConfigureHsrp",
+    "ConfigureOspfv2", "ConfigureSpanningTree", "ConfigureStpEdgePort",
+    "ControlPlaneActionType", "ControlPlaneCapabilityDimension",
+    "ControlPlaneCapabilityProfile", "ControlPlaneCompileResult",
+    "ControlPlaneIntent", "ControlPlanePlan", "ControlPlaneVerificationExpectation",
+    "ControlPlaneVerificationKind", "DynamicRoutingIntent",
+    "DynamicRoutingProtocol", "EtherChannelIntent", "EtherChannelProtocol",
+    "FirstHopRedundancyIntent", "LinkFailureScenario",
+    "LinkFailureScenarioIntent", "StpIntent", "StpMode",
 ]

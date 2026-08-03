@@ -10,9 +10,10 @@ from .ipam_planner import IPAMPlanner
 from .requirements_validator import validate_enterprise_intent
 from .service_compiler import ServiceCompiler
 from .voice_compiler import VoiceCompiler
+from .control_plane_compiler import ControlPlaneCompiler
 
 __all__ = [
     "CapacityPlanner", "ConfigurationCompiler", "DeviceSelector", "EnterpriseCompiler", "EnterpriseDesigner", "HardwarePlanner",
-    "HardwarePlanningPolicy", "IPAMPlanner", "ServiceCompiler", "VoiceCompiler",
+    "ControlPlaneCompiler", "HardwarePlanningPolicy", "IPAMPlanner", "ServiceCompiler", "VoiceCompiler",
     "validate_enterprise_intent",
 ]
