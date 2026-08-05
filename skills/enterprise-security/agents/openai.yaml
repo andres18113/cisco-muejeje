@@ -1,0 +1,4 @@
+interface:
+  display_name: "enterprise-security"
+  short_description: "Enterprise networking workflow for enterprise-security"
+  default_prompt: "Use the enterprise-security workflow for this request."

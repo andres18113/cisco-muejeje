@@ -1,0 +1,4 @@
+interface:
+  display_name: "enterprise-network-design"
+  short_description: "Enterprise networking workflow for enterprise-network-design"
+  default_prompt: "Use the enterprise-network-design workflow for this request."

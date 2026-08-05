@@ -1,0 +1,4 @@
+interface:
+  display_name: "first-hop-redundancy"
+  short_description: "Enterprise networking workflow for first-hop-redundancy"
+  default_prompt: "Use the first-hop-redundancy workflow for this request."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "network-autofix"
+  short_description: "Enterprise networking workflow for network-autofix"
+  default_prompt: "Use the network-autofix workflow for this request."

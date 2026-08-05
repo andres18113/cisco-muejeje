@@ -1,0 +1,4 @@
+interface:
+  display_name: "enterprise-voice"
+  short_description: "Enterprise networking workflow for enterprise-voice"
+  default_prompt: "Use the enterprise-voice workflow for this request."

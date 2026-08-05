@@ -1,0 +1,4 @@
+interface:
+  display_name: "packet-tracer-capabilities"
+  short_description: "Enterprise networking workflow for packet-tracer-capabilities"
+  default_prompt: "Use the packet-tracer-capabilities workflow for this request."

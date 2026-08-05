@@ -1,0 +1,4 @@
+interface:
+  display_name: "network-diagnosis"
+  short_description: "Enterprise networking workflow for network-diagnosis"
+  default_prompt: "Use the network-diagnosis workflow for this request."

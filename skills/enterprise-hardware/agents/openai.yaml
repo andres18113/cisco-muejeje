@@ -1,0 +1,4 @@
+interface:
+  display_name: "enterprise-hardware"
+  short_description: "Enterprise networking workflow for enterprise-hardware"
+  default_prompt: "Use the enterprise-hardware workflow for this request."
