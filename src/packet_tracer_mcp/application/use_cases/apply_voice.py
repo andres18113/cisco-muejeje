@@ -16,7 +16,19 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
+from ...domain.enterprise.models.deployment import (
+    DeploymentIdentityError,
+    DeploymentManifest,
+    resolve_manifest_targets,
+)
+from ...domain.enterprise.models.execution import (
+    MutationDisposition,
+    journal_from_action_results,
+    satisfies_apply_dependency,
+)
+from ...domain.enterprise.models.evidence import evidence_from_legacy_result
 from ...domain.enterprise.models.voice_plan import (
+    BindPhoneToExtension,
     CallExpectation,
     CallExpectationResult,
     VoiceAction,
@@ -69,34 +81,50 @@ class VoiceApplicator:
         actual_source_service_hash: str = "",
         capabilities: dict[str, VoiceCapabilityProfile] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
+        deployment_manifest: DeploymentManifest | None = None,
     ) -> VoiceApplicationResult:
         started = monotonic()
         context = runtime_context or ConfigurationRuntimeContext()
+        deployment_id = deployment_manifest.deployment_id if deployment_manifest else ""
         if actual_source_topology_hash != plan.source_topology_hash:
             return self._failure(
                 plan, ConfigurationFailureCode.SOURCE_TOPOLOGY_MISMATCH,
                 "VoicePlan source hash does not match deployed E4.", context, started,
+                deployment_id=deployment_id,
+            )
+        if (
+            deployment_manifest is not None
+            and deployment_manifest.physical_topology_hash != plan.source_topology_hash
+        ):
+            return self._failure(
+                plan, ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                "DeploymentManifest physical topology hash does not match VoicePlan.",
+                context, started, deployment_id=deployment_id,
             )
         if actual_source_configuration_hash != plan.source_configuration_hash:
             return self._failure(
                 plan, ConfigurationFailureCode.SOURCE_CONFIGURATION_MISMATCH,
                 "VoicePlan source hash does not match applied E5.", context, started,
+                deployment_id=deployment_id,
             )
         if plan.source_service_hash and actual_source_service_hash != plan.source_service_hash:
             return self._failure(
                 plan, ConfigurationFailureCode.SOURCE_CONFIGURATION_MISMATCH,
                 "VoicePlan service hash does not match applied E6.", context, started,
+                deployment_id=deployment_id,
             )
         try:
             ordered = order_dependency_actions(plan.actions)
         except ConfigurationDependencyError as exc:
             return self._failure(
                 plan, ConfigurationFailureCode.DEPENDENCY_BLOCKED, str(exc), context, started,
+                deployment_id=deployment_id,
             )
         if [item.id for item in ordered] != [item.id for item in plan.actions]:
             return self._failure(
                 plan, ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 "VoicePlan actions are not in deterministic dependency order.", context, started,
+                deployment_id=deployment_id,
             )
         missing = sorted(
             item.source_id for item in plan.foundational_requirements
@@ -106,17 +134,63 @@ class VoiceApplicator:
             return self._failure(
                 plan, ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING,
                 "Voice foundations are not VERIFIED: " + ", ".join(missing), context, started,
+                deployment_id=deployment_id,
             )
         try:
-            inventory = {item.device_name: item for item in self._runtime.inventory()}
+            runtime_inventory = self._runtime.inventory()
         except Exception as exc:
             return self._failure(
                 plan, ConfigurationFailureCode.SESSION_FAILED,
                 f"Voice runtime inventory failed: {exc}", context, started,
+                deployment_id=deployment_id,
             )
+        deployed_names: dict[str, str] = {}
+        if deployment_manifest is not None:
+            semantic_device_ids = [
+                item.host_device_id for item in plan.call_controls
+            ] + [
+                item.phone_id for item in plan.phone_assignments
+            ]
+            try:
+                semantic_targets = resolve_manifest_targets(
+                    deployment_manifest,
+                    physical_topology_hash=plan.source_topology_hash,
+                    semantic_device_ids=semantic_device_ids,
+                    inventory=runtime_inventory,
+                )
+            except DeploymentIdentityError as exc:
+                return self._failure(
+                    plan, ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                    str(exc), context, started, deployment_id=deployment_id,
+                )
+            deployed_names = {
+                identifier: target.device_name
+                for identifier, target in semantic_targets.items()
+            }
+            targets = semantic_targets
+        else:
+            inventory_by_name = {item.device_name: item for item in runtime_inventory}
+            deployed_names = {
+                item.host_device_id: item.host_device_name
+                for item in plan.call_controls
+            }
+            deployed_names.update({
+                item.phone_id: item.physical_device_name
+                for item in plan.phone_assignments
+            })
+            targets = {
+                item.host_device_id: inventory_by_name[item.host_device_name]
+                for item in plan.call_controls
+                if item.host_device_name in inventory_by_name
+            }
+            targets.update({
+                item.phone_id: inventory_by_name[item.physical_device_name]
+                for item in plan.phone_assignments
+                if item.physical_device_name in inventory_by_name
+            })
         target_errors = []
         for control in plan.call_controls:
-            target = inventory.get(control.host_device_name)
+            target = targets.get(control.host_device_id)
             if target is None:
                 target_errors.append(f"Target {control.host_device_name} was not found.")
             elif target.model.casefold() != control.host_model.casefold():
@@ -125,7 +199,7 @@ class VoiceApplicator:
                     f"{control.host_model}."
                 )
         for phone in plan.phone_assignments:
-            target = inventory.get(phone.physical_device_name)
+            target = targets.get(phone.phone_id)
             if target is None:
                 target_errors.append(f"Target {phone.physical_device_name} was not found.")
             elif target.model.casefold() != phone.model.casefold():
@@ -137,15 +211,60 @@ class VoiceApplicator:
             return self._failure(
                 plan, ConfigurationFailureCode.TARGET_NOT_FOUND,
                 " ".join(sorted(target_errors)), context, started,
+                deployment_id=deployment_id,
             )
 
         capabilities = capabilities or {}
-        action_results = self._apply_actions(plan, capabilities)
+        action_results = self._apply_actions(plan, capabilities, deployed_names)
         application_status = self._application_status(action_results)
         registrations = self._registrations(plan, action_results, capabilities)
         calls = self._calls(plan, registrations, capabilities)
         phones = self._phone_outcomes(plan, action_results, registrations, calls)
         status, failure_code = self._overall(application_status, phones, calls)
+        journal = journal_from_action_results(
+            plan_id=plan.id,
+            deployment_id=deployment_id,
+            actions=list(plan.actions),
+            results=action_results,
+        )
+        evidence_records = [
+            evidence_from_legacy_result(
+                identifier=f"evidence/{item.expectation_id}",
+                subject=item.phone_id,
+                claim="phone_registration",
+                status=item.status,
+                evidence_method=item.evidence_method,
+                fresh_evidence=item.fresh_evidence,
+                observed_value={
+                    "extension": item.extension,
+                    "direct_readback": item.direct_readback.value,
+                },
+                backend=context.backend,
+                backend_version=context.backend_version,
+                environment_fingerprint=context.capability_snapshot_hash,
+                limitations=[item.message] if item.message else [],
+            )
+            for item in registrations
+        ] + [
+            evidence_from_legacy_result(
+                identifier=f"evidence/{item.call_attempt_id or item.call_expectation_id}",
+                subject=item.source_phone_id,
+                claim="call_behavior",
+                status=item.status,
+                evidence_method=item.evidence_method,
+                fresh_evidence=item.fresh_evidence,
+                observed_value={
+                    "connected": item.connected,
+                    "states": [state.value for state in item.states],
+                    "teardown_verified": item.teardown_verified,
+                },
+                backend=context.backend,
+                backend_version=context.backend_version,
+                environment_fingerprint=context.capability_snapshot_hash,
+                limitations=[item.message] if item.message else [],
+            )
+            for item in calls
+        ]
         return VoiceApplicationResult(
             voice_plan_id=plan.id, voice_semantic_hash=plan.semantic_hash,
             source_topology_hash=plan.source_topology_hash,
@@ -154,10 +273,13 @@ class VoiceApplicator:
             runtime_context=context, status=status, application_status=application_status,
             failure_code=failure_code, action_results=action_results,
             registrations=registrations, calls=calls, phones=phones,
+            deployment_id=deployment_id, execution_journal=journal,
+            dirty_state=journal.dirty_state,
+            evidence_records=evidence_records,
             duration_ms=int((monotonic() - started) * 1000),
         )
 
-    def _apply_actions(self, plan, capabilities):
+    def _apply_actions(self, plan, capabilities, deployed_names):
         results: dict[str, ActionApplicationResult] = {}
         for action in plan.actions:
             profile = capabilities.get(action.host_model)
@@ -180,7 +302,7 @@ class VoiceApplicator:
                 blocked = [
                     dependency for dependency in action.depends_on
                     if dependency in results
-                    and results[dependency].status is not ActionExecutionStatus.APPLIED
+                    and not satisfies_apply_dependency(results[dependency].status)
                 ]
                 if blocked:
                     results[action.id] = ActionApplicationResult(
@@ -194,7 +316,7 @@ class VoiceApplicator:
                 item for item in pending
                 if all(
                     dependency in results
-                    and results[dependency].status is ActionExecutionStatus.APPLIED
+                    and satisfies_apply_dependency(results[dependency].status)
                     for dependency in item.depends_on
                 )
             ]
@@ -205,7 +327,18 @@ class VoiceApplicator:
                     if item.phase == first.phase and item.call_control_id == first.call_control_id
                 ]
                 try:
-                    mutations = {item.action_id: item for item in self._runtime.apply_actions(batch)}
+                    runtime_batch = []
+                    for item in batch:
+                        updates = {
+                            "host_device_name": deployed_names[item.host_device_id],
+                        }
+                        if isinstance(item, BindPhoneToExtension):
+                            updates["physical_device_name"] = deployed_names[item.phone_id]
+                        runtime_batch.append(item.model_copy(update=updates))
+                    mutations = {
+                        item.action_id: item
+                        for item in self._runtime.apply_actions(runtime_batch)
+                    }
                 except Exception as exc:
                     mutations = {
                         item.id: RuntimeActionMutation(
@@ -219,7 +352,10 @@ class VoiceApplicator:
                     applied = bool(mutation and mutation.applied)
                     results[item.id] = ActionApplicationResult(
                         action_id=item.id,
-                        status=ActionExecutionStatus.APPLIED if applied else ActionExecutionStatus.FAILED,
+                        status=(
+                            self._mutation_status(mutation)
+                            if mutation else ActionExecutionStatus.FAILED
+                        ),
                         failure_code=(
                             ConfigurationFailureCode.NONE if applied
                             else mutation.failure_code if mutation else
@@ -227,6 +363,11 @@ class VoiceApplicator:
                         ),
                         message=mutation.message if mutation else "Runtime returned no mutation.",
                         batch_id=mutation.batch_id if mutation else "",
+                        operation=item.operation,
+                        disposition=(
+                            mutation.disposition if mutation
+                            else MutationDisposition.FAILED
+                        ),
                     )
                     pending.remove(item)
                 progress = True
@@ -239,6 +380,16 @@ class VoiceApplicator:
                 break
         return [results[item.id] for item in plan.actions]
 
+    @staticmethod
+    def _mutation_status(mutation: RuntimeActionMutation) -> ActionExecutionStatus:
+        if not mutation.applied:
+            return ActionExecutionStatus.FAILED
+        if mutation.disposition is MutationDisposition.NO_OP:
+            return ActionExecutionStatus.NO_OP
+        if mutation.disposition is MutationDisposition.REASSERTED:
+            return ActionExecutionStatus.REASSERTED
+        return ActionExecutionStatus.APPLIED
+
     def _registrations(self, plan, actions, capabilities):
         action_results = {item.action_id: item for item in actions}
         controls = {item.id: item for item in plan.call_controls}
@@ -248,7 +399,7 @@ class VoiceApplicator:
             if item.kind is VoiceVerificationKind.PHONE_REGISTRATION
         ):
             action = action_results[expectation.action_id]
-            if action.status is not ActionExecutionStatus.APPLIED:
+            if not satisfies_apply_dependency(action.status):
                 results.append(PhoneRegistrationResult(
                     expectation_id=expectation.id, phone_id=expectation.phone_id,
                     extension=expectation.extension,
@@ -304,13 +455,35 @@ class VoiceApplicator:
 
     def _calls(self, plan, registrations, capabilities):
         registration_by_phone = {item.phone_id: item for item in registrations}
+        registration_by_expectation = {
+            item.expectation_id: item for item in registrations
+        }
         assignments = {item.phone_id: item for item in plan.phone_assignments}
         controls = {item.id: item for item in plan.call_controls}
         results = []
         for expectation in plan.call_expectations:
+            prerequisite_ids = [
+                item.reference_id
+                for item in expectation.verification_prerequisites
+                if item.kind.value in {"phone_registered", "verification_verified"}
+            ] or list(expectation.depends_on)
+            prerequisite_results = [
+                registration_by_expectation.get(identifier)
+                for identifier in prerequisite_ids
+            ]
             source_registration = registration_by_phone.get(expectation.source_phone_id)
             target_registration = registration_by_phone.get(expectation.expected_target_phone_id)
             hard_block = (
+                any(item is None for item in prerequisite_results)
+                or any(
+                    item is not None and item.status in {
+                        ActionExecutionStatus.FAILED,
+                        ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                        ActionExecutionStatus.SKIPPED,
+                    }
+                    for item in prerequisite_results
+                )
+                or
                 source_registration is None
                 or source_registration.status in {
                     ActionExecutionStatus.FAILED, ActionExecutionStatus.DEPENDENCY_BLOCKED,
@@ -444,7 +617,7 @@ class VoiceApplicator:
     def _application_status(results):
         if any(item.status is ActionExecutionStatus.FAILED for item in results):
             return ActionExecutionStatus.FAILED
-        if any(item.status is not ActionExecutionStatus.APPLIED for item in results):
+        if any(not satisfies_apply_dependency(item.status) for item in results):
             return ActionExecutionStatus.PARTIAL
         return ActionExecutionStatus.APPLIED
 
@@ -461,7 +634,12 @@ class VoiceApplicator:
         return ActionExecutionStatus.PARTIAL, ConfigurationFailureCode.NONE
 
     @staticmethod
-    def _failure(plan, code, message, context, started):
+    def _failure(plan, code, message, context, started, deployment_id=""):
+        journal = journal_from_action_results(
+            plan_id=plan.id, deployment_id=deployment_id,
+            actions=list(plan.actions), results=[],
+        )
+        journal.mark_preflight_failure(message)
         return VoiceApplicationResult(
             voice_plan_id=plan.id, voice_semantic_hash=plan.semantic_hash,
             source_topology_hash=plan.source_topology_hash,
@@ -469,5 +647,7 @@ class VoiceApplicator:
             source_service_hash=plan.source_service_hash,
             runtime_context=context, status=ActionExecutionStatus.FAILED,
             failure_code=code, preflight_errors=[message],
+            deployment_id=deployment_id, execution_journal=journal,
+            dirty_state=journal.dirty_state,
             duration_ms=int((monotonic() - started) * 1000),
         )

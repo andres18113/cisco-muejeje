@@ -30,6 +30,21 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeVerification,
     VerificationResult,
 )
+from ...domain.enterprise.models.deployment import (
+    DeploymentIdentityError,
+    DeploymentManifest,
+    resolve_manifest_targets,
+)
+from ...domain.enterprise.models.execution import (
+    MutationDisposition,
+    journal_from_action_results,
+    satisfies_apply_dependency,
+)
+from ...domain.enterprise.models.evidence import evidence_from_legacy_result
+from ...domain.enterprise.models.verification import (
+    legacy_action_prerequisites,
+    prerequisites_satisfied,
+)
 from ...domain.enterprise.services.configuration_dependencies import (
     ConfigurationDependencyError,
     order_configuration_actions,
@@ -61,6 +76,7 @@ class ConfigurationApplicator:
         actual_source_topology_hash: str,
         capabilities: dict[str, DeviceCapabilities] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
+        deployment_manifest: DeploymentManifest | None = None,
     ) -> ConfigurationApplicationResult:
         started = monotonic()
         runtime_context = runtime_context or ConfigurationRuntimeContext()
@@ -70,6 +86,19 @@ class ConfigurationApplicator:
                 ConfigurationFailureCode.SOURCE_TOPOLOGY_MISMATCH,
                 "ConfigurationPlan source hash does not match the deployed E4 topology.",
                 runtime_context=runtime_context,
+                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                started=started,
+            )
+        if (
+            deployment_manifest is not None
+            and deployment_manifest.physical_topology_hash != plan.source_topology_hash
+        ):
+            return self._preflight_failure(
+                plan,
+                ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                "DeploymentManifest physical topology hash does not match ConfigurationPlan.",
+                runtime_context=runtime_context,
+                deployment_id=deployment_manifest.deployment_id,
                 started=started,
             )
 
@@ -81,6 +110,7 @@ class ConfigurationApplicator:
                 ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 str(exc),
                 runtime_context=runtime_context,
+                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
                 started=started,
             )
         if [action.id for action in ordered] != [action.id for action in plan.actions]:
@@ -89,6 +119,7 @@ class ConfigurationApplicator:
                 ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 "ConfigurationPlan actions are not in deterministic dependency order.",
                 runtime_context=runtime_context,
+                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
                 started=started,
             )
 
@@ -98,9 +129,35 @@ class ConfigurationApplicator:
             return self._preflight_failure(
                 plan, ConfigurationFailureCode.SESSION_FAILED,
                 f"Runtime inventory failed: {exc}", runtime_context=runtime_context,
+                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
                 started=started,
             )
-        targets = {item.device_name: item for item in inventory}
+        if deployment_manifest is not None:
+            try:
+                semantic_targets = resolve_manifest_targets(
+                    deployment_manifest,
+                    physical_topology_hash=plan.source_topology_hash,
+                    semantic_device_ids=[item.device_id for item in plan.devices],
+                    inventory=inventory,
+                )
+            except DeploymentIdentityError as exc:
+                return self._preflight_failure(
+                    plan, ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH, str(exc),
+                    runtime_context=runtime_context,
+                    deployment_id=deployment_manifest.deployment_id,
+                    started=started,
+                )
+            targets = {
+                item.device_name: semantic_targets[item.device_id]
+                for item in plan.devices
+            }
+        else:
+            targets = {item.device_name: item for item in inventory}
+        deployed_names = {
+            item.device_id: targets[item.device_name].device_name
+            for item in plan.devices
+            if item.device_name in targets
+        }
         preflight_errors = self._validate_targets(plan, targets)
         if preflight_errors:
             code = (
@@ -113,6 +170,7 @@ class ConfigurationApplicator:
             return self._preflight_failure(
                 plan, code, *preflight_errors,
                 runtime_context=runtime_context, started=started,
+                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
             )
 
         results: dict[str, ActionApplicationResult] = {}
@@ -126,7 +184,7 @@ class ConfigurationApplicator:
                 blocked = [
                     dependency for dependency in action.depends_on
                     if dependency not in results
-                    or results[dependency].status is not ActionExecutionStatus.APPLIED
+                    or not satisfies_apply_dependency(results[dependency].status)
                 ]
                 if blocked:
                     results[action.id] = ActionApplicationResult(
@@ -140,7 +198,15 @@ class ConfigurationApplicator:
             if not ready:
                 continue
             try:
-                mutations = {item.action_id: item for item in self._runtime.apply_actions(ready)}
+                runtime_ready = [
+                    item.model_copy(update={
+                        "device_name": deployed_names.get(item.device_id, item.device_name),
+                    })
+                    for item in ready
+                ]
+                mutations = {
+                    item.action_id: item for item in self._runtime.apply_actions(runtime_ready)
+                }
             except Exception as exc:
                 mutations = {
                     action.id: RuntimeActionMutation(
@@ -160,12 +226,11 @@ class ConfigurationApplicator:
                         message="Runtime returned no mutation result.",
                     )
                 else:
+                    disposition = mutation.disposition
+                    status = self._mutation_status(mutation)
                     results[action.id] = ActionApplicationResult(
                         action_id=action.id,
-                        status=(
-                            ActionExecutionStatus.APPLIED
-                            if mutation.applied else ActionExecutionStatus.FAILED
-                        ),
+                        status=status,
                         failure_code=(
                             ConfigurationFailureCode.NONE
                             if mutation.applied else mutation.failure_code
@@ -174,18 +239,77 @@ class ConfigurationApplicator:
                         ),
                         message=mutation.message,
                         batch_id=mutation.batch_id,
+                        operation=action.operation,
+                        disposition=disposition,
                     )
 
         action_results = [results[action.id] for action in plan.actions]
-        applied_ids = {
-            item.action_id for item in action_results
-            if item.status is ActionExecutionStatus.APPLIED
-        }
-        expectations = [
-            item for item in plan.verification_expectations if item.action_id in applied_ids
+        action_statuses = {item.action_id: item.status for item in action_results}
+        ready_expectations: list[VerificationExpectation] = []
+        blocked_verification: dict[str, VerificationResult] = {}
+        for item in plan.verification_expectations:
+            prerequisites = (
+                item.verification_prerequisites
+                or legacy_action_prerequisites([item.action_id])
+            )
+            satisfied, blocked = prerequisites_satisfied(
+                prerequisites,
+                action_statuses=action_statuses,
+                verification_statuses={},
+                resource_statuses={},
+            )
+            if satisfied:
+                ready_expectations.append(item)
+            else:
+                blocked_verification[item.id] = VerificationResult(
+                    expectation_id=item.id,
+                    action_id=item.action_id,
+                    status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                    message="Blocked by: " + ", ".join(blocked),
+                )
+        runtime_expectations = [
+            item.model_copy(update={
+                "device_name": deployed_names.get(item.device_id, item.device_name),
+            })
+            for item in ready_expectations
         ]
-        verification_results = self._verify(plan, expectations)
+        observed_verification = {
+            item.expectation_id: item
+            for item in self._verify(plan, runtime_expectations)
+        }
+        verification_results = [
+            blocked_verification.get(item.id) or observed_verification[item.id]
+            for item in plan.verification_expectations
+        ]
         status, failure_code = self._overall_status(action_results, verification_results)
+        deployment_id = deployment_manifest.deployment_id if deployment_manifest else ""
+        journal = journal_from_action_results(
+            plan_id=plan.id,
+            deployment_id=deployment_id,
+            actions=list(plan.actions),
+            results=action_results,
+        )
+        expectations_by_id = {
+            item.id: item for item in plan.verification_expectations
+        }
+        evidence_records = [
+            evidence_from_legacy_result(
+                identifier=f"evidence/{item.expectation_id}",
+                subject=expectations_by_id[item.expectation_id].device_id,
+                claim=expectations_by_id[item.expectation_id].kind.value,
+                status=item.status,
+                evidence_method=item.evidence_method,
+                fresh_evidence=item.fresh_evidence,
+                observed_value={
+                    name: value.value for name, value in sorted(item.fields.items())
+                },
+                backend=runtime_context.backend,
+                backend_version=runtime_context.backend_version,
+                environment_fingerprint=runtime_context.capability_snapshot_hash,
+                limitations=[item.message] if item.message else [],
+            )
+            for item in verification_results
+        ]
         return ConfigurationApplicationResult(
             config_plan_id=plan.id,
             config_semantic_hash=plan.semantic_hash,
@@ -195,8 +319,22 @@ class ConfigurationApplicator:
             failure_code=failure_code,
             action_results=action_results,
             verification_results=verification_results,
+            deployment_id=deployment_id,
+            execution_journal=journal,
+            dirty_state=journal.dirty_state,
+            evidence_records=evidence_records,
             duration_ms=int((monotonic() - started) * 1000),
         )
+
+    @staticmethod
+    def _mutation_status(mutation: RuntimeActionMutation) -> ActionExecutionStatus:
+        if not mutation.applied:
+            return ActionExecutionStatus.FAILED
+        if mutation.disposition is MutationDisposition.NO_OP:
+            return ActionExecutionStatus.NO_OP
+        if mutation.disposition is MutationDisposition.REASSERTED:
+            return ActionExecutionStatus.REASSERTED
+        return ActionExecutionStatus.APPLIED
 
     @staticmethod
     def _validate_targets(
@@ -319,6 +457,17 @@ class ConfigurationApplicator:
             ActionExecutionStatus.SKIPPED, ActionExecutionStatus.DEPENDENCY_BLOCKED,
         } for item in actions):
             return ConfigurationApplicationStatus.PARTIAL, ConfigurationFailureCode.NONE
+        if any(
+            item.status is ActionExecutionStatus.UNOBSERVABLE
+            for item in verification
+        ) and not any(
+            item.status is ActionExecutionStatus.FAILED
+            for item in verification
+        ):
+            return (
+                ConfigurationApplicationStatus.PARTIAL,
+                ConfigurationFailureCode.OBSERVABILITY_LIMITATION,
+            )
         if any(item.status is not ActionExecutionStatus.VERIFIED for item in verification):
             return ConfigurationApplicationStatus.PARTIAL, ConfigurationFailureCode.VERIFICATION_FAILED
         if verification:
@@ -333,8 +482,15 @@ class ConfigurationApplicator:
         code: ConfigurationFailureCode,
         *messages: str,
         runtime_context: ConfigurationRuntimeContext,
+        deployment_id: str = "",
         started: float,
     ) -> ConfigurationApplicationResult:
+        journal = journal_from_action_results(
+            plan_id=plan.id, deployment_id=deployment_id,
+            actions=list(plan.actions), results=[],
+        )
+        for message in messages:
+            journal.mark_preflight_failure(message)
         return ConfigurationApplicationResult(
             config_plan_id=plan.id,
             config_semantic_hash=plan.semantic_hash,
@@ -343,5 +499,8 @@ class ConfigurationApplicator:
             status=ConfigurationApplicationStatus.FAILED,
             failure_code=code,
             preflight_errors=list(messages),
+            deployment_id=deployment_id,
+            execution_journal=journal,
+            dirty_state=journal.dirty_state,
             duration_ms=int((monotonic() - started) * 1000),
         )

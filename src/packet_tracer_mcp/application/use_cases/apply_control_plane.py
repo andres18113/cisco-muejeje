@@ -16,6 +16,22 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
+from ...domain.enterprise.models.deployment import (
+    DeploymentIdentityError,
+    DeploymentManifest,
+    resolve_manifest_targets,
+)
+from ...domain.enterprise.models.execution import (
+    CompensationStatus,
+    DirtyState,
+    MutationDisposition,
+    journal_from_action_results,
+    satisfies_apply_dependency,
+)
+from ...domain.enterprise.models.evidence import (
+    EvidenceRecord,
+    evidence_from_legacy_result,
+)
 from ...domain.enterprise.models.control_plane import (
     ConfigureEtherChannel,
     ConfigureHsrp,
@@ -37,6 +53,13 @@ from ...domain.enterprise.models.control_plane_runtime import (
     RuntimeFailureScenarioResult,
 )
 from ...domain.enterprise.models.security_plan import SecurityCapabilityStatus
+from ...domain.enterprise.models.verification import (
+    PrerequisiteKind,
+    VerificationDependencyError,
+    VerificationPrerequisite,
+    order_verification_expectations,
+    prerequisites_satisfied,
+)
 from ...domain.enterprise.services.configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
@@ -98,9 +121,11 @@ class ControlPlaneApplicator:
         foundational_hashes: Mapping[str, str] | None = None,
         capabilities: Mapping[str, ControlPlaneCapabilityProfile] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
+        deployment_manifest: DeploymentManifest | None = None,
     ) -> ControlPlaneApplicationResult:
         started = monotonic()
         context = runtime_context or ConfigurationRuntimeContext()
+        deployment_id = deployment_manifest.deployment_id if deployment_manifest else ""
         mismatch = self._source_mismatch(
             plan,
             actual_source_topology_hash,
@@ -111,6 +136,19 @@ class ControlPlaneApplicator:
             code, message = mismatch
             return self._failure(
                 plan, code, message, context=context, started=started,
+                deployment_id=deployment_id,
+            )
+        if (
+            deployment_manifest is not None
+            and deployment_manifest.physical_topology_hash != plan.source_topology_hash
+        ):
+            return self._failure(
+                plan,
+                ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                "DeploymentManifest physical topology hash does not match ControlPlanePlan.",
+                context=context,
+                started=started,
+                deployment_id=deployment_id,
             )
 
         try:
@@ -119,6 +157,7 @@ class ControlPlaneApplicator:
             return self._failure(
                 plan, ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 str(exc), context=context, started=started,
+                deployment_id=deployment_id,
             )
         if [item.id for item in ordered] != [item.id for item in plan.actions]:
             return self._failure(
@@ -127,6 +166,18 @@ class ControlPlaneApplicator:
                 "ControlPlanePlan actions are not in deterministic dependency order.",
                 context=context,
                 started=started,
+                deployment_id=deployment_id,
+            )
+        try:
+            verification_plan = self._normalized_verification_plan(plan)
+        except VerificationDependencyError as exc:
+            return self._failure(
+                plan,
+                ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                str(exc),
+                context=context,
+                started=started,
+                deployment_id=deployment_id,
             )
 
         foundation_errors = self._foundation_errors(
@@ -139,17 +190,45 @@ class ControlPlaneApplicator:
                 *foundation_errors,
                 context=context,
                 started=started,
+                deployment_id=deployment_id,
             )
 
         try:
-            inventory = {item.device_name: item for item in self._runtime.inventory()}
+            inventory_items = self._runtime.inventory()
         except Exception as exc:
             return self._failure(
                 plan, ConfigurationFailureCode.SESSION_FAILED,
                 f"Control-plane runtime inventory failed: {exc}",
                 context=context, started=started,
+                deployment_id=deployment_id,
             )
-        target_errors = self._target_errors(plan, inventory)
+        runtime_plan = verification_plan
+        if deployment_manifest is not None:
+            try:
+                semantic_targets = resolve_manifest_targets(
+                    deployment_manifest,
+                    physical_topology_hash=plan.source_topology_hash,
+                    semantic_device_ids=self._semantic_device_ids(plan),
+                    inventory=inventory_items,
+                )
+                runtime_plan = self._runtime_plan(
+                    verification_plan,
+                    {
+                        identifier: target.device_name
+                        for identifier, target in semantic_targets.items()
+                    },
+                )
+            except DeploymentIdentityError as exc:
+                return self._failure(
+                    plan,
+                    ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                    str(exc),
+                    context=context,
+                    started=started,
+                    deployment_id=deployment_id,
+                )
+        inventory = {item.device_name: item for item in inventory_items}
+        target_errors = self._target_errors(runtime_plan, inventory)
         if target_errors:
             code = (
                 ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
@@ -160,41 +239,58 @@ class ControlPlaneApplicator:
             )
             return self._failure(
                 plan, code, *target_errors, context=context, started=started,
+                deployment_id=deployment_id,
             )
 
         profiles = capabilities or {}
-        action_results = self._apply_actions(plan, profiles)
+        action_results = self._apply_actions(runtime_plan, profiles)
         by_action = {item.action_id: item for item in action_results}
+        verification_statuses: dict[str, ActionExecutionStatus] = {}
         observed_results = self._verify_stage(
-            plan,
+            runtime_plan,
             [
-                item for item in plan.verification_expectations
+                item for item in runtime_plan.verification_expectations
                 if item.kind in _OBSERVED_KINDS
             ],
             ControlPlaneExecutionStage.OBSERVED,
             by_action,
             profiles,
+            verification_statuses=verification_statuses,
+            resource_statuses=dict(foundational_statuses),
         )
+        verification_statuses.update({
+            item.expectation_id: item.status for item in observed_results
+        })
         behavior_results = self._verify_stage(
-            plan,
+            runtime_plan,
             [
-                item for item in plan.verification_expectations
+                item for item in runtime_plan.verification_expectations
                 if item.kind in _BEHAVIOR_KINDS
             ],
             ControlPlaneExecutionStage.BEHAVIOR,
             by_action,
             profiles,
+            verification_statuses=verification_statuses,
+            resource_statuses=dict(foundational_statuses),
         )
+        verification_statuses.update({
+            item.expectation_id: item.status for item in behavior_results
+        })
         bound_scenario_expectations = {
             expectation_id
-            for scenario in plan.failure_scenarios
+            for scenario in runtime_plan.failure_scenarios
             for expectation_id in scenario.verification_expectation_ids
         }
         failover_results = self._unbound_failover_results(
-            plan, by_action, profiles, bound_scenario_expectations,
+            runtime_plan, by_action, profiles, bound_scenario_expectations,
+            verification_statuses, dict(foundational_statuses),
         )
+        verification_statuses.update({
+            item.expectation_id: item.status for item in failover_results
+        })
         scenario_results = self._execute_scenarios(
-            plan, by_action, inventory, profiles,
+            runtime_plan, by_action, inventory, profiles,
+            verification_statuses, dict(foundational_statuses),
         )
 
         applied_status = self._aggregate(
@@ -220,6 +316,19 @@ class ControlPlaneApplicator:
             failover_results,
             scenario_results,
         )
+        journal = journal_from_action_results(
+            plan_id=plan.id,
+            deployment_id=deployment_id,
+            actions=list(plan.actions),
+            results=action_results,
+        )
+        self._record_scenario_restore(journal, scenario_results)
+        evidence_records = self._evidence_records(
+            runtime_plan,
+            [*observed_results, *behavior_results, *failover_results],
+            scenario_results,
+            context,
+        )
         return ControlPlaneApplicationResult(
             control_plane_plan_id=plan.id,
             control_plane_semantic_hash=plan.semantic_hash,
@@ -239,6 +348,10 @@ class ControlPlaneApplicator:
             behavior_results=behavior_results,
             failover_results=failover_results,
             scenario_results=scenario_results,
+            deployment_id=deployment_id,
+            execution_journal=journal,
+            dirty_state=journal.dirty_state,
+            evidence_records=evidence_records,
             duration_ms=int((monotonic() - started) * 1000),
         )
 
@@ -277,6 +390,121 @@ class ControlPlaneApplicator:
                     f"Foundation {requirement.source_id} source hash does not match."
                 )
         return sorted(set(errors))
+
+    @staticmethod
+    def _normalized_verification_plan(plan: ControlPlanePlan) -> ControlPlanePlan:
+        verification_ids = {item.id for item in plan.verification_expectations}
+        action_ids = {item.id for item in plan.actions}
+        normalized = []
+        for item in plan.verification_expectations:
+            if item.verification_prerequisites:
+                prerequisites = [
+                    prerequisite.model_copy(update={
+                        "kind": PrerequisiteKind.VERIFICATION_VERIFIED,
+                    })
+                    if (
+                        prerequisite.kind is PrerequisiteKind.ACTION_APPLIED
+                        and prerequisite.reference_id in verification_ids
+                        and prerequisite.reference_id not in action_ids
+                    )
+                    else prerequisite
+                    for prerequisite in item.verification_prerequisites
+                ]
+                normalized.append(item.model_copy(update={
+                    "verification_prerequisites": prerequisites,
+                }))
+                continue
+            references = [item.action_id, *item.depends_on]
+            normalized.append(item.model_copy(update={
+                "verification_prerequisites": [
+                    VerificationPrerequisite(
+                        kind=(
+                            PrerequisiteKind.VERIFICATION_VERIFIED
+                            if identifier in verification_ids
+                            else PrerequisiteKind.ACTION_APPLIED
+                        ),
+                        reference_id=identifier,
+                    )
+                    for identifier in sorted(set(filter(None, references)))
+                ],
+            }))
+        ordered = order_verification_expectations(normalized)
+        return plan.model_copy(update={"verification_expectations": list(ordered)})
+
+    @staticmethod
+    def _semantic_device_ids(plan: ControlPlanePlan) -> list[str]:
+        identifiers = {item.device_id for item in plan.actions if item.device_id}
+        for expectation in plan.verification_expectations:
+            if expectation.device_id:
+                identifiers.add(expectation.device_id)
+            if expectation.peer_device_id:
+                identifiers.add(expectation.peer_device_id)
+        for scenario in plan.failure_scenarios:
+            identifiers.update(filter(None, (
+                scenario.device_a_id,
+                scenario.device_b_id,
+                scenario.target_device_id,
+                scenario.peer_device_id,
+                scenario.probe_source_device_id,
+                scenario.probe_destination_device_id,
+            )))
+        return sorted(identifiers)
+
+    @staticmethod
+    def _runtime_plan(
+        plan: ControlPlanePlan,
+        deployed_names: dict[str, str],
+    ) -> ControlPlanePlan:
+        def resolve(identifier: str, label: str) -> str:
+            if not identifier:
+                raise DeploymentIdentityError(f"{label} has no semantic device ID.")
+            try:
+                return deployed_names[identifier]
+            except KeyError as exc:
+                raise DeploymentIdentityError(
+                    f"DeploymentManifest has no resolved target for {identifier!r}."
+                ) from exc
+
+        actions = [
+            item.model_copy(update={
+                "device_name": resolve(
+                    item.device_id, f"Control-plane action {item.id}",
+                ),
+            })
+            for item in plan.actions
+        ]
+        expectations = []
+        for item in plan.verification_expectations:
+            expected = dict(item.expected)
+            if item.device_id:
+                expected["source_device_name"] = resolve(
+                    item.device_id, f"Control-plane expectation {item.id}",
+                )
+            expectations.append(item.model_copy(update={"expected": expected}))
+        scenarios = [
+            item.model_copy(update={
+                "target_device_name": resolve(
+                    item.target_device_id, f"Failure scenario {item.id} target",
+                ),
+                "peer_device_name": resolve(
+                    item.peer_device_id, f"Failure scenario {item.id} peer",
+                ),
+                "probe_source_device_name": resolve(
+                    item.probe_source_device_id,
+                    f"Failure scenario {item.id} probe source",
+                ),
+                "probe_destination_device_name": resolve(
+                    item.probe_destination_device_id,
+                    f"Failure scenario {item.id} probe destination",
+                ),
+            })
+            for item in plan.failure_scenarios
+        ]
+        return plan.model_copy(update={
+            "actions": actions,
+            "verification_expectations": expectations,
+            "failure_scenarios": scenarios,
+        })
 
     @staticmethod
     def _target_errors(
@@ -349,6 +577,8 @@ class ControlPlaneApplicator:
                     f"{action.model}:{action.required_capability.value} is "
                     f"{support.value}."
                 ),
+                operation=action.operation,
+                disposition=MutationDisposition.SKIPPED,
             )
 
         pending = [item for item in plan.actions if item.id not in results]
@@ -358,7 +588,7 @@ class ControlPlaneApplicator:
                 blocked = [
                     dependency for dependency in action.depends_on
                     if dependency in results
-                    and results[dependency].status is not ActionExecutionStatus.APPLIED
+                    and not satisfies_apply_dependency(results[dependency].status)
                 ]
                 if not blocked:
                     continue
@@ -367,6 +597,8 @@ class ControlPlaneApplicator:
                     status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
                     failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                     message="Blocked by: " + ", ".join(sorted(blocked)),
+                    operation=action.operation,
+                    disposition=MutationDisposition.BLOCKED,
                 )
                 pending.remove(action)
                 progress = True
@@ -375,7 +607,7 @@ class ControlPlaneApplicator:
                 action for action in pending
                 if all(
                     dependency in results
-                    and results[dependency].status is ActionExecutionStatus.APPLIED
+                    and satisfies_apply_dependency(results[dependency].status)
                     for dependency in action.depends_on
                 )
             ]
@@ -388,16 +620,15 @@ class ControlPlaneApplicator:
                 mutations = self._safe_apply(batch)
                 for action in batch:
                     mutation = mutations.get(action.id)
-                    applied = bool(mutation and mutation.applied)
                     results[action.id] = ActionApplicationResult(
                         action_id=action.id,
                         status=(
-                            ActionExecutionStatus.APPLIED
-                            if applied else ActionExecutionStatus.FAILED
+                            self._mutation_status(mutation)
+                            if mutation else ActionExecutionStatus.FAILED
                         ),
                         failure_code=(
                             ConfigurationFailureCode.NONE
-                            if applied else mutation.failure_code
+                            if mutation and mutation.applied else mutation.failure_code
                             if mutation
                             and mutation.failure_code is not ConfigurationFailureCode.NONE
                             else ConfigurationFailureCode.APPLICATION_FAILED
@@ -407,6 +638,11 @@ class ControlPlaneApplicator:
                             if mutation else "Runtime returned no mutation result."
                         ),
                         batch_id=mutation.batch_id if mutation else "",
+                        operation=action.operation,
+                        disposition=(
+                            mutation.disposition
+                            if mutation else MutationDisposition.UNKNOWN
+                        ),
                     )
                     pending.remove(action)
                 progress = True
@@ -417,9 +653,21 @@ class ControlPlaneApplicator:
                         status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
                         failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                         message="No executable dependency frontier remained.",
+                        operation=action.operation,
+                        disposition=MutationDisposition.BLOCKED,
                     )
                 break
         return [results[item.id] for item in plan.actions]
+
+    @staticmethod
+    def _mutation_status(mutation: RuntimeActionMutation) -> ActionExecutionStatus:
+        if not mutation.applied:
+            return ActionExecutionStatus.FAILED
+        if mutation.disposition is MutationDisposition.NO_OP:
+            return ActionExecutionStatus.NO_OP
+        if mutation.disposition is MutationDisposition.REASSERTED:
+            return ActionExecutionStatus.REASSERTED
+        return ActionExecutionStatus.APPLIED
 
     def _safe_apply(
         self, actions: Sequence[ControlPlaneAction],
@@ -446,58 +694,61 @@ class ControlPlaneApplicator:
         stage: ControlPlaneExecutionStage,
         actions: Mapping[str, ActionApplicationResult],
         profiles: Mapping[str, ControlPlaneCapabilityProfile],
+        *,
+        verification_statuses: Mapping[str, ActionExecutionStatus],
+        resource_statuses: Mapping[str, ActionExecutionStatus],
     ) -> list[ControlPlaneVerificationResult]:
         actions_by_id = {item.id: item for item in plan.actions}
-        immediate: dict[str, RuntimeControlPlaneVerification] = {}
-        runnable: list[ControlPlaneVerificationExpectation] = []
-        for expectation in expectations:
-            blocked = [
-                dependency for dependency in expectation.depends_on
-                if dependency not in actions
-                or actions[dependency].status is not ActionExecutionStatus.APPLIED
-            ]
-            if blocked:
-                immediate[expectation.id] = RuntimeControlPlaneVerification(
-                    expectation_id=expectation.id,
-                    stage=stage,
-                    status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
-                    message="Blocked by: " + ", ".join(sorted(blocked)),
-                )
-                continue
-            action = actions_by_id.get(expectation.action_id)
-            support = self._capability_status(
-                profiles,
-                action.model if action else "",
-                expectation.required_capability,
-            )
-            if support not in _RUNNABLE_CAPABILITIES:
-                immediate[expectation.id] = RuntimeControlPlaneVerification(
-                    expectation_id=expectation.id,
-                    stage=stage,
-                    status=ActionExecutionStatus.UNOBSERVABLE,
-                    evidence_method="control_plane_capability_gate",
-                    fields={"capability": FieldVerificationStatus.UNOBSERVABLE},
-                    message=(
-                        f"{action.model if action else 'unknown'}:"
-                        f"{expectation.required_capability.value} is {support.value}."
-                    ),
-                )
-                continue
-            runnable.append(expectation)
-
-        observed = self._safe_verify(runnable, stage)
-        by_id = {**immediate, **{item.expectation_id: item for item in observed}}
+        action_statuses = {
+            identifier: result.status for identifier, result in actions.items()
+        }
+        current_statuses = dict(verification_statuses)
         results: list[ControlPlaneVerificationResult] = []
         for expectation in expectations:
-            item = by_id.get(expectation.id)
-            if item is None:
+            satisfied, blocked = prerequisites_satisfied(
+                expectation.verification_prerequisites,
+                action_statuses=action_statuses,
+                verification_statuses=current_statuses,
+                resource_statuses=dict(resource_statuses),
+            )
+            if not satisfied:
                 item = RuntimeControlPlaneVerification(
                     expectation_id=expectation.id,
                     stage=stage,
-                    status=ActionExecutionStatus.UNKNOWN,
-                    message="Runtime returned no verification result.",
+                    status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                    evidence_method="verification_prerequisite_gate",
+                    fields={"prerequisites": FieldVerificationStatus.UNOBSERVABLE},
+                    message="Blocked by: " + ", ".join(blocked),
                 )
+            else:
+                action = actions_by_id.get(expectation.action_id)
+                support = self._capability_status(
+                    profiles,
+                    action.model if action else "",
+                    expectation.required_capability,
+                )
+                if support not in _RUNNABLE_CAPABILITIES:
+                    item = RuntimeControlPlaneVerification(
+                        expectation_id=expectation.id,
+                        stage=stage,
+                        status=ActionExecutionStatus.UNOBSERVABLE,
+                        evidence_method="control_plane_capability_gate",
+                        fields={"capability": FieldVerificationStatus.UNOBSERVABLE},
+                        message=(
+                            f"{action.model if action else 'unknown'}:"
+                            f"{expectation.required_capability.value} is {support.value}."
+                        ),
+                    )
+                else:
+                    observed = self._safe_verify([expectation], stage)
+                    item = observed[0] if observed else RuntimeControlPlaneVerification(
+                        expectation_id=expectation.id,
+                        stage=stage,
+                        status=ActionExecutionStatus.UNKNOWN,
+                        message="Runtime returned no verification result.",
+                    )
             results.append(self._verification_result(expectation, item, stage))
+            current_statuses[expectation.id] = results[-1].status
         return results
 
     def _safe_verify(self, expectations, stage):
@@ -522,8 +773,14 @@ class ControlPlaneApplicator:
         actions: Mapping[str, ActionApplicationResult],
         profiles: Mapping[str, ControlPlaneCapabilityProfile],
         bound_expectation_ids: set[str],
+        verification_statuses: Mapping[str, ActionExecutionStatus],
+        resource_statuses: Mapping[str, ActionExecutionStatus],
     ) -> list[ControlPlaneVerificationResult]:
         actions_by_id = {item.id: item for item in plan.actions}
+        action_statuses = {
+            identifier: result.status for identifier, result in actions.items()
+        }
+        current_statuses = dict(verification_statuses)
         results: list[ControlPlaneVerificationResult] = []
         for expectation in plan.verification_expectations:
             if (
@@ -537,23 +794,26 @@ class ControlPlaneApplicator:
                 is ControlPlaneVerificationKind.LINK_FAILURE_CONVERGENCE
                 else ControlPlaneExecutionStage.RESTORE
             )
-            blocked = [
-                dependency for dependency in expectation.depends_on
-                if dependency not in actions
-                or actions[dependency].status is not ActionExecutionStatus.APPLIED
-            ]
+            satisfied, blocked = prerequisites_satisfied(
+                expectation.verification_prerequisites,
+                action_statuses=action_statuses,
+                verification_statuses=current_statuses,
+                resource_statuses=dict(resource_statuses),
+            )
             action = actions_by_id.get(expectation.action_id)
             support = self._capability_status(
                 profiles,
                 action.model if action else "",
                 expectation.required_capability,
             )
-            if blocked:
+            if not satisfied:
                 runtime_result = RuntimeControlPlaneVerification(
                     expectation_id=expectation.id,
                     stage=stage,
                     status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
-                    message="Blocked by: " + ", ".join(sorted(blocked)),
+                    evidence_method="verification_prerequisite_gate",
+                    fields={"prerequisites": FieldVerificationStatus.UNOBSERVABLE},
+                    message="Blocked by: " + ", ".join(blocked),
                 )
             else:
                 supported = support in _RUNNABLE_CAPABILITIES
@@ -577,6 +837,7 @@ class ControlPlaneApplicator:
             results.append(self._verification_result(
                 expectation, runtime_result, stage,
             ))
+            current_statuses[expectation.id] = results[-1].status
         return results
 
     @staticmethod
@@ -606,9 +867,135 @@ class ControlPlaneApplicator:
             convergence=item.convergence,
         )
 
-    def _execute_scenarios(self, plan, actions, inventory, profiles):
+    @staticmethod
+    def _evidence_records(
+        plan: ControlPlanePlan,
+        verification: Sequence[ControlPlaneVerificationResult],
+        scenarios: Sequence[FailureScenarioResult],
+        context: ConfigurationRuntimeContext,
+    ) -> list[EvidenceRecord]:
+        expectations = {
+            item.id: item for item in plan.verification_expectations
+        }
+        actions = {item.id: item for item in plan.actions}
+        scenario_plans = {item.id: item for item in plan.failure_scenarios}
+        records = []
+        for item in verification:
+            expectation = expectations[item.expectation_id]
+            action = actions.get(expectation.action_id)
+            subject = expectation.device_id or (
+                action.device_id if action else expectation.action_id
+            )
+            records.append(evidence_from_legacy_result(
+                identifier=(
+                    f"evidence/control-plane/{item.expectation_id}/{item.stage.value}"
+                ),
+                subject=subject,
+                claim=f"{item.kind.value}:{item.stage.value}",
+                status=item.status,
+                evidence_method=item.evidence_method,
+                fresh_evidence=item.fresh_evidence,
+                observed_value={
+                    "stage": item.stage.value,
+                    "fields": {
+                        name: value.value
+                        for name, value in sorted(item.fields.items())
+                    },
+                    "convergence": (
+                        item.convergence.model_dump(mode="json")
+                        if item.convergence else None
+                    ),
+                },
+                backend=context.backend,
+                backend_version=context.backend_version,
+                environment_fingerprint=context.capability_snapshot_hash,
+                limitations=[item.message] if item.message else [],
+            ))
+        for scenario in scenarios:
+            scenario_plan = scenario_plans.get(scenario.scenario_id)
+            subject = (
+                scenario_plan.probe_source_device_id
+                if scenario_plan else scenario.scenario_id
+            )
+            runtime_stages = [
+                item for item in (scenario.before, scenario.during, scenario.after)
+                if item is not None
+            ]
+            for item in runtime_stages:
+                expectation = expectations.get(item.expectation_id)
+                records.append(evidence_from_legacy_result(
+                    identifier=(
+                        f"evidence/control-plane/{item.expectation_id}/{item.stage.value}"
+                    ),
+                    subject=(expectation.device_id if expectation else subject),
+                    claim=(
+                        f"{expectation.kind.value}:{item.stage.value}"
+                        if expectation else f"failure_scenario:{item.stage.value}"
+                    ),
+                    status=item.status,
+                    evidence_method=(
+                        item.evidence_method or "behavioral_failure_scenario"
+                    ),
+                    fresh_evidence=item.fresh_evidence,
+                    observed_value={
+                        "scenario_id": scenario.scenario_id,
+                        "stage": item.stage.value,
+                        "fields": {
+                            name: value.value
+                            for name, value in sorted(item.fields.items())
+                        },
+                        "convergence": (
+                            item.convergence.model_dump(mode="json")
+                            if item.convergence else None
+                        ),
+                    },
+                    backend=context.backend,
+                    backend_version=context.backend_version,
+                    environment_fingerprint=context.capability_snapshot_hash,
+                    limitations=[item.message] if item.message else [],
+                ))
+            records.append(evidence_from_legacy_result(
+                identifier=f"evidence/control-plane/scenario/{scenario.scenario_id}",
+                subject=subject,
+                claim="failure_scenario:composed",
+                status=scenario.status,
+                evidence_method=(
+                    "behavioral_failure_scenario" if runtime_stages else ""
+                ),
+                fresh_evidence=(
+                    bool(runtime_stages)
+                    and all(item.fresh_evidence for item in runtime_stages)
+                ),
+                observed_value={
+                    "baseline": scenario.baseline_status.value,
+                    "injection": scenario.injection_status.value,
+                    "failover": scenario.failover_status.value,
+                    "restore": scenario.restore_status.value,
+                    "recovery": scenario.recovery_status.value,
+                    "restore_attempted": scenario.restore_attempted,
+                },
+                backend=context.backend,
+                backend_version=context.backend_version,
+                environment_fingerprint=context.capability_snapshot_hash,
+                limitations=[scenario.message] if scenario.message else [],
+            ))
+        return records
+
+    def _execute_scenarios(
+        self,
+        plan,
+        actions,
+        inventory,
+        profiles,
+        verification_statuses,
+        resource_statuses,
+    ):
         expectations = {item.id: item for item in plan.verification_expectations}
         actions_by_id = {item.id: item for item in plan.actions}
+        action_statuses = {
+            identifier: result.status for identifier, result in actions.items()
+        }
+        current_verification_statuses = dict(verification_statuses)
         results: list[FailureScenarioResult] = []
         for scenario in plan.failure_scenarios:
             if not scenario.restore_required:
@@ -640,17 +1027,18 @@ class ControlPlaneApplicator:
                     message="Failure scenario lacks its failure or recovery expectation.",
                 ))
                 continue
-            blocked = [
-                dependency for dependency in failure.depends_on
-                if dependency not in actions
-                or actions[dependency].status is not ActionExecutionStatus.APPLIED
-            ]
-            if blocked:
+            satisfied, blocked = prerequisites_satisfied(
+                failure.verification_prerequisites,
+                action_statuses=action_statuses,
+                verification_statuses=current_verification_statuses,
+                resource_statuses=dict(resource_statuses),
+            )
+            if not satisfied:
                 results.append(FailureScenarioResult(
                     scenario_id=scenario.id,
                     status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
                     failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
-                    message="Blocked by: " + ", ".join(sorted(blocked)),
+                    message="Blocked by: " + ", ".join(blocked),
                 ))
                 continue
             target = inventory.get(scenario.target_device_name)
@@ -705,9 +1093,40 @@ class ControlPlaneApplicator:
                     message=f"Failure scenario runtime raised: {exc}",
                 ))
                 continue
-            results.append(self._scenario_result(
+            recovery_verification_statuses = dict(current_verification_statuses)
+            if runtime_result.during is not None:
+                recovery_verification_statuses[failure.id] = (
+                    runtime_result.during.status
+                )
+            recovery_ready, recovery_blocked = prerequisites_satisfied(
+                recovery.verification_prerequisites,
+                action_statuses=action_statuses,
+                verification_statuses=recovery_verification_statuses,
+                resource_statuses=dict(resource_statuses),
+            )
+            if not recovery_ready:
+                runtime_result = runtime_result.model_copy(update={
+                    "after": RuntimeControlPlaneVerification(
+                        expectation_id=recovery.id,
+                        stage=ControlPlaneExecutionStage.RESTORE,
+                        status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                        evidence_method="verification_prerequisite_gate",
+                        fields={
+                            "prerequisites": FieldVerificationStatus.UNOBSERVABLE,
+                        },
+                        message="Blocked by: " + ", ".join(recovery_blocked),
+                    ),
+                })
+            scenario_result = self._scenario_result(
                 scenario, failure, recovery, runtime_result,
-            ))
+            )
+            results.append(scenario_result)
+            current_verification_statuses[failure.id] = (
+                scenario_result.failover_status
+            )
+            current_verification_statuses[recovery.id] = (
+                scenario_result.recovery_status
+            )
         return results
 
     @staticmethod
@@ -723,17 +1142,16 @@ class ControlPlaneApplicator:
             runtime.before.status if runtime.before else ActionExecutionStatus.UNKNOWN
         )
         injection = (
-            ActionExecutionStatus.APPLIED
-            if runtime.injection and runtime.injection.applied
-            else ActionExecutionStatus.FAILED
-            if runtime.injection else ActionExecutionStatus.UNKNOWN
+            ControlPlaneApplicator._mutation_status(runtime.injection)
+            if runtime.injection
+            else ActionExecutionStatus.UNKNOWN
         )
         failover = (
             runtime.during.status if runtime.during else ActionExecutionStatus.UNKNOWN
         )
         restore = (
-            ActionExecutionStatus.APPLIED
-            if runtime.restore and runtime.restore.applied
+            ControlPlaneApplicator._mutation_status(runtime.restore)
+            if runtime.restore
             else ActionExecutionStatus.FAILED
             if runtime.restore_attempted else ActionExecutionStatus.SKIPPED
         )
@@ -766,7 +1184,7 @@ class ControlPlaneApplicator:
                 and not runtime.restore_attempted
             ) or (
                 runtime.restore_attempted
-                and restore is not ActionExecutionStatus.APPLIED
+                and not satisfies_apply_dependency(restore)
             )
             return FailureScenarioResult(
                 scenario_id=scenario.id,
@@ -798,16 +1216,16 @@ class ControlPlaneApplicator:
             status = ActionExecutionStatus.FAILED
             code = ConfigurationFailureCode.CLEANUP_FAILED
             message = "An applied fault was not followed by a restore attempt."
-        elif runtime.restore_attempted and restore is not ActionExecutionStatus.APPLIED:
+        elif runtime.restore_attempted and not satisfies_apply_dependency(restore):
             status = ActionExecutionStatus.FAILED
             code = ConfigurationFailureCode.CLEANUP_FAILED
-        elif runtime.injection is not None and injection is not ActionExecutionStatus.APPLIED:
+        elif runtime.injection is not None and not satisfies_apply_dependency(injection):
             status = ActionExecutionStatus.FAILED
             code = ConfigurationFailureCode.APPLICATION_FAILED
         elif baseline is not ActionExecutionStatus.VERIFIED:
             status = ActionExecutionStatus.FAILED
             code = ConfigurationFailureCode.BEHAVIORAL_VERIFICATION_FAILED
-        elif injection is not ActionExecutionStatus.APPLIED:
+        elif not satisfies_apply_dependency(injection):
             status = ActionExecutionStatus.FAILED
             code = ConfigurationFailureCode.APPLICATION_FAILED
         elif failover is not ActionExecutionStatus.VERIFIED:
@@ -837,6 +1255,45 @@ class ControlPlaneApplicator:
         )
 
     @staticmethod
+    def _record_scenario_restore(journal, scenarios) -> None:
+        uncertain_restore = any(
+            item.failure_code is ConfigurationFailureCode.CLEANUP_FAILED
+            and item.restore_status is ActionExecutionStatus.UNKNOWN
+            for item in scenarios
+        )
+        if uncertain_restore:
+            journal.mark_cleanup(CompensationStatus.UNKNOWN)
+            return
+        injected = [
+            item for item in scenarios
+            if satisfies_apply_dependency(item.injection_status)
+        ]
+        if not injected:
+            return
+        restored = all(
+            item.restore_attempted
+            and satisfies_apply_dependency(item.restore_status)
+            for item in injected
+        )
+        if not restored:
+            journal.mark_cleanup(CompensationStatus.FAILED)
+            return
+        restore_observed = all(
+            item.recovery_status is ActionExecutionStatus.VERIFIED
+            and item.failure_code is not ConfigurationFailureCode.SESSION_FAILED
+            for item in injected
+        )
+        if not restore_observed:
+            journal.mark_cleanup(CompensationStatus.UNKNOWN)
+            return
+        if journal.dirty_state is DirtyState.CLEAN:
+            journal.mark_cleanup(CompensationStatus.SUCCEEDED)
+        else:
+            # A known scenario restore cannot erase dirty state caused by an
+            # earlier control-plane application failure.
+            journal.cleanup_status = CompensationStatus.SUCCEEDED
+
+    @staticmethod
     def _capability_status(profiles, model, dimension):
         profile = profiles.get(model)
         return (
@@ -850,6 +1307,10 @@ class ControlPlaneApplicator:
             return ActionExecutionStatus.SKIPPED
         if any(item is ActionExecutionStatus.FAILED for item in statuses):
             return ActionExecutionStatus.FAILED
+        if success is ActionExecutionStatus.APPLIED and all(
+            satisfies_apply_dependency(item) for item in statuses
+        ):
+            return ActionExecutionStatus.APPLIED
         if all(item is success for item in statuses):
             return success
         for candidate in (
@@ -910,7 +1371,16 @@ class ControlPlaneApplicator:
         *messages,
         context,
         started,
+        deployment_id="",
     ):
+        journal = journal_from_action_results(
+            plan_id=plan.id,
+            deployment_id=deployment_id,
+            actions=list(plan.actions),
+            results=[],
+        )
+        for message in messages:
+            journal.mark_preflight_failure(message)
         return ControlPlaneApplicationResult(
             control_plane_plan_id=plan.id,
             control_plane_semantic_hash=plan.semantic_hash,
@@ -922,5 +1392,8 @@ class ControlPlaneApplicator:
             failure_code=code,
             configured_status=ActionExecutionStatus.COMPILED,
             preflight_errors=list(messages),
+            deployment_id=deployment_id,
+            execution_journal=journal,
+            dirty_state=journal.dirty_state,
             duration_ms=int((monotonic() - started) * 1000),
         )
