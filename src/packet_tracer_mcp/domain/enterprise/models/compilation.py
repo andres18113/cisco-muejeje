@@ -110,6 +110,9 @@ class LayoutRegion(BaseModel):
 class EnterpriseCompileSummary(BaseModel):
     plan_id: str
     semantic_hash: str = ""
+    physical_topology_hash: str = ""
+    layout_hash: str = ""
+    artifact_hash: str = ""
     sites: int = 0
     network_devices: int = 0
     endpoints: int = 0
@@ -128,6 +131,9 @@ class EnterpriseCompileSummary(BaseModel):
 class EnterpriseCompileResult(BaseModel):
     plan: TopologyPlan | None = None
     semantic_hash: str = ""
+    physical_topology_hash: str = ""
+    layout_hash: str = ""
+    artifact_hash: str = ""
     summary: EnterpriseCompileSummary
     issues: list[CompilationIssue] = Field(default_factory=list)
     layout_regions: list[LayoutRegion] = Field(default_factory=list)

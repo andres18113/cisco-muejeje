@@ -133,6 +133,13 @@ class TopologyPlan(BaseModel):
     """Plan completo, validado, listo para generar scripts."""
     id: str = ""
     name: str = "topology"
+    # Schema v1 exposed one hash for network identity and presentation.
+    # Schema v2 keeps semantic_hash as the complete artifact hash, while
+    # downstream plans bind explicitly to physical_topology_hash.
+    hash_schema_version: str = "1"
+    physical_topology_hash: str = ""
+    layout_hash: str = ""
+    artifact_hash: str = ""
     semantic_hash: str = ""
     metadata: dict[str, str] = Field(default_factory=dict)
     devices: list[DevicePlan] = Field(default_factory=list)
@@ -166,3 +173,8 @@ class TopologyPlan(BaseModel):
 
     def devices_by_category(self, category: str) -> list[DevicePlan]:
         return [d for d in self.devices if d.category == category]
+
+    @property
+    def physical_identity_hash(self) -> str:
+        """Return the v2 physical hash or the explicit v1 compatibility value."""
+        return self.physical_topology_hash or self.semantic_hash

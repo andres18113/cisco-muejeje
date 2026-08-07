@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -37,6 +36,7 @@ from .endpoint_expander import EndpointGroupExpander, ExpandedEndpoint, iter_zon
 from .layout_planner import LayoutPlanner
 from .naming import DeterministicNamingService
 from .physical_ports import is_logical_interface, natural_interface_key, physical_ports
+from .topology_identity import stamp_topology_hashes
 
 
 CableResolver = Callable[[str, str], str]
@@ -242,7 +242,11 @@ class EnterpriseCompiler:
 
         topology.warnings = [issue.message for issue in issues if issue.severity is CompilationIssueSeverity.WARNING]
         topology.errors = []
-        topology.semantic_hash = _semantic_hash(topology)
+        stamp_topology_hashes(
+            topology,
+            layout_regions=regions,
+            layout_profile=layout_profile,
+        )
         return self._result(topology, enterprise, issues, regions, valid=True)
 
     @staticmethod
@@ -620,6 +624,9 @@ class EnterpriseCompiler:
         summary = EnterpriseCompileSummary(
             plan_id=topology.id,
             semantic_hash=topology.semantic_hash if valid else "",
+            physical_topology_hash=topology.physical_topology_hash if valid else "",
+            layout_hash=topology.layout_hash if valid else "",
+            artifact_hash=topology.artifact_hash if valid else "",
             sites=len(enterprise.sites),
             network_devices=sum(bool(device.network_layer) for device in topology.devices),
             endpoints=sum(not device.network_layer for device in topology.devices),
@@ -649,6 +656,9 @@ class EnterpriseCompiler:
         return EnterpriseCompileResult(
             plan=topology if valid else None,
             semantic_hash=topology.semantic_hash if valid else "",
+            physical_topology_hash=topology.physical_topology_hash if valid else "",
+            layout_hash=topology.layout_hash if valid else "",
+            artifact_hash=topology.artifact_hash if valid else "",
             summary=summary,
             issues=ordered_issues,
             layout_regions=regions if valid else [],
@@ -723,13 +733,6 @@ def _link_plan(
         network_layer=network_layer,
         redundancy_group=redundancy_group,
     )
-
-
-def _semantic_hash(topology: TopologyPlan) -> str:
-    payload = topology.model_dump(mode="json")
-    payload["semantic_hash"] = ""
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _error(

@@ -11,9 +11,11 @@ from .requirements_validator import validate_enterprise_intent
 from .service_compiler import ServiceCompiler
 from .voice_compiler import VoiceCompiler
 from .control_plane_compiler import ControlPlaneCompiler
+from .topology_identity import TopologyHashes, compute_topology_hashes, stamp_topology_hashes
 
 __all__ = [
     "CapacityPlanner", "ConfigurationCompiler", "DeviceSelector", "EnterpriseCompiler", "EnterpriseDesigner", "HardwarePlanner",
     "ControlPlaneCompiler", "HardwarePlanningPolicy", "IPAMPlanner", "ServiceCompiler", "VoiceCompiler",
+    "TopologyHashes", "compute_topology_hashes", "stamp_topology_hashes",
     "validate_enterprise_intent",
 ]
