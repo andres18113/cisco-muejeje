@@ -9,6 +9,9 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from .configuration import ConfigurationIssue
+from .execution import OperationSemantics
+from .evidence import CapabilityReadiness
+from .verification import VerificationPrerequisite
 
 
 class SecurityDecision(str, Enum):
@@ -55,6 +58,7 @@ class SecurityCapabilityProfile(BaseModel):
     )
     evidence_source: str = ""
     packet_tracer_version: str | None = None
+    capability_readiness: dict[str, CapabilityReadiness] = Field(default_factory=dict)
 
     def status(self, dimension: SecurityCapabilityDimension) -> SecurityCapabilityStatus:
         return self.dimensions.get(dimension, SecurityCapabilityStatus.UNKNOWN)
@@ -179,17 +183,27 @@ class BaseSecurityAction(BaseModel):
     model: str
     site_id: str
     depends_on: list[str] = Field(default_factory=list)
+    apply_dependencies: list[str] = Field(default_factory=list)
     required_capability: SecurityCapabilityDimension
     critical: bool = True
+    operation: OperationSemantics = OperationSemantics.SET_VALUE
+    compensation_available: bool = False
+    inverse_action_id: str = ""
 
 
 class CreateSecurityAcl(BaseSecurityAction):
     action_type: Literal[SecurityActionType.CREATE_ACL] = SecurityActionType.CREATE_ACL
+    operation: Literal[
+        OperationSemantics.ENSURE_PRESENT
+    ] = OperationSemantics.ENSURE_PRESENT
     acl_name: str
 
 
 class AddSecurityAclRule(BaseSecurityAction):
     action_type: Literal[SecurityActionType.ADD_ACL_RULE] = SecurityActionType.ADD_ACL_RULE
+    operation: Literal[
+        OperationSemantics.ENSURE_PRESENT
+    ] = OperationSemantics.ENSURE_PRESENT
     acl_name: str
     sequence: int
     policy_id: str = ""
@@ -329,6 +343,7 @@ class SecurityVerificationExpectation(BaseModel):
     cleanup_recovery_required: bool = False
     required_query: str = ""
     depends_on: list[str] = Field(default_factory=list)
+    verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
 
 
 def security_verification_capability(
@@ -369,6 +384,7 @@ class SecurityPlan(BaseModel):
     default_decision: SecurityDecision = SecurityDecision.ALLOW
     source_topology_id: str
     source_topology_hash: str
+    source_topology_hash_schema: str = "legacy-full-v1"
     source_configuration_id: str
     source_configuration_hash: str
     source_service_id: str = ""
@@ -392,6 +408,7 @@ class SecurityCompileSummary(BaseModel):
     security_plan_id: str = ""
     semantic_hash: str = ""
     source_topology_hash: str = ""
+    source_topology_hash_schema: str = ""
     source_configuration_hash: str = ""
     source_service_hash: str = ""
     source_voice_hash: str = ""

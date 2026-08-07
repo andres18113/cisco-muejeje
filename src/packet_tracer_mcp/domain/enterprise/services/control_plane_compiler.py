@@ -50,6 +50,7 @@ from ..models.control_plane import (
     control_plane_action_type_counts,
 )
 from ..models.security_plan import SecurityCapabilityStatus, SecurityPlan
+from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from .configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
@@ -253,10 +254,26 @@ class ControlPlaneCompiler:
         if not any(
             item.severity is ConfigurationIssueSeverity.ERROR for item in issues
         ):
+            for action in actions:
+                action.apply_dependencies = list(action.depends_on)
+            for expectation in expectations:
+                expectation.verification_prerequisites = [
+                    VerificationPrerequisite(
+                        kind=PrerequisiteKind.ACTION_APPLIED,
+                        reference_id=identifier,
+                    )
+                    for identifier in sorted(set([
+                        expectation.action_id, *expectation.depends_on,
+                    ]))
+                ]
             plan = ControlPlanePlan(
-                id=f"control-plane_{topology.id or topology.semantic_hash[:16]}",
+                id=f"control-plane_{topology.id or topology.physical_identity_hash[:16]}",
                 source_topology_id=topology.id,
-                source_topology_hash=topology.semantic_hash,
+                source_topology_hash=topology.physical_identity_hash,
+                source_topology_hash_schema=(
+                    "physical-topology-v2"
+                    if topology.physical_topology_hash else "legacy-full-v1"
+                ),
                 source_configuration_id=configuration.id,
                 source_configuration_hash=configuration.semantic_hash,
                 source_security_id=security_id,
@@ -286,13 +303,13 @@ class ControlPlaneCompiler:
         security_plan: SecurityPlan | None,
         issues: list[ConfigurationIssue],
     ) -> None:
-        if not topology.semantic_hash or not configuration.semantic_hash:
+        if not topology.physical_identity_hash or not configuration.semantic_hash:
             issues.append(_error(
                 ConfigurationIssueCode.CONTROL_PLANE_SOURCE_HASH_MISSING,
                 "E9 requires immutable E4 and E5 semantic hashes.",
                 intent.id,
             ))
-        if configuration.source_topology_hash != topology.semantic_hash:
+        if configuration.source_topology_hash != topology.physical_identity_hash:
             issues.append(_error(
                 ConfigurationIssueCode.CONTROL_PLANE_SOURCE_MISMATCH,
                 "The E5 ConfigurationPlan was compiled for a different E4 topology.",
@@ -308,7 +325,7 @@ class ControlPlaneCompiler:
             ))
             return
         if (
-            security_plan.source_topology_hash != topology.semantic_hash
+            security_plan.source_topology_hash != topology.physical_identity_hash
             or security_plan.source_configuration_hash != configuration.semantic_hash
         ):
             issues.append(_error(
@@ -1861,7 +1878,11 @@ class ControlPlaneCompiler:
         summary = ControlPlaneCompileSummary(
             control_plane_plan_id=plan.id if plan else "",
             semantic_hash=plan.semantic_hash if plan else "",
-            source_topology_hash=topology.semantic_hash,
+            source_topology_hash=topology.physical_identity_hash,
+            source_topology_hash_schema=(
+                "physical-topology-v2"
+                if topology.physical_topology_hash else "legacy-full-v1"
+            ),
             source_configuration_hash=configuration.semantic_hash,
             source_security_hash=security_hash,
             action_count=len(actions),

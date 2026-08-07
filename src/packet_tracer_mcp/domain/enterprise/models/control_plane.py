@@ -9,7 +9,10 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from .configuration import ConfigurationIssue
+from .execution import OperationSemantics
+from .evidence import CapabilityReadiness
 from .security_plan import SecurityCapabilityStatus
+from .verification import VerificationPrerequisite
 
 
 class StpMode(str, Enum):
@@ -70,6 +73,7 @@ class ControlPlaneCapabilityProfile(BaseModel):
     ] = Field(default_factory=dict)
     evidence_source: str = ""
     packet_tracer_version: str | None = None
+    capability_readiness: dict[str, CapabilityReadiness] = Field(default_factory=dict)
 
     def status(
         self, dimension: ControlPlaneCapabilityDimension,
@@ -176,8 +180,12 @@ class BaseControlPlaneAction(BaseModel):
     model: str
     site_id: str
     depends_on: list[str] = Field(default_factory=list)
+    apply_dependencies: list[str] = Field(default_factory=list)
     required_capability: ControlPlaneCapabilityDimension
     critical: bool = True
+    operation: OperationSemantics = OperationSemantics.SET_VALUE
+    compensation_available: bool = False
+    inverse_action_id: str = ""
 
 
 class ConfigureSpanningTree(BaseControlPlaneAction):
@@ -309,6 +317,7 @@ class ControlPlaneVerificationExpectation(BaseModel):
         default_factory=dict,
     )
     depends_on: list[str] = Field(default_factory=list)
+    verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
 
 
 class LinkFailureScenario(BaseModel):
@@ -337,6 +346,7 @@ class ControlPlanePlan(BaseModel):
     id: str
     source_topology_id: str
     source_topology_hash: str
+    source_topology_hash_schema: str = "legacy-full-v1"
     source_configuration_id: str
     source_configuration_hash: str
     source_security_id: str = ""
@@ -362,6 +372,7 @@ class ControlPlaneCompileSummary(BaseModel):
     control_plane_plan_id: str = ""
     semantic_hash: str = ""
     source_topology_hash: str = ""
+    source_topology_hash_schema: str = ""
     source_configuration_hash: str = ""
     source_security_hash: str = ""
     action_count: int = 0

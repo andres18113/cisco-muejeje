@@ -55,6 +55,7 @@ from ..models.security_plan import (
 )
 from ..models.service_plan import ServiceDefinition, ServicePlan, ServiceType
 from ..models.voice_plan import CallControlInstance, VoicePlan
+from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from .configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
@@ -232,15 +233,31 @@ class SecurityCompiler:
         )
         plan: SecurityPlan | None = None
         if not has_errors:
+            for action in actions:
+                action.apply_dependencies = list(action.depends_on)
+            for expectation in expectations:
+                expectation.verification_prerequisites = [
+                    VerificationPrerequisite(
+                        kind=PrerequisiteKind.ACTION_APPLIED,
+                        reference_id=identifier,
+                    )
+                    for identifier in sorted(set([
+                        expectation.action_id, *expectation.depends_on,
+                    ]))
+                ]
             service_consumed = any(item.destination_service_id for item in intent.policies)
             voice_consumed = any(
                 item.destination_call_control_id for item in intent.policies
             )
             plan = SecurityPlan(
-                id=f"security_{topology.id or topology.semantic_hash[:16]}",
+                id=f"security_{topology.id or topology.physical_identity_hash[:16]}",
                 default_decision=intent.default_decision,
                 source_topology_id=topology.id,
-                source_topology_hash=topology.semantic_hash,
+                source_topology_hash=topology.physical_identity_hash,
+                source_topology_hash_schema=(
+                    "physical-topology-v2"
+                    if topology.physical_topology_hash else "legacy-full-v1"
+                ),
                 source_configuration_id=configuration.id,
                 source_configuration_hash=configuration.semantic_hash,
                 source_service_id=service_plan.id if service_consumed and service_plan else "",
@@ -350,13 +367,13 @@ class SecurityCompiler:
         voice_plan: VoicePlan | None,
         issues: list[ConfigurationIssue],
     ) -> None:
-        if not topology.semantic_hash or not configuration.semantic_hash:
+        if not topology.physical_identity_hash or not configuration.semantic_hash:
             issues.append(_error(
                 ConfigurationIssueCode.SECURITY_SOURCE_HASH_MISSING,
                 "E8 requires immutable E4 and E5 semantic hashes.",
                 intent.id,
             ))
-        if configuration.source_topology_hash != topology.semantic_hash:
+        if configuration.source_topology_hash != topology.physical_identity_hash:
             issues.append(_error(
                 ConfigurationIssueCode.SECURITY_SOURCE_MISMATCH,
                 "The E5 ConfigurationPlan was compiled for a different E4 topology.",
@@ -370,7 +387,7 @@ class SecurityCompiler:
                 intent.id,
             ))
         if service_plan and (
-            service_plan.source_topology_hash != topology.semantic_hash
+            service_plan.source_topology_hash != topology.physical_identity_hash
             or service_plan.source_configuration_hash != configuration.semantic_hash
             or not service_plan.semantic_hash
         ):
@@ -387,7 +404,7 @@ class SecurityCompiler:
                 intent.id,
             ))
         if voice_plan and (
-            voice_plan.source_topology_hash != topology.semantic_hash
+            voice_plan.source_topology_hash != topology.physical_identity_hash
             or voice_plan.source_configuration_hash != configuration.semantic_hash
             or not voice_plan.semantic_hash
         ):
@@ -1410,7 +1427,11 @@ class SecurityCompiler:
         summary = SecurityCompileSummary(
             security_plan_id=plan.id if plan else "",
             semantic_hash=plan.semantic_hash if plan else "",
-            source_topology_hash=topology.semantic_hash,
+            source_topology_hash=topology.physical_identity_hash,
+            source_topology_hash_schema=(
+                "physical-topology-v2"
+                if topology.physical_topology_hash else "legacy-full-v1"
+            ),
             source_configuration_hash=configuration.semantic_hash,
             source_service_hash=plan.source_service_hash if plan else "",
             source_voice_hash=plan.source_voice_hash if plan else "",

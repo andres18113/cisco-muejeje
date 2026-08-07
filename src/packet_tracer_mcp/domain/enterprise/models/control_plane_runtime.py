@@ -17,6 +17,8 @@ from .configuration_runtime import (
     RuntimeActionMutation,
 )
 from .control_plane import ControlPlaneVerificationKind
+from .evidence import EvidenceRecord
+from .execution import ApplicationExecutionJournal, DirtyState
 
 
 class ControlPlaneExecutionStage(str, Enum):
@@ -101,6 +103,10 @@ class ControlPlaneApplicationResult(BaseModel):
     failover_results: list[ControlPlaneVerificationResult] = Field(default_factory=list)
     scenario_results: list[FailureScenarioResult] = Field(default_factory=list)
     preflight_errors: list[str] = Field(default_factory=list)
+    deployment_id: str = ""
+    execution_journal: ApplicationExecutionJournal | None = None
+    dirty_state: DirtyState = DirtyState.CLEAN
+    evidence_records: list[EvidenceRecord] = Field(default_factory=list)
     duration_ms: int = 0
 
     def compact_summary(self) -> dict[str, object]:
@@ -126,5 +132,12 @@ class ControlPlaneApplicationResult(BaseModel):
             "unbound_failover_checks": len(self.failover_results),
             "failure_scenarios": len(self.scenario_results),
             "preflight_errors": self.preflight_errors,
+            "deployment_id": self.deployment_id,
+            "dirty_state": self.dirty_state.value,
+            "execution_journal": (
+                self.execution_journal.compact_summary()
+                if self.execution_journal else None
+            ),
+            "evidence_records": [item.compact_summary() for item in self.evidence_records],
             "duration_ms": self.duration_ms,
         }

@@ -8,7 +8,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+from .execution import OperationSemantics
 from .segments import SegmentRole
+from .verification import VerificationPrerequisite
 
 
 class ConfigurationPhase(IntEnum):
@@ -161,12 +163,19 @@ class BaseConfigurationAction(BaseModel):
     device_name: str
     site_id: str
     depends_on: list[str] = Field(default_factory=list)
+    apply_dependencies: list[str] = Field(default_factory=list)
     required_capability: str = ""
     critical: bool = True
+    operation: OperationSemantics = OperationSemantics.SET_VALUE
+    compensation_available: bool = False
+    inverse_action_id: str = ""
 
 
 class CreateVlan(BaseConfigurationAction):
     action_type: Literal[ConfigurationActionType.CREATE_VLAN] = ConfigurationActionType.CREATE_VLAN
+    operation: Literal[
+        OperationSemantics.ENSURE_PRESENT
+    ] = OperationSemantics.ENSURE_PRESENT
     vlan_id: int
     name: str = ""
     segment_id: str = ""
@@ -307,6 +316,7 @@ class VerificationExpectation(BaseModel):
     device_name: str
     expected: dict[str, str | int | bool | list[int]] = Field(default_factory=dict)
     required_query: str = ""
+    verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
 
 
 class DeviceConfigurationPlan(BaseModel):
@@ -322,6 +332,7 @@ class ConfigurationPlan(BaseModel):
     id: str
     source_topology_id: str
     source_topology_hash: str
+    source_topology_hash_schema: str = "legacy-full-v1"
     semantic_hash: str = ""
     actions: list[ConfigurationAction] = Field(default_factory=list)
     devices: list[DeviceConfigurationPlan] = Field(default_factory=list)
@@ -340,6 +351,7 @@ class ConfigurationCompileSummary(BaseModel):
     config_plan_id: str = ""
     semantic_hash: str = ""
     source_topology_hash: str = ""
+    source_topology_hash_schema: str = ""
     devices: int = 0
     endpoint_devices: int = 0
     action_count: int = 0

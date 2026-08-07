@@ -39,6 +39,7 @@ from ..models.enterprise_plan import EnterprisePlan
 from ..models.requirements import AddressingPreference, EndpointRequirement
 from ..models.roles import DeviceRole
 from ..models.segments import NetworkSegment, SegmentRole
+from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from .configuration_dependencies import ConfigurationDependencyError, order_configuration_actions
 from .configuration_validator import validate_configuration_actions
 from .segment_assignment import SegmentAssignmentPolicy
@@ -94,7 +95,7 @@ class ConfigurationCompiler:
     ) -> ConfigurationCompileResult:
         issues: list[ConfigurationIssue] = []
         actions: list[ConfigurationAction] = []
-        if not topology.semantic_hash:
+        if not topology.physical_identity_hash:
             issues.append(_error(
                 ConfigurationIssueCode.SOURCE_TOPOLOGY_HASH_MISSING,
                 "E5 requires the immutable semantic hash produced by E4.",
@@ -218,11 +219,22 @@ class ConfigurationCompiler:
             return self._result(None, actions, topology, issues)
 
         expectations = self._expectations(actions)
+        for action in actions:
+            action.apply_dependencies = list(action.depends_on)
+        for expectation in expectations:
+            expectation.verification_prerequisites = [VerificationPrerequisite(
+                kind=PrerequisiteKind.ACTION_APPLIED,
+                reference_id=expectation.action_id,
+            )]
         device_plans = self._device_plans(actions, devices)
         plan = ConfigurationPlan(
-            id=f"cfg_{topology.id or topology.semantic_hash[:16]}",
+            id=f"cfg_{topology.id or topology.physical_identity_hash[:16]}",
             source_topology_id=topology.id,
-            source_topology_hash=topology.semantic_hash,
+            source_topology_hash=topology.physical_identity_hash,
+            source_topology_hash_schema=(
+                "physical-topology-v2"
+                if topology.physical_topology_hash else "legacy-full-v1"
+            ),
             actions=actions,
             devices=device_plans,
             verification_expectations=expectations,
@@ -968,7 +980,11 @@ class ConfigurationCompiler:
         summary = ConfigurationCompileSummary(
             config_plan_id=plan.id if plan else "",
             semantic_hash=plan.semantic_hash if plan else "",
-            source_topology_hash=topology.semantic_hash,
+            source_topology_hash=topology.physical_identity_hash,
+            source_topology_hash_schema=(
+                "physical-topology-v2"
+                if topology.physical_topology_hash else "legacy-full-v1"
+            ),
             devices=len({action.device_id for action in actions}),
             endpoint_devices=len({
                 action.device_id for action in actions

@@ -24,6 +24,7 @@ from ..models.configuration import (
 from ..models.enterprise_plan import EnterprisePlan
 from ..models.requirements import ServiceRequirement
 from ..models.roles import DeviceRole
+from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from ..models.service_plan import (
     AddDnsRecord,
     ConfigureNtpService,
@@ -114,7 +115,7 @@ class ServiceCompiler:
     ) -> ServiceCompileResult:
         issues: list[ConfigurationIssue] = []
         capabilities = capabilities or {}
-        if not topology.semantic_hash:
+        if not topology.physical_identity_hash:
             issues.append(_error(
                 ConfigurationIssueCode.SOURCE_TOPOLOGY_HASH_MISSING,
                 "E6 requires the immutable semantic hash produced by E4.",
@@ -126,7 +127,7 @@ class ServiceCompiler:
                 "E6 requires the immutable semantic hash produced by E5.",
                 configuration.id,
             ))
-        if configuration.source_topology_hash != topology.semantic_hash:
+        if configuration.source_topology_hash != topology.physical_identity_hash:
             issues.append(_error(
                 ConfigurationIssueCode.SOURCE_CONFIGURATION_TOPOLOGY_MISMATCH,
                 "The E5 ConfigurationPlan was compiled for a different E4 topology.",
@@ -330,6 +331,22 @@ class ServiceCompiler:
         errors = any(item.severity is ConfigurationIssueSeverity.ERROR for item in issues)
         if not errors:
             expectations = self._expectations(services, actions, source_requirements, devices)
+            for action in actions:
+                action.apply_dependencies = list(action.depends_on)
+            for expectation in expectations:
+                expectation.verification_prerequisites = [
+                    VerificationPrerequisite(
+                        kind=PrerequisiteKind.ACTION_APPLIED,
+                        reference_id=expectation.action_id,
+                    ),
+                    *[
+                        VerificationPrerequisite(
+                            kind=PrerequisiteKind.VERIFICATION_VERIFIED,
+                            reference_id=identifier,
+                        )
+                        for identifier in sorted(set(expectation.depends_on))
+                    ],
+                ]
             by_service_expectations: dict[str, list[str]] = defaultdict(list)
             for item in expectations:
                 by_service_expectations[item.service_id].append(item.id)
@@ -341,9 +358,13 @@ class ServiceCompiler:
             return self._result(None, actions, topology, configuration, services, expectations, issues)
 
         plan = ServicePlan(
-            id=f"services_{topology.id or topology.semantic_hash[:16]}",
+            id=f"services_{topology.id or topology.physical_identity_hash[:16]}",
             source_topology_id=topology.id,
-            source_topology_hash=topology.semantic_hash,
+            source_topology_hash=topology.physical_identity_hash,
+            source_topology_hash_schema=(
+                "physical-topology-v2"
+                if topology.physical_topology_hash else "legacy-full-v1"
+            ),
             source_configuration_id=configuration.id,
             source_configuration_hash=configuration.semantic_hash,
             services=sorted(services, key=lambda item: item.id),
@@ -752,7 +773,11 @@ class ServiceCompiler:
         summary = ServiceCompileSummary(
             service_plan_id=plan.id if plan else "",
             semantic_hash=plan.semantic_hash if plan else "",
-            source_topology_hash=topology.semantic_hash,
+            source_topology_hash=topology.physical_identity_hash,
+            source_topology_hash_schema=(
+                "physical-topology-v2"
+                if topology.physical_topology_hash else "legacy-full-v1"
+            ),
             source_configuration_hash=configuration.semantic_hash,
             service_count=len(services),
             action_count=len(actions),

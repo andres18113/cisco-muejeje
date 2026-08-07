@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 
 from .capabilities import CapabilityStatus
 from .configuration import ConfigurationIssue
+from .execution import OperationSemantics
+from .evidence import CapabilityReadiness
+from .verification import VerificationPrerequisite
 
 
 class ServiceType(str, Enum):
@@ -75,6 +78,7 @@ class ServiceCapabilityProfile(BaseModel):
     behavioral_verification_support: CapabilityStatus = CapabilityStatus.UNKNOWN
     source: str = ""
     packet_tracer_version: str | None = None
+    capability_readiness: dict[str, CapabilityReadiness] = Field(default_factory=dict)
 
 
 class BaseServiceAction(BaseModel):
@@ -88,8 +92,12 @@ class BaseServiceAction(BaseModel):
     host_model: str
     site_id: str
     depends_on: list[str] = Field(default_factory=list)
+    apply_dependencies: list[str] = Field(default_factory=list)
     required_capability: str
     critical: bool = True
+    operation: OperationSemantics = OperationSemantics.SET_VALUE
+    compensation_available: bool = False
+    inverse_action_id: str = ""
 
 
 class EnableDnsService(BaseServiceAction):
@@ -98,6 +106,9 @@ class EnableDnsService(BaseServiceAction):
 
 class AddDnsRecord(BaseServiceAction):
     action_type: Literal[ServiceActionType.ADD_DNS_RECORD] = ServiceActionType.ADD_DNS_RECORD
+    operation: Literal[
+        OperationSemantics.ENSURE_PRESENT
+    ] = OperationSemantics.ENSURE_PRESENT
     hostname: str
     address: str
     record_type: Literal["A"] = "A"
@@ -131,6 +142,9 @@ class PublishTftpFile(BaseServiceAction):
     action_type: Literal[
         ServiceActionType.PUBLISH_TFTP_FILE
     ] = ServiceActionType.PUBLISH_TFTP_FILE
+    operation: Literal[
+        OperationSemantics.ENSURE_PRESENT
+    ] = OperationSemantics.ENSURE_PRESENT
     filename: str
     content: str
     content_sha256: str
@@ -187,6 +201,7 @@ class ServiceVerificationExpectation(BaseModel):
     client_device_id: str = ""
     client_device_name: str = ""
     depends_on: list[str] = Field(default_factory=list)
+    verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
     expected: dict[str, str | int | bool] = Field(default_factory=dict)
 
 
@@ -194,6 +209,7 @@ class ServicePlan(BaseModel):
     id: str
     source_topology_id: str
     source_topology_hash: str
+    source_topology_hash_schema: str = "legacy-full-v1"
     source_configuration_id: str
     source_configuration_hash: str
     semantic_hash: str = ""
@@ -213,6 +229,7 @@ class ServiceCompileSummary(BaseModel):
     service_plan_id: str = ""
     semantic_hash: str = ""
     source_topology_hash: str = ""
+    source_topology_hash_schema: str = ""
     source_configuration_hash: str = ""
     service_count: int = 0
     action_count: int = 0

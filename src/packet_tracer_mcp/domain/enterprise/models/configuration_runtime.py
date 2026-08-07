@@ -6,6 +6,14 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from .evidence import EvidenceRecord
+from .execution import (
+    ApplicationExecutionJournal,
+    DirtyState,
+    MutationDisposition,
+    OperationSemantics,
+)
+
 
 class ActionExecutionStatus(str, Enum):
     INTENDED = "intended"
@@ -18,6 +26,8 @@ class ActionExecutionStatus(str, Enum):
     UNKNOWN = "unknown"
     DEPENDENCY_BLOCKED = "dependency_blocked"
     UNOBSERVABLE = "unobservable"
+    NO_OP = "no_op"
+    REASSERTED = "reasserted"
 
 
 class ConfigurationApplicationStatus(str, Enum):
@@ -83,6 +93,9 @@ class RuntimeConfigurationTarget(BaseModel):
     device_name: str
     model: str
     interfaces: list[str] = Field(default_factory=list)
+    runtime_identifier: str = ""
+    runtime_identifier_stable: bool = False
+    runtime_fingerprint: str = ""
 
 
 class ConfigurationRuntimeContext(BaseModel):
@@ -94,6 +107,8 @@ class ConfigurationRuntimeContext(BaseModel):
 class RuntimeActionMutation(BaseModel):
     action_id: str
     applied: bool
+    operation: OperationSemantics = OperationSemantics.SET_VALUE
+    disposition: MutationDisposition = MutationDisposition.UNKNOWN
     message: str = ""
     failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
     batch_id: str = ""
@@ -115,6 +130,8 @@ class ActionApplicationResult(BaseModel):
     failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
     message: str = ""
     batch_id: str = ""
+    operation: OperationSemantics = OperationSemantics.SET_VALUE
+    disposition: MutationDisposition = MutationDisposition.UNKNOWN
 
 
 class VerificationResult(BaseModel):
@@ -140,6 +157,10 @@ class ConfigurationApplicationResult(BaseModel):
     action_results: list[ActionApplicationResult] = Field(default_factory=list)
     verification_results: list[VerificationResult] = Field(default_factory=list)
     preflight_errors: list[str] = Field(default_factory=list)
+    deployment_id: str = ""
+    execution_journal: ApplicationExecutionJournal | None = None
+    dirty_state: DirtyState = DirtyState.CLEAN
+    evidence_records: list[EvidenceRecord] = Field(default_factory=list)
     duration_ms: int = 0
 
     def compact_summary(self) -> dict[str, object]:
@@ -159,5 +180,12 @@ class ConfigurationApplicationResult(BaseModel):
             "actions": dict(sorted(action_counts.items())),
             "verification": dict(sorted(verification_counts.items())),
             "preflight_errors": self.preflight_errors,
+            "deployment_id": self.deployment_id,
+            "dirty_state": self.dirty_state.value,
+            "execution_journal": (
+                self.execution_journal.compact_summary()
+                if self.execution_journal else None
+            ),
+            "evidence_records": [item.compact_summary() for item in self.evidence_records],
             "duration_ms": self.duration_ms,
         }

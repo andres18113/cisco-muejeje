@@ -26,6 +26,22 @@ from .configuration_runtime import (
     ConfigurationRuntimeContext, FieldVerificationStatus, RuntimeActionMutation, RuntimeConfigurationTarget,
     RuntimeVerification, VerificationResult,
 )
+from .deployment import (
+    DeploymentBinding, DeploymentIdentityError, DeploymentManifest,
+    EnvironmentFingerprint, IdentityMethod, build_deployment_manifest,
+    resolve_manifest_targets,
+)
+from .evidence import (
+    CapabilityReadiness, EvidenceFreshness, EvidenceRecord, EvidenceStrength,
+    ObservationStatus, ReadinessStatus, SupportStatus, VerificationMethod,
+    VerificationStatus, evidence_from_legacy_result,
+)
+from .execution import (
+    ApplicationExecutionJournal, CompensationStatus, DirtyState,
+    ExecutionJournalEntry, MutationDisposition, OperationSemantics,
+    disposition_from_status, journal_from_action_results,
+    satisfies_apply_dependency,
+)
 from .enterprise_plan import EnterprisePlan, SitePlan
 from .hierarchy import BuildingIntent, EndpointGroup, FloorIntent, ZoneIntent
 from .discovery import (
@@ -88,6 +104,11 @@ from .control_plane_runtime import (
 from .roles import DeviceRole
 from .segments import NetworkSegment, SegmentRequirement, SegmentRole
 from .topology import NetworkLayer, TopologyDesign, TopologyPattern
+from .verification import (
+    PrerequisiteKind, VerificationDependencyError, VerificationPrerequisite,
+    legacy_action_prerequisites, order_verification_expectations,
+    prerequisites_satisfied,
+)
 
 __all__ = [
     "AccessBlockPlan", "AccessCapacityRequirement", "BuildingIntent", "CapabilityConflict",
@@ -143,4 +164,16 @@ __all__ = [
     "ControlPlaneApplicationResult", "ControlPlaneExecutionStage",
     "ControlPlaneVerificationResult", "FailureScenarioResult",
     "RuntimeControlPlaneVerification", "RuntimeFailureScenarioResult",
+    "DeploymentBinding", "DeploymentIdentityError", "DeploymentManifest",
+    "EnvironmentFingerprint", "IdentityMethod", "build_deployment_manifest",
+    "resolve_manifest_targets",
+    "CapabilityReadiness", "EvidenceFreshness", "EvidenceRecord", "EvidenceStrength",
+    "ObservationStatus", "ReadinessStatus", "SupportStatus", "VerificationMethod",
+    "VerificationStatus", "evidence_from_legacy_result",
+    "ApplicationExecutionJournal", "CompensationStatus",
+    "DirtyState", "ExecutionJournalEntry", "MutationDisposition", "OperationSemantics",
+    "disposition_from_status", "journal_from_action_results", "satisfies_apply_dependency",
+    "PrerequisiteKind", "VerificationDependencyError", "VerificationPrerequisite",
+    "legacy_action_prerequisites", "order_verification_expectations",
+    "prerequisites_satisfied",
 ]

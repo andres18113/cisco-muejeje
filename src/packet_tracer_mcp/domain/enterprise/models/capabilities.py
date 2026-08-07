@@ -6,6 +6,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from .evidence import CapabilityReadiness
 from .roles import DeviceRole
 
 
@@ -77,6 +78,7 @@ class DeviceCapabilities(BaseModel):
     packet_tracer_version: str | None = None
     verified: bool = False
     evidence: list[CapabilityEvidence] = Field(default_factory=list)
+    capability_readiness: dict[str, CapabilityReadiness] = Field(default_factory=dict)
 
     @property
     def access_port_count(self) -> int:

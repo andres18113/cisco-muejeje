@@ -9,6 +9,9 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from .configuration import ConfigurationIssue
+from .execution import OperationSemantics
+from .evidence import CapabilityReadiness
+from .verification import VerificationPrerequisite
 
 
 class VoiceCapabilityStatus(str, Enum):
@@ -38,6 +41,7 @@ class VoiceCapabilityProfile(BaseModel):
     )
     evidence_source: str = ""
     packet_tracer_version: str | None = None
+    capability_readiness: dict[str, CapabilityReadiness] = Field(default_factory=dict)
 
     def status(self, dimension: VoiceCapabilityDimension) -> VoiceCapabilityStatus:
         return self.dimensions.get(dimension, VoiceCapabilityStatus.UNKNOWN)
@@ -98,8 +102,12 @@ class BaseVoiceAction(BaseModel):
     host_model: str
     site_id: str
     depends_on: list[str] = Field(default_factory=list)
+    apply_dependencies: list[str] = Field(default_factory=list)
     required_capability: VoiceCapabilityDimension
     critical: bool = True
+    operation: OperationSemantics = OperationSemantics.SET_VALUE
+    compensation_available: bool = False
+    inverse_action_id: str = ""
 
 
 class EnableCallControl(BaseVoiceAction):
@@ -124,6 +132,9 @@ class CreateExtension(BaseVoiceAction):
     action_type: Literal[
         VoiceActionType.CREATE_EXTENSION
     ] = VoiceActionType.CREATE_EXTENSION
+    operation: Literal[
+        OperationSemantics.ENSURE_PRESENT
+    ] = OperationSemantics.ENSURE_PRESENT
     extension: str
     directory_index: int
 
@@ -153,12 +164,16 @@ class GeneratePhoneConfigurationFiles(BaseVoiceAction):
     action_type: Literal[
         VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES
     ] = VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES
+    operation: Literal[OperationSemantics.REPLACE] = OperationSemantics.REPLACE
 
 
 class ConfigureDialRule(BaseVoiceAction):
     action_type: Literal[
         VoiceActionType.CONFIGURE_DIAL_RULE
     ] = VoiceActionType.CONFIGURE_DIAL_RULE
+    operation: Literal[
+        OperationSemantics.ENSURE_PRESENT
+    ] = OperationSemantics.ENSURE_PRESENT
     source_site_id: str
     destination_site_id: str
     destination_prefix: str
@@ -232,6 +247,10 @@ class CallExpectation(BaseModel):
     expected_result: CallExpectationResult
     site_id: str
     depends_on: list[str] = Field(default_factory=list)
+    verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
+    operation: Literal[
+        OperationSemantics.EXECUTE_ONCE
+    ] = OperationSemantics.EXECUTE_ONCE
 
 
 class VoiceVerificationKind(str, Enum):
@@ -249,6 +268,7 @@ class VoiceVerificationExpectation(BaseModel):
     action_id: str
     call_expectation_id: str = ""
     depends_on: list[str] = Field(default_factory=list)
+    verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
 
 
 class VoiceFoundationRequirement(BaseModel):
@@ -266,6 +286,7 @@ class VoicePlan(BaseModel):
     id: str
     source_topology_id: str
     source_topology_hash: str
+    source_topology_hash_schema: str = "legacy-full-v1"
     source_configuration_id: str
     source_configuration_hash: str
     source_service_id: str = ""
@@ -294,6 +315,7 @@ class VoiceCompileSummary(BaseModel):
     voice_plan_id: str = ""
     semantic_hash: str = ""
     source_topology_hash: str = ""
+    source_topology_hash_schema: str = ""
     source_configuration_hash: str = ""
     source_service_hash: str = ""
     call_control_count: int = 0
