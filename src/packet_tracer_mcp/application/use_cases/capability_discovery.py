@@ -132,6 +132,13 @@ class CapabilityProbeRegistry:
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE, requires_fresh_device=True,
             isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
+        "multilayer_intervlan": ProbeDefinition(
+            id="multilayer-intervlan-probe", capability="multilayer_intervlan",
+            prerequisites=["supports_vlan", "configuration_channel"],
+            cost=ProbeCost.EXPENSIVE, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            requires_fresh_device=True,
+            isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
+        ),
         "supports_static_routes": ProbeDefinition(
             id="static-route-probe", capability="supports_static_routes", prerequisites=["layer3"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,

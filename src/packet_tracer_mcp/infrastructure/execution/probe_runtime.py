@@ -18,6 +18,8 @@ from ...domain.enterprise.models.discovery import (
     ProbeExecutionStatus,
     RuntimeDeviceDescriptor,
     RuntimeDeviceObservation,
+    Layer3ProbeStrategy,
+    MultilayerDimension,
     RuntimeModuleDescriptor,
     RuntimePortDescriptor,
     encode_inventory_observation,
@@ -25,10 +27,16 @@ from ...domain.enterprise.models.discovery import (
     semantic_inventory_fingerprint,
 )
 from ...infrastructure.catalog.devices import resolve_model
-from ...shared.constants import PT_DEVICE_TYPE, PT_DEVICE_TYPE_DEFAULT
+from ...shared.constants import PT_CONNECT_TYPE, PT_DEVICE_TYPE, PT_DEVICE_TYPE_DEFAULT
 from .configuration_runtime import PacketTracerConfigurationRuntime
 from .device_lifecycle import DeviceReadinessWaiter, IosBootWaiter, StateConvergenceWaiter
-from .ios_terminal import ControlledIosExecutor, OperationalQueryId, parse_show_ip_interface_brief
+from .ios_terminal import (
+    ControlledIosExecutor,
+    InterfaceStatusRow,
+    OperationalQueryId,
+    parse_show_ip_interface,
+    parse_show_ip_interface_brief,
+)
 from ...shared.constants import (
     CAPABILITY_PROBE_IPV4_ADDRESS,
     CAPABILITY_PROBE_IPV4_MASK,
@@ -61,7 +69,34 @@ def _backend_managed_identity(item: dict) -> str:
     return f"{str(item.get('model') or '').strip()}/{str(item.get('name') or '').strip()}"
 
 
+# Estrategia L3 por modelo. Declarada, no deducida: un 2960 soporta VLANs sin
+# poder enrutar entre ellas, así que `supports_vlan` no implica multilayer.
+_LAYER3_STRATEGY_BY_MODEL: dict[str, Layer3ProbeStrategy] = {
+    "2911": Layer3ProbeStrategy.ROUTED_PHYSICAL_INTERFACE,
+    "3560-24PS": Layer3ProbeStrategy.SVI,
+    "3650-24PS": Layer3ProbeStrategy.SVI,
+}
+
+
+def layer3_strategy_for(runtime_model: str) -> Layer3ProbeStrategy:
+    """Resuelve por nombre de catálogo exacto, no por subcadena del modelo."""
+    resolved = resolve_model(runtime_model)
+    key = resolved.pt_type if resolved else runtime_model
+    return _LAYER3_STRATEGY_BY_MODEL.get(
+        key, _LAYER3_STRATEGY_BY_MODEL.get(runtime_model, Layer3ProbeStrategy.NONE),
+    )
+
+
+# Slice multilayer: dos VLANs con SVI en rango de laboratorio, sin colisionar
+# con las redes que ya usan los probes de interfaz física y SVI simple.
 _MULTILAYER_PROBE_VLAN_ID = 901
+_MULTILAYER_SLICE_VLAN_A = 10
+_MULTILAYER_SLICE_VLAN_B = 20
+_MULTILAYER_SLICE_MASK = "255.255.255.0"
+_MULTILAYER_SLICE_GATEWAY_A = "198.18.140.1"
+_MULTILAYER_SLICE_HOST_A = "198.18.140.10"
+_MULTILAYER_SLICE_GATEWAY_B = "198.18.141.1"
+_MULTILAYER_SLICE_HOST_B = "198.18.141.10"
 _MULTILAYER_PROBE_IPV4_ADDRESS = "198.18.130.1"
 _MULTILAYER_PROBE_IPV4_MASK = "255.255.255.0"
 
@@ -236,6 +271,8 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             return self._probe_vlan(temporary_name, definition)
         if capability == "layer3":
             return self._probe_layer3(temporary_name, definition)
+        if capability == "multilayer_intervlan":
+            return self._probe_multilayer_intervlan(temporary_name, definition)
         return CapabilityProbeResult(
             probe_id=definition.id,
             model="",
@@ -422,17 +459,285 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             return self._json_result(js, timeout=3.0)
         return StateConvergenceWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
 
-    def _layer3_target(self, temporary_name: str) -> tuple[str, bool] | None:
+    def _probe_multilayer_intervlan(
+        self, temporary_name: str, definition: ProbeDefinition,
+    ) -> CapabilityProbeResult:
+        """Construye dos VLANs con SVI y demuestra (o no) el forwarding entre ellas.
+
+        Cada propiedad se observa por separado: una SVI configurada sin line
+        protocol, un `ip routing` no observable y un forwarding que falla son
+        tres resultados distintos y no pueden colapsarse en uno.
+        """
+        model = self._observed_model(temporary_name)
+        if layer3_strategy_for(model) is not Layer3ProbeStrategy.SVI:
+            return self._failure(
+                definition, ProbeExecutionStatus.SKIPPED,
+                f"Model {model!r} does not declare the SVI layer-3 strategy.",
+            )
+        access_ports = self._physical_access_ports(temporary_name, 2)
+        if len(access_ports) < 2:
+            return self._failure(
+                definition, ProbeExecutionStatus.VERIFY_FAILED,
+                "Fewer than two physical access ports were observed for the slice.",
+            )
+
+        dimensions: dict[str, str] = {}
+        endpoints = (f"{temporary_name}_PCA", f"{temporary_name}_PCB")
+        try:
+            built = self._build_multilayer_slice(
+                temporary_name, access_ports, endpoints, dimensions,
+            )
+            if not built:
+                return self._multilayer_result(definition, dimensions, model)
+            self._observe_multilayer_state(temporary_name, dimensions)
+            self._observe_multilayer_behavior(endpoints, dimensions)
+        finally:
+            self._teardown_multilayer_slice(temporary_name, endpoints)
+        return self._multilayer_result(definition, dimensions, model)
+
+    def _build_multilayer_slice(
+        self, switch: str, ports: list[str], endpoints: tuple[str, str],
+        dimensions: dict[str, str],
+    ) -> bool:
+        vlans = (_MULTILAYER_SLICE_VLAN_A, _MULTILAYER_SLICE_VLAN_B)
+        gateways = (_MULTILAYER_SLICE_GATEWAY_A, _MULTILAYER_SLICE_GATEWAY_B)
+        hosts = (_MULTILAYER_SLICE_HOST_A, _MULTILAYER_SLICE_HOST_B)
+
+        lines = ["enable", "configure terminal"]
+        for vlan in vlans:
+            lines.append(f"vlan {vlan}")
+            lines.append("exit")
+        for port, vlan in zip(ports, vlans):
+            lines.extend((
+                f"interface {port}", "switchport mode access",
+                f"switchport access vlan {vlan}", "no shutdown", "exit",
+            ))
+        for vlan, gateway in zip(vlans, gateways):
+            lines.extend((
+                f"interface Vlan{vlan}",
+                f"ip address {gateway} {_MULTILAYER_SLICE_MASK}",
+                "no shutdown", "exit",
+            ))
+        lines.extend(("ip routing", "end"))
+        if not self._configuration.configure_ios(switch, "\n".join(lines)):
+            dimensions[MultilayerDimension.SVI_CONFIGURATION.value] = "config_apply_failed"
+            return False
+        dimensions[MultilayerDimension.SVI_CONFIGURATION.value] = "applied"
+
+        for name, host, gateway in zip(endpoints, hosts, gateways):
+            if not self._create_probe_endpoint(name):
+                dimensions[MultilayerDimension.ENDPOINT_GATEWAY.value] = "endpoint_create_failed"
+                return False
+        for name, port in zip(endpoints, ports):
+            if not self._link_probe_endpoint(name, switch, port):
+                dimensions[MultilayerDimension.ENDPOINT_GATEWAY.value] = "endpoint_link_failed"
+                return False
+        for name, host, gateway in zip(endpoints, hosts, gateways):
+            self._configuration.configure_endpoint_ipv4(
+                name, host, _MULTILAYER_SLICE_MASK, gateway,
+            )
+        dimensions[MultilayerDimension.ENDPOINT_GATEWAY.value] = "configured"
+        return True
+
+    def _observe_multilayer_state(
+        self, switch: str, dimensions: dict[str, str],
+    ) -> None:
+        """Espera acotada a que las SVI aparezcan y converjan."""
+        expected = (
+            (_MULTILAYER_SLICE_VLAN_A, _MULTILAYER_SLICE_GATEWAY_A),
+            (_MULTILAYER_SLICE_VLAN_B, _MULTILAYER_SLICE_GATEWAY_B),
+        )
+        started = time.monotonic()
+        deadline = started + 20.0
+        attempts = 0
+        rows: dict[int, InterfaceStatusRow | None] = {}
+        while True:
+            attempts += 1
+            for vlan, _gateway in expected:
+                show = self._ios.execute(
+                    switch, OperationalQueryId.SHOW_IP_INTERFACE,
+                    interface=f"Vlan{vlan}",
+                )
+                rows[vlan] = parse_show_ip_interface(show.output) if show.executed else None
+            ready = all(
+                rows.get(vlan) is not None
+                and rows[vlan].protocol.casefold() == "up"
+                for vlan, _gateway in expected
+            )
+            if ready or time.monotonic() >= deadline:
+                break
+            time.sleep(0.5)
+        dimensions["convergence_attempts"] = str(attempts)
+        dimensions["convergence_elapsed_ms"] = str(int((time.monotonic() - started) * 1000))
+
+        present, addressed, admin_up, protocol_up = [], [], [], []
+        for vlan, gateway in expected:
+            row = rows.get(vlan)
+            present.append(row is not None)
+            addressed.append(bool(row) and row.ip_address.strip() == gateway)
+            admin_up.append(bool(row) and "administratively down" not in row.status.casefold())
+            protocol_up.append(bool(row) and row.protocol.casefold() == "up")
+        dimensions[MultilayerDimension.SVI_CONFIGURATION.value] = (
+            "observed" if all(present) else "svi_absent_from_readback"
+        )
+        dimensions[MultilayerDimension.SVI_ADDRESS_READBACK.value] = (
+            "observed" if all(addressed) else "address_not_read_back"
+        )
+        dimensions[MultilayerDimension.SVI_ADMIN_STATE.value] = (
+            "up" if all(admin_up) else "down"
+        )
+        dimensions[MultilayerDimension.SVI_OPERATIONAL_STATE.value] = (
+            "up" if all(protocol_up) else "down"
+        )
+
+    def _observe_multilayer_behavior(
+        self, endpoints: tuple[str, str], dimensions: dict[str, str],
+    ) -> None:
+        from .typed_ping import TypedPingExecutor
+
+        ping = TypedPingExecutor(self._send_and_wait)
+
+        for endpoint in endpoints:
+            # El primer ``ping`` de un endpoint recién creado no produce una
+            # ventana fresca: el resultado llega sin delta observable y se
+            # clasificaría como inalcanzable aunque la ruta funcione. Se descarta
+            # una ejecución por endpoint antes de medir nada.
+            ping.ping(endpoint, _MULTILAYER_SLICE_GATEWAY_A)
+
+        def reach(source: str, destination: str, budget: float):
+            """Reintento acotado: ARP y la ventana de terminal necesitan asentarse."""
+            deadline = time.monotonic() + budget
+            attempts = 0
+            result = ping.ping(source, destination)
+            while (
+                not (result.reachable and result.fresh_output_observed)
+                and time.monotonic() < deadline
+            ):
+                attempts += 1
+                time.sleep(1.0)
+                result = ping.ping(source, destination)
+            return result, attempts
+
+        gateway_a, retries_a = reach(endpoints[0], _MULTILAYER_SLICE_GATEWAY_A, 20.0)
+        gateway_b, retries_b = reach(endpoints[1], _MULTILAYER_SLICE_GATEWAY_B, 20.0)
+        dimensions["gateway_ping_retries"] = f"{retries_a}/{retries_b}"
+        dimensions["endpoint_a_to_svi"] = "reachable" if gateway_a.reachable else "unreachable"
+        dimensions["endpoint_b_to_svi"] = "reachable" if gateway_b.reachable else "unreachable"
+        if not (gateway_a.reachable and gateway_b.reachable):
+            # Sin baseline hacia la propia puerta de enlace, un fallo entre VLANs
+            # no probaría nada sobre el enrutamiento.
+            dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = "no_gateway_baseline"
+            dimensions[MultilayerDimension.IP_ROUTING.value] = "unproven"
+            return
+        crossed, retries_x = reach(endpoints[0], _MULTILAYER_SLICE_HOST_B, 20.0)
+        dimensions["intervlan_ping_retries"] = str(retries_x)
+        dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = (
+            "reachable" if crossed.reachable else "unreachable"
+        )
+        dimensions[MultilayerDimension.IP_ROUTING.value] = (
+            "proven_by_forwarding" if crossed.reachable else "unproven"
+        )
+        if not crossed.fresh_output_observed:
+            dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = "stale_output"
+
+    def _multilayer_result(
+        self, definition: ProbeDefinition, dimensions: dict[str, str], model: str,
+    ) -> CapabilityProbeResult:
+        forwarding = dimensions.get(MultilayerDimension.INTERVLAN_FORWARDING.value)
+        verified = forwarding == "reachable"
+        summary = "; ".join(f"{key}={value}" for key, value in sorted(dimensions.items()))
+        return CapabilityProbeResult(
+            probe_id=definition.id, model=model, capability=definition.capability,
+            status=CapabilityStatus.SUPPORTED if verified else CapabilityStatus.UNKNOWN,
+            execution_status=(
+                ProbeExecutionStatus.VERIFIED if verified
+                else ProbeExecutionStatus.VERIFY_FAILED
+            ),
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=dimensions.get(
+                MultilayerDimension.SVI_CONFIGURATION.value,
+            ) in {"applied", "observed"},
+            verified=verified,
+            verification_method=CapabilityVerificationMethod.SIMULATION_TRACE,
+            raw_summary=summary,
+            failure_reason="" if verified else f"Inter-VLAN forwarding was not demonstrated: {summary}",
+            dimensions=dimensions,
+        )
+
+    def _physical_access_ports(self, temporary_name: str, count: int) -> list[str]:
         name = json.dumps(temporary_name)
         js = "".join((
-            "try{var __d=ipc.network().getDevice(", name, ");var __model=__d&&typeof __d.getModel==='function'?String(__d.getModel()):'';var __iface='';var __svi=false;",
-            "if(__model.indexOf('2911')>=0){for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);if(__p&&String(__p.getName()).indexOf('Ethernet')>=0){__iface=__p.getName();break;}}}",
-            "else if(__model.indexOf('3560')>=0){__iface='Vlan", str(_MULTILAYER_PROBE_VLAN_ID), "';__svi=true;}",
-            "reportResult(JSON.stringify({interface:__iface,svi:__svi}));}catch(__e){reportResult('ERROR:'+__e);}",
+            "try{var __d=ipc.network().getDevice(", name, ");var __out=[];",
+            "for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);",
+            "if(!__p){continue;}var __n=String(__p.getName());",
+            "if(__n.indexOf('Vlan')===0||__n.indexOf('Loopback')===0){continue;}",
+            "if(__n.indexOf('Ethernet')<0){continue;}__out.push(__n);}",
+            "reportResult(JSON.stringify({ports:__out}));}catch(__e){reportResult('ERROR:'+__e);}",
         ))
-        data = self._json_result(js, timeout=5.0)
-        interface = str(data.get("interface") or "")
-        return (interface, bool(data.get("svi"))) if interface else None
+        ports = self._json_result(js, timeout=5.0).get("ports", [])
+        return [str(item) for item in ports][:count] if isinstance(ports, list) else []
+
+    def _create_probe_endpoint(self, name: str) -> bool:
+        payload = json.dumps(name)
+        js = "".join((
+            "try{if(typeof lwAddDevice!=='function'){reportResult(JSON.stringify({created:false}));}",
+            "else{lwAddDevice(", payload, ",", str(PT_DEVICE_TYPE.get("pc", PT_DEVICE_TYPE_DEFAULT)), ",\"PC-PT\",9100,9100);",
+            "reportResult(JSON.stringify({created:!!ipc.network().getDevice(", payload, ")}));}}",
+            "catch(__e){reportResult('ERROR:'+__e);}",
+        ))
+        return bool(self._json_result(js, timeout=15.0).get("created"))
+
+    def _link_probe_endpoint(self, endpoint: str, switch: str, port: str) -> bool:
+        js = "".join((
+            "try{if(typeof lwAddLink!=='function'){reportResult(JSON.stringify({linked:false}));}",
+            "else{lwAddLink(", json.dumps(endpoint), ",\"FastEthernet0\",",
+            json.dumps(switch), ",", json.dumps(port), ",",
+            str(PT_CONNECT_TYPE["straight"]), ");",
+            "var __p=ipc.network().getDevice(", json.dumps(endpoint), ").getPort(\"FastEthernet0\");",
+            "reportResult(JSON.stringify({linked:!!(__p&&__p.getLink())}));}}",
+            "catch(__e){reportResult('ERROR:'+__e);}",
+        ))
+        return bool(self._json_result(js, timeout=15.0).get("linked"))
+
+    def _teardown_multilayer_slice(
+        self, switch: str, endpoints: tuple[str, str],
+    ) -> None:
+        """Borra sólo lo que creó este slice; el switch lo retira el framework."""
+        for name in endpoints:
+            try:
+                self.delete_temporary_device(name)
+            except Exception:
+                continue
+
+    def _layer3_target(self, temporary_name: str) -> tuple[str, bool] | None:
+        """Resuelve la interfaz IPv4 según la estrategia declarada del modelo."""
+        observed_model = self._observed_model(temporary_name)
+        strategy = layer3_strategy_for(observed_model)
+        if strategy is Layer3ProbeStrategy.SVI:
+            return f"Vlan{_MULTILAYER_PROBE_VLAN_ID}", True
+        if strategy is Layer3ProbeStrategy.ROUTED_PHYSICAL_INTERFACE:
+            interface = self._first_ethernet_port(temporary_name)
+            return (interface, False) if interface else None
+        return None
+
+    def _observed_model(self, temporary_name: str) -> str:
+        name = json.dumps(temporary_name)
+        js = "".join((
+            "try{var __d=ipc.network().getDevice(", name, ");",
+            "reportResult(JSON.stringify({model:__d&&typeof __d.getModel==='function'?String(__d.getModel()):''}));}",
+            "catch(__e){reportResult('ERROR:'+__e);}",
+        ))
+        return str(self._json_result(js, timeout=5.0).get("model") or "")
+
+    def _first_ethernet_port(self, temporary_name: str) -> str:
+        name = json.dumps(temporary_name)
+        js = "".join((
+            "try{var __d=ipc.network().getDevice(", name, ");var __iface='';",
+            "for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);",
+            "if(__p&&String(__p.getName()).indexOf('Ethernet')>=0){__iface=__p.getName();break;}}",
+            "reportResult(JSON.stringify({interface:__iface}));}catch(__e){reportResult('ERROR:'+__e);}",
+        ))
+        return str(self._json_result(js, timeout=5.0).get("interface") or "")
 
     def _wait_for_ip(self, temporary_name: str, interface: str, *, present: bool) -> bool:
         name, port = json.dumps(temporary_name), json.dumps(interface)

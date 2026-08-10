@@ -238,6 +238,34 @@ def _has_active_pager(value: str) -> bool:
     return normalize_terminal_output(value).rstrip().endswith(_PAGER_MARKER)
 
 
+_SVI_STATE = re.compile(
+    r"(?im)^(?P<interface>[A-Za-z][A-Za-z0-9/.-]*)\s+is\s+(?P<admin>[^,]+),\s*"
+    r"line protocol is\s+(?P<protocol>\S+)",
+)
+_SVI_ADDRESS = re.compile(r"(?im)^\s*Internet address is\s+(?P<address>\d+\.\d+\.\d+\.\d+)/(?P<prefix>\d+)")
+
+
+def parse_show_ip_interface(value: str) -> InterfaceStatusRow | None:
+    """Lee una sola interfaz de ``show ip interface <iface>``.
+
+    `show ip interface brief` pagina en un switch de 24+ puertos y PT 9.0.1
+    rechaza ``terminal length 0``, de modo que las interfaces Vlan quedan fuera
+    de la primera página. La consulta por interfaz entrega estado y dirección
+    dentro de esa primera página, sin depender de cuántos puertos existan.
+    """
+    normalized = normalize_terminal_output(value)
+    state = _SVI_STATE.search(normalized)
+    if state is None:
+        return None
+    address = _SVI_ADDRESS.search(normalized)
+    return InterfaceStatusRow(
+        state.group("interface"),
+        address.group("address") if address else "unassigned",
+        state.group("admin").strip(),
+        state.group("protocol").strip(),
+    )
+
+
 def parse_show_ip_interface_brief(value: str) -> list[InterfaceStatusRow]:
     rows: list[InterfaceStatusRow] = []
     for line in normalize_terminal_output(value).splitlines():

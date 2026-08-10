@@ -291,7 +291,10 @@ def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
     sent: list[str] = []
 
     responses = iter((
-        '{"interface":"GigabitEthernet0/0","svi":false}',
+        # La estrategia L3 se resuelve en dos pasos: primero el modelo observado
+        # y su estrategia declarada, y sólo entonces la interfaz concreta.
+        '{"model":"2911"}',
+        '{"interface":"GigabitEthernet0/0"}',
         '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
         '{"ok":true,"before":""}',
         '{"found":true,"configuration_channel":true,"output":"Interface IP-Address"}',

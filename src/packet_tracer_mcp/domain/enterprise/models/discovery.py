@@ -115,6 +115,30 @@ class CleanupStatus(str, Enum):
     NOT_REQUIRED = "not_required"
 
 
+class Layer3ProbeStrategy(str, Enum):
+    """Cómo alcanza un modelo una dirección IPv4 propia.
+
+    Un switch L2 y un multilayer soportan ambos VLANs, así que la estrategia no
+    puede deducirse de `supports_vlan`: se declara por modelo.
+    """
+
+    ROUTED_PHYSICAL_INTERFACE = "routed_physical_interface"
+    SVI = "svi"
+    NONE = "none"
+
+
+class MultilayerDimension(str, Enum):
+    """Propiedades que un cierre multilayer debe poder distinguir."""
+
+    SVI_CONFIGURATION = "svi_configuration"
+    SVI_ADDRESS_READBACK = "svi_address_readback"
+    SVI_ADMIN_STATE = "svi_admin_state"
+    SVI_OPERATIONAL_STATE = "svi_operational_state"
+    IP_ROUTING = "ip_routing"
+    ENDPOINT_GATEWAY = "endpoint_gateway"
+    INTERVLAN_FORWARDING = "intervlan_forwarding"
+
+
 class BackendVersionProvenance(str, Enum):
     """Cómo se supo la versión del backend que produjo una evidencia.
 
@@ -375,6 +399,11 @@ class CapabilityProbeResult(BaseModel):
     packet_tracer_version: str | None = None
     verification_method: CapabilityVerificationMethod | None = None
     context: ProbeContext | None = None
+    # Un probe compuesto observa varias propiedades en una sola construcción.
+    # Colapsarlas en el status perdería exactamente lo que hay que distinguir:
+    # una SVI configurada pero sin line protocol no es lo mismo que una SVI
+    # ausente, ni que un forwarding que falla.
+    dimensions: dict[str, str] = Field(default_factory=dict)
 
     def evidence(self):
         """Convierte sólo resultados verificados en evidencia reusable."""
