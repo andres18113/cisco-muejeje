@@ -35,6 +35,24 @@ from ...shared.constants import (
 
 
 _INTERFACE_TYPE = re.compile(r"^[A-Za-z-]+")
+
+# Packet Tracer materializa un "Power Distribution Device" por su cuenta cuando
+# aparece el primer dispositivo alimentable, y lo conserva después de que el
+# probe borre los suyos. No lo crea el probe, no tiene puertos y ningún plan lo
+# direcciona; además el probe tiene prohibido borrar objetos que no son suyos.
+# Si contara para la huella, la restauración quedaría permanentemente indecidible
+# y toda sesión live sería irreutilizable. Se excluye sólo con el modelo exacto y
+# cero puertos, para no ocultar nunca un dispositivo real del usuario.
+_BACKEND_MANAGED_MODELS = frozenset({"power distribution device"})
+
+
+def _is_backend_managed_device(item: dict) -> bool:
+    if item.get("kind") != "device":
+        return False
+    model = str(item.get("model") or "").strip().casefold()
+    return model in _BACKEND_MANAGED_MODELS and not item.get("ports")
+
+
 _MULTILAYER_PROBE_VLAN_ID = 901
 _MULTILAYER_PROBE_IPV4_ADDRESS = "198.18.130.1"
 _MULTILAYER_PROBE_IPV4_MASK = "255.255.255.0"
@@ -107,7 +125,7 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             raise RuntimeError("Packet Tracer returned malformed link inventory data.")
         normalized = [
             item for item in [*items, *links]
-            if isinstance(item, dict)
+            if isinstance(item, dict) and not _is_backend_managed_device(item)
         ]
         return semantic_inventory_fingerprint(normalized)
 
