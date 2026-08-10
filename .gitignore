@@ -52,3 +52,9 @@ site/
 _site/
 
 pt_union.txt
+
+# Local agent working directories, regenerated on demand and never sources.
+# AGENTS.md reads graphify-out/ and refreshes it with `graphify update .`;
+# a dirty graph there is expected, not a change worth versioning.
+.codex/
+graphify-out/
