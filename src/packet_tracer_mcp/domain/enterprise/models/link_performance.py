@@ -20,6 +20,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 from .compilation import ConcreteLinkRole
+from .evidence import CapabilityReadiness, EvidenceRecord, ReadinessStatus
 
 
 class LinkMedia(str, Enum):
@@ -103,6 +104,13 @@ class LinkPerformanceIssueCode(str, Enum):
     SPEED_MISMATCH = "speed_mismatch"
     SPEED_NOT_SUPPORTED = "speed_not_supported"
     DUPLEX_NOT_SUPPORTED = "duplex_not_supported"
+
+    # Distinto de NOT_SUPPORTED: nadie demostró que falle, pero tampoco que
+    # funcione. Bloquea la mutación productiva sin declarar nada falso.
+    LINK_MODE_NOT_VERIFIED = "link_mode_not_verified"
+
+    # El plan cabía en el techo planificado; lo que el runtime negoció, no.
+    LINK_CAPACITY_BELOW_REQUIREMENT = "link_capacity_below_requirement"
     DCE_ENDPOINT_UNRESOLVED = "dce_endpoint_unresolved"
     MEDIA_UNKNOWN = "media_unknown"
 
@@ -205,133 +213,183 @@ class SerialClockCapability(BaseModel):
         return max(self.verified_rates_bps) if self.verified_rates_bps else None
 
 
-#: Perfil medido en E9.5 Stage 3A2. Es evidencia con procedencia, no una
-#: constante del dominio: otro backend declara la suya.
-PT_2911_HWIC2T_SERIAL_CLOCK = SerialClockCapability(
-    backend_version="9.0.1.0858",
-    device_model="2911",
-    interface_kind="HWIC-2T Serial",
-    verified_rates_bps=(64_000, 128_000, 2_000_000, 4_000_000),
-    rejected_rates_bps=(3_000_000, 8_000_000),
-    enumeration_complete=False,
-)
+class LinkModeContext(str, Enum):
+    """Estado en que se midió una combinación. Un rechazo puede depender de él.
 
-
-class ModeEvidence(str, Enum):
-    """Cuánto se sabe de un modo de enlace, sin colapsar los grados.
-
-    Aceptar no es aplicar: el CLI puede tragarse ``speed 1000`` en un puerto ya
-    negociado a 100 Mbps sin que nada cambie. Y no haber probado un valor no lo
-    vuelve no soportado.
+    Medido: `duplex half` sobre un Gigabit se rechaza "when speed
+    autonegotiation subset contains 1Gbps". El propio backend condiciona su
+    negativa, así que guardarla sin el contexto la convierte en una prohibición
+    universal que nadie demostró.
     """
 
-    OBSERVED = "observed"      # se aplicó y el efecto se volvió a leer
-    ACCEPTED = "accepted"      # el CLI no lo rechazó; el efecto no se observó
-    REJECTED = "rejected"      # el CLI lo rechazó
-    UNTESTED = "untested"      # nunca se midió
+    LINKED = "linked"
+    UNLINKED = "unlinked"
+    UNSPECIFIED = "unspecified"
+
+
+class LinkModeOutcome(str, Enum):
+    """Grados de lo que se midió. Cada salto exige más que el anterior.
+
+    Aceptar no es aplicar, y aplicar no es observar el modo resultante: el CLI
+    acepta `speed 100` en un puerto Gigabit enlazado sin que nada cambie, ni
+    siquiera tras rebotar el enlace.
+    """
+
+    NOT_MEASURED = "not_measured"
+    COMMAND_REJECTED = "command_rejected"
+    COMMAND_ACCEPTED = "command_accepted"
+    CONFIG_APPLIED = "config_applied"
+    MODE_EFFECT_OBSERVED = "mode_effect_observed"
+    MODE_BEHAVIOR_VERIFIED = "mode_behavior_verified"
+
+
+class NominalCapacitySource(str, Enum):
+    """De dónde sale la capacidad nominal. No todas valen lo mismo.
+
+    `PORT_CLASS` es la clase del puerto según su nombre: un techo teórico, no
+    una medición. Nunca puede derivarse de un getter de bandwidth, que es
+    metadata de routing.
+    """
+
+    CATALOG_DECLARATION = "catalog_declaration"
+    PORT_CLASS = "port_class"
+    CONTROLLED_RUNTIME_OBSERVATION = "controlled_runtime_observation"
+    UNKNOWN = "unknown"
+
+
+class LinkModeObservation(BaseModel):
+    """Una combinación medida, con su contexto y su registro de evidencia.
+
+    La provenance no se duplica aquí: vive en el `EvidenceRecord`, que ya es el
+    vocabulario compartido de E9.5.
+    """
+
+    speed: LinkSpeedMode
+    duplex: DuplexMode
+    context: LinkModeContext = LinkModeContext.UNSPECIFIED
+    outcome: LinkModeOutcome = LinkModeOutcome.NOT_MEASURED
+    evidence: EvidenceRecord | None = None
+    prerequisite: str = ""
+
+    def matches(
+        self, speed: LinkSpeedMode, duplex: DuplexMode, context: LinkModeContext,
+    ) -> bool:
+        if self.speed is not speed or self.duplex is not duplex:
+            return False
+        if self.context is LinkModeContext.UNSPECIFIED:
+            return True
+        return context in (self.context, LinkModeContext.UNSPECIFIED)
+
+
+def _readiness(
+    compile_status: ReadinessStatus,
+    apply_status: ReadinessStatus,
+    verify_status: ReadinessStatus,
+    capability: str,
+    reason: str,
+) -> CapabilityReadiness:
+    return CapabilityReadiness(
+        capability=capability,
+        compile=compile_status,
+        apply=apply_status,
+        verify=verify_status,
+        reasons={"apply": [reason], "verify": [reason]},
+    )
 
 
 class EthernetLinkModeCapability(BaseModel):
-    """Modos observados sobre un backend/modelo/tipo de puerto concretos.
+    """Qué hizo un backend concreto con un tipo de puerto concreto.
 
-    Mismo criterio que `SerialClockCapability`: no es una tabla Cisco, es lo
-    que este backend hizo. `nominal_capacity_bps` es lo que el puerto declara
-    por sí solo; lo que el enlace consigue depende también del otro extremo.
+    Genérico a propósito: los valores los rellena un adaptador de
+    infraestructura. Este módulo no sabe qué backends existen.
+
+    `nominal_capacity_bps` es un techo teórico y lleva su procedencia al lado
+    precisamente porque no es una medición del enlace.
     """
 
     backend_version: str = ""
     device_model: str = ""
     port_kind: str = ""
     nominal_capacity_bps: int = 0
-    observed_speeds: tuple[LinkSpeedMode, ...] = ()
-    accepted_speeds: tuple[LinkSpeedMode, ...] = ()
-    rejected_speeds: tuple[LinkSpeedMode, ...] = ()
-    observed_duplex: tuple[DuplexMode, ...] = ()
-    accepted_duplex: tuple[DuplexMode, ...] = ()
-    rejected_duplex: tuple[DuplexMode, ...] = ()
+    nominal_capacity_source: NominalCapacitySource = NominalCapacitySource.UNKNOWN
+    observations: tuple[LinkModeObservation, ...] = ()
     enumeration_complete: bool = False
-    source: str = "controlled_probe"
     notes: str = ""
 
-    def speed_evidence(self, speed: LinkSpeedMode) -> ModeEvidence:
-        if speed in self.rejected_speeds:
-            return ModeEvidence.REJECTED
-        if speed in self.observed_speeds:
-            return ModeEvidence.OBSERVED
-        if speed in self.accepted_speeds:
-            return ModeEvidence.ACCEPTED
-        return ModeEvidence.UNTESTED
+    def observation_for(
+        self,
+        speed: LinkSpeedMode,
+        duplex: DuplexMode,
+        context: LinkModeContext = LinkModeContext.UNSPECIFIED,
+    ) -> LinkModeObservation | None:
+        """La medición más específica que cubra esta combinación y contexto."""
+        exact = [
+            item for item in self.observations
+            if item.matches(speed, duplex, context)
+            and item.context is not LinkModeContext.UNSPECIFIED
+        ]
+        if exact:
+            return exact[0]
+        for item in self.observations:
+            if item.matches(speed, duplex, context):
+                return item
+        return None
 
-    def duplex_evidence(self, duplex: DuplexMode) -> ModeEvidence:
-        if duplex in self.rejected_duplex:
-            return ModeEvidence.REJECTED
-        if duplex in self.observed_duplex:
-            return ModeEvidence.OBSERVED
-        if duplex in self.accepted_duplex:
-            return ModeEvidence.ACCEPTED
-        return ModeEvidence.UNTESTED
+    def outcome_for(
+        self,
+        speed: LinkSpeedMode,
+        duplex: DuplexMode,
+        context: LinkModeContext = LinkModeContext.UNSPECIFIED,
+    ) -> LinkModeOutcome:
+        observation = self.observation_for(speed, duplex, context)
+        return observation.outcome if observation else LinkModeOutcome.NOT_MEASURED
 
+    def readiness_for(
+        self,
+        speed: LinkSpeedMode,
+        duplex: DuplexMode,
+        context: LinkModeContext = LinkModeContext.UNSPECIFIED,
+    ) -> CapabilityReadiness:
+        """Traduce la medición a los tres ejes que E9.5 ya usa.
 
-#: Perfiles medidos en E9.5 Stage 3A3 sobre PT 9.0.1.0858. Lo que no aparece
-#: no está soportado ni sin soportar: está sin probar.
-PT_2911_GIGABIT_LINK_MODE = EthernetLinkModeCapability(
-    backend_version="9.0.1.0858",
-    device_model="2911",
-    port_kind="GigabitEthernet",
-    nominal_capacity_bps=1_000_000_000,
-    accepted_speeds=(
-        LinkSpeedMode.AUTO, LinkSpeedMode.SPEED_10M,
-        LinkSpeedMode.SPEED_100M, LinkSpeedMode.SPEED_1G,
-    ),
-    observed_duplex=(DuplexMode.FULL,),
-    accepted_duplex=(DuplexMode.AUTO,),
-    rejected_duplex=(DuplexMode.HALF,),
-    enumeration_complete=False,
-    notes=(
-        "`duplex half` se rechaza mientras la negociación de velocidad incluya "
-        "1 Gbps: \"%Duplex cannot be set to half when speed autonegotiation "
-        "subset contains 1Gbps\". El rechazo es condicional, no absoluto."
-    ),
-)
-
-PT_3560_FASTETHERNET_LINK_MODE = EthernetLinkModeCapability(
-    backend_version="9.0.1.0858",
-    device_model="3560-24PS",
-    port_kind="FastEthernet",
-    nominal_capacity_bps=100_000_000,
-    accepted_speeds=(
-        LinkSpeedMode.AUTO, LinkSpeedMode.SPEED_10M, LinkSpeedMode.SPEED_100M,
-    ),
-    rejected_speeds=(LinkSpeedMode.SPEED_1G,),
-    observed_duplex=(DuplexMode.HALF, DuplexMode.FULL),
-    accepted_duplex=(DuplexMode.AUTO,),
-    enumeration_complete=False,
-    notes="`speed 1000` responde \"% Invalid input\": el puerto no la ofrece.",
-)
-
-PT_3560_GIGABIT_LINK_MODE = EthernetLinkModeCapability(
-    backend_version="9.0.1.0858",
-    device_model="3560-24PS",
-    port_kind="GigabitEthernet",
-    nominal_capacity_bps=1_000_000_000,
-    observed_speeds=(LinkSpeedMode.SPEED_10M, LinkSpeedMode.SPEED_1G),
-    accepted_speeds=(LinkSpeedMode.AUTO, LinkSpeedMode.SPEED_100M),
-    rejected_duplex=(DuplexMode.AUTO, DuplexMode.FULL, DuplexMode.HALF),
-    enumeration_complete=False,
-    notes=(
-        "El uplink no acepta ninguna forma de `duplex`: las tres responden "
-        "\"% Invalid input\". Medido con el puerto sin enlazar, donde el efecto "
-        "de `speed` se observo en el bandwidth de routing que espeja el nominal "
-        "mientras la autonegociacion sigue activa -- no en una tasa negociada, "
-        "que sin cable no existe."
-    ),
-)
-
-_LINK_MODE_CAPABILITIES: tuple[EthernetLinkModeCapability, ...] = (
-    PT_2911_GIGABIT_LINK_MODE,
-    PT_3560_FASTETHERNET_LINK_MODE,
-    PT_3560_GIGABIT_LINK_MODE,
-)
+        La distinción que importa está en `apply`: sin medición, compilar la
+        intención es legítimo pero mutar el runtime no lo es. `UNKNOWN` no es
+        `UNSUPPORTED`, y tampoco es permiso.
+        """
+        capability = f"ethernet_link_mode/{speed.value}/{duplex.value}"
+        outcome = self.outcome_for(speed, duplex, context)
+        if outcome is LinkModeOutcome.COMMAND_REJECTED:
+            return _readiness(
+                ReadinessStatus.UNSUPPORTED, ReadinessStatus.UNSUPPORTED,
+                ReadinessStatus.UNSUPPORTED, capability,
+                "The backend rejected this combination in the measured context.",
+            )
+        if outcome in (
+            LinkModeOutcome.MODE_EFFECT_OBSERVED,
+            LinkModeOutcome.MODE_BEHAVIOR_VERIFIED,
+        ):
+            return _readiness(
+                ReadinessStatus.READY, ReadinessStatus.READY, ReadinessStatus.READY,
+                capability, "The mode was applied and its effect was read back.",
+            )
+        if outcome is LinkModeOutcome.CONFIG_APPLIED:
+            return _readiness(
+                ReadinessStatus.READY, ReadinessStatus.READY, ReadinessStatus.PARTIAL,
+                capability,
+                "The configuration took effect; the operational mode was not verified.",
+            )
+        if outcome is LinkModeOutcome.COMMAND_ACCEPTED:
+            return _readiness(
+                ReadinessStatus.READY, ReadinessStatus.PARTIAL, ReadinessStatus.UNKNOWN,
+                capability,
+                "The command was accepted with no observed effect: acceptance is "
+                "not proof that the mode can be forced.",
+            )
+        return _readiness(
+            ReadinessStatus.READY, ReadinessStatus.UNKNOWN, ReadinessStatus.UNKNOWN,
+            capability,
+            "This combination was never measured on this backend.",
+        )
 
 
 def port_kind_of(interface: str) -> str:
@@ -341,25 +399,50 @@ def port_kind_of(interface: str) -> str:
     return head.rstrip("0123456789 ")
 
 
-def link_mode_capability_for(
-    device_model: str, interface: str, *, backend_version: str = "",
-) -> EthernetLinkModeCapability | None:
-    """Perfil medido para este modelo y tipo de puerto, o None si no se midió.
+def nominal_link_ceiling_bps(
+    local: EthernetLinkModeCapability | None,
+    peer: EthernetLinkModeCapability | None,
+) -> int | None:
+    """Techo teórico: el menor de los dos nominales. No es un techo verificado.
 
-    Devolver None es la respuesta correcta cuando no hay evidencia: no existe
-    un perfil por defecto que "más o menos" valga para cualquier plataforma.
+    Con un solo extremo conocido no hay techo, porque media evidencia no
+    autoriza a afirmar la capacidad de un enlace.
     """
-    model = (device_model or "").strip().casefold()
-    kind = port_kind_of(interface).casefold()
-    for candidate in _LINK_MODE_CAPABILITIES:
-        if candidate.device_model.casefold() != model:
-            continue
-        if candidate.port_kind.casefold() != kind:
-            continue
-        if backend_version and candidate.backend_version != backend_version:
-            continue
-        return candidate
-    return None
+    nominals = [
+        capability.nominal_capacity_bps
+        for capability in (local, peer)
+        if capability is not None and capability.nominal_capacity_bps > 0
+    ]
+    return min(nominals) if len(nominals) >= 2 else None
+
+
+def verified_mutual_ceiling_bps(
+    local: EthernetLinkModeCapability | None,
+    peer: EthernetLinkModeCapability | None,
+    *,
+    speed_capacity: "dict[LinkSpeedMode, int]",
+    context: LinkModeContext = LinkModeContext.LINKED,
+) -> int | None:
+    """La mayor velocidad que AMBOS extremos demostraron alcanzar.
+
+    Que un puerto se llame Gigabit no prueba que el enlace llegue a 1 Gbps, y
+    que un extremo lo demuestre no basta si el otro no lo hizo. Sin evidencia
+    en los dos lados el resultado es None -- desconocido, no cero.
+    """
+    if local is None or peer is None:
+        return None
+    realizable = [
+        capacity
+        for speed, capacity in speed_capacity.items()
+        if all(
+            side.readiness_for(speed, DuplexMode.AUTO, context).verify
+            is ReadinessStatus.READY
+            or side.readiness_for(speed, DuplexMode.FULL, context).verify
+            is ReadinessStatus.READY
+            for side in (local, peer)
+        )
+    ]
+    return max(realizable) if realizable else None
 
 
 class LinkPerformanceIntent(BaseModel):
@@ -383,6 +466,11 @@ class LinkPerformanceIntent(BaseModel):
     # 100 Mbps, y eso no se deduce del extremo que se está configurando.
     local_port_capability: EthernetLinkModeCapability | None = None
     peer_port_capability: EthernetLinkModeCapability | None = None
+    link_context: LinkModeContext = LinkModeContext.LINKED
+
+    # Una exploración controlada puede pedir lo que no está medido; la
+    # operación productiva no. Son dos rutas y no deben confundirse.
+    allow_unverified_mode_exploration: bool = False
 
     dce_endpoint_device_id: str = ""
     dte_endpoint_device_id: str = ""
@@ -413,10 +501,14 @@ class LinkPerformanceDecision(BaseModel):
     effective_speed: LinkSpeedMode = LinkSpeedMode.AUTO
     effective_duplex: DuplexMode = DuplexMode.AUTO
 
-    # Techo del enlace, no del puerto: el menor de los dos extremos cuando
-    # ambos se conocen. None significa que falta un extremo, no que no haya
-    # techo.
-    link_ceiling_bps: int | None = None
+    # Dos techos distintos que antes eran uno solo. El nominal es teórico -- el
+    # menor de los dos nominales; el mutuo verificado es la mayor velocidad que
+    # AMBOS extremos demostraron. None es desconocido, no cero.
+    nominal_link_ceiling_bps: int | None = None
+    verified_mutual_ceiling_bps: int | None = None
+
+    # Readiness del modo pedido sobre este enlace, en los tres ejes de E9.5.
+    mode_readiness: CapabilityReadiness | None = None
 
     # Reloj físico del DCE frente a ancho de banda lógico de routing: uno no
     # sustituye al otro y por eso viajan en campos distintos.
@@ -445,7 +537,11 @@ class LinkPerformanceDecision(BaseModel):
             "headroom_percent": self.headroom_percent,
             "engineered_demand_bps": self.engineered_demand_bps,
             "supported_capacities_bps": list(self.supported_capacities_bps),
-            "link_ceiling_bps": self.link_ceiling_bps,
+            "nominal_link_ceiling_bps": self.nominal_link_ceiling_bps,
+            "verified_mutual_ceiling_bps": self.verified_mutual_ceiling_bps,
+            "mode_apply_readiness": (
+                self.mode_readiness.apply.value if self.mode_readiness else ""
+            ),
             "selected_capacity_bps": self.effective_capacity_bps,
             "capacity_source": self.capacity_source.value,
             "reason": self.selection_reason,
@@ -462,19 +558,44 @@ class LinkPerformanceDecision(BaseModel):
 
 
 class ObservedLinkPerformance(BaseModel):
-    """Lo que el runtime negoció. No reescribe intent ni plan.
+    """Lo que el runtime hizo. No reescribe intent ni plan.
 
-    Velocidad física y `bandwidth` de routing viajan en campos distintos porque
-    son independientes, igual que el reloj y el `bandwidth` de una serial.
-    Medido en PT 9.0.1.0858: con `bandwidth 5000` sobre un enlace negociado a
-    100 Mbps, `show interfaces` informa "BW 5000 Kbit" y "Full Duplex, 100Mbps"
-    a la vez. Mientras nadie fije `bandwidth`, la metadata sigue a la tasa
-    negociada -- y por eso leerla no prueba cuál es esa tasa.
+    Tres canales que no valen lo mismo y por eso no comparten campo:
+
+    * `reported_speed` es lo que el texto del CLI imprime. Es el más débil:
+      medido, un enlace Gigabit contra Gigabit informa "100Mbps" mientras su
+      bandwidth de routing dice 1 Gbps, y un puerto sin cable informa una
+      velocidad igualmente.
+    * `routing_bandwidth_kbps` es metadata de routing. Con
+      `bandwidth_autonegotiated` activo espeja la tasa negociada, y ahí es la
+      mejor evidencia disponible de la capacidad efectiva -- indirecta, no
+      directa. En cuanto alguien fija `bandwidth`, deja de espejarla.
+    * `duplex_autonegotiated` y `full_duplex` salen del objeto de puerto y sí
+      distinguen un modo forzado de uno negociado.
     """
 
     link_id: str
-    observed_speed: LinkSpeedMode | None = None
-    observed_duplex: DuplexMode | None = None
-    observed_bandwidth_kbps: int | None = None
-    routing_bandwidth_autonegotiated: bool | None = None
+    reported_speed: LinkSpeedMode | None = None
+    reported_duplex: DuplexMode | None = None
+    routing_bandwidth_kbps: int | None = None
+    bandwidth_autonegotiated: bool | None = None
+    duplex_autonegotiated: bool | None = None
+    full_duplex: bool | None = None
+    line_protocol_up: bool | None = None
     observed: bool = False
+
+    @property
+    def effective_capacity_bps(self) -> int | None:
+        """Capacidad efectiva inferida, solo mientras la metadata espeje el enlace."""
+        if not self.observed or not self.bandwidth_autonegotiated:
+            return None
+        if not self.routing_bandwidth_kbps or not self.line_protocol_up:
+            return None
+        return self.routing_bandwidth_kbps * 1000
+
+    def meets(self, minimum_capacity_bps: int | None) -> bool | None:
+        """None cuando no hay evidencia suficiente: desconocido no es fallo."""
+        if not minimum_capacity_bps:
+            return None
+        effective = self.effective_capacity_bps
+        return None if effective is None else effective >= minimum_capacity_bps

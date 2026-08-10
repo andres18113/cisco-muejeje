@@ -162,12 +162,14 @@ class TestSerialCapacity:
         """Fijada a proposito: subir la version sin querer rompe aqui.
 
         v2 la subio Stage 3A3 al acotar la capacidad Ethernet por el extremo
-        mas lento; la politica serial no cambio con ella.
+        mas lento, y v3 Stage 3A3-B al hacer contextual el rechazo y al negar
+        que un modo sin medir autorice una mutacion. La politica serial no
+        cambio con ninguna de las dos.
         """
         decision = LinkPerformancePlanner().plan(_serial())
 
         assert decision.policy_id == "enterprise-link-performance"
-        assert decision.policy_version == "2"
+        assert decision.policy_version == "3"
 
     def test_a_different_policy_version_is_visible_in_the_decision(self):
         """Un cambio de politica que altere el comportamiento se puede ver."""
@@ -343,13 +345,13 @@ class TestRequestedEffectiveObserved:
         intent = _ethernet()
         decision = LinkPerformancePlanner().plan(intent)
         observed = ObservedLinkPerformance(
-            link_id=intent.link_id, observed_speed=LinkSpeedMode.SPEED_1G,
-            observed_duplex=DuplexMode.FULL, observed=True,
+            link_id=intent.link_id, reported_speed=LinkSpeedMode.SPEED_1G,
+            reported_duplex=DuplexMode.FULL, observed=True,
         )
 
         assert intent.requested_speed is LinkSpeedMode.AUTO
         assert decision.effective_speed is LinkSpeedMode.AUTO
-        assert observed.observed_speed is LinkSpeedMode.SPEED_1G
+        assert observed.reported_speed is LinkSpeedMode.SPEED_1G
 
     def test_media_must_be_resolved_before_any_policy_applies(self):
         decision = LinkPerformancePlanner().plan(
@@ -590,7 +592,7 @@ class TestProvenanceScoping:
     """La capability serial es evidencia con procedencia, no una tabla Cisco."""
 
     def test_the_measured_profile_names_its_backend_and_hardware(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
             PT_2911_HWIC2T_SERIAL_CLOCK,
         )
         profile = PT_2911_HWIC2T_SERIAL_CLOCK
@@ -601,7 +603,7 @@ class TestProvenanceScoping:
         assert 8_000_000 in profile.rejected_rates_bps
 
     def test_the_highest_tested_rate_is_not_claimed_as_an_absolute_maximum(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
             PT_2911_HWIC2T_SERIAL_CLOCK,
         )
         profile = PT_2911_HWIC2T_SERIAL_CLOCK

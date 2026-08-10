@@ -177,16 +177,16 @@ class TestObservedStateExclusion:
         topology = _topology(metadata={LINK_DCE_KEY: "HQ-R1"})
         before = _hashes(topology)
         observed_fast = ObservedLinkPerformance(
-            link_id="hq-br01", observed_speed=LinkSpeedMode.SPEED_1G,
-            observed_duplex=DuplexMode.FULL, observed=True,
+            link_id="hq-br01", reported_speed=LinkSpeedMode.SPEED_1G,
+            reported_duplex=DuplexMode.FULL, observed=True,
         )
         observed_slow = ObservedLinkPerformance(
-            link_id="hq-br01", observed_speed=LinkSpeedMode.SPEED_100M,
-            observed_duplex=DuplexMode.FULL, observed=True,
+            link_id="hq-br01", reported_speed=LinkSpeedMode.SPEED_100M,
+            reported_duplex=DuplexMode.FULL, observed=True,
         )
         after = _hashes(topology)
 
-        assert observed_fast.observed_speed is not observed_slow.observed_speed
+        assert observed_fast.reported_speed is not observed_slow.reported_speed
         assert before.physical_topology_hash == after.physical_topology_hash
         assert before.layout_hash == after.layout_hash
         assert before.artifact_hash == after.artifact_hash

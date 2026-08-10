@@ -298,19 +298,25 @@ class EthernetLinkModeStatus:
     line_protocol_up: bool | None
 
     @property
-    def negotiated_speed_bps(self) -> int | None:
-        """La cifra solo describe un enlace si el protocolo esta arriba.
+    def reported_speed_bps(self) -> int | None:
+        """Lo que la linea informa, solo con el protocolo arriba.
 
-        Medido en PT 9.0.1.0858: un uplink Gigabit sin cable informa
-        "Half-duplex, 100Mb/s" con el puerto down, mientras su BW de routing
-        sigue en 1000000 Kbit. Esa linea es el estado en reposo del puerto, no
-        una negociacion; tomarla por observada daria por medido un enlace que
-        no existe.
+        NO es la tasa negociada y no debe usarse como tal. Medido en PT
+        9.0.1.0858:
+
+        * un uplink Gigabit sin cable informa "Half-duplex, 100Mb/s" mientras
+          su BW de routing sigue en 1000000 Kbit;
+        * un enlace Gigabit<->Gigabit informa "100Mbps" en los dos extremos
+          aunque su BW de routing diga 1000000 Kbit.
+
+        La cifra solo empezo a moverse tras un `speed 1000` explicito. Para la
+        tasa efectiva, `routing_bandwidth_kbps` con la autonegociacion activa
+        es la mejor evidencia disponible, y aun asi es indirecta.
         """
         return self.speed_bps if self.line_protocol_up else None
 
     @property
-    def negotiated_duplex(self) -> str:
+    def reported_duplex(self) -> str:
         return self.duplex if self.line_protocol_up else ""
 
 

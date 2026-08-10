@@ -14,6 +14,8 @@ Lo observado en runtime no se escribe en ninguno de los dos.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from ..models.compilation import ConcreteLinkRole
 from ..models.configuration import (
     ConfigurationPhase,
@@ -24,12 +26,13 @@ from ..models.configuration import (
 from ..models.link_performance import (
     CapacitySource,
     DuplexMode,
+    EthernetLinkModeCapability,
     LinkMedia,
+    LinkModeContext,
     LinkPerformanceDecision,
     LinkPerformanceIntent,
     LinkSpeedMode,
     TrafficContribution,
-    link_mode_capability_for,
 )
 from .link_performance_planner import LinkPerformancePlanner
 
@@ -60,8 +63,18 @@ def resolve_link_media(cable: str) -> LinkMedia:
 class LinkPerformanceIntegration:
     """Traduce enlaces planificados a decisiones y a acciones tipadas."""
 
-    def __init__(self, planner: LinkPerformancePlanner | None = None) -> None:
+    def __init__(
+        self,
+        planner: LinkPerformancePlanner | None = None,
+        capability_resolver: (
+            "Callable[[str, str], EthernetLinkModeCapability | None] | None"
+        ) = None,
+    ) -> None:
         self._planner = planner or LinkPerformancePlanner()
+        # Quién sabe qué backend hay debajo lo aporta la infraestructura. Sin
+        # resolver, los extremos quedan sin perfil y la política se comporta
+        # como antes de haber medido nada.
+        self._capability_resolver = capability_resolver
 
     # -- intent ----------------------------------------------------------
 
@@ -76,6 +89,8 @@ class LinkPerformanceIntegration:
         requested_duplex: DuplexMode = DuplexMode.AUTO,
         sync_routing_bandwidth: bool = False,
         endpoint_models: dict[str, str] | None = None,
+        link_context: LinkModeContext = LinkModeContext.LINKED,
+        allow_unverified_mode_exploration: bool = False,
     ) -> LinkPerformanceIntent:
         metadata = dict(getattr(link, "metadata", {}) or {})
         role = self._role_for(getattr(link, "link_role", ""))
@@ -92,24 +107,27 @@ class LinkPerformanceIntegration:
             sync_routing_bandwidth_to_effective_capacity=sync_routing_bandwidth,
             local_port_capability=local,
             peer_port_capability=peer,
+            link_context=link_context,
+            allow_unverified_mode_exploration=allow_unverified_mode_exploration,
             dce_endpoint_device_id=metadata.get(LINK_DCE_KEY, ""),
             dte_endpoint_device_id=metadata.get(LINK_DTE_KEY, ""),
         )
 
-    @staticmethod
-    def _endpoint_capabilities(link, endpoint_models: dict[str, str]):
+    def _endpoint_capabilities(self, link, endpoint_models: dict[str, str]):
         """Perfil medido de cada extremo, o None donde no haya evidencia.
 
-        El modelo del dispositivo no viene en el enlace: lo aporta quien
-        conoce el inventario. Sin el, los dos extremos quedan sin perfil y la
-        politica se comporta como antes de medir nada.
+        El modelo del dispositivo no viene en el enlace: lo aporta quien conoce
+        el inventario, y quien sabe traducirlo a un perfil es la
+        infraestructura. Sin resolver, ambos extremos quedan sin perfil.
         """
+        if self._capability_resolver is None:
+            return (None, None)
         pairs = (
             (getattr(link, "device_a", ""), getattr(link, "port_a", "")),
             (getattr(link, "device_b", ""), getattr(link, "port_b", "")),
         )
         return tuple(
-            link_mode_capability_for(endpoint_models.get(device, ""), interface)
+            self._capability_resolver(endpoint_models.get(device, ""), interface)
             if device and interface else None
             for device, interface in pairs
         )
