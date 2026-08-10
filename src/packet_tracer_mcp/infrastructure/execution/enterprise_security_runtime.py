@@ -96,6 +96,7 @@ class PacketTracerEnterpriseSecurityRuntime:
         service_behavior: TypedBehaviorDriver | None = None,
         voice_call_operation: VoiceCallOperationPort | None = None,
         behavior_timeout_seconds: float = 12.0,
+        endpoint_measurement_attempts: int = 3,
         convergence_interval_seconds: float = 0.25,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
@@ -114,6 +115,10 @@ class PacketTracerEnterpriseSecurityRuntime:
         self._sleep = sleeper
         self._ping = TypedPingExecutor(
             send_and_wait,
+            # La terminal de un endpoint PC no atribuye sus primeras
+            # ejecuciones; sin presupuesto, una ruta que funciona se
+            # pierde como UNOBSERVABLE en lugar de medirse.
+            measurement_attempts=endpoint_measurement_attempts,
             timeout_seconds=behavior_timeout_seconds,
             interval_seconds=convergence_interval_seconds,
             clock=clock,

@@ -421,6 +421,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         ping_executor: _PingExecutor | None = None,
         ios_executor: ControlledIosExecutor | None = None,
         behavior_timeout_seconds: float = 12.0,
+        endpoint_measurement_attempts: int = 3,
         convergence_interval_seconds: float = 0.25,
         stable_samples: int = 2,
         max_probe_attempts: int = 6,
@@ -433,6 +434,10 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         self._ios = ios_executor or ControlledIosExecutor(send_and_wait)
         self._ping = ping_executor or TypedPingExecutor(
             send_and_wait,
+            # La terminal de un endpoint PC no atribuye sus primeras
+            # ejecuciones; sin presupuesto, una ruta que funciona se
+            # pierde como UNOBSERVABLE en lugar de medirse.
+            measurement_attempts=endpoint_measurement_attempts,
             timeout_seconds=behavior_timeout_seconds,
             interval_seconds=convergence_interval_seconds,
             clock=clock,
