@@ -50,6 +50,7 @@ class ServiceVerificationKind(str, Enum):
     DNS_RESOLUTION = "dns_resolution"
     DNS_NEGATIVE_CONTROL = "dns_negative_control"
     HTTP_FETCH = "http_fetch"
+    HTTPS_FETCH = "https_fetch"
     HTTP_BY_HOSTNAME = "http_by_hostname"
     NTP_SYNC = "ntp_sync"
     TFTP_RETRIEVE = "tftp_retrieve"

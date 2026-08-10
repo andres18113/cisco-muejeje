@@ -41,6 +41,7 @@ from .ios_terminal import (
     parse_show_interfaces_trunk,
     parse_show_ip_interface_brief,
 )
+from .runtime_inventory import normalize_runtime_inventory
 
 
 _IOS_ACTIONS = (
@@ -87,22 +88,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._ready_ios_devices: set[str] = set()
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
-        raw = self._query_inventory()
-        items = raw.get("devices", []) if isinstance(raw, dict) else raw
-        targets: list[RuntimeConfigurationTarget] = []
-        for item in items:
-            ports = []
-            for port in item.get("ports", item.get("interfaces", [])) or []:
-                name = port.get("name", "") if isinstance(port, dict) else str(port)
-                if name:
-                    ports.append(name)
-            targets.append(RuntimeConfigurationTarget(
-                device_name=str(item.get("name") or item.get("device_name") or ""),
-                model=str(item.get("model") or ""),
-                interfaces=sorted(set(ports), key=str.casefold),
-            ))
+        targets = normalize_runtime_inventory(self._query_inventory())
         self._targets = {item.device_name: item for item in targets}
-        return sorted(targets, key=lambda item: item.device_name)
+        return targets
 
     def apply_actions(
         self, actions: Sequence[ConfigurationAction],
@@ -325,14 +313,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 if self._same_interface(item.interface, expected_interface)
             ), None) if show.executed else None
 
-        def status_matches(row) -> bool:
+        def administrative_state_matches(row) -> bool:
             if row is None:
                 return False
             status = row.status.casefold()
-            protocol = row.protocol.casefold()
             if expected_up:
-                return status == "up" and protocol == "up"
-            return status == "administratively down" and protocol == "down"
+                return status != "administratively down"
+            return status == "administratively down"
 
         show, convergence, converged = self._converged_ios_query(
             expectation,
@@ -341,7 +328,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             lambda value: bool(
                 (row := find_row(value))
                 and row.ip_address == expected_ip
-                and status_matches(row)
+                and administrative_state_matches(row)
             ),
             timeout_seconds=self._l3_timeout,
         )
@@ -353,8 +340,21 @@ class PacketTracerEnterpriseConfigurationRuntime:
             converged and row and row.ip_address == expected_ip
             and show.fresh_output_observed
         )
-        status_verified = status_matches(row)
-        verified = address_verified and status_verified
+        administrative_state_verified = administrative_state_matches(row)
+        operational_up = bool(
+            row
+            and row.status.casefold() == "up"
+            and row.protocol.casefold() == "up"
+        )
+        if not administrative_state_verified:
+            operational_field = FieldVerificationStatus.FAILED
+        elif not expected_up:
+            operational_field = FieldVerificationStatus.VERIFIED
+        elif operational_up:
+            operational_field = FieldVerificationStatus.VERIFIED
+        else:
+            operational_field = FieldVerificationStatus.UNKNOWN
+        verified = address_verified and administrative_state_verified
         return RuntimeVerification(
             expectation_id=expectation.id,
             status=ActionExecutionStatus.VERIFIED if verified else ActionExecutionStatus.FAILED,
@@ -363,10 +363,22 @@ class PacketTracerEnterpriseConfigurationRuntime:
             fields={
                 "interface": FieldVerificationStatus.VERIFIED if row else FieldVerificationStatus.FAILED,
                 "ipv4": FieldVerificationStatus.VERIFIED if address_verified else FieldVerificationStatus.FAILED,
-                "status": FieldVerificationStatus.VERIFIED if status_verified else FieldVerificationStatus.FAILED,
-                "protocol": FieldVerificationStatus.VERIFIED if status_verified else FieldVerificationStatus.FAILED,
+                "administrative_state": (
+                    FieldVerificationStatus.VERIFIED
+                    if administrative_state_verified else FieldVerificationStatus.FAILED
+                ),
+                # Operational carrier/protocol state is a different claim from
+                # whether the typed L3 configuration was accepted.  An SVI can
+                # legitimately remain down/down until its VLAN has an active
+                # member; that must not erase fresh IP/admin read-back evidence.
+                "status": operational_field,
+                "protocol": operational_field,
             },
-            message=show.failure_reason or ("" if converged else "L3 convergence timed out."),
+            message=(
+                show.failure_reason
+                or ("" if operational_up else "Configuration verified; operational link is not up/up.")
+                if converged else "L3 configuration convergence timed out."
+            ),
             convergence=convergence,
         )
 
@@ -521,7 +533,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
     def _unobservable(expectation: VerificationExpectation) -> RuntimeVerification:
         return RuntimeVerification(
             expectation_id=expectation.id,
-            status=ActionExecutionStatus.PARTIAL,
+            status=ActionExecutionStatus.UNOBSERVABLE,
             evidence_method="runtime_observability_limit",
             fresh_evidence=False,
             fields={

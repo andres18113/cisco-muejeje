@@ -19,7 +19,9 @@ from ...domain.enterprise.models.configuration_runtime import (
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentManifest,
+    requires_deployment_manifest,
     resolve_manifest_targets,
+    validate_manifest_environment,
 )
 from ...domain.enterprise.models.execution import (
     CompensationStatus,
@@ -49,6 +51,7 @@ from ...domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
     ControlPlaneVerificationResult,
     FailureScenarioResult,
+    FailureTransitionPhase,
     RuntimeControlPlaneVerification,
     RuntimeFailureScenarioResult,
 )
@@ -150,6 +153,34 @@ class ControlPlaneApplicator:
                 started=started,
                 deployment_id=deployment_id,
             )
+        if (
+            deployment_manifest is None
+            and requires_deployment_manifest(plan.source_topology_hash_schema)
+        ):
+            return self._failure(
+                plan,
+                ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED,
+                "ControlPlanePlan uses physical-topology-v2 identity and requires a "
+                "DeploymentManifest; name-only runtime fallback is legacy-only.",
+                context=context,
+                started=started,
+                deployment_id=deployment_id,
+            )
+        if deployment_manifest is not None:
+            try:
+                validate_manifest_environment(
+                    deployment_manifest,
+                    context.environment_fingerprint,
+                )
+            except DeploymentIdentityError as exc:
+                return self._failure(
+                    plan,
+                    ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH,
+                    str(exc),
+                    context=context,
+                    started=started,
+                    deployment_id=deployment_id,
+                )
 
         try:
             ordered = order_dependency_actions(plan.actions)
@@ -906,9 +937,10 @@ class ControlPlaneApplicator:
                         if item.convergence else None
                     ),
                 },
-                backend=context.backend,
-                backend_version=context.backend_version,
-                environment_fingerprint=context.capability_snapshot_hash,
+                backend=context.evidence_backend,
+                backend_version=context.evidence_backend_version,
+                environment_fingerprint=context.environment_semantic_hash,
+                capability_snapshot_hash=context.capability_snapshot_hash,
                 limitations=[item.message] if item.message else [],
             ))
         for scenario in scenarios:
@@ -949,9 +981,10 @@ class ControlPlaneApplicator:
                             if item.convergence else None
                         ),
                     },
-                    backend=context.backend,
-                    backend_version=context.backend_version,
-                    environment_fingerprint=context.capability_snapshot_hash,
+                    backend=context.evidence_backend,
+                    backend_version=context.evidence_backend_version,
+                    environment_fingerprint=context.environment_semantic_hash,
+                    capability_snapshot_hash=context.capability_snapshot_hash,
                     limitations=[item.message] if item.message else [],
                 ))
             records.append(evidence_from_legacy_result(
@@ -973,10 +1006,15 @@ class ControlPlaneApplicator:
                     "restore": scenario.restore_status.value,
                     "recovery": scenario.recovery_status.value,
                     "restore_attempted": scenario.restore_attempted,
+                    "transitions": [
+                        item.model_dump(mode="json")
+                        for item in scenario.transitions
+                    ],
                 },
-                backend=context.backend,
-                backend_version=context.backend_version,
-                environment_fingerprint=context.capability_snapshot_hash,
+                backend=context.evidence_backend,
+                backend_version=context.evidence_backend_version,
+                environment_fingerprint=context.environment_semantic_hash,
+                capability_snapshot_hash=context.capability_snapshot_hash,
                 limitations=[scenario.message] if scenario.message else [],
             ))
         return records
@@ -1177,6 +1215,27 @@ class ControlPlaneApplicator:
                 continue
             if item.expectation_id != expectation_id or item.stage is not stage:
                 contract_errors.append(label)
+        transitions = list(runtime.transitions)
+        if transitions:
+            sequences = [item.sequence for item in transitions]
+            elapsed = [item.elapsed_ms for item in transitions]
+            canonical = {
+                phase: index
+                for index, phase in enumerate((
+                    FailureTransitionPhase.BASELINE_OBSERVED,
+                    FailureTransitionPhase.FAULT_INJECTED,
+                    FailureTransitionPhase.FAILOVER_OBSERVED,
+                    FailureTransitionPhase.RESTORE_DISPATCHED,
+                    FailureTransitionPhase.RECOVERY_OBSERVED,
+                ))
+            }
+            phase_order = [canonical[item.phase] for item in transitions]
+            if (
+                sequences != list(range(len(transitions)))
+                or elapsed != sorted(elapsed)
+                or phase_order != sorted(set(phase_order))
+            ):
+                contract_errors.append("transitions")
         if contract_errors:
             cleanup_failed = (
                 runtime.injection is not None
@@ -1203,6 +1262,7 @@ class ControlPlaneApplicator:
                 before=runtime.before,
                 during=runtime.during,
                 after=runtime.after,
+                transitions=transitions,
                 message=(
                     "Runtime returned invalid scenario evidence for: "
                     + ", ".join(contract_errors) + "."
@@ -1251,6 +1311,7 @@ class ControlPlaneApplicator:
             before=runtime.before,
             during=runtime.during,
             after=runtime.after,
+            transitions=transitions,
             message=message,
         )
 

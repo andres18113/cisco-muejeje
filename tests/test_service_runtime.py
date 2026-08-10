@@ -311,5 +311,33 @@ def test_ntp_and_tftp_behavior_remain_unobservable_without_client_evidence():
             host_device_id="srv", host_device_name="server",
             client_device_id="pc", client_device_name="client",
         ))
-        assert result.status is ActionExecutionStatus.PARTIAL
+        assert result.status is ActionExecutionStatus.UNOBSERVABLE
         assert not result.fresh_evidence
+
+
+def test_https_behavior_uses_https_url_and_never_substitutes_http():
+    calls = []
+    responses = [
+        json.dumps({"started": True, "content_before": ""}),
+        json.dumps({"found": True, "content": "Packet Tracer secure page"}),
+        json.dumps({"released": True}),
+    ]
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [], lambda js, timeout: calls.append(js) or responses.pop(0),
+        http_timeout_seconds=0.1, convergence_interval_seconds=0.0,
+    )
+    expectation = ServiceVerificationExpectation(
+        id="verify-https", service_id="service/hq/https", action_id="enable",
+        kind=ServiceVerificationKind.HTTPS_FETCH,
+        evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+        host_device_id="srv", host_device_name="server",
+        client_device_id="pc", client_device_name="client",
+        expected={"address": "198.18.160.10", "marker": "", "scheme": "https"},
+    )
+
+    result = runtime.verify(expectation)
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.evidence_method == "https_client_fresh_content"
+    assert json.dumps("https://198.18.160.10/") in calls[0]
+    assert "http://198.18.160.10/" not in calls[0]

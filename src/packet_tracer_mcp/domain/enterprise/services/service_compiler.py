@@ -676,13 +676,21 @@ class ServiceCompiler:
                         id=_stable_id("verify-http-ip", service.id, client_id),
                         service_id=service.id,
                         action_id=terminal.id,
-                        kind=ServiceVerificationKind.HTTP_FETCH,
+                        kind=(
+                            ServiceVerificationKind.HTTPS_FETCH
+                            if service.service_type is ServiceType.HTTPS
+                            else ServiceVerificationKind.HTTP_FETCH
+                        ),
                         evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
                         host_device_id=service.host_device_id,
                         host_device_name=service.host_device_name,
                         client_device_id=client_id,
                         client_device_name=client.name,
-                        expected={"address": service.address, "marker": content},
+                        expected={
+                            "address": service.address,
+                            "marker": content,
+                            "scheme": service.service_type.value,
+                        },
                     )
                     http_fetches[(service.id, client_id)] = fetch.id
                     expectations.append(fetch)

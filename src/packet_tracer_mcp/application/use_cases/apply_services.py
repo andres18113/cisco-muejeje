@@ -19,7 +19,9 @@ from ...domain.enterprise.models.configuration_runtime import (
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentManifest,
+    requires_deployment_manifest,
     resolve_manifest_targets,
+    validate_manifest_environment,
 )
 from ...domain.enterprise.models.execution import (
     MutationDisposition,
@@ -27,6 +29,7 @@ from ...domain.enterprise.models.execution import (
     satisfies_apply_dependency,
 )
 from ...domain.enterprise.models.evidence import evidence_from_legacy_result
+from ...domain.enterprise.models.evidence import ReadinessStatus
 from ...domain.enterprise.models.service_plan import (
     ServiceAction,
     ServiceCapabilityProfile,
@@ -99,6 +102,28 @@ class ServiceApplicator:
                 "DeploymentManifest physical topology hash does not match ServicePlan.",
                 context=runtime_context, deployment_id=deployment_id, started=started,
             )
+        if (
+            deployment_manifest is None
+            and requires_deployment_manifest(plan.source_topology_hash_schema)
+        ):
+            return self._failure(
+                plan, ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED,
+                "ServicePlan uses physical-topology-v2 identity and requires a "
+                "DeploymentManifest; name-only runtime fallback is legacy-only.",
+                context=runtime_context, deployment_id=deployment_id, started=started,
+            )
+        if deployment_manifest is not None:
+            try:
+                validate_manifest_environment(
+                    deployment_manifest,
+                    runtime_context.environment_fingerprint,
+                )
+            except DeploymentIdentityError as exc:
+                return self._failure(
+                    plan, ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH,
+                    str(exc), context=runtime_context,
+                    deployment_id=deployment_id, started=started,
+                )
         if actual_source_configuration_hash != plan.source_configuration_hash:
             return self._failure(
                 plan, ConfigurationFailureCode.SOURCE_CONFIGURATION_MISMATCH,
@@ -349,9 +374,10 @@ class ServiceApplicator:
                 evidence_method=item.evidence_method,
                 fresh_evidence=item.fresh_evidence,
                 observed_value=item.observed,
-                backend=runtime_context.backend,
-                backend_version=runtime_context.backend_version,
-                environment_fingerprint=runtime_context.capability_snapshot_hash,
+                backend=runtime_context.evidence_backend,
+                backend_version=runtime_context.evidence_backend_version,
+                environment_fingerprint=runtime_context.environment_semantic_hash,
+                capability_snapshot_hash=runtime_context.capability_snapshot_hash,
                 limitations=[item.message] if item.message else [],
             )
             for item in verification
@@ -462,11 +488,32 @@ class ServiceApplicator:
                     if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE
                     else profile.behavioral_verification_support
                 )
+            readiness = (
+                profile.capability_readiness.get("behavioral_verification")
+                if profile is not None
+                and expectation.evidence_kind is not ServiceEvidenceKind.DIRECT_STATE
+                else None
+            )
+            if readiness is not None and readiness.verify is ReadinessStatus.UNOBSERVABLE:
+                reasons = readiness.reasons.get("verify", [])
+                results[expectation.id] = ServiceVerificationResult(
+                    expectation_id=expectation.id,
+                    service_id=expectation.service_id,
+                    status=ActionExecutionStatus.UNOBSERVABLE,
+                    evidence_kind=expectation.evidence_kind,
+                    failure_code=ConfigurationFailureCode.OBSERVABILITY_LIMITATION,
+                    message=" ".join(reasons) or "Behavioral state is unobservable.",
+                )
+                continue
             if support is not CapabilityStatus.SUPPORTED:
                 results[expectation.id] = ServiceVerificationResult(
                     expectation_id=expectation.id,
                     service_id=expectation.service_id,
-                    status=ActionExecutionStatus.PARTIAL,
+                    status=(
+                        ActionExecutionStatus.UNKNOWN
+                        if support is CapabilityStatus.UNKNOWN
+                        else ActionExecutionStatus.PARTIAL
+                    ),
                     evidence_kind=expectation.evidence_kind,
                     failure_code=(
                         ConfigurationFailureCode.DIRECT_READBACK_UNOBSERVABLE

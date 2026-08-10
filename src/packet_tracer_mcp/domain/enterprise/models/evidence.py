@@ -81,6 +81,7 @@ class EvidenceRecord(BaseModel):
     backend: str = ""
     backend_version: str = ""
     environment_fingerprint: str = ""
+    capability_snapshot_hash: str = ""
     probe_fingerprint: str = ""
     observed_value: Any = None
     support_status: SupportStatus = SupportStatus.UNKNOWN
@@ -96,6 +97,9 @@ class EvidenceRecord(BaseModel):
             self.freshness is EvidenceFreshness.FRESH
             and self.observation_status is ObservationStatus.OBSERVED
             and self.verification_status is VerificationStatus.VERIFIED
+            and self.method is not VerificationMethod.NONE
+            and self.strength is EvidenceStrength.CLAIM_DIRECT
+            and self.support_status in {SupportStatus.SUPPORTED, SupportStatus.PARTIAL}
         )
 
     @property
@@ -104,6 +108,8 @@ class EvidenceRecord(BaseModel):
             return "unsupported"
         if self.observation_status is ObservationStatus.UNOBSERVABLE:
             return "unobservable"
+        if self.observation_status is ObservationStatus.PROBE_FAILED:
+            return "probe_failed"
         if self.verification_status is VerificationStatus.FAILED:
             return "failed"
         if (
@@ -130,6 +136,7 @@ class EvidenceRecord(BaseModel):
             "backend": self.backend,
             "backend_version": self.backend_version,
             "environment_fingerprint": self.environment_fingerprint,
+            "capability_snapshot_hash": self.capability_snapshot_hash,
             "probe_fingerprint": self.probe_fingerprint,
             "limitations": list(self.limitations),
             "raw_reference": self.raw_reference,
@@ -157,22 +164,45 @@ def evidence_from_legacy_result(
     backend: str = "",
     backend_version: str = "",
     environment_fingerprint: str = "",
+    capability_snapshot_hash: str = "",
     limitations: list[str] | None = None,
 ) -> EvidenceRecord:
     """Lossless-enough adapter while E5-E9 legacy result fields remain public."""
     status_value = status.value if isinstance(status, Enum) else str(status)
-    observation = {
-        "verified": ObservationStatus.OBSERVED,
-        "failed": ObservationStatus.OBSERVED,
-        "partial": ObservationStatus.OBSERVED,
-        "unobservable": ObservationStatus.UNOBSERVABLE,
-        "dependency_blocked": ObservationStatus.SKIPPED,
-        "skipped": ObservationStatus.SKIPPED,
-    }.get(status_value, ObservationStatus.NOT_ATTEMPTED)
-    verification = {
-        "verified": VerificationStatus.VERIFIED,
-        "failed": VerificationStatus.FAILED,
-    }.get(status_value, VerificationStatus.UNVERIFIED)
+    normalized_method = evidence_method.casefold()
+    if status_value == "verified":
+        observation = (
+            ObservationStatus.OBSERVED
+            if fresh_evidence else ObservationStatus.PROBE_FAILED
+        )
+    elif status_value == "failed":
+        observation = (
+            ObservationStatus.OBSERVED
+            if fresh_evidence else ObservationStatus.PROBE_FAILED
+        )
+    elif status_value == "partial":
+        observation = (
+            ObservationStatus.OBSERVED
+            if fresh_evidence else ObservationStatus.UNOBSERVABLE
+            if any(
+                token in normalized_method
+                for token in ("unavailable", "unobservable", "observability_limit")
+            )
+            else ObservationStatus.NOT_ATTEMPTED
+        )
+    else:
+        observation = {
+            "unobservable": ObservationStatus.UNOBSERVABLE,
+            "dependency_blocked": ObservationStatus.SKIPPED,
+            "skipped": ObservationStatus.SKIPPED,
+        }.get(status_value, ObservationStatus.NOT_ATTEMPTED)
+    verification = (
+        VerificationStatus.VERIFIED
+        if status_value == "verified" and fresh_evidence
+        else VerificationStatus.FAILED
+        if status_value == "failed" and fresh_evidence
+        else VerificationStatus.UNVERIFIED
+    )
     support = (
         SupportStatus.SUPPORTED
         if status_value == "verified"
@@ -209,6 +239,7 @@ def evidence_from_legacy_result(
         backend=backend,
         backend_version=backend_version,
         environment_fingerprint=environment_fingerprint,
+        capability_snapshot_hash=capability_snapshot_hash,
         observed_value=observed_value,
         support_status=support,
         observation_status=observation,
@@ -233,10 +264,21 @@ def _legacy_method(value: str) -> tuple[VerificationMethod, str]:
         return VerificationMethod.BEHAVIORAL, ""
     if any(token in normalized for token in ("terminal", "ios", "cli", "show")):
         return VerificationMethod.OPERATIONAL_CLI, ""
-    if any(token in normalized for token in ("structured", "getter", "api")):
+    if any(
+        token in normalized
+        for token in (
+            "structured", "getter", "api", "object_state", "vlan_manager",
+        )
+    ):
         return VerificationMethod.STRUCTURED_API, ""
     if "event" in normalized:
         return VerificationMethod.EVENT_STREAM, ""
-    if "direct" in normalized or "readback" in normalized:
+    if any(
+        token in normalized
+        for token in (
+            "direct", "readback", "observation", "registration_table",
+            "current_call",
+        )
+    ):
         return VerificationMethod.DIRECT_STATE, ""
     return VerificationMethod.NONE, f"Unmapped legacy evidence method: {value}."

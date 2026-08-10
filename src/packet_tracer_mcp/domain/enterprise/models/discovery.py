@@ -16,8 +16,39 @@ from pydantic import BaseModel, Field
 from .capabilities import CapabilityStatus, EvidenceSource
 
 
-PROBE_SCHEMA_VERSION = 1
-SNAPSHOT_SCHEMA_VERSION = 1
+PROBE_SCHEMA_VERSION = 2
+SNAPSHOT_SCHEMA_VERSION = 2
+
+
+def semantic_fingerprint(payload: object) -> str:
+    """Hash semantico: estable, ordenado y libre de datos de sesion."""
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def semantic_inventory_fingerprint(items: list[object]) -> str:
+    """Fingerprint de inventario independiente del orden de enumeracion runtime."""
+    normalized = [_canonical_inventory_value(item) for item in items]
+    ordered = sorted(
+        normalized,
+        key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
+    )
+    return semantic_fingerprint({"inventory": ordered})
+
+
+def _canonical_inventory_value(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            str(key): _canonical_inventory_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple, set)):
+        normalized = [_canonical_inventory_value(item) for item in value]
+        return sorted(
+            normalized,
+            key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
+        )
+    return value
 
 
 class DiscoverySource(str, Enum):
@@ -82,6 +113,61 @@ class CleanupStatus(str, Enum):
     CLEAN = "clean"
     DIRTY_SESSION = "dirty_session"
     NOT_REQUIRED = "not_required"
+
+
+class ProbeIsolationLevel(str, Enum):
+    SHARED_DEVICE = "shared_device"
+    RESET_REQUIRED = "reset_required"
+    FRESH_DEVICE_REQUIRED = "fresh_device_required"
+    FRESH_SESSION_REQUIRED = "fresh_session_required"
+
+
+class ProbeEnvironment(BaseModel):
+    """Hechos estables que pueden cambiar la validez de una observacion."""
+
+    backend: CapabilityBackend = CapabilityBackend.PACKET_TRACER
+    backend_version: str = ""
+    transport_channel: str = ""
+    extension_version: str = ""
+    platform: str = ""
+    capability_snapshot_version: str = str(SNAPSHOT_SCHEMA_VERSION)
+    runtime_mode: str = ""
+    relevant_facts: dict[str, str] = Field(default_factory=dict)
+
+    def semantic_fingerprint(self) -> str:
+        return semantic_fingerprint(self.model_dump(mode="json"))
+
+
+class ProbeContext(BaseModel):
+    """Proveniencia y condiciones de confianza de un resultado de probe."""
+
+    probe_id: str
+    probe_version: str = "1"
+    backend: CapabilityBackend = CapabilityBackend.PACKET_TRACER
+    backend_version: str = ""
+    device_model: str
+    environment_fingerprint: str = ""
+    initial_inventory_hash: str = ""
+    final_inventory_hash: str = ""
+    inventory_restored: bool | None = None
+    isolation_level: ProbeIsolationLevel = ProbeIsolationLevel.SHARED_DEVICE
+    mutations: list[str] = Field(default_factory=list)
+    cleanup_status: CleanupStatus = CleanupStatus.NOT_REQUIRED
+    result_status: CapabilityStatus = CapabilityStatus.UNKNOWN
+    execution_status: ProbeExecutionStatus = ProbeExecutionStatus.SKIPPED
+    probe_fingerprint: str = ""
+
+    @property
+    def reusable(self) -> bool:
+        restoration_proven = (
+            self.inventory_restored is True
+            if self.mutations
+            else self.inventory_restored is not False
+        )
+        return (
+            self.cleanup_status is not CleanupStatus.DIRTY_SESSION
+            and restoration_proven
+        )
 
 
 class DeviceInitializationState(str, Enum):
@@ -184,12 +270,15 @@ class CapabilityProbeResult(BaseModel):
     duration_ms: int = 0
     packet_tracer_version: str | None = None
     verification_method: CapabilityVerificationMethod | None = None
+    context: ProbeContext | None = None
 
     def evidence(self):
         """Convierte sólo resultados verificados en evidencia reusable."""
         from .capabilities import CapabilityEvidence
 
         if self.execution_status is not ProbeExecutionStatus.VERIFIED:
+            return None
+        if self.context is not None and not self.context.reusable:
             return None
         return CapabilityEvidence(
             capability=self.capability,
@@ -205,13 +294,42 @@ class CapabilityProbeResult(BaseModel):
 
 class ProbeDefinition(BaseModel):
     id: str
+    probe_version: str = "1"
     capability: str
     supported_categories: list[str] = Field(default_factory=list)
     prerequisites: list[str] = Field(default_factory=list)
     safety: ProbeSafety = ProbeSafety.SAFE
     requires_power_cycle: bool = False
     requires_fresh_device: bool = False
+    isolation_level: ProbeIsolationLevel | None = None
     cost: ProbeCost = ProbeCost.CHEAP
+
+    @property
+    def effective_isolation_level(self) -> ProbeIsolationLevel:
+        """Migra flags E3.5 sin convertirlos en una segunda fuente de verdad."""
+        if self.isolation_level is not None:
+            return self.isolation_level
+        if self.requires_fresh_device:
+            return ProbeIsolationLevel.FRESH_DEVICE_REQUIRED
+        if self.requires_power_cycle:
+            return ProbeIsolationLevel.RESET_REQUIRED
+        return ProbeIsolationLevel.SHARED_DEVICE
+
+    def semantic_fingerprint(
+        self, model: str, relevant_inputs: dict[str, object] | None = None,
+    ) -> str:
+        return semantic_fingerprint({
+            "probe_id": self.id,
+            "probe_version": self.probe_version,
+            "capability": self.capability,
+            "target_model": model,
+            "supported_categories": sorted(self.supported_categories),
+            "prerequisites": sorted(self.prerequisites),
+            "safety": self.safety.value,
+            "isolation_level": self.effective_isolation_level.value,
+            "cost": self.cost.value,
+            "relevant_inputs": relevant_inputs or {},
+        })
 
 
 class ProbeRequest(BaseModel):
@@ -264,7 +382,28 @@ class CapabilitySnapshot(BaseModel):
     probe_schema_version: int = PROBE_SCHEMA_VERSION
     packet_tracer_version: str | None = None
     backend: CapabilityBackend = CapabilityBackend.PACKET_TRACER
+    environment_fingerprint: str = ""
+    probe_fingerprints: dict[str, str] = Field(default_factory=dict)
+    initial_inventory_hash: str = ""
+    final_inventory_hash: str = ""
+    inventory_restored: bool | None = None
     session: ProbeSessionResult
+
+    @property
+    def reusable(self) -> bool:
+        restoration_proven = (
+            self.inventory_restored is True
+            if self.session.session.mutations
+            else self.inventory_restored is not False
+        )
+        return (
+            self.session.session.cleanup_status is not CleanupStatus.DIRTY_SESSION
+            and restoration_proven
+            and all(
+                result.context is None or result.context.reusable
+                for result in self.session.results
+            )
+        )
 
     def stable_hash(self) -> str:
         payload = self.model_dump(mode="json")

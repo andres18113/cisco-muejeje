@@ -72,7 +72,26 @@ from ...infrastructure.execution.bridge_token import (
 )
 from ...infrastructure.execution.file_bridge import FileBridge
 from ...infrastructure.execution.bridge_preflight import BridgeReadinessPreflight
+from ...infrastructure.execution.topology_observation import (
+    LinkEndpoint,
+    LinkExpectation,
+    LayoutPoint,
+    assess_layout_application,
+    build_layout_observation_js,
+    parse_layout_observation,
+    verify_exact_link_convergence,
+)
+from ...infrastructure.execution.transport_health import (
+    TransportHealth,
+    TransportName,
+    format_transport_health,
+    select_transport,
+)
 from ...infrastructure.persistence.project_repository import ProjectRepository
+from ...infrastructure.persistence.deployment_manifest_store import (
+    DeploymentManifestStore,
+    ManifestPersistenceError,
+)
 from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
 from ...infrastructure.catalog.cables import CABLE_TYPES, CABLE_RULES, infer_cable
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
@@ -82,7 +101,14 @@ from ...infrastructure.catalog.enterprise_capabilities import EnterpriseCapabili
 from ...infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
 from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 from ...application.use_cases.capability_discovery import CapabilityDiscoveryService
+from ...application.use_cases.deploy_enterprise_topology import (
+    EnterprisePhysicalTopologyDeployer,
+)
+from ...domain.enterprise.models.deployment import EnvironmentFingerprint
 from ...domain.enterprise.models.discovery import DetailLevel, ProbeLevel, ProbeRequest
+from ...infrastructure.execution.packet_tracer_physical_runtime import (
+    PacketTracerPhysicalTopologyRuntime,
+)
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...shared.utils import (
     js_escape, safe_name_component, resolve_within, interpret_ping as _interpret_ping,
@@ -852,17 +878,67 @@ def register_tools(mcp: FastMCP) -> None:
     # vivo pero la ventana cerrada.
     _file_bridge = FileBridge()
 
+    def _command_path_probe(channel: str, polling: bool) -> bool:
+        """Round-trip read-only por un canal explícito, sin fallback."""
+        if not polling:
+            return False
+        marker = "__PT_MCP_HEALTH_" + channel.upper() + "_" + str(time.time_ns())
+        js = "reportResult(" + json.dumps(marker) + ");"
+        return _bridge_send_and_wait(
+            js, timeout=2.0, channel=channel,
+        ) == marker
+
+    def _transport_health_snapshot(
+        *, probe_command_path: bool,
+    ) -> tuple[TransportHealth, TransportHealth]:
+        http_up = _bridge_is_up()
+        http_polling = http_up and _bridge_pt_connected()
+        file_polling = _file_bridge.pt_alive()
+        return (
+            TransportHealth(
+                transport=TransportName.HTTP,
+                transport_up=http_up,
+                polling=http_polling,
+                command_path_responsive=(
+                    _command_path_probe("http", http_polling)
+                    if probe_command_path else False
+                ),
+                command_probe_attempted=probe_command_path and http_polling,
+            ),
+            TransportHealth(
+                transport=TransportName.FILE,
+                transport_up=file_polling or _file_bridge.dir.exists(),
+                polling=file_polling,
+                command_path_responsive=(
+                    _command_path_probe("file", file_polling)
+                    if probe_command_path else False
+                ),
+                command_probe_attempted=probe_command_path and file_polling,
+            ),
+        )
+
+    def _operation_transport_selection(
+        *, require_command_path: bool = False,
+    ):
+        """Selecciona una vez desde evidencia explícita del transporte.
+
+        El fallback devuelto es sólo diagnóstico. Las tools mutantes fijan el
+        transporte seleccionado durante toda la operación y nunca repiten una
+        mutación ambigua por el fallback.
+        """
+        http_health, file_health = _transport_health_snapshot(
+            probe_command_path=require_command_path,
+        )
+        return select_transport(http_health, file_health)
+
     def _pick_channel() -> str:
         """'http' | 'file' | '' según qué ejecutor esté disponible."""
-        if _bridge_is_up() and _bridge_pt_connected():
-            return "http"
-        if _file_bridge.pt_alive():
-            return "file"
-        return ""
+        selected = _operation_transport_selection().selected
+        return selected.value if selected is not None else ""
 
-    def _channel_send(payload: str) -> bool:
-        """Envía fire-and-forget por el canal disponible."""
-        ch = _pick_channel()
+    def _channel_send(payload: str, channel: str | None = None) -> bool:
+        """Envía por un canal; un canal explícito nunca se redirige."""
+        ch = channel if channel is not None else _pick_channel()
         if ch == "http":
             status, _ = _http_post(f"{_BRIDGE_URL}/queue", payload)
             return status == 200
@@ -874,6 +950,8 @@ def register_tools(mcp: FastMCP) -> None:
     def pt_live_deploy(
         plan_json: str,
         command_delay: float = 0.0,
+        packet_tracer_version: str = "",
+        extension_version: str = "",
     ) -> str:
         """
         Envia comandos directamente a Packet Tracer en tiempo real.
@@ -890,6 +968,9 @@ def register_tools(mcp: FastMCP) -> None:
           contra PT 9.0, crear 10 dispositivos + enlaces + configurar IOS de
           corrido tarda ~100 ms y la config queda aplicada. Subilo solo si tu
           instalación se atraganta.
+        - packet_tracer_version: versión exacta observada, necesaria para emitir
+          un DeploymentManifest E9.5 verificable en planes enterprise v2.
+        - extension_version: versión del Control Center si está disponible.
         """
         if command_delay < 0.0:
             command_delay = 0.0
@@ -900,8 +981,82 @@ def register_tools(mcp: FastMCP) -> None:
         err = _check_bridge()
         if err:
             return err
+        transport_selection = _operation_transport_selection(
+            require_command_path=True,
+        )
+        if transport_selection.selected is None:
+            return "[ERROR] No hay un transporte seleccionable para el despliegue."
+        operation_channel = transport_selection.selected.value
 
         plan = TopologyPlan.model_validate_json(plan_json)
+        if plan.hash_schema_version == "2":
+            if not plan.physical_topology_hash:
+                return (
+                    "[ERROR] El plan declara physical-topology-v2 pero no contiene "
+                    "physical_topology_hash; no se mutó Packet Tracer."
+                )
+            if not packet_tracer_version.strip():
+                return (
+                    "[ERROR] packet_tracer_version exacta es obligatoria para un "
+                    "despliegue enterprise v2; no se mutó Packet Tracer."
+                )
+
+            physical_runtime = PacketTracerPhysicalTopologyRuntime(
+                lambda script, timeout: _bridge_send_and_wait(
+                    script,
+                    timeout=timeout,
+                    channel=operation_channel,
+                ),
+            )
+            physical_result = EnterprisePhysicalTopologyDeployer(
+                physical_runtime,
+            ).deploy(
+                plan,
+                environment_fingerprint=EnvironmentFingerprint(
+                    backend="packet_tracer",
+                    backend_version=packet_tracer_version.strip(),
+                    bridge_transport=operation_channel,
+                    extension_version=extension_version.strip(),
+                    runtime_mode="logical-workspace",
+                ),
+            )
+            summary = physical_result.compact_summary()
+            if physical_result.manifest is None:
+                details = "; ".join(physical_result.errors)
+                return (
+                    "[ERROR] Despliegue físico enterprise v2 sin manifest verificable.\n"
+                    f"  Status: {summary['status']}\n"
+                    f"  Failure: {summary['failure_code']}\n"
+                    f"  Dirty state: {summary['dirty_state']}"
+                    + (f"\n  Details: {details}" if details else "")
+                )
+
+            try:
+                manifest_path = DeploymentManifestStore().save_verified(
+                    physical_result.manifest,
+                )
+            except ManifestPersistenceError as exc:
+                return (
+                    "[ERROR] El estado físico fue verificado, pero el "
+                    "DeploymentManifest no pudo persistirse de forma segura; "
+                    "E5-E9 permanecen bloqueados.\n"
+                    f"  Details: {exc}"
+                )
+            manifest = physical_result.manifest.compact_summary()
+            return (
+                "[OK] Topología física enterprise v2 desplegada y observada.\n"
+                f"  Transporte fijado: {operation_channel} (sin replay silencioso)\n"
+                f"  DeploymentManifest: bindings={manifest['binding_count']}, "
+                f"physical_hash={manifest['physical_topology_hash']}, "
+                f"semantic_hash={manifest['semantic_hash']}\n"
+                f"  Manifest path: {manifest_path}\n"
+                f"  Dirty state: {summary['dirty_state']}\n"
+                "  E5-E9 no fueron aplicados por esta operación física."
+            )
+
+        # Compatibility path for pre-E9.5 plans. It intentionally retains the
+        # historical combined physical/configuration behavior, emits no manifest,
+        # and must not be treated as the authoritative enterprise v2 path.
         script = generate_executable_script(plan)
         commands = [
             line.strip() for line in script.splitlines()
@@ -915,50 +1070,60 @@ def register_tools(mcp: FastMCP) -> None:
         for i in range(0, len(commands), _DEPLOY_BATCH):
             chunk = commands[i:i + _DEPLOY_BATCH]
             payload = "\n".join(_js_guard(c) for c in chunk)
-            if _channel_send(payload):
-                sent += len(chunk)
+            if not _channel_send(payload, channel=operation_channel):
+                return (
+                    "[ERROR] Falló el envío por el transporte fijado "
+                    f"'{operation_channel}'. No se reejecutó el lote por "
+                    "otro canal porque su aplicación quedó ambigua."
+                )
+            sent += len(chunk)
             if command_delay:
                 time.sleep(command_delay)
 
         dev_ok = 0
         dev_fail = []
         for dev in plan.devices:
-            safe = _js_escape(dev.name)
+            device_literal = json.dumps(dev.name)
             js = (
                 "try {"
-                f"  var d = ipc.network().getDevice('{safe}');"
+                "  var d = ipc.network().getDevice(" + device_literal + ");"
                 "  reportResult(d ? 'OK' : 'MISSING');"
                 "} catch(e) { reportResult('MISSING'); }"
             )
-            r = _bridge_send_and_wait(js, timeout=5.0)
+            r = _bridge_send_and_wait(
+                js, timeout=5.0, channel=operation_channel,
+            )
             if r == "OK":
                 dev_ok += 1
             else:
                 dev_fail.append(dev.name)
 
-        def _verify_link(lnk) -> str | None:
-            sd = _js_escape(lnk.device_a)
-            sp = _js_escape(lnk.port_a)
-            js = (
-                "try {"
-                f"  var d = ipc.network().getDevice('{sd}');"
-                f"  if (!d) {{ reportResult('DEV_MISSING'); throw 's'; }}"
-                f"  var p = d.getPort('{sp}');"
-                f"  if (!p) {{ reportResult('PORT_MISSING'); throw 's'; }}"
-                "  reportResult(p.getLink() != null ? 'OK' : 'NO_LINK');"
-                "} catch(e) { if (e !== 's') reportResult('ERROR'); }"
+        def _verify_link(lnk):
+            expectation = LinkExpectation(
+                endpoint_a=LinkEndpoint(lnk.device_a, lnk.port_a),
+                endpoint_b=LinkEndpoint(lnk.device_b, lnk.port_b),
             )
-            return _bridge_send_and_wait(js, timeout=5.0)
+            return verify_exact_link_convergence(
+                lambda script, timeout: _bridge_send_and_wait(
+                    script, timeout=timeout, channel=operation_channel,
+                ),
+                expectation,
+                timeout_seconds=4.0,
+            )
 
         link_ok = 0
         link_fail = []
         link_fail_objs = []
         for lnk in plan.links:
             r = _verify_link(lnk)
-            if r == "OK":
+            if r.verified:
                 link_ok += 1
             else:
-                link_fail.append(f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b} ({r or 'timeout'})")
+                link_fail.append(
+                    f"{lnk.device_a}:{lnk.port_a} <-> "
+                    f"{lnk.device_b}:{lnk.port_b} "
+                    f"({r.observation.status.value}, attempts={r.attempts})"
+                )
                 link_fail_objs.append(lnk)
 
         # --- Reconcile (fix F16): re-encola los comandos de los items faltantes y re-verifica.
@@ -974,20 +1139,28 @@ def register_tools(mcp: FastMCP) -> None:
                 names.add(lnk.device_b)
             retry_cmds = [c for c in commands if any(f'"{n}"' in c for n in names)]
             for cmd in retry_cmds:
-                _channel_send(_js_guard(cmd))
+                if not _channel_send(
+                    _js_guard(cmd), channel=operation_channel,
+                ):
+                    return (
+                        "[ERROR] Falló el reconcile por el transporte fijado "
+                        f"'{operation_channel}'. No se intentó otro canal."
+                    )
                 time.sleep(command_delay)
 
             # Re-verificar dispositivos fallidos
             still_missing_dev = []
             for name in dev_fail:
-                safe = _js_escape(name)
+                device_literal = json.dumps(name)
                 js = (
                     "try {"
-                    f"  var d = ipc.network().getDevice('{safe}');"
+                    "  var d = ipc.network().getDevice(" + device_literal + ");"
                     "  reportResult(d ? 'OK' : 'MISSING');"
                     "} catch(e) { reportResult('MISSING'); }"
                 )
-                if _bridge_send_and_wait(js, timeout=5.0) == "OK":
+                if _bridge_send_and_wait(
+                    js, timeout=5.0, channel=operation_channel,
+                ) == "OK":
                     dev_ok += 1
                     reconciled["devices"].append(name)
                 else:
@@ -997,17 +1170,26 @@ def register_tools(mcp: FastMCP) -> None:
             # Re-verificar links fallidos
             still_failed_links = []
             for lnk in link_fail_objs:
-                if _verify_link(lnk) == "OK":
+                verification = _verify_link(lnk)
+                if verification.verified:
                     link_ok += 1
                     reconciled["links"].append(f"{lnk.device_a}:{lnk.port_a}")
                 else:
                     still_failed_links.append(
-                        f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b}"
+                        f"{lnk.device_a}:{lnk.port_a} <-> "
+                        f"{lnk.device_b}:{lnk.port_b} "
+                        f"({verification.observation.status.value}, "
+                        f"attempts={verification.attempts})"
                     )
             link_fail = still_failed_links
 
         report = [
-            "Topologia desplegada en Packet Tracer!",
+            (
+                "[OK] Topología física desplegada y observada en Packet Tracer."
+                if not dev_fail and not link_fail
+                else "[ERROR] Despliegue físico incompleto; no se emitió manifest."
+            ),
+            f"  Transporte fijado: {operation_channel} (sin replay silencioso)",
             f"  Comandos enviados: {sent}",
             f"  Dispositivos: {dev_ok}/{len(plan.devices)} verificados",
         ]
@@ -1023,6 +1205,14 @@ def register_tools(mcp: FastMCP) -> None:
             report.append("  FAILED links:")
             for f in link_fail:
                 report.append(f"    - {f}")
+
+        if dev_fail or link_fail:
+            return "\n".join(report)
+
+        report.append(
+            "  [ADVERTENCIA] Ruta legacy combinada E4/E5; no se fabricó "
+            "DeploymentManifest y no es autoritativa para E9.5."
+        )
 
         return "\n".join(report)
 
@@ -1066,59 +1256,59 @@ def register_tools(mcp: FastMCP) -> None:
                 "Kill that process (or restart the MCP server) and retry."
             )
 
-        http_up = _ensure_bridge()
-        http_connected = http_up and _bridge_pt_connected()
-        file_alive = _file_bridge.pt_alive()
+        _ensure_bridge()
+        http_health, file_health = _transport_health_snapshot(
+            probe_command_path=True,
+        )
+        selection = select_transport(http_health, file_health)
 
-        # Cabeceras reales del webview de PT (incluye el Origin: pt-sm:), útil
-        # para diagnóstico y para ajustar CORS más adelante.
-        hdr = ""
+        lines = ["PACKET TRACER TRANSPORT HEALTH"]
+        for label, health in (("HTTP", http_health), ("FILE", file_health)):
+            prefix = (
+                "[OK]"
+                if health.command_path_responsive
+                else "[ADVERTENCIA]"
+                if health.transport_up or health.polling
+                else "[ERROR]"
+            )
+            lines.append(prefix + " " + label)
+            lines.extend("  " + item for item in format_transport_health(health))
+
+        selected = selection.selected.value if selection.selected else "none"
+        fallback = selection.fallback.value if selection.fallback else "none"
+        lines.extend([
+            "SELECTION",
+            "  selected=" + selected,
+            "  fallback=" + fallback,
+            "  reason=" + selection.reason,
+            "  operation_transport_pinned=true",
+            "  silent_replay_allowed=false",
+            "TOKEN",
+            "  persisted=" + str(has_persisted_bridge_token()).lower(),
+            "  ephemeral=" + str(token_is_ephemeral()).lower(),
+        ])
+
+        # Cabeceras reales del webview de PT (incluye Origin: pt-sm:), sin
+        # exponer token ni objetos internos completos.
         if _bridge_instance is not None and _bridge_instance._client_headers:
-            hdr = f"\nPT client headers: {_bridge_instance._client_headers}"
-
-        if http_connected and file_alive:
-            return (
-                "CONNECTED por ambos canales:\n"
-                f"  • HTTP (ventana abierta) — http://127.0.0.1:{_BRIDGE_PORT}\n"
-                "  • file-bridge (Script Engine, sigue si cerrás la ventana)" + hdr
-            )
-        if http_connected:
-            return (
-                "CONNECTED por HTTP (ventana MCP Control Center abierta) — "
-                f"http://127.0.0.1:{_BRIDGE_PORT}.\n"
-                "Nota: el file-bridge aún no reportó heartbeat; si cerrás la "
-                "ventana, esperá unos segundos a que tome el relevo." + hdr
-            )
-        if file_alive:
-            return (
-                "CONNECTED por file-bridge (la ventana está cerrada, pero PT sigue "
-                "abierto con la extensión). El despliegue funciona igual, un poco "
-                "más lento que por HTTP. Abrí MCP Control Center si querés el canal "
-                "HTTP y el panel de logs."
-            )
-
-        # Ningún canal.
+            lines.append("PT client headers: " + str(_bridge_instance._client_headers))
         if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
-            return _stale_client_message()
-
-        warn = ""
+            lines.append("[ERROR] " + _stale_client_message())
         if token_was_rotated():
-            warn = (
-                "\n\nNOTA: el token guardado faltaba o estaba corrupto y se "
-                "regeneró. Reabrí la extensión para que lo relea."
+            lines.append(
+                "[ADVERTENCIA] El token persistido faltaba o estaba corrupto y "
+                "se regeneró; reabrí la extensión para que lo relea."
             )
         if token_is_ephemeral():
-            warn += (
-                "\n\nADVERTENCIA: el token no se pudo escribir a disco, así que "
-                "cambia en cada reinicio."
+            lines.append(
+                "[ADVERTENCIA] El token no se pudo persistir y cambia al reiniciar."
             )
-
-        return (
-            "Packet Tracer NO está conectado por ningún canal.\n"
-            "Abrí PT con la extensión MCP Control Center instalada "
-            "(Extensions > MCP BUILDER). Con la ventana abierta usa HTTP; si la "
-            "cerrás, el file-bridge toma el relevo mientras PT siga abierto." + warn
-        )
+        if selection.selected is None:
+            lines.append(
+                "[ERROR] Packet Tracer no tiene un command path responsive. "
+                "Abrí MCP Control Center o esperá el heartbeat del file-bridge."
+            )
+        return "\n".join(lines)
 
     @mcp.tool()
     def pt_verify_connectivity(
@@ -1297,7 +1487,11 @@ def register_tools(mcp: FastMCP) -> None:
     # forma de testearlo, y es justo la clase de funcion que hay que testear.
     _js_escape = js_escape
 
-    def _bridge_send_and_wait(js_call: str, timeout: float = 10.0) -> str | None:
+    def _bridge_send_and_wait(
+        js_call: str,
+        timeout: float = 10.0,
+        channel: str | None = None,
+    ) -> str | None:
         """Manda JS y espera el resultado, por el canal disponible.
 
         El js_call se envuelve en try/catch: un error no capturado se reporta como
@@ -1309,7 +1503,7 @@ def register_tools(mcp: FastMCP) -> None:
         - archivo: el Script Engine inyecta un reportResult local que captura el
           valor y lo escribe al res; acá se manda el js "crudo" con su try/catch.
         """
-        ch = _pick_channel()
+        ch = channel if channel is not None else _pick_channel()
         guarded = (
             "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
         )
@@ -1355,12 +1549,39 @@ def register_tools(mcp: FastMCP) -> None:
             token_ready=has_persisted_bridge_token,
         )
 
-    def _capability_discovery() -> CapabilityDiscoveryService:
+    def _capability_discovery(
+        operation_channel: str | None = None,
+        packet_tracer_version: str | None = None,
+    ) -> CapabilityDiscoveryService:
         """Composition root local: el adapter MCP no contiene probes ni parsers."""
         nonlocal capability_discovery_service
+        if operation_channel is not None:
+            catalog = EnterpriseCapabilityAdapter()
+            runtime = PacketTracerBridgeProbeRuntime(
+                lambda script, timeout: _bridge_send_and_wait(
+                    script,
+                    timeout=timeout,
+                    channel=operation_channel,
+                ),
+                packet_tracer_version=packet_tracer_version,
+                send=lambda payload: _channel_send(
+                    payload,
+                    channel=operation_channel,
+                ),
+                transport_channel=operation_channel,
+            )
+            return CapabilityDiscoveryService(
+                runtime=runtime,
+                snapshots=CapabilitySnapshotStore(),
+                identity_for=catalog.identity_for,
+            )
         if capability_discovery_service is None:
             catalog = EnterpriseCapabilityAdapter()
-            runtime = PacketTracerBridgeProbeRuntime(_bridge_send_and_wait, send=_channel_send)
+            runtime = PacketTracerBridgeProbeRuntime(
+                _bridge_send_and_wait,
+                send=_channel_send,
+                transport_channel=_pick_channel,
+            )
             capability_discovery_service = CapabilityDiscoveryService(
                 runtime=runtime,
                 snapshots=CapabilitySnapshotStore(),
@@ -1617,7 +1838,12 @@ def register_tools(mcp: FastMCP) -> None:
         return f"Device renamed: '{old_name}' → '{new_name}'"
 
     @mcp.tool()
-    def pt_move_device(device_name: str, x: int, y: int) -> str:
+    def pt_move_device(
+        device_name: str,
+        x: int,
+        y: int,
+        tolerance: int = 8,
+    ) -> str:
         """
         Move a device to new coordinates on the Packet Tracer canvas.
 
@@ -1625,28 +1851,74 @@ def register_tools(mcp: FastMCP) -> None:
         - device_name: device name
         - x: X coordinate (logical view, e.g. 100-800)
         - y: Y coordinate (logical view, e.g. 100-600)
+        - tolerance: drift máximo aceptado por eje para el read-back (default 8)
         """
         err = _check_bridge()
         if err:
             return err
+        selection = _operation_transport_selection(require_command_path=True)
+        if selection.selected is None:
+            return "[ERROR] No hay un transporte seleccionable para mover el equipo."
+        operation_channel = selection.selected.value
 
-        safe_name = _js_escape(device_name)
+        requested = LayoutPoint(x=int(x), y=int(y))
+        device_literal = json.dumps(device_name)
         js = (
             "try {"
-            f'  var dev = ipc.network().getDevice("{safe_name}");'
+            "  var dev = ipc.network().getDevice(" + device_literal + ");"
             "  if (!dev) { reportResult('ERROR:Device not found'); }"
             "  else {"
-            f"    dev.moveToLocation({int(x)}, {int(y)});"
-            f'    reportResult("OK:moved to {int(x)},{int(y)}");'
+            "    dev.moveToLocation(" + str(requested.x) + "," + str(requested.y) + ");"
+            "    reportResult('ACK');"
             "  }"
             "} catch(e) { reportResult('ERROR:' + e); }"
         )
-        result = _bridge_send_and_wait(js, timeout=8.0)
+        result = _bridge_send_and_wait(
+            js, timeout=8.0, channel=operation_channel,
+        )
         if result is None:
-            return "No response from PT."
+            evidence = assess_layout_application(
+                requested, acknowledged=False, observed=None, tolerance=tolerance,
+            )
+            payload = evidence.as_dict()
+            payload["transport"] = operation_channel
+            payload["summary"] = (
+                "[ERROR] No hubo ACK; no se intentó otro transporte."
+            )
+            return json.dumps(payload, indent=2, ensure_ascii=False)
         if result.startswith("ERROR:"):
             return f"Error: {result[6:]}"
-        return f"Device '{device_name}' moved to ({x}, {y})."
+        acknowledged = result == "ACK"
+        observed = parse_layout_observation(
+            _bridge_send_and_wait(
+                build_layout_observation_js(device_name),
+                timeout=5.0,
+                channel=operation_channel,
+            )
+        )
+        evidence = assess_layout_application(
+            requested,
+            acknowledged=acknowledged,
+            observed=observed,
+            tolerance=tolerance,
+        )
+        payload = evidence.as_dict()
+        payload["transport"] = operation_channel
+        if not acknowledged:
+            payload["summary"] = (
+                "[ERROR] Packet Tracer no devolvió el ACK de movimiento esperado."
+            )
+        elif evidence.within_tolerance is True:
+            payload["summary"] = "[OK] Layout observado dentro de tolerancia."
+        elif evidence.within_tolerance is False:
+            payload["summary"] = (
+                "[ADVERTENCIA] Layout observado con drift fuera de tolerancia."
+            )
+        else:
+            payload["summary"] = (
+                "[ADVERTENCIA] Movimiento reconocido, coordenadas no observables."
+            )
+        return json.dumps(payload, indent=2, ensure_ascii=False)
 
     @mcp.tool()
     def pt_delete_link(device_name: str, interface_name: str) -> str:
@@ -1797,32 +2069,40 @@ def register_tools(mcp: FastMCP) -> None:
         err = _check_bridge()
         if err:
             return err
+        selection = _operation_transport_selection(require_command_path=True)
+        if selection.selected is None:
+            return "[ERROR] No hay un transporte seleccionable para crear el enlace."
+        operation_channel = selection.selected.value
 
-        sd1 = _js_escape(device1)
-        sp1 = _js_escape(port1)
-        sd2 = _js_escape(device2)
-        sp2 = _js_escape(port2)
+        device1_literal = json.dumps(device1)
+        port1_literal = json.dumps(port1)
+        device2_literal = json.dumps(device2)
+        port2_literal = json.dumps(port2)
 
         js = (
             "try {"
-            f"  var d1 = ipc.network().getDevice('{sd1}');"
-            f"  var d2 = ipc.network().getDevice('{sd2}');"
-            f"  if (!d1) {{ reportResult('ERROR:Device \\'{sd1}\\' not found'); throw 'stop'; }}"
-            f"  if (!d2) {{ reportResult('ERROR:Device \\'{sd2}\\' not found'); throw 'stop'; }}"
-            f"  var p1 = d1.getPort('{sp1}');"
-            f"  var p2 = d2.getPort('{sp2}');"
-            f"  if (!p1) {{ reportResult('ERROR:Port \\'{sp1}\\' not found on \\'{sd1}\\''); throw 'stop'; }}"
-            f"  if (!p2) {{ reportResult('ERROR:Port \\'{sp2}\\' not found on \\'{sd2}\\''); throw 'stop'; }}"
+            "  var ed1=" + device1_literal + ", ep1=" + port1_literal + ";"
+            "  var ed2=" + device2_literal + ", ep2=" + port2_literal + ";"
+            "  var d1 = ipc.network().getDevice(ed1);"
+            "  var d2 = ipc.network().getDevice(ed2);"
+            "  if (!d1) { reportResult('ERROR:Device not found: '+ed1); throw 'stop'; }"
+            "  if (!d2) { reportResult('ERROR:Device not found: '+ed2); throw 'stop'; }"
+            "  var p1 = d1.getPort(ep1);"
+            "  var p2 = d2.getPort(ep2);"
+            "  if (!p1) { reportResult('ERROR:Port not found: '+ed1+'/'+ep1); throw 'stop'; }"
+            "  if (!p2) { reportResult('ERROR:Port not found: '+ed2+'/'+ep2); throw 'stop'; }"
             "  if (p1.getLink() != null) {"
-            f"    reportResult('ERROR:Port \\'{sp1}\\' on \\'{sd1}\\' already has a link'); throw 'stop';"
+            "    reportResult('ERROR:Port already linked: '+ed1+'/'+ep1); throw 'stop';"
             "  }"
             "  if (p2.getLink() != null) {"
-            f"    reportResult('ERROR:Port \\'{sp2}\\' on \\'{sd2}\\' already has a link'); throw 'stop';"
+            "    reportResult('ERROR:Port already linked: '+ed2+'/'+ep2); throw 'stop';"
             "  }"
             "  reportResult('PRE_OK:' + d1.getClassName() + '|' + d2.getClassName());"
             "} catch(e) { if (e !== 'stop') reportResult('ERROR:' + e); }"
         )
-        pre_result = _bridge_send_and_wait(js, timeout=10.0)
+        pre_result = _bridge_send_and_wait(
+            js, timeout=10.0, channel=operation_channel,
+        )
         if pre_result is None:
             return _TIMEOUT_MSG
         if pre_result.startswith("ERROR:"):
@@ -1836,23 +2116,51 @@ def register_tools(mcp: FastMCP) -> None:
             cls2 = parts[1].lower() if len(parts) > 1 else ""
             resolved_cable = infer_cable(cls1, cls2)
 
+        cable_literal = json.dumps(resolved_cable)
         js_link = (
-            "try {"
-            f'  addLink("{sd1}", "{sp1}", "{sd2}", "{sp2}", "{resolved_cable}");'
-            f"  var pCheck = ipc.network().getDevice('{sd1}').getPort('{sp1}');"
-            "  if (pCheck && pCheck.getLink() != null) {"
-            "    reportResult('OK:link created');"
-            "  } else {"
-            f"    reportResult('ERROR:addLink returned but link not found on {sp1}');"
-            "  }"
-            "} catch(e) { reportResult('ERROR:' + e); }"
+            "try {addLink("
+            + device1_literal + "," + port1_literal + ","
+            + device2_literal + "," + port2_literal + ","
+            + cable_literal
+            + ");reportResult('ACK');}"
+            "catch(e){reportResult('ERROR:'+e);}"
         )
-        link_result = _bridge_send_and_wait(js_link, timeout=10.0)
+        link_result = _bridge_send_and_wait(
+            js_link, timeout=10.0, channel=operation_channel,
+        )
         if link_result is None:
-            return "No response after addLink (timeout)."
+            return (
+                "[ERROR] No response after addLink. El transporte quedó fijado "
+                f"en '{operation_channel}' y no se reejecutó por otro canal."
+            )
         if link_result.startswith("ERROR:"):
             return f"Link creation failed: {link_result[6:]}"
-        return f"Link created: {device1}/{port1} <--[{resolved_cable}]--> {device2}/{port2}"
+        if link_result != "ACK":
+            return f"[ERROR] Unexpected addLink acknowledgement: {link_result}"
+
+        expectation = LinkExpectation(
+            endpoint_a=LinkEndpoint(device1, port1),
+            endpoint_b=LinkEndpoint(device2, port2),
+        )
+        verification = verify_exact_link_convergence(
+            lambda script, timeout: _bridge_send_and_wait(
+                script, timeout=timeout, channel=operation_channel,
+            ),
+            expectation,
+            timeout_seconds=4.0,
+        )
+        if not verification.verified:
+            return (
+                "[ERROR] addLink fue reconocido, pero el read-back exacto de "
+                "ambos extremos no convergió: "
+                + verification.observation.status.value
+                + f" (attempts={verification.attempts})."
+            )
+        return (
+            f"[OK] Link verified: {device1}/{port1} <--[{resolved_cable}]--> "
+            f"{device2}/{port2}; transport={operation_channel}; "
+            f"attempts={verification.attempts}."
+        )
 
     # ------------------------------------------------------------------
     # RAW JS EXECUTION
@@ -3725,9 +4033,25 @@ def register_tools(mcp: FastMCP) -> None:
             force=force,
             packet_tracer_version=packet_tracer_version.strip() or None,
         )
-        readiness, executed = _capability_preflight().execute_if_ready(
-            lambda: service.run(request)
-        )
+        def _run_on_pinned_transport():
+            selection = _operation_transport_selection(require_command_path=True)
+            if selection.selected is None:
+                raise RuntimeError(
+                    "No command path remained responsive when the probe operation started."
+                )
+            operation_channel = selection.selected.value
+            operation_service = _capability_discovery(
+                operation_channel=operation_channel,
+                packet_tracer_version=request.packet_tracer_version,
+            )
+            return operation_service.run(request)
+
+        try:
+            readiness, executed = _capability_preflight().execute_if_ready(
+                _run_on_pinned_transport
+            )
+        except RuntimeError as exc:
+            return f"[ERROR] Probe no iniciado: {exc}"
         if not readiness.ready:
             if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
                 return _stale_client_message()

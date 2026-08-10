@@ -8,6 +8,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
 from src.packet_tracer_mcp.infrastructure.catalog import (
     packet_tracer_service_capabilities,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.evidence import ReadinessStatus
 
 
 def test_packet_tracer_service_matrix_keeps_four_capability_dimensions():
@@ -51,4 +52,14 @@ def test_only_live_behaviorally_proven_services_are_promoted():
         assert (
             profiles[f"Server-PT:{service_type.value}"].behavioral_verification_support
             is CapabilityStatus.UNKNOWN
+        )
+    assert (
+        profiles["Server-PT:https"].capability_readiness["behavioral_verification"].verify
+        is ReadinessStatus.UNKNOWN
+    )
+    for service_type in (ServiceType.NTP, ServiceType.TFTP):
+        assert (
+            profiles[f"Server-PT:{service_type.value}"]
+            .capability_readiness["behavioral_verification"].verify
+            is ReadinessStatus.UNOBSERVABLE
         )

@@ -29,6 +29,7 @@ from ...domain.enterprise.models.service_plan import (
     SetHttpContent,
 )
 from ...domain.enterprise.models.service_runtime import RuntimeServiceVerification
+from .runtime_inventory import normalize_runtime_inventory
 
 
 _HOSTNAME = re.compile(
@@ -60,20 +61,7 @@ class PacketTracerEnterpriseServiceRuntime:
         self._sleep = sleeper
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
-        raw = self._query_inventory()
-        items = raw.get("devices", []) if isinstance(raw, dict) else raw
-        return sorted([
-            RuntimeConfigurationTarget(
-                device_name=str(item.get("name") or item.get("device_name") or ""),
-                model=str(item.get("model") or ""),
-                interfaces=sorted({
-                    str(port.get("name") if isinstance(port, dict) else port)
-                    for port in (item.get("ports", item.get("interfaces", [])) or [])
-                    if port
-                }),
-            )
-            for item in items
-        ], key=lambda item: item.device_name)
+        return normalize_runtime_inventory(self._query_inventory())
 
     def apply_actions(
         self, actions: Sequence[ServiceAction],
@@ -170,12 +158,13 @@ class PacketTracerEnterpriseServiceRuntime:
             return self._verify_dns(expectation)
         if expectation.kind in {
             ServiceVerificationKind.HTTP_FETCH,
+            ServiceVerificationKind.HTTPS_FETCH,
             ServiceVerificationKind.HTTP_BY_HOSTNAME,
         }:
             return self._verify_http(expectation)
         return RuntimeServiceVerification(
             expectation_id=expectation.id,
-            status=ActionExecutionStatus.PARTIAL,
+            status=ActionExecutionStatus.UNOBSERVABLE,
             evidence_kind=expectation.evidence_kind,
             evidence_method="packet_tracer_client_observation_unavailable",
             fresh_evidence=False,
@@ -322,8 +311,13 @@ class PacketTracerEnterpriseServiceRuntime:
             expectation.expected.get("hostname")
             or expectation.expected.get("address") or ""
         )
+        scheme = str(expectation.expected.get("scheme") or "http").casefold()
+        if scheme not in {"http", "https"}:
+            return self._behavior_failure(
+                expectation, "Web verification scheme is not registered.",
+            )
         client = json.dumps(expectation.client_device_name)
-        url = json.dumps("http://" + target + "/")
+        url = json.dumps(scheme + "://" + target + "/")
         start = self._json_result(
             f"var d=ipc.network().getDevice({client});"
             + self._background_http_start(expectation.id, url)
@@ -347,21 +341,29 @@ class PacketTracerEnterpriseServiceRuntime:
             )
         observed = self._poll(
             inspect,
-            lambda item: marker in str(item.get("content") or "")
-            and str(item.get("content") or "") != before,
+            lambda item: bool(
+                (content := str(item.get("content") or ""))
+                and content != before
+                and (not marker or marker in content)
+            ),
             self._http_timeout,
         )
         content = str(observed.get("content") or "")
-        matched = bool(marker and marker in content and content != before)
+        matched = bool(
+            content and content != before and (not marker or marker in content)
+        )
         self._release_background_http(expectation.id, client)
         return RuntimeServiceVerification(
             expectation_id=expectation.id,
             status=(ActionExecutionStatus.VERIFIED if matched else ActionExecutionStatus.FAILED),
             evidence_kind=expectation.evidence_kind,
-            evidence_method="http_client_fresh_content",
+            evidence_method=f"{scheme}_client_fresh_content",
             fresh_evidence=matched,
-            observed={"marker": marker, "target": target} if matched else {},
-            message="Fresh HTTP content contained the marker." if matched else "Fresh HTTP marker was not observed.",
+            observed={"marker": marker, "target": target, "scheme": scheme} if matched else {},
+            message=(
+                f"Fresh {scheme.upper()} content matched the expectation."
+                if matched else f"Fresh {scheme.upper()} content was not observed."
+            ),
         )
 
     @staticmethod

@@ -309,6 +309,25 @@ def test_applied_is_not_promoted_to_verified_when_readback_is_partial():
     assert all(item.status is ActionExecutionStatus.PARTIAL for item in result.verification_results)
 
 
+def test_fully_unobservable_readback_is_an_observability_limit_not_a_failure():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    runtime.verification_status = ActionExecutionStatus.UNOBSERVABLE
+
+    result = ConfigurationApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+    )
+
+    assert result.status is ConfigurationApplicationStatus.PARTIAL
+    assert result.failure_code is ConfigurationFailureCode.OBSERVABILITY_LIMITATION
+    assert all(
+        item.status is ActionExecutionStatus.UNOBSERVABLE
+        for item in result.verification_results
+    )
+
+
 def test_dhcp_verification_preserves_field_level_observability():
     topology, plan = _compiled()
     runtime = FakeConfigurationRuntime(topology)

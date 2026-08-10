@@ -65,6 +65,7 @@ class OspfQueryClassification(str, Enum):
 
 class EigrpQueryClassification(str, Enum):
     SUPPORTED_EMPTY = "supported_empty"
+    PROCESS_MISMATCH = "process_mismatch"
     QUERY_TIMEOUT = "query_timeout"
     PARSER_UNAVAILABLE = "parser_unavailable"
 
@@ -213,6 +214,7 @@ class OspfNeighborStatusRow:
 class OspfRouteStatusRow:
     code: str
     prefix: str
+    prefix_length: int | None
     administrative_distance: int
     metric: int
     next_hop: str
@@ -421,6 +423,11 @@ def parse_show_etherchannel_summary(
         match = group_row.fullmatch(line)
         if match is None:
             continue
+        # LACP is the only protocol row backed by a captured PT 9.0.1.0858
+        # fixture. PAgP and static/on stay unobservable until their real output
+        # is captured instead of being accepted by a permissive regex.
+        if match.group("protocol").casefold() != "lacp":
+            continue
         members = tuple(
             EtherChannelMemberStatus(
                 interface=item.group("interface"),
@@ -500,7 +507,8 @@ def parse_show_ip_route_ospf(value: str) -> list[OspfRouteStatusRow]:
     rows: list[OspfRouteStatusRow] = []
     row_pattern = re.compile(
         r"\s*(?P<code>O)\s+"
-        r"(?P<prefix>\d{1,3}(?:\.\d{1,3}){3})\s+"
+        r"(?P<prefix>\d{1,3}(?:\.\d{1,3}){3})"
+        r"(?:/(?P<prefix_length>\d{1,2}))?\s+"
         r"\[(?P<distance>\d+)/(?P<metric>\d+)\]\s+"
         r"via\s+(?P<next_hop>\d{1,3}(?:\.\d{1,3}){3}),\s+"
         r"(?P<age>\d{2}:\d{2}:\d{2}),\s+"
@@ -510,9 +518,16 @@ def parse_show_ip_route_ospf(value: str) -> list[OspfRouteStatusRow]:
         match = row_pattern.fullmatch(line)
         if match is None:
             continue
+        prefix_length = (
+            int(match.group("prefix_length"))
+            if match.group("prefix_length") is not None else None
+        )
+        if prefix_length is not None and prefix_length > 32:
+            continue
         rows.append(OspfRouteStatusRow(
             code=match.group("code"),
             prefix=match.group("prefix"),
+            prefix_length=prefix_length,
             administrative_distance=int(match.group("distance")),
             metric=int(match.group("metric")),
             next_hop=match.group("next_hop"),
@@ -543,6 +558,7 @@ def classify_show_ip_eigrp_neighbors(
     value: str,
     *,
     executed: bool = True,
+    expected_as_number: int | None = None,
 ) -> EigrpQueryClassification:
     if not executed:
         return EigrpQueryClassification.QUERY_TIMEOUT
@@ -551,12 +567,16 @@ def classify_show_ip_eigrp_neighbors(
         for line in normalize_terminal_output(value).splitlines()
         if line.strip()
     )
-    if lines == (
-        "show ip eigrp neighbors",
-        "IP-EIGRP neighbors for process 90",
-        "Router>",
-    ):
-        return EigrpQueryClassification.SUPPORTED_EMPTY
+    if len(lines) == 3 and lines[0] == "show ip eigrp neighbors":
+        process = re.fullmatch(
+            r"IP-EIGRP neighbors for process (?P<as_number>\d+)",
+            lines[1],
+        )
+        if process is not None and re.fullmatch(r"\S+[>#]", lines[2]):
+            observed_as = int(process.group("as_number"))
+            if expected_as_number is not None and observed_as != expected_as_number:
+                return EigrpQueryClassification.PROCESS_MISMATCH
+            return EigrpQueryClassification.SUPPORTED_EMPTY
     return EigrpQueryClassification.PARSER_UNAVAILABLE
 
 
@@ -577,7 +597,11 @@ def classify_show_ip_route_eigrp(
         for line in normalize_terminal_output(value).splitlines()
         if line.strip()
     )
-    if lines == ("show ip route eigrp", "Router>"):
+    if (
+        len(lines) == 2
+        and lines[0] == "show ip route eigrp"
+        and re.fullmatch(r"\S+[>#]", lines[1])
+    ):
         return EigrpQueryClassification.SUPPORTED_EMPTY
     return EigrpQueryClassification.PARSER_UNAVAILABLE
 

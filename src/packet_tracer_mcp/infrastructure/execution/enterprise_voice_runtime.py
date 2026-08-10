@@ -6,6 +6,7 @@ import json
 import re
 from collections.abc import Callable, Sequence
 
+from ...application.ports.phone_control import PhoneControlPort
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
@@ -28,6 +29,10 @@ from ..generator.voice_renderer import PacketTracerVoiceRenderer
 from .configuration_runtime import PacketTracerConfigurationRuntime
 from .device_lifecycle import StateConvergenceWaiter
 from .ios_terminal import ControlledIosExecutor, OperationalQueryId, parse_show_ephone
+from .phone_control import (
+    UnavailablePhoneControl,
+)
+from .runtime_inventory import normalize_runtime_inventory
 
 
 _MAC = re.compile(r"^[0-9A-Fa-f]{12}$")
@@ -43,9 +48,7 @@ class PacketTracerEnterpriseVoiceRuntime:
         send_and_wait: Callable[[str, float], str | None],
         *,
         ios_readiness: Callable[[str], bool] | None = None,
-        call_driver: Callable[
-            [CallExpectation, str, int], RuntimeCallObservation
-        ] | None = None,
+        phone_control: PhoneControlPort | None = None,
         registration_timeout_seconds: float = 30.0,
         convergence_interval_seconds: float = 0.5,
     ) -> None:
@@ -55,7 +58,7 @@ class PacketTracerEnterpriseVoiceRuntime:
         self._renderer = PacketTracerVoiceRenderer()
         self._ios = ControlledIosExecutor(send_and_wait)
         self._ios_readiness = ios_readiness or self._wait_for_ios
-        self._call_driver = call_driver
+        self._phone_control = phone_control or UnavailablePhoneControl()
         self._registration_timeout = registration_timeout_seconds
         self._convergence_interval = convergence_interval_seconds
         self._targets: dict[str, RuntimeConfigurationTarget] = {}
@@ -63,22 +66,9 @@ class PacketTracerEnterpriseVoiceRuntime:
         self._registration_hosts: dict[str, str] = {}
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
-        raw = self._query_inventory()
-        items = raw.get("devices", []) if isinstance(raw, dict) else raw
-        targets = [
-            RuntimeConfigurationTarget(
-                device_name=str(item.get("name") or item.get("device_name") or ""),
-                model=str(item.get("model") or ""),
-                interfaces=sorted({
-                    str(port.get("name") if isinstance(port, dict) else port)
-                    for port in (item.get("ports", item.get("interfaces", [])) or [])
-                    if port
-                }, key=str.casefold),
-            )
-            for item in items
-        ]
+        targets = normalize_runtime_inventory(self._query_inventory())
         self._targets = {item.device_name: item for item in targets}
-        return sorted(targets, key=lambda item: item.device_name)
+        return targets
 
     def apply_actions(
         self, actions: Sequence[VoiceAction],
@@ -116,7 +106,7 @@ class PacketTracerEnterpriseVoiceRuntime:
             results.update({item.id: RuntimeActionMutation(
                 action_id=item.id,
                 applied=False,
-                failure_code=ConfigurationFailureCode.CAPABILITY_UNSUPPORTED,
+                failure_code=ConfigurationFailureCode.CAPABILITY_UNKNOWN,
                 message="Packet Tracer intersite voice rendering is not verified.",
             ) for item in nonlocal_rules})
             renderable = [item for item in renderable if item not in nonlocal_rules]
@@ -266,7 +256,7 @@ class PacketTracerEnterpriseVoiceRuntime:
             expectation_id=expectation.id,
             phone_id=expectation.phone_id,
             extension=expectation.extension,
-            status=ActionExecutionStatus.PARTIAL,
+            status=ActionExecutionStatus.UNOBSERVABLE,
             direct_readback=FieldVerificationStatus.UNOBSERVABLE,
             evidence_method="pt_9_0_1_extension_api_has_no_registration_getter",
             fresh_evidence=False,
@@ -279,23 +269,8 @@ class PacketTracerEnterpriseVoiceRuntime:
     def verify_call(
         self, expectation: CallExpectation, call_attempt_id: str, started_ns: int,
     ) -> RuntimeCallObservation:
-        if self._call_driver is not None:
-            return self._call_driver(expectation, call_attempt_id, started_ns)
-        return RuntimeCallObservation(
-            call_expectation_id=expectation.id,
-            call_attempt_id=call_attempt_id,
-            source_phone_id=expectation.source_phone_id,
-            dialed_extension=expectation.dialed_extension,
-            status=ActionExecutionStatus.PARTIAL,
-            connected=False,
-            teardown_verified=False,
-            observed_after_ns=started_ns,
-            fresh_evidence=False,
-            evidence_method="pt_extension_api_call_driver_unavailable",
-            message=(
-                "A documented Packet Tracer call driver is unavailable; the runtime cannot "
-                "initiate and tear down this phone call."
-            ),
+        return self._phone_control.execute_call(
+            expectation, call_attempt_id, started_ns,
         )
 
     def _wait_for_ios(self, device_name: str) -> bool:

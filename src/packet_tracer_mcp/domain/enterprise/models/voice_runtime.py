@@ -28,6 +28,15 @@ class CallState(str, Enum):
     UNKNOWN = "unknown"
 
 
+class PhoneExecutionMethod(str, Enum):
+    """Canal utilizado para iniciar/observar una operación telefónica."""
+
+    STRUCTURED_API = "structured_api"
+    PACKET_TRACER_NATIVE_UI = "packet_tracer_native_ui"
+    HYBRID = "hybrid"
+    UNOBSERVABLE = "unobservable"
+
+
 class RuntimePhoneRegistration(BaseModel):
     expectation_id: str
     phone_id: str
@@ -51,6 +60,7 @@ class RuntimeCallObservation(BaseModel):
     observed_after_ns: int = 0
     fresh_evidence: bool = False
     evidence_method: str = ""
+    execution_method: PhoneExecutionMethod = PhoneExecutionMethod.UNOBSERVABLE
     message: str = ""
 
 

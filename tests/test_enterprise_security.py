@@ -424,6 +424,12 @@ def test_nat_port_security_and_inspection_reuse_e4_e5_identities():
     assert (port.switch_device_id, port.interface) == ("sw1", "FastEthernet0/1")
     assert snooping.vlan_ids == [10]
     assert snooping.trusted_interfaces == ["GigabitEthernet0/1"]
+    port_violation = next(
+        item for item in result.plan.verification_expectations
+        if item.kind is SecurityVerificationKind.PORT_SECURITY_VIOLATION
+    )
+    assert port_violation.probe_kind is SecurityProbeKind.UNOBSERVABLE
+    assert port_violation.source_device_id == "sales-pc"
 
 
 def test_unknown_capability_warns_and_unsupported_required_feature_blocks():

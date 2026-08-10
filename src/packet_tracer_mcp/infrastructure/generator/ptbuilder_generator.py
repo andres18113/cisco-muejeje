@@ -7,7 +7,7 @@ con la extensión PTBuilder de Packet Tracer.
 
 from __future__ import annotations
 import json
-from ...domain.models.plans import TopologyPlan
+from ...domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ...shared.constants import (
     PT_DEVICE_TYPE,
     PT_DEVICE_TYPE_DEFAULT,
@@ -15,6 +15,30 @@ from ...shared.constants import (
     PT_CONNECT_TYPE_DEFAULT,
 )
 from ...shared.ios_config import build_configure_ios_call
+
+
+def generate_device_command(device: DevicePlan) -> str:
+    """Render one trusted PTBuilder device mutation.
+
+    Keeping the per-object renderer here lets the production deployment adapter
+    reuse the exact same command as the bulk topology generator.
+    """
+
+    device_type = PT_DEVICE_TYPE.get(device.category, PT_DEVICE_TYPE_DEFAULT)
+    return (
+        f'lwAddDevice({json.dumps(device.name)}, {device_type}, '
+        f'{json.dumps(device.model)}, {int(device.x)}, {int(device.y)});'
+    )
+
+
+def generate_link_command(link: LinkPlan) -> str:
+    """Render one trusted PTBuilder link mutation with serialized fields."""
+
+    connect_type = PT_CONNECT_TYPE.get(link.cable, PT_CONNECT_TYPE_DEFAULT)
+    return (
+        f'lwAddLink({json.dumps(link.device_a)}, {json.dumps(link.port_a)}, '
+        f'{json.dumps(link.device_b)}, {json.dumps(link.port_b)}, {connect_type});'
+    )
 
 
 def generate_ptbuilder_script(plan: TopologyPlan) -> str:
@@ -30,11 +54,7 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
     # rompía el literal JS y el resto se ejecutaba como código en el Script Engine.
     # Es el mismo patrón que ya usa generate_executable_script() más abajo.
     for dev in plan.devices:
-        device_type = PT_DEVICE_TYPE.get(dev.category, PT_DEVICE_TYPE_DEFAULT)
-        lines.append(
-            f'lwAddDevice({json.dumps(dev.name)}, {device_type}, '
-            f'{json.dumps(dev.model)}, {int(dev.x)}, {int(dev.y)});'
-        )
+        lines.append(generate_device_command(dev))
 
     # Laptops WiFi: cambiar el NIC ethernet por uno inalámbrico (→ Wireless0). Debe ir
     # antes de los links/config; la auto-asociación al AP es por RF (SSID default).
@@ -49,11 +69,7 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
         )
 
     for link in plan.links:
-        connect_type = PT_CONNECT_TYPE.get(link.cable, PT_CONNECT_TYPE_DEFAULT)
-        lines.append(
-            f'lwAddLink({json.dumps(link.device_a)}, {json.dumps(link.port_a)}, '
-            f'{json.dumps(link.device_b)}, {json.dumps(link.port_b)}, {connect_type});'
-        )
+        lines.append(generate_link_command(link))
 
     return "\n".join(lines)
 

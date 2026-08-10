@@ -19,7 +19,9 @@ from ...domain.enterprise.models.configuration_runtime import (
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentManifest,
+    requires_deployment_manifest,
     resolve_manifest_targets,
+    validate_manifest_environment,
 )
 from ...domain.enterprise.models.execution import (
     CompensationStatus,
@@ -134,6 +136,34 @@ class SecurityApplicator:
                 started,
                 deployment_id=deployment_id,
             )
+        if (
+            deployment_manifest is None
+            and requires_deployment_manifest(plan.source_topology_hash_schema)
+        ):
+            return self._failure(
+                plan,
+                ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED,
+                "SecurityPlan uses physical-topology-v2 identity and requires a "
+                "DeploymentManifest; name-only runtime fallback is legacy-only.",
+                context,
+                started,
+                deployment_id=deployment_id,
+            )
+        if deployment_manifest is not None:
+            try:
+                validate_manifest_environment(
+                    deployment_manifest,
+                    context.environment_fingerprint,
+                )
+            except DeploymentIdentityError as exc:
+                return self._failure(
+                    plan,
+                    ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH,
+                    str(exc),
+                    context,
+                    started,
+                    deployment_id=deployment_id,
+                )
         try:
             ordered = order_dependency_actions(plan.actions)
         except ConfigurationDependencyError as exc:
@@ -725,9 +755,10 @@ class SecurityApplicator:
                         for name, value in sorted(item.fields.items())
                     },
                 },
-                backend=context.backend,
-                backend_version=context.backend_version,
-                environment_fingerprint=context.capability_snapshot_hash,
+                backend=context.evidence_backend,
+                backend_version=context.evidence_backend_version,
+                environment_fingerprint=context.environment_semantic_hash,
+                capability_snapshot_hash=context.capability_snapshot_hash,
                 limitations=[item.message] if item.message else [],
             ))
         return records
@@ -768,8 +799,8 @@ class SecurityApplicator:
         runnable = []
         gated = []
         for expectation in expectations:
-            dimension = security_verification_capability(expectation)
             action = actions.get(expectation.action_id)
+            dimension = security_verification_capability(expectation, action)
             profile = capabilities.get(action.model) if action else None
             support = (
                 profile.status(dimension) if profile

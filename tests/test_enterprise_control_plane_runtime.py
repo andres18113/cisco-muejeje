@@ -11,7 +11,10 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     FieldVerificationStatus,
 )
 from packet_tracer_mcp.domain.enterprise.models.control_plane import (
+    ControlPlaneCapabilityDimension,
     ControlPlaneVerificationKind,
+    EtherChannelProtocol,
+    StpMode,
 )
 from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
@@ -317,6 +320,131 @@ def test_stale_or_unparseable_ios_output_never_promotes_direct_state():
     )
 
 
+def test_mst_state_stays_fully_unobservable_without_an_mst_fixture_parser():
+    plan = _compile().plan
+    actions = {item.id: item for item in plan.actions}
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.STP_STATE
+        and item.device_id == "sw1"
+    ).model_copy(deep=True)
+    action = actions[expectation.action_id].model_copy(update={
+        "mode": StpMode.MST,
+        "required_capability": ControlPlaneCapabilityDimension.STP_MST_CONFIG,
+        "mst_instances": {1: [10], 2: [20]},
+    })
+    expectation.expected["mode"] = StpMode.MST.value
+    ios = FakeControlPlaneIos({
+        (action.device_name, OperationalQueryId.SHOW_SPANNING_TREE):
+            _stp_output(root_vlans={10}),
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions([action])
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert not result.fresh_evidence
+    assert all(
+        status is FieldVerificationStatus.UNOBSERVABLE
+        for status in result.fields.values()
+    )
+    assert ios.calls == []
+
+
+@pytest.mark.parametrize(
+    ("protocol", "display"),
+    (
+        (EtherChannelProtocol.PAGP, "PAgP"),
+        (EtherChannelProtocol.STATIC, "STATIC"),
+    ),
+)
+def test_unfixture_backed_channel_protocols_are_unobservable_not_failed(
+    protocol, display,
+):
+    plan = _compile().plan
+    actions = {item.id: item for item in plan.actions}
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ETHERCHANNEL_STATE
+        and item.device_id == "sw1"
+    ).model_copy(deep=True)
+    capability = (
+        ControlPlaneCapabilityDimension.ETHERCHANNEL_PAGP_CONFIG
+        if protocol is EtherChannelProtocol.PAGP
+        else ControlPlaneCapabilityDimension.ETHERCHANNEL_STATIC_CONFIG
+    )
+    action = actions[expectation.action_id].model_copy(update={
+        "protocol": protocol,
+        "required_capability": capability,
+    })
+    expectation.expected["protocol"] = protocol.value
+    ios = FakeControlPlaneIos({
+        (action.device_name, OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY):
+            _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY.replace("LACP", display),
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions([action])
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert not result.fresh_evidence
+    assert all(
+        status is FieldVerificationStatus.UNOBSERVABLE
+        for status in result.fields.values()
+    )
+    assert ios.calls == []
+
+
+def test_hsrp_role_readback_is_explicitly_unobservable_without_a_query():
+    plan = _compile().plan
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.HSRP_STATE
+        and item.device_id == "r1"
+    )
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=FakeControlPlaneIos({}),
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.evidence_method == "hsrp_role_readback_unavailable"
+    assert "role" in result.message.casefold()
+
+
+def test_eigrp_process_readback_is_explicitly_unobservable_without_row_fixtures():
+    plan = _compile().plan
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+        and item.device_id == "b1"
+    )
+    ios = FakeControlPlaneIos({})
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.evidence_method == "eigrp_readback_unavailable"
+    assert "AS" in result.message
+    assert ios.calls == []
+
+
 def test_fresh_ospf_rows_must_match_the_expected_neighbor_instance():
     plan = _compile().plan
     neighbor = next(item for item in plan.verification_expectations
@@ -364,6 +492,62 @@ def test_ospf_neighbor_fields_are_typed_from_the_same_parser_row():
     assert result.fields["peer_ipv4"] is FieldVerificationStatus.FAILED
 
 
+def test_ospf_route_requires_an_exact_network_row_not_a_nearby_prefix():
+    plan = _compile().plan
+    route = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTE_PRESENT
+        and item.device_id == "r1"
+    )
+    nearby = route.expected["network"].rsplit(".", 1)[0] + ".1"
+    ios = FakeControlPlaneIos({
+        ("HQ-R1", OperationalQueryId.SHOW_IP_ROUTE_OSPF):
+            _PT_9_0_1_0858_OSPF_ROUTE_R1.replace("198.18.102.0", nearby),
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([route])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.fields["network"] is FieldVerificationStatus.FAILED
+    assert result.fields["prefix_length"] is FieldVerificationStatus.UNOBSERVABLE
+
+
+def test_ospf_route_verifies_explicit_prefix_and_rejects_wrong_expected_next_hop():
+    plan = _compile().plan
+    route = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTE_PRESENT
+        and item.device_id == "r1"
+    ).model_copy(deep=True)
+    route.expected["next_hop"] = "10.255.0.99"
+    prefix_length = route.expected["prefix_length"]
+    output = _PT_9_0_1_0858_OSPF_ROUTE_R1.replace(
+        "198.18.102.0",
+        f"{route.expected['network']}/{prefix_length}",
+    )
+    ios = FakeControlPlaneIos({
+        ("HQ-R1", OperationalQueryId.SHOW_IP_ROUTE_OSPF): output,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([route])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.fields["network"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["prefix_length"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["protocol"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["next_hop"] is FieldVerificationStatus.FAILED
+
+
 def test_failure_scenario_requires_stable_before_during_and_after_samples():
     plan = _compile().plan
     scenario, failure, recovery = _failure_parts(plan)
@@ -390,6 +574,17 @@ def test_failure_scenario_requires_stable_before_during_and_after_samples():
     assert " shutdown" in sent[0]
     assert " no shutdown" in sent[1]
     assert all("write memory" not in script for script in sent)
+    assert [item.sequence for item in result.transitions] == list(range(5))
+    assert [item.phase.value for item in result.transitions] == [
+        "baseline_observed",
+        "fault_injected",
+        "failover_observed",
+        "restore_dispatched",
+        "recovery_observed",
+    ]
+    assert [item.elapsed_ms for item in result.transitions] == sorted(
+        item.elapsed_ms for item in result.transitions
+    )
 
 
 def test_unstable_baseline_prevents_fault_injection():

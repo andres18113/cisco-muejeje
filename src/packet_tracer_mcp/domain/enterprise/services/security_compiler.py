@@ -167,12 +167,26 @@ class SecurityCompiler:
         call_controls = {
             item.id: item for item in voice_plan.call_controls
         } if voice_plan else {}
+        voice_calls_by_control: dict[str, list[str]] = defaultdict(list)
+        if voice_plan:
+            control_by_phone = {
+                item.phone_id: item.call_control_id
+                for item in voice_plan.phone_assignments
+            }
+            for expectation in sorted(
+                voice_plan.call_expectations,
+                key=lambda item: item.id,
+            ):
+                control_id = control_by_phone.get(expectation.source_phone_id, "")
+                if control_id:
+                    voice_calls_by_control[control_id].append(expectation.id)
 
         self._analyze_policy_conflicts(intent.policies, issues)
         resolved = self._resolve_policies(
             intent.policies,
             services,
             call_controls,
+            voice_calls_by_control,
             segment_l3,
             segment_networks,
             endpoints,
@@ -504,6 +518,7 @@ class SecurityCompiler:
         policies: list[SecurityPolicyIntent],
         services: dict[str, ServiceDefinition],
         call_controls: dict[str, CallControlInstance],
+        voice_calls_by_control: dict[str, list[str]],
         segment_l3: dict[str, list[object]],
         segment_networks: dict[str, str],
         endpoints: dict[str, list[object]],
@@ -554,6 +569,7 @@ class SecurityCompiler:
             )
             source_action_id = source_endpoint.id
             destination_foundation_id = ""
+            voice_call_expectation_id = ""
 
             if policy.destination_service_id:
                 service = services.get(policy.destination_service_id)
@@ -585,7 +601,18 @@ class SecurityCompiler:
                 destination_device_id = call_control.host_device_id
                 protocol = "tcp"
                 destination_ports = [call_control.signaling_port]
-                probe_kind = SecurityProbeKind.VOICE_CALL
+                call_ids = voice_calls_by_control.get(call_control.id, [])
+                if call_ids:
+                    probe_kind = SecurityProbeKind.VOICE_CALL
+                    voice_call_expectation_id = call_ids[0]
+                else:
+                    probe_kind = SecurityProbeKind.UNOBSERVABLE
+                    issues.append(_warning(
+                        ConfigurationIssueCode.SECURITY_CAPABILITY_UNOBSERVABLE,
+                        f"E7 call control {call_control.id!r} has no plan-owned call "
+                        "expectation for E8 behavioral verification.",
+                        policy.id,
+                    ))
                 destination_foundation_id = call_control.id
             elif policy.destination_segment_id:
                 destination_cidr = segment_networks.get(policy.destination_segment_id, "")
@@ -623,6 +650,7 @@ class SecurityCompiler:
                     "destination_device_name": destination_device.name if destination_device else "",
                     "destination_address": destination_address,
                     "probe_kind": probe_kind,
+                    "voice_call_expectation_id": voice_call_expectation_id,
                     "source_foundation_id": source_action_id,
                     "destination_foundation_id": destination_foundation_id,
                 })
@@ -695,6 +723,7 @@ class SecurityCompiler:
                     destination_cidr=str(item["destination_cidr"]),
                     source_ports=list(item["source_ports"]),
                     destination_ports=list(item["destination_ports"]),
+                    voice_call_expectation_id=str(item["voice_call_expectation_id"]),
                     logging=policy.logging,
                 ))
                 previous = rule_id
@@ -1048,6 +1077,7 @@ class SecurityCompiler:
                 expected_decision=SecurityDecision.ALLOW,
                 source_device_id=source_endpoint.device_id if source_endpoint else "",
                 source_device_name=source_device.name if source_device else "",
+                source_address=source_endpoint.ipv4 if source_endpoint else "",
                 destination_device_id=policy.probe_destination_device_id,
                 destination_device_name=destination.name if destination else "",
                 destination_address=(
@@ -1142,14 +1172,27 @@ class SecurityCompiler:
                             source_id=endpoint_address.id,
                         )
                     )
+                direct_expectation_id = _stable_id("verify-port-security", action_id)
                 expectations.append(SecurityVerificationExpectation(
-                    id=_stable_id("verify-port-security", action_id),
+                    id=direct_expectation_id,
                     kind=SecurityVerificationKind.PORT_SECURITY_STATE,
                     action_id=action_id,
                     policy_id=policy.id,
                     probe_kind=SecurityProbeKind.DIRECT_READBACK,
                     required_query="show_port_security_interface",
                     depends_on=[action_id],
+                ))
+                endpoint = devices.get(endpoint_id)
+                expectations.append(SecurityVerificationExpectation(
+                    id=_stable_id("verify-port-security-violation", action_id),
+                    kind=SecurityVerificationKind.PORT_SECURITY_VIOLATION,
+                    action_id=action_id,
+                    policy_id=policy.id,
+                    probe_kind=SecurityProbeKind.UNOBSERVABLE,
+                    source_device_id=endpoint_id,
+                    source_device_name=endpoint.name if endpoint else "",
+                    required_query="controlled_second_mac_violation",
+                    depends_on=[direct_expectation_id],
                 ))
         return actions, expectations
 
@@ -1371,8 +1414,8 @@ class SecurityCompiler:
             action = actions_by_id.get(expectation.action_id)
             if action is None:
                 continue
-            dimension = security_verification_capability(expectation)
             profile = capabilities.get(action.model)
+            dimension = security_verification_capability(expectation, action)
             status = (
                 profile.status(dimension)
                 if profile else SecurityCapabilityStatus.UNKNOWN

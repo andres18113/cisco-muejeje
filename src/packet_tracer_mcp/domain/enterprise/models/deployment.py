@@ -6,11 +6,14 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from ...models.plans import TopologyPlan
-from .configuration_runtime import RuntimeConfigurationTarget
+
+if TYPE_CHECKING:
+    from .configuration_runtime import RuntimeConfigurationTarget
 
 
 class IdentityMethod(str, Enum):
@@ -49,6 +52,33 @@ class DeploymentIdentityError(ValueError):
     """Raised when a semantic target cannot be safely mapped to runtime."""
 
 
+def requires_deployment_manifest(source_topology_hash_schema: str) -> bool:
+    """Only the explicitly declared legacy schema may use name-based lookup."""
+
+    return source_topology_hash_schema != "legacy-full-v1"
+
+
+def validate_manifest_environment(
+    manifest: DeploymentManifest,
+    runtime_environment: EnvironmentFingerprint | None,
+) -> None:
+    """Require independently supplied runtime provenance to match deployment."""
+
+    if runtime_environment is None:
+        raise DeploymentIdentityError(
+            "Runtime EnvironmentFingerprint is required for a DeploymentManifest."
+        )
+    if (
+        runtime_environment.semantic_hash
+        != manifest.environment_fingerprint.semantic_hash
+        or runtime_environment.backend != manifest.backend
+        or runtime_environment.backend_version != manifest.backend_version
+    ):
+        raise DeploymentIdentityError(
+            "Runtime EnvironmentFingerprint does not match DeploymentManifest."
+        )
+
+
 class DeploymentManifest(BaseModel):
     deployment_id: str
     physical_topology_hash: str
@@ -78,13 +108,30 @@ class DeploymentManifest(BaseModel):
         inventory: list[RuntimeConfigurationTarget],
     ) -> RuntimeConfigurationTarget:
         binding = self.binding_for(semantic_device_id)
-        matches = []
-        if binding.runtime_identifier:
+        if binding.identity_method is IdentityMethod.RUNTIME_ID:
+            if not binding.runtime_identifier:
+                raise DeploymentIdentityError(
+                    f"Manifest binding {semantic_device_id!r} declares runtime-ID "
+                    "identity without a runtime identifier."
+                )
             matches = [
                 item for item in inventory
                 if item.runtime_identifier == binding.runtime_identifier
             ]
-        if not matches:
+            if not matches:
+                raise DeploymentIdentityError(
+                    f"Stable runtime identifier for {semantic_device_id!r} is no longer "
+                    "present; refusing to downgrade to a name-only lookup."
+                )
+        else:
+            if (
+                binding.identity_method is IdentityMethod.COMPOSITE_FINGERPRINT
+                and not binding.runtime_fingerprint
+            ):
+                raise DeploymentIdentityError(
+                    f"Manifest binding {semantic_device_id!r} declares composite "
+                    "fingerprint identity without a fingerprint."
+                )
             matches = [
                 item for item in inventory
                 if item.device_name == binding.deployed_name
@@ -99,13 +146,16 @@ class DeploymentManifest(BaseModel):
                 f"Runtime target model {target.model!r} does not match manifest model "
                 f"{binding.model!r} for {semantic_device_id!r}."
             )
-        if (
-            binding.runtime_fingerprint and target.runtime_fingerprint
-            and binding.runtime_fingerprint != target.runtime_fingerprint
-        ):
-            raise DeploymentIdentityError(
-                f"Runtime fingerprint does not match manifest binding for {semantic_device_id!r}."
-            )
+        if binding.runtime_fingerprint:
+            if not target.runtime_fingerprint:
+                raise DeploymentIdentityError(
+                    f"Runtime fingerprint for {semantic_device_id!r} is unavailable; "
+                    "the manifest binding cannot be revalidated."
+                )
+            if binding.runtime_fingerprint != target.runtime_fingerprint:
+                raise DeploymentIdentityError(
+                    f"Runtime fingerprint does not match manifest binding for {semantic_device_id!r}."
+                )
         return target
 
     def compact_summary(self) -> dict[str, object]:
@@ -180,13 +230,15 @@ def build_deployment_manifest(
     )
     manifest.semantic_hash = _digest({
         "schema": "deployment-manifest-v1",
-        "deployment_id": manifest.deployment_id,
         "physical_topology_hash": manifest.physical_topology_hash,
         "backend": manifest.backend,
         "backend_version": manifest.backend_version,
         "environment_fingerprint": manifest.environment_fingerprint.model_dump(mode="json"),
         "bindings": [
-            item.model_dump(mode="json", exclude={"creation_evidence"})
+            item.model_dump(
+                mode="json",
+                exclude={"creation_evidence", "runtime_identifier"},
+            )
             for item in manifest.bindings
         ],
     })
@@ -209,6 +261,21 @@ def resolve_manifest_targets(
         identifier: manifest.resolve_target(identifier, inventory)
         for identifier in sorted(set(semantic_device_ids))
     }
+
+
+def runtime_target_fingerprint(
+    device_name: str,
+    model: str,
+    interfaces: list[str],
+) -> str:
+    """Build the backend-neutral composite used by deployment and applicators."""
+
+    return _digest({
+        "schema": "runtime-target-fingerprint-v1",
+        "device_name": device_name,
+        "model": model,
+        "interfaces": sorted(set(interfaces), key=str.casefold),
+    })
 
 
 def _digest(payload: object) -> str:

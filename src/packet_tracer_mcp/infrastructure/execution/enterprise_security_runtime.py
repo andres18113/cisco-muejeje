@@ -5,8 +5,10 @@ from __future__ import annotations
 import ipaddress
 import json
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from time import monotonic, sleep
 
+from ...application.ports.voice_call_operation import VoiceCallOperationPort
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
@@ -43,7 +45,10 @@ from .security_ios import (
     parse_show_ip_nat_statistics,
     parse_show_ip_nat_translations,
     parse_show_port_security_interface,
+    NatStatisticsState,
+    NatTranslationRow,
 )
+from .runtime_inventory import normalize_runtime_inventory
 from .typed_ping import TypedPingExecutor
 
 
@@ -51,6 +56,30 @@ TypedBehaviorDriver = Callable[
     [SecurityVerificationExpectation, SecurityVerificationStage],
     RuntimeSecurityVerification,
 ]
+
+
+def _nat_address(value: str) -> str:
+    """Return the IPv4 portion of an IOS NAT endpoint (which may include a port)."""
+    candidate = value.strip()
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        pass
+    address, separator, port = candidate.rpartition(":")
+    if not separator or not port.isdigit():
+        return ""
+    try:
+        return str(ipaddress.ip_address(address))
+    except ValueError:
+        return ""
+
+
+@dataclass(frozen=True)
+class _NatOperationalSnapshot:
+    translations: tuple[NatTranslationRow, ...]
+    statistics: NatStatisticsState | None
+    translations_fresh: bool
+    statistics_fresh: bool
 
 
 class PacketTracerEnterpriseSecurityRuntime:
@@ -65,7 +94,7 @@ class PacketTracerEnterpriseSecurityRuntime:
         ios_readiness: Callable[[str], bool] | None = None,
         ios_executor: ControlledIosExecutor | None = None,
         service_behavior: TypedBehaviorDriver | None = None,
-        voice_behavior: TypedBehaviorDriver | None = None,
+        voice_call_operation: VoiceCallOperationPort | None = None,
         behavior_timeout_seconds: float = 12.0,
         convergence_interval_seconds: float = 0.25,
         clock: Callable[[], float] = monotonic,
@@ -78,7 +107,7 @@ class PacketTracerEnterpriseSecurityRuntime:
         self._ios = ios_executor or ControlledIosExecutor(send_and_wait)
         self._ios_readiness = ios_readiness or self._wait_for_ios
         self._service_behavior = service_behavior
-        self._voice_behavior = voice_behavior
+        self._voice_call_operation = voice_call_operation
         self._behavior_timeout = behavior_timeout_seconds
         self._interval = convergence_interval_seconds
         self._clock = clock
@@ -95,22 +124,9 @@ class PacketTracerEnterpriseSecurityRuntime:
         self._ready_ios_devices: set[str] = set()
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
-        raw = self._query_inventory()
-        items = raw.get("devices", []) if isinstance(raw, dict) else raw
-        targets: list[RuntimeConfigurationTarget] = []
-        for item in items:
-            interfaces = sorted({
-                str(port.get("name") if isinstance(port, dict) else port)
-                for port in (item.get("ports", item.get("interfaces", [])) or [])
-                if port and (not isinstance(port, dict) or port.get("name"))
-            }, key=str.casefold)
-            targets.append(RuntimeConfigurationTarget(
-                device_name=str(item.get("name") or item.get("device_name") or ""),
-                model=str(item.get("model") or ""),
-                interfaces=interfaces,
-            ))
+        targets = normalize_runtime_inventory(self._query_inventory())
         self._targets = {item.device_name: item for item in targets}
-        return sorted(targets, key=lambda item: item.device_name)
+        return targets
 
     def apply_actions(
         self, actions: Sequence[SecurityAction],
@@ -301,8 +317,16 @@ class PacketTracerEnterpriseSecurityRuntime:
             )
         return self._direct(
             expectation, enabled and policy, "fresh_show_port_security_interface",
-            {"enabled": self._field(enabled), "policy": self._field(policy)},
-            "Port-security state matched." if enabled and policy else "Port-security state differed.",
+            {
+                "enabled": self._field(enabled),
+                "policy": self._field(policy),
+                "violation_counter_readback": self._field(state is not None),
+            },
+            (
+                "Port-security configuration matched; the violation counter is only "
+                "direct state and does not prove a controlled violation."
+                if enabled and policy else "Port-security state differed."
+            ),
             fresh=show.fresh_output_observed,
         )
 
@@ -383,38 +407,103 @@ class PacketTracerEnterpriseSecurityRuntime:
             return self._unobservable(expectation, "Fresh DAI output was unavailable.")
         state = parse_show_ip_arp_inspection(show.output)
         vlans = bool(state and set(action.vlan_ids).issubset(state.enabled_vlans))
-        if vlans and action.trusted_interfaces:
-            return RuntimeSecurityVerification(
-                expectation_id=expectation.id,
-                stage=SecurityVerificationStage.DIRECT_STATE,
-                status=ActionExecutionStatus.UNOBSERVABLE,
-                evidence_method="fresh_show_ip_arp_inspection_first_page",
-                fresh_evidence=show.fresh_output_observed,
-                fields={
-                    "vlans": FieldVerificationStatus.VERIFIED,
-                    "trusted_interfaces": FieldVerificationStatus.UNOBSERVABLE,
-                },
-                message=(
-                    "DAI VLAN state matched; PT paginates before the trusted uplink "
-                    "and does not accept terminal length 0."
-                ),
+        active = bool(state and set(action.vlan_ids).issubset(state.active_vlans))
+        fields = {
+            "vlans": self._field(vlans),
+            "active_vlans": self._field(active),
+            "trusted_interfaces": FieldVerificationStatus.UNOBSERVABLE,
+            "untrusted_interfaces": FieldVerificationStatus.UNOBSERVABLE,
+        }
+        if not vlans or not active:
+            return self._direct(
+                expectation, False, "fresh_show_ip_arp_inspection",
+                fields, "DAI enabled or active VLAN state differed.",
+                fresh=show.fresh_output_observed,
             )
-        return self._direct(
-            expectation, vlans, "fresh_show_ip_arp_inspection",
-            {"vlans": self._field(vlans)},
-            "DAI VLAN state matched." if vlans else "DAI VLAN state differed.",
-            fresh=show.fresh_output_observed,
+        truncated = show.truncated_by_pager or "--More--" in show.output
+        return RuntimeSecurityVerification(
+            expectation_id=expectation.id,
+            stage=SecurityVerificationStage.DIRECT_STATE,
+            status=ActionExecutionStatus.UNOBSERVABLE,
+            evidence_method=(
+                "fresh_show_ip_arp_inspection_first_page"
+                if truncated else "fresh_show_ip_arp_inspection_vlan_only"
+            ),
+            fresh_evidence=show.fresh_output_observed,
+            fields=fields,
+            message=(
+                "DAI VLAN state matched, but the paginated PT window ended before "
+                "trusted and default-untrusted interface rows."
+                if truncated else
+                "DAI VLAN state matched, but no PT 9.0.1 verified interface-trust "
+                "fixture is available; trusted and untrusted ports remain unobservable."
+            ),
         )
 
     def _verify_behavior_one(self, expectation, stage):
         if expectation.probe_kind is SecurityProbeKind.VOICE_CALL:
-            if self._voice_behavior is None:
+            if self._voice_call_operation is None:
                 return self._unobservable(
                     expectation,
                     "E8 has no typed E7 call operation injected; phone UI remains encapsulated.",
                     stage=stage,
                 )
-            return self._voice_behavior(expectation, stage)
+            if not expectation.voice_call_expectation_id:
+                return self._unobservable(
+                    expectation,
+                    "E8 expectation has no immutable E7 call-expectation binding.",
+                    stage=stage,
+                )
+            try:
+                observed = self._voice_call_operation.execute_planned_call(
+                    expectation.voice_call_expectation_id,
+                )
+            except Exception as exc:
+                return RuntimeSecurityVerification(
+                    expectation_id=expectation.id,
+                    stage=stage,
+                    status=ActionExecutionStatus.FAILED,
+                    evidence_method="e7_typed_call_operation_failed",
+                    fresh_evidence=False,
+                    message=f"Typed E7 call operation failed: {exc}",
+                )
+            if observed.status is ActionExecutionStatus.UNOBSERVABLE:
+                return self._unobservable(
+                    expectation,
+                    observed.message or "E7 call behavior is unobservable.",
+                    stage=stage,
+                )
+            fresh = bool(
+                observed.fresh_evidence
+                and observed.call_expectation_id
+                == expectation.voice_call_expectation_id
+                and observed.call_attempt_id
+            )
+            expected_connected = not (
+                stage is SecurityVerificationStage.ENFORCEMENT_BEHAVIOR
+                and expectation.expected_decision is SecurityDecision.DENY
+            )
+            matched = observed.connected is expected_connected
+            if not fresh or not matched:
+                status = ActionExecutionStatus.FAILED
+            elif observed.connected and not observed.teardown_verified:
+                status = ActionExecutionStatus.PARTIAL
+            else:
+                status = ActionExecutionStatus.VERIFIED
+            return RuntimeSecurityVerification(
+                expectation_id=expectation.id,
+                stage=stage,
+                status=status,
+                evidence_method=(
+                    "e7_planned_voice_call_" + observed.execution_method.value
+                ),
+                fresh_evidence=fresh,
+                message=(
+                    f"E7 call connected={observed.connected}; "
+                    f"expected_connected={expected_connected}; "
+                    f"teardown_verified={observed.teardown_verified}."
+                ),
+            )
         if expectation.probe_kind in {
             SecurityProbeKind.DNS_LOOKUP,
             SecurityProbeKind.HTTPS_FETCH,
@@ -432,16 +521,13 @@ class PacketTracerEnterpriseSecurityRuntime:
             reached, fresh = self._typed_http(expectation)
             return self._behavior_result(expectation, stage, reached, fresh, "typed_http_client")
         if expectation.probe_kind is SecurityProbeKind.ICMP_REACHABILITY:
+            action = self._actions.get(expectation.action_id)
+            if (
+                expectation.kind is SecurityVerificationKind.NAT_TRANSLATION
+                and isinstance(action, ConfigureSecurityNat)
+            ):
+                return self._verify_nat_translation(expectation, action, stage)
             reached, fresh = self._typed_ping(expectation)
-            if expectation.kind is SecurityVerificationKind.NAT_TRANSLATION and reached:
-                action = self._actions.get(expectation.action_id)
-                if isinstance(action, ConfigureSecurityNat):
-                    translated = self._nat_translation_observed(action)
-                    reached = reached and translated
-                    return self._behavior_result(
-                        expectation, stage, reached, fresh and translated,
-                        "typed_pc_ping_plus_fresh_nat_translation",
-                    )
             return self._behavior_result(expectation, stage, reached, fresh, "typed_pc_ping")
         if expectation.probe_kind is SecurityProbeKind.UNOBSERVABLE:
             return self._unobservable(
@@ -503,17 +589,165 @@ class PacketTracerEnterpriseSecurityRuntime:
         # its positive baseline succeeded immediately before policy mutation.
         return bool(content and content != before), True
 
-    def _nat_translation_observed(self, action: ConfigureSecurityNat) -> bool:
-        translations = self._ios.execute(
+    def _read_nat_snapshot(self, action: ConfigureSecurityNat) -> _NatOperationalSnapshot:
+        translations_result = self._ios.execute(
             action.device_name, OperationalQueryId.SHOW_IP_NAT_TRANSLATIONS,
         )
-        if translations.executed and parse_show_ip_nat_translations(translations.output):
-            return True
-        statistics = self._ios.execute(
+        statistics_result = self._ios.execute(
             action.device_name, OperationalQueryId.SHOW_IP_NAT_STATISTICS,
         )
-        state = parse_show_ip_nat_statistics(statistics.output) if statistics.executed else None
-        return bool(state and state.hits > 0)
+        return _NatOperationalSnapshot(
+            translations=tuple(
+                parse_show_ip_nat_translations(translations_result.output)
+                if translations_result.executed else []
+            ),
+            statistics=(
+                parse_show_ip_nat_statistics(statistics_result.output)
+                if statistics_result.executed else None
+            ),
+            translations_fresh=(
+                translations_result.executed
+                and translations_result.fresh_output_observed
+            ),
+            statistics_fresh=(
+                statistics_result.executed
+                and statistics_result.fresh_output_observed
+            ),
+        )
+
+    def _verify_nat_translation(self, expectation, action, stage):
+        before = self._read_nat_snapshot(action)
+        reached, traffic_fresh = self._typed_ping(expectation)
+        after = self._read_nat_snapshot(action)
+        if not traffic_fresh:
+            return self._unobservable(
+                expectation,
+                "The typed traffic probe produced no fresh endpoint evidence.",
+                stage=stage,
+            )
+        if not reached:
+            return RuntimeSecurityVerification(
+                expectation_id=expectation.id,
+                stage=stage,
+                status=ActionExecutionStatus.FAILED,
+                evidence_method="typed_pc_ping_plus_exact_nat_delta",
+                fresh_evidence=True,
+                fields={
+                    "traffic_outcome": FieldVerificationStatus.FAILED,
+                    "exact_translation": FieldVerificationStatus.UNOBSERVABLE,
+                    "translation_delta": FieldVerificationStatus.UNOBSERVABLE,
+                },
+                message="The typed traffic probe failed before NAT could be proven.",
+            )
+
+        exact_after = {
+            row for row in after.translations
+            if self._nat_row_matches(expectation, action, row)
+        }
+        exact_before = {
+            row for row in before.translations
+            if self._nat_row_matches(expectation, action, row)
+        }
+        exact_fresh = after.translations_fresh
+        new_exact = bool(exact_after - exact_before) and (
+            before.translations_fresh and after.translations_fresh
+        )
+        hit_delta = bool(
+            before.statistics_fresh
+            and after.statistics_fresh
+            and before.statistics is not None
+            and after.statistics is not None
+            and after.statistics.hits > before.statistics.hits
+        )
+        current_delta = new_exact or hit_delta
+        fields = {
+            "traffic_outcome": FieldVerificationStatus.VERIFIED,
+            "exact_translation": (
+                FieldVerificationStatus.VERIFIED
+                if exact_fresh and exact_after else
+                FieldVerificationStatus.FAILED
+                if exact_fresh else FieldVerificationStatus.UNOBSERVABLE
+            ),
+            "translation_delta": (
+                FieldVerificationStatus.VERIFIED
+                if current_delta else FieldVerificationStatus.UNOBSERVABLE
+            ),
+        }
+        if exact_fresh and exact_after and current_delta:
+            return RuntimeSecurityVerification(
+                expectation_id=expectation.id,
+                stage=stage,
+                status=ActionExecutionStatus.VERIFIED,
+                evidence_method="typed_pc_ping_plus_exact_nat_delta",
+                fresh_evidence=True,
+                fields=fields,
+                message=(
+                    f"Fresh {action.mode.value} NAT evidence matched the exact source, "
+                    "destination and configured translation scope with a current-probe delta."
+                ),
+            )
+        if not exact_fresh:
+            status = ActionExecutionStatus.UNOBSERVABLE
+            message = "Fresh NAT translation read-back was unavailable after typed traffic."
+        elif not exact_after:
+            status = ActionExecutionStatus.FAILED
+            message = (
+                "Fresh NAT output contained no translation matching the exact source, "
+                "destination and configured mode scope."
+            )
+        else:
+            status = ActionExecutionStatus.UNOBSERVABLE
+            message = (
+                "An exact NAT row exists, but neither a new row nor a fresh hit-counter "
+                "delta ties it to the current traffic probe."
+            )
+        return RuntimeSecurityVerification(
+            expectation_id=expectation.id,
+            stage=stage,
+            status=status,
+            evidence_method="typed_pc_ping_plus_exact_nat_delta",
+            fresh_evidence=bool(exact_fresh and traffic_fresh),
+            fields=fields,
+            message=message,
+        )
+
+    @staticmethod
+    def _nat_row_matches(expectation, action, row: NatTranslationRow) -> bool:
+        source = _nat_address(expectation.source_address)
+        inside_local = _nat_address(row.inside_local)
+        if not source or inside_local != source:
+            return False
+        if not any(
+            ipaddress.ip_address(source) in ipaddress.ip_network(network, strict=False)
+            for network in action.inside_networks
+        ):
+            return False
+        protocol = row.protocol.casefold()
+        destination = _nat_address(expectation.destination_address)
+        if protocol != "---" and protocol != "icmp":
+            return False
+        if protocol != "---" and destination and not (
+            _nat_address(row.outside_local) == destination
+            and _nat_address(row.outside_global) == destination
+        ):
+            return False
+        inside_global = _nat_address(row.inside_global)
+        if action.mode.value == "static":
+            return any(
+                item.inside_local_address == source
+                and item.outside_global_address == inside_global
+                for item in action.static_mappings
+            )
+        if action.mode.value == "dynamic":
+            if action.dynamic_pool is None or not inside_global:
+                return False
+            global_address = ipaddress.ip_address(inside_global)
+            return (
+                ipaddress.ip_address(action.dynamic_pool.start_address)
+                <= global_address
+                <= ipaddress.ip_address(action.dynamic_pool.end_address)
+            )
+        return bool(inside_global and inside_global != source)
 
     def _destination_address(self, expectation) -> str:
         try:
@@ -572,6 +806,18 @@ class PacketTracerEnterpriseSecurityRuntime:
 
     @staticmethod
     def _direct(expectation, matched, method, fields, message, *, fresh):
+        if not fresh:
+            return RuntimeSecurityVerification(
+                expectation_id=expectation.id,
+                stage=SecurityVerificationStage.DIRECT_STATE,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method=method,
+                fresh_evidence=False,
+                fields={
+                    name: FieldVerificationStatus.UNOBSERVABLE for name in fields
+                },
+                message="No fresh current-query evidence was available. " + message,
+            )
         return RuntimeSecurityVerification(
             expectation_id=expectation.id,
             stage=SecurityVerificationStage.DIRECT_STATE,
@@ -584,6 +830,16 @@ class PacketTracerEnterpriseSecurityRuntime:
 
     @staticmethod
     def _behavior_result(expectation, stage, reached, fresh, method):
+        if not fresh:
+            return RuntimeSecurityVerification(
+                expectation_id=expectation.id,
+                stage=stage,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method=method,
+                fresh_evidence=False,
+                fields={"traffic_outcome": FieldVerificationStatus.UNOBSERVABLE},
+                message="No fresh typed behavioral evidence was available.",
+            )
         expected_reachability = (
             True if stage in {
                 SecurityVerificationStage.BASELINE,

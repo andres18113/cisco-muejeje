@@ -29,7 +29,14 @@ from .configuration_runtime import (
 from .deployment import (
     DeploymentBinding, DeploymentIdentityError, DeploymentManifest,
     EnvironmentFingerprint, IdentityMethod, build_deployment_manifest,
-    resolve_manifest_targets,
+    resolve_manifest_targets, runtime_target_fingerprint,
+)
+from .physical_deployment import (
+    PhysicalDeploymentFailureCode, PhysicalDeploymentItemResult,
+    PhysicalDeploymentItemStatus, PhysicalDeploymentResult,
+    PhysicalDeploymentStatus, PhysicalDeviceObservation,
+    PhysicalLinkObservation, PhysicalModuleObservation, PhysicalMutationResult,
+    PhysicalObjectKind,
 )
 from .evidence import (
     CapabilityReadiness, EvidenceFreshness, EvidenceRecord, EvidenceStrength,
@@ -42,8 +49,19 @@ from .execution import (
     disposition_from_status, journal_from_action_results,
     satisfies_apply_dependency,
 )
+from .failure_domain import (
+    FailureDomain, FailureDomainCatalog, FailureDomainCoverageGap,
+    FailureDomainIndependenceResult, FailureDomainProvenance, FailureDomainType,
+    FailurePath, FailureScenario, FailureScenarioScope, IndependenceStatus,
+)
 from .enterprise_plan import EnterprisePlan, SitePlan
 from .hierarchy import BuildingIntent, EndpointGroup, FloorIntent, ZoneIntent
+from .ipam_reconciliation import (
+    AddressPurpose, AddressReconcileIssue, AddressReconcileIssueCode,
+    AddressReconcileResult, AddressReconcileStatus, AddressRenumbering,
+    ExistingAddressBinding, FinalAddressBinding, FinalAddressPlan,
+    InfrastructureAddressDemand, ReconciliationStatus,
+)
 from .discovery import (
     CapabilityConflict, CapabilityProbeResult, CapabilitySnapshot, CatalogGapReport,
     CleanupStatus, DetailLevel, DeviceIdentity, DiscoverySource, E4ReadinessReport,
@@ -70,7 +88,7 @@ from .voice_plan import (
     VoiceCapabilityStatus, VoiceCompileResult, VoiceIntent, VoicePlan, VoicePolicy,
 )
 from .voice_runtime import (
-    CallState, CallVerificationResult, PhoneRegistrationResult, PhoneVoiceOutcome,
+    CallState, CallVerificationResult, PhoneExecutionMethod, PhoneRegistrationResult, PhoneVoiceOutcome,
     RuntimeCallObservation, RuntimePhoneRegistration, VoiceApplicationResult,
 )
 from .security_plan import (
@@ -99,6 +117,7 @@ from .control_plane import (
 from .control_plane_runtime import (
     ControlPlaneApplicationResult, ControlPlaneExecutionStage,
     ControlPlaneVerificationResult, FailureScenarioResult,
+    FailureScenarioTransition, FailureTransitionPhase,
     RuntimeControlPlaneVerification, RuntimeFailureScenarioResult,
 )
 from .roles import DeviceRole
@@ -140,7 +159,7 @@ __all__ = [
     "ExtensionRange", "VoiceActionType", "VoiceCapabilityDimension",
     "VoiceCapabilityProfile", "VoiceCapabilityStatus", "VoiceCompileResult",
     "VoiceIntent", "VoicePlan", "VoicePolicy",
-    "CallState", "CallVerificationResult", "PhoneRegistrationResult",
+    "CallState", "CallVerificationResult", "PhoneExecutionMethod", "PhoneRegistrationResult",
     "PhoneVoiceOutcome", "RuntimeCallObservation", "RuntimePhoneRegistration",
     "VoiceApplicationResult",
     "DeviceHardeningIntent", "DhcpInspectionPolicyIntent", "DynamicNatPoolIntent",
@@ -163,16 +182,29 @@ __all__ = [
     "LinkFailureScenarioIntent", "StpIntent", "StpMode",
     "ControlPlaneApplicationResult", "ControlPlaneExecutionStage",
     "ControlPlaneVerificationResult", "FailureScenarioResult",
+    "FailureScenarioTransition", "FailureTransitionPhase",
     "RuntimeControlPlaneVerification", "RuntimeFailureScenarioResult",
     "DeploymentBinding", "DeploymentIdentityError", "DeploymentManifest",
     "EnvironmentFingerprint", "IdentityMethod", "build_deployment_manifest",
-    "resolve_manifest_targets",
+    "resolve_manifest_targets", "runtime_target_fingerprint",
+    "PhysicalDeploymentFailureCode", "PhysicalDeploymentItemResult",
+    "PhysicalDeploymentItemStatus", "PhysicalDeploymentResult",
+    "PhysicalDeploymentStatus", "PhysicalDeviceObservation",
+    "PhysicalLinkObservation", "PhysicalModuleObservation",
+    "PhysicalMutationResult", "PhysicalObjectKind",
     "CapabilityReadiness", "EvidenceFreshness", "EvidenceRecord", "EvidenceStrength",
     "ObservationStatus", "ReadinessStatus", "SupportStatus", "VerificationMethod",
     "VerificationStatus", "evidence_from_legacy_result",
     "ApplicationExecutionJournal", "CompensationStatus",
     "DirtyState", "ExecutionJournalEntry", "MutationDisposition", "OperationSemantics",
     "disposition_from_status", "journal_from_action_results", "satisfies_apply_dependency",
+    "AddressPurpose", "AddressReconcileIssue", "AddressReconcileIssueCode",
+    "AddressReconcileResult", "AddressReconcileStatus", "AddressRenumbering",
+    "ExistingAddressBinding", "FinalAddressBinding", "FinalAddressPlan",
+    "InfrastructureAddressDemand", "ReconciliationStatus",
+    "FailureDomain", "FailureDomainCatalog", "FailureDomainCoverageGap",
+    "FailureDomainIndependenceResult", "FailureDomainProvenance", "FailureDomainType",
+    "FailurePath", "FailureScenario", "FailureScenarioScope", "IndependenceStatus",
     "PrerequisiteKind", "VerificationDependencyError", "VerificationPrerequisite",
     "legacy_action_prerequisites", "order_verification_expectations",
     "prerequisites_satisfied",

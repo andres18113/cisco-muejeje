@@ -56,29 +56,44 @@ def _physical_payload(topology: TopologyPlan) -> dict[str, object]:
             "wireless": device.wireless,
             "metadata": _network_metadata(device.metadata),
         })
-    links = [{
-        "id": link.id,
-        "device_a_id": link.device_a_id or name_to_id.get(link.device_a, link.device_a),
-        "port_a": link.port_a,
-        "device_b_id": link.device_b_id or name_to_id.get(link.device_b, link.device_b),
-        "port_b": link.port_b,
-        "cable": link.cable,
-        "link_role": link.link_role,
-        "network_layer": link.network_layer,
-        "redundancy_group": link.redundancy_group,
-        "metadata": _network_metadata(link.metadata),
-    } for link in sorted(
-        topology.links,
-        key=lambda item: (
-            item.id, item.device_a_id or item.device_a, item.port_a,
-            item.device_b_id or item.device_b, item.port_b,
-        ),
-    )]
-    modules = [{
-        "device_id": name_to_id.get(module.device, module.device),
-        "slot": module.slot,
-        "module": module.module,
-    } for module in sorted(topology.modules, key=lambda item: (item.device, item.slot, item.module))]
+    links = []
+    for link in topology.links:
+        endpoint_a = (
+            link.device_a_id or name_to_id.get(link.device_a, link.device_a),
+            link.port_a,
+        )
+        endpoint_b = (
+            link.device_b_id or name_to_id.get(link.device_b, link.device_b),
+            link.port_b,
+        )
+        first, second = sorted((endpoint_a, endpoint_b))
+        links.append({
+            "id": link.id,
+            "device_a_id": first[0],
+            "port_a": first[1],
+            "device_b_id": second[0],
+            "port_b": second[1],
+            "cable": link.cable,
+            "link_role": link.link_role,
+            "network_layer": link.network_layer,
+            "redundancy_group": link.redundancy_group,
+            "metadata": _network_metadata(link.metadata),
+        })
+    links.sort(key=lambda item: (
+        str(item["id"]), str(item["device_a_id"]), str(item["port_a"]),
+        str(item["device_b_id"]), str(item["port_b"]),
+    ))
+    modules = [
+        {
+            "device_id": name_to_id.get(module.device, module.device),
+            "slot": module.slot,
+            "module": module.module,
+        }
+        for module in topology.modules
+    ]
+    modules.sort(key=lambda item: (
+        str(item["device_id"]), str(item["slot"]), str(item["module"]),
+    ))
     return {
         "schema": "physical-topology-v2",
         "devices": devices,

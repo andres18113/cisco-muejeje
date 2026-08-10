@@ -6,12 +6,15 @@ from copy import deepcopy
 
 from ...domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
 from ...domain.enterprise.models.discovery import (
+    CapabilityBackend,
     CapabilityVerificationMethod,
     CapabilityProbeResult,
+    ProbeEnvironment,
     ProbeDefinition,
     ProbeExecutionStatus,
     RuntimeDeviceDescriptor,
     RuntimeDeviceObservation,
+    semantic_inventory_fingerprint,
 )
 
 
@@ -24,6 +27,9 @@ class FakePacketTracerProbeRuntime:
         enumerated_models: list[RuntimeDeviceDescriptor] | None = None,
         cleanup_failures: set[str] | None = None,
         create_failures: dict[str, Exception] | None = None,
+        transport_channel: str = "offline_fake",
+        extension_version: str = "",
+        existing_inventory: list[dict[str, str]] | None = None,
     ) -> None:
         self.observations = observations or {}
         self.probe_results = probe_results or {}
@@ -31,6 +37,9 @@ class FakePacketTracerProbeRuntime:
         self.enumerated_models = enumerated_models
         self.cleanup_failures = cleanup_failures or set()
         self.create_failures = create_failures or {}
+        self.transport_channel = transport_channel
+        self.extension_version = extension_version
+        self.existing_inventory = existing_inventory or []
         self.create_device_calls = 0
         self.delete_device_calls = 0
         self.created_names: list[str] = []
@@ -39,6 +48,21 @@ class FakePacketTracerProbeRuntime:
 
     def packet_tracer_version(self) -> str | None:
         return self._version
+
+    def probe_environment(self) -> ProbeEnvironment:
+        return ProbeEnvironment(
+            backend=CapabilityBackend.PACKET_TRACER,
+            backend_version=self._version or "",
+            transport_channel=self.transport_channel,
+            extension_version=self.extension_version,
+        )
+
+    def inventory_fingerprint(self) -> str:
+        temporary = [
+            {"name": name, "model": model}
+            for name, model in self._models_by_name.items()
+        ]
+        return semantic_inventory_fingerprint([*self.existing_inventory, *temporary])
 
     def discover_models(self) -> list[RuntimeDeviceDescriptor] | None:
         return deepcopy(self.enumerated_models)
@@ -53,7 +77,13 @@ class FakePacketTracerProbeRuntime:
 
     def delete_temporary_device(self, temporary_name: str) -> bool:
         self.delete_device_calls += 1
-        return temporary_name not in self.cleanup_failures
+        if temporary_name in self.cleanup_failures or "*" in self.cleanup_failures:
+            return False
+        self._models_by_name.pop(temporary_name, None)
+        return True
+
+    def reset_temporary_device(self, temporary_name: str) -> bool:
+        return self.power_cycle(temporary_name)
 
     def power_cycle(self, temporary_name: str) -> bool:
         """Hook explícito para tests futuros de módulos, sin sleeps reales."""

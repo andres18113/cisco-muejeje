@@ -139,7 +139,7 @@ def test_l3_verifier_uses_controlled_fresh_show_window():
     assert result.fields["protocol"] is FieldVerificationStatus.VERIFIED
 
 
-def test_l3_verifier_does_not_promote_an_address_on_a_down_link():
+def test_l3_verifier_separates_configured_admin_state_from_down_link_state():
     _, plan = _plan()
     expectation = next(
         item for item in plan.verification_expectations
@@ -166,9 +166,12 @@ def test_l3_verifier_does_not_promote_an_address_on_a_down_link():
 
     result = runtime.verify([expectation])[0]
 
-    assert result.status is ActionExecutionStatus.FAILED
-    assert result.fields["status"] is FieldVerificationStatus.FAILED
-    assert result.fields["protocol"] is FieldVerificationStatus.FAILED
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.fields["ipv4"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["administrative_state"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["status"] is FieldVerificationStatus.UNKNOWN
+    assert result.fields["protocol"] is FieldVerificationStatus.UNKNOWN
+    assert "operational link is not up/up" in result.message
 
 
 def test_l3_verifier_requires_administratively_down_state_when_requested():
@@ -333,6 +336,29 @@ def test_endpoint_dhcp_verification_keeps_gateway_and_dns_unobservable():
     assert result.fields["netmask"] is FieldVerificationStatus.VERIFIED
     assert result.fields["gateway"] is FieldVerificationStatus.UNOBSERVABLE
     assert result.fields["dns"] is FieldVerificationStatus.UNOBSERVABLE
+
+
+def test_access_port_and_dhcp_pool_without_getters_are_unobservable_not_partial():
+    _, plan = _plan()
+    expectations = [
+        item for item in plan.verification_expectations
+        if item.kind.value in {"access_port", "dhcp_pool"}
+    ]
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+    )
+
+    results = runtime.verify(expectations)
+
+    assert results
+    assert all(item.status is ActionExecutionStatus.UNOBSERVABLE for item in results)
+    assert all(not item.fresh_evidence for item in results)
+    assert all(
+        set(item.fields.values()) == {FieldVerificationStatus.UNOBSERVABLE}
+        for item in results
+    )
 
 
 def test_endpoint_timeout_cannot_be_promoted_by_a_late_matching_read():

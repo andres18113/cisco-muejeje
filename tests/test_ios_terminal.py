@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor, EigrpQueryClassification,
     EtherChannelQueryClassification, OperationalQueryId, OspfQueryClassification,
@@ -464,6 +466,21 @@ def test_packet_tracer_ospf_routes_parse_both_exact_live_rows():
     ]
 
 
+def test_ospf_route_parser_preserves_an_explicit_prefix_length_when_present():
+    output = _PT_9_0_1_0858_OSPF_ROUTE_R1.replace(
+        "198.18.102.0", "198.18.102.0/24",
+    )
+
+    rows = parse_show_ip_route_ospf(output)
+
+    assert len(rows) == 1
+    assert rows[0].prefix == "198.18.102.0"
+    assert rows[0].prefix_length == 24
+    assert parse_show_ip_route_ospf(
+        _PT_9_0_1_0858_OSPF_ROUTE_R1,
+    )[0].prefix_length is None
+
+
 def test_show_ip_ospf_neighbor_is_a_registered_fresh_query():
     sent = []
     before = "Router>"
@@ -567,6 +584,43 @@ def test_packet_tracer_eigrp_live_outputs_are_supported_empty():
     assert classify_show_ip_route_eigrp(
         _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY,
     ) is EigrpQueryClassification.SUPPORTED_EMPTY
+
+
+def test_eigrp_empty_neighbor_header_is_bound_to_the_expected_process_as():
+    assert classify_show_ip_eigrp_neighbors(
+        _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY,
+        expected_as_number=90,
+    ) is EigrpQueryClassification.SUPPORTED_EMPTY
+    assert classify_show_ip_eigrp_neighbors(
+        _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY,
+        expected_as_number=100,
+    ) is EigrpQueryClassification.PROCESS_MISMATCH
+
+
+def test_eigrp_empty_classifiers_accept_real_device_prompts_not_only_router():
+    neighbors = _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY.replace(
+        "Router>", "HQ-R1#",
+    )
+    routes = _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY.replace(
+        "Router>", "HQ-R1#",
+    )
+
+    assert classify_show_ip_eigrp_neighbors(
+        neighbors, expected_as_number=90,
+    ) is EigrpQueryClassification.SUPPORTED_EMPTY
+    assert classify_show_ip_route_eigrp(
+        routes,
+    ) is EigrpQueryClassification.SUPPORTED_EMPTY
+
+
+@pytest.mark.parametrize("protocol", ("PAgP", "STATIC", "-"))
+def test_unobserved_etherchannel_protocol_rows_are_not_parser_backed(protocol):
+    output = _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY.replace("LACP", protocol)
+
+    assert parse_show_etherchannel_summary(output) == []
+    assert classify_show_etherchannel_summary(
+        output,
+    ) is EtherChannelQueryClassification.PARSER_UNAVAILABLE
 
 
 def test_show_ip_eigrp_neighbors_is_a_registered_fresh_query():

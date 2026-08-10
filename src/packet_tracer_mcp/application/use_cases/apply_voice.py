@@ -19,7 +19,9 @@ from ...domain.enterprise.models.configuration_runtime import (
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentManifest,
+    requires_deployment_manifest,
     resolve_manifest_targets,
+    validate_manifest_environment,
 )
 from ...domain.enterprise.models.execution import (
     MutationDisposition,
@@ -101,6 +103,27 @@ class VoiceApplicator:
                 "DeploymentManifest physical topology hash does not match VoicePlan.",
                 context, started, deployment_id=deployment_id,
             )
+        if (
+            deployment_manifest is None
+            and requires_deployment_manifest(plan.source_topology_hash_schema)
+        ):
+            return self._failure(
+                plan, ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED,
+                "VoicePlan uses physical-topology-v2 identity and requires a "
+                "DeploymentManifest; name-only runtime fallback is legacy-only.",
+                context, started, deployment_id=deployment_id,
+            )
+        if deployment_manifest is not None:
+            try:
+                validate_manifest_environment(
+                    deployment_manifest,
+                    context.environment_fingerprint,
+                )
+            except DeploymentIdentityError as exc:
+                return self._failure(
+                    plan, ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH,
+                    str(exc), context, started, deployment_id=deployment_id,
+                )
         if actual_source_configuration_hash != plan.source_configuration_hash:
             return self._failure(
                 plan, ConfigurationFailureCode.SOURCE_CONFIGURATION_MISMATCH,
@@ -239,9 +262,10 @@ class VoiceApplicator:
                     "extension": item.extension,
                     "direct_readback": item.direct_readback.value,
                 },
-                backend=context.backend,
-                backend_version=context.backend_version,
-                environment_fingerprint=context.capability_snapshot_hash,
+                backend=context.evidence_backend,
+                backend_version=context.evidence_backend_version,
+                environment_fingerprint=context.environment_semantic_hash,
+                capability_snapshot_hash=context.capability_snapshot_hash,
                 limitations=[item.message] if item.message else [],
             )
             for item in registrations
@@ -257,10 +281,12 @@ class VoiceApplicator:
                     "connected": item.connected,
                     "states": [state.value for state in item.states],
                     "teardown_verified": item.teardown_verified,
+                    "execution_method": item.execution_method.value,
                 },
-                backend=context.backend,
-                backend_version=context.backend_version,
-                environment_fingerprint=context.capability_snapshot_hash,
+                backend=context.evidence_backend,
+                backend_version=context.evidence_backend_version,
+                environment_fingerprint=context.environment_semantic_hash,
+                capability_snapshot_hash=context.capability_snapshot_hash,
                 limitations=[item.message] if item.message else [],
             )
             for item in calls
@@ -383,6 +409,11 @@ class VoiceApplicator:
     @staticmethod
     def _mutation_status(mutation: RuntimeActionMutation) -> ActionExecutionStatus:
         if not mutation.applied:
+            if mutation.failure_code in {
+                ConfigurationFailureCode.CAPABILITY_UNKNOWN,
+                ConfigurationFailureCode.CAPABILITY_UNSUPPORTED,
+            }:
+                return ActionExecutionStatus.SKIPPED
             return ActionExecutionStatus.FAILED
         if mutation.disposition is MutationDisposition.NO_OP:
             return ActionExecutionStatus.NO_OP
@@ -417,7 +448,7 @@ class VoiceApplicator:
             if support is VoiceCapabilityStatus.UNOBSERVABLE:
                 results.append(PhoneRegistrationResult(
                     expectation_id=expectation.id, phone_id=expectation.phone_id,
-                    extension=expectation.extension, status=ActionExecutionStatus.PARTIAL,
+                    extension=expectation.extension, status=ActionExecutionStatus.UNOBSERVABLE,
                     direct_readback=FieldVerificationStatus.UNOBSERVABLE,
                     failure_code=ConfigurationFailureCode.PHONE_REGISTRATION_UNOBSERVABLE,
                     evidence_method="runtime_capability_matrix",
@@ -558,7 +589,10 @@ class VoiceApplicator:
                 observed.connected and connected_state if expected_connected
                 else not observed.connected and not connected_state
             )
-            if not fresh or not behavior_matches:
+            if observed.status is ActionExecutionStatus.UNOBSERVABLE:
+                status = ActionExecutionStatus.UNOBSERVABLE
+                failure = ConfigurationFailureCode.OBSERVABILITY_LIMITATION
+            elif not fresh or not behavior_matches:
                 status = ActionExecutionStatus.FAILED
                 failure = ConfigurationFailureCode.CALL_SETUP_FAILED
             elif not observed.teardown_verified:

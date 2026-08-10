@@ -6,6 +6,7 @@ import hashlib
 import ipaddress
 import json
 from collections import defaultdict
+from collections.abc import Iterable
 
 from ...models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ..models.configuration import (
@@ -50,10 +51,22 @@ from ..models.control_plane import (
     control_plane_action_type_counts,
 )
 from ..models.security_plan import SecurityCapabilityStatus, SecurityPlan
+from ..models.failure_domain import (
+    FailureDomain,
+    FailureDomainCatalog,
+    FailurePath,
+    FailureScenario,
+    FailureScenarioScope,
+    IndependenceStatus,
+)
 from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from .configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
+)
+from .failure_domain_analyzer import (
+    FailureDomainAnalyzer,
+    build_failure_domain_catalog,
 )
 
 
@@ -178,6 +191,7 @@ class ControlPlaneCompiler:
         *,
         security_plan: SecurityPlan | None = None,
         capabilities: dict[str, ControlPlaneCapabilityProfile] | None = None,
+        failure_domains: Iterable[FailureDomain] = (),
     ) -> ControlPlaneCompileResult:
         issues: list[ConfigurationIssue] = []
         capabilities = capabilities or {}
@@ -189,6 +203,10 @@ class ControlPlaneCompiler:
         devices = {_device_id(item): item for item in topology.devices}
         names_to_ids = {item.name: _device_id(item) for item in topology.devices}
         links = {item.id: item for item in topology.links if item.id}
+        failure_domain_catalog = build_failure_domain_catalog(
+            topology,
+            explicit_domains=failure_domains,
+        )
         foundations: dict[str, ControlPlaneFoundationRequirement] = {}
         actions: list[ControlPlaneAction] = []
         expectations: list[ControlPlaneVerificationExpectation] = []
@@ -234,7 +252,7 @@ class ControlPlaneCompiler:
 
         scenarios, scenario_expectations = self._compile_failure_scenarios(
             intent, configuration, devices, names_to_ids, links, actions,
-            foundations, issues,
+            foundations, failure_domain_catalog, issues,
         )
         expectations.extend(scenario_expectations)
 
@@ -288,6 +306,7 @@ class ControlPlaneCompiler:
                     key=lambda item: (item.kind.value, item.device_id, item.id),
                 ),
                 failure_scenarios=sorted(scenarios, key=lambda item: item.id),
+                failure_domain_catalog=failure_domain_catalog,
             )
             plan.semantic_hash = self._semantic_hash(plan)
         return self._result(
@@ -1507,6 +1526,7 @@ class ControlPlaneCompiler:
         links: dict[str, LinkPlan],
         actions: list[ControlPlaneAction],
         foundations: dict[str, ControlPlaneFoundationRequirement],
+        failure_domain_catalog: FailureDomainCatalog,
         issues: list[ConfigurationIssue],
     ) -> tuple[list[LinkFailureScenario], list[ControlPlaneVerificationExpectation]]:
         scenarios: list[LinkFailureScenario] = []
@@ -1587,6 +1607,50 @@ class ControlPlaneCompiler:
                     policy.id,
                 ))
                 continue
+            surviving_devices = sorted({
+                device_id
+                for survivor_id in policy.expected_surviving_link_ids
+                for device_id in _link_device_ids(links[survivor_id], names_to_ids)
+                if device_id
+            })
+            domain_result = FailureDomainAnalyzer().analyze(
+                FailureScenario(
+                    id=policy.id,
+                    scope=FailureScenarioScope.LINK_FAULT,
+                    primary_path=FailurePath(
+                        id=f"{policy.id}/primary",
+                        device_ids=sorted({a_id, b_id}),
+                        link_ids=[link.id],
+                        endpoint_device_ids=sorted({a_id, b_id}),
+                    ),
+                    surviving_path=FailurePath(
+                        id=f"{policy.id}/surviving",
+                        device_ids=surviving_devices,
+                        link_ids=sorted(set(policy.expected_surviving_link_ids)),
+                        endpoint_device_ids=sorted({a_id, b_id}),
+                    ),
+                    additional_relevant_domain_types=sorted(
+                        set(policy.required_independence_domains),
+                        key=lambda item: item.value,
+                    ),
+                ),
+                failure_domain_catalog,
+            )
+            if domain_result.status is IndependenceStatus.NOT_INDEPENDENT:
+                issues.append(_error(
+                    ConfigurationIssueCode.CONTROL_PLANE_FAILURE_DOMAIN_NOT_INDEPENDENT,
+                    "Expected surviving path shares blocking failure domains: "
+                    + ", ".join(domain_result.blocking_domain_ids),
+                    policy.id,
+                ))
+                continue
+            if domain_result.status is IndependenceStatus.UNKNOWN:
+                issues.append(_warning(
+                    ConfigurationIssueCode.CONTROL_PLANE_FAILURE_DOMAIN_UNKNOWN,
+                    "Failure-domain independence remains UNKNOWN because required "
+                    "coverage is incomplete.",
+                    policy.id,
+                ))
             affected = sorted(
                 (
                     item for item in actions
@@ -1663,6 +1727,8 @@ class ControlPlaneCompiler:
                         "surviving_link_ids": sorted(
                             set(policy.expected_surviving_link_ids)
                         ),
+                        "failure_domain_status": domain_result.status.value,
+                        "failure_domain_catalog_hash": failure_domain_catalog.semantic_hash,
                     },
                     depends_on=dependencies,
                 ),
@@ -1702,6 +1768,7 @@ class ControlPlaneCompiler:
                 expected_surviving_link_ids=sorted(
                     set(policy.expected_surviving_link_ids)
                 ),
+                failure_domain_result=domain_result,
                 restore_required=True,
                 verification_expectation_ids=[failure_id, restore_id],
             ))

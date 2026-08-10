@@ -33,7 +33,9 @@ from ...domain.enterprise.models.configuration_runtime import (
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentManifest,
+    requires_deployment_manifest,
     resolve_manifest_targets,
+    validate_manifest_environment,
 )
 from ...domain.enterprise.models.execution import (
     MutationDisposition,
@@ -101,6 +103,33 @@ class ConfigurationApplicator:
                 deployment_id=deployment_manifest.deployment_id,
                 started=started,
             )
+        if (
+            deployment_manifest is None
+            and requires_deployment_manifest(plan.source_topology_hash_schema)
+        ):
+            return self._preflight_failure(
+                plan,
+                ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED,
+                "ConfigurationPlan uses physical-topology-v2 identity and requires a "
+                "DeploymentManifest; name-only runtime fallback is legacy-only.",
+                runtime_context=runtime_context,
+                started=started,
+            )
+        if deployment_manifest is not None:
+            try:
+                validate_manifest_environment(
+                    deployment_manifest,
+                    runtime_context.environment_fingerprint,
+                )
+            except DeploymentIdentityError as exc:
+                return self._preflight_failure(
+                    plan,
+                    ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH,
+                    str(exc),
+                    runtime_context=runtime_context,
+                    deployment_id=deployment_manifest.deployment_id,
+                    started=started,
+                )
 
         try:
             ordered = order_configuration_actions(plan.actions)
@@ -303,9 +332,10 @@ class ConfigurationApplicator:
                 observed_value={
                     name: value.value for name, value in sorted(item.fields.items())
                 },
-                backend=runtime_context.backend,
-                backend_version=runtime_context.backend_version,
-                environment_fingerprint=runtime_context.capability_snapshot_hash,
+                backend=runtime_context.evidence_backend,
+                backend_version=runtime_context.evidence_backend_version,
+                environment_fingerprint=runtime_context.environment_semantic_hash,
+                capability_snapshot_hash=runtime_context.capability_snapshot_hash,
                 limitations=[item.message] if item.message else [],
             )
             for item in verification_results

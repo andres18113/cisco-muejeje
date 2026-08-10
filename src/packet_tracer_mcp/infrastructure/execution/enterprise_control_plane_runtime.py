@@ -15,16 +15,22 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
 )
 from ...domain.enterprise.models.control_plane import (
+    ConfigureEigrpIpv4,
     ConfigureEtherChannel,
+    ConfigureHsrp,
     ConfigureOspfv2,
     ConfigureSpanningTree,
     ControlPlaneAction,
     ControlPlaneVerificationExpectation,
     ControlPlaneVerificationKind,
+    EtherChannelProtocol,
     LinkFailureScenario,
+    StpMode,
 )
 from ...domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
+    FailureScenarioTransition,
+    FailureTransitionPhase,
     RuntimeControlPlaneVerification,
     RuntimeFailureScenarioResult,
 )
@@ -42,6 +48,7 @@ from .ios_terminal import (
     parse_show_ip_route_ospf,
     parse_show_spanning_tree,
 )
+from .runtime_inventory import normalize_runtime_inventory
 from .stable_convergence import StableConvergenceWaiter
 from .typed_ping import TypedPingExecutor, TypedPingResult
 
@@ -108,6 +115,27 @@ class FailureScenarioExecutor:
             raise ValueError("Failure expectations are not bound to the typed scenario.")
         failure_reachable = self._expected_reachable(failure_expectation)
         recovery_reachable = self._expected_reachable(recovery_expectation)
+        started = self._clock()
+        transitions: list[FailureScenarioTransition] = []
+
+        def transition(
+            phase: FailureTransitionPhase,
+            status: ActionExecutionStatus,
+            *,
+            evidence_method: str = "",
+            message: str = "",
+        ) -> None:
+            elapsed_ms = max(0, int((self._clock() - started) * 1000))
+            if transitions:
+                elapsed_ms = max(elapsed_ms, transitions[-1].elapsed_ms)
+            transitions.append(FailureScenarioTransition(
+                sequence=len(transitions),
+                phase=phase,
+                elapsed_ms=elapsed_ms,
+                status=status,
+                evidence_method=evidence_method,
+                message=message,
+            ))
 
         try:
             rendered = self._renderer.render_scenario(scenario)
@@ -126,10 +154,17 @@ class FailureScenarioExecutor:
             stage=ControlPlaneExecutionStage.BEHAVIOR,
             expected_reachable=True,
         )
+        transition(
+            FailureTransitionPhase.BASELINE_OBSERVED,
+            before.status,
+            evidence_method=before.evidence_method,
+            message=before.message,
+        )
         if before.status is not ActionExecutionStatus.VERIFIED:
             return RuntimeFailureScenarioResult(
                 scenario_id=scenario.id,
                 before=before,
+                transitions=transitions,
                 message="Stable reachable baseline was not established; fault not injected.",
             )
 
@@ -146,6 +181,15 @@ class FailureScenarioExecutor:
                 rendered.ios_payload,
                 "Typed link shutdown accepted by Packet Tracer.",
             )
+            transition(
+                FailureTransitionPhase.FAULT_INJECTED,
+                (
+                    ActionExecutionStatus.APPLIED
+                    if injection.applied else ActionExecutionStatus.FAILED
+                ),
+                evidence_method="typed_interface_shutdown_dispatch",
+                message=injection.message,
+            )
             if injection.applied:
                 during = self._stable_probe(
                     scenario,
@@ -159,6 +203,12 @@ class FailureScenarioExecutor:
                     ControlPlaneExecutionStage.FAILOVER,
                     "Fault dispatch was not confirmed, so failover was not measured.",
                 )
+            transition(
+                FailureTransitionPhase.FAILOVER_OBSERVED,
+                during.status,
+                evidence_method=during.evidence_method,
+                message=during.message,
+            )
         finally:
             restore_attempted = True
             restore = self._configure(
@@ -167,12 +217,27 @@ class FailureScenarioExecutor:
                 rendered.cleanup_payload,
                 "Typed link restoration accepted by Packet Tracer.",
             )
+            transition(
+                FailureTransitionPhase.RESTORE_DISPATCHED,
+                (
+                    ActionExecutionStatus.APPLIED
+                    if restore.applied else ActionExecutionStatus.FAILED
+                ),
+                evidence_method="typed_interface_restore_dispatch",
+                message=restore.message,
+            )
             if restore.applied:
                 after = self._stable_probe(
                     scenario,
                     expectation_id=recovery_expectation.id,
                     stage=ControlPlaneExecutionStage.RESTORE,
                     expected_reachable=recovery_reachable,
+                )
+                transition(
+                    FailureTransitionPhase.RECOVERY_OBSERVED,
+                    after.status,
+                    evidence_method=after.evidence_method,
+                    message=after.message,
                 )
 
         messages = [
@@ -191,6 +256,7 @@ class FailureScenarioExecutor:
             restore_attempted=restore_attempted,
             restore=restore,
             after=after,
+            transitions=transitions,
             message="; ".join(messages),
         )
 
@@ -389,7 +455,6 @@ class PacketTracerEnterpriseControlPlaneRuntime:
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         raw = self._query_inventory()
         items = raw.get("devices", []) if isinstance(raw, dict) else raw
-        targets: list[RuntimeConfigurationTarget] = []
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -397,17 +462,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             device_id = str(item.get("id") or item.get("device_id") or "")
             if device_id and name:
                 self._device_names_by_id[device_id] = name
-            interfaces = sorted({
-                str(port.get("name") if isinstance(port, dict) else port)
-                for port in (item.get("ports", item.get("interfaces", [])) or [])
-                if port and (not isinstance(port, dict) or port.get("name"))
-            }, key=str.casefold)
-            targets.append(RuntimeConfigurationTarget(
-                device_name=name,
-                model=str(item.get("model") or ""),
-                interfaces=interfaces,
-            ))
-        return sorted(targets, key=lambda item: item.device_name.casefold())
+        return normalize_runtime_inventory(raw)
 
     def apply_actions(
         self, actions: Sequence[ControlPlaneAction],
@@ -485,11 +540,13 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             ControlPlaneVerificationKind.ETHERCHANNEL_STATE:
                 self._observe_etherchannel,
             ControlPlaneVerificationKind.ROUTING_PROCESS:
-                self._observe_ospf_process,
+                self._observe_routing_process,
             ControlPlaneVerificationKind.ROUTING_NEIGHBOR:
-                self._observe_ospf_neighbor,
+                self._observe_routing_neighbor,
             ControlPlaneVerificationKind.ROUTE_PRESENT:
-                self._observe_ospf_route,
+                self._observe_route,
+            ControlPlaneVerificationKind.HSRP_STATE:
+                self._observe_hsrp_role,
         }.get(expectation.kind)
         if direct is not None:
             return direct(expectation, action, query_cache)
@@ -566,6 +623,13 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 expectation, ControlPlaneExecutionStage.OBSERVED,
                 "The STP expectation is not bound to a typed STP action.",
             )
+        if action.mode is StpMode.MST:
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                "MST has no PT 9.0.1.0858 fresh-output fixture and typed parser.",
+                evidence_method="mst_readback_unavailable",
+            )
         show = self._fresh_show(
             action.device_name, OperationalQueryId.SHOW_SPANNING_TREE,
             expectation, query_cache,
@@ -611,6 +675,14 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             return self._unobservable(
                 expectation, ControlPlaneExecutionStage.OBSERVED,
                 "The EtherChannel expectation is not bound to a typed channel action.",
+            )
+        if action.protocol is not EtherChannelProtocol.LACP:
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                f"{action.protocol.value} bundle read-back has no PT 9.0.1.0858 "
+                "fixture-backed parser.",
+                evidence_method="etherchannel_protocol_readback_unavailable",
             )
         show = self._fresh_show(
             action.device_name, OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY,
@@ -667,6 +739,52 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         return self._direct_observation(
             expectation, fields, "fresh_show_etherchannel_summary",
             "Fresh parser-backed EtherChannel group was compared exactly.",
+        )
+
+    def _observe_routing_process(self, expectation, action, query_cache):
+        if isinstance(action, ConfigureEigrpIpv4):
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                f"EIGRP AS {action.as_number} query support is known, but no "
+                "non-empty PT neighbor row is fixture-backed.",
+                evidence_method="eigrp_readback_unavailable",
+            )
+        return self._observe_ospf_process(expectation, action, query_cache)
+
+    def _observe_routing_neighbor(self, expectation, action, query_cache):
+        if isinstance(action, ConfigureEigrpIpv4):
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                "EIGRP adjacency cannot be promoted from an empty neighbor table.",
+                evidence_method="eigrp_readback_unavailable",
+            )
+        return self._observe_ospf_neighbor(expectation, action, query_cache)
+
+    def _observe_route(self, expectation, action, query_cache):
+        if isinstance(action, ConfigureEigrpIpv4):
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                "EIGRP route state cannot be promoted from an empty route table.",
+                evidence_method="eigrp_readback_unavailable",
+            )
+        return self._observe_ospf_route(expectation, action, query_cache)
+
+    def _observe_hsrp_role(self, expectation, action, query_cache):
+        del query_cache
+        if not isinstance(action, ConfigureHsrp):
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                "The HSRP expectation is not bound to a typed HSRP action.",
+            )
+        return self._unobservable(
+            expectation,
+            ControlPlaneExecutionStage.OBSERVED,
+            "Packet Tracer exposes no fixture-backed stationary HSRP role read-back.",
+            evidence_method="hsrp_role_readback_unavailable",
         )
 
     def _observe_ospf_process(self, expectation, action, query_cache):
@@ -758,17 +876,37 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 "Fresh OSPF route output had no parser-backed route row.",
             )
         network = expectation.expected.get("network")
-        exact = isinstance(network, str) and any(
-            item.prefix == network and item.code == "O" for item in rows
+        route = next(
+            (
+                item for item in rows
+                if isinstance(network, str)
+                and item.prefix == network
+                and item.code == "O"
+            ),
+            None,
         )
         fields = self._unobservable_fields(expectation)
-        fields["protocol"] = FieldVerificationStatus.VERIFIED
+        fields["protocol"] = self._field(route is not None)
         if isinstance(network, str):
-            fields["network"] = self._field(exact)
+            fields["network"] = self._field(route is not None)
+        prefix_length = expectation.expected.get("prefix_length")
+        if isinstance(prefix_length, int) and route is not None:
+            if route.prefix_length is not None:
+                fields["prefix_length"] = self._field(
+                    route.prefix_length == prefix_length
+                )
+        next_hop = expectation.expected.get("next_hop")
+        if isinstance(next_hop, str) and route is not None:
+            fields["next_hop"] = self._field(route.next_hop == next_hop)
+        outgoing = expectation.expected.get("outgoing_interface")
+        if isinstance(outgoing, str) and route is not None:
+            fields["outgoing_interface"] = self._field(
+                self._interface_key(route.interface) == self._interface_key(outgoing)
+            )
         return self._direct_observation(
             expectation, fields, "fresh_show_ip_route_ospf",
-            "Fresh OSPF route rows were matched by network; metadata absent from "
-            "the parser remains unobservable.",
+            "Fresh OSPF route rows were matched by exact prefix, protocol, and "
+            "any explicitly observable route attributes.",
         )
 
     def _fresh_show(
@@ -863,12 +1001,14 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         expectation: ControlPlaneVerificationExpectation,
         stage: ControlPlaneExecutionStage,
         message: str,
+        *,
+        evidence_method: str = "runtime_observability_limit",
     ) -> RuntimeControlPlaneVerification:
         return RuntimeControlPlaneVerification(
             expectation_id=expectation.id,
             stage=stage,
             status=ActionExecutionStatus.UNOBSERVABLE,
-            evidence_method="runtime_observability_limit",
+            evidence_method=evidence_method,
             fresh_evidence=False,
             fields={
                 field: FieldVerificationStatus.UNOBSERVABLE

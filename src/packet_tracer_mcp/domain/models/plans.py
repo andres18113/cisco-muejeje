@@ -177,4 +177,6 @@ class TopologyPlan(BaseModel):
     @property
     def physical_identity_hash(self) -> str:
         """Return the v2 physical hash or the explicit v1 compatibility value."""
-        return self.physical_topology_hash or self.semantic_hash
+        if self.hash_schema_version == "1":
+            return self.semantic_hash
+        return self.physical_topology_hash

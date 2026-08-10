@@ -30,6 +30,25 @@ class ControlPlaneExecutionStage(str, Enum):
     RESTORE = "restore"
 
 
+class FailureTransitionPhase(str, Enum):
+    """Observable milestones in one bounded fault/restore execution."""
+
+    BASELINE_OBSERVED = "baseline_observed"
+    FAULT_INJECTED = "fault_injected"
+    FAILOVER_OBSERVED = "failover_observed"
+    RESTORE_DISPATCHED = "restore_dispatched"
+    RECOVERY_OBSERVED = "recovery_observed"
+
+
+class FailureScenarioTransition(BaseModel):
+    sequence: int
+    phase: FailureTransitionPhase
+    elapsed_ms: int
+    status: ActionExecutionStatus
+    evidence_method: str = ""
+    message: str = ""
+
+
 class RuntimeControlPlaneVerification(BaseModel):
     expectation_id: str
     stage: ControlPlaneExecutionStage
@@ -62,6 +81,7 @@ class RuntimeFailureScenarioResult(BaseModel):
     restore_attempted: bool = False
     restore: RuntimeActionMutation | None = None
     after: RuntimeControlPlaneVerification | None = None
+    transitions: list[FailureScenarioTransition] = Field(default_factory=list)
     message: str = ""
 
 
@@ -78,6 +98,7 @@ class FailureScenarioResult(BaseModel):
     before: RuntimeControlPlaneVerification | None = None
     during: RuntimeControlPlaneVerification | None = None
     after: RuntimeControlPlaneVerification | None = None
+    transitions: list[FailureScenarioTransition] = Field(default_factory=list)
     message: str = ""
 
 

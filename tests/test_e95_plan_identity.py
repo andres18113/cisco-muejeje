@@ -5,7 +5,12 @@ from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     compute_topology_hashes,
     stamp_topology_hashes,
 )
-from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.domain.models.plans import (
+    DevicePlan,
+    LinkPlan,
+    ModulePlan,
+    TopologyPlan,
+)
 
 
 def _topology() -> TopologyPlan:
@@ -69,6 +74,52 @@ def test_display_rename_does_not_redefine_physical_topology():
     )
 
 
+def test_display_rename_does_not_reorder_modules_in_physical_identity():
+    original = _topology()
+    original.modules = [
+        ModulePlan(device="HQ-R1", slot="0/0", module="HWIC-2T"),
+        ModulePlan(device="HQ-SW1", slot="1", module="PT-SWITCH-NM-1FGE"),
+    ]
+    renamed = deepcopy(original)
+    renamed.devices[0].name = "ZZZ-ROUTER"
+    renamed.devices[1].name = "AAA-SWITCH"
+    renamed.links[0].device_a = "ZZZ-ROUTER"
+    renamed.links[0].device_b = "AAA-SWITCH"
+    renamed.modules[0].device = "ZZZ-ROUTER"
+    renamed.modules[1].device = "AAA-SWITCH"
+
+    assert (
+        compute_topology_hashes(original).physical_topology_hash
+        == compute_topology_hashes(renamed).physical_topology_hash
+    )
+
+
+def test_reversing_undirected_link_endpoints_keeps_physical_identity():
+    original = _topology()
+    reversed_link = deepcopy(original)
+    link = reversed_link.links[0]
+    (
+        link.device_a,
+        link.port_a,
+        link.device_a_id,
+        link.device_b,
+        link.port_b,
+        link.device_b_id,
+    ) = (
+        link.device_b,
+        link.port_b,
+        link.device_b_id,
+        link.device_a,
+        link.port_a,
+        link.device_a_id,
+    )
+
+    assert (
+        compute_topology_hashes(original).physical_topology_hash
+        == compute_topology_hashes(reversed_link).physical_topology_hash
+    )
+
+
 def test_hash_stamp_preserves_legacy_semantic_hash_as_artifact_identity():
     topology = _topology()
     hashes = stamp_topology_hashes(topology)
@@ -86,6 +137,15 @@ def test_legacy_topology_uses_explicit_compatibility_fallback():
 
     assert legacy.hash_schema_version == "1"
     assert legacy.physical_identity_hash == "legacy-e4-hash"
+
+
+def test_v2_topology_never_falls_back_to_artifact_semantic_hash():
+    incomplete = TopologyPlan(
+        hash_schema_version="2",
+        semantic_hash="artifact-must-not-be-physical",
+    )
+
+    assert incomplete.physical_identity_hash == ""
 
 
 def test_network_mutations_change_physical_identity_but_warnings_do_not():

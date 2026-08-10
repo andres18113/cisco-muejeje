@@ -12,6 +12,7 @@ from ...domain.enterprise.models.service_plan import (
     ServiceCapabilityProfile,
     ServiceType,
 )
+from ...domain.enterprise.models.evidence import CapabilityReadiness, ReadinessStatus
 
 
 def packet_tracer_service_capabilities(
@@ -38,6 +39,48 @@ def packet_tracer_service_capabilities(
     }
     profiles[ServiceType.DNS].behavioral_verification_support = CapabilityStatus.SUPPORTED
     profiles[ServiceType.HTTP].behavioral_verification_support = CapabilityStatus.SUPPORTED
+    profiles[ServiceType.DNS].capability_readiness["behavioral_verification"] = (
+        CapabilityReadiness(
+            capability="dns_behavioral_verification",
+            compile=ReadinessStatus.READY,
+            apply=ReadinessStatus.READY,
+            verify=ReadinessStatus.READY,
+        )
+    )
+    profiles[ServiceType.HTTP].capability_readiness["behavioral_verification"] = (
+        CapabilityReadiness(
+            capability="http_behavioral_verification",
+            compile=ReadinessStatus.READY,
+            apply=ReadinessStatus.READY,
+            verify=ReadinessStatus.READY,
+        )
+    )
+    profiles[ServiceType.HTTPS].capability_readiness["behavioral_verification"] = (
+        CapabilityReadiness(
+            capability="https_behavioral_verification",
+            compile=ReadinessStatus.READY,
+            apply=ReadinessStatus.PARTIAL,
+            verify=ReadinessStatus.UNKNOWN,
+            reasons={
+                "verify": [
+                    "A typed HTTPS URL is compiled, but PT 9.0.1 client behavior has not been live verified."
+                ],
+            },
+        )
+    )
+    for service_type, reason in (
+        (ServiceType.NTP, "Packet Tracer exposes activation but no independent registered synchronization observation."),
+        (ServiceType.TFTP, "Packet Tracer exposes service activation but no safe registered publication/retrieval observation."),
+    ):
+        profiles[service_type].capability_readiness["behavioral_verification"] = (
+            CapabilityReadiness(
+                capability=f"{service_type.value}_behavioral_verification",
+                compile=ReadinessStatus.READY,
+                apply=ReadinessStatus.PARTIAL,
+                verify=ReadinessStatus.UNOBSERVABLE,
+                reasons={"verify": [reason]},
+            )
+        )
     return {
         f"Server-PT:{service_type.value}": profiles[service_type]
         for service_type in ServiceType

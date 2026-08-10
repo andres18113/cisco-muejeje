@@ -33,6 +33,8 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
+    FailureScenarioTransition,
+    FailureTransitionPhase,
     RuntimeControlPlaneVerification,
     RuntimeFailureScenarioResult,
 )
@@ -243,6 +245,21 @@ def _successful_runtime_scenario(scenario, failure, recovery):
             status=ActionExecutionStatus.VERIFIED,
             fresh_evidence=True,
         ),
+        transitions=[
+            FailureScenarioTransition(
+                sequence=index,
+                phase=phase,
+                elapsed_ms=index * 10,
+                status=ActionExecutionStatus.VERIFIED,
+            )
+            for index, phase in enumerate((
+                FailureTransitionPhase.BASELINE_OBSERVED,
+                FailureTransitionPhase.FAULT_INJECTED,
+                FailureTransitionPhase.FAILOVER_OBSERVED,
+                FailureTransitionPhase.RESTORE_DISPATCHED,
+                FailureTransitionPhase.RECOVERY_OBSERVED,
+            ))
+        ],
     )
 
 
@@ -278,6 +295,31 @@ def test_applies_dag_and_keeps_observed_behavior_and_failover_separate():
     assert runtime.scenarios == ["scenario/link-1"]
     assert result.scenario_results[0].restore_attempted
     assert result.scenario_results[0].restore_status is ActionExecutionStatus.APPLIED
+    assert [
+        item.elapsed_ms for item in result.scenario_results[0].transitions
+    ] == [0, 10, 20, 30, 40]
+
+
+def test_non_monotonic_failure_transitions_are_rejected_as_runtime_evidence():
+    runtime = FakeControlPlaneRuntime()
+    plan = _plan()
+    scenario = plan.failure_scenarios[0]
+    expectations = {item.id: item for item in plan.verification_expectations}
+    failure = expectations[scenario.verification_expectation_ids[0]]
+    recovery = expectations[scenario.verification_expectation_ids[1]]
+    result = _successful_runtime_scenario(scenario, failure, recovery)
+    result.transitions[1].elapsed_ms = 100
+    result.transitions[2].elapsed_ms = 50
+    runtime.scenario_result = result
+
+    applied = _apply(runtime, plan=plan)
+
+    assert applied.scenario_results[0].status is ActionExecutionStatus.FAILED
+    assert (
+        applied.scenario_results[0].failure_code
+        is ConfigurationFailureCode.SESSION_FAILED
+    )
+    assert "transitions" in applied.scenario_results[0].message
 
 
 @pytest.mark.parametrize(

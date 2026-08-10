@@ -11,6 +11,7 @@ from src.packet_tracer_mcp.application.use_cases.apply_security import SecurityA
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
+    ConfigurationRuntimeContext,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
@@ -27,6 +28,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import
 from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentBinding,
     DeploymentManifest,
+    EnvironmentFingerprint,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.execution import (
     CompensationStatus,
@@ -192,6 +194,12 @@ def _control_plane_manifest(plan):
     return manifest, targets, names
 
 
+def _runtime_context(manifest):
+    return ConfigurationRuntimeContext(
+        environment_fingerprint=manifest.environment_fingerprint,
+    )
+
+
 def test_security_manifest_retargets_actions_behavior_and_cleanup_by_semantic_id():
     plan = _compile_security().plan
     manifest, targets, names = _security_manifest(plan)
@@ -206,6 +214,7 @@ def test_security_manifest_retargets_actions_behavior_and_cleanup_by_semantic_id
         capabilities=_security_capabilities(),
         cleanup_control=True,
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.deployment_id == manifest.deployment_id
@@ -231,6 +240,7 @@ def test_security_manifest_hash_mismatch_blocks_before_inventory_or_mutation():
         foundational_statuses=_security_foundations(plan),
         capabilities=_security_capabilities(),
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.failure_code is ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
@@ -260,6 +270,7 @@ def test_security_manifest_never_falls_back_to_a_planned_display_name():
         foundational_statuses=_security_foundations(plan),
         capabilities=_security_capabilities(),
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.failure_code is ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
@@ -276,6 +287,7 @@ def test_control_plane_manifest_retargets_actions_observation_and_scenario():
         runtime,
         plan,
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.deployment_id == manifest.deployment_id
@@ -295,12 +307,63 @@ def test_control_plane_manifest_hash_mismatch_blocks_before_inventory_or_mutatio
     runtime = _RenamedControlPlaneRuntime(targets)
     manifest = manifest.model_copy(update={"physical_topology_hash": "wrong"})
 
-    result = _apply_control_plane(runtime, plan, deployment_manifest=manifest)
+    result = _apply_control_plane(
+        runtime, plan, deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
+    )
 
     assert result.failure_code is ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
     assert runtime.inventory_calls == 0
     assert runtime.applied_batches == []
     assert result.dirty_state is DirtyState.CLEAN
+
+
+def test_modern_e8_plan_requires_manifest_before_runtime_inventory():
+    plan = _compile_security().plan.model_copy(update={
+        "source_topology_hash_schema": "physical-topology-v2",
+    })
+    assert plan.source_topology_hash_schema == "physical-topology-v2"
+    runtime = FakeSecurityRuntime()
+
+    result = SecurityApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        actual_source_service_hash=plan.source_service_hash,
+        foundational_statuses=_security_foundations(plan),
+        capabilities=_security_capabilities(),
+    )
+
+    assert result.failure_code is ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED
+    assert runtime.calls == []
+
+
+def test_e9_manifest_environment_mismatch_precedes_runtime_inventory():
+    plan = _control_plane_plan()
+    manifest, targets, _names = _control_plane_manifest(plan)
+    manifest_environment = EnvironmentFingerprint(
+        backend_version="9.0.1.0858",
+        runtime_mode="live",
+    )
+    manifest = manifest.model_copy(update={
+        "environment_fingerprint": manifest_environment,
+    })
+    runtime = _RenamedControlPlaneRuntime(targets)
+
+    result = _apply_control_plane(
+        runtime,
+        plan,
+        deployment_manifest=manifest,
+        runtime_context=ConfigurationRuntimeContext(
+            environment_fingerprint=manifest_environment.model_copy(
+                update={"runtime_mode": "offline"},
+            ),
+        ),
+    )
+
+    assert result.failure_code is ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH
+    assert runtime.inventory_calls == 0
+    assert runtime.applied_batches == []
 
 
 def test_control_plane_manifest_never_falls_back_to_a_planned_display_name():
@@ -317,7 +380,10 @@ def test_control_plane_manifest_never_falls_back_to_a_planned_display_name():
     ))
     runtime = _RenamedControlPlaneRuntime(targets)
 
-    result = _apply_control_plane(runtime, plan, deployment_manifest=manifest)
+    result = _apply_control_plane(
+        runtime, plan, deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
+    )
 
     assert result.failure_code is ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
     assert runtime.inventory_calls == 1

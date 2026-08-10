@@ -36,8 +36,12 @@ class SecurityCapabilityDimension(str, Enum):
     NAT_PAT_CONFIG = "nat_pat_config"
     NAT_STATIC_CONFIG = "nat_static_config"
     NAT_DYNAMIC_CONFIG = "nat_dynamic_config"
+    NAT_INTERFACE_ROLE_READBACK = "nat_interface_role_readback"
     NAT_TRANSLATION_READBACK = "nat_translation_readback"
     NAT_BEHAVIORAL = "nat_behavioral"
+    NAT_PAT_BEHAVIORAL = "nat_pat_behavioral"
+    NAT_STATIC_BEHAVIORAL = "nat_static_behavioral"
+    NAT_DYNAMIC_BEHAVIORAL = "nat_dynamic_behavioral"
     PORT_SECURITY_CONFIG = "port_security_config"
     PORT_SECURITY_READBACK = "port_security_readback"
     PORT_SECURITY_BEHAVIORAL = "port_security_behavioral"
@@ -308,6 +312,7 @@ class SecurityVerificationKind(str, Enum):
     NAT_DIRECT_STATE = "nat_direct_state"
     NAT_TRANSLATION = "nat_translation"
     PORT_SECURITY_STATE = "port_security_state"
+    PORT_SECURITY_VIOLATION = "port_security_violation"
     DHCP_SNOOPING_STATE = "dhcp_snooping_state"
     DAI_STATE = "dai_state"
     HARDENING_STATE = "hardening_state"
@@ -334,11 +339,13 @@ class SecurityVerificationExpectation(BaseModel):
     expected_decision: SecurityDecision = SecurityDecision.ALLOW
     source_device_id: str = ""
     source_device_name: str = ""
+    source_address: str = ""
     destination_device_id: str = ""
     destination_device_name: str = ""
     destination_address: str = ""
     protocol: str = "ip"
     destination_ports: list[int] = Field(default_factory=list)
+    voice_call_expectation_id: str = ""
     baseline_required: bool = False
     cleanup_recovery_required: bool = False
     required_query: str = ""
@@ -348,17 +355,26 @@ class SecurityVerificationExpectation(BaseModel):
 
 def security_verification_capability(
     expectation: SecurityVerificationExpectation,
+    action: SecurityAction | None = None,
 ) -> SecurityCapabilityDimension:
     """Map an acceptance expectation to its independent capability gate."""
     if expectation.kind is SecurityVerificationKind.NAT_TRANSLATION:
+        if isinstance(action, ConfigureSecurityNat):
+            return {
+                NatMode.PAT: SecurityCapabilityDimension.NAT_PAT_BEHAVIORAL,
+                NatMode.STATIC: SecurityCapabilityDimension.NAT_STATIC_BEHAVIORAL,
+                NatMode.DYNAMIC: SecurityCapabilityDimension.NAT_DYNAMIC_BEHAVIORAL,
+            }[action.mode]
         return SecurityCapabilityDimension.NAT_BEHAVIORAL
     if expectation.kind is SecurityVerificationKind.TRAFFIC_POLICY:
         return SecurityCapabilityDimension.ACL_BEHAVIORAL
+    if expectation.kind is SecurityVerificationKind.PORT_SECURITY_VIOLATION:
+        return SecurityCapabilityDimension.PORT_SECURITY_BEHAVIORAL
     return {
         SecurityVerificationKind.ACL_DIRECT_STATE:
             SecurityCapabilityDimension.ACL_READBACK,
         SecurityVerificationKind.NAT_DIRECT_STATE:
-            SecurityCapabilityDimension.NAT_TRANSLATION_READBACK,
+            SecurityCapabilityDimension.NAT_INTERFACE_ROLE_READBACK,
         SecurityVerificationKind.PORT_SECURITY_STATE:
             SecurityCapabilityDimension.PORT_SECURITY_READBACK,
         SecurityVerificationKind.DHCP_SNOOPING_STATE:

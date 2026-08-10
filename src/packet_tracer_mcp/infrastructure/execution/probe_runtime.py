@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Callable
 
 from ...application.use_cases.capability_discovery import PacketTracerProbeRuntime
 from ...domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
 from ...domain.enterprise.models.discovery import (
+    CapabilityBackend,
     CapabilityVerificationMethod,
     CapabilityProbeResult,
     ProbeDefinition,
+    ProbeEnvironment,
     ProbeExecutionStatus,
     RuntimeDeviceDescriptor,
     RuntimeDeviceObservation,
     RuntimePortDescriptor,
+    semantic_inventory_fingerprint,
 )
 from ...infrastructure.catalog.devices import resolve_model
 from ...shared.constants import PT_DEVICE_TYPE, PT_DEVICE_TYPE_DEFAULT
@@ -49,14 +53,77 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         send_and_wait: Callable[[str, float], str | None],
         packet_tracer_version: str | None = None,
         send: Callable[[str], bool] | None = None,
+        transport_channel: str | Callable[[], str] = "",
+        extension_version: str = "",
     ) -> None:
         self._send_and_wait = send_and_wait
         self._packet_tracer_version = packet_tracer_version
+        self._transport_channel = transport_channel
+        self._extension_version = extension_version
         self._configuration = PacketTracerConfigurationRuntime(send or (lambda _: False))
         self._ios = ControlledIosExecutor(send_and_wait)
 
     def packet_tracer_version(self) -> str | None:
         return self._packet_tracer_version
+
+    def probe_environment(self) -> ProbeEnvironment:
+        transport = (
+            self._transport_channel()
+            if callable(self._transport_channel)
+            else self._transport_channel
+        )
+        return ProbeEnvironment(
+            backend=CapabilityBackend.PACKET_TRACER,
+            backend_version=self._packet_tracer_version or "",
+            transport_channel=transport,
+            extension_version=self._extension_version,
+        )
+
+    def inventory_fingerprint(self) -> str:
+        """Lee identidad fisica minima con APIs PT ya usadas por el MCP."""
+        js = (
+            "try{var __n=ipc.network();var __items=[];var __links=[];"
+            "for(var __i=0;__i<__n.getDeviceCount();__i++){var __d=__n.getDeviceAt(__i);"
+            "if(!__d){continue;}var __ports=[];"
+            "for(var __p=0;__p<__d.getPortCount();__p++){try{var __port=__d.getPortAt(__p);"
+            "if(__port){__ports.push(__port.getName());}}catch(__pe){}}"
+            "__items.push({kind:'device',name:__d.getName(),model:(typeof __d.getModel==='function'?__d.getModel():''),ports:__ports});}"
+            "for(var __l=0;__l<__n.getLinkCount();__l++){try{var __link=__n.getLinkAt(__l);"
+            "var __class=(typeof __link.getClassName==='function'?__link.getClassName():'');"
+            "if(typeof __link.getPort1==='function'&&typeof __link.getPort2==='function'){"
+            "var __p1=__link.getPort1();var __p2=__link.getPort2();"
+            "__links.push({kind:'link',class_name:__class,a_device:__p1.getOwnerDevice().getName(),a_port:__p1.getName(),b_device:__p2.getOwnerDevice().getName(),b_port:__p2.getName()});}"
+            "else{__links.push({kind:'link',class_name:__class,index:__l});}}"
+            "catch(__le){__links.push({kind:'link',index:__l,unreadable:true});}}"
+            "reportResult(JSON.stringify({items:__items,links:__links}));}"
+            "catch(__e){reportResult('ERROR:'+__e);}"
+        )
+        data = self._json_result(js, timeout=10.0)
+        items = data.get("items", [])
+        if not isinstance(items, list):
+            raise RuntimeError("Packet Tracer returned malformed inventory data.")
+        links = data.get("links", [])
+        if not isinstance(links, list):
+            raise RuntimeError("Packet Tracer returned malformed link inventory data.")
+        normalized = [
+            item for item in [*items, *links]
+            if isinstance(item, dict)
+        ]
+        return semantic_inventory_fingerprint(normalized)
+
+    def wait_for_inventory_fingerprint(
+        self,
+        expected: str,
+        timeout_seconds: float = 5.0,
+    ) -> str:
+        """Espera acotadamente el retiro asíncrono de objetos temporales PT."""
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        observed = ""
+        while True:
+            observed = self.inventory_fingerprint()
+            if observed == expected or time.monotonic() >= deadline:
+                return observed
+            time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
 
     def discover_models(self) -> list[RuntimeDeviceDescriptor] | None:
         return None

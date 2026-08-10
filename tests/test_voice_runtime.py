@@ -328,6 +328,34 @@ def test_connect_timeout_is_not_misreported_as_a_verified_call():
     assert CallState.CONNECTED not in observed.states
 
 
+def test_unavailable_phone_control_is_unobservable_not_failed_call_setup():
+    plan = _compile().plan
+    call = next(
+        item for item in plan.call_expectations
+        if item.expected_result is CallExpectationResult.ESTABLISHED
+    )
+    runtime = FakeVoiceRuntime()
+    runtime.calls[call.id] = RuntimeCallObservation(
+        call_expectation_id=call.id,
+        call_attempt_id="",
+        source_phone_id=call.source_phone_id,
+        dialed_extension=call.dialed_extension,
+        status=ActionExecutionStatus.UNOBSERVABLE,
+        observed_after_ns=0,
+        fresh_evidence=False,
+        evidence_method="documented_phone_control_api_unavailable",
+    )
+
+    _, _, result = _apply(runtime)
+    observed = next(
+        item for item in result.calls if item.call_expectation_id == call.id
+    )
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.failure_code.value == "observability_limitation"
+    assert result.status is ActionExecutionStatus.PARTIAL
+
+
 def test_each_direction_receives_a_distinct_current_attempt_id():
     plan, runtime, result = _apply()
     positives = [item for item in result.calls

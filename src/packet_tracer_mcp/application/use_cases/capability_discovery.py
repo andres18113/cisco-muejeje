@@ -12,6 +12,7 @@ from ...domain.enterprise.models.discovery import (
     PROBE_SCHEMA_VERSION,
     CapabilityProbeResult,
     CapabilitySnapshot,
+    CapabilityBackend,
     CatalogGapReport,
     CleanupStatus,
     DeviceIdentity,
@@ -20,8 +21,11 @@ from ...domain.enterprise.models.discovery import (
     E4ReadinessState,
     ModelIdentityStatus,
     ProbeCost,
+    ProbeContext,
     ProbeDefinition,
+    ProbeEnvironment,
     ProbeExecutionStatus,
+    ProbeIsolationLevel,
     ProbeLevel,
     ProbeRequest,
     ProbeSafety,
@@ -44,6 +48,10 @@ class PacketTracerProbeRuntime(Protocol):
 
     def packet_tracer_version(self) -> str | None: ...
 
+    def probe_environment(self) -> ProbeEnvironment: ...
+
+    def inventory_fingerprint(self) -> str: ...
+
     def discover_models(self) -> list[RuntimeDeviceDescriptor] | None: ...
 
     def create_temporary_device(self, runtime_model: str, temporary_name: str) -> RuntimeDeviceObservation: ...
@@ -58,7 +66,9 @@ class PacketTracerProbeRuntime(Protocol):
 class SnapshotRepository(Protocol):
     def find_cached(
         self, packet_tracer_version: str | None, models: list[str], capabilities: list[str],
-        probe_schema_version: int,
+        probe_schema_version: int, environment_fingerprint: str = "",
+        probe_fingerprints: dict[str, str] | None = None,
+        initial_inventory_hash: str = "",
     ) -> CapabilitySnapshot | None: ...
 
     def save_runtime(self, snapshot: CapabilitySnapshot): ...
@@ -70,46 +80,55 @@ class CapabilityProbeRegistry:
     _definitions = {
         "model_exists": ProbeDefinition(
             id="model-exists", capability="model_exists", cost=ProbeCost.CHEAP,
+            isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
         "port_inventory": ProbeDefinition(
             id="port-inventory", capability="port_inventory", prerequisites=["model_exists"],
-            cost=ProbeCost.CHEAP,
+            cost=ProbeCost.CHEAP, isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
         "supports_modules": ProbeDefinition(
             id="module-inventory", capability="supports_modules", prerequisites=["model_exists"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.MUTATING, requires_power_cycle=True,
+            isolation_level=ProbeIsolationLevel.RESET_REQUIRED,
         ),
         "supports_poe": ProbeDefinition(
             id="poe-inventory", capability="supports_poe", prerequisites=["port_inventory"],
-            cost=ProbeCost.CHEAP,
+            cost=ProbeCost.CHEAP, isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
         "layer2": ProbeDefinition(
             id="layer2-probe", capability="layer2", prerequisites=["port_inventory"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
         "configuration_channel": ProbeDefinition(
             id="configuration-channel", capability="configuration_channel", prerequisites=["model_exists"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
         "supports_vlan": ProbeDefinition(
             id="vlan-probe", capability="supports_vlan", prerequisites=["layer2", "configuration_channel"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE, requires_fresh_device=True,
+            isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
         "supports_trunk": ProbeDefinition(
             id="trunk-probe", capability="supports_trunk", prerequisites=["supports_vlan"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE, requires_fresh_device=True,
+            isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
         "layer3": ProbeDefinition(
             id="layer3-probe", capability="layer3", prerequisites=["port_inventory", "configuration_channel"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE, requires_fresh_device=True,
+            isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
         "supports_static_routes": ProbeDefinition(
             id="static-route-probe", capability="supports_static_routes", prerequisites=["layer3"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
         "supports_ospf": ProbeDefinition(
             id="ospf-probe", capability="supports_ospf", prerequisites=["layer3"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
     }
 
@@ -156,8 +175,35 @@ class CapabilityDiscoveryService:
         version = request.packet_tracer_version or self._runtime.packet_tracer_version()
         models = request.models or list(DEFAULT_SAFE_MODELS)
         capabilities = self._requested_capabilities(request)
+        environment = self._probe_environment(version)
+        environment_fingerprint = environment.semantic_fingerprint()
+        initial_inventory_hash = self._inventory_fingerprint()
+        definitions = {
+            definition.capability: definition
+            for definition in self._registry.definitions_for(capabilities)
+        }
+        probe_fingerprints = {
+            _probe_fingerprint_key(model, capability): definitions[capability].semantic_fingerprint(
+                model,
+                {
+                    "probe_level": request.probe_level.value,
+                    "categories": sorted(request.categories),
+                },
+            )
+            for model in models
+            for capability in capabilities
+            if capability in definitions
+        }
         if not request.force:
-            cached = self._snapshots.find_cached(version, models, capabilities, PROBE_SCHEMA_VERSION)
+            cached = self._snapshots.find_cached(
+                version,
+                models,
+                capabilities,
+                PROBE_SCHEMA_VERSION,
+                environment_fingerprint=environment_fingerprint,
+                probe_fingerprints=probe_fingerprints,
+                initial_inventory_hash=initial_inventory_hash,
+            )
             if cached is not None:
                 return cached, True
 
@@ -184,6 +230,7 @@ class CapabilityDiscoveryService:
                 self._append_observed_results(existing, capabilities, results, version)
                 continue
             name = f"__MCP_PROBE_{session.session_id.rsplit('-', 1)[-1]}_{index:02d}"
+            session.mutations.append(f"temporary-device-attempt:{model}")
             try:
                 observation = self._runtime.create_temporary_device(model, name)
             except TimeoutError as exc:
@@ -195,6 +242,7 @@ class CapabilityDiscoveryService:
             else:
                 if observation.found:
                     session.created_devices.append(name)
+                    session.mutations.append(f"temporary-device:{model}")
                 descriptor = self._descriptor(model, observation, version)
                 descriptors.append(descriptor)
                 if observation.found:
@@ -209,27 +257,88 @@ class CapabilityDiscoveryService:
                         packet_tracer_version=version,
                     ))
             finally:
-                if name in session.created_devices:
-                    try:
-                        if self._runtime.delete_temporary_device(name):
-                            deleted.append(name)
-                        else:
-                            failed.append(name)
-                    except Exception:
-                        failed.append(name)
+                self._cleanup_temporary_device(name, deleted, failed)
 
         if failed:
             session.cleanup_status = CleanupStatus.DIRTY_SESSION
             session.warnings.append("Cleanup incompleto; revisar exclusivamente los devices temporales listados.")
-        elif session.created_devices:
+        elif session.mutations:
             session.cleanup_status = CleanupStatus.CLEAN
+        final_inventory_hash = self._converged_inventory_fingerprint(
+            initial_inventory_hash,
+        )
+        inventory_restored = (
+            initial_inventory_hash == final_inventory_hash
+            if initial_inventory_hash and final_inventory_hash
+            else None
+        )
+        if inventory_restored is False:
+            session.cleanup_status = CleanupStatus.DIRTY_SESSION
+            session.warnings.append(
+                "El inventario runtime final no coincide con el inventario previo al probe."
+            )
+        finalized_results = _finalize_probe_results(
+            _dedupe_results(results),
+            definitions=definitions,
+            environment=environment,
+            environment_fingerprint=environment_fingerprint,
+            probe_fingerprints=probe_fingerprints,
+            initial_inventory_hash=initial_inventory_hash,
+            final_inventory_hash=final_inventory_hash,
+            inventory_restored=inventory_restored,
+            cleanup_status=session.cleanup_status,
+            session_mutations=session.mutations,
+        )
         result = ProbeSessionResult(
-            session=session, devices=descriptors, results=_dedupe_results(results),
+            session=session, devices=descriptors, results=finalized_results,
             cleanup_deleted=deleted, cleanup_failed=failed,
         )
-        snapshot = CapabilitySnapshot(packet_tracer_version=version, session=result)
+        snapshot = CapabilitySnapshot(
+            packet_tracer_version=version,
+            backend=environment.backend,
+            environment_fingerprint=environment_fingerprint,
+            probe_fingerprints=probe_fingerprints,
+            initial_inventory_hash=initial_inventory_hash,
+            final_inventory_hash=final_inventory_hash,
+            inventory_restored=inventory_restored,
+            session=result,
+        )
         self._snapshots.save_runtime(snapshot)
         return snapshot, False
+
+    def _probe_environment(self, version: str | None) -> ProbeEnvironment:
+        provider = getattr(self._runtime, "probe_environment", None)
+        environment = provider() if callable(provider) else None
+        if not isinstance(environment, ProbeEnvironment):
+            environment = ProbeEnvironment(
+                backend=CapabilityBackend.PACKET_TRACER,
+                backend_version=version or "",
+            )
+        elif not environment.backend_version and version:
+            environment = environment.model_copy(update={"backend_version": version})
+        return environment
+
+    def _inventory_fingerprint(self) -> str:
+        provider = getattr(self._runtime, "inventory_fingerprint", None)
+        if not callable(provider):
+            return ""
+        try:
+            value = provider()
+        except Exception:
+            return ""
+        return value if isinstance(value, str) else ""
+
+    def _converged_inventory_fingerprint(self, expected: str) -> str:
+        """Permite que el adapter espere la convergencia asíncrona del cleanup."""
+        waiter = getattr(self._runtime, "wait_for_inventory_fingerprint", None)
+        if callable(waiter) and expected:
+            try:
+                value = waiter(expected, 5.0)
+            except Exception:
+                value = ""
+            if isinstance(value, str) and value:
+                return value
+        return self._inventory_fingerprint()
 
     def readiness_report(
         self, snapshot: CapabilitySnapshot, hardware_plan: HardwarePlan | None = None,
@@ -402,9 +511,34 @@ class CapabilityDiscoveryService:
                     packet_tracer_version=version,
                 ))
                 continue
+            isolation = definition.effective_isolation_level
+            if isolation is ProbeIsolationLevel.FRESH_SESSION_REQUIRED:
+                begin_session = getattr(self._runtime, "start_fresh_probe_session", None)
+                try:
+                    fresh_session = bool(begin_session(definition.id)) if callable(begin_session) else False
+                except Exception:
+                    fresh_session = False
+                if not fresh_session:
+                    results.append(CapabilityProbeResult(
+                        probe_id=definition.id,
+                        model=model,
+                        capability=definition.capability,
+                        execution_status=ProbeExecutionStatus.PREREQUISITE_MISSING,
+                        evidence_source=EvidenceSource.CONTROLLED_PROBE,
+                        failure_reason="Runtime cannot guarantee a fresh probe session.",
+                        packet_tracer_version=version,
+                    ))
+                    continue
             probe_name = name
-            if definition.requires_fresh_device:
+            uses_fresh_device = isolation in {
+                ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
+                ProbeIsolationLevel.FRESH_SESSION_REQUIRED,
+            }
+            if uses_fresh_device:
                 probe_name = f"{name}_{definition.id}"
+                session.mutations.append(
+                    f"fresh-device-attempt:{model}:{definition.capability}"
+                )
                 try:
                     fresh = self._runtime.create_temporary_device(model, probe_name)
                     if not fresh.found:
@@ -415,22 +549,147 @@ class CapabilityDiscoveryService:
                             failure_reason=fresh.error or "Fresh temporary device was not created.",
                             packet_tracer_version=version,
                         ))
+                        self._cleanup_temporary_device(probe_name, deleted, failed)
                         continue
                     session.created_devices.append(probe_name)
+                    session.mutations.append(f"fresh-device:{model}:{definition.capability}")
                 except Exception as exc:
                     results.append(_error_result(model, definition.capability, ProbeExecutionStatus.EXECUTION_ERROR, str(exc), version))
+                    self._cleanup_temporary_device(probe_name, deleted, failed)
                     continue
-            result = self._runtime.probe_capability(probe_name, definition.capability, definition)
-            results.append(result.model_copy(update={"model": model, "packet_tracer_version": version}))
-            observed[definition.capability] = result.status
-            if definition.requires_fresh_device:
+            if isolation is ProbeIsolationLevel.RESET_REQUIRED:
+                reset = getattr(self._runtime, "reset_temporary_device", None)
+                if not callable(reset):
+                    reset = getattr(self._runtime, "power_cycle", None)
                 try:
-                    if self._runtime.delete_temporary_device(probe_name):
-                        deleted.append(probe_name)
-                    else:
-                        failed.append(probe_name)
+                    reset_ok = bool(reset(probe_name)) if callable(reset) else False
                 except Exception:
-                    failed.append(probe_name)
+                    reset_ok = False
+                if not reset_ok:
+                    results.append(CapabilityProbeResult(
+                        probe_id=definition.id,
+                        model=model,
+                        capability=definition.capability,
+                        execution_status=ProbeExecutionStatus.PREREQUISITE_MISSING,
+                        evidence_source=EvidenceSource.CONTROLLED_PROBE,
+                        failure_reason="Runtime did not restore the required probe baseline.",
+                        packet_tracer_version=version,
+                    ))
+                    continue
+                session.mutations.append(f"reset-device:{model}:{definition.capability}")
+            try:
+                result = self._runtime.probe_capability(probe_name, definition.capability, definition)
+            except TimeoutError as exc:
+                result = _error_result(
+                    model, definition.capability, ProbeExecutionStatus.TIMEOUT, str(exc), version,
+                )
+            except Exception as exc:
+                result = _error_result(
+                    model, definition.capability, ProbeExecutionStatus.EXECUTION_ERROR, str(exc), version,
+                )
+            copied = result.model_copy(update={"model": model, "packet_tracer_version": version})
+            results.append(copied)
+            observed[definition.capability] = copied.status
+            if copied.configured:
+                session.mutations.append(f"configure:{model}:{definition.capability}")
+            if uses_fresh_device:
+                self._cleanup_temporary_device(probe_name, deleted, failed)
+
+    def _cleanup_temporary_device(
+        self,
+        name: str,
+        deleted: list[str],
+        failed: list[str],
+    ) -> None:
+        """Idempotently remove an attempted controlled name, even after timeout."""
+
+        try:
+            removed_or_absent = self._runtime.delete_temporary_device(name)
+        except Exception:
+            removed_or_absent = False
+        target = deleted if removed_or_absent else failed
+        if name not in target:
+            target.append(name)
+
+
+def _probe_fingerprint_key(model: str, capability: str) -> str:
+    return f"{model}:{capability}"
+
+
+def _finalize_probe_results(
+    results: list[CapabilityProbeResult],
+    *,
+    definitions: dict[str, ProbeDefinition],
+    environment: ProbeEnvironment,
+    environment_fingerprint: str,
+    probe_fingerprints: dict[str, str],
+    initial_inventory_hash: str,
+    final_inventory_hash: str,
+    inventory_restored: bool | None,
+    cleanup_status: CleanupStatus,
+    session_mutations: list[str],
+) -> list[CapabilityProbeResult]:
+    invalid = (
+        cleanup_status is CleanupStatus.DIRTY_SESSION
+        or inventory_restored is False
+        or (bool(session_mutations) and inventory_restored is not True)
+    )
+    finalized: list[CapabilityProbeResult] = []
+    for result in results:
+        definition = definitions.get(result.capability)
+        isolation = (
+            definition.effective_isolation_level
+            if definition is not None
+            else ProbeIsolationLevel.SHARED_DEVICE
+        )
+        expected_mutations = {
+            f"temporary-device-attempt:{result.model}",
+            f"temporary-device:{result.model}",
+            f"fresh-device-attempt:{result.model}:{result.capability}",
+            f"fresh-device:{result.model}:{result.capability}",
+            f"reset-device:{result.model}:{result.capability}",
+            f"configure:{result.model}:{result.capability}",
+        }
+        mutations = sorted(
+            mutation for mutation in session_mutations
+            if mutation in expected_mutations
+        )
+        status = CapabilityStatus.UNKNOWN if invalid else result.status
+        verified = False if invalid else result.verified
+        execution_status = result.execution_status
+        failure_reason = result.failure_reason
+        if invalid:
+            if execution_status is ProbeExecutionStatus.VERIFIED:
+                execution_status = ProbeExecutionStatus.VERIFY_FAILED
+            reason = "Probe cleanup or inventory restoration was not verified."
+            failure_reason = f"{failure_reason} {reason}".strip()
+        context = ProbeContext(
+            probe_id=result.probe_id,
+            probe_version=definition.probe_version if definition is not None else "legacy",
+            backend=environment.backend,
+            backend_version=environment.backend_version,
+            device_model=result.model,
+            environment_fingerprint=environment_fingerprint,
+            initial_inventory_hash=initial_inventory_hash,
+            final_inventory_hash=final_inventory_hash,
+            inventory_restored=inventory_restored,
+            isolation_level=isolation,
+            mutations=mutations,
+            cleanup_status=cleanup_status,
+            result_status=status,
+            execution_status=execution_status,
+            probe_fingerprint=probe_fingerprints.get(
+                _probe_fingerprint_key(result.model, result.capability), "",
+            ),
+        )
+        finalized.append(result.model_copy(update={
+            "status": status,
+            "verified": verified,
+            "execution_status": execution_status,
+            "failure_reason": failure_reason,
+            "context": context,
+        }))
+    return finalized
 
 
 def _descriptor_name(descriptor: RuntimeDeviceDescriptor) -> str:

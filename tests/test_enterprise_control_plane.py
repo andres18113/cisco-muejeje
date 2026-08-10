@@ -42,6 +42,12 @@ from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityPhase,
     SecurityPlan,
 )
+from packet_tracer_mcp.domain.enterprise.models.failure_domain import (
+    FailureDomain,
+    FailureDomainProvenance,
+    FailureDomainType,
+    IndependenceStatus,
+)
 from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 
 
@@ -402,6 +408,50 @@ def test_failure_scenario_keeps_exact_e4_fault_and_restore_identity():
     assert scenario.peer_interface == "GigabitEthernet0/1"
     assert scenario.cable == "cross"
     assert scenario.expected_surviving_link_ids == ["sw-member-b"]
+    assert scenario.failure_domain_result.status is IndependenceStatus.INDEPENDENT
+    assert _compile().plan.failure_domain_catalog.semantic_hash
+
+
+def test_failure_scenario_rejects_a_declared_shared_risk_path():
+    intent, topology, configuration, capabilities = _fixture()
+    shared_conduit = FailureDomain(
+        id="srg/shared-conduit",
+        domain_type=FailureDomainType.SHARED_RISK,
+        provenance=FailureDomainProvenance.EXPLICIT,
+        link_ids=["sw-member-a", "sw-member-b"],
+        evidence_reference="site-survey",
+    )
+
+    result = compile_enterprise_control_plane(
+        intent,
+        topology,
+        configuration,
+        capabilities=capabilities,
+        failure_domains=[shared_conduit],
+    )
+
+    assert not result.is_valid
+    assert ConfigurationIssueCode.CONTROL_PLANE_FAILURE_DOMAIN_NOT_INDEPENDENT in {
+        item.code for item in result.issues
+    }
+
+
+def test_required_provider_independence_without_evidence_stays_unknown():
+    intent, topology, configuration, capabilities = _fixture()
+    intent.failure_scenarios[0].required_independence_domains = [
+        FailureDomainType.UPLINK_PROVIDER,
+    ]
+
+    result = compile_enterprise_control_plane(
+        intent, topology, configuration, capabilities=capabilities,
+    )
+
+    assert result.is_valid
+    scenario = result.plan.failure_scenarios[0]
+    assert scenario.failure_domain_result.status is IndependenceStatus.UNKNOWN
+    assert ConfigurationIssueCode.CONTROL_PLANE_FAILURE_DOMAIN_UNKNOWN in {
+        item.code for item in result.issues
+    }
 
 
 def test_missing_transit_trunk_and_vip_collision_are_structured_errors():

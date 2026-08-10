@@ -6,6 +6,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from .deployment import EnvironmentFingerprint
 from .evidence import EvidenceRecord
 from .execution import (
     ApplicationExecutionJournal,
@@ -73,6 +74,8 @@ class ConfigurationFailureCode(str, Enum):
     SECURITY_ENFORCEMENT_FAILED = "security_enforcement_failed"
     SECURITY_BEHAVIOR_UNOBSERVABLE = "security_behavior_unobservable"
     SECURITY_CLEANUP_FAILED = "security_cleanup_failed"
+    DEPLOYMENT_MANIFEST_REQUIRED = "deployment_manifest_required"
+    ENVIRONMENT_FINGERPRINT_MISMATCH = "environment_fingerprint_mismatch"
 
 
 class FieldVerificationStatus(str, Enum):
@@ -102,6 +105,25 @@ class ConfigurationRuntimeContext(BaseModel):
     backend: str = ""
     backend_version: str = ""
     capability_snapshot_hash: str = ""
+    environment_fingerprint: EnvironmentFingerprint | None = None
+
+    @property
+    def evidence_backend(self) -> str:
+        if self.environment_fingerprint is not None:
+            return self.environment_fingerprint.backend
+        return self.backend
+
+    @property
+    def evidence_backend_version(self) -> str:
+        if self.environment_fingerprint is not None:
+            return self.environment_fingerprint.backend_version
+        return self.backend_version
+
+    @property
+    def environment_semantic_hash(self) -> str:
+        if self.environment_fingerprint is None:
+            return ""
+        return self.environment_fingerprint.semantic_hash
 
 
 class RuntimeActionMutation(BaseModel):

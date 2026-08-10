@@ -13,6 +13,11 @@ from .execution import OperationSemantics
 from .evidence import CapabilityReadiness
 from .security_plan import SecurityCapabilityStatus
 from .verification import VerificationPrerequisite
+from .failure_domain import (
+    FailureDomainCatalog,
+    FailureDomainIndependenceResult,
+    FailureDomainType,
+)
 
 
 class StpMode(str, Enum):
@@ -140,6 +145,9 @@ class LinkFailureScenarioIntent(BaseModel):
     probe_source_device_id: str
     probe_destination_device_id: str
     expected_surviving_link_ids: list[str] = Field(default_factory=list)
+    required_independence_domains: list[FailureDomainType] = Field(
+        default_factory=list,
+    )
     restore_required: bool = True
 
 
@@ -338,6 +346,7 @@ class LinkFailureScenario(BaseModel):
     probe_destination_device_name: str
     probe_destination_ipv4: str
     expected_surviving_link_ids: list[str] = Field(default_factory=list)
+    failure_domain_result: FailureDomainIndependenceResult | None = None
     restore_required: bool = True
     verification_expectation_ids: list[str] = Field(default_factory=list)
 
@@ -361,6 +370,7 @@ class ControlPlanePlan(BaseModel):
         default_factory=list,
     )
     failure_scenarios: list[LinkFailureScenario] = Field(default_factory=list)
+    failure_domain_catalog: FailureDomainCatalog | None = None
 
     def actions_of_type(
         self, action_type: ControlPlaneActionType,

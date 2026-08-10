@@ -37,12 +37,33 @@ class CapabilitySnapshotStore:
         models: list[str],
         capabilities: list[str],
         probe_schema_version: int,
+        environment_fingerprint: str = "",
+        probe_fingerprints: dict[str, str] | None = None,
+        initial_inventory_hash: str = "",
     ) -> CapabilitySnapshot | None:
         """Sólo reutiliza la misma versión de PT y el mismo esquema de probe."""
         wanted_models = set(models)
         wanted_capabilities = set(capabilities)
+        wanted_probe_fingerprints = probe_fingerprints or {}
         for snapshot in reversed(self.list_runtime(packet_tracer_version)):
             if snapshot.probe_schema_version != probe_schema_version:
+                continue
+            if not snapshot.reusable:
+                continue
+            if (
+                environment_fingerprint
+                and snapshot.environment_fingerprint != environment_fingerprint
+            ):
+                continue
+            if (
+                initial_inventory_hash
+                and snapshot.initial_inventory_hash != initial_inventory_hash
+            ):
+                continue
+            if any(
+                snapshot.probe_fingerprints.get(key) != fingerprint
+                for key, fingerprint in wanted_probe_fingerprints.items()
+            ):
                 continue
             present_models = {
                 descriptor.identity.canonical_id or descriptor.identity.runtime_id

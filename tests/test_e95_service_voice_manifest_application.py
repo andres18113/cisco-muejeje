@@ -8,6 +8,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
+    ConfigurationRuntimeContext,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
@@ -85,6 +86,12 @@ def _voice_foundation(plan):
     }
 
 
+def _runtime_context(manifest):
+    return ConfigurationRuntimeContext(
+        environment_fingerprint=manifest.environment_fingerprint,
+    )
+
+
 def test_service_manifest_retargets_runtime_copies_without_mutating_plan():
     enterprise, topology, configuration, capabilities = _service_fixture()
     plan = compile_enterprise_services(
@@ -112,6 +119,7 @@ def test_service_manifest_retargets_runtime_copies_without_mutating_plan():
         foundational_statuses=_service_foundation(plan),
         capabilities=capabilities,
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.deployment_id == manifest.deployment_id
@@ -153,6 +161,7 @@ def test_voice_manifest_retargets_call_control_and_phone_runtime_copies():
         foundational_statuses=_voice_foundation(plan),
         capabilities=_profile(),
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.deployment_id == manifest.deployment_id
@@ -193,6 +202,7 @@ def test_service_manifest_hash_mismatch_is_clean_and_precedes_inventory():
         foundational_statuses=_service_foundation(plan),
         capabilities=capabilities,
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.failure_code is ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
@@ -217,10 +227,69 @@ def test_voice_manifest_hash_mismatch_is_clean_and_precedes_inventory():
         foundational_statuses=_voice_foundation(plan),
         capabilities=_profile(),
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.failure_code is ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
     assert result.dirty_state.value == "clean"
+    assert runtime.inventory_calls == 0
+    assert runtime.applied == []
+
+
+def test_modern_e6_plan_requires_manifest_before_runtime_inventory():
+    enterprise, topology, configuration, capabilities = _service_fixture()
+    plan = compile_enterprise_services(
+        enterprise, topology, configuration, capabilities=capabilities,
+    ).plan
+    plan = plan.model_copy(update={
+        "source_topology_hash_schema": "physical-topology-v2",
+    })
+    assert plan.source_topology_hash_schema == "physical-topology-v2"
+    runtime = _RecordingServiceRuntime(topology)
+
+    result = ServiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses=_service_foundation(plan),
+        capabilities=capabilities,
+    )
+
+    assert result.failure_code is ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED
+    assert runtime.inventory_calls == 0
+    assert runtime.apply_calls == []
+
+
+def test_e7_manifest_environment_mismatch_precedes_runtime_inventory():
+    _, topology, _, _, _ = _voice_fixture()
+    plan = _compile_voice().plan
+    runtime = _RecordingVoiceRuntime(topology)
+    manifest_environment = EnvironmentFingerprint(
+        backend_version="9.0.1.0858",
+        bridge_transport="file",
+    )
+    manifest = build_deployment_manifest(
+        topology,
+        runtime.inventory(),
+        fingerprint=manifest_environment,
+    )
+    runtime.inventory_calls = 0
+
+    result = VoiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses=_voice_foundation(plan),
+        capabilities=_profile(),
+        deployment_manifest=manifest,
+        runtime_context=ConfigurationRuntimeContext(
+            environment_fingerprint=manifest_environment.model_copy(
+                update={"bridge_transport": "http"},
+            ),
+        ),
+    )
+
+    assert result.failure_code is ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH
     assert runtime.inventory_calls == 0
     assert runtime.applied == []
 
@@ -247,6 +316,7 @@ def test_service_manifest_missing_binding_never_falls_back_to_plan_name():
         foundational_statuses=_service_foundation(plan),
         capabilities=capabilities,
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.failure_code is ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
@@ -273,6 +343,7 @@ def test_voice_manifest_missing_binding_never_falls_back_to_plan_name():
         foundational_statuses=_voice_foundation(plan),
         capabilities=_profile(),
         deployment_manifest=manifest,
+        runtime_context=_runtime_context(manifest),
     )
 
     assert result.failure_code is ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH

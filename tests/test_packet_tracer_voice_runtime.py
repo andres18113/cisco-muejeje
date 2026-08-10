@@ -11,8 +11,15 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     ConfigureDialRule,
     VoiceActionType,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    PhoneExecutionMethod,
+    RuntimeCallObservation,
+)
 from src.packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
     PacketTracerEnterpriseVoiceRuntime,
+)
+from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
+    PacketTracerNativeUiPhoneControlAdapter,
 )
 from tests.test_enterprise_voice import _compile
 
@@ -81,7 +88,8 @@ def test_missing_documented_call_driver_returns_unobservable_not_success():
 
     observed = runtime.verify_call(call, "attempt-current", 123)
 
-    assert observed.status is ActionExecutionStatus.PARTIAL
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.execution_method is PhoneExecutionMethod.UNOBSERVABLE
     assert not observed.fresh_evidence
     assert not observed.connected
     assert not observed.teardown_verified
@@ -97,7 +105,7 @@ def test_registration_getter_absence_is_reported_as_unobservable():
 
     observed = runtime.observe_registration(expectation)
 
-    assert observed.status is ActionExecutionStatus.PARTIAL
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
     assert observed.direct_readback is FieldVerificationStatus.UNOBSERVABLE
     assert not observed.fresh_evidence
 
@@ -162,3 +170,48 @@ def test_inventory_preserves_runtime_model_and_interfaces():
     router = next(item for item in items if item.device_name == "HQ-R1")
     assert router.model == "2911"
     assert router.interfaces == ["Gi0/0"]
+
+
+def test_legacy_ui_driver_is_encapsulated_and_execution_method_is_preserved():
+    requests = []
+
+    def driver(expectation, attempt_id, started_ns):
+        requests.append((expectation.id, attempt_id, started_ns))
+        return RuntimeCallObservation(
+            call_expectation_id=expectation.id,
+            call_attempt_id=attempt_id,
+            source_phone_id=expectation.source_phone_id,
+            dialed_extension=expectation.dialed_extension,
+            status=ActionExecutionStatus.VERIFIED,
+            observed_after_ns=started_ns + 1,
+            fresh_evidence=True,
+            evidence_method="controlled_native_ui",
+        )
+
+    runtime = PacketTracerEnterpriseVoiceRuntime(
+        lambda: [], lambda _source: True, lambda _source, _timeout: "{}",
+        ios_readiness=lambda _name: True,
+        phone_control=PacketTracerNativeUiPhoneControlAdapter(driver),
+    )
+    call = _compile().plan.call_expectations[0]
+
+    observed = runtime.verify_call(call, "attempt-current", 123)
+
+    assert requests == [(call.id, "attempt-current", 123)]
+    assert observed.execution_method is PhoneExecutionMethod.PACKET_TRACER_NATIVE_UI
+
+
+def test_intersite_runtime_limitation_is_unknown_not_unsupported():
+    runtime = _runtime([])
+    local = next(
+        item for item in _compile().plan.actions
+        if isinstance(item, ConfigureDialRule)
+    )
+    intersite = local.model_copy(update={
+        "id": "voice/dial/intersite", "local": False,
+        "destination_site_id": "branch",
+    })
+
+    observed = runtime.apply_actions([intersite])[0]
+
+    assert observed.failure_code.value == "capability_unknown"
