@@ -301,10 +301,19 @@ class LinkPerformancePlanner:
             observation = capability.observation_for(
                 intent.requested_speed, intent.requested_duplex, intent.link_context,
             )
+            # Cuál de los dos ejes falla no se deduce de que el intent fije el
+            # duplex: pedir 1G full en un puerto FastEthernet se rechaza por la
+            # velocidad. Si esa velocidad ya se rechaza con el duplex en AUTO,
+            # el eje culpable es la velocidad.
+            speed_alone_rejected = (
+                capability.readiness_for(
+                    intent.requested_speed, DuplexMode.AUTO, intent.link_context,
+                ).apply is ReadinessStatus.UNSUPPORTED
+            )
             code = (
-                LinkPerformanceIssueCode.DUPLEX_NOT_SUPPORTED
-                if intent.requested_duplex is not DuplexMode.AUTO
-                else LinkPerformanceIssueCode.SPEED_NOT_SUPPORTED
+                LinkPerformanceIssueCode.SPEED_NOT_SUPPORTED
+                if speed_alone_rejected or intent.requested_duplex is DuplexMode.AUTO
+                else LinkPerformanceIssueCode.DUPLEX_NOT_SUPPORTED
             )
             decision.mode_readiness = readiness
             decision.issues.append(LinkPerformanceIssue(

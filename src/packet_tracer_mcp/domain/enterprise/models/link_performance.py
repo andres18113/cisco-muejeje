@@ -161,10 +161,11 @@ class HeadroomPolicy(BaseModel):
 # configuraciones explícitas válidas; simplemente no son el fallback de una WAN
 # empresarial sin información de tráfico.
 #
-# El techo sale de una reproducción controlada, no de una tabla Cisco asumida:
-# sobre PT 9.0.1.0858, un 2911 con HWIC-2T aceptó y volvió a leer 64k, 128k,
-# 2M y 4M, mientras 8M y 3M dejaron la interfaz en su valor anterior. Un
-# backend que soporte más lo declara por `supported_serial_rates_bps`.
+# El techo sale de una reproducción controlada, no de una tabla Cisco asumida.
+# Qué backend la produjo y con qué hardware es dato del catálogo, no de aquí:
+# el perfil medido vive junto a los demás perfiles de infraestructura. Un
+# backend que soporte más lo declara por `supported_serial_rates_bps`, que es
+# parámetro del planner precisamente para no fijar aquí ninguno.
 SUPPORTED_SERIAL_RATES_BPS: tuple[int, ...] = (
     64_000, 128_000, 256_000, 512_000,
     1_000_000, 2_000_000, 4_000_000,

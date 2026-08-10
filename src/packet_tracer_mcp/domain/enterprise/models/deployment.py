@@ -194,6 +194,29 @@ class DeploymentManifest(BaseModel):
                 f"{observed_orientation.value} while the manifest binds it as DCE; "
                 "refusing to swap orientation."
             )
+        return self.resolve_link_endpoint_target(
+            semantic_link_id, semantic_device_id, inventory,
+            observed_interface=observed_interface,
+        )
+
+    def resolve_link_endpoint_target(
+        self,
+        semantic_link_id: str,
+        semantic_device_id: str,
+        inventory: list[RuntimeConfigurationTarget],
+        *,
+        observed_interface: str | None = None,
+    ) -> tuple[RuntimeConfigurationTarget, str]:
+        """Resuelve el extremo de un enlace, o se niega antes de mutar.
+
+        Independiente del medio: la orientacion DCE/DTE solo importa para un
+        reloj serial, y esa comprobacion vive en quien la necesita. Un
+        dispositivo ajeno al enlace, una interfaz que el runtime no expone o
+        una que no es la observada bloquean aqui, antes de que exista mutacion
+        alguna.
+        """
+        link = self.link_binding_for(semantic_link_id)
+        endpoint = link.endpoint_for(semantic_device_id)
         target = self.resolve_target(semantic_device_id, inventory)
         if endpoint.interface not in target.interfaces:
             raise DeploymentIdentityError(
@@ -202,7 +225,8 @@ class DeploymentManifest(BaseModel):
             )
         # Que la interfaz exista en el dispositivo no prueba que sostenga este
         # enlace: un 2911 con HWIC-2T expone Serial0/0/0 y Serial0/0/1, y un
-        # manifest apuntando a la otra seria auto-consistente.
+        # 3560 expone veinticuatro FastEthernet. Un manifest apuntando a otra
+        # seria auto-consistente.
         if observed_interface is not None and observed_interface != endpoint.interface:
             raise DeploymentIdentityError(
                 f"Link {semantic_link_id!r} was observed on "

@@ -345,6 +345,27 @@ class TestAPortRefusesWhatTheBackendRefused:
         assert not decision.applicable
         assert decision.effective_capacity_bps is None
 
+    def test_the_refusal_blames_the_axis_that_actually_failed(self):
+        """1G/full en un FastEthernet lo rechaza la velocidad, no el duplex."""
+        decision = LinkPerformancePlanner().plan(_ethernet(
+            requested_speed=LinkSpeedMode.SPEED_1G,
+            requested_duplex=DuplexMode.FULL,
+            local_port_capability=PT_3560_FASTETHERNET_LINK_MODE,
+        ))
+
+        assert LinkPerformanceIssueCode.SPEED_NOT_SUPPORTED.value in _codes(decision)
+        assert LinkPerformanceIssueCode.DUPLEX_NOT_SUPPORTED.value not in _codes(decision)
+
+    def test_a_duplex_only_refusal_still_blames_the_duplex(self):
+        """En el uplink Gigabit la velocidad pasa y lo que cae es el duplex."""
+        decision = LinkPerformancePlanner().plan(_ethernet(
+            requested_speed=LinkSpeedMode.SPEED_100M,
+            requested_duplex=DuplexMode.FULL,
+            local_port_capability=PT_3560_GIGABIT_LINK_MODE,
+        ))
+
+        assert LinkPerformanceIssueCode.DUPLEX_NOT_SUPPORTED.value in _codes(decision)
+
     def test_a_refused_request_selects_no_capacity_at_all(self):
         decision = LinkPerformancePlanner().plan(_ethernet(
             requested_speed=LinkSpeedMode.SPEED_100M,
