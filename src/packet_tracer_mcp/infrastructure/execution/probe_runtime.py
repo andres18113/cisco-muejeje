@@ -13,6 +13,7 @@ from ...domain.enterprise.models.discovery import (
     CapabilityBackend,
     CapabilityVerificationMethod,
     CapabilityProbeResult,
+    DeviceInitializationState,
     ProbeDefinition,
     ProbeEnvironment,
     ProbeExecutionStatus,
@@ -595,24 +596,16 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
     ) -> None:
         from .typed_ping import TypedPingExecutor
 
-        ping = TypedPingExecutor(self._send_and_wait)
-
-        for endpoint in endpoints:
-            # El primer ``ping`` de un endpoint recién creado no produce una
-            # ventana fresca: el resultado llega sin delta observable y se
-            # clasificaría como inalcanzable aunque la ruta funcione. Se descarta
-            # una ejecución por endpoint antes de medir nada.
-            ping.ping(endpoint, _MULTILAYER_SLICE_GATEWAY_A)
+        # La terminal del endpoint no atribuye sus primeras ejecuciones; el
+        # reintento acotado vive en el executor, no repetido en cada probe.
+        ping = TypedPingExecutor(self._send_and_wait, measurement_attempts=4)
 
         def reach(source: str, destination: str, budget: float):
-            """Reintento acotado: ARP y la ventana de terminal necesitan asentarse."""
+            """Reintento acotado adicional: el ARP inicial puede perder el primer eco."""
             deadline = time.monotonic() + budget
             attempts = 0
             result = ping.ping(source, destination)
-            while (
-                not (result.reachable and result.fresh_output_observed)
-                and time.monotonic() < deadline
-            ):
+            while not result.reachable and time.monotonic() < deadline:
                 attempts += 1
                 time.sleep(1.0)
                 result = ping.ping(source, destination)
@@ -685,7 +678,14 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             "reportResult(JSON.stringify({created:!!ipc.network().getDevice(", payload, ")}));}}",
             "catch(__e){reportResult('ERROR:'+__e);}",
         ))
-        return bool(self._json_result(js, timeout=15.0).get("created"))
+        if not self._json_result(js, timeout=15.0).get("created"):
+            return False
+        # Un endpoint recién creado existe antes de que su CommandPrompt sirva.
+        # Sin esta espera, el primer `ping` vuelve sin ventana atribuible y un
+        # camino que funciona se mide como inalcanzable. Es la misma barrera que
+        # `create_temporary_device` ya aplica; aquí sólo se reutiliza.
+        readiness = self._wait_for_operational_readiness(name, "PC-PT")
+        return readiness.state is DeviceInitializationState.OPERATIONAL_READY
 
     def _link_probe_endpoint(self, endpoint: str, switch: str, port: str) -> bool:
         js = "".join((

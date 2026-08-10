@@ -158,3 +158,88 @@ def test_typed_ping_rejects_noncanonical_source_before_bridge_call():
 def test_typed_ping_rejects_negative_wait_budgets(kwargs):
     with pytest.raises(ValueError):
         TypedPingExecutor(lambda _script, _timeout: None, **kwargs)
+NEWLINE = chr(10)
+
+
+# Prompt sin backslash: la ventana no depende de su forma exacta.
+_BEFORE = "PC>"
+_ANSWERED = (
+    _BEFORE + "ping 198.18.140.1" + NEWLINE
+    + "Packets: Sent = 4, Received = 4, Lost = 0" + NEWLINE + _BEFORE
+)
+_UNANSWERED = (
+    _BEFORE + "ping 198.18.140.1" + NEWLINE
+    + "Packets: Sent = 4, Received = 0, Lost = 4" + NEWLINE + _BEFORE
+)
+
+
+def _endpoint_that_attributes_on_attempt(n: int, answered: str = _ANSWERED):
+    """Guiona un endpoint cuya ventana solo es atribuible en el intento n.
+
+    Reproduce lo medido contra PT 9.0.1.0858: un PC ya listo devolvio
+    ``no_fresh_ping_result`` y despues ``current_ping_echo_not_observed``
+    antes de entregar una ventana valida al tercer intento.
+    """
+    state = {"attempt": 0, "commands": 0}
+
+    def send_and_wait(script, _timeout):
+        if "enterCommand" in script:
+            state["attempt"] += 1
+            state["commands"] += 1
+            return json.dumps({"started": True, "before": _BEFORE})
+        if state["attempt"] < n:
+            return json.dumps({"found": True, "output": _BEFORE})
+        return json.dumps({"found": True, "output": answered})
+
+    send_and_wait.state = state
+    return send_and_wait
+
+
+def test_a_single_attempt_stays_the_default_for_existing_callers():
+    result = TypedPingExecutor(
+        _endpoint_that_attributes_on_attempt(3), timeout_seconds=0,
+    ).ping("PC0", "198.18.140.1")
+
+    assert not result.fresh_output_observed
+    assert result.attempts == 1
+
+
+def test_bounded_attempts_recover_an_endpoint_that_attributes_late():
+    result = TypedPingExecutor(
+        _endpoint_that_attributes_on_attempt(3),
+        timeout_seconds=0, measurement_attempts=4, sleeper=lambda _s: None,
+    ).ping("PC0", "198.18.140.1")
+
+    assert result.reachable
+    assert result.fresh_output_observed
+    assert result.attempts == 3
+
+
+def test_attempts_stop_at_the_declared_budget():
+    result = TypedPingExecutor(
+        _endpoint_that_attributes_on_attempt(99),
+        timeout_seconds=0, measurement_attempts=3, sleeper=lambda _s: None,
+    ).ping("PC0", "198.18.140.1")
+
+    assert not result.fresh_output_observed
+    assert result.attempts == 3
+
+
+def test_a_fresh_unreachable_result_is_not_retried():
+    """El reintento busca evidencia atribuible, nunca un resultado favorable."""
+    endpoint = _endpoint_that_attributes_on_attempt(1, answered=_UNANSWERED)
+
+    result = TypedPingExecutor(
+        endpoint, timeout_seconds=0, measurement_attempts=5,
+        sleeper=lambda _s: None,
+    ).ping("PC0", "198.18.140.1")
+
+    assert not result.reachable
+    assert result.fresh_output_observed
+    assert result.attempts == 1
+    assert endpoint.state["commands"] == 1
+
+
+def test_a_non_positive_attempt_budget_is_rejected():
+    with pytest.raises(ValueError):
+        TypedPingExecutor(lambda _s, _t: None, measurement_attempts=0)

@@ -6,7 +6,7 @@ import ipaddress
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import monotonic, sleep
 
 from .ios_terminal import extract_terminal_command_window
@@ -28,6 +28,8 @@ class TypedPingResult:
     fresh_output_observed: bool
     window_strategy: str = "none"
     failure_reason: str = ""
+    # Cuantas ejecuciones hicieron falta para obtener una ventana atribuible.
+    attempts: int = 1
 
 
 class TypedPingExecutor:
@@ -39,6 +41,7 @@ class TypedPingExecutor:
         *,
         timeout_seconds: float = 12.0,
         interval_seconds: float = 0.25,
+        measurement_attempts: int = 1,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
@@ -54,6 +57,9 @@ class TypedPingExecutor:
             or interval_seconds < 0
         ):
             raise ValueError("interval_seconds must be non-negative.")
+        if isinstance(measurement_attempts, bool) or not isinstance(measurement_attempts, int) or measurement_attempts < 1:
+            raise ValueError("measurement_attempts must be a positive integer.")
+        self._measurement_attempts = measurement_attempts
         self._send_and_wait = send_and_wait
         self._timeout = timeout_seconds
         self._interval = interval_seconds
@@ -61,6 +67,29 @@ class TypedPingExecutor:
         self._sleep = sleeper
 
     def ping(self, source_device: str, destination: str) -> TypedPingResult:
+        """Ejecuta la medida, reintentando solo mientras no haya ventana fresca.
+
+        La terminal de un endpoint recien creado no atribuye sus primeras
+        ejecuciones: medido contra PT 9.0.1.0858, un PC listo devolvio
+        ``no_fresh_ping_result`` y luego ``current_ping_echo_not_observed``
+        antes de entregar una ventana valida al tercer intento. Sin esto, cada
+        probe tendria que repetir un descarte manual antes de medir.
+
+        Un resultado fresco -- alcanzable o no -- se devuelve de inmediato: el
+        reintento busca evidencia atribuible, nunca un resultado favorable.
+        """
+        attempt = 0
+        result = self._ping_once(source_device, destination)
+        while (
+            not result.fresh_output_observed
+            and attempt + 1 < self._measurement_attempts
+        ):
+            attempt += 1
+            self._sleep(self._interval)
+            result = self._ping_once(source_device, destination)
+        return replace(result, attempts=attempt + 1)
+
+    def _ping_once(self, source_device: str, destination: str) -> TypedPingResult:
         if not self._valid_device_name(source_device):
             return TypedPingResult(False, False, failure_reason="invalid_source_device")
         try:
