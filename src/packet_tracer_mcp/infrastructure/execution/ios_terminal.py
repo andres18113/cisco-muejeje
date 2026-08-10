@@ -251,6 +251,113 @@ _SVI_STATE = re.compile(
 _SVI_ADDRESS = re.compile(r"(?im)^\s*Internet address is\s+(?P<address>\d+\.\d+\.\d+\.\d+)/(?P<prefix>\d+)")
 
 
+# Syslog de IOS: `%FACILITY-severidad-MNEMONICO:`. Un `no shutdown` correcto
+# devuelve `%LINK-5-CHANGED: ...`, y leer ese `%` como error daria por
+# rechazado un comando que si se aplico.
+_IOS_SYSLOG = re.compile(r"(?m)^\s*%[A-Z][A-Z0-9_]*-\d+-[A-Z0-9_]+\s*:")
+
+# Rechazos de IOS. No todos dicen "% Invalid input": medido en PT 9.0.1.0858,
+# `duplex half` sobre un Gigabit en autonegociacion responde
+# "%Duplex cannot be set to half when speed autonegotiation subset contains
+# 1Gbps", que es un rechazo con otra forma. Clasificar por "% Invalid" habria
+# dado ese comando por aceptado.
+_IOS_ERROR = re.compile(r"(?m)^\s*%.*$")
+
+
+def ios_rejection_reason(value: str) -> str | None:
+    """Devuelve el texto del rechazo, o None si IOS no rechazo nada.
+
+    Solo distingue rechazo de no-rechazo. Que un comando no sea rechazado no
+    prueba que haya surtido efecto: eso se decide releyendo, no leyendo el eco.
+    """
+    for line in normalize_terminal_output(value).splitlines():
+        if not line.lstrip().startswith("%"):
+            continue
+        if _IOS_SYSLOG.match(line):
+            continue
+        stripped = line.strip()
+        if stripped != "%":
+            return stripped
+    return None
+
+
+@dataclass(frozen=True)
+class EthernetLinkModeStatus:
+    """Estado fisico y metadata de routing de una interfaz Ethernet.
+
+    Van juntos en la lectura y separados en el tipo porque son independientes:
+    con `bandwidth 5000` sobre un enlace negociado a 100 Mbps, PT 9.0.1.0858
+    informa "BW 5000 Kbit" y "Full Duplex, 100Mbps" en la misma salida.
+    """
+
+    interface: str
+    duplex: str            # full | half | auto | ""
+    speed_bps: int | None  # lo que la linea informa; ver negotiated_speed_bps
+    speed_auto: bool
+    routing_bandwidth_kbps: int | None
+    line_protocol_up: bool | None
+
+    @property
+    def negotiated_speed_bps(self) -> int | None:
+        """La cifra solo describe un enlace si el protocolo esta arriba.
+
+        Medido en PT 9.0.1.0858: un uplink Gigabit sin cable informa
+        "Half-duplex, 100Mb/s" con el puerto down, mientras su BW de routing
+        sigue en 1000000 Kbit. Esa linea es el estado en reposo del puerto, no
+        una negociacion; tomarla por observada daria por medido un enlace que
+        no existe.
+        """
+        return self.speed_bps if self.line_protocol_up else None
+
+    @property
+    def negotiated_duplex(self) -> str:
+        return self.duplex if self.line_protocol_up else ""
+
+
+# Dos formatos en el mismo backend: un 2911 imprime "Full Duplex, 100Mbps" y un
+# 3560 "Full-duplex, 100Mb/s". Una regex escrita contra una sola muestra habria
+# dejado la otra plataforma sin leer.
+_LINK_MODE = re.compile(
+    r"(?i)\b(?P<duplex>auto|full|half)[-\s]?duplex\s*,\s*"
+    r"(?P<speed>auto[-\s]?speed|\d+\s*[MG]b(?:ps|/s))",
+)
+_ROUTING_BANDWIDTH = re.compile(r"(?i)\bBW\s+(?P<kbps>\d+)\s*Kbit")
+_SPEED_VALUE = re.compile(r"(?i)(?P<value>\d+)\s*(?P<unit>[MG])b")
+
+
+def parse_ethernet_link_mode(value: str) -> EthernetLinkModeStatus | None:
+    """Lee `show interfaces <ethernet>`.
+
+    Ausencia de la linea de duplex no es un fallo de lectura: un puerto que
+    nunca negocio no tiene tasa fisica que informar.
+    """
+    normalized = normalize_terminal_output(value)
+    state = _SVI_STATE.search(normalized)
+    if state is None:
+        return None
+    mode = _LINK_MODE.search(normalized)
+    duplex, speed_bps, speed_auto = "", None, False
+    if mode is not None:
+        duplex = mode.group("duplex").casefold()
+        raw_speed = mode.group("speed")
+        if raw_speed.casefold().replace(" ", "").replace("-", "").startswith("auto"):
+            speed_auto = True
+        else:
+            value_match = _SPEED_VALUE.search(raw_speed)
+            if value_match:
+                scale = 1_000_000 if value_match.group("unit").upper() == "M" else 1_000_000_000
+                speed_bps = int(value_match.group("value")) * scale
+    bandwidth = _ROUTING_BANDWIDTH.search(normalized)
+    return EthernetLinkModeStatus(
+        interface=state.group("interface"),
+        duplex=duplex,
+        speed_bps=speed_bps,
+        speed_auto=speed_auto or duplex == "auto",
+        routing_bandwidth_kbps=int(bandwidth.group("kbps")) if bandwidth else None,
+        line_protocol_up=state.group("protocol").strip().casefold().startswith("up"),
+    )
+
+
 @dataclass(frozen=True)
 class SerialControllerStatus:
     """Rol del extremo y reloj, leidos del controlador de la serial."""

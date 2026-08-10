@@ -159,17 +159,22 @@ class TestSerialCapacity:
         assert decision.applicable
 
     def test_the_decision_records_which_policy_produced_it(self):
+        """Fijada a proposito: subir la version sin querer rompe aqui.
+
+        v2 la subio Stage 3A3 al acotar la capacidad Ethernet por el extremo
+        mas lento; la politica serial no cambio con ella.
+        """
         decision = LinkPerformancePlanner().plan(_serial())
 
         assert decision.policy_id == "enterprise-link-performance"
-        assert decision.policy_version == "1"
+        assert decision.policy_version == "2"
 
     def test_a_different_policy_version_is_visible_in_the_decision(self):
         """Un cambio de politica que altere el comportamiento se puede ver."""
-        decision = LinkPerformancePlanner(policy_version="2").plan(_serial())
+        decision = LinkPerformancePlanner(policy_version="9").plan(_serial())
 
-        assert decision.policy_version == "2"
-        assert decision.explain()["policy"] == "enterprise-link-performance@2"
+        assert decision.policy_version == "9"
+        assert decision.explain()["policy"] == "enterprise-link-performance@9"
 
     def test_demand_beyond_the_medium_is_reported_not_silently_capped(self):
         decision = LinkPerformancePlanner().plan(_serial(traffic=[

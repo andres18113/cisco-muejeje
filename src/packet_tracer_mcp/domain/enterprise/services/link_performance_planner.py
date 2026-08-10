@@ -21,6 +21,7 @@ from ..models.link_performance import (
     LinkPerformanceIssue,
     LinkPerformanceIssueCode,
     LinkSpeedMode,
+    ModeEvidence,
     ethernet_capacity_bps,
 )
 
@@ -35,8 +36,10 @@ class LinkPerformancePlanner:
     #: Cambiar cualquiera de estas reglas de forma que altere el resultado
     #: obliga a subir la version: la decision la lleva grabada y con ella
     #: viaja a la identidad semantica del plan.
+    #: v2 (E9.5 Stage 3A3): la capacidad Ethernet pasa a estar acotada por el
+    #: menor de los dos extremos y por lo que cada puerto rechazó de verdad.
     POLICY_ID = "enterprise-link-performance"
-    POLICY_VERSION = "1"
+    POLICY_VERSION = "2"
 
     def __init__(
         self,
@@ -191,6 +194,7 @@ class LinkPerformancePlanner:
         decision.supported_capacities_bps = [
             ethernet_capacity_bps(speed) for speed in _ETHERNET_SPEED_ORDER
         ]
+        decision.link_ceiling_bps = self._link_ceiling_bps(intent, decision)
         if intent.requested_speed is LinkSpeedMode.AUTO:
             # Sin intent explícito no se fuerza nada: la negociación es la
             # política, y el ancho de banda lógico de plataforma se conserva.
@@ -199,8 +203,11 @@ class LinkPerformancePlanner:
             decision.capacity_source = CapacitySource.MEDIA_DEFAULT_POLICY
             decision.selection_reason = "AUTONEGOTIATION_LEFT_TO_THE_LINK"
             self._check_duplex(intent, decision)
+            self._check_demand(intent, decision, decision.link_ceiling_bps)
             return
 
+        if self._speed_refused_by_a_port(intent, decision):
+            return
         if intent.peer_supported_speeds and intent.requested_speed not in intent.peer_supported_speeds:
             decision.issues.append(LinkPerformanceIssue(
                 code=LinkPerformanceIssueCode.SPEED_NOT_SUPPORTED,
@@ -210,21 +217,116 @@ class LinkPerformancePlanner:
                 ),
             ))
             return
+        requested_capacity = ethernet_capacity_bps(intent.requested_speed)
+        ceiling = decision.link_ceiling_bps
+        if ceiling is not None and requested_capacity > ceiling:
+            decision.issues.append(LinkPerformanceIssue(
+                code=LinkPerformanceIssueCode.SPEED_NOT_SUPPORTED,
+                link_id=intent.link_id,
+                message=(
+                    f"{intent.requested_speed.value} exceeds the {ceiling} bps "
+                    "ceiling set by the slower endpoint of this link."
+                ),
+            ))
+            return
+        self._check_duplex_supported(intent, decision)
+        if not decision.applicable:
+            return
         decision.effective_speed = intent.requested_speed
         decision.effective_duplex = intent.requested_duplex
-        decision.effective_capacity_bps = ethernet_capacity_bps(intent.requested_speed)
+        decision.effective_capacity_bps = requested_capacity
         decision.capacity_source = CapacitySource.EXPLICIT_USER
         decision.selection_reason = "EXPLICIT_USER_LINK_MODE"
         self._check_duplex(intent, decision)
-        if decision.engineered_demand_bps > (decision.effective_capacity_bps or 0):
-            decision.issues.append(LinkPerformanceIssue(
-                code=LinkPerformanceIssueCode.LINK_CAPACITY_INSUFFICIENT,
-                link_id=intent.link_id,
-                message=(
-                    f"{decision.engineered_demand_bps} bps exceeds "
-                    f"{decision.effective_capacity_bps} bps at the requested speed."
-                ),
-            ))
+        self._check_demand(intent, decision, decision.effective_capacity_bps)
+
+    @staticmethod
+    def _link_ceiling_bps(
+        intent: LinkPerformanceIntent, decision: LinkPerformanceDecision,
+    ) -> int | None:
+        """Un enlace corre al menor de sus extremos, no al del que se configura.
+
+        Con un solo extremo conocido no hay techo: la mitad de la evidencia no
+        autoriza a afirmar la capacidad del enlace.
+        """
+        nominals = [
+            capability.nominal_capacity_bps
+            for capability in (intent.local_port_capability, intent.peer_port_capability)
+            if capability is not None and capability.nominal_capacity_bps > 0
+        ]
+        if len(nominals) < 2:
+            return None
+        ceiling = min(nominals)
+        if max(nominals) != ceiling:
+            decision.warnings.append(
+                f"Link runs at {ceiling} bps: the endpoints are asymmetric "
+                f"({max(nominals)} bps on the faster side)."
+            )
+        return ceiling
+
+    @staticmethod
+    def _speed_refused_by_a_port(
+        intent: LinkPerformanceIntent, decision: LinkPerformanceDecision,
+    ) -> bool:
+        """Un puerto que rechazó esa velocidad la vuelve a rechazar aquí.
+
+        `UNTESTED` no se convierte en rechazo: no haberla probado no la
+        invalida, y forzar esa equivalencia inventaría evidencia.
+        """
+        for capability in (intent.local_port_capability, intent.peer_port_capability):
+            if capability is None:
+                continue
+            if capability.speed_evidence(intent.requested_speed) is ModeEvidence.REJECTED:
+                decision.issues.append(LinkPerformanceIssue(
+                    code=LinkPerformanceIssueCode.SPEED_NOT_SUPPORTED,
+                    link_id=intent.link_id,
+                    message=(
+                        f"{capability.device_model} {capability.port_kind} rejected "
+                        f"{intent.requested_speed.value} on backend "
+                        f"{capability.backend_version}."
+                    ),
+                ))
+                return True
+        return False
+
+    @staticmethod
+    def _check_duplex_supported(
+        intent: LinkPerformanceIntent, decision: LinkPerformanceDecision,
+    ) -> None:
+        """El puerto que no ofrece ese duplex lo rechaza antes de compilarlo."""
+        if intent.requested_duplex is DuplexMode.AUTO:
+            return
+        for capability in (intent.local_port_capability, intent.peer_port_capability):
+            if capability is None:
+                continue
+            if capability.duplex_evidence(intent.requested_duplex) is ModeEvidence.REJECTED:
+                decision.issues.append(LinkPerformanceIssue(
+                    code=LinkPerformanceIssueCode.DUPLEX_NOT_SUPPORTED,
+                    link_id=intent.link_id,
+                    message=(
+                        f"{capability.device_model} {capability.port_kind} rejected "
+                        f"duplex {intent.requested_duplex.value} on backend "
+                        f"{capability.backend_version}."
+                    ),
+                ))
+                return
+
+    @staticmethod
+    def _check_demand(
+        intent: LinkPerformanceIntent,
+        decision: LinkPerformanceDecision,
+        capacity_bps: int | None,
+    ) -> None:
+        if not capacity_bps or decision.engineered_demand_bps <= capacity_bps:
+            return
+        decision.issues.append(LinkPerformanceIssue(
+            code=LinkPerformanceIssueCode.LINK_CAPACITY_INSUFFICIENT,
+            link_id=intent.link_id,
+            message=(
+                f"{decision.engineered_demand_bps} bps exceeds "
+                f"{capacity_bps} bps available on this link."
+            ),
+        ))
 
     @staticmethod
     def _check_duplex(

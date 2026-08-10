@@ -29,6 +29,7 @@ from ..models.link_performance import (
     LinkPerformanceIntent,
     LinkSpeedMode,
     TrafficContribution,
+    link_mode_capability_for,
 )
 from .link_performance_planner import LinkPerformancePlanner
 
@@ -74,9 +75,11 @@ class LinkPerformanceIntegration:
         requested_speed: LinkSpeedMode = LinkSpeedMode.AUTO,
         requested_duplex: DuplexMode = DuplexMode.AUTO,
         sync_routing_bandwidth: bool = False,
+        endpoint_models: dict[str, str] | None = None,
     ) -> LinkPerformanceIntent:
         metadata = dict(getattr(link, "metadata", {}) or {})
         role = self._role_for(getattr(link, "link_role", ""))
+        local, peer = self._endpoint_capabilities(link, endpoint_models or {})
         return LinkPerformanceIntent(
             link_id=getattr(link, "id", "") or "",
             media=resolve_link_media(getattr(link, "cable", "")),
@@ -87,8 +90,28 @@ class LinkPerformanceIntegration:
             traffic=list(traffic or []),
             failure_survival_bps=failure_survival_bps,
             sync_routing_bandwidth_to_effective_capacity=sync_routing_bandwidth,
+            local_port_capability=local,
+            peer_port_capability=peer,
             dce_endpoint_device_id=metadata.get(LINK_DCE_KEY, ""),
             dte_endpoint_device_id=metadata.get(LINK_DTE_KEY, ""),
+        )
+
+    @staticmethod
+    def _endpoint_capabilities(link, endpoint_models: dict[str, str]):
+        """Perfil medido de cada extremo, o None donde no haya evidencia.
+
+        El modelo del dispositivo no viene en el enlace: lo aporta quien
+        conoce el inventario. Sin el, los dos extremos quedan sin perfil y la
+        politica se comporta como antes de medir nada.
+        """
+        pairs = (
+            (getattr(link, "device_a", ""), getattr(link, "port_a", "")),
+            (getattr(link, "device_b", ""), getattr(link, "port_b", "")),
+        )
+        return tuple(
+            link_mode_capability_for(endpoint_models.get(device, ""), interface)
+            if device and interface else None
+            for device, interface in pairs
         )
 
     @staticmethod
