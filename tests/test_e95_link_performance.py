@@ -83,7 +83,7 @@ class TestSerialCapacity:
 
         assert decision.calculated_demand_bps == 2_880_000
         assert decision.effective_capacity_bps == 4_000_000
-        assert decision.capacity_source is CapacitySource.SERVICE_REQUIREMENT
+        assert decision.capacity_source is CapacitySource.TRAFFIC_CALCULATION
         assert decision.selection_reason == (
             "SMALLEST_SUPPORTED_RATE_MEETING_ENGINEERED_DEMAND"
         )
@@ -405,7 +405,7 @@ class TestExplainability:
         assert summary["engineered_demand_bps"] == 1_675_000
         assert 1_000_000 in summary["supported_capacities_bps"]
         assert summary["selected_capacity_bps"] == 2_000_000
-        assert summary["capacity_source"] == "service_requirement"
+        assert summary["capacity_source"] == "traffic_calculation"
         assert summary["reason"] == "SMALLEST_SUPPORTED_RATE_MEETING_ENGINEERED_DEMAND"
 
     def test_the_fallback_summary_never_claims_the_user_asked_for_it(self):
@@ -579,3 +579,48 @@ class TestControllerParser:
         )
 
         assert parse_serial_controller("% Invalid input") is None
+
+
+class TestProvenanceScoping:
+    """La capability serial es evidencia con procedencia, no una tabla Cisco."""
+
+    def test_the_measured_profile_names_its_backend_and_hardware(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            PT_2911_HWIC2T_SERIAL_CLOCK,
+        )
+        profile = PT_2911_HWIC2T_SERIAL_CLOCK
+
+        assert profile.backend_version == "9.0.1.0858"
+        assert profile.device_model == "2911"
+        assert 4_000_000 in profile.verified_rates_bps
+        assert 8_000_000 in profile.rejected_rates_bps
+
+    def test_the_highest_tested_rate_is_not_claimed_as_an_absolute_maximum(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            PT_2911_HWIC2T_SERIAL_CLOCK,
+        )
+        profile = PT_2911_HWIC2T_SERIAL_CLOCK
+
+        assert profile.highest_verified_tested_rate_bps == 4_000_000
+        assert not profile.enumeration_complete
+
+    def test_traffic_calculation_outranks_role_and_media_policy(self):
+        assert capacity_source_rank(CapacitySource.TRAFFIC_CALCULATION) < (
+            capacity_source_rank(CapacitySource.MEDIA_DEFAULT_POLICY)
+        )
+
+    def test_a_declared_service_requirement_stays_a_separate_source(self):
+        """Un calculo de trafico no es un requisito de servicio declarado."""
+        assert CapacitySource.TRAFFIC_CALCULATION is not CapacitySource.SERVICE_REQUIREMENT
+        assert capacity_source_rank(CapacitySource.SERVICE_REQUIREMENT) < (
+            capacity_source_rank(CapacitySource.TRAFFIC_CALCULATION)
+        )
+
+    def test_encapsulation_defaults_are_never_claimed_as_a_choice(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            EncapsulationSource,
+        )
+        decision = LinkPerformancePlanner().plan(_serial())
+
+        assert decision.encapsulation_source is EncapsulationSource.PLATFORM_DEFAULT
+        assert decision.explain()["encapsulation_source"] == "platform_default"

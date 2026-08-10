@@ -98,7 +98,14 @@ def build_exact_link_readback_js(expectation: LinkExpectation) -> str:
         "var __l1=__p1.getLink();var __l2=__p2.getLink();"
         "__o.port_a_bound=!!__l1;__o.port_b_bound=!!__l2;"
         "if(!__l1||!__l2){__o.reason='NO_LINK';__emit();return;}"
-        "__o.both_ports_bound=true;__o.same_link=(__l1===__l2);"
+        # Dos `getLink()` sobre el mismo enlace devuelven proxies IPC distintos,
+        # asi que `===` es false incluso cuando el enlace es el mismo. Medido en
+        # PT 9.0.1.0858: `getObjectUuid()` si coincide. Se compara la identidad
+        # declarada y solo se cae en `===` si el getter no existe.
+        "__o.both_ports_bound=true;"
+        "__o.same_link=(function(){try{var __ua=String(__l1.getObjectUuid());"
+        "var __ub=String(__l2.getObjectUuid());"
+        "if(__ua&&__ub){return __ua===__ub;}}catch(__ue){}return __l1===__l2;})();"
         "__o.link_class_a=String(__l1.getClassName());"
         "__o.link_class_b=String(__l2.getClassName());"
         "__o.observed_link_a=__ends(__l1);__o.observed_link_b=__ends(__l2);"

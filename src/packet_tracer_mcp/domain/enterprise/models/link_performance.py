@@ -38,6 +38,7 @@ class CapacitySource(str, Enum):
     EXPLICIT_USER = "explicit_user"
     LINK_POLICY = "link_policy"
     SERVICE_REQUIREMENT = "service_requirement"
+    TRAFFIC_CALCULATION = "traffic_calculation"
     TOPOLOGY_ROLE_POLICY = "topology_role_policy"
     MEDIA_DEFAULT_POLICY = "media_default_policy"
     ENTERPRISE_FALLBACK = "enterprise_fallback"
@@ -48,6 +49,7 @@ _SOURCE_PRECEDENCE: tuple[CapacitySource, ...] = (
     CapacitySource.EXPLICIT_USER,
     CapacitySource.LINK_POLICY,
     CapacitySource.SERVICE_REQUIREMENT,
+    CapacitySource.TRAFFIC_CALCULATION,
     CapacitySource.TOPOLOGY_ROLE_POLICY,
     CapacitySource.MEDIA_DEFAULT_POLICY,
     CapacitySource.ENTERPRISE_FALLBACK,
@@ -171,6 +173,46 @@ def ethernet_capacity_bps(speed: LinkSpeedMode) -> int:
     return _ETHERNET_CAPACITY_BPS.get(speed, 0)
 
 
+class EncapsulationSource(str, Enum):
+    """Nadie eligio PPP ni HDLC: se conservo lo que trae la plataforma."""
+
+    PLATFORM_DEFAULT = "platform_default"
+    EXPLICIT_POLICY = "explicit_policy"
+
+
+class SerialClockCapability(BaseModel):
+    """Tasas observadas sobre un backend/modelo/interfaz concretos.
+
+    No es una tabla Cisco universal. `highest_verified_tested_rate_bps` es la
+    mayor tasa que se aplico y volvio a leerse, no un maximo absoluto: sin una
+    enumeracion completa del backend, lo que no se probo queda sin probar.
+    """
+
+    backend_version: str = ""
+    device_model: str = ""
+    interface_kind: str = ""
+    verified_rates_bps: tuple[int, ...] = ()
+    rejected_rates_bps: tuple[int, ...] = ()
+    enumeration_complete: bool = False
+    source: str = "controlled_probe"
+
+    @property
+    def highest_verified_tested_rate_bps(self) -> int | None:
+        return max(self.verified_rates_bps) if self.verified_rates_bps else None
+
+
+#: Perfil medido en E9.5 Stage 3A2. Es evidencia con procedencia, no una
+#: constante del dominio: otro backend declara la suya.
+PT_2911_HWIC2T_SERIAL_CLOCK = SerialClockCapability(
+    backend_version="9.0.1.0858",
+    device_model="2911",
+    interface_kind="HWIC-2T Serial",
+    verified_rates_bps=(64_000, 128_000, 2_000_000, 4_000_000),
+    rejected_rates_bps=(3_000_000, 8_000_000),
+    enumeration_complete=False,
+)
+
+
 class LinkPerformanceIntent(BaseModel):
     """Lo que se pidió, sin resolver todavía nada."""
 
@@ -222,6 +264,7 @@ class LinkPerformanceDecision(BaseModel):
     routing_bandwidth_kbps: int | None = None
     dce_endpoint_device_id: str = ""
     dte_endpoint_device_id: str = ""
+    encapsulation_source: EncapsulationSource = EncapsulationSource.PLATFORM_DEFAULT
 
     issues: list[LinkPerformanceIssue] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -249,6 +292,7 @@ class LinkPerformanceDecision(BaseModel):
             "duplex": self.effective_duplex.value,
             "routing_bandwidth_kbps": self.routing_bandwidth_kbps,
             "serial_clock_rate_bps": self.serial_clock_rate_bps,
+            "encapsulation_source": self.encapsulation_source.value,
             "dce": self.dce_endpoint_device_id,
             "dte": self.dte_endpoint_device_id,
             "issues": [item.code.value for item in self.issues],

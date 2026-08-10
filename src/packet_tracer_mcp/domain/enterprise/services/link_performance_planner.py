@@ -165,7 +165,8 @@ class LinkPerformancePlanner:
             self._insufficient(decision, decision.engineered_demand_bps)
             return
         decision.effective_capacity_bps = usable[0]
-        decision.capacity_source = CapacitySource.SERVICE_REQUIREMENT
+        # Demanda agregada calculada, no un requisito de servicio declarado.
+        decision.capacity_source = CapacitySource.TRAFFIC_CALCULATION
         decision.selection_reason = "SMALLEST_SUPPORTED_RATE_MEETING_ENGINEERED_DEMAND"
 
     def _insufficient(self, decision: LinkPerformanceDecision, required: int) -> None:

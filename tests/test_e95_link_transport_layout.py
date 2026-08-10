@@ -353,3 +353,31 @@ def test_explicit_channel_is_consumed_only_by_send_and_wait_helper():
     assert "ch = channel if channel is not None else _pick_channel()" in bridge_helper
     assert "ch = _pick_channel()" in check_bridge
     assert "channel if channel is not None" not in check_bridge
+
+
+class TestExactLinkIdentityUsesUuid:
+    """Dos `getLink()` sobre el mismo enlace no son el mismo objeto.
+
+    Medido en PT 9.0.1.0858 sobre un enlace recien creado: `la === lb` dio
+    false mientras `getObjectUuid()` devolvio el mismo valor en ambos extremos.
+    Comparar por identidad de objeto habria declarado ENDPOINT_MISMATCH en todo
+    enlace real.
+    """
+
+    def _script(self):
+        from src.packet_tracer_mcp.infrastructure.execution.topology_observation import (
+            LinkEndpoint, LinkExpectation, build_exact_link_readback_js,
+        )
+        return build_exact_link_readback_js(LinkExpectation(
+            endpoint_a=LinkEndpoint("R1", "GigabitEthernet0/0"),
+            endpoint_b=LinkEndpoint("R2", "GigabitEthernet0/0"),
+        ))
+
+    def test_the_declared_identity_is_compared_before_object_identity(self):
+        script = self._script()
+
+        assert "getObjectUuid" in script
+        assert script.index("getObjectUuid") < script.index("__l1===__l2")
+
+    def test_object_identity_remains_only_as_a_fallback(self):
+        assert "__l1===__l2" in self._script()
