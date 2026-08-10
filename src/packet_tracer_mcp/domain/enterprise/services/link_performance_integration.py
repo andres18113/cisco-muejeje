@@ -38,7 +38,12 @@ LINK_MEDIA_KEY = "link_media"
 LINK_DCE_KEY = "serial_dce_device_id"
 LINK_DTE_KEY = "serial_dte_device_id"
 
+# Vocabulario real del catalogo (`CABLE_TYPES`). Se enumeran los dos conjuntos
+# de medios de datos; todo lo demas -- consola, telefonia, coaxial, wireless,
+# octal, celular, USB -- no es un medio de datos conmutado y no recibe politica
+# de capacidad. Un cable desconocido nunca se asume Ethernet.
 _SERIAL_CABLES = frozenset({"serial"})
+_ETHERNET_CABLES = frozenset({"straight", "cross", "crossover", "fiber", "auto"})
 
 
 def resolve_link_media(cable: str) -> LinkMedia:
@@ -46,7 +51,7 @@ def resolve_link_media(cable: str) -> LinkMedia:
     normalized = (cable or "").strip().casefold()
     if normalized in _SERIAL_CABLES:
         return LinkMedia.SERIAL
-    if normalized:
+    if normalized in _ETHERNET_CABLES:
         return LinkMedia.ETHERNET
     return LinkMedia.UNKNOWN
 

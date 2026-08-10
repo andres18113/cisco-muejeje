@@ -106,11 +106,11 @@ class TestConfigurationIdentity:
     def test_a_different_effective_rate_produces_a_different_action_payload(self):
         _, low = self._actions()
         _, high = self._actions(traffic=[
-            TrafficContribution(source_id="users", per_unit_bps=64_000, units=100),
+            TrafficContribution(source_id="users", per_unit_bps=64_000, units=45),
         ])
 
         assert low[0].clock_rate_bps == 2_000_000
-        assert high[0].clock_rate_bps == 8_000_000
+        assert high[0].clock_rate_bps == 4_000_000
         assert low[0].model_dump() != high[0].model_dump()
 
     def test_the_clock_is_emitted_only_for_the_resolved_dce(self):

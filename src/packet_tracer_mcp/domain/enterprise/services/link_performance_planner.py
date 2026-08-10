@@ -11,6 +11,7 @@ from __future__ import annotations
 from ..models.link_performance import (
     ENTERPRISE_SERIAL_FALLBACK_BPS,
     SUPPORTED_SERIAL_RATES_BPS,
+    CapacityRequestMode,
     CapacitySource,
     DuplexMode,
     HeadroomPolicy,
@@ -31,12 +32,22 @@ _ETHERNET_SPEED_ORDER: tuple[LinkSpeedMode, ...] = (
 class LinkPerformancePlanner:
     """Servicio puro: mismas entradas, misma decisión, sin estado ni backend."""
 
+    #: Cambiar cualquiera de estas reglas de forma que altere el resultado
+    #: obliga a subir la version: la decision la lleva grabada y con ella
+    #: viaja a la identidad semantica del plan.
+    POLICY_ID = "enterprise-link-performance"
+    POLICY_VERSION = "1"
+
     def __init__(
         self,
         headroom: HeadroomPolicy | None = None,
         supported_serial_rates_bps: tuple[int, ...] = SUPPORTED_SERIAL_RATES_BPS,
         enterprise_serial_fallback_bps: int = ENTERPRISE_SERIAL_FALLBACK_BPS,
+        policy_id: str | None = None,
+        policy_version: str | None = None,
     ) -> None:
+        self._policy_id = policy_id or self.POLICY_ID
+        self._policy_version = policy_version or self.POLICY_VERSION
         self._headroom = headroom or HeadroomPolicy()
         self._serial_rates = tuple(sorted(set(supported_serial_rates_bps)))
         self._serial_fallback = enterprise_serial_fallback_bps
@@ -46,7 +57,10 @@ class LinkPerformancePlanner:
             link_id=intent.link_id,
             media=intent.media,
             role=intent.role,
+            policy_id=self._policy_id,
+            policy_version=self._policy_version,
             requested_capacity_bps=intent.requested_capacity_bps,
+            requested_capacity_mode=intent.requested_capacity_mode,
             headroom_percent=self._headroom.engineering_headroom_percent,
             dce_endpoint_device_id=intent.dce_endpoint_device_id,
             dte_endpoint_device_id=intent.dte_endpoint_device_id,
@@ -117,13 +131,26 @@ class LinkPerformancePlanner:
         if requested in self._serial_rates:
             decision.effective_capacity_bps = requested
             decision.selection_reason = "EXPLICIT_USER_RATE"
+        elif intent.requested_capacity_mode is CapacityRequestMode.EXACT:
+            # "Exactamente 3 Mbps" no puede convertirse en 4 en silencio.
+            decision.effective_capacity_bps = None
+            decision.selection_reason = "EXACT_RATE_NOT_SUPPORTED_BY_MEDIUM"
+            decision.issues.append(LinkPerformanceIssue(
+                code=LinkPerformanceIssueCode.EXACT_CAPACITY_UNSUPPORTED,
+                link_id=decision.link_id,
+                message=(
+                    f"{requested} bps was requested exactly and is not a supported "
+                    f"rate; supported rates are {list(self._serial_rates)}."
+                ),
+            ))
+            return
         else:
             usable = [rate for rate in self._serial_rates if rate >= requested]
             if not usable:
                 self._insufficient(decision, requested)
                 return
             decision.effective_capacity_bps = usable[0]
-            decision.selection_reason = "SMALLEST_SUPPORTED_RATE_MEETING_EXPLICIT_REQUEST"
+            decision.selection_reason = "SMALLEST_SUPPORTED_RATE_MEETING_MINIMUM_REQUEST"
         if decision.engineered_demand_bps > (decision.effective_capacity_bps or 0):
             decision.warnings.append(
                 "Explicit capacity is below the engineered demand for this link.",

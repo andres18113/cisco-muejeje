@@ -20,6 +20,8 @@ class OperationalQueryId(str, Enum):
     SHOW_EPHONE = "show_ephone"
     SHOW_ACCESS_LISTS = "show_access_lists"
     SHOW_IP_INTERFACE = "show_ip_interface"
+    SHOW_CONTROLLERS_SERIAL = "show_controllers_serial"
+    SHOW_INTERFACE = "show_interface"
     SHOW_IP_NAT_TRANSLATIONS = "show_ip_nat_translations"
     SHOW_IP_NAT_STATISTICS = "show_ip_nat_statistics"
     SHOW_PORT_SECURITY_INTERFACE = "show_port_security_interface"
@@ -100,6 +102,9 @@ _COMMANDS = {
 }
 _INTERFACE_COMMANDS = {
     OperationalQueryId.SHOW_IP_INTERFACE: "show ip interface {interface}",
+    # DCE/DTE y reloj sólo son observables por el controlador de la serial.
+    OperationalQueryId.SHOW_CONTROLLERS_SERIAL: "show controllers {interface}",
+    OperationalQueryId.SHOW_INTERFACE: "show interfaces {interface}",
     OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE:
         "show port-security interface {interface}",
 }
@@ -107,6 +112,7 @@ _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_EPHONE,
     OperationalQueryId.SHOW_ACCESS_LISTS,
     OperationalQueryId.SHOW_IP_INTERFACE,
+    OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
     OperationalQueryId.SHOW_IP_NAT_TRANSLATIONS,
     OperationalQueryId.SHOW_IP_NAT_STATISTICS,
     OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE,
@@ -243,6 +249,42 @@ _SVI_STATE = re.compile(
     r"line protocol is\s+(?P<protocol>\S+)",
 )
 _SVI_ADDRESS = re.compile(r"(?im)^\s*Internet address is\s+(?P<address>\d+\.\d+\.\d+\.\d+)/(?P<prefix>\d+)")
+
+
+@dataclass(frozen=True)
+class SerialControllerStatus:
+    """Rol del extremo y reloj, leidos del controlador de la serial."""
+
+    interface: str
+    endpoint_role: str
+    clock_rate_bps: int | None
+
+
+_CONTROLLER_ROLE = re.compile(r"(?im)^\s*(?P<role>DCE|DTE)\b(?P<rest>.*)$")
+_CONTROLLER_CLOCK = re.compile(r"(?i)clock rate\s+(?P<rate>\d+)")
+
+
+def parse_serial_controller(value: str) -> SerialControllerStatus | None:
+    """Lee `show controllers <serial>`.
+
+    Medido en PT 9.0.1.0858: el DCE responde "DCE V.35, clock rate 2000000" y
+    el DTE "DTE V.35 TX and RX clocks detected". El reloj pertenece al DCE; la
+    ausencia en el DTE no es un fallo de lectura, es que no tiene reloj propio.
+    """
+    normalized = normalize_terminal_output(value)
+    role = _CONTROLLER_ROLE.search(normalized)
+    if role is None:
+        return None
+    interface = ""
+    header = re.search(r"(?im)^Interface\s+(?P<name>\S+)", normalized)
+    if header:
+        interface = header.group("name")
+    clock = _CONTROLLER_CLOCK.search(role.group("rest"))
+    return SerialControllerStatus(
+        interface=interface,
+        endpoint_role=role.group("role").casefold(),
+        clock_rate_bps=int(clock.group("rate")) if clock else None,
+    )
 
 
 def parse_show_ip_interface(value: str) -> InterfaceStatusRow | None:

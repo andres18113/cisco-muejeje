@@ -12,6 +12,7 @@ import pytest
 from src.packet_tracer_mcp.domain.enterprise.models.compilation import ConcreteLinkRole
 from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
     ENTERPRISE_SERIAL_FALLBACK_BPS,
+    CapacityRequestMode,
     CapacitySource,
     DuplexMode,
     HeadroomPolicy,
@@ -77,11 +78,11 @@ class TestSerialCapacity:
 
     def test_traffic_demand_raises_the_selected_rate_above_the_fallback(self):
         decision = LinkPerformancePlanner().plan(_serial(traffic=[
-            TrafficContribution(source_id="branch-users", per_unit_bps=64_000, units=60),
+            TrafficContribution(source_id="branch-users", per_unit_bps=64_000, units=45),
         ]))
 
-        assert decision.calculated_demand_bps == 3_840_000
-        assert decision.effective_capacity_bps == 8_000_000
+        assert decision.calculated_demand_bps == 2_880_000
+        assert decision.effective_capacity_bps == 4_000_000
         assert decision.capacity_source is CapacitySource.SERVICE_REQUIREMENT
         assert decision.selection_reason == (
             "SMALLEST_SUPPORTED_RATE_MEETING_ENGINEERED_DEMAND"
@@ -133,8 +134,42 @@ class TestSerialCapacity:
 
         assert decision.effective_capacity_bps == 4_000_000
         assert decision.selection_reason == (
-            "SMALLEST_SUPPORTED_RATE_MEETING_EXPLICIT_REQUEST"
+            "SMALLEST_SUPPORTED_RATE_MEETING_MINIMUM_REQUEST"
         )
+
+    def test_an_exact_unsupported_rate_is_rejected_not_rounded_up(self):
+        """"Exactamente 3 Mbps" no puede convertirse en 4 en silencio."""
+        decision = LinkPerformancePlanner().plan(_serial(
+            requested_capacity_bps=3_000_000,
+            requested_capacity_mode=CapacityRequestMode.EXACT,
+        ))
+
+        assert decision.effective_capacity_bps is None
+        assert decision.serial_clock_rate_bps is None
+        assert not decision.applicable
+        assert LinkPerformanceIssueCode.EXACT_CAPACITY_UNSUPPORTED.value in _codes(decision)
+
+    def test_an_exact_supported_rate_is_accepted(self):
+        decision = LinkPerformancePlanner().plan(_serial(
+            requested_capacity_bps=2_000_000,
+            requested_capacity_mode=CapacityRequestMode.EXACT,
+        ))
+
+        assert decision.effective_capacity_bps == 2_000_000
+        assert decision.applicable
+
+    def test_the_decision_records_which_policy_produced_it(self):
+        decision = LinkPerformancePlanner().plan(_serial())
+
+        assert decision.policy_id == "enterprise-link-performance"
+        assert decision.policy_version == "1"
+
+    def test_a_different_policy_version_is_visible_in_the_decision(self):
+        """Un cambio de politica que altere el comportamiento se puede ver."""
+        decision = LinkPerformancePlanner(policy_version="2").plan(_serial())
+
+        assert decision.policy_version == "2"
+        assert decision.explain()["policy"] == "enterprise-link-performance@2"
 
     def test_demand_beyond_the_medium_is_reported_not_silently_capped(self):
         decision = LinkPerformancePlanner().plan(_serial(traffic=[
@@ -420,3 +455,127 @@ class TestTypedActions:
         engineered = HeadroomPolicy(engineering_headroom_percent=bad).engineered_bps(1_000_000)
 
         assert engineered >= 1_000_000
+
+
+class TestLiveVerifiedSerialCeiling:
+    """El techo serial sale de una reproduccion controlada, no de una tabla.
+
+    Sobre PT 9.0.1.0858, un 2911 con HWIC-2T acepto y volvio a leer 64k, 128k,
+    2M y 4M; 8M y 3M dejaron la interfaz en su valor anterior.
+    """
+
+    def test_the_live_verified_rates_are_the_selectable_ones(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            SUPPORTED_SERIAL_RATES_BPS,
+        )
+
+        assert 4_000_000 in SUPPORTED_SERIAL_RATES_BPS
+        assert 8_000_000 not in SUPPORTED_SERIAL_RATES_BPS
+
+    def test_demand_above_the_verified_ceiling_is_insufficient_not_capped(self):
+        decision = LinkPerformancePlanner().plan(_serial(traffic=[
+            TrafficContribution(source_id="wan", per_unit_bps=5_000_000, units=1),
+        ]))
+
+        assert decision.effective_capacity_bps is None
+        assert LinkPerformanceIssueCode.LINK_CAPACITY_INSUFFICIENT.value in _codes(decision)
+
+    def test_a_backend_with_more_headroom_can_declare_it(self):
+        planner = LinkPerformancePlanner(
+            supported_serial_rates_bps=(2_000_000, 4_000_000, 8_000_000),
+        )
+        decision = planner.plan(_serial(traffic=[
+            TrafficContribution(source_id="wan", per_unit_bps=5_000_000, units=1),
+        ]))
+
+        assert decision.effective_capacity_bps == 8_000_000
+
+
+class TestSerialRenderer:
+    def test_the_clock_renders_in_bits_per_second_on_its_interface(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+            ConfigurationPhase, ConfigureSerialClock,
+        )
+        from src.packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
+            render_serial_clock,
+        )
+
+        lines = render_serial_clock(ConfigureSerialClock(
+            id="a", phase=ConfigurationPhase.L2_INTERFACES, device_id="d",
+            device_name="HQ-R1", site_id="hq", interface="Serial0/0/0",
+            clock_rate_bps=2_000_000,
+        ))
+
+        assert lines == ["interface Serial0/0/0", " clock rate 2000000"]
+
+    def test_bandwidth_renders_in_kbps_and_never_as_a_clock(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+            ConfigurationPhase, ConfigureInterfaceBandwidth,
+        )
+        from src.packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
+            render_interface_bandwidth,
+        )
+
+        lines = render_interface_bandwidth(ConfigureInterfaceBandwidth(
+            id="a", phase=ConfigurationPhase.L2_INTERFACES, device_id="d",
+            device_name="HQ-R1", site_id="hq", interface="Serial0/0/0",
+            bandwidth_kbps=2_000,
+        ))
+
+        assert lines == ["interface Serial0/0/0", " bandwidth 2000"]
+        assert "clock" not in " ".join(lines)
+
+    def test_auto_ethernet_renders_nothing(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+            ConfigurationPhase, ConfigureEthernetLinkMode,
+        )
+        from src.packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
+            render_ethernet_link_mode,
+        )
+
+        assert render_ethernet_link_mode(ConfigureEthernetLinkMode(
+            id="a", phase=ConfigurationPhase.L2_INTERFACES, device_id="d",
+            device_name="SW1", site_id="hq", interface="Gig0/1",
+        )) == []
+
+
+class TestControllerParser:
+    """Lectura real de `show controllers` de PT 9.0.1.0858."""
+
+    _DCE = (
+        "show controllers Serial0/0/0\n"
+        "Interface Serial0/0/0\n"
+        "Hardware is PowerQUICC MPC860\n"
+        "DCE V.35, clock rate 2000000\n"
+    )
+    _DTE = (
+        "show controllers Serial0/0/0\n"
+        "Interface Serial0/0/0\n"
+        "Hardware is PowerQUICC MPC860\n"
+        "DTE V.35 TX and RX clocks detected\n"
+    )
+
+    def test_the_dce_end_reports_its_role_and_clock(self):
+        from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+            parse_serial_controller,
+        )
+        row = parse_serial_controller(self._DCE)
+
+        assert row.endpoint_role == "dce"
+        assert row.clock_rate_bps == 2_000_000
+
+    def test_the_dte_end_reports_no_clock_of_its_own(self):
+        from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+            parse_serial_controller,
+        )
+        row = parse_serial_controller(self._DTE)
+
+        assert row.endpoint_role == "dte"
+        assert row.clock_rate_bps is None
+
+    def test_unrelated_output_yields_nothing(self):
+        from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+            parse_serial_controller,
+        )
+
+        assert parse_serial_controller("% Invalid input") is None

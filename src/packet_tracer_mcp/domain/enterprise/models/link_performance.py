@@ -62,6 +62,17 @@ def capacity_source_rank(source: CapacitySource) -> int:
         return len(_SOURCE_PRECEDENCE)
 
 
+class CapacityRequestMode(str, Enum):
+    """Distingue "exactamente 3 Mbps" de "al menos 3 Mbps".
+
+    Un minimo puede subir a la siguiente tasa soportada; una peticion exacta
+    que el medio no soporta tiene que fallar, no aproximarse en silencio.
+    """
+
+    EXACT = "exact"
+    MINIMUM = "minimum"
+
+
 class LinkSpeedMode(str, Enum):
     AUTO = "auto"
     SPEED_10M = "10m"
@@ -85,6 +96,7 @@ class SerialEndpointRole(str, Enum):
 
 class LinkPerformanceIssueCode(str, Enum):
     LINK_CAPACITY_INSUFFICIENT = "link_capacity_insufficient"
+    EXACT_CAPACITY_UNSUPPORTED = "exact_capacity_unsupported"
     DUPLEX_MISMATCH = "duplex_mismatch"
     SPEED_MISMATCH = "speed_mismatch"
     SPEED_NOT_SUPPORTED = "speed_not_supported"
@@ -134,12 +146,17 @@ class HeadroomPolicy(BaseModel):
         return int(-(-demand_bps * factor // 1))
 
 
-# Tasas serial que este proyecto considera seleccionables por política. 64k y
-# 128k siguen siendo configuraciones explícitas válidas; simplemente no son el
-# fallback de una WAN empresarial sin información de tráfico.
+# Tasas serial seleccionables por política. 64k y 128k siguen siendo
+# configuraciones explícitas válidas; simplemente no son el fallback de una WAN
+# empresarial sin información de tráfico.
+#
+# El techo sale de una reproducción controlada, no de una tabla Cisco asumida:
+# sobre PT 9.0.1.0858, un 2911 con HWIC-2T aceptó y volvió a leer 64k, 128k,
+# 2M y 4M, mientras 8M y 3M dejaron la interfaz en su valor anterior. Un
+# backend que soporte más lo declara por `supported_serial_rates_bps`.
 SUPPORTED_SERIAL_RATES_BPS: tuple[int, ...] = (
     64_000, 128_000, 256_000, 512_000,
-    1_000_000, 2_000_000, 4_000_000, 8_000_000,
+    1_000_000, 2_000_000, 4_000_000,
 )
 ENTERPRISE_SERIAL_FALLBACK_BPS = 2_000_000
 
@@ -161,6 +178,7 @@ class LinkPerformanceIntent(BaseModel):
     media: LinkMedia = LinkMedia.UNKNOWN
     role: ConcreteLinkRole | None = None
     requested_capacity_bps: int | None = None
+    requested_capacity_mode: CapacityRequestMode = CapacityRequestMode.MINIMUM
     minimum_capacity_bps: int | None = None
     requested_speed: LinkSpeedMode = LinkSpeedMode.AUTO
     requested_duplex: DuplexMode = DuplexMode.AUTO
@@ -180,7 +198,13 @@ class LinkPerformanceDecision(BaseModel):
     media: LinkMedia = LinkMedia.UNKNOWN
     role: ConcreteLinkRole | None = None
 
+    # Que politica produjo la decision. Un cambio de politica que altere el
+    # comportamiento cambia esta identidad y, con ella, la del plan.
+    policy_id: str = ""
+    policy_version: str = ""
+
     requested_capacity_bps: int | None = None
+    requested_capacity_mode: CapacityRequestMode = CapacityRequestMode.MINIMUM
     calculated_demand_bps: int = 0
     engineered_demand_bps: int = 0
     headroom_percent: float = 0.0
@@ -210,6 +234,7 @@ class LinkPerformanceDecision(BaseModel):
         """Resumen compacto derivable; no una segunda API pública."""
         return {
             "link_id": self.link_id,
+            "policy": f"{self.policy_id}@{self.policy_version}",
             "role": self.role.value if self.role else "",
             "media": self.media.value,
             "requested_capacity_bps": self.requested_capacity_bps,
