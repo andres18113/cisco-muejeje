@@ -18,6 +18,7 @@ from ...domain.enterprise.models.discovery import (
     ProbeExecutionStatus,
     RuntimeDeviceDescriptor,
     RuntimeDeviceObservation,
+    RuntimeModuleDescriptor,
     RuntimePortDescriptor,
     encode_inventory_observation,
     inventory_restoration_matches,
@@ -177,7 +178,17 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             "if(!__d){reportResult(JSON.stringify({found:false}));}else{var __ports=[];"
             "for(var __i=0;__i<__d.getPortCount();__i++){try{var __p=__d.getPortAt(__i);"
             "if(__p){__ports.push({name:__p.getName(),bandwidth_kbps:(typeof __p.getBandwidth==='function')?__p.getBandwidth():null});}}catch(__pe){}}"
-            "reportResult(JSON.stringify({found:true,runtime_id:(typeof __d.getModel==='function')?__d.getModel():__model,display_name:__d.getName(),ports:__ports}));}}"
+            # La lectura de módulos va en su propio try: si falla, la creación
+            # sigue siendo válida y el slot simplemente queda sin observar.
+            "var __mods=[];try{var __root=__d.getRootModule();"
+            "if(__root){for(var __s=0;__s<__root.getModuleCount();__s++){"
+            "var __m=__root.getModuleAt(__s);if(!__m){continue;}var __entry={};"
+            "try{__entry.name=String(__m.getModuleNameAsString());}catch(__me){__entry.name='';}"
+            "try{__entry.slot=String(__m.getModuleNumber());}catch(__me){__entry.slot='';}"
+            "try{__entry.slot_type_code=String(__root.getSlotTypeAt(__s));}catch(__me){__entry.slot_type_code='';}"
+            "try{__entry.port_count=__m.getPortCount();}catch(__me){__entry.port_count=0;}"
+            "__mods.push(__entry);}}}catch(__re){__mods=[];}"
+            "reportResult(JSON.stringify({found:true,runtime_id:(typeof __d.getModel==='function')?__d.getModel():__model,display_name:__d.getName(),ports:__ports,modules:__mods}));}}"
             "}catch(__e){reportResult('ERROR:'+__e); }"
         )
         data = self._json_result(js, timeout=15.0)
@@ -188,6 +199,11 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             runtime_id=data.get("runtime_id"),
             display_name=data.get("display_name", ""),
             ports=[self._port_descriptor(item) for item in data.get("ports", [])],
+            modules=[
+                self._module_descriptor(item)
+                for item in data.get("modules", [])
+                if isinstance(item, dict)
+            ],
         )
         if observation.found:
             return observation.model_copy(update={
@@ -454,6 +470,23 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         if not isinstance(value, dict):
             raise RuntimeError("Packet Tracer returned a non-object probe response.")
         return value
+
+    @staticmethod
+    def _module_descriptor(value: dict) -> RuntimeModuleDescriptor:
+        # "None" es literalmente lo que devuelve el getter de nombre, también
+        # para un módulo con puertos. No es un nombre: es la ausencia de uno.
+        raw_name = str(value.get("name") or "").strip()
+        named = bool(raw_name) and raw_name.casefold() not in {"none", "null"}
+        port_count = value.get("port_count")
+        return RuntimeModuleDescriptor(
+            name=raw_name if named else "",
+            slot=str(value.get("slot") or "") or None,
+            installed=True,
+            slot_type_code=str(value.get("slot_type_code") or ""),
+            port_count=int(port_count) if isinstance(port_count, int) else 0,
+            identity_observable=named,
+            evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        )
 
     @staticmethod
     def _port_descriptor(value: dict) -> RuntimePortDescriptor:

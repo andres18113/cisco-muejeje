@@ -93,6 +93,16 @@ class CapabilityProbeRegistry:
             cost=ProbeCost.NORMAL, safety=ProbeSafety.MUTATING, requires_power_cycle=True,
             isolation_level=ProbeIsolationLevel.RESET_REQUIRED,
         ),
+        "module_slot_enumeration": ProbeDefinition(
+            id="module-slot-enumeration", capability="module_slot_enumeration",
+            prerequisites=["model_exists"], cost=ProbeCost.CHEAP,
+            isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
+        ),
+        "module_installed_identity": ProbeDefinition(
+            id="module-installed-identity", capability="module_installed_identity",
+            prerequisites=["module_slot_enumeration"], cost=ProbeCost.CHEAP,
+            isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
+        ),
         "supports_poe": ProbeDefinition(
             id="poe-inventory", capability="supports_poe", prerequisites=["port_inventory"],
             cost=ProbeCost.CHEAP, isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
@@ -493,6 +503,33 @@ class CapabilityDiscoveryService:
             elif capability == "supports_modules":
                 status = CapabilityStatus.SUPPORTED if descriptor.modules else CapabilityStatus.UNKNOWN
                 results.append(_physical_result(model, capability, status, version, "Module inventory observed." if descriptor.modules else "No runtime module inventory available."))
+            elif capability == "module_slot_enumeration":
+                slots = len(descriptor.modules)
+                results.append(_physical_result(
+                    model, capability,
+                    CapabilityStatus.SUPPORTED if slots else CapabilityStatus.UNKNOWN,
+                    version,
+                    f"{slots} slot(s) enumerated with type code(s) "
+                    + ",".join(sorted({item.slot_type_code for item in descriptor.modules}))
+                    if slots else "Runtime exposed no module tree.",
+                    observed_value=slots or None,
+                ))
+            elif capability == "module_installed_identity":
+                named = [item for item in descriptor.modules if item.identity_observable]
+                with_ports = [item for item in descriptor.modules if item.port_count]
+                results.append(_physical_result(
+                    model, capability,
+                    CapabilityStatus.SUPPORTED if named else CapabilityStatus.UNKNOWN,
+                    version,
+                    f"{len(named)} module name(s) observed." if named else (
+                        "The module name getter answered without a name for "
+                        f"{len(descriptor.modules)} enumerated slot(s), including "
+                        f"{len(with_ports)} that expose ports; module identity is "
+                        "not observable on this surface."
+                        if descriptor.modules else "No module tree to identify."
+                    ),
+                    observed_value=len(named) or None,
+                ))
             elif capability == "supports_poe":
                 statuses = {port.poe_status for port in descriptor.ports}
                 status = _observed_status(statuses)
@@ -508,7 +545,7 @@ class CapabilityDiscoveryService:
     ) -> None:
         observed = {item.capability: item.status for item in results if item.model == model}
         for definition in self._registry.definitions_for(capabilities):
-            if definition.capability in {"model_exists", "port_inventory", "supports_modules", "supports_poe"}:
+            if definition.capability in {"model_exists", "port_inventory", "supports_modules", "supports_poe", "module_slot_enumeration", "module_installed_identity"}:
                 continue
             if any(observed.get(prerequisite) is not CapabilityStatus.SUPPORTED for prerequisite in definition.prerequisites):
                 results.append(CapabilityProbeResult(

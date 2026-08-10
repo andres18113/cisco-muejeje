@@ -318,6 +318,13 @@ class RuntimeModuleDescriptor(BaseModel):
     installed: bool = False
     resulting_ports: list[RuntimePortDescriptor] = Field(default_factory=list)
     evidence_source: EvidenceSource = EvidenceSource.PACKET_TRACER_RUNTIME
+    # Packet Tracer devuelve un código numérico de slot, no un tipo nombrado.
+    slot_type_code: str = ""
+    port_count: int = 0
+    # El getter de nombre existe y responde, pero devuelve "None" incluso para
+    # un módulo que expone puertos. Enumerar un slot y nombrar lo que contiene
+    # son observaciones distintas y se registran por separado.
+    identity_observable: bool = False
 
 
 class DeviceIdentity(BaseModel):
