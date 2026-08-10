@@ -19,6 +19,8 @@ from ...domain.enterprise.models.discovery import (
     RuntimeDeviceDescriptor,
     RuntimeDeviceObservation,
     RuntimePortDescriptor,
+    encode_inventory_observation,
+    inventory_restoration_matches,
     semantic_inventory_fingerprint,
 )
 from ...infrastructure.catalog.devices import resolve_model
@@ -51,6 +53,11 @@ def _is_backend_managed_device(item: dict) -> bool:
         return False
     model = str(item.get("model") or "").strip().casefold()
     return model in _BACKEND_MANAGED_MODELS and not item.get("ports")
+
+
+def _backend_managed_identity(item: dict) -> str:
+    """Identidad estable para poder detectar que uno preexistente desapareció."""
+    return f"{str(item.get('model') or '').strip()}/{str(item.get('name') or '').strip()}"
 
 
 _MULTILAYER_PROBE_VLAN_ID = 901
@@ -123,11 +130,18 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         links = data.get("links", [])
         if not isinstance(links, list):
             raise RuntimeError("Packet Tracer returned malformed link inventory data.")
-        normalized = [
-            item for item in [*items, *links]
-            if isinstance(item, dict) and not _is_backend_managed_device(item)
-        ]
-        return semantic_inventory_fingerprint(normalized)
+        normalized: list[dict] = []
+        backend_managed: list[str] = []
+        for item in [*items, *links]:
+            if not isinstance(item, dict):
+                continue
+            if _is_backend_managed_device(item):
+                backend_managed.append(_backend_managed_identity(item))
+            else:
+                normalized.append(item)
+        return encode_inventory_observation(
+            semantic_inventory_fingerprint(normalized), backend_managed,
+        )
 
     def wait_for_inventory_fingerprint(
         self,
@@ -139,7 +153,10 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         observed = ""
         while True:
             observed = self.inventory_fingerprint()
-            if observed == expected or time.monotonic() >= deadline:
+            if (
+                inventory_restoration_matches(expected, observed)
+                or time.monotonic() >= deadline
+            ):
                 return observed
             time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
 

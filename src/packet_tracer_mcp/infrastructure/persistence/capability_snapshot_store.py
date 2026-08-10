@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ...domain.enterprise.models.discovery import CapabilitySnapshot, SnapshotDiff
+from ...domain.enterprise.models.discovery import (
+    BackendVersionProvenance,
+    CapabilitySnapshot,
+    SnapshotDiff,
+)
 from ...shared.utils import resolve_within, safe_name_component
 
 
@@ -49,6 +53,15 @@ class CapabilitySnapshotStore:
             if snapshot.probe_schema_version != probe_schema_version:
                 continue
             if not snapshot.reusable:
+                continue
+            if (
+                snapshot.backend_version_provenance
+                is BackendVersionProvenance.UNKNOWN
+            ):
+                # Dos builds distintas de Packet Tracer producen snapshots
+                # indistinguibles cuando nadie pudo nombrar la versión. La
+                # evidencia sigue siendo válida en su propia sesión, pero no
+                # puede cruzar a otra.
                 continue
             if (
                 environment_fingerprint

@@ -18,8 +18,10 @@ from ...domain.enterprise.models.discovery import (
     DeviceIdentity,
     DiscoverySource,
     E4ReadinessReport,
+    BackendVersionProvenance,
     E4ReadinessState,
     ModelIdentityStatus,
+    inventory_restoration_matches,
     ProbeCost,
     ProbeContext,
     ProbeDefinition,
@@ -268,7 +270,9 @@ class CapabilityDiscoveryService:
             initial_inventory_hash,
         )
         inventory_restored = (
-            initial_inventory_hash == final_inventory_hash
+            inventory_restoration_matches(
+                initial_inventory_hash, final_inventory_hash,
+            )
             if initial_inventory_hash and final_inventory_hash
             else None
         )
@@ -295,6 +299,13 @@ class CapabilityDiscoveryService:
         )
         snapshot = CapabilitySnapshot(
             packet_tracer_version=version,
+            # El bridge confirmado no expone versión: lo más fuerte que puede
+            # afirmarse hoy es que el entorno la declaró. Nunca se marca como
+            # observada directamente sin un getter real.
+            backend_version_provenance=(
+                BackendVersionProvenance.DECLARED_ENVIRONMENT if version
+                else BackendVersionProvenance.UNKNOWN
+            ),
             backend=environment.backend,
             environment_fingerprint=environment_fingerprint,
             probe_fingerprints=probe_fingerprints,

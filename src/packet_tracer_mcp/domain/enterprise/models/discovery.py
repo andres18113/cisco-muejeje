@@ -115,6 +115,64 @@ class CleanupStatus(str, Enum):
     NOT_REQUIRED = "not_required"
 
 
+class BackendVersionProvenance(str, Enum):
+    """Cómo se supo la versión del backend que produjo una evidencia.
+
+    El file-bridge no expone hoy una versión verificable, así que una snapshot
+    puede quedar sin versión. Eso no la invalida dentro de su propia sesión,
+    pero dos versiones distintas de Packet Tracer producirían snapshots
+    indistinguibles, de modo que no puede reutilizarse entre sesiones.
+    """
+
+    DIRECTLY_OBSERVED = "directly_observed"
+    DECLARED_ENVIRONMENT = "declared_environment"
+    UNKNOWN = "unknown"
+
+
+_INVENTORY_PARTS = 2
+
+
+def encode_inventory_observation(
+    semantic_fingerprint_value: str, backend_managed: list[str],
+) -> str:
+    """Huella de inventario con la parte backend-managed separada.
+
+    Packet Tracer materializa objetos por su cuenta (hoy, el Power Distribution
+    Device) y los conserva después de que el probe borre los suyos. Contarlos
+    junto al resto hacía imposible restaurar; ignorarlos del todo escondía que
+    un objeto preexistente del usuario hubiera desaparecido. Se guardan aparte
+    para poder exigir cosas distintas de cada mitad.
+    """
+    ordered = ";".join(sorted(set(backend_managed)))
+    return f"{semantic_fingerprint_value}|{ordered}"
+
+
+def decode_inventory_observation(value: str) -> tuple[str, frozenset[str]]:
+    """Devuelve (huella semántica, identidades backend-managed)."""
+    if not value:
+        return "", frozenset()
+    parts = value.split("|", 1)
+    if len(parts) != _INVENTORY_PARTS:
+        # Huella heredada, sin mitad backend-managed.
+        return value, frozenset()
+    semantic, managed = parts
+    return semantic, frozenset(item for item in managed.split(";") if item)
+
+
+def inventory_restoration_matches(initial: str, final: str) -> bool:
+    """La mitad semántica debe coincidir; la backend-managed sólo puede crecer.
+
+    Un objeto backend-managed nuevo es una consecuencia de la sesión que el
+    probe no puede revertir, y no invalida la restauración. La desaparición o
+    el cambio de uno preexistente sí: nadie autorizó tocarlo.
+    """
+    initial_semantic, initial_managed = decode_inventory_observation(initial)
+    final_semantic, final_managed = decode_inventory_observation(final)
+    if initial_semantic != final_semantic:
+        return False
+    return initial_managed <= final_managed
+
+
 class InventoryRestoration(str, Enum):
     """Clasificación explícita de `inventory_restored` frente a la mutación.
 
@@ -420,6 +478,9 @@ class CapabilitySnapshot(BaseModel):
     schema_version: int = SNAPSHOT_SCHEMA_VERSION
     probe_schema_version: int = PROBE_SCHEMA_VERSION
     packet_tracer_version: str | None = None
+    backend_version_provenance: BackendVersionProvenance = (
+        BackendVersionProvenance.UNKNOWN
+    )
     backend: CapabilityBackend = CapabilityBackend.PACKET_TRACER
     environment_fingerprint: str = ""
     probe_fingerprints: dict[str, str] = Field(default_factory=dict)

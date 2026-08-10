@@ -24,6 +24,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     ProbeSafety,
     RuntimeDeviceObservation,
     RuntimePortDescriptor,
+    decode_inventory_observation,
     semantic_inventory_fingerprint,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
@@ -332,7 +333,11 @@ def test_live_inventory_fingerprint_uses_structured_device_and_link_readback():
 
     runtime = PacketTracerBridgeProbeRuntime(send_and_wait)
 
-    assert runtime.inventory_fingerprint() == semantic_inventory_fingerprint([
+    semantic, backend_managed = decode_inventory_observation(
+        runtime.inventory_fingerprint(),
+    )
+
+    assert semantic == semantic_inventory_fingerprint([
         {
             "kind": "link", "a_device": "R1", "a_port": "GigabitEthernet0/0",
             "b_device": "SW1", "b_port": "GigabitEthernet0/1",
@@ -342,5 +347,6 @@ def test_live_inventory_fingerprint_uses_structured_device_and_link_readback():
             "ports": ["GigabitEthernet0/0", "GigabitEthernet0/1"],
         },
     ])
+    assert backend_managed == frozenset()
     assert "getDeviceCount" in sent[0]
     assert "getLinkAt" in sent[0]
