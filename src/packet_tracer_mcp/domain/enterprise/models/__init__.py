@@ -49,6 +49,13 @@ from .execution import (
     disposition_from_status, journal_from_action_results,
     satisfies_apply_dependency,
 )
+from .link_performance import (
+    CapacitySource, DuplexMode, HeadroomPolicy, LinkMedia,
+    LinkPerformanceDecision, LinkPerformanceIntent, LinkPerformanceIssue,
+    LinkPerformanceIssueCode, LinkSpeedMode, ObservedLinkPerformance,
+    SerialEndpointRole, TrafficContribution, capacity_source_rank,
+    ethernet_capacity_bps,
+)
 from .failure_domain import (
     FailureDomain, FailureDomainCatalog, FailureDomainCoverageGap,
     FailureDomainIndependenceResult, FailureDomainProvenance, FailureDomainType,
@@ -205,6 +212,11 @@ __all__ = [
     "AddressReconcileResult", "AddressReconcileStatus", "AddressRenumbering",
     "ExistingAddressBinding", "FinalAddressBinding", "FinalAddressPlan",
     "InfrastructureAddressDemand", "ReconciliationStatus",
+    "CapacitySource", "DuplexMode", "HeadroomPolicy", "LinkMedia",
+    "LinkPerformanceDecision", "LinkPerformanceIntent", "LinkPerformanceIssue",
+    "LinkPerformanceIssueCode", "LinkSpeedMode", "ObservedLinkPerformance",
+    "SerialEndpointRole", "TrafficContribution", "capacity_source_rank",
+    "ethernet_capacity_bps",
     "FailureDomain", "FailureDomainCatalog", "FailureDomainCoverageGap",
     "FailureDomainIndependenceResult", "FailureDomainProvenance", "FailureDomainType",
     "FailurePath", "FailureScenario", "FailureScenarioScope", "IndependenceStatus",

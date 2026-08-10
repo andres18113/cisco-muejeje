@@ -8,6 +8,7 @@ from .hardware_planner import HardwarePlanner, HardwarePlanningPolicy
 from .capacity_planner import CapacityPlanner
 from .ipam_planner import IPAMPlanner
 from .address_reconciler import AddressReconciler
+from .link_performance_planner import LinkPerformancePlanner
 from .failure_domain_analyzer import FailureDomainAnalyzer, build_failure_domain_catalog
 from .requirements_validator import validate_enterprise_intent
 from .service_compiler import ServiceCompiler
@@ -18,6 +19,7 @@ from .topology_identity import TopologyHashes, compute_topology_hashes, stamp_to
 __all__ = [
     "CapacityPlanner", "ConfigurationCompiler", "DeviceSelector", "EnterpriseCompiler", "EnterpriseDesigner", "HardwarePlanner",
     "AddressReconciler", "ControlPlaneCompiler", "FailureDomainAnalyzer",
+    "LinkPerformancePlanner",
     "HardwarePlanningPolicy", "IPAMPlanner", "ServiceCompiler", "VoiceCompiler",
     "TopologyHashes", "compute_topology_hashes", "stamp_topology_hashes",
     "build_failure_domain_catalog",

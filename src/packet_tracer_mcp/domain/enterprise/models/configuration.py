@@ -32,6 +32,9 @@ class ConfigurationActionType(str, Enum):
     CONFIGURE_DHCP_POOL = "configure_dhcp_pool"
     SET_ENDPOINT_STATIC = "set_endpoint_static"
     SET_ENDPOINT_DHCP = "set_endpoint_dhcp"
+    CONFIGURE_SERIAL_CLOCK = "configure_serial_clock"
+    CONFIGURE_INTERFACE_BANDWIDTH = "configure_interface_bandwidth"
+    CONFIGURE_ETHERNET_LINK_MODE = "configure_ethernet_link_mode"
 
 
 class ConfigurationIssueSeverity(str, Enum):
@@ -287,6 +290,38 @@ class SetEndpointDhcp(BaseConfigurationAction):
     dns_server: str | None = None
 
 
+class ConfigureSerialClock(BaseConfigurationAction):
+    """Reloj fisico del extremo DCE. Nunca se emite en ambos extremos."""
+
+    action_type: Literal[
+        ConfigurationActionType.CONFIGURE_SERIAL_CLOCK
+    ] = ConfigurationActionType.CONFIGURE_SERIAL_CLOCK
+    interface: str
+    clock_rate_bps: int
+    serial_endpoint_role: Literal["dce"] = "dce"
+
+
+class ConfigureInterfaceBandwidth(BaseConfigurationAction):
+    """Ancho de banda logico para metricas de routing, no el reloj del enlace."""
+
+    action_type: Literal[
+        ConfigurationActionType.CONFIGURE_INTERFACE_BANDWIDTH
+    ] = ConfigurationActionType.CONFIGURE_INTERFACE_BANDWIDTH
+    interface: str
+    bandwidth_kbps: int
+
+
+class ConfigureEthernetLinkMode(BaseConfigurationAction):
+    """Velocidad y duplex explicitos; AUTO deja negociar al enlace."""
+
+    action_type: Literal[
+        ConfigurationActionType.CONFIGURE_ETHERNET_LINK_MODE
+    ] = ConfigurationActionType.CONFIGURE_ETHERNET_LINK_MODE
+    interface: str
+    speed: str = "auto"
+    duplex: str = "auto"
+
+
 ConfigurationAction = Annotated[
     CreateVlan
     | ConfigureAccessPort
@@ -296,7 +331,10 @@ ConfigurationAction = Annotated[
     | ConfigureSubinterface
     | ConfigureDhcpPool
     | SetEndpointStaticAddress
-    | SetEndpointDhcp,
+    | SetEndpointDhcp
+    | ConfigureSerialClock
+    | ConfigureInterfaceBandwidth
+    | ConfigureEthernetLinkMode,
     Field(discriminator="action_type"),
 ]
 
