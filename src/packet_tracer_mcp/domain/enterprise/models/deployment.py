@@ -48,6 +48,54 @@ class DeploymentBinding(BaseModel):
     creation_evidence: str = ""
 
 
+class SerialEndpointOrientation(str, Enum):
+    """Que extremo entrega el reloj, resuelto o todavia sin resolver."""
+
+    DCE = "dce"
+    DTE = "dte"
+    UNRESOLVED = "unresolved"
+
+
+class DeploymentLinkEndpoint(BaseModel):
+    """Un extremo exacto: dispositivo semantico mas su interfaz observada."""
+
+    semantic_device_id: str
+    interface: str
+    orientation: SerialEndpointOrientation = SerialEndpointOrientation.UNRESOLVED
+
+
+class DeploymentLinkBinding(BaseModel):
+    """Enlace semantico atado a lo que existe en el backend.
+
+    `runtime_link_identifier` es identidad de runtime y vive solo aqui: no
+    entra en el hash fisico ni en la identidad semantica del plan, porque un
+    redespliegue del mismo enlace produce otro identificador sin que la red
+    haya cambiado.
+    """
+
+    semantic_link_id: str
+    endpoint_a: DeploymentLinkEndpoint
+    endpoint_b: DeploymentLinkEndpoint
+    runtime_link_identifier: str = ""
+    runtime_link_identity_observed: bool = False
+
+    def endpoint_for(self, semantic_device_id: str) -> DeploymentLinkEndpoint:
+        for endpoint in (self.endpoint_a, self.endpoint_b):
+            if endpoint.semantic_device_id == semantic_device_id:
+                return endpoint
+        raise DeploymentIdentityError(
+            f"Link {self.semantic_link_id!r} has no endpoint on "
+            f"{semantic_device_id!r}."
+        )
+
+    @property
+    def dce_endpoint(self) -> DeploymentLinkEndpoint | None:
+        for endpoint in (self.endpoint_a, self.endpoint_b):
+            if endpoint.orientation is SerialEndpointOrientation.DCE:
+                return endpoint
+        return None
+
+
 class DeploymentIdentityError(ValueError):
     """Raised when a semantic target cannot be safely mapped to runtime."""
 
@@ -88,6 +136,7 @@ class DeploymentManifest(BaseModel):
         default_factory=EnvironmentFingerprint,
     )
     bindings: list[DeploymentBinding] = Field(default_factory=list)
+    link_bindings: list[DeploymentLinkBinding] = Field(default_factory=list)
     semantic_hash: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -101,6 +150,66 @@ class DeploymentManifest(BaseModel):
                 f"Deployment binding for {semantic_device_id!r} is missing or ambiguous."
             )
         return matches[0]
+
+    def link_binding_for(self, semantic_link_id: str) -> DeploymentLinkBinding:
+        matches = [
+            item for item in self.link_bindings
+            if item.semantic_link_id == semantic_link_id
+        ]
+        if len(matches) != 1:
+            raise DeploymentIdentityError(
+                f"Deployment link binding for {semantic_link_id!r} is missing "
+                "or ambiguous."
+            )
+        return matches[0]
+
+    def resolve_serial_clock_target(
+        self,
+        semantic_link_id: str,
+        semantic_device_id: str,
+        inventory: list[RuntimeConfigurationTarget],
+        *,
+        observed_orientation: SerialEndpointOrientation | None = None,
+        observed_interface: str | None = None,
+    ) -> tuple[RuntimeConfigurationTarget, str]:
+        """Resuelve donde aplicar un reloj, o se niega antes de mutar.
+
+        El reloj es del DCE. Un extremo equivocado, una interfaz que el runtime
+        no expone o una orientacion que el backend contradice bloquean aqui,
+        que es antes de que exista ninguna mutacion.
+        """
+        link = self.link_binding_for(semantic_link_id)
+        endpoint = link.endpoint_for(semantic_device_id)
+        if endpoint.orientation is not SerialEndpointOrientation.DCE:
+            raise DeploymentIdentityError(
+                f"{semantic_device_id!r} is the {endpoint.orientation.value} end of "
+                f"{semantic_link_id!r}; a clock belongs to the DCE."
+            )
+        if (
+            observed_orientation is not None
+            and observed_orientation is not SerialEndpointOrientation.DCE
+        ):
+            raise DeploymentIdentityError(
+                f"Runtime observed {semantic_device_id!r} as "
+                f"{observed_orientation.value} while the manifest binds it as DCE; "
+                "refusing to swap orientation."
+            )
+        target = self.resolve_target(semantic_device_id, inventory)
+        if endpoint.interface not in target.interfaces:
+            raise DeploymentIdentityError(
+                f"Interface {endpoint.interface!r} is not present on the resolved "
+                f"runtime target for {semantic_device_id!r}."
+            )
+        # Que la interfaz exista en el dispositivo no prueba que sostenga este
+        # enlace: un 2911 con HWIC-2T expone Serial0/0/0 y Serial0/0/1, y un
+        # manifest apuntando a la otra seria auto-consistente.
+        if observed_interface is not None and observed_interface != endpoint.interface:
+            raise DeploymentIdentityError(
+                f"Link {semantic_link_id!r} was observed on "
+                f"{observed_interface!r} while the manifest binds it to "
+                f"{endpoint.interface!r}."
+            )
+        return target, endpoint.interface
 
     def resolve_target(
         self,
