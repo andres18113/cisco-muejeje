@@ -115,6 +115,44 @@ class CleanupStatus(str, Enum):
     NOT_REQUIRED = "not_required"
 
 
+class InventoryRestoration(str, Enum):
+    """Clasificación explícita de `inventory_restored` frente a la mutación.
+
+    El booleano opcional almacenado no distingue "no había nada que
+    restaurar" de "no se pudo medir". Esa diferencia decide si una sesión
+    puede reutilizarse, así que se expone como un valor propio en vez de
+    dejarla implícita en un `None`.
+    """
+
+    RESTORED = "restored"
+    NOT_RESTORED = "not_restored"
+    NOT_APPLICABLE = "not_applicable"
+    UNKNOWN = "unknown"
+
+
+def classify_inventory_restoration(
+    inventory_restored: bool | None, *, mutated: bool,
+) -> InventoryRestoration:
+    """Deriva la clasificación; nunca convierte `None` en restauración."""
+    if inventory_restored is True:
+        return InventoryRestoration.RESTORED
+    if inventory_restored is False:
+        return InventoryRestoration.NOT_RESTORED
+    return (
+        InventoryRestoration.UNKNOWN if mutated
+        else InventoryRestoration.NOT_APPLICABLE
+    )
+
+
+# Sólo una restauración probada, o la ausencia de algo que restaurar, permiten
+# reutilizar. UNKNOWN bloquea: una sesión mutada sin restauración observada no
+# es una sesión limpia.
+_REUSABLE_RESTORATIONS = frozenset({
+    InventoryRestoration.RESTORED,
+    InventoryRestoration.NOT_APPLICABLE,
+})
+
+
 class ProbeIsolationLevel(str, Enum):
     SHARED_DEVICE = "shared_device"
     RESET_REQUIRED = "reset_required"
@@ -158,15 +196,16 @@ class ProbeContext(BaseModel):
     probe_fingerprint: str = ""
 
     @property
-    def reusable(self) -> bool:
-        restoration_proven = (
-            self.inventory_restored is True
-            if self.mutations
-            else self.inventory_restored is not False
+    def restoration(self) -> InventoryRestoration:
+        return classify_inventory_restoration(
+            self.inventory_restored, mutated=bool(self.mutations),
         )
+
+    @property
+    def reusable(self) -> bool:
         return (
             self.cleanup_status is not CleanupStatus.DIRTY_SESSION
-            and restoration_proven
+            and self.restoration in _REUSABLE_RESTORATIONS
         )
 
 
@@ -390,15 +429,17 @@ class CapabilitySnapshot(BaseModel):
     session: ProbeSessionResult
 
     @property
-    def reusable(self) -> bool:
-        restoration_proven = (
-            self.inventory_restored is True
-            if self.session.session.mutations
-            else self.inventory_restored is not False
+    def restoration(self) -> InventoryRestoration:
+        return classify_inventory_restoration(
+            self.inventory_restored,
+            mutated=bool(self.session.session.mutations),
         )
+
+    @property
+    def reusable(self) -> bool:
         return (
             self.session.session.cleanup_status is not CleanupStatus.DIRTY_SESSION
-            and restoration_proven
+            and self.restoration in _REUSABLE_RESTORATIONS
             and all(
                 result.context is None or result.context.reusable
                 for result in self.session.results

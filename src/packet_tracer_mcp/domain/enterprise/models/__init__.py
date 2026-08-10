@@ -65,9 +65,11 @@ from .ipam_reconciliation import (
 from .discovery import (
     CapabilityConflict, CapabilityProbeResult, CapabilitySnapshot, CatalogGapReport,
     CleanupStatus, DetailLevel, DeviceIdentity, DiscoverySource, E4ReadinessReport,
-    E4ReadinessState, ModelIdentityStatus, ProbeCost, ProbeDefinition, ProbeExecutionStatus,
+    E4ReadinessState, InventoryRestoration, ModelIdentityStatus, ProbeCost,
+    ProbeDefinition, ProbeExecutionStatus, ProbeIsolationLevel,
     ProbeLevel, ProbeRequest, ProbeSafety, ProbeSession, ProbeSessionResult,
     RuntimeDeviceDescriptor, RuntimePortDescriptor, SnapshotDiff,
+    classify_inventory_restoration,
 )
 from .hardware import (
     AccessBlockPlan, CatalogCoverageReport, HardwareCandidate, HardwareLinkRequirement,
@@ -149,6 +151,7 @@ __all__ = [
     "HierarchyMode", "LayoutProfile", "LayoutRegion", "LinkRole", "ModelIdentityStatus", "ModuleInstallation", "NetworkLayer", "NormalizedPortSpeed",
     "NetworkSegment", "PlannedNetworkDevice", "PortAssignmentRange", "PortAttachmentPolicy",
     "PhysicalCompilationProfile", "PhysicalModelProfile", "PortClass", "PortDescriptor", "ProbeCost", "ProbeDefinition", "ProbeExecutionStatus",
+    "InventoryRestoration", "ProbeIsolationLevel", "classify_inventory_restoration",
     "ProbeLevel", "ProbeRequest", "ProbeSafety", "ProbeSession", "ProbeSessionResult",
     "ResiliencyLevel", "RuntimeDeviceDescriptor", "RuntimePortDescriptor", "SegmentRequirement", "SegmentRole",
     "SiteHardwarePlan", "SiteIntent", "SitePlan", "SiteType", "TopologyDesign",
