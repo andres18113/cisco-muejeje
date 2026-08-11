@@ -18,6 +18,7 @@ from __future__ import annotations
 import pytest
 
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+    ConfigurationPhase,
     ConfigureEthernetLinkMode,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
@@ -176,11 +177,26 @@ class TestExplicitHundredFullReachesTheRenderer:
         assert len(emitted) == 2
         assert all(isinstance(item, ConfigureEthernetLinkMode) for item in emitted)
 
-    def test_the_renderer_emits_speed_before_duplex(self):
-        """El orden es el que se aplico en vivo y el backend acepto."""
-        emitted = _actions(self._decision())
+    def test_a_speed_that_was_not_forced_is_never_written(self):
+        """El enlace ya negocia 100 Mbps; escribir `speed` sugeriria un control
+        que no existe. Medido: `speed 100` se acepta y no mueve nada."""
+        decision = self._decision()
+        emitted = _actions(decision)
 
+        assert decision.speed_forced is False
         assert render_ethernet_link_mode(emitted[0]) == [
+            f"interface {R_IF}", " duplex full",
+        ]
+
+    def test_the_renderer_emits_speed_before_duplex_when_it_is_forced(self):
+        """El orden es el que se aplico en vivo y el backend acepto."""
+        forced = ConfigureEthernetLinkMode(
+            id="x", phase=ConfigurationPhase.L2_INTERFACES,
+            device_id="d", device_name="d", site_id="hq",
+            interface=R_IF, speed="100m", duplex="full",
+        )
+
+        assert render_ethernet_link_mode(forced) == [
             f"interface {R_IF}", " speed 100", " duplex full",
         ]
 

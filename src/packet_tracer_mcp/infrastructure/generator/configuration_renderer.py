@@ -11,7 +11,10 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigureAccessPort,
     ConfigureDhcpPool,
+    ConfigureEthernetLinkMode,
+    ConfigureInterfaceBandwidth,
     ConfigureRoutedInterface,
+    ConfigureSerialClock,
     ConfigureSubinterface,
     ConfigureSvi,
     ConfigureTrunk,
@@ -25,10 +28,22 @@ from ...domain.models.vlans import (
 )
 from ...shared.ios_config import build_configure_ios_call
 from ...shared.utils import safe_ios_identifier, validate_ios_interface_name
+from .link_performance_renderer import render_link_performance
 from .vlan_cli_generator import (
     generate_router_subinterface_cli,
     generate_switch_vlan_cli,
     switch_supports_encap,
+)
+
+
+# Acciones que este renderer sabe convertir. Una accion tipada fuera de esta
+# lista se descarta en silencio, asi que la lista es la definicion operativa de
+# "renderizable": las de rendimiento de enlace faltaban aqui y por eso un reloj
+# serial o un modo Ethernet compilaban sin producir una sola linea de CLI.
+_RENDERABLE = (
+    CreateVlan, ConfigureAccessPort, ConfigureTrunk, ConfigureRoutedInterface,
+    ConfigureSvi, ConfigureSubinterface, ConfigureDhcpPool,
+    ConfigureSerialClock, ConfigureInterfaceBandwidth, ConfigureEthernetLinkMode,
 )
 
 
@@ -52,9 +67,7 @@ class PacketTracerIosRenderer:
     ) -> list[RenderedConfigurationBatch]:
         grouped: dict[ConfigurationPhase, list[ConfigurationAction]] = defaultdict(list)
         for action in actions:
-            if isinstance(action, (CreateVlan, ConfigureAccessPort, ConfigureTrunk,
-                                   ConfigureRoutedInterface, ConfigureSvi,
-                                   ConfigureSubinterface, ConfigureDhcpPool)):
+            if isinstance(action, _RENDERABLE):
                 grouped[action.phase].append(action)
 
         batches: list[RenderedConfigurationBatch] = []
@@ -113,7 +126,14 @@ class PacketTracerIosRenderer:
         lines.extend(generate_router_subinterface_cli(subinterfaces))
 
         for action in actions:
-            if isinstance(action, ConfigureRoutedInterface):
+            if isinstance(action, (ConfigureSerialClock, ConfigureInterfaceBandwidth,
+                                   ConfigureEthernetLinkMode)):
+                # El CLI de rendimiento de enlace se construye en un solo sitio;
+                # aqui sólo se despacha y se cierra el bloque de interfaz.
+                rendered = render_link_performance(action)
+                if rendered:
+                    lines.extend([*rendered, " exit"])
+            elif isinstance(action, ConfigureRoutedInterface):
                 interface = validate_ios_interface_name(action.interface)
                 address = str(ipaddress.ip_address(action.ipv4))
                 lines.extend([

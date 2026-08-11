@@ -24,6 +24,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
     LinkModeOutcome,
     LinkPerformanceIntent,
     LinkPerformanceIssueCode,
+    BandwidthProvenance,
     LinkSpeedMode,
     NominalCapacitySource,
     ObservedLinkPerformance,
@@ -402,15 +403,43 @@ class TestNominalIsNotVerifiedMutual:
     def test_one_known_endpoint_is_not_enough_to_claim_a_ceiling(self):
         assert nominal_link_ceiling_bps(PT_2911_GIGABIT_LINK_MODE, None) is None
 
-    def test_two_gigabit_nominals_do_not_prove_a_verified_gigabit_link(self):
-        """Ninguno de los dos demostro 1 Gbps enlazado."""
+    def test_two_gigabit_nominals_negotiate_a_gigabit_but_force_nothing(self):
+        """Negociable y forzable divergen, y el enlace Gigabit es el caso claro."""
         decision = LinkPerformancePlanner().plan(_ethernet(
             local_port_capability=PT_2911_GIGABIT_LINK_MODE,
             peer_port_capability=PT_3560_GIGABIT_LINK_MODE,
         ))
 
         assert decision.nominal_link_ceiling_bps == 1_000_000_000
-        assert decision.verified_mutual_ceiling_bps != 1_000_000_000
+        assert decision.auto_negotiable_ceiling_bps == 1_000_000_000
+        assert decision.forceable_speed_ceiling_bps is None
+
+    def test_a_hundred_megabit_request_on_a_gigabit_link_is_refused(self):
+        """El sobreclaim que 3A3-B dejaba pasar: prometer 100 sobre 1 Gbps."""
+        decision = LinkPerformancePlanner().plan(_ethernet(
+            requested_speed=LinkSpeedMode.SPEED_100M,
+            requested_duplex=DuplexMode.FULL,
+            local_port_capability=PT_2911_GIGABIT_LINK_MODE,
+            peer_port_capability=PT_2911_GIGABIT_LINK_MODE,
+        ))
+
+        assert not decision.applicable
+        assert LinkPerformanceIssueCode.LINK_MODE_NOT_VERIFIED.value in _codes(decision)
+        assert "negotiates 1000000000 bps" in decision.issues[0].message
+
+    def test_a_request_the_link_already_negotiates_is_met_without_forcing(self):
+        """Se satisface, pero se dice como: negociando, no forzando."""
+        decision = LinkPerformancePlanner().plan(_ethernet(
+            requested_speed=LinkSpeedMode.SPEED_100M,
+            requested_duplex=DuplexMode.FULL,
+            local_port_capability=PT_2911_GIGABIT_LINK_MODE,
+            peer_port_capability=PT_3560_FASTETHERNET_LINK_MODE,
+        ))
+
+        assert decision.applicable
+        assert decision.speed_forced is False
+        assert decision.selection_reason == "REQUESTED_SPEED_MET_BY_NEGOTIATION_NOT_FORCED"
+        assert any("no speed command is emitted" in w for w in decision.warnings)
 
     def test_an_asymmetric_link_is_reported_without_blocking(self):
         decision = LinkPerformancePlanner().plan(_ethernet(
@@ -442,13 +471,46 @@ class TestObservedCapacityIsInferredNotRead:
 
         assert forced.effective_capacity_bps is None
 
-    def test_an_autonegotiated_bandwidth_yields_the_effective_capacity(self):
+    def test_a_platform_tracked_bandwidth_yields_the_effective_capacity(self):
         observed = ObservedLinkPerformance(
             link_id="hq-core", routing_bandwidth_kbps=100_000,
             bandwidth_autonegotiated=True, line_protocol_up=True, observed=True,
+            bandwidth_provenance=BandwidthProvenance.PLATFORM_TRACKED,
         )
 
         assert observed.effective_capacity_bps == 100_000_000
+
+    def test_autonegotiation_alone_is_not_enough_without_a_measured_profile(self):
+        """Que otro backend derive el BW de la negociacion no dice nada de este."""
+        observed = ObservedLinkPerformance.from_runtime(
+            "hq-core", capability=None,
+            routing_bandwidth_kbps=100_000, bandwidth_autonegotiated=True,
+            line_protocol_up=True,
+        )
+
+        assert observed.bandwidth_provenance is BandwidthProvenance.UNKNOWN
+        assert observed.effective_capacity_bps is None
+
+    def test_a_measured_profile_promotes_the_reading_to_platform_tracked(self):
+        observed = ObservedLinkPerformance.from_runtime(
+            "hq-core", capability=PT_2911_GIGABIT_LINK_MODE,
+            routing_bandwidth_kbps=1_000_000, bandwidth_autonegotiated=True,
+            line_protocol_up=True,
+        )
+
+        assert observed.bandwidth_provenance is BandwidthProvenance.PLATFORM_TRACKED
+        assert observed.effective_capacity_bps == 1_000_000_000
+
+    def test_an_explicitly_configured_bandwidth_is_never_read_as_capacity(self):
+        """`bandwidth 5000` sobre un enlace de 1 Gbps no son 5 Mbps."""
+        observed = ObservedLinkPerformance.from_runtime(
+            "hq-core", capability=PT_2911_GIGABIT_LINK_MODE,
+            routing_bandwidth_kbps=5_000, bandwidth_autonegotiated=False,
+            line_protocol_up=True,
+        )
+
+        assert observed.bandwidth_provenance is BandwidthProvenance.EXPLICITLY_CONFIGURED
+        assert observed.effective_capacity_bps is None
 
     def test_a_down_link_yields_no_effective_capacity(self):
         observed = ObservedLinkPerformance(
@@ -465,6 +527,7 @@ class TestRuntimeShortfallIsNotAnApplyFailure:
         observed = ObservedLinkPerformance(
             link_id=decision.link_id, routing_bandwidth_kbps=100_000,
             bandwidth_autonegotiated=True, line_protocol_up=True, observed=True,
+            bandwidth_provenance=BandwidthProvenance.PLATFORM_TRACKED,
         )
 
         issues = LinkPerformancePlanner.verify_observed_capacity(
@@ -480,6 +543,7 @@ class TestRuntimeShortfallIsNotAnApplyFailure:
         observed = ObservedLinkPerformance(
             link_id=decision.link_id, routing_bandwidth_kbps=1_000_000,
             bandwidth_autonegotiated=True, line_protocol_up=True, observed=True,
+            bandwidth_provenance=BandwidthProvenance.PLATFORM_TRACKED,
         )
 
         assert LinkPerformancePlanner.verify_observed_capacity(
@@ -513,7 +577,7 @@ class TestCapabilityLookupLivesOutsideTheDomain:
         assert fast.nominal_capacity_bps < gig.nominal_capacity_bps
 
     def test_an_unmeasured_model_has_no_profile_instead_of_a_default(self):
-        assert link_mode_capability_for("2960-24TT", "FastEthernet0/1") is None
+        assert link_mode_capability_for("2950-24", "FastEthernet0/1") is None
 
     def test_a_different_backend_version_does_not_inherit_the_profile(self):
         assert link_mode_capability_for(
@@ -523,9 +587,9 @@ class TestCapabilityLookupLivesOutsideTheDomain:
 
 class TestPolicyIdentityMovedWithTheBehaviour:
     def test_the_policy_version_records_the_new_ethernet_rules(self):
-        assert LinkPerformancePlanner().plan(_ethernet()).policy_version == "3"
+        assert LinkPerformancePlanner().plan(_ethernet()).policy_version == "4"
 
-    def test_both_ceilings_travel_in_the_explanation(self):
+    def test_the_three_ceilings_travel_in_the_explanation(self):
         decision = LinkPerformancePlanner().plan(_ethernet(
             local_port_capability=PT_2911_GIGABIT_LINK_MODE,
             peer_port_capability=PT_3560_FASTETHERNET_LINK_MODE,
@@ -533,4 +597,5 @@ class TestPolicyIdentityMovedWithTheBehaviour:
         explained = decision.explain()
 
         assert explained["nominal_link_ceiling_bps"] == 100_000_000
-        assert "verified_mutual_ceiling_bps" in explained
+        assert explained["auto_negotiable_ceiling_bps"] == 100_000_000
+        assert explained["forceable_speed_ceiling_bps"] is None

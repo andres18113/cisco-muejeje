@@ -26,7 +26,8 @@ from ..models.link_performance import (
     ReadinessStatus,
     ethernet_capacity_bps,
     nominal_link_ceiling_bps,
-    verified_mutual_ceiling_bps,
+    auto_negotiable_ceiling_bps,
+    forceable_speed_ceiling_bps,
 )
 
 _ETHERNET_SPEED_ORDER: tuple[LinkSpeedMode, ...] = (
@@ -48,8 +49,12 @@ class LinkPerformancePlanner:
     #: v3 (Stage 3A3-B): el rechazo pasa a depender del contexto medido, el
     #: techo nominal se separa del mutuo verificado, y un modo sin medir deja
     #: de autorizar una mutación productiva.
+    #: v4 (Stage 3A3-C): capacidad negociable y velocidad forzable dejan de
+    #: ser el mismo techo -- forzar `speed` no resultó observable en ninguna
+    #: plataforma medida -- y la demanda bajo AUTO se contrasta contra lo
+    #: negociable con evidencia.
     POLICY_ID = "enterprise-link-performance"
-    POLICY_VERSION = "3"
+    POLICY_VERSION = "4"
 
     def __init__(
         self,
@@ -205,7 +210,11 @@ class LinkPerformancePlanner:
             ethernet_capacity_bps(speed) for speed in _ETHERNET_SPEED_ORDER
         ]
         decision.nominal_link_ceiling_bps = self._nominal_ceiling(intent, decision)
-        decision.verified_mutual_ceiling_bps = verified_mutual_ceiling_bps(
+        decision.auto_negotiable_ceiling_bps = auto_negotiable_ceiling_bps(
+            intent.local_port_capability, intent.peer_port_capability,
+            context=intent.link_context,
+        )
+        decision.forceable_speed_ceiling_bps = forceable_speed_ceiling_bps(
             intent.local_port_capability, intent.peer_port_capability,
             speed_capacity=_ETHERNET_SPEED_CAPACITY,
             context=intent.link_context,
@@ -218,10 +227,13 @@ class LinkPerformancePlanner:
             decision.capacity_source = CapacitySource.MEDIA_DEFAULT_POLICY
             decision.selection_reason = "AUTONEGOTIATION_LEFT_TO_THE_LINK"
             self._check_duplex(intent, decision)
-            # La demanda se contrasta contra el techo nominal: bajo AUTO nadie
-            # eligió una velocidad, y el techo verificado puede ser menor sin
-            # que eso signifique que el enlace no la alcance.
-            self._check_demand(intent, decision, decision.nominal_link_ceiling_bps)
+            # Bajo AUTO la referencia correcta es lo que la negociación alcanza
+            # con evidencia; el nominal sólo cubre el caso sin medir. El techo
+            # forzable no pinta nada aquí: nadie está forzando.
+            self._check_demand(
+                intent, decision,
+                decision.auto_negotiable_ceiling_bps or decision.nominal_link_ceiling_bps,
+            )
             return
 
         if self._mode_refused_by_a_port(intent, decision):
@@ -249,13 +261,83 @@ class LinkPerformancePlanner:
             return
         if self._mode_unverified_for_production(intent, decision):
             return
+        if not self._speed_request_is_satisfiable(intent, decision, requested_capacity):
+            return
         decision.effective_speed = intent.requested_speed
         decision.effective_duplex = intent.requested_duplex
         decision.effective_capacity_bps = requested_capacity
         decision.capacity_source = CapacitySource.EXPLICIT_USER
-        decision.selection_reason = "EXPLICIT_USER_LINK_MODE"
         self._check_duplex(intent, decision)
         self._check_demand(intent, decision, decision.effective_capacity_bps)
+
+    @staticmethod
+    def _speed_request_is_satisfiable(
+        intent: LinkPerformanceIntent,
+        decision: LinkPerformanceDecision,
+        requested_capacity: int,
+    ) -> bool:
+        """Fijar una velocidad y que el enlace la alcance no son lo mismo.
+
+        Medido en tres plataformas: el CLI acepta `speed` sobre un puerto
+        enlazado y la capacidad no se mueve. Así que una petición explícita
+        sólo se satisface de dos maneras -- forzándola donde el forzado se
+        demostró, o comprobando que la negociación ya llega a ese valor. Si no
+        se da ninguna, decir que sí sería prometer un enlace de 100 Mbps sobre
+        uno que corre a 1 Gbps.
+        """
+        capabilities = (intent.local_port_capability, intent.peer_port_capability)
+        if all(capability is None for capability in capabilities):
+            # Sin ningún perfil no hay nada medido que contradecir. La regla
+            # vive donde vive la evidencia; extenderla a backends sin perfil
+            # bloquearía peticiones sobre las que este proyecto no ha medido
+            # nada, que es justamente lo contrario de lo que se pretende.
+            decision.speed_forced = True
+            decision.selection_reason = "EXPLICIT_USER_LINK_MODE"
+            return True
+        if intent.allow_unverified_mode_exploration:
+            decision.speed_forced = True
+            decision.selection_reason = "EXPLICIT_USER_LINK_MODE_UNDER_EXPLORATION"
+            return True
+        if all(
+            capability is not None
+            and capability.speed_is_forceable(intent.requested_speed, intent.link_context)
+            for capability in capabilities
+        ):
+            decision.speed_forced = True
+            decision.selection_reason = "EXPLICIT_USER_LINK_MODE_FORCED"
+            return True
+        negotiable = decision.auto_negotiable_ceiling_bps
+        if negotiable is not None and negotiable == requested_capacity:
+            decision.speed_forced = False
+            decision.selection_reason = "REQUESTED_SPEED_MET_BY_NEGOTIATION_NOT_FORCED"
+            decision.warnings.append(
+                f"The link negotiates {negotiable} bps on its own, which matches "
+                "the request; no speed command is emitted because forcing the "
+                "rate was never observed to take effect on this backend."
+            )
+            return True
+        if negotiable is None:
+            decision.selection_reason = "SPEED_FORCING_UNVERIFIED_AND_NEGOTIATION_UNKNOWN"
+            decision.issues.append(LinkPerformanceIssue(
+                code=LinkPerformanceIssueCode.LINK_MODE_NOT_VERIFIED,
+                link_id=intent.link_id,
+                message=(
+                    f"speed {intent.requested_speed.value} cannot be forced on this "
+                    "backend and what the link negotiates was never observed."
+                ),
+            ))
+            return False
+        decision.selection_reason = "SPEED_FORCING_UNVERIFIED_AND_NEGOTIATION_DIFFERS"
+        decision.issues.append(LinkPerformanceIssue(
+            code=LinkPerformanceIssueCode.LINK_MODE_NOT_VERIFIED,
+            link_id=intent.link_id,
+            message=(
+                f"speed {intent.requested_speed.value} cannot be forced on this "
+                f"backend, and the link negotiates {negotiable} bps instead of "
+                f"{requested_capacity} bps."
+            ),
+        ))
+        return False
 
     @staticmethod
     def _nominal_ceiling(

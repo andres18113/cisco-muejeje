@@ -38,3 +38,19 @@ def render_ethernet_link_mode(action: ConfigureEthernetLinkMode) -> list[str]:
     if action.duplex in {"full", "half"}:
         lines.append(f" duplex {action.duplex}")
     return lines if len(lines) > 1 else []
+
+
+def render_link_performance(action) -> list[str]:
+    """Despacho unico de las tres acciones de rendimiento de enlace.
+
+    Existe para que el renderer de configuracion no repita el `isinstance` ni
+    vuelva a olvidarse de una: cuando faltaban en su lista blanca, un reloj
+    serial compilaba y no producia ni una linea.
+    """
+    if isinstance(action, ConfigureSerialClock):
+        return render_serial_clock(action)
+    if isinstance(action, ConfigureInterfaceBandwidth):
+        return render_interface_bandwidth(action)
+    if isinstance(action, ConfigureEthernetLinkMode):
+        return render_ethernet_link_mode(action)
+    return []

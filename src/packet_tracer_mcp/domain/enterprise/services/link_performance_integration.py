@@ -181,16 +181,19 @@ class LinkPerformanceIntegration:
                 ))
         elif decision.media is LinkMedia.ETHERNET:
             # AUTO/AUTO no fuerza nada: no hay accion que emitir.
-            if (
-                decision.effective_speed is not LinkSpeedMode.AUTO
-                or decision.effective_duplex is not DuplexMode.AUTO
-            ):
+            # Una velocidad que no se forzó no se escribe: el enlace ya la
+            # negocia, y emitir `speed` sugeriría un control que no existe.
+            speed = (
+                decision.effective_speed.value
+                if decision.speed_forced else LinkSpeedMode.AUTO.value
+            )
+            if speed != LinkSpeedMode.AUTO.value or decision.effective_duplex is not DuplexMode.AUTO:
                 actions.append(ConfigureEthernetLinkMode(
                     id=f"{decision.link_id}/link-mode/{device_id}",
                     phase=ConfigurationPhase.L2_INTERFACES,
                     device_id=device_id, device_name=device_name, site_id=site_id,
                     interface=interface,
-                    speed=decision.effective_speed.value,
+                    speed=speed,
                     duplex=decision.effective_duplex.value,
                 ))
         if decision.routing_bandwidth_kbps:

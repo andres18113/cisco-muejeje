@@ -244,6 +244,23 @@ class LinkModeOutcome(str, Enum):
     MODE_BEHAVIOR_VERIFIED = "mode_behavior_verified"
 
 
+class BandwidthProvenance(str, Enum):
+    """De dónde viene el `bandwidth` leído, que decide si sirve de evidencia.
+
+    Medido: sobre un 2911, `bandwidth 5000` deja el BW en 5000 con la
+    autonegociación desactivada mientras el enlace sigue físicamente a 1 Gbps.
+    Leer esa cifra como capacidad daría 5 Mbps para un enlace de 1 Gbps.
+
+    `PLATFORM_TRACKED` exige dos cosas a la vez: que la plataforma siga
+    derivando el valor, y que el perfil medido de ese backend haya demostrado
+    que lo deriva de la negociación. Una sola de las dos no basta.
+    """
+
+    PLATFORM_TRACKED = "platform_tracked"
+    EXPLICITLY_CONFIGURED = "explicitly_configured"
+    UNKNOWN = "unknown"
+
+
 class NominalCapacitySource(str, Enum):
     """De dónde sale la capacidad nominal. No todas valen lo mismo.
 
@@ -314,8 +331,47 @@ class EthernetLinkModeCapability(BaseModel):
     nominal_capacity_bps: int = 0
     nominal_capacity_source: NominalCapacitySource = NominalCapacitySource.UNKNOWN
     observations: tuple[LinkModeObservation, ...] = ()
+
+    # Sólo cierto donde se comprobó que el bandwidth de routing sigue a la tasa
+    # negociada mientras nadie lo fije. Sin esa comprobación, leer el BW de un
+    # modelo distinto sería extrapolar desde otra plataforma.
+    bandwidth_tracks_negotiated_capacity: bool = False
+
     enumeration_complete: bool = False
     notes: str = ""
+
+    def autonegotiation_observed(
+        self, context: LinkModeContext = LinkModeContext.LINKED,
+    ) -> bool:
+        """¿Se vio a este puerto alcanzar su nominal negociando?"""
+        return self.outcome_for(
+            LinkSpeedMode.AUTO, DuplexMode.AUTO, context,
+        ) in (
+            LinkModeOutcome.MODE_EFFECT_OBSERVED,
+            LinkModeOutcome.MODE_BEHAVIOR_VERIFIED,
+        )
+
+    def speed_is_forceable(
+        self, speed: LinkSpeedMode, context: LinkModeContext = LinkModeContext.LINKED,
+    ) -> bool:
+        """Forzar una velocidad es otra cosa que negociarla.
+
+        Medido en tres plataformas: el CLI acepta `speed` sobre un puerto
+        enlazado y la capacidad no se mueve, ni siquiera tras rebotar el
+        enlace. Aceptar no es forzar, y por eso esto exige efecto observado.
+        """
+        if speed is LinkSpeedMode.AUTO:
+            return False
+        return any(
+            item.speed is speed
+            and item.duplex is DuplexMode.AUTO
+            and item.outcome in (
+                LinkModeOutcome.MODE_EFFECT_OBSERVED,
+                LinkModeOutcome.MODE_BEHAVIOR_VERIFIED,
+            )
+            and item.context in (context, LinkModeContext.UNSPECIFIED)
+            for item in self.observations
+        )
 
     def observation_for(
         self,
@@ -417,31 +473,52 @@ def nominal_link_ceiling_bps(
     return min(nominals) if len(nominals) >= 2 else None
 
 
-def verified_mutual_ceiling_bps(
+def auto_negotiable_ceiling_bps(
+    local: EthernetLinkModeCapability | None,
+    peer: EthernetLinkModeCapability | None,
+    *,
+    context: LinkModeContext = LinkModeContext.LINKED,
+) -> int | None:
+    """Capacidad que el enlace alcanza NEGOCIANDO, no forzando.
+
+    Son cosas distintas y divergen: sobre un enlace Gigabit contra Gigabit la
+    negociación llega a 1 Gbps mientras forzar `speed 100` no mueve nada. Usar
+    una por la otra sobreafirma en un sentido y subestima en el otro.
+
+    Exige haber visto negociar a los DOS extremos; entonces el techo es el
+    menor de sus nominales, que es lo que se observó en cada combinación
+    medida. Sin esa evidencia el resultado es None: desconocido, no cero.
+    """
+    if local is None or peer is None:
+        return None
+    if not (local.autonegotiation_observed(context) and peer.autonegotiation_observed(context)):
+        return None
+    nominals = [
+        side.nominal_capacity_bps for side in (local, peer)
+        if side.nominal_capacity_bps > 0
+    ]
+    return min(nominals) if len(nominals) == 2 else None
+
+
+def forceable_speed_ceiling_bps(
     local: EthernetLinkModeCapability | None,
     peer: EthernetLinkModeCapability | None,
     *,
     speed_capacity: "dict[LinkSpeedMode, int]",
     context: LinkModeContext = LinkModeContext.LINKED,
 ) -> int | None:
-    """La mayor velocidad que AMBOS extremos demostraron alcanzar.
+    """La mayor velocidad que AMBOS extremos demostraron poder FORZAR.
 
-    Que un puerto se llame Gigabit no prueba que el enlace llegue a 1 Gbps, y
-    que un extremo lo demuestre no basta si el otro no lo hizo. Sin evidencia
-    en los dos lados el resultado es None -- desconocido, no cero.
+    Distinta de la negociable: aquí no cuenta que el CLI aceptara el comando,
+    sino que el efecto se volviera a leer. Devuelve None cuando ningún extremo
+    demostró forzar ninguna, que es el caso en todo lo medido hasta ahora.
     """
     if local is None or peer is None:
         return None
     realizable = [
         capacity
         for speed, capacity in speed_capacity.items()
-        if all(
-            side.readiness_for(speed, DuplexMode.AUTO, context).verify
-            is ReadinessStatus.READY
-            or side.readiness_for(speed, DuplexMode.FULL, context).verify
-            is ReadinessStatus.READY
-            for side in (local, peer)
-        )
+        if all(side.speed_is_forceable(speed, context) for side in (local, peer))
     ]
     return max(realizable) if realizable else None
 
@@ -502,11 +579,17 @@ class LinkPerformanceDecision(BaseModel):
     effective_speed: LinkSpeedMode = LinkSpeedMode.AUTO
     effective_duplex: DuplexMode = DuplexMode.AUTO
 
-    # Dos techos distintos que antes eran uno solo. El nominal es teórico -- el
-    # menor de los dos nominales; el mutuo verificado es la mayor velocidad que
-    # AMBOS extremos demostraron. None es desconocido, no cero.
+    # Si la velocidad se fija de verdad o simplemente coincide con la que el
+    # enlace negocia. Sólo lo primero justifica emitir un comando `speed`.
+    speed_forced: bool = False
+
+    # Tres techos que no son el mismo. El nominal es teórico; el negociable es
+    # lo que la autonegociación alcanza con evidencia en ambos extremos; el
+    # forzable es lo que ambos demostraron poder fijar a mano. Divergen: un
+    # enlace Gigabit negocia 1 Gbps y no deja forzar ninguna velocidad.
     nominal_link_ceiling_bps: int | None = None
-    verified_mutual_ceiling_bps: int | None = None
+    auto_negotiable_ceiling_bps: int | None = None
+    forceable_speed_ceiling_bps: int | None = None
 
     # Readiness del modo pedido sobre este enlace, en los tres ejes de E9.5.
     mode_readiness: CapabilityReadiness | None = None
@@ -539,7 +622,8 @@ class LinkPerformanceDecision(BaseModel):
             "engineered_demand_bps": self.engineered_demand_bps,
             "supported_capacities_bps": list(self.supported_capacities_bps),
             "nominal_link_ceiling_bps": self.nominal_link_ceiling_bps,
-            "verified_mutual_ceiling_bps": self.verified_mutual_ceiling_bps,
+            "auto_negotiable_ceiling_bps": self.auto_negotiable_ceiling_bps,
+            "forceable_speed_ceiling_bps": self.forceable_speed_ceiling_bps,
             "mode_apply_readiness": (
                 self.mode_readiness.apply.value if self.mode_readiness else ""
             ),
@@ -580,6 +664,7 @@ class ObservedLinkPerformance(BaseModel):
     reported_duplex: DuplexMode | None = None
     routing_bandwidth_kbps: int | None = None
     bandwidth_autonegotiated: bool | None = None
+    bandwidth_provenance: BandwidthProvenance = BandwidthProvenance.UNKNOWN
     duplex_autonegotiated: bool | None = None
     full_duplex: bool | None = None
     line_protocol_up: bool | None = None
@@ -587,12 +672,61 @@ class ObservedLinkPerformance(BaseModel):
 
     @property
     def effective_capacity_bps(self) -> int | None:
-        """Capacidad efectiva inferida, solo mientras la metadata espeje el enlace."""
-        if not self.observed or not self.bandwidth_autonegotiated:
+        """Capacidad inferida, sólo con la procedencia que la sostiene.
+
+        Tres condiciones, y ninguna sobra: la plataforma tiene que seguir
+        derivando el valor (`PLATFORM_TRACKED`, que ya incluye el aval del
+        perfil medido), el enlace tiene que estar arriba, y tiene que haber
+        una cifra. Con la procedencia desconocida no se infiere nada.
+        """
+        if not self.observed:
+            return None
+        if self.bandwidth_provenance is not BandwidthProvenance.PLATFORM_TRACKED:
             return None
         if not self.routing_bandwidth_kbps or not self.line_protocol_up:
             return None
         return self.routing_bandwidth_kbps * 1000
+
+    @classmethod
+    def from_runtime(
+        cls,
+        link_id: str,
+        *,
+        capability: EthernetLinkModeCapability | None,
+        routing_bandwidth_kbps: int | None,
+        bandwidth_autonegotiated: bool | None,
+        duplex_autonegotiated: bool | None = None,
+        full_duplex: bool | None = None,
+        line_protocol_up: bool | None = None,
+        reported_speed: LinkSpeedMode | None = None,
+        reported_duplex: DuplexMode | None = None,
+    ) -> "ObservedLinkPerformance":
+        """Resuelve la procedencia una sola vez, donde se conoce el perfil.
+
+        Sin perfil medido para este modelo y puerto, la procedencia es
+        `UNKNOWN` aunque la plataforma diga que autonegocia: que otro backend
+        derive el bandwidth de la negociación no dice nada de este.
+        """
+        if bandwidth_autonegotiated is None:
+            provenance = BandwidthProvenance.UNKNOWN
+        elif not bandwidth_autonegotiated:
+            provenance = BandwidthProvenance.EXPLICITLY_CONFIGURED
+        elif capability is not None and capability.bandwidth_tracks_negotiated_capacity:
+            provenance = BandwidthProvenance.PLATFORM_TRACKED
+        else:
+            provenance = BandwidthProvenance.UNKNOWN
+        return cls(
+            link_id=link_id,
+            reported_speed=reported_speed,
+            reported_duplex=reported_duplex,
+            routing_bandwidth_kbps=routing_bandwidth_kbps,
+            bandwidth_autonegotiated=bandwidth_autonegotiated,
+            bandwidth_provenance=provenance,
+            duplex_autonegotiated=duplex_autonegotiated,
+            full_duplex=full_duplex,
+            line_protocol_up=line_protocol_up,
+            observed=True,
+        )
 
     def meets(self, minimum_capacity_bps: int | None) -> bool | None:
         """None cuando no hay evidencia suficiente: desconocido no es fallo."""

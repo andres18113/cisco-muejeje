@@ -169,7 +169,7 @@ class TestSerialCapacity:
         decision = LinkPerformancePlanner().plan(_serial())
 
         assert decision.policy_id == "enterprise-link-performance"
-        assert decision.policy_version == "3"
+        assert decision.policy_version == "4"
 
     def test_a_different_policy_version_is_visible_in_the_decision(self):
         """Un cambio de politica que altere el comportamiento se puede ver."""
