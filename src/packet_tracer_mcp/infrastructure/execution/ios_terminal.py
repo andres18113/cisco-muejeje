@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from time import monotonic
 from collections.abc import Callable
 from typing import Never
 
 from ...domain.enterprise.models.discovery import DeviceInitializationResult
+from .command_dispatch import (
+    PAGER_GUARD_JS as _PAGER_GUARD_JS,
+    DispatchClassification,
+    classify_echo,
+    fresh_command_window,
+    has_active_pager,
+    is_command_corrupted,
+)
 from .device_lifecycle import IosBootWaiter, StateConvergenceWaiter
 
 
@@ -136,6 +144,12 @@ class IosCommandResult:
     fresh_output_observed: bool = False
     window_strategy: str = "none"
     truncated_by_pager: bool = False
+    # Identidad de lo despachado, separada del resultado de la consulta. Un
+    # comando corrompido NO es una consulta rechazada: IOS nunca recibió lo
+    # que se pidió, así que rechazarlo no dice nada sobre la consulta.
+    dispatch_classification: str = DispatchClassification.ECHO_UNOBSERVABLE.value
+    echo_observed: str = ""
+    dispatch_attempts: int = 1
 
 
 @dataclass(frozen=True)
@@ -241,7 +255,10 @@ def normalize_terminal_output(value: str) -> str:
 
 
 def _has_active_pager(value: str) -> bool:
-    return normalize_terminal_output(value).rstrip().endswith(_PAGER_MARKER)
+    # Delegado a la frontera de despacho: alli la deteccion aplica los
+    # backspaces con los que IOS redibuja su propio `--More--`, que es
+    # justamente el estado que consume la primera tecla del comando siguiente.
+    return has_active_pager(value)
 
 
 _SVI_STATE = re.compile(
@@ -790,14 +807,27 @@ def classify_show_ip_route_eigrp(
 
 
 def extract_terminal_command_window(before: str, after: str, command: str) -> TerminalOutputWindow:
-    """Aísla evidencia de la consulta actual sin confiar en historial IOS."""
-    if after.startswith(before) and len(after) > len(before):
-        return TerminalOutputWindow(after[len(before):], True, "prefix_delta", command.casefold() in after[len(before):].casefold())
-    marker = command.casefold()
-    index = after.casefold().rfind(marker)
-    if index >= 0 and after[index:] != before[index:]:
-        return TerminalOutputWindow(after[index:], True, "last_query_echo", True)
-    return TerminalOutputWindow("", False, "no_fresh_window")
+    """Aísla evidencia de la consulta actual sin confiar en historial IOS.
+
+    Ya no se ancla buscando el texto del comando. Esa estrategia tenía dos
+    fallas que sólo aparecen en sesiones largas y bajo corrupción de comandos:
+    un comando corrompido no se encontraba nunca, y un comando repetido se
+    anclaba a una ejecución ANTERIOR, atribuyendo salida stale como fresca.
+    El anclaje ahora es por el mayor sufijo retenido del buffer.
+
+    `query_echo_found` pasó a exigir eco EXACTO: que la ventana contenga el
+    texto pedido en alguna línea no prueba que el terminal lo haya recibido.
+    """
+    window = fresh_command_window(before, after)
+    if not window.fresh:
+        return TerminalOutputWindow("", False, window.strategy.value)
+    classification, _ = classify_echo(command, window.output)
+    return TerminalOutputWindow(
+        window.output,
+        True,
+        window.strategy.value,
+        classification is DispatchClassification.DISPATCHED,
+    )
 
 
 class ControlledIosExecutor:
@@ -822,7 +852,42 @@ class ControlledIosExecutor:
             interval_seconds=interval_seconds,
         ).wait()
 
+    # Toda consulta registrada es un `show`: no muta nada, así que reintentar
+    # es seguro por construcción. El techo es bajo a propósito -- si el
+    # terminal corrompe dos despachos seguidos, insistir no lo arregla.
+    _READ_ONLY_DISPATCH_ATTEMPTS = 3
+
     def execute(
+        self,
+        device_name: str,
+        query_id: OperationalQueryId,
+        *,
+        interface: str = "",
+    ) -> IosCommandResult:
+        """Despacha una consulta registrada, reintentando sólo corrupción probada."""
+        attempts = 1
+        result = self._execute_once(device_name, query_id, interface=interface)
+        while (
+            attempts < self._READ_ONLY_DISPATCH_ATTEMPTS
+            and self._is_retryable_corruption(result)
+        ):
+            attempts += 1
+            result = self._execute_once(device_name, query_id, interface=interface)
+        return replace(result, dispatch_attempts=attempts)
+
+    @staticmethod
+    def _is_retryable_corruption(result: IosCommandResult) -> bool:
+        """Exige dos pruebas, no una, antes de reintentar.
+
+        El eco demuestra que el comando llegó corrompido, y el rechazo de IOS
+        demuestra que ese comando corrompido no surtió efecto. Sin la segunda,
+        reintentar sería reejecutar algo cuyo efecto no se conoce.
+        """
+        if not is_command_corrupted(DispatchClassification(result.dispatch_classification)):
+            return False
+        return ios_rejection_reason(result.output) is not None
+
+    def _execute_once(
         self,
         device_name: str,
         query_id: OperationalQueryId,
@@ -868,8 +933,11 @@ class ControlledIosExecutor:
         js = "".join((
             "try{var d=ipc.network().getDevice(", name, ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
             "if(!t||typeof t.enterCommand!=='function'||typeof t.getOutput!=='function'){reportResult(JSON.stringify({ok:false,reason:'IOS terminal unavailable'}));}",
-            "else{var before=String(t.getOutput());t.enterCommand(", command_json, ");",
-            "reportResult(JSON.stringify({ok:true,before:before}));}}catch(e){reportResult('ERROR:'+e);}",
+            "else{var before=String(t.getOutput());",
+            _PAGER_GUARD_JS,
+            "if(__pager){reportResult(JSON.stringify({ok:false,reason:'prompt_not_ready:pager_active'}));}",
+            "else{t.enterCommand(", command_json, ");",
+            "reportResult(JSON.stringify({ok:true,before:before}));}}}catch(e){reportResult('ERROR:'+e);}",
         ))
         raw = self._send_and_wait(js, 10.0)
         elapsed = int((monotonic() - started) * 1000)
@@ -882,7 +950,21 @@ class ControlledIosExecutor:
         except json.JSONDecodeError:
             return complete(IosCommandResult(device_name, query_id, False, failure_reason="IOS terminal returned malformed JSON.", duration_ms=elapsed, session_state=session))
         if not state.get("ok"):
-            return complete(IosCommandResult(device_name, query_id, False, failure_reason=str(state.get("reason") or "IOS terminal unavailable."), duration_ms=elapsed, session_state=session))
+            reason = str(state.get("reason") or "IOS terminal unavailable.")
+            refused = reason.startswith("prompt_not_ready")
+            if refused:
+                # El comando NO se envió: la guarda atómica lo impidió. Es un
+                # fallo de barrera, no de la consulta, y no deja el terminal en
+                # un estado ambiguo.
+                self._pager_quarantine.add(name)
+            return complete(IosCommandResult(
+                device_name, query_id, False, failure_reason=reason,
+                duration_ms=elapsed, session_state=session,
+                dispatch_classification=(
+                    DispatchClassification.PROMPT_NOT_READY.value if refused
+                    else DispatchClassification.TRANSPORT_FAILED.value
+                ),
+            ))
         baseline = str(state.get("before") or "")
         def observe() -> dict:
             read_js = "".join((
@@ -902,6 +984,7 @@ class ControlledIosExecutor:
         elapsed = int((monotonic() - started) * 1000)
         output = str(observe().get("output") or "")
         window = extract_terminal_command_window(baseline, output, command)
+        classification, echoed = classify_echo(command, window.output)
         truncated_by_pager = _PAGER_MARKER in window.output
         if truncated_by_pager:
             # PT 9.0.1 rejects ``terminal length 0``. Cancel the documented
@@ -910,7 +993,10 @@ class ControlledIosExecutor:
             pager_isolated = self._cancel_pager(name, output)
             if not pager_isolated:
                 self._pager_quarantine.add(name)
-                return IosCommandResult(
+                # `complete` también acá: sin esto, una cancelación de pager no
+                # confirmada dejaba el device en EXEC privilegiado para siempre,
+                # porque era el único retorno que no restauraba el modo.
+                return complete(IosCommandResult(
                     device_name,
                     query_id,
                     False,
@@ -924,12 +1010,30 @@ class ControlledIosExecutor:
                     fresh_output_observed=window.fresh,
                     window_strategy=window.strategy,
                     truncated_by_pager=True,
-                )
+                    dispatch_classification=classification.value,
+                    echo_observed=echoed,
+                ))
         if not convergence.configuration_channel:
-            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager))
+            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager, dispatch_classification=classification.value, echo_observed=echoed))
         if not window.fresh:
-            return complete(IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy))
-        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(window.output), duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager))
+            return complete(IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy, dispatch_classification=classification.value, echo_observed=echoed))
+        if is_command_corrupted(classification):
+            # NO se clasifica como consulta rechazada: IOS jamás recibió la
+            # consulta pedida, así que su `% Invalid input` no habla de ella.
+            return complete(IosCommandResult(
+                device_name, query_id, False,
+                output=normalize_terminal_output(window.output),
+                failure_reason=(
+                    f"COMMAND_DISPATCH_MISMATCH: requested {command!r} but the "
+                    f"terminal echoed {echoed!r}."
+                ),
+                duration_ms=elapsed, session_state=session,
+                fresh_output_observed=True, window_strategy=window.strategy,
+                truncated_by_pager=truncated_by_pager,
+                dispatch_classification=classification.value,
+                echo_observed=echoed,
+            ))
+        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(window.output), duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager, dispatch_classification=classification.value, echo_observed=echoed))
 
     @staticmethod
     def _registered_command(query_id: OperationalQueryId, *, interface: str) -> str:
@@ -997,7 +1101,24 @@ class ControlledIosExecutor:
         return bool(prompt and prompt.endswith((">", "#")) and _SETUP_DIALOG not in prompt.casefold())
 
     def _enter(self, name: str, command: str) -> bool:
-        js = "try{var d=ipc.network().getDevice(" + name + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}else{t.enterCommand(" + json.dumps(command) + ");reportResult('{\"ok\":true}');}}catch(e){reportResult('ERROR:'+e);}"
+        """Transición de modo (`enable`/`disable`) o respuesta al setup dialog.
+
+        Lleva la misma guarda atómica que el despacho de consultas: un `enable`
+        que llega como `nable` deja la sesión en un estado que después se lee
+        como "modo privilegiado no disponible", ocultando la causa real.
+        `_cancel_pager` queda deliberadamente fuera: ahí la tecla que el pager
+        consume es justamente lo que se quiere entregar.
+        """
+        js = (
+            "try{var d=ipc.network().getDevice(" + name + ");"
+            "var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;"
+            "if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}"
+            "else{var before=String(t.getOutput());"
+            + _PAGER_GUARD_JS +
+            "if(__pager){reportResult('{\"ok\":false,\"reason\":\"pager_active\"}');}"
+            "else{t.enterCommand(" + json.dumps(command) + ");"
+            "reportResult('{\"ok\":true}');}}}catch(e){reportResult('ERROR:'+e);}"
+        )
         response = self._send_and_wait(js, 5.0)
         return response == '{"ok":true}'
 

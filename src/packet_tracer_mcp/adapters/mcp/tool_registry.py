@@ -110,8 +110,9 @@ from ...infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
 from ...shared.enums import RoutingProtocol, TopologyTemplate
+from ...infrastructure.execution.typed_ping import TypedPingExecutor
 from ...shared.utils import (
-    js_escape, safe_name_component, resolve_within, interpret_ping as _interpret_ping,
+    js_escape, safe_name_component, resolve_within,
     normalize_ip,
 )
 from ...domain.services.canvas import (
@@ -1346,61 +1347,29 @@ def register_tools(mcp: FastMCP) -> None:
         if err:
             return err
 
-        dev = json.dumps(from_device)
-        ping_command = json.dumps(f"ping {target_ip}")
+        # Este tool despachaba `enterCommand` por su cuenta y decidía por conteo
+        # de marcadores de estadística en la consola. Eso no podía distinguir
+        # `ping` de `ing`: contaba bloques nuevos sin verificar jamás qué comando
+        # había recibido el terminal. Ahora usa la misma frontera que el resto,
+        # que verifica el eco exacto y se niega a tipear sobre un pager activo.
+        #
+        # Un `ping IP` pelado funciona en ambos mundos: el PC manda 4 paquetes y
+        # el IOS 5. Meter "-n N" rompería en IOS, así que se deja el default de
+        # cada uno; `count` queda para uso futuro si se agrega selección por tipo.
+        result = TypedPingExecutor(
+            lambda script, timeout: _bridge_send_and_wait(script, timeout),
+            timeout_seconds=timeout_s,
+            measurement_attempts=3,
+        ).ping(from_device, target_ip)
 
-        # 1) Baseline: cuántos bloques de estadística hay ya en la consola, y
-        #    disparar el ping. La consola conserva histórico, así que contamos
-        #    marcadores en vez de fiarnos del largo (que se trunca/reemplaza).
-        # Un `ping IP` pelado funciona en ambos mundos: el PC manda 4 paquetes y el
-        # IOS 5. Meter "-n N" rompería en IOS, así que se deja el default de cada
-        # uno; `count` queda para uso futuro si se agrega selección por tipo.
-        arm = (
-            f"var cp=ipc.network().getDevice({dev}).getCommandPrompt();"
-            "if(!cp){reportResult('ERR:device sin consola');}"
-            "else{var o=String(cp.getOutput());"
-            "var m=o.match(/Packets: Sent|Success rate/g);"
-            "var base=m?m.length:0;"
-            f"cp.enterCommand({ping_command});"
-            "reportResult('BASE:'+base);}"
-        )
-        armed = _bridge_send_and_wait(arm, timeout=8.0)
-        if armed is None:
-            return "Sin respuesta de PT (timeout) al iniciar el ping."
-        if not armed.startswith("BASE:"):
-            return f"No se pudo iniciar el ping: {armed}"
-        base = int(armed[5:])
-
-        # 2) Sondear la consola hasta que aparezca un bloque de estadística nuevo.
-        poll = (
-            f"var cp=ipc.network().getDevice({dev}).getCommandPrompt();"
-            "var o=String(cp.getOutput());"
-            "var m=o.match(/Packets: Sent|Success rate/g);"
-            "var cur=m?m.length:0;"
-            f"if(cur> {base}){{"
-            "var stat=o.match(/Packets: Sent = \\d+, Received = (\\d+), Lost = (\\d+)[^\\n]*|Success rate is (\\d+) percent \\((\\d+)\\/(\\d+)\\)/g);"
-            "reportResult('DONE:'+(stat?stat[stat.length-1]:'sin stats'));"
-            "}else{reportResult('WAIT');}"
-        )
-
-        deadline = time.time() + timeout_s
-        last = "WAIT"
-        while time.time() < deadline:
-            time.sleep(0.6)
-            r = _bridge_send_and_wait(poll, timeout=5.0)
-            if r is None:
-                continue
-            last = r
-            if r.startswith("DONE:"):
-                stat = r[5:]
-                ok = _interpret_ping(stat)
-                verdict = "CONECTIVIDAD OK" if ok else "SIN CONECTIVIDAD"
-                return f"{from_device} → {target_ip}: {verdict}\n{stat}"
-
-        return (
-            f"{from_device} → {target_ip}: sin resultado tras {timeout_s:.0f}s. "
-            "El ping puede seguir corriendo; reintentá o subí timeout_s."
-        )
+        if not result.fresh_output_observed:
+            return (
+                f"{from_device} → {target_ip}: sin resultado atribuible tras "
+                f"{result.attempts} intento(s) ({result.failure_reason or 'sin evidencia fresca'}). "
+                "El ping puede seguir corriendo; reintentá o subí timeout_s."
+            )
+        verdict = "CONECTIVIDAD OK" if result.reachable else "SIN CONECTIVIDAD"
+        return f"{from_device} → {target_ip}: {verdict}\n{result.statistics}"
 
     @mcp.tool()
     def pt_save_project(filename: str, directory: str = "") -> str:

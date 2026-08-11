@@ -29,6 +29,7 @@ from ...domain.enterprise.models.service_plan import (
     SetHttpContent,
 )
 from ...domain.enterprise.models.service_runtime import RuntimeServiceVerification
+from .command_dispatch import PAGER_GUARD_JS
 from .runtime_inventory import normalize_runtime_inventory
 
 
@@ -229,11 +230,20 @@ class PacketTracerEnterpriseServiceRuntime:
             f"var d=ipc.network().getDevice({client});"
             "var cp=d&&typeof d.getCommandPrompt==='function'?d.getCommandPrompt():null;"
             "var before=cp&&typeof cp.getOutput==='function'?String(cp.getOutput()):'';"
-            "var started=false;if(cp&&typeof cp.enterCommand==='function'){"
+            + PAGER_GUARD_JS +
+            # Misma frontera que el resto: tipear sobre un pager activo se come
+            # el primer caracter del comando.
+            "var started=false;var blocked=false;"
+            "if(__pager){blocked=true;}"
+            "else if(cp&&typeof cp.enterCommand==='function'){"
             f"cp.enterCommand({command_json});started=true;}}"
-            "reportResult(JSON.stringify({started:started,before:before}));",
+            "reportResult(JSON.stringify({started:started,blocked:blocked,before:before}));",
             5.0,
         )
+        if start.get("blocked"):
+            return self._behavior_failure(
+                expectation, "Typed DNS ping was refused: the terminal pager was active.",
+            )
         if not start.get("started"):
             return self._behavior_failure(expectation, "Typed DNS ping did not start.")
         before = str(start.get("before") or "")

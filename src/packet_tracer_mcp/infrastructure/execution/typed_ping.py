@@ -9,6 +9,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from time import monotonic, sleep
 
+from .command_dispatch import (
+    IDLE_GUARD_JS,
+    PAGER_GUARD_JS,
+    DispatchClassification,
+    classify_echo,
+    terminal_is_idle,
+)
 from .ios_terminal import extract_terminal_command_window
 
 
@@ -30,6 +37,10 @@ class TypedPingResult:
     failure_reason: str = ""
     # Cuantas ejecuciones hicieron falta para obtener una ventana atribuible.
     attempts: int = 1
+    # Linea de estadisticas tal como la imprimio el terminal, ya recortada a la
+    # ventana atribuible. Existe para que un caller pueda mostrar la medida sin
+    # volver a leer la consola por fuera de esta frontera.
+    statistics: str = ""
 
 
 class TypedPingExecutor:
@@ -84,10 +95,31 @@ class TypedPingExecutor:
             not result.fresh_output_observed
             and attempt + 1 < self._measurement_attempts
         ):
+            # Medido en vivo contra PT 9.0.1.0858: sin esta comprobacion el
+            # reintento tipeaba un ping nuevo mientras el anterior seguia
+            # imprimiendo, y la ventana resultante pertenecia al comando
+            # ANTERIOR. Un comando en vuelo no se pisa: se informa lo que hay.
+            if not self._terminal_returned_to_prompt(source_device):
+                return replace(
+                    result,
+                    attempts=attempt + 1,
+                    failure_reason=result.failure_reason or "previous_command_still_running",
+                )
             attempt += 1
             self._sleep(self._interval)
             result = self._ping_once(source_device, destination)
         return replace(result, attempts=attempt + 1)
+
+    def _terminal_returned_to_prompt(self, source_device: str) -> bool:
+        source = json.dumps(source_device)
+        observed = self._json_result("".join((
+            "try{var d=ipc.network().getDevice(", source, ");var t=null;",
+            "if(d&&typeof d.getCommandPrompt==='function'){t=d.getCommandPrompt();}",
+            "if(!t&&d&&typeof d.getCommandLine==='function'){t=d.getCommandLine();}",
+            "reportResult(JSON.stringify({output:t?String(t.getOutput()):''}));}",
+            "catch(e){reportResult('ERROR:'+e);}",
+        )), 3.0)
+        return terminal_is_idle(str(observed.get("output") or ""))
 
     def _ping_once(self, source_device: str, destination: str) -> TypedPingResult:
         if not self._valid_device_name(source_device):
@@ -107,12 +139,25 @@ class TypedPingExecutor:
             "if(!t&&d&&typeof d.getCommandLine==='function'){",
             "t=d.getCommandLine();if(t){kind='ios_command_line';}}",
             "var before=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
-            "var started=false;if(t&&typeof t.enterCommand==='function'){",
+            PAGER_GUARD_JS,
+            IDLE_GUARD_JS,
+            # Mismo script que el despacho: si el pager sigue activo, el `p` de
+            # `ping` se gasta en avanzar la pagina y el CLI recibe `ing`. Y si
+            # el terminal todavia imprime, la ventana seria del comando previo.
+            "var started=false;var blocked='';",
+            "if(__pager){blocked='pager_active';}",
+            "else if(!__idle){blocked='command_in_flight';}",
+            "else if(t&&typeof t.enterCommand==='function'){",
             "t.enterCommand(", json.dumps(command), ");started=true;}",
-            "reportResult(JSON.stringify({started:started,before:before,",
+            "reportResult(JSON.stringify({started:started,blocked:blocked,before:before,",
             "terminal_kind:kind}));}",
             "catch(e){reportResult('ERROR:'+e);}",
         )), 5.0)
+        if started.get("blocked"):
+            return TypedPingResult(
+                False, False,
+                failure_reason="prompt_not_ready_" + str(started.get("blocked")),
+            )
         if not started.get("started"):
             return TypedPingResult(False, False, failure_reason="command_prompt_unavailable")
         before = str(started.get("before") or "")
@@ -155,11 +200,19 @@ class TypedPingExecutor:
                 failure_reason="no_fresh_ping_result",
             )
         if not window.query_echo_found:
+            # Un eco corrompido y un eco ausente son cosas distintas: el primero
+            # prueba que el terminal recibio OTRO comando, el segundo no prueba
+            # nada. Colapsarlos ocultaba justamente el defecto que se investiga.
+            classification, echoed = classify_echo(command, window.output)
             return TypedPingResult(
                 False,
                 False,
                 window_strategy=window.strategy,
-                failure_reason="current_ping_echo_not_observed",
+                failure_reason=(
+                    "current_ping_echo_not_observed"
+                    if classification is DispatchClassification.ECHO_UNOBSERVABLE
+                    else f"command_dispatch_mismatch:{classification.value}:{echoed}"
+                ),
             )
         counts = _PACKET_COUNTS.search(window.output)
         if counts is not None:
@@ -169,6 +222,7 @@ class TypedPingExecutor:
                     reachable=received > 0,
                     fresh_output_observed=True,
                     window_strategy=window.strategy,
+                    statistics=counts.group(0),
                 )
         ios = _IOS_SUCCESS_RATE.search(window.output)
         if ios is not None:
@@ -178,6 +232,7 @@ class TypedPingExecutor:
                     reachable=received > 0,
                     fresh_output_observed=True,
                     window_strategy=window.strategy,
+                    statistics=ios.group(0),
                 )
         return TypedPingResult(
             False,
