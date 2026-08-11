@@ -354,6 +354,66 @@ Update the product containment rule accordingly.
 
 ---
 
+## TD-RUNTIME-002 — `terminal_is_idle` is blinded by a trailing asynchronous syslog
+
+Status:
+OPEN
+
+Severity:
+P1
+
+Discovered:
+Runtime R2-0 (RIPv2 live replay qualification)
+
+Description:
+
+`terminal_is_idle` decides that a console has returned control by checking
+that the rendered output ends with a prompt.
+
+After `configureIosDevice` completes, IOS emits the asynchronous notice:
+
+```text
+Router>
+%SYS-5-CONFIG_I: Configured from console by console
+```
+
+The syslog line lands **after** the prompt, so the buffer no longer ends with
+one and the check returns False indefinitely. Measured during R2-0: still
+False at t+35s, with the tail unchanged.
+
+Runtime Safety R1-E already applied the equivalent correction to
+`first_echo_line`, which skips recognisable `%FACILITY-severity-MNEMONIC:`
+lines. `terminal_is_idle` never received that treatment.
+
+Consequence:
+
+`TypedPingExecutor` uses `IDLE_GUARD_JS`, whose JavaScript check has the same
+shape. A typed ping issued after a configuration change on the same device can
+be refused with `prompt_not_ready_command_in_flight` even though the CLI has
+returned control.
+
+Not affected:
+
+`ControlledIosExecutor` registered queries, which use `getPrompt()` rather
+than the output tail and are immune to a trailing syslog line.
+
+Blocks now:
+No. R2-0 completed by using `getPrompt()` readiness, the same signal the
+hardened IOS executor already uses.
+
+RESOLVE_BEFORE:
+typed RIPv2 behavioural verification, because that step pings immediately
+after configuring, and at latest E9.5 final closure.
+
+Closure criterion:
+
+Idle detection ignores recognisable asynchronous IOS syslog lines when
+deciding whether the console returned control, in both the Python helper and
+the JavaScript guard, with a deterministic regression covering a syslog line
+arriving after the prompt.
+
+---
+
 ## TD-PUBLIC-001 — Raw fire-and-forget tool remains publicly invokable
 
 Status:
