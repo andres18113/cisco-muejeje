@@ -344,6 +344,10 @@ class ConfigurationCompiler:
                     device_name=device.name,
                     site_id=device.site_id,
                     interface=interface,
+                    # Un switch presenta switchports; un router, interfaces
+                    # enrutadas. El mismo enlace Ethernet es una cosa por un
+                    # extremo y otra por el otro.
+                    interface_is_routed=device.category == "router",
                 ))
         return emitted
 

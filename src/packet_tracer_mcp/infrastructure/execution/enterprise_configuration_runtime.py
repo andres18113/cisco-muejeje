@@ -101,33 +101,64 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._targets = {item.device_name: item for item in targets}
         return targets
 
+    @staticmethod
+    def _refuse_batch(
+        actions: Sequence[ConfigurationAction], message: str,
+    ) -> list[RuntimeActionMutation]:
+        """Rechaza el lote entero sin haber tocado ningun dispositivo."""
+        return [
+            RuntimeActionMutation(
+                action_id=action.id,
+                applied=False,
+                failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
+                message=message,
+            )
+            for action in actions
+        ]
+
     def apply_actions(
         self, actions: Sequence[ConfigurationAction],
     ) -> list[RuntimeActionMutation]:
         results: dict[str, RuntimeActionMutation] = {}
         ios_by_device: dict[str, list[ConfigurationAction]] = defaultdict(list)
         endpoints: list[SetEndpointStaticAddress | SetEndpointDhcp] = []
+        unroutable: list[ConfigurationAction] = []
         for action in actions:
             if isinstance(action, _IOS_ACTIONS):
                 ios_by_device[action.device_name].append(action)
             elif isinstance(action, _ENDPOINT_ACTIONS):
                 endpoints.append(action)
             else:
-                # Ni IOS ni endpoint: nadie sabe aplicarla. Se informa como
-                # fallo estructurado en vez de desaparecer del resultado, que
-                # es como se perdieron las acciones de rendimiento de enlace.
-                results[action.id] = RuntimeActionMutation(
-                    action_id=action.id,
-                    applied=False,
-                    failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
-                    message=(
-                        f"No runtime channel handles {type(action).__name__}; "
-                        "the action was not applied."
-                    ),
-                )
+                unroutable.append(action)
+
+        # Enrutabilidad y renderizabilidad se comprueban sobre TODO el lote
+        # antes de la primera mutacion. Fallar a mitad dejaria la red en un
+        # estado que nadie pidio, y ese estado es peor que no haber empezado.
+        if unroutable:
+            return self._refuse_batch(
+                actions,
+                "No runtime channel handles "
+                + ", ".join(sorted({type(item).__name__ for item in unroutable}))
+                + "; the batch was refused before any device was touched.",
+            )
 
         if ios_by_device and not self._targets:
             self.inventory()
+
+        prerendered: dict[str, list] = {}
+        for device_name, device_actions in sorted(ios_by_device.items()):
+            target = self._targets.get(device_name)
+            try:
+                prerendered[device_name] = self._renderer.render_device_batches(
+                    device_name, target.model if target else "", device_actions,
+                )
+            except ValueError as exc:
+                return self._refuse_batch(
+                    actions,
+                    f"{device_name}: {exc}; the batch was refused before any "
+                    "device was touched.",
+                )
+
         for device_name, device_actions in sorted(ios_by_device.items()):
             target = self._targets.get(device_name)
             model = target.model if target else ""
@@ -142,19 +173,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         )
                     continue
                 self._ready_ios_devices.add(device_name)
-            try:
-                batches = self._renderer.render_device_batches(
-                    device_name, model, device_actions,
-                )
-            except ValueError as exc:
-                for action in device_actions:
-                    results[action.id] = RuntimeActionMutation(
-                        action_id=action.id, applied=False,
-                        failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
-                        message=str(exc),
-                    )
-                continue
-            for batch in batches:
+            # Ya renderizado en el preflight: aqui solo queda aplicar.
+            for batch in prerendered[device_name]:
                 applied = self._configuration.configure_ios(device_name, batch.ios_payload)
                 batch_id = f"{device_name}:{int(batch.phase)}"
                 for action_id in batch.action_ids:

@@ -164,8 +164,14 @@ class LinkPerformanceIntegration:
         device_name: str,
         site_id: str,
         interface: str,
+        interface_is_routed: bool = False,
     ) -> list:
-        """Acciones tipadas; ninguna se emite sobre una decision no aplicable."""
+        """Acciones tipadas; ninguna se emite sobre una decision no aplicable.
+
+        `interface_is_routed` distingue un puerto conmutado de uno enrutado.
+        No se deduce del medio: un enlace Ethernet entre un router y un switch
+        es enrutado por un extremo y conmutado por el otro.
+        """
         if not decision.applicable:
             return []
         actions: list = []
@@ -197,9 +203,14 @@ class LinkPerformanceIntegration:
                     duplex=decision.effective_duplex.value,
                 ))
         # `bandwidth` es un comando de interfaz enrutada. Medido: un switchport
-        # de 2960 lo rechaza con "% Invalid input", asi que emitirlo sobre un
-        # enlace Ethernet conmutado seria generar CLI que el backend no acepta.
-        if decision.routing_bandwidth_kbps and decision.media is not LinkMedia.ETHERNET:
+        # de 2960 lo rechaza con "% Invalid input". Pero prohibirlo en todo
+        # Ethernet seria pasarse: un Gigabit enrutado de router si lo acepta, y
+        # una politica de metrica puede necesitarlo. Lo que decide es el tipo de
+        # interfaz, no el medio. Serial siempre es enrutado.
+        bandwidth_target_supported = (
+            decision.media is not LinkMedia.ETHERNET or interface_is_routed
+        )
+        if decision.routing_bandwidth_kbps and bandwidth_target_supported:
             actions.append(ConfigureInterfaceBandwidth(
                 id=f"{decision.link_id}/bandwidth/{device_id}",
                 phase=ConfigurationPhase.L2_INTERFACES,

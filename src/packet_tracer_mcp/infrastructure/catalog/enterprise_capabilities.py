@@ -35,6 +35,16 @@ class EnterpriseCapabilityAdapter:
         providers: list[CapabilityProvider] | None = None,
     ) -> None:
         self._resolver = resolver or CapabilityResolver()
+        # DEUDA E9.5 (Stage 3A3-E), explicita y medida: sin `providers` no se
+        # incorpora NINGUNA evidencia de runtime, asi que las capacidades que
+        # los probes de Stage 2D verificaron en vivo no llegan a la seleccion
+        # de hardware. Reproducido: con un ProbeCapabilityProvider conectado,
+        # `3560-24PS.layer3` pasa de UNKNOWN a SUPPORTED; sin el, se queda en
+        # UNKNOWN. Toda la construccion productiva actual es sin providers.
+        #
+        # No decir por tanto que "el planner eligio correctamente un L2": el
+        # planner nunca vio la evidencia. Es una frontera de arquitectura sin
+        # cerrar, no una decision informada.
         self._providers = providers or []
         self._normalization_index = self._build_normalization_index()
 
