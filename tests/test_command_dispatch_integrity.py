@@ -606,6 +606,121 @@ def test_a_terminal_still_printing_or_paging_is_not_idle():
     assert not terminal_is_idle("Router#show interfaces\nGi0/0 is up\n --More-- ")
 
 
+# -- TD-RUNTIME-002: syslog asincrono DESPUES del prompt -------------------
+
+def test_the_live_r2_0_observation_is_command_ready():
+    """La cola exacta observada en vivo durante R2-0.
+
+    `configureIosDevice` devuelve el control, IOS imprime su prompt, y recien
+    despues emite el aviso de configuracion. El buffer deja de terminar en
+    prompt sin que el CLI este ocupado: quedaba en False para siempre --
+    medido sin cambios a t+35s.
+    """
+    tail = "\nRouter>\n%SYS-5-CONFIG_I: Configured from console by console"
+
+    assert terminal_is_idle(tail)
+
+
+def test_a_trailing_link_syslog_does_not_hide_the_prompt():
+    assert terminal_is_idle(
+        "Router#\n%LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up",
+    )
+
+
+def test_several_trailing_syslog_lines_are_all_skipped():
+    assert terminal_is_idle(
+        "Router#\n"
+        "%LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to up\n"
+        "%LINEPROTO-5-UPDOWN: Line protocol on Interface Gi0/0, changed state to up\n"
+        "%SYS-5-CONFIG_I: Configured from console by console",
+    )
+
+
+def test_a_pc_prompt_followed_by_syslog_shaped_text_still_reads_as_ready():
+    assert terminal_is_idle("C:\\>\n%SYS-5-CONFIG_I: Configured from console by console")
+
+
+def test_a_pager_behind_a_trailing_syslog_is_still_not_idle():
+    """Saltear syslog no puede convertirse en saltear el pager."""
+    assert not terminal_is_idle(
+        "Router#show interfaces\nGi0/0 is up\n"
+        "%LINK-5-CHANGED: Interface Gi0/0, changed state to up\n --More-- ",
+    )
+
+
+def test_a_command_in_flight_behind_the_prompt_is_not_idle():
+    assert not terminal_is_idle("Router#\nshow ip route")
+
+
+def test_arbitrary_trailing_text_is_not_a_syslog_line():
+    assert not terminal_is_idle("Router#\nalgo que no es syslog")
+
+
+def test_a_rejection_line_is_not_treated_as_skippable_syslog():
+    """`% Invalid input` empieza con `%` pero no tiene forma de syslog."""
+    assert not terminal_is_idle("Router#\n% Invalid input detected at '^' marker.")
+
+
+def test_a_partial_prompt_is_not_idle():
+    assert not terminal_is_idle("Router")
+    assert not terminal_is_idle(
+        "Would you like to enter the initial configuration dialog? [yes/no]:",
+    )
+
+
+def test_a_buffer_that_is_only_syslog_has_no_prompt_to_return_to():
+    assert not terminal_is_idle("%SYS-5-CONFIG_I: Configured from console by console")
+
+
+def test_the_javascript_guard_skips_trailing_syslog_too():
+    """La guarda atomica corre en PT, no en Python: debe llevar la misma regla.
+
+    Sin esto, el ping tipado seguiria rechazando el despacho aunque el helper
+    de Python ya lo aceptara.
+    """
+    from src.packet_tracer_mcp.infrastructure.execution.command_dispatch import (
+        IDLE_GUARD_JS,
+    )
+
+    assert "%" in IDLE_GUARD_JS and "__syslog" in IDLE_GUARD_JS
+
+
+def test_typed_ping_retries_after_a_configuration_notice_instead_of_giving_up():
+    """El consumidor productivo, con la cola exacta que dejo `configureIosDevice`.
+
+    La barrera de reintento consulta `terminal_is_idle`. Con el aviso de
+    configuracion colgando detras del prompt, el ejecutor concluia que habia un
+    comando en vuelo y se rendia sin volver a medir -- justo despues de
+    configurar, que es cuando la verificacion conductual de R2 va a pingear.
+    """
+    configured = "Router#\n%SYS-5-CONFIG_I: Configured from console by console"
+    answered = (
+        "Router#ping 10.0.0.1\n"
+        "Success rate is 100 percent (5/5), round-trip min/avg/max = 1/2/4 ms\n"
+        "Router#"
+    )
+    state = {"dispatches": 0}
+
+    def send_and_wait(script, _timeout):
+        if "enterCommand" in script:
+            state["dispatches"] += 1
+            return json.dumps({"started": True, "before": "Router#"})
+        # La primera lectura no atribuye; despues el terminal responde.
+        output = configured if state["dispatches"] < 2 else answered
+        return json.dumps({"found": True, "output": output})
+
+    result = TypedPingExecutor(
+        send_and_wait, timeout_seconds=0, measurement_attempts=3,
+        sleeper=lambda _s: None,
+    ).ping("R1", "10.0.0.1")
+
+    assert state["dispatches"] == 2, (
+        "El reintento no llego a despachar: la barrera leyo el aviso de "
+        "configuracion como un comando en vuelo."
+    )
+    assert result.reachable and result.fresh_output_observed
+
+
 def test_corruption_without_a_proven_rejection_is_never_retried():
     """Sin rechazo no hay prueba de que el comando corrompido no surtiera efecto."""
     terminal = _CorruptingTerminal(99, rejected=False)

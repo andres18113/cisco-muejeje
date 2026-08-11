@@ -357,7 +357,7 @@ Update the product containment rule accordingly.
 ## TD-RUNTIME-002 — `terminal_is_idle` is blinded by a trailing asynchronous syslog
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P1
@@ -411,6 +411,36 @@ Idle detection ignores recognisable asynchronous IOS syslog lines when
 deciding whether the console returned control, in both the Python helper and
 the JavaScript guard, with a deterministic regression covering a syslog line
 arriving after the prompt.
+
+### Resolution
+
+Resolved: 2026-08-11, stage "Resolve TD-RUNTIME-002".
+
+Commit subject:
+`fix: tolerate trailing IOS syslog in idle detection`
+on `feature/runtime-ripv2`.
+
+What changed:
+
+Both `terminal_is_idle` and `IDLE_GUARD_JS` now discard trailing lines that
+match the recognisable `%FACILITY-severity-MNEMONIC:` shape before looking for
+the prompt. The rule is the one `first_echo_line` already used; no second
+syslog regex was introduced.
+
+Evidence:
+
+- deterministic regressions for prompt only, prompt plus `CONFIG_I`, prompt
+  plus `LINK`, several consecutive notices, and the exact tail recorded live
+  during R2-0;
+- negative regressions holding the R1 guarantees: pager behind a notice,
+  command in flight, arbitrary trailing text, `% Invalid input`, partial
+  prompt, and syslog with no prompt behind it;
+- a `TypedPingExecutor` regression proving the retry barrier is passed after a
+  configuration notice;
+- live confirmation on disposable `__MCP_PROBE_R2_IDLE_R1` (2911, PT
+  9.0.1.0858): tail `Router>` followed by `%SYS-5-CONFIG_I`, with the Python
+  helper and the in-Packet-Tracer JavaScript guard both reporting ready and no
+  pager. Cleanup left no `__MCP_PROBE_R2_*` residue.
 
 ---
 
@@ -475,3 +505,9 @@ Missing planned functionality is not automatically technical debt.
 Move an item here only when its closure criterion has been satisfied.
 
 Do not delete historical debt entries.
+
+- **TD-RUNTIME-002** — resolved 2026-08-11. Idle detection now discards
+  trailing recognisable IOS syslog lines before looking for the prompt, in both
+  the Python helper and the in-Packet-Tracer JavaScript guard, reusing the rule
+  `first_echo_line` already applied. Confirmed by deterministic regressions and
+  by one live disposable reproduction. The entry above is kept in full.

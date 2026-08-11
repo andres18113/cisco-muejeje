@@ -107,7 +107,19 @@ PAGER_GUARD_JS = (
 # Requiere `__r` (definido por PAGER_GUARD_JS) y define `__idle`. NO se usa en
 # las transiciones de modo ni al contestar el setup dialog: ahi el terminal
 # legitimamente no esta en un prompt.
-IDLE_GUARD_JS = "var __idle=/(?:[A-Za-z]:\\\\>|\\S*[>#])\\s*$/.test(__r);"
+# Descarta las lineas de syslog de la cola antes de buscar el prompt, con la
+# misma regla que el lado Python: IOS emite `%SYS-5-CONFIG_I` DESPUES de haber
+# devuelto el control, y exigir el prompt al final dejaba esto en False para
+# siempre. Corre dentro del script de despacho, asi que la guarda atomica y el
+# helper de Python no pueden divergir.
+IDLE_GUARD_JS = (
+    "var __syslog=/^%[A-Z][A-Z0-9_]*-\\d+-[A-Z0-9_]+\\s*:/;"
+    "var __il=__r.split('\\n');"
+    "while(__il.length){var __lt=__il[__il.length-1].replace(/^\\s+|\\s+$/g,'');"
+    "if(__lt===''||__syslog.test(__lt)){__il.pop();}else{break;}}"
+    "var __idle=__il.length>0&&"
+    "/(?:[A-Za-z]:\\\\>|\\S*[>#])\\s*$/.test(__il.join('\\n'));"
+)
 
 
 def resolve_backspaces(value: str) -> str:
@@ -334,11 +346,31 @@ def terminal_is_idle(output: str) -> bool:
     mientras el anterior seguia imprimiendo, y la ventana resultante pertenecia
     al comando ANTERIOR. El eco entonces faltaba, y el fallo se reportaba como
     "eco no observado" en vez de "se reintento sobre un comando en curso".
+
+    Las lineas de syslog de la COLA se descartan antes de buscar el prompt.
+    Medido durante R2-0: al terminar `configureIosDevice`, IOS imprime su
+    prompt y recien despues emite `%SYS-5-CONFIG_I`, de modo que el buffer deja
+    de terminar en prompt aunque el CLI ya devolvio el control. Exigir el
+    prompt al final dejaba esto en False para siempre -- sin cambios a t+35s.
+
+    Se saltea SOLO el formato reconocible de syslog, la misma regla que usa
+    `first_echo_line`. Cualquier otra cola -- un comando en vuelo, un `%
+    Invalid input`, texto arbitrario -- sigue significando que el terminal no
+    esta listo, y el pager se rechaza antes de mirar nada.
     """
     rendered = rendered_terminal_text(output).rstrip()
     if not rendered or rendered.endswith(_PAGER_MARKER):
         return False
-    return bool(_IDLE_PROMPT_TAIL.search(rendered))
+    lines = rendered.splitlines()
+    while lines:
+        tail = lines[-1].strip()
+        if tail and not _IOS_SYSLOG.match(tail):
+            break
+        lines.pop()
+    if not lines:
+        # Solo habia avisos asincronos: no hay prompt al que haber vuelto.
+        return False
+    return bool(_IDLE_PROMPT_TAIL.search("\n".join(lines).rstrip()))
 
 
 def assess_prompt_readiness(
