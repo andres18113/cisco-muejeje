@@ -8,12 +8,15 @@ no impide el efecto duplicado.
 
 La distincion estructural que decide cada caso:
 
-    conjunto  -> reaplicar no agrega nada     (network X, vlan N, ip address A)
-    lista     -> reaplicar agrega un duplicado (access-list N permit ...)
+    forma de conjunto/asignacion -> reaplicar no deberia agregar nada
+    forma de lista ordenada      -> reaplicar podria agregar una entrada mas
 
-Lo que estos tests fijan es la clasificacion, contra el texto que los
-generadores emiten de verdad. No miden Packet Tracer: donde no hay medicion, la
-familia queda UNKNOWN y se dice.
+ALCANCE DE LA EVIDENCIA. Estos tests leen el texto que los generadores emiten
+de verdad, y eso es todo lo que prueban: la FORMA del payload. NINGUNO mide
+Packet Tracer. Por eso la clasificacion habla de como se TRATA cada familia y
+no de como PT se comporta: una familia estructuralmente aditiva se trata como
+insegura hasta que exista una reproduccion controlada, tal como exige el
+"Gate discipline" de e95-stabilization.
 """
 
 from __future__ import annotations
@@ -43,16 +46,25 @@ REPLAY_SAFE_FAMILIES = {
     "SetEndpointDhcp": "configurePcIp(dhcp) -- setter estructurado",
 }
 
-# Familias donde reaplicar SI agrega efecto: la ACL numerada es una lista
-# ordenada y admite entradas duplicadas.
+# Familias que se TRATAN como inseguras por precaucion de producto.
+#
+# Lo que esta probado es la FORMA del payload, leida del generador: es
+# estructuralmente aditiva. Lo que NO esta probado es como se comporta Packet
+# Tracer al recibirla dos veces -- no se corrio ninguna reproduccion. El propio
+# "Gate discipline" de e95-stabilization exige una reproduccion controlada
+# antes de clasificar una limitacion de PT, asi que aqui no se afirma que PT
+# duplique la ACE: se la trata como insegura mientras no haya evidencia.
 REPLAY_UNSAFE_FAMILIES = {
     "ACLPlan / pt_apply_acl": (
-        "generate_acl_cli emite solo `access-list N permit|deny ...`, sin un "
-        "`no access-list N` delante. Reaplicar agrega ACEs duplicadas."
+        "STRUCTURALLY_ADDITIVE: generate_acl_cli emite solo "
+        "`access-list N permit|deny ...`, sin un `no access-list N` delante. "
+        "REPLAY_SAFETY_NOT_PROVEN: no se midio el efecto de aplicarla dos "
+        "veces en PT. TREAT_AS_REPLAY_UNSAFE por seguridad de producto."
     ),
     "NAT (cuerpo ACL)": (
-        "generate_nat_body_cli emite `access-list N permit <net>` con la misma "
-        "forma aditiva."
+        "STRUCTURALLY_ADDITIVE: generate_nat_body_cli emite "
+        "`access-list N permit <net>`, la misma forma. "
+        "REPLAY_SAFETY_NOT_PROVEN, hereda el trato conservador."
     ),
 }
 
@@ -86,11 +98,13 @@ def test_the_configuration_renderer_emits_only_assignments():
 # -- evidencia de las familias inseguras ----------------------------------
 
 def test_the_acl_generator_appends_entries_without_resetting_the_list():
-    """La razon exacta por la que la familia ACL no es replay-safe.
+    """La forma del payload, que es lo unico que aqui se puede probar.
 
-    `build_remove_payload` existe, pero es una operacion SEPARADA de borrado:
-    la generacion normal no la antepone, asi que dos aplicaciones del mismo
-    plan dejan la ACL con cada entrada por duplicado.
+    `build_remove_payload` existe, pero es una operacion SEPARADA de borrado y
+    la generacion normal no la antepone. Eso hace al payload estructuralmente
+    aditivo. Lo que PT haga al recibirlo dos veces no se midio, y este test no
+    lo afirma: por eso la familia se TRATA como insegura en vez de declararse
+    probadamente insegura.
     """
     source = (GENERATOR / "acl_cli_generator.py").read_text(encoding="utf-8")
     generate = source.split("def generate_acl_cli")[1].split("\ndef ")[0]

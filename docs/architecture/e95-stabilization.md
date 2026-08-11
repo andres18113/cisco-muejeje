@@ -383,6 +383,52 @@ layout acknowledged != coordinates observed
 registered phone    != call verified
 ```
 
+## What makes an action APPLIED
+
+The substitution list above says what `APPLIED` is *not*. Until Runtime Safety
+R1 it never said what produces it: no document named the event, and
+`ActionExecutionStatus` carried no documentation. Runtime Safety R1 adopts the
+following contract. This is a **new normative statement, not a restatement of
+an older one** — it formalises what the runtime already did, so that callers
+stop having to guess.
+
+```text
+COMPILED   the typed action was produced by the compiler
+APPLIED    the action was accepted by its selected runtime execution channel
+OBSERVED   backend state was read through qualifying runtime evidence
+VERIFIED   the intended claim satisfied its declared verification criterion
+```
+
+`APPLIED` asserts acceptance by the channel and nothing beyond it. It does
+**not** assert backend acknowledgement of the intended state, a
+`MutationDisposition` of `CHANGED`, directly observed backend state,
+successful verification, or behavioural success.
+
+The reason is the transport. The typed configuration channel is
+fire-and-forget: `PacketTracerConfigurationRuntime` hands the payload to the
+runtime channel and receives no acknowledgement from Packet Tracer. No signal
+exists anywhere in the system that could sustain a stronger claim, so a
+stronger reading of `APPLIED` would be unrepresentable rather than merely
+unproven.
+
+A mutation is therefore honestly described by three independent axes at once:
+
+```text
+ExecutionStatus     APPLIED        the channel accepted the dispatch
+MutationDisposition UNKNOWN        nobody observed what changed
+Verification        not verified   the claim has not been re-read yet
+```
+
+That combination is a valid, expected state. It means "the dispatch was
+accepted, the backend effect is not yet known". Only verification moves the
+third axis, and only qualifying evidence moves the second. A consumer that
+reads `APPLIED` alone as proof that Packet Tracer reached the intended state
+is making an inference this contract does not license.
+
+Runtimes that *do* observe their own mutation — the physical topology runtime
+is the current example — keep their stronger semantics by declaring a
+`MutationDisposition`. The contract above narrows nothing for them.
+
 E10 can start only after the architectural contracts have passed full
 regression and every runtime capability it depends on has a precise supported,
 unsupported, unobservable, failed, or blocked classification backed by the

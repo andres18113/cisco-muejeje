@@ -229,8 +229,11 @@ def test_how_many_times_a_stranded_request_is_evaluated(tmp_path):
                 request.unlink()
 
     assert evaluations == 5, (
-        "El mismo payload se evalua una vez por tick mientras nadie retire el "
-        "archivo. Esto NO es at-most-once ni exactly-once."
+        "BAJO ESTA CONDICION MODELADA -- respuesta escrita, borrado fallido, "
+        "sin envio posterior -- el mismo payload se evalua una vez por tick "
+        "hasta que una limpieza externa retire el archivo. El alcance importa: "
+        "esto NO dice que el buzon sea at-least-once en general, dice que ni "
+        "exactly-once ni at-most-once pueden garantizarse."
     )
 
 
