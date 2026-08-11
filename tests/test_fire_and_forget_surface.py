@@ -203,6 +203,56 @@ def test_a_request_the_engine_failed_to_remove_is_replayable_until_collected(tmp
     )
 
 
+def test_how_many_times_a_stranded_request_is_evaluated(tmp_path):
+    """Cuenta ejecuciones reales, no disponibilidad, replicando el bucle del motor.
+
+    Escenario exacto: el motor contesta, falla al borrar el req, y NO hay envio
+    siguiente de Python que lo recoja. Se simulan varios ticks.
+
+    El bucle real es: listar -> leer contenido -> evaluar -> escribir res ->
+    borrar req (con el error tragado). Si el borrado falla, el req sigue
+    listado en el tick siguiente y se vuelve a evaluar.
+    """
+    bridge = FileBridge(tmp_path)
+    bridge.send("configureIosDevice('R1','router rip')")
+
+    evaluations = 0
+    remove_works = False  # el fallo que se inyecta
+
+    for _tick in range(5):
+        for request in sorted(tmp_path.glob("req_*.js")):
+            request.read_text(encoding="utf-8")
+            evaluations += 1
+            name = request.name[4:-3]
+            (tmp_path / f"res_{name}.txt").write_text("ok", encoding="utf-8")
+            if remove_works:
+                request.unlink()
+
+    assert evaluations == 5, (
+        "El mismo payload se evalua una vez por tick mientras nadie retire el "
+        "archivo. Esto NO es at-most-once ni exactly-once."
+    )
+
+
+def test_the_same_scenario_is_bounded_when_a_later_send_collects(tmp_path):
+    """Control: con un envio posterior, la recoleccion corta la repeticion."""
+    bridge = FileBridge(tmp_path)
+    bridge.send("configureIosDevice('R1','a')")
+
+    evaluations = 0
+    for tick in range(5):
+        for request in sorted(tmp_path.glob("req_*.js")):
+            request.read_text(encoding="utf-8")
+            evaluations += 1
+            (tmp_path / f"res_{request.name[4:-3]}.txt").write_text("ok", encoding="utf-8")
+        if tick == 0:
+            bridge.send("configureIosDevice('R1','b')")  # recoge el anterior
+
+    # El primero se evaluo una vez; el segundo, en los ticks restantes.
+    assert evaluations < 10
+    assert evaluations >= 2
+
+
 def test_nothing_in_the_transport_claims_exactly_once():
     source = (
         PACKAGE / "infrastructure" / "execution" / "file_bridge.py"

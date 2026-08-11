@@ -17,9 +17,40 @@ from .execution import (
 
 
 class ActionExecutionStatus(str, Enum):
+    """Estado de una acción a lo largo de su ciclo de vida.
+
+    Qué evento produce APPLIED
+    --------------------------
+    Hasta R1-E esto no estaba escrito en ninguna parte. La arquitectura decía
+    con qué NO se confunde -- `compiled != applied`, `applied != observed`,
+    "a result may be APPLIED and still be UNOBSERVABLE" -- pero ningún source
+    nombraba el evento que lo produce, y el enum no tenía documentación.
+
+    Se fija aquí lo único que el transporte puede sustentar:
+
+        APPLIED = el payload fue aceptado por el canal del runtime.
+
+    Ni más ni menos. El canal de configuración es fire-and-forget: entrega el
+    payload y no recibe acuse de Packet Tracer. Por eso APPLIED no puede
+    significar "el backend confirmó la aplicación" -- no existe en el sistema
+    ninguna señal capaz de sostener esa afirmación --, y tampoco "el estado
+    quedó aplicado", que es precisamente lo que la verificación va a averiguar.
+
+    Esto DOCUMENTA el comportamiento vigente; no lo cambia. Si la intención
+    original era la lectura más fuerte ("el estado intencionado quedó aplicado
+    aunque no sea observable"), entonces el transporte actual no puede
+    entregarla y eso es una decisión semántica propia, no un ajuste de wording.
+
+    FAILED aquí es una certeza LOCAL: el payload no salió del proceso, así que
+    no puede aplicarse más tarde. VERIFIED es lo contrario de APPLIED en cuanto
+    a evidencia: sale de releer el estado, nunca del envío.
+    """
+
     INTENDED = "intended"
     COMPILED = "compiled"
+    # Aceptado por el canal del runtime. NO implica efecto en el backend.
     APPLIED = "applied"
+    # Releído del dispositivo. Es el único que afirma efecto.
     VERIFIED = "verified"
     PARTIAL = "partial"
     FAILED = "failed"
