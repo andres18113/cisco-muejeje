@@ -196,7 +196,10 @@ class LinkPerformanceIntegration:
                     speed=speed,
                     duplex=decision.effective_duplex.value,
                 ))
-        if decision.routing_bandwidth_kbps:
+        # `bandwidth` es un comando de interfaz enrutada. Medido: un switchport
+        # de 2960 lo rechaza con "% Invalid input", asi que emitirlo sobre un
+        # enlace Ethernet conmutado seria generar CLI que el backend no acepta.
+        if decision.routing_bandwidth_kbps and decision.media is not LinkMedia.ETHERNET:
             actions.append(ConfigureInterfaceBandwidth(
                 id=f"{decision.link_id}/bandwidth/{device_id}",
                 phase=ConfigurationPhase.L2_INTERFACES,

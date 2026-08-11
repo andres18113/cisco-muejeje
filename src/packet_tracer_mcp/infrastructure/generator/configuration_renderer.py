@@ -19,6 +19,8 @@ from ...domain.enterprise.models.configuration import (
     ConfigureSvi,
     ConfigureTrunk,
     CreateVlan,
+    SetEndpointDhcp,
+    SetEndpointStaticAddress,
 )
 from ...domain.models.vlans import (
     AccessPortConfig,
@@ -36,15 +38,55 @@ from .vlan_cli_generator import (
 )
 
 
-# Acciones que este renderer sabe convertir. Una accion tipada fuera de esta
-# lista se descarta en silencio, asi que la lista es la definicion operativa de
-# "renderizable": las de rendimiento de enlace faltaban aqui y por eso un reloj
-# serial o un modo Ethernet compilaban sin producir una sola linea de CLI.
+class UnrenderableConfigurationAction(ValueError):
+    """Una accion tipada llego aqui y nadie sabe convertirla.
+
+    Es un error y no un caso silencioso: durante E9.5 las acciones de
+    rendimiento de enlace no estaban en la lista y compilaban, validaban y no
+    producian una sola linea de CLI. Nadie se entero porque no fallaba nada.
+    """
+
+    def __init__(self, actions: list[ConfigurationAction]) -> None:
+        self.actions = list(actions)
+        detail = ", ".join(
+            f"{type(action).__name__}({action.id})" for action in self.actions
+        )
+        super().__init__(
+            "No renderer is registered for these configuration actions: " + detail
+        )
+
+
+# Acciones que este renderer convierte a CLI. La tupla es la definicion
+# operativa de "renderizable".
 _RENDERABLE = (
     CreateVlan, ConfigureAccessPort, ConfigureTrunk, ConfigureRoutedInterface,
     ConfigureSvi, ConfigureSubinterface, ConfigureDhcpPool,
     ConfigureSerialClock, ConfigureInterfaceBandwidth, ConfigureEthernetLinkMode,
 )
+
+# Acciones que legitimamente pertenecen a otro renderer. Se enumeran a
+# proposito: delegar es una decision, ignorar es un descuido, y desde fuera se
+# parecen demasiado.
+_DELEGATED = (
+    SetEndpointStaticAddress, SetEndpointDhcp,
+)
+
+
+@dataclass(frozen=True)
+class RendererCoverage:
+    """Que sabe hacer este renderer, para poder auditarlo desde fuera."""
+
+    rendered: tuple[type, ...]
+    delegated: tuple[type, ...]
+
+    def handles(self, action_type: type) -> bool:
+        return issubclass(action_type, self.rendered) or issubclass(
+            action_type, self.delegated,
+        )
+
+
+def renderer_coverage() -> RendererCoverage:
+    return RendererCoverage(rendered=_RENDERABLE, delegated=_DELEGATED)
 
 
 @dataclass(frozen=True)
@@ -66,9 +108,16 @@ class PacketTracerIosRenderer:
         actions: list[ConfigurationAction],
     ) -> list[RenderedConfigurationBatch]:
         grouped: dict[ConfigurationPhase, list[ConfigurationAction]] = defaultdict(list)
+        unhandled: list[ConfigurationAction] = []
         for action in actions:
             if isinstance(action, _RENDERABLE):
                 grouped[action.phase].append(action)
+            elif not isinstance(action, _DELEGATED):
+                unhandled.append(action)
+        if unhandled:
+            # Fallar aqui es el punto: producir un plan vacio para una accion
+            # que nadie sabe renderizar parece exito y no lo es.
+            raise UnrenderableConfigurationAction(unhandled)
 
         batches: list[RenderedConfigurationBatch] = []
         for phase in sorted(grouped):

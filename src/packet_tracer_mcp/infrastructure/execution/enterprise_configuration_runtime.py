@@ -11,7 +11,10 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationAction,
     ConfigureAccessPort,
     ConfigureDhcpPool,
+    ConfigureEthernetLinkMode,
+    ConfigureInterfaceBandwidth,
     ConfigureRoutedInterface,
+    ConfigureSerialClock,
     ConfigureSubinterface,
     ConfigureSvi,
     ConfigureTrunk,
@@ -44,6 +47,9 @@ from .ios_terminal import (
 from .runtime_inventory import normalize_runtime_inventory
 
 
+# Acciones que se aplican por el canal IOS. Faltaban aqui las tres de
+# rendimiento de enlace, de modo que el runtime las descartaba antes
+# incluso de llegar al renderer: el mismo fallo mudo, una capa mas abajo.
 _IOS_ACTIONS = (
     CreateVlan,
     ConfigureAccessPort,
@@ -52,6 +58,9 @@ _IOS_ACTIONS = (
     ConfigureSvi,
     ConfigureSubinterface,
     ConfigureDhcpPool,
+    ConfigureSerialClock,
+    ConfigureInterfaceBandwidth,
+    ConfigureEthernetLinkMode,
 )
 _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 
@@ -103,6 +112,19 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 ios_by_device[action.device_name].append(action)
             elif isinstance(action, _ENDPOINT_ACTIONS):
                 endpoints.append(action)
+            else:
+                # Ni IOS ni endpoint: nadie sabe aplicarla. Se informa como
+                # fallo estructurado en vez de desaparecer del resultado, que
+                # es como se perdieron las acciones de rendimiento de enlace.
+                results[action.id] = RuntimeActionMutation(
+                    action_id=action.id,
+                    applied=False,
+                    failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
+                    message=(
+                        f"No runtime channel handles {type(action).__name__}; "
+                        "the action was not applied."
+                    ),
+                )
 
         if ios_by_device and not self._targets:
             self.inventory()

@@ -6,6 +6,7 @@ import hashlib
 import ipaddress
 import json
 from collections import defaultdict
+from collections.abc import Callable
 
 from ...models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ..models.addressing import SubnetAllocation
@@ -36,16 +37,21 @@ from ..models.configuration import (
     action_type_counts,
 )
 from ..models.enterprise_plan import EnterprisePlan
+from ..models.link_performance import EthernetLinkModeCapability
 from ..models.requirements import AddressingPreference, EndpointRequirement
 from ..models.roles import DeviceRole
 from ..models.segments import NetworkSegment, SegmentRole
 from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from .configuration_dependencies import ConfigurationDependencyError, order_configuration_actions
+from .link_performance_integration import LinkPerformanceIntegration
 from .configuration_validator import validate_configuration_actions
 from .segment_assignment import SegmentAssignmentPolicy
 
 
 _RESERVED_VLANS = {1002, 1003, 1004, 1005}
+#: Categorias cuyo modo de enlace se configura por IOS. Los endpoints quedan
+#: fuera: no se les configura velocidad ni duplex desde aqui.
+_LINK_MODE_CATEGORIES = {"router", "switch"}
 _TRUNK_LINK_ROLES = {
     "access_uplink", "distribution_uplink", "core_link", "redundant_link", "edge_link",
 }
@@ -85,6 +91,20 @@ def _device_key(device: DevicePlan) -> str:
 
 class ConfigurationCompiler:
     """Compila intención lógica sin bridge, IOS, TerminalLine ni MCP."""
+
+    def __init__(
+        self,
+        link_mode_capability_resolver: (
+            "Callable[[str, str], EthernetLinkModeCapability | None] | None"
+        ) = None,
+    ) -> None:
+        # Quién sabe qué backend hay debajo lo aporta quien construye el
+        # compilador. Sin resolver, los enlaces quedan sin perfil y la política
+        # de rendimiento no emite nada, que es el comportamiento previo.
+        self._link_performance = LinkPerformanceIntegration(
+            capability_resolver=link_mode_capability_resolver,
+        )
+        self._link_capabilities_available = link_mode_capability_resolver is not None
 
     def compile(
         self,
@@ -200,6 +220,10 @@ class ConfigurationCompiler:
                 required_capability="endpoint_dhcp",
             ))
 
+        actions.extend(self._link_performance_actions(
+            topology, devices, links, names_to_ids, issues,
+        ))
+
         issues.extend(validate_configuration_actions(actions))
         if not any(issue.severity is ConfigurationIssueSeverity.ERROR for issue in issues):
             try:
@@ -241,6 +265,87 @@ class ConfigurationCompiler:
         )
         plan.semantic_hash = self._semantic_hash(plan)
         return self._result(plan, actions, topology, issues)
+
+    def _link_performance_actions(
+        self,
+        topology: TopologyPlan,
+        devices: dict[str, DevicePlan],
+        links: list[LinkPlan],
+        names_to_ids: dict[str, str],
+        issues: list[ConfigurationIssue],
+    ) -> list[ConfigurationAction]:
+        """Convierte la política de rendimiento de enlace en acciones tipadas.
+
+        Sin resolver de capacidades no se emite nada: una mutación de modo
+        sobre un backend del que no se sabe nada no es un caso por defecto
+        aceptable, y el intent sigue compilando igual.
+        """
+        if not self._link_capabilities_available:
+            return []
+        endpoint_models = {
+            device.name: device.model for device in topology.devices
+        }
+        emitted: list[ConfigurationAction] = []
+        for link in sorted(links, key=lambda item: (item.id or "", item.device_a)):
+            # El modo de enlace se configura por IOS, asi que solo aplica entre
+            # dispositivos gestionables. Un PC o un telefono nunca tendran
+            # perfil, y avisar de ello en cada enlace de acceso seria ruido
+            # sobre algo que no es una carencia.
+            endpoints = [
+                devices.get(names_to_ids.get(name, ""))
+                for name in (link.device_a, link.device_b)
+            ]
+            if not all(
+                device is not None and device.category in _LINK_MODE_CATEGORIES
+                for device in endpoints
+            ):
+                continue
+            intent = self._link_performance.intent_for_link(
+                link, endpoint_models=endpoint_models,
+            )
+            # Preflight productivo: compilar la intención es una cosa y mutar
+            # el runtime otra. Un extremo sin perfil deja la capacidad en
+            # UNKNOWN, que no es UNSUPPORTED pero tampoco es permiso.
+            unprofiled = [
+                name for name, capability in (
+                    (link.device_a, intent.local_port_capability),
+                    (link.device_b, intent.peer_port_capability),
+                )
+                if capability is None
+            ]
+            if unprofiled:
+                issues.append(_warning(
+                    ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                    f"Link {link.id or link.device_a}: no measured link-mode profile "
+                    f"for {', '.join(unprofiled)}; leaving the link to "
+                    "autonegotiation instead of mutating an unknown capability.",
+                    link.id or link.device_a,
+                ))
+                continue
+            decision = self._link_performance.decide(intent)
+            if not decision.applicable:
+                for issue in decision.issues:
+                    issues.append(_warning(
+                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                        f"Link {link.id or link.device_a}: {issue.message}",
+                        link.id or link.device_a,
+                    ))
+                continue
+            for device_name, interface in (
+                (link.device_a, link.port_a), (link.device_b, link.port_b),
+            ):
+                device_id = names_to_ids.get(device_name, "")
+                device = devices.get(device_id)
+                if device is None:
+                    continue
+                emitted.extend(self._link_performance.actions_for(
+                    decision,
+                    device_id=device_id,
+                    device_name=device.name,
+                    site_id=device.site_id,
+                    interface=interface,
+                ))
+        return emitted
 
     @staticmethod
     def _resolved_link(link: LinkPlan, names_to_ids: dict[str, str]) -> LinkPlan:
