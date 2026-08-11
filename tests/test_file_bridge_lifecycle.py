@@ -39,7 +39,7 @@ def test_a_timed_out_request_is_withdrawn_so_it_cannot_run_later(bridge):
     """El caso que origino todo: nadie leyo el req y el caller se rindio."""
     assert bridge.send_and_wait("reportResult('x')", timeout=0.2) is None
 
-    assert bridge.last_disposition is RequestDisposition.CANCELLED_UNCLAIMED
+    assert bridge.last_disposition is RequestDisposition.WITHDRAWN_NO_EXECUTION_OBSERVED
     assert _requests(bridge) == [], (
         "El request vencido sigue en el buzon: el Script Engine lo ejecutaria "
         "mas tarde, sin dueno."
@@ -125,7 +125,7 @@ def test_a_stale_response_is_never_delivered_to_a_later_request(bridge, tmp_path
     (tmp_path / "res_9999_deadbeef_000001.txt").write_text("ajeno", encoding="utf-8")
 
     assert bridge.send_and_wait("reportResult('x')", timeout=0.2) is None
-    assert bridge.last_disposition is RequestDisposition.CANCELLED_UNCLAIMED
+    assert bridge.last_disposition is RequestDisposition.WITHDRAWN_NO_EXECUTION_OBSERVED
 
 
 def test_request_names_do_not_repeat_across_process_restarts(tmp_path):
@@ -169,6 +169,110 @@ def test_a_response_that_arrives_in_time_is_returned_and_consumed(bridge):
     # try/catch que traga el error: si falla, el mismo req se reejecuta en cada
     # tick. El buzon debe quedar limpio aunque el motor no lo haya limpiado.
     assert _requests(bridge) == []
+
+
+# -- G. nada afirma que el comando no se ejecuto -------------------------
+
+def test_no_disposition_claims_the_command_never_ran():
+    """El nombre viejo, CANCELLED_UNCLAIMED, afirmaba mas de lo observable.
+
+    Un `unlink` exitoso prueba que el motor no habia TERMINADO, no que no
+    hubiera empezado; y no hay cota superior probada del tiempo de evaluacion,
+    asi que no ver la respuesta durante una ventana acotada tampoco lo prueba.
+    """
+    assert not any(item.proves_no_execution for item in RequestDisposition)
+
+
+def test_an_engine_that_already_claimed_the_request_is_never_reported_as_cancelled(bridge):
+    """Peor caso: el motor leyo el contenido ANTES de que Python cancelara.
+
+    El archivo desaparece del buzon, pero la evaluacion sigue con el string ya
+    en memoria. Retirarlo no deshace nada y no puede reportarse como si si.
+    """
+    import threading
+
+    claimed = {}
+    original = bridge._write_atomic
+
+    def engine_reads_immediately(path, text):
+        original(path, text)
+        if path.name.startswith("req_"):
+            claimed["name"] = path.name[4:-3]
+            claimed["source"] = text  # el motor ya tiene el contenido
+
+    bridge._write_atomic = engine_reads_immediately
+
+    def finish_evaluation_late():
+        # La evaluacion termina despues de que el caller se rindio y cancelo.
+        time.sleep(0.15)
+        (bridge.dir / f"res_{claimed['name']}.txt").write_text("ejecutado", encoding="utf-8")
+
+    worker = threading.Thread(target=finish_evaluation_late)
+    worker.start()
+    try:
+        bridge.send_and_wait("reportResult('x')", timeout=0.05)
+    finally:
+        worker.join()
+
+    assert bridge.last_disposition is RequestDisposition.EXECUTED_LATE
+    assert not bridge.last_disposition.proves_no_execution
+
+
+# -- H. reejecucion duplicada del motor ----------------------------------
+
+def test_a_request_left_behind_by_the_engine_is_retired_by_the_server(bridge):
+    """`removeFile` del motor va en un try/catch que traga el error.
+
+    Si falla, el mismo req se vuelve a evaluar en cada tick hasta la purga de
+    huerfanos a los 60 s. El servidor lo retira al cobrar la respuesta, que es
+    una mitigacion: no convierte al protocolo en exactly-once.
+    """
+    import threading
+
+    names = []
+    original = bridge._write_atomic
+
+    def engine_answers_but_does_not_clean(path, text):
+        original(path, text)
+        if path.name.startswith("req_"):
+            names.append(path.name[4:-3])
+
+    bridge._write_atomic = engine_answers_but_does_not_clean
+
+    def engine():
+        while not names:
+            time.sleep(0.01)
+        (bridge.dir / f"res_{names[0]}.txt").write_text("ok", encoding="utf-8")
+        # El motor NO borra el req: ese es el fallo que se inyecta.
+
+    worker = threading.Thread(target=engine)
+    worker.start()
+    try:
+        assert bridge.send_and_wait("x", timeout=5.0) == "ok"
+    finally:
+        worker.join()
+
+    assert _requests(bridge) == []
+
+
+def test_a_fire_and_forget_request_is_also_retired_from_the_mailbox(bridge):
+    """`send()` no espera respuesta, asi que nadie retiraba su req.
+
+    Las mutaciones IOS viajan por este camino. Si el motor no logra borrar el
+    archivo, un `configureIosDevice` se reaplica en cada tick.
+    """
+    assert bridge.send("configureIosDevice('R1','...')")
+
+    pending = _requests(bridge)
+    assert len(pending) == 1
+
+    # Simula al motor respondiendo sin poder limpiar.
+    name = pending[0][4:-3]
+    (bridge.dir / f"res_{name}.txt").write_text("hecho", encoding="utf-8")
+    bridge.collect_completed()
+
+    assert _requests(bridge) == []
+    assert _responses(bridge) == []
 
 
 # -- F. limpieza acotada --------------------------------------------------

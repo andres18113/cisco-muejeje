@@ -24,17 +24,18 @@ Protocolo (un archivo por request, escritura atómica tmp+rename):
 
 Cancelación y timeout:
 Al vencer, Python RETIRA el req en vez de dejarlo. El Script Engine lee y
-evalúa dentro del mismo tick y borra el req sólo al terminar, así que el
-resultado del `unlink` clasifica el caso: ENOENT prueba que ya se ejecutó, y
-un borrado exitoso significa que todavía no se había completado. Ver
-`RequestDisposition`.
+evalúa dentro del mismo tick y borra el req sólo al terminar, así que un
+`unlink` con ENOENT prueba que la ejecución ya se completó. Un `unlink`
+exitoso, en cambio, prueba únicamente que NO se había completado: el motor
+pudo haber leído el contenido y estar evaluándolo. Ver `RequestDisposition`.
 
-Límite conocido de esta clasificación:
-con el Script Engine desplegado no hay marca de *claim*, así que "leído y
-evaluando" no se distingue de "nunca leído" por el filesystem. Para el caso
-en que el borrado tuvo éxito, se observa acotadamente si aparece la respuesta;
-si no aparece, se clasifica CANCELLED_UNCLAIMED asumiendo que una evaluación
-ya iniciada habría publicado su respuesta dentro de esa ventana.
+Límite conocido, y por qué ningún valor afirma cancelación:
+el Script Engine desplegado no publica marca de *claim*, así que "leído y
+evaluando" no se distingue de "nunca leído" por el filesystem. Tampoco existe
+cota superior probada del tiempo que puede tardar una evaluación ya empezada,
+de modo que no observar la respuesta durante una ventana acotada no prueba que
+no vaya a llegar. Por eso el caso se llama WITHDRAWN_NO_EXECUTION_OBSERVED y
+no "cancelado": nombra la observación, no una garantía.
 
 Corrección diferida que vuelve esa clasificación demostrable (requiere
 recompilar el .pts, cuyas dependencias de PTBuilder no se redistribuyen desde
@@ -77,22 +78,37 @@ _OWN_STALE_TTL_S = 120.0
 
 
 class RequestDisposition(str, Enum):
-    """Qué pasó con un request, cuando el resultado no llegó a tiempo.
+    """Qué se OBSERVÓ de un request cuyo resultado no llegó a tiempo.
 
-    Existe porque la ausencia de respuesta no dice si el comando se ejecutó.
-    Antes el `req_*.js` se dejaba en disco a propósito para que el Script
-    Engine lo procesara tarde, de modo que un comando cuyo caller ya se había
-    rendido igual se tipeaba en la terminal, más tarde, sin dueño.
+    Cada nombre dice exactamente lo que la evidencia sostiene, ni un paso más.
+    El Script Engine desplegado no publica marca de *claim*, y no existe cota
+    superior probada del tiempo que puede tardar una evaluación ya empezada.
+    Por lo tanto NINGÚN valor de este enum afirma que el comando no se haya
+    ejecutado: sólo el retiro del archivo antes de ser leído garantizaría eso,
+    y eso es precisamente lo que no se puede observar desde el filesystem.
     """
 
     COMPLETED = "completed"
-    # El req se retiró antes de que el Script Engine lo leyera: no se ejecuta.
-    CANCELLED_UNCLAIMED = "cancelled_unclaimed"
+    # El archivo se retiró y no se observó ejecución durante la ventana
+    # acotada. NO es prueba de cancelación: si el motor ya había leído el
+    # contenido, la evaluación pudo terminar después de que dejamos de mirar.
+    WITHDRAWN_NO_EXECUTION_OBSERVED = "withdrawn_no_execution_observed"
     # El Script Engine ya lo había ejecutado. La respuesta se descarta, nunca
     # se atribuye a otra operación.
     EXECUTED_LATE = "executed_late"
-    # No se pudo decidir. No se afirma que la cancelación haya funcionado.
+    # No se pudo decidir. Nunca se afirma que la cancelación haya funcionado.
     IN_FLIGHT_UNKNOWN = "in_flight_unknown"
+
+    @property
+    def proves_no_execution(self) -> bool:
+        """Ningún valor lo prueba hoy. Existe para que el caller no lo suponga.
+
+        Cuando el .pts publique el marcador de claim descrito en el docstring
+        del módulo, `WITHDRAWN_NO_EXECUTION_OBSERVED` podrá dividirse en un
+        caso demostrable y otro ambiguo, y esta propiedad dejará de ser
+        uniformemente falsa.
+        """
+        return False
 
 
 def bridge_dir() -> Path:
@@ -127,6 +143,8 @@ class FileBridge:
         # nombre de request no se repite nunca entre corridas.
         self._boot = secrets.token_hex(4)
         self.last_disposition = RequestDisposition.COMPLETED
+        # Nombres de los fire-and-forget todavía sin retirar del buzón.
+        self._pending: list[str] = []
 
     def _ensure(self) -> None:
         # Crea SIEMPRE self.dir, no el default del módulo: si se pasó un
@@ -167,14 +185,45 @@ class FileBridge:
         os.replace(tmp, path)
 
     def send(self, js_code: str) -> bool:
-        """Encola un comando fire-and-forget. No espera resultado."""
+        """Encola un comando fire-and-forget. No espera resultado.
+
+        El bool dice ENCOLADO, nunca APLICADO: no se observa nada de lo que PT
+        haga con el payload. Las mutaciones IOS viajan por acá, así que el
+        efecto sólo puede afirmarse releyendo el estado, jamás desde este
+        retorno.
+        """
         try:
             self._ensure()
             name = self._next_name()
             self._write_atomic(self.dir / f"req_{name}.js", js_code)
+            self._pending.append(name)
             return True
         except OSError:
             return False
+
+    def collect_completed(self) -> int:
+        """Retira los fire-and-forget que el motor ya contestó.
+
+        Nadie espera la respuesta de un `send()`, así que su `req` quedaba en
+        el buzón dependiendo por completo de que el Script Engine lo borrara.
+        Ese borrado va dentro de un try/catch que traga el error: si falla, el
+        mismo payload se reevalúa en cada tick hasta la purga de huérfanos.
+        Para un `configureIosDevice` eso es reaplicar la configuración varias
+        veces. Devuelve cuántos se retiraron.
+        """
+        retired = 0
+        for name in list(self._pending):
+            res_path = self.dir / f"res_{name}.txt"
+            try:
+                if not res_path.exists():
+                    continue
+            except OSError:
+                continue
+            self._discard(res_path)
+            self._discard(self.dir / f"req_{name}.js")
+            self._pending.remove(name)
+            retired += 1
+        return retired
 
     def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
         """Encola un comando y espera su res_<name>.txt.
@@ -252,7 +301,7 @@ class FileBridge:
                 return RequestDisposition.EXECUTED_LATE
             time.sleep(0.05)
         self._purge_own_stale()
-        return RequestDisposition.CANCELLED_UNCLAIMED
+        return RequestDisposition.WITHDRAWN_NO_EXECUTION_OBSERVED
 
     @staticmethod
     def _discard(res_path: Path) -> None:

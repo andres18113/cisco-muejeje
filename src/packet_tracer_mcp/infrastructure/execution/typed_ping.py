@@ -32,7 +32,10 @@ _IOS_SUCCESS_RATE = re.compile(
     re.IGNORECASE,
 )
 
-# Piso de seguridad, no una preferencia de latencia.
+# DEFAULT del ejecutor y PISO para los sitios productivos. No se fuerza dentro
+# del constructor: los tests pasan 0 a proposito porque no esperan a ningun
+# backend, y un clamp los volveria lentos sin volverlos mas correctos. El piso
+# se sostiene con un test que audita cada construccion productiva.
 #
 # Medido en PT 9.0.1.0858 sobre dispositivos disposable: un ping totalmente
 # perdido tarda 25.0 s en publicar su estadistica desde un PC y 10.8 s desde un
