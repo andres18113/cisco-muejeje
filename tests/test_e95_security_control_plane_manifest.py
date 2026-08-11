@@ -298,7 +298,10 @@ def test_control_plane_manifest_retargets_actions_observation_and_scenario():
     )]
     assert result.execution_journal is not None
     assert result.execution_journal.cleanup_status is CompensationStatus.SUCCEEDED
-    assert result.dirty_state is DirtyState.CLEAN
+    # Las mutaciones fire-and-forget ya no derivan una disposicion desde
+    # APPLIED, asi que el journal las registra como UNKNOWN y el estado
+    # sucio hereda esa incertidumbre en vez de declararse limpio.
+    assert result.dirty_state is DirtyState.UNKNOWN
 
 
 def test_control_plane_manifest_hash_mismatch_blocks_before_inventory_or_mutation():

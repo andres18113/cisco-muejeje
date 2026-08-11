@@ -13,6 +13,7 @@ Autoridad: docs/architecture/e95-stabilization.md, seccion
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -23,6 +24,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 from src.packet_tracer_mcp.domain.enterprise.models.execution import (
     MutationDisposition,
     disposition_from_status,
+    journal_from_action_results,
 )
 
 REPO = Path(__file__).resolve().parents[1]
@@ -114,24 +116,56 @@ def test_a_definite_local_failure_is_the_only_certain_negative():
     ) is ActionExecutionStatus.FAILED
 
 
-def test_the_journal_fallback_labels_a_dispatch_as_reasserted():
-    """HALLAZGO REGISTRADO, no corregido en este stage de cierre.
+def test_a_dispatch_without_an_explicit_disposition_stays_unknown():
+    """APPLIED no es evidencia de ninguna disposicion.
 
-    `journal_from_action_results` cae a `disposition_from_status` cuando la
-    disposicion explicita es UNKNOWN, y ese mapeo convierte "applied" en
-    REASSERTED -- un nombre que sugiere haber observado que el estado ya
-    estaba. Nadie lo observo.
-
-    Por que no se cambia aca: `_derive_dirty_state` cuenta REASSERTED COMO
-    mutacion que necesita compensacion, y cualquier disposicion UNKNOWN fuerza
-    `DirtyState.UNKNOWN`. Es decir, el mapeo actual es conservador para el
-    rollback; lo impreciso es la ETIQUETA del journal, no la seguridad. Dejarlo
-    en UNKNOWN volveria `DirtyState.UNKNOWN` a todo lote fire-and-forget, que
-    es un cambio semantico mayor y no cabe en un cierre.
-
-    Este test fija el comportamiento vigente para que el cambio, si se decide,
-    sea deliberado y visible.
+    El mapeo derivaba REASSERTED de "applied" -- un nombre que afirma haber
+    observado que el estado ya estaba. Nadie lo observo: lo unico ocurrido es
+    que el canal acepto el despacho.
     """
     assert disposition_from_status(
         ActionExecutionStatus.APPLIED,
+    ) is MutationDisposition.UNKNOWN
+
+
+def test_the_journal_keeps_a_dispatch_only_entry_as_unknown():
+    """El mismo hecho, ya dentro del journal."""
+    journal = journal_from_action_results(
+        plan_id="p1", deployment_id="d1",
+        actions=[SimpleNamespace(id="a1")],
+        results=[SimpleNamespace(
+            action_id="a1",
+            status=ActionExecutionStatus.APPLIED,
+            disposition=MutationDisposition.UNKNOWN,
+        )],
+    )
+
+    assert journal.entries[0].disposition is MutationDisposition.UNKNOWN
+
+
+def test_an_explicit_disposition_is_preserved_over_the_status_fallback():
+    """Cuando un runtime SI observo, su declaracion manda."""
+    journal = journal_from_action_results(
+        plan_id="p1", deployment_id="d1",
+        actions=[SimpleNamespace(id="a1")],
+        results=[SimpleNamespace(
+            action_id="a1",
+            status=ActionExecutionStatus.APPLIED,
+            disposition=MutationDisposition.REASSERTED,
+        )],
+    )
+
+    assert journal.entries[0].disposition is MutationDisposition.REASSERTED
+
+
+def test_statuses_that_do_carry_an_observation_still_derive_one():
+    """Sólo se quitó `applied`; lo demás sigue derivando igual."""
+    assert disposition_from_status(
+        ActionExecutionStatus.NO_OP,
+    ) is MutationDisposition.NO_OP
+    assert disposition_from_status(
+        ActionExecutionStatus.REASSERTED,
     ) is MutationDisposition.REASSERTED
+    assert disposition_from_status(
+        ActionExecutionStatus.FAILED,
+    ) is MutationDisposition.FAILED

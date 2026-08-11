@@ -115,9 +115,21 @@ def satisfies_apply_dependency(status: Any) -> bool:
 
 
 def disposition_from_status(status: Any) -> MutationDisposition:
+    """Deriva una disposición sólo desde estados que la evidencian.
+
+    `applied` NO está en el mapa, a propósito. `APPLIED` significa que el canal
+    de ejecución aceptó el despacho, y eso no observa nada del backend: inferir
+    `REASSERTED` de ahí era ponerle un nombre observacional a algo que nadie
+    miró. Un despacho sin disposición explícita queda `UNKNOWN`, que es el
+    default de este `.get`.
+
+    Los estados que sí quedan son los que ya cargan la observación: `no_op` y
+    `reasserted` sólo se producen cuando un runtime declaró esa disposición,
+    y `failed` / `dependency_blocked` / `skipped` describen lo que pasó con el
+    intento, no con el estado del dispositivo.
+    """
     value = status.value if isinstance(status, Enum) else str(status)
     return {
-        "applied": MutationDisposition.REASSERTED,
         "no_op": MutationDisposition.NO_OP,
         "reasserted": MutationDisposition.REASSERTED,
         "failed": MutationDisposition.FAILED,
