@@ -8,6 +8,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from ...domain.enterprise.models.configuration_runtime import (
+    mutation_execution_status,
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationFailureCode,
@@ -408,18 +409,15 @@ class VoiceApplicator:
 
     @staticmethod
     def _mutation_status(mutation: RuntimeActionMutation) -> ActionExecutionStatus:
-        if not mutation.applied:
-            if mutation.failure_code in {
-                ConfigurationFailureCode.CAPABILITY_UNKNOWN,
-                ConfigurationFailureCode.CAPABILITY_UNSUPPORTED,
-            }:
-                return ActionExecutionStatus.SKIPPED
-            return ActionExecutionStatus.FAILED
-        if mutation.disposition is MutationDisposition.NO_OP:
-            return ActionExecutionStatus.NO_OP
-        if mutation.disposition is MutationDisposition.REASSERTED:
-            return ActionExecutionStatus.REASSERTED
-        return ActionExecutionStatus.APPLIED
+        # Especializacion propia de voz: una capacidad que el modelo no declara
+        # no es un fallo de aplicacion, es algo que no se intento.
+        if not mutation.applied and mutation.failure_code in {
+            ConfigurationFailureCode.CAPABILITY_UNKNOWN,
+            ConfigurationFailureCode.CAPABILITY_UNSUPPORTED,
+        }:
+            return ActionExecutionStatus.SKIPPED
+        # El resto es la definicion unica del dominio: encolar no es aplicar.
+        return mutation_execution_status(mutation)
 
     def _registrations(self, plan, actions, capabilities):
         action_results = {item.action_id: item for item in actions}

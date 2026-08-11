@@ -32,10 +32,11 @@ _IOS_SUCCESS_RATE = re.compile(
     re.IGNORECASE,
 )
 
-# DEFAULT del ejecutor y PISO para los sitios productivos. No se fuerza dentro
-# del constructor: los tests pasan 0 a proposito porque no esperan a ningun
-# backend, y un clamp los volveria lentos sin volverlos mas correctos. El piso
-# se sostiene con un test que audita cada construccion productiva.
+# Contrato exacto: SAFE_DEFAULT + invariante de callsite productivo.
+#
+# NO es un minimo forzado: el constructor no lo impone, y los tests pasan 0 a
+# proposito porque no esperan a ningun backend. Lo que si se sostiene es que
+# ninguna construccion PRODUCTIVA quede por debajo, y eso lo audita un test.
 #
 # Medido en PT 9.0.1.0858 sobre dispositivos disposable: un ping totalmente
 # perdido tarda 25.0 s en publicar su estadistica desde un PC y 10.8 s desde un

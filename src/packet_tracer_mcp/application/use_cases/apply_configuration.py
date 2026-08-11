@@ -19,6 +19,7 @@ from ...domain.enterprise.models.configuration import (
     VerificationExpectation,
 )
 from ...domain.enterprise.models.configuration_runtime import (
+    mutation_execution_status,
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
@@ -358,13 +359,8 @@ class ConfigurationApplicator:
 
     @staticmethod
     def _mutation_status(mutation: RuntimeActionMutation) -> ActionExecutionStatus:
-        if not mutation.applied:
-            return ActionExecutionStatus.FAILED
-        if mutation.disposition is MutationDisposition.NO_OP:
-            return ActionExecutionStatus.NO_OP
-        if mutation.disposition is MutationDisposition.REASSERTED:
-            return ActionExecutionStatus.REASSERTED
-        return ActionExecutionStatus.APPLIED
+        # Una sola definicion, en el dominio: encolar no es aplicar.
+        return mutation_execution_status(mutation)
 
     @staticmethod
     def _validate_targets(

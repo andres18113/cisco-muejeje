@@ -136,6 +136,40 @@ class RuntimeActionMutation(BaseModel):
     batch_id: str = ""
 
 
+def mutation_execution_status(
+    mutation: RuntimeActionMutation,
+) -> ActionExecutionStatus:
+    """Estado de ejecución de una mutación despachada. Una sola definición.
+
+    Vivía duplicada, idéntica, en cinco applicators.
+
+    `APPLIED` acá significa DESPACHADO POR EL CANAL DEL RUNTIME, no "el backend
+    confirmó el efecto". No es una laxitud heredada: es el contrato que la
+    arquitectura fija de forma explícita.
+
+        docs/architecture/e95-stabilization.md   compiled != applied
+                                                 applied  != observed
+        docs/architecture/enterprise-control-plane.md
+            "A result may be APPLIED and still be UNOBSERVABLE."
+
+    Por eso el canal de configuración puede ser asíncrono sin mentir: el envío
+    sostiene APPLIED y nada más. Quien afirma el efecto es la verificación, que
+    relee el estado y produce VERIFIED, y ningún camino promueve lo uno a lo
+    otro. Colapsar los dos estados en uno "más conservador" no agregaría
+    seguridad -- borraría la distinción que ya los mantiene separados.
+
+    `applied=False` sí es una certeza local: el payload no salió del proceso,
+    así que no puede aplicarse más tarde.
+    """
+    if not mutation.applied:
+        return ActionExecutionStatus.FAILED
+    if mutation.disposition is MutationDisposition.NO_OP:
+        return ActionExecutionStatus.NO_OP
+    if mutation.disposition is MutationDisposition.REASSERTED:
+        return ActionExecutionStatus.REASSERTED
+    return ActionExecutionStatus.APPLIED
+
+
 class RuntimeVerification(BaseModel):
     expectation_id: str
     status: ActionExecutionStatus

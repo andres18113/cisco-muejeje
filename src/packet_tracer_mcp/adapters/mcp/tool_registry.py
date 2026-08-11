@@ -944,14 +944,11 @@ def register_tools(mcp: FastMCP) -> None:
             status, _ = _http_post(f"{_BRIDGE_URL}/queue", payload)
             return status == 200
         if ch == "file":
-            queued = _file_bridge.send(payload)
-            # Nadie espera la respuesta de un fire-and-forget, así que su req
-            # quedaba en el buzón dependiendo de que el Script Engine lo
-            # borrara — y ese borrado traga sus errores. Un req contestado pero
-            # no retirado se reevalúa en cada tick: para un configureIosDevice,
-            # eso es reaplicar la configuración. Se retiran los ya contestados.
-            _file_bridge.collect_completed()
-            return queued
+            # `send` retira por sí solo los fire-and-forget ya contestados: sin
+            # eso, un req cuyo borrado falló en el motor se reevalúa en cada
+            # tick, y para un `configureIosDevice` eso es reaplicar la config.
+            # Es mitigación, no exactly-once -- ver FileBridge.collect_completed.
+            return _file_bridge.send(payload)
         return False
 
     @mcp.tool()

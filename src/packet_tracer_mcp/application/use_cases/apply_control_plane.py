@@ -7,6 +7,7 @@ from time import monotonic
 from typing import Protocol
 
 from ...domain.enterprise.models.configuration_runtime import (
+    mutation_execution_status,
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
@@ -692,13 +693,8 @@ class ControlPlaneApplicator:
 
     @staticmethod
     def _mutation_status(mutation: RuntimeActionMutation) -> ActionExecutionStatus:
-        if not mutation.applied:
-            return ActionExecutionStatus.FAILED
-        if mutation.disposition is MutationDisposition.NO_OP:
-            return ActionExecutionStatus.NO_OP
-        if mutation.disposition is MutationDisposition.REASSERTED:
-            return ActionExecutionStatus.REASSERTED
-        return ActionExecutionStatus.APPLIED
+        # Una sola definicion, en el dominio: encolar no es aplicar.
+        return mutation_execution_status(mutation)
 
     def _safe_apply(
         self, actions: Sequence[ControlPlaneAction],

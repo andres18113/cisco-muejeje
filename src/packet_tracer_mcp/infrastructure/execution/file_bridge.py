@@ -192,6 +192,10 @@ class FileBridge:
         efecto sólo puede afirmarse releyendo el estado, jamás desde este
         retorno.
         """
+        # Antes de encolar, no después: al retirar acá se recogen los envíos
+        # ANTERIORES, que ya tuvieron tiempo de ser contestados. Hacerlo
+        # después sólo miraba un `res` que todavía no podía existir.
+        self.collect_completed()
         try:
             self._ensure()
             name = self._next_name()
