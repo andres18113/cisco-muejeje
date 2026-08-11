@@ -7,6 +7,7 @@ import ipaddress
 import json
 from collections import defaultdict
 from collections.abc import Callable
+from enum import Enum
 
 from ...models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ..models.addressing import SubnetAllocation
@@ -89,19 +90,28 @@ def _device_key(device: DevicePlan) -> str:
     return device.id or device.name
 
 
-def interface_is_routed(
+class InterfaceRoutingSemantics(str, Enum):
+    """Que dice el plan sobre esta interfaz. Cuatro respuestas, no dos.
+
+    "Nadie la configuro" y "esta conmutada" llevan a la misma accion -- no
+    emitir bandwidth -- pero no son lo mismo, y colapsarlas hace invisible una
+    interfaz que se quedo fuera del plan. `CONFLICT` es peor todavia: el plan
+    se contradice, y llamarlo conmutado esconderia el error.
+    """
+
+    ROUTED = "routed"
+    SWITCHED = "switched"
+    UNKNOWN = "unknown"
+    CONFLICT = "conflict"
+
+
+def interface_routing_semantics(
     actions: list[ConfigurationAction], device_id: str, interface: str,
-) -> bool:
-    """¿Esta interfaz concreta esta enrutada, segun lo que el plan declara?
+) -> InterfaceRoutingSemantics:
+    """Clasifica una interfaz por la configuracion tipada que el plan le dio.
 
     La categoria del dispositivo no sirve: un switch multicapa puede tener
     Gi0/1 como switchport y Gi0/2 como puerto enrutado, y son la misma caja.
-    Lo que distingue una de otra es la configuracion tipada que ya se decidio
-    para cada una.
-
-    Una interfaz sin configurar no se considera enrutada. El desconocimiento
-    se resuelve hacia el lado seguro: dejar de emitir algo valido es peor que
-    emitir un comando que el backend rechaza, pero solo un poco.
     """
     switched = False
     routed = False
@@ -116,10 +126,23 @@ def interface_is_routed(
             # Router-on-a-stick: el fisico que sostiene subinterfaces es
             # enrutado, aunque la direccion viva en las subinterfaces.
             routed = routed or action.parent_interface == interface
-    # Si el plan dijera las dos cosas sobre el mismo puerto seria un error de
-    # compilacion, no algo que resolver aqui: gana lo conmutado, que es lo que
-    # no emite nada.
-    return routed and not switched
+    if routed and switched:
+        return InterfaceRoutingSemantics.CONFLICT
+    if routed:
+        return InterfaceRoutingSemantics.ROUTED
+    if switched:
+        return InterfaceRoutingSemantics.SWITCHED
+    return InterfaceRoutingSemantics.UNKNOWN
+
+
+def interface_is_routed(
+    actions: list[ConfigurationAction], device_id: str, interface: str,
+) -> bool:
+    """Sólo `ROUTED` habilita bandwidth. UNKNOWN y CONFLICT no lo hacen."""
+    return (
+        interface_routing_semantics(actions, device_id, interface)
+        is InterfaceRoutingSemantics.ROUTED
+    )
 
 
 class ConfigurationCompiler:
@@ -376,14 +399,27 @@ class ConfigurationCompiler:
                 device = devices.get(device_id)
                 if device is None:
                     continue
+                semantics = interface_routing_semantics(
+                    planned_actions, device_id, interface,
+                )
+                if semantics is InterfaceRoutingSemantics.CONFLICT:
+                    # El plan se contradice sobre este puerto. Se dice, no se
+                    # resuelve a la brava: quien lo compilo tiene un error.
+                    issues.append(_error(
+                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                        f"{device.name} {interface} is declared both routed and "
+                        "switched by the configuration plan.",
+                        link.id or link.device_a,
+                    ))
+                    continue
                 emitted.extend(self._link_performance.actions_for(
                     decision,
                     device_id=device_id,
                     device_name=device.name,
                     site_id=device.site_id,
                     interface=interface,
-                    interface_is_routed=interface_is_routed(
-                        planned_actions, device_id, interface,
+                    interface_is_routed=(
+                        semantics is InterfaceRoutingSemantics.ROUTED
                     ),
                 ))
         return emitted

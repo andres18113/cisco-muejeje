@@ -53,12 +53,15 @@ class LinkPerformancePlanner:
     #: ser el mismo techo -- forzar `speed` no resultó observable en ninguna
     #: plataforma medida -- y la demanda bajo AUTO se contrasta contra lo
     #: negociable con evidencia.
-    #: v5 (Stage 3A3-G): sincronizar el bandwidth de routing bajo AUTO usa
-    #: el techo negociable. Antes solo miraba `effective_capacity_bps`, que
-    #: bajo AUTO siempre es None, de modo que el flag no hacia nada en
-    #: ningun enlace Ethernet. Esto SI cambia lo que el planner decide.
+    #: v5 (Stage 3A3-G): sincronizar el bandwidth de routing bajo AUTO paso
+    #: a usar el techo negociable.
+    #: v6 (Stage 3A3-H): se revierte. Un techo negociable es una cota con
+    #: evidencia, no la capacidad efectiva, y bajo AUTO esta no se conoce
+    #: antes de desplegar. Ademas escribir `bandwidth` desactiva la
+    #: autonegociacion del valor y con ella la unica evidencia indirecta de
+    #: la tasa negociada: sincronizar destruiria el canal de observacion.
     POLICY_ID = "enterprise-link-performance"
-    POLICY_VERSION = "5"
+    POLICY_VERSION = "6"
 
     def __init__(
         self,
@@ -101,19 +104,20 @@ class LinkPerformancePlanner:
                 link_id=intent.link_id,
                 message="Link media must be resolved before performance policy applies.",
             ))
-        # Alinear el bandwidth de routing con la capacidad del enlace. Bajo
-        # AUTO nadie elige una velocidad, asi que `effective_capacity_bps` es
-        # None y la referencia correcta es lo que la negociacion alcanza con
-        # evidencia en ambos extremos. Sin ninguna de las dos no se sincroniza
-        # nada: inventar una cifra para una metrica de routing seria peor que
-        # dejarla en el valor de plataforma.
-        if intent.sync_routing_bandwidth_to_effective_capacity:
-            reference = (
-                decision.effective_capacity_bps
-                or decision.auto_negotiable_ceiling_bps
-            )
-            if reference:
-                decision.routing_bandwidth_kbps = reference // 1000
+        # El flag dice "sincroniza con la capacidad EFECTIVA", y bajo Ethernet
+        # AUTO esa capacidad no se conoce antes de desplegar: sólo se conocen
+        # techos. El negociable es una cota superior con evidencia, no un
+        # resultado, y sustituir uno por otro seria afirmar lo que no se sabe.
+        #
+        # Ademas se perderia lo unico que si permite averiguarlo: escribir
+        # `bandwidth` desactiva la autonegociacion del valor -- medido sobre un
+        # 2911 -- y con ella la unica evidencia indirecta de la tasa negociada.
+        # Sincronizar aqui destruiria el canal de observacion.
+        if (
+            intent.sync_routing_bandwidth_to_effective_capacity
+            and decision.effective_capacity_bps
+        ):
+            decision.routing_bandwidth_kbps = decision.effective_capacity_bps // 1000
         return decision
 
     # -- demanda ---------------------------------------------------------

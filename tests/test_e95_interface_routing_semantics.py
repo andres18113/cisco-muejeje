@@ -26,7 +26,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
 from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan
 from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
     ConfigurationCompiler,
+    InterfaceRoutingSemantics,
     interface_is_routed,
+    interface_routing_semantics,
 )
 from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
@@ -95,7 +97,11 @@ class TestTheClassifierReadsTheInterfaceNotTheBox:
         assert not interface_is_routed(actions, SWITCH, L2_PORT)
         assert interface_is_routed(actions, SWITCH, L3_PORT)
 
-    def test_an_unconfigured_interface_is_not_assumed_routed(self):
+    def test_an_unconfigured_interface_is_unknown_not_switched(self):
+        """No es lo mismo "nadie la configuro" que "esta conmutada"."""
+        assert interface_routing_semantics([], SWITCH, L3_PORT) is (
+            InterfaceRoutingSemantics.UNKNOWN
+        )
         assert not interface_is_routed([], SWITCH, L3_PORT)
 
     def test_another_device_with_the_same_interface_name_does_not_leak(self):
@@ -103,11 +109,25 @@ class TestTheClassifierReadsTheInterfaceNotTheBox:
 
         assert not interface_is_routed(actions, "other-device", L3_PORT)
 
-    def test_a_contradictory_plan_resolves_to_switched(self):
-        """Ante un plan incoherente se elige lo que no emite nada."""
+    def test_a_contradictory_plan_is_a_conflict_not_a_switchport(self):
+        """Llamarlo conmutado esconderia un error de compilacion."""
         actions = [_access(L3_PORT, "acc"), _routed(L3_PORT, "rtd")]
 
+        assert interface_routing_semantics(actions, SWITCH, L3_PORT) is (
+            InterfaceRoutingSemantics.CONFLICT
+        )
         assert not interface_is_routed(actions, SWITCH, L3_PORT)
+
+    def test_the_four_states_are_distinguishable(self):
+        routed = [_routed(L3_PORT)]
+        switched = [_access(L2_PORT)]
+
+        assert interface_routing_semantics(routed, SWITCH, L3_PORT) is (
+            InterfaceRoutingSemantics.ROUTED
+        )
+        assert interface_routing_semantics(switched, SWITCH, L2_PORT) is (
+            InterfaceRoutingSemantics.SWITCHED
+        )
 
 
 def _topology(model: str = "2960-24TT") -> TopologyPlan:
@@ -133,67 +153,168 @@ def _topology(model: str = "2960-24TT") -> TopologyPlan:
     )
 
 
-def _bandwidth_actions(planned, device_id: str, interface: str):
-    compiler = ConfigurationCompiler(
-        link_mode_capability_resolver=link_mode_capability_for,
+def _emit_with(decision, *, routed: bool):
+    """El clasificador se prueba con una decision construida, no forzando
+    al producto a producir una que bajo AUTO no existe."""
+    from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+        LinkPerformanceIntegration,
     )
-    emitted = compiler._link_performance_actions(
-        _topology(), {device.id: device for device in _topology().devices},
-        _topology().links,
-        {device.name: device.id for device in _topology().devices},
-        ConfigurationPolicy(sync_routing_bandwidth=True),
-        planned,
-        [],
+
+    return LinkPerformanceIntegration().actions_for(
+        decision, device_id=SWITCH, device_name="SW1", site_id="hq",
+        interface=L3_PORT if routed else L2_PORT, interface_is_routed=routed,
     )
-    return [
-        action for action in emitted
-        if isinstance(action, ConfigureInterfaceBandwidth)
-        and action.device_id == device_id and action.interface == interface
-    ]
+
+
+def _ethernet_decision_with_bandwidth():
+    from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        LinkMedia,
+        LinkPerformanceDecision,
+    )
+
+    return LinkPerformanceDecision(
+        link_id="l1", media=LinkMedia.ETHERNET, routing_bandwidth_kbps=1_000_000,
+    )
+
+
+def _compiler_semantics(planned, interface: str):
+    topology = _topology()
+    return interface_routing_semantics(planned, SWITCH, interface)
 
 
 class TestSameDeviceTwoInterfacesTwoAnswers:
-    """La regresion obligatoria: falla con `device.category == "router"`.
-
-    Con la regla vieja SW1 es un switch, asi que sus DOS puertos quedaban
-    clasificados como conmutados y ninguno recibia `bandwidth`. El puerto
-    enrutado lo recibe ahora, y el switchport sigue sin recibirlo.
-    """
+    """El caso que la categoria del dispositivo no podia representar."""
 
     @pytest.fixture()
     def planned(self):
         return [_access(L2_PORT, "acc"), _routed(L3_PORT, "rtd")]
 
-    def test_the_switchport_gets_no_bandwidth(self, planned):
-        assert _bandwidth_actions(planned, SWITCH, L2_PORT) == []
+    def test_the_two_interfaces_classify_differently(self, planned):
+        assert _compiler_semantics(planned, L2_PORT) is (
+            InterfaceRoutingSemantics.SWITCHED
+        )
+        assert _compiler_semantics(planned, L3_PORT) is (
+            InterfaceRoutingSemantics.ROUTED
+        )
 
-    def test_the_routed_port_on_the_same_switch_does(self, planned):
-        assert len(_bandwidth_actions(planned, SWITCH, L3_PORT)) == 1
+    def test_the_switchport_gets_no_bandwidth(self):
+        """Caso A."""
+        emitted = _emit_with(_ethernet_decision_with_bandwidth(), routed=False)
 
-    def test_the_emitted_bandwidth_carries_the_link_capacity(self, planned):
-        [action] = _bandwidth_actions(planned, SWITCH, L3_PORT)
+        assert not any(
+            isinstance(item, ConfigureInterfaceBandwidth) for item in emitted
+        )
 
-        assert action.bandwidth_kbps > 0
+    def test_the_routed_port_on_the_same_switch_does(self):
+        """Caso B: misma decision, misma caja, otra interfaz."""
+        emitted = _emit_with(_ethernet_decision_with_bandwidth(), routed=True)
 
-    def test_without_the_policy_neither_interface_gets_bandwidth(self, planned):
-        """`sync_routing_bandwidth` apagado: no es un efecto secundario."""
+        assert len([
+            item for item in emitted
+            if isinstance(item, ConfigureInterfaceBandwidth)
+        ]) == 1
+
+    def test_an_unknown_interface_gets_no_bandwidth(self, planned):
+        """Caso C: sin semantica declarada no se emite, y sigue siendo UNKNOWN."""
+        assert _compiler_semantics(planned, "GigabitEthernet0/9") is (
+            InterfaceRoutingSemantics.UNKNOWN
+        )
+        assert not interface_is_routed(planned, SWITCH, "GigabitEthernet0/9")
+
+    def test_a_conflicting_interface_is_reported_not_silently_switched(self):
+        """Caso D: el compilador lo bloquea con una incidencia estructurada."""
+        planned = [_access(L3_PORT, "acc"), _routed(L3_PORT, "rtd")]
         compiler = ConfigurationCompiler(
             link_mode_capability_resolver=link_mode_capability_for,
         )
         topology = _topology()
+        issues = []
         emitted = compiler._link_performance_actions(
             topology, {device.id: device for device in topology.devices},
             topology.links,
             {device.name: device.id for device in topology.devices},
-            ConfigurationPolicy(),
+            ConfigurationPolicy(sync_routing_bandwidth=True),
             planned,
-            [],
+            issues,
         )
 
-        assert [
-            action for action in emitted
-            if isinstance(action, ConfigureInterfaceBandwidth)
-        ] == []
+        assert any("routed and switched" in issue.message for issue in issues)
+        assert emitted == []
+
+
+class TestAutoNeverSynthesisesAnEffectiveCapacity:
+    """Caso E, y la razon por la que 3A3-G se revierte."""
+
+    @staticmethod
+    def _auto_decision(sync: bool):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            LinkMedia,
+            LinkPerformanceIntent,
+        )
+        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+            LinkPerformancePlanner,
+        )
+
+        local = link_mode_capability_for("2960-24TT", "GigabitEthernet0/1")
+        return LinkPerformancePlanner().plan(LinkPerformanceIntent(
+            link_id="l1", media=LinkMedia.ETHERNET,
+            local_port_capability=local, peer_port_capability=local,
+            sync_routing_bandwidth_to_effective_capacity=sync,
+        ))
+
+    def test_the_auto_ceiling_is_known(self):
+        assert self._auto_decision(True).auto_negotiable_ceiling_bps == 1_000_000_000
+
+    def test_the_effective_capacity_is_not(self):
+        """Un techo con evidencia no es un resultado."""
+        assert self._auto_decision(True).effective_capacity_bps is None
+
+    def test_syncing_does_not_substitute_the_ceiling(self):
+        assert self._auto_decision(True).routing_bandwidth_kbps is None
+
+    def test_the_two_are_never_conflated(self):
+        decision = self._auto_decision(True)
+
+        assert decision.auto_negotiable_ceiling_bps != decision.effective_capacity_bps
+
+    def test_without_syncing_nothing_changes_either(self):
+        assert self._auto_decision(False).routing_bandwidth_kbps is None
+
+
+class TestSerialSyncStillWorks:
+    """Caso F: donde la capacidad efectiva SI se conoce, sincronizar funciona."""
+
+    @staticmethod
+    def _serial_decision(sync: bool):
+        from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
+            ConcreteLinkRole,
+        )
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            LinkMedia,
+            LinkPerformanceIntent,
+        )
+        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+            LinkPerformancePlanner,
+        )
+
+        return LinkPerformancePlanner().plan(LinkPerformanceIntent(
+            link_id="wan", media=LinkMedia.SERIAL, role=ConcreteLinkRole.WAN_LINK,
+            dce_endpoint_device_id="hq", dte_endpoint_device_id="br",
+            sync_routing_bandwidth_to_effective_capacity=sync,
+        ))
+
+    def test_the_serial_effective_capacity_is_known_before_deploying(self):
+        assert self._serial_decision(False).effective_capacity_bps == 2_000_000
+
+    def test_syncing_produces_the_matching_routing_bandwidth(self):
+        assert self._serial_decision(True).routing_bandwidth_kbps == 2000
+
+    def test_without_syncing_no_routing_bandwidth_is_decided(self):
+        assert self._serial_decision(False).routing_bandwidth_kbps is None
+
+    def test_the_clock_is_untouched_either_way(self):
+        for sync in (True, False):
+            assert self._serial_decision(sync).serial_clock_rate_bps == 2_000_000
 
 
 class TestTheReferenceIsUnchanged:
@@ -267,3 +388,95 @@ class TestSerialIsUntouched:
 
         assert len(dce) == 1
         assert dte == []
+
+
+class TestBandwidthObservabilityIsNotDestroyed:
+    """Escribir `bandwidth` apaga la autonegociacion del valor.
+
+    Medido sobre un 2911: `bandwidth 5000` deja `isBandwidthAutoNegotiate()`
+    en False. Y esa autonegociacion es la unica evidencia indirecta de la tasa
+    negociada, asi que sincronizar bajo AUTO no solo afirmaria lo que no se
+    sabe: dejaria de poder averiguarlo.
+    """
+
+    @staticmethod
+    def _observed(autonegotiated: bool, kbps: int = 1_000_000):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            ObservedLinkPerformance,
+        )
+
+        return ObservedLinkPerformance.from_runtime(
+            "l1",
+            capability=link_mode_capability_for("2960-24TT", "GigabitEthernet0/1"),
+            routing_bandwidth_kbps=kbps,
+            bandwidth_autonegotiated=autonegotiated,
+            line_protocol_up=True,
+        )
+
+    def test_a_platform_tracked_bandwidth_still_infers_capacity(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            BandwidthProvenance,
+        )
+
+        observed = self._observed(True)
+
+        assert observed.bandwidth_provenance is BandwidthProvenance.PLATFORM_TRACKED
+        assert observed.effective_capacity_bps == 1_000_000_000
+
+    def test_an_explicitly_configured_bandwidth_is_not_a_capacity(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            BandwidthProvenance,
+        )
+
+        observed = self._observed(False, kbps=5_000)
+
+        assert observed.bandwidth_provenance is (
+            BandwidthProvenance.EXPLICITLY_CONFIGURED
+        )
+        assert observed.effective_capacity_bps is None
+
+    def test_the_auto_plan_leaves_the_channel_intact(self):
+        """Al no emitir bandwidth bajo AUTO, la observacion sigue disponible."""
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            LinkMedia,
+            LinkPerformanceIntent,
+        )
+        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+            LinkPerformanceIntegration,
+        )
+
+        local = link_mode_capability_for("2960-24TT", "GigabitEthernet0/1")
+        integration = LinkPerformanceIntegration()
+        decision = integration.decide(LinkPerformanceIntent(
+            link_id="l1", media=LinkMedia.ETHERNET,
+            local_port_capability=local, peer_port_capability=local,
+            sync_routing_bandwidth_to_effective_capacity=True,
+        ))
+        emitted = integration.actions_for(
+            decision, device_id=SWITCH, device_name="SW1", site_id="hq",
+            interface=L3_PORT, interface_is_routed=True,
+        )
+
+        assert not any(
+            isinstance(item, ConfigureInterfaceBandwidth) for item in emitted
+        )
+        assert self._observed(True).effective_capacity_bps == 1_000_000_000
+
+    def test_the_verifier_still_catches_a_shortfall_after_an_auto_plan(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+            LinkMedia,
+            LinkPerformanceDecision,
+        )
+        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+            LinkPerformancePlanner,
+        )
+
+        issues = LinkPerformancePlanner.verify_observed_capacity(
+            LinkPerformanceDecision(link_id="l1", media=LinkMedia.ETHERNET),
+            self._observed(True),
+            minimum_capacity_bps=10_000_000_000,
+        )
+
+        assert [item.code.value for item in issues] == [
+            "link_capacity_below_requirement",
+        ]

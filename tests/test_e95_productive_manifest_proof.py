@@ -304,8 +304,8 @@ class TestPolicyVersionScope:
 
     Stage 3A3-E cambio a quien se le emite `bandwidth`, que es un paso
     posterior a la decision, y no la subio. Stage 3A3-G si cambio lo que el
-    planner decide -- sincronizar bajo AUTO contra el techo negociable -- y
-    por eso la subio a 5. La distincion es el contrato.
+    planner decide, y por eso la subio. Stage 3A3-H revierte aquel cambio y
+    la sube otra vez: una reversion tambien cambia lo que se decide.
     """
 
     def test_the_decision_never_travels_into_the_configuration_plan(self):
@@ -345,4 +345,4 @@ class TestPolicyVersionScope:
             LinkPerformancePlanner,
         )
 
-        assert LinkPerformancePlanner.POLICY_VERSION == "5"
+        assert LinkPerformancePlanner.POLICY_VERSION == "6"

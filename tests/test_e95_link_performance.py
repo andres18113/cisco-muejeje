@@ -161,14 +161,15 @@ class TestSerialCapacity:
     def test_the_decision_records_which_policy_produced_it(self):
         """Fijada a proposito: subir la version sin querer rompe aqui.
 
-        v2 la subio Stage 3A3, v3 Stage 3A3-B, v4 Stage 3A3-C y v5 Stage
-        3A3-G al hacer que sincronizar el bandwidth de routing bajo AUTO
-        use el techo negociable. La politica serial no cambio con ninguna.
+        v2 la subio Stage 3A3, v3 Stage 3A3-B, v4 Stage 3A3-C, v5 Stage 3A3-G
+        y v6 Stage 3A3-H al revertir aquella sustitucion del techo
+        negociable por la capacidad efectiva. La politica serial no cambio
+        con ninguna de ellas.
         """
         decision = LinkPerformancePlanner().plan(_serial())
 
         assert decision.policy_id == "enterprise-link-performance"
-        assert decision.policy_version == "5"
+        assert decision.policy_version == "6"
 
     def test_a_different_policy_version_is_visible_in_the_decision(self):
         """Un cambio de politica que altere el comportamiento se puede ver."""

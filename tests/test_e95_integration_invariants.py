@@ -218,8 +218,8 @@ class TestBandwidthTargetFollowsTheInterfaceNotTheMedium:
         # `device.category` sigue usandose para acotar la politica a
         # dispositivos gestionables, que es otra pregunta. Lo que no puede
         # seguir siendo es la fuente de verdad de enrutado/conmutado.
-        assert "interface_is_routed=device.category" not in source
-        assert "interface_is_routed=interface_is_routed(" in source
+        assert "device.category" not in source.split("interface_is_routed=")[1][:200]
+        assert "interface_routing_semantics(" in source
 
     def test_no_routing_bandwidth_decided_means_no_action_anywhere(self):
         decision = LinkPerformanceDecision(link_id="l1", media=LinkMedia.SERIAL)
