@@ -6,28 +6,28 @@ from collections.abc import Iterable
 
 import pytest
 
-from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityDimension,
     ControlPlaneVerificationKind,
     EtherChannelProtocol,
     StpMode,
 )
-from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
+from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
 )
-from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
     PacketTracerEnterpriseControlPlaneRuntime,
 )
-from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,
 )
-from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
+from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
 from test_enterprise_control_plane import _compile
 from test_ios_terminal import (
     _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY,

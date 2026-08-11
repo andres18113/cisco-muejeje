@@ -50,7 +50,7 @@ from .ios_terminal import (
 )
 from .runtime_inventory import normalize_runtime_inventory
 from .stable_convergence import StableConvergenceWaiter
-from .typed_ping import TypedPingExecutor, TypedPingResult
+from .typed_ping import SAFE_PING_TIMEOUT_S, TypedPingExecutor, TypedPingResult
 
 
 class _PingExecutor(Protocol):
@@ -420,7 +420,10 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         fault_renderer: PacketTracerControlPlaneFaultRenderer | None = None,
         ping_executor: _PingExecutor | None = None,
         ios_executor: ControlledIosExecutor | None = None,
-        behavior_timeout_seconds: float = 12.0,
+        # Medido: un ping totalmente perdido tarda 25.0 s desde un PC. Con
+        # 12 s, un destino que de verdad es inalcanzable no llegaba a
+        # clasificarse como tal y quedaba sin evidencia atribuible.
+        behavior_timeout_seconds: float = SAFE_PING_TIMEOUT_S,
         endpoint_measurement_attempts: int = 3,
         convergence_interval_seconds: float = 0.25,
         stable_samples: int = 2,

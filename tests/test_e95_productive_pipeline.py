@@ -162,14 +162,15 @@ class TestTheCompilerReachesLinkPerformance:
     def test_the_whole_reference_plan_renders_without_orphans(self, reference):
         """Si algo quedara sin renderer, esto ya no pasaria en silencio.
 
-        La cadena de referencia se importa por `packet_tracer_mcp` y este
-        modulo por `src.packet_tracer_mcp`: son dos identidades del mismo
-        codigo, asi que aqui hay que usar el namespace de la cadena.
+        Antes la cadena de referencia se importaba por `packet_tracer_mcp` y
+        este modulo por `src.packet_tracer_mcp`: dos identidades del mismo
+        codigo. Los tests se normalizaron a un solo namespace, asi que un
+        `isinstance` contra la cadena vuelve a significar lo que dice.
         """
-        from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+        from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
             _IOS_ACTIONS,
         )
-        from packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
+        from src.packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
             PacketTracerIosRenderer as ReferenceRenderer,
         )
 
@@ -190,7 +191,7 @@ class TestTheCompilerReachesLinkPerformance:
 
     def test_the_runtime_routes_every_planned_action_somewhere(self, reference):
         """El descarte mudo estaba tambien aqui, una capa por debajo."""
-        from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+        from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
             _ENDPOINT_ACTIONS,
             _IOS_ACTIONS,
         )
@@ -231,7 +232,7 @@ class TestUnknownProfileNeverMutates:
 
     @staticmethod
     def _compile(reference, resolver):
-        from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+        from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
             ConfigurationCompiler,
         )
 
@@ -268,7 +269,7 @@ class TestUnknownProfileNeverMutates:
 
     def test_the_measured_reference_needs_no_unverified_warning(self, reference):
         """Contraste: no emitir acciones no prueba por si solo que falte el perfil."""
-        from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+        from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
             link_mode_capability_for,
         )
 

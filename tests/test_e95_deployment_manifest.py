@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import RuntimeConfigurationTarget
-from packet_tracer_mcp.domain.enterprise.models.deployment import (
+from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import RuntimeConfigurationTarget
+from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentBinding,
     DeploymentManifest,
     DeploymentIdentityError,
@@ -11,8 +11,8 @@ from packet_tracer_mcp.domain.enterprise.models.deployment import (
     IdentityMethod,
     build_deployment_manifest,
 )
-from packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
-from packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
+from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
+from src.packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
 
 
 def _topology() -> TopologyPlan:

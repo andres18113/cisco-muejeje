@@ -2,21 +2,21 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from packet_tracer_mcp.domain.enterprise.models.configuration import (
+from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationIssueCode,
     ConfigurationPhase,
 )
-from packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureHsrp,
     ControlPlaneVerificationKind,
     EtherChannelIntent,
     EtherChannelProtocol,
     FirstHopRedundancyIntent,
 )
-from packet_tracer_mcp.domain.models.plans import LinkPlan
+from src.packet_tracer_mcp.domain.models.plans import LinkPlan
 
 from tests.test_enterprise_control_plane import _fixture
 
@@ -164,7 +164,7 @@ def test_etherchannel_rejects_same_physical_port_across_two_bundles():
         ),
     ])
     # The new members deliberately reuse sw1:GigabitEthernet0/1 in another bundle.
-    from packet_tracer_mcp.domain.enterprise.models.configuration import ConfigureTrunk
+    from src.packet_tracer_mcp.domain.enterprise.models.configuration import ConfigureTrunk
 
     for link in topology.links[-2:]:
         configuration.actions.extend([

@@ -136,6 +136,21 @@ If a method is not here, do **not** assume it exists.
 - `d.getProcess("AclProcess")` → AclProcess | null (routers) · `d.enterCommand(cmd, mode)`
 - `d.setDhcpFlag(bool)`, `d.setDefaultGateway(ip)`
 
+**Terminal (consola del dispositivo)** — `var t = d.getCommandLine();` (IOS) ·
+`var t = d.getCommandPrompt();` (PC/Server/Laptop) — cualquiera puede ser null
+- `t.enterCommand(cmd)` → tipea en la consola. **UN argumento**, no dos.
+- `t.getOutput()` → transcript completo (string) · `t.getPrompt()` → prompt actual
+- [ADVERTENCIA] `d.enterCommand(cmd, mode)` y `t.enterCommand(cmd)` son métodos
+  **distintos de objetos distintos**, y no son intercambiables. Medido en PT
+  9.0.1.0858: `d.enterCommand("show clock")` con un solo argumento devuelve
+  `IPC Call ERROR: Invalid arguments`, y con dos devuelve `ok` pero **no
+  escribe nada en la consola** (delta de buffer 0). Sólo `t.enterCommand(cmd)`
+  llega al CLI. La aridad no se puede consultar: ambas reportan `length === 0`
+  por ser nativas, así que la diferencia sólo se ve probándolas.
+- [ADVERTENCIA] No tipear mientras la consola está en `--More--`: el pager se
+  come el/los primer(os) carácter(es) del comando siguiente. Medido: 6/6
+  ensayos convirtieron `show ip interface brief` en `how ip interface brief`.
+
 **Port** — `var p = d.getPort("GigabitEthernet0/0");`
 - `p.getLink()` → link | null (null = free) · `p.setIpSubnetMask(ip, mask)` · `p.setDefaultGateway(ip)`
 - `p.setDnsServerIp(ip)` · `p.setAclInID(id)`/`p.setAclOutID(id)` (pass `""` to clear)

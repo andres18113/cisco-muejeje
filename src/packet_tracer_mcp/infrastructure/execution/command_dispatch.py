@@ -236,16 +236,29 @@ def fresh_command_window(before: str, after: str) -> FreshWindow:
     )
 
 
-def first_echo_line(window: str) -> str:
-    """Primera linea no vacia de la ventana fresca: el eco del comando.
+# Syslog de IOS: `%FACILITY-severidad-MNEMONICO:`. Es asincrono -- lo emite el
+# equipo por su cuenta, no como respuesta a nada -- asi que puede aterrizar
+# entre el prompt y el eco del comando.
+_IOS_SYSLOG = re.compile(r"^\s*%[A-Z][A-Z0-9_]*-\d+-[A-Z0-9_]+\s*:")
 
-    El terminal repite lo que recibio antes de responder. Esa linea es la unica
-    evidencia directa de la identidad de lo despachado.
+
+def first_echo_line(window: str) -> str:
+    """Primera linea de la ventana que puede ser el eco del comando.
+
+    El terminal repite lo que recibio antes de responder, y esa linea es la
+    unica evidencia directa de la identidad de lo despachado.
+
+    Las lineas de syslog se saltean porque son asincronas: un
+    `%LINK-5-CHANGED: ...` que llega justo despues del prompt quedaria primero
+    y haria ilegible el eco de un comando que se despacho perfectamente. Se
+    saltea SOLO ese formato reconocible; cualquier otra linea sigue contando
+    como la primera, para que el cotejo siga siendo exacto y no una busqueda.
     """
     for line in rendered_terminal_text(window).splitlines():
         stripped = line.strip()
-        if stripped:
-            return stripped
+        if not stripped or _IOS_SYSLOG.match(stripped):
+            continue
+        return stripped
     return ""
 
 

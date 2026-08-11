@@ -49,7 +49,7 @@ from .security_ios import (
     NatTranslationRow,
 )
 from .runtime_inventory import normalize_runtime_inventory
-from .typed_ping import TypedPingExecutor
+from .typed_ping import SAFE_PING_TIMEOUT_S, TypedPingExecutor
 
 
 TypedBehaviorDriver = Callable[
@@ -95,7 +95,10 @@ class PacketTracerEnterpriseSecurityRuntime:
         ios_executor: ControlledIosExecutor | None = None,
         service_behavior: TypedBehaviorDriver | None = None,
         voice_call_operation: VoiceCallOperationPort | None = None,
-        behavior_timeout_seconds: float = 12.0,
+        # Medido: un ping totalmente perdido tarda 25.0 s desde un PC. Un
+        # control negativo que ESPERA no alcanzar el destino necesita ese
+        # presupuesto completo para poder afirmarlo.
+        behavior_timeout_seconds: float = SAFE_PING_TIMEOUT_S,
         endpoint_measurement_attempts: int = 3,
         convergence_interval_seconds: float = 0.25,
         clock: Callable[[], float] = monotonic,

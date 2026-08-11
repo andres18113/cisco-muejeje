@@ -275,6 +275,160 @@ def test_first_echo_line_ignores_leading_blank_lines():
     assert first_echo_line("\n\n  show ip route  \nCodes:") == "show ip route"
 
 
+# -- syslog asincrono intercalado -----------------------------------------
+
+def test_an_async_syslog_landing_before_the_echo_does_not_break_attribution():
+    """IOS emite `%LINK-5-CHANGED` por su cuenta, sin que nadie lo pida.
+
+    Si cae entre el prompt y el eco, tomarlo como "primera linea" haria
+    ilegible el eco de un comando que se despacho perfectamente.
+    """
+    window = (
+        "%LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to up\n"
+        "show ip interface brief\n"
+        "Interface  IP-Address  OK? Status\n"
+        "Router#"
+    )
+
+    classification, echoed = classify_echo("show ip interface brief", window)
+
+    assert classification is DispatchClassification.DISPATCHED
+    assert echoed == "show ip interface brief"
+
+
+def test_several_syslog_lines_in_a_row_are_skipped():
+    window = (
+        "%LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to up\n"
+        "%LINEPROTO-5-UPDOWN: Line protocol on Interface Gi0/0, changed state to up\n"
+        "show ip route\nCodes: L - local\nRouter#"
+    )
+
+    classification, _ = classify_echo("show ip route", window)
+
+    assert classification is DispatchClassification.DISPATCHED
+
+
+def test_a_corrupted_echo_behind_a_syslog_is_still_caught():
+    """Saltear syslog no debe convertirse en buscar el comando donde sea."""
+    window = (
+        "%LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to up\n"
+        "how ip interface brief\n% Invalid input detected\nRouter#"
+    )
+
+    classification, echoed = classify_echo("show ip interface brief", window)
+
+    assert classification is DispatchClassification.PREFIX_LOSS
+    assert echoed == "how ip interface brief"
+
+
+def test_a_rejection_line_is_not_confused_with_syslog_and_still_reads_as_echo():
+    """`% Invalid input` no tiene forma de syslog: no se saltea."""
+    window = "% Invalid input detected at '^' marker.\nRouter#"
+
+    classification, echoed = classify_echo("show ip route", window)
+
+    assert classification is DispatchClassification.ECHO_UNOBSERVABLE
+    assert echoed == "% Invalid input detected at '^' marker."
+
+
+# -- contencion del bypass de control de pager ----------------------------
+
+def test_the_pager_control_path_dispatches_only_the_cancel_keystroke():
+    """`_cancel_pager` esquiva la guarda a proposito: debe seguir siendo estrecho.
+
+    Ahi la tecla que el pager consume es justamente lo que se quiere entregar,
+    asi que no puede llevar guarda. Lo que no puede es convertirse en una via
+    para despachar un comando arbitrario.
+    """
+    sent: list[str] = []
+    executor = ControlledIosExecutor(lambda js, _t: sent.append(js) or '{"ok":false}')
+
+    executor._cancel_pager('"R1"', "salida paginada")
+
+    assert len(sent) == 1
+    dispatch = sent[0]
+    assert "String.fromCharCode(3)" in dispatch
+    # Un solo enterCommand, y su unico argumento es la tecla de control.
+    assert dispatch.count("enterCommand(") == 1
+    assert "enterCommand(String.fromCharCode(3))" in dispatch
+
+
+def test_only_the_known_seams_dispatch_commands_to_a_terminal():
+    """Inventario cerrado de despachos, para que no reaparezca un bypass.
+
+    `pt_verify_connectivity` tenia el suyo propio y decidia contando marcadores
+    de estadistica; ese camino no podia distinguir `ping` de `ing`. El dia que
+    alguien agregue un `enterCommand` nuevo, este test cae y hay que decidir a
+    conciencia si lleva guarda.
+    """
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parents[1] / "src" / "packet_tracer_mcp"
+    dispatching: dict[str, list[str]] = {}
+    for path in sorted(package.rglob("*.py")):
+        emitted = [
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            # Sólo despachos reales: la llamada se arma sobre un objeto terminal.
+            if ".enterCommand(" in line and not line.lstrip().startswith("#")
+            and "typeof" not in line
+        ]
+        if emitted:
+            dispatching[path.relative_to(package).as_posix()] = emitted
+
+    assert sorted(dispatching) == [
+        "infrastructure/execution/enterprise_service_runtime.py",
+        "infrastructure/execution/ios_terminal.py",
+        "infrastructure/execution/typed_ping.py",
+    ], f"Apareció un despacho fuera de las costuras conocidas: {sorted(dispatching)}"
+
+
+def test_every_dispatching_module_carries_the_readiness_guard():
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parents[1] / "src" / "packet_tracer_mcp"
+    for relative in (
+        "infrastructure/execution/enterprise_service_runtime.py",
+        "infrastructure/execution/ios_terminal.py",
+        "infrastructure/execution/typed_ping.py",
+    ):
+        source = (package / relative).read_text(encoding="utf-8")
+        assert "PAGER_GUARD_JS" in source, (
+            f"{relative} despacha comandos sin importar la guarda de readiness"
+        )
+
+
+def test_the_product_ping_tool_no_longer_dispatches_on_its_own():
+    from pathlib import Path
+
+    registry = (
+        Path(__file__).resolve().parents[1]
+        / "src" / "packet_tracer_mcp" / "adapters" / "mcp" / "tool_registry.py"
+    ).read_text(encoding="utf-8")
+
+    assert ".enterCommand(" not in registry
+    assert "TypedPingExecutor(" in registry
+
+
+def test_no_caller_data_reaches_the_pager_control_script():
+    """El script despachado es identico sea cual sea el dato del caller.
+
+    `paged_output` existe para comparar evidencia, nunca para viajar al CLI.
+    Si alguna vez se interpolara ahi, este test lo delata.
+    """
+    def _dispatch_for(paged_output: str) -> str:
+        sent: list[str] = []
+        executor = ControlledIosExecutor(lambda js, _t: sent.append(js) or '{"ok":false}')
+        executor._cancel_pager('"R1"', paged_output)
+        return sent[0]
+
+    benign = _dispatch_for("salida paginada\n--More--")
+    hostile = _dispatch_for('");t.enterCommand("configure terminal")//')
+
+    assert benign == hostile
+    assert "configure terminal" not in hostile
+
+
 # -- retry acotado sobre el ejecutor real ----------------------------------
 
 class _CorruptingTerminal:

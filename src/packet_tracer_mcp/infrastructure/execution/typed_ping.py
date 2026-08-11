@@ -19,14 +19,30 @@ from .command_dispatch import (
 from .ios_terminal import extract_terminal_command_window
 
 
+# El `[^\n]*` final existe para que `group(0)` sea la LINEA de estadistica
+# completa: el contrato publico de `pt_ping` venia mostrando `Lost = N` y el
+# `(N% loss)`, y recortar en `Received` los perdia. Los grupos numerados no
+# cambian, asi que la interpretacion sigue siendo la misma.
 _PACKET_COUNTS = re.compile(
-    r"Packets:\s*Sent\s*=\s*(\d+),\s*Received\s*=\s*(\d+)",
+    r"Packets:\s*Sent\s*=\s*(\d+),\s*Received\s*=\s*(\d+)[^\n]*",
     re.IGNORECASE,
 )
 _IOS_SUCCESS_RATE = re.compile(
-    r"Success rate is\s+(\d+)\s+percent\s+\((\d+)/(\d+)\)",
+    r"Success rate is\s+(\d+)\s+percent\s+\((\d+)/(\d+)\)[^\n]*",
     re.IGNORECASE,
 )
+
+# Piso de seguridad, no una preferencia de latencia.
+#
+# Medido en PT 9.0.1.0858 sobre dispositivos disposable: un ping totalmente
+# perdido tarda 25.0 s en publicar su estadistica desde un PC y 10.8 s desde un
+# 2911. Con el default anterior de 12 s, un destino inalcanzable desde un PC no
+# llegaba a clasificarse como inalcanzable: se reportaba como sin evidencia
+# atribuible, que es un error de clasificacion y no una espera corta.
+#
+# El presupuesto sigue siendo del caller, que puede subirlo por semantica; lo
+# que no debe pasar es que alguien tenga que bajarlo para ser correcto.
+SAFE_PING_TIMEOUT_S = 30.0
 
 
 @dataclass(frozen=True)
@@ -50,7 +66,7 @@ class TypedPingExecutor:
         self,
         send_and_wait: Callable[[str, float], str | None],
         *,
-        timeout_seconds: float = 12.0,
+        timeout_seconds: float = SAFE_PING_TIMEOUT_S,
         interval_seconds: float = 0.25,
         measurement_attempts: int = 1,
         clock: Callable[[], float] = monotonic,

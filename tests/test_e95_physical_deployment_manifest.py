@@ -4,16 +4,16 @@ from copy import deepcopy
 
 import pytest
 
-from packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
-from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
-from packet_tracer_mcp.domain.enterprise.models.execution import DirtyState, MutationDisposition
-from packet_tracer_mcp.domain.enterprise.models.evidence import (
+from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
+from src.packet_tracer_mcp.domain.enterprise.models.execution import DirtyState, MutationDisposition
+from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
     ObservationStatus,
     VerificationStatus,
 )
-from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentFailureCode,
     PhysicalDeploymentStatus,
     PhysicalDeviceObservation,
@@ -22,8 +22,8 @@ from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalMutationResult,
     PhysicalObjectKind,
 )
-from packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
-from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
+from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
+from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
 
 
 def _topology() -> TopologyPlan:

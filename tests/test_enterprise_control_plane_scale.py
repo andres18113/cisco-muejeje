@@ -4,10 +4,10 @@ from collections import Counter
 from copy import deepcopy
 from time import perf_counter
 
-from packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from packet_tracer_mcp.domain.enterprise.models.configuration import (
+from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureAccessPort,
     ConfigureRoutedInterface,
     ConfigureTrunk,
@@ -16,7 +16,7 @@ from packet_tracer_mcp.domain.enterprise.models.configuration import (
     CreateVlan,
     SetEndpointStaticAddress,
 )
-from packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityProfile,
     ControlPlaneIntent,
     ControlPlaneVerificationKind,
@@ -29,7 +29,7 @@ from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     StpIntent,
     StpMode,
 )
-from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 
 
 def _device(

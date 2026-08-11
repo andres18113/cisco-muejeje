@@ -1316,7 +1316,7 @@ def register_tools(mcp: FastMCP) -> None:
         from_device: str,
         to_ip: str,
         count: int = 4,
-        timeout_s: float = 20.0,
+        timeout_s: float = 30.0,
     ) -> str:
         """
         Ejecuta un ping REAL desde un dispositivo en PT y devuelve el resultado.

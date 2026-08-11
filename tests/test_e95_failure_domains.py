@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from packet_tracer_mcp.domain.enterprise.models.failure_domain import (
+from src.packet_tracer_mcp.domain.enterprise.models.failure_domain import (
     FailureDomain,
     FailureDomainProvenance,
     FailureDomainType,
@@ -11,11 +11,11 @@ from packet_tracer_mcp.domain.enterprise.models.failure_domain import (
     FailureScenarioScope,
     IndependenceStatus,
 )
-from packet_tracer_mcp.domain.enterprise.services.failure_domain_analyzer import (
+from src.packet_tracer_mcp.domain.enterprise.services.failure_domain_analyzer import (
     FailureDomainAnalyzer,
     build_failure_domain_catalog,
 )
-from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 
 
 def _topology() -> TopologyPlan:

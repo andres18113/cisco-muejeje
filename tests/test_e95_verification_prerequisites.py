@@ -1,6 +1,6 @@
 import pytest
 
-from packet_tracer_mcp.domain.enterprise.models.verification import (
+from src.packet_tracer_mcp.domain.enterprise.models.verification import (
     PrerequisiteKind,
     VerificationDependencyError,
     VerificationPrerequisite,

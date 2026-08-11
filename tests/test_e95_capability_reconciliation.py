@@ -25,6 +25,18 @@ from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+    CapabilityStatus,
+    EvidenceSource,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+    CapabilityProbeResult,
+    CapabilitySnapshot,
+    CapabilityVerificationMethod,
+    ProbeExecutionStatus,
+    ProbeSession,
+    ProbeSessionResult,
+)
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
@@ -34,9 +46,68 @@ PACKAGE = REPO / "src" / "packet_tracer_mcp"
 MEASURED_VERSION = "9.0.1.0858"
 
 
+def _verified(model: str, capability: str, probe_id: str, method) -> CapabilityProbeResult:
+    return CapabilityProbeResult(
+        probe_id=probe_id,
+        model=model,
+        capability=capability,
+        status=CapabilityStatus.SUPPORTED,
+        execution_status=ProbeExecutionStatus.VERIFIED,
+        evidence_source=EvidenceSource.CONTROLLED_PROBE,
+        configured=True,
+        verified=True,
+        packet_tracer_version=MEASURED_VERSION,
+        verification_method=method,
+    )
+
+
+def _stage_2d_snapshot() -> CapabilitySnapshot:
+    """La forma minima de lo que Stage 2D verifico en vivo.
+
+    Reproduce exactamente los cuatro hechos de los que dependen estos tests:
+    3560-24PS tiene layer3 e inter-VLAN multilayer verificados, y 3650-24PS
+    tiene el multilayer verificado pero ningun layer3 -- que es justamente la
+    asimetria que hace visible la deuda de reconciliacion.
+    """
+    return CapabilitySnapshot(
+        packet_tracer_version=MEASURED_VERSION,
+        session=ProbeSessionResult(
+            session=ProbeSession(
+                session_id="stage-2d-hermetic-fixture",
+                packet_tracer_version=MEASURED_VERSION,
+            ),
+            results=[
+                _verified(
+                    "3560-24PS", "layer3", "layer3-probe",
+                    CapabilityVerificationMethod.CLI_PLUS_READBACK,
+                ),
+                _verified(
+                    "3560-24PS", "multilayer_intervlan", "multilayer-intervlan-probe",
+                    CapabilityVerificationMethod.SIMULATION_TRACE,
+                ),
+                _verified(
+                    "3650-24PS", "multilayer_intervlan", "multilayer-intervlan-probe",
+                    CapabilityVerificationMethod.SIMULATION_TRACE,
+                ),
+            ],
+        ),
+    )
+
+
 @pytest.fixture(scope="module")
-def store() -> CapabilitySnapshotStore:
-    return CapabilitySnapshotStore()
+def store(tmp_path_factory) -> CapabilitySnapshotStore:
+    """Store efimero con exactamente la evidencia que estos tests necesitan.
+
+    Antes construia `CapabilitySnapshotStore()` sin argumentos, que lee
+    `data/capabilities` relativo al CWD. Ese directorio esta gitignored, asi
+    que un worktree recien creado hacia fallar dos tests hasta que alguien
+    copiaba snapshots a mano desde otro checkout. Los snapshots son estado
+    runtime mutable, no fixtures: en vez de versionarlos, se reconstruye la
+    forma minima y el resultado deja de depender de la maquina.
+    """
+    store = CapabilitySnapshotStore(tmp_path_factory.mktemp("capabilities"))
+    store.save_runtime(_stage_2d_snapshot())
+    return store
 
 
 def _layer3(adapter: EnterpriseCapabilityAdapter, model: str):
@@ -48,6 +119,14 @@ def _layer3(adapter: EnterpriseCapabilityAdapter, model: str):
 
 class TestTheEvidenceExistsAndIsReachable:
     def test_stage_2d_multilayer_evidence_is_persisted(self, store):
+        """Round-trip de la evidencia: guardada, releida y filtrable.
+
+        Antes esto afirmaba algo sobre la maquina -- que el `data/capabilities`
+        de este disco tuviera la corrida real de Stage 2D. Eso no era una
+        propiedad del codigo y no sobrevivia a un checkout limpio. Lo que si es
+        del codigo, y lo que aqui se prueba, es que un snapshot con esa forma
+        se persiste y vuelve a salir por `list_runtime`.
+        """
         verified = {
             (result.model, result.capability)
             for snapshot in store.list_runtime(None)

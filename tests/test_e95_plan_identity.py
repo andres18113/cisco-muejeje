@@ -1,11 +1,11 @@
 from copy import deepcopy
 
-from packet_tracer_mcp.domain.enterprise.models.compilation import LayoutProfile, LayoutRegion
-from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from src.packet_tracer_mcp.domain.enterprise.models.compilation import LayoutProfile, LayoutRegion
+from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     compute_topology_hashes,
     stamp_topology_hashes,
 )
-from packet_tracer_mcp.domain.models.plans import (
+from src.packet_tracer_mcp.domain.models.plans import (
     DevicePlan,
     LinkPlan,
     ModulePlan,
