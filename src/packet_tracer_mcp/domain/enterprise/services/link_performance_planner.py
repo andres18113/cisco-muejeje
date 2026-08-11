@@ -53,8 +53,12 @@ class LinkPerformancePlanner:
     #: ser el mismo techo -- forzar `speed` no resultó observable en ninguna
     #: plataforma medida -- y la demanda bajo AUTO se contrasta contra lo
     #: negociable con evidencia.
+    #: v5 (Stage 3A3-G): sincronizar el bandwidth de routing bajo AUTO usa
+    #: el techo negociable. Antes solo miraba `effective_capacity_bps`, que
+    #: bajo AUTO siempre es None, de modo que el flag no hacia nada en
+    #: ningun enlace Ethernet. Esto SI cambia lo que el planner decide.
     POLICY_ID = "enterprise-link-performance"
-    POLICY_VERSION = "4"
+    POLICY_VERSION = "5"
 
     def __init__(
         self,
@@ -97,8 +101,19 @@ class LinkPerformancePlanner:
                 link_id=intent.link_id,
                 message="Link media must be resolved before performance policy applies.",
             ))
-        if intent.sync_routing_bandwidth_to_effective_capacity and decision.effective_capacity_bps:
-            decision.routing_bandwidth_kbps = decision.effective_capacity_bps // 1000
+        # Alinear el bandwidth de routing con la capacidad del enlace. Bajo
+        # AUTO nadie elige una velocidad, asi que `effective_capacity_bps` es
+        # None y la referencia correcta es lo que la negociacion alcanza con
+        # evidencia en ambos extremos. Sin ninguna de las dos no se sincroniza
+        # nada: inventar una cifra para una metrica de routing seria peor que
+        # dejarla en el valor de plataforma.
+        if intent.sync_routing_bandwidth_to_effective_capacity:
+            reference = (
+                decision.effective_capacity_bps
+                or decision.auto_negotiable_ceiling_bps
+            )
+            if reference:
+                decision.routing_bandwidth_kbps = reference // 1000
         return decision
 
     # -- demanda ---------------------------------------------------------

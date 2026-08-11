@@ -303,8 +303,9 @@ class TestPolicyVersionScope:
     """`POLICY_VERSION` versiona la decision, no el renderizado.
 
     Stage 3A3-E cambio a quien se le emite `bandwidth`, que es un paso
-    posterior a la decision. Si la version cubriera el extremo a extremo,
-    habria que subirla; como no lo cubre, subirla seria cosmetico.
+    posterior a la decision, y no la subio. Stage 3A3-G si cambio lo que el
+    planner decide -- sincronizar bajo AUTO contra el techo negociable -- y
+    por eso la subio a 5. La distincion es el contrato.
     """
 
     def test_the_decision_never_travels_into_the_configuration_plan(self):
@@ -339,9 +340,9 @@ class TestPolicyVersionScope:
         assert default.effective_speed is relabelled.effective_speed
         assert default.routing_bandwidth_kbps == relabelled.routing_bandwidth_kbps
 
-    def test_the_pinned_version_is_still_four(self):
+    def test_the_pinned_version_moved_with_the_planner_change(self):
         from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
             LinkPerformancePlanner,
         )
 
-        assert LinkPerformancePlanner.POLICY_VERSION == "4"
+        assert LinkPerformancePlanner.POLICY_VERSION == "5"

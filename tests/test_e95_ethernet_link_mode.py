@@ -587,7 +587,7 @@ class TestCapabilityLookupLivesOutsideTheDomain:
 
 class TestPolicyIdentityMovedWithTheBehaviour:
     def test_the_policy_version_records_the_new_ethernet_rules(self):
-        assert LinkPerformancePlanner().plan(_ethernet()).policy_version == "4"
+        assert LinkPerformancePlanner().plan(_ethernet()).policy_version == "5"
 
     def test_the_three_ceilings_travel_in_the_explanation(self):
         decision = LinkPerformancePlanner().plan(_ethernet(

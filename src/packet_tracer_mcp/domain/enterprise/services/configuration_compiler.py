@@ -89,6 +89,39 @@ def _device_key(device: DevicePlan) -> str:
     return device.id or device.name
 
 
+def interface_is_routed(
+    actions: list[ConfigurationAction], device_id: str, interface: str,
+) -> bool:
+    """¿Esta interfaz concreta esta enrutada, segun lo que el plan declara?
+
+    La categoria del dispositivo no sirve: un switch multicapa puede tener
+    Gi0/1 como switchport y Gi0/2 como puerto enrutado, y son la misma caja.
+    Lo que distingue una de otra es la configuracion tipada que ya se decidio
+    para cada una.
+
+    Una interfaz sin configurar no se considera enrutada. El desconocimiento
+    se resuelve hacia el lado seguro: dejar de emitir algo valido es peor que
+    emitir un comando que el backend rechaza, pero solo un poco.
+    """
+    switched = False
+    routed = False
+    for action in actions:
+        if action.device_id != device_id:
+            continue
+        if isinstance(action, (ConfigureAccessPort, ConfigureTrunk)):
+            switched = switched or action.interface == interface
+        elif isinstance(action, ConfigureRoutedInterface):
+            routed = routed or action.interface == interface
+        elif isinstance(action, ConfigureSubinterface):
+            # Router-on-a-stick: el fisico que sostiene subinterfaces es
+            # enrutado, aunque la direccion viva en las subinterfaces.
+            routed = routed or action.parent_interface == interface
+    # Si el plan dijera las dos cosas sobre el mismo puerto seria un error de
+    # compilacion, no algo que resolver aqui: gana lo conmutado, que es lo que
+    # no emite nada.
+    return routed and not switched
+
+
 class ConfigurationCompiler:
     """Compila intención lógica sin bridge, IOS, TerminalLine ni MCP."""
 
@@ -220,8 +253,10 @@ class ConfigurationCompiler:
                 required_capability="endpoint_dhcp",
             ))
 
+        # Se pasa `actions` tal cual esta: la clasificacion enrutado/conmutado
+        # sale de lo que el plan ya decidio para cada interfaz.
         actions.extend(self._link_performance_actions(
-            topology, devices, links, names_to_ids, issues,
+            topology, devices, links, names_to_ids, policy, actions, issues,
         ))
 
         issues.extend(validate_configuration_actions(actions))
@@ -272,6 +307,8 @@ class ConfigurationCompiler:
         devices: dict[str, DevicePlan],
         links: list[LinkPlan],
         names_to_ids: dict[str, str],
+        policy: ConfigurationPolicy,
+        planned_actions: list[ConfigurationAction],
         issues: list[ConfigurationIssue],
     ) -> list[ConfigurationAction]:
         """Convierte la política de rendimiento de enlace en acciones tipadas.
@@ -302,6 +339,7 @@ class ConfigurationCompiler:
                 continue
             intent = self._link_performance.intent_for_link(
                 link, endpoint_models=endpoint_models,
+                sync_routing_bandwidth=policy.sync_routing_bandwidth,
             )
             # Preflight productivo: compilar la intención es una cosa y mutar
             # el runtime otra. Un extremo sin perfil deja la capacidad en
@@ -344,10 +382,9 @@ class ConfigurationCompiler:
                     device_name=device.name,
                     site_id=device.site_id,
                     interface=interface,
-                    # Un switch presenta switchports; un router, interfaces
-                    # enrutadas. El mismo enlace Ethernet es una cosa por un
-                    # extremo y otra por el otro.
-                    interface_is_routed=device.category == "router",
+                    interface_is_routed=interface_is_routed(
+                        planned_actions, device_id, interface,
+                    ),
                 ))
         return emitted
 

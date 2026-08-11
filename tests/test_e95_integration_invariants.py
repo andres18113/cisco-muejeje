@@ -203,19 +203,8 @@ class TestBandwidthTargetFollowsTheInterfaceNotTheMedium:
         assert "interface_is_routed" in signature.parameters
         assert "device_category" not in signature.parameters
 
-    def test_the_compiler_derives_it_from_the_device_category(self):
-        """DEUDA E9.5 acotada, y por eso INTERFACE_BANDWIDTH_TARGET_SAFETY = PARTIAL.
-
-        El seam es correcto, pero quien lo alimenta usa `category == "router"`.
-        Un puerto enrutado sobre un switch multicapa -- un 3560/3650 con `no
-        switchport` o una SVI -- quedaria clasificado como conmutado y no
-        recibiria `bandwidth` aunque lo aceptara.
-
-        El error va en la direccion segura: se deja de emitir algo valido, no
-        se emite algo que el backend rechace. Cerrarlo exige saber si el puerto
-        esta enrutado, y esa evidencia es justo la que hoy no llega a la
-        seleccion de hardware.
-        """
+    def test_the_compiler_no_longer_infers_it_from_the_device_category(self):
+        """Un switch multicapa tiene puertos de los dos tipos en la misma caja."""
         import inspect
 
         from src.packet_tracer_mcp.domain.enterprise.services import (
@@ -226,7 +215,11 @@ class TestBandwidthTargetFollowsTheInterfaceNotTheMedium:
             configuration_compiler.ConfigurationCompiler._link_performance_actions,
         )
 
-        assert 'interface_is_routed=device.category == "router"' in source
+        # `device.category` sigue usandose para acotar la politica a
+        # dispositivos gestionables, que es otra pregunta. Lo que no puede
+        # seguir siendo es la fuente de verdad de enrutado/conmutado.
+        assert "interface_is_routed=device.category" not in source
+        assert "interface_is_routed=interface_is_routed(" in source
 
     def test_no_routing_bandwidth_decided_means_no_action_anywhere(self):
         decision = LinkPerformanceDecision(link_id="l1", media=LinkMedia.SERIAL)

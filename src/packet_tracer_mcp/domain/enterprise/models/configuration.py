@@ -159,6 +159,11 @@ class ConfigurationPolicy(BaseModel):
     native_vlan_id: int | None = None
     dns_server: str | None = None
 
+    # Alinear el `bandwidth` logico de routing con la capacidad del enlace es
+    # una decision de metricas, no un efecto secundario de tener un enlace.
+    # Apagado por defecto: nadie lo pidio hasta que alguien lo pide.
+    sync_routing_bandwidth: bool = False
+
 
 class BaseConfigurationAction(BaseModel):
     id: str
