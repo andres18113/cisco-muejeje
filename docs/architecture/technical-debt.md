@@ -128,6 +128,143 @@ specification is future work; nothing in this checkpoint invented one.
 
 # Open Debt
 
+## TD-RUNTIME-007 — Route expectations have no convergence window
+
+Status:
+RESOLVED
+
+Severity:
+P1
+
+Discovered:
+Debt Checkpoint 1, independent review of the TD-RUNTIME-005 integration
+
+Description:
+
+`ControlPlaneApplicator.verify` is single-shot. `_observe_rip_route` performs
+one registered read and decides, and `ROUTE_PRESENT` belongs to
+`_OBSERVED_KINDS`, so a FAILED observation drives the whole application result
+to `PARTIAL` / `VERIFICATION_FAILED`.
+
+RIP advertises on a 30-second update timer. A correct deployment verified
+immediately after application therefore reports FAILED for a route that simply
+has not arrived yet, and the failure is indistinguishable from a route that will
+never arrive.
+
+The R2-B phase 4 evidence hid this: the operator harness slept 35 seconds before
+reading, and observed route ages of `00:00:26` and `00:00:00`. Nothing in the
+product reproduces that wait.
+
+Blocks now:
+**Yes.** University-topology acceptance applies RIPv2 and verifies it in the
+same run. Without a convergence window the acceptance would report failure for
+a working network, which is worse than no verification: it produces a false
+negative that an operator would reasonably act on.
+
+RESOLVE_BEFORE:
+university-topology acceptance.
+
+Closure criterion:
+
+Route verification retries the **read only**, within an explicit bounded budget,
+and never redispatches configuration. A route that appears within the budget
+verifies; a route absent at the end of the budget FAILS; stale or truncated
+evidence remains UNOBSERVABLE rather than consuming the budget or being reported
+as failure. Every sample must still require the exact prefix, prefix length and
+RIP source.
+
+### Resolution
+
+Resolved: 2026-08-12, stage "Debt Checkpoint 1".
+
+Commit subject:
+`fix: bound RIP route verification with a convergence window`
+on `feature/runtime-ripv2`.
+
+`_observe_rip_route` now reads inside a bounded window. Defaults are 45 s,
+sampled every 5 s, capped at 10 reads. The budget is derived from measurement,
+not taste: RIP advertises on a 30-second timer, and the R2-B phase 4 evidence
+showed both routes present after a 35-second wait with ages `00:00:26` and
+`00:00:00`. One full update cycle plus margin.
+
+What the window does and does not do:
+
+- it retries the **registered read only**. No configuration is redispatched,
+  and a regression asserts the mutation channel stays silent for the whole
+  window while only `SHOW_IP_ROUTE_RIP` is issued;
+- stale evidence and a pager-truncated table **abort immediately** rather than
+  consuming the budget. Neither improves by waiting, and spending the window on
+  them would disguise an unobservable read as a failure;
+- the comparison never relaxes. Every sample still requires the exact prefix,
+  prefix length and RIP source, proven for a wrong length, a wrong network, a
+  mismatched pair, and an OSPF row carrying the right prefix;
+- the per-device query cache is invalidated between samples, since a cached
+  read cannot converge.
+
+The result carries a `ConvergenceReport` with the attempt count and the last
+observable state, matching how stable ping probes already report.
+
+Evidence: a route absent on the first two reads and present on the third
+VERIFIES in three reads; a route that never appears FAILS after exactly the
+budgeted reads and says so without claiming anything was redispatched.
+
+One thing this exposed, worth recording: the earlier route tests inherited the
+real budget and slept through it, taking the module from 0.5 s to 200 s. They
+now inject a single attempt, because they are about comparison semantics rather
+than convergence, which has its own tests with a deterministic clock.
+
+---
+
+## TD-RUNTIME-006 — Two unreachable journal lifecycle transitions
+
+Status:
+OPEN
+
+Severity:
+P2
+
+Discovered:
+Debt Checkpoint 1, independent review of the TD-RUNTIME-001 fix
+
+Description:
+
+Two orderings on `ApplicationExecutionJournal` can produce a state that
+contradicts a recorded cleanup verdict. Neither is reachable through any
+current applicator, and both were found by reading the model rather than by
+observing a failure.
+
+1. `append` after `mark_cleanup`. `append` recomputes `dirty_state` from the
+   entries and does not consult `cleanup_status`. A journal that recorded
+   `mark_cleanup(FAILED)` — final state `DIRTY_UNRECOVERABLE` — and then
+   appended a benign entry recomputes to `CLEAN` while `cleanup_status` remains
+   `FAILED`.
+
+2. `mark_preflight_failure` after `mark_cleanup`. It forces `CLEAN` whenever
+   `entries` is empty, regardless of any cleanup verdict already recorded.
+
+Why unreachable today: every applicator builds its journal from action results,
+appends all entries, and only then records cleanup; the failure paths construct
+a fresh journal. So no production sequence appends or marks preflight after a
+cleanup transition.
+
+Blocks now:
+No. Not reachable through any current applicator, and the model is documented
+as the authority for final state, so the risk is to future callers rather than
+to present behaviour.
+
+RESOLVE_BEFORE:
+Diagnosis/Autofix work, which is the first consumer expected to drive a journal
+through transitions the applicators do not currently produce, and at latest
+E9.5 final closure.
+
+Closure criterion:
+
+Either the journal refuses these orderings explicitly, or the composition
+accounts for a recorded cleanup verdict so a later `append` or preflight marker
+cannot contradict it. A regression must cover both sequences.
+
+---
+
 ## TD-RUNTIME-005 — RIP route learning is observable but not a compiled expectation
 
 Status:
@@ -1197,6 +1334,13 @@ Do not delete historical debt entries.
   source changed. The entry above is kept in full and
   records the residual observability ceiling. The prior "deadline status" note
   remains as written.
+- **TD-RUNTIME-007** — resolved 2026-08-12 at Debt Checkpoint 1. Route
+  verification now reads inside a bounded convergence window of 45 s, sampled
+  every 5 s, capped at 10 reads, derived from RIP's 30-second update timer and
+  the R2-B phase 4 measurement. Only the read retries; configuration is never
+  redispatched. Stale and truncated evidence abort immediately instead of
+  consuming the budget, and every sample still requires the exact prefix,
+  length and RIP source. The entry above is kept in full.
 - **TD-RUNTIME-001** — resolved 2026-08-12 at Debt Checkpoint 1. The stated
   mechanism was wrong: cleanup always precedes result materialisation, so no
   snapshot was ever stale. The real defect was a false CLEAN, because

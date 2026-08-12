@@ -971,8 +971,15 @@ def _route_case(output, *, network="150.1.1.0", prefix_length=27, truncated=Fals
         fresh_output_observed=True, truncated_by_pager=truncated,
     )
     ios = _FakeIos({(action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP): result})
+    # Un solo intento: estos casos son sobre la COMPARACION, no sobre la
+    # ventana de convergencia, que tiene sus propios tests con reloj inyectado.
+    # Sin esto heredarian el presupuesto real y dormirian 45 s cada uno.
     runtime = PacketTracerEnterpriseControlPlaneRuntime(
-        lambda: [], lambda _s: True, lambda _s, _t: None, ios_executor=ios)
+        lambda: [], lambda _s: True, lambda _s, _t: None, ios_executor=ios,
+        route_convergence_attempts=1,
+        route_convergence_timeout_seconds=0.0,
+        route_convergence_interval_seconds=0.0,
+    )
     runtime.apply_actions([action])
     return runtime.verify([expectation])[0]
 
@@ -1087,6 +1094,185 @@ def test_route_verification_is_separate_from_forwarding_verification():
 
     assert ControlPlaneVerificationKind.ROUTE_PRESENT in kinds
     assert ControlPlaneVerificationKind.END_TO_END_REACHABILITY not in kinds
+
+
+# ===================== convergencia acotada de rutas (TD-RUNTIME-007) ======
+
+
+class _SequenceIos:
+    """Devuelve una lectura distinta por intento, y cuenta los intentos."""
+
+    def __init__(self, device_name, outputs):
+        self._device_name = device_name
+        self._outputs = list(outputs)
+        self.calls: list[OperationalQueryId] = []
+
+    def execute(self, device_name, query_id, *, interface=""):
+        assert not interface
+        self.calls.append(query_id)
+        index = min(len(self.calls) - 1, len(self._outputs) - 1)
+        value = self._outputs[index]
+        if isinstance(value, IosCommandResult):
+            return value
+        return IosCommandResult(
+            device_name=device_name, query_id=query_id, executed=True,
+            output=value, session_state=IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=True, window_strategy="prefix_delta",
+        )
+
+
+_EMPTY_ROUTE_TABLE = "show ip route rip\nRouter>"
+
+
+def _converging_case(outputs, *, attempts=4, network="150.1.1.0", prefix_length=27):
+    """Verifica una expectativa de ruta con reloj y sleeper deterministas."""
+    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+        ControlPlaneVerificationExpectation,
+    )
+
+    plan = _compile_university().plan
+    action = next(
+        item for item in plan.actions_of_type(ControlPlaneActionType.CONFIGURE_RIPV2)
+        if item.device_id == "r1"
+    )
+    expectation = ControlPlaneVerificationExpectation(
+        id="verify/route", kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
+        action_id=action.id, device_id="r1",
+        required_capability=ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
+        expected={"network": network, "prefix_length": prefix_length,
+                  "protocol": "ripv2"},
+    )
+    ios = _SequenceIos(action.device_name, outputs)
+    ticks = {"now": 0.0}
+    slept: list[float] = []
+
+    def clock():
+        return ticks["now"]
+
+    def sleeper(seconds):
+        slept.append(seconds)
+        ticks["now"] += seconds
+
+    dispatched: list[str] = []
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [],
+        lambda script: dispatched.append(script) or True,
+        lambda _s, _t: None,
+        ios_executor=ios,
+        route_convergence_timeout_seconds=100.0,
+        route_convergence_interval_seconds=5.0,
+        route_convergence_attempts=attempts,
+        clock=clock, sleeper=sleeper,
+    )
+    runtime.apply_actions([action])
+    dispatched.clear()  # el despacho de configuracion ya ocurrio, antes de verificar
+    observed = runtime.verify([expectation])[0]
+    return observed, ios, dispatched, slept
+
+
+def test_a_route_that_appears_later_still_verifies():
+    """Primera lectura vacia, la ruta llega despues: converge."""
+    observed, ios, _, slept = _converging_case([
+        _EMPTY_ROUTE_TABLE,
+        _EMPTY_ROUTE_TABLE,
+        _PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1,
+    ])
+
+    assert observed.status is ActionExecutionStatus.VERIFIED
+    assert len(ios.calls) == 3
+    assert observed.convergence is not None
+    assert observed.convergence.attempts == 3
+    assert slept == [5.0, 5.0]
+
+
+def test_a_route_that_never_appears_fails_after_the_budget():
+    observed, ios, _, _ = _converging_case([_EMPTY_ROUTE_TABLE], attempts=4)
+
+    assert observed.status is ActionExecutionStatus.FAILED
+    assert len(ios.calls) == 4
+    assert observed.convergence.attempts == 4
+    assert observed.convergence.last_observable_state == "route_absent"
+    assert "did not appear" in observed.message
+
+
+def test_stale_evidence_aborts_convergence_as_unobservable():
+    """Rancio no mejora esperando, y no debe disfrazarse de fallo."""
+    stale = IosCommandResult(
+        device_name="UCE-R1", query_id=OperationalQueryId.SHOW_IP_ROUTE_RIP,
+        executed=True, output=_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1,
+        session_state=IosSessionState.EXEC_PROMPT_READY,
+        fresh_output_observed=False,
+    )
+    observed, ios, _, slept = _converging_case([stale], attempts=4)
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert len(ios.calls) == 1
+    assert slept == []
+
+
+def test_a_truncated_read_aborts_convergence_as_unobservable():
+    truncated = IosCommandResult(
+        device_name="UCE-R1", query_id=OperationalQueryId.SHOW_IP_ROUTE_RIP,
+        executed=True, output="show ip route rip\nR  150.1.1.0/2\n --More-- ",
+        session_state=IosSessionState.EXEC_PROMPT_READY,
+        fresh_output_observed=True, truncated_by_pager=True,
+    )
+    observed, ios, _, slept = _converging_case([truncated], attempts=4)
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.evidence_method == "rip_route_readback_truncated"
+    assert len(ios.calls) == 1
+    assert slept == []
+
+
+def test_convergence_never_redispatches_configuration():
+    """Lo unico que se reintenta es la lectura."""
+    observed, ios, dispatched, _ = _converging_case(
+        [_EMPTY_ROUTE_TABLE], attempts=5,
+    )
+
+    assert observed.status is ActionExecutionStatus.FAILED
+    assert len(ios.calls) == 5
+    assert dispatched == []
+    assert all(item is OperationalQueryId.SHOW_IP_ROUTE_RIP for item in ios.calls)
+
+
+@pytest.mark.parametrize(
+    ("network", "prefix_length"),
+    [("150.1.1.0", 24), ("150.1.9.0", 27), ("150.1.1.64", 27)],
+    ids=["wrong-length", "wrong-network", "wrong-pair"],
+)
+def test_every_sample_still_requires_the_exact_prefix(network, prefix_length):
+    """Converger no relaja la comparacion: la ruta correcta nunca satisface otra."""
+    observed, ios, _, _ = _converging_case(
+        [_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1], attempts=3,
+        network=network, prefix_length=prefix_length,
+    )
+
+    assert observed.status is ActionExecutionStatus.FAILED
+    # Se agoto el presupuesto releyendo, no acepto una coincidencia parcial.
+    assert len(ios.calls) == 3
+
+
+def test_a_non_rip_row_never_satisfies_a_sample_during_convergence():
+    observed, _, _, _ = _converging_case([
+        "show ip route rip\nO       150.1.1.0/27 [110/65] via 150.1.1.86, 00:00:26, Serial0/0/0\nRouter>",
+    ], attempts=2)
+
+    assert observed.status is ActionExecutionStatus.FAILED
+
+
+def test_the_convergence_budget_is_validated():
+    for kwargs in (
+        {"route_convergence_attempts": 0},
+        {"route_convergence_attempts": True},
+        {"route_convergence_timeout_seconds": -1.0},
+        {"route_convergence_interval_seconds": -1.0},
+    ):
+        with pytest.raises(ValueError):
+            PacketTracerEnterpriseControlPlaneRuntime(
+                lambda: [], lambda _s: True, lambda _s, _t: None, **kwargs,
+            )
 
 
 # ===================== I. ruta de aplicación del producto ==================

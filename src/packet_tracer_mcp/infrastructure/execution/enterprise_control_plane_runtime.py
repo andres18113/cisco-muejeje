@@ -431,9 +431,26 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         convergence_interval_seconds: float = 0.25,
         stable_samples: int = 2,
         max_probe_attempts: int = 6,
+        # RIP anuncia cada 30 s. Medido en R2-B fase 4: tras esperar 35 s las
+        # rutas ya estaban, con edades 00:00:26 y 00:00:00. El presupuesto
+        # cubre un ciclo completo de actualizacion con margen, y se agota
+        # releyendo, nunca reaplicando.
+        route_convergence_timeout_seconds: float = 45.0,
+        route_convergence_interval_seconds: float = 5.0,
+        route_convergence_attempts: int = 10,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
+        if route_convergence_timeout_seconds < 0:
+            raise ValueError("route_convergence_timeout_seconds must be non-negative.")
+        if route_convergence_interval_seconds < 0:
+            raise ValueError("route_convergence_interval_seconds must be non-negative.")
+        if (
+            isinstance(route_convergence_attempts, bool)
+            or not isinstance(route_convergence_attempts, int)
+            or route_convergence_attempts < 1
+        ):
+            raise ValueError("route_convergence_attempts must be a positive integer.")
         self._query_inventory = query_inventory
         self._configuration = PacketTracerConfigurationRuntime(send)
         self._renderer = renderer or PacketTracerControlPlaneRenderer()
@@ -460,6 +477,11 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             clock=clock,
             sleeper=sleeper,
         )
+        self._route_timeout = route_convergence_timeout_seconds
+        self._route_interval = route_convergence_interval_seconds
+        self._route_attempts = route_convergence_attempts
+        self._clock = clock
+        self._sleep = sleeper
         self._device_names_by_id: dict[str, str] = {}
         self._applied_actions: dict[str, ControlPlaneAction] = {}
 
@@ -806,22 +828,6 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 expectation, ControlPlaneExecutionStage.OBSERVED,
                 "No registered live-fixture-backed query observes this route protocol.",
             )
-        show = self._fresh_show(
-            action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP,
-            expectation, query_cache,
-        )
-        if isinstance(show, RuntimeControlPlaneVerification):
-            return show
-        if show.truncated_by_pager:
-            # Una tabla cortada puede esconder justo la ruta buscada: leerla
-            # como ausencia seria un FAILED falso.
-            return self._unobservable(
-                expectation, ControlPlaneExecutionStage.OBSERVED,
-                "The RIP route read-back was truncated by the IOS pager.",
-                evidence_method="rip_route_readback_truncated",
-            )
-        rows = parse_show_ip_route_rip(show.output)
-        fields = self._unobservable_fields(expectation)
         network = expectation.expected.get("network")
         prefix_length = expectation.expected.get("prefix_length")
         if not isinstance(network, str) or type(prefix_length) is not int:
@@ -833,22 +839,68 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 "The route expectation does not carry a typed prefix and length.",
                 evidence_method="rip_route_expectation_untyped",
             )
-        match = next(
-            (
-                item for item in rows
-                if item.prefix == network and item.prefix_length == prefix_length
-            ),
-            None,
-        )
-        fields["protocol"] = self._field(match is not None)
-        fields["network"] = self._field(match is not None)
-        fields["prefix_length"] = self._field(match is not None)
-        return self._direct_observation(
+        # Ventana de convergencia ACOTADA. RIP anuncia cada 30 s, asi que una
+        # sola lectura confunde "todavia no llego" con "no va a llegar". Lo
+        # unico que se reintenta es la LECTURA: aqui no se reaplica nada.
+        key = (action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP)
+        deadline = self._clock() + self._route_timeout
+        attempts = 0
+        while True:
+            attempts += 1
+            show = self._fresh_show(
+                action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP,
+                expectation, query_cache,
+            )
+            if isinstance(show, RuntimeControlPlaneVerification):
+                # Evidencia rancia o consulta no ejecutada: esperar no lo
+                # arregla y agotar el presupuesto lo disfrazaria de fallo.
+                return show
+            if show.truncated_by_pager:
+                # Una tabla cortada puede esconder justo la ruta buscada: leerla
+                # como ausencia seria un FAILED falso.
+                return self._unobservable(
+                    expectation, ControlPlaneExecutionStage.OBSERVED,
+                    "The RIP route read-back was truncated by the IOS pager.",
+                    evidence_method="rip_route_readback_truncated",
+                )
+            match = next(
+                (
+                    item for item in parse_show_ip_route_rip(show.output)
+                    if item.prefix == network
+                    and item.prefix_length == prefix_length
+                ),
+                None,
+            )
+            if match is not None or attempts >= self._route_attempts:
+                break
+            if self._clock() + self._route_interval >= deadline:
+                break
+            self._sleep(self._route_interval)
+            # La cache existe para no repetir la consulta entre expectativas
+            # del mismo device; para converger hace falta una lectura nueva.
+            query_cache.pop(key, None)
+
+        fields = self._unobservable_fields(expectation)
+        for field in ("protocol", "network", "prefix_length"):
+            fields[field] = self._field(match is not None)
+        observation = self._direct_observation(
             expectation, fields, "fresh_show_ip_route_rip",
-            "Fresh RIP route rows were matched by exact prefix and length."
+            f"Fresh RIP route rows matched the expected prefix after "
+            f"{attempts} read(s)."
             if match is not None else
-            "Fresh RIP route output does not carry the expected prefix.",
+            f"The expected RIP route did not appear within {attempts} bounded "
+            f"read(s); no configuration was redispatched.",
         )
+        return observation.model_copy(update={
+            "convergence": ConvergenceReport(
+                attempts=attempts,
+                final_status=observation.status,
+                last_observable_state=(
+                    f"{network}/{prefix_length}"
+                    if match is not None else "route_absent"
+                ),
+            ),
+        })
 
     def _observe_rip_process(self, expectation, action, query_cache):
         if expectation.expected.get("protocol") != "ripv2":
