@@ -1365,7 +1365,7 @@ class ControlPlaneApplicator:
             for item in scenarios
         )
         if uncertain_restore:
-            journal.mark_cleanup(CompensationStatus.UNKNOWN)
+            journal.record_scenario_restore(CompensationStatus.UNKNOWN)
             return
         injected = [
             item for item in scenarios
@@ -1379,7 +1379,7 @@ class ControlPlaneApplicator:
             for item in injected
         )
         if not restored:
-            journal.mark_cleanup(CompensationStatus.FAILED)
+            journal.record_scenario_restore(CompensationStatus.FAILED)
             return
         restore_observed = all(
             item.recovery_status is ActionExecutionStatus.VERIFIED
@@ -1387,14 +1387,9 @@ class ControlPlaneApplicator:
             for item in injected
         )
         if not restore_observed:
-            journal.mark_cleanup(CompensationStatus.UNKNOWN)
+            journal.record_scenario_restore(CompensationStatus.UNKNOWN)
             return
-        # El bypass que antes vivia aqui existia porque `mark_cleanup` limpiaba
-        # sin evidencia: un restore de escenario no puede borrar la suciedad de
-        # una aplicacion anterior. Esa proteccion ahora es del propio
-        # `mark_cleanup`, que sólo limpia lo que la compensación puede probar,
-        # así que la ruta vuelve a ser una sola.
-        journal.mark_cleanup(CompensationStatus.SUCCEEDED)
+        journal.record_scenario_restore(CompensationStatus.SUCCEEDED)
 
     @staticmethod
     def _capability_status(profiles, model, dimension):

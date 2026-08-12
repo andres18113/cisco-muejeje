@@ -824,22 +824,25 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         fields = self._unobservable_fields(expectation)
         network = expectation.expected.get("network")
         prefix_length = expectation.expected.get("prefix_length")
+        if not isinstance(network, str) or type(prefix_length) is not int:
+            # Sin prefijo y máscara tipados no hay nada que comparar. Antes se
+            # caía a emparejar sólo por dirección de red, y entonces una /27
+            # satisfacía una expectativa de /24.
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "The route expectation does not carry a typed prefix and length.",
+                evidence_method="rip_route_expectation_untyped",
+            )
         match = next(
             (
                 item for item in rows
-                if item.prefix == network
-                and (
-                    type(prefix_length) is not int
-                    or item.prefix_length == prefix_length
-                )
+                if item.prefix == network and item.prefix_length == prefix_length
             ),
             None,
         )
         fields["protocol"] = self._field(match is not None)
-        if isinstance(network, str):
-            fields["network"] = self._field(match is not None)
-        if type(prefix_length) is int:
-            fields["prefix_length"] = self._field(match is not None)
+        fields["network"] = self._field(match is not None)
+        fields["prefix_length"] = self._field(match is not None)
         return self._direct_observation(
             expectation, fields, "fresh_show_ip_route_rip",
             "Fresh RIP route rows were matched by exact prefix and length."

@@ -116,6 +116,16 @@ are explicit.
 
 ---
 
+# Documentation limitation
+
+There is no formal specification of **University Topology Acceptance** anywhere
+in `docs/`. Debt maturity at Debt Checkpoint 1 was therefore classified from
+each entry's own governed `RESOLVE_BEFORE` field, which is the authority this
+ledger defines, and not from an assumed acceptance scope. Writing that
+specification is future work; nothing in this checkpoint invented one.
+
+---
+
 # Open Debt
 
 ## TD-RUNTIME-005 — RIP route learning is observable but not a compiled expectation
@@ -520,13 +530,39 @@ Consequences:
 
 Evidence:
 
-- 27 focused regressions covering no-mutation, recoverable, unrecoverable and
-  unknown application states across successful, failed, unknown and
-  not-attempted compensation; historical state surviving a successful cleanup;
-  a post-cleanup append recomputing from entries; and an adversarial sweep
-  proving no `CompensationStatus` value can turn an `UNKNOWN` mutation into
-  `CLEAN`;
+- focused regressions covering the **full cross product** of four application
+  states against all six compensation statuses, plus historical state surviving
+  a successful cleanup, a post-cleanup append recomputing from entries, and an
+  adversarial sweep proving no `CompensationStatus` value can turn an `UNKNOWN`
+  mutation into `CLEAN`;
 - full suite green.
+
+### Correction found by independent review
+
+The first implementation deleted the `apply_control_plane.py` bypass and routed
+the scenario restore through `mark_cleanup`, on the argument that the two
+applicators had "opposite semantics for the same situation". **That argument was
+wrong, and it introduced a new false CLEAN**: with the bypass gone, a
+`DIRTY_RECOVERABLE` application followed by a successful scenario restore
+reported `CLEAN`. Reproduced directly before fixing.
+
+The two situations are not the same. `apply_security.py` computes its cleanup
+outcome from cleanup actions actually executed against the applied actions, so
+`SUCCEEDED` clearing `DIRTY_RECOVERABLE` is earned there. The control-plane
+path records the restoration of a link fault this same runtime injected; it
+runs no inverse against the mutations of a failed application, so it can prove
+nothing about them.
+
+`ApplicationExecutionJournal.record_scenario_restore` now expresses that
+difference explicitly. It records `cleanup_status` and may only worsen the
+state — `FAILED` to `DIRTY_UNRECOVERABLE`, `UNKNOWN` to `UNKNOWN` — never
+improve it. `mark_cleanup` keeps its meaning for real compensation. The
+deleted comment had been right; what was missing was a name for the operation
+rather than an inline field write.
+
+A regression now pins this for all four application states, and the route
+observer additionally fails closed when an expectation lacks a typed prefix and
+length, which previously fell back to matching on network address alone.
 
 ---
 

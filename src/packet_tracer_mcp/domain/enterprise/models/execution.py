@@ -152,6 +152,23 @@ class ApplicationExecutionJournal(BaseModel):
         elif status is CompensationStatus.UNKNOWN:
             self.dirty_state = DirtyState.UNKNOWN
 
+    def record_scenario_restore(self, status: CompensationStatus) -> None:
+        """Restauración de un escenario inyectado, que NO compensa la aplicación.
+
+        `mark_cleanup` es para una compensación que ejecutó inversos contra lo
+        que se aplicó. Devolver un enlace que este mismo runtime tumbó no es
+        eso: no dice nada sobre las mutaciones que dejó una aplicación fallida,
+        así que sólo puede empeorar el estado, nunca mejorarlo.
+
+        Separar las dos operaciones es lo que impide que un restore exitoso
+        borre una suciedad que nadie deshizo.
+        """
+        self.cleanup_status = status
+        if status is CompensationStatus.FAILED:
+            self.dirty_state = DirtyState.DIRTY_UNRECOVERABLE
+        elif status is CompensationStatus.UNKNOWN:
+            self.dirty_state = DirtyState.UNKNOWN
+
     def compact_summary(self) -> dict[str, object]:
         counts: dict[str, int] = {}
         for entry in self.entries:

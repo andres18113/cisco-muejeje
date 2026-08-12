@@ -212,16 +212,22 @@ neighbour state machine, and none is required or claimed.
 
 ## Claim ceiling
 
-Route-learning *behaviour* is verified. The typed *expectation* plumbing is
-not: no compiled `ROUTE_PRESENT` expectation binds the read-back, so route
-learning does not appear inside `ControlPlaneApplicationResult` and an
-automated caller cannot yet assert it through the typed plan. That gap is
-`TD-RUNTIME-005`, which remains OPEN.
+Route-learning *behaviour* was verified here, in phase 4. At the time this was
+written the typed *expectation* plumbing did not exist, so route learning did
+not appear inside `ControlPlaneApplicationResult`.
+
+**Closed at Debt Checkpoint 1 (2026-08-12).** `TD-RUNTIME-005` is RESOLVED:
+compiled `ROUTE_PRESENT` expectations for typed RIPv2 now bind this read-back,
+with expected prefixes derived from the E5 L3 identities rather than the
+classful `network` statement.
 
 ```text
 RIPV2_ROUTE_LEARNING_BEHAVIOR       = VERIFIED
-RIPV2_ROUTE_EXPECTATION_INTEGRATION = NOT_READY
+RIPV2_ROUTE_EXPECTATION_INTEGRATION = READY   (was NOT_READY in phase 4)
 ```
+
+The evidence above is also what qualifies `ROUTING_ROUTE_STATE` as SUPPORTED
+for the 2911 in the control-plane capability catalog.
 
 ## Cleanup
 

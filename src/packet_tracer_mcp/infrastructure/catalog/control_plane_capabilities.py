@@ -22,7 +22,9 @@ from ...domain.enterprise.models.security_plan import SecurityCapabilityStatus a
 
 
 _RIPV2_LIVE_QUALIFICATION = (
-    "R2-0 controlled Packet Tracer live qualification on a disposable 2911; "
+    "R2-0 and R2-B controlled Packet Tracer live qualifications on disposable "
+    "2911 routers; configuration and routing-process state from R2-0, learned "
+    "route state from R2-B phase 4; "
     "see docs/architecture/ripv2-runtime-qualification.md"
 )
 
@@ -51,8 +53,17 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
         {
             Dimension.RIPV2_CONFIG: Status.SUPPORTED,
             Dimension.ROUTING_PROCESS_STATE: Status.SUPPORTED,
-            # R2-B fase 4 leyo en vivo  en este modelo y
-            # build, y el parser de produccion extrajo la ruta aprendida.
+            # R2-B fase 4 leyo en vivo `show ip route rip` en este modelo y
+            # build, y el parser de produccion extrajo la ruta aprendida
+            # (`R 150.1.1.0/27 ... Serial0/0/0`).
+            #
+            # Igual que ROUTING_PROCESS_STATE, la dimension describe el CANAL
+            # de observacion del dispositivo, no un protocolo. Marcarla
+            # SUPPORTED tambien habilita las expectativas de ruta de OSPF sobre
+            # este modelo, que hasta ahora se saltaban por capacidad. Eso es
+            # deliberado y no fabrica evidencia: `_observe_ospf_route` sigue
+            # exigiendo su propia consulta y su propio parseo fresco, y
+            # devuelve UNOBSERVABLE cuando no hay filas que leer.
             Dimension.ROUTING_ROUTE_STATE: Status.SUPPORTED,
         },
     ),

@@ -200,3 +200,71 @@ def test_an_unknown_mutation_never_becomes_clean(status, dispositions):
     journal.mark_cleanup(status)
 
     assert journal.dirty_state is not DirtyState.CLEAN
+
+
+# Producto cruzado COMPLETO: 4 estados aplicados x 6 estados de compensación.
+_APPLIED_CASES = {
+    DirtyState.CLEAN: ((MutationDisposition.CHANGED,), True),
+    DirtyState.DIRTY_RECOVERABLE: (
+        (MutationDisposition.CHANGED, MutationDisposition.FAILED), True,
+    ),
+    DirtyState.DIRTY_UNRECOVERABLE: (
+        (MutationDisposition.CHANGED, MutationDisposition.FAILED), False,
+    ),
+    DirtyState.UNKNOWN: ((MutationDisposition.UNKNOWN,), True),
+}
+
+
+@pytest.mark.parametrize("status", list(CompensationStatus))
+@pytest.mark.parametrize("applied", list(_APPLIED_CASES))
+def test_the_full_cross_product_never_invents_a_clean(applied, status):
+    """Sólo un estado aplicado ya limpio, o recuperable con inversos, puede
+    terminar CLEAN. Cualquier otra cosa sería afirmar de más."""
+    dispositions, inverse = _APPLIED_CASES[applied]
+    journal = _journal(*dispositions, inverse=inverse)
+    assert journal.dirty_state is applied
+
+    journal.mark_cleanup(status)
+
+    if journal.dirty_state is DirtyState.CLEAN:
+        assert applied is DirtyState.CLEAN or (
+            applied is DirtyState.DIRTY_RECOVERABLE
+            and status is CompensationStatus.SUCCEEDED
+        )
+    assert journal.applied_dirty_state is applied
+
+
+# ===================== restore de escenario != compensación ================
+
+
+@pytest.mark.parametrize("applied", list(_APPLIED_CASES))
+def test_a_scenario_restore_never_improves_the_dirty_state(applied):
+    """La regresión que introduje al borrar el bypass del control plane.
+
+    Devolver un enlace que el propio runtime tumbó no ejecuta ningún inverso
+    contra las mutaciones de la aplicación, así que no puede limpiarlas. Con
+    `mark_cleanup` esto declaraba CLEAN sobre DIRTY_RECOVERABLE.
+    """
+    dispositions, inverse = _APPLIED_CASES[applied]
+    journal = _journal(*dispositions, inverse=inverse)
+
+    journal.record_scenario_restore(CompensationStatus.SUCCEEDED)
+
+    assert journal.cleanup_status is CompensationStatus.SUCCEEDED
+    assert journal.dirty_state is applied
+
+
+def test_a_scenario_restore_still_reports_its_own_failure():
+    journal = _journal(MutationDisposition.CHANGED)
+
+    journal.record_scenario_restore(CompensationStatus.FAILED)
+
+    assert journal.dirty_state is DirtyState.DIRTY_UNRECOVERABLE
+
+
+def test_a_scenario_restore_of_unknown_outcome_is_unknown():
+    journal = _journal(MutationDisposition.CHANGED)
+
+    journal.record_scenario_restore(CompensationStatus.UNKNOWN)
+
+    assert journal.dirty_state is DirtyState.UNKNOWN
