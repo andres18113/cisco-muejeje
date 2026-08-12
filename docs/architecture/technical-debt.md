@@ -118,6 +118,86 @@ are explicit.
 
 # Open Debt
 
+## TD-CAPABILITY-001 — No product provider populates control-plane capability profiles
+
+Status:
+OPEN
+
+Severity:
+P0
+
+Discovered:
+Runtime R2-B (capability gate, hard precondition)
+
+Description:
+
+`ControlPlaneApplicator` gates every typed control-plane action on
+`ControlPlaneCapabilityProfile`. Nothing in `src/` ever constructs one.
+
+Measured on `feature/runtime-ripv2` @ `dc7046c`:
+
+- `ControlPlaneCapabilityProfile(` appears in `src/` only as the class
+  definition; all 13 constructions live in `tests/`;
+- the only constructor is the classmethod `.supported()`, whose own
+  `evidence_source` field is the literal string `"test fixture"`;
+- no `ControlPlaneCapabilityDimension` value (`ripv2_config`,
+  `ospfv2_config`, `eigrp_ipv4_config`, `stp_pvst_config`, `hsrp_config`)
+  appears anywhere in `src/` outside the enum that declares it, so the
+  capability snapshot store holds no control-plane evidence at all;
+- there is no bridge from `DeviceCapabilities`, the model the real providers
+  populate, to `ControlPlaneCapabilityProfile`.
+
+Consequently `capabilities=None`, the production default of
+`ControlPlaneApplicator.apply`, resolves every dimension to UNKNOWN.
+
+Executed against the real applicator with a valid runtime inventory and a
+runtime that would have accepted every mutation:
+
+```text
+2911:ripv2_config is unknown.
+status = skipped   failure_code = capability_unknown   disposition = skipped
+dispatched to runtime: nothing
+```
+
+Substituting a test profile built with `.supported()` dispatches both actions,
+which isolates the capability gate as the cause.
+
+This is not specific to RIPv2 and was not introduced by R2-A: OSPFv2, EIGRP,
+STP and HSRP resolve UNKNOWN on the same model. The typed control-plane
+application path has only ever been exercised with test-supplied profiles.
+
+The gate itself behaves correctly. UNKNOWN stays UNKNOWN, nothing is
+dispatched, and no claim is inflated. The debt is the missing evidence path,
+not the gate.
+
+Related:
+`TD-HARDWARE-001` is the same family — capability evidence not reaching its
+consumer — but concerns hardware selection rather than control-plane
+dimensions.
+
+Blocks now:
+Yes. `RIPV2_PRODUCT_CAPABILITY_RESOLUTION = BLOCKED` stopped Runtime R2-B at
+its declared hard precondition. Every live R2-B gate is unreachable without
+injecting a fake SUPPORTED capability, which R2-B explicitly forbids.
+
+Also blocks:
+any live acceptance that applies typed control-plane actions, including the
+university-topology scenario.
+
+RESOLVE_BEFORE:
+the next runtime ticket, before Runtime R2-B can be retried, and necessarily
+before university-topology acceptance.
+
+Closure criterion:
+
+A production provider resolves `ControlPlaneCapabilityProfile` for a given
+model from real catalog/runtime/probe evidence, with recorded provenance and
+Packet Tracer version, and the control-plane application path consumes it
+without a caller-supplied fixture. UNKNOWN must remain UNKNOWN when evidence is
+absent: the closure is a real evidence path, never a default of SUPPORTED.
+
+---
+
 ## TD-RUNTIME-001 — Post-cleanup result DirtyState may be stale
 
 Status:
@@ -493,6 +573,23 @@ Observe both shapes on a disposable Packet Tracer device and confirm that the
 parser reads the RIP block correctly beside another protocol, and that a
 paginated read-back is reported UNOBSERVABLE rather than FAILED. Then either
 promote the fixture to live-captured evidence or correct the parser.
+
+### Deadline status — 2026-08-11
+
+The declared RESOLVE_BEFORE milestone arrived and was **not** met. Recorded
+here rather than moved.
+
+Runtime R2-B stopped at its hard precondition: the product capability gate
+resolves `2911:ripv2_config` to UNKNOWN and skips every typed RIPv2 action
+(`TD-CAPABILITY-001`). R2-B therefore never reached a live stage, and its own
+rules forbid both bypassing the gate with raw IOS and injecting a fake
+capability.
+
+The two shapes were not qualified live. Neither NOT_REPRODUCED nor a live
+result is claimed for them: no probe was run.
+
+The debt stays OPEN with its milestone unchanged in substance: the qualification
+must happen when R2-B is retried, which now depends on `TD-CAPABILITY-001`.
 
 ---
 
