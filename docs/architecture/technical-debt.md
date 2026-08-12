@@ -716,7 +716,7 @@ This debt MUST be resolved when R2-B resumes.
 ## TD-RUNTIME-004 — The typed renderer rejects the project's probe naming convention
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P2
@@ -729,6 +729,11 @@ Description:
 Every controlled probe in this project is named `__MCP_PROBE_*`, and the
 standing safety rule is that only resources with that prefix may be created and
 deleted.
+
+> **Correction, added at resolution.** The second clause was never true of the
+> code: no production path has ever selected devices by prefix, and deletion is
+> by exact caller-supplied name. The original wording is preserved above because
+> it is what this debt was opened against.
 
 The trusted control-plane renderer validates device names with
 `_SAFE_DEVICE = ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`, which requires an
@@ -768,6 +773,82 @@ prefix the renderer accepts and the standing safety rule is restated, or
 `_SAFE_DEVICE` is widened with an explicit justification that it still rejects
 the injection-shaped names it was written to reject. Whichever is chosen, a
 regression must pin it.
+
+### Resolution
+
+Resolved: 2026-08-11, stage "TD-RUNTIME-004 scoped probe naming contract".
+
+Commit subject:
+`fix: define renderer-safe typed probe naming`
+on `feature/runtime-ripv2`.
+
+**The resolution is a scoped naming-contract clarification, not a renderer
+relaxation.** `_SAFE_DEVICE` is byte-for-byte unchanged, and a regression pins
+both that fact and the continued rejection of `__MCP_PROBE_CAP_R1` through the
+typed path.
+
+What the audit established:
+
+- no production code anywhere selects devices by either prefix; deletion is by
+  exact caller-supplied name and is idempotent on absence, so cleanup
+  correctness needs a unique remembered name, never a prefix;
+- isolation is proven by whole-workspace inventory fingerprint diff, in which
+  names are opaque values. There is no probe-versus-user discrimination step:
+  the session deletes exactly the names it created and requires the workspace
+  fingerprint to converge back. The one model-based rule, `_BACKEND_MANAGED_MODELS`,
+  excludes a backend-created Power Distribution Device from the fingerprint so
+  restoration stays decidable; it is not a probe classifier;
+- the two prefixes therefore serve human and QA recognition, not enforcement;
+- the conflict was never two rules governing the same objects. Capability
+  discovery probes are created through `lwAddDevice` and observed with
+  registered queries, and never reach the typed renderer. A probe that must be
+  rendered by a trusted renderer is a newer population that neither rule
+  anticipated.
+
+The contract now declared:
+
+| Prefix | Created by | Traverses trusted renderers |
+| --- | --- | --- |
+| `__MCP_PROBE_*` | capability discovery | No |
+| `MCP-PROBE-*` | disposable probes on a typed path | Yes |
+
+Recorded in `e95-stabilization.md`, which previously claimed a single universal
+namespace, and in `docs/qa/capability-probes.md`, whose residue check now
+covers both.
+
+Not changed, deliberately: the `capability_discovery.py` generator, its
+`__MCP_PROBE_*` output, `_SAFE_DEVICE`, the `__MCP_E4_TEST_*` test namespace,
+and every historical run record.
+
+Evidence:
+
+- capability discovery still emits `__MCP_PROBE_*`, proven by running the real
+  use case and reading the names the runtime was asked to create;
+- `MCP-PROBE-*` is accepted by both the typed control-plane renderer and the
+  fault renderer. This is renderer-level only: the regressions call
+  `render_action` and `render_scenario` and inspect the returned payloads.
+  Nothing is dispatched and Packet Tracer is not involved;
+- ten hostile shapes still reject — newline, leading and trailing space,
+  carriage return, semicolon, quote, leading hyphen, leading dot, empty, and
+  over-length;
+- deletion is exact-name for four unrelated name shapes, with no prefix scan in
+  the emitted script;
+- five mutations were run against these regressions during this stage —
+  widening `_SAFE_DEVICE`, renaming the discovery generator, switching deletion
+  to a prefix scan, and reverting each of the two documents — and all five
+  failed the suite. The prefix-scan mutation is caught by the emitted-script
+  assertions, which reject `startsWith` and `indexOf` in the deletion script.
+
+Known limits of this closure, recorded rather than glossed:
+
+- `MCP-PROBE-*` has no producer in `src/`. Nothing in production emits or
+  requires it, because a typed-path probe is created by an operator harness,
+  not by the product. The contract is a declared convention with a regression
+  that pins renderer compatibility, not an enforced invariant;
+- two scoped statements naming only `__MCP_PROBE_*` remain outside the two
+  edited documents, and both are still literally true of capability discovery:
+  the `pt_probe_capabilities` docstring in `tool_registry.py` and
+  `packet-tracer-capability-discovery.md`. Neither is covered by a regression.
 
 ---
 
@@ -833,6 +914,13 @@ Move an item here only when its closure criterion has been satisfied.
 
 Do not delete historical debt entries.
 
+- **TD-RUNTIME-004** — resolved 2026-08-11. Two disposable namespaces are now
+  declared explicitly: `__MCP_PROBE_*` for capability discovery, which never
+  reaches a trusted renderer, and `MCP-PROBE-*` for probes that do. The
+  resolution is a naming-contract clarification, not a renderer relaxation:
+  `_SAFE_DEVICE` is unchanged and still refuses the discovery prefix through
+  the typed path. Cleanup remains exact-name and prefix-independent. The entry
+  above is kept in full.
 - **TD-CAPABILITY-001** — resolved 2026-08-11. A control-plane capability
   catalog now derives `ControlPlaneCapabilityProfile` from live evidence
   attributed to a model, and `ControlPlaneApplicator` resolves it by default

@@ -227,9 +227,26 @@ it must never be described as verified restoration. Runtime evidence that
 requires proven cleanup should require `True`, not merely the snapshot's broad
 `reusable` property.
 
-All temporary objects remain identified by the controlled `__MCP_PROBE_*`
-namespace and cleanup reports only those objects. Probe definitions, not tool
-arguments, select the mutation logic.
+Disposable objects live in two declared namespaces, and cleanup reports only
+objects this project created.
+
+`__MCP_PROBE_*` is the capability-discovery namespace. Those probes are created
+through `lwAddDevice` and observed with registered queries; they never traverse
+the typed control-plane renderer.
+
+`MCP-PROBE-*` is the namespace for a disposable probe that a trusted renderer
+may have to render a typed action for. The control-plane renderer validates
+compiled device names against an allowlist whose first character must be
+alphanumeric, so a leading underscore cannot reach it. The second prefix exists
+to satisfy that validator, not to weaken it: the validator is unchanged.
+
+Neither prefix is load-bearing. A temporary device is deleted by its exact
+caller-supplied name, so cleanup correctness depends on that name being unique
+and remembered, never on matching a prefix. The prefixes exist so that a human
+reading the workspace, and a QA residue check, can tell at a glance what is
+disposable.
+
+Probe definitions, not tool arguments, select the mutation logic.
 
 ## IPAM reconciliation
 

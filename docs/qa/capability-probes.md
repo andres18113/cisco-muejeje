@@ -5,9 +5,30 @@ Las pruebas live son manuales y no forman parte de `pytest` normal. Antes de com
 ## Secuencia mínima
 
 1. Ejecutar `pt_probe_capabilities(models=["PC-PT", "2911", "2960-24TT", "3560-24PS"], probe_level="physical")`.
-2. Confirmar que el resumen indica cleanup limpio y que no quedan devices `__MCP_PROBE_*`.
+2. Confirmar que el resumen indica cleanup limpio y que no queda residuo en **ninguno de los dos namespaces desechables**: `__MCP_PROBE_*` ni `MCP-PROBE-*`. Ver "Namespaces desechables" más abajo.
 3. Consultar `pt_capability_report(report="summary")` y registrar la versión de Packet Tracer explícitamente si el runtime no la expone.
 4. Revisar puertos descubiertos y comparar contra la GUI; no promover modelos ni aliases automáticamente.
+
+## Namespaces desechables
+
+Existen dos, y el chequeo de residuo debe cubrir los dos:
+
+| Prefijo | Quién lo crea | Atraviesa renderers confiables |
+| --- | --- | --- |
+| `__MCP_PROBE_*` | capability discovery (`pt_probe_capabilities`) | No |
+| `MCP-PROBE-*` | probes desechables de un camino tipado | Sí |
+
+El segundo prefijo existe porque el renderer de control plane sólo acepta
+nombres cuyo primer carácter es alfanumérico, así que un guion bajo inicial no
+puede llegar hasta él. El validador no se relajó.
+
+Ninguno de los dos prefijos sostiene la limpieza: un dispositivo temporal se
+borra por su nombre exacto, no por coincidencia de prefijo. Los prefijos son
+para que una persona —y este chequeo de QA— reconozcan lo desechable de un
+vistazo.
+
+Si aparece residuo, eliminar manualmente sólo los nombres listados por la
+sesión; nunca borrar dispositivos del usuario.
 
 ## PoE manual
 
