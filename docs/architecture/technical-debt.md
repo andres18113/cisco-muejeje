@@ -260,6 +260,62 @@ mapping still yields UNKNOWN, `CAPABILITY_UNKNOWN` and zero mutations, and
 explicit UNSUPPORTED evidence yields `CAPABILITY_UNSUPPORTED` and zero
 mutations.
 
+### Scope closure — 2026-08-11
+
+Two questions were left open by the resolution above and are now settled.
+
+**Environment scope is enforced, not merely recorded.**
+
+The first implementation stored `packet_tracer_version` on the profile as
+metadata and never consulted it, so evidence qualified on any build. The gate
+now applies the rule that
+`capability_resolver._evidence_matches_version` already fixes for runtime and
+probe evidence: reuse requires an **exact** version match.
+
+`ControlPlaneApplicator.apply` filters resolved profiles through
+`_profiles_in_environment_scope` against
+`ConfigurationRuntimeContext.evidence_backend_version`, which is the existing
+declared-environment mechanism and prefers the `EnvironmentFingerprint` when
+one is present. No second version system was introduced.
+
+- a profile that declares no version claims no scope and is preserved, which
+  keeps caller-supplied profiles working unchanged;
+- a profile that declares a version is dropped when the declared environment
+  differs **or is absent**, and a dropped profile means the model has no
+  profile, which the gate resolves as UNKNOWN.
+
+Consequence for callers: the product path must now declare the environment it
+is running against. The live qualification recorded above ran before this rule
+existed and did not declare one; the environment was in fact `9.0.1.0858`, but
+that run would today require the caller to say so. Counterfactuals for a newer
+build, an older build, an undeclared environment and a malformed version are
+regression-covered, and mutation checks confirm the rule is load-bearing.
+
+**`ROUTING_PROCESS_STATE` is a device observation-channel gate.**
+
+The contract was determined from structure and from runtime behaviour rather
+than from what RIP verification needs:
+
+- the enum splits *configuration* per protocol and mode — three STP config
+  dimensions, three EtherChannel config dimensions, three routing config
+  dimensions — but declares exactly **one** state dimension per family;
+- both compiler branches, RIP and OSPF/EIGRP, request the same
+  `ROUTING_PROCESS_STATE`, so it is protocol-independent by construction;
+- narrowing by protocol or mode happens at observation time in the runtime and
+  predates RIP: `mst_readback_unavailable`,
+  `etherchannel_protocol_readback_unavailable`, `hsrp_role_readback_unavailable`
+  and `eigrp_readback_unavailable` all narrow within a coarse state dimension.
+
+So the dimension means "this device exposes routing-process state that a
+registered query can observe", not "every routing protocol is observable". The
+R2-0 live `show ip protocols` read on the qualified 2911 evidences exactly
+that, and it cannot manufacture an OSPF or EIGRP claim: with the gate
+SUPPORTED, an EIGRP routing-process expectation still returns UNOBSERVABLE with
+`eigrp_readback_unavailable`, which is regression-covered.
+
+`ROUTING_PROCESS_STATE` therefore stays SUPPORTED for the 2911 on evidence, not
+on convenience.
+
 ---
 
 ## TD-RUNTIME-001 — Post-cleanup result DirtyState may be stale

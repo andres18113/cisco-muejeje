@@ -13,6 +13,7 @@ import pytest
 
 from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
     ControlPlaneApplicator,
+    _profiles_in_environment_scope,
 )
 from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
@@ -25,6 +26,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
+    ConfigurationRuntimeContext,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
@@ -240,9 +242,16 @@ def test_no_dimension_is_left_to_an_implicit_default():
 
 
 def test_the_product_path_needs_no_manually_supplied_profile():
+    """Sin fixture inyectado, pero CON el entorno declarado.
+
+    Declarar el entorno no es inyectar evidencia: es decir contra que build se
+    esta ejecutando, que es la condicion para que la evidencia viva aplique.
+    """
     runtime = _RecordingRuntime()
 
-    result = _apply(_compiled_rip_plan(), runtime)
+    result = _apply(
+        _compiled_rip_plan(), runtime, runtime_context=_context("9.0.1.0858"),
+    )
 
     assert len(runtime.dispatched) == 2
     assert all(
@@ -280,7 +289,7 @@ def test_supported_ripv2_becomes_eligible_through_the_real_applicator():
     plan = _compiled_rip_plan()
     runtime = _RecordingRuntime()
 
-    result = _apply(plan, runtime)
+    result = _apply(plan, runtime, runtime_context=_context("9.0.1.0858"))
 
     assert runtime.dispatched == [item.id for item in plan.actions]
     assert {item.status for item in result.action_results} == {
@@ -320,6 +329,220 @@ def test_production_never_builds_an_all_supported_profile():
     ]
 
     assert offenders == []
+
+
+# ===================== alcance de entorno (version) =======================
+#
+# Guardar `packet_tracer_version` como metadato no es alcance. La regla que se
+# aplica es la que `capability_resolver._evidence_matches_version` ya fija:
+# evidencia de runtime/probe sólo se reutiliza con version EXACTA.
+
+
+def _context(version: str) -> ConfigurationRuntimeContext:
+    return ConfigurationRuntimeContext(
+        backend="packet_tracer", backend_version=version,
+    )
+
+
+def test_matching_declared_environment_lets_live_evidence_qualify():
+    runtime = _RecordingRuntime()
+
+    result = _apply(
+        _compiled_rip_plan(), runtime,
+        runtime_context=_context("9.0.1.0858"),
+    )
+
+    assert len(runtime.dispatched) == 2
+    assert all(
+        item.status is ActionExecutionStatus.APPLIED
+        for item in result.action_results
+    )
+
+
+@pytest.mark.parametrize(
+    "declared", ["9.0.2.0000", "8.2.1.0118", "", "not-a-version"],
+    ids=["newer-build", "older-build", "undeclared", "garbage"],
+)
+def test_an_unmatched_environment_never_inherits_supported(declared):
+    runtime = _RecordingRuntime()
+
+    result = _apply(
+        _compiled_rip_plan(), runtime, runtime_context=_context(declared),
+    )
+
+    assert runtime.dispatched == []
+    assert all(
+        item.failure_code is ConfigurationFailureCode.CAPABILITY_UNKNOWN
+        for item in result.action_results
+    )
+    assert all(
+        item.status is ActionExecutionStatus.SKIPPED
+        for item in result.action_results
+    )
+
+
+def test_the_scope_rule_is_the_existing_exact_version_contract():
+    from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+        CapabilityEvidence,
+    )
+    from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
+        _evidence_matches_version,
+    )
+
+    from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+        CapabilityStatus,
+        EvidenceSource,
+    )
+
+    qualified = packet_tracer_control_plane_capabilities()["2911"]
+    evidence = CapabilityEvidence(
+        capability="ripv2_config",
+        status=CapabilityStatus.SUPPORTED,
+        source=EvidenceSource.CONTROLLED_PROBE,
+        packet_tracer_version=qualified.packet_tracer_version,
+    )
+
+    for declared in ("9.0.1.0858", "9.0.2.0000", ""):
+        expected = _evidence_matches_version(evidence, declared or None)
+        in_scope = "2911" in _profiles_in_environment_scope(
+            {"2911": qualified}, declared,
+        )
+        assert in_scope is expected, declared
+
+
+def test_a_profile_that_declares_no_version_claims_no_scope():
+    unscoped = ControlPlaneCapabilityProfile(
+        model="2911",
+        evidence_source="explicit caller declaration",
+        dimensions={Dimension.RIPV2_CONFIG: Status.SUPPORTED},
+    )
+
+    assert unscoped.packet_tracer_version is None
+    for declared in ("9.0.1.0858", "anything", ""):
+        assert "2911" in _profiles_in_environment_scope(
+            {"2911": unscoped}, declared,
+        )
+
+
+def test_the_environment_scope_uses_the_fingerprint_when_present():
+    from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+        EnvironmentFingerprint,
+    )
+
+    context = ConfigurationRuntimeContext(
+        backend="ignored", backend_version="ignored",
+        environment_fingerprint=EnvironmentFingerprint(
+            backend="packet_tracer", backend_version="9.0.1.0858",
+        ),
+    )
+
+    assert context.evidence_backend_version == "9.0.1.0858"
+    assert "2911" in _profiles_in_environment_scope(
+        packet_tracer_control_plane_capabilities(),
+        context.evidence_backend_version,
+    )
+
+
+# ===================== semantica de ROUTING_PROCESS_STATE ==================
+#
+# El enum separa la CONFIGURACION por protocolo/modo y deja UNA sola dimension
+# de observacion por familia. Esa asimetria es el contrato: `*_STATE` describe
+# el canal de observacion del dispositivo, y el estrechamiento por protocolo lo
+# hace el runtime en el momento de observar.
+
+
+def test_configuration_dimensions_are_split_per_protocol_but_state_is_not():
+    config_families = {
+        "stp": [Dimension.STP_PVST_CONFIG, Dimension.STP_RAPID_PVST_CONFIG,
+                Dimension.STP_MST_CONFIG],
+        "etherchannel": [Dimension.ETHERCHANNEL_LACP_CONFIG,
+                         Dimension.ETHERCHANNEL_PAGP_CONFIG,
+                         Dimension.ETHERCHANNEL_STATIC_CONFIG],
+        "routing": [Dimension.OSPFV2_CONFIG, Dimension.EIGRP_IPV4_CONFIG,
+                    Dimension.RIPV2_CONFIG],
+    }
+    for members in config_families.values():
+        assert len(members) == 3
+
+    # Una sola dimension de estado para las tres variantes de cada familia.
+    state_dimensions = [
+        item for item in Dimension
+        if item.value.endswith("_state")
+    ]
+    assert Dimension.STP_STATE in state_dimensions
+    assert Dimension.ETHERCHANNEL_STATE in state_dimensions
+    assert Dimension.ROUTING_PROCESS_STATE in state_dimensions
+    assert len([
+        item for item in state_dimensions
+        if item.value.startswith("routing_process")
+    ]) == 1
+
+
+def test_every_routing_protocol_shares_the_same_process_state_gate():
+    """Prueba que la dimension no es protocol-specific en el compilador."""
+    source = (
+        PACKAGE / "domain" / "enterprise" / "services" / "control_plane_compiler.py"
+    ).read_text(encoding="utf-8")
+
+    # Las dos ramas -- RIP y OSPF/EIGRP -- piden la MISMA dimension.
+    assert source.count(
+        "ControlPlaneCapabilityDimension.ROUTING_PROCESS_STATE",
+    ) == 2
+
+
+def test_a_supported_process_state_gate_still_leaves_eigrp_unobservable():
+    """El estrechamiento por protocolo es del runtime, no del gate."""
+    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+        ConfigureEigrpIpv4, ControlPlanePhase, ControlPlaneVerificationExpectation,
+        ControlPlaneVerificationKind, RoutingNetwork,
+    )
+    from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+        PacketTracerEnterpriseControlPlaneRuntime,
+    )
+
+    action = ConfigureEigrpIpv4(
+        id="cp/eigrp/x", phase=ControlPlanePhase.DYNAMIC_ROUTING,
+        device_id="r1", device_name="PROBE-R1", model="2911", site_id="probe",
+        required_capability=Dimension.EIGRP_IPV4_CONFIG,
+        as_number=100, router_id="1.1.1.1",
+        networks=[RoutingNetwork(
+            network="10.0.0.0", wildcard="0.0.0.255", segment_id="lan",
+            interface="GigabitEthernet0/0",
+            source_configuration_action_id="cfg/l3/r1/lan",
+        )],
+    )
+    expectation = ControlPlaneVerificationExpectation(
+        id="verify/eigrp", kind=ControlPlaneVerificationKind.ROUTING_PROCESS,
+        action_id=action.id, device_id="r1",
+        required_capability=Dimension.ROUTING_PROCESS_STATE,
+        expected={"protocol": "eigrp", "router_id": "1.1.1.1"},
+    )
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+    )
+    runtime.apply_actions([action])
+
+    observed = runtime.verify([expectation])[0]
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.evidence_method == "eigrp_readback_unavailable"
+    assert not observed.fresh_evidence
+
+
+def test_the_runtime_narrows_by_mode_for_other_families_too():
+    """El mismo patron ya existia para STP/EtherChannel antes de RIP."""
+    source = (
+        PACKAGE / "infrastructure" / "execution"
+        / "enterprise_control_plane_runtime.py"
+    ).read_text(encoding="utf-8")
+
+    for evidence_method in (
+        "mst_readback_unavailable",
+        "etherchannel_protocol_readback_unavailable",
+        "hsrp_role_readback_unavailable",
+        "eigrp_readback_unavailable",
+    ):
+        assert evidence_method in source
 
 
 def test_the_capability_source_has_no_model_string_special_case():

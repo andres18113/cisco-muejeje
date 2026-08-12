@@ -92,6 +92,29 @@ _RUNNABLE_CAPABILITIES = {
 }
 
 
+def _profiles_in_environment_scope(
+    profiles: Mapping[str, ControlPlaneCapabilityProfile],
+    declared_version: str,
+) -> Mapping[str, ControlPlaneCapabilityProfile]:
+    """Aplica el alcance de la evidencia, no sólo lo registra.
+
+    Reutiliza la regla que `capability_resolver._evidence_matches_version` ya
+    fija para la evidencia de runtime/probe: sólo se reutiliza con versión
+    EXACTA. Un perfil que no declara versión no afirma alcance y se conserva;
+    uno que sí la declara queda fuera cuando el entorno declarado no coincide,
+    incluido el caso en que el entorno no se declaró en absoluto.
+
+    Quedar fuera significa que el modelo no tiene perfil, y el gate lo resuelve
+    como UNKNOWN. Una versión desconocida nunca hereda SUPPORTED.
+    """
+    return {
+        model: profile
+        for model, profile in profiles.items()
+        if profile.packet_tracer_version is None
+        or profile.packet_tracer_version == declared_version
+    }
+
+
 class ControlPlaneRuntime(Protocol):
     def inventory(self) -> list[RuntimeConfigurationTarget]: ...
 
@@ -294,8 +317,9 @@ class ControlPlaneApplicator:
         # `None` significa "resuelve la evidencia autoritativa". Un mapping
         # explicito, incluido `{}`, se respeta tal cual: los tests que quieren
         # aislar el gate siguen pudiendo declarar ausencia de evidencia.
-        profiles = (
-            capabilities if capabilities is not None else self._capability_provider()
+        profiles = _profiles_in_environment_scope(
+            capabilities if capabilities is not None else self._capability_provider(),
+            context.evidence_backend_version,
         )
         action_results = self._apply_actions(runtime_plan, profiles)
         by_action = {item.action_id: item for item in action_results}
