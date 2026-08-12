@@ -76,6 +76,60 @@ _PT_9_0_1_0858_SHOW_IP_PROTOCOLS_RIP = (
 )
 
 
+# Capturado EN VIVO durante R2-B fase 3 sobre PT 9.0.1.0858, recorriendo el
+# pager para reconstruir la salida completa. Dos bloques reales: EIGRP primero
+# --con SUS PROPIAS `Routing for Networks:` y `Passive Interface(s):`, que son
+# justo las trampas de fuga-- y RIP despues. Conserva las dos indentaciones
+# reales: EIGRP con espacios, RIP con TAB.
+_PT_9_0_1_0858_SHOW_IP_PROTOCOLS_EIGRP_THEN_RIP = (
+    "show ip protocols\n"
+    'Routing Protocol is "eigrp  100 " \n'
+    "  Outgoing update filter list for all interfaces is not set \n"
+    "  Incoming update filter list for all interfaces is not set \n"
+    "  Default networks flagged in outgoing updates  \n"
+    "  Default networks accepted from incoming updates \n"
+    "  Redistributing: eigrp 100\n"
+    "  EIGRP-IPv4 Protocol for AS(100)\n"
+    "    Metric weight K1=1, K2=0, K3=1, K4=0, K5=0\n"
+    "    NSF-aware route hold timer is 240\n"
+    "    Router-ID: 10.0.0.1\n"
+    "    Topology : 0 (base)\n"
+    "      Active Timer: 3 min\n"
+    "      Distance: internal 90 external 170\n"
+    "      Maximum path: 4\n"
+    "      Maximum hopcount 100\n"
+    "      Maximum metric variance 1\n"
+    "  Automatic Summarization: disabled\n"
+    "  Automatic address summarization: \n"
+    "  Maximum path: 4\n"
+    "  Routing for Networks:  \n"
+    "     10.0.0.0\n"
+    "  Passive Interface(s): \n"
+    "    GigabitEthernet0/1\n"
+    "  Routing Information Sources:  \n"
+    "    Gateway         Distance      Last Update \n"
+    "  Distance: internal 90 external 170\n"
+    'Routing Protocol is "rip"\n'
+    "Sending updates every 30 seconds, next due in 10 seconds\n"
+    "Invalid after 180 seconds, hold down 180, flushed after 240\n"
+    "Outgoing update filter list for all interfaces is not set\n"
+    "Incoming update filter list for all interfaces is not set\n"
+    "Redistributing: rip\n"
+    "Default version control: send version 2, receive 2\n"
+    "  Interface             Send  Recv  Triggered RIP  Key-chain\n"
+    "Automatic network summarization is not in effect\n"
+    "Maximum path: 4\n"
+    "Routing for Networks:\n"
+    "\t150.1.0.0\n"
+    "Passive Interface(s):\n"
+    "\tGigabitEthernet0/0\n"
+    "Routing Information Sources:\n"
+    "\tGateway         Distance      Last Update\n"
+    "Distance: (default is 120)\n"
+    "Router>"
+)
+
+
 def _rip_output(
     *,
     send: int = 2,
@@ -458,6 +512,38 @@ def test_parser_reports_absence_rather_than_guessing():
     assert parse_show_ip_protocols_rip(
         'show ip protocols\nRouting Protocol is "ospf 1"\nRouter>',
     ) is None
+
+
+def test_parser_reads_only_rip_from_the_live_two_protocol_capture():
+    """Cualificacion viva de TD-RUNTIME-003, forma 1.
+
+    El bloque EIGRP trae sus propias `Routing for Networks: 10.0.0.0` y
+    `Passive Interface(s): GigabitEthernet0/1`, y se imprime ANTES que RIP.
+    Si el acotado de bloque fallara, apareceria aqui.
+    """
+    text = _PT_9_0_1_0858_SHOW_IP_PROTOCOLS_EIGRP_THEN_RIP
+    assert text.count("Routing Protocol is") == 2
+    assert text.index('"eigrp') < text.index('"rip"')
+
+    observed = parse_show_ip_protocols_rip(text)
+
+    assert observed is not None
+    assert observed.version_send == 2
+    assert observed.version_recv == 2
+    assert observed.auto_summary is False
+    assert observed.networks == ("150.1.0.0",)
+    assert observed.passive_interfaces == ("GigabitEthernet0/0",)
+    # Lo del vecino no entra.
+    assert "10.0.0.0" not in observed.networks
+    assert "GigabitEthernet0/1" not in observed.passive_interfaces
+
+
+def test_the_live_capture_carries_both_real_indentation_styles():
+    """EIGRP indenta con espacios y RIP con TAB en la MISMA salida."""
+    text = _PT_9_0_1_0858_SHOW_IP_PROTOCOLS_EIGRP_THEN_RIP
+
+    assert "\n     10.0.0.0\n" in text
+    assert "\n\t150.1.0.0\n" in text
 
 
 def test_parser_never_reads_another_protocol_block_as_rip_state():

@@ -647,7 +647,7 @@ Evidence:
 ## TD-RUNTIME-003 — RIPv2 read-back is qualified against one live output shape
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P2
@@ -710,6 +710,79 @@ The two output shapes were not qualified live. Neither a live result nor
 NOT_REPRODUCED is claimed for them: no probe was run.
 
 This debt MUST be resolved when R2-B resumes.
+
+### Resolution
+
+Resolved: 2026-08-11, stage "R2-B phase 3 — live read-back qualification".
+
+Commit subject:
+`test: qualify RIPv2 protocol readback shapes live`
+on `feature/runtime-ripv2`.
+
+Environment: PT `9.0.1.0858`, declared through
+`ConfigurationRuntimeContext.evidence_backend_version` so the capability
+evidence applied. RIP was applied through the real product path
+(`ControlPlaneApplicator` → typed renderer → `configureIosDevice`), one
+deliberate dispatch. Disposable devices only, named `MCP-PROBE-R2B-*` per the
+naming contract in `TD-RUNTIME-004`.
+
+**Shape 2 — paginated read-back: reproduced, fail-closed confirmed.**
+
+Adding any second routing process makes `show ip protocols` exceed the pager
+window on this build. The production read-back reported:
+
+```text
+truncated_by_pager = True
+verification       = UNOBSERVABLE, evidence rip_readback_truncated
+fresh_evidence     = False
+```
+
+Not a false VERIFIED, and not a false FAILED from the cut-off fields. This is
+the contract the debt required.
+
+**Shape 1 — RIP beside another protocol: qualified against a real capture.**
+
+Three measured properties of PT 9.0.1.0858 constrain how this shape can be
+observed at all, and each was established by a failed attempt rather than
+assumed:
+
+- the EIGRP block alone fills the ~24-line pager window;
+- protocol blocks print with EIGRP before RIP, so RIP falls outside that
+  window;
+- `terminal length 0` dispatches successfully on the command line and Packet
+  Tracer **ignores it**; a static route produces no second protocol block.
+
+So a single production read can never expose the RIP block while a second
+protocol exists on this build — which is exactly Shape 2, already fail-closed.
+The full output was therefore reconstructed by walking the pager, and the
+production parser was qualified against that real capture:
+
+```text
+protocol blocks : ['Routing Protocol is "eigrp  100 "',
+                   'Routing Protocol is "rip"']
+parsed RIP      : version 2/2, auto-summary false,
+                  networks ['150.1.0.0'],
+                  passive ['GigabitEthernet0/0']
+```
+
+The EIGRP block carried its own `Routing for Networks: 10.0.0.0` and
+`Passive Interface(s): GigabitEthernet0/1`, printed before RIP. Neither leaked:
+ten leakage checks passed, including exact network and passive-interface sets.
+
+The capture is persisted as
+`_PT_9_0_1_0858_SHOW_IP_PROTOCOLS_EIGRP_THEN_RIP` in
+`tests/test_typed_ripv2_control_plane.py`, replacing the synthetic two-protocol
+fixture with live evidence. It also pins that one real output carries both
+indentation styles: EIGRP with spaces, RIP with TAB.
+
+No source changed. The parser needed no correction.
+
+Residual limit, recorded rather than glossed: on this build a device running
+RIP alongside another routing protocol is **UNOBSERVABLE** through the product
+read-back, because the pager truncates before RIP is reachable and cannot be
+disabled. That is safe — it never yields a wrong answer — but it is a real
+observability ceiling for multi-protocol devices, and a future stage that needs
+RIP state on such a device will have to page through or find another query.
 
 ---
 
@@ -914,6 +987,15 @@ Move an item here only when its closure criterion has been satisfied.
 
 Do not delete historical debt entries.
 
+- **TD-RUNTIME-003** — resolved 2026-08-11. Both remaining read-back shapes now
+  have live evidence on PT 9.0.1.0858. A paginated `show ip protocols` is
+  reported UNOBSERVABLE via `rip_readback_truncated`, never a false VERIFIED or
+  FAILED. The two-protocol shape was captured live by walking the pager and the
+  production parser reads only the RIP block from it, excluding the EIGRP
+  block's own networks and passive interfaces; that capture replaces the
+  synthetic fixture. No source changed. The entry above is kept in full and
+  records the residual observability ceiling. The prior "deadline status" note
+  remains as written.
 - **TD-RUNTIME-004** — resolved 2026-08-11. Two disposable namespaces are now
   declared explicitly: `__MCP_PROBE_*` for capability discovery, which never
   reaches a trusted renderer, and `MCP-PROBE-*` for probes that do. The
