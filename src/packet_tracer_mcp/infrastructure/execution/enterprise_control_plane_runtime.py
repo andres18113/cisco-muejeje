@@ -19,6 +19,7 @@ from ...domain.enterprise.models.control_plane import (
     ConfigureEtherChannel,
     ConfigureHsrp,
     ConfigureOspfv2,
+    ConfigureRipv2,
     ConfigureSpanningTree,
     ControlPlaneAction,
     ControlPlaneVerificationExpectation,
@@ -45,6 +46,7 @@ from .ios_terminal import (
     OperationalQueryId,
     parse_show_etherchannel_summary,
     parse_show_ip_ospf_neighbor,
+    parse_show_ip_protocols_rip,
     parse_show_ip_route_ospf,
     parse_show_spanning_tree,
 )
@@ -750,6 +752,8 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         )
 
     def _observe_routing_process(self, expectation, action, query_cache):
+        if isinstance(action, ConfigureRipv2):
+            return self._observe_rip_process(expectation, action, query_cache)
         if isinstance(action, ConfigureEigrpIpv4):
             return self._unobservable(
                 expectation,
@@ -761,6 +765,13 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         return self._observe_ospf_process(expectation, action, query_cache)
 
     def _observe_routing_neighbor(self, expectation, action, query_cache):
+        if isinstance(action, ConfigureRipv2):
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                "RIP adjacency is behaviour, not configuration read-back.",
+                evidence_method="rip_neighbor_readback_unavailable",
+            )
         if isinstance(action, ConfigureEigrpIpv4):
             return self._unobservable(
                 expectation,
@@ -771,6 +782,14 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         return self._observe_ospf_neighbor(expectation, action, query_cache)
 
     def _observe_route(self, expectation, action, query_cache):
+        if isinstance(action, ConfigureRipv2):
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                "A learned RIP route is behaviour and is not observed by this "
+                "configuration read-back.",
+                evidence_method="rip_route_readback_unavailable",
+            )
         if isinstance(action, ConfigureEigrpIpv4):
             return self._unobservable(
                 expectation,
@@ -779,6 +798,65 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 evidence_method="eigrp_readback_unavailable",
             )
         return self._observe_ospf_route(expectation, action, query_cache)
+
+    def _observe_rip_process(self, expectation, action, query_cache):
+        if expectation.expected.get("protocol") != "ripv2":
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "No registered live-fixture-backed query observes this routing process.",
+            )
+        show = self._fresh_show(
+            action.device_name, OperationalQueryId.SHOW_IP_PROTOCOLS,
+            expectation, query_cache,
+        )
+        if isinstance(show, RuntimeControlPlaneVerification):
+            return show
+        if show.truncated_by_pager:
+            # Un `show ip protocols` cortado por el pager puede esconder
+            # sentencias de red o interfaces pasivas: leerlo como ausencia
+            # produciria un FAILED falso.
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "The RIP read-back was truncated by the IOS pager.",
+                evidence_method="rip_readback_truncated",
+            )
+        observed = parse_show_ip_protocols_rip(show.output)
+        fields = self._unobservable_fields(expectation)
+        if observed is None:
+            return self._direct_observation(
+                expectation,
+                {field: FieldVerificationStatus.FAILED for field in fields},
+                "fresh_show_ip_protocols",
+                "Fresh output reports no RIP routing process on the device.",
+            )
+        fields["protocol"] = FieldVerificationStatus.VERIFIED
+        for field, value in (
+            ("version_send", observed.version_send),
+            ("version_recv", observed.version_recv),
+        ):
+            expected = expectation.expected.get(field)
+            if type(expected) is int:
+                fields[field] = self._field(value == expected)
+        auto_summary = expectation.expected.get("auto_summary")
+        if isinstance(auto_summary, bool) and observed.auto_summary is not None:
+            fields["auto_summary"] = self._field(
+                observed.auto_summary is auto_summary
+            )
+        networks = expectation.expected.get("networks")
+        if self._typed_str_list(networks) is not None:
+            fields["networks"] = self._field(
+                set(observed.networks) == set(networks)
+            )
+        passive = expectation.expected.get("passive_interfaces")
+        if self._typed_str_list(passive) is not None:
+            fields["passive_interfaces"] = self._field(
+                {self._interface_key(item) for item in observed.passive_interfaces}
+                == {self._interface_key(item) for item in passive}
+            )
+        return self._direct_observation(
+            expectation, fields, "fresh_show_ip_protocols",
+            "Fresh RIP state was compared semantically against the typed intent.",
+        )
 
     def _observe_hsrp_role(self, expectation, action, query_cache):
         del query_cache
@@ -952,6 +1030,12 @@ class PacketTracerEnterpriseControlPlaneRuntime:
     @staticmethod
     def _typed_int_list(value) -> list[int] | None:
         if not isinstance(value, list) or any(type(item) is not int for item in value):
+            return None
+        return value
+
+    @staticmethod
+    def _typed_str_list(value) -> list[str] | None:
+        if not isinstance(value, list) or any(type(item) is not str for item in value):
             return None
         return value
 

@@ -290,14 +290,14 @@ def test_the_transport_preconditions_for_rip_are_named_not_assumed(precondition)
     assert precondition in RIPV2_TRANSPORT_PRECONDITIONS
 
 
-def test_rip_exists_only_as_legacy_generated_cli_not_as_a_typed_action():
-    """Fija donde esta hoy RIP, que es justo la deuda que R2 tendra que saldar.
+def test_rip_emits_ios_text_from_exactly_two_places_and_they_do_not_mix():
+    """R1-D fijaba que RIP solo existia como texto legacy. R2-A lo cambio.
 
-    Existe un generador de texto CLI con `router rip`, pero vive en el camino
-    legacy (full_build / deploy_executor / manual_executor). NO existe una
-    accion tipada de RIP en el camino empresarial, que es el unico que declara
-    su resultado con `RuntimeActionMutation` y lo verifica releyendo. R1-D no
-    agrega ninguna: si este test cae, alguien empezo RIP antes de tiempo.
+    Aquel test era un cable trampa deliberado: mientras RIP no fuera tipado, no
+    podia producir un `RuntimeActionMutation` y por tanto tampoco un APPLIED.
+    R2-A cruza el cable a proposito y anade `ConfigureRipv2`. Lo que queda por
+    proteger ya no es la ausencia, sino la separacion: siguen existiendo
+    exactamente dos emisores de `router rip`, y el tipado no depende del legacy.
     """
     emitters = sorted(
         path.relative_to(PACKAGE).as_posix()
@@ -305,12 +305,42 @@ def test_rip_exists_only_as_legacy_generated_cli_not_as_a_typed_action():
         if "router rip" in path.read_text(encoding="utf-8").casefold()
     )
 
-    assert emitters == ["infrastructure/generator/cli_config_generator.py"]
+    assert emitters == [
+        "infrastructure/generator/cli_config_generator.py",
+        "infrastructure/generator/control_plane_renderer.py",
+    ]
 
-    typed_actions = (
-        PACKAGE / "domain" / "enterprise" / "models" / "control_plane.py"
-    ).read_text(encoding="utf-8").casefold()
-    assert "rip" not in typed_actions.replace("description", "").replace("scripting", "")
+    typed_renderer = (
+        PACKAGE / "infrastructure" / "generator" / "control_plane_renderer.py"
+    ).read_text(encoding="utf-8")
+    assert "cli_config_generator" not in typed_renderer
+
+
+def test_the_typed_rip_action_is_a_first_class_control_plane_action():
+    """RIP tipado entra por la union discriminada, no por una puerta lateral.
+
+    Es lo que le da un `RuntimeActionMutation` y una expectativa de relectura;
+    un texto suelto no tendria ninguno de los dos.
+    """
+    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+        ConfigureRipv2,
+        ControlPlaneActionType,
+        ControlPlanePlan,
+    )
+
+    assert ConfigureRipv2.model_fields["action_type"].default is (
+        ControlPlaneActionType.CONFIGURE_RIPV2
+    )
+    # Sin lista de comandos crudos y sin atajo de capacidad: la unica via a IOS
+    # es el renderer confiable.
+    assert not {"commands", "raw_commands", "payload", "supports_rip"} & set(
+        ConfigureRipv2.model_fields,
+    )
+    plan = ControlPlanePlan(
+        id="p", source_topology_id="t", source_topology_hash="th",
+        source_configuration_id="c", source_configuration_hash="ch",
+    )
+    assert plan.actions_of_type(ControlPlaneActionType.CONFIGURE_RIPV2) == []
 
 
 def test_the_legacy_rip_generator_is_not_wired_into_the_typed_mutation_runtime():

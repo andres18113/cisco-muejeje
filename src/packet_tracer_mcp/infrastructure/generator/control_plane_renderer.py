@@ -13,16 +13,18 @@ from ...domain.enterprise.models.control_plane import (
     ConfigureEtherChannel,
     ConfigureHsrp,
     ConfigureOspfv2,
+    ConfigureRipv2,
     ConfigureSpanningTree,
     ConfigureStpEdgePort,
     ControlPlaneAction,
     ControlPlaneCapabilityDimension,
     EtherChannelProtocol,
     LinkFailureScenario,
+    RipNetwork,
     RoutingNetwork,
     StpMode,
 )
-from ...domain.models.plans import EIGRPConfig, OSPFConfig
+from ...domain.models.plans import EIGRPConfig, OSPFConfig, RIPConfig
 from ...domain.models.switch_security import STPConfig
 from ...infrastructure.catalog.cables import ALL_LINK_TYPES
 from ...shared.utils import validate_ios_interface_name
@@ -132,6 +134,28 @@ def _network(value: RoutingNetwork, *, ospf: bool) -> dict[str, str | int]:
     }
 
 
+def _rip_network(value: RipNetwork) -> str:
+    """La sentencia `network` de RIP: sólo una dirección classful.
+
+    Rechaza cualquier dirección que no sea el inicio exacto de su clase, para
+    que el renderer no pueda emitir una sentencia que IOS reinterpretaría.
+    """
+    address = _ipv4(value.network, "RIP network")
+    first = int(ipaddress.IPv4Address(address)) >> 24
+    length = 8 if 1 <= first <= 126 else 16 if 128 <= first <= 191 else (
+        24 if 192 <= first <= 223 else None
+    )
+    if length is None:
+        raise ValueError(f"RIP network {address} belongs to no routable class.")
+    if int(ipaddress.IPv4Address(address)) & ((1 << (32 - length)) - 1):
+        raise ValueError(f"RIP network {address} is not a classful network address.")
+    for segment_id in value.source_segment_ids:
+        _safe_reference(segment_id, "segment ID")
+    for action_id in value.source_configuration_action_ids:
+        _safe_reference(action_id, "configuration action ID")
+    return address
+
+
 def _validate_common(action: BaseControlPlaneAction) -> None:
     _safe_reference(action.id, "action ID")
     _safe_reference(action.device_id, "device ID")
@@ -204,6 +228,9 @@ class PacketTracerControlPlaneRenderer:
                 action, ControlPlaneCapabilityDimension.EIGRP_IPV4_CONFIG
             )
             payload, cleanup = self._eigrp(action)
+        elif isinstance(action, ConfigureRipv2):
+            _require_capability(action, ControlPlaneCapabilityDimension.RIPV2_CONFIG)
+            payload, cleanup = self._rip(action)
         else:
             raise ValueError(
                 f"No Packet Tracer control-plane renderer for {type(action).__name__}."
@@ -524,6 +551,34 @@ class PacketTracerControlPlaneRenderer:
             body.append(" no auto-summary")
         body.append(" exit")
         return _wrap(body), _wrap([f"no router eigrp {as_number}"])
+
+    @staticmethod
+    def _rip(action: ConfigureRipv2) -> tuple[str, str]:
+        networks = [_rip_network(item) for item in action.networks]
+        if not networks or len(networks) != len(set(networks)):
+            raise ValueError("RIPv2 requires unique compiled classful networks.")
+        passive = [
+            _exact_interface(item, "RIPv2 passive interface")
+            for item in action.passive_interfaces
+        ]
+        if len(passive) != len(set(item.casefold() for item in passive)):
+            raise ValueError("RIPv2 passive interfaces contain duplicates.")
+        legacy = RIPConfig(
+            router=action.device_name,
+            version=action.version,
+            networks=networks,
+            no_auto_summary=action.no_auto_summary,
+        )
+        if legacy.version != 2:
+            raise ValueError("Only RIP version 2 is a compiled product path.")
+        # Este orden es el payload calificado en vivo durante R2-0.
+        body = ["router rip", f" version {legacy.version}"]
+        if legacy.no_auto_summary:
+            body.append(" no auto-summary")
+        body.extend(f" network {item}" for item in legacy.networks)
+        body.extend(f" passive-interface {interface}" for interface in passive)
+        body.append(" exit")
+        return _wrap(body), _wrap(["no router rip"])
 
 
 class PacketTracerControlPlaneFaultRenderer:

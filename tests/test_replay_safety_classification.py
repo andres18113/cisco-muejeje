@@ -44,6 +44,13 @@ REPLAY_SAFE_FAMILIES = {
     "ConfigureEthernetLinkMode": "duplex/speed -- asignacion",
     "SetEndpointStaticAddress": "configurePcIp(...) -- setter estructurado",
     "SetEndpointDhcp": "configurePcIp(dhcp) -- setter estructurado",
+    "ConfigureRipv2": (
+        "router rip / version 2 / no auto-summary / network / passive-interface "
+        "-- conjuntos y asignaciones. A diferencia del resto de esta tabla, aqui "
+        "SI hay medicion: R2-0 aplico el payload dos veces sobre un 2911 "
+        "disposable y releyo estado semantico identico. Ver "
+        "docs/architecture/ripv2-runtime-qualification.md."
+    ),
 }
 
 # Familias que se TRATAN como inseguras por precaucion de producto.
@@ -158,9 +165,11 @@ def test_the_classification_does_not_claim_the_whole_surface_is_safe():
 # la diferencia estructural con `access-list`, y es lo que hace tolerable la
 # reejecucion duplicada para RIP y no para las ACL.
 #
-# ADVERTENCIA: esto es analisis de la semantica IOS, NO una medicion sobre
-# Packet Tracer. R2 deberia confirmarlo aplicando el payload dos veces sobre un
-# router disposable y releyendo, antes de apoyarse en ello.
+# Este set nacio como analisis de la semantica IOS. R2-0 lo confirmo en vivo
+# (PT 9.0.1.0858, 2911 disposable): dos aplicaciones identicas dejaron el mismo
+# estado semantico. La calificacion, con sus limites, esta en
+# docs/architecture/ripv2-runtime-qualification.md. Sigue siendo una
+# calificacion de una repeticion sobre un modelo, no una afirmacion estadistica.
 RIPV2_PLANNED_OPERATIONS = {
     "router rip": "entra/crea el proceso; repetirlo no crea un segundo proceso",
     "version 2": "asignacion",
@@ -186,3 +195,19 @@ def test_the_rip_operation_set_contains_no_ordered_list_command():
         operation.startswith("access-list") or "distribute-list" in operation
         for operation in RIPV2_PLANNED_OPERATIONS
     )
+
+
+def test_the_typed_rip_renderer_emits_only_the_classified_operation_set():
+    """La clasificacion vale para lo que el producto emite, no para un plan.
+
+    Si el renderer tipado empezara a emitir una forma aditiva, la familia
+    quedaria mal clasificada sin que ningun otro test lo notara.
+    """
+    source = (GENERATOR / "control_plane_renderer.py").read_text(encoding="utf-8")
+    body = source.split("def _rip(")[1].split("\n\nclass ")[0]
+
+    for additive in ("access-list", "distribute-list", "offset-list", "neighbor "):
+        assert additive not in body
+    for declared in ("router rip", "version", "no auto-summary", "network",
+                     "passive-interface"):
+        assert declared in body

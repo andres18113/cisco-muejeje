@@ -41,6 +41,7 @@ class OperationalQueryId(str, Enum):
     SHOW_IP_ROUTE_OSPF = "show_ip_route_ospf"
     SHOW_IP_EIGRP_NEIGHBORS = "show_ip_eigrp_neighbors"
     SHOW_IP_ROUTE_EIGRP = "show_ip_route_eigrp"
+    SHOW_IP_PROTOCOLS = "show_ip_protocols"
 
 
 class TrunkQueryClassification(str, Enum):
@@ -107,6 +108,8 @@ _COMMANDS = {
     OperationalQueryId.SHOW_IP_ROUTE_OSPF: "show ip route ospf",
     OperationalQueryId.SHOW_IP_EIGRP_NEIGHBORS: "show ip eigrp neighbors",
     OperationalQueryId.SHOW_IP_ROUTE_EIGRP: "show ip route eigrp",
+    # Observado en EXEC de usuario durante R2-0; no requiere `enable`.
+    OperationalQueryId.SHOW_IP_PROTOCOLS: "show ip protocols",
 }
 _INTERFACE_COMMANDS = {
     OperationalQueryId.SHOW_IP_INTERFACE: "show ip interface {interface}",
@@ -240,6 +243,21 @@ class OspfRouteStatusRow:
     next_hop: str
     age: str
     interface: str
+
+
+@dataclass(frozen=True)
+class RipProtocolStatus:
+    """Estado SEMÁNTICO de RIP leído de `show ip protocols`.
+
+    Los temporizadores (`next due in N seconds`) cambian entre lecturas y no
+    son configuración: quedan deliberadamente fuera.
+    """
+
+    version_send: int | None
+    version_recv: int | None
+    auto_summary: bool | None
+    networks: tuple[str, ...]
+    passive_interfaces: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -804,6 +822,83 @@ def classify_show_ip_route_eigrp(
     ):
         return EigrpQueryClassification.SUPPORTED_EMPTY
     return EigrpQueryClassification.PARSER_UNAVAILABLE
+
+
+# Packet Tracer indenta las entradas de red e interfaz pasiva con TAB, no con
+# dos espacios: exigir espacios las hace invisibles.
+_RIP_BLOCK_HEADER = re.compile(r'^\s*Routing Protocol is\s+"(?P<protocol>[^"]*)"')
+_RIP_VERSION = re.compile(
+    r"send\s+version\s+(?P<send>\d+),\s*receive\s+(?:version\s+)?(?P<recv>\d+)",
+    re.IGNORECASE,
+)
+_RIP_NETWORKS_HEADER = re.compile(r"^\s*Routing for Networks:", re.IGNORECASE)
+_RIP_PASSIVE_HEADER = re.compile(r"^\s*Passive Interface\(s\):", re.IGNORECASE)
+_RIP_NETWORK_ENTRY = re.compile(r"[ \t]+(?P<network>\d{1,3}(?:\.\d{1,3}){3})[ \t]*")
+_RIP_PASSIVE_ENTRY = re.compile(r"[ \t]+(?P<interface>[A-Za-z][A-Za-z0-9/.]*)[ \t]*")
+
+
+def _rip_entries(
+    block: list[str], header: re.Pattern[str], entry: re.Pattern[str],
+) -> tuple[str, ...]:
+    found: list[str] = []
+    inside = False
+    for line in block:
+        if header.match(line):
+            inside = True
+            continue
+        if not inside:
+            continue
+        match = entry.fullmatch(line)
+        if match is not None:
+            found.append(match.group(1))
+            continue
+        if line.strip():
+            break
+    return tuple(found)
+
+
+def parse_show_ip_protocols_rip(value: str) -> RipProtocolStatus | None:
+    """Lee el bloque RIP de `show ip protocols` tal como PT 9.0.1.0858 lo emite.
+
+    Devuelve None cuando no hay proceso RIP, que es evidencia de ausencia y no
+    un fallo de lectura. `show ip protocols` puede listar varios protocolos,
+    así que el bloque se acota hasta el siguiente `Routing Protocol is`.
+    """
+    lines = normalize_terminal_output(value).splitlines()
+    start = next(
+        (
+            index for index, line in enumerate(lines)
+            if (match := _RIP_BLOCK_HEADER.match(line)) is not None
+            and match.group("protocol").strip().casefold() == "rip"
+        ),
+        None,
+    )
+    if start is None:
+        return None
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        if _RIP_BLOCK_HEADER.match(line):
+            break
+        block.append(line)
+    version_send: int | None = None
+    version_recv: int | None = None
+    auto_summary: bool | None = None
+    for line in block:
+        version = _RIP_VERSION.search(line)
+        if version is not None and version_send is None:
+            version_send = int(version.group("send"))
+            version_recv = int(version.group("recv"))
+        if "automatic network summarization is" in line.casefold():
+            auto_summary = "not in effect" not in line.casefold()
+    return RipProtocolStatus(
+        version_send=version_send,
+        version_recv=version_recv,
+        auto_summary=auto_summary,
+        networks=_rip_entries(block, _RIP_NETWORKS_HEADER, _RIP_NETWORK_ENTRY),
+        passive_interfaces=_rip_entries(
+            block, _RIP_PASSIVE_HEADER, _RIP_PASSIVE_ENTRY,
+        ),
+    )
 
 
 def extract_terminal_command_window(before: str, after: str, command: str) -> TerminalOutputWindow:

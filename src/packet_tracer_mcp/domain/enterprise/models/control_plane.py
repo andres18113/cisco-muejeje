@@ -35,6 +35,7 @@ class EtherChannelProtocol(str, Enum):
 class DynamicRoutingProtocol(str, Enum):
     OSPFV2 = "ospfv2"
     EIGRP = "eigrp"
+    RIPV2 = "ripv2"
 
 
 class ControlPlaneCapabilityDimension(str, Enum):
@@ -47,6 +48,7 @@ class ControlPlaneCapabilityDimension(str, Enum):
     HSRP_CONFIG = "hsrp_config"
     OSPFV2_CONFIG = "ospfv2_config"
     EIGRP_IPV4_CONFIG = "eigrp_ipv4_config"
+    RIPV2_CONFIG = "ripv2_config"
     STP_READBACK = "stp_readback"
     ETHERCHANNEL_READBACK = "etherchannel_readback"
     HSRP_READBACK = "hsrp_readback"
@@ -177,6 +179,7 @@ class ControlPlaneActionType(str, Enum):
     CONFIGURE_HSRP = "configure_hsrp"
     CONFIGURE_OSPFV2 = "configure_ospfv2"
     CONFIGURE_EIGRP_IPV4 = "configure_eigrp_ipv4"
+    CONFIGURE_RIPV2 = "configure_ripv2"
 
 
 class BaseControlPlaneAction(BaseModel):
@@ -280,13 +283,39 @@ class ConfigureEigrpIpv4(BaseControlPlaneAction):
     no_auto_summary: bool = True
 
 
+class RipNetwork(BaseModel):
+    """Una sentencia `network` de RIP: classful y sin wildcard.
+
+    IOS RIP no acepta wildcard ni prefijo, así que este modelo no los declara:
+    lo que no existe en el comando tampoco existe en el tipo. Una sentencia
+    classful resume varias interfaces, por eso la procedencia es plural.
+    """
+
+    network: str
+    source_segment_ids: list[str] = Field(default_factory=list)
+    source_configuration_action_ids: list[str] = Field(default_factory=list)
+
+
+class ConfigureRipv2(BaseControlPlaneAction):
+    action_type: Literal[
+        ControlPlaneActionType.CONFIGURE_RIPV2
+    ] = ControlPlaneActionType.CONFIGURE_RIPV2
+    # RIPv2 exclusivamente: la versión es estructural, no configurable. Un
+    # ConfigureRipv2 con version=1 no se puede construir.
+    version: Literal[2] = 2
+    networks: list[RipNetwork] = Field(default_factory=list)
+    passive_interfaces: list[str] = Field(default_factory=list)
+    no_auto_summary: bool = True
+
+
 ControlPlaneAction = Annotated[
     ConfigureSpanningTree
     | ConfigureStpEdgePort
     | ConfigureEtherChannel
     | ConfigureHsrp
     | ConfigureOspfv2
-    | ConfigureEigrpIpv4,
+    | ConfigureEigrpIpv4
+    | ConfigureRipv2,
     Field(discriminator="action_type"),
 ]
 

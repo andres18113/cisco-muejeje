@@ -29,6 +29,7 @@ from ..models.control_plane import (
     ConfigureEtherChannel,
     ConfigureHsrp,
     ConfigureOspfv2,
+    ConfigureRipv2,
     ConfigureSpanningTree,
     ConfigureStpEdgePort,
     ControlPlaneAction,
@@ -46,6 +47,7 @@ from ..models.control_plane import (
     DynamicRoutingProtocol,
     EtherChannelProtocol,
     LinkFailureScenario,
+    RipNetwork,
     RoutingNetwork,
     StpMode,
     control_plane_action_type_counts,
@@ -141,6 +143,29 @@ def _wildcard(network: ipaddress.IPv4Network) -> str:
 
 def _prefix_length_from_wildcard(wildcard: str) -> int:
     return 32 - int(ipaddress.IPv4Address(wildcard)).bit_count()
+
+
+def _classful_network(network: ipaddress.IPv4Network) -> str | None:
+    """La red classful que IOS RIP espera detrás de `network`.
+
+    RIP no lleva máscara en la sentencia: IOS la deduce de la clase. Varias
+    subredes de la misma clase colapsan en una sola sentencia, que es la razón
+    por la que 150.1.1.0/24 y 150.1.100.0/30 comparten `network 150.1.0.0`.
+    Devuelve None cuando la dirección no pertenece a ninguna clase con
+    sentencia RIP (loopback, multicast, reservadas).
+    """
+    first = int(network.network_address) >> 24
+    if 1 <= first <= 126:
+        length = 8
+    elif 128 <= first <= 191:
+        length = 16
+    elif 192 <= first <= 223:
+        length = 24
+    else:
+        return None
+    return str(ipaddress.IPv4Network(
+        (int(network.network_address) >> (32 - length) << (32 - length), length),
+    ).network_address)
 
 
 def _link_device_ids(
@@ -1296,6 +1321,20 @@ class ControlPlaneCompiler:
             )
             if device is None or not local:
                 continue
+            passive = sorted({
+                _interface_of(item) for item in local
+                if item.id not in active_foundations
+                or item.segment_id in set(policy.passive_segment_ids)
+            })
+            if policy.protocol is DynamicRoutingProtocol.RIPV2:
+                # RIP no tiene router ID: no se calcula ni se comprueba una
+                # colisión que el protocolo no puede sufrir.
+                rip_action = self._rip_action(
+                    policy, device, device_id, local, passive, foundations, issues,
+                )
+                if rip_action is not None:
+                    action_by_device[device_id] = rip_action
+                continue
             router_id = policy.router_ids.get(device_id, "")
             if not router_id:
                 router_id = str(min(ipaddress.ip_address(item.ipv4) for item in local))
@@ -1333,11 +1372,6 @@ class ControlPlaneCompiler:
                 ipaddress.ip_address(item.network), item.wildcard,
                 item.area if item.area is not None else -1, item.interface,
             ))
-            passive = sorted({
-                _interface_of(item) for item in local
-                if item.id not in active_foundations
-                or item.segment_id in set(policy.passive_segment_ids)
-            })
             if policy.protocol is DynamicRoutingProtocol.OSPFV2:
                 action_id = _stable_id(
                     "ospfv2", policy.id, device_id, policy.process_id,
@@ -1386,6 +1420,29 @@ class ControlPlaneCompiler:
 
         actions = [action_by_device[key] for key in sorted(action_by_device)]
         expectations: list[ControlPlaneVerificationExpectation] = []
+        if policy.protocol is DynamicRoutingProtocol.RIPV2:
+            # Verificación de CONFIGURACIÓN: el estado semántico intencionado
+            # frente al leído. Vecindad, rutas aprendidas y alcance extremo a
+            # extremo son comportamiento y no se compilan en esta etapa.
+            for action in actions:
+                expectations.append(ControlPlaneVerificationExpectation(
+                    id=_stable_id("verify-rip-process", action.id),
+                    kind=ControlPlaneVerificationKind.ROUTING_PROCESS,
+                    action_id=action.id,
+                    device_id=action.device_id,
+                    required_capability=
+                        ControlPlaneCapabilityDimension.ROUTING_PROCESS_STATE,
+                    expected={
+                        "protocol": DynamicRoutingProtocol.RIPV2.value,
+                        "version_send": action.version,
+                        "version_recv": action.version,
+                        "auto_summary": not action.no_auto_summary,
+                        "networks": [item.network for item in action.networks],
+                        "passive_interfaces": list(action.passive_interfaces),
+                    },
+                    depends_on=[action.id],
+                ))
+            return actions, expectations
         for action in actions:
             expectations.append(ControlPlaneVerificationExpectation(
                 id=_stable_id("verify-routing-process", action.id),
@@ -1508,6 +1565,62 @@ class ControlPlaneCompiler:
                     depends_on=sorted([local_action.id, remote_action.id]),
                 ))
         return actions, expectations
+
+    def _rip_action(
+        self,
+        policy,
+        device: DevicePlan,
+        device_id: str,
+        local: list[object],
+        passive: list[str],
+        foundations: dict[str, ControlPlaneFoundationRequirement],
+        issues: list[ConfigurationIssue],
+    ) -> ConfigureRipv2 | None:
+        """Colapsa las identidades L3 del dispositivo en sentencias classful."""
+        segments: dict[str, set[str]] = defaultdict(set)
+        sources: dict[str, set[str]] = defaultdict(set)
+        contributing: list[object] = []
+        for foundation in local:
+            classful = _classful_network(_network_of(foundation))
+            if classful is None:
+                issues.append(_error(
+                    ConfigurationIssueCode.CONTROL_PLANE_ROUTING_FOUNDATION_MISSING,
+                    f"{_interface_of(foundation)} on {device_id} has no classful "
+                    "RIP network statement.",
+                    foundation.id,
+                ))
+                continue
+            segments[classful].add(foundation.segment_id)
+            sources[classful].add(foundation.id)
+            contributing.append(foundation)
+        if not segments:
+            issues.append(_error(
+                ConfigurationIssueCode.CONTROL_PLANE_ROUTING_FOUNDATION_MISSING,
+                f"RIPv2 device {device_id!r} compiled no network statement.",
+                device_id,
+            ))
+            return None
+        for foundation in contributing:
+            self._foundation(foundations, "l3_interface", foundation.id)
+        networks = [
+            RipNetwork(
+                network=classful,
+                source_segment_ids=sorted(segments[classful]),
+                source_configuration_action_ids=sorted(sources[classful]),
+            )
+            for classful in sorted(segments, key=ipaddress.ip_address)
+        ]
+        return ConfigureRipv2(
+            id=_stable_id("ripv2", policy.id, device_id),
+            phase=ControlPlanePhase.DYNAMIC_ROUTING,
+            device_id=device_id,
+            device_name=device.name,
+            model=device.model,
+            site_id=device.site_id,
+            required_capability=ControlPlaneCapabilityDimension.RIPV2_CONFIG,
+            networks=networks,
+            passive_interfaces=passive,
+        )
 
     @staticmethod
     def _l3_on_interface(actions: list[object], interface: str):

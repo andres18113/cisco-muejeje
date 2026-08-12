@@ -444,6 +444,58 @@ Evidence:
 
 ---
 
+## TD-RUNTIME-003 — RIPv2 read-back is qualified against one live output shape
+
+Status:
+OPEN
+
+Severity:
+P2
+
+Discovered:
+Runtime R2-A (typed RIPv2 implementation)
+
+Description:
+
+`parse_show_ip_protocols_rip` and the RIPv2 configuration verification are
+validated against the exact `show ip protocols` output captured during R2-0:
+one router, one routing protocol, no IPv4-addressed RIP interface, and no
+pagination.
+
+Two shapes are implemented and unit-tested but never observed live in Packet
+Tracer:
+
+1. a device running RIP alongside another routing protocol, where
+   `show ip protocols` emits several `Routing Protocol is "..."` blocks and the
+   RIP block must be read in isolation;
+2. a `show ip protocols` long enough to trigger the IOS pager.
+
+Current containment:
+
+- the parser scopes the RIP block between `Routing Protocol is` headers, so a
+  neighbouring block cannot contribute networks, passive interfaces, or the
+  auto-summary flag;
+- a read-back flagged `truncated_by_pager` is reported UNOBSERVABLE rather than
+  FAILED, so a hidden line cannot be mistaken for a missing network statement;
+- both behaviours are covered by deterministic regressions and by mutation
+  checks that fail when either guard is removed.
+
+Blocks now:
+No. The offline typed implementation and its verification do not depend on
+either shape, and neither shape can silently produce a false VERIFIED.
+
+RESOLVE_BEFORE:
+R2-B live behavioural verification, and at latest E9.5 final closure.
+
+Closure criterion:
+
+Observe both shapes on a disposable Packet Tracer device and confirm that the
+parser reads the RIP block correctly beside another protocol, and that a
+paginated read-back is reported UNOBSERVABLE rather than FAILED. Then either
+promote the fixture to live-captured evidence or correct the parser.
+
+---
+
 ## TD-PUBLIC-001 — Raw fire-and-forget tool remains publicly invokable
 
 Status:
