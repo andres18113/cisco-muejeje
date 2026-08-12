@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from time import monotonic
 from typing import Protocol
 
@@ -23,6 +23,9 @@ from ...domain.enterprise.models.deployment import (
     requires_deployment_manifest,
     resolve_manifest_targets,
     validate_manifest_environment,
+)
+from ...infrastructure.catalog.control_plane_capabilities import (
+    packet_tracer_control_plane_capabilities,
 )
 from ...domain.enterprise.models.execution import (
     CompensationStatus,
@@ -111,8 +114,22 @@ class ControlPlaneRuntime(Protocol):
 class ControlPlaneApplicator:
     """Ejecuta únicamente un ControlPlanePlan ya compilado y cerrado."""
 
-    def __init__(self, runtime: ControlPlaneRuntime) -> None:
+    def __init__(
+        self,
+        runtime: ControlPlaneRuntime,
+        *,
+        capability_provider: Callable[
+            [], Mapping[str, ControlPlaneCapabilityProfile]
+        ] | None = None,
+    ) -> None:
         self._runtime = runtime
+        # El producto resuelve capacidades desde el catálogo de evidencia viva.
+        # Antes el valor por defecto era "ninguna evidencia", asi que toda
+        # accion tipada de control plane quedaba en CAPABILITY_UNKNOWN y nadie
+        # podia ejecutarla sin inyectar un perfil de test.
+        self._capability_provider = (
+            capability_provider or packet_tracer_control_plane_capabilities
+        )
 
     def apply(
         self,
@@ -274,7 +291,12 @@ class ControlPlaneApplicator:
                 deployment_id=deployment_id,
             )
 
-        profiles = capabilities or {}
+        # `None` significa "resuelve la evidencia autoritativa". Un mapping
+        # explicito, incluido `{}`, se respeta tal cual: los tests que quieren
+        # aislar el gate siguen pudiendo declarar ausencia de evidencia.
+        profiles = (
+            capabilities if capabilities is not None else self._capability_provider()
+        )
         action_results = self._apply_actions(runtime_plan, profiles)
         by_action = {item.action_id: item for item in action_results}
         verification_statuses: dict[str, ActionExecutionStatus] = {}

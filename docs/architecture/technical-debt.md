@@ -121,7 +121,7 @@ are explicit.
 ## TD-CAPABILITY-001 — No product provider populates control-plane capability profiles
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P0
@@ -195,6 +195,70 @@ model from real catalog/runtime/probe evidence, with recorded provenance and
 Packet Tracer version, and the control-plane application path consumes it
 without a caller-supplied fixture. UNKNOWN must remain UNKNOWN when evidence is
 absent: the closure is a real evidence path, never a default of SUPPORTED.
+
+### Resolution
+
+Resolved: 2026-08-11, stage "Resolve TD-CAPABILITY-001".
+
+Commit subject:
+`fix: wire control-plane capability evidence into product runtime`
+on `feature/runtime-ripv2`.
+
+Implementation path:
+
+`infrastructure/catalog/control_plane_capabilities.py` mirrors the existing
+`security_capabilities.py` catalog and returns
+`dict[str, ControlPlaneCapabilityProfile]`. `ControlPlaneApplicator` gained a
+`capability_provider` constructor parameter defaulting to that catalog, and
+`apply()` now treats `capabilities=None` as "resolve authoritative evidence"
+instead of "no evidence". An explicit mapping, including `{}`, is still
+honoured verbatim so tests can isolate the gate.
+
+The precedent for a use case importing an authoritative catalog is
+`compile_configuration.py`, which already imports `link_mode_capability_for`
+from the same package.
+
+Evidence mapping:
+
+Only live evidence **attributed to a model** is encoded. The E9 live baseline
+in `enterprise-control-plane.md` records STP, EtherChannel, HSRP, OSPF and
+EIGRP results but names no device model, so none of them is claimed; inventing
+that attribution is exactly what the mapping must not do.
+
+- `2911` / `RIPV2_CONFIG` = SUPPORTED, from the R2-0 live qualification;
+- `2911` / `ROUTING_PROCESS_STATE` = SUPPORTED, from the same live
+  `show ip protocols` read-back, which demonstrates the observation channel on
+  this model and build. It does not make OSPF or EIGRP observable: the runtime
+  reads those with different queries and still requires its own fresh parse;
+- every other dimension on every model = UNKNOWN, declared explicitly rather
+  than omitted, so a new dimension must be classified instead of inheriting a
+  default.
+
+Live qualification:
+
+One disposable 2911 on PT 9.0.1.0858, applied through the real product path
+with no `capabilities` argument:
+
+```text
+2911:ripv2_config              -> supported
+provenance                     -> R2-0 controlled live qualification (non-test)
+action                         -> applied, failure_code none
+RIP configuration dispatches   -> 1
+read-back                      -> send/recv 2/2, auto-summary false,
+                                  networks ['150.1.0.0'],
+                                  passive ['GigabitEthernet0/0',
+                                           'GigabitEthernet0/1']
+typed verification             -> routing_process VERIFIED via
+                                  fresh_show_ip_protocols, fresh evidence,
+                                  all six compared fields verified
+```
+
+Cleanup left no probe residue.
+
+Fail-closed behaviour is unchanged and regression-covered: an explicit empty
+mapping still yields UNKNOWN, `CAPABILITY_UNKNOWN` and zero mutations, and
+explicit UNSUPPORTED evidence yields `CAPABILITY_UNSUPPORTED` and zero
+mutations.
 
 ---
 
@@ -576,20 +640,78 @@ promote the fixture to live-captured evidence or correct the parser.
 
 ### Deadline status — 2026-08-11
 
-The declared RESOLVE_BEFORE milestone arrived and was **not** met. Recorded
-here rather than moved.
+The deadline is **active but not yet violated**, and the milestone is
+unchanged.
 
-Runtime R2-B stopped at its hard precondition: the product capability gate
-resolves `2911:ripv2_config` to UNKNOWN and skips every typed RIPv2 action
-(`TD-CAPABILITY-001`). R2-B therefore never reached a live stage, and its own
-rules forbid both bypassing the gate with raw IOS and injecting a fake
-capability.
+The RESOLVE_BEFORE milestone is R2-B *completion*. R2-B did not complete: it
+stopped at its hard precondition, because the product capability gate resolved
+`2911:ripv2_config` to UNKNOWN and skipped every typed RIPv2 action
+(`TD-CAPABILITY-001`, since resolved). R2-B therefore never reached a live
+stage, and its own rules forbade both bypassing the gate with raw IOS and
+injecting a fake capability.
 
-The two shapes were not qualified live. Neither NOT_REPRODUCED nor a live
-result is claimed for them: no probe was run.
+The two output shapes were not qualified live. Neither a live result nor
+NOT_REPRODUCED is claimed for them: no probe was run.
 
-The debt stays OPEN with its milestone unchanged in substance: the qualification
-must happen when R2-B is retried, which now depends on `TD-CAPABILITY-001`.
+This debt MUST be resolved when R2-B resumes.
+
+---
+
+## TD-RUNTIME-004 — The typed renderer rejects the project's probe naming convention
+
+Status:
+OPEN
+
+Severity:
+P2
+
+Discovered:
+Resolve TD-CAPABILITY-001 (live qualification)
+
+Description:
+
+Every controlled probe in this project is named `__MCP_PROBE_*`, and the
+standing safety rule is that only resources with that prefix may be created and
+deleted.
+
+The trusted control-plane renderer validates device names with
+`_SAFE_DEVICE = ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`, which requires an
+alphanumeric first character. Measured directly:
+
+```text
+__MCP_PROBE_CAP_R1   -> rejected: Invalid compiled device name
+MCP-PROBE-CAP-R1     -> accepted
+```
+
+A typed control-plane action therefore cannot be rendered for a device that
+follows the project's own probe convention. Earlier live stages never hit this
+because R2-0 dispatched through `configure_ios` rather than the typed renderer.
+
+Current containment:
+
+The TD-CAPABILITY-001 live qualification used `MCP-PROBE-CAP-R1`, which is
+still unmistakably a probe and was the only device created or deleted. The
+safety intent — never touch user topology, delete only what was created — was
+fully preserved, and cleanup left no residue.
+
+Blocks now:
+No. It did not block the live qualification.
+
+Blocks:
+any future live control-plane probe that expects the `__MCP_PROBE_*` prefix to
+work end to end through the typed path, which includes R2-B as its ticket is
+currently written.
+
+RESOLVE_BEFORE:
+R2-B resumption.
+
+Closure criterion:
+
+Reconcile the two rules deliberately: either the probe convention adopts a
+prefix the renderer accepts and the standing safety rule is restated, or
+`_SAFE_DEVICE` is widened with an explicit justification that it still rejects
+the injection-shaped names it was written to reject. Whichever is chosen, a
+regression must pin it.
 
 ---
 
@@ -655,6 +777,14 @@ Move an item here only when its closure criterion has been satisfied.
 
 Do not delete historical debt entries.
 
+- **TD-CAPABILITY-001** — resolved 2026-08-11. A control-plane capability
+  catalog now derives `ControlPlaneCapabilityProfile` from live evidence
+  attributed to a model, and `ControlPlaneApplicator` resolves it by default
+  instead of treating an absent argument as "no evidence". Only RIPv2
+  configuration and routing-process state on the 2911 carry live evidence;
+  every other dimension is explicitly UNKNOWN. Confirmed by one disposable live
+  qualification with a single deliberate dispatch and a verified read-back. The
+  entry above is kept in full.
 - **TD-RUNTIME-002** — resolved 2026-08-11. Idle detection now discards
   trailing recognisable IOS syslog lines before looking for the prompt, in both
   the Python helper and the in-Packet-Tracer JavaScript guard, reusing the rule
