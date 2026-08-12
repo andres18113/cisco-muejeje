@@ -51,6 +51,9 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
         {
             Dimension.RIPV2_CONFIG: Status.SUPPORTED,
             Dimension.ROUTING_PROCESS_STATE: Status.SUPPORTED,
+            # R2-B fase 4 leyo en vivo  en este modelo y
+            # build, y el parser de produccion extrajo la ruta aprendida.
+            Dimension.ROUTING_ROUTE_STATE: Status.SUPPORTED,
         },
     ),
     "2960-24TT": (_NO_MODEL_ATTRIBUTED_EVIDENCE, {}),

@@ -47,6 +47,7 @@ from .ios_terminal import (
     parse_show_etherchannel_summary,
     parse_show_ip_ospf_neighbor,
     parse_show_ip_protocols_rip,
+    parse_show_ip_route_rip,
     parse_show_ip_route_ospf,
     parse_show_spanning_tree,
 )
@@ -783,13 +784,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
 
     def _observe_route(self, expectation, action, query_cache):
         if isinstance(action, ConfigureRipv2):
-            return self._unobservable(
-                expectation,
-                ControlPlaneExecutionStage.OBSERVED,
-                "A learned RIP route is behaviour and is not observed by this "
-                "configuration read-back.",
-                evidence_method="rip_route_readback_unavailable",
-            )
+            return self._observe_rip_route(expectation, action, query_cache)
         if isinstance(action, ConfigureEigrpIpv4):
             return self._unobservable(
                 expectation,
@@ -798,6 +793,59 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 evidence_method="eigrp_readback_unavailable",
             )
         return self._observe_ospf_route(expectation, action, query_cache)
+
+    def _observe_rip_route(self, expectation, action, query_cache):
+        """Ruta APRENDIDA por RIP, distinta de la configuración leída.
+
+        Compara sólo prefijo, longitud y que la fuente sea RIP. Ni siguiente
+        salto ni interfaz entran: la evidencia viva llegó por una serial, y
+        exigir ese nombre ataría la aceptación a una topología concreta.
+        """
+        if expectation.expected.get("protocol") != "ripv2":
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "No registered live-fixture-backed query observes this route protocol.",
+            )
+        show = self._fresh_show(
+            action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP,
+            expectation, query_cache,
+        )
+        if isinstance(show, RuntimeControlPlaneVerification):
+            return show
+        if show.truncated_by_pager:
+            # Una tabla cortada puede esconder justo la ruta buscada: leerla
+            # como ausencia seria un FAILED falso.
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "The RIP route read-back was truncated by the IOS pager.",
+                evidence_method="rip_route_readback_truncated",
+            )
+        rows = parse_show_ip_route_rip(show.output)
+        fields = self._unobservable_fields(expectation)
+        network = expectation.expected.get("network")
+        prefix_length = expectation.expected.get("prefix_length")
+        match = next(
+            (
+                item for item in rows
+                if item.prefix == network
+                and (
+                    type(prefix_length) is not int
+                    or item.prefix_length == prefix_length
+                )
+            ),
+            None,
+        )
+        fields["protocol"] = self._field(match is not None)
+        if isinstance(network, str):
+            fields["network"] = self._field(match is not None)
+        if type(prefix_length) is int:
+            fields["prefix_length"] = self._field(match is not None)
+        return self._direct_observation(
+            expectation, fields, "fresh_show_ip_route_rip",
+            "Fresh RIP route rows were matched by exact prefix and length."
+            if match is not None else
+            "Fresh RIP route output does not carry the expected prefix.",
+        )
 
     def _observe_rip_process(self, expectation, action, query_cache):
         if expectation.expected.get("protocol") != "ripv2":

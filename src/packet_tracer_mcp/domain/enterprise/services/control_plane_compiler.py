@@ -1442,6 +1442,43 @@ class ControlPlaneCompiler:
                     },
                     depends_on=[action.id],
                 ))
+            # Rutas APRENDIDAS. El prefijo esperado sale de las identidades L3
+            # de E5, no de `RipNetwork`, que es classful y no sabe nada de la
+            # /27 ni de la /28 reales. Un prefijo conectado localmente nunca
+            # puede satisfacer esto: se descuenta antes de emitir nada.
+            connected: dict[str, set] = {
+                device_id: {
+                    _network_of(item) for item in l3_by_device.get(device_id, [])
+                }
+                for device_id in action_by_device
+            }
+            for local_id, local_action in sorted(action_by_device.items()):
+                for remote_id, remote_action in sorted(action_by_device.items()):
+                    if local_id == remote_id:
+                        continue
+                    remote_only = sorted(
+                        connected[remote_id] - connected[local_id],
+                        key=lambda item: (item.network_address, item.prefixlen),
+                    )
+                    for network in remote_only:
+                        expectations.append(ControlPlaneVerificationExpectation(
+                            id=_stable_id(
+                                "verify-rip-route", local_id,
+                                str(network.network_address), network.prefixlen,
+                            ),
+                            kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
+                            action_id=local_action.id,
+                            device_id=local_id,
+                            peer_device_id=remote_id,
+                            required_capability=
+                                ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
+                            expected={
+                                "network": str(network.network_address),
+                                "prefix_length": network.prefixlen,
+                                "protocol": DynamicRoutingProtocol.RIPV2.value,
+                            },
+                            depends_on=sorted([local_action.id, remote_action.id]),
+                        ))
             return actions, expectations
         for action in actions:
             expectations.append(ControlPlaneVerificationExpectation(

@@ -885,6 +885,210 @@ def test_verification_requires_the_action_to_have_been_applied():
     assert not ios.calls
 
 
+# ===================== expectativa tipada de ruta (TD-RUNTIME-005) =========
+
+
+def _route_expectations(plan):
+    return [
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTE_PRESENT
+    ]
+
+
+def test_route_expectations_name_only_remote_prefixes():
+    """El prefijo sale de las identidades L3, no de la sentencia classful."""
+    plan = _compile_university().plan
+    by_device: dict[str, set] = {}
+    for item in _route_expectations(plan):
+        by_device.setdefault(item.device_id, set()).add(
+            (item.expected["network"], item.expected["prefix_length"]),
+        )
+
+    # r1 espera las LAN de r2 y r3 y el transito r2-r3; su propia LAN
+    # (150.1.1.0/24) y su propio transito (150.1.100.0/30) quedan fuera.
+    assert by_device["r1"] == {
+        ("150.1.2.0", 24), ("150.1.3.0", 24), ("150.1.200.0", 30),
+    }
+    assert ("150.1.2.0", 24) not in by_device["r2"]
+    assert ("150.1.3.0", 24) not in by_device["r3"]
+    # Nunca la sentencia classful de RIP.
+    assert all(
+        network != "150.1.0.0"
+        for networks in by_device.values() for network, _ in networks
+    )
+
+
+def test_a_connected_prefix_never_becomes_a_remote_route_expectation():
+    plan = _compile_university().plan
+    connected = {
+        "r1": ("150.1.1.0", 24), "r2": ("150.1.2.0", 24), "r3": ("150.1.3.0", 24),
+    }
+
+    for item in _route_expectations(plan):
+        key = (item.expected["network"], item.expected["prefix_length"])
+        assert key != connected[item.device_id], (
+            f"{item.device_id} no puede esperar aprender su propia {key}"
+        )
+
+
+def test_route_expectations_require_prefix_and_rip_but_not_topology_details():
+    plan = _compile_university().plan
+
+    for item in _route_expectations(plan):
+        assert item.expected["protocol"] == "ripv2"
+        assert set(item.expected) == {"network", "prefix_length", "protocol"}
+        # Ni siguiente salto ni interfaz: ataria la aceptacion a una serial.
+        assert "next_hop" not in item.expected
+        assert "outgoing_interface" not in item.expected
+        assert item.required_capability is (
+            ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE
+        )
+
+
+def _route_case(output, *, network="150.1.1.0", prefix_length=27, truncated=False):
+    """Verifica UNA expectativa de ruta contra una salida dada."""
+    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+        ControlPlaneVerificationExpectation,
+    )
+
+    plan = _compile_university().plan
+    action = next(
+        item for item in plan.actions_of_type(ControlPlaneActionType.CONFIGURE_RIPV2)
+        if item.device_id == "r1"
+    )
+    expectation = ControlPlaneVerificationExpectation(
+        id="verify/route", kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
+        action_id=action.id, device_id="r1",
+        required_capability=ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
+        expected={"network": network, "prefix_length": prefix_length,
+                  "protocol": "ripv2"},
+    )
+    result = IosCommandResult(
+        device_name=action.device_name,
+        query_id=OperationalQueryId.SHOW_IP_ROUTE_RIP,
+        executed=True, output=output,
+        session_state=IosSessionState.EXEC_PROMPT_READY,
+        fresh_output_observed=True, truncated_by_pager=truncated,
+    )
+    ios = _FakeIos({(action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP): result})
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _s: True, lambda _s, _t: None, ios_executor=ios)
+    runtime.apply_actions([action])
+    return runtime.verify([expectation])[0]
+
+
+def test_a_learned_route_verifies():
+    observed = _route_case(_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1)
+
+    assert observed.status is ActionExecutionStatus.VERIFIED
+    assert observed.evidence_method == "fresh_show_ip_route_rip"
+    assert observed.fresh_evidence
+
+
+def test_a_wrong_prefix_does_not_verify():
+    observed = _route_case(
+        _PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1, network="10.9.9.0", prefix_length=24,
+    )
+
+    assert observed.status is ActionExecutionStatus.FAILED
+
+
+def test_a_wrong_prefix_length_does_not_verify():
+    observed = _route_case(
+        _PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1, prefix_length=28,
+    )
+
+    assert observed.status is ActionExecutionStatus.FAILED
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "show ip route rip\nO       150.1.1.0/27 [110/65] via 150.1.1.86, 00:00:26, Serial0/0/0\nRouter>",
+        "show ip route rip\nD       150.1.1.0/27 [90/2172416] via 150.1.1.86, 00:00:26, Serial0/0/0\nRouter>",
+        "show ip route rip\nC       150.1.1.0/27 is directly connected, Serial0/0/0\nRouter>",
+    ],
+    ids=["ospf", "eigrp", "connected"],
+)
+def test_a_route_from_another_protocol_does_not_verify(output):
+    observed = _route_case(output)
+
+    assert observed.status is ActionExecutionStatus.FAILED
+
+
+def test_a_pager_truncated_route_table_is_unobservable_not_failed():
+    observed = _route_case(
+        "show ip route rip\nR       150.1.1.0/2\n --More-- ", truncated=True,
+    )
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.evidence_method == "rip_route_readback_truncated"
+    assert not observed.fresh_evidence
+
+
+def test_stale_evidence_never_verifies_a_route():
+    """Sin ventana fresca no hay evidencia, y sin evidencia no hay ruta."""
+    plan = _compile_university().plan
+    action = next(
+        item for item in plan.actions_of_type(ControlPlaneActionType.CONFIGURE_RIPV2)
+        if item.device_id == "r1"
+    )
+    expectation = next(
+        item for item in _route_expectations(plan) if item.device_id == "r1"
+    )
+    ios = _FakeIos({
+        (action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP): IosCommandResult(
+            device_name=action.device_name,
+            query_id=OperationalQueryId.SHOW_IP_ROUTE_RIP,
+            executed=True, output=_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1,
+            session_state=IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=False,
+        ),
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _s: True, lambda _s, _t: None, ios_executor=ios)
+    runtime.apply_actions([action])
+
+    observed = runtime.verify([expectation])[0]
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+
+
+def test_applied_configuration_never_proves_a_learned_route():
+    """APPLIED es despacho; una ruta aprendida es otra cosa."""
+    plan = _compile_university().plan
+    action = next(
+        item for item in plan.actions_of_type(ControlPlaneActionType.CONFIGURE_RIPV2)
+        if item.device_id == "r1"
+    )
+    expectation = next(
+        item for item in _route_expectations(plan) if item.device_id == "r1"
+    )
+    ios = _FakeIos({
+        (action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP): IosCommandResult(
+            device_name=action.device_name,
+            query_id=OperationalQueryId.SHOW_IP_ROUTE_RIP,
+            executed=False, failure_reason="prompt_not_ready",
+        ),
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _s: True, lambda _s, _t: None, ios_executor=ios)
+
+    mutation = runtime.apply_actions([action])[0]
+    observed = runtime.verify([expectation])[0]
+
+    assert mutation.applied
+    assert observed.status is not ActionExecutionStatus.VERIFIED
+
+
+def test_route_verification_is_separate_from_forwarding_verification():
+    plan = _compile_university().plan
+    kinds = {item.kind for item in plan.verification_expectations}
+
+    assert ControlPlaneVerificationKind.ROUTE_PRESENT in kinds
+    assert ControlPlaneVerificationKind.END_TO_END_REACHABILITY not in kinds
+
+
 # ===================== I. ruta de aplicación del producto ==================
 
 
@@ -923,14 +1127,24 @@ def test_a_rip_action_the_renderer_rejects_is_never_dispatched():
     assert "Typed E9 rendering failed" in results[0].message
 
 
-def test_rip_behaviour_expectations_stay_out_of_the_offline_contract():
+def test_rip_compiles_configuration_and_route_expectations_but_no_adjacency():
+    """R2-A dejo fuera las rutas a proposito; TD-RUNTIME-005 las incorpora.
+
+    Lo que sigue fuera es la vecindad: RIP no tiene maquina de estados de
+    vecino y no se inventa una.
+    """
     plan = _compile_university().plan
     kinds = {
         item.kind for item in plan.verification_expectations
         if item.action_id.startswith("cp/ripv2/")
     }
 
-    assert kinds == {ControlPlaneVerificationKind.ROUTING_PROCESS}
+    assert kinds == {
+        ControlPlaneVerificationKind.ROUTING_PROCESS,
+        ControlPlaneVerificationKind.ROUTE_PRESENT,
+    }
+    assert ControlPlaneVerificationKind.ROUTING_NEIGHBOR not in kinds
+    assert ControlPlaneVerificationKind.END_TO_END_REACHABILITY not in kinds
 
 
 # ===================== J. aislamiento del generador legacy =================

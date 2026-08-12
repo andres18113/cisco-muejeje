@@ -216,7 +216,13 @@ def test_only_dimensions_with_live_attributed_evidence_are_supported():
 
     # ROUTING_PROCESS_STATE acompana a RIPV2_CONFIG porque la MISMA lectura en
     # vivo de R2-0 lo demuestra sobre este modelo y este build.
-    assert supported == {Dimension.RIPV2_CONFIG, Dimension.ROUTING_PROCESS_STATE}
+    # ROUTING_ROUTE_STATE se anade con la evidencia de R2-B fase 4, donde
+    # `show ip route rip` se leyo en vivo en este mismo modelo y build.
+    assert supported == {
+        Dimension.RIPV2_CONFIG,
+        Dimension.ROUTING_PROCESS_STATE,
+        Dimension.ROUTING_ROUTE_STATE,
+    }
 
 
 # ===================== completitud del mapeo ================================

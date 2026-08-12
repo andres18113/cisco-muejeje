@@ -121,7 +121,7 @@ are explicit.
 ## TD-RUNTIME-005 — RIP route learning is observable but not a compiled expectation
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P2
@@ -165,6 +165,48 @@ A compiled `ROUTE_PRESENT` expectation exists for typed RIPv2, bound to the
 remote prefixes derived from the configuration plan, and
 `_observe_route` verifies it with `parse_show_ip_route_rip` and fresh evidence.
 Absent, stale, or non-RIP route output must not verify.
+
+### Resolution
+
+Resolved: 2026-08-12, stage "Debt Checkpoint 1".
+
+Commit subject:
+`feat: integrate RIP route expectations into control-plane results`
+on `feature/runtime-ripv2`.
+
+The route read-back was already live-qualified in R2-B phase 4. What this adds
+is the typed expectation that carries it into
+`ControlPlaneApplicationResult`, so an automated caller can finally ask "did
+this router learn the remote LAN?" through the plan instead of through an
+operator harness.
+
+Expected prefixes come from the **E5 L3 identities**, never from `RipNetwork`,
+which is classful and does not know the real `/27` or `/28`. For each ordered
+pair of routers the compiler emits one expectation per network the remote is
+connected to and the local is not, so a locally connected prefix can never
+satisfy a remote route expectation. Nothing keys on device names.
+
+The expectation carries exactly `network`, `prefix_length` and
+`protocol = ripv2`. Next hop, outgoing interface and metric are deliberately
+absent: the qualified evidence arrived over a serial, and requiring those
+fields would bind acceptance to one topology shape.
+
+`ROUTING_ROUTE_STATE` is now SUPPORTED for the 2911, on the R2-B phase 4 live
+read of `show ip route rip` on that exact model and build.
+
+Fail-closed behaviour, all regression-covered: a wrong prefix or wrong prefix
+length FAILS; an OSPF, EIGRP or connected row FAILS rather than satisfying a
+RIP expectation; a pager-truncated route table is UNOBSERVABLE with
+`rip_route_readback_truncated`, never FAILED; evidence without a fresh window is
+UNOBSERVABLE; and an APPLIED configuration never proves a learned route.
+
+Two earlier tests changed, both because this debt is chartered to move the
+boundary they pinned. R2-A had asserted that RIP compiles only a
+`ROUTING_PROCESS` expectation; that test now asserts configuration **and**
+route expectations, while still proving no neighbour or reachability
+expectation is invented. The capability test now lists the third supported
+dimension. Route verification stays distinct from forwarding: no
+`END_TO_END_REACHABILITY` expectation is compiled for RIP.
 
 ---
 
@@ -1119,6 +1161,19 @@ Do not delete historical debt entries.
   source changed. The entry above is kept in full and
   records the residual observability ceiling. The prior "deadline status" note
   remains as written.
+- **TD-RUNTIME-001** — resolved 2026-08-12 at Debt Checkpoint 1. The stated
+  mechanism was wrong: cleanup always precedes result materialisation, so no
+  snapshot was ever stale. The real defect was a false CLEAN, because
+  `mark_cleanup(SUCCEEDED)` erased UNKNOWN. Historical and final state are now
+  distinct, `dirty_state` is the authoritative final value, and successful
+  compensation clears only what an inverse could undo. The entry above is kept
+  in full.
+- **TD-RUNTIME-005** — resolved 2026-08-12 at Debt Checkpoint 1. Typed
+  ROUTE_PRESENT expectations for RIPv2 now carry the already-qualified route
+  read-back into ControlPlaneApplicationResult. Expected prefixes derive from
+  the E5 L3 identities, never from the classful RipNetwork, and a locally
+  connected prefix can never satisfy a remote route expectation. The entry
+  above is kept in full.
 - **TD-RUNTIME-004** — resolved 2026-08-11. Two disposable namespaces are now
   declared explicitly: `__MCP_PROBE_*` for capability discovery, which never
   reaches a trusted renderer, and `MCP-PROBE-*` for probes that do. The
