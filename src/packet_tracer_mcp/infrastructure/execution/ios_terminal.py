@@ -42,6 +42,7 @@ class OperationalQueryId(str, Enum):
     SHOW_IP_EIGRP_NEIGHBORS = "show_ip_eigrp_neighbors"
     SHOW_IP_ROUTE_EIGRP = "show_ip_route_eigrp"
     SHOW_IP_PROTOCOLS = "show_ip_protocols"
+    SHOW_IP_ROUTE_RIP = "show_ip_route_rip"
 
 
 class TrunkQueryClassification(str, Enum):
@@ -110,6 +111,7 @@ _COMMANDS = {
     OperationalQueryId.SHOW_IP_ROUTE_EIGRP: "show ip route eigrp",
     # Observado en EXEC de usuario durante R2-0; no requiere `enable`.
     OperationalQueryId.SHOW_IP_PROTOCOLS: "show ip protocols",
+    OperationalQueryId.SHOW_IP_ROUTE_RIP: "show ip route rip",
 }
 _INTERFACE_COMMANDS = {
     OperationalQueryId.SHOW_IP_INTERFACE: "show ip interface {interface}",
@@ -235,6 +237,24 @@ class OspfNeighborStatusRow:
 
 @dataclass(frozen=True)
 class OspfRouteStatusRow:
+    code: str
+    prefix: str
+    prefix_length: int | None
+    administrative_distance: int
+    metric: int
+    next_hop: str
+    age: str
+    interface: str
+
+
+@dataclass(frozen=True)
+class RipRouteStatusRow:
+    """Una ruta APRENDIDA por RIP, tal como PT 9.0.1.0858 la imprime.
+
+    Sólo campos que la salida real expone. `prefix_length` es opcional porque
+    IOS puede imprimir la ruta sin longitud cuando no hay subnetting.
+    """
+
     code: str
     prefix: str
     prefix_length: int | None
@@ -899,6 +919,54 @@ def parse_show_ip_protocols_rip(value: str) -> RipProtocolStatus | None:
             block, _RIP_PASSIVE_HEADER, _RIP_PASSIVE_ENTRY,
         ),
     )
+
+
+# Capturado en vivo en R2-B fase 4 sobre PT 9.0.1.0858:
+#
+#     R       150.1.1.0/27 [120/1] via 150.1.1.86, 00:00:26, Serial0/0/0
+#
+# La interfaz NO se restringe a GigabitEthernet, como si hace el parser de
+# OSPF: la ruta RIP calificada llega por una Serial, y anclar el nombre de
+# familia la haria invisible.
+_RIP_ROUTE_ROW = re.compile(
+    r"\s*(?P<code>R)\s+"
+    r"(?P<prefix>\d{1,3}(?:\.\d{1,3}){3})"
+    r"(?:/(?P<prefix_length>\d{1,2}))?\s+"
+    r"\[(?P<distance>\d+)/(?P<metric>\d+)\]\s+"
+    r"via\s+(?P<next_hop>\d{1,3}(?:\.\d{1,3}){3}),\s+"
+    r"(?P<age>\d{2}:\d{2}:\d{2}),\s+"
+    r"(?P<interface>[A-Za-z][A-Za-z0-9/.]*)\s*"
+)
+
+
+def parse_show_ip_route_rip(value: str) -> list[RipRouteStatusRow]:
+    """Lee sólo filas `R` completas de `show ip route rip`.
+
+    Una fila sin distancia, metrica, siguiente salto o interfaz no se
+    completa con supuestos: simplemente no es una fila.
+    """
+    rows: list[RipRouteStatusRow] = []
+    for line in normalize_terminal_output(value).splitlines():
+        match = _RIP_ROUTE_ROW.fullmatch(line)
+        if match is None:
+            continue
+        length = (
+            int(match.group("prefix_length"))
+            if match.group("prefix_length") is not None else None
+        )
+        if length is not None and length > 32:
+            continue
+        rows.append(RipRouteStatusRow(
+            code=match.group("code"),
+            prefix=match.group("prefix"),
+            prefix_length=length,
+            administrative_distance=int(match.group("distance")),
+            metric=int(match.group("metric")),
+            next_hop=match.group("next_hop"),
+            age=match.group("age"),
+            interface=match.group("interface"),
+        ))
+    return rows
 
 
 def extract_terminal_command_window(before: str, after: str, command: str) -> TerminalOutputWindow:

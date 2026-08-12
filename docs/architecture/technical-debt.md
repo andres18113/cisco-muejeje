@@ -118,6 +118,56 @@ are explicit.
 
 # Open Debt
 
+## TD-RUNTIME-005 — RIP route learning is observable but not a compiled expectation
+
+Status:
+OPEN
+
+Severity:
+P2
+
+Discovered:
+Runtime R2-B phase 4 (live route learning and forwarding)
+
+Description:
+
+R2-B phase 4 added the production read-back for learned RIP routes: the
+registered query `SHOW_IP_ROUTE_RIP` and `parse_show_ip_route_rip`, qualified
+live on PT 9.0.1.0858 and pinned by regressions against the real capture.
+
+What does not yet exist is the typed *expectation* around it. The compiler's
+RIPv2 branch emits only a `ROUTING_PROCESS` expectation, and
+`_observe_route` still answers `rip_route_readback_unavailable` for a
+`ConfigureRipv2` action, which was the deliberate R2-A boundary between
+configuration and behaviour.
+
+Consequence: route learning was proven in phase 4 by executing the registered
+query and the production parser directly, and comparing the result against the
+intended remote prefixes. That is production code and fresh evidence, but it is
+not surfaced inside `ControlPlaneApplicationResult`, so an automated caller
+cannot yet ask "did R1 learn R2's LAN?" through the typed plan.
+
+Compiling such an expectation needs the remote device's actual subnets. The
+RIPv2 action deliberately stores only the classful `network` statement plus
+provenance, so the expectation would have to be derived from the configuration
+plan rather than from `RipNetwork`.
+
+Blocks now:
+No. Route learning and forwarding were both verified live in phase 4.
+
+RESOLVE_BEFORE:
+university-topology acceptance, where route learning must be asserted
+automatically rather than by an operator harness.
+
+Closure criterion:
+
+A compiled `ROUTE_PRESENT` expectation exists for typed RIPv2, bound to the
+remote prefixes derived from the configuration plan, and
+`_observe_route` verifies it with `parse_show_ip_route_rip` and fresh evidence.
+Absent, stale, or non-RIP route output must not verify.
+
+---
+
 ## TD-CAPABILITY-001 — No product provider populates control-plane capability profiles
 
 Status:
@@ -992,8 +1042,10 @@ Do not delete historical debt entries.
   reported UNOBSERVABLE via `rip_readback_truncated`, never a false VERIFIED or
   FAILED. The two-protocol shape was captured live by walking the pager and the
   production parser reads only the RIP block from it, excluding the EIGRP
-  block's own networks and passive interfaces; that capture replaces the
-  synthetic fixture. No source changed. The entry above is kept in full and
+  block's own networks and passive interfaces. That capture supplements the
+  synthetic fixtures rather than replacing them: the RIP-first order, where the
+  parser must stop at the next block header, is still covered offline. No
+  source changed. The entry above is kept in full and
   records the residual observability ceiling. The prior "deadline status" note
   remains as written.
 - **TD-RUNTIME-004** — resolved 2026-08-11. Two disposable namespaces are now

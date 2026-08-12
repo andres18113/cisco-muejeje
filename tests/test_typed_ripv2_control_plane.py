@@ -44,6 +44,7 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosSessionState,
     OperationalQueryId,
     parse_show_ip_protocols_rip,
+    parse_show_ip_route_rip,
 )
 from src.packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
     PacketTracerControlPlaneRenderer,
@@ -126,6 +127,26 @@ _PT_9_0_1_0858_SHOW_IP_PROTOCOLS_EIGRP_THEN_RIP = (
     "Routing Information Sources:\n"
     "\tGateway         Distance      Last Update\n"
     "Distance: (default is 120)\n"
+    "Router>"
+)
+
+
+# Capturado EN VIVO en R2-B fase 4 sobre PT 9.0.1.0858, sobre la rebanada
+# PCA -- R1 == serial == R2 -- PCC. La ruta aprendida llega por una Serial,
+# no por Gigabit: por eso el parser no ancla la familia de interfaz.
+_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1 = (
+    "show ip route rip\n"
+    "     150.1.0.0/16 is variably subnetted, 5 subnets, 4 masks\n"
+    "R       150.1.1.0/27 [120/1] via 150.1.1.86, 00:00:26, Serial0/0/0\n"
+    "\n"
+    "Router>"
+)
+
+_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R2 = (
+    "show ip route rip\n"
+    "     150.1.0.0/16 is variably subnetted, 5 subnets, 4 masks\n"
+    "R       150.1.1.64/28 [120/1] via 150.1.1.85, 00:00:07, Serial0/0/0\n"
+    "\n"
     "Router>"
 )
 
@@ -589,6 +610,100 @@ def test_parser_reads_auto_summary_in_effect():
     observed = parse_show_ip_protocols_rip(_rip_output(summarization="in effect"))
 
     assert observed.auto_summary is True
+
+
+# ===================== rutas aprendidas por RIP ============================
+
+
+def test_the_live_rip_route_is_recognised_on_r1():
+    rows = parse_show_ip_route_rip(_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1)
+
+    assert len(rows) == 1
+    route = rows[0]
+    assert route.code == "R"
+    assert route.prefix == "150.1.1.0"
+    assert route.prefix_length == 27
+    assert route.administrative_distance == 120
+    assert route.metric == 1
+    assert route.next_hop == "150.1.1.86"
+    assert route.interface == "Serial0/0/0"
+
+
+def test_the_live_rip_route_is_recognised_on_r2():
+    rows = parse_show_ip_route_rip(_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R2)
+
+    assert [(item.prefix, item.prefix_length) for item in rows] == [
+        ("150.1.1.64", 28),
+    ]
+    assert rows[0].next_hop == "150.1.1.85"
+    assert rows[0].interface == "Serial0/0/0"
+
+
+def test_a_serial_learned_route_is_not_lost_to_an_interface_family_anchor():
+    """El parser de OSPF ancla `GigabitEthernet` y por eso no sirve aqui."""
+    from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+        parse_show_ip_route_ospf,
+    )
+
+    assert parse_show_ip_route_ospf(_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1) == []
+    assert parse_show_ip_route_rip(_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R1)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Otro protocolo: la letra de codigo no es `R`.
+        "show ip route\nO       150.1.1.0/27 [110/65] via 150.1.1.86, 00:00:26, Serial0/0/0\nRouter>",
+        "show ip route\nD       150.1.1.0/27 [90/2172416] via 150.1.1.86, 00:00:26, Serial0/0/0\nRouter>",
+        # Conectada / estatica.
+        "show ip route\nC       150.1.1.84/30 is directly connected, Serial0/0/0\nRouter>",
+        "show ip route\nS       150.1.1.0/27 [1/0] via 150.1.1.86\nRouter>",
+    ],
+    ids=["ospf", "eigrp", "connected", "static"],
+)
+def test_a_non_rip_route_never_satisfies_the_rip_expectation(text):
+    assert parse_show_ip_route_rip(text) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Cortada por el pager justo en la fila.
+        "show ip route rip\nR       150.1.1.0/27 [120/1] via 150.1.1.8\n --More-- ",
+        # Sin siguiente salto.
+        "show ip route rip\nR       150.1.1.0/27 [120/1]\nRouter>",
+        # Sin metrica ni distancia.
+        "show ip route rip\nR       150.1.1.0/27 via 150.1.1.86, 00:00:26, Serial0/0/0\nRouter>",
+        # Sin interfaz de salida.
+        "show ip route rip\nR       150.1.1.0/27 [120/1] via 150.1.1.86, 00:00:26,\nRouter>",
+        # Vacia.
+        "show ip route rip\nRouter>",
+    ],
+    ids=["pager-cut", "no-next-hop", "no-metric", "no-interface", "empty"],
+)
+def test_incomplete_route_evidence_never_verifies(text):
+    """Fail-closed: una fila incompleta no se completa con supuestos."""
+    assert parse_show_ip_route_rip(text) == []
+
+
+def test_route_evidence_is_distinct_from_configuration_evidence():
+    """Una cosa es que RIP este configurado y otra que haya aprendido algo."""
+    configured = parse_show_ip_protocols_rip(
+        _PT_9_0_1_0858_SHOW_IP_PROTOCOLS_RIP,
+    )
+    learned = parse_show_ip_route_rip(_PT_9_0_1_0858_SHOW_IP_PROTOCOLS_RIP)
+
+    assert configured is not None
+    assert learned == []
+
+
+def test_the_rip_route_query_is_registered_and_unprivileged():
+    from src.packet_tracer_mcp.infrastructure.execution import ios_terminal
+
+    assert ios_terminal._COMMANDS[
+        OperationalQueryId.SHOW_IP_ROUTE_RIP
+    ] == "show ip route rip"
+    assert OperationalQueryId.SHOW_IP_ROUTE_RIP not in ios_terminal._PRIVILEGED_QUERIES
 
 
 # ===================== G/H. verificación ===================================
