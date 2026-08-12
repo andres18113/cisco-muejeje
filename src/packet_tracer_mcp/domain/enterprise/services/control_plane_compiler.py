@@ -1453,32 +1453,42 @@ class ControlPlaneCompiler:
                 for device_id in action_by_device
             }
             for local_id, local_action in sorted(action_by_device.items()):
+                # Una expectativa por (dispositivo, prefijo), no por pareja: con
+                # tres o mas routers un mismo prefijo llega por varios vecinos y
+                # emitir una por pareja producia IDs duplicadas. La pregunta es
+                # "aprendio este prefijo", no "por cual vecino": el siguiente
+                # salto no forma parte de la asercion.
+                contributors: dict = {}
                 for remote_id, remote_action in sorted(action_by_device.items()):
                     if local_id == remote_id:
                         continue
-                    remote_only = sorted(
+                    for network in sorted(
                         connected[remote_id] - connected[local_id],
                         key=lambda item: (item.network_address, item.prefixlen),
-                    )
-                    for network in remote_only:
-                        expectations.append(ControlPlaneVerificationExpectation(
-                            id=_stable_id(
-                                "verify-rip-route", local_id,
-                                str(network.network_address), network.prefixlen,
-                            ),
-                            kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
-                            action_id=local_action.id,
-                            device_id=local_id,
-                            peer_device_id=remote_id,
-                            required_capability=
-                                ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
-                            expected={
-                                "network": str(network.network_address),
-                                "prefix_length": network.prefixlen,
-                                "protocol": DynamicRoutingProtocol.RIPV2.value,
-                            },
-                            depends_on=sorted([local_action.id, remote_action.id]),
-                        ))
+                    ):
+                        contributors.setdefault(network, (remote_id, remote_action))
+                for network, (remote_id, remote_action) in sorted(
+                    contributors.items(),
+                    key=lambda item: (item[0].network_address, item[0].prefixlen),
+                ):
+                    expectations.append(ControlPlaneVerificationExpectation(
+                        id=_stable_id(
+                            "verify-rip-route", local_id,
+                            str(network.network_address), network.prefixlen,
+                        ),
+                        kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
+                        action_id=local_action.id,
+                        device_id=local_id,
+                        peer_device_id=remote_id,
+                        required_capability=
+                            ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
+                        expected={
+                            "network": str(network.network_address),
+                            "prefix_length": network.prefixlen,
+                            "protocol": DynamicRoutingProtocol.RIPV2.value,
+                        },
+                        depends_on=sorted([local_action.id, remote_action.id]),
+                    ))
             return actions, expectations
         for action in actions:
             expectations.append(ControlPlaneVerificationExpectation(

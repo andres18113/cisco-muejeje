@@ -918,6 +918,32 @@ def test_route_expectations_name_only_remote_prefixes():
     )
 
 
+def test_every_compiled_expectation_has_a_unique_id():
+    """Con 3+ routers un prefijo llega por varios vecinos.
+
+    Emitir una expectativa por PAREJA producia dos con la misma id, porque la
+    id no incluye al vecino. Lo encontro la aceptacion universitaria; los
+    tests anteriores lo tapaban al comparar conjuntos.
+    """
+    plan = _compile_university().plan
+    identifiers = [item.id for item in plan.verification_expectations]
+
+    assert len(identifiers) == len(set(identifiers))
+
+
+def test_a_prefix_reachable_through_two_peers_is_expected_once():
+    plan = _compile_university().plan
+    routes = _route_expectations(plan)
+    keys = [
+        (item.device_id, item.expected["network"], item.expected["prefix_length"])
+        for item in routes
+    ]
+
+    assert len(keys) == len(set(keys))
+    # r1 alcanza el transito r2-r3 por r2 y por r3, y aun asi se espera una vez.
+    assert keys.count(("r1", "150.1.200.0", 30)) == 1
+
+
 def test_a_connected_prefix_never_becomes_a_remote_route_expectation():
     plan = _compile_university().plan
     connected = {
