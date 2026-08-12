@@ -168,3 +168,66 @@ RIPV2_REPLAY_LIVE_QUALIFICATION   = READY
 RIPV2_CURRENT_TRANSPORT_SAFETY    = READY_FOR_TYPED_IMPLEMENTATION
 GLOBAL_COMMAND_TRANSPORT_INTEGRITY = PARTIAL   (unchanged by this gate)
 ```
+
+---
+
+# R2-B phase 4 — typed RIPv2 route exchange and forwarding
+
+A later stage on the same Packet Tracer build. Recorded here so the evidence
+and its ceiling outlive the session that produced them.
+
+## Environment and slice
+
+| Item | Value |
+| --- | --- |
+| Packet Tracer version | `9.0.1.0858`, declared through `ConfigurationRuntimeContext.evidence_backend_version` |
+| Routers | 2× `2911` with `HWIC-2T`, serial interface **discovered** as `Serial0/0/0`, not assumed |
+| Endpoints | 2× `PC-PT` |
+| Probe names | `MCP-PROBE-R2B-R1`, `-R2`, `-PCA`, `-PCC` |
+| Serial roles | `show controllers`: R1 **DCE**, R2 **DTE**; `clock rate` applied only to R1 |
+| Addressing | R1 LAN `150.1.1.64/28`, WAN `150.1.1.84/30`, R2 LAN `150.1.1.0/27` |
+
+Local reachability was proven **before** RIP existed, so a later failure could
+not be misattributed to routing: each PC reached its own gateway 4/4, and R1
+reached R2 across the WAN 5/5.
+
+## What was verified live
+
+| Claim | Result |
+| --- | --- |
+| Capability resolution for `ripv2_config` and `routing_process_state` on 2911 | SUPPORTED, non-test provenance, version-scoped |
+| LAN interface passive, serial interface active | compiled that way on both routers |
+| Typed RIP application | one deliberate dispatch per router, APPLIED |
+| Configuration read-back | VERIFIED on both, via `fresh_show_ip_protocols` |
+| Learned route on R1 | `R 150.1.1.0/27 [120/1] via 150.1.1.86, Serial0/0/0` |
+| Learned route on R2 | `R 150.1.1.64/28 [120/1] via 150.1.1.85, Serial0/0/0` |
+| Forwarding PC-A → PC-C and PC-C → PC-A | 4/4 each, no loss, first attempt |
+
+Routes were read through the registered query `SHOW_IP_ROUTE_RIP` and
+`parse_show_ip_route_rip`, both added in this stage because neither existing
+route parser matches a RIP row arriving over a serial interface.
+
+This is **RIP route exchange**, not an OSPF-style adjacency. RIP has no
+neighbour state machine, and none is required or claimed.
+
+## Claim ceiling
+
+Route-learning *behaviour* is verified. The typed *expectation* plumbing is
+not: no compiled `ROUTE_PRESENT` expectation binds the read-back, so route
+learning does not appear inside `ControlPlaneApplicationResult` and an
+automated caller cannot yet assert it through the typed plan. That gap is
+`TD-RUNTIME-005`, which remains OPEN.
+
+```text
+RIPV2_ROUTE_LEARNING_BEHAVIOR       = VERIFIED
+RIPV2_ROUTE_EXPECTATION_INTEGRATION = NOT_READY
+```
+
+## Cleanup
+
+All four disposable devices were deleted by exact name in a finally-protected
+block: `MCP-PROBE-R2B-R1`, `-R2`, `-PCA`, `-PCC`.
+
+Residue of `MCP-PROBE-R2B-*`: none. Semantic probe links remaining: 0. The
+backend-managed `Power Distribution Device` was preserved, as it is not probe
+residue and is not removable by this project.

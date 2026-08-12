@@ -330,6 +330,11 @@ def test_historical_run_records_still_name_their_original_probes():
 
     assert "__MCP_PROBE_R2_R1" in qualification
     assert "Residue of `__MCP_PROBE_R2_*`: none." in qualification
-    assert TYPED_PREFIX not in qualification
+    # La comprobacion se acota al registro R2-0. Etapas POSTERIORES en el mismo
+    # documento usan legitimamente el namespace tipado; lo que no puede pasar es
+    # que el registro historico se renombre hacia la convencion nueva.
+    r2_0_record = qualification.split("# R2-B phase 4", 1)[0]
+    assert "__MCP_PROBE_R2_R1" in r2_0_record
+    assert TYPED_PREFIX not in r2_0_record
     # El registro vivo de TD-RUNTIME-002 conserva su nombre original.
     assert "__MCP_PROBE_R2_IDLE_R1" in ledger
