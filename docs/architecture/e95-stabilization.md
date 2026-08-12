@@ -156,9 +156,24 @@ Dirty state is derived conservatively:
   `DIRTY_RECOVERABLE`;
 - a failure after a mutation without an inverse: `DIRTY_UNRECOVERABLE`.
 
-Cleanup is also explicit. Successful compensation returns the journal to
-`CLEAN`; failed compensation makes it `DIRTY_UNRECOVERABLE`; unknown cleanup
-keeps the result `UNKNOWN`. A transport timeout after a mutation must not be
+Historical and final state are distinct, and both are kept.
+`ApplicationExecutionJournal.applied_dirty_state` is derived from the
+append-only entries and records what the application itself left behind.
+`dirty_state` is the final post-cleanup state, and it is the authoritative
+value for any consumer deciding acceptance, diagnosis, or autofix. When no
+compensation was attempted the two are equal.
+
+Cleanup is explicit, and it only clears what compensation can actually prove.
+Successful compensation returns the journal to `CLEAN` **only** when the
+applied state was `CLEAN` or `DIRTY_RECOVERABLE`, because those are the cases
+an inverse could undo. It does not resolve `UNKNOWN`: the open question there
+is whether the mutation happened at all, and compensating does not answer it.
+It does not clear `DIRTY_UNRECOVERABLE` either, which is dirty precisely
+because no inverse existed to run. `CompensationStatus.SUCCEEDED` means the
+compensation completed, never that every mutation was restored.
+
+Failed compensation makes the final state `DIRTY_UNRECOVERABLE`; unknown
+cleanup keeps it `UNKNOWN`. A transport timeout after a mutation must not be
 reported as a clean failure.
 
 The shared vocabulary makes idempotency observable, but does not imply that

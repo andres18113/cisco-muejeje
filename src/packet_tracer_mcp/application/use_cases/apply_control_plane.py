@@ -1389,12 +1389,12 @@ class ControlPlaneApplicator:
         if not restore_observed:
             journal.mark_cleanup(CompensationStatus.UNKNOWN)
             return
-        if journal.dirty_state is DirtyState.CLEAN:
-            journal.mark_cleanup(CompensationStatus.SUCCEEDED)
-        else:
-            # A known scenario restore cannot erase dirty state caused by an
-            # earlier control-plane application failure.
-            journal.cleanup_status = CompensationStatus.SUCCEEDED
+        # El bypass que antes vivia aqui existia porque `mark_cleanup` limpiaba
+        # sin evidencia: un restore de escenario no puede borrar la suciedad de
+        # una aplicacion anterior. Esa proteccion ahora es del propio
+        # `mark_cleanup`, que sólo limpia lo que la compensación puede probar,
+        # así que la ruta vuelve a ser una sola.
+        journal.mark_cleanup(CompensationStatus.SUCCEEDED)
 
     @staticmethod
     def _capability_status(profiles, model, dimension):

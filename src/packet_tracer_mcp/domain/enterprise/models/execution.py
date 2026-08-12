@@ -29,13 +29,33 @@ class MutationDisposition(str, Enum):
 
 
 class DirtyState(str, Enum):
+    """Residuo que una aplicación deja en el backend.
+
+    `ApplicationExecutionJournal.dirty_state` es el estado FINAL, ya compuesto
+    con el resultado de la compensación. El estado histórico, anterior a
+    cualquier limpieza, se conserva en `entries` y se lee con
+    `applied_dirty_state`. Los dos son distintos y ninguno se pisa al otro.
+    """
+
+    # No hubo mutación, o la que falló no llegó a mutar nada.
     CLEAN = "clean"
+    # Falló algo después de mutar, pero toda mutación tiene inverso.
     DIRTY_RECOVERABLE = "dirty_recoverable"
+    # Falló algo después de mutar y alguna mutación no tiene inverso.
     DIRTY_UNRECOVERABLE = "dirty_unrecoverable"
+    # No se sabe si la mutación ocurrió. La duda no se limpia compensando.
     UNKNOWN = "unknown"
 
 
 class CompensationStatus(str, Enum):
+    """Resultado de la COMPENSACIÓN, que no es lo mismo que restauración.
+
+    `SUCCEEDED` dice que la operación de compensación se completó, no que todo
+    lo mutado haya vuelto a su sitio: una compensación sólo puede deshacer
+    aquello para lo que existía un inverso. Por eso no basta para declarar
+    CLEAN por sí sola.
+    """
+
     NOT_AVAILABLE = "not_available"
     AVAILABLE = "available"
     NOT_ATTEMPTED = "not_attempted"
@@ -59,12 +79,33 @@ class ExecutionJournalEntry(BaseModel):
 
 
 class ApplicationExecutionJournal(BaseModel):
+    """Registro append-only de una aplicación, y su estado sucio.
+
+    INVARIANTE AUTORITATIVA. `dirty_state` es el estado FINAL post-limpieza y
+    es la única fuente de verdad para un consumidor que decida aceptación,
+    diagnóstico o autofix. `applied_dirty_state` es el estado histórico
+    derivado de `entries`, anterior a cualquier compensación, y nunca se pisa.
+
+    Cuando no se intentó compensación los dos coinciden. Cuando sí se intentó,
+    `dirty_state` es la composición de ambos según `mark_cleanup`, que jamás
+    declara CLEAN sin evidencia de que lo mutado se restauró.
+    """
+
     plan_id: str
     deployment_id: str = ""
     entries: list[ExecutionJournalEntry] = Field(default_factory=list)
     dirty_state: DirtyState = DirtyState.CLEAN
     preflight_errors: list[str] = Field(default_factory=list)
     cleanup_status: CompensationStatus = CompensationStatus.NOT_ATTEMPTED
+
+    @property
+    def applied_dirty_state(self) -> DirtyState:
+        """Estado histórico, derivado sólo de lo aplicado.
+
+        Se recalcula desde `entries`, que son append-only, así que una
+        compensación posterior no puede borrarlo.
+        """
+        return _derive_dirty_state(self.entries)
 
     def append(self, entry: ExecutionJournalEntry) -> None:
         expected = len(self.entries) + 1
@@ -86,10 +127,27 @@ class ApplicationExecutionJournal(BaseModel):
         self.dirty_state = DirtyState.UNKNOWN
 
     def mark_cleanup(self, status: CompensationStatus) -> None:
+        """Compone el estado final con lo que la compensación puede probar.
+
+        Una compensación exitosa sólo deshace aquello para lo que existía un
+        inverso, así que sólo puede limpiar `DIRTY_RECOVERABLE`. No puede
+        resolver `UNKNOWN` --la duda es si la mutación llegó a ocurrir, y
+        compensar no la despeja-- ni `DIRTY_UNRECOVERABLE`, que es dirty
+        precisamente porque no había inverso que ejecutar.
+        """
         self.cleanup_status = status
+        applied = self.applied_dirty_state
         if status is CompensationStatus.SUCCEEDED:
-            self.dirty_state = DirtyState.CLEAN
+            self.dirty_state = (
+                DirtyState.CLEAN
+                if applied in {DirtyState.CLEAN, DirtyState.DIRTY_RECOVERABLE}
+                else applied
+            )
         elif status is CompensationStatus.FAILED:
+            # Sin cambios respecto al contrato previo, y a proposito: una
+            # compensacion fallida se reporta como residuo que nadie puede
+            # deshacer solo, que es la señal mas fuerte para pedir atencion.
+            # Degradarla a UNKNOWN seria mas debil, no mas honesto.
             self.dirty_state = DirtyState.DIRTY_UNRECOVERABLE
         elif status is CompensationStatus.UNKNOWN:
             self.dirty_state = DirtyState.UNKNOWN

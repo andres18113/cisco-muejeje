@@ -223,7 +223,12 @@ def test_security_manifest_retargets_actions_behavior_and_cleanup_by_semantic_id
     assert (names["guest-pc"][0], names["web"][0]) in runtime.behavior_names
     assert result.execution_journal is not None
     assert result.execution_journal.cleanup_status is CompensationStatus.SUCCEEDED
-    assert result.dirty_state is DirtyState.CLEAN
+    # La limpieza se completo, pero las mutaciones fueron fire-and-forget y su
+    # disposicion quedo UNKNOWN: no hay evidencia de que lo mutado se haya
+    # restaurado, asi que declarar CLEAN seria afirmar de mas. Antes esta linea
+    # decia CLEAN, y esa era la falsa limpieza que TD-RUNTIME-001 cierra.
+    assert result.dirty_state is DirtyState.UNKNOWN
+    assert result.execution_journal.applied_dirty_state is DirtyState.UNKNOWN
 
 
 def test_security_manifest_hash_mismatch_blocks_before_inventory_or_mutation():

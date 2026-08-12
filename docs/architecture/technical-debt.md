@@ -371,7 +371,7 @@ on convenience.
 ## TD-RUNTIME-001 — Post-cleanup result DirtyState may be stale
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P1
@@ -414,6 +414,77 @@ Determine explicitly whether `result.dirty_state` is intended to represent:
 
 Then make implementation, naming, documentation, and tests consistent with
 that contract.
+
+### Resolution
+
+Resolved: 2026-08-12, stage "Debt Checkpoint 1".
+
+Commit subject:
+`fix: reconcile final dirty state after cleanup`
+on `feature/runtime-ripv2`.
+
+**The stated mechanism was wrong, and the correction matters.** There is no
+stale snapshot. In every applicator the cleanup transition happens *before* the
+result is built — `apply_control_plane.py` constructs the journal, calls
+`_record_scenario_restore`, and only then materialises the result reading
+`journal.dirty_state`. Because no enterprise model revalidates instances, the
+result holds the same journal object, so `result.dirty_state` and
+`result.execution_journal.dirty_state` could never disagree. Fixing "staleness"
+would have fixed nothing.
+
+The real defect was a **false CLEAN**. `mark_cleanup(SUCCEEDED)` overwrote
+`dirty_state` to `CLEAN` unconditionally, including over `UNKNOWN`. Since a
+fire-and-forget dispatch carries an `UNKNOWN` disposition, a mutation nobody
+could confirm, compensated by another dispatch nobody could confirm, was being
+reported as clean. `apply_control_plane.py` had a hand-written bypass to dodge
+exactly this, while `apply_security.py` did not — two applicators with opposite
+semantics for the same situation, each pinned by a test in the same file.
+
+Contract chosen:
+
+```text
+EXECUTION_RESULT_CONTRACT = HISTORICAL_AND_FINAL_STATE_ARE_DISTINCT
+```
+
+Chosen from behaviour, not diff size: the result is already materialised after
+cleanup, so the field is structurally final, while the append-only entries are
+the historical record this document already says must not be erased.
+
+Authoritative invariant, now documented in `e95-stabilization.md`:
+
+- `dirty_state` is the **final post-cleanup state** and is the only value a
+  consumer should use for acceptance, diagnosis, or autofix;
+- `applied_dirty_state` is a property derived from the append-only entries and
+  records the **historical** application state; compensation never overwrites
+  it;
+- with no compensation attempted, the two are equal.
+
+`mark_cleanup` now composes them with what compensation can actually prove:
+`SUCCEEDED` clears only `CLEAN` and `DIRTY_RECOVERABLE`, because those are what
+an inverse could undo. It never resolves `UNKNOWN`, and never clears
+`DIRTY_UNRECOVERABLE`. `FAILED` and `UNKNOWN` keep their previous meaning
+deliberately: a failed compensation still reports unrecoverable residue, which
+is the strongest call for attention, and weakening it to UNKNOWN would be less
+safe, not more honest.
+
+Consequences:
+
+- the control-plane bypass is deleted; both applicators now take one path;
+- one security test changed from `CLEAN` to `UNKNOWN`. That removes an unearned
+  claim rather than weakening a check, and the test now also asserts the
+  historical state;
+- `e95-stabilization.md` said "Successful compensation returns the journal to
+  `CLEAN`" without qualification. That sentence was unsound and is corrected.
+
+Evidence:
+
+- 27 focused regressions covering no-mutation, recoverable, unrecoverable and
+  unknown application states across successful, failed, unknown and
+  not-attempted compensation; historical state surviving a successful cleanup;
+  a post-cleanup append recomputing from entries; and an adversarial sweep
+  proving no `CompensationStatus` value can turn an `UNKNOWN` mutation into
+  `CLEAN`;
+- full suite green.
 
 ---
 
