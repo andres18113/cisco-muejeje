@@ -6,6 +6,8 @@ import re
 
 from ...models.errors import ErrorCode, PlanError, ValidationResult
 from ..models.intent import EnterpriseIntent
+from ..models.link_performance import LinkMedia
+from .site_planner import site_id_for
 
 
 def validate_enterprise_intent(intent: EnterpriseIntent) -> ValidationResult:
@@ -44,7 +46,64 @@ def validate_enterprise_intent(intent: EnterpriseIntent) -> ValidationResult:
             ))
         _validate_requirements(site.endpoints, site.name, result)
         _validate_buildings(site, result)
+    _validate_wan_requirements(intent, result)
     return result
+
+
+def _validate_wan_requirements(
+    intent: EnterpriseIntent,
+    result: ValidationResult,
+) -> None:
+    """Valida pares WAN como enlaces no dirigidos antes de crear un plan."""
+    known_sites = {site_id_for(site.name) for site in intent.sites}
+    media_by_pair: dict[tuple[str, str], set[LinkMedia]] = {}
+    for site in sorted(intent.sites, key=lambda item: site_id_for(item.name)):
+        source = site_id_for(site.name)
+        for requirement in sorted(
+            site.uplinks,
+            key=lambda item: (item.target_site_id, item.media.value),
+        ):
+            target = requirement.target_site_id
+            if target == source:
+                result.errors.append(PlanError(
+                    code=ErrorCode.ENTERPRISE_WAN_SELF_LINK,
+                    message=f"El sitio {source!r} no puede enlazarse consigo mismo.",
+                    device=source,
+                    suggestion="Eliminá el uplink propio o indicá otro sitio.",
+                ))
+                continue
+            if target not in known_sites:
+                result.errors.append(PlanError(
+                    code=ErrorCode.ENTERPRISE_WAN_SITE_NOT_FOUND,
+                    message=f"El sitio destino WAN {target!r} no existe.",
+                    device=source,
+                    suggestion="Usá el site_id de un sitio declarado en la intención.",
+                ))
+                continue
+            if requirement.media is LinkMedia.UNKNOWN:
+                result.errors.append(PlanError(
+                    code=ErrorCode.ENTERPRISE_WAN_MEDIA_UNKNOWN,
+                    message=f"El enlace WAN {source}<->{target} requiere un medio conocido.",
+                    device=f"{min(source, target)}<->{max(source, target)}",
+                    suggestion="Indicá serial o ethernet.",
+                ))
+                continue
+            pair = tuple(sorted((source, target)))
+            media_by_pair.setdefault(pair, set()).add(requirement.media)
+
+    for pair, media in sorted(media_by_pair.items()):
+        if len(media) <= 1:
+            continue
+        media_names = ", ".join(sorted(item.value for item in media))
+        result.errors.append(PlanError(
+            code=ErrorCode.ENTERPRISE_WAN_MEDIA_CONFLICT,
+            message=(
+                f"El enlace WAN {pair[0]}<->{pair[1]} declara medios incompatibles: "
+                f"{media_names}."
+            ),
+            device=f"{pair[0]}<->{pair[1]}",
+            suggestion="Declaralo con un único medio en ambos extremos.",
+        ))
 
 
 def _validate_buildings(site, result: ValidationResult) -> None:

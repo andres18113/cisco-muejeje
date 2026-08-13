@@ -65,6 +65,12 @@ class _WanConnection:
     media: LinkMedia
 
 
+@dataclass(frozen=True)
+class _WanRouterResolution:
+    device: PlannedNetworkDevice | None = None
+    warning: str = ""
+
+
 class SwitchCountPlanner:
     """Elige un conjunto homogéneo por capacidad física, sin reaplicar growth E2."""
 
@@ -295,7 +301,7 @@ class HardwarePlanner:
         )
         unsupported = [
             warning for warning in warnings
-            if warning.startswith(("No existe candidato", "WAN:"))
+            if warning.startswith(("No existe candidato", "WAN inválida:"))
             or "sin puerto asignado" in warning
         ]
         return HardwarePlan(
@@ -381,20 +387,16 @@ class HardwarePlanner:
             site, mode, len(access_devices), switch_candidates, router_candidates,
             policy, internet_required,
         )
-        wan_device = self._wan_router_device(
+        wan_resolution = self._wan_router_device(
             site,
             router_candidates,
             required_serial_ports,
             required_wan_ethernet_ports,
         )
-        if wan_device is not None:
-            higher_devices.append(wan_device)
-        elif required_serial_ports or required_wan_ethernet_ports:
-            warnings.append(
-                f"No existe candidato WAN para {site.site_id} con "
-                f"{required_serial_ports} puerto(s) serial y "
-                f"{required_wan_ethernet_ports} puerto(s) Ethernet verificables."
-            )
+        if wan_resolution.device is not None:
+            higher_devices.append(wan_resolution.device)
+        elif wan_resolution.warning:
+            warnings.append(wan_resolution.warning)
         devices.extend(higher_devices)
         for device in higher_devices:
             if device.selection_status is not DeviceCandidateStatus.COMPATIBLE:
@@ -426,7 +428,7 @@ class HardwarePlanner:
         enterprise_plan: EnterprisePlan,
     ) -> tuple[list[_WanConnection], list[str]]:
         known_sites = {site.site_id for site in enterprise_plan.sites}
-        connections: dict[tuple[str, str, str], _WanConnection] = {}
+        media_by_pair: dict[tuple[str, str], set[LinkMedia]] = {}
         warnings: list[str] = []
         for site in sorted(enterprise_plan.sites, key=lambda item: item.site_id):
             for requirement in sorted(
@@ -436,25 +438,38 @@ class HardwarePlanner:
                 target = requirement.target_site_id
                 if target not in known_sites:
                     warnings.append(
-                        f"WAN: {site.site_id} referencia el sitio inexistente {target}."
+                        f"WAN inválida: {site.site_id} referencia el sitio inexistente {target}."
                     )
                     continue
                 if target == site.site_id:
-                    warnings.append(f"WAN: {site.site_id} no puede enlazarse consigo mismo.")
+                    warnings.append(
+                        f"WAN inválida: {site.site_id} no puede enlazarse consigo mismo."
+                    )
                     continue
                 if requirement.media is LinkMedia.UNKNOWN:
                     warnings.append(
-                        f"WAN: {site.site_id}->{target} requiere un medio conocido."
+                        f"WAN inválida: {site.site_id}->{target} requiere un medio conocido."
                     )
                     continue
                 source, destination = sorted((site.site_id, target))
-                key = (source, destination, requirement.media.value)
-                connections[key] = _WanConnection(
-                    source_site_id=source,
-                    target_site_id=destination,
-                    media=requirement.media,
+                media_by_pair.setdefault((source, destination), set()).add(
+                    requirement.media,
                 )
-        return [connections[key] for key in sorted(connections)], sorted(set(warnings))
+        connections: list[_WanConnection] = []
+        for pair, media in sorted(media_by_pair.items()):
+            if len(media) > 1:
+                media_names = ", ".join(sorted(item.value for item in media))
+                warnings.append(
+                    f"WAN inválida: {pair[0]}<->{pair[1]} declara medios "
+                    f"incompatibles: {media_names}."
+                )
+                continue
+            connections.append(_WanConnection(
+                source_site_id=pair[0],
+                target_site_id=pair[1],
+                media=next(iter(media)),
+            ))
+        return connections, sorted(set(warnings))
 
     @staticmethod
     def _wan_demand(
@@ -474,10 +489,12 @@ class HardwarePlanner:
         router_candidates: list[HardwareCandidate],
         required_serial_ports: int,
         required_ethernet_ports: int,
-    ) -> PlannedNetworkDevice | None:
+    ) -> _WanRouterResolution:
         if required_serial_ports == 0 and required_ethernet_ports == 0:
-            return None
+            return _WanRouterResolution()
         viable: list[tuple[HardwareCandidate, list[ModuleInstallation], list[PortDescriptor]]] = []
+        unknown_module_models: list[str] = []
+        unsupported_reasons: list[str] = []
         module_planner = ModulePlanner()
         for candidate in sorted(router_candidates, key=lambda item: item.model.casefold()):
             ethernet_ports = [
@@ -485,6 +502,24 @@ class HardwarePlanner:
                 if PortClass.UPLINK_CAPABLE in port.classes
             ]
             if len(ethernet_ports) < required_ethernet_ports:
+                unsupported_reasons.append(
+                    f"{candidate.model} sólo tiene {len(ethernet_ports)} puerto(s) "
+                    f"Ethernet WAN y se requiere(n) {required_ethernet_ports}"
+                )
+                continue
+            existing_serial_ports = [
+                port for port in candidate.ports
+                if PortClass.SERIAL in port.classes
+            ]
+            needs_module = len(existing_serial_ports) < required_serial_ports
+            if needs_module and candidate.capabilities.supports_modules is CapabilityStatus.UNKNOWN:
+                unknown_module_models.append(candidate.model)
+                continue
+            if needs_module and candidate.capabilities.supports_modules is CapabilityStatus.UNSUPPORTED:
+                unsupported_reasons.append(
+                    f"{candidate.model} tiene supports_modules=UNSUPPORTED y se requiere(n) "
+                    f"{required_serial_ports} puerto(s) serial"
+                )
                 continue
             module_plan = module_planner.plan_serial(
                 candidate,
@@ -493,6 +528,10 @@ class HardwarePlanner:
                 available_slots=len(candidate.available_module_slots),
             )
             if module_plan is None:
+                unsupported_reasons.append(
+                    f"{candidate.model} no tiene un módulo serial compatible con "
+                    f"{required_serial_ports} puerto(s) y los slots disponibles"
+                )
                 continue
             module_ports = [
                 PortDescriptor(
@@ -511,7 +550,17 @@ class HardwarePlanner:
             ]
             viable.append((candidate, module_plan, [*candidate.ports, *module_ports]))
         if not viable:
-            return None
+            if unknown_module_models:
+                models = ", ".join(sorted(unknown_module_models, key=str.casefold))
+                return _WanRouterResolution(warning=(
+                    f"WAN: {site.site_id} queda sin resolver: {models} tiene "
+                    f"supports_modules=UNKNOWN; falta evidencia para instalar "
+                    f"{required_serial_ports} puerto(s) serial."
+                ))
+            reasons = "; ".join(unsupported_reasons) or "no hay candidatos router"
+            return _WanRouterResolution(warning=(
+                f"No existe candidato WAN soportado para {site.site_id}: {reasons}."
+            ))
 
         candidate, module_plan, port_descriptors = min(
             viable,
@@ -521,7 +570,7 @@ class HardwarePlanner:
                 item[0].model.casefold(),
             ),
         )
-        return PlannedNetworkDevice(
+        return _WanRouterResolution(device=PlannedNetworkDevice(
             id=f"r-wan-{site.site_id}-01",
             site_id=site.site_id,
             role=DeviceRole.WAN_ROUTER,
@@ -539,7 +588,7 @@ class HardwarePlanner:
             port_capacity=len(port_descriptors),
             port_descriptors=port_descriptors,
             module_plan=module_plan,
-        )
+        ))
 
     @staticmethod
     def _connect_wan(

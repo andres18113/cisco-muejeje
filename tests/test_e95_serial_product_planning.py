@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
     compile_enterprise_topology,
@@ -11,6 +12,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import SitePlan
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwareCandidate,
     HardwarePlanStatus,
@@ -175,21 +177,18 @@ def test_reordered_reciprocal_serial_requirements_are_deduplicated_deterministic
     assert first.plan.model_dump(mode="json") == second.plan.model_dump(mode="json")
 
 
-@pytest.mark.parametrize("supports_modules, include_option", [
-    (CapabilityStatus.UNKNOWN, True),
-    (CapabilityStatus.SUPPORTED, False),
-])
-def test_missing_or_unknown_serial_module_capability_fails_closed(
+def _candidate_with_module_status(
     supports_modules: CapabilityStatus,
-    include_option: bool,
-):
+    *,
+    include_option: bool = True,
+) -> HardwareCandidate:
     option = ModuleInstallation(
         module="Generic-Serial-Module",
         slot="slot-a",
         provided_ports=["module-port-a", "module-port-b"],
         provided_port_classes=[PortClass.SERIAL, PortClass.WAN],
     )
-    candidate = HardwareCandidate(
+    return HardwareCandidate(
         model="Generic-Router",
         capabilities=DeviceCapabilities(
             model="Generic-Router",
@@ -207,18 +206,244 @@ def test_missing_or_unknown_serial_module_capability_fails_closed(
         available_module_slots=["slot-a"],
     )
 
+
+@pytest.mark.parametrize(
+    ("supports_modules", "warning", "is_unsupported"),
+    [
+        (
+            CapabilityStatus.UNKNOWN,
+            "WAN: north queda sin resolver: Generic-Router tiene "
+            "supports_modules=UNKNOWN; falta evidencia para instalar 1 puerto(s) serial.",
+            False,
+        ),
+        (
+            CapabilityStatus.UNSUPPORTED,
+            "No existe candidato WAN soportado para north: Generic-Router tiene "
+            "supports_modules=UNSUPPORTED y se requiere(n) 1 puerto(s) serial.",
+            True,
+        ),
+    ],
+)
+def test_unknown_and_unsupported_module_capabilities_remain_distinct(
+    supports_modules: CapabilityStatus,
+    warning: str,
+    is_unsupported: bool,
+):
     hardware = HardwarePlanner().plan(
         _design(_intent(LinkMedia.SERIAL)),
         [],
-        [candidate],
+        [_candidate_with_module_status(supports_modules)],
     )
 
     assert hardware.status is HardwarePlanStatus.UNRESOLVED
-    assert hardware.unsupported_requirements
+    assert hardware.warnings == [
+        warning,
+        warning.replace("north", "south"),
+    ]
+    assert hardware.unsupported_requirements == (
+        hardware.warnings if is_unsupported else []
+    )
     assert not [link for site in hardware.site_hardware for link in site.links]
-    assert not [
+    wan_devices = [
         device
         for site in hardware.site_hardware
         for device in site.devices
         if device.role is DeviceRole.WAN_ROUTER
     ]
+    assert wan_devices == []
+    assert not [
+        module
+        for site in hardware.site_hardware
+        for device in site.devices
+        for module in device.module_plan
+    ]
+
+
+def test_supported_modules_without_a_compatible_option_remain_unsupported():
+    hardware = HardwarePlanner().plan(
+        _design(_intent(LinkMedia.SERIAL)),
+        [],
+        [_candidate_with_module_status(CapabilityStatus.SUPPORTED, include_option=False)],
+    )
+
+    assert hardware.status is HardwarePlanStatus.UNRESOLVED
+    assert hardware.unsupported_requirements == hardware.warnings
+    assert all("módulo serial compatible" in warning for warning in hardware.warnings)
+
+
+def _conflicting_intent(*, reverse_sites: bool = False) -> EnterpriseIntent:
+    sites = [
+        SiteIntent(
+            name="A",
+            type=SiteType.HQ,
+            uplinks=[WanLinkRequirement(target_site_id="b", media=LinkMedia.SERIAL)],
+        ),
+        SiteIntent(
+            name="B",
+            type=SiteType.BRANCH,
+            uplinks=[WanLinkRequirement(target_site_id="a", media=LinkMedia.ETHERNET)],
+        ),
+    ]
+    if reverse_sites:
+        sites.reverse()
+    return EnterpriseIntent(name="Conflict", sites=sites)
+
+
+def test_reciprocal_media_conflict_is_a_deterministic_structured_invalid_plan():
+    first = EnterpriseDesigner().design(_conflicting_intent())
+    reordered = EnterpriseDesigner().design(_conflicting_intent(reverse_sites=True))
+
+    assert first.plan is None
+    assert reordered.plan is None
+    assert first.validation.to_dict() == reordered.validation.to_dict()
+    assert [error.code.value for error in first.validation.errors] == [
+        "ENTERPRISE_WAN_MEDIA_CONFLICT",
+    ]
+    assert first.validation.errors[0].device == "a<->b"
+    assert "ethernet, serial" in first.validation.errors[0].message
+
+
+@pytest.mark.parametrize(
+    ("uplink", "error_code"),
+    [
+        (
+            WanLinkRequirement(target_site_id="a", media=LinkMedia.SERIAL),
+            "ENTERPRISE_WAN_SELF_LINK",
+        ),
+        (
+            WanLinkRequirement(target_site_id="missing", media=LinkMedia.SERIAL),
+            "ENTERPRISE_WAN_SITE_NOT_FOUND",
+        ),
+    ],
+)
+def test_invalid_wan_peer_fails_closed_before_a_plan_exists(
+    uplink: WanLinkRequirement,
+    error_code: str,
+):
+    result = EnterpriseDesigner().design(EnterpriseIntent(
+        name="Invalid peer",
+        sites=[SiteIntent(name="A", type=SiteType.HQ, uplinks=[uplink])],
+    ))
+
+    assert result.plan is None
+    assert not result.validation.is_valid
+    assert [error.code.value for error in result.validation.errors] == [error_code]
+
+
+def test_unknown_wan_media_fails_closed_before_a_plan_exists():
+    result = EnterpriseDesigner().design(EnterpriseIntent(
+        name="Unknown media",
+        sites=[
+            SiteIntent(
+                name="A",
+                type=SiteType.HQ,
+                uplinks=[WanLinkRequirement(
+                    target_site_id="b",
+                    media=LinkMedia.UNKNOWN,
+                )],
+            ),
+            SiteIntent(name="B", type=SiteType.BRANCH),
+        ],
+    ))
+
+    assert result.plan is None
+    assert [error.code.value for error in result.validation.errors] == [
+        "ENTERPRISE_WAN_MEDIA_UNKNOWN",
+    ]
+
+
+def test_uplink_public_schema_is_typed_and_legacy_site_plan_strings_fail_closed():
+    intent_uplinks = SiteIntent.model_json_schema()["properties"]["uplinks"]
+    plan_uplinks = SitePlan.model_json_schema()["properties"]["uplinks"]
+
+    assert intent_uplinks["items"]["$ref"].endswith("/WanLinkRequirement")
+    assert plan_uplinks["items"]["$ref"].endswith("/WanLinkRequirement")
+    with pytest.raises(ValidationError):
+        SitePlan.model_validate({
+            "name": "A",
+            "site_id": "a",
+            "type": "hq",
+            "uplinks": ["b"],
+        })
+    assert SitePlan(name="A", site_id="a", type=SiteType.HQ).model_dump()["uplinks"] == []
+
+
+def test_two_serial_links_per_router_use_one_catalogued_two_port_module(monkeypatch):
+    serial_demands: list[tuple[str, int]] = []
+    original = ModulePlanner.plan_serial
+
+    def traced(self, candidate, required_serial_ports, options, available_slots=None):
+        serial_demands.append((candidate.model, required_serial_ports))
+        return original(self, candidate, required_serial_ports, options, available_slots)
+
+    monkeypatch.setattr(ModulePlanner, "plan_serial", traced)
+    enterprise = _design(EnterpriseIntent(
+        name="Serial triangle",
+        sites=[
+            SiteIntent(
+                name="A",
+                type=SiteType.HQ,
+                uplinks=[
+                    WanLinkRequirement(target_site_id="b", media=LinkMedia.SERIAL),
+                    WanLinkRequirement(target_site_id="c", media=LinkMedia.SERIAL),
+                ],
+            ),
+            SiteIntent(
+                name="B",
+                type=SiteType.BRANCH,
+                uplinks=[WanLinkRequirement(target_site_id="c", media=LinkMedia.SERIAL)],
+            ),
+            SiteIntent(name="C", type=SiteType.BRANCH),
+        ],
+    ))
+    hardware = HardwarePlanner().plan(enterprise, [], [_router_candidate()])
+    catalog = PacketTracerTopologyCatalogAdapter()
+    compiled = compile_enterprise_topology(
+        enterprise,
+        hardware,
+        catalog.compilation_profile(),
+        catalog.cable_for,
+    )
+
+    routers = [
+        device
+        for site in hardware.site_hardware
+        for device in site.devices
+        if device.role is DeviceRole.WAN_ROUTER
+    ]
+    links = [link for site in hardware.site_hardware for link in site.links]
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert serial_demands == [("2911", 2), ("2911", 2), ("2911", 2)]
+    assert len(routers) == 3
+    assert all(len(router.module_plan) == 1 for router in routers)
+    assert all(router.module_plan[0].module == "HWIC-2T" for router in routers)
+    assert all(len(router.module_plan[0].provided_ports) == 2 for router in routers)
+    assert len(links) == 3
+    assert compiled.is_valid and compiled.plan is not None
+    assert len(compiled.plan.modules) == 3
+    serial_links = [link for link in compiled.plan.links if link.cable == "serial"]
+    assert len(serial_links) == 3
+    ports_by_router: dict[str, set[str]] = {}
+    for link in serial_links:
+        ports_by_router.setdefault(link.device_a_id, set()).add(link.port_a)
+        ports_by_router.setdefault(link.device_b_id, set()).add(link.port_b)
+    assert {router.id: len(ports_by_router[router.id]) for router in routers} == {
+        router.id: 2 for router in routers
+    }
+
+
+def test_edge_and_wan_router_roles_are_distinct_pending_role_reconciliation():
+    intent = _intent(LinkMedia.SERIAL).model_copy(update={"internet_required": True})
+    hardware = HardwarePlanner().plan(_design(intent), [], [_router_candidate()])
+
+    for site in hardware.site_hardware:
+        routers = [
+            device
+            for device in site.devices
+            if device.role in {DeviceRole.EDGE_ROUTER, DeviceRole.WAN_ROUTER}
+        ]
+        assert [device.role for device in routers] == [
+            DeviceRole.EDGE_ROUTER,
+            DeviceRole.WAN_ROUTER,
+        ]
+        assert [device.selected_model for device in routers] == ["2911", "2911"]

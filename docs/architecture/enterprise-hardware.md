@@ -45,6 +45,24 @@ Los puertos se normalizan en clases (`access_capable`, `uplink_capable`, `wan`, 
 
 `ModulePlanner` sólo usa módulos declarados compatibles por el catálogo y puede respetar un número de slots conocido. Si no existe una combinación compatible, devuelve ausencia de plan en vez de inventar una tarjeta o una ranura. El catálogo actual no conoce todas las ranuras de todos los modelos, por lo que esa evidencia debe llegar desde E3.5 cuando corresponda.
 
+Para una WAN serial, `supports_modules=UNKNOWN` deja el requisito sin resolver
+por evidencia insuficiente: no selecciona router, no instala módulo y no lo
+declara `UNSUPPORTED`. `supports_modules=UNSUPPORTED`, en cambio, queda en
+`unsupported_requirements`. La demanda se agrega por router antes de invocar
+`ModulePlanner`; con evidencia del catálogo actual, dos enlaces seriales piden
+dos puertos y una sola `HWIC-2T` satisface ambos sin duplicar el módulo.
+
+## Límite de roles de router para Stage 3A4
+
+`EDGE_ROUTER` (salida a Internet) y `WAN_ROUTER` (enlace entre sedes) siguen
+siendo dispositivos físicos distintos en el planner general. Por tanto, una
+sede que pide ambos roles produce actualmente dos routers, aunque los dos
+puedan seleccionar el modelo 2911. Stage 3A4 no los fusiona: antes de compilar
+la topología universitaria de referencia debe existir una política explícita
+que permita que un único dispositivo satisfaga LAN gateway, edge y WAN sin
+duplicar interfaces ni responsabilidades. Ese gate permanece abierto para la
+siguiente slice de planning.
+
 ## Cobertura del catálogo y E3.5
 
 `EnterpriseCapabilityAdapter.coverage_report()` compara modelos observados con el catálogo sin añadirlos automáticamente. Modelos como `PT8200`, `IR8340` o `IE-3400` permanecen `unclassified` hasta ser descubiertos y verificados.

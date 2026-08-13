@@ -34,6 +34,22 @@ Those deterministic allocations belong to E2.
 Validation is kept in `requirements_validator.py`, not in Pydantic models, so
 callers receive structured validation results instead of hidden model policy.
 
+### Typed WAN uplinks
+
+`SiteIntent.uplinks` and `SitePlan.uplinks` use `WanLinkRequirement`, whose
+peer is a stable `site_id` and whose medium is a `LinkMedia`. The earlier
+`SitePlan.uplinks: list[str]` was an unused foundation placeholder: it had no
+corresponding `SiteIntent` input, MCP tool, persistence format, documented
+meaning, or compiler consumer. It was therefore not a supported serialized
+contract, and Stage 3A4 replaces it without legacy-string coercion. Empty
+non-WAN plans still serialize `uplinks` as `[]`.
+
+WAN requirements are validated before `EnterprisePlan` creation. A self-link,
+an unknown peer, an unknown medium, or contradictory media for the same
+undirected site pair returns the normal structured `ValidationResult` and no
+plan. There is no Enterprise-plan schema version to bump; the governed
+`TopologyPlan.hash_schema_version` contract is unchanged.
+
 ## Capabilities and hardware selection
 
 The infrastructure adapter reads the existing Packet Tracer device and module
