@@ -85,7 +85,7 @@ from .hardware import (
     PortDescriptor, ResiliencyLevel, SiteHardwarePlan,
 )
 from .intent import EnterpriseIntent, SiteIntent, SiteType
-from .requirements import EndpointRequirement, ServiceRequirement
+from .requirements import EndpointRequirement, ServiceRequirement, WanLinkRequirement
 from .service_plan import (
     DnsRecordRequirement, ServiceActionType, ServiceCapabilityProfile,
     ServiceCompileResult, ServiceEvidenceKind, ServicePlan, ServiceType,
@@ -151,7 +151,7 @@ __all__ = [
     "ConfigurationRuntimeContext", "FieldVerificationStatus", "RuntimeActionMutation", "RuntimeConfigurationTarget",
     "RuntimeVerification", "VerificationResult",
     "DeviceCandidateStatus", "DeviceCapabilities", "DeviceIdentity", "DeviceRequirement",
-    "DeviceRole", "DeviceSelectionResult", "EndpointRequirement", "ServiceRequirement",
+    "DeviceRole", "DeviceSelectionResult", "EndpointRequirement", "ServiceRequirement", "WanLinkRequirement",
     "DiscoverySource", "E4ReadinessReport", "E4ReadinessState", "EndpointGroup", "EnterpriseIntent",
     "EnterprisePlan", "EvidenceSource", "FloorIntent",
     "EnterpriseCompileResult", "EnterpriseCompileSummary",

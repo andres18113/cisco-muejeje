@@ -7,7 +7,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 from .hierarchy import BuildingIntent
-from .requirements import EndpointRequirement, ServiceRequirement
+from .requirements import EndpointRequirement, ServiceRequirement, WanLinkRequirement
 
 
 class SiteType(str, Enum):
@@ -29,6 +29,7 @@ class SiteIntent(BaseModel):
     growth_percent: float | None = None
     address_block: str | None = None
     pair_pc_with_ip_phone: bool | None = None
+    uplinks: list[WanLinkRequirement] = Field(default_factory=list)
 
 
 class EnterpriseIntent(BaseModel):

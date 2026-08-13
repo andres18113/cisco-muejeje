@@ -8,6 +8,7 @@ from ...domain.enterprise.models.capabilities import DeviceCapabilities
 from ...domain.enterprise.models.hardware import (
     CatalogCoverageReport,
     HardwareCandidate,
+    ModuleInstallation,
     NormalizedPortSpeed,
     PortClass,
     PortDescriptor,
@@ -19,7 +20,16 @@ from ...domain.enterprise.services.capability_resolver import (
 )
 from .aliases import MODEL_ALIASES
 from .devices import ALL_MODELS, DeviceModel
-from .modules import ALL_MODULES
+from .modules import ALL_MODULES, get_serial_module
+
+
+_SERIAL_MODULE_SLOT_BY_MODEL = {
+    "1941": "0/0",
+    "2901": "0/0",
+    "2911": "0/0",
+    "ISR4321": "0",
+    "ISR4331": "0",
+}
 
 
 def _normalization_key(value: str) -> str:
@@ -110,14 +120,19 @@ class EnterpriseCapabilityAdapter:
         self, category: str, packet_tracer_version: str | None = None,
     ) -> list[HardwareCandidate]:
         """Provee candidatos físicos al dominio sin que éste importe el catálogo PT."""
-        return [
-            HardwareCandidate(
+        candidates: list[HardwareCandidate] = []
+        for capability in self.all_capabilities(category, packet_tracer_version):
+            module_options = self._serial_module_options(capability.model)
+            candidates.append(HardwareCandidate(
                 model=capability.model,
                 capabilities=capability,
                 ports=self.port_descriptors_for(capability.model),
-            )
-            for capability in self.all_capabilities(category, packet_tracer_version)
-        ]
+                module_options=module_options,
+                available_module_slots=[
+                    option.slot for option in module_options if option.slot is not None
+                ],
+            ))
+        return candidates
 
     def identity_for(self, runtime_model: str, packet_tracer_version: str | None = None):
         """Resuelve sólo matching exacto/alias ya declarado; no inventa aliases runtime."""
@@ -214,3 +229,16 @@ class EnterpriseCapabilityAdapter:
             speed=normalized_speed,
             slot=port.slot,
         )
+
+    @staticmethod
+    def _serial_module_options(model: str) -> list[ModuleInstallation]:
+        module = get_serial_module(model)
+        slot = _SERIAL_MODULE_SLOT_BY_MODEL.get(model)
+        if module is None or slot is None:
+            return []
+        return [ModuleInstallation(
+            module=module.name,
+            slot=slot,
+            provided_ports=list(module.ports_added),
+            provided_port_classes=[PortClass.SERIAL, PortClass.WAN],
+        )]

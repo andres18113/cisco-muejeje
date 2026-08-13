@@ -6,6 +6,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from .link_performance import LinkMedia
 from .roles import DeviceRole
 from .service_plan import DnsRecordRequirement, ServiceType, TftpFileRequirement
 
@@ -15,6 +16,13 @@ class AddressingPreference(str, Enum):
     STATIC = "static"
     SLAAC = "slaac"
     UNSPECIFIED = "unspecified"
+
+
+class WanLinkRequirement(BaseModel):
+    """Conectividad entre sitios antes de escoger routers, módulos o puertos."""
+
+    target_site_id: str
+    media: LinkMedia = LinkMedia.ETHERNET
 
 
 class EndpointRequirement(BaseModel):

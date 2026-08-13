@@ -7,6 +7,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 from .capabilities import DeviceCandidateStatus, DeviceCapabilities, DeviceRequirement
+from .link_performance import LinkMedia
 from .roles import DeviceRole
 from .topology import NetworkLayer, TopologyPattern
 
@@ -43,6 +44,7 @@ class PortDescriptor(BaseModel):
 class ModuleInstallation(BaseModel):
     module: str
     provided_ports: list[str] = Field(default_factory=list)
+    provided_port_classes: list[PortClass] = Field(default_factory=list)
     slot: str | None = None
 
 
@@ -83,6 +85,7 @@ class HardwareLinkRequirement(BaseModel):
     target_port: str | None = None
     redundancy_group: str | None = None
     required_port_class: PortClass = PortClass.UPLINK_CAPABLE
+    media: LinkMedia = LinkMedia.ETHERNET
 
 
 class ResiliencyLevel(str, Enum):
@@ -136,6 +139,8 @@ class HardwareCandidate(BaseModel):
     model: str
     capabilities: DeviceCapabilities
     ports: list[PortDescriptor] = Field(default_factory=list)
+    module_options: list[ModuleInstallation] = Field(default_factory=list)
+    available_module_slots: list[str] = Field(default_factory=list)
 
 
 class AccessBlockPlan(BaseModel):

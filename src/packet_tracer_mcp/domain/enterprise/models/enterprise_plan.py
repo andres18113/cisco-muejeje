@@ -9,7 +9,7 @@ from .capabilities import DeviceRequirement, DeviceSelectionResult
 from .capacity import AccessCapacityRequirement
 from .hierarchy import BuildingPlan, ZonePlan
 from .intent import SiteType
-from .requirements import EndpointRequirement, ServiceRequirement
+from .requirements import EndpointRequirement, ServiceRequirement, WanLinkRequirement
 from .segments import NetworkSegment
 from .topology import TopologyDesign
 
@@ -23,7 +23,7 @@ class SitePlan(BaseModel):
     device_requirements: list[DeviceRequirement] = Field(default_factory=list)
     selected_devices: list[DeviceSelectionResult] = Field(default_factory=list)
     services: list[ServiceRequirement] = Field(default_factory=list)
-    uplinks: list[str] = Field(default_factory=list)
+    uplinks: list[WanLinkRequirement] = Field(default_factory=list)
     growth_percent: float = 0.0
     buildings: list[BuildingPlan] = Field(default_factory=list)
     default_zone: ZonePlan | None = None

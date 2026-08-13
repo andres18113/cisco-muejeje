@@ -34,6 +34,7 @@ def plan_site(intent: SiteIntent, default_growth_percent: float) -> SitePlan:
             intent.pair_pc_with_ip_phone
             if intent.pair_pc_with_ip_phone is not None else True
         ),
+        uplinks=intent.uplinks,
     )
     PhysicalHierarchyPlanner().plan(intent, plan)
 

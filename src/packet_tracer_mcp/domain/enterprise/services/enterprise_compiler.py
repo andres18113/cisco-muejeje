@@ -31,6 +31,7 @@ from ..models.hardware import (
     PortClass,
     PortDescriptor,
 )
+from ..models.link_performance import LinkMedia
 from ..models.roles import DeviceRole
 from .endpoint_expander import EndpointGroupExpander, ExpandedEndpoint, iter_zone_contexts
 from .layout_planner import LayoutPlanner
@@ -322,16 +323,22 @@ class EnterpriseCompiler:
                 )
                 compiled[device.id] = compiled_device
                 planned[device.id] = device
+                existing_ports = {port.name for port in device.port_descriptors}
                 module_ports = [
                     PortDescriptor(
                         name=port,
-                        classes=[PortClass.MODULE_PROVIDED, PortClass.WAN],
+                        classes=list(dict.fromkeys([
+                            PortClass.MODULE_PROVIDED,
+                            PortClass.WAN,
+                            *module.provided_port_classes,
+                        ])),
                         source="module_plan",
                         slot=module.slot or "",
                         module=module.module,
                     )
                     for module in device.module_plan
                     for port in module.provided_ports
+                    if port not in existing_ports
                 ]
                 inventories[device.id] = list(device.port_descriptors) + module_ports
         return compiled, planned, inventories
@@ -432,10 +439,17 @@ class EnterpriseCompiler:
             (link for site in hardware.site_hardware for link in site.links),
             key=lambda item: (
                 item.source_device, item.target_device, item.link_role.value,
-                item.source_port or "", item.target_port or "", item.redundancy_group or "",
+                item.media.value, item.source_port or "", item.target_port or "",
+                item.redundancy_group or "",
             ),
         )
         for index, requirement in enumerate(requirements, start=1):
+            if requirement.media is LinkMedia.UNKNOWN:
+                issues.append(_error(
+                    CompilationIssueCode.LINK_MEDIA_UNRESOLVED,
+                    f"El enlace {requirement.source_device}->{requirement.target_device} no define un medio conocido.",
+                ))
+                continue
             if requirement.source_device not in hardware_by_id or requirement.target_device not in hardware_by_id:
                 issues.append(_error(
                     CompilationIssueCode.LINK_ENDPOINT_MISSING,
@@ -445,11 +459,13 @@ class EnterpriseCompiler:
             reservation = f"infra:{index:04d}"
             source_port = allocator.allocate(
                 requirement.source_device, reservation, requirement.required_port_class,
-                requirement.source_port, allow_class_fallback=True,
+                requirement.source_port,
+                allow_class_fallback=requirement.media is not LinkMedia.SERIAL,
             )
             target_port = allocator.allocate(
                 requirement.target_device, reservation, requirement.required_port_class,
-                requirement.target_port, allow_class_fallback=True,
+                requirement.target_port,
+                allow_class_fallback=requirement.media is not LinkMedia.SERIAL,
             )
             if not source_port or not target_port:
                 if source_port:
@@ -463,7 +479,7 @@ class EnterpriseCompiler:
             links.append(_link_plan(
                 source, source_port, target, target_port, role,
                 source.network_layer, requirement.redundancy_group or "",
-                physical_profile, cable_resolver,
+                physical_profile, cable_resolver, media=requirement.media,
             ))
         return links
 
@@ -712,11 +728,17 @@ def _link_plan(
     redundancy_group: str,
     physical_profile: PhysicalCompilationProfile,
     cable_resolver: CableResolver | None,
+    media: LinkMedia = LinkMedia.ETHERNET,
 ) -> LinkPlan:
-    semantic = "|".join((role.value, source.id, source_port, target.id, target_port))
+    semantic_parts = [role.value, source.id, source_port, target.id, target_port]
+    if media is not LinkMedia.ETHERNET:
+        semantic_parts.insert(1, media.value)
+    semantic = "|".join(semantic_parts)
     link_id = f"link/{role.value}/{hashlib.sha256(semantic.encode('utf-8')).hexdigest()[:12]}"
     cable = (
-        cable_resolver(source.category, target.category)
+        LinkMedia.SERIAL.value
+        if media is LinkMedia.SERIAL
+        else cable_resolver(source.category, target.category)
         if cable_resolver is not None
         else physical_profile.default_cable
     )
