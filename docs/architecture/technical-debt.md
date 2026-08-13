@@ -116,17 +116,214 @@ are explicit.
 
 ---
 
+# Debt Checkpoint 2 — result, 2026-08-12
+
+```text
+DEBT_CHECKPOINT_2      = CLOSED
+STAGE_3A4_PREREQUISITE = READY
+NEXT                   = STAGE_3A4_TRAFFIC_REFERENCE_TOPOLOGY
+```
+
+Ran on `feature/runtime-ripv2` after University Topology Acceptance and before
+Stage 3A4. Dependency map: `e95-stage-3a4-readiness.md`.
+
+**Entry inventory:** six carried entries — TD-RUNTIME-006, TD-HARDWARE-001,
+TD-SECURITY-001, TD-VOICE-001, TD-PUBLIC-001, TD-TRANSPORT-001 — plus
+TD-ACCEPTANCE-001 opened by this checkpoint.
+
+**Debts blocking Stage 3A4 start: none.** Each was verified against source, not
+against its own prose. The reasoning per entry is recorded in that entry's
+CP2 verification subsection and summarised in the readiness map.
+
+**Deadline moved: one.** TD-ACCEPTANCE-001 resolves before **Stage 3A4
+closure**, earlier than the E9.5 deadline it would otherwise inherit, because
+3A4 is the first milestone whose definition requires the production
+physical/configuration pipeline to work. No other `RESOLVE_BEFORE` was touched.
+
+**No debt was promoted for being ugly, and none was deferred for being
+inconvenient.** Severity changed on nothing. TD-RUNTIME-006 gained two further
+unreachable orderings and stayed P2, because four unreachable orderings are no
+more reachable than two.
+
+**What this checkpoint corrected rather than closed.** Five entries described
+code accurately but incompletely, and the corrections are the substance of CP2:
+
+- TD-RUNTIME-006 — wrong file cited, two of four orderings enumerated, and the
+  stated reason for unreachability wrong for `deploy_enterprise_topology.py`;
+- TD-HARDWARE-001 — the "3650 has multilayer runtime evidence" claim has **no
+  support anywhere in this repository** and must not be assumed at closure;
+- TD-SECURITY-001 — the typed security renderer and the NAT generator inherit
+  the additive ACL body verbatim, so the eventual live reproduction is wider
+  than "the normal ACL generator";
+- TD-VOICE-001 — containment is currently stronger than recorded, because no
+  voice capability catalog exists at all; and the action model declares
+  `REPLACE` for behaviour this entry classifies as UNKNOWN;
+- TD-TRANSPORT-001 — containment is understated; Python-side request retirement
+  narrows the re-evaluation window and was not listed.
+
+Also corrected: the Documentation limitation section, which asserted no
+University Topology Acceptance specification existed after one had been
+committed; and TD-RUNTIME-005's resolution, which was written before its
+compiled expectations had ever run against three routers.
+
+**Source changed:** one three-line deletion — a blank line and a two-line
+function. A stranded `def evidence_for(self, ...)` was nested inside the
+module-level `_snapshot_evidence` generator in `capability_providers.py`:
+unreachable, carrying a `self` parameter it had no class for, and positioned so
+that "repairing" it by un-indenting would blank out every provider's evidence.
+Test count unchanged at 1716, green before and after.
+
+**Governance discrepancy, recorded not resolved.** This checkpoint's own
+trigger condition above reads *"after the university topology passes its
+routing/failure/recovery acceptance scenario"*. The executed acceptance had
+eleven gates and no failure or recovery gate. The routing half was satisfied;
+the failure/recovery half was not. Failure/recovery is E9 scope and is already
+registered UNKNOWN in `docs/qa/e95-runtime-debt.md`, so nothing is blocked — but
+the definition and what triggered it do not match, and that is written down
+rather than quietly reconciled.
+
+**Not done, deliberately:** no live Packet Tracer probe was run. Every closure
+criterion touched at this checkpoint was satisfiable from persisted evidence,
+and rerunning the acceptance to improve wording was explicitly out of scope.
+
+---
+
 # Documentation limitation
 
-There is no formal specification of **University Topology Acceptance** anywhere
-in `docs/`. Debt maturity at Debt Checkpoint 1 was therefore classified from
-each entry's own governed `RESOLVE_BEFORE` field, which is the authority this
-ledger defines, and not from an assumed acceptance scope. Writing that
-specification is future work; nothing in this checkpoint invented one.
+**As written at Debt Checkpoint 1, verbatim, and true then:**
+
+> There is no formal specification of **University Topology Acceptance** anywhere
+> in `docs/`. Debt maturity at Debt Checkpoint 1 was therefore classified from
+> each entry's own governed `RESOLVE_BEFORE` field, which is the authority this
+> ledger defines, and not from an assumed acceptance scope. Writing that
+> specification is future work; nothing in this checkpoint invented one.
+
+**Superseded at Debt Checkpoint 2 (2026-08-12).**
+`docs/architecture/university-topology-acceptance.md` now exists, committed at
+`79bc1e6`, and carries a contract — topology, expected RIPv2, expected learned
+routes, eleven named gates, PASS/PARTIAL/BLOCKED/FAIL definitions, and a
+persistence/cleanup rule — followed by the executed result. The paragraph above
+is kept because it was the honest state at CP1, not deleted to make the ledger
+look tidier.
+
+The narrower limitation that remains: that contract was written **for** its own
+run rather than as a standing definition, so it governs one acceptance and not
+the next one. CP2 treats it as a precedent to imitate, not as a general
+standard.
 
 ---
 
 # Open Debt
+
+## TD-ACCEPTANCE-001 — The physical/configuration product pipeline has never been live-accepted
+
+Status:
+OPEN
+
+Severity:
+P1
+
+Discovered:
+Debt Checkpoint 2, claim-scope audit of the University Topology Acceptance
+
+Description:
+
+The University Topology Acceptance built a 41-device, 41-link topology live on
+PT 9.0.1.0858 and it worked. It was built by an **uncommitted developer
+harness**, not by the product.
+
+Traced from the harness source rather than inferred from the successful result
+(the four modules survive only in the executing session's scratchpad; the
+durable record is the "Claim scope" table in
+`university-topology-acceptance.md`):
+
+- devices came from `PacketTracerBridgeProbeRuntime.create_temporary_device`,
+  which is capability-probe scaffolding, not `deploy_enterprise_topology`;
+- links and modules came from raw JS `lwAddLink` / `addModule` over
+  `FileBridge`, bypassing `packet_tracer_physical_runtime`, whose
+  `ensure_device` / `ensure_link` / `observe_link` exist precisely for this and
+  whose module is documented as "the backend-neutral production seam for
+  physical deployment";
+- all nine router L3 interfaces, the three switch SVIs and every `clock rate`
+  came from hand-written IOS through `configure_ios`, bypassing
+  `compile_configuration` → `configuration_renderer` → `apply_configuration`;
+- the 35 PC addresses came from raw JS `configurePcIp`.
+
+What *was* product path: the typed RIPv2 chain end to end, the
+`ControlledIosExecutor` registered queries, and `TypedPingExecutor`.
+
+So the acceptance is sound for what it was chartered to accept — the typed
+control plane — and unsound as evidence that the product can build this
+topology. `deploy_enterprise_topology` and `packet_tracer_physical_runtime`
+have **no recorded live execution anywhere in `docs/`**.
+
+Consequence, already recorded in the acceptance document:
+
+```text
+REFERENCE_TOPOLOGY_BEHAVIOR            = PASS
+TYPED_CONTROL_PLANE_PRODUCT_ACCEPTANCE = PASS
+FULL_PRODUCT_PIPELINE_ACCEPTANCE       = NOT_ESTABLISHED
+```
+
+Classification:
+```text
+STAGE_3A4_SCOPE
+```
+
+Blocks Stage 3A4 **start**:
+**No.** This is not a prerequisite that must exist before the phase begins — it
+is a substantial part of what the phase is for. Stage 3A4 is the governed phase
+in which the reference topology and the traffic path are exercised end to end
+through production seams, so "the reference topology has not yet been exercised
+through the complete production physical/configuration pipeline" describes
+3A4's own work, not an obstacle to starting it.
+
+Nothing in repository governance and no architectural dependency requires the
+pipeline to be proven before 3A4 opens. The seams already exist
+(`deploy_enterprise_topology`, `packet_tracer_physical_runtime`,
+`compile_configuration` → `configuration_renderer` → `apply_configuration`);
+what is missing is an executed run through them, which is exactly a 3A4
+deliverable.
+
+Blocks claims of:
+any statement that the product can deploy and configure a topology of this
+scale, and any E9.5 closure claim that rests on one. That ceiling holds for the
+whole of Stage 3A4 until the run exists.
+
+RESOLVE_BEFORE:
+**Stage 3A4 closure.** Not E9.5 closure and not CP3 — bringing the deadline
+forward is deliberate, because 3A4 is the first milestone whose own definition
+requires this path to work, and deferring it to CP3 would let 3A4 close on the
+same harness-shaped evidence this entry exists to reject.
+
+Closure criterion:
+
+One live run in which the physical topology and its addressing are produced by
+`deploy_enterprise_topology` / `packet_tracer_physical_runtime` and by the
+`compile_configuration` → `configuration_renderer` → `apply_configuration`
+chain, with the deployment manifest emitted from fresh exact read-back as that
+use case already requires. Scale may be smaller than 41 devices — the claim to
+establish is that the seam works, not that it scales — but it must include at
+least one multi-device link and one routed interface.
+
+Two rules that make the difference between closing this and repeating it:
+
+- a harness may **orchestrate** the run; it may not **perform** the mutations.
+  The University Acceptance harness stays useful as a behavioural reference and
+  must not become the implementation path;
+- a missing product capability may not be worked around with raw JS or raw IOS
+  to make the run succeed. If a seam is genuinely absent, the narrow missing
+  capability is named and either implemented as Stage 3A4 work or opened as
+  governed debt with its own deadline;
+- **`foundational_statuses` must be produced, not asserted.** The acceptance
+  harness satisfied `ControlPlaneApplicator`'s foundational-requirement gate
+  with a comprehension declaring every requirement VERIFIED, and passed no
+  hashes — so a real product gate was fed a fabricated precondition about
+  addressing that had been applied by raw IOS and never read back. Closure
+  requires those statuses and hashes to come from `apply_configuration`, which
+  derives them from actual readback.
+
+---
 
 ## TD-RUNTIME-007 — Route expectations have no convergence window
 
@@ -263,6 +460,55 @@ Either the journal refuses these orderings explicitly, or the composition
 accounts for a recorded cleanup verdict so a later `append` or preflight marker
 cannot contradict it. A regression must cover both sequences.
 
+### Correction — Debt Checkpoint 2, 2026-08-12
+
+The entry above under-counts the problem and gives the wrong reason for the
+conclusion. The conclusion itself survives. Corrected here rather than rewritten
+above, so the original claim stays visible.
+
+**The model lives in `domain/enterprise/models/execution.py:81`**, not in
+`configuration_runtime.py`, which only holds a field reference.
+
+**Four orderings exist, not two.** `record_scenario_restore`
+(`execution.py:155`) writes `dirty_state` by the same mechanism as
+`mark_cleanup` — `FAILED` → `DIRTY_UNRECOVERABLE`, `UNKNOWN` → `UNKNOWN` — so
+it is exposed to exactly the same two successors:
+
+3. `append` after `record_scenario_restore(FAILED)` recomputes to `CLEAN` while
+   `cleanup_status` stays `FAILED`;
+4. `mark_preflight_failure` after `record_scenario_restore(FAILED)` forces
+   `CLEAN` on empty entries.
+
+This matters for attribution: `record_scenario_restore` was introduced in
+`fix: keep scenario restore from clearing application dirtiness`, which
+*precedes* the commit that wrote this debt. The method was in front of the
+author and was not enumerated. The closure criterion's "a regression must cover
+both sequences" therefore under-specifies the fix by two.
+
+**`mark_transport_unknown` (`execution.py:124`) has no caller at all** — not in
+`src/`, not in `tests/`. It sets `dirty_state = UNKNOWN` and is subject to the
+same `append` overwrite. It is dead code today, so it adds no present risk, but
+a future caller would inherit the defect silently. Closure should either delete
+it or bring it under the same composition rule.
+
+**The stated reason is wrong for one applicator.** The entry says "every
+applicator builds its journal from action results, appends all entries, and
+only then records cleanup". `deploy_enterprise_topology.py` does not: it
+constructs a bare journal and appends incrementally through the device and
+module loops. The orderings are still unreachable there, but for a different
+reason — that applicator never calls `mark_cleanup` or
+`record_scenario_restore` at all, and both its `mark_preflight_failure` calls
+sit in early-return preflight blocks that run before the first append.
+
+**Disposition unchanged: OPEN, P2, does not block Stage 3A4.** Verified by
+complete caller inventory — `mark_cleanup` is called only from
+`apply_security.py`, `record_scenario_restore` only from the
+`_record_scenario_restore` helper in `apply_control_plane.py`, and every
+`mark_preflight_failure` site either follows an empty-results journal
+construction or precedes any append. Stage 3A4 drives the same applicators, so
+it cannot reach these orderings either. The severity is not raised: four
+unreachable orderings are no more reachable than two.
+
 ---
 
 ## TD-RUNTIME-005 — RIP route learning is observable but not a compiled expectation
@@ -354,6 +600,51 @@ route expectations, while still proving no neighbour or reachability
 expectation is invented. The capability test now lists the third supported
 dimension. Route verification stays distinct from forwarding: no
 `END_TO_END_REACHABILITY` expectation is compiled for RIP.
+
+### Corrective evidence — University Topology Acceptance, 2026-08-12
+
+**The closure above was written before the compiled expectations had ever been
+executed against three routers, and executing them falsified part of it.**
+Recorded here so the ledger does not read as though the closure was clean on
+first attempt.
+
+The resolution claimed the compiler emitted "one expectation per network the
+remote is connected to and the local is not". With two routers that is also one
+expectation per prefix, so the distinction never surfaced. With three routers a
+prefix is reachable through two peers, and the compiler emitted one expectation
+**per ordered peer pair** while `_stable_id` keys only on
+`(local_id, network, prefix_length)`. Two expectations therefore shared an id:
+ten emitted, eight unique.
+
+The offline tests did not catch it. They used a three-router fixture — so the
+shape was covered — but compared **sets**, which silently absorbs a duplicate.
+Set comparison is what hid a real defect behind a passing suite.
+
+Correction, in `feat: complete university topology acceptance`: the compiler
+emits exactly one expectation per `(device, remote prefix)`, keeping the first
+contributing peer for `depends_on` and `peer_device_id`. This is also the
+honest semantics — the assertion is that the router *learned the prefix*, not
+which neighbour advertised it, and next hop was already deliberately excluded
+from the comparison.
+
+Regression coverage, both in `tests/test_typed_ripv2_control_plane.py`:
+
+- `test_every_compiled_expectation_has_a_unique_id` — ids unique across the
+  whole plan, not merely within route expectations;
+- `test_a_prefix_reachable_through_two_peers_is_expected_once` — the r2–r3
+  transit prefix, reachable from r1 through both peers, is expected exactly
+  once.
+
+Both compare a **list against its set**, which is precisely the check the
+earlier tests omitted.
+
+Disposition: **TD-RUNTIME-005 remains RESOLVED.** Its closure criterion — a
+compiled `ROUTE_PRESENT` expectation bound to remote prefixes derived from the
+configuration plan, verified with `parse_show_ip_route_rip` and fresh evidence,
+with absent, stale or non-RIP output never verifying — is satisfied, and is now
+satisfied under executed multi-peer evidence rather than under an untested
+two-router assumption. Nine semantically unique `(device, prefix)` expectations
+were emitted and all nine VERIFIED live on PT 9.0.1.0858.
 
 ---
 
@@ -742,6 +1033,46 @@ Capability evidence used by the enterprise resolver must reconcile
 deterministically into eligible physical hardware without model-string
 special casing, while UNKNOWN remains UNKNOWN.
 
+### Verification — Debt Checkpoint 2, 2026-08-12
+
+Re-verified against source. **Still accurate, with one claim I could not
+substantiate and one part already satisfied.**
+
+Confirmed: the gap is live. Both productive constructions of
+`EnterpriseCapabilityAdapter` (`tool_registry.py:1532` and `:1552`) pass no
+providers, and neither `ProbeCapabilityProvider` nor
+`RuntimeCapabilityProvider` is instantiated anywhere in `src/`. The in-code
+marker at `enterprise_capabilities.py:38` says the same thing and is correctly
+mirrored here.
+
+Already satisfied: the "without model-string special casing" half.
+`device_selector.py` branches only on category, port counts and
+`CapabilityStatus`; model strings appear solely as sort keys and in the
+caller-supplied `preferred_model` comparison. `capability_resolver.py` contains
+no model literal. What remains unsatisfied is the evidence *reaching* the
+resolver, and `UNKNOWN` already remains `UNKNOWN` — distribution and core roles
+land in `needs_verification` rather than being selected on absent evidence.
+
+**Could not verify:** the claim "3650 has multilayer runtime evidence". No such
+evidence exists anywhere in this repository — no capability snapshot content,
+no attributed record in `src/`. The only 3650 layer-3 statement is prose in
+`docs/devices.md:28` carrying no provenance and no Packet Tracer version. The
+3560 half of the example is exact; the 3650 half should be treated as
+unsubstantiated until a probe record exists, and closure must not assume it.
+
+Small hygiene item found in this same path and fixed at CP2: a stranded
+`def evidence_for(self, ...)` was nested inside the module-level
+`_snapshot_evidence` generator in `capability_providers.py`, unreachable and
+carrying a `self` parameter it had no class for. Removed. No behaviour changed
+— all three providers already define their own `evidence_for` — but leaving it
+invited a future reader to "repair" it by un-indenting and silently blank out
+every provider's evidence.
+
+Does not block Stage 3A4: regression-pinned by
+`TestTheRegressionReferenceDoesNotDependOnSelection`, whose docstring states
+the reason and whose assertions prove the reference fixture pins `2960-24TT`
+and `2911` by hand and admits neither `3560-24PS` nor `3650-24PS`.
+
 ---
 
 ## TD-TRANSPORT-001 — FileBridge does not provide exactly-once or at-most-once execution
@@ -796,6 +1127,39 @@ B. the limitation remains explicitly classified and every E9.5 product
 mutation family is safely contained with no claim stronger than the
 available evidence.
 
+### Verification — Debt Checkpoint 2, 2026-08-12
+
+Confirmed against `file_bridge.py`, which corroborates this entry in its own
+prose: the module docstring states that the deployed Script Engine publishes no
+claim marker, so "read and evaluating" is indistinguishable from "never read"
+through the filesystem, and it records the deferred fix — a `run_<name>` marker
+written before the request is read — together with why it was not applied
+(recompiling the `.pts` needs PTBuilder dependencies this repository does not
+redistribute). Branch A is therefore blocked by something outside the repo, and
+closure realistically runs through branch B.
+
+The "no false cancellation claims" containment is enforced structurally rather
+than merely asserted: `RequestDisposition.proves_no_execution` returns `False`
+for every value, and exists specifically so a caller cannot assume otherwise.
+
+**The containment list is understated.** Python-side request retirement is a
+real mitigation and is not listed: on a successful `send_and_wait`, the request
+file is discarded from Python after the response is read, closing the silent
+re-execution window the engine's swallowed delete would otherwise leave. For
+fire-and-forget the same retirement happens through `collect_completed()`,
+called at the *top* of the next `send()`. Two honest limits on that: the window
+between the engine writing the response and Python unlinking the request
+remains open, and the most recent fire-and-forget request is never retired
+until another send occurs.
+
+This narrows the limitation; it does not remove it, and the classification
+stays BACKEND_LIMITATION.
+
+Sufficient for Stage 3A4: 3A4 dispatches link-mode, bandwidth and serial-clock
+mutations — the same families Stage 3A3 already dispatched under this
+containment, each with typed readback and no blind retry. No new mutation
+family is introduced that would need a fresh classification.
+
 ---
 
 ## TD-SECURITY-001 — ACL/NAT replay safety is not proven
@@ -846,6 +1210,29 @@ application, followed by direct readback and behavioral verification.
 
 Then classify the operation family from evidence.
 
+### Verification — Debt Checkpoint 2, 2026-08-12
+
+Confirmed against source, and **the scope is wider than this entry states**.
+
+`generate_acl_cli` is purely additive, and the full dispatch payload adds no
+reset either — `enable`, `configure terminal`, the ACL body, the optional
+binding, `end`, `write memory`. `no access-list` exists only in
+`build_remove_payload`.
+
+The wording "the normal ACL generator" reads as though a typed enterprise path
+might behave differently. It does not: `security_renderer.py` returns the
+additive payload as the action **body** and `build_remove_payload` only in the
+separate **cleanup** slot, so the typed security path inherits the additive
+shape verbatim. `nat_cli_generator.py` emits its inline `access-list ... permit`
+lines the same way, with `no access-list` again confined to cleanup.
+
+Nothing here changes the classification — `TREAT_AS_REPLAY_UNSAFE_FOR_PRODUCT_SAFETY`
+is still the right call and is still not a measurement. It widens what the
+eventual live reproduction must cover: the typed security and NAT paths, not
+only the standalone generator.
+
+Does not block Stage 3A4, which dispatches no ACL or NAT mutation.
+
 ---
 
 ## TD-VOICE-001 — `create cnf-files` replay behavior is unknown
@@ -887,6 +1274,37 @@ execution is:
 - or remains unobservable.
 
 Update the product containment rule accordingly.
+
+### Verification — Debt Checkpoint 2, 2026-08-12
+
+Confirmed: exactly one occurrence in `src/`, emitted only for
+`GeneratePhoneConfigurationFiles`, compiled at one site carrying
+`required_capability=TFTP_PHONE_BOOTSTRAP`, and gated in `apply_voice.py` so an
+UNKNOWN capability yields SKIPPED with `CAPABILITY_UNKNOWN` and no dispatch.
+
+Two things this entry does not record.
+
+**Containment is currently stronger than described, for a reason that is itself
+a gap.** `apply_voice.py` resolves `capabilities = capabilities or {}` and has
+**no default capability provider** — there is no `voice_capabilities.py` in the
+catalog package, unlike `control_plane_capabilities.py` and
+`security_capabilities.py`. So with no caller-supplied profile every voice
+action resolves UNKNOWN and is skipped, and `create cnf-files` is never
+dispatched at all. That is the same shape as `TD-CAPABILITY-001`, which was
+resolved for the control plane only. It is not separately ledgered; it is
+recorded here rather than opened as a new entry, because its practical effect
+today is to *strengthen* this containment, and the voice hardening pass that
+closes this debt is the natural place to resolve both together.
+
+**One inconsistency worth carrying into that pass.** The action model declares
+`operation: Literal[OperationSemantics.REPLACE]`, while this entry classifies
+the replay behaviour as UNKNOWN. `OperationSemantics.EXECUTE_ONCE` exists and is
+used elsewhere in the same file, so the stronger semantics was chosen
+deliberately and is not evidenced. A typed `REPLACE` asserts more than the
+measurement supports; the live probe must either substantiate it or the
+declaration must change.
+
+Does not block Stage 3A4, which dispatches no voice action.
 
 ---
 
@@ -1300,6 +1718,36 @@ Public-surface governance explicitly limits arbitrary raw IOS/JS to the
 controlled developer/capability-investigation boundary and prevents it from
 being treated as a normal enterprise operation.
 
+### Verification — Debt Checkpoint 2, 2026-08-12
+
+Confirmed, and sharper than written on three points:
+
+- `wait_result: bool = False` is the **default**, so an unqualified call gets
+  the un-awaited branch rather than opting into it;
+- registration is unconditional. The `@mcp.tool()` decorator sits inside
+  `register_tools` with no feature flag, environment gate or conditional, and
+  the only precondition is a bridge-liveness check, which is not authorization;
+- the tool is **advertised** as a capability through the resource registry's
+  `"raw_js"` flag, and documented in the adapter README.
+
+The separation claim holds: the raw path returns a bare string and never
+constructs a `RuntimeActionMutation` or an `ActionExecutionStatus`, so it still
+cannot masquerade as a typed enterprise mutation.
+
+**Deadline is not verifiable from the repository, and that is a finding.** The
+milestone is "Skills/public MCP facade phase". A `skills/` tree with seventeen
+packages already exists and predates this ledger, so the deadline cannot mean
+"when skills exist". The ledger's own planned-work list names a "future reduced
+public enterprise MCP facade", which is the reading that makes the deadline
+coherent — but no document in `docs/` defines that phase or its entry criteria,
+so nothing in the repository can establish whether the deadline has arrived.
+This is the same class of gap the Documentation limitation section above
+records. Treated as NOT passed at CP2, on the facade reading.
+
+Does not block Stage 3A4. Stage 3A4 must not use this tool: its rule is that a
+missing production seam is named and implemented, never bypassed with raw JS or
+raw IOS.
+
 ---
 
 # Planned Work That Is Not Technical Debt
@@ -1352,8 +1800,13 @@ Do not delete historical debt entries.
   ROUTE_PRESENT expectations for RIPv2 now carry the already-qualified route
   read-back into ControlPlaneApplicationResult. Expected prefixes derive from
   the E5 L3 identities, never from the classful RipNetwork, and a locally
-  connected prefix can never satisfy a remote route expectation. The entry
-  above is kept in full.
+  connected prefix can never satisfy a remote route expectation. **Corrected
+  2026-08-12 by executed acceptance evidence**: the closure had assumed one
+  expectation per prefix, but the compiler emitted one per peer pair, so with
+  three routers two expectations collided on the same id. Fixed to one
+  expectation per `(device, remote prefix)` and pinned by two regressions that
+  compare a list against its set. Still RESOLVED, now on multi-peer evidence.
+  The entry above is kept in full.
 - **TD-RUNTIME-004** — resolved 2026-08-11. Two disposable namespaces are now
   declared explicitly: `__MCP_PROBE_*` for capability discovery, which never
   reaches a trusted renderer, and `MCP-PROBE-*` for probes that do. The
