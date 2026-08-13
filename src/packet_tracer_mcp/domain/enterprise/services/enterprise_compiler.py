@@ -169,21 +169,8 @@ class EnterpriseCompiler:
                 "configuration_deferred_to": "E5",
             },
         )
-        if hardware.status is HardwarePlanStatus.UNRESOLVED:
-            cause = (
-                "unsupported"
-                if hardware.unsupported_requirements
-                else "insufficient_evidence"
-            )
-            reasons = hardware.unsupported_requirements or hardware.warnings
-            issues.append(_error(
-                CompilationIssueCode.HARDWARE_PLAN_UNRESOLVED,
-                "HardwarePlan no está resuelto; E4 no puede inventar la topología física. "
-                + (" ".join(reasons) if reasons else "No se seleccionó hardware físico."),
-                resolution_cause=cause,
-                warning_count=len(hardware.warnings),
-                unsupported_count=len(hardware.unsupported_requirements),
-            ))
+        if hardware.status is not HardwarePlanStatus.VALID:
+            issues.extend(_hardware_plan_resolution_issues(hardware))
             return self._result(topology, enterprise, issues, [], valid=False)
         enterprise_sites = {site.site_id: site for site in enterprise.sites}
         hardware_sites = {site.site_id: site for site in hardware.site_hardware}
@@ -794,6 +781,38 @@ def _error(
         subject=subject,
         details=details,
     )
+
+
+def _hardware_plan_resolution_issues(hardware: HardwarePlan) -> list[CompilationIssue]:
+    """Clasifica cada causa incompleta sin promover UNKNOWN a UNSUPPORTED."""
+    unsupported = sorted(set(hardware.unsupported_requirements))
+    unsupported_set = set(unsupported)
+    insufficient = sorted({
+        warning for warning in hardware.warnings
+        if warning not in unsupported_set
+    })
+    if not insufficient and not unsupported:
+        insufficient = ["No se seleccionó hardware físico con evidencia suficiente."]
+
+    classified = [
+        ("insufficient_evidence", insufficient),
+        ("unsupported", unsupported),
+    ]
+    return [
+        _error(
+            CompilationIssueCode.HARDWARE_PLAN_UNRESOLVED,
+            f"HardwarePlan {hardware.status.value} no puede llegar a E4; "
+            f"causa {cause}: {' '.join(reasons)}",
+            cause,
+            hardware_status=hardware.status.value,
+            resolution_cause=cause,
+            evidence_count=len(reasons),
+            warning_count=len(hardware.warnings),
+            unsupported_count=len(hardware.unsupported_requirements),
+        )
+        for cause, reasons in classified
+        if reasons
+    ]
 
 
 def _warning(

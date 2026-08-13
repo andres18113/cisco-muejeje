@@ -14,6 +14,7 @@ import json
 
 import pytest
 
+from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
@@ -64,6 +65,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.failure_domain import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwarePlan,
+    HardwarePlanStatus,
     ResiliencyLevel,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hierarchy import (
@@ -207,6 +209,15 @@ def _compile_reference_chain() -> _ReferenceChain:
         item for item in capability_catalog.hardware_candidates("switch")
         if item.model == "2960-24TT"
     )
+    # Este fixture fija evidencia física completa; UNKNOWN se prueba en suites
+    # de reconciliación y ya no puede atravesar el gate fail-closed de E4.
+    switch = switch.model_copy(update={
+        "capabilities": switch.capabilities.model_copy(update={
+            "supports_poe": CapabilityStatus.SUPPORTED,
+            "poe_ports": 24,
+            "layer3": CapabilityStatus.SUPPORTED,
+        }),
+    })
     router = next(
         item for item in capability_catalog.hardware_candidates("router")
         if item.model == "2911"
@@ -225,6 +236,7 @@ def _compile_reference_chain() -> _ReferenceChain:
             ),
         ),
     )
+    assert hardware.status is HardwarePlanStatus.VALID
     topology_catalog = PacketTracerTopologyCatalogAdapter()
     e4 = compile_enterprise_topology(
         enterprise,

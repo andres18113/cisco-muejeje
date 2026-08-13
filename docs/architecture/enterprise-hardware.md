@@ -25,7 +25,10 @@ La evidencia se conserva por capacidad y se prioriza así: probe controlado/runt
 - `NEEDS_VERIFICATION`: hay puertos físicos útiles, pero falta evidencia; el modelo queda provisional.
 - `INCOMPATIBLE`: la evidencia disponible contradice un requisito o no existe ningún candidato físico.
 
-Por ello, un `HardwarePlan` puede ser `VALID`, `PARTIALLY_RESOLVED` o `UNRESOLVED`. Un plan parcial es el resultado correcto cuando falta evidencia; no se generan afirmaciones IOS o Packet Tracer a partir de esa incertidumbre.
+Por ello, un `HardwarePlan` puede ser `VALID`, `PARTIALLY_RESOLVED` o
+`UNRESOLVED`. Un plan parcial es el resultado correcto cuando falta evidencia,
+pero no es compilable: E4 sólo acepta `VALID`. No se generan afirmaciones IOS,
+Packet Tracer ni una topología física parcial a partir de esa incertidumbre.
 
 ## Capacidad y jerarquía
 
@@ -38,6 +41,12 @@ La política selecciona una estructura determinista:
 - tres o más: `three_tier`, con distribución y core.
 
 El nivel de resiliencia controla enlaces de acceso redundantes y, para `high`, la duplicación de padres en los enlaces entre capas. Es una especificación física: no presupone STP, EtherChannel, HSRP o protocolos de routing.
+
+Cuando existe un router de sitio, la cadena física no presupone capas ausentes:
+`flat` conecta acceso directamente con edge, `collapsed_core` conecta
+distribución con edge y `three_tier` conserva core con edge. Una topología
+plana no produce una falsa advertencia por carecer deliberadamente de
+distribución.
 
 ## Puertos, PoE y módulos
 
@@ -71,11 +80,13 @@ fusiona. La evidencia de módulos `UNKNOWN` conserva un resultado no resuelto
 por falta de evidencia y nunca se transforma en `UNSUPPORTED`.
 
 Un requisito WAN bloqueante mantiene `HardwarePlanStatus.UNRESOLVED` aunque el
-resto del sitio ya tenga switches seleccionados. E4 rechaza ese plan con
-`HARDWARE_PLAN_UNRESOLVED`: `resolution_cause=insufficient_evidence` cuando la
-causa es `UNKNOWN`, y `resolution_cause=unsupported` cuando E3 produjo
-`unsupported_requirements`. Así una topología LAN parcial no puede ocultar la
-ausencia del router reconciliado.
+resto del sitio ya tenga switches seleccionados. E4 rechaza tanto ese estado
+como `PARTIALLY_RESOLVED` con `HARDWARE_PLAN_UNRESOLVED`. Cada clasificación se
+conserva en un issue estructurado: `resolution_cause=insufficient_evidence` para
+`UNKNOWN` y `resolution_cause=unsupported` para `unsupported_requirements`. Si
+coexisten, se emiten ambos issues en orden determinista; una causa desconocida
+nunca se promueve a no soportada. Así una topología LAN parcial no puede
+ocultar la ausencia del router reconciliado ni otra evidencia incompleta.
 
 Los dispositivos de un solo rol conservan sus IDs anteriores (`r-edge-*` o
 `r-wan-*`) y no serializan roles adicionales. El reconciliado adopta el ID

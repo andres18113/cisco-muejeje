@@ -18,6 +18,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwareCandidate,
+    HardwarePlanStatus,
     HierarchyMode,
     NormalizedPortSpeed,
     PortClass,
@@ -65,7 +66,11 @@ def _requirement(
 
 
 def _candidate(
-    *, access: int = 24, uplinks: int = 2, poe: CapabilityStatus = CapabilityStatus.UNKNOWN,
+    *,
+    access: int = 24,
+    uplinks: int = 2,
+    poe: CapabilityStatus = CapabilityStatus.SUPPORTED,
+    layer3: CapabilityStatus = CapabilityStatus.SUPPORTED,
 ) -> HardwareCandidate:
     ports = [
         PortDescriptor(
@@ -92,7 +97,7 @@ def _candidate(
             port_count=access + uplinks,
             supports_poe=poe,
             poe_ports=24 if poe is CapabilityStatus.SUPPORTED else None,
-            layer3=CapabilityStatus.UNKNOWN,
+            layer3=layer3,
         ),
         ports=ports,
     )
@@ -148,6 +153,29 @@ def _reference():
     assert result.is_valid, [issue.model_dump(mode="json") for issue in result.issues]
     assert result.plan is not None
     return enterprise, hardware, result
+
+
+def _legacy_non_wan_identity_reference():
+    """Preserva la entrada exacta del hash v2 anterior al gate de estado E4."""
+    enterprise = _design(_reference_intent())
+    partial = HardwarePlanner().plan(enterprise, [_candidate(
+        poe=CapabilityStatus.UNKNOWN,
+        layer3=CapabilityStatus.UNKNOWN,
+    )])
+    assert partial.status is HardwarePlanStatus.PARTIALLY_RESOLVED
+    catalog = PacketTracerTopologyCatalogAdapter()
+    rejected = compile_enterprise_topology(
+        enterprise, partial, catalog.compilation_profile(), catalog.cable_for,
+    )
+    assert rejected.plan is None
+    # El pin pertenece a la identidad del artefacto histórico, no autoriza a
+    # producción a compilar el HardwarePlan parcial que lo originó.
+    identity_input = partial.model_copy(update={"status": HardwarePlanStatus.VALID})
+    result = compile_enterprise_topology(
+        enterprise, identity_input, catalog.compilation_profile(), catalog.cable_for,
+    )
+    assert result.is_valid and result.plan is not None
+    return result
 
 
 def test_natural_interface_order_and_logical_interface_exclusion():
@@ -590,12 +618,13 @@ def test_catalog_cable_policy_is_used_and_e5_configuration_remains_empty():
     assert not plan.static_routes and not plan.ospf_configs and not plan.eigrp_configs
 
 
-def test_poE_generic_model_and_layout_runtime_limits_are_warnings_not_e4_blockers():
-    _, _, result = _reference()
+def test_resolved_reference_keeps_only_non_blocking_e4_runtime_warnings():
+    _, hardware, result = _reference()
     codes = {issue.code for issue in result.issues}
 
+    assert hardware.status is HardwarePlanStatus.VALID
     assert result.is_valid
-    assert CompilationIssueCode.POE_CAPABILITY_UNKNOWN in codes
+    assert CompilationIssueCode.POE_CAPABILITY_UNKNOWN not in codes
     assert CompilationIssueCode.ENDPOINT_MODEL_GENERIC in codes
     assert CompilationIssueCode.LAYOUT_COORDINATE_READBACK_PARTIAL in codes
     assert sum(issue.code is CompilationIssueCode.ENDPOINT_MODEL_GENERIC for issue in result.issues) == 1
@@ -604,11 +633,13 @@ def test_poE_generic_model_and_layout_runtime_limits_are_warnings_not_e4_blocker
 def test_compact_summary_omits_full_plan_and_semantic_hash_is_stable():
     _, _, result = _reference()
     compact = result.compact_summary()
+    legacy = _legacy_non_wan_identity_reference()
 
     assert "plan" not in compact
     assert compact["semantic_hash"] == result.semantic_hash
-    assert result.semantic_hash == "9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870"
+    assert legacy.semantic_hash == "9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870"
     assert result.plan is not None and result.plan.hash_schema_version == "2"
+    assert legacy.plan is not None and legacy.plan.hash_schema_version == "2"
     assert compact["devices"] == 81
     assert compact["links"] == 83
 

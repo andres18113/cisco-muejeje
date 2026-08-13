@@ -150,6 +150,38 @@ university topology is called a *"reference scenario"* in one commit message,
 while every governed doc reserves *"reference topology"* for the offline
 fixture. 3A4 should say which it means, every time.
 
+### Slice 1D correction: reference product planning is ready offline
+
+The four gaps above describe the pre-serial audit baseline. Slice 1D now adds a
+separate governed QA fixture in `tests/test_e95_serial_product_planning.py` for
+the documented 7/14/14-PC, three-site shape. It runs through
+`EnterpriseDesigner` → `HardwarePlanner`/`ModulePlanner` →
+`EnterpriseCompiler` and produces exactly 41 product-managed devices and 41
+links: three reconciled site routers, three access switches, 35 PCs, three
+router-switch LAN links, three serial WAN links and 35 access links.
+
+Reciprocal serial declarations deduplicate to one semantic link per site pair.
+Each router consumes one LAN port and the two serial ports supplied by one
+catalogued `HWIC-2T`; the fixture does not name those serial interfaces.
+Equivalent site/uplink reordering preserves the complete plan, WAN link IDs and
+schema-v2 hashes. The older non-WAN identity pin remains
+`9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870`.
+
+This closes only the offline planning gate:
+
+```text
+SITE_ROUTER_ROLE_RECONCILIATION = READY
+SERIAL_ROUTER_SUBGRAPH_PLANNING = READY
+REFERENCE_TOPOLOGY_PRODUCT_PLANNING = READY_OFFLINE
+STAGE_3A4 = PARTIAL
+TD_ACCEPTANCE_001 = OPEN
+E9_5 = OPEN
+```
+
+There is still no product deployment, configuration application or runtime
+evidence for this 41-device plan. `TD-ACCEPTANCE-001` therefore remains the next
+Stage 3A4 blocker.
+
 ## 4. Traffic — what is missing
 
 ### What already exists

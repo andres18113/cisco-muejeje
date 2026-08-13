@@ -12,7 +12,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.compilation import CompilationIssueCode
+from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
+    CompilationIssueCode,
+    ConcreteLinkRole,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import SitePlan
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwareCandidate,
@@ -793,3 +796,229 @@ def test_single_role_router_ids_remain_unchanged():
         for site in plan.site_hardware
         for device in site.devices
     )
+
+
+def _reference_planning_intent(*, reverse_sites: bool = False) -> EnterpriseIntent:
+    """QA artifact for the documented 7/14/14-host three-site reference."""
+    site_specs = [
+        ("A", SiteType.HQ, 7, ["b", "c"]),
+        ("B", SiteType.BRANCH, 14, ["a", "c"]),
+        ("C", SiteType.BRANCH, 14, ["a", "b"]),
+    ]
+    if reverse_sites:
+        site_specs.reverse()
+    sites = [
+        SiteIntent(
+            name=name,
+            type=site_type,
+            endpoints=[EndpointRequirement(role=DeviceRole.USER_PC, count=pc_count)],
+            uplinks=[
+                WanLinkRequirement(target_site_id=target, media=LinkMedia.SERIAL)
+                for target in (reversed(targets) if reverse_sites else targets)
+            ],
+        )
+        for name, site_type, pc_count, targets in site_specs
+    ]
+    return EnterpriseIntent(
+        name="Reference planning closure",
+        sites=sites,
+        internet_required=True,
+        default_growth_percent=0,
+    )
+
+
+def _compile_reference_planning(*, reverse_sites: bool = False):
+    enterprise = _design(_reference_planning_intent(reverse_sites=reverse_sites))
+    hardware = HardwarePlanner().plan(
+        enterprise,
+        [_layer3_switch_candidate()],
+        [_router_candidate()],
+    )
+    catalog = PacketTracerTopologyCatalogAdapter()
+    compiled = compile_enterprise_topology(
+        enterprise,
+        hardware,
+        catalog.compilation_profile(),
+        catalog.cable_for,
+    )
+    return enterprise, hardware, compiled
+
+
+def test_e4_status_lattice_only_allows_valid_hardware_plans():
+    enterprise, hardware, _ = _compile_reference_planning()
+    catalog = PacketTracerTopologyCatalogAdapter()
+
+    assert set(HardwarePlanStatus) == {
+        HardwarePlanStatus.VALID,
+        HardwarePlanStatus.PARTIALLY_RESOLVED,
+        HardwarePlanStatus.UNRESOLVED,
+    }
+    for status in HardwarePlanStatus:
+        candidate = hardware.model_copy(update={
+            "status": status,
+            "warnings": [] if status is HardwarePlanStatus.VALID else [
+                "catalog evidence remains UNKNOWN",
+            ],
+        })
+        result = compile_enterprise_topology(
+            enterprise,
+            candidate,
+            catalog.compilation_profile(),
+            catalog.cable_for,
+        )
+        if status is HardwarePlanStatus.VALID:
+            assert result.is_valid and result.plan is not None
+            continue
+        assert not result.is_valid
+        assert result.plan is None
+        issue = next(
+            item for item in result.issues
+            if item.code is CompilationIssueCode.HARDWARE_PLAN_UNRESOLVED
+        )
+        assert issue.details["hardware_status"] == status.value
+        assert issue.details["resolution_cause"] == "insufficient_evidence"
+
+
+def test_e4_preserves_mixed_unknown_and_unsupported_causes_deterministically():
+    enterprise, hardware, _ = _compile_reference_planning()
+    catalog = PacketTracerTopologyCatalogAdapter()
+    unknown = "WAN: site a has supports_modules=UNKNOWN"
+    unsupported = "No existe candidato WAN soportado para site b"
+
+    results = []
+    for warnings, unsupported_requirements in (
+        ([unsupported, unknown], [unsupported]),
+        ([unknown, unsupported], [unsupported]),
+    ):
+        incomplete = hardware.model_copy(update={
+            "status": HardwarePlanStatus.UNRESOLVED,
+            "warnings": warnings,
+            "unsupported_requirements": unsupported_requirements,
+        })
+        results.append(compile_enterprise_topology(
+            enterprise,
+            incomplete,
+            catalog.compilation_profile(),
+            catalog.cable_for,
+        ))
+
+    evidence = [
+        [
+            issue.model_dump(mode="json")
+            for issue in result.issues
+            if issue.code is CompilationIssueCode.HARDWARE_PLAN_UNRESOLVED
+        ]
+        for result in results
+    ]
+    assert all(result.plan is None and not result.is_valid for result in results)
+    assert evidence[0] == evidence[1]
+    assert [issue["details"]["resolution_cause"] for issue in evidence[0]] == [
+        "insufficient_evidence",
+        "unsupported",
+    ]
+    assert unknown in evidence[0][0]["message"]
+    assert unknown not in evidence[0][1]["message"]
+    assert unsupported in evidence[0][1]["message"]
+
+
+def test_router_category_does_not_authorize_ungoverned_edge_firewall_merge():
+    enterprise = _design(EnterpriseIntent(
+        name="Ungoverned role pair",
+        sites=[SiteIntent(name="A", type=SiteType.HQ)],
+        internet_required=True,
+    ))
+    candidate = _router_candidate()
+    hardware = HardwarePlanner().plan(enterprise, [], [candidate])
+    router = hardware.site_hardware[0].devices[0]
+
+    assert candidate.capabilities.category == "router"
+    assert router.role is DeviceRole.EDGE_ROUTER
+    assert router.additional_roles == []
+    assert not router.fulfills_role(DeviceRole.FIREWALL)
+    assert not router.fulfills_role(DeviceRole.WAN_ROUTER)
+
+
+def test_complete_reference_compiles_exactly_41_devices_and_41_links():
+    _, hardware, compiled = _compile_reference_planning()
+
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert compiled.is_valid and compiled.plan is not None
+    plan = compiled.plan
+    routers = [device for device in plan.devices if device.category == "router"]
+    switches = [device for device in plan.devices if device.category == "switch"]
+    pcs = [
+        device for device in plan.devices
+        if device.enterprise_role == DeviceRole.USER_PC.value
+    ]
+    wan_links = [link for link in plan.links if link.cable == LinkMedia.SERIAL.value]
+    lan_links = [
+        link for link in plan.links
+        if link.link_role == ConcreteLinkRole.EDGE_LINK.value
+    ]
+    access_links = [
+        link for link in plan.links
+        if link.link_role == ConcreteLinkRole.ENDPOINT_ACCESS.value
+    ]
+
+    assert (len(plan.devices), len(plan.links)) == (41, 41)
+    assert (len(routers), len(switches), len(pcs)) == (3, 3, 35)
+    assert (len(wan_links), len(lan_links), len(access_links)) == (3, 3, 35)
+    assert len({link.id for link in plan.links}) == 41
+    assert len({
+        tuple(sorted((link.device_a_id, link.device_b_id))) for link in wan_links
+    }) == 3
+
+
+def test_complete_reference_uses_one_router_module_and_three_ports_per_site():
+    _, hardware, compiled = _compile_reference_planning()
+    assert compiled.plan is not None
+    plan = compiled.plan
+    planned_routers = {
+        device.id: device
+        for site in hardware.site_hardware
+        for device in site.devices
+        if device.role is DeviceRole.EDGE_ROUTER
+    }
+
+    assert len(planned_routers) == 3
+    for router_id, router in planned_routers.items():
+        assert router.additional_roles == [DeviceRole.WAN_ROUTER]
+        assert len(router.module_plan) == 1
+        assert router.module_plan[0].module == "HWIC-2T"
+        assert len(router.module_plan[0].provided_ports) == 2
+        serial_ports = {
+            port.name for port in router.port_descriptors
+            if PortClass.SERIAL in port.classes
+        }
+        used_serial_ports = {
+            link.port_a if link.device_a_id == router_id else link.port_b
+            for link in plan.links
+            if link.cable == LinkMedia.SERIAL.value
+            and router_id in {link.device_a_id, link.device_b_id}
+        }
+        used_lan_ports = {
+            link.port_a if link.device_a_id == router_id else link.port_b
+            for link in plan.links
+            if link.link_role == ConcreteLinkRole.EDGE_LINK.value
+            and router_id in {link.device_a_id, link.device_b_id}
+        }
+        assert used_serial_ports == serial_ports
+        assert len(used_serial_ports) == 2
+        assert len(used_lan_ports) == 1
+        assert used_serial_ports.isdisjoint(used_lan_ports)
+
+
+def test_complete_reciprocal_reference_is_identical_under_input_reordering():
+    _, first_hardware, first = _compile_reference_planning()
+    _, reordered_hardware, reordered = _compile_reference_planning(reverse_sites=True)
+
+    assert first_hardware.model_dump(mode="json") == reordered_hardware.model_dump(mode="json")
+    assert first.is_valid and first.plan is not None
+    assert reordered.is_valid and reordered.plan is not None
+    assert first.plan.hash_schema_version == reordered.plan.hash_schema_version == "2"
+    assert first.semantic_hash == reordered.semantic_hash
+    assert first.plan.model_dump(mode="json") == reordered.plan.model_dump(mode="json")
+    first_wan_ids = sorted(
+        link.id for link in first.plan.links if link.cable == LinkMedia.SERIAL.value
+    )
+    assert len(first_wan_ids) == len(set(first_wan_ids)) == 3

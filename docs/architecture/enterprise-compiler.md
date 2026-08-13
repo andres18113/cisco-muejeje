@@ -58,18 +58,22 @@ models, exhausted ports, duplicate identity, self-links, and incomplete
 endpoint expansion are hard errors: an invalid compile result does not expose a
 partial `TopologyPlan`.
 
-E4 also rejects `HardwarePlanStatus.UNRESOLVED` before expanding any physical
-object. `HARDWARE_PLAN_UNRESOLVED.details.resolution_cause` remains
-`insufficient_evidence` when E3 stopped on unknown evidence and `unsupported`
-when `unsupported_requirements` is non-empty. A resolved LAN subset therefore
-cannot turn a missing required WAN/router selection into a valid partial
-topology.
+E4 uses an explicit status whitelist before expanding any physical object:
+only `HardwarePlanStatus.VALID` compiles. Both `PARTIALLY_RESOLVED` and
+`UNRESOLVED` return no plan and report `HARDWARE_PLAN_UNRESOLVED`, including the
+rejected `hardware_status`. Evidence is partitioned deterministically into
+`resolution_cause=insufficient_evidence` and
+`resolution_cause=unsupported`; mixed evidence produces one structured issue
+for each cause. A resolved LAN subset therefore cannot turn missing or
+provisional hardware into a valid partial topology, and `UNKNOWN` never becomes
+`UNSUPPORTED` because another cause is unsupported.
 
 PC/phone pairs compile as `switch -> phone -> PC`, consuming one switch access
-port per pair. PoE requirements remain metadata. Unknown PoE or a provisional
-hardware selection is a structured warning, not a fabricated capability and
-not an E4 physical blocker. The current IP-camera mapping uses the catalog's
-generic wired endpoint and is reported once as reduced-assurance metadata.
+port per pair. PoE requirements remain metadata. A planner result made partial
+by unknown PoE or provisional hardware stops at the status gate; E4 never
+promotes it. Reduced-assurance metadata that remains inside an otherwise
+`VALID` input is still reported as a warning. The current IP-camera mapping uses
+the catalog's generic wired endpoint and is reported once.
 
 ## Hierarchical layout
 

@@ -410,11 +410,28 @@ class HardwarePlanner:
                 warnings.append(f"{device.id}: selección provisional; falta evidencia de capacidades requeridas.")
         distributions = [device for device in higher_devices if device.role is DeviceRole.DISTRIBUTION_SWITCH]
         redundancy = RedundancyPlanner()
-        uplinks, redundancy_warnings = redundancy.connect_access(access_devices, distributions, policy.resiliency)
         cores = [device for device in higher_devices if device.role is DeviceRole.CORE_SWITCH]
         edges = [device for device in higher_devices if device.role is DeviceRole.EDGE_ROUTER]
-        uplinks.extend(redundancy.connect_layer(distributions, cores, LinkRole.CORE_LINK, policy.resiliency))
-        uplinks.extend(redundancy.connect_layer(cores, edges, LinkRole.EDGE_LINK, policy.resiliency))
+        if distributions:
+            uplinks, redundancy_warnings = redundancy.connect_access(
+                access_devices, distributions, policy.resiliency,
+            )
+        else:
+            uplinks = redundancy.connect_layer(
+                access_devices, edges, LinkRole.EDGE_LINK, policy.resiliency,
+            )
+            redundancy_warnings = []
+        if cores:
+            uplinks.extend(redundancy.connect_layer(
+                distributions, cores, LinkRole.CORE_LINK, policy.resiliency,
+            ))
+            uplinks.extend(redundancy.connect_layer(
+                cores, edges, LinkRole.EDGE_LINK, policy.resiliency,
+            ))
+        elif distributions:
+            uplinks.extend(redundancy.connect_layer(
+                distributions, edges, LinkRole.EDGE_LINK, policy.resiliency,
+            ))
         warnings.extend(redundancy_warnings)
         pattern = site.topology.pattern if site.topology else TopologyPattern.STAR
         layers = site.topology.network_layers if site.topology else [NetworkLayer.ACCESS]
