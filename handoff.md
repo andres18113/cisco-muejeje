@@ -4,57 +4,86 @@
 
 - worktree: `.claude/worktrees/runtime-ripv2`
 - branch: `feature/runtime-ripv2`
-- implementation HEAD: `5ea2ed3b1d4200430dd918078f1cf4f3cb19746d`
-- regression: `1781 passed`
-- worktree: clean before this docs-only handoff update; leave clean afterward
-- Graphify: current through the offline planning checkpoint
+- Slice 2A implementation commit: `e846175b6e2154621e89d24d0809fae0e396d24b`
+- full regression: `1815 passed, 3 pre-existing pytest deprecation warnings`
+- Graphify: AST graph refreshed after Slice 2A; final module-effect/deployer/
+  manifest and disposable-workspace paths queried
+- worktree: clean after the final governed documentation commit
 
 ```text
 REFERENCE_TOPOLOGY_PRODUCT_PLANNING = READY_OFFLINE
-STAGE_3A4 = PARTIAL
-TD_ACCEPTANCE_001 = OPEN
-E9_5 = OPEN
+STAGE_3A4                           = PARTIAL
+TD_ACCEPTANCE_001                   = OPEN
+E9_5                               = OPEN
 ```
 
-## Offline planning complete
+Offline planning remains authoritative. Do not reopen it unless executed
+runtime evidence directly invalidates a planning contract.
 
-- foundational evidence is derived from executed results rather than asserted;
-- serial WAN intent reaches semantic hardware and topology planning;
-- `UNKNOWN` and `UNSUPPORTED` remain distinct and fail closed;
-- compatible `EDGE_ROUTER + WAN_ROUTER` roles reconcile to one site router;
-- the governed reference compiles offline to exactly 41 devices and 41 links;
-- E4 accepts only `HardwarePlanStatus.VALID` and preserves mixed causes;
-- Graphify covers the final planning route.
-
-Do not reopen offline planning unless executed runtime evidence invalidates one
-of these contracts.
-
-## Exact next task
+## Slice 2A complete
 
 ```text
 STAGE 3A4 — SERIAL PRODUCT SLICE 2A
 MODULE EFFECT EVIDENCE + PRODUCT PHYSICAL DEPLOYMENT
 ```
 
-Start by recovering the backend's real module observables and strengthening the
-existing modular-plan deployment safety gate with typed effect evidence. Never
-infer requested `HWIC-2T` identity from successful submission: exact module
-identity remains unobservable unless direct runtime evidence proves it.
+The production physical path now supports a typed module-effect capability,
+checked one-shot insertion, fresh before/after effect observation, separate
+exact-identity evidence, observed manifest link bindings, a strict read-only
+empty-workspace gate, exact cleanup, and bounded inventory restoration.
 
-The first live qualification should eventually be only:
+The first live qualification used only:
 
 ```text
-2×2911 + required serial modules + 1 serial WAN
+2×2911 + 2 requested HWIC-2T effects + 1 serial WAN
 ```
 
-Before any mutation, inventory Packet Tracer read-only and hard-stop if any
-foreign/manual/graded topology exists. Use disposable exact names, preserve
-backend-managed PDD objects, clean up only created resources, and require final
-inventory to equal baseline.
+Packet Tracer `9.0.1.0858` returned `VERIFIED_CLEAN`. Fresh readback verified
+both `Serial0/0/0` + `Serial0/0/1` port effects and the exact
+`Serial0/0/0 ↔ Serial0/0/0` link. The manifest preserved its directly observed
+runtime UUID. Cleanup removed the two exact disposable routers and restored
+the semantic workspace; only Packet Tracer's exact zero-port power-distribution
+object remained.
 
-Scope limits for Slice 2A:
+Evidence boundaries:
 
-- no full 41-device reference deployment yet;
-- no serial IOS or configuration application yet;
-- no RIPv2 orchestration yet;
-- no traffic integration yet.
+```text
+MODULE_EFFECT                      = OBSERVED / VERIFIED
+REQUESTED_EXACT_MODULE_IDENTITY    = UNOBSERVABLE / UNVERIFIED
+OBSERVED_MODULE_NUMBER             = "0"
+REQUESTED_INSERTION_SLOT           = "0/0"  # never treated as the same field
+SERIAL_LINK_ENDPOINT_BINDING       = OBSERVED / VERIFIED
+SERIAL_CABLE_IDENTITY              = UNOBSERVABLE / UNVERIFIED
+SERIAL_ENDPOINT_ORIENTATION        = UNRESOLVED
+INVENTORY_RESTORED                 = VERIFIED
+```
+
+Mutation acknowledgement remained `APPLIED`, never `VERIFIED`. Exact requested
+`HWIC-2T` identity was not inferred from acknowledgement, port effect, or
+module number.
+
+Full evidence:
+`docs/architecture/stage-3a4-serial-product-slice-2a.md`.
+
+## Why the stage and debt remain open
+
+Slice 2A advances `TD-ACCEPTANCE-001` rows 1, 2, and the physical part of row
+6. It cannot close the debt because the closure criterion requires one same
+reference-topology run that also includes production configuration/addressing,
+authentic foundational evidence, typed control plane, and authoritative
+registered-query/traffic evidence.
+
+The following were intentionally not performed:
+
+- no 41-device reference deployment;
+- no serial IOS or configuration application;
+- no RIPv2 orchestration;
+- no traffic integration;
+- no CP3;
+- no E9.5 closure;
+- no Skills modification or restructuring.
+
+## Hard stop
+
+HARD STOP after Slice 2A. The next governed session must recover this handoff
+and the Slice 2A evidence record before selecting any further Stage 3A4 slice.

@@ -143,7 +143,9 @@ Four gaps between that fixture and what 3A4 needs:
    `tests/test_e95_reference_regression.py`, so grepping that file alone will
    not reveal the constraint. Extending the reference is a deliberate contract
    change across three files, not an incidental edit.
-4. **It has never been deployed by the product.** See `TD-ACCEPTANCE-001`.
+4. **At this audit baseline it had never been deployed by the product.** See
+   `TD-ACCEPTANCE-001`; Slice 2A below records the later bounded physical run,
+   not a full reference deployment.
 
 Note the naming collision, which has already caused confusion: the live
 university topology is called a *"reference scenario"* in one commit message,
@@ -388,8 +390,9 @@ configurable at all.
 
 ## Blocking findings
 
-**1. The deployer refuses every plan that carries modules.** A 2911 serial
-triangle needs HWIC-2T, and `deploy_enterprise_topology` fails preflight with
+**1. At the source-audit baseline, the deployer refused every plan that carried
+modules.** A 2911 serial triangle needs HWIC-2T, and
+`deploy_enterprise_topology` failed preflight with
 `MODULE_OBSERVATION_UNAVAILABLE` because
 `packet_tracer_physical_runtime.supports_module_observation()` returns `False`.
 That is honest, not lazy: PT's module-name getter returns the literal string
@@ -397,13 +400,14 @@ That is honest, not lazy: PT's module-name getter returns the literal string
 treats as absence of a name. Module **identity** is genuinely unobservable on
 this backend.
 
-What *is* observable: slot occupancy, `slot_type_code`, `port_count`, and the
+What *was* observable: slot occupancy, `slot_type_code`, `port_count`, and the
 resulting ports themselves, since device observation enumerates real runtime
-ports. So the narrow missing capability is a **module effect-verification
+ports. So the narrow missing capability was a **module effect-verification
 tier** — planned slot occupied, planned ports present — recording identity as
 UNOBSERVABLE and never claiming it. `PacketTracerPhysicalTopologyRuntime` also
-has no `ensure_module` / `observe_module` at all, and there is no
-`generate_module_command` to mirror `generate_link_command`.
+had no `ensure_module` / `observe_module` operation, and there was no
+`generate_module_command` to mirror `generate_link_command`. Slice 2A below
+implements and live-qualifies that effect tier without promoting identity.
 
 **2. The E5/E9 composition seam does not exist in production.** Stated
 precisely, because "no orchestration anywhere" would be wrong:
@@ -437,7 +441,11 @@ cannot pass the gate. The same is true of `access_port` and `dhcp_pool`, which
 route to `_unobservable` unconditionally. A RIPv2 reference topology **is**
 satisfiable, because it needs only `l3_interface` and `link` foundations.
 
-## Nine seams the serial reference topology needs
+## Nine seams identified at the source-audit baseline
+
+This list is historical input to the later governed slices, not the current
+state. Slice 1D closed the offline-planning seams; Slice 2A closes the bounded
+physical module/link seams. Composition and later runtime layers remain open.
 
 `CABLE_RULES` yields no `"serial"` and is category-only, so it cannot
 distinguish a serial WAN link from a crossover; no planner ever emits a
@@ -548,3 +556,44 @@ original trigger wording verbatim, and says explicitly that failure/recovery is
 may treat it as satisfied. A checkpoint definition that quietly does not match
 what triggered it is exactly the drift this ledger exists to prevent, so it was
 fixed in the definition instead of only being noted here.
+
+---
+
+## Serial product Slice 2A — implemented and live-qualified
+
+Implementation commit `e846175b6e2154621e89d24d0809fae0e396d24b`
+replaced the historical all-or-nothing exact-module gate with independent
+operation, physical-effect, and exact-identity evidence axes. The Packet Tracer
+adapter now provides checked one-shot module insertion, fresh before/after port
+inventory, module-tree fields, exact workspace inventory, exact disposable
+cleanup, and observed link bindings in the deployment manifest. A mutation ACK
+remains `APPLIED`; it does not verify the resulting state.
+
+The first governed live qualification ran on Packet Tracer `9.0.1.0858` over a
+pinned file transport. Its first runtime operation observed an empty semantic
+workspace. The product then deployed exactly two 2911s, one requested
+`HWIC-2T` in `0/0` per router, and one
+`Serial0/0/0 ↔ Serial0/0/0` WAN. Fresh readback verified both added serial-port
+sets and the exact two-ended link, and produced a manifest link binding with a
+directly observed runtime UUID. Exact module identity remained
+`UNOBSERVABLE/UNVERIFIED`; observed module number `0` was not relabeled as the
+requested slot `0/0`. Cable identity and DCE/DTE orientation also remained
+unverified.
+
+Cleanup removed only the two exact disposable routers and a fresh final
+inventory matched the semantic baseline. Packet Tracer's retained exact
+zero-port power-distribution object was preserved under the existing backend-
+managed exception. Result: `VERIFIED_CLEAN`.
+
+The full evidence packet is
+[`stage-3a4-serial-product-slice-2a.md`](stage-3a4-serial-product-slice-2a.md).
+This resolves the physical/module blocker for the bounded serial product slice;
+it does not exercise configuration, foundational-evidence composition,
+control-plane application, or traffic. Therefore:
+
+```text
+REFERENCE_TOPOLOGY_PRODUCT_PLANNING = READY_OFFLINE
+STAGE_3A4                           = PARTIAL
+TD_ACCEPTANCE_001                   = OPEN
+E9_5                               = OPEN
+```

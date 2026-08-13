@@ -291,8 +291,11 @@ What *was* product path: the typed RIPv2 chain end to end, the
 
 So the acceptance is sound for what it was chartered to accept — the typed
 control plane — and unsound as evidence that the product can build this
-topology. `deploy_enterprise_topology` and `packet_tracer_physical_runtime`
-have **no recorded live execution anywhere in `docs/`**.
+topology. At debt discovery, `deploy_enterprise_topology` and
+`packet_tracer_physical_runtime` had **no recorded live execution anywhere in
+`docs/`**. Slice 2A later added bounded physical/module/link evidence; it did
+not execute the complete reference pipeline and therefore does not close this
+entry.
 
 Consequence, already recorded in the acceptance document:
 
@@ -386,12 +389,17 @@ Row-by-row, from source audit and one implemented slice. Details in
 
 | Row | State |
 | --- | --- |
-| 1 physical deployment | **Seam exists and is wired.** `pt_live_deploy` already routes an enterprise-v2 plan through `EnterprisePhysicalTopologyDeployer`, emitting a manifest only from verified read-back. Unreached because no reference plan can be produced yet. |
-| 2 serial support | **Blocked, nine seams.** Enumerated in the readiness map. Includes a genuine backend limitation: the deployer refuses any plan carrying modules because PT cannot observe module identity, and a serial 2911 needs HWIC-2T. |
+| 1 physical deployment | **Bounded product slice VERIFIED; reference run pending.** Slice 2A deployed `2×2911 + requested module effects + 1 serial WAN` through `EnterprisePhysicalTopologyDeployer` / `PacketTracerPhysicalTopologyRuntime`, emitted a fresh-readback manifest, and restored the workspace. This advances row 1 but does not satisfy its same-run 41-device closure criterion. Evidence: `stage-3a4-serial-product-slice-2a.md`. |
+| 2 serial support | **Physical serial product capability VERIFIED for 2911/HWIC-2T; reference run pending.** The adapter now inserts once, independently verifies fresh `Serial0/0/0` and `Serial0/0/1` effects, preserves exact module identity as `UNOBSERVABLE`, and deploys one exact serial WAN. Serial IOS/orientation and the full reference execution remain outside Slice 2A. |
 | 3 configuration and addressing | **Better than this entry assumed.** Host addressing is already fully typed — `SetEndpointStaticAddress` → a seven-argument `configurePcIp`, a superset of the harness call. Router L3 and `clock rate` are supported. The one real gap is a compiler path emitting `ConfigureSvi` for a **non-gateway** switch management address; the action type and renderer already exist. |
 | 4 foundational evidence | **Implemented.** `application/use_cases/foundational_evidence.py` derives statuses from executed results only, with no parameter through which a status could be supplied. Thirty-five regressions, including a drift check against the real gate. Row 4 is satisfied *as a capability*; it is not yet *exercised*, which needs rows 1–3. |
 | 5 typed control plane | Unchanged and already correct. |
-| 6 authoritative readback | Unchanged; still requires calling `topology_observation.py` rather than reimplementing it. |
+| 6 authoritative readback | **Physical portion VERIFIED on the bounded slice.** Production exact two-ended readback observed both serial endpoints and their shared runtime UUID; the manifest binding was derived from those observations. Registered query and traffic evidence for the closing reference run remain pending. |
+
+`TD-ACCEPTANCE-001` remains `OPEN`. Its closure criterion requires rows 1–4
+and 6 in the same reference-topology run; Slice 2A intentionally performed no
+configuration, foundational-evidence composition, control-plane work, or
+traffic.
 
 New ceiling discovered while implementing row 4, and it constrains the closing
 run: **`endpoint_address`, `access_port` and `dhcp_pool` foundations can never

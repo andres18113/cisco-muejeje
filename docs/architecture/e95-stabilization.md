@@ -72,13 +72,31 @@ Plans contain semantic identities; Packet Tracer contains runtime objects.
 - an observed runtime identifier when it is stable;
 - an optional composite runtime fingerprint;
 - observed interface names and creation evidence;
+- one `DeploymentLinkBinding` per semantic link, built from fresh observed
+  endpoint/device/interface pairs;
+- a directly observed runtime link identifier when both endpoint readbacks
+  agree, without making that ephemeral identifier part of semantic identity;
 - the identity method used for that binding.
 
 Manifest creation is downstream of physical deployment. The production E4
-use case first ensures devices, observes device name/model/required ports,
-ensures links, and observes the exact two endpoints and ports. It emits no
-manifest when any required device, port, or link observation fails or when a
-binding is missing or ambiguous.
+use case first ensures devices; applies requested modules only through a typed
+effect-capable backend; independently observes fresh module port effects;
+observes device name/model/required ports; ensures links; and observes the exact
+two endpoints and ports. It emits no manifest when any required device, module
+effect, port, or link observation fails or when a binding is missing,
+ambiguous, or attached to a different planned interface.
+
+Requested module identity and observed module identity are separate claims. A
+fresh before/after port delta plus module-tree and required-port-class evidence
+may verify the requested physical effect while exact installed identity remains
+`UNOBSERVABLE/UNVERIFIED`. A mutation acknowledgement never verifies either
+claim. Packet Tracer's observed module number is retained verbatim and is not
+silently relabeled as the requested insertion slot.
+
+Link endpoint orientation defaults to `UNRESOLVED` until a direct runtime
+observer proves DCE/DTE. A shared runtime link UUID may be retained in the
+binding, but it is excluded from the manifest semantic hash so recreating the
+same semantic link does not change downstream identity.
 
 Semantic cable intent remains part of the physical hash. Packet Tracer may
 expose exact link peers and ports without exposing a reliable cable-type
@@ -260,6 +278,16 @@ caller-supplied name, so cleanup correctness depends on that name being unique
 and remembered, never on matching a prefix. The prefixes exist so that a human
 reading the workspace, and a QA residue check, can tell at a glance what is
 disposable.
+
+The serial physical qualification adds a stricter transaction boundary. Its
+first runtime call inventories every device, port, and link and hard-stops on
+any semantic topology or incomplete item. Only the exact zero-port model
+`Power Distribution Device` is classified as backend-managed. Cleanup acts on
+remembered exact attempted names in reverse order, never on a prefix scan, and
+then compares semantic device/link multisets to the baseline. New retained PDD
+objects are allowed; no baseline PDD may disappear or change. A malformed final
+inventory yields `inventory_restored=None`, not a false mismatch or a verified
+cleanup claim.
 
 Probe definitions, not tool arguments, select the mutation logic.
 

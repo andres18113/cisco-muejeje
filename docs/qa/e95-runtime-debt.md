@@ -67,7 +67,7 @@ that Packet Tracer has been measured in this E9.5 run.
 | --- | --- | --- |
 | 3560 SVI | Typed L3 configuration and fresh operational verification paths keep configured/admin state separate from line protocol state. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION` on a fresh 3560 device/session. |
 | PoE | Capability discovery preserves absent reliable port-power evidence as unknown. | [ADVERTENCIA] `UNKNOWN — PENDING_CONTROLLED_REPRODUCTION`; do not infer from model names. |
-| Modules | Runtime descriptors and probe fingerprints can carry observed module inventory. | [ADVERTENCIA] `UNKNOWN — PENDING_CONTROLLED_REPRODUCTION` for representative modular models. |
+| Modules | Product deployment now separates one-shot module application, fresh physical-effect readback, and exact identity. The 2911/HWIC-2T slice verifies added serial ports without equating requested slot `0/0`, observed module number `0`, or requested identity. | [OK] `BACKEND_LIMITATION_CONFIRMED` for exact module identity on Packet Tracer `9.0.1.0858` / 2911: the direct name remained absent while the physical effect was `VERIFIED`. Scope is this exact model/module slice; other modular models remain `UNKNOWN`. Evidence: `../architecture/stage-3a4-serial-product-slice-2a.md`. |
 | Access-port direct getter | E5 can return `UNOBSERVABLE` when no independent direct getter is available. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION`; application acceptance is not read-back. |
 | DHCP pool getter | E5 models direct DHCP-pool observation separately from application. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION`. |
 | DHCP gateway getter | Gateway is an independent DHCP verification field. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION`. |
