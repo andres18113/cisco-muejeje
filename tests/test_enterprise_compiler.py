@@ -607,6 +607,8 @@ def test_compact_summary_omits_full_plan_and_semantic_hash_is_stable():
 
     assert "plan" not in compact
     assert compact["semantic_hash"] == result.semantic_hash
+    assert result.semantic_hash == "9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870"
+    assert result.plan is not None and result.plan.hash_schema_version == "2"
     assert compact["devices"] == 81
     assert compact["links"] == 83
 

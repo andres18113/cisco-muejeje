@@ -26,6 +26,7 @@ from ..models.enterprise_plan import EnterprisePlan
 from ..models.hardware import (
     HardwareLinkRequirement,
     HardwarePlan,
+    HardwarePlanStatus,
     LinkRole,
     PlannedNetworkDevice,
     PortClass,
@@ -168,6 +169,22 @@ class EnterpriseCompiler:
                 "configuration_deferred_to": "E5",
             },
         )
+        if hardware.status is HardwarePlanStatus.UNRESOLVED:
+            cause = (
+                "unsupported"
+                if hardware.unsupported_requirements
+                else "insufficient_evidence"
+            )
+            reasons = hardware.unsupported_requirements or hardware.warnings
+            issues.append(_error(
+                CompilationIssueCode.HARDWARE_PLAN_UNRESOLVED,
+                "HardwarePlan no está resuelto; E4 no puede inventar la topología física. "
+                + (" ".join(reasons) if reasons else "No se seleccionó hardware físico."),
+                resolution_cause=cause,
+                warning_count=len(hardware.warnings),
+                unsupported_count=len(hardware.unsupported_requirements),
+            ))
+            return self._result(topology, enterprise, issues, [], valid=False)
         enterprise_sites = {site.site_id: site for site in enterprise.sites}
         hardware_sites = {site.site_id: site for site in hardware.site_hardware}
         for site_id in sorted(enterprise_sites):
@@ -301,6 +318,19 @@ class EnterpriseCompiler:
                 zone_id = zone_by_switch.get(device.id, "")
                 site_plan = enterprise_sites.get(site.site_id)
                 building_id, floor_id = _hierarchy_for_zone(site_plan, zone_id)
+                metadata = {
+                    "selection_status": device.selection_status.value,
+                    "parent_group": device.parent_group,
+                    "redundancy_group": device.redundancy_group or "",
+                    "port_capacity": str(device.port_capacity),
+                    "poe_capacity": "unknown" if device.poe_capacity is None else str(device.poe_capacity),
+                }
+                if device.additional_roles:
+                    metadata["additional_roles"] = ",".join(
+                        role.value for role in sorted(
+                            device.additional_roles, key=lambda item: item.value,
+                        )
+                    )
                 compiled_device = DevicePlan(
                     id=device.id,
                     name=naming.network_name(site.site_id, device.role, index, zone_id),
@@ -313,13 +343,7 @@ class EnterpriseCompiler:
                     floor_id=floor_id,
                     zone_id=zone_id,
                     network_layer=device.network_layer.value,
-                    metadata={
-                        "selection_status": device.selection_status.value,
-                        "parent_group": device.parent_group,
-                        "redundancy_group": device.redundancy_group or "",
-                        "port_capacity": str(device.port_capacity),
-                        "poe_capacity": "unknown" if device.poe_capacity is None else str(device.poe_capacity),
-                    },
+                    metadata=metadata,
                 )
                 compiled[device.id] = compiled_device
                 planned[device.id] = device

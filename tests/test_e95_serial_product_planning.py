@@ -12,6 +12,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.compilation import CompilationIssueCode
 from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import SitePlan
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwareCandidate,
@@ -26,13 +27,18 @@ from src.packet_tracer_mcp.domain.enterprise.models.intent import (
     SiteType,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.link_performance import LinkMedia
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import WanLinkRequirement
+from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
+    EndpointRequirement,
+    WanLinkRequirement,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
 from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
 from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanner,
+    HardwarePlanningPolicy,
+    HierarchyPolicy,
     ModulePlanner,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
@@ -76,6 +82,36 @@ def _router_candidate() -> HardwareCandidate:
         for candidate in EnterpriseCapabilityAdapter().hardware_candidates("router")
         if candidate.model == "2911"
     )
+
+
+def _layer3_switch_candidate() -> HardwareCandidate:
+    candidate = next(
+        candidate
+        for candidate in EnterpriseCapabilityAdapter().hardware_candidates("switch")
+        if candidate.model == "2960-24TT"
+    )
+    return candidate.model_copy(update={
+        "capabilities": candidate.capabilities.model_copy(update={
+            "layer3": CapabilityStatus.SUPPORTED,
+        }),
+    })
+
+
+def _three_tier_policy() -> HardwarePlanningPolicy:
+    return HardwarePlanningPolicy(hierarchy=HierarchyPolicy(
+        small_site_max_access_switches=0,
+        collapsed_core_max_access_switches=0,
+    ))
+
+
+def _with_lan_endpoint(intent: EnterpriseIntent) -> EnterpriseIntent:
+    endpoint = EndpointRequirement(role=DeviceRole.USER_PC, count=1)
+    return intent.model_copy(update={
+        "sites": [
+            site.model_copy(update={"endpoints": [endpoint]})
+            for site in intent.sites
+        ],
+    })
 
 
 def _compile(media: LinkMedia, *, duplicate: bool = False, reverse_sites: bool = False):
@@ -432,9 +468,24 @@ def test_two_serial_links_per_router_use_one_catalogued_two_port_module(monkeypa
     }
 
 
-def test_edge_and_wan_router_roles_are_distinct_pending_role_reconciliation():
-    intent = _intent(LinkMedia.SERIAL).model_copy(update={"internet_required": True})
-    hardware = HardwarePlanner().plan(_design(intent), [], [_router_candidate()])
+def test_compatible_edge_and_wan_roles_reconcile_to_one_physical_router_per_site():
+    intent = _with_lan_endpoint(
+        _intent(LinkMedia.SERIAL).model_copy(update={"internet_required": True}),
+    )
+    enterprise = _design(intent)
+    hardware = HardwarePlanner().plan(
+        enterprise,
+        [_layer3_switch_candidate()],
+        [_router_candidate()],
+        _three_tier_policy(),
+    )
+    catalog = PacketTracerTopologyCatalogAdapter()
+    compiled = compile_enterprise_topology(
+        enterprise,
+        hardware,
+        catalog.compilation_profile(),
+        catalog.cable_for,
+    )
 
     for site in hardware.site_hardware:
         routers = [
@@ -442,8 +493,303 @@ def test_edge_and_wan_router_roles_are_distinct_pending_role_reconciliation():
             for device in site.devices
             if device.role in {DeviceRole.EDGE_ROUTER, DeviceRole.WAN_ROUTER}
         ]
-        assert [device.role for device in routers] == [
-            DeviceRole.EDGE_ROUTER,
-            DeviceRole.WAN_ROUTER,
+        assert len(routers) == 1
+        router = routers[0]
+        assert router.id == f"r-edge-{site.site_id}-01"
+        assert router.role is DeviceRole.EDGE_ROUTER
+        assert router.additional_roles == [DeviceRole.WAN_ROUTER]
+        assert router.fulfills_role(DeviceRole.EDGE_ROUTER)
+        assert router.fulfills_role(DeviceRole.WAN_ROUTER)
+        assert router.selected_model == "2911"
+        assert router.required_capabilities is not None
+        assert router.required_capabilities.category == "router"
+        assert router.required_capabilities.min_uplinks == 1
+        assert router.required_capabilities.requires_modules
+        assert len(router.module_plan) == 1
+        edge_links = [
+            link
+            for link in site.links
+            if link.link_role.value == "edge_link" and link.target_device == router.id
         ]
-        assert [device.selected_model for device in routers] == ["2911", "2911"]
+        assert len(edge_links) == 1
+    assert compiled.is_valid and compiled.plan is not None
+    compiled_routers = [
+        device for device in compiled.plan.devices if device.category == "router"
+    ]
+    assert len(compiled_routers) == 2
+    assert all(device.enterprise_role == DeviceRole.EDGE_ROUTER.value for device in compiled_routers)
+    assert all(device.metadata["additional_roles"] == "wan_router" for device in compiled_routers)
+    assert len([link for link in compiled.plan.links if link.cable == "serial"]) == 1
+
+
+def _combined_hardware(
+    candidate: HardwareCandidate,
+    media: LinkMedia = LinkMedia.SERIAL,
+):
+    intent = _intent(media).model_copy(update={"internet_required": True})
+    return HardwarePlanner().plan(_design(intent), [], [candidate])
+
+
+def test_reconciliation_rejects_an_incompatible_device_category():
+    candidate = _candidate_with_module_status(CapabilityStatus.SUPPORTED)
+    candidate = candidate.model_copy(update={
+        "capabilities": candidate.capabilities.model_copy(update={"category": "switch"}),
+    })
+
+    hardware = _combined_hardware(candidate)
+
+    assert hardware.status is HardwarePlanStatus.UNRESOLVED
+    assert hardware.unsupported_requirements == hardware.warnings
+    assert all("categoría switch" in warning for warning in hardware.warnings)
+    assert not [device for site in hardware.site_hardware for device in site.devices]
+
+
+@pytest.mark.parametrize(
+    ("status", "unsupported"),
+    [
+        (CapabilityStatus.UNKNOWN, False),
+        (CapabilityStatus.UNSUPPORTED, True),
+    ],
+)
+def test_reconciled_module_capability_preserves_unknown_vs_unsupported(
+    status: CapabilityStatus,
+    unsupported: bool,
+):
+    hardware = _combined_hardware(_candidate_with_module_status(status))
+
+    assert hardware.status is HardwarePlanStatus.UNRESOLVED
+    assert (hardware.unsupported_requirements == hardware.warnings) is unsupported
+    assert all(f"supports_modules={status.value.upper()}" in item for item in hardware.warnings)
+    assert not [device for site in hardware.site_hardware for device in site.devices]
+
+    enterprise = _design(
+        _intent(LinkMedia.SERIAL).model_copy(update={"internet_required": True}),
+    )
+    catalog = PacketTracerTopologyCatalogAdapter()
+    compiled = compile_enterprise_topology(
+        enterprise,
+        hardware,
+        catalog.compilation_profile(),
+        catalog.cable_for,
+    )
+    issue = next(
+        item for item in compiled.issues
+        if item.code is CompilationIssueCode.HARDWARE_PLAN_UNRESOLVED
+    )
+    assert compiled.plan is None
+    assert issue.details["resolution_cause"] == (
+        "unsupported" if unsupported else "insufficient_evidence"
+    )
+    assert issue.details["unsupported_count"] == (
+        len(hardware.unsupported_requirements)
+    )
+
+
+def test_unresolved_reconciliation_blocks_e4_even_when_lan_hardware_is_resolved():
+    intent = _with_lan_endpoint(
+        _intent(LinkMedia.SERIAL).model_copy(update={"internet_required": True}),
+    )
+    enterprise = _design(intent)
+    hardware = HardwarePlanner().plan(
+        enterprise,
+        [_layer3_switch_candidate()],
+        [_candidate_with_module_status(CapabilityStatus.UNKNOWN)],
+        _three_tier_policy(),
+    )
+    catalog = PacketTracerTopologyCatalogAdapter()
+    compiled = compile_enterprise_topology(
+        enterprise,
+        hardware,
+        catalog.compilation_profile(),
+        catalog.cable_for,
+    )
+
+    assert any(device.selected_model for site in hardware.site_hardware for device in site.devices)
+    assert hardware.status is HardwarePlanStatus.UNRESOLVED
+    assert hardware.unsupported_requirements == []
+    assert compiled.plan is None
+    issue = next(
+        item for item in compiled.issues
+        if item.code is CompilationIssueCode.HARDWARE_PLAN_UNRESOLVED
+    )
+    assert issue.details["resolution_cause"] == "insufficient_evidence"
+
+
+def test_reconciliation_fails_closed_when_lan_facing_port_is_missing():
+    candidate = _candidate_with_module_status(CapabilityStatus.SUPPORTED).model_copy(
+        update={"ports": []},
+    )
+
+    hardware = _combined_hardware(candidate)
+
+    assert hardware.status is HardwarePlanStatus.UNRESOLVED
+    assert hardware.unsupported_requirements == hardware.warnings
+    assert all("Ethernet WAN" in warning for warning in hardware.warnings)
+    assert not [device for site in hardware.site_hardware for device in site.devices]
+
+
+def test_reconciled_ethernet_wan_sums_lan_and_wan_port_demand_without_a_module():
+    hardware = _combined_hardware(_router_candidate(), LinkMedia.ETHERNET)
+
+    routers = [device for site in hardware.site_hardware for device in site.devices]
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert len(routers) == 2
+    assert all(router.role is DeviceRole.EDGE_ROUTER for router in routers)
+    assert all(router.additional_roles == [DeviceRole.WAN_ROUTER] for router in routers)
+    assert all(router.required_capabilities.min_uplinks == 2 for router in routers)
+    assert all(not router.required_capabilities.requires_modules for router in routers)
+    assert all(not router.module_plan for router in routers)
+
+
+def test_reconciled_ethernet_wan_rejects_one_port_for_two_combined_duties():
+    candidate = _candidate_with_module_status(CapabilityStatus.SUPPORTED).model_copy(
+        update={
+            "ports": [PortDescriptor(
+                name="ethernet-a",
+                classes=[PortClass.UPLINK_CAPABLE],
+            )],
+        },
+    )
+
+    hardware = _combined_hardware(candidate, LinkMedia.ETHERNET)
+
+    assert hardware.status is HardwarePlanStatus.UNRESOLVED
+    assert hardware.unsupported_requirements == hardware.warnings
+    assert all("se requiere(n) 2" in warning for warning in hardware.warnings)
+    assert not [device for site in hardware.site_hardware for device in site.devices]
+
+
+def test_reconciliation_fails_closed_when_serial_module_slot_is_missing():
+    candidate = _candidate_with_module_status(CapabilityStatus.SUPPORTED).model_copy(
+        update={"available_module_slots": []},
+    )
+
+    hardware = _combined_hardware(candidate)
+
+    assert hardware.status is HardwarePlanStatus.UNRESOLVED
+    assert hardware.unsupported_requirements == hardware.warnings
+    assert all("slots disponibles" in warning for warning in hardware.warnings)
+    assert not [device for site in hardware.site_hardware for device in site.devices]
+
+
+def _combined_triangle(*, reverse_sites: bool = False):
+    sites = [
+        SiteIntent(
+            name="A",
+            type=SiteType.HQ,
+            uplinks=[
+                WanLinkRequirement(target_site_id="b", media=LinkMedia.SERIAL),
+                WanLinkRequirement(target_site_id="c", media=LinkMedia.SERIAL),
+            ],
+        ),
+        SiteIntent(
+            name="B",
+            type=SiteType.BRANCH,
+            uplinks=[WanLinkRequirement(target_site_id="c", media=LinkMedia.SERIAL)],
+        ),
+        SiteIntent(name="C", type=SiteType.BRANCH),
+    ]
+    if reverse_sites:
+        sites.reverse()
+    enterprise = _design(EnterpriseIntent(
+        name="Combined serial triangle",
+        sites=_with_lan_endpoint(EnterpriseIntent(
+            name="Combined serial triangle sites",
+            sites=sites,
+        )).sites,
+        internet_required=True,
+    ))
+    hardware = HardwarePlanner().plan(
+        enterprise,
+        [_layer3_switch_candidate()],
+        [_router_candidate()],
+        _three_tier_policy(),
+    )
+    catalog = PacketTracerTopologyCatalogAdapter()
+    compiled = compile_enterprise_topology(
+        enterprise,
+        hardware,
+        catalog.compilation_profile(),
+        catalog.cable_for,
+    )
+    return hardware, compiled
+
+
+def test_three_site_triangle_reconciles_to_three_routers_with_one_module_each():
+    hardware, compiled = _combined_triangle()
+
+    routers = [
+        device
+        for site in hardware.site_hardware
+        for device in site.devices
+        if device.role in {DeviceRole.EDGE_ROUTER, DeviceRole.WAN_ROUTER}
+    ]
+    links = [link for site in hardware.site_hardware for link in site.links]
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert [router.id for router in routers] == [
+        "r-edge-a-01",
+        "r-edge-b-01",
+        "r-edge-c-01",
+    ]
+    assert all(router.additional_roles == [DeviceRole.WAN_ROUTER] for router in routers)
+    assert all(router.required_capabilities.min_uplinks == 1 for router in routers)
+    assert all(len(router.module_plan) == 1 for router in routers)
+    assert all(len(router.module_plan[0].provided_ports) == 2 for router in routers)
+    assert len([link for link in links if link.link_role.value == "wan_link"]) == 3
+    assert len([link for link in links if link.link_role.value == "edge_link"]) == 3
+    assert compiled.is_valid and compiled.plan is not None
+    assert len([device for device in compiled.plan.devices if device.category == "router"]) == 3
+    assert len(compiled.plan.modules) == 3
+    serial_links = [link for link in compiled.plan.links if link.cable == "serial"]
+    assert len(serial_links) == 3
+    router_ids = {router.id for router in routers}
+    ports_by_router: dict[str, set[str]] = {router_id: set() for router_id in router_ids}
+    for link in compiled.plan.links:
+        if link.device_a_id in router_ids:
+            ports_by_router[link.device_a_id].add(link.port_a)
+        if link.device_b_id in router_ids:
+            ports_by_router[link.device_b_id].add(link.port_b)
+    assert {router_id: len(ports) for router_id, ports in ports_by_router.items()} == {
+        router_id: 3 for router_id in router_ids
+    }
+
+
+def test_reconciled_triangle_is_deterministic_under_equivalent_site_reordering():
+    first_hardware, first = _combined_triangle()
+    reordered_hardware, reordered = _combined_triangle(reverse_sites=True)
+
+    assert first_hardware.model_dump(mode="json") == reordered_hardware.model_dump(mode="json")
+    assert first.is_valid and first.plan is not None
+    assert reordered.is_valid and reordered.plan is not None
+    assert first.semantic_hash == reordered.semantic_hash
+    assert first.plan.model_dump(mode="json") == reordered.plan.model_dump(mode="json")
+
+
+def test_single_role_router_ids_remain_unchanged():
+    wan_only = HardwarePlanner().plan(
+        _design(_intent(LinkMedia.SERIAL)),
+        [],
+        [_router_candidate()],
+    )
+    internet_only = HardwarePlanner().plan(
+        _design(EnterpriseIntent(
+            name="Internet only",
+            internet_required=True,
+            sites=[SiteIntent(name="A", type=SiteType.HQ)],
+        )),
+        [],
+        [_router_candidate()],
+    )
+
+    assert [
+        device.id for site in wan_only.site_hardware for device in site.devices
+    ] == ["r-wan-north-01", "r-wan-south-01"]
+    assert [
+        device.id for site in internet_only.site_hardware for device in site.devices
+    ] == ["r-edge-a-01"]
+    assert all(
+        not device.additional_roles
+        for plan in (wan_only, internet_only)
+        for site in plan.site_hardware
+        for device in site.devices
+    )

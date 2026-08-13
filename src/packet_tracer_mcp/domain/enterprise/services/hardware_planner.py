@@ -292,8 +292,12 @@ class HardwarePlanner:
             *wan_warnings,
             *(warning for site in site_hardware for warning in site.warnings),
         ]
+        blocking_wan_warning = any(
+            warning.startswith(("No existe candidato WAN", "WAN:", "WAN inválida:"))
+            for warning in warnings
+        )
         status = (
-            HardwarePlanStatus.UNRESOLVED if not any(
+            HardwarePlanStatus.UNRESOLVED if blocking_wan_warning or not any(
                 device.selected_model or device.provisional_model
                 for site in site_hardware for device in site.devices
             )
@@ -383,15 +387,18 @@ class HardwarePlanner:
 
         access_devices = [device for device in devices if device.role is DeviceRole.ACCESS_SWITCH]
         mode = HardwareHierarchyPlanner.choose(len(access_devices), policy.hierarchy)
+        has_wan_demand = bool(required_serial_ports or required_wan_ethernet_ports)
+        reconcile_site_router = internet_required and has_wan_demand
         higher_devices = self._higher_layers(
             site, mode, len(access_devices), switch_candidates, router_candidates,
-            policy, internet_required,
+            policy, internet_required and not reconcile_site_router,
         )
         wan_resolution = self._wan_router_device(
             site,
             router_candidates,
             required_serial_ports,
             required_wan_ethernet_ports,
+            reconcile_edge_role=reconcile_site_router,
         )
         if wan_resolution.device is not None:
             higher_devices.append(wan_resolution.device)
@@ -489,22 +496,31 @@ class HardwarePlanner:
         router_candidates: list[HardwareCandidate],
         required_serial_ports: int,
         required_ethernet_ports: int,
+        *,
+        reconcile_edge_role: bool = False,
     ) -> _WanRouterResolution:
         if required_serial_ports == 0 and required_ethernet_ports == 0:
             return _WanRouterResolution()
+        combined_ethernet_ports = required_ethernet_ports + int(reconcile_edge_role)
         viable: list[tuple[HardwareCandidate, list[ModuleInstallation], list[PortDescriptor]]] = []
         unknown_module_models: list[str] = []
         unsupported_reasons: list[str] = []
         module_planner = ModulePlanner()
         for candidate in sorted(router_candidates, key=lambda item: item.model.casefold()):
+            if candidate.capabilities.category != "router":
+                unsupported_reasons.append(
+                    f"{candidate.model} tiene categoría {candidate.capabilities.category}, "
+                    "se requiere router"
+                )
+                continue
             ethernet_ports = [
                 port for port in candidate.ports
                 if PortClass.UPLINK_CAPABLE in port.classes
             ]
-            if len(ethernet_ports) < required_ethernet_ports:
+            if len(ethernet_ports) < combined_ethernet_ports:
                 unsupported_reasons.append(
                     f"{candidate.model} sólo tiene {len(ethernet_ports)} puerto(s) "
-                    f"Ethernet WAN y se requiere(n) {required_ethernet_ports}"
+                    f"Ethernet WAN/LAN y se requiere(n) {combined_ethernet_ports}"
                 )
                 continue
             existing_serial_ports = [
@@ -566,23 +582,32 @@ class HardwarePlanner:
             viable,
             key=lambda item: (
                 len(item[1]),
-                len(item[2]) - required_serial_ports - required_ethernet_ports,
+                len(item[2]) - required_serial_ports - combined_ethernet_ports,
                 item[0].model.casefold(),
             ),
         )
+        primary_role = (
+            DeviceRole.EDGE_ROUTER if reconcile_edge_role else DeviceRole.WAN_ROUTER
+        )
+        network_layer = NetworkLayer.EDGE if reconcile_edge_role else NetworkLayer.WAN
+        prefix = "r-edge" if reconcile_edge_role else "r-wan"
         return _WanRouterResolution(device=PlannedNetworkDevice(
-            id=f"r-wan-{site.site_id}-01",
+            id=f"{prefix}-{site.site_id}-01",
             site_id=site.site_id,
-            role=DeviceRole.WAN_ROUTER,
-            network_layer=NetworkLayer.WAN,
+            role=primary_role,
+            additional_roles=(
+                [DeviceRole.WAN_ROUTER] if reconcile_edge_role else []
+            ),
+            network_layer=network_layer,
             selection_status=DeviceCandidateStatus.COMPATIBLE,
             selected_model=candidate.model,
             candidate_models=sorted(
                 (item[0].model for item in viable), key=str.casefold,
             ),
             required_capabilities=DeviceRequirement(
-                role=DeviceRole.WAN_ROUTER,
-                min_uplinks=required_ethernet_ports,
+                role=primary_role,
+                category="router" if reconcile_edge_role else None,
+                min_uplinks=combined_ethernet_ports,
                 requires_modules=bool(module_plan),
             ),
             port_capacity=len(port_descriptors),
@@ -598,7 +623,11 @@ class HardwarePlanner:
         sites = {site.site_id: site for site in site_hardware}
         routers = {
             site.site_id: next(
-                (device for device in site.devices if device.role is DeviceRole.WAN_ROUTER),
+                (
+                    device
+                    for device in site.devices
+                    if device.fulfills_role(DeviceRole.WAN_ROUTER)
+                ),
                 None,
             )
             for site in site_hardware

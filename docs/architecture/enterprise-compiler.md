@@ -58,6 +58,13 @@ models, exhausted ports, duplicate identity, self-links, and incomplete
 endpoint expansion are hard errors: an invalid compile result does not expose a
 partial `TopologyPlan`.
 
+E4 also rejects `HardwarePlanStatus.UNRESOLVED` before expanding any physical
+object. `HARDWARE_PLAN_UNRESOLVED.details.resolution_cause` remains
+`insufficient_evidence` when E3 stopped on unknown evidence and `unsupported`
+when `unsupported_requirements` is non-empty. A resolved LAN subset therefore
+cannot turn a missing required WAN/router selection into a valid partial
+topology.
+
 PC/phone pairs compile as `switch -> phone -> PC`, consuming one switch access
 port per pair. PoE requirements remain metadata. Unknown PoE or a provisional
 hardware selection is a structured warning, not a fabricated capability and

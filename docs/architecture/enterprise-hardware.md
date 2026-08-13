@@ -52,16 +52,35 @@ declara `UNSUPPORTED`. `supports_modules=UNSUPPORTED`, en cambio, queda en
 `ModulePlanner`; con evidencia del catálogo actual, dos enlaces seriales piden
 dos puertos y una sola `HWIC-2T` satisface ambos sin duplicar el módulo.
 
-## Límite de roles de router para Stage 3A4
+## Reconciliación de roles de router para Stage 3A4
 
-`EDGE_ROUTER` (salida a Internet) y `WAN_ROUTER` (enlace entre sedes) siguen
-siendo dispositivos físicos distintos en el planner general. Por tanto, una
-sede que pide ambos roles produce actualmente dos routers, aunque los dos
-puedan seleccionar el modelo 2911. Stage 3A4 no los fusiona: antes de compilar
-la topología universitaria de referencia debe existir una política explícita
-que permita que un único dispositivo satisfaga LAN gateway, edge y WAN sin
-duplicar interfaces ni responsabilidades. Ese gate permanece abierto para la
-siguiente slice de planning.
+`EDGE_ROUTER` (gateway/salida LAN) y `WAN_ROUTER` (enlace entre sedes) siguen
+siendo roles lógicos distintos. Cuando un sitio requiere ambos, E3 puede
+realizarlos en un solo `PlannedNetworkDevice`: `role` conserva el rol primario
+`EDGE_ROUTER`, `additional_roles` registra `WAN_ROUTER` y
+`required_capabilities` contiene la unión usada para seleccionar el hardware.
+E4 conserva el rol primario para nombres y compatibilidad con configuración, y
+propaga los roles adicionales como metadata física.
+
+La reconciliación sólo ocurre para esa pareja explícita y exige categoría
+`router`. La demanda Ethernet es aditiva (un puerto LAN más los enlaces WAN
+Ethernet); la demanda serial sigue agregándose por sitio y se entrega una sola
+vez a `ModulePlanner`, incluyendo slots. Un candidato con categoría incorrecta,
+puertos insuficientes, módulos no soportados o slots insuficientes no se
+fusiona. La evidencia de módulos `UNKNOWN` conserva un resultado no resuelto
+por falta de evidencia y nunca se transforma en `UNSUPPORTED`.
+
+Un requisito WAN bloqueante mantiene `HardwarePlanStatus.UNRESOLVED` aunque el
+resto del sitio ya tenga switches seleccionados. E4 rechaza ese plan con
+`HARDWARE_PLAN_UNRESOLVED`: `resolution_cause=insufficient_evidence` cuando la
+causa es `UNKNOWN`, y `resolution_cause=unsupported` cuando E3 produjo
+`unsupported_requirements`. Así una topología LAN parcial no puede ocultar la
+ausencia del router reconciliado.
+
+Los dispositivos de un solo rol conservan sus IDs anteriores (`r-edge-*` o
+`r-wan-*`) y no serializan roles adicionales. El reconciliado adopta el ID
+estable `r-edge-*`, por lo que el gateway LAN y los enlaces WAN apuntan a la
+misma identidad física sin igualar los dos roles en el dominio.
 
 ## Cobertura del catálogo y E3.5
 

@@ -118,6 +118,7 @@ class PlannedNetworkDevice(BaseModel):
     id: str
     site_id: str
     role: DeviceRole
+    additional_roles: list[DeviceRole] = Field(default_factory=list)
     network_layer: NetworkLayer
     selection_status: DeviceCandidateStatus
     selected_model: str | None = None
@@ -131,6 +132,10 @@ class PlannedNetworkDevice(BaseModel):
     parent_group: str = ""
     redundancy_group: str | None = None
     warnings: list[str] = Field(default_factory=list)
+
+    def fulfills_role(self, role: DeviceRole) -> bool:
+        """Indica si este dispositivo físico satisface el rol primario o uno reconciliado."""
+        return role is self.role or role in self.additional_roles
 
 
 class HardwareCandidate(BaseModel):
