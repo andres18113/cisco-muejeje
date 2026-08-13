@@ -305,6 +305,135 @@ mandatory restore"*. Its live status is registered as UNKNOWN in
 3A4 should not adopt it. If a traffic-under-failure check is later wanted, that
 is a contract change with its own evidence requirements.
 
+---
+
+# Stage 3A4 execution — findings, 2026-08-13
+
+Three parallel source audits ran against `57fa11f`. What follows corrects this
+document where it was wrong and records what the audits established. Nothing
+here was inferred from behaviour; every claim is from source.
+
+## Corrections to this document
+
+**Host addressing is NOT missing — the product already has it.** §5's seam
+table and `TD-ACCEPTANCE-001` row 3 both implied the 35 PC addresses had no
+typed path. They do: `SetEndpointStaticAddress` / `SetEndpointDhcp` are
+compiled by `configuration_compiler`, rendered through
+`enterprise_configuration_runtime._endpoint_call`, and emit a **seven-argument**
+`configurePcIp(name, dhcp, ip, mask, gw, dns, interface)` — a superset of the
+harness's five-argument call. The acceptance harness reimplemented a capability
+the product already had. Row 3 is therefore much closer to satisfied than this
+document claimed.
+
+**Traffic changes outcomes on serial only.** §4 treated traffic as a single
+gap. Measured: on SERIAL, demand selects the rate, sets
+`CapacitySource.TRAFFIC_CALCULATION`, sets `serial_clock_rate_bps` and so
+changes the emitted `ConfigureSerialClock` and the configuration semantic hash.
+On ETHERNET it can only raise `LINK_CAPACITY_INSUFFICIENT` through
+`_check_demand`, and under AUTO with no measured profiles both ceilings are
+`None`, so it is a complete no-op. Wiring traffic therefore buys a real,
+hash-visible decision **only where serial links exist** — which makes serial a
+hard prerequisite of the traffic half of this stage, not a parallel workstream.
+
+## Blocking findings
+
+**1. The deployer refuses every plan that carries modules.** A 2911 serial
+triangle needs HWIC-2T, and `deploy_enterprise_topology` fails preflight with
+`MODULE_OBSERVATION_UNAVAILABLE` because
+`packet_tracer_physical_runtime.supports_module_observation()` returns `False`.
+That is honest, not lazy: PT's module-name getter returns the literal string
+`"None"` even for a module exposing ports, which `probe_runtime` correctly
+treats as absence of a name. Module **identity** is genuinely unobservable on
+this backend.
+
+What *is* observable: slot occupancy, `slot_type_code`, `port_count`, and the
+resulting ports themselves, since device observation enumerates real runtime
+ports. So the narrow missing capability is a **module effect-verification
+tier** — planned slot occupied, planned ports present — recording identity as
+UNOBSERVABLE and never claiming it. `PacketTracerPhysicalTopologyRuntime` also
+has no `ensure_module` / `observe_module` at all, and there is no
+`generate_module_command` to mirror `generate_link_command`.
+
+**2. No orchestrator exists.** `ConfigurationApplicator` and
+`ControlPlaneApplicator` have **zero callers in `src/`**. `pt_live_deploy` runs
+the physical stage only and says so explicitly. `full_build.py` is the legacy
+pre-E9.5 planner and touches none of the E5–E9 seams. Stage 3A4 must build the
+orchestration seam that runs plan → compile → deploy → configure →
+control-plane, and per the CP2 rule it may orchestrate but must not perform
+mutations itself.
+
+**3. Endpoint-address foundations can never reach VERIFIED.** `_verify_endpoint`
+reads back IP and mask through structured getters but returns `gateway: null`
+and `dns: null`, because PT 9.0.1 evidence confirms only the first two getters.
+Those fields resolve UNOBSERVABLE, so the result is `PARTIAL` at best. Any
+control-plane plan compiling `kind="endpoint_address"` foundations therefore
+cannot pass the gate. The same is true of `access_port` and `dhcp_pool`, which
+route to `_unobservable` unconditionally. A RIPv2 reference topology **is**
+satisfiable, because it needs only `l3_interface` and `link` foundations.
+
+## Nine seams the serial reference topology needs
+
+`CABLE_RULES` yields no `"serial"` and is category-only, so it cannot
+distinguish a serial WAN link from a crossover; no planner ever emits a
+router-to-router `HardwareLinkRequirement`, `DeviceRole.WAN_ROUTER` is never
+instantiated and `LinkRole.WAN_LINK` is mapped but never emitted;
+`ModulePlanner.plan_serial` is correct and has zero production callers;
+module-provided ports are classed `[MODULE_PROVIDED, WAN]` and never
+`PortClass.SERIAL`; the physical runtime lacks module support; the manifest
+never populates `link_bindings`, so `resolve_serial_clock_target` is
+unreachable; `configuration_compiler`'s `unprofiled` gate is Ethernet-shaped
+and `continue`s every serial link before `decide()` runs;
+`PT_2911_HWIC2T_SERIAL_CLOCK` has no resolver and no consumer; and
+`parse_serial_controller` returns a bare `str` that nothing maps to
+`SerialEndpointOrientation`.
+
+Already usable, do not reimplement: `PT_CONNECT_TYPE["serial"] = 8106` flows
+through `generate_link_command` unchanged, `resolve_link_media` accepts
+`"serial"`, the planner's serial branch is complete, both typed actions and
+their renderers exist and are whitelisted, `DeploymentLinkBinding` has its
+resolution API, and `LINK_DCE_KEY` is already inside the physical hash.
+
+## What this session implemented
+
+`application/use_cases/foundational_evidence.py` — the authentic derivation of
+control-plane foundational evidence, which is `TD-ACCEPTANCE-001` row 4 and the
+defect CP2 named as the sharpest edge.
+
+`derive_foundational_statuses` takes only executed results — a
+`ConfigurationApplicationResult`, a `PhysicalDeploymentResult`, or neither —
+and has no parameter through which a caller could supply a status. VERIFIED is
+copied, never minted:
+
+- configuration foundations read `verification_results`, never
+  `action_results`, whose ceiling is APPLIED because the configuration channel
+  is fire-and-forget;
+- link foundations translate the physical read-back, and **only**
+  `OBSERVED` with the `observed` flag actually set becomes VERIFIED; APPLIED
+  and SATISFIED carry through as APPLIED;
+- two sources disagreeing about one foundation resolve to the weaker;
+- no evidence at all yields an empty mapping, which makes the gate refuse.
+
+`derive_foundational_hashes` emits an entry only where a requirement declares a
+`source_hash`, which today is `kind="security"` alone; a routing-only plan
+honestly produces `{}`. `unmet_foundations` previews what the gate will reject
+without dispatching, and a parametrised regression compares it against the real
+`ControlPlaneApplicator._foundation_errors` so the preview cannot drift.
+
+Thirty-five regressions, including one asserting the helper's signature admits
+no status-supplying parameter, and one reproducing the full reference shape
+where an endpoint address is PARTIAL and the gate consequently still refuses.
+
+## One thing the existing suite caught, worth recording
+
+The first version of the new tests imported `packet_tracer_mcp` bare.
+`test_no_test_imports_the_package_outside_the_repo_namespace` failed them: a
+bare import resolves through the editable install rather than this worktree, so
+the tests would have validated the main checkout's code while reporting on this
+branch. The convention is `src.packet_tracer_mcp`. Recorded because the failure
+mode is silent everywhere except that guard.
+
+---
+
 ## One governance discrepancy, since corrected
 
 The ledger defines Debt Checkpoint 2 as occurring *"After the university

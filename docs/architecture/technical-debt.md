@@ -379,6 +379,28 @@ Three rules decide whether this closes or merely repeats:
   `FULL_PRODUCT_PIPELINE_ACCEPTANCE` may move off `NOT_ESTABLISHED` only when
   rows 1–4 and row 6 are all satisfied in the same run.
 
+### Progress — Stage 3A4, 2026-08-13
+
+Row-by-row, from source audit and one implemented slice. Details in
+`e95-stage-3a4-readiness.md`.
+
+| Row | State |
+| --- | --- |
+| 1 physical deployment | **Seam exists and is wired.** `pt_live_deploy` already routes an enterprise-v2 plan through `EnterprisePhysicalTopologyDeployer`, emitting a manifest only from verified read-back. Unreached because no reference plan can be produced yet. |
+| 2 serial support | **Blocked, nine seams.** Enumerated in the readiness map. Includes a genuine backend limitation: the deployer refuses any plan carrying modules because PT cannot observe module identity, and a serial 2911 needs HWIC-2T. |
+| 3 configuration and addressing | **Better than this entry assumed.** Host addressing is already fully typed — `SetEndpointStaticAddress` → a seven-argument `configurePcIp`, a superset of the harness call. Router L3 and `clock rate` are supported. The one real gap is a compiler path emitting `ConfigureSvi` for a **non-gateway** switch management address; the action type and renderer already exist. |
+| 4 foundational evidence | **Implemented.** `application/use_cases/foundational_evidence.py` derives statuses from executed results only, with no parameter through which a status could be supplied. Thirty-five regressions, including a drift check against the real gate. Row 4 is satisfied *as a capability*; it is not yet *exercised*, which needs rows 1–3. |
+| 5 typed control plane | Unchanged and already correct. |
+| 6 authoritative readback | Unchanged; still requires calling `topology_observation.py` rather than reimplementing it. |
+
+New ceiling discovered while implementing row 4, and it constrains the closing
+run: **`endpoint_address`, `access_port` and `dhcp_pool` foundations can never
+reach VERIFIED** on this backend. Endpoint verification reads IP and mask but
+returns `gateway: null` and `dns: null`, so it resolves PARTIAL; the other two
+route to `_unobservable` unconditionally. A closing run must therefore compile
+only `l3_interface` and `link` foundations — which a RIPv2 reference topology
+does — or it will fail a gate that no amount of correct execution can satisfy.
+
 ---
 
 ## TD-RUNTIME-007 — Route expectations have no convergence window
