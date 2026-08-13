@@ -50,3 +50,6 @@ def _snapshot_evidence(snapshots, model: str, source: EvidenceSource) -> Iterabl
             evidence = result.evidence()
             if evidence is not None:
                 yield evidence
+
+    def evidence_for(self, model: str) -> Iterable[CapabilityEvidence]:
+        return ()

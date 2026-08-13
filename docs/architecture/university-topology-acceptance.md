@@ -201,10 +201,24 @@ confirmation. Closing `TD-ACCEPTANCE-001` requires those statuses to come from
 What this run therefore does and does not establish:
 
 ```text
-REFERENCE_TOPOLOGY_BEHAVIOR            = PASS
-TYPED_CONTROL_PLANE_PRODUCT_ACCEPTANCE = PASS
-FULL_PRODUCT_PIPELINE_ACCEPTANCE       = NOT_ESTABLISHED
+REFERENCE_TOPOLOGY_BEHAVIOR                        = PASS
+TYPED_RIPV2_PRODUCT_APPLICATION                    = PASS
+TYPED_RIPV2_PRODUCT_READBACK                       = PASS
+TYPED_RIPV2_ROUTE_LEARNING                         = PASS
+TYPED_RIPV2_FORWARDING                             = PASS
+CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION = NOT_ESTABLISHED
+FULL_PRODUCT_PIPELINE_ACCEPTANCE                   = NOT_ESTABLISHED
 ```
+
+**These seven lines replace an earlier three-line form that read
+`TYPED_CONTROL_PLANE_PRODUCT_ACCEPTANCE = PASS`.** That single line claimed too
+much. The typed control-plane path is not one indivisible thing: it is an
+application step, a readback step, a route-learning step, a forwarding step,
+and a foundational-requirement gate that decides whether the first step should
+run at all. Four of those five were exercised by production code on fresh
+evidence and each keeps its PASS. The fifth was fed a fabricated precondition
+and establishes nothing, so it is now named separately rather than absorbed
+into a blanket claim that would have carried it silently.
 
 The live result stands and is not weakened: a three-router RIPv2 triangle with
 thirty-five hosts really was built on PT 9.0.1.0858, really converged, and

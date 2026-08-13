@@ -305,7 +305,7 @@ mandatory restore"*. Its live status is registered as UNKNOWN in
 3A4 should not adopt it. If a traffic-under-failure check is later wanted, that
 is a contract change with its own evidence requirements.
 
-## One governance discrepancy, recorded not resolved
+## One governance discrepancy, since corrected
 
 The ledger defines Debt Checkpoint 2 as occurring *"After the university
 topology passes its routing/**failure/recovery** acceptance scenario"*.
@@ -318,6 +318,13 @@ application, configuration readback, route convergence, forwarding, final state
 So CP2's stated trigger was not literally satisfied: the routing half was, the
 failure/recovery half was not. This does not invalidate the acceptance, which
 passed against the contract written for it, and it does not block Stage 3A4,
-since failure/recovery is E9 scope and already registered UNKNOWN. It is
-recorded because a checkpoint definition that quietly does not match what
-triggered it is exactly the kind of drift this ledger exists to prevent.
+since failure/recovery is E9 scope and already registered UNKNOWN.
+
+**The checkpoint definition has since been corrected** rather than left to
+drift. `technical-debt.md` now states the sequence the project actually
+follows — CP1 → University Topology Acceptance → CP2 → Stage 3A4 — preserves the
+original trigger wording verbatim, and says explicitly that failure/recovery is
+**not** a CP2 prerequisite and was **not** discharged by CP2. No later milestone
+may treat it as satisfied. A checkpoint definition that quietly does not match
+what triggered it is exactly the drift this ledger exists to prevent, so it was
+fixed in the definition instead of only being noted here.

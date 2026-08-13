@@ -91,8 +91,34 @@ the university topology becomes an acceptance scenario.
 
 When:
 
-After the university topology passes its routing/failure/recovery acceptance
-scenario and before returning to E9.5 Stage 3A4.
+**Corrected at Debt Checkpoint 2, 2026-08-12.** The original wording was:
+
+> After the university topology passes its routing/failure/recovery acceptance
+> scenario and before returning to E9.5 Stage 3A4.
+
+That sentence encoded a prerequisite that was never satisfied, and leaving it
+would have recorded a failure/recovery scenario as having occurred when none
+did. The University Topology Acceptance had eleven gates — workspace safety,
+physical topology, link readback, addressing, local connectivity, capability,
+typed application, configuration readback, route convergence, forwarding, final
+state — and **no failure gate and no recovery gate**. Its contract never
+proposed one. The routing half of the trigger was met; the failure/recovery
+half was not, and was not attempted.
+
+The corrected trigger, which is the sequence the project actually follows:
+
+```text
+CP1 → University Topology Acceptance → CP2 → Stage 3A4
+```
+
+CP2 occurs after the University Topology Acceptance completes and before Stage
+3A4 begins. **Failure/recovery is not a CP2 prerequisite and was not satisfied
+by CP2.** It remains E9 scope — `enterprise-control-plane.md` places bounded
+failover execution and mandatory restore there — and its live status remains
+UNKNOWN in `docs/qa/e95-runtime-debt.md`, registered as
+`PENDING_ROOT_CAUSE_AND_LIVE_FAILOVER` and
+`PENDING_LIVE_RESTORE_AND_RECOVERY`. Nothing in this checkpoint advanced it,
+and no later milestone may treat it as discharged here.
 
 Purpose:
 
@@ -166,21 +192,32 @@ University Topology Acceptance specification existed after one had been
 committed; and TD-RUNTIME-005's resolution, which was written before its
 compiled expectations had ever run against three routers.
 
-**Source changed:** one three-line deletion — a blank line and a two-line
-function. A stranded `def evidence_for(self, ...)` was nested inside the
-module-level `_snapshot_evidence` generator in `capability_providers.py`:
-unreachable, carrying a `self` parameter it had no class for, and positioned so
-that "repairing" it by un-indenting would blank out every provider's evidence.
-Test count unchanged at 1716, green before and after.
+**Source changed: none.** This checkpoint is documentation and governance only,
+and `src/` is byte-identical to the University Acceptance commit.
 
-**Governance discrepancy, recorded not resolved.** This checkpoint's own
-trigger condition above reads *"after the university topology passes its
+An earlier revision of CP2 deleted a stranded `def evidence_for(self, ...)`
+nested inside the module-level `_snapshot_evidence` generator in
+`capability_providers.py`. That deletion was **reverted**: on inspection it
+fixed no correctness or evidence defect. The nested function was never
+executed as a method and never referenced, so removing it changed no behaviour;
+the justification offered for it — that a future reader might "repair" it by
+un-indenting and blank out every provider's evidence — was a speculative
+hazard, not an observed defect. Incidental cleanup does not belong on a
+checkpoint line, where it would blur what the checkpoint is accountable for.
+
+The observation itself is kept, under `TD-HARDWARE-001`, whose evidence path
+that file sits in. Suite unchanged at 1716 passing.
+
+**Governance discrepancy, now corrected in the definition itself.** This
+checkpoint's trigger originally read *"after the university topology passes its
 routing/failure/recovery acceptance scenario"*. The executed acceptance had
-eleven gates and no failure or recovery gate. The routing half was satisfied;
-the failure/recovery half was not. Failure/recovery is E9 scope and is already
-registered UNKNOWN in `docs/qa/e95-runtime-debt.md`, so nothing is blocked — but
-the definition and what triggered it do not match, and that is written down
-rather than quietly reconciled.
+eleven gates and no failure or recovery gate, so half that trigger was never
+satisfied. The DEBT CHECKPOINT 2 definition above has been rewritten to state
+the sequence the project actually follows — CP1 → University Topology
+Acceptance → CP2 → Stage 3A4 — with the original wording preserved verbatim and
+an explicit statement that failure/recovery is **not** a CP2 prerequisite and
+was **not** discharged here. It remains E9 scope and UNKNOWN in
+`docs/qa/e95-runtime-debt.md`.
 
 **Not done, deliberately:** no live Packet Tracer probe was run. Every closure
 criterion touched at this checkpoint was satisfiable from persisted evidence,
@@ -260,10 +297,21 @@ have **no recorded live execution anywhere in `docs/`**.
 Consequence, already recorded in the acceptance document:
 
 ```text
-REFERENCE_TOPOLOGY_BEHAVIOR            = PASS
-TYPED_CONTROL_PLANE_PRODUCT_ACCEPTANCE = PASS
-FULL_PRODUCT_PIPELINE_ACCEPTANCE       = NOT_ESTABLISHED
+REFERENCE_TOPOLOGY_BEHAVIOR                        = PASS
+TYPED_RIPV2_PRODUCT_APPLICATION                    = PASS
+TYPED_RIPV2_PRODUCT_READBACK                       = PASS
+TYPED_RIPV2_ROUTE_LEARNING                         = PASS
+TYPED_RIPV2_FORWARDING                             = PASS
+CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION = NOT_ESTABLISHED
+FULL_PRODUCT_PIPELINE_ACCEPTANCE                   = NOT_ESTABLISHED
 ```
+
+`CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION` is the line this entry
+most directly owns. `ControlPlaneApplicator` gates every action on the
+configuration it depends on having been verified, and the harness satisfied
+that gate by declaring every requirement VERIFIED in a comprehension over the
+gate's own inputs, with no hashes. The gate is real product code; on this run
+it decided nothing.
 
 Classification:
 ```text
@@ -298,30 +346,38 @@ same harness-shaped evidence this entry exists to reject.
 
 Closure criterion:
 
-One live run in which the physical topology and its addressing are produced by
-`deploy_enterprise_topology` / `packet_tracer_physical_runtime` and by the
-`compile_configuration` → `configuration_renderer` → `apply_configuration`
-chain, with the deployment manifest emitted from fresh exact read-back as that
-use case already requires. Scale may be smaller than 41 devices — the claim to
-establish is that the seam works, not that it scales — but it must include at
-least one multi-device link and one routed interface.
+One live run of the Stage 3A4 reference topology in which **every bypass the
+University Acceptance harness used is eliminated**. The criterion is written as
+a one-to-one answer to what that harness actually did, so closure cannot be
+claimed while any single substitution survives.
 
-Two rules that make the difference between closing this and repeating it:
+| # | Harness bypass | What closure requires |
+| --- | --- | --- |
+| 1 | devices via `create_temporary_device`, links and modules via raw JS `lwAddLink` / `addModule` | **Production physical deployment** through `deploy_enterprise_topology` / `packet_tracer_physical_runtime`, with the deployment manifest emitted from fresh exact read-back as that use case already requires |
+| 2 | serial links placed by raw JS because no product path expresses them | **Serial topology support in the product.** `CABLE_RULES` has no rule yielding `serial`, so the reference cannot currently express a serial link at all. This is the narrow missing capability referred to below, and the reference must carry serial for a traffic-driven capacity decision to be demonstrable |
+| 3 | nine router interfaces, three SVIs and `clock rate` by hand-written IOS through `configure_ios`; 35 PC addresses by raw JS `configurePcIp` | **Production configuration and addressing** through `compile_configuration` → `configuration_renderer` → `apply_configuration`, including host addressing |
+| 4 | `foundational_statuses` supplied as a comprehension declaring every requirement VERIFIED, `foundational_hashes={}` | **Authentic foundational-requirement evidence.** Statuses and hashes must be produced by `apply_configuration` from real readback, so `ControlPlaneApplicator`'s gate decides on evidence instead of on an assertion |
+| 5 | — (this one the harness did correctly) | **Typed control plane** through `compile_control_plane` → `ControlPlaneApplicator.apply` → `PacketTracerEnterpriseControlPlaneRuntime`, with capability resolution left to the product. Retained explicitly so a future run cannot regress the one part that was already right |
+| 6 | workspace and link readback reimplemented in raw JS, which is where the `getOwnerDevice()` defect lived | **Authoritative readback and traffic evidence** through `topology_observation.py`, registered `OperationalQueryId` queries, and the typed traffic/ping primitives — never a parallel reimplementation |
+
+Scale may be smaller than 41 devices: the claim to establish is that the seams
+work, not that they scale. It must include at least one multi-device link, one
+routed interface, and — because of row 2 — at least one serial link.
+
+Three rules decide whether this closes or merely repeats:
 
 - a harness may **orchestrate** the run; it may not **perform** the mutations.
   The University Acceptance harness stays useful as a behavioural reference and
   must not become the implementation path;
 - a missing product capability may not be worked around with raw JS or raw IOS
-  to make the run succeed. If a seam is genuinely absent, the narrow missing
-  capability is named and either implemented as Stage 3A4 work or opened as
-  governed debt with its own deadline;
-- **`foundational_statuses` must be produced, not asserted.** The acceptance
-  harness satisfied `ControlPlaneApplicator`'s foundational-requirement gate
-  with a comprehension declaring every requirement VERIFIED, and passed no
-  hashes — so a real product gate was fed a fabricated precondition about
-  addressing that had been applied by raw IOS and never read back. Closure
-  requires those statuses and hashes to come from `apply_configuration`, which
-  derives them from actual readback.
+  to make the run succeed. If a seam is genuinely absent — row 2 is the known
+  case — the narrow missing capability is named and either implemented as Stage
+  3A4 work or opened as governed debt with its own deadline;
+- the claim recorded at closure must name which of the seven acceptance lines
+  it upgrades. In particular
+  `CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION` and
+  `FULL_PRODUCT_PIPELINE_ACCEPTANCE` may move off `NOT_ESTABLISHED` only when
+  rows 1–4 and row 6 are all satisfied in the same run.
 
 ---
 
@@ -1060,13 +1116,15 @@ no attributed record in `src/`. The only 3650 layer-3 statement is prose in
 3560 half of the example is exact; the 3650 half should be treated as
 unsubstantiated until a probe record exists, and closure must not assume it.
 
-Small hygiene item found in this same path and fixed at CP2: a stranded
-`def evidence_for(self, ...)` was nested inside the module-level
-`_snapshot_evidence` generator in `capability_providers.py`, unreachable and
-carrying a `self` parameter it had no class for. Removed. No behaviour changed
-— all three providers already define their own `evidence_for` — but leaving it
-invited a future reader to "repair" it by un-indenting and silently blank out
-every provider's evidence.
+Hygiene item observed in this same path at CP2 and **deliberately left in
+place**: a stranded `def evidence_for(self, ...)` is nested inside the
+module-level `_snapshot_evidence` generator in `capability_providers.py`,
+unreachable and carrying a `self` parameter it has no class for. It is dead —
+all three providers define their own `evidence_for` — so it fixes nothing to
+remove and CP2 does not touch source. Recorded here because this file is the
+evidence path this debt must eventually rewire, and whoever does that work
+should delete the fragment then rather than leave a reader to "repair" it by
+un-indenting, which would silently blank out every provider's evidence.
 
 Does not block Stage 3A4: regression-pinned by
 `TestTheRegressionReferenceDoesNotDependOnSelection`, whose docstring states

@@ -25,9 +25,13 @@
   forwarding, workspace restored with zero residue.
 
   ```text
-  REFERENCE_TOPOLOGY_BEHAVIOR            = PASS
-  TYPED_CONTROL_PLANE_PRODUCT_ACCEPTANCE = PASS
-  FULL_PRODUCT_PIPELINE_ACCEPTANCE       = NOT_ESTABLISHED
+  REFERENCE_TOPOLOGY_BEHAVIOR                        = PASS
+  TYPED_RIPV2_PRODUCT_APPLICATION                    = PASS
+  TYPED_RIPV2_PRODUCT_READBACK                       = PASS
+  TYPED_RIPV2_ROUTE_LEARNING                         = PASS
+  TYPED_RIPV2_FORWARDING                             = PASS
+  CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION = NOT_ESTABLISHED
+  FULL_PRODUCT_PIPELINE_ACCEPTANCE                   = NOT_ESTABLISHED
   ```
 
   The physical build, addressing and host configuration were done by an
