@@ -329,11 +329,30 @@ document claimed.
 gap. Measured: on SERIAL, demand selects the rate, sets
 `CapacitySource.TRAFFIC_CALCULATION`, sets `serial_clock_rate_bps` and so
 changes the emitted `ConfigureSerialClock` and the configuration semantic hash.
-On ETHERNET it can only raise `LINK_CAPACITY_INSUFFICIENT` through
-`_check_demand`, and under AUTO with no measured profiles both ceilings are
-`None`, so it is a complete no-op. Wiring traffic therefore buys a real,
-hash-visible decision **only where serial links exist** — which makes serial a
-hard prerequisite of the traffic half of this stage, not a parallel workstream.
+Ethernet needs three separate statements, and collapsing them into "traffic is
+irrelevant on Ethernet" would be wrong:
+
+1. **Selected capacity, speed and duplex never change from demand.** The
+   Ethernet branch picks these from `requested_speed` and the measured
+   profiles; no code path lets demand choose them. So no emitted
+   `ConfigureEthernetLinkMode` differs because of traffic, and an AUTO link
+   stays AUTO.
+2. **Capacity *sufficiency* is traffic-relevant.** `_check_demand` compares
+   `engineered_demand_bps` against the auto-negotiable or nominal ceiling and
+   raises `LINK_CAPACITY_INSUFFICIENT`. That makes `decision.applicable` false,
+   which suppresses **every** action for that link. Demand can therefore block
+   an Ethernet link's configuration outright — a real outcome, and Stage 3A3's
+   validation contract is what supplies the ceilings it is compared against.
+3. **The check is inert only where Stage 3A3 measured nothing.** With no
+   profile for either endpoint both ceilings are `None` and `_check_demand`
+   returns early. That is a consequence of missing measurement, not a property
+   of Ethernet.
+
+So wiring traffic buys a *hash-visible capacity decision* only on serial, and
+that is why serial is a prerequisite for the traffic half rather than a
+parallel workstream. It does not make Ethernet demand meaningless: on a
+measured Ethernet link, demand already decides whether the link is
+configurable at all.
 
 ## Blocking findings
 
@@ -354,13 +373,28 @@ UNOBSERVABLE and never claiming it. `PacketTracerPhysicalTopologyRuntime` also
 has no `ensure_module` / `observe_module` at all, and there is no
 `generate_module_command` to mirror `generate_link_command`.
 
-**2. No orchestrator exists.** `ConfigurationApplicator` and
-`ControlPlaneApplicator` have **zero callers in `src/`**. `pt_live_deploy` runs
-the physical stage only and says so explicitly. `full_build.py` is the legacy
-pre-E9.5 planner and touches none of the E5–E9 seams. Stage 3A4 must build the
-orchestration seam that runs plan → compile → deploy → configure →
-control-plane, and per the CP2 rule it may orchestrate but must not perform
-mutations itself.
+**2. The E5/E9 composition seam does not exist in production.** Stated
+precisely, because "no orchestration anywhere" would be wrong:
+
+- **physical (E4) is wired.** `pt_live_deploy` constructs
+  `PacketTracerPhysicalTopologyRuntime` and `EnterprisePhysicalTopologyDeployer`,
+  persists a verified manifest, and states that it applied no E5–E9;
+- **configuration (E5) and control plane (E9) have no entry point at all.**
+  Measured: `grep -rE "[A-Za-z]+Applicator\(" src/` returns **nothing**. Not one
+  enterprise applicator — configuration, control-plane, security, services or
+  voice — is constructed anywhere in `src/`. No adapter or `server.py` symbol
+  references `compile_enterprise_configuration`,
+  `compile_enterprise_control_plane`, or either enterprise runtime;
+- **the `pt_apply_*` tools are not a precedent.** `pt_apply_vlan`,
+  `pt_apply_acl`, `pt_apply_nat`, `pt_apply_stp` and the rest are legacy
+  CLI-generator paths dispatching through `configureIosDevice`. They bypass the
+  typed compile → render → apply chain entirely, so copying their shape would
+  reproduce the harness rather than replace it.
+
+So the missing piece is exactly the E4 → E5 → E9 composition, which is why the
+University harness had to write it by hand. Stage 3A4 must build it in
+production code, and per the CP2 rule it may orchestrate but must not itself
+perform mutations.
 
 **3. Endpoint-address foundations can never reach VERIFIED.** `_verify_endpoint`
 reads back IP and mask through structured getters but returns `gateway: null`
@@ -423,14 +457,39 @@ Thirty-five regressions, including one asserting the helper's signature admits
 no status-supplying parameter, and one reproducing the full reference shape
 where an endpoint address is PARTIAL and the gate consequently still refuses.
 
-## One thing the existing suite caught, worth recording
+## Import contract — corrected
 
-The first version of the new tests imported `packet_tracer_mcp` bare.
-`test_no_test_imports_the_package_outside_the_repo_namespace` failed them: a
-bare import resolves through the editable install rather than this worktree, so
-the tests would have validated the main checkout's code while reporting on this
-branch. The convention is `src.packet_tracer_mcp`. Recorded because the failure
-mode is silent everywhere except that guard.
+The first version of the new tests imported `packet_tracer_mcp` bare and
+`test_no_test_imports_the_package_outside_the_repo_namespace` failed them. The
+fix — importing `src.packet_tracer_mcp` — was right, but **the reason first
+recorded here was wrong and is corrected**.
+
+The wrong claim was that a bare import resolves to the main checkout. It does
+not. `.venv/Lib/site-packages/_r2_worktree_editable.pth` puts
+`…/worktrees/runtime-ripv2/src` on `sys.path`, so a bare
+`import packet_tracer_mcp` resolves **inside this worktree**, with no custom
+`PYTHONPATH`. Measured: both `packet_tracer_mcp.__file__` and
+`src.packet_tracer_mcp.__file__` are the same path under this worktree.
+
+The real hazard is the one the guard's own docstring names: the two names load
+**distinct module objects for the same file**, so an `isinstance` across them is
+always false and an assertion written that way passes without checking
+anything. Measured: `packet_tracer_mcp is src.packet_tracer_mcp` → `False`.
+
+The canonical contract, already declared in `pyproject.toml`
+(`pythonpath = ["."]`, with the comment that it "garantiza una sola identidad
+del módulo"):
+
+- tests import `src.packet_tracer_mcp`;
+- run `python -m pytest` from the worktree root, no custom `PYTHONPATH`;
+- production entry points use the bare name (`pt-mcp = packet_tracer_mcp.server:main`),
+  and `src/` modules use relative imports, so a pytest process loads exactly one
+  identity.
+
+One trap worth knowing: that `.pth` is pinned to the **runtime-ripv2** path. Any
+other worktree sharing this virtualenv will resolve a bare
+`import packet_tracer_mcp` to *this* worktree's source, not its own. Inside
+runtime-ripv2 the two agree; anywhere else they do not.
 
 ---
 
