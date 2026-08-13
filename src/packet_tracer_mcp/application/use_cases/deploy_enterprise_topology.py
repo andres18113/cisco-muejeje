@@ -13,6 +13,8 @@ from typing import Protocol
 
 from ...domain.enterprise.models.configuration_runtime import RuntimeConfigurationTarget
 from ...domain.enterprise.models.deployment import (
+    DeploymentLinkBinding,
+    DeploymentLinkEndpoint,
     DeploymentIdentityError,
     EnvironmentFingerprint,
     build_deployment_manifest,
@@ -40,9 +42,11 @@ from ...domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
     PhysicalDeviceObservation,
     PhysicalLinkObservation,
+    PhysicalModuleEffectCapability,
     PhysicalModuleObservation,
     PhysicalMutationResult,
     PhysicalObjectKind,
+    PhysicalWorkspaceObservation,
 )
 from ...domain.enterprise.services.topology_identity import compute_topology_hashes
 from ...domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
@@ -62,15 +66,50 @@ class PhysicalTopologyRuntime(Protocol):
 
     def observe_device(self, device: DevicePlan) -> PhysicalDeviceObservation: ...
 
-    def supports_module_observation(self) -> bool: ...
+    def module_effect_capability(
+        self,
+        module: ModulePlan,
+        device: DevicePlan,
+    ) -> PhysicalModuleEffectCapability: ...
 
     def ensure_module(self, module: ModulePlan) -> PhysicalMutationResult: ...
 
-    def observe_module(self, module: ModulePlan) -> PhysicalModuleObservation: ...
+    def observe_module_effect(self, module: ModulePlan) -> PhysicalModuleObservation: ...
 
     def ensure_link(self, link: LinkPlan) -> PhysicalMutationResult: ...
 
     def observe_link(self, link: LinkPlan) -> PhysicalLinkObservation: ...
+
+    def observe_workspace(self) -> PhysicalWorkspaceObservation: ...
+
+
+def disposable_workspace_error(observation: PhysicalWorkspaceObservation) -> str:
+    """Return the hard-stop reason for a complete disposable-workspace inventory."""
+
+    if not observation.observed:
+        return (
+            "Read-only workspace inventory was incomplete: "
+            + (observation.message or "unknown observation failure")
+        )
+    invalid_backend_managed = [
+        item
+        for item in observation.backend_managed_devices
+        if item.model.strip().casefold() != "power distribution device"
+        or bool(item.ports)
+    ]
+    if invalid_backend_managed:
+        return (
+            "Workspace inventory used an invalid backend-managed classification; "
+            "only an exact zero-port Power Distribution Device may be excluded."
+        )
+    if observation.semantic_devices or observation.links:
+        return (
+            "Workspace is not empty: observed "
+            f"{len(observation.semantic_devices)} semantic device(s) and "
+            f"{len(observation.links)} link(s). User/manual/graded topology "
+            "must never be mutated."
+        )
+    return ""
 
 
 class EnterprisePhysicalTopologyDeployer:
@@ -85,6 +124,7 @@ class EnterprisePhysicalTopologyDeployer:
         *,
         environment_fingerprint: EnvironmentFingerprint,
         deployment_id: str = "",
+        require_empty_workspace: bool = False,
     ) -> PhysicalDeploymentResult:
         physical_hash = topology.physical_identity_hash
         resolved_deployment_id = deployment_id or (
@@ -115,13 +155,54 @@ class EnterprisePhysicalTopologyDeployer:
                 errors=preflight_errors,
             )
 
+        if require_empty_workspace:
+            workspace, workspace_error = self._observe_workspace()
+            evidence.append(_workspace_evidence(
+                workspace,
+                error=workspace_error,
+                fingerprint=environment_fingerprint,
+            ))
+            if workspace_error:
+                journal.mark_preflight_failure(workspace_error)
+                return _result(
+                    topology=topology,
+                    deployment_id=resolved_deployment_id,
+                    environment_fingerprint=environment_fingerprint,
+                    failure_code=(
+                        PhysicalDeploymentFailureCode.WORKSPACE_OBSERVATION_FAILED
+                        if workspace is None or not workspace.observed
+                        else PhysicalDeploymentFailureCode.WORKSPACE_NOT_EMPTY
+                    ),
+                    item_results=item_results,
+                    evidence=evidence,
+                    journal=journal,
+                    errors=[workspace_error],
+                )
+
+        devices = sorted(topology.devices, key=_device_id)
         modules = sorted(topology.modules, key=_module_id)
-        if modules and not self._supports_module_observation():
-            message = (
-                "The selected backend cannot independently observe exact module "
-                "identity and slot state; refusing to issue a false physical manifest."
+        devices_by_name = {item.name: item for item in devices}
+        module_capabilities: dict[str, PhysicalModuleEffectCapability] = {}
+        module_capability_errors: list[str] = []
+        for module in modules:
+            target_id = _module_id(module)
+            capability, error = self._module_effect_capability(
+                module,
+                devices_by_name[module.device],
             )
-            journal.mark_preflight_failure(message)
+            if capability is not None:
+                module_capabilities[target_id] = capability
+            evidence.append(_module_capability_evidence(
+                module,
+                capability,
+                error=error,
+                fingerprint=environment_fingerprint,
+            ))
+            if error:
+                module_capability_errors.append(error)
+                journal.mark_preflight_failure(error)
+
+        if module_capability_errors:
             return _result(
                 topology=topology,
                 deployment_id=resolved_deployment_id,
@@ -132,10 +213,9 @@ class EnterprisePhysicalTopologyDeployer:
                 item_results=item_results,
                 evidence=evidence,
                 journal=journal,
-                errors=[message],
+                errors=module_capability_errors,
             )
 
-        devices = sorted(topology.devices, key=_device_id)
         links = sorted(topology.links, key=_link_id)
 
         for device in devices:
@@ -180,8 +260,18 @@ class EnterprisePhysicalTopologyDeployer:
         module_observation_errors: list[str] = []
         for module in modules:
             target_id = _module_id(module)
-            observation, error = self._observe_module(module)
-            evidence.append(_module_evidence(
+            observation, error = self._observe_module_effect(
+                module,
+                module_capabilities[target_id],
+            )
+            evidence.append(_module_effect_evidence(
+                module,
+                module_capabilities[target_id],
+                observation,
+                error=error,
+                fingerprint=environment_fingerprint,
+            ))
+            evidence.append(_module_identity_evidence(
                 module,
                 observation,
                 error=error,
@@ -277,10 +367,13 @@ class EnterprisePhysicalTopologyDeployer:
                     errors=[error],
                 )
 
+        link_observations: dict[str, PhysicalLinkObservation] = {}
         link_observation_errors: list[str] = []
         for link in links:
             target_id = _link_id(link)
             observation, error = self._observe_link(link)
+            if observation is not None:
+                link_observations[target_id] = observation
             evidence.append(_link_evidence(
                 link,
                 observation,
@@ -332,11 +425,19 @@ class EnterprisePhysicalTopologyDeployer:
             for _, observation in sorted(device_observations.items())
         ]
         try:
+            link_bindings = [
+                _link_binding_from_observation(
+                    link,
+                    link_observations[_link_id(link)],
+                )
+                for link in links
+            ]
             manifest = build_deployment_manifest(
                 topology,
                 inventory,
                 fingerprint=environment_fingerprint,
                 deployment_id=resolved_deployment_id,
+                link_bindings=link_bindings,
             )
         except DeploymentIdentityError as exc:
             message = f"DeploymentManifest creation failed after observation: {exc}"
@@ -375,6 +476,23 @@ class EnterprisePhysicalTopologyDeployer:
             evidence_records=evidence,
         )
 
+    def _observe_workspace(
+        self,
+    ) -> tuple[PhysicalWorkspaceObservation | None, str]:
+        try:
+            observation = self._runtime.observe_workspace()
+        except Exception as exc:
+            return None, f"Read-only workspace inventory failed: {exc}"
+        if not isinstance(observation, PhysicalWorkspaceObservation):
+            return None, "Runtime returned an invalid workspace inventory type."
+        if not observation.observed:
+            return observation, (
+                "Read-only workspace inventory was incomplete: "
+                + (observation.message or "unknown observation failure")
+            )
+        error = disposable_workspace_error(observation)
+        return observation, error
+
     def _ensure_device(
         self,
         device: DevicePlan,
@@ -403,14 +521,42 @@ class EnterprisePhysicalTopologyDeployer:
             })
         return mutation, error
 
-    def _supports_module_observation(self) -> bool:
-        provider = getattr(self._runtime, "supports_module_observation", None)
+    def _module_effect_capability(
+        self,
+        module: ModulePlan,
+        device: DevicePlan,
+    ) -> tuple[PhysicalModuleEffectCapability | None, str]:
+        target_id = _module_id(module)
+        provider = getattr(self._runtime, "module_effect_capability", None)
         if not callable(provider):
-            return False
+            return None, (
+                "The selected backend has no typed module-effect capability; "
+                "refusing modular deployment before mutation."
+            )
         try:
-            return provider() is True
-        except Exception:
-            return False
+            capability = provider(module, device)
+        except Exception as exc:
+            return None, f"Module capability failed for {target_id!r}: {exc}"
+        if capability.target_id != target_id:
+            return capability, (
+                f"Module capability returned target {capability.target_id!r}; "
+                f"expected {target_id!r}."
+            )
+        if capability.operation_support is not SupportStatus.SUPPORTED:
+            return capability, (
+                f"Module operation for {target_id!r} is "
+                f"{capability.operation_support.value}; refusing mutation."
+            )
+        if capability.effect_observation_support is not SupportStatus.SUPPORTED:
+            return capability, (
+                f"Module effect observation for {target_id!r} is "
+                f"{capability.effect_observation_support.value}; refusing mutation."
+            )
+        if not capability.expected_ports:
+            return capability, (
+                f"Module effect capability for {target_id!r} declares no expected ports."
+            )
+        return capability, ""
 
     def _ensure_module(
         self,
@@ -439,28 +585,66 @@ class EnterprisePhysicalTopologyDeployer:
         )
         return mutation, error
 
-    def _observe_module(
+    def _observe_module_effect(
         self,
         module: ModulePlan,
+        capability: PhysicalModuleEffectCapability,
     ) -> tuple[PhysicalModuleObservation | None, str]:
         target_id = _module_id(module)
-        observe = getattr(self._runtime, "observe_module", None)
+        observe = getattr(self._runtime, "observe_module_effect", None)
         if not callable(observe):
-            return None, "Backend has no typed module observation operation."
+            return None, "Backend has no typed module-effect observation operation."
         try:
             observation = observe(module)
         except Exception as exc:
-            return None, f"Module observation failed for {target_id!r}: {exc}"
-        expected = (target_id, module.device, module.slot, module.module)
-        observed = (
-            observation.target_id,
-            observation.device_name,
-            observation.slot,
-            observation.module,
-        )
-        if not observation.observed or observed != expected:
+            return None, f"Module-effect observation failed for {target_id!r}: {exc}"
+        if observation.target_id != target_id:
             return observation, (
-                f"Module {target_id!r} did not match its exact device, slot and model."
+                f"Module-effect observation returned target {observation.target_id!r}; "
+                f"expected {target_id!r}."
+            )
+        if (
+            observation.device_name != module.device
+            or observation.requested_slot != module.slot
+            or observation.requested_module != module.module
+        ):
+            return observation, (
+                f"Module-effect observation for {target_id!r} crossed its requested target."
+            )
+        if not observation.observed:
+            return observation, f"Module effect for {target_id!r} was not observed."
+        if observation.freshness is not EvidenceFreshness.FRESH:
+            return observation, f"Module effect for {target_id!r} is stale or undated."
+        if not observation.port_inventory_observed:
+            return observation, f"Module effect port inventory for {target_id!r} was unobservable."
+        expected_ports = set(capability.expected_ports)
+        if set(observation.expected_ports) != expected_ports:
+            return observation, (
+                f"Module-effect observation for {target_id!r} changed the expected port set."
+            )
+        if not expected_ports.issubset(observation.ports_after):
+            missing = sorted(expected_ports - set(observation.ports_after))
+            return observation, (
+                f"Module effect for {target_id!r} is missing expected port(s): "
+                + ", ".join(missing)
+            )
+        if not expected_ports.issubset(observation.observed_expected_ports):
+            return observation, f"Module effect for {target_id!r} is only partially observed."
+        if not set(capability.expected_port_classes).issubset(
+            observation.observed_port_classes,
+        ):
+            return observation, (
+                f"Module effect for {target_id!r} lacks the expected port class evidence."
+            )
+        if not observation.slot_effect_observed or not observation.effect_observed:
+            return observation, f"Module effect for {target_id!r} did not converge."
+        if (
+            observation.identity_observation_status is ObservationStatus.OBSERVED
+            and observation.observed_module_identity != module.module
+        ):
+            return observation, (
+                f"Observed module identity {observation.observed_module_identity!r} "
+                f"contradicts requested identity {module.module!r} for {target_id!r}."
             )
         return observation, ""
 
@@ -704,6 +888,38 @@ def _planned_ports(topology: TopologyPlan) -> dict[str, set[str]]:
     return result
 
 
+def _link_binding_from_observation(
+    link: LinkPlan,
+    observation: PhysicalLinkObservation,
+) -> DeploymentLinkBinding:
+    """Bind semantic endpoints to the interfaces returned by exact read-back."""
+
+    if observation.device_a == link.device_a and observation.device_b == link.device_b:
+        interface_a, interface_b = observation.port_a, observation.port_b
+    elif observation.device_a == link.device_b and observation.device_b == link.device_a:
+        interface_a, interface_b = observation.port_b, observation.port_a
+    else:
+        raise DeploymentIdentityError(
+            f"Observed link {_link_id(link)!r} cannot be mapped to its semantic endpoints."
+        )
+    return DeploymentLinkBinding(
+        semantic_link_id=_link_id(link),
+        endpoint_a=DeploymentLinkEndpoint(
+            semantic_device_id=link.device_a_id or link.device_a,
+            interface=interface_a,
+        ),
+        endpoint_b=DeploymentLinkEndpoint(
+            semantic_device_id=link.device_b_id or link.device_b,
+            interface=interface_b,
+        ),
+        runtime_link_identifier=observation.runtime_link_identifier,
+        runtime_link_identity_observed=(
+            observation.runtime_link_identity_observed
+            and bool(observation.runtime_link_identifier)
+        ),
+    )
+
+
 def _mutation_error(
     mutation: PhysicalMutationResult,
     *,
@@ -804,6 +1020,39 @@ def _item_from_mutation(
     )
 
 
+def _workspace_evidence(
+    observation: PhysicalWorkspaceObservation | None,
+    *,
+    error: str,
+    fingerprint: EnvironmentFingerprint,
+) -> EvidenceRecord:
+    completed = observation is not None and observation.observed
+    verified = completed and not error and observation.safe_for_disposable_mutation
+    return EvidenceRecord(
+        id="e4/workspace/pre-mutation",
+        subject="physical-workspace",
+        claim="workspace inventory is complete and contains no semantic topology",
+        method=(VerificationMethod.STRUCTURED_API if observation else VerificationMethod.NONE),
+        strength=(EvidenceStrength.CLAIM_DIRECT if observation else EvidenceStrength.NONE),
+        source="physical_topology_runtime.observe_workspace",
+        freshness=(EvidenceFreshness.FRESH if completed else EvidenceFreshness.UNKNOWN),
+        backend=fingerprint.backend,
+        backend_version=fingerprint.backend_version,
+        environment_fingerprint=fingerprint.semantic_hash,
+        observed_value=(observation.compact_summary() if observation else None),
+        support_status=(SupportStatus.SUPPORTED if completed else SupportStatus.UNKNOWN),
+        observation_status=(
+            ObservationStatus.OBSERVED if completed else ObservationStatus.PROBE_FAILED
+        ),
+        verification_status=(
+            VerificationStatus.VERIFIED if verified
+            else VerificationStatus.FAILED if completed
+            else VerificationStatus.UNVERIFIED
+        ),
+        limitations=[error] if error else [],
+    )
+
+
 def _device_evidence(
     device: DevicePlan,
     observation: PhysicalDeviceObservation | None,
@@ -812,7 +1061,7 @@ def _device_evidence(
     fingerprint: EnvironmentFingerprint,
 ) -> EvidenceRecord:
     observed_value = observation.model_dump(mode="json") if observation else None
-    runtime_completed = observation is not None
+    runtime_completed = observation is not None and observation.observed
     unobservable = bool(error) and "port inventory was not observed" in error
     return EvidenceRecord(
         id=f"e4/device/{_device_id(device)}",
@@ -826,7 +1075,7 @@ def _device_evidence(
         backend_version=fingerprint.backend_version,
         environment_fingerprint=fingerprint.semantic_hash,
         observed_value=observed_value,
-        support_status=(SupportStatus.SUPPORTED if not error else SupportStatus.UNKNOWN),
+        support_status=(SupportStatus.SUPPORTED if runtime_completed else SupportStatus.UNKNOWN),
         observation_status=(
             ObservationStatus.UNOBSERVABLE
             if unobservable
@@ -845,44 +1094,164 @@ def _device_evidence(
     )
 
 
-def _module_evidence(
+def _module_capability_evidence(
     module: ModulePlan,
+    capability: PhysicalModuleEffectCapability | None,
+    *,
+    error: str,
+    fingerprint: EnvironmentFingerprint,
+) -> EvidenceRecord:
+    observed_value = capability.model_dump(mode="json") if capability else None
+    support = (
+        capability.operation_support
+        if capability is not None
+        and capability.operation_support is not SupportStatus.SUPPORTED
+        else capability.effect_observation_support
+        if capability is not None
+        else SupportStatus.UNKNOWN
+    )
+    verified = (
+        capability is not None
+        and not error
+        and capability.operation_support is SupportStatus.SUPPORTED
+        and capability.effect_observation_support is SupportStatus.SUPPORTED
+    )
+    explicitly_negative = support is SupportStatus.UNSUPPORTED
+    return EvidenceRecord(
+        id=f"e4/module-capability/{_module_id(module)}",
+        subject=_module_id(module),
+        claim="backend supports requested module operation and physical-effect observation",
+        method=(VerificationMethod.STRUCTURED_API if capability else VerificationMethod.NONE),
+        strength=(EvidenceStrength.CLAIM_DIRECT if capability else EvidenceStrength.NONE),
+        source="physical_topology_runtime.module_effect_capability",
+        freshness=(EvidenceFreshness.FRESH if capability else EvidenceFreshness.UNKNOWN),
+        backend=fingerprint.backend,
+        backend_version=fingerprint.backend_version,
+        environment_fingerprint=fingerprint.semantic_hash,
+        observed_value=observed_value,
+        support_status=support,
+        observation_status=(
+            ObservationStatus.OBSERVED if capability else ObservationStatus.PROBE_FAILED
+        ),
+        verification_status=(
+            VerificationStatus.VERIFIED if verified
+            else VerificationStatus.FAILED if explicitly_negative
+            else VerificationStatus.UNVERIFIED
+        ),
+        limitations=[error] if error else [],
+    )
+
+
+def _module_effect_evidence(
+    module: ModulePlan,
+    capability: PhysicalModuleEffectCapability,
     observation: PhysicalModuleObservation | None,
     *,
     error: str,
     fingerprint: EnvironmentFingerprint,
 ) -> EvidenceRecord:
     observed_value = observation.model_dump(mode="json") if observation else None
-    runtime_completed = observation is not None
-    unobservable = bool(error) and "no typed module observation" in error.casefold()
+    freshness = observation.freshness if observation else EvidenceFreshness.UNKNOWN
+    observed = bool(
+        observation is not None
+        and observation.observed
+        and observation.port_inventory_observed
+    )
+    verified = bool(
+        observation is not None
+        and not error
+        and freshness is EvidenceFreshness.FRESH
+        and observation.effect_observed
+        and observation.slot_effect_observed
+    )
+    stale = observation is not None and freshness is EvidenceFreshness.STALE
     return EvidenceRecord(
-        id=f"e4/module/{_module_id(module)}",
+        id=f"e4/module-effect/{_module_id(module)}",
         subject=_module_id(module),
-        claim="planned module identity, device and slot match runtime",
-        method=(VerificationMethod.STRUCTURED_API if runtime_completed else VerificationMethod.NONE),
-        strength=(EvidenceStrength.CLAIM_DIRECT if runtime_completed else EvidenceStrength.NONE),
-        source="physical_topology_runtime.observe_module",
-        freshness=(EvidenceFreshness.FRESH if runtime_completed else EvidenceFreshness.UNKNOWN),
+        claim="requested module physical port effect matches fresh runtime state",
+        method=(VerificationMethod.STRUCTURED_API if observation else VerificationMethod.NONE),
+        strength=(EvidenceStrength.CLAIM_DIRECT if observation else EvidenceStrength.NONE),
+        source="physical_topology_runtime.observe_module_effect",
+        freshness=freshness,
         backend=fingerprint.backend,
         backend_version=fingerprint.backend_version,
         environment_fingerprint=fingerprint.semantic_hash,
         observed_value=observed_value,
-        support_status=(SupportStatus.SUPPORTED if not error else SupportStatus.UNKNOWN),
+        support_status=capability.effect_observation_support,
         observation_status=(
-            ObservationStatus.UNOBSERVABLE
-            if unobservable
-            else ObservationStatus.OBSERVED
-            if runtime_completed
-            else ObservationStatus.PROBE_FAILED
+            ObservationStatus.OBSERVED if observed else ObservationStatus.PROBE_FAILED
         ),
         verification_status=(
-            VerificationStatus.VERIFIED
-            if not error
-            else VerificationStatus.UNVERIFIED
-            if unobservable or not runtime_completed
+            VerificationStatus.VERIFIED if verified
+            else VerificationStatus.UNVERIFIED if stale or observation is None
             else VerificationStatus.FAILED
         ),
         limitations=[error] if error else [],
+    )
+
+
+def _module_identity_evidence(
+    module: ModulePlan,
+    observation: PhysicalModuleObservation | None,
+    *,
+    error: str,
+    fingerprint: EnvironmentFingerprint,
+) -> EvidenceRecord:
+    identity_status = (
+        observation.identity_observation_status
+        if observation is not None
+        else ObservationStatus.PROBE_FAILED
+    )
+    observed_identity = observation.observed_module_identity if observation else ""
+    identity_matches = (
+        identity_status is ObservationStatus.OBSERVED
+        and observed_identity == module.module
+    )
+    limitation = (
+        "Packet Tracer did not directly identify the module installed for the "
+        "requested slot; requested identity is not observed identity."
+        if identity_status is ObservationStatus.UNOBSERVABLE
+        else error
+    )
+    return EvidenceRecord(
+        id=f"e4/module-identity/{_module_id(module)}",
+        subject=_module_id(module),
+        claim="requested exact module identity matches runtime",
+        method=(
+            VerificationMethod.STRUCTURED_API
+            if identity_status is ObservationStatus.OBSERVED
+            else VerificationMethod.NONE
+        ),
+        strength=(
+            EvidenceStrength.CLAIM_DIRECT
+            if identity_status is ObservationStatus.OBSERVED
+            else EvidenceStrength.NONE
+        ),
+        source="physical_topology_runtime.observe_module_effect",
+        freshness=(observation.freshness if observation else EvidenceFreshness.UNKNOWN),
+        backend=fingerprint.backend,
+        backend_version=fingerprint.backend_version,
+        environment_fingerprint=fingerprint.semantic_hash,
+        observed_value={
+            "requested_slot": module.slot,
+            "requested_module": module.module,
+            "observed_module_identity": observed_identity,
+        },
+        support_status=(
+            SupportStatus.SUPPORTED
+            if identity_status is ObservationStatus.OBSERVED
+            else SupportStatus.PARTIAL
+            if identity_status is ObservationStatus.UNOBSERVABLE
+            else SupportStatus.UNKNOWN
+        ),
+        observation_status=identity_status,
+        verification_status=(
+            VerificationStatus.VERIFIED if identity_matches
+            else VerificationStatus.FAILED
+            if identity_status is ObservationStatus.OBSERVED
+            else VerificationStatus.UNVERIFIED
+        ),
+        limitations=[limitation] if limitation else [],
     )
 
 
@@ -894,7 +1263,7 @@ def _link_evidence(
     fingerprint: EnvironmentFingerprint,
 ) -> EvidenceRecord:
     observed_value = observation.model_dump(mode="json") if observation else None
-    runtime_completed = observation is not None
+    runtime_completed = observation is not None and observation.observed
     unobservable = bool(error) and "unobservable" in error
     return EvidenceRecord(
         id=f"e4/link/{_link_id(link)}",
@@ -908,7 +1277,7 @@ def _link_evidence(
         backend_version=fingerprint.backend_version,
         environment_fingerprint=fingerprint.semantic_hash,
         observed_value=observed_value,
-        support_status=(SupportStatus.SUPPORTED if not error else SupportStatus.UNKNOWN),
+        support_status=(SupportStatus.SUPPORTED if runtime_completed else SupportStatus.UNKNOWN),
         observation_status=(
             ObservationStatus.UNOBSERVABLE
             if unobservable

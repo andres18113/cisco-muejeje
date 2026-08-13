@@ -10,7 +10,9 @@ from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology impo
 from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
 from src.packet_tracer_mcp.domain.enterprise.models.execution import DirtyState, MutationDisposition
 from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
+    EvidenceFreshness,
     ObservationStatus,
+    SupportStatus,
     VerificationStatus,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
@@ -18,6 +20,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
     PhysicalDeviceObservation,
     PhysicalLinkObservation,
+    PhysicalModuleEffectCapability,
     PhysicalModuleObservation,
     PhysicalMutationResult,
     PhysicalObjectKind,
@@ -67,7 +70,10 @@ class FakePhysicalRuntime:
         self.device_observations = {
             "r1": PhysicalDeviceObservation(
                 target_id="r1", deployed_name="HQ-R1", model="2911",
-                interfaces=["GigabitEthernet0/0", "GigabitEthernet0/1"],
+                interfaces=[
+                    "GigabitEthernet0/0", "GigabitEthernet0/1",
+                    "Serial0/0/0", "Serial0/0/1",
+                ],
                 runtime_identifier="runtime-r1", runtime_identifier_stable=True,
                 runtime_fingerprint="fp-r1",
             ),
@@ -90,8 +96,26 @@ class FakePhysicalRuntime:
         self.module_observation_supported = False
         self.calls: list[str] = []
 
-    def supports_module_observation(self) -> bool:
-        return self.module_observation_supported
+    def module_effect_capability(
+        self,
+        module: ModulePlan,
+        device: DevicePlan,
+    ) -> PhysicalModuleEffectCapability:
+        target_id = f"{module.device}:{module.slot}:{module.module}"
+        return PhysicalModuleEffectCapability(
+            target_id=target_id,
+            operation_support=(
+                SupportStatus.SUPPORTED
+                if self.module_observation_supported else SupportStatus.UNKNOWN
+            ),
+            effect_observation_support=(
+                SupportStatus.SUPPORTED
+                if self.module_observation_supported else SupportStatus.UNKNOWN
+            ),
+            expected_ports=["Serial0/0/0", "Serial0/0/1"],
+            expected_port_classes=["serial"],
+            identity_observation_status=ObservationStatus.UNOBSERVABLE,
+        )
 
     def ensure_device(self, device: DevicePlan) -> PhysicalMutationResult:
         self.calls.append(f"ensure-device:{device.id}")
@@ -125,14 +149,29 @@ class FakePhysicalRuntime:
             applied=True,
         )
 
-    def observe_module(self, module: ModulePlan) -> PhysicalModuleObservation:
+    def observe_module_effect(self, module: ModulePlan) -> PhysicalModuleObservation:
         target_id = f"{module.device}:{module.slot}:{module.module}"
-        self.calls.append(f"observe-module:{target_id}")
+        self.calls.append(f"observe-module-effect:{target_id}")
         return PhysicalModuleObservation(
             target_id=target_id,
             device_name=module.device,
-            slot=module.slot,
-            module=module.module,
+            requested_slot=module.slot,
+            requested_module=module.module,
+            freshness=EvidenceFreshness.FRESH,
+            port_inventory_observed=True,
+            expected_ports=["Serial0/0/0", "Serial0/0/1"],
+            expected_port_classes=["serial"],
+            ports_before=["GigabitEthernet0/0", "GigabitEthernet0/1"],
+            ports_after=[
+                "GigabitEthernet0/0", "GigabitEthernet0/1",
+                "Serial0/0/0", "Serial0/0/1",
+            ],
+            observed_expected_ports=["Serial0/0/0", "Serial0/0/1"],
+            added_ports=["Serial0/0/0", "Serial0/0/1"],
+            observed_port_classes=["serial"],
+            slot_effect_observed=True,
+            effect_observed=True,
+            identity_observation_status=ObservationStatus.UNOBSERVABLE,
         )
 
     def ensure_link(self, link: LinkPlan) -> PhysicalMutationResult:
@@ -355,6 +394,12 @@ def test_planned_module_requires_exact_device_slot_and_model_readback():
     assert module_item.observed
     module_evidence = next(
         item for item in result.evidence_records
-        if item.id == "e4/module/HQ-R1:0/0:HWIC-2T"
+        if item.id == "e4/module-effect/HQ-R1:0/0:HWIC-2T"
     )
     assert module_evidence.verifies_claim
+    identity_evidence = next(
+        item for item in result.evidence_records
+        if item.id == "e4/module-identity/HQ-R1:0/0:HWIC-2T"
+    )
+    assert identity_evidence.observation_status is ObservationStatus.UNOBSERVABLE
+    assert identity_evidence.verification_status is VerificationStatus.UNVERIFIED

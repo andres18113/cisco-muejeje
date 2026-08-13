@@ -7,7 +7,7 @@ con la extensión PTBuilder de Packet Tracer.
 
 from __future__ import annotations
 import json
-from ...domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from ...domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
 from ...shared.constants import (
     PT_DEVICE_TYPE,
     PT_DEVICE_TYPE_DEFAULT,
@@ -41,6 +41,23 @@ def generate_link_command(link: LinkPlan) -> str:
     )
 
 
+def generate_module_command(module: ModulePlan) -> str:
+    """Render one checked module mutation with serialized fields.
+
+    Packet Tracer's helper returns ``false`` for an occupied, invalid or
+    incompatible slot.  Turning that into an exception lets the typed runtime
+    distinguish an explicit rejection from an acknowledgement; the later
+    independent effect read-back remains the only verification.
+    """
+
+    return (
+        "if(addModule(" + json.dumps(module.device, ensure_ascii=False) + ", "
+        + json.dumps(module.slot, ensure_ascii=False) + ", "
+        + json.dumps(module.module, ensure_ascii=False)
+        + ")!==true){throw new Error('Packet Tracer rejected module insertion');}"
+    )
+
+
 def generate_ptbuilder_script(plan: TopologyPlan) -> str:
     """Genera un script JS de PTBuilder a partir de un plan validado.
 
@@ -63,10 +80,7 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
             lines.append(f'swapLaptopToWireless({json.dumps(dev.name)});')
 
     for mod in plan.modules:
-        lines.append(
-            f'addModule({json.dumps(mod.device)}, {json.dumps(mod.slot)}, '
-            f'{json.dumps(mod.module)});'
-        )
+        lines.append(generate_module_command(mod))
 
     for link in plan.links:
         lines.append(generate_link_command(link))

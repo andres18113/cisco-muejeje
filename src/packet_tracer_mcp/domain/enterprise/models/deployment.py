@@ -302,6 +302,7 @@ class DeploymentManifest(BaseModel):
             "backend_version": self.backend_version,
             "environment_fingerprint": self.environment_fingerprint.semantic_hash,
             "binding_count": len(self.bindings),
+            "link_binding_count": len(self.link_bindings),
             "identity_methods": dict(sorted(methods.items())),
             "semantic_hash": self.semantic_hash,
         }
@@ -313,6 +314,7 @@ def build_deployment_manifest(
     *,
     fingerprint: EnvironmentFingerprint,
     deployment_id: str = "",
+    link_bindings: list[DeploymentLinkBinding] | None = None,
     created_at: datetime | None = None,
 ) -> DeploymentManifest:
     if not topology.physical_identity_hash:
@@ -352,6 +354,62 @@ def build_deployment_manifest(
             identity_method=method,
             creation_evidence="inventory_readback",
         ))
+    ordered_link_bindings = sorted(
+        link_bindings or [],
+        key=lambda item: item.semantic_link_id,
+    )
+    if link_bindings is not None:
+        expected_link_ids = {
+            item.id or f"{item.device_a}:{item.port_a}->{item.device_b}:{item.port_b}"
+            for item in topology.links
+        }
+        observed_link_ids = [item.semantic_link_id for item in ordered_link_bindings]
+        if len(observed_link_ids) != len(set(observed_link_ids)):
+            raise DeploymentIdentityError(
+                "Deployment link bindings contain duplicate semantic link identities."
+            )
+        if set(observed_link_ids) != expected_link_ids:
+            raise DeploymentIdentityError(
+                "Deployment link bindings do not cover the exact semantic link plan."
+            )
+        device_bindings = {item.semantic_device_id: item for item in bindings}
+        planned_by_id = {
+            item.id or f"{item.device_a}:{item.port_a}->{item.device_b}:{item.port_b}": item
+            for item in topology.links
+        }
+        for link_binding in ordered_link_bindings:
+            planned = planned_by_id[link_binding.semantic_link_id]
+            expected_devices = {
+                planned.device_a_id or planned.device_a,
+                planned.device_b_id or planned.device_b,
+            }
+            observed_devices = {
+                link_binding.endpoint_a.semantic_device_id,
+                link_binding.endpoint_b.semantic_device_id,
+            }
+            if observed_devices != expected_devices:
+                raise DeploymentIdentityError(
+                    f"Deployment link binding {link_binding.semantic_link_id!r} "
+                    "does not match its semantic endpoints."
+                )
+            expected_interfaces = {
+                (planned.device_a_id or planned.device_a): planned.port_a,
+                (planned.device_b_id or planned.device_b): planned.port_b,
+            }
+            for endpoint in (link_binding.endpoint_a, link_binding.endpoint_b):
+                if expected_interfaces.get(endpoint.semantic_device_id) != endpoint.interface:
+                    raise DeploymentIdentityError(
+                        f"Observed interface {endpoint.interface!r} for link "
+                        f"{link_binding.semantic_link_id!r} does not match the planned "
+                        f"interface for {endpoint.semantic_device_id!r}."
+                    )
+                device_binding = device_bindings.get(endpoint.semantic_device_id)
+                if device_binding is None or endpoint.interface not in device_binding.ports:
+                    raise DeploymentIdentityError(
+                        f"Observed interface {endpoint.interface!r} for link "
+                        f"{link_binding.semantic_link_id!r} is absent from the fresh "
+                        f"device binding {endpoint.semantic_device_id!r}."
+                    )
     manifest = DeploymentManifest(
         deployment_id=deployment_id or f"deployment/{topology.physical_identity_hash[:16]}",
         physical_topology_hash=topology.physical_identity_hash,
@@ -359,6 +417,7 @@ def build_deployment_manifest(
         backend_version=fingerprint.backend_version,
         environment_fingerprint=fingerprint,
         bindings=bindings,
+        link_bindings=ordered_link_bindings,
         created_at=created_at or datetime.now(timezone.utc),
     )
     manifest.semantic_hash = _digest({
@@ -373,6 +432,16 @@ def build_deployment_manifest(
                 exclude={"creation_evidence", "runtime_identifier"},
             )
             for item in manifest.bindings
+        ],
+        "link_bindings": [
+            item.model_dump(
+                mode="json",
+                exclude={
+                    "runtime_link_identifier",
+                    "runtime_link_identity_observed",
+                },
+            )
+            for item in manifest.link_bindings
         ],
     })
     return manifest

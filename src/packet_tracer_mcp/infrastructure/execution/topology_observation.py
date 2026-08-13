@@ -51,6 +51,8 @@ class LinkReadback:
     observed_link_b: tuple[LinkEndpoint, ...] = ()
     link_class_a: str = ""
     link_class_b: str = ""
+    runtime_link_identifier_a: str = ""
+    runtime_link_identifier_b: str = ""
     detail: str = ""
 
 
@@ -82,6 +84,7 @@ def build_exact_link_readback_js(expectation: LinkExpectation) -> str:
         "var __o={exact:false,port_a_bound:false,port_b_bound:false,"
         "both_ports_bound:false,same_link:false,"
         "reason:'',link_class_a:'',link_class_b:'',"
+        "runtime_link_identifier_a:'',runtime_link_identifier_b:'',"
         "observed_link_a:[],observed_link_b:[]};"
         "function __emit(){reportResult(JSON.stringify(__o));}"
         "function __endpoint(__p){return {device:String(__p.getOwnerDevice().getName()),"
@@ -105,6 +108,7 @@ def build_exact_link_readback_js(expectation: LinkExpectation) -> str:
         "__o.both_ports_bound=true;"
         "__o.same_link=(function(){try{var __ua=String(__l1.getObjectUuid());"
         "var __ub=String(__l2.getObjectUuid());"
+        "__o.runtime_link_identifier_a=__ua;__o.runtime_link_identifier_b=__ub;"
         "if(__ua&&__ub){return __ua===__ub;}}catch(__ue){}return __l1===__l2;})();"
         "__o.link_class_a=String(__l1.getClassName());"
         "__o.link_class_b=String(__l2.getClassName());"
@@ -179,6 +183,12 @@ def parse_exact_link_readback(raw: str | None) -> LinkReadback:
         observed_link_b=observed_b,
         link_class_a=str(payload.get("link_class_a") or "")[:100],
         link_class_b=str(payload.get("link_class_b") or "")[:100],
+        runtime_link_identifier_a=str(
+            payload.get("runtime_link_identifier_a") or ""
+        )[:200],
+        runtime_link_identifier_b=str(
+            payload.get("runtime_link_identifier_b") or ""
+        )[:200],
         detail=str(payload.get("detail") or "")[:200],
     )
 
