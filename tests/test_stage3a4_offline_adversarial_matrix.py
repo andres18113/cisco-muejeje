@@ -85,8 +85,12 @@ from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
     WanLinkRequirement,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+    EnterprisePhysicalTopologyDeployer,
+)
 from src.packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
     SerialControllerObservation,
+    SerialOrientationObserver,
 )
 from tests.test_enterprise_reference_execution import _isolated_preflight
 
@@ -480,20 +484,22 @@ class TestRow14ForeignObjectsAreNeverDeleted:
         assert "Power Distribution Device0" not in physical.removed
 
 
-class TestAModelWithoutLiveEvidenceFailsClosed:
-    """Hallazgo de este gate, no un fallo: UNKNOWN atraviesa todo el producto.
+class TestTheDefaultSelectionIsRecordedNotAssumed:
+    """Cual modelo elige el catalogo por si solo, fijado para el gate en vivo.
 
-    La seleccion por capacidad elige del catalogo completo y para esta forma
-    acotada elige `1941`. El catalogo de capacidades de plano de control solo
-    tiene evidencia en vivo para `2911`, asi que RIPv2 sobre 1941 es UNKNOWN --
-    y el compilador se niega en vez de asumir. Es el invariante "sin evidencia
-    -> UNKNOWN, y UNKNOWN no es permiso" funcionando de punta a punta.
+    Sin preferencia la seleccion por capacidad elige `1941` para esta forma
+    acotada. La evidencia de capacidad de plano de control en vivo existe solo
+    para `2911`, asi que la corrida en vivo debe DIRIGIR la seleccion en vez de
+    confiar en que el catalogo acierte.
 
-    Consecuencia registrada para el gate en vivo: la corrida acotada debera
-    dirigir la seleccion a 2911, no confiar en que el catalogo la elija.
+    Nota correctiva: la compilacion del plano de control NO depende del modelo
+    -- 1941 y 2911 compilan igual. La capacidad se consulta al aplicar. Una
+    lectura anterior de este archivo decia que el compilador se negaba; era
+    falsa y se corrige aqui. El detalle vive en
+    `test_enterprise_preferred_router_model.py`.
     """
 
-    def test_ripv2_on_an_unevidenced_model_never_compiles_a_control_plane(self):
+    def test_the_unsteered_selection_is_1941(self):
         physical = _GenericPhysicalRuntime()
 
         result = _run(
@@ -506,8 +512,7 @@ class TestAModelWithoutLiveEvidenceFailsClosed:
             if item.category == "router"
         }
 
-        assert routers == {"1941"}, "si cambia la seleccion, revisar esta fila"
-        assert result.control_plane_result is None
+        assert routers == {"1941"}, "si cambia la seleccion, revisar el gate en vivo"
 
 
 class TestTheGateGrantsNoLivePermission:
@@ -527,3 +532,24 @@ class TestTheGateGrantsNoLivePermission:
 
         for double in (physical, configuration, control_plane):
             assert type(double).__module__ == __name__, type(double)
+
+
+def _oriented_manifest_for(topology):
+    """Manifiesto orientado desde el despliegue del doble, no fabricado a mano.
+
+    Lo emite el deployer a partir de sus observaciones y lo orienta el observador
+    de produccion. Construirlo a mano seria justo el atajo que el manifiesto
+    existe para impedir.
+    """
+    runtime = _GenericPhysicalRuntime().bind(topology)
+    deployment = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+        topology,
+        environment_fingerprint=FINGERPRINT,
+        require_empty_workspace=True,
+    )
+    assert deployment.manifest is not None, deployment.errors
+    result = SerialOrientationObserver(_GenericOrientationRuntime()).observe(
+        topology, deployment.manifest,
+    )
+    assert result.oriented_manifest is not None, result.errors
+    return result.oriented_manifest

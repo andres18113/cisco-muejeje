@@ -47,6 +47,7 @@ from ...domain.enterprise.models.control_plane import ControlPlaneIntent
 from ...domain.enterprise.models.control_plane_runtime import ControlPlaneApplicationResult
 from ...domain.enterprise.models.deployment import DeploymentManifest, EnvironmentFingerprint
 from ...domain.enterprise.models.intent import EnterpriseIntent
+from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
 from ...domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentResult,
     PhysicalMutationResult,
@@ -294,6 +295,7 @@ def execute_enterprise_reference(
     capability_store: CapabilitySnapshotStore | None = None,
     deployment_id: str = "",
     require_empty_workspace: bool = True,
+    policy: HardwarePlanningPolicy | None = None,
 ) -> EnterpriseExecutionResult:
     """Ejecuta el producto de punta a punta y limpia pase lo que pase."""
     started_at = datetime.now(timezone.utc)
@@ -326,6 +328,7 @@ def execute_enterprise_reference(
         intent,
         packet_tracer_version=packet_tracer_version,
         capability_store=capability_store,
+        policy=policy,
     )
     state.composition = composition
     if not composition.valid or composition.topology is None:
@@ -345,6 +348,7 @@ def execute_enterprise_reference(
         capability_store=capability_store,
         deployment_id=deployment_id,
         require_empty_workspace=require_empty_workspace,
+        policy=policy,
     )
 
 
@@ -361,6 +365,7 @@ def _execute_mutating_stages(
     capability_store: CapabilitySnapshotStore | None,
     deployment_id: str,
     require_empty_workspace: bool,
+    policy: HardwarePlanningPolicy | None,
 ) -> EnterpriseExecutionResult:
     """Desde aqui se muta, asi que desde aqui la limpieza es obligatoria."""
     stage = EnterpriseExecutionStage.PHYSICAL_DEPLOYMENT
@@ -392,6 +397,7 @@ def _execute_mutating_stages(
             capability_store=capability_store,
             deployment_manifest=oriented,
             control_plane_intent=control_plane_intent,
+            policy=policy,
         )
         state.composition = composed
         if not composed.valid or composed.configuration is None or composed.control_plane is None:

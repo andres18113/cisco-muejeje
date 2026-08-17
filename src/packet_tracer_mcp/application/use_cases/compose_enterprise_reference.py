@@ -31,6 +31,7 @@ from ...domain.enterprise.models.hardware import HardwarePlan
 from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.link_performance import TrafficAttributionResult
 from ...domain.enterprise.services.enterprise_designer import EnterpriseDesigner
+from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
 from ...domain.enterprise.services.traffic_attribution import attribute_enterprise_traffic
 from ...infrastructure.catalog.enterprise_topology import PacketTracerTopologyCatalogAdapter
 from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
@@ -88,6 +89,7 @@ def compose_enterprise_reference(
     capability_store: CapabilitySnapshotStore | None = None,
     deployment_manifest: DeploymentManifest | None = None,
     control_plane_intent: ControlPlaneIntent | None = None,
+    policy: HardwarePlanningPolicy | None = None,
 ) -> EnterpriseReferenceComposition:
     """Compone el producto offline y se detiene en la primera etapa invalida."""
     designed = EnterpriseDesigner().design(intent)
@@ -101,6 +103,7 @@ def compose_enterprise_reference(
         enterprise,
         packet_tracer_version=packet_tracer_version,
         capability_store=capability_store,
+        policy=policy,
     )
 
     catalog = PacketTracerTopologyCatalogAdapter()

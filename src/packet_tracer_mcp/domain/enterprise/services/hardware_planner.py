@@ -48,6 +48,11 @@ class HardwarePlanningPolicy:
     resiliency: ResiliencyLevel = ResiliencyLevel.BASIC
     homogeneous_access_models: bool = True
     hierarchy: HierarchyPolicy = HierarchyPolicy()
+    #: Desempate entre candidatos YA viables, aportado por quien planifica.
+    #: Nunca habilita a un modelo que no cumple: se aplica después del filtro de
+    #: viabilidad, así que pedir un switch como router no lo cuela. Vacío = sin
+    #: preferencia, que es el comportamiento anterior byte a byte.
+    preferred_router_model: str = ""
 
 
 @dataclass(frozen=True)
@@ -399,6 +404,7 @@ class HardwarePlanner:
             required_serial_ports,
             required_wan_ethernet_ports,
             reconcile_edge_role=reconcile_site_router,
+            preferred_model=policy.preferred_router_model,
         )
         if wan_resolution.device is not None:
             higher_devices.append(wan_resolution.device)
@@ -515,6 +521,7 @@ class HardwarePlanner:
         required_ethernet_ports: int,
         *,
         reconcile_edge_role: bool = False,
+        preferred_model: str = "",
     ) -> _WanRouterResolution:
         if required_serial_ports == 0 and required_ethernet_ports == 0:
             return _WanRouterResolution()
@@ -595,9 +602,15 @@ class HardwarePlanner:
                 f"No existe candidato WAN soportado para {site.site_id}: {reasons}."
             ))
 
+        # La preferencia entra aquí y no antes: `viable` ya pasó categoría,
+        # puertos y evidencia de módulos, así que preferir sólo reordena lo que
+        # de todos modos podía elegirse. Un nombre inexistente deja la clave
+        # intacta y el resultado es el de siempre.
+        preferred = preferred_model.strip().casefold()
         candidate, module_plan, port_descriptors = min(
             viable,
             key=lambda item: (
+                bool(preferred) and item[0].model.casefold() != preferred,
                 len(item[1]),
                 len(item[2]) - required_serial_ports - combined_ethernet_ports,
                 item[0].model.casefold(),
