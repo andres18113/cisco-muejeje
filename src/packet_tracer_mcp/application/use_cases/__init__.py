@@ -14,6 +14,22 @@ from .plan_enterprise_hardware import (
     capability_catalog_for,
     plan_enterprise_hardware,
 )
+from .compose_enterprise_reference import (
+    EnterpriseReferenceComposition,
+    compose_enterprise_reference,
+)
+from .execute_enterprise_reference import (
+    EnterpriseExecutionResult,
+    EnterpriseExecutionStage,
+    EnterpriseExecutionStatus,
+    EnterpriseRuntimes,
+    execute_enterprise_reference,
+)
+from .foundational_evidence import (
+    derive_foundational_hashes,
+    derive_foundational_statuses,
+    unmet_foundations,
+)
 from .deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
     PhysicalTopologyRuntime,
