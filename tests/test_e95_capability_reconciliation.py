@@ -13,7 +13,6 @@ decision informada, y para que se note el dia que se cierre.
 
 from __future__ import annotations
 
-import ast
 import pathlib
 
 import pytest
@@ -24,6 +23,7 @@ from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
+    packet_tracer_enterprise_capability_adapter,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
@@ -110,6 +110,68 @@ def store(tmp_path_factory) -> CapabilitySnapshotStore:
     return store
 
 
+def _probe_result(
+    model: str,
+    capability: str,
+    *,
+    status: CapabilityStatus,
+    verified: bool,
+) -> CapabilityProbeResult:
+    """Un resultado de probe con estado y verificacion controlados."""
+    return CapabilityProbeResult(
+        probe_id=f"{capability}-probe",
+        model=model,
+        capability=capability,
+        status=status,
+        execution_status=(
+            ProbeExecutionStatus.VERIFIED if verified
+            else ProbeExecutionStatus.VERIFY_FAILED
+        ),
+        evidence_source=EvidenceSource.CONTROLLED_PROBE,
+        configured=True,
+        verified=verified,
+        packet_tracer_version=MEASURED_VERSION,
+        verification_method=CapabilityVerificationMethod.SIMULATION_TRACE,
+    )
+
+
+def _store_with(tmp_path_factory, name: str, results) -> CapabilitySnapshotStore:
+    store = CapabilitySnapshotStore(tmp_path_factory.mktemp(name))
+    store.save_runtime(CapabilitySnapshot(
+        packet_tracer_version=MEASURED_VERSION,
+        session=ProbeSessionResult(
+            session=ProbeSession(
+                session_id=f"hermetic-{name}",
+                packet_tracer_version=MEASURED_VERSION,
+            ),
+            results=list(results),
+        ),
+    ))
+    return store
+
+
+@pytest.fixture(scope="module")
+def store_unverified(tmp_path_factory) -> CapabilitySnapshotStore:
+    """Multilayer SUPPORTED pero NO verificado: no puede implicar layer3."""
+    return _store_with(tmp_path_factory, "unverified", [
+        _probe_result(
+            "3650-24PS", "multilayer_intervlan",
+            status=CapabilityStatus.SUPPORTED, verified=False,
+        ),
+    ])
+
+
+@pytest.fixture(scope="module")
+def store_unsupported(tmp_path_factory) -> CapabilitySnapshotStore:
+    """Un hecho negativo medido: conectar providers no lo vuelve positivo."""
+    return _store_with(tmp_path_factory, "unsupported", [
+        _probe_result(
+            "3560-24PS", "layer3",
+            status=CapabilityStatus.UNSUPPORTED, verified=True,
+        ),
+    ])
+
+
 def _layer3(adapter: EnterpriseCapabilityAdapter, model: str):
     for candidate in adapter.hardware_candidates("switch", MEASURED_VERSION):
         if candidate.model == model:
@@ -152,38 +214,126 @@ class TestTheEvidenceExistsAndIsReachable:
 
 
 class TestTheBoundaryIsExactAndVisible:
-    def test_no_production_site_wires_the_providers(self):
-        """El dia que alguien los conecte, este test cae y hay que revisarlo."""
-        wired = []
-        for path in sorted(PACKAGE.rglob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                target = node.func
-                name = getattr(target, "id", "") or getattr(target, "attr", "")
-                if name != "EnterpriseCapabilityAdapter":
-                    continue
-                if any(keyword.arg == "providers" for keyword in node.keywords):
-                    wired.append(path.relative_to(REPO).as_posix())
+    """Sustituye al viejo tripwire negativo, con afirmaciones mas fuertes.
 
-        assert wired == [], (
-            "Runtime capability providers are now wired in production; "
-            f"CAPABILITY_TO_HARDWARE_RECONCILIATION must be re-evaluated: {wired}"
+    Antes habia un test que fallaba el dia que alguien conectara providers en
+    produccion. Conectarlos dejo de ser el accidente que ese test vigilaba y
+    paso a ser el objetivo de TD-HARDWARE-001, asi que restaurarlo seria
+    vigilar lo contrario de lo que se quiere. Se reemplaza por lo que si debe
+    cumplirse siempre: la composicion productiva conecta la evidencia, la acota
+    a una version exacta, y no asciende nada que no se haya observado.
+    """
+
+    def test_product_composition_wires_exact_version_providers(self, store):
+        wired = packet_tracer_enterprise_capability_adapter(
+            MEASURED_VERSION, store=store,
         )
 
-    def test_even_wired_the_3650_evidence_does_not_map_to_a_field(self, store):
-        """La segunda mitad de la deuda: `multilayer_intervlan` no tiene destino.
+        assert _layer3(wired, "3560-24PS") is CapabilityStatus.SUPPORTED
 
-        Conectar los providers no basta; la capacidad probada tampoco alimenta
-        ningun campo que el selector lea para ese modelo.
+    def test_product_composition_wires_both_evidence_providers(self):
+        """Ambos providers, no uno: probe y runtime son fuentes distintas."""
+        wired = packet_tracer_enterprise_capability_adapter(MEASURED_VERSION)
+
+        kinds = {type(provider) for provider in wired._providers}
+
+        assert kinds == {ProbeCapabilityProvider, RuntimeCapabilityProvider}
+
+    def test_the_composition_root_demands_an_exact_version(self):
+        """Sin version exacta no hay composicion: no hay default razonable."""
+        for blank in ("", "   "):
+            with pytest.raises(ValueError):
+                packet_tracer_enterprise_capability_adapter(blank)
+
+    def test_a_model_without_evidence_stays_unknown(self, store):
+        """Conectar providers no reparte capacidades a quien no fue medido."""
+        wired = packet_tracer_enterprise_capability_adapter(
+            MEASURED_VERSION, store=store,
+        )
+        measured = {"3560-24PS", "3650-24PS"}
+        others = [
+            candidate
+            for candidate in wired.hardware_candidates("switch", MEASURED_VERSION)
+            if candidate.model not in measured
+        ]
+
+        assert others, "el catalogo debe tener switches sin evidencia"
+        for candidate in others:
+            assert candidate.capabilities.layer3 is CapabilityStatus.UNKNOWN, (
+                candidate.model
+            )
+
+    def test_product_composition_keeps_mismatched_evidence_unknown(self, store):
+        wired = packet_tracer_enterprise_capability_adapter(
+            "9.0.2.0000", store=store,
+        )
+
+        assert _layer3(wired, "3560-24PS") is CapabilityStatus.UNKNOWN
+
+    def test_evidence_is_scoped_to_the_exact_asked_version_not_the_bound_one(self, store):
+        """Preguntar por otra version no reetiqueta la evidencia medida.
+
+        El adapter esta atado a una version; si la consulta nombra otra, la
+        evidencia no se traslada silenciosamente a esa otra version.
         """
-        wired = EnterpriseCapabilityAdapter(providers=[
-            ProbeCapabilityProvider(store, MEASURED_VERSION),
-            RuntimeCapabilityProvider(store, MEASURED_VERSION),
-        ])
+        wired = packet_tracer_enterprise_capability_adapter(
+            MEASURED_VERSION, store=store,
+        )
 
-        assert _layer3(wired, "3650-24PS").value == "unknown"
+        for candidate in wired.hardware_candidates("switch", "9.0.2.0000"):
+            if candidate.model == "3560-24PS":
+                assert candidate.capabilities.layer3 is CapabilityStatus.UNKNOWN
+                return
+        raise AssertionError("3560-24PS is not a switch candidate")
+
+    def test_verified_multilayer_forwarding_implies_layer3_without_model_case(self, store):
+        wired = packet_tracer_enterprise_capability_adapter(
+            MEASURED_VERSION, store=store,
+        )
+
+        assert _layer3(wired, "3650-24PS") is CapabilityStatus.SUPPORTED
+
+    def test_the_implication_requires_supported_and_verified_evidence(self, store_unverified):
+        """La implicacion se apoya en evidencia verificada, no en su forma.
+
+        Un resultado con el mismo `capability` pero sin `verified`, o cuyo
+        estado no sea SUPPORTED, no puede producir `layer3`. Si pudiera, la
+        implicacion seria una forma de ascender lo no observado.
+        """
+        wired = packet_tracer_enterprise_capability_adapter(
+            MEASURED_VERSION, store=store_unverified,
+        )
+
+        assert _layer3(wired, "3650-24PS") is CapabilityStatus.UNKNOWN
+
+    def test_provider_wiring_never_promotes_an_unsupported_capability(self, store_unsupported):
+        """Un hecho negativo medido sigue siendo negativo despues de conectar."""
+        wired = packet_tracer_enterprise_capability_adapter(
+            MEASURED_VERSION, store=store_unsupported,
+        )
+
+        # Medido: el hecho negativo llega intacto a la seleccion. Afirmar solo
+        # "no es SUPPORTED" tambien pasaria si quedara en UNKNOWN, que seria
+        # perder la evidencia en vez de respetarla.
+        assert _layer3(wired, "3560-24PS") is CapabilityStatus.UNSUPPORTED
+
+    def test_no_test_fixture_or_supported_shortcut_reaches_production(self):
+        """La composicion productiva no puede fabricar evidencia.
+
+        Su unica fuente son snapshots persistidos. Ni un perfil de test ni un
+        atajo tipo `.supported()` pueden entrar por aqui: con un store vacio no
+        hay ninguna capacidad promovida.
+        """
+        source = (
+            PACKAGE / "infrastructure" / "catalog" / "enterprise_capabilities.py"
+        ).read_text(encoding="utf-8")
+        composition = source.split(
+            "def packet_tracer_enterprise_capability_adapter"
+        )[1].split("\ndef ")[0]
+
+        assert ".supported(" not in composition
+        assert "fixture" not in composition.casefold()
+        assert "CapabilityStatus.SUPPORTED" not in composition
 
 
 class TestTheRegressionReferenceDoesNotDependOnSelection:

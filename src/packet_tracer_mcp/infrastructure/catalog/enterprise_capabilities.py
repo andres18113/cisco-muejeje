@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from ...domain.enterprise.models.capabilities import DeviceCapabilities
+from ...domain.enterprise.models.capabilities import CapabilityStatus, DeviceCapabilities
 from ...domain.enterprise.models.hardware import (
     CatalogCoverageReport,
     HardwareCandidate,
@@ -21,6 +21,8 @@ from ...domain.enterprise.services.capability_resolver import (
 from .aliases import MODEL_ALIASES
 from .devices import ALL_MODELS, DeviceModel
 from .modules import ALL_MODULES, get_serial_module
+from .capability_providers import ProbeCapabilityProvider, RuntimeCapabilityProvider
+from ..persistence.capability_snapshot_store import CapabilitySnapshotStore
 
 
 _SERIAL_MODULE_SLOT_BY_MODEL = {
@@ -43,19 +45,11 @@ class EnterpriseCapabilityAdapter:
         self,
         resolver: CapabilityResolver | None = None,
         providers: list[CapabilityProvider] | None = None,
+        bound_packet_tracer_version: str | None = None,
     ) -> None:
         self._resolver = resolver or CapabilityResolver()
-        # DEUDA E9.5 (Stage 3A3-E), explicita y medida: sin `providers` no se
-        # incorpora NINGUNA evidencia de runtime, asi que las capacidades que
-        # los probes de Stage 2D verificaron en vivo no llegan a la seleccion
-        # de hardware. Reproducido: con un ProbeCapabilityProvider conectado,
-        # `3560-24PS.layer3` pasa de UNKNOWN a SUPPORTED; sin el, se queda en
-        # UNKNOWN. Toda la construccion productiva actual es sin providers.
-        #
-        # No decir por tanto que "el planner eligio correctamente un L2": el
-        # planner nunca vio la evidencia. Es una frontera de arquitectura sin
-        # cerrar, no una decision informada.
         self._providers = providers or []
+        self._bound_packet_tracer_version = bound_packet_tracer_version
         self._normalization_index = self._build_normalization_index()
 
     def normalize_model_name(self, name: str) -> str | None:
@@ -163,12 +157,26 @@ class EnterpriseCapabilityAdapter:
         capabilities: DeviceCapabilities,
         packet_tracer_version: str | None,
     ) -> DeviceCapabilities:
+        if (
+            self._bound_packet_tracer_version is not None
+            and packet_tracer_version is not None
+            and packet_tracer_version != self._bound_packet_tracer_version
+        ):
+            return self._resolver.with_evidence(
+                capabilities, [], packet_tracer_version,
+            )
+        effective_version = (
+            packet_tracer_version or self._bound_packet_tracer_version
+        )
         evidence = [
             item
             for provider in self._providers
-            for item in provider.evidence_for(capabilities.model, packet_tracer_version)
+            for item in provider.evidence_for(capabilities.model, effective_version)
         ]
-        return self._resolver.with_evidence(capabilities, evidence, packet_tracer_version)
+        evidence = _with_semantic_implications(evidence)
+        return self._resolver.with_evidence(
+            capabilities, evidence, effective_version,
+        )
 
     def _facts_for(self, model: DeviceModel) -> CatalogDeviceFacts:
         aliases = tuple(
@@ -242,3 +250,47 @@ class EnterpriseCapabilityAdapter:
             provided_ports=list(module.ports_added),
             provided_port_classes=[PortClass.SERIAL, PortClass.WAN],
         )]
+
+
+def packet_tracer_enterprise_capability_adapter(
+    packet_tracer_version: str,
+    *,
+    store: CapabilitySnapshotStore | None = None,
+) -> EnterpriseCapabilityAdapter:
+    """Build the productive, exact-version capability composition root."""
+
+    version = packet_tracer_version.strip()
+    if not version:
+        raise ValueError("An exact Packet Tracer version is required.")
+    snapshots = store or CapabilitySnapshotStore()
+    return EnterpriseCapabilityAdapter(
+        providers=[
+            ProbeCapabilityProvider(snapshots, version),
+            RuntimeCapabilityProvider(snapshots, version),
+        ],
+        bound_packet_tracer_version=version,
+    )
+
+
+def _with_semantic_implications(evidence):
+    """Apply model-neutral, one-way implications without defeating explicit facts."""
+
+    items = list(evidence)
+    direct = {item.capability for item in items}
+    if "layer3" not in direct:
+        source = next((
+            item for item in items
+            if item.capability == "multilayer_intervlan"
+            and item.status is CapabilityStatus.SUPPORTED
+            and item.verified
+        ), None)
+        if source is not None:
+            detail = source.source_detail or "verified multilayer forwarding"
+            items.append(source.model_copy(update={
+                "capability": "layer3",
+                "source_detail": detail + " => layer3",
+                "notes": (
+                    (source.notes + " ") if source.notes else ""
+                ) + "Inter-VLAN forwarding is a model-neutral positive proof of layer-3 capability.",
+            }))
+    return items
