@@ -10,6 +10,7 @@ from ...domain.enterprise.models.control_plane import (
     ControlPlaneCompileResult,
     ControlPlaneIntent,
 )
+from ...domain.enterprise.models.link_performance import TrafficFlowIntent
 from ...domain.enterprise.models.security_plan import SecurityPlan
 from ...domain.enterprise.models.failure_domain import FailureDomain
 from ...domain.enterprise.services.control_plane_compiler import ControlPlaneCompiler
@@ -24,7 +25,15 @@ def compile_enterprise_control_plane(
     security_plan: SecurityPlan | None = None,
     capabilities: dict[str, ControlPlaneCapabilityProfile] | None = None,
     failure_domains: Iterable[FailureDomain] = (),
+    traffic_flows: Iterable[TrafficFlowIntent] = (),
 ) -> ControlPlaneCompileResult:
+    """Compila el plano de control; con flujos declarados, atribuye conducta.
+
+    `traffic_flows` es opcional a proposito: sin flujos el plan compilado es
+    byte a byte el de antes. Con flujos, la verificacion de comportamiento deja
+    de ser el producto cartesiano de pares de routers y pasa a ser lo que el
+    intent pidio, con el prerequisito de ruta resuelto por prefijo de destino.
+    """
     return ControlPlaneCompiler().compile(
         intent,
         topology,
@@ -32,4 +41,5 @@ def compile_enterprise_control_plane(
         security_plan=security_plan,
         capabilities=capabilities,
         failure_domains=failure_domains,
+        traffic_flows=traffic_flows,
     )

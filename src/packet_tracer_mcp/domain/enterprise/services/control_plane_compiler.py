@@ -52,6 +52,7 @@ from ..models.control_plane import (
     StpMode,
     control_plane_action_type_counts,
 )
+from ..models.link_performance import TrafficFlowIntent
 from ..models.security_plan import SecurityCapabilityStatus, SecurityPlan
 from ..models.failure_domain import (
     FailureDomain,
@@ -217,6 +218,7 @@ class ControlPlaneCompiler:
         security_plan: SecurityPlan | None = None,
         capabilities: dict[str, ControlPlaneCapabilityProfile] | None = None,
         failure_domains: Iterable[FailureDomain] = (),
+        traffic_flows: Iterable[TrafficFlowIntent] = (),
     ) -> ControlPlaneCompileResult:
         issues: list[ConfigurationIssue] = []
         capabilities = capabilities or {}
@@ -270,7 +272,7 @@ class ControlPlaneCompiler:
 
         routing_actions, routing_expectations = self._compile_routing(
             intent, topology, configuration, devices, names_to_ids, links,
-            foundations, issues,
+            foundations, issues, tuple(traffic_flows),
         )
         actions.extend(routing_actions)
         expectations.extend(routing_expectations)
@@ -300,14 +302,28 @@ class ControlPlaneCompiler:
             for action in actions:
                 action.apply_dependencies = list(action.depends_on)
             for expectation in expectations:
+                # Los prerequisitos derivados de acciones se recalculan siempre.
+                # Los que el compilador puso a proposito -- hoy, la ruta exacta
+                # que un flujo declarado necesita -- se CONSERVAN: antes esta
+                # asignacion los pisaba, y un prerequisito semantico se perdia
+                # sin que nada lo notara. Con la lista previa vacia, que es el
+                # caso de todas las demas expectativas, el resultado no cambia.
+                preserved = [
+                    prerequisite
+                    for prerequisite in expectation.verification_prerequisites
+                    if prerequisite.kind is not PrerequisiteKind.ACTION_APPLIED
+                ]
                 expectation.verification_prerequisites = [
-                    VerificationPrerequisite(
-                        kind=PrerequisiteKind.ACTION_APPLIED,
-                        reference_id=identifier,
-                    )
-                    for identifier in sorted(set([
-                        expectation.action_id, *expectation.depends_on,
-                    ]))
+                    *[
+                        VerificationPrerequisite(
+                            kind=PrerequisiteKind.ACTION_APPLIED,
+                            reference_id=identifier,
+                        )
+                        for identifier in sorted(set([
+                            expectation.action_id, *expectation.depends_on,
+                        ]))
+                    ],
+                    *preserved,
                 ]
             plan = ControlPlanePlan(
                 id=f"control-plane_{topology.id or topology.physical_identity_hash[:16]}",
@@ -1216,6 +1232,7 @@ class ControlPlaneCompiler:
         links: dict[str, LinkPlan],
         foundations: dict[str, ControlPlaneFoundationRequirement],
         issues: list[ConfigurationIssue],
+        traffic_flows: tuple[TrafficFlowIntent, ...] = (),
     ) -> tuple[list[ControlPlaneAction], list[ControlPlaneVerificationExpectation]]:
         policies = [*intent.routing_domains]
         if intent.routing is not None and intent.routing.id not in {item.id for item in policies}:
@@ -1226,7 +1243,7 @@ class ControlPlaneCompiler:
         for policy in sorted(policies, key=lambda item: item.id):
             domain_actions, domain_expectations = self._compile_routing_domain(
                 policy, topology, configuration, devices, names_to_ids, links,
-                foundations, issues,
+                foundations, issues, traffic_flows,
             )
             for action in domain_actions:
                 if action.device_id in used_devices:
@@ -1251,8 +1268,19 @@ class ControlPlaneCompiler:
         links: dict[str, LinkPlan],
         foundations: dict[str, ControlPlaneFoundationRequirement],
         issues: list[ConfigurationIssue],
+        traffic_flows: tuple[TrafficFlowIntent, ...] = (),
     ) -> tuple[list[ControlPlaneAction], list[ControlPlaneVerificationExpectation]]:
         del topology
+        # Indices para atribuir comportamiento a flujos declarados. Quedan
+        # vacios y sin efecto cuando el intent no trae `traffic_flows`.
+        #
+        # La atribucion por flujo esta implementada SOLO para RIPv2, que es el
+        # protocolo de la topologia de referencia de Stage 3A4. OSPF y EIGRP
+        # conservan su producto cartesiano de pares sin cambio alguno: no hay
+        # evidencia ni fixture que respalde el otro camino, y dejarlo escrito
+        # sin prueba seria peor que no tenerlo.
+        routes_by_device: dict[str, list[tuple[str, str, int]]] = defaultdict(list)
+        rip_peer_by_route: dict[str, tuple[str, object]] = {}
         l3_by_device: dict[str, list[object]] = defaultdict(list)
         static_endpoints_by_segment: dict[str, list[SetEndpointStaticAddress]] = defaultdict(list)
         for action in configuration.actions:
@@ -1471,11 +1499,16 @@ class ControlPlaneCompiler:
                     contributors.items(),
                     key=lambda item: (item[0].network_address, item[0].prefixlen),
                 ):
+                    route_id = _stable_id(
+                        "verify-rip-route", local_id,
+                        str(network.network_address), network.prefixlen,
+                    )
+                    routes_by_device[local_id].append((
+                        route_id, str(network.network_address), network.prefixlen,
+                    ))
+                    rip_peer_by_route[route_id] = (remote_id, remote_action)
                     expectations.append(ControlPlaneVerificationExpectation(
-                        id=_stable_id(
-                            "verify-rip-route", local_id,
-                            str(network.network_address), network.prefixlen,
-                        ),
+                        id=route_id,
                         kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
                         action_id=local_action.id,
                         device_id=local_id,
@@ -1489,6 +1522,15 @@ class ControlPlaneCompiler:
                         },
                         depends_on=sorted([local_action.id, remote_action.id]),
                     ))
+            # Conducta extremo a extremo: sólo la que el intent pidió. Sin
+            # flujos declarados RIPv2 sigue compilando exactamente lo mismo que
+            # antes -- configuración y rutas aprendidas, ninguna alcanzabilidad.
+            if traffic_flows:
+                expectations.extend(self._rip_flow_behavior_expectations(
+                    traffic_flows, devices, links, action_by_device,
+                    l3_by_device, static_endpoints_by_segment,
+                    routes_by_device, rip_peer_by_route, issues,
+                ))
             return actions, expectations
         for action in actions:
             # `show ip ospf neighbor` es la unica consulta registrada que
@@ -1564,11 +1606,12 @@ class ControlPlaneCompiler:
                         })
                     else:
                         route_unclaimed.extend(("wildcard", "segment_id"))
+                    route_id = _stable_id(
+                        "verify-route", local_id, remote.network, remote.wildcard,
+                    )
                     expectations.append(ControlPlaneVerificationExpectation(
                         unclaimed_fields=route_unclaimed,
-                        id=_stable_id(
-                            "verify-route", local_id, remote.network, remote.wildcard,
-                        ),
+                        id=route_id,
                         kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
                         action_id=local_action.id,
                         device_id=local_id,
@@ -1633,6 +1676,119 @@ class ControlPlaneCompiler:
                     depends_on=sorted([local_action.id, remote_action.id]),
                 ))
         return actions, expectations
+
+    @staticmethod
+    def _rip_flow_behavior_expectations(
+        traffic_flows,
+        devices: dict[str, DevicePlan],
+        links: dict[str, LinkPlan],
+        action_by_device: dict[str, object],
+        l3_by_device: dict[str, list[object]],
+        static_endpoints_by_segment: dict[str, list[SetEndpointStaticAddress]],
+        routes_by_device: dict[str, list[tuple[str, str, int]]],
+        rip_peer_by_route: dict[str, tuple[str, object]],
+        issues: list[ConfigurationIssue],
+    ) -> list[ControlPlaneVerificationExpectation]:
+        """Una expectativa de alcance por flujo declarado, resuelta por semántica.
+
+            flujo -> router del sitio origen -> IP de destino en el sitio destino
+                  -> la expectativa ROUTE_PRESENT DE ESE PREFIJO en ESE router
+
+        No se cuelga de todas las rutas del router de origen: una ruta que este
+        flujo no usa no es prerequisito suyo. Si el flujo declara un camino
+        explícito, los routers intermedios salen de ESE camino y se les exige la
+        ruta al MISMO prefijo de destino; sin camino declarado no se inventan
+        intermedios a partir de la adyacencia.
+
+        Un prerequisito de ruta NO es evidencia de reenvío: la expectativa se
+        sigue satisfaciendo con su propio ping tipado, no con la ruta.
+        """
+        emitted: list[ControlPlaneVerificationExpectation] = []
+        routers_by_site: dict[str, list[str]] = defaultdict(list)
+        for device_id in action_by_device:
+            device = devices.get(device_id)
+            if device is not None and device.site_id:
+                routers_by_site[device.site_id].append(device_id)
+
+        for flow in sorted(traffic_flows, key=lambda item: item.id):
+            sources = sorted(routers_by_site.get(flow.source_site_id, ()))
+            targets = sorted(routers_by_site.get(flow.destination_site_id, ()))
+            if len(sources) != 1 or len(targets) != 1:
+                issues.append(_error(
+                    ConfigurationIssueCode.CONTROL_PLANE_INTENT_INVALID,
+                    f"Traffic flow {flow.id!r} resolves to {len(sources)} source and "
+                    f"{len(targets)} destination routing devices; exactly one of "
+                    "each is required to attribute behaviour.",
+                    flow.id,
+                ))
+                continue
+            source_id, target_id = sources[0], targets[0]
+            destination = _destination_address_for(
+                target_id, action_by_device, l3_by_device,
+                static_endpoints_by_segment,
+            )
+            if destination is None:
+                issues.append(_error(
+                    ConfigurationIssueCode.CONTROL_PLANE_INTENT_INVALID,
+                    f"Traffic flow {flow.id!r} has no compiled L3 identity at "
+                    f"{flow.destination_site_id!r} to address.",
+                    flow.id,
+                ))
+                continue
+
+            required = [source_id]
+            for link_id in flow.explicit_link_ids:
+                link = links.get(link_id)
+                if link is None:
+                    continue
+                for device_id in (link.device_a_id, link.device_b_id):
+                    if device_id in action_by_device and device_id not in required:
+                        required.append(device_id)
+
+            prerequisites: list[VerificationPrerequisite] = []
+            missing: list[str] = []
+            for device_id in required:
+                match = _route_for_destination(
+                    routes_by_device.get(device_id, ()), destination,
+                )
+                if match is None:
+                    missing.append(device_id)
+                    continue
+                prerequisites.append(VerificationPrerequisite(
+                    kind=PrerequisiteKind.VERIFICATION_VERIFIED,
+                    reference_id=match,
+                ))
+            if missing:
+                # Fallar cerrado antes que colgar el flujo de una ruta ajena.
+                issues.append(_error(
+                    ConfigurationIssueCode.CONTROL_PLANE_INTENT_INVALID,
+                    f"Traffic flow {flow.id!r} has no compiled route to "
+                    f"{destination} on {', '.join(sorted(missing))}.",
+                    flow.id,
+                ))
+                continue
+
+            source_action = action_by_device[source_id]
+            emitted.append(ControlPlaneVerificationExpectation(
+                id=_stable_id("verify-flow-reachability", flow.id, destination),
+                kind=ControlPlaneVerificationKind.END_TO_END_REACHABILITY,
+                action_id=source_action.id,
+                device_id=source_id,
+                peer_device_id=target_id,
+                required_capability=
+                    ControlPlaneCapabilityDimension.ROUTING_BEHAVIOR,
+                expected={
+                    "traffic_flow_id": flow.id,
+                    "destination_ipv4": destination,
+                    "reachable": True,
+                    "protocol": DynamicRoutingProtocol.RIPV2.value,
+                },
+                depends_on=sorted({
+                    source_action.id, action_by_device[target_id].id,
+                }),
+                verification_prerequisites=prerequisites,
+            ))
+        return emitted
 
     def _rip_action(
         self,
@@ -2151,3 +2307,63 @@ class ControlPlaneCompiler:
             summary=summary,
             issues=issues,
         )
+
+
+def _route_for_destination(
+    routes: "Iterable[tuple[str, str, int]]",
+    destination_ipv4: str,
+) -> str | None:
+    """La expectativa de ruta del prefijo que REALMENTE contiene el destino.
+
+    Se elige por contencion de red, no por posicion ni por cercania de nombre.
+    Ante varios prefijos que contienen el destino gana el mas especifico, que es
+    la misma regla con la que reenviaria el equipo.
+    """
+    try:
+        address = ipaddress.ip_address(destination_ipv4)
+    except ValueError:
+        return None
+    best: tuple[int, str] | None = None
+    for expectation_id, network, prefix_length in routes:
+        try:
+            candidate = ipaddress.ip_network(f"{network}/{prefix_length}", strict=False)
+        except ValueError:
+            continue
+        if address not in candidate:
+            continue
+        if best is None or candidate.prefixlen > best[0]:
+            best = (candidate.prefixlen, expectation_id)
+    return None if best is None else best[1]
+
+
+def _destination_address_for(
+    device_id: str,
+    action_by_device: dict,
+    l3_by_device: dict,
+    static_endpoints_by_segment: dict,
+) -> str | None:
+    """Una IP estable del sitio de destino, preferentemente de un host.
+
+    Un endpoint estático es mejor destino que la interfaz del propio router:
+    prueba el camino completo hasta la LAN en vez de detenerse en el borde. Si
+    no hay ninguno, se cae a una identidad L3 del router, que es lo que el
+    camino genérico ya hacía.
+    """
+    action = action_by_device.get(device_id)
+    if action is not None:
+        segments = sorted({
+            getattr(item, "segment_id", "")
+            for item in l3_by_device.get(device_id, [])
+            if getattr(item, "segment_id", "")
+        })
+        for segment_id in segments:
+            endpoints = sorted(
+                static_endpoints_by_segment.get(segment_id, []),
+                key=lambda item: (item.device_id, item.id),
+            )
+            if endpoints:
+                return endpoints[0].ipv4
+    identities = sorted(
+        l3_by_device.get(device_id, []), key=lambda item: item.id,
+    )
+    return identities[0].ipv4 if identities else None
