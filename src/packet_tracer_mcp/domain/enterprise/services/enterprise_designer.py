@@ -36,6 +36,7 @@ class EnterpriseDesigner:
             internet_required=intent.internet_required,
             warnings=validation.warning_messages(),
             metadata=intent.metadata,
+            traffic_flows=intent.traffic_flows,
         )
         capacity_planner = CapacityPlanner()
         for site in plan.sites:

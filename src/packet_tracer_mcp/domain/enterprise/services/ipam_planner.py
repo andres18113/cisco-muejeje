@@ -13,6 +13,7 @@ from ..models.addressing import (
     SiteAddressBlock,
     SubnetAllocation,
     SubnetRequirement,
+    WanTransitAllocation,
 )
 from ..models.enterprise_plan import EnterprisePlan, SitePlan
 from ..models.segments import NetworkSegment
@@ -118,6 +119,27 @@ class IPAMPlanner:
                 )
             site_blocks[site.site_id] = block
 
+        transit_allocations: list[WanTransitAllocation] = []
+        for source, target, media in self._wan_pairs(enterprise_plan):
+            subnet, available = self._take_subnet(available, 30)
+            if subnet is None:
+                return self._error(
+                    result,
+                    ErrorCode.ENTERPRISE_NO_USABLE_SUBNET,
+                    f"No hay /30 disponible para el tránsito {source}<->{target}.",
+                )
+            transit_allocations.append(WanTransitAllocation(
+                id=f"transit/{source}/{target}",
+                source_site_id=source,
+                target_site_id=target,
+                media=media,
+                network=str(subnet.network_address),
+                prefix=subnet.prefixlen,
+                netmask=str(subnet.netmask),
+                source_ipv4=str(subnet[1]),
+                target_ipv4=str(subnet[2]),
+            ))
+
         allocations: list[SubnetAllocation] = []
         blocks: list[SiteAddressBlock] = []
         for site in sorted(enterprise_plan.sites, key=lambda item: item.site_id):
@@ -142,6 +164,7 @@ class IPAMPlanner:
                 address_space=AddressSpace(network=str(enterprise_network)),
                 site_blocks=blocks,
                 allocations=allocations,
+                transit_allocations=transit_allocations,
             ),
             validation=result,
         )
@@ -154,6 +177,27 @@ class IPAMPlanner:
                 segment.name, segment.host_requirement, growth, self.minimum_lan_prefix
             ))
         return sorted(requirements, key=lambda item: (item.prefix, item.segment_id))
+
+    @staticmethod
+    def _wan_pairs(enterprise_plan: EnterprisePlan) -> list[tuple[str, str, str]]:
+        media_by_pair: dict[tuple[str, str], set[str]] = {}
+        known = {site.site_id for site in enterprise_plan.sites}
+        for site in enterprise_plan.sites:
+            for uplink in site.uplinks:
+                if uplink.target_site_id not in known or uplink.target_site_id == site.site_id:
+                    continue
+                pair = tuple(sorted((site.site_id, uplink.target_site_id)))
+                media_by_pair.setdefault(pair, set()).add(uplink.media.value)
+        # El filtro `len(media) == 1` NO es una política de descarte silencioso:
+        # un par con medios incompatibles ya fue rechazado antes de llegar acá,
+        # por `requirements_validator` con ENTERPRISE_WAN_MEDIA_CONFLICT. Acá es
+        # defensa en profundidad -- ante un plan imposible se prefiere no
+        # inventar un medio a elegir uno de los dos.
+        return [
+            (pair[0], pair[1], next(iter(media)))
+            for pair, media in sorted(media_by_pair.items())
+            if len(media) == 1
+        ]
 
     @staticmethod
     def _site_prefix(requirements: list[SubnetRequirement]) -> int:

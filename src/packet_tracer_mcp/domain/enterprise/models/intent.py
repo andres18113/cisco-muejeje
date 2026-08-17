@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from .hierarchy import BuildingIntent
 from .requirements import EndpointRequirement, ServiceRequirement, WanLinkRequirement
+from .link_performance import TrafficFlowIntent
 
 
 class SiteType(str, Enum):
@@ -42,3 +43,4 @@ class EnterpriseIntent(BaseModel):
     internet_required: bool = False
     default_growth_percent: float = 20.0
     metadata: dict[str, str] = Field(default_factory=dict)
+    traffic_flows: list[TrafficFlowIntent] = Field(default_factory=list)

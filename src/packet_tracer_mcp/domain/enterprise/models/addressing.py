@@ -48,8 +48,21 @@ class SubnetAllocation(BaseModel):
     reserved_hosts: int = 0
 
 
+class WanTransitAllocation(BaseModel):
+    id: str
+    source_site_id: str
+    target_site_id: str
+    media: str
+    network: str
+    prefix: int = 30
+    netmask: str
+    source_ipv4: str
+    target_ipv4: str
+
+
 class AddressingPlan(BaseModel):
     address_space: AddressSpace
     site_blocks: list[SiteAddressBlock] = Field(default_factory=list)
     allocations: list[SubnetAllocation] = Field(default_factory=list)
+    transit_allocations: list[WanTransitAllocation] = Field(default_factory=list)
     gateway_policy: GatewayPolicy = GatewayPolicy.FIRST_USABLE

@@ -141,6 +141,44 @@ class TrafficContribution(BaseModel):
         return int(self.per_unit_bps * self.units * concurrency)
 
 
+class TrafficFlowIntent(BaseModel):
+    """Semantic demand between sites before a physical path is selected."""
+
+    id: str
+    source_site_id: str
+    destination_site_id: str
+    per_unit_bps: int = 0
+    units: int = 1
+    concurrency: float = 1.0
+    explicit_link_ids: list[str] = Field(default_factory=list)
+
+    def contribution(self) -> TrafficContribution:
+        return TrafficContribution(
+            source_id=self.id,
+            per_unit_bps=self.per_unit_bps,
+            units=self.units,
+            concurrency=self.concurrency,
+        )
+
+
+class TrafficAttributionIssue(BaseModel):
+    code: str
+    flow_id: str
+    message: str
+
+
+class TrafficAttributionResult(BaseModel):
+    contributions_by_link: dict[str, list[TrafficContribution]] = Field(
+        default_factory=dict,
+    )
+    paths_by_flow: dict[str, list[str]] = Field(default_factory=dict)
+    issues: list[TrafficAttributionIssue] = Field(default_factory=list)
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.issues
+
+
 class HeadroomPolicy(BaseModel):
     """Reserva de ingeniería de tráfico, distinta de la reserva de crecimiento.
 

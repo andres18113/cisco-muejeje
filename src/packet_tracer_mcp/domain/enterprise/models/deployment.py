@@ -308,6 +308,42 @@ class DeploymentManifest(BaseModel):
         }
 
 
+def deployment_manifest_semantic_hash(manifest: DeploymentManifest) -> str:
+    """Hash only stable semantic bindings, including serial orientation.
+
+    Runtime object identifiers and evidence bookkeeping can change across an
+    equivalent deployment.  Endpoint orientation cannot: it determines which
+    bound interface is allowed to receive a serial clock.
+    """
+
+    return _digest({
+        "schema": "deployment-manifest-v1",
+        "physical_topology_hash": manifest.physical_topology_hash,
+        "backend": manifest.backend,
+        "backend_version": manifest.backend_version,
+        "environment_fingerprint": manifest.environment_fingerprint.model_dump(
+            mode="json",
+        ),
+        "bindings": [
+            item.model_dump(
+                mode="json",
+                exclude={"creation_evidence", "runtime_identifier"},
+            )
+            for item in manifest.bindings
+        ],
+        "link_bindings": [
+            item.model_dump(
+                mode="json",
+                exclude={
+                    "runtime_link_identifier",
+                    "runtime_link_identity_observed",
+                },
+            )
+            for item in manifest.link_bindings
+        ],
+    })
+
+
 def build_deployment_manifest(
     topology: TopologyPlan,
     inventory: list[RuntimeConfigurationTarget],
@@ -420,30 +456,7 @@ def build_deployment_manifest(
         link_bindings=ordered_link_bindings,
         created_at=created_at or datetime.now(timezone.utc),
     )
-    manifest.semantic_hash = _digest({
-        "schema": "deployment-manifest-v1",
-        "physical_topology_hash": manifest.physical_topology_hash,
-        "backend": manifest.backend,
-        "backend_version": manifest.backend_version,
-        "environment_fingerprint": manifest.environment_fingerprint.model_dump(mode="json"),
-        "bindings": [
-            item.model_dump(
-                mode="json",
-                exclude={"creation_evidence", "runtime_identifier"},
-            )
-            for item in manifest.bindings
-        ],
-        "link_bindings": [
-            item.model_dump(
-                mode="json",
-                exclude={
-                    "runtime_link_identifier",
-                    "runtime_link_identity_observed",
-                },
-            )
-            for item in manifest.link_bindings
-        ],
-    })
+    manifest.semantic_hash = deployment_manifest_semantic_hash(manifest)
     return manifest
 
 

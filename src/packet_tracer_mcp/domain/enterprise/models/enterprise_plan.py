@@ -12,6 +12,7 @@ from .intent import SiteType
 from .requirements import EndpointRequirement, ServiceRequirement, WanLinkRequirement
 from .segments import NetworkSegment
 from .topology import TopologyDesign
+from .link_performance import TrafficFlowIntent
 
 
 class SitePlan(BaseModel):
@@ -47,6 +48,7 @@ class EnterprisePlan(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)
     addressing: AddressingPlan | None = None
+    traffic_flows: list[TrafficFlowIntent] = Field(default_factory=list)
 
     def compact_summary(self) -> dict[str, int | str]:
         """Resumen calculado bajo demanda para futuras respuestas MCP de bajo consumo."""

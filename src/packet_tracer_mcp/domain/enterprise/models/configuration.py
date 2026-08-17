@@ -46,6 +46,7 @@ class ConfigurationIssueCode(str, Enum):
     SOURCE_TOPOLOGY_HASH_MISSING = "SOURCE_TOPOLOGY_HASH_MISSING"
     SITE_TOPOLOGY_MISSING = "SITE_TOPOLOGY_MISSING"
     SEGMENT_ALLOCATION_MISSING = "SEGMENT_ALLOCATION_MISSING"
+    TRANSIT_ALLOCATION_MISSING = "TRANSIT_ALLOCATION_MISSING"
     SEGMENT_MAPPING_MISSING = "SEGMENT_MAPPING_MISSING"
     VLAN_INVALID_ID = "VLAN_INVALID_ID"
     VLAN_ID_CONFLICT = "VLAN_ID_CONFLICT"
@@ -304,6 +305,7 @@ class ConfigureSerialClock(BaseConfigurationAction):
     interface: str
     clock_rate_bps: int
     serial_endpoint_role: Literal["dce"] = "dce"
+    source_link_id: str = ""
 
 
 class ConfigureInterfaceBandwidth(BaseConfigurationAction):
@@ -351,6 +353,7 @@ class VerificationKind(str, Enum):
     L3_INTERFACE = "l3_interface"
     DHCP_POOL = "dhcp_pool"
     ENDPOINT_ADDRESSING = "endpoint_addressing"
+    SERIAL_CONTROLLER = "serial_controller"
 
 
 class VerificationExpectation(BaseModel):
