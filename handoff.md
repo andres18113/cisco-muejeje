@@ -18,11 +18,15 @@ Pre-slice baseline (previous handoff's checkpoint):
 Current tip:
 
 ```text
-HEAD    = 7755c37ba39018dbff942a5b5ffa1e1c7f8fa79c
+HEAD    = aa7cc18dfe201dad068a4e82999b41a8b48d2cd3
 ```
 
-`5855585..HEAD` contains **10 commits total**, which split into two distinct
-things that must not be conflated:
+`5855585..HEAD` contains **11 commits total**: the 9 code commits plus **two**
+docs-only checkpoints, `7755c37` and `aa7cc18`. An earlier revision of this file
+recorded the tip as `7755c37` and the count as 10 — it was written by `aa7cc18`
+itself and did not update its own tip pointer. Corrected from Git.
+
+The split that must not be conflated:
 
 | | Count | Boundary commits | Touches |
 | --- | --- | --- | --- |
@@ -60,8 +64,15 @@ executable change.
 ### Verification state
 
 - full regression: `1906 passed, 3 pre-existing pytest deprecation warnings`,
-  from `python -m pytest` at the worktree root with **no** custom `PYTHONPATH`,
-  on the clean tree
+  from **`./.venv/Scripts/python.exe -m pytest`** at the worktree root with
+  **no** custom `PYTHONPATH`, on the clean tree.
+
+  Earlier revisions of this file wrote that command as bare `python -m pytest`.
+  That was wrong and is corrected here: measured on this machine, the `python`
+  on `PATH` is a separate installation with **no `pytest` installed**, so the
+  shorthand fails outright. Only the worktree-local `.venv` reproduces the
+  baseline. This is documentation drift only — the 1906 figure itself was
+  re-verified at `aa7cc18` and is unchanged
 - each of the nine code commits was additionally qualified as a **commit
   snapshot** in a throwaway worktree, not as a dirty-tree run
 - Graphify: AST graph refreshed after `b7c131f` — 7062 nodes, 23890 edges,
@@ -141,22 +152,56 @@ Do not record this as an outstanding blocker. Record it as a scope boundary.
 
 ## Hard gate — live import isolation
 
-**The current environment is `KNOWN_UNSAFE` for live mutation.** This is a
-measurement on this machine at this checkpoint, not a caution.
+**Re-measured at `aa7cc18`. The earlier `KNOWN_UNSAFE` diagnosis was measured
+against the wrong interpreter and is corrected below.** The gate itself is not
+relaxed — it is made precise.
 
-`.venv/Lib/site-packages/_editable_impl_packet_tracer_mcp.pth` contains one
-line, the **main checkout** `…\Cisco-MCP\src`. Measured now:
+The file the previous revision cited,
+`.venv/Lib/site-packages/_editable_impl_packet_tracer_mcp.pth`, **does not exist
+in this worktree's venv.** It exists only in the *main checkout's* venv. This
+worktree has its own `.venv`, carrying `_r2_worktree_editable.pth` whose **first
+line is this worktree's `src`**, followed by the main venv's `site-packages` for
+dependencies only. Nested `.pth` files are not processed recursively by
+`site.addpackage`, so the main checkout's `src` never reaches `sys.path` here —
+measured `False`.
+
+Measured now, per interpreter:
 
 ```text
-cwd = worktree root   ->  import packet_tracer_mcp  ->  ...\Cisco-MCP\src\packet_tracer_mcp\__init__.py   [WRONG TREE]
-cwd = <worktree>/src  ->  import packet_tracer_mcp  ->  ...\runtime-ripv2\src\packet_tracer_mcp\__init__.py [correct]
-packet_tracer_mcp is src.packet_tracer_mcp  ->  False
-both namespaces can be resident simultaneously as distinct module objects
+worktree .venv   -> import packet_tracer_mcp -> ...\runtime-ripv2\src\...\__init__.py  [CORRECT, any cwd]
+main checkout .venv -> import packet_tracer_mcp -> ...\Cisco-MCP\src\...\__init__.py   [WRONG TREE]
+PATH python      -> import packet_tracer_mcp -> ModuleNotFoundError  (and no pytest)
 ```
 
-So the default invocation resolves the production namespace to a **different
-tree than the one under test**. A live session started that way would mutate a
-real Packet Tracer workspace using code that is not this worktree's.
+So the hazard is **not** "this worktree's environment is poisoned." It is that
+**three interpreters are reachable and only one is correct**, and nothing in the
+repository pins which one runs. That is the first thing the gate must check.
+
+The second hazard is real, interpreter-independent, and was understated.
+Measured on the **correct** venv:
+
+```text
+bare -> ...runtime-ripv2\src\packet_tracer_mcp\__init__.py
+src. -> ...runtime-ripv2\src\packet_tracer_mcp\__init__.py
+same file   -> True
+same object -> False
+CapabilityStatus.SUPPORTED is CapabilityStatus.SUPPORTED  ->  False
+```
+
+Two distinct module objects over the *same files*. Every cross-namespace
+`isinstance`, enum identity and registry-singleton check silently misfires. This
+survives choosing the right interpreter and is what the preflight must refuse.
+
+```text
+ENVIRONMENT_REPAIR = NONE_REQUIRED
+```
+
+Determined, not assumed: the governed invocation already resolves the production
+namespace inside this worktree, so there is nothing to repair. Rewriting the main
+checkout's `.pth`, or reinstalling the editable install against this worktree,
+were rejected as **unsafe** — they would break the main checkout and the other
+worktrees — not as "repair forbidden." No repository state and no local
+environment state was changed by this determination.
 
 ### Static namespace tests are not a live preflight
 
@@ -179,19 +224,24 @@ Before **any** Packet Tracer mutation, the process that will perform the
 mutation must itself prove, at runtime:
 
 ```text
-1. packet_tracer_mcp.__file__ resolves inside
+1. sys.executable is the worktree-local .venv interpreter
+2. packet_tracer_mcp.__file__ resolves inside
    .claude/worktrees/runtime-ripv2/src/packet_tracer_mcp/
-2. sys.modules contains exactly ONE of
+3. sys.modules contains exactly ONE of
    {packet_tracer_mcp, src.packet_tracer_mcp}
 ```
 
-Both checks must run **in the executing process**, before the first mutation,
-and must abort the run on failure. A preflight performed in a different process,
-or inferred from a passing suite, does not satisfy this gate.
+Check 1 is an addition beyond the previous two: interpreter choice is what
+decides checks 2 and 3, so leaving it implicit made the gate depend on an
+unstated assumption.
 
-Clearing it means either invoking with `cwd` at `src/`, or reinstalling the
-editable install against this worktree. Neither was done here — this slice was
-entirely offline and deliberately did not touch the environment.
+All three must run **in the executing process**, before the first mutation, and
+must abort the run on failure. A preflight performed in a different process, or
+inferred from a passing suite, does not satisfy this gate.
+
+Clearing it means invoking through the worktree's own `.venv`. Invoking with
+`cwd` at `src/` is no longer necessary — that was a workaround for the
+misdiagnosed `.pth` and does nothing for check 3.
 
 ## What was intentionally not performed
 

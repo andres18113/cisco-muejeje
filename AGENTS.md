@@ -14,8 +14,14 @@ a local HTTP bridge.
 
 ```bash
 pip install -e ".[test]"
-python -m pytest          # from the repo root, no PT required
+./.venv/Scripts/python.exe -m pytest     # from the repo root, no PT required
 ```
+
+Run the suite with the **checkout-local `.venv` interpreter**, not with whatever
+`python` resolves to on `PATH`. Measured on the current machine, a bare `python`
+is a different installation with no `pytest` and no editable install, so
+`python -m pytest` fails outright. Only the local `.venv` reproduces the governed
+baseline. No custom `PYTHONPATH` — `pyproject.toml` sets `pythonpath = ["."]`.
 
 There is no linter or formatter configured. Match the surrounding style: type
 hints on public functions, `from __future__ import annotations` at the top,
@@ -58,26 +64,44 @@ tests**. If you write a helper worth testing, put it in `shared/utils.py`.
 
 ## Import namespace, and the live-run gate
 
-Tests import `src.packet_tracer_mcp`; run `python -m pytest` from the repo root
-with no custom `PYTHONPATH`. `pyproject.toml` sets `pythonpath = ["."]` so that
-a pytest process loads exactly one identity of the package.
+Two namespaces, two contracts. `packet_tracer_mcp` is the **production** name
+(the `pt-mcp` console script and `python -m` use it); `src.packet_tracer_mcp` is
+the **test** name. New production code must never import the `src.` form.
+
+Tests import `src.packet_tracer_mcp`; run the suite with the checkout-local
+`.venv` interpreter from the repo root and no custom `PYTHONPATH`.
+`pyproject.toml` sets `pythonpath = ["."]`.
 
 A bare `import packet_tracer_mcp` in a test is a bug, and
-`tests/test_worktree_isolation.py` fails on it. In a worktree it is worse than a
-duplicate identity: the shared virtualenv's editable `.pth` points at the **main
-checkout**, so the bare name loads a *different tree* than the one you are
-editing.
+`tests/test_worktree_isolation.py` fails on it.
 
-**Before any live Packet Tracer mutation**, prove both:
+**Which interpreter you use decides which tree you get.** Measured on this
+machine, from a worktree root:
+
+| Interpreter | bare `import packet_tracer_mcp` |
+| --- | --- |
+| worktree-local `.venv` | resolves **inside the worktree** — correct |
+| main checkout `.venv` | resolves to the **main checkout** — wrong tree, silently |
+| bare `python` on `PATH` | `ModuleNotFoundError`, and no `pytest` either |
+
+So a worktree's own `.venv` is the thing that makes the production namespace
+resolve locally. Do not "fix" this by editing another checkout's `.pth`, and do
+not install into `PATH` Python to make a shorthand command work.
+
+**Before any live Packet Tracer mutation**, prove all three *in the process that
+will perform the mutation*:
 
 ```text
-packet_tracer_mcp.__file__  resolves inside the worktree you are testing
+sys.executable              is the checkout-local .venv interpreter
+packet_tracer_mcp.__file__  resolves inside the tree you are testing
 sys.modules holds exactly ONE of packet_tracer_mcp / src.packet_tracer_mcp
 ```
 
-Do not run live work otherwise — you would be mutating a real workspace with
-code from another tree. Invoking with `cwd` at `src/` is the supported way to
-get the production namespace to resolve locally without touching the `.pth`.
+The third is not theoretical. When one process holds both, they are distinct
+module objects over the *same files*, so `CapabilityStatus.SUPPORTED is
+CapabilityStatus.SUPPORTED` is **False** across them and every `isinstance` and
+enum comparison silently misfires. A passing static isolation test does not
+establish any of this for a live process — it runs in a different one.
 
 ## Working with the bridge
 
