@@ -396,6 +396,42 @@ def test_actions_form_closed_shared_dag_and_expectations_cover_acceptance():
     )
 
 
+def test_ospf_expectations_require_only_registered_show_fields():
+    """OSPF sólo reclama lo que una consulta registrada puede establecer.
+
+    Lo que sale de `expected` NO desaparece: queda en `unclaimed_fields`, que es
+    lo que impide que estrechar la afirmación suba el estado agregado.
+    """
+    plan = _compile().plan
+    processes = [
+        item
+        for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+        and item.expected.get("protocol") == DynamicRoutingProtocol.OSPFV2.value
+    ]
+    routes = [
+        item
+        for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTE_PRESENT
+        and item.expected.get("protocol") == DynamicRoutingProtocol.OSPFV2.value
+    ]
+
+    assert processes
+    assert all(item.expected == {"protocol": "ospfv2"} for item in processes)
+    # `show ip ospf neighbor` no imprime el router-id local.
+    assert all(item.unclaimed_fields == ["router_id"] for item in processes)
+
+    assert routes
+    assert all(
+        set(item.expected) == {"network", "prefix_length", "protocol"}
+        for item in routes
+    )
+    # `show ip route ospf` no lleva wildcard ni identidad semántica de segmento.
+    assert all(
+        item.unclaimed_fields == ["wildcard", "segment_id"] for item in routes
+    )
+
+
 def test_failure_scenario_keeps_exact_e4_fault_and_restore_identity():
     scenario = _compile().plan.failure_scenarios[0]
 

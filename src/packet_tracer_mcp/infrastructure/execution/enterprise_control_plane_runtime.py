@@ -1397,9 +1397,19 @@ class PacketTracerEnterpriseControlPlaneRuntime:
 
     @staticmethod
     def _unobservable_fields(expectation) -> dict[str, FieldVerificationStatus]:
+        """Campos reclamados MAS los declarados explicitamente no reclamables.
+
+        Los `unclaimed_fields` entran aqui a proposito. Si solo se partiera de
+        `expected`, estrechar la expectativa bastaria para que
+        `_direct_observation` viera "todos los campos VERIFIED" y devolviera
+        VERIFIED, subiendo la afirmacion sin haber observado nada nuevo.
+        """
         return {
             field: FieldVerificationStatus.UNOBSERVABLE
-            for field in expectation.expected
+            for field in (
+                *expectation.expected,
+                *getattr(expectation, "unclaimed_fields", ()),
+            )
         }
 
     @staticmethod

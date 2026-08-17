@@ -205,20 +205,33 @@ def test_etherchannel_rejects_same_physical_port_across_two_bundles():
     }
 
 
-def test_route_expectation_keeps_semantic_segment_and_concrete_prefix():
+def test_route_expectations_keep_prefix_but_ospf_omits_unobservable_metadata():
     intent, topology, configuration, capabilities = _fixture()
 
     result = _compile_fixture(intent, topology, configuration, capabilities)
 
     assert result.is_valid, result.issues
     routes = [
-        expectation.expected
+        expectation
         for expectation in result.plan.verification_expectations
         if expectation.kind is ControlPlaneVerificationKind.ROUTE_PRESENT
     ]
     assert routes
-    assert all(item.get("segment_id") for item in routes)
-    assert all(isinstance(item.get("prefix_length"), int) for item in routes)
+    assert all(
+        isinstance(item.expected.get("prefix_length"), int) for item in routes
+    )
+    ospf = [item for item in routes if item.expected.get("protocol") == "ospfv2"]
+    other = [item for item in routes if item.expected.get("protocol") != "ospfv2"]
+    assert ospf
+    assert all(
+        set(item.expected) == {"network", "prefix_length", "protocol"}
+        for item in ospf
+    )
+    # Omitido de `expected` no es lo mismo que olvidado: sigue declarado como
+    # no reclamable, y por eso el estado agregado no sube al estrecharlo.
+    assert all(item.unclaimed_fields == ["wildcard", "segment_id"] for item in ospf)
+    assert all(item.expected.get("segment_id") for item in other)
+    assert all(item.unclaimed_fields == [] for item in other)
 
 
 def test_routing_behavior_uses_e5_endpoint_identities_when_available():

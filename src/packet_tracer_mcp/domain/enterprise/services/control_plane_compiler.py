@@ -1491,17 +1491,27 @@ class ControlPlaneCompiler:
                     ))
             return actions, expectations
         for action in actions:
+            # `show ip ospf neighbor` es la unica consulta registrada que
+            # establece que el proceso OSPF opera, y NO imprime el router-id
+            # local. Reclamar un valor que ninguna consulta puede comparar era
+            # incorrecto; quitarlo sin mas habria subido el estado agregado de
+            # UNOBSERVABLE a VERIFIED sin observar nada nuevo. Se declara como
+            # no reclamado, que estrecha la afirmacion sin mover el techo.
+            process_expected = {"protocol": policy.protocol.value}
+            process_unclaimed: list[str] = []
+            if policy.protocol is not DynamicRoutingProtocol.OSPFV2:
+                process_expected["router_id"] = action.router_id
+            else:
+                process_unclaimed.append("router_id")
             expectations.append(ControlPlaneVerificationExpectation(
                 id=_stable_id("verify-routing-process", action.id),
+                unclaimed_fields=process_unclaimed,
                 kind=ControlPlaneVerificationKind.ROUTING_PROCESS,
                 action_id=action.id,
                 device_id=action.device_id,
                 required_capability=
                     ControlPlaneCapabilityDimension.ROUTING_PROCESS_STATE,
-                expected={
-                    "protocol": policy.protocol.value,
-                    "router_id": action.router_id,
-                },
+                expected=process_expected,
                 depends_on=[action.id],
             ))
         for link, left, right in transit:
@@ -1536,7 +1546,26 @@ class ControlPlaneCompiler:
                 for remote in remote_action.networks:
                     if remote.network in local_networks:
                         continue
+                    # `show ip route ospf` da prefijo, longitud, siguiente salto
+                    # e interfaz. Ni el wildcard ni la identidad semantica del
+                    # segmento aparecen en esa salida, asi que no se reclaman.
+                    route_expected: dict[str, object] = {
+                        "network": remote.network,
+                        "prefix_length": _prefix_length_from_wildcard(
+                            remote.wildcard
+                        ),
+                        "protocol": policy.protocol.value,
+                    }
+                    route_unclaimed: list[str] = []
+                    if policy.protocol is not DynamicRoutingProtocol.OSPFV2:
+                        route_expected.update({
+                            "wildcard": remote.wildcard,
+                            "segment_id": remote.segment_id,
+                        })
+                    else:
+                        route_unclaimed.extend(("wildcard", "segment_id"))
                     expectations.append(ControlPlaneVerificationExpectation(
+                        unclaimed_fields=route_unclaimed,
                         id=_stable_id(
                             "verify-route", local_id, remote.network, remote.wildcard,
                         ),
@@ -1546,15 +1575,7 @@ class ControlPlaneCompiler:
                         peer_device_id=remote_id,
                         required_capability=
                             ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
-                        expected={
-                            "network": remote.network,
-                            "wildcard": remote.wildcard,
-                            "prefix_length": _prefix_length_from_wildcard(
-                                remote.wildcard
-                            ),
-                            "segment_id": remote.segment_id,
-                            "protocol": policy.protocol.value,
-                        },
+                        expected=route_expected,
                         depends_on=[local_action.id, remote_action.id],
                     ))
                 local_endpoints = sorted(

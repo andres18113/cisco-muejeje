@@ -353,6 +353,15 @@ class ControlPlaneVerificationExpectation(BaseModel):
     expected: dict[str, str | int | bool | list[str] | list[int]] = Field(
         default_factory=dict,
     )
+    #: Campos que esta expectativa deliberadamente NO reclama, porque ninguna
+    #: consulta registrada puede establecerlos en este backend.
+    #:
+    #: Existen para que quitar un campo de `expected` no sea una forma de subir
+    #: el estado agregado. El observador los renderiza UNOBSERVABLE igual que si
+    #: siguieran en `expected`: la afirmacion se estrecha, el techo de evidencia
+    #: no se mueve. Borrarlos en vez de declararlos convertiria una lectura
+    #: incompleta en un VERIFIED sin haber observado nada nuevo.
+    unclaimed_fields: list[str] = Field(default_factory=list)
     depends_on: list[str] = Field(default_factory=list)
     verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
 

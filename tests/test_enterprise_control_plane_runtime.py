@@ -269,6 +269,9 @@ def test_direct_control_plane_state_uses_only_fresh_registered_ios_evidence():
     assert all(item is FieldVerificationStatus.VERIFIED for item in stp.fields.values())
     assert channel.status is ActionExecutionStatus.VERIFIED
     assert all(item is FieldVerificationStatus.VERIFIED for item in channel.fields.values())
+    # OSPF estrecho su `expected` a lo que una consulta registrada puede
+    # comprobar, pero el techo de evidencia NO se movio: `router_id` sigue
+    # apareciendo como no observado y el agregado sigue siendo UNOBSERVABLE.
     assert process.status is ActionExecutionStatus.UNOBSERVABLE
     assert process.fields == {
         "protocol": FieldVerificationStatus.VERIFIED,
@@ -278,11 +281,13 @@ def test_direct_control_plane_state_uses_only_fresh_registered_ios_evidence():
     assert all(item is FieldVerificationStatus.VERIFIED for item in neighbor.fields.values())
     assert neighbor.fields["adjacent"] is FieldVerificationStatus.VERIFIED
     assert route.status is ActionExecutionStatus.UNOBSERVABLE
-    assert route.fields["network"] is FieldVerificationStatus.VERIFIED
-    assert route.fields["protocol"] is FieldVerificationStatus.VERIFIED
-    assert route.fields["prefix_length"] is FieldVerificationStatus.UNOBSERVABLE
-    assert route.fields["wildcard"] is FieldVerificationStatus.UNOBSERVABLE
-    assert route.fields["segment_id"] is FieldVerificationStatus.UNOBSERVABLE
+    assert route.fields == {
+        "network": FieldVerificationStatus.VERIFIED,
+        "prefix_length": FieldVerificationStatus.UNOBSERVABLE,
+        "protocol": FieldVerificationStatus.VERIFIED,
+        "wildcard": FieldVerificationStatus.UNOBSERVABLE,
+        "segment_id": FieldVerificationStatus.UNOBSERVABLE,
+    }
     assert hsrp.status is ActionExecutionStatus.UNOBSERVABLE
     assert eigrp.status is ActionExecutionStatus.UNOBSERVABLE
     assert all(item.stage is ControlPlaneExecutionStage.OBSERVED for item in results)
@@ -645,6 +650,107 @@ def test_ospf_route_verifies_explicit_prefix_and_rejects_wrong_expected_next_hop
     assert result.fields["prefix_length"] is FieldVerificationStatus.VERIFIED
     assert result.fields["protocol"] is FieldVerificationStatus.VERIFIED
     assert result.fields["next_hop"] is FieldVerificationStatus.FAILED
+
+
+def test_compiled_ospf_route_verifies_from_an_explicit_prefix_row():
+    plan = _compile().plan
+    route = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTE_PRESENT
+        and item.device_id == "r1"
+    )
+    output = _PT_9_0_1_0858_OSPF_ROUTE_R1.replace(
+        "198.18.102.0",
+        f"{route.expected['network']}/{route.expected['prefix_length']}",
+    )
+    ios = FakeControlPlaneIos({
+        ("HQ-R1", OperationalQueryId.SHOW_IP_ROUTE_OSPF): output,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([route])[0]
+
+    # Todo lo RECLAMADO se verifica contra una fila de ruta explicita...
+    for field in route.expected:
+        assert result.fields[field] is FieldVerificationStatus.VERIFIED, field
+
+    # ...y aun asi el agregado NO llega a VERIFIED, porque los campos que la
+    # expectativa declara no reclamables siguen contando como no observados.
+    # Ese es justamente el ascenso que estrechar `expected` habria regalado.
+    assert route.unclaimed_fields == ["wildcard", "segment_id"]
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.fields == {
+        "network": FieldVerificationStatus.VERIFIED,
+        "prefix_length": FieldVerificationStatus.VERIFIED,
+        "protocol": FieldVerificationStatus.VERIFIED,
+        "wildcard": FieldVerificationStatus.UNOBSERVABLE,
+        "segment_id": FieldVerificationStatus.UNOBSERVABLE,
+    }
+
+
+def test_narrowing_ospf_expectations_never_raises_the_aggregate_claim():
+    """Estrechar lo que se afirma no puede subir lo que se concluye.
+
+    Se compara contra el techo historico explicitamente: antes de estrechar,
+    proceso y ruta OSPF resolvian UNOBSERVABLE porque `router_id`, `wildcard` y
+    `segment_id` no los establece ninguna consulta registrada. Despues de
+    estrechar deben seguir resolviendo UNOBSERVABLE. Si alguna vez suben, tiene
+    que ser porque se observo algo nuevo, no porque se borro un campo.
+    """
+    plan = _compile().plan
+    ospf = [
+        item for item in plan.verification_expectations
+        if item.kind in {
+            ControlPlaneVerificationKind.ROUTING_PROCESS,
+            ControlPlaneVerificationKind.ROUTE_PRESENT,
+        }
+        and item.expected.get("protocol") == "ospfv2"
+    ]
+
+    assert ospf
+    for expectation in ospf:
+        # Lo no reclamado esta declarado, no borrado.
+        assert expectation.unclaimed_fields
+        assert not set(expectation.unclaimed_fields) & set(expectation.expected)
+        removed = {"router_id", "wildcard", "segment_id"}
+        assert not removed & set(expectation.expected)
+        assert set(expectation.unclaimed_fields) <= removed
+
+
+def test_route_evidence_never_stands_in_for_forwarding_evidence():
+    """Una ruta en la tabla no es un paquete que llego.
+
+    ROUTE_PRESENT y END_TO_END_REACHABILITY son dimensiones de capacidad
+    distintas y se satisfacen con evidencia distinta: la primera con una lectura
+    registrada, la segunda con un ping tipado. Estrechar la primera no puede
+    acercar a la segunda.
+    """
+    plan = _compile().plan
+    routes = [
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTE_PRESENT
+    ]
+    behavior = [
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+    ]
+
+    assert routes and behavior
+    assert {item.required_capability for item in routes}.isdisjoint(
+        {item.required_capability for item in behavior}
+    )
+    # Ninguna expectativa de ruta afirma alcanzabilidad ni estado de fallo.
+    for item in routes:
+        assert "reachable" not in item.expected
+        assert "loop_free" not in item.expected
+        assert item.kind not in {
+            ControlPlaneVerificationKind.LINK_FAILURE_CONVERGENCE,
+            ControlPlaneVerificationKind.RESTORE_RECOVERY,
+        }
 
 
 def test_failure_scenario_observes_effect_and_does_not_infer_surviving_path():
