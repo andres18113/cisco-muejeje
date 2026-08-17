@@ -7,6 +7,83 @@
 - working tree: **clean** (`git status --short` empty)
 - Slice 2A implementation commit: `e846175b6e2154621e89d24d0809fae0e396d24b`
 
+## Stage 3A4 execution — gates 1–3 CLOSED, gate 4 BLOCKED
+
+Executed 2026-08-17 against the master mission's strict order. Naming below uses
+**MEG-n** for the master's 1→7 execution order and **OAG** for its
+`PHASE 4 — OFFLINE CLOSURE TESTS`, because the master's own section headings and
+its order list number differently and "Phase 4" was readable as live permission.
+
+```text
+MEG-1  live import isolation ................... CLOSED   0587995, 5641445
+MEG-2  capability consumer / TD-HARDWARE ....... CLOSED   ea4eb3a, 06217ac
+MEG-3  product execution surface ............... CLOSED   7de805a, 6ef25bf
+OAG    offline adversarial matrix .............. CLOSED   c1ea586
+MEG-4  bounded live qualification ............. BLOCKED   see below
+MEG-5  full same-run 41/41 acceptance ......... NOT_STARTED
+MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
+MEG-7  Stage 3A4 closure ...................... NOT_STARTED
+```
+
+Suite 1906 → **1964 passed**, 3 pre-existing warnings. Terminal gate green:
+`--collect-only`, full run, `compileall -q src`, `git diff --check`,
+`git status --short` all clean on the terminal state.
+
+### What each gate established
+
+**MEG-1.** The earlier `KNOWN_UNSAFE` diagnosis was measured against the wrong
+interpreter and is corrected above. `ENVIRONMENT_REPAIR = NONE_REQUIRED`,
+determined by re-measurement, not assumed — no repository state and no local
+environment state was changed. The executable gate now proves three things in
+the mutating process and fails closed: interpreter, tree, single identity. The
+third is the one reproducible today, and the observation never creates what it
+observes — the resolver reads `sys.modules` instead of importing.
+
+**MEG-2.** `application/use_cases/plan_enterprise_hardware.py` is the first
+production caller of both the exact-version composition root and
+`HardwarePlanner`. Graphify confirmed beforehand that all 47 inbound
+`HardwarePlanner` edges came from tests.
+`PHASE_2_IMPLEMENTATION = COMPLETE / OFFLINE_QUALIFIED`;
+**`TD_HARDWARE_001` stays `OPEN`** — seeded stores prove wiring and negative
+semantics, not machine evidence.
+
+**MEG-3.** `execute_enterprise_reference` is the single product execution entry
+point and owns the whole live lifecycle. A harness may start it and collect
+evidence; it may not order the stages. `compose_enterprise_reference` is the
+pure offline half beneath it and, from a semantic intent, reproduces the
+governed reference shape — **41 devices, 41 links, 3 serial WAN links** — with
+hardware chosen from the whole catalogue rather than hand-pinned.
+One offline MCP tool (`pt_compose_enterprise_reference`) makes the flow
+operator-inspectable; MCP *mutation* exposure stays deferred under TD-PUBLIC-001.
+
+**OAG.** Three rows added that could not exist while the sequence lived in a
+harness — failed E5 never mutates E9, cleanup after failure verified by
+re-observation, foreign objects never deleted. Eleven other rows were cited to
+their existing owners rather than duplicated. It found one real defect: the
+configuration gate compared against a non-existent enum member and now requires
+**VERIFIED**, since APPLIED is not evidence of effect.
+
+### MEG-4 is blocked, and on what
+
+Two findings, both from executed offline evidence:
+
+1. **Model steering.** Capability-driven selection picks `1941` for the bounded
+   shape, and the control-plane capability catalogue holds live evidence only
+   for `2911`. RIPv2 on 1941 is therefore UNKNOWN and the compiler refuses —
+   correct behaviour, and "UNKNOWN is not permission" working end to end. The
+   bounded live run must **steer selection to 2911** rather than trust the
+   catalogue to choose it. Pinned by a passing assertion in the OAG matrix.
+2. **Operator declaration and workspace classification.** `PT_MCP_GOVERNED_ROOT`
+   is declared by the operator by design, and is unset. Packet Tracer is running
+   (two instances) with a live bridge on `127.0.0.1:9080`. G3 requires a complete
+   read-only inventory, an exact build confirmation and a workspace
+   classification, and mandates **HARD STOP** if any semantic, manual, user or
+   graded topology is present. That classification has not been performed and
+   cannot be assumed.
+
+No Packet Tracer mutation was attempted. `LIVE_PACKET_TRACER_RUN = NONE` still
+holds, and every claim in this section is offline.
+
 ### Commit accounting — from Git, not from memory
 
 Pre-slice baseline (previous handoff's checkpoint):
