@@ -1275,6 +1275,59 @@ Does not block Stage 3A4: regression-pinned by
 the reason and whose assertions prove the reference fixture pins `2960-24TT`
 and `2911` by hand and admits neither `3560-24PS` nor `3650-24PS`.
 
+### Progress — Stage 3A4 MEG-2, 2026-08-17
+
+```text
+PHASE_2_IMPLEMENTATION = COMPLETE / OFFLINE_QUALIFIED
+TD_HARDWARE_001        = OPEN
+```
+
+**The consumer now exists.** `application/use_cases/plan_enterprise_hardware.py`
+is the first production caller of both
+`packet_tracer_enterprise_capability_adapter` and `HardwarePlanner`. It composes
+only: candidates come from `hardware_candidates(category, version)`, planning is
+delegated to `HardwarePlanner` unchanged, and the result carries the candidates
+next to the plan so the evidence *used by* the resolver stays recoverable.
+
+Confirmed with Graphify before the change, not assumed: all 47 inbound edges of
+`HardwarePlanner` came from tests or from its own module.
+
+Ten regressions in `tests/test_enterprise_hardware_composition.py`, one per
+invariant this entry cares about — exact-version evidence reaches eligibility;
+no evidence stays UNKNOWN; version mismatch stays UNKNOWN; evidence is never
+redistributed to another model; a measured UNSUPPORTED survives as UNSUPPORTED;
+and no fixture or `.supported()` shortcut exists on the production path.
+
+**Why the entry still does not close.** The criterion governs *"capability
+evidence used by the enterprise resolver"*. Every test above seeds its own
+`CapabilitySnapshotStore`. Seeded evidence proves **code properties** — that the
+wiring carries evidence and that the negative semantics hold. It is **not**
+machine or backend evidence, and presenting it as such would be exactly the
+substitution this entry exists to reject. The literal criterion is therefore
+re-evaluated after the first governed live gate that exercises real
+exact-version capability consumption, and `RESOLVED` is recorded only from that
+evidence. If no such evidence is produced during Stage 3A4, the entry stays
+`OPEN` against its E9.5 deadline — which changes nothing, because it does not
+block Stage 3A4.
+
+The "3650 has multilayer runtime evidence" claim remains **unsubstantiated** and
+is still not assumed anywhere.
+
+**`_SERIAL_MODULE_SLOT_BY_MODEL` — classified, as this entry's criterion
+requires.** `infrastructure/catalog/enterprise_capabilities.py:28` is a
+model-string-keyed dict, so it deserves an explicit verdict rather than silence:
+
+| Construct | Verdict |
+| --- | --- |
+| A backend/catalog-owned model→slot fact, living in `infrastructure/catalog/` and consumed as data | **LEGITIMATE.** Stating physical facts about models is precisely a catalog's job. It maps a chassis to the slot its serial module occupies; it promotes no capability and gates no eligibility |
+| A model-name exception inside `EnterprisePlan`, `HardwarePlanner` or `DeviceSelector` | **PROHIBITED.** That would be capability reconciliation smuggled into hardcoded planning, and would let the reference pass without evidence deciding anything |
+
+The prohibited half is now regression-enforced:
+`test_no_model_name_exception_lives_in_planning` scans the planning modules and
+the new use case for model-name literals. They are clean today and cannot
+silently stop being clean. **No closure of this entry may depend on such an
+exception.**
+
 ---
 
 ## TD-TRANSPORT-001 — FileBridge does not provide exactly-once or at-most-once execution
