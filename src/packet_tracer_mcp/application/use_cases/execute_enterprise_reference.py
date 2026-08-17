@@ -408,10 +408,14 @@ def _execute_mutating_stages(
             deployment_manifest=oriented,
         )
         state.configuration_result = configuration_result
-        if configuration_result.status is not ConfigurationApplicationStatus.COMPLETED:
+        # APPLIED != VERIFIED, y el enum lo distingue. Seguir sobre APPLIED seria
+        # tratar "la mutacion volvio bien" como evidencia de efecto, que es
+        # exactamente lo que el ceiling de este proyecto prohibe.
+        if configuration_result.status is not ConfigurationApplicationStatus.VERIFIED:
             return state.failed(
                 stage, runtimes, topology, e4_identity,
-                f"Configuration application ended {configuration_result.status.value}.",
+                f"Configuration application ended {configuration_result.status.value}, "
+                "and only VERIFIED is evidence the control plane may build on.",
             )
 
         stage = EnterpriseExecutionStage.FOUNDATIONAL_EVIDENCE
