@@ -687,7 +687,10 @@ What it explicitly does **not** advance:
 - no live Packet Tracer run of any kind;
 - no 41-device reference deployment;
 - flow attribution is **RIPv2 only** — OSPF and EIGRP keep their router
-  cross-product, because no fixture exercises the generic path;
+  cross-product, because no fixture exercises the generic path. This is a scope
+  boundary, not a Stage 3A4 blocker: the governed reference topology is RIPv2,
+  so RIPv2-only attribution suffices to close it, and generic other-IGP
+  attribution is outside this closure absent a governed E9.5 claim requiring it;
 - the OSPF observability ceiling is now *declared* rather than raised: see the
   `unclaimed_fields` mechanism in the Slice 2B record.
 

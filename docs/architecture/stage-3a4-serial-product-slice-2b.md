@@ -16,7 +16,7 @@ LIVE_PACKET_TRACER_RUN            = NONE
 SERIAL_ORIENTATION_LIVE_OBSERVED  = NO
 TRAFFIC_ATTRIBUTION_LIVE_OBSERVED = NO
 OSPF_NARROWING_LIVE_OBSERVED      = NO
-MODULE_REPLAY_GUARD_LIVE_OBSERVED = NO   # executed in Node, not in PT
+MODULE_REPLAY_GUARD               = MEASURED_IN_NODE / PACKET_TRACER_NOT_YET_QUALIFIED
 ```
 
 ## Why a reconciliation was needed
@@ -99,6 +99,12 @@ ping. The prerequisite orders evidence; it does not substitute for it.
 Scope, deliberately: **RIPv2 only.** OSPF and EIGRP keep their router
 cross-product untouched. A generic implementation was written and then removed
 because no fixture exercises it.
+
+That scope is **sufficient for the governed Stage 3A4 reference topology**,
+whose protocol is RIPv2, and is therefore **not by itself a Stage 3A4 blocker**.
+Generic other-IGP flow attribution sits outside this reference closure unless a
+governed E9.5 claim explicitly requires it; no such claim exists today. Record
+it as a scope boundary, not as outstanding work.
 
 ## The OSPF claim ceiling — the sharpest finding
 
@@ -192,12 +198,30 @@ being honest about its own error rate.
 ## Status
 
 ```text
+MODULE_REPLAY_GUARD                 = MEASURED_IN_NODE / PACKET_TRACER_NOT_YET_QUALIFIED
 REFERENCE_TOPOLOGY_PRODUCT_PLANNING = READY_OFFLINE
 STAGE_3A4                           = PARTIAL
 TD_ACCEPTANCE_001                   = OPEN
 TD_HARDWARE_001                     = OPEN
 E9_5                                = OPEN
+CP3_HARD                            = NOT_STARTED / NOT_READY
 ```
 
 Nothing here moves any of them. This reconciliation produced no live evidence,
 and Stage 3A4 cannot close without it.
+
+The full governed debt classification — every open entry, whether or not this
+slice touched it, with its RESOLVE_BEFORE and exact closure requirement — lives
+in `handoff.md`. This document deliberately does not restate it, so the two
+cannot drift.
+
+## Commit accounting
+
+`5855585..HEAD` is **10 commits**: **9 code commits**, first
+`ea7275e213349fd18b802aa4c0d2c29ca1b345dc` and last
+`b7c131f685e87d2157d55bc5ae12b66de7012add`, touching only `src/` and `tests/`;
+plus **1 docs-only checkpoint**, `7755c37ba39018dbff942a5b5ffa1e1c7f8fa79c`.
+
+Use `git log 5855585..b7c131f` for the code serialization. `ea7275e..b7c131f`
+is wrong — two-dot notation excludes the left endpoint and omits the first code
+commit.

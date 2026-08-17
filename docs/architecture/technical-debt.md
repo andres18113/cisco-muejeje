@@ -417,8 +417,12 @@ claim may say:
 
 - **Flow attribution is RIPv2-only.** OSPF and EIGRP keep their router
   cross-product. A generic implementation was written and removed because no
-  fixture exercises it. A closing run on RIPv2 is unaffected; a closing run on
-  any other IGP would not have flow-attributed behaviour.
+  fixture exercises it. This is a **scope boundary, not an open blocker**: the
+  governed Stage 3A4 reference topology is RIPv2, so RIPv2-only attribution is
+  sufficient to close it. Generic other-IGP attribution falls outside this
+  reference closure unless a governed E9.5 claim explicitly requires it, and no
+  such claim exists. A closing run on any other IGP would simply not have
+  flow-attributed behaviour.
 - **A verified route is not forwarding evidence.** `ROUTE_PRESENT` and
   `END_TO_END_REACHABILITY` keep disjoint capability dimensions, and the flow
   prerequisite orders evidence rather than substituting for it. No closure claim
