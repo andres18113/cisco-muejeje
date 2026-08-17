@@ -646,7 +646,14 @@ def test_disposable_qualification_always_cleans_exact_devices_and_restores_inven
         _topology(),
         environment_fingerprint=_fingerprint(),
         deployment_id="deployment/stage-3a4-slice-2a",
-        restoration_timeout_seconds=0.01,
+        # Este test comprueba el camino de EXITO, no el vencimiento. Con 0.01 s
+        # el deadline compite con las observaciones restantes y bajo carga de
+        # suite completa llega a vencer antes de la tercera -- se observo fallar
+        # asi una vez y pasar en aislamiento. Un presupuesto amplio no lo
+        # debilita: el bucle corta en cuanto hay coincidencia, asi que el
+        # timeout solo acota el camino de fallo. El vencimiento sigue cubierto
+        # por los tests que pasan 0.0 y esperan False/None.
+        restoration_timeout_seconds=5.0,
     )
 
     assert result.status is SerialPhysicalSliceQualificationStatus.VERIFIED_CLEAN

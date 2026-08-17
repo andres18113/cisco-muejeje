@@ -1330,6 +1330,86 @@ exception.**
 
 ---
 
+## TD-MODULE-SLOT-001 — Module slot placement is unverifiable, and the gate compares two namespaces
+
+Status:
+OPEN
+
+Severity:
+P1
+
+Discovered:
+Stage 3A4 MEG-4 bounded live qualification, 2026-08-17, on 2911 / PT `9.0.1.0858`.
+Evidence: `stage-3a4-bounded-live-qualification.md`.
+
+Description:
+
+`EnterprisePhysicalTopologyDeployer` refuses a module whose
+`slot_effect_observed` is false. `packet_tracer_physical_runtime.py:596` derives
+that flag as `effect_observed and after.module_tree_observed and
+any(item.observed_module_number == module.slot ...)`.
+
+That comparison puts two different namespaces on either side of `==`:
+
+```text
+module.slot                  = "0/0"   port-namespace, from _SERIAL_MODULE_SLOT_BY_MODEL
+item.observed_module_number  = "0"     module-tree namespace, from the backend
+```
+
+They cannot be equal for 2911, so the flag is unreachable on this model. Slice
+2A's own record already stated the two are distinct
+(`stage-3a4-serial-product-slice-2a.md:69`), and the check was nonetheless
+written as an equality. It shipped in Slice 2A's implementation commit
+`e846175`; it is not a later regression.
+
+Measured live, the module *does* land and its effect *is* independently
+verified — `Serial0/0/0` and `Serial0/0/1` appear in a fresh read-back that did
+not contain them before. What cannot be observed is **which slot** they came
+from: the module tree reports exactly one entry, the onboard module with three
+Gigabit ports, and the inserted HWIC-2T never appears. Matching against `"0"`
+would therefore be worse than not matching — it would assert the HWIC occupies
+the onboard slot, which the evidence contradicts.
+
+Why no regression caught it: `tests/test_e95_serial_physical_product_slice.py`
+sets `slot_effect_observed=True` directly in its double, so the real derivation
+was never exercised. That is now pinned by
+`tests/test_e95_module_slot_namespace.py`, which fixes the measured shape and
+asserts the exact refusal message.
+
+Classification:
+```text
+STAGE_3A4_SCOPE
+BACKEND_LIMITATION for slot attribution + PRODUCT_DEFECT in the comparison
+```
+
+Blocks Stage 3A4:
+**Yes.** No bounded live product run can pass module verification on 2911 while
+this holds, and MEG-5 cannot open before MEG-4 succeeds.
+
+Blocks claims of:
+any claim that a module was installed **in a specific slot**. Port-effect
+evidence remains valid and unaffected; it proves effect, never placement, and
+never identity.
+
+RESOLVE_BEFORE:
+Stage 3A4 MEG-4 completion.
+
+Closure criterion:
+
+One of the following, decided deliberately and recorded with its claim ceiling:
+
+- **A.** A confirmed backend path that attributes an inserted module to its
+  requested slot. If one exists it must be verified against Cisco's reference
+  before use — `AGENTS.md` rule 6 — and not guessed.
+- **B.** Slot placement is classified `UNOBSERVABLE` for this backend/model, the
+  same way module *identity* already is, and the deployment gate is changed to
+  stop treating an unobservable placement as a failed effect. Any such change
+  must state explicitly what is no longer claimed, and port-effect verification
+  must remain mandatory.
+
+**Neither branch may be taken by relaxing the gate to make a run succeed.** The
+MEG-4 run that found this deliberately left the refusal in place.
+
 ## TD-TRANSPORT-001 — FileBridge does not provide exactly-once or at-most-once execution
 
 Status:
