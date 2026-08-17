@@ -23,3 +23,7 @@ from .compile_security import compile_enterprise_security
 from .apply_security import SecurityApplicator, SecurityRuntime
 from .compile_control_plane import compile_enterprise_control_plane
 from .apply_control_plane import ControlPlaneApplicator, ControlPlaneRuntime
+from .observe_serial_orientation import (
+    SerialOrientationObserver,
+    SerialOrientationRuntime,
+)
