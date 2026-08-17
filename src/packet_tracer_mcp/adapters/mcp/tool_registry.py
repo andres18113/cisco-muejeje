@@ -11,7 +11,12 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
+from pydantic import ValidationError
 
+from ...application.use_cases.compose_enterprise_reference import (
+    compose_enterprise_reference,
+)
+from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.models.plans import TopologyPlan
 from ...domain.models.requests import TopologyRequest
 from ...domain.models.acls import ACLBinding
@@ -308,6 +313,45 @@ def register_tools(mcp: FastMCP) -> None:
         )
         plan, validation = plan_from_request(request)
         return plan.model_dump_json(indent=2)
+
+    # ------------------------------------------------------------------
+    # ENTERPRISE — composición offline del producto
+    # ------------------------------------------------------------------
+    @mcp.tool()
+    def pt_compose_enterprise_reference(
+        intent_json: str,
+        packet_tracer_version: str = "",
+    ) -> str:
+        """
+        Compone el producto Enterprise offline desde un intent semántico.
+
+        Recorre la mitad determinista del producto —diseño E4, selección de
+        hardware con evidencia de capacidad, compilación E5 y atribución de
+        tráfico— y devuelve un resumen. **No muta Packet Tracer** y no requiere
+        bridge: es una superficie de inspección.
+
+        La ejecución en vivo NO se expone aquí. Su punto de entrada es el caso
+        de uso `execute_enterprise_reference`, que es donde vive la secuencia.
+
+        Parámetros:
+        - intent_json: JSON de un EnterpriseIntent (sitios, endpoints, uplinks)
+        - packet_tracer_version: versión exacta para habilitar evidencia de
+          capacidad. Vacío deja toda capacidad en UNKNOWN, que no es permiso.
+
+        Devuelve el resumen JSON de la composición, con `issues` si algo falló.
+        """
+        try:
+            intent = EnterpriseIntent.model_validate_json(intent_json)
+        except (ValidationError, ValueError) as exc:
+            return json.dumps(
+                {"valid": False, "issues": [f"Invalid EnterpriseIntent: {exc}"]},
+                indent=2,
+            )
+        composed = compose_enterprise_reference(
+            intent,
+            packet_tracer_version=packet_tracer_version or None,
+        )
+        return json.dumps(composed.compact_summary(), indent=2)
 
     # ------------------------------------------------------------------
     # VALIDACIÓN
