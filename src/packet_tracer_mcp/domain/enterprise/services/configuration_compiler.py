@@ -10,7 +10,7 @@ from collections.abc import Callable
 from enum import Enum
 
 from ...models.plans import DevicePlan, LinkPlan, TopologyPlan
-from ..models.addressing import SubnetAllocation
+from ..models.addressing import SubnetAllocation, WanTransitAllocation
 from ..models.capabilities import CapabilityStatus, DeviceCapabilities
 from ..models.configuration import (
     AddressRange,
@@ -26,6 +26,7 @@ from ..models.configuration import (
     ConfigureAccessPort,
     ConfigureDhcpPool,
     ConfigureRoutedInterface,
+    ConfigureSerialClock,
     ConfigureSubinterface,
     ConfigureSvi,
     ConfigureTrunk,
@@ -38,13 +39,23 @@ from ..models.configuration import (
     action_type_counts,
 )
 from ..models.enterprise_plan import EnterprisePlan
-from ..models.link_performance import EthernetLinkModeCapability
+from ..models.deployment import (
+    DeploymentIdentityError,
+    DeploymentManifest,
+    SerialEndpointOrientation,
+)
+from ..models.link_performance import (
+    EthernetLinkModeCapability,
+    LinkMedia,
+    TrafficContribution,
+)
 from ..models.requirements import AddressingPreference, EndpointRequirement
 from ..models.roles import DeviceRole
 from ..models.segments import NetworkSegment, SegmentRole
 from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from .configuration_dependencies import ConfigurationDependencyError, order_configuration_actions
-from .link_performance_integration import LinkPerformanceIntegration
+from .link_performance_integration import LinkPerformanceIntegration, resolve_link_media
+from .link_performance_planner import LinkPerformancePlanner
 from .configuration_validator import validate_configuration_actions
 from .segment_assignment import SegmentAssignmentPolicy
 
@@ -153,11 +164,13 @@ class ConfigurationCompiler:
         link_mode_capability_resolver: (
             "Callable[[str, str], EthernetLinkModeCapability | None] | None"
         ) = None,
+        link_performance_planner: LinkPerformancePlanner | None = None,
     ) -> None:
         # Quién sabe qué backend hay debajo lo aporta quien construye el
         # compilador. Sin resolver, los enlaces quedan sin perfil y la política
         # de rendimiento no emite nada, que es el comportamiento previo.
         self._link_performance = LinkPerformanceIntegration(
+            planner=link_performance_planner,
             capability_resolver=link_mode_capability_resolver,
         )
         self._link_capabilities_available = link_mode_capability_resolver is not None
@@ -168,6 +181,9 @@ class ConfigurationCompiler:
         topology: TopologyPlan,
         policy: ConfigurationPolicy = ConfigurationPolicy(),
         capabilities: dict[str, DeviceCapabilities] | None = None,
+        *,
+        deployment_manifest: DeploymentManifest | None = None,
+        traffic_by_link: dict[str, list[TrafficContribution]] | None = None,
     ) -> ConfigurationCompileResult:
         issues: list[ConfigurationIssue] = []
         actions: list[ConfigurationAction] = []
@@ -203,6 +219,9 @@ class ConfigurationCompiler:
             )
         )
         actions.extend(gateway_actions)
+        actions.extend(self._serial_transit_actions(
+            enterprise, devices, links, issues,
+        ))
 
         trunk_actions, switch_trunk_vlans = self._trunk_actions(
             topology, devices, links, segment_vlans, switch_local_vlans,
@@ -280,6 +299,8 @@ class ConfigurationCompiler:
         # sale de lo que el plan ya decidio para cada interfaz.
         actions.extend(self._link_performance_actions(
             topology, devices, links, names_to_ids, policy, actions, issues,
+            deployment_manifest=deployment_manifest,
+            traffic_by_link=traffic_by_link or {},
         ))
 
         issues.extend(validate_configuration_actions(actions))
@@ -324,6 +345,81 @@ class ConfigurationCompiler:
         plan.semantic_hash = self._semantic_hash(plan)
         return self._result(plan, actions, topology, issues)
 
+    @staticmethod
+    def _serial_transit_actions(
+        enterprise: EnterprisePlan,
+        devices: dict[str, DevicePlan],
+        links: list[LinkPlan],
+        issues: list[ConfigurationIssue],
+    ) -> list[ConfigurationAction]:
+        """Materialize each allocated point-to-point WAN subnet on both ends."""
+        if enterprise.addressing is None:
+            return []
+        allocations: dict[tuple[str, str], WanTransitAllocation] = {
+            tuple(sorted((item.source_site_id, item.target_site_id))): item
+            for item in enterprise.addressing.transit_allocations
+            if item.media.casefold() == LinkMedia.SERIAL.value
+        }
+        serial_by_pair: dict[tuple[str, str], list[LinkPlan]] = defaultdict(list)
+        for link in links:
+            if resolve_link_media(link.cable) is not LinkMedia.SERIAL:
+                continue
+            endpoint_a = devices.get(link.device_a_id)
+            endpoint_b = devices.get(link.device_b_id)
+            if endpoint_a is None or endpoint_b is None:
+                issues.append(_error(
+                    ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
+                    f"Serial link {link.id!r} has unresolved semantic endpoints.",
+                    link.id,
+                ))
+                continue
+            serial_by_pair[tuple(sorted((endpoint_a.site_id, endpoint_b.site_id)))].append(link)
+
+        emitted: list[ConfigurationAction] = []
+        for pair, pair_links in sorted(serial_by_pair.items()):
+            if len(pair_links) != 1:
+                issues.append(_error(
+                    ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
+                    f"Sites {pair[0]!r} and {pair[1]!r} have {len(pair_links)} serial "
+                    "links but only one semantic transit allocation; explicit per-link "
+                    "allocation is required.",
+                    "/".join(pair),
+                ))
+                continue
+            link = pair_links[0]
+            allocation = allocations.get(pair)
+            if allocation is None:
+                issues.append(_error(
+                    ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
+                    f"Serial link {link.id!r} has no deterministic /30 transit allocation.",
+                    link.id,
+                ))
+                continue
+            for device_id, interface in (
+                (link.device_a_id, link.port_a),
+                (link.device_b_id, link.port_b),
+            ):
+                device = devices[device_id]
+                address = (
+                    allocation.source_ipv4
+                    if device.site_id == allocation.source_site_id
+                    else allocation.target_ipv4
+                )
+                emitted.append(ConfigureRoutedInterface(
+                    id=_action_id("transit-l3", link.id, device_id, interface),
+                    phase=ConfigurationPhase.L3_INTERFACES,
+                    device_id=device_id,
+                    device_name=device.name,
+                    site_id=device.site_id,
+                    interface=interface,
+                    ipv4=address,
+                    prefix=allocation.prefix,
+                    netmask=allocation.netmask,
+                    segment_id=allocation.id,
+                    required_capability="layer3",
+                ))
+        return emitted
+
     def _link_performance_actions(
         self,
         topology: TopologyPlan,
@@ -333,6 +429,9 @@ class ConfigurationCompiler:
         policy: ConfigurationPolicy,
         planned_actions: list[ConfigurationAction],
         issues: list[ConfigurationIssue],
+        *,
+        deployment_manifest: DeploymentManifest | None = None,
+        traffic_by_link: dict[str, list[TrafficContribution]] | None = None,
     ) -> list[ConfigurationAction]:
         """Convierte la política de rendimiento de enlace en acciones tipadas.
 
@@ -340,13 +439,12 @@ class ConfigurationCompiler:
         sobre un backend del que no se sabe nada no es un caso por defecto
         aceptable, y el intent sigue compilando igual.
         """
-        if not self._link_capabilities_available:
-            return []
         endpoint_models = {
             device.name: device.model for device in topology.devices
         }
         emitted: list[ConfigurationAction] = []
         for link in sorted(links, key=lambda item: (item.id or "", item.device_a)):
+            media = resolve_link_media(link.cable)
             # El modo de enlace se configura por IOS, asi que solo aplica entre
             # dispositivos gestionables. Un PC o un telefono nunca tendran
             # perfil, y avisar de ello en cada enlace de acceso seria ruido
@@ -360,14 +458,50 @@ class ConfigurationCompiler:
                 for device in endpoints
             ):
                 continue
+            dce_device_id: str | None = None
+            dte_device_id: str | None = None
+            if media is LinkMedia.SERIAL:
+                if deployment_manifest is None:
+                    # Serial addressing is deterministic before deployment, but
+                    # the physical cable decides which end may receive a clock.
+                    # Without that observation there is deliberately no clock.
+                    continue
+                try:
+                    binding = deployment_manifest.link_binding_for(link.id)
+                except DeploymentIdentityError as exc:
+                    issues.append(_error(
+                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                        str(exc),
+                        link.id,
+                    ))
+                    continue
+                endpoints_by_role = {
+                    endpoint.orientation: endpoint.semantic_device_id
+                    for endpoint in (binding.endpoint_a, binding.endpoint_b)
+                }
+                dce_device_id = endpoints_by_role.get(SerialEndpointOrientation.DCE)
+                dte_device_id = endpoints_by_role.get(SerialEndpointOrientation.DTE)
+                if not dce_device_id or not dte_device_id or dce_device_id == dte_device_id:
+                    issues.append(_error(
+                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                        f"Serial link {link.id!r} requires one freshly observed DCE "
+                        "endpoint and one freshly observed DTE endpoint.",
+                        link.id,
+                    ))
+                    continue
+            elif not self._link_capabilities_available:
+                continue
             intent = self._link_performance.intent_for_link(
                 link, endpoint_models=endpoint_models,
                 sync_routing_bandwidth=policy.sync_routing_bandwidth,
+                traffic=(traffic_by_link or {}).get(link.id, []),
+                dce_endpoint_device_id=dce_device_id,
+                dte_endpoint_device_id=dte_device_id,
             )
             # Preflight productivo: compilar la intención es una cosa y mutar
             # el runtime otra. Un extremo sin perfil deja la capacidad en
             # UNKNOWN, que no es UNSUPPORTED pero tampoco es permiso.
-            unprofiled = [
+            unprofiled = [] if media is LinkMedia.SERIAL else [
                 name for name, capability in (
                     (link.device_a, intent.local_port_capability),
                     (link.device_b, intent.peer_port_capability),
@@ -1095,6 +1229,14 @@ class ConfigurationCompiler:
             elif isinstance(action, ConfigureDhcpPool):
                 kind = VerificationKind.DHCP_POOL
                 expected = {"network": action.network, "gateway": action.gateway}
+            elif isinstance(action, ConfigureSerialClock):
+                kind = VerificationKind.SERIAL_CONTROLLER
+                query = "show_controllers_serial"
+                expected = {
+                    "interface": action.interface,
+                    "serial_endpoint_role": action.serial_endpoint_role,
+                    "clock_rate_bps": action.clock_rate_bps,
+                }
             else:
                 kind = VerificationKind.ENDPOINT_ADDRESSING
                 expected = {"mode": "dhcp" if isinstance(action, SetEndpointDhcp) else "static"}

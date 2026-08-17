@@ -43,6 +43,7 @@ from .ios_terminal import (
     OperationalQueryId,
     parse_show_interfaces_trunk,
     parse_show_ip_interface_brief,
+    parse_serial_controller,
 )
 from .runtime_inventory import normalize_runtime_inventory
 
@@ -257,11 +258,84 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 results.append(self._verify_trunk(expectation, ios_cache))
             elif expectation.kind is VerificationKind.L3_INTERFACE:
                 results.append(self._verify_l3(expectation, ios_cache))
+            elif expectation.kind is VerificationKind.SERIAL_CONTROLLER:
+                results.append(self._verify_serial_controller(expectation))
             elif expectation.kind is VerificationKind.ENDPOINT_ADDRESSING:
                 results.append(self._verify_endpoint(expectation))
             elif expectation.kind in {VerificationKind.ACCESS_PORT, VerificationKind.DHCP_POOL}:
                 results.append(self._unobservable(expectation))
         return results
+
+    def _verify_serial_controller(
+        self,
+        expectation: VerificationExpectation,
+    ) -> RuntimeVerification:
+        """Verify the physical DCE role and exact configured clock independently."""
+        expected_interface = str(expectation.expected["interface"])
+        expected_role = str(expectation.expected["serial_endpoint_role"]).casefold()
+        expected_rate = int(expectation.expected["clock_rate_bps"])
+        show = self._ios.execute(
+            expectation.device_name,
+            OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+            interface=expected_interface,
+        )
+        complete = bool(
+            show.executed
+            and show.fresh_output_observed
+            and not show.truncated_by_pager
+        )
+        row = parse_serial_controller(show.output) if complete else None
+        if row is None:
+            return RuntimeVerification(
+                expectation_id=expectation.id,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method=(
+                    "registered_ios_output_truncated"
+                    if show.truncated_by_pager
+                    else "fresh_show_controllers_serial"
+                ),
+                fresh_evidence=complete,
+                fields={
+                    field: FieldVerificationStatus.UNOBSERVABLE
+                    for field in expectation.expected
+                },
+                message=(
+                    show.failure_reason
+                    or "Fresh, complete serial-controller output was unavailable."
+                ),
+            )
+        interface_ok = self._same_interface(row.interface, expected_interface)
+        role_ok = row.endpoint_role == expected_role
+        rate_ok = row.clock_rate_bps == expected_rate
+        verified = interface_ok and role_ok and rate_ok
+        return RuntimeVerification(
+            expectation_id=expectation.id,
+            status=(
+                ActionExecutionStatus.VERIFIED
+                if verified else ActionExecutionStatus.FAILED
+            ),
+            evidence_method="fresh_show_controllers_serial",
+            fresh_evidence=True,
+            fields={
+                "interface": (
+                    FieldVerificationStatus.VERIFIED
+                    if interface_ok else FieldVerificationStatus.FAILED
+                ),
+                "serial_endpoint_role": (
+                    FieldVerificationStatus.VERIFIED
+                    if role_ok else FieldVerificationStatus.FAILED
+                ),
+                "clock_rate_bps": (
+                    FieldVerificationStatus.VERIFIED
+                    if rate_ok else FieldVerificationStatus.FAILED
+                ),
+            },
+            message=(
+                ""
+                if verified
+                else "Serial controller does not match the planned DCE role and clock."
+            ),
+        )
 
     def _verify_vlan(self, expectation: VerificationExpectation) -> RuntimeVerification:
         vlan_id = int(expectation.expected["vlan_id"])
@@ -602,6 +676,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
     @staticmethod
     def _same_interface(observed: str, expected: str) -> bool:
         aliases = (
+            ("serial", "se"),
             ("tengigabitethernet", "te"),
             ("tengig", "te"),
             ("gigabitethernet", "gi"),

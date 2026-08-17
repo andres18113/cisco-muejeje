@@ -12,6 +12,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationPlan,
     ConfigureAccessPort,
     ConfigureRoutedInterface,
+    ConfigureSerialClock,
     ConfigureSubinterface,
     ConfigureTrunk,
     SetEndpointDhcp,
@@ -181,6 +182,29 @@ class ConfigurationApplicator:
                 item.device_name: semantic_targets[item.device_id]
                 for item in plan.devices
             }
+            try:
+                for action in plan.actions:
+                    if not isinstance(action, ConfigureSerialClock):
+                        continue
+                    if not action.source_link_id:
+                        raise DeploymentIdentityError(
+                            f"Serial clock action {action.id!r} has no source link identity."
+                        )
+                    deployment_manifest.resolve_serial_clock_target(
+                        action.source_link_id,
+                        action.device_id,
+                        inventory,
+                        observed_interface=action.interface,
+                    )
+            except DeploymentIdentityError as exc:
+                return self._preflight_failure(
+                    plan,
+                    ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                    str(exc),
+                    runtime_context=runtime_context,
+                    deployment_id=deployment_manifest.deployment_id,
+                    started=started,
+                )
         else:
             targets = {item.device_name: item for item in inventory}
         deployed_names = {

@@ -9,6 +9,8 @@ from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
+    VerificationExpectation,
+    VerificationKind,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -16,6 +18,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 )
 from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
+)
+from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    IosCommandResult,
+    OperationalQueryId,
 )
 
 from test_enterprise_configuration import _fixture
@@ -425,3 +431,112 @@ def test_ios_boot_failure_stops_device_batch_before_configuration_mutation():
     assert not result.applied
     assert result.failure_code.value == "session_failed"
     assert not sent
+
+
+class _StaticIos:
+    def __init__(self, result: IosCommandResult) -> None:
+        self.result = result
+        self.calls: list[tuple[str, OperationalQueryId, str]] = []
+
+    def execute(self, device_name, query_id, *, interface=""):
+        self.calls.append((device_name, query_id, interface))
+        return self.result
+
+
+def _serial_expectation() -> VerificationExpectation:
+    return VerificationExpectation(
+        id="verify/clock",
+        action_id="clock",
+        kind=VerificationKind.SERIAL_CONTROLLER,
+        device_id="r-a",
+        device_name="R-A",
+        required_query="show_controllers_serial",
+        expected={
+            "interface": "Serial0/0/0",
+            "serial_endpoint_role": "dce",
+            "clock_rate_bps": 128_000,
+        },
+    )
+
+
+def _configuration_runtime_with_ios(result: IosCommandResult):
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+    )
+    ios = _StaticIos(result)
+    runtime._ios = ios
+    return runtime, ios
+
+
+def test_serial_clock_verifier_requires_fresh_exact_controller_state():
+    output = (
+        "R-A#show controllers Serial0/0/0\n"
+        "Interface Serial0/0/0\n"
+        "DCE V.35, clock rate 128000\n"
+        "R-A#"
+    )
+    runtime, ios = _configuration_runtime_with_ios(IosCommandResult(
+        "R-A",
+        OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+        True,
+        output=output,
+        fresh_output_observed=True,
+    ))
+
+    result = runtime.verify([_serial_expectation()])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.fresh_evidence
+    assert set(result.fields.values()) == {FieldVerificationStatus.VERIFIED}
+    assert ios.calls == [(
+        "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, "Serial0/0/0",
+    )]
+
+
+def test_serial_clock_verifier_never_promotes_incomplete_or_contradictory_state():
+    cases = (
+        IosCommandResult(
+            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            output=(
+                "Interface Serial0/0/0\nDCE V.35, clock rate 128000\n--More--"
+            ),
+            fresh_output_observed=True,
+            truncated_by_pager=True,
+        ),
+        IosCommandResult(
+            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            output="Interface Serial0/0/0\nDTE V.35 TX and RX clocks detected\n",
+            fresh_output_observed=True,
+        ),
+        IosCommandResult(
+            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            output="Interface Serial0/0/0\nDCE V.35, clock rate 64000\n",
+            fresh_output_observed=True,
+        ),
+        IosCommandResult(
+            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            output="Interface Serial0/0/0\nDCE V.35, clock rate 128000\n",
+            fresh_output_observed=False,
+        ),
+        IosCommandResult(
+            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            output="% Invalid input detected",
+            fresh_output_observed=True,
+        ),
+    )
+
+    statuses = []
+    for show in cases:
+        runtime, _ = _configuration_runtime_with_ios(show)
+        statuses.append(runtime.verify([_serial_expectation()])[0].status)
+
+    assert ActionExecutionStatus.VERIFIED not in statuses
+    assert statuses == [
+        ActionExecutionStatus.UNOBSERVABLE,
+        ActionExecutionStatus.FAILED,
+        ActionExecutionStatus.FAILED,
+        ActionExecutionStatus.UNOBSERVABLE,
+        ActionExecutionStatus.UNOBSERVABLE,
+    ]

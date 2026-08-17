@@ -91,6 +91,8 @@ class LinkPerformanceIntegration:
         endpoint_models: dict[str, str] | None = None,
         link_context: LinkModeContext = LinkModeContext.LINKED,
         allow_unverified_mode_exploration: bool = False,
+        dce_endpoint_device_id: str | None = None,
+        dte_endpoint_device_id: str | None = None,
     ) -> LinkPerformanceIntent:
         metadata = dict(getattr(link, "metadata", {}) or {})
         role = self._role_for(getattr(link, "link_role", ""))
@@ -109,8 +111,14 @@ class LinkPerformanceIntegration:
             peer_port_capability=peer,
             link_context=link_context,
             allow_unverified_mode_exploration=allow_unverified_mode_exploration,
-            dce_endpoint_device_id=metadata.get(LINK_DCE_KEY, ""),
-            dte_endpoint_device_id=metadata.get(LINK_DTE_KEY, ""),
+            dce_endpoint_device_id=(
+                metadata.get(LINK_DCE_KEY, "")
+                if dce_endpoint_device_id is None else dce_endpoint_device_id
+            ),
+            dte_endpoint_device_id=(
+                metadata.get(LINK_DTE_KEY, "")
+                if dte_endpoint_device_id is None else dte_endpoint_device_id
+            ),
         )
 
     def _endpoint_capabilities(self, link, endpoint_models: dict[str, str]):
@@ -184,6 +192,7 @@ class LinkPerformanceIntegration:
                     device_id=device_id, device_name=device_name, site_id=site_id,
                     interface=interface,
                     clock_rate_bps=decision.serial_clock_rate_bps,
+                    source_link_id=decision.link_id,
                 ))
         elif decision.media is LinkMedia.ETHERNET:
             # AUTO/AUTO no fuerza nada: no hay accion que emitir.
