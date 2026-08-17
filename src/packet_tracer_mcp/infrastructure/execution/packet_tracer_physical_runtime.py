@@ -92,6 +92,7 @@ class PacketTracerPhysicalTopologyRuntime:
         self._mutation_timeout_seconds = max(0.1, mutation_timeout_seconds)
         self._observation_timeout_seconds = max(0.1, observation_timeout_seconds)
         self._module_baselines: dict[str, _ModuleRuntimeState] = {}
+        self._owned_new_devices: set[str] = set()
 
     def ensure_device(self, device: DevicePlan) -> PhysicalMutationResult:
         target_id = _device_id(device)
@@ -133,6 +134,7 @@ class PacketTracerPhysicalTopologyRuntime:
                 PhysicalObjectKind.DEVICE,
                 f"Packet Tracer rejected creation of {device.name!r}: {ack_message}",
             )
+        self._owned_new_devices.add(device.name)
         return PhysicalMutationResult(
             target_id=target_id,
             target_kind=PhysicalObjectKind.DEVICE,
@@ -245,6 +247,7 @@ class PacketTracerPhysicalTopologyRuntime:
                 PhysicalObjectKind.DEVICE,
                 f"Packet Tracer rejected exact device cleanup: {ack_message}",
             )
+        self._owned_new_devices.discard(device.name)
         return PhysicalMutationResult(
             target_id=target_id,
             target_kind=PhysicalObjectKind.DEVICE,
@@ -454,8 +457,9 @@ class PacketTracerPhysicalTopologyRuntime:
 
         self._module_baselines[target_id] = before
         expected = set(spec.ports_added)
-        present = expected.intersection(before.ports)
-        if present == expected:
+        slot_ports = set(_ports_in_requested_slot(before.ports, module.slot))
+        present = expected.intersection(slot_ports)
+        if slot_ports == expected:
             return PhysicalMutationResult(
                 target_id=target_id,
                 target_kind=PhysicalObjectKind.MODULE,
@@ -465,14 +469,35 @@ class PacketTracerPhysicalTopologyRuntime:
                     "exact installed identity remains unobservable."
                 ),
             )
-        if present:
+        if present and slot_ports.issubset(expected):
             return _failure(
                 target_id,
                 PhysicalObjectKind.MODULE,
                 "A partial requested module port effect already exists; refusing to overwrite it.",
             )
 
-        ack_status, ack_message = self._mutation_ack(generate_module_command(module))
+        if slot_ports:
+            return _failure(
+                target_id,
+                PhysicalObjectKind.MODULE,
+                "A conflicting or superset effect exists in the requested slot; "
+                "refusing to mutate it.",
+            )
+        if module.device not in self._owned_new_devices:
+            return _failure(
+                target_id,
+                PhysicalObjectKind.MODULE,
+                "Slot emptiness is not independently proven by an owned new-device "
+                "transaction; module insertion is refused.",
+            )
+
+        ack_status, ack_message, changed = self._module_mutation_ack(
+            generate_module_command(
+                module,
+                expected_ports=spec.ports_added,
+                slot_empty_proven=True,
+            )
+        )
         if ack_status is _MutationAckStatus.UNKNOWN:
             return PhysicalMutationResult(
                 target_id=target_id,
@@ -488,6 +513,16 @@ class PacketTracerPhysicalTopologyRuntime:
                 target_id,
                 PhysicalObjectKind.MODULE,
                 f"Packet Tracer rejected module insertion for {target_id!r}: {ack_message}",
+            )
+        if changed is False:
+            return PhysicalMutationResult(
+                target_id=target_id,
+                target_kind=PhysicalObjectKind.MODULE,
+                disposition=MutationDisposition.NO_OP,
+                message=(
+                    "The guarded payload observed the complete module port effect "
+                    "without invoking native insertion; identity remains unobservable."
+                ),
             )
         return PhysicalMutationResult(
             target_id=target_id,
@@ -553,14 +588,18 @@ class PacketTracerPhysicalTopologyRuntime:
             ObservationStatus.OBSERVED
             if observed_identity else ObservationStatus.UNOBSERVABLE
         )
+        slot_ports_after = set(_ports_in_requested_slot(after.ports, module.slot))
         effect_observed = (
-            expected_set.issubset(after_set)
+            slot_ports_after == expected_set
             and set(expected_classes).issubset(observed_classes)
         )
         slot_effect_observed = bool(
             effect_observed
             and after.module_tree_observed
-            and after.slots
+            and any(
+                item.observed_module_number == module.slot
+                for item in after.slots
+            )
         )
         return PhysicalModuleObservation(
             target_id=target_id,
@@ -806,6 +845,43 @@ class PacketTracerPhysicalTopologyRuntime:
             "The bridge response did not contain an explicit acknowledgement.",
         )
 
+    def _module_mutation_ack(
+        self,
+        trusted_command: str,
+    ) -> tuple[_MutationAckStatus, str, bool | None]:
+        script = (
+            "try{" + trusted_command
+            + "reportResult(JSON.stringify(__mcpModuleMutationReceipt));}"
+            + "catch(__e){reportResult(JSON.stringify({ack:false,error:String(__e)}));}"
+        )
+        raw = self._send_and_wait(script, self._mutation_timeout_seconds)
+        payload = _json_object(raw)
+        if payload is None:
+            return (
+                _MutationAckStatus.UNKNOWN,
+                "The bridge returned no well-formed module receipt.",
+                None,
+            )
+        if payload.get("ack") is True and isinstance(payload.get("changed"), bool):
+            outcome = payload.get("outcome")
+            return (
+                _MutationAckStatus.ACKNOWLEDGED,
+                outcome if isinstance(outcome, str) else "",
+                bool(payload["changed"]),
+            )
+        if payload.get("ack") is False:
+            error = payload.get("error")
+            return (
+                _MutationAckStatus.REJECTED,
+                error if isinstance(error, str) and error else "explicit negative receipt",
+                False,
+            )
+        return (
+            _MutationAckStatus.UNKNOWN,
+            "The module receipt did not contain typed ack/changed fields.",
+            None,
+        )
+
 
 def _remove_device_command(device: DevicePlan) -> str:
     """Build checked cleanup JavaScript from serialized caller-controlled fields."""
@@ -979,6 +1055,27 @@ def _expected_ports_match_requested_slot(
         if "/" not in numeric_path or numeric_path.rsplit("/", 1)[0] != slot:
             return False
     return True
+
+
+def _ports_in_requested_slot(
+    ports: list[str] | tuple[str, ...],
+    requested_slot: str,
+) -> list[str]:
+    """Return ports in the exact numeric namespace governed by one slot."""
+
+    result: list[str] = []
+    slot = requested_slot.strip()
+    for port in ports:
+        first_digit = next(
+            (index for index, character in enumerate(port) if character.isdigit()),
+            -1,
+        )
+        if first_digit < 0:
+            continue
+        numeric_path = port[first_digit:]
+        if "/" in numeric_path and numeric_path.rsplit("/", 1)[0] == slot:
+            result.append(port)
+    return sorted(set(result), key=str.casefold)
 
 
 def _failure(

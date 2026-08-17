@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+import shutil
+import subprocess
 
 import pytest
 
@@ -60,6 +63,7 @@ from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runti
 )
 from src.packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
     generate_module_command,
+    generate_ptbuilder_script,
 )
 
 
@@ -856,7 +860,10 @@ class ModuleEffectTransport:
         self.ports = ports or ["GigabitEthernet0/0", "GigabitEthernet0/1"]
         self.calls: list[str] = []
         self.module_mutations = 0
-        self.mutation_reply: str | None = '{"ack": true}'
+        self.mutation_reply: str | None = (
+            '{"ack":true,"changed":true,"outcome":"mutation_accepted",'
+            '"identity_status":"unobservable"}'
+        )
 
     def __call__(self, script: str, _timeout: float) -> str | None:
         self.calls.append(script)
@@ -890,9 +897,15 @@ def _device() -> DevicePlan:
     return DevicePlan(id="r1", name="MCP-PROBE-S3A4-S2A-R1", model="2911", category="router")
 
 
+def _owned_runtime(transport: ModuleEffectTransport) -> PacketTracerPhysicalTopologyRuntime:
+    runtime = PacketTracerPhysicalTopologyRuntime(transport)
+    runtime._owned_new_devices.add(_module().device)
+    return runtime
+
+
 def test_packet_tracer_module_ensure_is_effect_idempotent_without_claiming_identity():
     transport = ModuleEffectTransport()
-    runtime = PacketTracerPhysicalTopologyRuntime(transport)
+    runtime = _owned_runtime(transport)
 
     capability = runtime.module_effect_capability(_module(), _device())
     first = runtime.ensure_module(_module())
@@ -928,7 +941,7 @@ def test_expected_device_ports_without_module_tree_do_not_prove_slot_effect():
             return __import__("json").dumps(payload)
 
     transport = NoModuleTreeTransport()
-    runtime = PacketTracerPhysicalTopologyRuntime(transport)
+    runtime = _owned_runtime(transport)
 
     mutation = runtime.ensure_module(_module())
     observation = runtime.observe_module_effect(_module())
@@ -942,12 +955,37 @@ def test_packet_tracer_module_ensure_fails_closed_on_partial_preexisting_effect(
     transport = ModuleEffectTransport(ports=[
         "GigabitEthernet0/0", "GigabitEthernet0/1", SERIAL_PORTS[0],
     ])
-    runtime = PacketTracerPhysicalTopologyRuntime(transport)
+    runtime = _owned_runtime(transport)
 
     mutation = runtime.ensure_module(_module())
 
     assert mutation.disposition is MutationDisposition.FAILED
     assert "partial" in mutation.message.casefold()
+    assert transport.module_mutations == 0
+
+
+def test_packet_tracer_module_ensure_requires_owned_new_device_for_empty_slot():
+    transport = ModuleEffectTransport()
+    runtime = PacketTracerPhysicalTopologyRuntime(transport)
+
+    mutation = runtime.ensure_module(_module())
+
+    assert mutation.disposition is MutationDisposition.FAILED
+    assert "emptiness" in mutation.message.casefold()
+    assert transport.module_mutations == 0
+
+
+def test_packet_tracer_module_ensure_rejects_foreign_same_slot_superset():
+    transport = ModuleEffectTransport(ports=[
+        "GigabitEthernet0/0", "GigabitEthernet0/1",
+        *SERIAL_PORTS, "Serial0/0/2",
+    ])
+    runtime = _owned_runtime(transport)
+
+    mutation = runtime.ensure_module(_module())
+
+    assert mutation.disposition is MutationDisposition.FAILED
+    assert "conflicting" in mutation.message.casefold()
     assert transport.module_mutations == 0
 
 
@@ -973,7 +1011,7 @@ def test_packet_tracer_refuses_effect_claim_for_non_catalogued_slot_namespace():
 def test_lost_module_ack_stays_unknown_and_is_never_replayed():
     transport = ModuleEffectTransport()
     transport.mutation_reply = None
-    runtime = PacketTracerPhysicalTopologyRuntime(transport)
+    runtime = _owned_runtime(transport)
 
     first = runtime.ensure_module(_module())
 
@@ -996,3 +1034,207 @@ def test_module_renderer_serializes_every_caller_controlled_field():
     assert __import__("json").dumps(module.module) in command
     assert "globalThis.pwned=true" in command
     assert command.count("addModule(") == 1
+
+
+# -- same-payload duplicate evaluation, measured in a real JS engine ---------
+#
+# El guard vive DENTRO del payload, asi que probarlo desde Python solo mediria
+# el mock. Estas pruebas ejecutan el JS emitido en Node con un `addModule`
+# instrumentado y cuentan invocaciones nativas reales.
+
+_NATIVE_OUTCOMES = {
+    # nombre -> (cuerpo JS de addModule, efecto que queda en el slot)
+    "accepted": ('nativeCalls += 1; ports.push("Serial0/0/0", "Serial0/0/1"); '
+                 'return true;', "complete"),
+    "rejected": ('nativeCalls += 1; return false;', "absent"),
+    "threw_without_effect": ('nativeCalls += 1; '
+                             'throw new Error("ipc died mid-call");', "absent"),
+    "threw_after_effect": ('nativeCalls += 1; '
+                           'ports.push("Serial0/0/0", "Serial0/0/1"); '
+                           'throw new Error("ipc died after mutating");', "complete"),
+}
+
+
+def _run_module_payload(tmp_path, evaluations: str, native_body: str, payloads: dict):
+    """Evalua payloads de modulo en Node y devuelve el JSON observado."""
+    harness = f"""
+let ports = ["GigabitEthernet0/0", "GigabitEthernet0/1"];
+let nativeCalls = 0;
+global.GLOBAL = global;
+const device = {{
+  getPortCount: () => ports.length,
+  getPortAt: (index) => ({{getName: () => ports[index]}})
+}};
+global.ipc = {{network: () => ({{getDevice: () => device}})}};
+global.addModule = () => {{ {native_body} }};
+const P = require(process.argv[2]);
+function evaluate(source) {{
+  try {{
+    return (new Function(source + ';return __mcpModuleMutationReceipt;'))();
+  }} catch (error) {{
+    return {{ack:false, error:String(error)}};
+  }}
+}}
+const out = {{}};
+{evaluations}
+out.nativeCalls = nativeCalls;
+out.ports = ports;
+out.storeSize = Object.keys(GLOBAL.__mcpModuleReceipts).length;
+process.stdout.write(JSON.stringify(out));
+"""
+    script = tmp_path / "module_payload_harness.js"
+    script.write_text(harness, encoding="utf-8")
+    payload_file = tmp_path / "module_payloads.json"
+    payload_file.write_text(json.dumps(payloads), encoding="utf-8")
+
+    completed = subprocess.run(
+        [shutil.which("node"), str(script), str(payload_file)],
+        check=True, capture_output=True, text=True,
+    )
+    return json.loads(completed.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+@pytest.mark.parametrize("outcome", sorted(_NATIVE_OUTCOMES))
+def test_same_guarded_module_payload_never_invokes_native_add_twice(tmp_path, outcome):
+    """Un mismo payload evaluado dos veces no puede insertar dos veces.
+
+    Se cubren los tres post-estados que importan: insercion aceptada, rechazo
+    nativo explicito, e incertidumbre por excepcion -- esta ultima tanto si el
+    efecto alcanzo a quedar como si no. Lo que nunca puede pasar es que un
+    intento se convierta en exito sin que una relectura fresca lo respalde.
+    """
+    native_body, effect = _NATIVE_OUTCOMES[outcome]
+    command = generate_module_command(
+        _module(), expected_ports=SERIAL_PORTS,
+        operation_token="same-file-bridge-request", slot_empty_proven=True,
+    )
+
+    observed = _run_module_payload(
+        tmp_path,
+        "out.first = evaluate(P.original);\nout.second = evaluate(P.original);",
+        native_body,
+        {"original": command},
+    )
+
+    # La invariante central, identica en los cuatro post-estados.
+    assert observed["nativeCalls"] == 1
+
+    if effect == "complete":
+        # El exito de la segunda evaluacion viene de releer el slot, no de
+        # asumir que el intento previo funciono.
+        assert observed["second"]["ack"] is True
+        assert observed["second"]["replayed"] is True
+        assert observed["second"]["outcome"] == "effect_present_after_prior_attempt"
+        assert sorted(observed["ports"][-2:]) == sorted(SERIAL_PORTS)
+    else:
+        # Sin efecto no hay ascenso posible: el intento previo se mantiene
+        # ambiguo y NO se degrada a NO_OP ni a exito.
+        assert observed["first"]["ack"] is False
+        assert observed["second"]["ack"] is False
+        assert "already attempted" in observed["second"]["error"]
+
+    if outcome == "rejected":
+        assert "rejected module insertion" in observed["first"]["error"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_module_receipt_store_is_bounded_and_eviction_cannot_duplicate_an_effect(tmp_path):
+    """El store global es acotado, y su desalojo no puede duplicar un efecto.
+
+    Medido, no supuesto: el store se corta en 128 recibos, asi que no hay fuga
+    de tokens. Tras desalojar el token original, la unica defensa que queda es
+    la pre-lectura exacta del slot -- y basta, porque el efecto ya presente se
+    reconoce sin invocar `addModule` otra vez.
+
+    LIMITE CONOCIDO, declarado en vez de disimulado: si el intento previo NO
+    dejo efecto (rechazo nativo), tras el desalojo un reenvio identico SI vuelve
+    a invocar `addModule`. No promueve nada a exito -- el rechazo se repite --
+    pero el recibo ya no lo contiene. El runtime tipado nunca reenvia
+    (`ensure_module` falla cerrado ante REJECTED), asi que esto solo alcanzaria
+    a un reenvio a nivel de transporte.
+    """
+    def command(token: str) -> str:
+        return generate_module_command(
+            _module(), expected_ports=SERIAL_PORTS,
+            operation_token=token, slot_empty_proven=True,
+        )
+
+    payloads = {
+        "original": command("tok-original"),
+        "others": [command(f"tok-{index}") for index in range(130)],
+    }
+    evaluations = (
+        "out.first = evaluate(P.original);\n"
+        "for (const other of P.others) evaluate(other);\n"
+        "const before = nativeCalls;\n"
+        "out.afterEviction = evaluate(P.original);\n"
+        "out.evictedDelta = nativeCalls - before;"
+    )
+
+    landed = _run_module_payload(
+        tmp_path, evaluations, _NATIVE_OUTCOMES["accepted"][0], payloads,
+    )
+    absent = _run_module_payload(
+        tmp_path, evaluations, _NATIVE_OUTCOMES["rejected"][0], payloads,
+    )
+
+    # Acotado: 130 operaciones extra no dejan 131 recibos vivos.
+    assert landed["storeSize"] == 128
+    assert absent["storeSize"] == 128
+
+    # Efecto presente: el desalojo es irrelevante, la pre-lectura lo detiene.
+    assert landed["evictedDelta"] == 0
+    assert landed["afterEviction"]["ack"] is True
+    assert landed["afterEviction"]["changed"] is False
+    assert landed["afterEviction"]["outcome"] == "effect_already_present"
+
+    # Efecto ausente: se repite el intento, pero jamas se promueve a exito.
+    assert absent["evictedDelta"] == 1
+    assert absent["afterEviction"]["ack"] is False
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_guarded_module_payload_never_claims_exact_module_identity(tmp_path):
+    """El efecto de puertos prueba efecto, nunca identidad HWIC/WIC exacta."""
+    observed = _run_module_payload(
+        tmp_path,
+        "out.first = evaluate(P.original);\nout.second = evaluate(P.original);",
+        _NATIVE_OUTCOMES["accepted"][0],
+        {"original": generate_module_command(
+            _module(), expected_ports=SERIAL_PORTS,
+            operation_token="identity-check", slot_empty_proven=True,
+        )},
+    )
+
+    for receipt in (observed["first"], observed["second"]):
+        assert receipt["identity_status"] == "unobservable"
+        assert "HWIC" not in json.dumps(receipt)
+
+
+def test_batch_script_only_claims_slot_emptiness_for_devices_it_creates():
+    """`slot_empty_proven` es una afirmacion, no un adorno del renderer.
+
+    El script batch solo puede probar vacio de slot para un dispositivo que el
+    mismo crea unas lineas antes. Sobre un dispositivo preexistente no tiene esa
+    prueba, y el payload debe rechazar la insercion en vez de asumirla.
+    """
+    created = DevicePlan(id="r1", name="R-NEW", model="2911", category="router")
+    plan = TopologyPlan(
+        devices=[created],
+        links=[],
+        modules=[
+            ModulePlan(device="R-NEW", slot="0/0", module="HWIC-2T"),
+            ModulePlan(device="R-PREEXISTING", slot="0/0", module="HWIC-2T"),
+        ],
+    )
+
+    script = generate_ptbuilder_script(plan)
+    owned, foreign = [
+        line for line in script.splitlines() if "__mcpModuleMutationReceipt" in line
+    ]
+
+    assert json.dumps("R-NEW") in owned
+    assert "__emptyProven=true" in owned
+    assert json.dumps("R-PREEXISTING") in foreign
+    assert "__emptyProven=false" in foreign

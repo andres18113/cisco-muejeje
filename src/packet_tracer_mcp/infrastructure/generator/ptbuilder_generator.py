@@ -7,6 +7,7 @@ con la extensión PTBuilder de Packet Tracer.
 
 from __future__ import annotations
 import json
+import secrets
 from ...domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
 from ...shared.constants import (
     PT_DEVICE_TYPE,
@@ -15,6 +16,7 @@ from ...shared.constants import (
     PT_CONNECT_TYPE_DEFAULT,
 )
 from ...shared.ios_config import build_configure_ios_call
+from ..catalog.modules import resolve_module
 
 
 def generate_device_command(device: DevicePlan) -> str:
@@ -41,20 +43,81 @@ def generate_link_command(link: LinkPlan) -> str:
     )
 
 
-def generate_module_command(module: ModulePlan) -> str:
-    """Render one checked module mutation with serialized fields.
+def generate_module_command(
+    module: ModulePlan,
+    *,
+    expected_ports: list[str] | tuple[str, ...] | None = None,
+    operation_token: str | None = None,
+    slot_empty_proven: bool = False,
+) -> str:
+    """Render a same-request replay-safe module-effect mutation."""
 
-    Packet Tracer's helper returns ``false`` for an occupied, invalid or
-    incompatible slot.  Turning that into an exception lets the typed runtime
-    distinguish an explicit rejection from an acknowledgement; the later
-    independent effect read-back remains the only verification.
-    """
-
+    if expected_ports is None:
+        spec = resolve_module(module.module)
+        expected_ports = list(spec.ports_added) if spec is not None else []
+    expected = sorted(set(expected_ports), key=str.casefold)
+    token = operation_token or secrets.token_hex(16)
+    name_js = json.dumps(module.device, ensure_ascii=False)
+    slot_js = json.dumps(module.slot, ensure_ascii=False)
+    model_js = json.dumps(module.module, ensure_ascii=False)
+    expected_js = json.dumps(expected, ensure_ascii=False)
+    token_js = json.dumps(token, ensure_ascii=False)
+    empty_js = "true" if slot_empty_proven else "false"
     return (
-        "if(addModule(" + json.dumps(module.device, ensure_ascii=False) + ", "
-        + json.dumps(module.slot, ensure_ascii=False) + ", "
-        + json.dumps(module.module, ensure_ascii=False)
-        + ")!==true){throw new Error('Packet Tracer rejected module insertion');}"
+        "var __mcpModuleMutationReceipt=(function(){"
+        "var __g=(typeof GLOBAL!=='undefined'?GLOBAL:this),__token=" + token_js
+        + ",__name=" + name_js + ",__slot=" + slot_js + ",__model=" + model_js
+        + ",__expected=" + expected_js + ",__emptyProven=" + empty_js + ";"
+        "if(!__g.__mcpModuleReceipts){__g.__mcpModuleReceipts={};"
+        "__g.__mcpModuleReceiptOrder=[];}"
+        "var __receipts=__g.__mcpModuleReceipts,__order=__g.__mcpModuleReceiptOrder;"
+        "function __has(__o,__k){return Object.prototype.hasOwnProperty.call(__o,__k);}"
+        "function __contains(__a,__v){for(var __i=0;__i<__a.length;__i++){"
+        "if(String(__a[__i])===String(__v)){return true;}}return false;}"
+        "function __slotOf(__port){var __m=String(__port).match(/[0-9].*$/);"
+        "if(!__m){return '';}var __p=__m[0].lastIndexOf('/');"
+        "return __p<0?'':__m[0].substring(0,__p);}"
+        "function __inspect(){var __d=ipc.network().getDevice(__name);"
+        "if(!__d){return {ok:false,error:'module target missing'};}"
+        "var __slotPorts=[];for(var __i=0;__i<__d.getPortCount();__i++){"
+        "var __port=__d.getPortAt(__i);if(!__port){"
+        "return {ok:false,error:'module port inventory unreadable'};}"
+        "var __pn=String(__port.getName());if(__slotOf(__pn)===__slot){"
+        "__slotPorts.push(__pn);}}var __exact=__slotPorts.length===__expected.length;"
+        "if(__exact){for(var __j=0;__j<__expected.length;__j++){"
+        "if(!__contains(__slotPorts,__expected[__j])){__exact=false;break;}}}"
+        "return {ok:true,exact:__exact,slotPorts:__slotPorts};}"
+        "function __record(__r){if(!__has(__receipts,__token)){__order.push(__token);}"
+        "__receipts[__token]=__r;while(__order.length>128){"
+        "var __old=__order.shift();delete __receipts[__old];}return __r;}"
+        "var __state=__inspect();if(!__state.ok){return {ack:false,changed:false,"
+        "outcome:'pre_read_failed',identity_status:'unobservable',error:__state.error};}"
+        "if(__has(__receipts,__token)){var __prior=__receipts[__token];"
+        "if(__state.exact&&__prior.attempted===true){return {ack:true,changed:true,"
+        "outcome:'effect_present_after_prior_attempt',identity_status:'unobservable',"
+        "replayed:true};}return {ack:false,changed:false,"
+        "outcome:'prior_attempt_ambiguous',identity_status:'unobservable',"
+        "replayed:true,error:'module operation token was already attempted'};}"
+        "if(__state.exact){return __record({ack:true,changed:false,attempted:false,"
+        "outcome:'effect_already_present',identity_status:'unobservable'});}"
+        "if(__state.slotPorts.length!==0){return __record({ack:false,changed:false,"
+        "attempted:false,outcome:'slot_effect_conflict',identity_status:'unobservable',"
+        "error:'partial, superset, or foreign slot effect is present'});}"
+        "if(!__emptyProven){return __record({ack:false,changed:false,attempted:false,"
+        "outcome:'slot_emptiness_unproven',identity_status:'unobservable',"
+        "error:'slot emptiness was not independently proven'});}"
+        "__record({ack:false,changed:false,attempted:true,outcome:'attempt_in_progress',"
+        "identity_status:'unobservable'});var __accepted=false;"
+        "try{__accepted=addModule(__name,__slot,__model)===true;}"
+        "catch(__nativeError){return __record({ack:false,changed:false,attempted:true,"
+        "outcome:'native_exception',identity_status:'unobservable',"
+        "error:String(__nativeError)});}if(!__accepted){return __record({ack:false,"
+        "changed:false,attempted:true,outcome:'native_rejected',"
+        "identity_status:'unobservable',error:'Packet Tracer rejected module insertion'});}"
+        "return __record({ack:true,changed:true,attempted:true,"
+        "outcome:'mutation_accepted',identity_status:'unobservable'});})();"
+        "if(__mcpModuleMutationReceipt.ack!==true){throw new Error("
+        "__mcpModuleMutationReceipt.error||'module insertion was not acknowledged');}"
     )
 
 
@@ -79,8 +142,17 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
         if dev.category == "laptop" and getattr(dev, "wireless", False):
             lines.append(f'swapLaptopToWireless({json.dumps(dev.name)});')
 
+    # `slot_empty_proven` no es un adorno: es la afirmación de que alguien
+    # comprobó que el slot estaba vacío. Aquí lo único que este script puede
+    # probar es que el dispositivo lo crea él mismo, unas líneas más arriba, así
+    # que su slot es de fábrica. Un módulo sobre un dispositivo preexistente no
+    # tiene esa prueba y el payload debe rechazarlo, igual que hace el runtime
+    # tipado con `_owned_new_devices`.
+    created_here = {dev.name for dev in plan.devices}
     for mod in plan.modules:
-        lines.append(generate_module_command(mod))
+        lines.append(generate_module_command(
+            mod, slot_empty_proven=mod.device in created_here,
+        ))
 
     for link in plan.links:
         lines.append(generate_link_command(link))
