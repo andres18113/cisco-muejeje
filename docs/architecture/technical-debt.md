@@ -401,6 +401,29 @@ and 6 in the same reference-topology run; Slice 2A intentionally performed no
 configuration, foundational-evidence composition, control-plane work, or
 traffic.
 
+### Progress — Stage 3A4 Slice 2B/3, 2026-08-17
+
+Offline only. **No live Packet Tracer run was performed**, so no row moves to
+satisfied. Full record: `stage-3a4-serial-product-slice-2b.md`.
+
+| Row | Change |
+| --- | --- |
+| 2 serial support | **Orientation resolved as a capability.** Slice 2A left `SERIAL_ENDPOINT_ORIENTATION = UNRESOLVED`. `SerialOrientationObserver` now derives DCE/DTE from one registered read-only `show controllers` per bound endpoint, failing closed on stale, truncated, mismatched-interface or wrong-physical-hash evidence, and never mutating E4. Not exercised live. |
+| 3 configuration and addressing | **Serial transit addressing and clock now compile.** Deterministic /30s per site pair, materialised on both ends; the clock is emitted only from an observed manifest binding, never from planning metadata, because the cable decides which end may carry it. `apply_configuration` revalidates every serial-clock target against the manifest before dispatch. |
+| 6 authoritative readback | **Traffic evidence becomes expressible.** `CapacitySource.TRAFFIC_CALCULATION` was unreachable in production; typed `TrafficFlowIntent` plus `attribute_enterprise_traffic` now attribute demand to the links a flow actually crosses. RIPv2 compiles one reachability expectation per declared flow, gated on the route to that flow's own destination prefix. Still no registered-query or traffic evidence from a live run. |
+
+Two ceilings this slice adds to the closing run, both narrowing what a future
+claim may say:
+
+- **Flow attribution is RIPv2-only.** OSPF and EIGRP keep their router
+  cross-product. A generic implementation was written and removed because no
+  fixture exercises it. A closing run on RIPv2 is unaffected; a closing run on
+  any other IGP would not have flow-attributed behaviour.
+- **A verified route is not forwarding evidence.** `ROUTE_PRESENT` and
+  `END_TO_END_REACHABILITY` keep disjoint capability dimensions, and the flow
+  prerequisite orders evidence rather than substituting for it. No closure claim
+  may treat a satisfied route prerequisite as reachability.
+
 New ceiling discovered while implementing row 4, and it constrains the closing
 run: **`endpoint_address`, `access_port` and `dhcp_pool` foundations can never
 reach VERIFIED** on this backend. Endpoint verification reads IP and mask but
@@ -408,6 +431,52 @@ returns `gateway: null` and `dns: null`, so it resolves PARTIAL; the other two
 route to `_unobservable` unconditionally. A closing run must therefore compile
 only `l3_interface` and `link` foundations — which a RIPv2 reference topology
 does — or it will fail a gate that no amount of correct execution can satisfy.
+
+---
+
+## Claim ceiling — OSPF control-plane observation, 2026-08-17
+
+Not a debt entry: a recorded ceiling, so no later milestone can quietly exceed
+it. Established from source at Stage 3A4 Slice 2B/3 (`8b7d77c`).
+
+**What OSPF observation can establish:**
+
+| Query | Establishes | Does NOT establish |
+| --- | --- | --- |
+| `show ip ospf neighbor` (`enterprise_control_plane_runtime.py:1207`) | the OSPF process is operating (`protocol`) | the local **`router_id`** — it is absent from this SHOW, and the observer says so in its own message |
+| `show ip route ospf` (`ios_terminal.py:743`) | `network`, `prefix_length`, `next_hop`, `outgoing_interface` | the **`wildcard`** and the semantic **`segment_id`** — neither appears in the output |
+
+Those three fields were therefore removed from what OSPF expectations *claim*.
+
+**The trap that removal opened, and how it is closed.**
+`_unobservable_fields` builds its field map from `expected`, and
+`_direct_observation` (`:1413`) returns VERIFIED only when every field is
+VERIFIED. Deleting the unmeetable fields therefore flipped OSPF
+`ROUTING_PROCESS` and `ROUTE_PRESENT` from UNOBSERVABLE to **VERIFIED without
+observing anything new**, and `apply_control_plane.py:378/381` aggregates those
+into a run's `observed_status`.
+
+`ControlPlaneVerificationExpectation.unclaimed_fields` now records what an
+expectation deliberately does not claim, and the observer renders those fields
+UNOBSERVABLE exactly as if they were still in `expected`.
+
+```text
+OSPF_ROUTER_ID          = UNOBSERVABLE / DECLARED_UNCLAIMED
+OSPF_ROUTE_WILDCARD     = UNOBSERVABLE / DECLARED_UNCLAIMED
+OSPF_ROUTE_SEGMENT_ID   = UNOBSERVABLE / DECLARED_UNCLAIMED
+OSPF_PROCESS_AGGREGATE  = UNOBSERVABLE   # unchanged by the narrowing
+OSPF_ROUTE_AGGREGATE    = UNOBSERVABLE   # unchanged by the narrowing
+```
+
+**The rule this establishes, which outlives OSPF:** narrowing what an
+expectation claims may never raise what an observation concludes. If an
+aggregate status improves, it must be because something new was observed — never
+because an unmeetable field was deleted. Regressions in
+`test_enterprise_control_plane_runtime.py` pin exactly that, including that
+route evidence never stands in for forwarding evidence and that nothing here
+implies failure or recovery state.
+
+RIPv2 expectations are untouched and keep all three fields.
 
 ---
 
@@ -1155,6 +1224,47 @@ remove and CP2 does not touch source. Recorded here because this file is the
 evidence path this debt must eventually rewire, and whoever does that work
 should delete the fragment then rather than leave a reader to "repair" it by
 un-indenting, which would silently blank out every provider's evidence.
+
+### Verification — Stage 3A4 Slice 2B/3, 2026-08-17
+
+**Still OPEN, and the reason is now sharper than "not wired yet".**
+
+Implemented (`2bee898`): `packet_tracer_enterprise_capability_adapter(version)`
+is an exact-version composition root that wires both `ProbeCapabilityProvider`
+and `RuntimeCapabilityProvider`, binds the adapter to one Packet Tracer version,
+and returns evidence-free capabilities when the asked version differs. It also
+adds the model-neutral one-way implication this entry's closure criterion needs:
+verified SUPPORTED `multilayer_intervlan` implies `layer3`, with no model-string
+special casing. Measured: `3560-24PS.layer3` goes UNKNOWN → SUPPORTED through
+that root, and `3650-24PS.layer3` reaches SUPPORTED through the implication.
+
+**Why the entry does not close.** The criterion requires capability evidence to
+reconcile into *eligible physical hardware*. Re-measured at this slice: the two
+productive constructions cited above (`tool_registry.py:1532` and `:1552`) both
+live inside `_capability_discovery` and consume `catalog.identity_for` alone,
+which reads no evidence. Wiring providers there would satisfy a grep and change
+nothing. Nothing anywhere in `src/` feeds a capability adapter into hardware
+selection at all. **The mechanism now exists and is proven; the consumer does
+not exist.** That is the remaining work, and it is a narrower statement than the
+one this entry opened with.
+
+The CP2 tripwire `test_no_production_site_wires_the_providers` was deliberately
+**not** restored. It existed to fire the day someone wired providers by
+accident; wiring them is now this entry's intended direction, so keeping it
+would guard the opposite of the goal. It is replaced by strictly stronger
+assertions: both providers wired, exact version mandatory, no-evidence stays
+UNKNOWN, version-mismatched stays UNKNOWN in both directions, the implication
+fires only on SUPPORTED *and* verified evidence, a measured UNSUPPORTED survives
+wiring as UNSUPPORTED, and no `.supported()` shortcut or test fixture exists in
+the composition root.
+
+The stranded `evidence_for` fragment described above **was deleted** in
+`2bee898`, as this entry anticipated.
+
+The "3650 has multilayer runtime evidence" claim remains **unsubstantiated**.
+The tests above use a hermetic fixture that constructs that evidence; they prove
+the implication mechanism, not that any real 3650 probe record exists. Closure
+must still not assume it.
 
 Does not block Stage 3A4: regression-pinned by
 `TestTheRegressionReferenceDoesNotDependOnSelection`, whose docstring states

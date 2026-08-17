@@ -516,6 +516,62 @@ The real hazard is the one the guard's own docstring names: the two names load
 always false and an assertion written that way passes without checking
 anything. Measured: `packet_tracer_mcp is src.packet_tracer_mcp` → `False`.
 
+> ### CORRECTION, 2026-08-17 — the paragraph above is now false
+>
+> `_r2_worktree_editable.pth` **does not exist**. The virtualenv contains
+> `_editable_impl_packet_tracer_mcp.pth`, whose single line is the **main
+> checkout**:
+>
+> ```text
+> C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP\src
+> ```
+>
+> Measured from this worktree's root:
+>
+> ```text
+> import packet_tracer_mcp      -> …\Cisco-MCP\src\packet_tracer_mcp\__init__.py
+> import src.packet_tracer_mcp  -> …\worktrees\runtime-ripv2\src\packet_tracer_mcp\__init__.py
+> packet_tracer_mcp is src.packet_tracer_mcp -> False
+> ```
+>
+> So the hazard is **worse** than "two identities of the same file": a bare
+> import loads the **wrong tree entirely**. Whether it fails loudly or silently
+> depends on luck — a symbol that exists in both trees resolves against the main
+> checkout without complaint.
+>
+> This was rediscovered when three test files reintroduced the bare import and
+> `python -m pytest` could not even collect the suite: the module they imported
+> exists only in this worktree. Fixed in `79e27fc`.
+>
+> The canonical contract below is unchanged and still correct. What changed is
+> the *consequence* of breaking it, and one hard gate now follows from it —
+> see "Live import isolation" below.
+
+### Live import isolation — a hard gate for every live run
+
+Because the `.pth` points at the main checkout, a live Packet Tracer session
+driven through the bare production namespace would mutate a real workspace using
+**code from a different tree than the one under test**.
+
+Before any live mutation, prove both:
+
+```text
+packet_tracer_mcp.__file__  resolves inside .claude/worktrees/runtime-ripv2/src
+sys.modules contains exactly ONE of packet_tracer_mcp / src.packet_tracer_mcp
+```
+
+Do not perform live work while `packet_tracer_mcp.__file__` resolves to the main
+checkout, or while both identities are loaded in the executing process.
+`tests/test_worktree_isolation.py` already encodes both checks
+(`test_the_runtime_entrypoint_resolves_to_this_worktree`,
+`test_only_one_identity_of_the_package_is_loaded_in_a_process`); the gate makes
+passing them a **precondition of execution**, not merely a suite assertion.
+
+Repairing the environment (reinstalling the editable install against this
+worktree, or invoking with `cwd` at `src/`) is a named prerequisite of the next
+live run. The 2026-08-17 reconciliation was entirely offline and deliberately
+did not touch it.
+
 The canonical contract, already declared in `pyproject.toml`
 (`pythonpath = ["."]`, with the comment that it "garantiza una sola identidad
 del módulo"):
@@ -597,3 +653,46 @@ STAGE_3A4                           = PARTIAL
 TD_ACCEPTANCE_001                   = OPEN
 E9_5                               = OPEN
 ```
+
+---
+
+## Serial product Slice 2B/3 — implemented offline, 2026-08-17
+
+Full record: [`stage-3a4-serial-product-slice-2b.md`](stage-3a4-serial-product-slice-2b.md).
+
+An uncommitted 36-path burst found in this worktree was reconciled and
+serialized into nine commits, `ea7275e..b7c131f`. Final authoritative
+regression on the clean tree: **1906 passed**, three pre-existing pytest
+deprecation warnings, canonical `python -m pytest` from the worktree root with
+no custom `PYTHONPATH`.
+
+What it advances, against §3 and §4 of this document:
+
+- **§4's core gap is closed as a capability.** `CapacitySource.TRAFFIC_CALCULATION`
+  was unreachable in production; `EnterprisePlan` now carries
+  `TrafficFlowIntent` and `attribute_enterprise_traffic` maps each flow onto the
+  links it actually traverses — the correctness rule `TrafficContribution`'s own
+  docstring states. It fails closed on unreachable and equal-cost-ambiguous
+  paths instead of guessing.
+- **The serial half of §3 gap 1 advances.** `SerialOrientationObserver` resolves
+  the DCE/DTE orientation Slice 2A left `UNRESOLVED`, and the configuration
+  compiler now refuses to emit a serial clock without an observed manifest
+  binding.
+- **The E5 half of the composition seam exists.** `compile_configuration`
+  becomes a version-bound composition root and `apply_configuration`
+  revalidates every serial-clock target against the manifest before dispatch.
+
+What it explicitly does **not** advance:
+
+- no live Packet Tracer run of any kind;
+- no 41-device reference deployment;
+- flow attribution is **RIPv2 only** — OSPF and EIGRP keep their router
+  cross-product, because no fixture exercises the generic path;
+- the OSPF observability ceiling is now *declared* rather than raised: see the
+  `unclaimed_fields` mechanism in the Slice 2B record.
+
+The nine seams listed above under "Nine seams identified at the source-audit
+baseline" are correspondingly reduced: `PT_2911_HWIC2T_SERIAL_CLOCK` now has a
+resolver and a consumer, `parse_serial_controller` now maps to
+`SerialEndpointOrientation`, and the `unprofiled` Ethernet-shaped gate no longer
+`continue`s every serial link before the planner runs.

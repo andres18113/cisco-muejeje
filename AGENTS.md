@@ -56,6 +56,29 @@ tests**. If you write a helper worth testing, put it in `shared/utils.py`.
    of it — PT answers a wrong call with a bare `Invalid arguments for IPC call
    "X"`, so a guess fails without telling you why.
 
+## Import namespace, and the live-run gate
+
+Tests import `src.packet_tracer_mcp`; run `python -m pytest` from the repo root
+with no custom `PYTHONPATH`. `pyproject.toml` sets `pythonpath = ["."]` so that
+a pytest process loads exactly one identity of the package.
+
+A bare `import packet_tracer_mcp` in a test is a bug, and
+`tests/test_worktree_isolation.py` fails on it. In a worktree it is worse than a
+duplicate identity: the shared virtualenv's editable `.pth` points at the **main
+checkout**, so the bare name loads a *different tree* than the one you are
+editing.
+
+**Before any live Packet Tracer mutation**, prove both:
+
+```text
+packet_tracer_mcp.__file__  resolves inside the worktree you are testing
+sys.modules holds exactly ONE of packet_tracer_mcp / src.packet_tracer_mcp
+```
+
+Do not run live work otherwise — you would be mutating a real workspace with
+code from another tree. Invoking with `cwd` at `src/` is the supported way to
+get the production namespace to resolve locally without touching the `.pth`.
+
 ## Working with the bridge
 
 The bridge only really works with Packet Tracer open, so most verification is

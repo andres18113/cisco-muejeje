@@ -117,3 +117,20 @@ rows. For example:
 If a row remains `UNKNOWN` after bounded investigation and E10 depends on it,
 the final recommendation must not be `START_E10`. If E10 does not depend on the
 row, preserve the precise limitation and gate only the affected scenario.
+
+## OSPF observation ceiling — recorded 2026-08-17
+
+Established from source at Stage 3A4 Slice 2B/3, not from a live run. Full
+rationale in `docs/architecture/technical-debt.md`, "Claim ceiling — OSPF
+control-plane observation".
+
+| Row | Contract | State |
+| --- | --- | --- |
+| OSPF routing-process observation | `show ip ospf neighbor` establishes that the process operates. | `PARTIAL — protocol VERIFIED, router_id UNOBSERVABLE`. The local router ID is absent from that SHOW; it is declared unclaimed, not dropped. Aggregate stays UNOBSERVABLE. |
+| OSPF route observation | `show ip route ospf` establishes prefix, length, next hop and interface. | `PARTIAL — wildcard and segment_id UNOBSERVABLE`. Declared unclaimed. Aggregate stays UNOBSERVABLE. |
+| Narrowing discipline | Reducing what an expectation claims never raises what an observation concludes. | `ENFORCED` by `unclaimed_fields` plus regressions; a status may improve only from new observation. |
+
+Do not promote either row on the strength of the narrowing itself. Only a live
+run producing new registered evidence can move them, and neither `router_id`
+nor `wildcard`/`segment_id` is obtainable from the currently registered queries
+at all.

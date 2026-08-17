@@ -5,85 +5,123 @@
 - worktree: `.claude/worktrees/runtime-ripv2`
 - branch: `feature/runtime-ripv2`
 - Slice 2A implementation commit: `e846175b6e2154621e89d24d0809fae0e396d24b`
-- full regression: `1815 passed, 3 pre-existing pytest deprecation warnings`
-- Graphify: AST graph refreshed after Slice 2A; final module-effect/deployer/
-  manifest and disposable-workspace paths queried
-- worktree: clean after the final governed documentation commit
+- Slice 2B/3 serialization: `ea7275e..b7c131f`, nine commits
+- full regression: `1906 passed, 3 pre-existing pytest deprecation warnings`,
+  from `python -m pytest` at the worktree root with **no** custom `PYTHONPATH`,
+  on a clean tree
+- Graphify: AST graph refreshed after the last code commit — 7062 nodes,
+  23890 edges, 241 communities
+- worktree: clean
 
 ```text
 REFERENCE_TOPOLOGY_PRODUCT_PLANNING = READY_OFFLINE
 STAGE_3A4                           = PARTIAL
 TD_ACCEPTANCE_001                   = OPEN
-E9_5                               = OPEN
+TD_HARDWARE_001                     = OPEN
+E9_5                                = OPEN
 ```
 
 Offline planning remains authoritative. Do not reopen it unless executed
 runtime evidence directly invalidates a planning contract.
 
-## Slice 2A complete
+## What happened since the last handoff
+
+The previous handoff declared a HARD STOP with a clean worktree. **It was not
+clean.** The tree carried 36 uncommitted paths written in a ~28-minute burst on
+2026-08-13, undocumented and uncommitted, and `python -m pytest` could not even
+collect the suite.
+
+That burst was reconciled — not discarded, not restarted — and serialized into
+nine reviewable commits, each qualified as a **commit snapshot** in a throwaway
+`git worktree` rather than as a dirty-tree run. Full record:
+`docs/architecture/stage-3a4-serial-product-slice-2b.md`.
 
 ```text
-STAGE 3A4 — SERIAL PRODUCT SLICE 2A
-MODULE EFFECT EVIDENCE + PRODUCT PHYSICAL DEPLOYMENT
+STAGE 3A4 — SERIAL PRODUCT SLICE 2B/3
+ORIENTATION + TRANSIT ADDRESSING + TYPED TRAFFIC + E5 COMPOSITION
 ```
 
-The production physical path now supports a typed module-effect capability,
-checked one-shot insertion, fresh before/after effect observation, separate
-exact-identity evidence, observed manifest link bindings, a strict read-only
-empty-workspace gate, exact cleanup, and bounded inventory restoration.
-
-The first live qualification used only:
-
-```text
-2×2911 + 2 requested HWIC-2T effects + 1 serial WAN
-```
-
-Packet Tracer `9.0.1.0858` returned `VERIFIED_CLEAN`. Fresh readback verified
-both `Serial0/0/0` + `Serial0/0/1` port effects and the exact
-`Serial0/0/0 ↔ Serial0/0/0` link. The manifest preserved its directly observed
-runtime UUID. Cleanup removed the two exact disposable routers and restored
-the semantic workspace; only Packet Tracer's exact zero-port power-distribution
-object remained.
+Slice 2A's `SERIAL_ENDPOINT_ORIENTATION = UNRESOLVED` is now resolvable from a
+registered read-only `show controllers` per bound endpoint, and the compiler
+refuses to emit a serial clock without an observed manifest binding.
+`CapacitySource.TRAFFIC_CALCULATION`, previously unreachable in production, is
+now reachable through typed `TrafficFlowIntent` and path attribution.
 
 Evidence boundaries:
 
 ```text
-MODULE_EFFECT                      = OBSERVED / VERIFIED
-REQUESTED_EXACT_MODULE_IDENTITY    = UNOBSERVABLE / UNVERIFIED
-OBSERVED_MODULE_NUMBER             = "0"
-REQUESTED_INSERTION_SLOT           = "0/0"  # never treated as the same field
-SERIAL_LINK_ENDPOINT_BINDING       = OBSERVED / VERIFIED
-SERIAL_CABLE_IDENTITY              = UNOBSERVABLE / UNVERIFIED
-SERIAL_ENDPOINT_ORIENTATION        = UNRESOLVED
-INVENTORY_RESTORED                 = VERIFIED
+LIVE_PACKET_TRACER_RUN             = NONE
+SERIAL_ORIENTATION_CAPABILITY      = IMPLEMENTED / OFFLINE_VERIFIED
+SERIAL_ORIENTATION_EXERCISED       = NO
+TRAFFIC_ATTRIBUTION                = IMPLEMENTED / OFFLINE_VERIFIED
+FLOW_BEHAVIOUR_ATTRIBUTION         = RIPV2_ONLY
+MODULE_REPLAY_GUARD                = MEASURED_IN_NODE / NOT_IN_PACKET_TRACER
+OSPF_ROUTER_ID / WILDCARD / SEGMENT_ID = UNOBSERVABLE / DECLARED_UNCLAIMED
+CAPABILITY_COMPOSITION_ROOT        = EXISTS / NO_PRODUCTION_CONSUMER
 ```
 
-Mutation acknowledgement remained `APPLIED`, never `VERIFIED`. Exact requested
-`HWIC-2T` identity was not inferred from acknowledgement, port effect, or
-module number.
+Nothing in this slice was executed against Packet Tracer.
 
-Full evidence:
-`docs/architecture/stage-3a4-serial-product-slice-2a.md`.
+## Hard gate — live import isolation
 
-## Why the stage and debt remain open
+**Discovered during reconciliation, and it governs every future live run.**
 
-Slice 2A advances `TD-ACCEPTANCE-001` rows 1, 2, and the physical part of row
-6. It cannot close the debt because the closure criterion requires one same
-reference-topology run that also includes production configuration/addressing,
-authentic foundational evidence, typed control plane, and authoritative
-registered-query/traffic evidence.
+`.venv/Lib/site-packages/_editable_impl_packet_tracer_mcp.pth` points at the
+**main checkout**, not this worktree. Measured from this worktree's root:
 
-The following were intentionally not performed:
+```text
+import packet_tracer_mcp      -> ...\Cisco-MCP\src\packet_tracer_mcp\__init__.py
+import src.packet_tracer_mcp  -> ...\worktrees\runtime-ripv2\src\...\__init__.py
+packet_tracer_mcp is src.packet_tracer_mcp -> False
+```
 
+A live session driven through the bare production namespace would therefore
+mutate a real workspace using **code from a different tree than the one under
+test**. Before any live mutation, prove both:
+
+```text
+packet_tracer_mcp.__file__  resolves inside .claude/worktrees/runtime-ripv2/src
+sys.modules holds exactly ONE of packet_tracer_mcp / src.packet_tracer_mcp
+```
+
+Do not perform live work otherwise. `tests/test_worktree_isolation.py` encodes
+both checks; the gate makes passing them a precondition of execution. Repairing
+the environment is a named prerequisite of the next live run and was
+deliberately not done here — this slice was entirely offline.
+
+## What was intentionally not performed
+
+- no live Packet Tracer run of any kind;
 - no 41-device reference deployment;
-- no serial IOS or configuration application;
-- no RIPv2 orchestration;
-- no traffic integration;
-- no CP3;
-- no E9.5 closure;
-- no Skills modification or restructuring.
+- no serial IOS application against a real device;
+- no RIPv2 live orchestration, no traffic execution;
+- no CP3, no E9.5 closure;
+- no Skills modification or restructuring;
+- no environment/editable-install repair.
+
+## Remaining Stage 3A4 / E9.5 blockers
+
+1. **`TD-ACCEPTANCE-001` — the live reference run.** Rows 1–4 and 6 must be
+   satisfied in **one** run. Rows 2, 3 and 6 advanced as capabilities here;
+   none is exercised. This is the stage's own deliverable and its closure gate.
+2. **Live import isolation.** The hard gate above must be cleared before any
+   run that would satisfy blocker 1.
+3. **`TD-HARDWARE-001` — no consumer.** The exact-version capability
+   composition root exists and is proven, but nothing in `src/` feeds a
+   capability adapter into hardware selection. `tool_registry.py:1532/:1552`
+   are not the answer — they use `identity_for` alone, which reads no evidence.
+4. **No MCP surface for the new use cases.** `SerialOrientationObserver`,
+   `PacketTracerSerialOrientationRuntime` and `attribute_enterprise_traffic`
+   are reachable from no registered tool, so an operator cannot invoke them.
+5. **Flow attribution is RIPv2-only.** A closing run on any other IGP would
+   have no flow-attributed behaviour.
+6. **Module replay containment is unmeasured against Packet Tracer.** It was
+   measured in Node against an instrumented `addModule`, and the receipt-store
+   eviction limit is documented rather than closed.
 
 ## Hard stop
 
-HARD STOP after Slice 2A. The next governed session must recover this handoff
-and the Slice 2A evidence record before selecting any further Stage 3A4 slice.
+HARD STOP after Slice 2B/3. The next governed session must recover this handoff
+and `docs/architecture/stage-3a4-serial-product-slice-2b.md` before selecting
+any further Stage 3A4 slice, and must clear the live import gate before any
+live work.
