@@ -9,6 +9,11 @@ from .generate_configs import generate_configs_uc
 from .export_artifacts import export_artifacts_uc
 from .full_build import full_build
 from .compile_enterprise import compile_enterprise_topology
+from .plan_enterprise_hardware import (
+    EnterpriseHardwareComposition,
+    capability_catalog_for,
+    plan_enterprise_hardware,
+)
 from .deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
     PhysicalTopologyRuntime,
