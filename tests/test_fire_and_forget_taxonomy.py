@@ -1,9 +1,9 @@
-"""Taxonomia completa de superficies fire-and-forget, y los gates de R2.
+"""Taxonomia de mutaciones tipadas de producto, y los gates de R2.
 
 Un informe anterior mezclo dos cosas distintas: las familias de accion de
 CONFIGURACION y el conjunto de todas las familias de mutacion fire-and-forget
-del producto. Aca se separan por subsistema, se cuentan, y se exige que cada
-familia aparezca EXACTAMENTE UNA VEZ en una sola clasificacion.
+del producto. La fuente de verdad vive ahora en el registro del dominio; este
+archivo consume esa vista, la cuenta y mantiene separados los caminos raw.
 
 Alcance de la evidencia: la clasificacion se apoya en la forma del payload
 leida de los generadores. NO hay medicion sobre Packet Tracer en este archivo.
@@ -13,59 +13,26 @@ from __future__ import annotations
 
 import pytest
 
-REPLAY_SAFE = "REPLAY_SAFE"
-TREAT_UNSAFE = "TREAT_AS_REPLAY_UNSAFE"
-UNKNOWN = "UNKNOWN"
-DEVELOPER = "DEVELOPER_DISPOSABLE"
-OUTSIDE = "OUTSIDE_NORMAL_TYPED_PRODUCT_CONTRACT"
+from src.packet_tracer_mcp.domain.enterprise.mutation_replay import (
+    ReplayClassification,
+    taxonomy_by_surface,
+)
 
-# subsistema -> familia -> clasificacion
-TAXONOMY: dict[str, dict[str, str]] = {
-    "Enterprise Configuration": {
-        "CreateVlan": REPLAY_SAFE,
-        "ConfigureAccessPort": REPLAY_SAFE,
-        "ConfigureTrunk": REPLAY_SAFE,
-        "ConfigureRoutedInterface": REPLAY_SAFE,
-        "ConfigureSvi": REPLAY_SAFE,
-        "ConfigureSubinterface": REPLAY_SAFE,
-        "ConfigureDhcpPool": REPLAY_SAFE,
-        "ConfigureSerialClock": REPLAY_SAFE,
-        "ConfigureInterfaceBandwidth": REPLAY_SAFE,
-        "ConfigureEthernetLinkMode": REPLAY_SAFE,
-    },
-    "Endpoint": {
-        "SetEndpointStaticAddress": REPLAY_SAFE,
-        "SetEndpointDhcp": REPLAY_SAFE,
-    },
-    "Control Plane": {
-        "spanning-tree priority": REPLAY_SAFE,
-        "port-channel / etherchannel": REPLAY_SAFE,
-        "router ospf": REPLAY_SAFE,
-        "router eigrp": REPLAY_SAFE,
-    },
-    "Security": {
-        "interface hardening (nat inside / snooping trust / arp trust)": REPLAY_SAFE,
-        "banner + service password-encryption": REPLAY_SAFE,
-        "NAT (cuerpo ACL)": TREAT_UNSAFE,
-    },
-    "Voice": {
-        "telephony-service knobs (max-ephones / max-dn / source-address)": REPLAY_SAFE,
-        "ephone-dn / ephone / button": REPLAY_SAFE,
-        "option 150 (dhcp)": REPLAY_SAFE,
-        "telephony-service create cnf-files": UNKNOWN,
-    },
-    "Probe / developer": {
-        "capability probe vlan+interface payloads": DEVELOPER,
-    },
-    "Public / raw / legacy": {
-        "pt_send_raw(wait_result=False)": OUTSIDE,
-        "pt_apply_acl (ACLPlan)": TREAT_UNSAFE,
-        "pt_live_deploy batch + reconcile": REPLAY_SAFE,
-        "legacy cli_config_generator (incluye RIP)": OUTSIDE,
-    },
+REPLAY_SAFE = ReplayClassification.REPLAY_SAFE.value
+TREAT_UNSAFE = ReplayClassification.TREAT_AS_REPLAY_UNSAFE.value
+UNKNOWN = ReplayClassification.UNKNOWN.value
+
+# subsistema -> familia -> clasificacion, derivado de fuente de producto.
+TAXONOMY = taxonomy_by_surface()
+VALID = {item.value for item in ReplayClassification}
+
+# No son mutaciones tipadas normales y por eso no pueden aparecer en el
+# registro. Sus limites de superficie se prueban en test_fire_and_forget_surface.
+NON_PRODUCT_PATHS = {
+    "pt_send_raw(wait_result=False)",
+    "legacy cli_config_generator (incluye RIP)",
+    "capability probe vlan+interface payloads",
 }
-
-VALID = {REPLAY_SAFE, TREAT_UNSAFE, UNKNOWN, DEVELOPER, OUTSIDE}
 
 
 def _families() -> list[str]:
@@ -100,15 +67,21 @@ def test_the_counts_are_stated_explicitly():
     }
 
     assert counts == {
-        "Enterprise Configuration": 10,
-        "Endpoint": 2,
-        "Control Plane": 4,
-        "Security": 3,
-        "Voice": 4,
-        "Probe / developer": 1,
-        "Public / raw / legacy": 4,
+        "Enterprise Configuration": 12,
+        "Control Plane": 7,
+        "Security": 8,
+        "Voice": 7,
+        "Services": 8,
+        "Physical Topology": 4,
+        # No es una mutacion tipada, pero muta y esta expuesta. Tipificar el
+        # resto no puede ser la via por la que se queda sin clasificar.
+        "Legacy / raw CLI": 1,
     }
-    assert len(_families()) == 28
+    assert len(_families()) == 47
+
+
+def test_non_product_paths_cannot_masquerade_as_registered_product_families():
+    assert NON_PRODUCT_PATHS.isdisjoint(_families())
 
 
 def test_the_taxonomy_still_contains_families_that_are_not_safe():

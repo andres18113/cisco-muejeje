@@ -25,63 +25,35 @@ from pathlib import Path
 
 import pytest
 
+from src.packet_tracer_mcp.domain.enterprise.mutation_replay import (
+    PRODUCT_MUTATION_REPLAY_REGISTRY,
+    EvidenceBasis,
+    MutationSurface,
+    ReplayClassification,
+    ReplayContainment,
+    UnclassifiedProductMutation,
+    policy_for_action_type,
+)
+
 REPO = Path(__file__).resolve().parents[1]
 GENERATOR = REPO / "src" / "packet_tracer_mcp" / "infrastructure" / "generator"
 
 
-# Familias cuya reaplicacion deja el mismo estado, por semantica de conjunto o
-# de asignacion declarativa. Evidencia: el texto emitido por cada generador.
-REPLAY_SAFE_FAMILIES = {
-    "CreateVlan": "vlan N / name X -- conjunto por id",
-    "ConfigureAccessPort": "switchport access vlan N -- asignacion",
-    "ConfigureTrunk": "switchport trunk allowed vlan <lista completa> -- forma replace, no `add`",
-    "ConfigureRoutedInterface": "ip address A M -- asignacion",
-    "ConfigureSvi": "interface Vlan N / ip address A M -- asignacion",
-    "ConfigureSubinterface": "encapsulation dot1q N / ip address A M -- asignacion",
-    "ConfigureDhcpPool": "ip dhcp pool P / network / default-router -- asignacion",
-    "ConfigureSerialClock": "clock rate N -- asignacion",
-    "ConfigureInterfaceBandwidth": "bandwidth N -- asignacion",
-    "ConfigureEthernetLinkMode": "duplex/speed -- asignacion",
-    "SetEndpointStaticAddress": "configurePcIp(...) -- setter estructurado",
-    "SetEndpointDhcp": "configurePcIp(dhcp) -- setter estructurado",
-    "ConfigureRipv2": (
-        "router rip / version 2 / no auto-summary / network / passive-interface "
-        "-- conjuntos y asignaciones. A diferencia del resto de esta tabla, aqui "
-        "SI hay medicion: R2-0 aplico el payload dos veces sobre un 2911 "
-        "disposable y releyo estado semantico identico. Ver "
-        "docs/architecture/ripv2-runtime-qualification.md."
-    ),
-}
+def _families(classification: ReplayClassification) -> dict[str, str]:
+    return {
+        item.family: item.evidence
+        for item in PRODUCT_MUTATION_REPLAY_REGISTRY
+        if item.classification is classification
+    }
 
-# Familias que se TRATAN como inseguras por precaucion de producto.
-#
-# Lo que esta probado es la FORMA del payload, leida del generador: es
-# estructuralmente aditiva. Lo que NO esta probado es como se comporta Packet
-# Tracer al recibirla dos veces -- no se corrio ninguna reproduccion. El propio
-# "Gate discipline" de e95-stabilization exige una reproduccion controlada
-# antes de clasificar una limitacion de PT, asi que aqui no se afirma que PT
-# duplique la ACE: se la trata como insegura mientras no haya evidencia.
-REPLAY_UNSAFE_FAMILIES = {
-    "ACLPlan / pt_apply_acl": (
-        "STRUCTURALLY_ADDITIVE: generate_acl_cli emite solo "
-        "`access-list N permit|deny ...`, sin un `no access-list N` delante. "
-        "REPLAY_SAFETY_NOT_PROVEN: no se midio el efecto de aplicarla dos "
-        "veces en PT. TREAT_AS_REPLAY_UNSAFE por seguridad de producto."
-    ),
-    "NAT (cuerpo ACL)": (
-        "STRUCTURALLY_ADDITIVE: generate_nat_body_cli emite "
-        "`access-list N permit <net>`, la misma forma. "
-        "REPLAY_SAFETY_NOT_PROVEN, hereda el trato conservador."
-    ),
-}
 
-# Sin medicion propia. No se declara seguro lo que no se comprobo.
-REPLAY_UNKNOWN_FAMILIES = {
-    "telephony-service create cnf-files": (
-        "Es un verbo imperativo, no una asignacion. Regenerar los archivos dos "
-        "veces probablemente rinde lo mismo, pero no se midio en PT."
-    ),
-}
+# La clasificacion vive en fuente de producto. Este archivo conserva pruebas
+# puntuales de la forma emitida por los generadores mas sensibles.
+REPLAY_SAFE_FAMILIES = _families(ReplayClassification.REPLAY_SAFE)
+REPLAY_UNSAFE_FAMILIES = _families(
+    ReplayClassification.TREAT_AS_REPLAY_UNSAFE,
+)
+REPLAY_UNKNOWN_FAMILIES = _families(ReplayClassification.UNKNOWN)
 
 
 # -- evidencia de las familias seguras ------------------------------------
@@ -144,10 +116,90 @@ def test_every_unsafe_family_has_a_recorded_reason(family):
 
 
 def test_unknown_families_are_named_rather_than_assumed_safe():
-    """Lo que no se midio no se declara seguro."""
-    assert REPLAY_UNKNOWN_FAMILIES
-    for reason in REPLAY_UNKNOWN_FAMILIES.values():
-        assert "no se midio" in reason
+    """Lo que no se midio no se declara seguro.
+
+    Antes esto se comprobaba buscando el literal "no se midio" dentro de una
+    prosa en castellano. Al mover la fuente de verdad al registro tipado ese
+    literal deja de existir, pero la INVARIANTE no puede relajarse a "el texto
+    no esta vacio": cualquier frase pasaria. Se afirma sobre `basis`, que es un
+    campo estructurado y validado.
+    """
+    unknown = [
+        item for item in PRODUCT_MUTATION_REPLAY_REGISTRY
+        if item.classification is ReplayClassification.UNKNOWN
+    ]
+
+    assert unknown
+    for item in unknown:
+        assert item.basis is EvidenceBasis.UNMEASURED, item.family
+
+
+def test_a_non_empty_reason_can_never_by_itself_make_a_family_replay_safe():
+    """La prosa no es contencion.
+
+    Este es exactamente el agujero que abriria `assert reason.strip()`: una
+    familia con evidencia redactada pero sin contencion estructural no puede
+    llegar a REPLAY_SAFE. El validador del registro lo rechaza al importar.
+    """
+    for item in PRODUCT_MUTATION_REPLAY_REGISTRY:
+        if item.classification is not ReplayClassification.REPLAY_SAFE:
+            continue
+        structural = {
+            ReplayContainment.DECLARATIVE_REAPPLICATION,
+            ReplayContainment.STRUCTURED_SETTER,
+            ReplayContainment.IN_PAYLOAD_EFFECT_GUARD,
+            ReplayContainment.CONTROLLED_REPEAT_QUALIFIED,
+        }
+        assert structural.intersection(item.containment), item.family
+        assert item.basis is not EvidenceBasis.UNMEASURED, item.family
+
+
+def test_the_three_classifications_are_distinct_and_never_default():
+    """UNKNOWN no es UNSAFE, y ninguno de los dos es SAFE.
+
+    Ademas no hay clasificacion por defecto: preguntar por una familia que no
+    esta registrada falla cerrado en vez de devolver algo.
+    """
+    by_class: dict[ReplayClassification, set[str]] = {
+        item: set() for item in ReplayClassification
+    }
+    for item in PRODUCT_MUTATION_REPLAY_REGISTRY:
+        by_class[item.classification].add(item.family)
+
+    assert all(by_class.values()), "las tres clases deben estar pobladas"
+    assert not by_class[ReplayClassification.REPLAY_SAFE] & by_class[
+        ReplayClassification.TREAT_AS_REPLAY_UNSAFE
+    ]
+    assert not by_class[ReplayClassification.REPLAY_SAFE] & by_class[
+        ReplayClassification.UNKNOWN
+    ]
+    assert not by_class[ReplayClassification.TREAT_AS_REPLAY_UNSAFE] & by_class[
+        ReplayClassification.UNKNOWN
+    ]
+
+    class _NeverRegistered:
+        pass
+
+    with pytest.raises(UnclassifiedProductMutation):
+        policy_for_action_type(_NeverRegistered)
+
+
+def test_the_legacy_raw_acl_path_keeps_an_explicit_classification():
+    """Tipificar el resto no puede dejar al camino legacy sin clasificar.
+
+    `pt_apply_acl` sigue expuesto y sigue mutando. Cuando la taxonomia se movio
+    al registro tipado esta familia se quedo fuera de toda clasificacion, que es
+    peor que clasificarla mal.
+    """
+    legacy = [
+        item for item in PRODUCT_MUTATION_REPLAY_REGISTRY
+        if item.surface is MutationSurface.LEGACY_RAW
+    ]
+
+    assert [item.family for item in legacy] == ["pt_apply_acl (ACLPlan)"]
+    assert legacy[0].classification is ReplayClassification.TREAT_AS_REPLAY_UNSAFE
+    # Nombra la ausencia de contencion en vez de inventar una.
+    assert legacy[0].containment == (ReplayContainment.NONE_ESTABLISHED,)
 
 
 def test_the_classification_does_not_claim_the_whole_surface_is_safe():
