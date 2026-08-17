@@ -46,6 +46,7 @@ from .ios_terminal import (
     OperationalQueryId,
     parse_show_etherchannel_summary,
     parse_show_ip_ospf_neighbor,
+    parse_show_ip_interface,
     parse_show_ip_protocols_rip,
     parse_show_ip_route_rip,
     parse_show_ip_route_ospf,
@@ -60,6 +61,16 @@ class _PingExecutor(Protocol):
     def ping(self, source_device: str, destination: str) -> TypedPingResult: ...
 
 
+class _IosExecutor(Protocol):
+    def execute(
+        self,
+        device_name: str,
+        query_id: OperationalQueryId,
+        *,
+        interface: str = "",
+    ) -> IosCommandResult: ...
+
+
 class FailureScenarioExecutor:
     """Ejecuta fault/restore tipados y exige evidencia ICMP estable."""
 
@@ -67,6 +78,7 @@ class FailureScenarioExecutor:
         self,
         configuration: PacketTracerConfigurationRuntime,
         ping_executor: _PingExecutor,
+        ios_executor: _IosExecutor | None = None,
         *,
         renderer: PacketTracerControlPlaneFaultRenderer | None = None,
         stable_samples: int = 2,
@@ -95,6 +107,7 @@ class FailureScenarioExecutor:
             raise ValueError("interval_seconds must be non-negative.")
         self._configuration = configuration
         self._ping = ping_executor
+        self._ios = ios_executor
         self._renderer = renderer or PacketTracerControlPlaneFaultRenderer()
         self._stable_samples = stable_samples
         self._max_attempts = max_probe_attempts
@@ -184,23 +197,42 @@ class FailureScenarioExecutor:
                 rendered.ios_payload,
                 "Typed link shutdown accepted by Packet Tracer.",
             )
-            transition(
-                FailureTransitionPhase.FAULT_INJECTED,
-                (
-                    ActionExecutionStatus.APPLIED
-                    if injection.applied else ActionExecutionStatus.FAILED
-                ),
-                evidence_method="typed_interface_shutdown_dispatch",
-                message=injection.message,
-            )
             if injection.applied:
-                during = self._stable_probe(
+                fault_effect = self._interface_effect(
                     scenario,
                     expectation_id=failure_expectation.id,
                     stage=ControlPlaneExecutionStage.FAILOVER,
-                    expected_reachable=failure_reachable,
+                    expected_down=True,
                 )
+                transition(
+                    FailureTransitionPhase.FAULT_INJECTED,
+                    fault_effect.status,
+                    evidence_method=fault_effect.evidence_method,
+                    message=fault_effect.message,
+                )
+                if fault_effect.status is ActionExecutionStatus.VERIFIED:
+                    reachability = self._stable_probe(
+                        scenario,
+                        expectation_id=failure_expectation.id,
+                        stage=ControlPlaneExecutionStage.FAILOVER,
+                        expected_reachable=failure_reachable,
+                    )
+                    during = self._compose_failure_observation(
+                        scenario, failure_expectation, fault_effect, reachability,
+                    )
+                else:
+                    during = self._blocked_by_effect(
+                        failure_expectation,
+                        fault_effect,
+                        field="link_down",
+                    )
             else:
+                transition(
+                    FailureTransitionPhase.FAULT_INJECTED,
+                    ActionExecutionStatus.FAILED,
+                    evidence_method="typed_interface_shutdown_dispatch",
+                    message=injection.message,
+                )
                 during = self._unobservable(
                     failure_expectation.id,
                     ControlPlaneExecutionStage.FAILOVER,
@@ -230,12 +262,28 @@ class FailureScenarioExecutor:
                 message=restore.message,
             )
             if restore.applied:
-                after = self._stable_probe(
+                restore_effect = self._interface_effect(
                     scenario,
                     expectation_id=recovery_expectation.id,
                     stage=ControlPlaneExecutionStage.RESTORE,
-                    expected_reachable=recovery_reachable,
+                    expected_down=False,
                 )
+                if restore_effect.status is ActionExecutionStatus.VERIFIED:
+                    reachability = self._stable_probe(
+                        scenario,
+                        expectation_id=recovery_expectation.id,
+                        stage=ControlPlaneExecutionStage.RESTORE,
+                        expected_reachable=recovery_reachable,
+                    )
+                    after = self._compose_recovery_observation(
+                        recovery_expectation, restore_effect, reachability,
+                    )
+                else:
+                    after = self._blocked_by_effect(
+                        recovery_expectation,
+                        restore_effect,
+                        field="link_restored",
+                    )
                 transition(
                     FailureTransitionPhase.RECOVERY_OBSERVED,
                     after.status,
@@ -261,6 +309,185 @@ class FailureScenarioExecutor:
             after=after,
             transitions=transitions,
             message="; ".join(messages),
+        )
+
+    def _interface_effect(
+        self,
+        scenario: LinkFailureScenario,
+        *,
+        expectation_id: str,
+        stage: ControlPlaneExecutionStage,
+        expected_down: bool,
+    ) -> RuntimeControlPlaneVerification:
+        field = "link_down" if expected_down else "link_restored"
+        if self._ios is None:
+            return RuntimeControlPlaneVerification(
+                expectation_id=expectation_id,
+                stage=stage,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method="interface_effect_observer_unavailable",
+                fields={field: FieldVerificationStatus.UNOBSERVABLE},
+                message=(
+                    "No registered IOS observer was available to establish the "
+                    "interface mutation effect."
+                ),
+            )
+        try:
+            show = self._ios.execute(
+                scenario.target_device_name,
+                OperationalQueryId.SHOW_IP_INTERFACE,
+                interface=scenario.target_interface,
+            )
+        except Exception as exc:
+            return RuntimeControlPlaneVerification(
+                expectation_id=expectation_id,
+                stage=stage,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method="interface_effect_query_failed",
+                fields={field: FieldVerificationStatus.UNOBSERVABLE},
+                message=(
+                    "Registered interface-effect query raised "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            )
+        if (
+            not show.executed
+            or not show.fresh_output_observed
+            or show.truncated_by_pager
+        ):
+            return RuntimeControlPlaneVerification(
+                expectation_id=expectation_id,
+                stage=stage,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method="interface_effect_readback_unobservable",
+                fresh_evidence=show.fresh_output_observed,
+                fields={field: FieldVerificationStatus.UNOBSERVABLE},
+                message=(
+                    show.failure_reason
+                    or "Interface-effect read-back was absent, stale, or truncated."
+                ),
+            )
+        observed = parse_show_ip_interface(show.output)
+        if observed is None or self._interface_key(observed.interface) != self._interface_key(
+            scenario.target_interface
+        ):
+            return RuntimeControlPlaneVerification(
+                expectation_id=expectation_id,
+                stage=stage,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method="interface_effect_parse_unobservable",
+                fresh_evidence=True,
+                fields={field: FieldVerificationStatus.UNOBSERVABLE},
+                message="Fresh interface output did not identify the exact target.",
+            )
+        administratively_down = "administratively down" in observed.status.casefold()
+        matched = administratively_down is expected_down
+        return RuntimeControlPlaneVerification(
+            expectation_id=expectation_id,
+            stage=stage,
+            status=(
+                ActionExecutionStatus.VERIFIED
+                if matched else ActionExecutionStatus.FAILED
+            ),
+            evidence_method="fresh_show_ip_interface_admin_state",
+            fresh_evidence=True,
+            fields={
+                field: (
+                    FieldVerificationStatus.VERIFIED
+                    if matched else FieldVerificationStatus.FAILED
+                )
+            },
+            message=(
+                f"Fresh exact-interface read-back matched {field}=true."
+                if matched else
+                f"Fresh exact-interface read-back contradicted {field}=true."
+            ),
+        )
+
+    @staticmethod
+    def _interface_key(value: str) -> str:
+        normalized = value.casefold().replace("-", "")
+        for prefix, canonical in (
+            ("fastethernet", "fa"),
+            ("gigabitethernet", "gi"),
+            ("serial", "se"),
+            ("fa", "fa"),
+            ("gi", "gi"),
+            ("se", "se"),
+        ):
+            if normalized.startswith(prefix):
+                return canonical + normalized[len(prefix):]
+        return normalized
+
+    @staticmethod
+    def _blocked_by_effect(expectation, effect, *, field):
+        fields = {
+            key: FieldVerificationStatus.UNOBSERVABLE
+            for key in expectation.expected
+        }
+        fields[field] = effect.fields[field]
+        return effect.model_copy(update={"fields": fields})
+
+    @staticmethod
+    def _composed_status(fields):
+        statuses = set(fields.values())
+        if FieldVerificationStatus.FAILED in statuses:
+            return ActionExecutionStatus.FAILED
+        if statuses == {FieldVerificationStatus.VERIFIED}:
+            return ActionExecutionStatus.VERIFIED
+        return ActionExecutionStatus.UNOBSERVABLE
+
+    def _compose_failure_observation(
+        self, scenario, expectation, effect, reachability,
+    ):
+        fields = {
+            key: FieldVerificationStatus.UNOBSERVABLE
+            for key in expectation.expected
+        }
+        fields.update(effect.fields)
+        fields.update(reachability.fields)
+        domain = scenario.failure_domain_result
+        if domain is not None:
+            expected_status = expectation.expected.get("failure_domain_status")
+            if isinstance(expected_status, str):
+                fields["failure_domain_status"] = (
+                    FieldVerificationStatus.VERIFIED
+                    if domain.status.value == expected_status
+                    else FieldVerificationStatus.FAILED
+                )
+        # A successful ping does not identify which alternate link carried it.
+        # Keep path attribution explicitly unobservable until a registered
+        # route/interface observer can establish the declared survivor set.
+        return RuntimeControlPlaneVerification(
+            expectation_id=expectation.id,
+            stage=ControlPlaneExecutionStage.FAILOVER,
+            status=self._composed_status(fields),
+            evidence_method="interface_effect_and_typed_ping",
+            fresh_evidence=effect.fresh_evidence and reachability.fresh_evidence,
+            fields=fields,
+            message=(
+                reachability.message
+                + " Surviving-path attribution was not inferred from reachability."
+            ),
+            convergence=reachability.convergence,
+        )
+
+    def _compose_recovery_observation(self, expectation, effect, reachability):
+        fields = {
+            key: FieldVerificationStatus.UNOBSERVABLE
+            for key in expectation.expected
+        }
+        fields.update(effect.fields)
+        fields.update(reachability.fields)
+        return RuntimeControlPlaneVerification(
+            expectation_id=expectation.id,
+            stage=ControlPlaneExecutionStage.RESTORE,
+            status=self._composed_status(fields),
+            evidence_method="interface_restore_effect_and_typed_ping",
+            fresh_evidence=effect.fresh_evidence and reachability.fresh_evidence,
+            fields=fields,
+            message=reachability.message,
+            convergence=reachability.convergence,
         )
 
     def _stable_probe(
@@ -469,6 +696,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         self._failure = FailureScenarioExecutor(
             self._configuration,
             self._ping,
+            self._ios,
             renderer=fault_renderer,
             stable_samples=stable_samples,
             max_probe_attempts=max_probe_attempts,
@@ -849,7 +1077,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             attempts += 1
             show = self._fresh_show(
                 action.device_name, OperationalQueryId.SHOW_IP_ROUTE_RIP,
-                expectation, query_cache,
+                expectation, query_cache, permit_truncated=True,
             )
             if isinstance(show, RuntimeControlPlaneVerification):
                 # Evidencia rancia o consulta no ejecutada: esperar no lo
@@ -910,7 +1138,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             )
         show = self._fresh_show(
             action.device_name, OperationalQueryId.SHOW_IP_PROTOCOLS,
-            expectation, query_cache,
+            expectation, query_cache, permit_truncated=True,
         )
         if isinstance(show, RuntimeControlPlaneVerification):
             return show
@@ -1104,6 +1332,8 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         query_id: OperationalQueryId,
         expectation: ControlPlaneVerificationExpectation,
         query_cache: dict[tuple[str, OperationalQueryId], IosCommandResult],
+        *,
+        permit_truncated: bool = False,
     ) -> IosCommandResult | RuntimeControlPlaneVerification:
         key = (device_name, query_id)
         if key not in query_cache:
@@ -1120,6 +1350,14 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 expectation, ControlPlaneExecutionStage.OBSERVED,
                 show.failure_reason
                 or "Registered IOS query produced no fresh current-command window.",
+            )
+        if show.truncated_by_pager and not permit_truncated:
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.OBSERVED,
+                "The registered IOS read-back was truncated by the pager; "
+                "partial output cannot establish complete control-plane state.",
+                evidence_method="registered_ios_output_truncated",
             )
         return show
 
