@@ -18,9 +18,9 @@ win.
 Corrected figures, measured rather than carried forward:
 
 ```text
-canonical regression   2085 passed, 3 pre-existing warnings
+canonical regression   2103 passed, 3 pre-existing warnings
                        ./.venv/Scripts/python.exe -m pytest, no custom PYTHONPATH
-Graphify               7816 nodes, 26723 edges, 293 communities
+Graphify               7872 nodes, 26873 edges, 273 communities
 ```
 
 ## Stage 3A4 execution — gates 1–3 CLOSED, gate 4 still open
@@ -47,12 +47,13 @@ configuration actions on measured exact-version capability evidence: physical
 deployment VERIFIED, serial orientation VERIFIED with exactly one DCE and one
 DTE, serial transit addressing VERIFIED, clock on the observed DCE read back
 VERIFIED. It stopped because six applied access-port actions cannot be read
-back at all — this repository registers no access-port getter — so E5 ended
-`partial` and only VERIFIED may carry the control plane. A later read-only
+back at all, so the aggregate E5 status ended `partial`. A later read-only
 audit established that every foundation the RIPv2 path declares *was* VERIFIED
-in that run, so the stop is the aggregate E5 rule rather than a missing
-foundation; see `TD-ACCESSPORT-READBACK-001`, which also records why closing
-access-port observability alone cannot unblock MEG-4. The "MEG-4 is blocked,
+in that run, so the stop was the aggregate rule rather than a missing
+foundation. That rule is now scoped to the foundations the control plane
+declares — the decision, its obligations and its evidence are recorded under
+`TD-ACCESSPORT-READBACK-001`, "Decision 2 taken". The access-port observability
+gap is unchanged and still blocks E9.5; it no longer blocks MEG-4. The "MEG-4 is blocked,
 and on what" section below describes run *zero* — the state before any run —
 and is history, not status.
 

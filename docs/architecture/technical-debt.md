@@ -2456,14 +2456,19 @@ So MEG-4's remaining blocker is two decisions, not one:
    not let it promote any UNOBSERVABLE or PARTIAL row to VERIFIED.
 
 Blocks Stage 3A4:
-**Yes, for MEG-4**, jointly with decision 2 above.
+**No, as of 2026-08-18** — see "Decision 2 taken" below.
+It read as blocking only through the aggregate E5 rule; `access_port` is not
+a foundation of the bounded RIPv2 `ControlPlanePlan`. The observability gap
+itself is unchanged and still blocks E9.5 closure of the runtime register's
+access-port row.
 
 Blocks claims of:
 any statement that an access port was configured with a given VLAN on this
 backend. `APPLIED` is the ceiling today.
 
 RESOLVE_BEFORE:
-Stage 3A4 MEG-4 completion.
+E9.5 final closure. Reclassified from "Stage 3A4 MEG-4 completion"
+on 2026-08-18; see "Decision 2 taken" below.
 
 Closure criterion:
 
@@ -2482,6 +2487,124 @@ Pagination note: the new query must **not** be added to
 remains the only pagination-qualified query. An interface-targeted query is
 preferred precisely so that pagination does not arise; if a measured capture
 paginates, that query needs its own pagination qualification first.
+
+### Decision 2 taken — the E5→E9 gate is foundation-scoped, 2026-08-18
+
+This entry named two remaining decisions and deliberately took neither. The
+second is taken here, under the two obligations this entry itself imposed:
+*state which acceptance line it moves*, and *do not let it promote any
+UNOBSERVABLE or PARTIAL row to VERIFIED*.
+
+Commit: `feat: scope the E5 gate to the foundations the control plane declares`.
+
+**Which acceptance line it moves: none.** By itself this decision moves no
+acceptance line off `NOT_ESTABLISHED`. What it does is make
+`TD-ACCEPTANCE-001` row 4 *reachable*: that row asks for statuses and hashes
+produced by `apply_configuration` from real readback so that
+`ControlPlaneApplicator`'s gate decides on evidence, and until now the aggregate
+rule stopped the run before that gate could decide anything. Movement of
+`CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION` or
+`FULL_PRODUCT_PIPELINE_ACCEPTANCE` still requires rows 1–4 and row 6 satisfied
+in one run, unchanged.
+
+**Nothing is promoted.** The aggregate `ConfigurationApplicationResult` keeps
+its truthful value, every UNOBSERVABLE row stays UNOBSERVABLE, every PARTIAL row
+stays PARTIAL, and each of those is pinned by a regression in
+`tests/test_e95_foundation_scoped_gate.py`. No expected field was removed from
+any expectation to make a status improve.
+
+**Why this is not the weakening this entry warned against.** The warning was
+written when the aggregate rule looked like a governed choice. It is not one.
+It entered in `c1ea586`, a fix for a gate that compared against a
+`ConfigurationApplicationStatus` member that did not exist and therefore raised
+`AttributeError`; the replacement's entire stated rationale is that APPLIED and
+VERIFIED are separate states and advancing on APPLIED would treat "the mutation
+returned success" as evidence of effect. `UNOBSERVABLE` and `PARTIAL` are never
+mentioned in that reasoning. The governed statement it shipped under is the
+adversarial-matrix row *"a failed E5 never mutates E9"* — contradiction-scoped,
+and still enforced exactly.
+
+Four governed documents state the precondition in foundation-scoped terms, and
+one of them is only coherent that way:
+
+```text
+enterprise-control-plane.md      "an unverified foundational action stops
+                                  application before any E9 mutation"
+enterprise-services.md           "every referenced E5 endpoint-address action"
+enterprise-voice.md              "a foundation that is not independently VERIFIED"
+university-topology-acceptance.md "a foundational-requirement gate that decides
+                                  whether the first step should run at all"
+e95-stage-3a4-readiness.md       "A RIPv2 reference topology IS satisfiable,
+                                  because it needs only l3_interface and link
+                                  foundations"
+```
+
+That last sentence is false under an aggregate rule: a RIPv2 run that emits
+access-port actions could never pass, which is precisely what run 5 measured.
+The governed pre-run analysis predicted satisfiability on foundation scope.
+
+**What now blocks, and what does not.** The gate refuses on *contradiction*
+rather than on *absence*:
+
+| Condition | Before | Now |
+| --- | --- | --- |
+| aggregate `FAILED` (preflight refusal, failed action) | blocks | **blocks** |
+| a `ConfigurationAction` result `FAILED` | blocks | **blocks** |
+| a verification result `FAILED` — read back and contradicted | blocks | **blocks** |
+| a verification `UNOBSERVABLE` on a non-declared foundation | blocks | passes, state preserved |
+| a verification `PARTIAL` on a non-declared foundation | blocks | passes, state preserved |
+| any declared foundation short of `VERIFIED`, including absent | (unreachable) | **blocks, zero runtime interaction** |
+
+An observed contradiction discredits this run's model of the device, including
+the foundations it did read successfully. An unobserved field discredits
+nothing; it simply cannot support a claim, and whether a claim needs it is the
+foundation gate's business.
+
+**Two defects the change surfaced, both previously unreachable.**
+
+1. `execute_enterprise_reference` never inspected the control-plane result. An
+   E9 that refused in its own preflight with
+   `FOUNDATIONAL_CONFIGURATION_MISSING` was reported as a **COMPLETED** run with
+   an empty error list. Unreachable before, because the aggregate rule stopped
+   the run before bad foundations could reach E9. Fixed in the same commit: E9
+   is the terminal operation of the sequence, so unlike the middle of the chain
+   there is no later consumer to scope its claim to, and its own aggregate
+   decides.
+2. A run may now complete every stage while non-required configuration stays
+   unobservable, so `COMPLETED` could be misread as "all configuration
+   verified". `EnterpriseExecutionResult.configuration_fully_verified` states it
+   explicitly and appears in the compact summary beside the aggregate status.
+
+**Recorded, not fixed, and out of this entry's scope:** `apply_security.py`
+still has the pre-correction shape — capability-refused actions are skipped and
+the remaining ones mutate, with no critical check and no dependency closure.
+The bounded MEG-4 path compiles no security plan, so nothing in this stage
+reaches it. Whoever opens E6 security work should carry the same whole-batch
+rule across rather than rediscover it.
+
+### Blocking relationship, re-evaluated after the decision
+
+Literal, against the current governed criteria:
+
+```text
+BLOCKS_MEG4      = NO   — access_port is not a foundation of the bounded RIPv2
+                          ControlPlanePlan, and the aggregate rule that made it
+                          appear blocking no longer gates the run
+BLOCKS_STAGE3A4  = NO   for the bounded qualification; the reference run is
+                          governed by its own foundation set, not by this entry
+BLOCKS_E9_5      = YES  — no closure classification can be recorded for the
+                          runtime register's access-port row without evidence
+RESOLVE_BEFORE   = E9.5 final closure (was: Stage 3A4 MEG-4 completion)
+```
+
+The observability gap is unchanged and remains real: six applied
+`ConfigureAccessPort` actions still cannot be read back at all, and `APPLIED`
+remains their ceiling. What changed is only that it no longer blocks an
+operation that never required it. It is **not** classified
+`BACKEND_LIMITATION` — nothing has probed whether Packet Tracer exposes a
+getter — and it is not merged into the runtime register's row, which it owns
+rather than duplicates: the register row records the runtime state, this entry
+records the missing registered query and its minimum evidence contract.
 
 ---
 
