@@ -124,6 +124,30 @@ class PhysicalModuleEffectCapability(BaseModel):
     message: str = ""
 
 
+def port_classes(ports: list[str] | tuple[str, ...]) -> list[str]:
+    """Classify interface names by Cisco naming convention.
+
+    Domain knowledge rather than a Packet Tracer detail: the names follow Cisco
+    conventions, and the evidence contract needs them to decide which newly
+    appeared ports are plausibly the requested module's effect.
+    """
+
+    classes: set[str] = set()
+    for port in ports:
+        lowered = port.casefold()
+        if lowered.startswith("serial"):
+            classes.add("serial")
+        elif "ethernet" in lowered:
+            classes.add("ethernet")
+        elif lowered.startswith("async"):
+            classes.add("async")
+        elif lowered.startswith("modem"):
+            classes.add("modem")
+        else:
+            classes.add("other")
+    return sorted(classes)
+
+
 class PhysicalModuleSlotObservation(BaseModel):
     """Direct fields exposed by one runtime module-tree entry.
 
@@ -189,17 +213,40 @@ class PhysicalModuleObservation(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
+    def newly_added_relevant_ports(self) -> list[str]:
+        """Ports that appeared and could plausibly be this module's effect.
+
+        Relevance is the port *class*: a serial HWIC explains new serial ports
+        and nothing else.  It is read from ``expected_ports`` themselves rather
+        than from the ``expected_port_classes`` field, so blanking that field
+        cannot widen what counts as unexplained.
+        """
+
+        relevant = set(port_classes(self.expected_ports))
+        if not relevant:
+            return []
+        added = set(self.ports_after) - set(self.ports_before)
+        return sorted(
+            (port for port in added if set(port_classes([port])) & relevant),
+            key=str.casefold,
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def effect_newly_caused(self) -> bool:
-        """The complete expected effect was absent before and present after.
+        """This transaction caused the declared effect: nothing missing, nothing extra.
 
         Read from the raw before/after inventories rather than from
-        ``added_ports`` so a derived field cannot vouch for itself.
+        ``added_ports`` so a derived field cannot vouch for itself.  Equality
+        rather than containment: expected ports appearing alongside an
+        unrequested module effect of the same class is an ambiguous result, not
+        a successful one.
         """
 
         expected = set(self.expected_ports)
         if not expected:
             return False
-        return expected <= (set(self.ports_after) - set(self.ports_before))
+        return set(self.newly_added_relevant_ports) == expected
 
     @computed_field  # type: ignore[prop-decorator]
     @property

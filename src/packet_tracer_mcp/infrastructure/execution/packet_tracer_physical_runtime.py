@@ -31,6 +31,7 @@ from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceLinkObservation,
     PhysicalWorkspaceObservation,
+    port_classes,
 )
 from ...domain.models.plans import DevicePlan, LinkPlan, ModulePlan
 from ..catalog.modules import resolve_module
@@ -404,7 +405,7 @@ class PacketTracerPhysicalTopologyRuntime:
                 operation_support=SupportStatus.SUPPORTED,
                 effect_observation_support=SupportStatus.UNSUPPORTED,
                 expected_ports=expected_ports,
-                expected_port_classes=_port_classes(expected_ports),
+                expected_port_classes=port_classes(expected_ports),
                 identity_observation_status=ObservationStatus.UNOBSERVABLE,
                 message=(
                     "The catalogued port names do not prove an effect in the "
@@ -416,7 +417,7 @@ class PacketTracerPhysicalTopologyRuntime:
             operation_support=SupportStatus.SUPPORTED,
             effect_observation_support=SupportStatus.SUPPORTED,
             expected_ports=expected_ports,
-            expected_port_classes=_port_classes(expected_ports),
+            expected_port_classes=port_classes(expected_ports),
             identity_observation_status=ObservationStatus.UNOBSERVABLE,
             message=(
                 "Packet Tracer can verify fresh port effects; exact installed "
@@ -573,8 +574,8 @@ class PacketTracerPhysicalTopologyRuntime:
         after_set = set(after.ports)
         observed_expected = sorted(expected_set.intersection(after_set), key=str.casefold)
         added = sorted(after_set.difference(baseline.ports), key=str.casefold)
-        observed_classes = _port_classes(observed_expected)
-        expected_classes = _port_classes(expected_ports)
+        observed_classes = port_classes(observed_expected)
+        expected_classes = port_classes(expected_ports)
 
         # Neither placement nor identity is derivable here, and the reason is the
         # same one: `observed_module_number` lives in the module-tree namespace
@@ -1008,23 +1009,6 @@ def _observable_module_identity(value: object) -> str:
     if normalized.casefold() in {"", "none", "null"}:
         return ""
     return normalized
-
-
-def _port_classes(ports: list[str] | tuple[str, ...]) -> list[str]:
-    classes: set[str] = set()
-    for port in ports:
-        lowered = port.casefold()
-        if lowered.startswith("serial"):
-            classes.add("serial")
-        elif "ethernet" in lowered:
-            classes.add("ethernet")
-        elif lowered.startswith("async"):
-            classes.add("async")
-        elif lowered.startswith("modem"):
-            classes.add("modem")
-        else:
-            classes.add("other")
-    return sorted(classes)
 
 
 def _expected_ports_match_requested_slot(

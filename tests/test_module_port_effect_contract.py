@@ -458,6 +458,79 @@ class TestRow11DuplicateEvaluationCausesNoFurtherMutation:
 
 
 # --------------------------------------------------------------------------
+# El efecto aceptado tiene que ser el declarado COMPLETO, ni mas ni menos
+# --------------------------------------------------------------------------
+
+class TestTheCausedEffectMustBeExactlyTheDeclaredOne:
+    """Auditoria posterior: `expected <= added` no alcanza como causacion.
+
+    Que aparezcan los puertos esperados no dice que la mutacion haya hecho SOLO
+    eso. Si la insercion produjo ademas un efecto de modulo relevante que nadie
+    pidio, lo que ocurrio no es el efecto declarado, y atribuirle el resultado a
+    la mutacion pedida seria una lectura optimista de evidencia ambigua.
+
+    "Relevante" son los puertos de las mismas clases que el modulo declara
+    agregar. Un puerto de otra clase que aparezca por su cuenta no es efecto
+    plausible de un HWIC serial, y exigir que tampoco aparezca seria inventar
+    una dimension que no se midio.
+    """
+
+    def test_an_unexpected_extra_serial_port_is_not_the_declared_effect(self):
+        """El hueco medido: antes esto verificaba."""
+        transport = _PacketTracerModuleTransport(
+            ports_added_by_insertion=[*SERIAL, "Serial0/1/0"],
+        )
+        runtime, observation = _insert(transport)
+
+        assert observation.added_ports == [*SERIAL, "Serial0/1/0"]
+        # El efecto en el slot pedido es exacto...
+        assert observation.effect_observed is True
+        # ...pero la mutacion causo mas de lo declarado.
+        assert observation.effect_newly_caused is False
+        assert observation.effect_verification_status is VerificationStatus.FAILED
+
+        _, error = _deployer_verdict(runtime, observation)
+        assert error != ""
+
+    def test_an_incidental_port_of_another_class_does_not_fail_the_effect(self):
+        """El limite del criterio, fijado para que no se ensanche solo."""
+        transport = _PacketTracerModuleTransport(
+            ports_added_by_insertion=[*SERIAL, "GigabitEthernet0/3"],
+        )
+        runtime, observation = _insert(transport)
+
+        assert "GigabitEthernet0/3" in observation.added_ports
+        assert observation.newly_added_relevant_ports == SERIAL
+        assert observation.effect_newly_caused is True
+        assert observation.effect_verification_status is VerificationStatus.VERIFIED
+
+        _, error = _deployer_verdict(runtime, observation)
+        assert error == ""
+
+    def test_a_missing_expected_port_is_still_not_the_declared_effect(self):
+        transport = _PacketTracerModuleTransport(ports_added_by_insertion=[SERIAL[0]])
+        _, observation = _insert(transport)
+
+        assert observation.newly_added_relevant_ports == [SERIAL[0]]
+        assert observation.effect_newly_caused is False
+
+    def test_relevance_is_read_from_the_expected_ports_themselves(self):
+        """Vaciar `expected_port_classes` no debe poder ablandar el criterio.
+
+        Si la relevancia se leyera de ese campo, un doble podria borrarlo y
+        conseguir que ningun puerto extra contara como relevante.
+        """
+        transport = _PacketTracerModuleTransport(
+            ports_added_by_insertion=[*SERIAL, "Serial0/1/0"],
+        )
+        _, observation = _insert(transport)
+        blanked = observation.model_copy(update={"expected_port_classes": []})
+
+        assert blanked.newly_added_relevant_ports == [*SERIAL, "Serial0/1/0"]
+        assert blanked.effect_newly_caused is False
+
+
+# --------------------------------------------------------------------------
 # El veredicto no se puede declarar, y esa es la parte estructural
 # --------------------------------------------------------------------------
 
