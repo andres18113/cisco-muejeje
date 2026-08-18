@@ -1717,6 +1717,101 @@ perfectly well: this repository had simply never written them down.
 
 ---
 
+## TD-ORIENTATION-PAGER-001 — Serial controller read-back truncates and orientation cannot complete
+
+Status:
+OPEN
+
+Severity:
+P1
+
+Discovered:
+Stage 3A4 MEG-4 bounded live qualification, run 3, 2026-08-18, on 2911 with
+HWIC-2T, PT `9.0.1.0858`. Evidence:
+`stage-3a4-bounded-live-qualification.md`, "Run 3".
+
+Description:
+
+`SerialOrientationObserver` derives DCE/DTE from one registered read-only
+`show controllers` per bound endpoint. Exercised live for the first time, both
+endpoints returned the same result:
+
+```text
+Serial endpoint 'r-edge-a-01' on 'link/wan_link/23682ae56217':
+    Registered controller query was truncated by the pager.
+Serial endpoint 'r-edge-b-01' — identical.
+```
+
+The observer refused rather than reading an orientation out of a half-captured
+buffer. That is the behaviour it was built for and it is not the defect; the
+defect is that the evidence the product needs cannot currently be captured.
+
+What was already known:
+
+- PT 9.0.1 **rejects `terminal length 0`**, recorded independently at
+  `ios_terminal.py:462`, `ios_terminal.py:1153` and `command_dispatch.py:154`.
+  The ordinary way to disable the pager is unavailable on this build;
+- `TD-RUNTIME-003` already handles pager truncation for `show ip protocols` by
+  reporting UNOBSERVABLE rather than FAILED. Same phenomenon, different query,
+  and that entry is `RESOLVED` on containment rather than on capture.
+
+What run 3 established that was not known:
+
+- `show controllers Serial0/0/0` on a 2911 carrying an HWIC-2T exceeds one page
+  on this build, so the orientation query truncates **every time** rather than
+  occasionally;
+- `ControlledIosExecutor` cancels the pager to stop a paginated SHOW poisoning
+  the next registered query, and keeps the first page as evidence. Whether the
+  DCE/DTE line is on that first page is **not known** — nothing has measured it;
+- the query is already interface-scoped (`SHOW_CONTROLLERS_SERIAL` with
+  `interface=Serial0/0/0`), so narrowing the command further is not available.
+
+Classification:
+```text
+STAGE_3A4_SCOPE
+BACKEND_LIMITATION for disabling the pager on this build
++ MISSING_CAPABILITY for capturing a paginated registered read-back
+```
+
+Blocks Stage 3A4:
+**Yes, for MEG-4.** The bounded qualification cannot reach E5, foundations, E9
+or behaviour while serial orientation cannot be observed, because every later
+stage depends on the oriented manifest. It blocks nothing offline and changes
+no claim already recorded.
+
+Blocks claims of:
+any statement about observed DCE/DTE orientation, and therefore about serial
+clock placement, on this backend. `SERIAL_ENDPOINT_ORIENTATION` remains
+unobserved live.
+
+RESOLVE_BEFORE:
+Stage 3A4 MEG-4 completion.
+
+Closure criterion:
+
+One of the following, decided deliberately and recorded with its claim ceiling:
+
+- **A.** A governed multi-page capture for registered read-only queries: page
+  through the pager and concatenate, with the completeness of the assembled
+  output proven rather than assumed. This is the only branch that yields
+  orientation evidence, and it widens the registered-query contract, so it must
+  keep the existing guarantees — no mutation, no poisoning of the next query,
+  and a truncated-and-not-completed capture still failing closed.
+- **B.** Establish, by measurement rather than by assumption, that the DCE/DTE
+  line is always within the first captured page, and accept the first page as
+  complete evidence *for this query only*. This must not weaken
+  `truncated_by_pager` anywhere else, and must state what is being relied on.
+- **C.** Classify live serial orientation `UNOBSERVABLE` for this build, which
+  forfeits exit-matrix rows 4, 5, 7 and 8 and every claim that rests on an
+  observed DCE. This is a real option and the most honest one if A and B both
+  fail, but it is a claim ceiling, not a fix.
+
+**No branch may be taken by parsing the buffer the product already flagged as
+truncated.** That flag exists precisely to stop a hidden line being mistaken for
+an absent one, and run 3 deliberately left the refusal in place.
+
+---
+
 ## TD-TRANSPORT-001 — FileBridge does not provide exactly-once or at-most-once execution
 
 Status:
