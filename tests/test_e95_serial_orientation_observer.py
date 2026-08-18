@@ -99,15 +99,23 @@ def _observation(
     observed: bool = True,
     fresh: bool = True,
     truncated: bool = False,
+    complete: bool = True,
 ) -> SerialControllerObservation:
+    """Una observacion utilizable: cada dimension explicita, ninguna asumida."""
     return SerialControllerObservation(
         device_name=device_name,
         interface=interface,
         orientation=orientation,
         clock_rate_bps=(2_000_000 if orientation is SerialEndpointOrientation.DCE else None),
         observed=observed,
+        executed=True,
         fresh_evidence=fresh,
+        complete=complete,
         truncated=truncated,
+        parseable=True,
+        interface_identity_match=True,
+        pages_captured=1,
+        pagination="not_encountered",
         evidence_method="fresh_show_controllers_serial",
     )
 
@@ -198,7 +206,7 @@ def test_incomplete_or_inexact_endpoint_evidence_fails_closed(defect: str):
     elif defect == "stale":
         bad = bad.model_copy(update={"fresh_evidence": False})
     elif defect == "truncated":
-        bad = bad.model_copy(update={"truncated": True})
+        bad = bad.model_copy(update={"truncated": True, "complete": False})
     elif defect == "wrong_interface":
         bad = bad.model_copy(update={"interface": "Serial0/0/1"})
     else:
@@ -260,6 +268,7 @@ def test_packet_tracer_runtime_rejects_non_authoritative_controller_output(defec
         executed=True,
         output=output,
         fresh_output_observed=True,
+        output_complete=True,
     )
     if defect == "stale":
         result = IosCommandResult(
@@ -268,6 +277,7 @@ def test_packet_tracer_runtime_rejects_non_authoritative_controller_output(defec
             executed=True,
             output=output,
             fresh_output_observed=False,
+            output_complete=True,
         )
     elif defect == "truncated":
         result = IosCommandResult(
@@ -285,6 +295,7 @@ def test_packet_tracer_runtime_rejects_non_authoritative_controller_output(defec
             executed=True,
             output=output.replace("Serial0/0/0", "Serial0/0/1"),
             fresh_output_observed=True,
+            output_complete=True,
         )
     elif defect == "unparsed":
         result = IosCommandResult(
@@ -293,6 +304,7 @@ def test_packet_tracer_runtime_rejects_non_authoritative_controller_output(defec
             executed=True,
             output="Interface Serial0/0/0\ncontroller state unavailable\n",
             fresh_output_observed=True,
+            output_complete=True,
         )
     elif defect == "wrong_query":
         result = IosCommandResult(
@@ -301,6 +313,7 @@ def test_packet_tracer_runtime_rejects_non_authoritative_controller_output(defec
             executed=True,
             output=output,
             fresh_output_observed=True,
+            output_complete=True,
         )
     ios = _FakeIosExecutor(result)
     runtime = PacketTracerSerialOrientationRuntime(

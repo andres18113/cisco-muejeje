@@ -17,15 +17,28 @@ from ...domain.models.plans import LinkPlan, TopologyPlan
 
 
 class SerialControllerObservation(BaseModel):
-    """One exact serial controller observation from the current command window."""
+    """One exact serial controller observation from the current command window.
+
+    The evidence dimensions stay separate on purpose.  ``complete`` is not
+    ``not truncated``: a read that walked three pager pages and closed on a
+    prompt is complete *and* was paginated, while a read whose bounded
+    continuation ran out is truncated even though its first page survives.
+    Every dimension defaults to the refusing value.
+    """
 
     device_name: str
     interface: str
     orientation: SerialEndpointOrientation = SerialEndpointOrientation.UNRESOLVED
     clock_rate_bps: int | None = None
     observed: bool = False
+    executed: bool = False
     fresh_evidence: bool = False
+    complete: bool = False
     truncated: bool = False
+    parseable: bool = False
+    interface_identity_match: bool = False
+    pages_captured: int = 0
+    pagination: str = ""
     evidence_method: str = ""
     message: str = ""
 
@@ -46,8 +59,14 @@ class SerialEndpointOrientationEvidence(BaseModel):
     orientation: SerialEndpointOrientation
     clock_rate_bps: int | None = None
     observed: bool
+    executed: bool = False
     fresh_evidence: bool
+    complete: bool = False
     truncated: bool
+    parseable: bool = False
+    interface_identity_match: bool = False
+    pages_captured: int = 0
+    pagination: str = ""
     evidence_method: str = ""
     message: str = ""
 
@@ -171,8 +190,14 @@ class SerialOrientationObserver:
                     orientation=observed.orientation,
                     clock_rate_bps=observed.clock_rate_bps,
                     observed=observed.observed,
+                    executed=observed.executed,
                     fresh_evidence=observed.fresh_evidence,
+                    complete=observed.complete,
                     truncated=observed.truncated,
+                    parseable=observed.parseable,
+                    interface_identity_match=observed.interface_identity_match,
+                    pages_captured=observed.pages_captured,
+                    pagination=observed.pagination,
                     evidence_method=observed.evidence_method,
                     message=observed.message,
                 )
@@ -297,10 +322,21 @@ def _evidence_problem(
 ) -> str:
     if not evidence.observed:
         return evidence.message or "controller state was not observed."
+    if not evidence.executed:
+        return "controller query did not execute."
     if not evidence.fresh_evidence:
         return "controller evidence is not fresh."
+    # COMPLETE is checked on its own, before truncation, because a bounded
+    # multi-page capture can stop without leaving a pager marker behind: an
+    # observation that never closed is not usable evidence either way.
+    if not evidence.complete:
+        return "controller evidence was not completely captured."
     if evidence.truncated:
         return "controller evidence was truncated by the pager."
+    if not evidence.parseable:
+        return "controller evidence carried no typed DCE/DTE state."
+    if not evidence.interface_identity_match:
+        return "controller evidence does not name the exact bound interface."
     if evidence.device_name != expected_device_name:
         return "controller evidence came from a different deployed device."
     if evidence.interface.casefold() != expected_interface.casefold():

@@ -483,6 +483,7 @@ def test_serial_clock_verifier_requires_fresh_exact_controller_state():
         True,
         output=output,
         fresh_output_observed=True,
+        output_complete=True,
     ))
 
     result = runtime.verify([_serial_expectation()])[0]
@@ -509,21 +510,25 @@ def test_serial_clock_verifier_never_promotes_incomplete_or_contradictory_state(
             "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
             output="Interface Serial0/0/0\nDTE V.35 TX and RX clocks detected\n",
             fresh_output_observed=True,
+            output_complete=True,
         ),
         IosCommandResult(
             "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
             output="Interface Serial0/0/0\nDCE V.35, clock rate 64000\n",
             fresh_output_observed=True,
+            output_complete=True,
         ),
         IosCommandResult(
             "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
             output="Interface Serial0/0/0\nDCE V.35, clock rate 128000\n",
             fresh_output_observed=False,
+            output_complete=True,
         ),
         IosCommandResult(
             "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
             output="% Invalid input detected",
             fresh_output_observed=True,
+            output_complete=True,
         ),
     )
 

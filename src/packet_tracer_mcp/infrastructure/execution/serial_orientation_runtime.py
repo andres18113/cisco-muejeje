@@ -16,7 +16,14 @@ from .ios_terminal import (
 
 
 class PacketTracerSerialOrientationRuntime:
-    """Observe DCE/DTE through one registered, read-only IOS query."""
+    """Observe DCE/DTE through one registered, read-only IOS query.
+
+    The query is qualified for bounded multi-page capture
+    (``TD-ORIENTATION-PAGER-001``): on PT ``9.0.1.0858`` the controller output
+    of a 2911 with an HWIC-2T never fits one page.  The pager mechanics live
+    entirely inside the executor -- this adapter only ever asks whether the
+    logical read is COMPLETE, and refuses everything else.
+    """
 
     def __init__(
         self,
@@ -40,11 +47,21 @@ class PacketTracerSerialOrientationRuntime:
             OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
             interface=interface,
         )
+        # Cada dimensión se conserva por separado: que la consulta se ejecutara,
+        # que la ventana fuera fresca, que la lectura lógica cerrara completa,
+        # que hubiera truncamiento, que el texto se pudiera tipar y que nombrara
+        # exactamente la interfaz pedida. Colapsarlas en un solo booleano es lo
+        # que hace imposible después distinguir "paginado pero completo" de
+        # "truncado".
         base = {
             "device_name": device_name,
             "interface": interface,
+            "executed": result.executed,
             "fresh_evidence": result.fresh_output_observed,
+            "complete": result.output_complete,
             "truncated": result.truncated_by_pager,
+            "pages_captured": result.pager_pages_captured,
+            "pagination": result.pager_continuation,
             "evidence_method": "fresh_show_controllers_serial",
         }
         if (
@@ -65,10 +82,16 @@ class PacketTracerSerialOrientationRuntime:
                 **base,
                 message="Registered controller query produced no fresh command window.",
             )
-        if result.truncated_by_pager:
+        if not result.output_complete:
+            # Una primera página que ya muestre DCE/DTE no alcanza: lo que no se
+            # capturó no se sabe, y leerlo igual sería exactamente el atajo que
+            # el flag de truncamiento existe para impedir.
             return SerialControllerObservation(
                 **base,
-                message="Registered controller query was truncated by the pager.",
+                message=(
+                    result.failure_reason
+                    or "Registered controller query was truncated by the pager."
+                ),
             )
         parsed = parse_serial_controller(result.output)
         if parsed is None:
@@ -76,6 +99,7 @@ class PacketTracerSerialOrientationRuntime:
                 **base,
                 message="Fresh controller output contained no typed DCE/DTE state.",
             )
+        base["parseable"] = True
         if not parsed.interface or parsed.interface.casefold() != interface.casefold():
             return SerialControllerObservation(
                 **base,
@@ -84,6 +108,7 @@ class PacketTracerSerialOrientationRuntime:
                     f"not exact bound interface {interface!r}."
                 ),
             )
+        base["interface_identity_match"] = True
         orientation = {
             "dce": SerialEndpointOrientation.DCE,
             "dte": SerialEndpointOrientation.DTE,

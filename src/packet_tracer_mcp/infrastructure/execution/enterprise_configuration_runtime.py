@@ -279,10 +279,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
             OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
             interface=expected_interface,
         )
+        # `output_complete` es estrictamente mas fuerte que "no truncada": para
+        # esta consulta, cualificada para continuacion acotada, exige ademas que
+        # la lectura logica haya cerrado en un prompt.
         complete = bool(
             show.executed
             and show.fresh_output_observed
-            and not show.truncated_by_pager
+            and show.output_complete
         )
         row = parse_serial_controller(show.output) if complete else None
         if row is None:

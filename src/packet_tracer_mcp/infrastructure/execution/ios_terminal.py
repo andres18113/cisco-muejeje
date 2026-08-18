@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass, replace
 from enum import Enum
-from time import monotonic
+from time import monotonic, sleep
 from collections.abc import Callable
 from typing import Never
 
@@ -15,9 +15,11 @@ from .command_dispatch import (
     PAGER_GUARD_JS as _PAGER_GUARD_JS,
     DispatchClassification,
     classify_echo,
+    drop_pager_prompt,
     fresh_command_window,
     has_active_pager,
     is_command_corrupted,
+    terminal_is_idle,
 )
 from .device_lifecycle import IosBootWaiter, StateConvergenceWaiter
 
@@ -82,6 +84,20 @@ class EigrpQueryClassification(str, Enum):
     PARSER_UNAVAILABLE = "parser_unavailable"
 
 
+class PagerContinuation(str, Enum):
+    """Que le paso al pager durante UNA lectura registrada, no a la consulta."""
+
+    # No hubo pager: la salida entro en una sola pagina.
+    NOT_ENCOUNTERED = "not_encountered"
+    # Hubo pager y esta consulta registrada no tiene continuacion cualificada.
+    # Es el comportamiento por defecto y significa truncado.
+    NOT_QUALIFIED = "not_qualified"
+    # Hubo pager, se recorrio completo y la lectura cerro en un prompt.
+    COMPLETED = "completed"
+    # Se intento la continuacion cualificada y una cota la corto. Truncado.
+    FAILED = "failed"
+
+
 class IosSessionState(str, Enum):
     WAITING_FOR_BOOT = "waiting_for_boot"
     BOOT_COMPLETE = "boot_complete"
@@ -136,6 +152,40 @@ _INTERFACE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9./:-]{0,79}$")
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"
 _PAGER_MARKER = "--More--"
 
+# Consultas registradas cuya continuacion de pager esta CUALIFICADA.
+#
+# El default de toda consulta registrada sigue siendo el de siempre: pager
+# encontrado -> truncada -> se aplica el techo de la afirmacion. Cualificar es
+# un acto explicito por consulta, con su propia evidencia, y entra aca; no es
+# una propiedad de "haber encontrado un pager".
+#
+# `SHOW_CONTROLLERS_SERIAL` entra por TD-ORIENTATION-PAGER-001: en PT 9.0.1.0858
+# `show controllers Serial0/0/0` sobre un 2911 con HWIC-2T excede una pagina
+# SIEMPRE, la consulta ya esta acotada a una interfaz y no hay forma de
+# angostarla mas, y ese build rechaza `terminal length 0`. Sin recorrer el
+# pager la orientacion DCE/DTE es inobservable.
+#
+# Que exista el primitivo NO promueve ninguna otra consulta. En particular
+# `SHOW_IP_PROTOCOLS` sigue sin cualificar y su techo de TD-RUNTIME-003 -- un
+# device con RIP junto a otro protocolo es UNOBSERVABLE por esta lectura --
+# queda exactamente donde estaba.
+_PAGINATION_QUALIFIED_QUERIES = frozenset({
+    OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+})
+
+# Cotas duras de UNA captura logica. Existen para que no haya forma de que la
+# continuacion se vuelva infinita, ni de que una sesion larga se cuele como si
+# fuera la salida del comando actual.
+_PAGER_MAX_PAGES = 12
+_PAGER_MAX_BYTES = 65536
+_PAGER_CAPTURE_DEADLINE_SECONDS = 25.0
+_PAGER_PAGE_TIMEOUT_SECONDS = 8.0
+# La unica tecla que el `--More--` consume para avanzar. No es un comando: el
+# pager se la come antes de que llegue al CLI, que es exactamente la mecanica
+# que este repositorio ya midio cuando un despacho perdia su primer caracter
+# (`DispatchClassification.PREFIX_LOSS`).
+_PAGER_CONTINUATION_KEY = "String.fromCharCode(32)"
+
 
 @dataclass(frozen=True)
 class IosCommandResult:
@@ -149,6 +199,14 @@ class IosCommandResult:
     fresh_output_observed: bool = False
     window_strategy: str = "none"
     truncated_by_pager: bool = False
+    # COMPLETA es una dimension propia, separada de EJECUTADA y de FRESCA. Para
+    # una sola pagina significa lo mismo que ya significaba en todo consumidor
+    # actual: la ventana del comando no traia marcador de pager. Para una
+    # lectura paginada significa algo mas fuerte -- se recorrio el pager entero
+    # y la salida cerro en un prompt. Por defecto False: incompleta.
+    output_complete: bool = False
+    pager_pages_captured: int = 1
+    pager_continuation: str = PagerContinuation.NOT_ENCOUNTERED.value
     # Identidad de lo despachado, separada del resultado de la consulta. Un
     # comando corrompido NO es una consulta rechazada: IOS nunca recibió lo
     # que se pidió, así que rechazarlo no dice nada sobre la consulta.
@@ -993,12 +1051,62 @@ def extract_terminal_command_window(before: str, after: str, command: str) -> Te
     )
 
 
+@dataclass(frozen=True)
+class _PagerCapture:
+    """Resultado de UNA lectura logica, paginada o no.
+
+    `complete` y `truncated` no son el mismo hecho negado: una captura que
+    recorrio tres paginas y cerro en el prompt es COMPLETA aunque hubo
+    paginacion, y una que encontro el pager y no pudo cerrar es TRUNCADA aunque
+    su primera pagina se conserve como evidencia.
+    """
+
+    output: str
+    pages: int
+    complete: bool
+    truncated: bool
+    continuation: PagerContinuation
+    transcript: str = ""
+    failure_reason: str = ""
+
+    @classmethod
+    def not_encountered(cls, output: str, transcript: str) -> "_PagerCapture":
+        return cls(output, 1, True, False, PagerContinuation.NOT_ENCOUNTERED, transcript)
+
+    @classmethod
+    def not_qualified(cls, output: str, transcript: str) -> "_PagerCapture":
+        return cls(output, 1, False, True, PagerContinuation.NOT_QUALIFIED, transcript)
+
+    @classmethod
+    def completed(cls, output: str, pages: int, transcript: str) -> "_PagerCapture":
+        return cls(output, pages, True, False, PagerContinuation.COMPLETED, transcript)
+
+    @classmethod
+    def failed(
+        cls, output: str, pages: int, transcript: str, reason: str,
+    ) -> "_PagerCapture":
+        return cls(
+            output, pages, False, True, PagerContinuation.FAILED, transcript, reason,
+        )
+
+
 class ControlledIosExecutor:
     """Ejecuta exclusivamente consultas IOS registradas; nunca CLI del usuario."""
 
-    def __init__(self, send_and_wait: Callable[[str, float], str | None]) -> None:
+    def __init__(
+        self,
+        send_and_wait: Callable[[str, float], str | None],
+        *,
+        clock: Callable[[], float] = monotonic,
+        sleeper: Callable[[float], None] = sleep,
+    ) -> None:
         self._send_and_wait = send_and_wait
         self._pager_quarantine: set[str] = set()
+        # Reloj y espera inyectables: las cotas de la captura paginada se miden
+        # en lugar de dormirse, y una regresion puede recorrerlas sin gastar el
+        # tiempo real que representan.
+        self._clock = clock
+        self._sleeper = sleeper
 
     def wait_until_ready(
         self,
@@ -1148,12 +1256,31 @@ class ControlledIosExecutor:
         output = str(observe().get("output") or "")
         window = extract_terminal_command_window(baseline, output, command)
         classification, echoed = classify_echo(command, window.output)
-        truncated_by_pager = _PAGER_MARKER in window.output
-        if truncated_by_pager:
-            # PT 9.0.1 rejects ``terminal length 0``. Cancel the documented
-            # TerminalLine interaction so a paginated SHOW cannot poison the
-            # next registered query. The captured first page remains evidence.
-            pager_isolated = self._cancel_pager(name, output)
+        capture = _PagerCapture.not_encountered(window.output, output)
+        if _PAGER_MARKER in window.output:
+            # PT 9.0.1 rejects ``terminal length 0``, so the pager is a real and
+            # frequent state. Una consulta CUALIFICADA lo recorre hasta cerrar
+            # una lectura logica; cualquier otra conserva el comportamiento de
+            # siempre -- primera pagina como evidencia y truncada.
+            # `is_command_corrupted` también decide acá: si el eco demuestra
+            # que IOS recibió otra cosa, la identidad de la consulta ya no es la
+            # cualificada y recorrer su pager sería recorrer el de otro comando.
+            if (
+                query_id in _PAGINATION_QUALIFIED_QUERIES
+                and window.fresh
+                and not is_command_corrupted(classification)
+            ):
+                capture = self._capture_registered_pages(
+                    name, window=window.output, transcript=output,
+                )
+            else:
+                capture = _PagerCapture.not_qualified(window.output, output)
+        if not capture.complete:
+            # Cancel the documented TerminalLine interaction so a paginated SHOW
+            # cannot poison the next registered query. Vale igual para la
+            # captura cualificada que fallo: lo que quedo a medias es
+            # exactamente lo que hay que aislar.
+            pager_isolated = self._cancel_pager(name, capture.transcript or output)
             if not pager_isolated:
                 self._pager_quarantine.add(name)
                 # `complete` también acá: sin esto, una cancelación de pager no
@@ -1173,11 +1300,13 @@ class ControlledIosExecutor:
                     fresh_output_observed=window.fresh,
                     window_strategy=window.strategy,
                     truncated_by_pager=True,
+                    pager_pages_captured=capture.pages,
+                    pager_continuation=capture.continuation.value,
                     dispatch_classification=classification.value,
                     echo_observed=echoed,
                 ))
         if not convergence.configuration_channel:
-            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager, dispatch_classification=classification.value, echo_observed=echoed))
+            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=capture.truncated, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed))
         if not window.fresh:
             return complete(IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy, dispatch_classification=classification.value, echo_observed=echoed))
         if is_command_corrupted(classification):
@@ -1192,11 +1321,13 @@ class ControlledIosExecutor:
                 ),
                 duration_ms=elapsed, session_state=session,
                 fresh_output_observed=True, window_strategy=window.strategy,
-                truncated_by_pager=truncated_by_pager,
+                truncated_by_pager=capture.truncated,
+                pager_pages_captured=capture.pages,
+                pager_continuation=capture.continuation.value,
                 dispatch_classification=classification.value,
                 echo_observed=echoed,
             ))
-        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(window.output), duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=truncated_by_pager, dispatch_classification=classification.value, echo_observed=echoed))
+        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(capture.output), failure_reason=capture.failure_reason, duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=capture.truncated, output_complete=capture.complete, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed))
 
     @staticmethod
     def _registered_command(query_id: OperationalQueryId, *, interface: str) -> str:
@@ -1207,6 +1338,172 @@ class ControlledIosExecutor:
         if interface:
             raise ValueError("This registered IOS query does not accept an interface.")
         return _COMMANDS[query_id]
+
+    def _capture_registered_pages(
+        self,
+        name: str,
+        *,
+        window: str,
+        transcript: str,
+    ) -> _PagerCapture:
+        """Recorre el pager hasta cerrar UNA lectura logica, o falla cerrado.
+
+        Sólo la llaman las consultas de `_PAGINATION_QUALIFIED_QUERIES`. No
+        recibe ni acepta ningún comando: la única interacción que emite es la
+        tecla que el propio `--More--` consume, y toda la mecánica de páginas
+        queda por debajo de quien pide la consulta.
+
+        La captura es de sólo lectura de punta a punta y está atada a la misma
+        página inicial: cada página nueva tiene que ser una continuación
+        atribuible del transcript anterior, así que ninguna mutación ajena
+        puede intercalarse dentro de la misma lectura lógica sin romper esa
+        atribución -- y romperla es fallar, no continuar.
+        """
+        started = self._clock()
+        # Identidad de sesión tomada al abrir la captura. `getPrompt()` puede
+        # venir vacío mientras el pager está activo, y vacío NO es evidencia de
+        # nada: sólo se rechaza cuando ambos prompts existen y difieren.
+        session_prompt = str(self._terminal_state(name).get("prompt") or "").strip()
+        assembled = drop_pager_prompt(window)
+        current = transcript
+        previous_page = ""
+        pages = 1
+        if not has_active_pager(current):
+            return _PagerCapture.failed(
+                assembled, pages, current,
+                "IOS output carried a pager marker without an active pager to "
+                "continue; the capture cannot be completed.",
+            )
+        while True:
+            if pages >= _PAGER_MAX_PAGES:
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager continuation exceeded its bounded page limit "
+                    f"of {_PAGER_MAX_PAGES}.",
+                )
+            remaining = _PAGER_CAPTURE_DEADLINE_SECONDS - (self._clock() - started)
+            if remaining <= 0:
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager continuation exceeded its bounded deadline of "
+                    f"{_PAGER_CAPTURE_DEADLINE_SECONDS:.0f}s.",
+                )
+            if not self._advance_pager(name):
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager continuation key was not delivered.",
+                )
+            state = self._await_pager_progress(
+                name,
+                current,
+                timeout_seconds=min(_PAGER_PAGE_TIMEOUT_SECONDS, remaining),
+            )
+            if state is None:
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager produced no continuation page within the "
+                    "bounded wait.",
+                )
+            if not state.get("found") or not state.get("terminal"):
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager continuation lost the device terminal.",
+                )
+            prompt = str(state.get("prompt") or "").strip()
+            if session_prompt and prompt and prompt != session_prompt:
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager continuation observed a different terminal "
+                    f"session: {session_prompt!r} became {prompt!r}.",
+                )
+            after = str(state.get("output") or "")
+            page = fresh_command_window(current, after)
+            if not page.fresh:
+                # El transcript no continúa al anterior: rodó más allá de todo
+                # anclaje o pertenece a otra sesión. Pegarlo igual sería
+                # reconstruir una lectura con un agujero adentro.
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager continuation window could not be attributed to "
+                    f"this capture ({page.strategy.value}).",
+                )
+            captured = drop_pager_prompt(page.output)
+            if not captured.strip():
+                return _PagerCapture.failed(
+                    assembled, pages, after,
+                    "IOS pager continuation produced no new output.",
+                )
+            if captured == previous_page:
+                return _PagerCapture.failed(
+                    assembled, pages, after,
+                    "IOS pager continuation repeated the same page without "
+                    "progress.",
+                )
+            assembled += captured
+            previous_page = captured
+            current = after
+            pages += 1
+            if len(assembled) > _PAGER_MAX_BYTES:
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager continuation exceeded its bounded byte limit "
+                    f"of {_PAGER_MAX_BYTES}.",
+                )
+            if has_active_pager(after):
+                continue
+            if not terminal_is_idle(after):
+                # Ni pager ni prompt: no hay forma de saber si la salida
+                # terminó. Un final ambiguo no es un final.
+                return _PagerCapture.failed(
+                    assembled, pages, current,
+                    "IOS pager continuation ended without a command prompt.",
+                )
+            return _PagerCapture.completed(assembled, pages, current)
+
+    def _await_pager_progress(
+        self,
+        name: str,
+        previous: str,
+        *,
+        timeout_seconds: float,
+    ) -> dict | None:
+        """Espera observable a la página siguiente; nunca un sleep a ciegas."""
+        last: dict = {}
+
+        def inspect() -> dict:
+            nonlocal last
+            state = self._terminal_state(name)
+            state["configuration_channel"] = (
+                str(state.get("output") or "") != previous
+            )
+            last = state
+            return state
+
+        converged = StateConvergenceWaiter(
+            inspect,
+            timeout_seconds=timeout_seconds,
+            clock=self._clock,
+            sleeper=self._sleeper,
+        ).wait()
+        return last if converged.configuration_channel else None
+
+    def _advance_pager(self, name: str) -> bool:
+        """Entrega al `--More--` la única tecla que consume, y nada más.
+
+        Es la misma interacción documentada de `TerminalLine` que ya usa
+        `_cancel_pager`, con otra tecla. No es un comando: el pager se come el
+        carácter antes de que llegue al CLI -- la mecánica que este repositorio
+        midió al ver un despacho perder su primer carácter -- así que esto no
+        abre ninguna vía de IOS crudo.
+        """
+        js = (
+            "try{var d=ipc.network().getDevice(" + name + ");"
+            "var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;"
+            "if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}"
+            "else{t.enterCommand(" + _PAGER_CONTINUATION_KEY + ");"
+            "reportResult('{\"ok\":true}');}}catch(e){reportResult('ERROR:'+e);}"
+        )
+        return self._send_and_wait(js, 5.0) == '{"ok":true}'
 
     def _cancel_pager(self, name: str, paged_output: str) -> bool:
         js = "try{var d=ipc.network().getDevice(" + name + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}else{t.enterCommand(String.fromCharCode(3));reportResult('{\"ok\":true}');}}catch(e){reportResult('ERROR:'+e);}"

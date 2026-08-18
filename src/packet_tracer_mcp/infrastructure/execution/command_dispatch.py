@@ -401,3 +401,23 @@ def assess_prompt_readiness(
     if previous is not None and str(previous.get("prompt") or "").strip() != prompt:
         return PromptReadiness.UNSTABLE
     return PromptReadiness.READY
+
+
+def drop_pager_prompt(value: str) -> str:
+    """Quita de la cola el `--More--`, que lo escribe el pager y no el device.
+
+    El marcador es una peticion de tecla del terminal, no salida del comando,
+    asi que no puede quedar dentro de una lectura logica reconstruida a partir
+    de varias paginas. Se quita SOLO de la cola y sin tocar el salto de linea
+    que lo precede: cuando el pager corta a mitad de una linea, concatenar las
+    paginas tal cual es lo unico que la vuelve a unir como estaba.
+
+    Que hubo paginacion NO se borra aca. Eso vive en campos tipados del
+    resultado -- cuantas paginas se capturaron y como termino la continuacion --
+    precisamente para que el texto pueda quedar limpio sin perder el hecho.
+    """
+    rendered = rendered_terminal_text(value)
+    trimmed = rendered.rstrip()
+    if not trimmed.endswith(_PAGER_MARKER):
+        return rendered
+    return trimmed[: -len(_PAGER_MARKER)]

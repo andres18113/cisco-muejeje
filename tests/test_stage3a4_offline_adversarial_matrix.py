@@ -328,8 +328,14 @@ class _GenericOrientationRuntime:
             orientation=role,
             clock_rate_bps=128_000 if role is SerialEndpointOrientation.DCE else None,
             observed=True,
+            executed=True,
             fresh_evidence=True,
+            complete=True,
             truncated=False,
+            parseable=True,
+            interface_identity_match=True,
+            pages_captured=1,
+            pagination="not_encountered",
             evidence_method="fake show controllers",
         )
 
