@@ -1365,3 +1365,255 @@ REFERENCE_41_41_RUN    = NOT_EXECUTED
 MEG-5 must not open. The bounded run still has to succeed, the access-port
 read-back gap blocks it, and separately the reference topology's own models
 have no measured capability or port evidence yet.
+
+---
+
+# Run 6 — 2026-08-18, after the foundation-scoped E5→E9 gate
+
+## Outcome, stated first
+
+```text
+MEG_4_STATUS                  = FAILED / CLEAN
+STOPPED_AT                    = control_plane_apply
+LIVE_PACKET_TRACER_RUN        = YES
+PHYSICAL_DEPLOYMENT           = VERIFIED
+SERIAL_ORIENTATION            = VERIFIED  (4 pages per endpoint, third live capture)
+E5_ACTIONS_APPLIED            = 17 of 17
+REQUIRED_FOUNDATIONS          = 5 of 5 VERIFIED
+RIPV2_APPLIED                 = YES, both routers
+RIPV2_LEARNED_ROUTES_OBSERVED = YES, both routers, fresh
+SEMANTIC_INVENTORY_RESTORED   = YES  (verified by independent re-observation)
+E4_IDENTITY_PRESERVED         = YES
+RAW_IOS_OR_JS_USED            = NONE
+HARNESS_PERFORMED_A_MUTATION  = NO
+```
+
+**The control plane ran.** RIPv2 was applied through the typed product path on
+both edge routers, `show ip protocols` read back a process matching the typed
+intent field for field, and `show ip route rip` observed the far-side prefix
+learned across the serial WAN. No earlier run reached E9 at all.
+
+It stopped on one field, and the same field, in both control-plane
+observations: `source_device_name`.
+
+## Gates, in order
+
+### G2 — same-process import isolation
+
+```text
+state              = ISOLATED
+sys.executable     = <worktree>/.venv/Scripts/python.exe
+loaded identities  = ['packet_tracer_mcp']          # exactly one
+```
+
+Run twice: the mutating process before its first mutation, and the independent
+post-cleanup re-observation. `PT_MCP_GOVERNED_ROOT` process-local, never
+persisted.
+
+### G3 — process rediscovery, inventory, build, classification
+
+Processes re-enumerated; no historical PID assumed.
+
+```text
+PID 16584  MainWindowHandle = 264778   <- GUI
+PID  4212  MainWindowHandle = 0        <- helper
+both       FileVersion = ProductVersion = 9.0.1.0858, same executable
+
+inventory       = observed=True, semantic_devices=0, links=0,
+                  backend_managed=1 ("Power Distribution Device0", zero ports)
+classification  = DISPOSABLE
+```
+
+`BRIDGE_PEER_PROCESS_IDENTITY` and `BRIDGE_PEER_BUILD_SELF_REPORT` remain
+`NOT_ATTESTED`, unchanged. No Packet Tracer API was guessed.
+
+## What the foundation-scoped gate changed
+
+Same shape, same hash, same capability evidence as run 5. The difference is
+only which evidence decides:
+
+```text
+E5 aggregate                 = partial            (unchanged from run 5)
+configuration_fully_verified = False              (stated explicitly, not implied)
+E5 actions                   = 17 applied
+E5 verifications             = 7 verified, 6 unobservable, 4 partial
+
+required foundations, derived from the typed ControlPlanePlan:
+    cfg/routed/d011557…        l3_interface   VERIFIED
+    cfg/routed/f383b9e…        l3_interface   VERIFIED
+    cfg/transit-l3/5273926…    l3_interface   VERIFIED
+    cfg/transit-l3/e737d0e…    l3_interface   VERIFIED
+    link/wan_link/23682ae…     link           VERIFIED
+
+E9 preflight                 = passed, failure_code none, preflight_errors []
+```
+
+The six access-port and four endpoint-address statuses stayed exactly as
+measured — `unobservable` and `partial` — and appear in
+`foundational_statuses` at those values. None was promoted; none was required.
+
+## The control plane, measured
+
+```text
+cp/ripv2/c3968dee…  A-EDGE-RTR-01   applied   batch A-EDGE-RTR-01:50
+cp/ripv2/271fe98f…  B-EDGE-RTR-01   applied   batch B-EDGE-RTR-01:50
+
+configured_status = compiled
+applied_status    = applied
+observed_status   = unobservable
+behavior_status   = dependency_blocked
+failover_status   = skipped
+```
+
+**Routing process, both routers**, from `fresh_show_ip_protocols`,
+`fresh_evidence = true`:
+
+```text
+protocol            verified
+version_send        verified
+version_recv        verified
+auto_summary        verified
+networks            verified
+passive_interfaces  verified
+source_device_name  unobservable      <- the only one
+message: "Fresh RIP state was compared semantically against the typed intent."
+```
+
+**Learned routes, both routers**, from `fresh_show_ip_route_rip`,
+`fresh_evidence = true`:
+
+```text
+network             verified
+prefix_length       verified
+protocol            verified
+source_device_name  unobservable      <- the only one
+message: "Fresh RIP route rows matched the expected prefix after 1 read(s)."
+```
+
+RIPv2 genuinely converged: each router observed the other side's prefix as a
+RIP route across the serial WAN, on a link whose DCE/DTE orientation this same
+run established from a four-page controller capture. That is the strongest
+control-plane evidence any run in this stage has produced.
+
+## The defect this run found
+
+`source_device_name` is part of both expectations' `expected` map, and neither
+registered query reports it: `show ip protocols` and `show ip route rip` print
+routing state, not the identity of the device that answered. So the field
+resolves UNOBSERVABLE, and `_direct_observation` holds the aggregate at
+UNOBSERVABLE because one field of the claim was not observed.
+
+**Narrowing is not available, by design.**
+`enterprise_control_plane_runtime.py:1398-1413` folds `unclaimed_fields` into
+the unobservable map precisely so that shrinking an expectation cannot make
+`_direct_observation` see "all fields verified" and raise the conclusion
+without observing anything new. That guard is correct and was not touched.
+
+The forwarding expectation then reported `dependency_blocked` —
+`Blocked by: verification_verified:cp/verify-rip-route/…` — so typed end-to-end
+behaviour was never attempted. That is the prerequisite gate working: it will
+not ping to manufacture evidence for a route claim that did not close.
+
+**Not worked around.** Substituting the device this process *asked* for the
+device the output *claims* would be exactly the substitution the evidence
+discipline forbids, and dropping the field from the expectation is the
+narrowing the runtime explicitly refuses. Recorded as the next blocker rather
+than repaired here.
+
+This is the same shape as the decision taken one layer up, one layer down: an
+observation whose every semantic field is verified is held at UNOBSERVABLE by a
+field the backend does not expose. Whether the right answer is an evidence-
+bearing device-identity read, or an explicit claim ceiling for these two
+queries, is a governed decision and is **not** taken in this run.
+
+## Module and orientation evidence, unchanged
+
+```text
+module port effect     VERIFIED, both routers
+module identity        UNOBSERVABLE
+module placement       UNOBSERVABLE
+serial orientation     A-EDGE-RTR-01 dce (4 pages, completed)
+                       B-EDGE-RTR-01 dte (4 pages, completed)
+CAN_PACKET_TRACER_AUTHENTICALLY_QUALIFY_MODULE_REPLAY_CONTAINMENT = NO
+```
+
+## G4 — cleanup and restoration
+
+```text
+cleanup entries    = 8, all applied, reverse order, exactly the planned names
+inventory_restored = True
+control-plane dirty_state = unknown
+```
+
+Independent post-run re-observation, separate process:
+
+```text
+semantic_device_count = 0
+link_count            = 0
+backend_managed       = 2  ("Power Distribution Device0", "Power Distribution
+                            Device1"), both zero ports
+```
+
+**A second power-distribution object appeared during this run** and is recorded
+rather than smoothed over: baseline carried one, the final inventory carries
+two. Both are backend-created, zero-port, and exactly what
+`disposable_workspace_error` tolerates. No foreign, pre-existing or
+backend-managed object was removed. `SEMANTIC_INVENTORY_RESTORED` is claimed
+for the semantic inventory, which is what the restoration comparison covers.
+
+`dirty_state = unknown` on the control-plane result is the honest value for a
+fire-and-forget configuration channel and is unchanged from its recorded
+meaning; it is not evidence of residue, and the independent re-observation is
+what establishes the workspace state.
+
+## Exit matrix
+
+| # | Item | Result |
+| --- | --- | --- |
+| 1 | exact-version capability consumption by the normal path | **PASS** |
+| 2 | product-generated `TopologyPlan` | **PASS** |
+| 3 | module effect containment | **PASS** |
+| 4 | fresh two-ended serial orientation | **PASS** |
+| 5 | exactly one DCE and one DTE | **PASS** |
+| 6 | typed E5 serial transit addressing | **PASS** |
+| 7 | clock on the observed DCE only | **PASS** |
+| 8 | independent clock readback | **PASS** |
+| 9 | authentic foundational evidence | **PASS** — 5 of 5 declared foundations VERIFIED from `apply_configuration` read-back, and the E9 gate decided on them |
+| 10 | typed RIPv2 process state | **PARTIAL** — every semantic field verified on both routers; aggregate held UNOBSERVABLE by `source_device_name` |
+| 11 | typed learned-route readback | **PARTIAL** — prefix, length and protocol verified on both routers; same single field |
+| 12 | typed forwarding behaviour | **NOT REACHED** — dependency-blocked by row 11 |
+| 13 | semantic cleanup / restoration | **PASS** — verified by independent re-observation |
+
+Row 9 moves NOT REACHED → **PASS** and rows 10 and 11 NOT REACHED → **PARTIAL**,
+all three for the first time.
+
+## What this does and does not establish
+
+```text
+FOUNDATION_SCOPED_GATE_EXERCISED_LIVE  = YES
+REQUIRED_FOUNDATIONS_VERIFIED          = 5 of 5
+RIPV2_APPLIED_THROUGH_THE_PRODUCT      = YES (both routers, typed path)
+RIPV2_PROCESS_SEMANTICS_OBSERVED       = YES (every claimed field but one)
+RIPV2_LEARNED_ROUTES_OBSERVED          = YES (both routers, fresh, matched)
+TYPED_FORWARDING_OBSERVED              = NO  (dependency-blocked, not attempted)
+CONFIGURATION_FULLY_VERIFIED           = NO  (stated explicitly in the result)
+FULL_PRODUCT_PIPELINE_ACCEPTANCE       = NOT_ESTABLISHED (unchanged)
+CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION = NOT_ESTABLISHED (unchanged)
+TD_ACCEPTANCE_001                      = OPEN (unchanged; bounded shape, not the reference run)
+TD_HARDWARE_001                        = OPEN (unchanged)
+TD_MODULE_SLOT_001                     = BACKEND_LIMITATION (unchanged)
+TD_CATALOG_PORT_001                    = RESOLVED (unchanged)
+TD_ORIENTATION_PAGER_001               = RESOLVED (unchanged)
+TD_CONFIG_CAPABILITY_001               = RESOLVED (unchanged)
+TD_ACCESSPORT_READBACK_001             = OPEN, no longer blocking MEG-4
+```
+
+```text
+MEG_5                  = NOT_OPENED
+MEG_5_EXECUTION        = BLOCKED
+REFERENCE_41_41_RUN    = NOT_EXECUTED
+```
+
+MEG-5 must not open. The bounded run still has to succeed, rows 10–12 are not
+closed, and the reference topology's own models still have neither measured
+capability evidence nor measured port inventories.

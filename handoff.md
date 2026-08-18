@@ -41,8 +41,14 @@ MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
 MEG-7  Stage 3A4 closure ...................... NOT_STARTED
 ```
 
-MEG-4 has now been executed five times against Packet Tracer `9.0.1.0858`, each
-time failing clean with the workspace restored. Run 5 applied **17 of 17**
+MEG-4 has now been executed six times against Packet Tracer `9.0.1.0858`, each
+time failing clean with the workspace restored. **Run 6 reached the control
+plane**: 17/17 E5 actions applied, all five declared foundations VERIFIED,
+RIPv2 applied on both routers, its process semantics read back field for field,
+and each router observed the far-side prefix as a learned RIP route across the
+serial WAN. It stopped on `source_device_name`, a field neither
+`show ip protocols` nor `show ip route rip` reports, which holds both otherwise
+fully verified observations at UNOBSERVABLE and dependency-blocks forwarding. Run 5 applied **17 of 17**
 configuration actions on measured exact-version capability evidence: physical
 deployment VERIFIED, serial orientation VERIFIED with exactly one DCE and one
 DTE, serial transit addressing VERIFIED, clock on the observed DCE read back
