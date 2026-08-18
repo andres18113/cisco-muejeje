@@ -256,3 +256,95 @@ def test_the_composition_publishes_the_capability_map_it_compiled_with():
     for model, profile in composed.capabilities.items():
         assert isinstance(profile, DeviceCapabilities)
         assert profile.model == model
+
+
+def _optional(plan, action_type):
+    """Marca una familia de acciones como NO critica, dejando el resto igual."""
+    ids = {action.id for action in plan.actions_of_type(action_type)}
+    assert ids
+    return plan.model_copy(update={
+        "actions": [
+            action.model_copy(update={"critical": False})
+            if action.id in ids else action
+            for action in plan.actions
+        ],
+    }), ids
+
+
+def test_a_required_action_blocked_by_a_refused_optional_dependency_stops_the_batch():
+    """Saltarse una accion OPCIONAL puede dejar una REQUERIDA inejecutable.
+
+    `configure_dhcp_pool` es critica y depende de un SVI. Si el SVI se salta
+    por capacidad -- legitimo, porque es opcional -- entonces la pool no podra
+    ejecutarse nunca, y eso se sabe ANTES de la primera mutacion. Mutar el
+    resto del lote seria el mismo dano que la regla de lote entero existe para
+    impedir, una capa mas abajo.
+    """
+    enterprise, topology, policy = _fixture()
+    policy.gateway_device_ids = {"hq": "sw-dist"}
+    policy.dhcp_server_device_ids = {"hq": "sw-dist"}
+    plan = compile_enterprise_configuration(enterprise, topology, policy).plan
+    optional_plan, svi_ids = _optional(plan, ConfigurationActionType.CONFIGURE_SVI)
+    runtime = FakeConfigurationRuntime(topology)
+    capabilities = _supported_capabilities()
+    capabilities["2960-24TT"].supports_svi = CapabilityStatus.UNKNOWN
+    pool = plan.actions_of_type(ConfigurationActionType.CONFIGURE_DHCP_POOL)[0]
+
+    result = ConfigurationApplicator(runtime).apply(
+        optional_plan,
+        actual_source_topology_hash=optional_plan.source_topology_hash,
+        capabilities=capabilities,
+    )
+
+    assert pool.critical
+    assert set(pool.depends_on) & svi_ids
+    assert runtime.apply_calls == []
+    assert result.status is ConfigurationApplicationStatus.FAILED
+    assert result.failure_code is ConfigurationFailureCode.CAPABILITY_UNKNOWN
+    assert any(pool.id in message for message in result.preflight_errors)
+
+
+def test_an_optional_action_with_no_required_dependents_still_only_skips():
+    """La regla no se traga el caso opcional legitimo: sin dependientes
+    criticos, saltarse una opcional deja correr el lote."""
+    topology, plan = _compiled()
+    optional_plan, endpoint_ids = _optional(
+        plan, ConfigurationActionType.SET_ENDPOINT_STATIC,
+    )
+    runtime = FakeConfigurationRuntime(topology)
+    capabilities = _supported_capabilities()
+
+    result = ConfigurationApplicator(runtime).apply(
+        optional_plan,
+        actual_source_topology_hash=optional_plan.source_topology_hash,
+        capabilities=capabilities,
+    )
+    dependents = [
+        action for action in plan.actions
+        if set(action.depends_on) & endpoint_ids
+    ]
+
+    assert dependents == []
+    assert runtime.apply_calls
+    assert result.status is not ConfigurationApplicationStatus.FAILED
+
+
+def test_endpoint_markers_are_not_device_capabilities():
+    """`endpoint_*` se excluye del gate porque NO es una capacidad de modelo.
+
+    Si alguien agrega uno de esos nombres a `DeviceCapabilities`, pasa a ser
+    una capacidad real y la exclusion por prefijo lo estaria ignorando en
+    silencio. Este test obliga a tomar esa decision en vez de heredarla.
+    """
+    enterprise, topology, policy = _fixture()
+    policy.gateway_device_ids = {"hq": "sw-dist"}
+    policy.dhcp_server_device_ids = {"hq": "sw-dist"}
+    plan = compile_enterprise_configuration(enterprise, topology, policy).plan
+    markers = {
+        action.required_capability for action in plan.actions
+        if action.required_capability.startswith("endpoint_")
+    }
+
+    assert markers == {"endpoint_static_ipv4", "endpoint_dhcp"}
+    for marker in markers:
+        assert marker not in DeviceCapabilities.model_fields

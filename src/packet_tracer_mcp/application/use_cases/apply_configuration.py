@@ -235,22 +235,35 @@ class ConfigurationApplicator:
         # resueltas UNKNOWN. `critical` es la distincion tipada que el modelo
         # declara; una accion NO critica sigue pudiendo saltarse.
         refusals = self._capability_refusals(plan, targets, capabilities)
-        required = [item for item in refusals if item[0].critical]
-        if required:
+        blocked = self._unexecutable_closure(plan, refusals)
+        required_blocked = sorted(
+            (action for action in plan.actions if action.critical and action.id in blocked),
+            key=lambda item: item.id,
+        )
+        if required_blocked:
+            refused_status = {action.id: status for action, status, _model in refusals}
+            refused_model = {action.id: model for action, _status, model in refusals}
             return self._preflight_failure(
                 plan,
                 (
                     ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
                     if any(
                         status is CapabilityStatus.UNSUPPORTED
-                        for _action, status, _model in required
+                        for status in refused_status.values()
                     )
                     else ConfigurationFailureCode.CAPABILITY_UNKNOWN
                 ),
                 *sorted({
-                    f"{action.device_name}: required capability "
-                    f"{action.required_capability} is {status.value} for {model}."
-                    for action, status, model in required
+                    (
+                        f"{action.id} ({action.device_name}): required capability "
+                        f"{action.required_capability} is "
+                        f"{refused_status[action.id].value} for {refused_model[action.id]}."
+                    )
+                    if action.id in refused_status else (
+                        f"{action.id} ({action.device_name}): required action depends on "
+                        "a refused action and can never execute."
+                    )
+                    for action in required_blocked
                 }),
                 runtime_context=runtime_context,
                 deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
@@ -484,6 +497,29 @@ class ConfigurationApplicator:
                 continue
             refusals.append((action, status, target.model))
         return refusals
+
+    @staticmethod
+    def _unexecutable_closure(
+        plan: ConfigurationPlan,
+        refusals: list[tuple[ConfigurationAction, CapabilityStatus, str]],
+    ) -> set[str]:
+        """Lo rechazado, mas todo lo que depende de ello, transitivamente.
+
+        Saltarse una accion OPCIONAL es legitimo; dejar una REQUERIDA colgando
+        de ella no lo es. `satisfies_apply_dependency` ya impide que la
+        dependiente se ejecute, pero eso se descubre a mitad del lote, con
+        mutaciones ya hechas. Se sabe antes, asi que se decide antes.
+
+        Las acciones se compilan en orden de dependencia, de modo que una sola
+        pasada hacia adelante alcanza el cierre completo.
+        """
+        blocked = {action.id for action, _status, _model in refusals}
+        for action in plan.actions:
+            if action.id in blocked:
+                continue
+            if any(dependency in blocked for dependency in action.depends_on):
+                blocked.add(action.id)
+        return blocked
 
     @staticmethod
     def _capability_refusal_results(
