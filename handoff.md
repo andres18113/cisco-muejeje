@@ -2,72 +2,174 @@
 
 ## Current checkpoint
 
-- worktree: `.claude/worktrees/runtime-ripv2`
-- branch: `feature/runtime-ripv2`
-- working tree: **clean** (`git status --short` empty)
-- Slice 2A implementation commit: `e846175b6e2154621e89d24d0809fae0e396d24b`
-
-**The body of this file describes Slice 2B/3 and its tip `aa7cc18`. Four
-governed sessions have landed since, and the MEG table below is corrected from
-Git rather than left as written.** The authoritative record of MEG-4 is
-`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose run 4 is the
-current state; the authoritative debt state is
-`docs/architecture/technical-debt.md`. Where this file and those disagree, they
-win.
-
-Corrected figures, measured rather than carried forward:
+Executable state, from Git rather than from memory. Everything below was
+measured at `8f1a478`; this file's own commit is docs-only and changes none of
+it.
 
 ```text
-canonical regression   2103 passed, 3 pre-existing warnings
-                       ./.venv/Scripts/python.exe -m pytest, no custom PYTHONPATH
-Graphify               7872 nodes, 26873 edges, 273 communities
+branch            feature/runtime-ripv2
+HEAD              8f1a478853957b0d1276e4de2b6374f94a2867d0
+working tree      clean  (git status --short empty, git diff --check clean)
+worktree          .claude/worktrees/runtime-ripv2   (operational location only;
+                  no product code depends on it — verified, see below)
+interpreter       ./.venv/Scripts/python.exe        (worktree-local, authoritative)
+PYTHONPATH        unset
+regression        2103 passed, 3 pre-existing pytest deprecation warnings
+Graphify          7872 nodes, 26873 edges, 273 communities
 ```
 
-## Stage 3A4 execution — gates 1–3 CLOSED, gate 4 still open
+Run the suite as `./.venv/Scripts/python.exe -m pytest` from the worktree root.
+The `python` on `PATH` is a different installation with no `pytest`.
 
-Executed 2026-08-17 against the master mission's strict order. Naming below uses
-**MEG-n** for the master's 1→7 execution order and **OAG** for its
-`PHASE 4 — OFFLINE CLOSURE TESTS`, because the master's own section headings and
-its order list number differently and "Phase 4" was readable as live permission.
+**Authority order.** Current Git, source and tests win over any prose in this
+file. The authoritative MEG-4 record is
+`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose **run 6** is
+the current state; the authoritative debt state is
+`docs/architecture/technical-debt.md`; the runtime register is
+`docs/qa/e95-runtime-debt.md`. Everything from "What happened since the last
+handoff" onward in this file is Slice 2B/3 history, not status.
+
+## MEG status
+
+Naming: **MEG-n** is the master mission's 1→7 execution order; **OAG** is its
+offline adversarial matrix.
 
 ```text
 MEG-1  live import isolation ................... CLOSED   0587995, 5641445
 MEG-2  capability consumer / TD-HARDWARE ....... CLOSED   ea4eb3a, 06217ac
 MEG-3  product execution surface ............... CLOSED   7de805a, 6ef25bf
 OAG    offline adversarial matrix .............. CLOSED   c1ea586
-MEG-4  bounded live qualification ............. FAILED / CLEAN, 4 runs
+MEG-4  bounded live qualification ............. FAILED / CLEAN, 6 runs
 MEG-5  full same-run 41/41 acceptance ......... NOT_OPENED
 MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
 MEG-7  Stage 3A4 closure ...................... NOT_STARTED
-```
 
-MEG-4 has now been executed six times against Packet Tracer `9.0.1.0858`, each
-time failing clean with the workspace restored. **Run 6 reached the control
-plane**: 17/17 E5 actions applied, all five declared foundations VERIFIED,
-RIPv2 applied on both routers, its process semantics read back field for field,
-and each router observed the far-side prefix as a learned RIP route across the
-serial WAN. It stopped on `source_device_name`, a field neither
-`show ip protocols` nor `show ip route rip` reports, which holds both otherwise
-fully verified observations at UNOBSERVABLE and dependency-blocks forwarding. Run 5 applied **17 of 17**
-configuration actions on measured exact-version capability evidence: physical
-deployment VERIFIED, serial orientation VERIFIED with exactly one DCE and one
-DTE, serial transit addressing VERIFIED, clock on the observed DCE read back
-VERIFIED. It stopped because six applied access-port actions cannot be read
-back at all, so the aggregate E5 status ended `partial`. A later read-only
-audit established that every foundation the RIPv2 path declares *was* VERIFIED
-in that run, so the stop was the aggregate rule rather than a missing
-foundation. That rule is now scoped to the foundations the control plane
-declares — the decision, its obligations and its evidence are recorded under
-`TD-ACCESSPORT-READBACK-001`, "Decision 2 taken". The access-port observability
-gap is unchanged and still blocks E9.5; it no longer blocks MEG-4. The "MEG-4 is blocked,
-and on what" section below describes run *zero* — the state before any run —
-and is history, not status.
-
-```text
 MEG_5               = NOT_OPENED
 MEG_5_EXECUTION     = BLOCKED
 REFERENCE_41_41_RUN = NOT_EXECUTED
 ```
+
+## MEG-4 run 6 — the current executed state
+
+Six bounded live runs against PT `9.0.1.0858`, every one failing clean with the
+workspace restored. Run 6 is the first to reach the control plane.
+
+```text
+MEG_4                          = FAILED / CLEAN
+STOPPED_AT                     = control_plane_apply
+
+PHYSICAL_DEPLOYMENT            = VERIFIED   (8 devices, 7 links, 17 items observed)
+MODULE_PORT_EFFECT             = VERIFIED   (both routers)
+MODULE_IDENTITY                = UNOBSERVABLE
+MODULE_PLACEMENT               = UNOBSERVABLE
+PORT_BINDINGS                  = BACKEND_VERIFIED inventory
+SERIAL_ORIENTATION             = VERIFIED   (one DCE, one DTE; 4 pages captured per endpoint)
+
+E5_ACTIONS                     = 17 of 17 APPLIED
+ACCESS_PORT                    = UNOBSERVABLE   (preserved, not required, not promoted)
+ENDPOINT_STATIC                = PARTIAL        (preserved; acceptable for the current
+                                                 routing foundation — no endpoint_address
+                                                 foundation is declared)
+CONFIGURATION_FULLY_VERIFIED   = NO             (stated explicitly in the result)
+
+AUTHENTIC_FOUNDATION_GATE      = PASS
+REQUIRED_FOUNDATIONS           = derived from the typed ControlPlanePlan:
+                                 4 x l3_interface + 1 x link, all VERIFIED
+                                 (no access_port, no endpoint_address)
+
+E9_REACHED                     = YES, first time. Preflight passed, no errors.
+RIPV2_APPLIED                  = YES, both routers, typed product path
+RIPV2_PROCESS_PAYLOAD_OBSERVED = YES — protocol, version_send, version_recv,
+                                 auto_summary, networks, passive_interfaces all
+                                 VERIFIED on both routers (fresh show ip protocols)
+LEARNED_ROUTE_PAYLOAD_OBSERVED = YES — network, prefix_length, protocol VERIFIED on
+                                 both routers (fresh show ip route rip); each router
+                                 learned the far-side prefix across the serial WAN
+SOURCE_DEVICE_NAME             = UNOBSERVABLE
+PROCESS_AGGREGATE_CLAIM        = PARTIAL   (held UNOBSERVABLE by that one field)
+ROUTE_AGGREGATE_CLAIM          = PARTIAL   (same field)
+TYPED_FORWARDING               = dependency_blocked / NOT_REACHED
+
+E4_IDENTITY_PRESERVED          = YES
+SEMANTIC_INVENTORY_RESTORED    = YES  (independent re-observation, separate process:
+                                       0 semantic devices, 0 links)
+```
+
+Recorded rather than smoothed over: the backend-managed power-distribution
+object count went from **1 to 2** during run 6. Both are backend-created and
+zero-port, and the restoration comparison covers the semantic inventory, which
+returned to zero devices and zero links. **No claim is made about raw backend
+inventory identity.**
+
+## Governed debt — current states
+
+```text
+TD_ORIENTATION_PAGER_001   = RESOLVED
+TD_MODULE_SLOT_001         = BACKEND_LIMITATION
+TD_CATALOG_PORT_001        = RESOLVED
+TD_CONFIG_CAPABILITY_001   = RESOLVED
+TD_HARDWARE_001            = OPEN
+TD_ACCESSPORT_READBACK_001 = OPEN — not the current MEG-4 blocker; blocks E9.5
+                             per the current ledger
+TD_ACCEPTANCE_001          = OPEN
+```
+
+`apply_security.py` still carries the pre-correction partial-mutation shape
+(capability-refused actions skipped, the rest mutate, no critical check, no
+dependency closure). It is **out of current Stage 3A4 scope** — the bounded path
+compiles no security plan — and stays owned by existing debt rather than
+duplicated into a new entry.
+
+## Current blocker
+
+```text
+CONTROL-PLANE SOURCE DEVICE PROVENANCE
+```
+
+`source_device_name` is claimed by the RIPv2 process and learned-route
+expectations and reported by neither registered query, so two otherwise fully
+verified observations sit at UNOBSERVABLE and typed forwarding is
+dependency-blocked behind them. Narrowing is refused by design:
+`enterprise_control_plane_runtime.py::_unobservable_fields` folds
+`unclaimed_fields` in precisely so that shrinking an expectation cannot raise
+its conclusion.
+
+## Next task
+
+Trace whether control-plane registered query execution already carries
+independent terminal/session/runtime-device provenance that can be uniquely
+manifest-bound to semantic source identity. The requested target alone is not
+evidence — the device this process *asked* is not the device the output
+*claims*. Prefer execution-envelope provenance, and do not invent an IOS
+hostname query unless existing provenance is demonstrably insufficient.
+Preserve `source_device_name` as UNOBSERVABLE throughout, and HARD STOP if no
+authentic provenance exists.
+
+## Operating constraints, still in force
+
+- the main agent is the implementation owner; read-only subagents may audit,
+  but must not edit the same seam;
+- no Skills modifications during Stage 3A4 work;
+- no access-port investigation now;
+- no MEG-5 and no 41/41 reference run before MEG-4 closes;
+- no raw IOS or raw JS product bypass; no harness-performed mutation;
+- no fabricated identity, capability, foundation or readback evidence;
+- current source, tests and Git beat stale historical prose — including this
+  file's history sections.
+
+Production code carries no dependency on Claude, `.claude`, a worktree name or
+an absolute filesystem path; the only match in `src/` is a comment naming a test
+file. `PT_MCP_GOVERNED_ROOT` stays an operator-declared, process-local input.
+
+---
+
+# History below this line
+
+Everything that follows is the Slice 2B/3 record and the pre-run-1 analysis,
+kept verbatim. It is **not** status: where it disagrees with the checkpoint
+above or with the documents that checkpoint cites, they win. In particular
+the "MEG-4 is blocked, and on what" section describes the state before any
+live run existed.
 
 Suite 1906 → **1964 passed**, 3 pre-existing warnings. Terminal gate green:
 `--collect-only`, full run, `compileall -q src`, `git diff --check`,
