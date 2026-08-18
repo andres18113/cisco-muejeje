@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import Counter
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from .deployment import DeploymentManifest, EnvironmentFingerprint
 from .evidence import (
@@ -17,6 +17,7 @@ from .evidence import (
     EvidenceRecord,
     ObservationStatus,
     SupportStatus,
+    VerificationStatus,
 )
 from .execution import (
     ApplicationExecutionJournal,
@@ -141,8 +142,22 @@ class PhysicalModuleSlotObservation(BaseModel):
 class PhysicalModuleObservation(BaseModel):
     """Before/after evidence for a requested module's physical effect.
 
-    Requested identity and directly observed identity are never aliases.  A
-    verified port effect can therefore coexist with an UNOBSERVABLE identity.
+    Four dimensions are kept apart and never collapse into one another:
+
+    ``requested_slot``
+        Mutation intent.  Nothing more: it is what was asked for, not what
+        happened.
+    ``effect_verification_status``
+        Whether this transaction is proven to have *caused* the complete
+        expected port effect.
+    ``identity_observation_status``
+        Whether the backend independently named the installed card.
+    ``placement_observation_status``
+        Whether the backend independently attributed that card to the
+        requested slot.
+
+    A verified port effect therefore coexists with an UNOBSERVABLE identity and
+    an UNOBSERVABLE placement, and never promotes either.
     """
 
     target_id: str
@@ -152,6 +167,9 @@ class PhysicalModuleObservation(BaseModel):
     requested_module: str
     freshness: EvidenceFreshness = EvidenceFreshness.UNKNOWN
     port_inventory_observed: bool = False
+    #: True when this transaction created the device and still owns it.  The
+    #: effect of a device someone else owns was not necessarily caused here.
+    device_newly_owned: bool = False
     expected_ports: list[str] = Field(default_factory=list)
     expected_port_classes: list[str] = Field(default_factory=list)
     ports_before: list[str] = Field(default_factory=list)
@@ -159,12 +177,58 @@ class PhysicalModuleObservation(BaseModel):
     observed_expected_ports: list[str] = Field(default_factory=list)
     added_ports: list[str] = Field(default_factory=list)
     observed_port_classes: list[str] = Field(default_factory=list)
+    module_tree_observed: bool = False
     slot_observations: list[PhysicalModuleSlotObservation] = Field(default_factory=list)
-    slot_effect_observed: bool = False
+    #: The complete expected port set is present in the requested slot's port
+    #: namespace, with the expected port classes.  Presence, not causation.
     effect_observed: bool = False
     identity_observation_status: ObservationStatus = ObservationStatus.UNOBSERVABLE
     observed_module_identity: str = ""
+    placement_observation_status: ObservationStatus = ObservationStatus.UNOBSERVABLE
     message: str = ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effect_newly_caused(self) -> bool:
+        """The complete expected effect was absent before and present after.
+
+        Read from the raw before/after inventories rather than from
+        ``added_ports`` so a derived field cannot vouch for itself.
+        """
+
+        expected = set(self.expected_ports)
+        if not expected:
+            return False
+        return expected <= (set(self.ports_after) - set(self.ports_before))
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effect_verification_status(self) -> VerificationStatus:
+        """VERIFIED only from fresh, complete, transaction-caused evidence.
+
+        Deliberately a computed field: the verdict cannot be assigned, so no
+        caller and no test double can declare success without supplying the
+        evidence that earns it.  Absent or stale evidence is UNVERIFIED;
+        evidence that is present but does not establish the effect is FAILED.
+        Both fail closed against a gate that requires VERIFIED.
+        """
+
+        if (
+            not self.observed
+            or not self.port_inventory_observed
+            or not self.expected_ports
+            or self.freshness is not EvidenceFreshness.FRESH
+        ):
+            return VerificationStatus.UNVERIFIED
+        if (
+            self.device_newly_owned
+            and self.effect_observed
+            and self.effect_newly_caused
+            and set(self.expected_ports) <= set(self.observed_expected_ports)
+            and set(self.expected_port_classes) <= set(self.observed_port_classes)
+        ):
+            return VerificationStatus.VERIFIED
+        return VerificationStatus.FAILED
 
 
 class PhysicalWorkspaceDeviceObservation(BaseModel):

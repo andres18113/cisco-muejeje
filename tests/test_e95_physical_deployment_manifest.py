@@ -169,7 +169,7 @@ class FakePhysicalRuntime:
             observed_expected_ports=["Serial0/0/0", "Serial0/0/1"],
             added_ports=["Serial0/0/0", "Serial0/0/1"],
             observed_port_classes=["serial"],
-            slot_effect_observed=True,
+            device_newly_owned=True,
             effect_observed=True,
             identity_observation_status=ObservationStatus.UNOBSERVABLE,
         )

@@ -576,30 +576,20 @@ class PacketTracerPhysicalTopologyRuntime:
         observed_classes = _port_classes(observed_expected)
         expected_classes = _port_classes(expected_ports)
 
-        matching_slots = [
-            item for item in after.slots
-            if item.observed_module_number == module.slot and item.identity_observable
-        ]
-        observed_identity = (
-            matching_slots[0].observed_module_identity
-            if len(matching_slots) == 1 else ""
-        )
-        identity_status = (
-            ObservationStatus.OBSERVED
-            if observed_identity else ObservationStatus.UNOBSERVABLE
-        )
+        # Neither placement nor identity is derivable here, and the reason is the
+        # same one: `observed_module_number` lives in the module-tree namespace
+        # ("0") while `module.slot` lives in the port namespace ("0/0"), and this
+        # repository holds no governed mapping between them.  Measured on 2911 /
+        # PT 9.0.1.0858 the inserted HWIC never appears in the tree at all; the
+        # single entry reported is the onboard module.  Comparing the two would
+        # not merely fail to prove placement -- it would assert a placement the
+        # evidence contradicts, and would then attribute a card identity to it.
+        # The tree is kept below as raw evidence and read by nothing.
+        # TD-MODULE-SLOT-001, branch B.
         slot_ports_after = set(_ports_in_requested_slot(after.ports, module.slot))
         effect_observed = (
             slot_ports_after == expected_set
             and set(expected_classes).issubset(observed_classes)
-        )
-        slot_effect_observed = bool(
-            effect_observed
-            and after.module_tree_observed
-            and any(
-                item.observed_module_number == module.slot
-                for item in after.slots
-            )
         )
         return PhysicalModuleObservation(
             target_id=target_id,
@@ -608,6 +598,7 @@ class PacketTracerPhysicalTopologyRuntime:
             requested_module=module.module,
             freshness=EvidenceFreshness.FRESH,
             port_inventory_observed=True,
+            device_newly_owned=module.device in self._owned_new_devices,
             expected_ports=expected_ports,
             expected_port_classes=expected_classes,
             ports_before=list(baseline.ports),
@@ -615,6 +606,7 @@ class PacketTracerPhysicalTopologyRuntime:
             observed_expected_ports=observed_expected,
             added_ports=added,
             observed_port_classes=observed_classes,
+            module_tree_observed=after.module_tree_observed,
             slot_observations=[
                 PhysicalModuleSlotObservation(
                     observed_module_number=item.observed_module_number,
@@ -625,10 +617,10 @@ class PacketTracerPhysicalTopologyRuntime:
                 )
                 for item in after.slots
             ],
-            slot_effect_observed=slot_effect_observed,
             effect_observed=effect_observed,
-            identity_observation_status=identity_status,
-            observed_module_identity=observed_identity,
+            identity_observation_status=ObservationStatus.UNOBSERVABLE,
+            observed_module_identity="",
+            placement_observation_status=ObservationStatus.UNOBSERVABLE,
             message="fresh_packet_tracer_module_port_effect_readback",
         )
 

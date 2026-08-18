@@ -277,6 +277,11 @@ class EnterprisePhysicalTopologyDeployer:
                 error=error,
                 fingerprint=environment_fingerprint,
             ))
+            evidence.append(_module_placement_evidence(
+                module,
+                observation,
+                fingerprint=environment_fingerprint,
+            ))
             item = item_results[(PhysicalObjectKind.MODULE, target_id)]
             if error:
                 item.status = PhysicalDeploymentItemStatus.FAILED
@@ -636,8 +641,16 @@ class EnterprisePhysicalTopologyDeployer:
             return observation, (
                 f"Module effect for {target_id!r} lacks the expected port class evidence."
             )
-        if not observation.slot_effect_observed or not observation.effect_observed:
-            return observation, f"Module effect for {target_id!r} did not converge."
+        # What a module requirement really asks for is that the ports exist and
+        # that this transaction caused them.  Exact placement is UNOBSERVABLE on
+        # this backend and is not required here -- see TD-MODULE-SLOT-001 -- so
+        # the gate demands the port effect and claims nothing about the slot.
+        if observation.effect_verification_status is not VerificationStatus.VERIFIED:
+            return observation, (
+                f"Module port effect for {target_id!r} is not VERIFIED "
+                f"({observation.effect_verification_status.value}); "
+                "only a fresh, complete, transaction-caused effect is evidence."
+            )
         if (
             observation.identity_observation_status is ObservationStatus.OBSERVED
             and observation.observed_module_identity != module.module
@@ -1157,18 +1170,23 @@ def _module_effect_evidence(
         and observation.observed
         and observation.port_inventory_observed
     )
-    verified = bool(
-        observation is not None
-        and not error
-        and freshness is EvidenceFreshness.FRESH
-        and observation.effect_observed
-        and observation.slot_effect_observed
+    # One derivation, not two.  The observation already grades its own evidence;
+    # re-grading it here is how the two halves drifted apart before.  The only
+    # thing this layer adds is its capability cross-check: an error outranks a
+    # self-reported VERIFIED.
+    status = (
+        observation.effect_verification_status if observation is not None
+        else VerificationStatus.UNVERIFIED
     )
-    stale = observation is not None and freshness is EvidenceFreshness.STALE
+    if error and status is VerificationStatus.VERIFIED:
+        status = VerificationStatus.FAILED
     return EvidenceRecord(
         id=f"e4/module-effect/{_module_id(module)}",
         subject=_module_id(module),
-        claim="requested module physical port effect matches fresh runtime state",
+        claim=(
+            "this transaction caused the requested module's complete port "
+            "effect, proven by fresh before/after runtime state"
+        ),
         method=(VerificationMethod.STRUCTURED_API if observation else VerificationMethod.NONE),
         strength=(EvidenceStrength.CLAIM_DIRECT if observation else EvidenceStrength.NONE),
         source="physical_topology_runtime.observe_module_effect",
@@ -1181,12 +1199,64 @@ def _module_effect_evidence(
         observation_status=(
             ObservationStatus.OBSERVED if observed else ObservationStatus.PROBE_FAILED
         ),
-        verification_status=(
-            VerificationStatus.VERIFIED if verified
-            else VerificationStatus.UNVERIFIED if stale or observation is None
-            else VerificationStatus.FAILED
-        ),
+        verification_status=status,
         limitations=[error] if error else [],
+    )
+
+
+def _module_placement_evidence(
+    module: ModulePlan,
+    observation: PhysicalModuleObservation | None,
+    *,
+    fingerprint: EnvironmentFingerprint,
+) -> EvidenceRecord:
+    """Record the placement dimension explicitly, including when it is unknown.
+
+    A verified port effect says the ports exist and that this transaction caused
+    them.  It says nothing about which slot the card physically occupies, and a
+    manifest that stayed silent about that would read as if it did.
+    """
+
+    placement_status = (
+        observation.placement_observation_status
+        if observation is not None
+        else ObservationStatus.PROBE_FAILED
+    )
+    return EvidenceRecord(
+        id=f"e4/module-placement/{_module_id(module)}",
+        subject=_module_id(module),
+        claim="requested module physically occupies the requested slot",
+        method=(
+            VerificationMethod.STRUCTURED_API
+            if placement_status is ObservationStatus.OBSERVED
+            else VerificationMethod.NONE
+        ),
+        strength=(
+            EvidenceStrength.CLAIM_DIRECT
+            if placement_status is ObservationStatus.OBSERVED
+            else EvidenceStrength.NONE
+        ),
+        source="physical_topology_runtime.observe_module_effect",
+        freshness=(observation.freshness if observation else EvidenceFreshness.UNKNOWN),
+        backend=fingerprint.backend,
+        backend_version=fingerprint.backend_version,
+        environment_fingerprint=fingerprint.semantic_hash,
+        observed_value={
+            "requested_slot": module.slot,
+            "observed_module_numbers": [
+                item.observed_module_number
+                for item in (observation.slot_observations if observation else [])
+            ],
+            "module_tree_observed": bool(observation and observation.module_tree_observed),
+        },
+        support_status=SupportStatus.UNKNOWN,
+        observation_status=placement_status,
+        verification_status=VerificationStatus.UNVERIFIED,
+        limitations=[
+            "Packet Tracer reports module-tree numbers in a namespace this "
+            "repository cannot map to the requested slot; exact physical "
+            "placement is not claimed. TD-MODULE-SLOT-001."
+        ] if placement_status is not ObservationStatus.OBSERVED else [],
     )
 
 

@@ -150,7 +150,7 @@ class SerialEffectRuntime:
             observed_expected_ports=SERIAL_PORTS,
             added_ports=SERIAL_PORTS,
             observed_port_classes=["serial"],
-            slot_effect_observed=True,
+            device_newly_owned=True,
             effect_observed=True,
             identity_observation_status=ObservationStatus.UNOBSERVABLE,
             observed_module_identity="",
@@ -338,20 +338,17 @@ def test_incomplete_wrong_slot_or_stale_module_effect_never_produces_manifest(de
         observation.observed_expected_ports = []
         observation.added_ports = []
         observation.observed_port_classes = []
-        observation.slot_effect_observed = False
         observation.effect_observed = False
     elif defect == "partial":
         observation.ports_after = [*observation.ports_before, SERIAL_PORTS[0]]
         observation.observed_expected_ports = [SERIAL_PORTS[0]]
         observation.added_ports = [SERIAL_PORTS[0]]
-        observation.slot_effect_observed = False
         observation.effect_observed = False
     elif defect == "wrong_slot":
         wrong = ["Serial0/1/0", "Serial0/1/1"]
         observation.ports_after = [*observation.ports_before, *wrong]
         observation.observed_expected_ports = []
         observation.added_ports = wrong
-        observation.slot_effect_observed = False
         observation.effect_observed = False
     else:
         observation.freshness = EvidenceFreshness.STALE
@@ -684,6 +681,38 @@ def test_disposable_qualification_cleanup_runs_when_deployment_fails_after_mutat
     assert result.inventory_restored is True
 
 
+def test_cleanup_runs_after_a_module_port_effect_failure_and_spares_foreign_objects():
+    """Filas 12 y 13 del contrato de TD-MODULE-SLOT-001, en su etapa propia.
+
+    El modo de fallo elegido es el que la rama B agrega y la puerta anterior no
+    veia: los puertos esperados YA estaban antes de la mutacion, asi que esta
+    transaccion no puede afirmar haberlos causado. La limpieza tiene que correr
+    igual, tocar exactamente los dispositivos planificados, y dejar intacto el
+    objeto backend-managed que el workspace ya traia.
+    """
+    runtime = SerialEffectRuntime()
+    not_caused = deepcopy(runtime.observations["MCP-PROBE-S3A4-S2A-R1"])
+    not_caused.ports_before = list(not_caused.ports_after)
+    runtime.observations["MCP-PROBE-S3A4-S2A-R1"] = not_caused
+    baseline = runtime.workspace.model_copy(deep=True)
+    runtime.observe_workspace = lambda: baseline  # type: ignore[method-assign]
+
+    result = qualify_serial_physical_slice(
+        runtime,
+        _topology(),
+        environment_fingerprint=_fingerprint(),
+        restoration_timeout_seconds=0.01,
+    )
+
+    assert not_caused.effect_newly_caused is False
+    assert not_caused.effect_verification_status is VerificationStatus.FAILED
+    assert result.status is SerialPhysicalSliceQualificationStatus.FAILED_CLEAN
+    assert result.deployment.manifest is None
+    assert runtime.removed == ["MCP-PROBE-S3A4-S2A-R2", "MCP-PROBE-S3A4-S2A-R1"]
+    assert "Power Distribution Device0" not in runtime.removed
+    assert result.inventory_restored is True
+
+
 def test_disposable_qualification_hard_stops_without_cleanup_on_foreign_workspace():
     runtime = SerialEffectRuntime()
     runtime.workspace = PhysicalWorkspaceObservation(devices=[
@@ -936,7 +965,16 @@ def test_packet_tracer_module_ensure_is_effect_idempotent_without_claiming_ident
     assert transport.module_mutations == 1
 
 
-def test_expected_device_ports_without_module_tree_do_not_prove_slot_effect():
+def test_expected_device_ports_without_module_tree_still_prove_the_port_effect():
+    """Rama B de TD-MODULE-SLOT-001: el arbol de modulos no entra al veredicto.
+
+    Este test antes exigia leer el arbol -- para correr sobre el una igualdad
+    entre dos namespaces que nunca podia cumplirse. El efecto de puerto se
+    prueba con el inventario de puertos antes/despues, que aqui esta completo,
+    asi que exigir ademas el arbol seria pedir evidencia que nadie consulta. Lo
+    que el arbol ausente deja UNOBSERVABLE es la UBICACION, y eso se afirma.
+    """
+
     class NoModuleTreeTransport(ModuleEffectTransport):
         def __call__(self, script: str, timeout: float) -> str | None:
             raw = super().__call__(script, timeout)
@@ -955,7 +993,9 @@ def test_expected_device_ports_without_module_tree_do_not_prove_slot_effect():
 
     assert mutation.disposition is MutationDisposition.CHANGED
     assert observation.effect_observed
-    assert not observation.slot_effect_observed
+    assert observation.module_tree_observed is False
+    assert observation.effect_verification_status is VerificationStatus.VERIFIED
+    assert observation.placement_observation_status is ObservationStatus.UNOBSERVABLE
 
 
 def test_packet_tracer_module_ensure_fails_closed_on_partial_preexisting_effect():

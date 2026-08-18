@@ -255,7 +255,7 @@ class _GenericPhysicalRuntime:
             observed_expected_ports=serial,
             added_ports=serial,
             observed_port_classes=["serial"],
-            slot_effect_observed=True,
+            device_newly_owned=True,
             effect_observed=True,
             identity_observation_status=ObservationStatus.UNOBSERVABLE,
             observed_module_identity="",
