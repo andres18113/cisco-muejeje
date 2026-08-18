@@ -41,6 +41,7 @@ from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
+    ConfigurationFailureCode,
     ConfigurationRuntimeContext,
 )
 from ...domain.enterprise.models.control_plane import ControlPlaneIntent
@@ -134,6 +135,23 @@ class EnterpriseExecutionResult:
         return self.status is EnterpriseExecutionStatus.COMPLETED
 
     @property
+    def configuration_fully_verified(self) -> bool:
+        """Si TODA la evidencia de E5 quedo VERIFIED, no solo las fundaciones.
+
+        COMPLETED significa que cada etapa corrio y que cada fundacion DECLARADA
+        por el plan de plano de control quedo VERIFIED. NO significa que toda la
+        configuracion se haya podido releer: en este backend hay familias que no
+        tienen getter registrado, asi que una corrida puede completar con
+        evidencia parcial fuera del conjunto requerido. Se expone aparte para
+        que `completed` no se lea como algo mas fuerte de lo que es.
+        """
+        return (
+            self.configuration_result is not None
+            and self.configuration_result.status
+            is ConfigurationApplicationStatus.VERIFIED
+        )
+
+    @property
     def mutated(self) -> bool:
         """BLOCKED significa exactamente que no se toco Packet Tracer."""
         return self.status is not EnterpriseExecutionStatus.BLOCKED
@@ -158,6 +176,7 @@ class EnterpriseExecutionResult:
                 self.configuration_result.status.value
                 if self.configuration_result else None
             ),
+            "configuration_fully_verified": self.configuration_fully_verified,
             "foundational_statuses": {
                 key: value.value for key, value in sorted(self.foundational_statuses.items())
             },
@@ -379,6 +398,65 @@ def execute_enterprise_reference(
     )
 
 
+def _configuration_contradiction(
+    result: ConfigurationApplicationResult,
+) -> str:
+    """Por que lo aplicado impide construir encima, o cadena vacia.
+
+    NO es "el agregado no quedo VERIFIED". El agregado cae a PARTIAL en cuanto
+    UNA sola relectura queda UNOBSERVABLE, aunque esa accion no sea prerrequisito
+    de nada de lo que sigue. Exigirlo entero es mas fuerte que el criterio
+    gobernado: `TD-ACCEPTANCE-001` fila 4 pide evidencia autentica, producida por
+    `apply_configuration` desde relectura real, de las fundaciones que la
+    operacion de plano de control DECLARA -- y esas las verifica
+    `ControlPlaneApplicator._foundation_errors` contra el plan tipado, antes de
+    tocar el runtime, exigiendo VERIFIED en cada una.
+
+    Lo que sigue bloqueando aca es la CONTRADICCION, no la ausencia:
+
+    * `FAILED` agregado -- el preflight rechazo el lote o una accion no se
+      aplico, asi que el plan no se ejecuto como se compilo;
+    * una accion `FAILED` -- se intento mutar y no surtio efecto, de modo que el
+      device quedo en un estado que nadie pidio;
+    * una verificacion `FAILED` -- se releyo y el backend dijo lo contrario de lo
+      planificado. Eso no es "no se pudo mirar": es haber mirado y visto otra
+      cosa, y desmiente el modelo que este proceso tiene del device, incluidas
+      las fundaciones que si leyo bien.
+
+    `UNOBSERVABLE` y `PARTIAL` no contradicen nada; conservan su estado y dejan
+    la decision a la fundacion que corresponda, si es que alguna los declara.
+    """
+    if result.status is ConfigurationApplicationStatus.FAILED:
+        return (
+            f"Configuration application ended {result.status.value}"
+            + (f": {'; '.join(result.preflight_errors)}" if result.preflight_errors else "")
+            + ". A failed application is not a base the control plane may build on."
+        )
+    failed_actions = sorted(
+        item.action_id for item in result.action_results
+        if item.status is ActionExecutionStatus.FAILED
+    )
+    if failed_actions:
+        return (
+            "Configuration actions failed and did not take effect: "
+            + ", ".join(failed_actions)
+            + ". The control plane may not build on a device left in a state "
+            "nobody planned."
+        )
+    contradicted = sorted(
+        item.expectation_id for item in result.verification_results
+        if item.status is ActionExecutionStatus.FAILED
+    )
+    if contradicted:
+        return (
+            "Configuration read-back contradicted the plan for: "
+            + ", ".join(contradicted)
+            + ". An observed contradiction is not an unobserved field, and it "
+            "discredits this run's model of the device."
+        )
+    return ""
+
+
 def _execute_mutating_stages(
     state: _ExecutionState,
     runtimes: EnterpriseRuntimes,
@@ -448,12 +526,9 @@ def _execute_mutating_stages(
         # APPLIED != VERIFIED, y el enum lo distingue. Seguir sobre APPLIED seria
         # tratar "la mutacion volvio bien" como evidencia de efecto, que es
         # exactamente lo que el ceiling de este proyecto prohibe.
-        if configuration_result.status is not ConfigurationApplicationStatus.VERIFIED:
-            return state.failed(
-                stage, runtimes, topology, e4_identity,
-                f"Configuration application ended {configuration_result.status.value}, "
-                "and only VERIFIED is evidence the control plane may build on.",
-            )
+        contradiction = _configuration_contradiction(configuration_result)
+        if contradiction:
+            return state.failed(stage, runtimes, topology, e4_identity, contradiction)
 
         stage = EnterpriseExecutionStage.FOUNDATIONAL_EVIDENCE
         # Derivada de resultados ejecutados. No hay parametro por el que un
@@ -480,6 +555,25 @@ def _execute_mutating_stages(
             deployment_manifest=oriented,
         )
         state.control_plane_result = control_plane_result
+        # E9 es la operacion terminal de esta secuencia: no hay consumidor
+        # posterior al que acotar su claim, asi que aca el agregado SI manda.
+        # Hasta ahora nadie lo miraba, y un E9 que se nego en preflight -- por
+        # ejemplo con `FOUNDATIONAL_CONFIGURATION_MISSING` -- se reportaba como
+        # corrida COMPLETED. Lo tapaba el gate agregado de E5, que impedia
+        # llegar hasta aca con fundaciones malas; al acotar ese gate, el hueco
+        # queda a la vista.
+        if control_plane_result.status is not ConfigurationApplicationStatus.VERIFIED:
+            return state.failed(
+                stage, runtimes, topology, e4_identity,
+                f"Control-plane application ended {control_plane_result.status.value}"
+                + (
+                    f" ({control_plane_result.failure_code.value})"
+                    if control_plane_result.failure_code
+                    is not ConfigurationFailureCode.NONE else ""
+                )
+                + ".",
+                *control_plane_result.preflight_errors,
+            )
         return state.completed_run(runtimes, topology, e4_identity)
     except Exception as exc:  # la limpieza corre igual
         return state.failed(stage, runtimes, topology, e4_identity, f"{type(exc).__name__}: {exc}")

@@ -430,11 +430,15 @@ class TestRow8AFailedE5NeverMutatesE9:
         assert result.control_plane_result is None
         assert result.foundational_statuses == {}
 
-    def test_only_verified_configuration_may_carry_the_control_plane(self):
+    def test_a_failed_configuration_may_never_carry_the_control_plane(self):
         """APPLIED no es VERIFIED, y el enum ya los distingue.
 
         Avanzar sobre APPLIED trataria "la mutacion volvio bien" como evidencia
-        de efecto. El gate exige VERIFIED y lo dice en su propio error.
+        de efecto. Lo que cambio con el gate acotado por fundaciones es CUAL de
+        los estados no-VERIFIED bloquea aca: una aplicacion FALLIDA sigue
+        bloqueando, porque el plan no se ejecuto como se compilo. Un campo que
+        nadie pudo mirar ya no bloquea por si solo -- eso lo decide la fundacion
+        que lo declare, y esta fijado en `test_e95_foundation_scoped_gate.py`.
         """
         physical = _GenericPhysicalRuntime()
 
@@ -443,8 +447,12 @@ class TestRow8AFailedE5NeverMutatesE9:
             configuration=_FailingConfigurationRuntime([]),
             control_plane=_ForbiddenControlPlaneRuntime(),
         )
+        errors = " ".join(result.errors)
 
-        assert "only VERIFIED is evidence" in " ".join(result.errors)
+        assert result.stopped_at is EnterpriseExecutionStage.CONFIGURATION_APPLY
+        assert result.control_plane_result is None
+        assert "failed" in errors.casefold()
+        assert "not a base the control plane may build on" in errors
 
 
 class TestRow12CleanupRunsAfterEveryFailure:
