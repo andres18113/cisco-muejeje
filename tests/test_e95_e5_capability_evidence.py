@@ -16,6 +16,8 @@ directories, never from `data/capabilities`, which is gitignored machine state.
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
@@ -121,6 +123,12 @@ def measured_store(tmp_path):
     ])
 
 
+@pytest.fixture
+def empty_store(tmp_path):
+    """Sin evidencia, explicitamente. Nunca `None`: ver el test de mas abajo."""
+    return CapabilitySnapshotStore(tmp_path / "empty")
+
+
 def composed_with_store():
     """Helper compartido con `test_e95_e5_capability_authorization`."""
     import tempfile
@@ -145,13 +153,24 @@ def test_measured_evidence_reaches_the_e5_capability_map(measured_store):
     assert composed.capabilities["2911"].layer3 is CapabilityStatus.SUPPORTED
 
 
-def test_without_a_store_the_catalogue_alone_authorizes_nothing():
+def test_an_empty_store_means_the_catalogue_alone_authorizes_nothing(empty_store):
     """Declaracion estatica de catalogo != evidencia de capacidad runtime."""
-    composed = _compose(None)
+    composed = _compose(empty_store)
 
     for model, capability in BOUNDED_REQUIREMENTS:
         assert getattr(composed.capabilities[model], capability) is CapabilityStatus.UNKNOWN
     assert composed.capabilities["IE-2000"].source == "packet_tracer_catalog"
+
+
+def test_the_default_store_is_machine_state_and_a_test_must_never_use_it():
+    """`CapabilitySnapshotStore()` lee `data/capabilities` relativo al CWD.
+
+    Ese directorio esta gitignored: es estado de la maquina, no del repositorio.
+    Un test que pase `capability_store=None` no prueba "sin evidencia" -- prueba
+    lo que haya en el disco de quien lo corre, y pasa o falla segun eso. Se fija
+    aca para que la trampa quede nombrada en vez de reaparecer.
+    """
+    assert CapabilitySnapshotStore().base_dir == pathlib.Path("data") / "capabilities"
 
 
 def test_evidence_from_another_build_is_not_reused(tmp_path):
@@ -249,30 +268,30 @@ class _ForbiddenMutationConfigurationRuntime:
         )
 
 
-def test_an_unauthorized_e5_never_reaches_e9_and_never_mutates():
-    result, _physical = _run(store=None)
+def test_an_unauthorized_e5_never_reaches_e9_and_never_mutates(empty_store):
+    result, _physical = _run(store=empty_store)
 
     assert result.status is EnterpriseExecutionStatus.FAILED
     assert result.stopped_at is EnterpriseExecutionStage.CONFIGURATION_APPLY
     assert result.control_plane_result is None
 
 
-def test_cleanup_still_runs_after_an_e5_capability_refusal():
-    result, physical = _run(store=None)
+def test_cleanup_still_runs_after_an_e5_capability_refusal(empty_store):
+    result, physical = _run(store=empty_store)
 
     assert result.cleanup_results
     assert result.final_inventory is not None
     assert physical.calls.count("observe_workspace") >= 2
 
 
-def test_an_e5_capability_refusal_preserves_the_e4_identity():
-    result, _physical = _run(store=None)
+def test_an_e5_capability_refusal_preserves_the_e4_identity(empty_store):
+    result, _physical = _run(store=empty_store)
 
     assert result.e4_identity_preserved is True
 
 
-def test_an_e5_capability_refusal_never_removes_foreign_objects():
-    result, physical = _run(store=None)
+def test_an_e5_capability_refusal_never_removes_foreign_objects(empty_store):
+    result, physical = _run(store=empty_store)
 
     planned = {item.name for item in result.composition.topology.devices}
 
