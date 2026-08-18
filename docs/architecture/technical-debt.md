@@ -1720,12 +1720,12 @@ perfectly well: this repository had simply never written them down.
 ## TD-ORIENTATION-PAGER-001 — Serial controller read-back truncates and orientation cannot complete
 
 Status:
-OPEN
+RESOLVED
 
-Branch A is implemented and offline-qualified — see "Branch A" below. The entry
-stays **OPEN** because nothing has yet observed Packet Tracer delivering the
-continuation key and returning the next page. Offline qualification is not live
-evidence, and this repository does not close a runtime debt on a capability.
+Branch A is implemented, offline-qualified and **live-qualified**: MEG-4 run 4
+captured four pages per endpoint on the same query that truncated every time in
+run 3, and orientation came back `verified` with exactly one DCE and one DTE.
+See "Resolution — MEG-4 run 4" at the end of this entry.
 
 Severity:
 P1
@@ -1934,8 +1934,172 @@ SERIAL_ORIENTATION_OBSERVED_LIVE                  = NO  (unchanged)
 
 The fakes reproduce the pager mechanics this repository has measured — the
 tail rewrite when IOS erases its own `--More--`, and the single key it consumes
-— but no live run has yet sent that key to Packet Tracer. Until the MEG-4
-rerun measures it, this entry stays OPEN.
+— but at the time of writing no live run had yet sent that key to Packet
+Tracer. MEG-4 run 4 did; see the resolution below.
+
+### Resolution — MEG-4 run 4, 2026-08-18
+
+Live-qualified. Both bound endpoints of the bounded serial WAN returned a
+complete multi-page controller read-back through the product path:
+
+```text
+A-EDGE-RTR-01  Serial0/0/0  pages_captured=4  pagination=completed
+               complete=True  truncated=False  parseable=True
+               interface_identity_match=True  orientation=dce  clock=2000000
+
+B-EDGE-RTR-01  Serial0/0/0  pages_captured=4  pagination=completed
+               complete=True  truncated=False  parseable=True
+               interface_identity_match=True  orientation=dte  clock=None
+```
+
+Same query, same build, same module state that returned
+`truncated_by_pager` on every attempt in run 3. Packet Tracer does deliver the
+single key the `--More--` consumes, and the capture closed on a prompt both
+times. Orientation `verified`, exactly one DCE and one DTE, E4 physical hash
+unchanged. Evidence:
+`stage-3a4-bounded-live-qualification.md`, "Run 4".
+
+A second, independent use of the same capture appeared in the same run: the
+serial clock read-back (`_verify_serial_controller`) returned VERIFIED on
+interface, role and rate. That verifier now requires `output_complete` rather
+than "not truncated", so it could not have passed on a partial page.
+
+**What was measured that branch B assumed.** The DCE line was on page 1 of 4.
+Branch B would therefore have *appeared* to work on exactly this device, this
+build and this module state, and would still have been unsound — a frequency,
+not a guarantee, and three more pages of controller state were being discarded
+unseen. Branch A was the right call for a reason now visible rather than
+argued.
+
+Criteria, one at a time:
+
+| # | Criterion | Verdict |
+| --- | --- | --- |
+| 1 | Governed multi-page capture for registered read-only queries | **Holds.** Bounded, typed, and private to the executor. |
+| 2 | Completeness proven rather than assumed | **Holds.** The capture closes only on `terminal_is_idle` with no active pager; every other exit is a failure. |
+| 3 | Existing guarantees kept — no mutation, no poisoning of the next query | **Holds.** Only the pager's own key is sent, and a failed capture still cancels and quarantines exactly as before. |
+| 4 | A truncated-and-not-completed capture still fails closed | **Holds.** `output_complete=False` refuses at the runtime, at the E5 gate and at the clock verifier, each independently. |
+| 5 | No other registered query promoted | **Holds.** `_PAGINATION_QUALIFIED_QUERIES` holds one member; `SHOW_IP_PROTOCOLS` and every OSPF/EIGRP/STP/LACP/HSRP query keep their behaviour and their ceilings. |
+| 6 | Live evidence, not a capability | **Holds.** Eight pages captured across two endpoints on PT `9.0.1.0858`. |
+
+Status: **RESOLVED.** Not `BACKEND_LIMITATION`: the pager is not a limitation
+once it is walked. The build's refusal of `terminal length 0` remains true and
+remains recorded — it is the reason the capture exists, not an unresolved part
+of this entry.
+
+Residual, recorded rather than glossed over: the capture is qualified for
+`show controllers <serial>` on a 2911 with an HWIC-2T at `9.0.1.0858`, four
+pages. Another query, model or build gets the primitive's bounds but not its
+measurement, and qualifying one is an explicit act — adding it to
+`_PAGINATION_QUALIFIED_QUERIES` with its own evidence.
+
+---
+
+## TD-CONFIG-CAPABILITY-001 — The E5 configuration capability gate has no evidence source in the product path
+
+Status:
+OPEN
+
+Severity:
+P1
+
+Discovered:
+Stage 3A4 MEG-4 bounded live qualification, run 4, 2026-08-18, on PT
+`9.0.1.0858`. Evidence: `stage-3a4-bounded-live-qualification.md`, "Run 4".
+
+Description:
+
+`ConfigurationApplicator` gates each compiled action on the capability its
+compiler stamped (`configuration_compiler.py:1178`), and resolves an absent
+profile to UNKNOWN. Nothing in the product execution path ever produces such a
+profile, so the gate has nothing to resolve and skips the action.
+
+Measured live, in the run that first reached this stage:
+
+```text
+17 compiled actions ->  1 applied
+                       12 skipped, failure_code = capability_unknown
+                        4 dependency_blocked
+
+supports_vlan is unknown for IE-2000.   x8
+layer3 is unknown for 2911.             x4
+
+configuration status = partial   ->   the control plane is never reached
+```
+
+**It is not model-specific.** Measured offline through
+`EnterpriseCapabilityAdapter.capabilities_for(model, "9.0.1.0858")`:
+
+```text
+2911, IE-2000, 2960-24TT, 1941, 3560, 3650
+   supports_vlan = layer2 = layer3 = unknown
+   source        = packet_tracer_catalog
+```
+
+Every selectable model, every functional dimension. `supports_modules` is the
+only non-unknown capability and it is catalogue data, not backend evidence.
+The 41-device reference would meet the same gate on its first VLAN action, so
+this blocks MEG-5 as well as MEG-4.
+
+The gate itself is correct and must not be relaxed: UNKNOWN is not permission,
+nothing was dispatched on absent evidence, and no claim was inflated. **The
+debt is the missing evidence path, not the gate** — the same sentence
+`TD-CAPABILITY-001` used about the control-plane half.
+
+Relationship to the neighbouring entries, stated exactly so none of them drifts:
+
+| Entry | Relationship |
+| --- | --- |
+| `TD-CAPABILITY-001` (`RESOLVED`) | Same shape, different surface. That entry built the bridge for `ControlPlaneCapabilityProfile` — the **E9** gate. Run 4 never reached E9. Its resolution stands untouched and does not cover E5. |
+| `TD-HARDWARE-001` (`OPEN`) | Same missing evidence, different consumer. That entry is about evidence reconciling into **hardware selection**; this one is about the same absent evidence arriving at the **configuration** gate. Neither closes the other, and this entry does not alter its criterion. |
+| `TD-ACCEPTANCE-001` (`OPEN`) | Blocked by this. Rows 1–4 and 6 cannot be satisfied in one run while E5 cannot reach VERIFIED. |
+
+Classification:
+```text
+STAGE_3A4_SCOPE
+MISSING_EVIDENCE_PATH  (not a backend limitation: the probes exist)
+```
+
+Blocks Stage 3A4:
+**Yes, for MEG-4 and MEG-5.** The bounded qualification cannot reach
+foundations, E9 or behaviour while E5 ends `partial`, and only VERIFIED is
+evidence the control plane may build on.
+
+Blocks claims of:
+any statement that the product configures a device on evidence. Today it either
+skips or, where an action declares no requirement, applies without consulting
+any.
+
+RESOLVE_BEFORE:
+Stage 3A4 MEG-4 completion.
+
+Closure criterion:
+
+Capability evidence for the exact build must reach the E5 gate through the
+product path, with UNKNOWN preserved wherever nothing was measured. Concretely:
+
+- a governed way for the execution path to obtain a `CapabilitySnapshotStore`
+  for the running build, whether by running the existing
+  `CapabilityDiscoveryService` probes under their own authorisation or by
+  loading a build-pinned snapshot the way `measured_port_inventories.py`
+  already does for ports;
+- evidence scoped to model **and** build, refusing to migrate across either,
+  matching the rule `capability_resolver._evidence_matches_version` and the
+  `TD-CATALOG-PORT-001` evidence tiers already enforce;
+- no model-string special casing, and no promotion of an unmeasured model;
+- a regression that fails if UNKNOWN is ever treated as permissive.
+
+**A profile supplied by a caller, a test fixture, or a default that reads
+SUPPORTED is not closure.** That is exactly the shape `TD-CAPABILITY-001`
+recorded as the defect, and repeating it on the E5 surface would repeat the
+defect.
+
+Observed in the same run and deliberately left open rather than folded in:
+`ConfigureSerialClock` inherits `required_capability = ""`, so the gate skips
+it entirely and a real device mutation applied without consulting any evidence.
+Whether a serial clock should declare a requirement is a separate question from
+this entry's closure, and answering it by stamping one without measuring what
+it should resolve against would just move the UNKNOWN.
 
 ---
 

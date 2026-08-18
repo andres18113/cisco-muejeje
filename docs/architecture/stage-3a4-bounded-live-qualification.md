@@ -731,3 +731,339 @@ TD_ORIENTATION_PAGER_001               = OPEN (opened by this run)
 
 MEG-5 must not open. The bounded run has to succeed first, and separately the
 reference run's own models need measured port inventories.
+
+---
+
+# Run 4 — 2026-08-18, after the TD-ORIENTATION-PAGER-001 branch-A capture
+
+## Outcome, stated first
+
+```text
+MEG_4_STATUS                  = FAILED / CLEAN
+STOPPED_AT                    = configuration_apply
+LIVE_PACKET_TRACER_RUN        = YES
+PHYSICAL_DEPLOYMENT           = VERIFIED
+SERIAL_ORIENTATION            = VERIFIED  (first time, both endpoints)
+SEMANTIC_INVENTORY_RESTORED   = YES  (verified by independent re-observation)
+E4_IDENTITY_PRESERVED         = YES
+RAW_IOS_OR_JS_USED            = NONE
+HARNESS_PERFORMED_A_MUTATION  = NO
+```
+
+**Serial orientation closed.** Both bound endpoints returned a complete
+multi-page controller read-back, one DCE and one DTE, and the deployment
+manifest was oriented. The clock was applied to the observed DCE only and read
+back independently as VERIFIED. Run 3 could not reach any of that.
+
+It then stopped at configuration application, on a condition no earlier run
+reached, and one that is not new code: the E5 capability gate has no evidence
+to resolve. **Nothing here upgrades any acceptance line** — TD-ACCEPTANCE-001
+closes on rows 1–4 and 6 in one *reference* run, and this is the bounded shape.
+
+## Gates, in order
+
+### G2 — same-process import isolation
+
+```text
+state              = ISOLATED
+sys.executable     = <worktree>/.venv/Scripts/python.exe
+packet_tracer_mcp.__file__ = <worktree>/src/packet_tracer_mcp/__init__.py
+loaded identities  = ['packet_tracer_mcp']          # exactly one
+```
+
+Run three times: read-only probe, the mutating process before its first
+mutation, and the independent post-cleanup re-observation.
+`PT_MCP_GOVERNED_ROOT` was set per run process and never persisted.
+
+### G3 — process rediscovery, transport, inventory, build, classification
+
+**The historical PID was not assumed, and this time that mattered.** Run 3's
+GUI instance was PID `41784`; it is gone. Re-enumeration found a different pair:
+
+```text
+PID 16584  MainWindowHandle = 264778  StartTime 2026-08-18 09:40:21   <- GUI
+PID  4212  MainWindowHandle = 0       StartTime 2026-08-18 09:40:25   <- helper
+both       C:\Program Files\Cisco Packet Tracer 9.0.1\bin\PacketTracer.exe
+both       FileVersion = ProductVersion = 9.0.1.0858
+```
+
+Packet Tracer was restarted between run 3 and run 4. Had the PID been carried
+forward from the record, the build evidence would have described a process that
+no longer exists.
+
+```text
+transport       = file bridge (heartbeat age 0.6s at probe time)
+inventory       = observed=True, semantic_devices=0, links=0, backend_managed=0
+                  message="fresh_complete_workspace_inventory"
+classification  = DISPOSABLE
+```
+
+No semantic, manual, user or graded topology was present, so no HARD STOP was
+triggered. Build evidence keeps the same bounded limit as runs 2 and 3:
+
+```text
+PT_GUI_PROCESS_BUILD           = 9.0.1.0858   (Windows process metadata)
+ALL_PT_PROCESSES_SAME_BINARY   = YES
+BRIDGE_PEER_PROCESS_IDENTITY   = NOT_ATTESTED
+BRIDGE_PEER_BUILD_SELF_REPORT  = NOT_ATTESTED
+```
+
+No Packet Tracer API was guessed. Run 1's `pt.system.version` guess is still not
+repeated.
+
+## The run
+
+Semantic request → `execute_enterprise_reference`, called once. The harness
+built the intent, constructed the four production runtimes over the file
+bridge, and recorded the result. It sequenced nothing and mutated nothing.
+
+```text
+devices  = 8    (2x 2911 edge routers, 2x IE-2000 access switches, 4 PCs)
+links    = 7    (2 edge links, 4 endpoint access links, 1 serial WAN)
+routers  = 2911 (steered via HardwarePlanningPolicy.preferred_router_model)
+serial   = link/wan_link/23682ae56217
+physical_topology_hash = 1d2324aa7cf334584f2b6ecb27791e113676a5076a54c7c5c32285ca22d67692
+```
+
+Identical planned shape and hash to run 3, so the two runs are directly
+comparable.
+
+```text
+deployment   status = VERIFIED, failure_code = none
+             items  = 17 observed, 0 failed
+             journal= 17 attempted, 17 changed, dirty_state = clean
+             manifest = 8 device bindings, 7 link bindings
+                        identity method: composite_fingerprint x8
+                        semantic_hash f0fa22f49616c42306456d729706c9e0e3c84e85388e16162b4b45caa931b383
+```
+
+Module evidence per router, unchanged in shape from runs 2 and 3: port effect
+`VERIFIED`; identity and placement `unobservable / UNVERIFIED` under
+TD-MODULE-SLOT-001.
+
+## What the pager capture established
+
+The first live measurement of a bounded multi-page registered read-back:
+
+```text
+A-EDGE-RTR-01  Serial0/0/0  orientation=dce  clock_rate_bps=2000000
+               pages_captured=4  pagination=completed
+               executed=True fresh=True complete=True truncated=False
+               parseable=True interface_identity_match=True
+
+B-EDGE-RTR-01  Serial0/0/0  orientation=dte  clock_rate_bps=None
+               pages_captured=4  pagination=completed
+               executed=True fresh=True complete=True truncated=False
+               parseable=True interface_identity_match=True
+```
+
+Four pages per endpoint, on the same query that returned `truncated_by_pager`
+on every attempt in run 3. Packet Tracer does deliver the single key the
+`--More--` consumes, and the assembled read closed on a prompt both times.
+
+```text
+orientation status                  = verified
+source_manifest_semantic_hash       = f0fa22f4…
+oriented_manifest_semantic_hash     = aa8e76e4…
+physical_topology_hash              = 1d2324aa…  (unchanged — E4 identity intact)
+exactly one DCE and one DTE         = YES
+```
+
+`TD-ORIENTATION-PAGER-001` is closed by this measurement. Branch B's premise —
+that the role line might always sit on page one — is now moot and was never
+relied on. The DCE line was in fact on page 1 of 4, which is precisely why
+accepting a truncated first page would have *looked* like it worked and would
+still have been unsound.
+
+## The defect this run found
+
+```text
+Configuration application ended partial, and only VERIFIED is evidence the
+control plane may build on.
+```
+
+Of 17 compiled configuration actions:
+
+```text
+applied              1   the serial clock on the observed DCE
+skipped             12   failure_code = capability_unknown
+dependency_blocked   4   endpoint addressing, blocked by the skipped access ports
+```
+
+The twelve skips, verbatim:
+
+```text
+supports_vlan is unknown for IE-2000.   x8   (vlan, access, gateway-access)
+layer3 is unknown for 2911.             x4   (routed interfaces, transit L3)
+```
+
+Verification followed the same shape: **1 verified, 16 dependency_blocked.**
+
+Root cause, read from the resolver rather than inferred: **no capability
+evidence reaches the E5 gate for any model.** Measured offline against the same
+adapter and build:
+
+```text
+model        supports_vlan   layer2     layer3     source
+2911         unknown         unknown    unknown    packet_tracer_catalog
+IE-2000      unknown         unknown    unknown    packet_tracer_catalog
+2960-24TT    unknown         unknown    unknown    packet_tracer_catalog
+1941         unknown         unknown    unknown    packet_tracer_catalog
+3560         unknown         unknown    unknown    packet_tracer_catalog
+3650         unknown         unknown    unknown    packet_tracer_catalog
+```
+
+Every model, every functional dimension. `supports_modules` is the only
+non-unknown capability and it comes from the catalogue, not from the backend.
+So this is **not** an IE-2000 problem and not a consequence of model steering:
+the same gate would skip the same action families on the 41-device reference.
+
+**The gate is correct.** UNKNOWN is not permission, nothing was dispatched on
+absent evidence, and no claim was inflated. What is missing is the evidence
+path: `execute_enterprise_reference` never gathers capability evidence, and no
+capability snapshot exists for this build (`data/capabilities/` still does not
+exist). `CapabilityDiscoveryService` and its probes exist in the product but are
+not part of the execution path, and running them is itself a mutation that this
+ticket had no authorisation to perform.
+
+**Why the serial clock got through, stated exactly rather than flatteringly.**
+Not because it has measured evidence. `ConfigureSerialClock` inherits
+`required_capability = ""` from `BaseConfigurationAction`, and
+`configuration_compiler.py:1178` skips the capability check entirely for an
+action that declares no requirement. A real mutation reached a live device
+without passing the gate that stopped every other action. Recorded as an
+observation, not resolved here.
+
+**Not worked around.** Supplying a hand-built capability profile, or relaxing
+the gate to treat UNKNOWN as permissive, would each have manufactured a pass.
+Opened as `TD-CONFIG-CAPABILITY-001`.
+
+## Module replay qualification — the required decision
+
+```text
+CAN_PACKET_TRACER_AUTHENTICALLY_QUALIFY_MODULE_REPLAY_CONTAINMENT = NO
+```
+
+Unchanged, and for the same reason as all three earlier runs: each module was
+inserted once and no replay condition arose. The ceiling stands:
+
+```text
+MODULE_REPLAY_GUARD = MEASURED_IN_NODE / PACKET_TRACER_NOT_YET_QUALIFIED
+                    + BACKEND_LIMITATION for provoking replay in a bounded run
+                    + payload-local containment (receipt + exact slot pre-read)
+
+PACKET_TRACER_REPLAY_QUALIFICATION = NOT_ESTABLISHED / backend-limited
+GLOBAL EXACTLY_ONCE  = NOT CLAIMED
+GLOBAL AT_MOST_ONCE  = NOT CLAIMED
+```
+
+## TD-HARDWARE-001 — explicit re-evaluation
+
+```text
+CAPABILITY_CONSUMER_INVOKED       = YES  (plan_enterprise_hardware, bound to 9.0.1.0858)
+PINNED_BACKEND_EVIDENCE_AVAILABLE = NO   (data/capabilities/ still does not exist)
+PINNED_BACKEND_EVIDENCE_USED      = NO
+TD_HARDWARE_LITERAL_CRITERION     = NOT_SATISFIED
+UNKNOWN_PRESERVED                 = YES, everywhere; nothing fabricated
+```
+
+**One answer changes from runs 2 and 3.** Did UNKNOWN block the concrete
+operation? Runs 2 and 3 recorded *no* — the failures were a catalogue port-name
+error and a pager truncation. Run 4 records **yes**: absent capability evidence
+is exactly what stopped this run. The debt's practical cost is now measured
+rather than argued.
+
+That does not close it and does not change its criterion. `TD-HARDWARE-001` is
+about capability evidence reconciling into *hardware selection*; what run 4 hit
+is the same missing evidence arriving at the *configuration* gate. The new entry
+records that seam.
+
+```text
+TD_HARDWARE_001 = OPEN (unchanged)
+```
+
+## G4 — cleanup and restoration
+
+```text
+cleanup entries    = 8, all disposition=changed, applied=True
+removal order      = reverse of deployment
+targets            = exactly the eight names the product planned
+inventory_restored = True
+```
+
+Independent post-run re-observation, separate process, separate G2:
+
+```text
+semantic_device_count = 0
+link_count            = 0
+backend_managed       = 1  ("Power Distribution Device0", zero ports)
+classification        = disposable
+```
+
+The power-distribution object was **absent at baseline and present after**, the
+same tolerated-difference case run 1 recorded and unlike run 3's exact match. It
+is backend-created, carries zero ports, and is exactly what
+`disposable_workspace_error` permits. Recorded rather than smoothed over. No
+foreign, pre-existing or backend-managed object was removed.
+
+## Exit matrix
+
+| # | Item | Result |
+| --- | --- | --- |
+| 1 | exact-version capability consumption attempted by the normal path | **YES** — bound to 9.0.1.0858; no evidence available, UNKNOWN preserved |
+| 2 | product-generated `TopologyPlan` | **PASS** — 8 devices / 7 links from a semantic intent |
+| 3 | module effect containment | **PASS** — port effect VERIFIED on both routers; identity and placement UNOBSERVABLE |
+| 4 | fresh two-ended serial orientation | **PASS** — 4 pages captured per endpoint, complete, non-truncated |
+| 5 | exactly one DCE and one DTE | **PASS** — DCE on A-EDGE-RTR-01, DTE on B-EDGE-RTR-01 |
+| 6 | typed E5 serial transit addressing | **FAIL** — skipped, `layer3 is unknown for 2911` |
+| 7 | clock on the observed DCE only | **PASS** — one clock action, on the observed DCE |
+| 8 | independent clock readback | **PASS** — interface, role and rate VERIFIED from `fresh_show_controllers_serial` |
+| 9 | authentic foundational evidence | **NOT REACHED** |
+| 10 | typed RIPv2 process state | **NOT REACHED** |
+| 11 | typed learned-route readback | **NOT REACHED** |
+| 12 | typed forwarding behaviour | **NOT REACHED** |
+| 13 | semantic cleanup / restoration | **PASS** — verified by independent re-observation |
+
+Rows 4, 5, 7 and 8 move to **PASS** for the first time. Row 6 moves NOT REACHED
+→ **FAIL**, which is progress in the same sense row 4 was in run 3: the stage
+was exercised and returned a measurement.
+
+Preserved unchanged:
+
+```text
+MODULE_IDENTITY  = UNOBSERVABLE
+MODULE_PLACEMENT = UNOBSERVABLE
+CABLE_IDENTITY   = UNOBSERVABLE
+APPLIED         != VERIFIED
+```
+
+## What this does and does not establish
+
+```text
+PRODUCT_PATH_REACHES_LIVE_DEPLOYMENT   = YES
+PRODUCT_GENERATED_TOPOLOGY_DEPLOYED    = YES (8 devices, 7 links)
+PHYSICAL_DEPLOYMENT_MANIFEST_EMITTED   = YES
+MODULE_PORT_EFFECT_VERIFIED_LIVE       = YES (both routers)
+SERIAL_ORIENTATION_OBSERVED            = YES (both endpoints, complete capture)
+BOUNDED_MULTI_PAGE_CAPTURE             = LIVE_QUALIFIED (4 pages x 2 endpoints)
+SERIAL_CLOCK_APPLIED_AND_READ_BACK     = YES (DCE only)
+E5_CONFIGURATION_VERIFIED              = NO  (partial: 1 of 17)
+FULL_PRODUCT_PIPELINE_ACCEPTANCE       = NOT_ESTABLISHED (unchanged)
+CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION = NOT_ESTABLISHED (unchanged)
+TD_ACCEPTANCE_001                      = OPEN (unchanged; bounded shape, not the reference run)
+TD_HARDWARE_001                        = OPEN (unchanged)
+TD_MODULE_SLOT_001                     = BACKEND_LIMITATION (unchanged)
+TD_CATALOG_PORT_001                    = RESOLVED (unchanged)
+TD_ORIENTATION_PAGER_001               = RESOLVED (closed by this run)
+TD_CONFIG_CAPABILITY_001               = OPEN (opened by this run)
+```
+
+```text
+MEG_5                  = NOT_OPENED
+MEG_5_EXECUTION        = BLOCKED
+REFERENCE_41_41_RUN    = NOT_EXECUTED
+```
+
+MEG-5 must not open. The bounded run still has to succeed, and the blocker that
+stopped it is model-independent, so the 41-device reference would meet the same
+gate on its first configuration action.

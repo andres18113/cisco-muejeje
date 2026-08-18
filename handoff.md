@@ -7,7 +7,23 @@
 - working tree: **clean** (`git status --short` empty)
 - Slice 2A implementation commit: `e846175b6e2154621e89d24d0809fae0e396d24b`
 
-## Stage 3A4 execution — gates 1–3 CLOSED, gate 4 BLOCKED
+**The body of this file describes Slice 2B/3 and its tip `aa7cc18`. Four
+governed sessions have landed since, and the MEG table below is corrected from
+Git rather than left as written.** The authoritative record of MEG-4 is
+`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose run 4 is the
+current state; the authoritative debt state is
+`docs/architecture/technical-debt.md`. Where this file and those disagree, they
+win.
+
+Corrected figures, measured rather than carried forward:
+
+```text
+canonical regression   2061 passed, 3 pre-existing warnings
+                       ./.venv/Scripts/python.exe -m pytest, no custom PYTHONPATH
+Graphify               7709 nodes, 26446 edges, 263 communities
+```
+
+## Stage 3A4 execution — gates 1–3 CLOSED, gate 4 still open
 
 Executed 2026-08-17 against the master mission's strict order. Naming below uses
 **MEG-n** for the master's 1→7 execution order and **OAG** for its
@@ -19,10 +35,24 @@ MEG-1  live import isolation ................... CLOSED   0587995, 5641445
 MEG-2  capability consumer / TD-HARDWARE ....... CLOSED   ea4eb3a, 06217ac
 MEG-3  product execution surface ............... CLOSED   7de805a, 6ef25bf
 OAG    offline adversarial matrix .............. CLOSED   c1ea586
-MEG-4  bounded live qualification ............. BLOCKED   see below
-MEG-5  full same-run 41/41 acceptance ......... NOT_STARTED
+MEG-4  bounded live qualification ............. FAILED / CLEAN, 4 runs
+MEG-5  full same-run 41/41 acceptance ......... NOT_OPENED
 MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
 MEG-7  Stage 3A4 closure ...................... NOT_STARTED
+```
+
+MEG-4 has now been executed four times against Packet Tracer `9.0.1.0858`, each
+time failing clean with the workspace restored. Run 4 reached configuration
+application: physical deployment VERIFIED, serial orientation VERIFIED with
+exactly one DCE and one DTE, clock applied to the observed DCE and read back
+VERIFIED. It stopped because the E5 capability gate has no evidence source
+(`TD-CONFIG-CAPABILITY-001`). The "MEG-4 is blocked, and on what" section below
+describes run *zero* — the state before any run — and is history, not status.
+
+```text
+MEG_5               = NOT_OPENED
+MEG_5_EXECUTION     = BLOCKED
+REFERENCE_41_41_RUN = NOT_EXECUTED
 ```
 
 Suite 1906 → **1964 passed**, 3 pre-existing warnings. Terminal gate green:
