@@ -1333,10 +1333,10 @@ exception.**
 ## TD-MODULE-SLOT-001 — Module slot placement is unverifiable, and the gate compares two namespaces
 
 Status:
-OPEN
+BACKEND_LIMITATION
 
 Severity:
-P1
+BACKEND_LIMITATION
 
 Discovered:
 Stage 3A4 MEG-4 bounded live qualification, 2026-08-17, on 2911 / PT `9.0.1.0858`.
@@ -1371,20 +1371,26 @@ would therefore be worse than not matching — it would assert the HWIC occupies
 the onboard slot, which the evidence contradicts.
 
 Why no regression caught it: `tests/test_e95_serial_physical_product_slice.py`
-sets `slot_effect_observed=True` directly in its double, so the real derivation
-was never exercised. That is now pinned by
-`tests/test_e95_module_slot_namespace.py`, which fixes the measured shape and
-asserts the exact refusal message.
+set `slot_effect_observed=True` directly in its double, so the real derivation
+was never exercised. It was first pinned by `tests/test_e95_module_slot_namespace.py`;
+that file has since been retired in favour of `tests/test_module_port_effect_contract.py`,
+which drives the real runtime instead of a hand-built observation — see the
+Resolution below.
 
 Classification:
 ```text
 STAGE_3A4_SCOPE
-BACKEND_LIMITATION for slot attribution + PRODUCT_DEFECT in the comparison
+BACKEND_LIMITATION for slot attribution     # remains
+PRODUCT_DEFECT in the comparison            # fixed 2026-08-17, see Resolution
 ```
 
 Blocks Stage 3A4:
-**Yes.** No bounded live product run can pass module verification on 2911 while
-this holds, and MEG-5 cannot open before MEG-4 succeeds.
+**No, since the branch-B resolution below.** At discovery this read **Yes** --
+no bounded live product run could pass module verification on 2911 while the
+namespace comparison stood. The comparison is gone and module verification now
+rests on port-effect evidence, which is verifiable. The residual backend
+limitation blocks only claims about placement, and no Stage 3A4 acceptance row
+asks for one.
 
 Blocks claims of:
 any claim that a module was installed **in a specific slot**. Port-effect
@@ -1409,6 +1415,80 @@ One of the following, decided deliberately and recorded with its claim ceiling:
 
 **Neither branch may be taken by relaxing the gate to make a run succeed.** The
 MEG-4 run that found this deliberately left the refusal in place.
+
+### Resolution — branch B, 2026-08-17, commits `8d385f9` / `1483762`
+
+Branch B was selected and implemented. The `PRODUCT_DEFECT` half of the
+classification is fixed; what remains is the backend limitation, which is why
+this entry closes as `BACKEND_LIMITATION` rather than `RESOLVED` — the
+limitation is classified and contained, not eliminated.
+
+**What the product now claims, and what it stopped claiming.**
+
+```text
+MUTATION_SUBMISSION       = APPLIED only
+REQUESTED_INSERTION_SLOT  = mutation intent only
+MODULE_PORT_EFFECT        = VERIFIED, from fresh before/after evidence that this
+                            transaction caused the complete expected port set
+EXACT_MODULE_IDENTITY     = UNOBSERVABLE
+EXACT_MODULE_PLACEMENT    = UNOBSERVABLE
+```
+
+No `SLOT_VERIFIED` is emitted or implied anywhere. The deployment manifest
+carries an `e4/module-placement/<target>` evidence record whose claim is
+"requested module physically occupies the requested slot" and whose verdict is
+`UNOBSERVABLE` / `UNVERIFIED` with an explicit limitation, so a reader cannot
+mistake silence for assent.
+
+**Identity was corrected too, and for the same reason.** The old derivation
+selected which module-tree entry to read an identity from by the same invalid
+`observed_module_number == module.slot` comparison. It never fired on 2911, so
+the outcome was accidentally right; on a backend where the two namespaces
+happened to collide it would have attributed a card identity to a placement
+nothing established. Identity is now UNOBSERVABLE because placement is: without
+knowing which tree entry corresponds to the requested slot, no observed identity
+can be attributed to *this* module.
+
+**The gate is stricter than it was, not looser.** Two conditions were dropped —
+reading the module tree, and the namespace comparison — one unreachable and one
+semantically invalid. Two were added that did not exist before:
+
+- the complete expected port set must have been **absent before** and **present
+  after** the mutation, so a pre-existing port set no longer counts as an effect
+  this run caused (the old gate would have accepted it);
+- the device must be **newly owned by the current disposable transaction**, read
+  from the runtime's own ownership ledger rather than assumed.
+
+The verdict lives in `PhysicalModuleObservation.effect_verification_status`, a
+**computed field**. It cannot be assigned by production code or by a test
+double. That is deliberate containment: what hid the original defect for a whole
+slice was `slot_effect_observed=True` written by hand in a double, which meant
+no regression ever exercised the real derivation.
+
+**Closure criteria, evaluated one at a time.**
+
+| # | Criterion | Verdict |
+| --- | --- | --- |
+| 1 | Stage 3A4 acceptance does not literally require VERIFIED exact placement | **Holds.** TD-ACCEPTANCE-001 rows 1–6 were read individually. Row 1 requires production deployment with a fresh-readback manifest; row 2 requires the adapter to insert once, independently verify fresh `Serial0/0/0` / `Serial0/0/1` effects, and preserve exact module identity as `UNOBSERVABLE`. No row asks for placement. |
+| 2 | No production code reports or implies verified exact placement | **Holds.** The only occurrence of the placement sentence in `src/` is the `claim` field of the evidence record that reports it unverified; `verifies_claim` is false there. Pinned by `test_e95_serial_physical_product_slice.py`. |
+| 3 | Module effect is independently verified | **Holds.** From a fresh port inventory read before and after, against the catalogued expected port set — never from the mutation receipt. |
+| 4 | Replay containment remains intact | **Holds.** Containment lives entirely in `ensure_module` and never read this flag: a complete pre-existing effect is `NO_OP`, a partial one refuses to overwrite, a conflicting one refuses to mutate, an ambiguous receipt is never replayed, and insertion still requires an owned new device. Re-pinned as rows 10 and 11. |
+| 5 | Cleanup / ownership safety remains intact | **Holds.** Cleanup targets `attempted_devices` and is unrelated to module evidence; a module-effect failure still runs it, still removes only product-planned names, and still spares the backend-managed power-distribution object. Re-pinned as rows 12 and 13. |
+| 6 | Interface / link binding remains adequately evidenced | **Holds.** Links are created only after module observation succeeds, and what link binding needs is that the **port** exists — which is exactly what is now verified. Placement was never an input to it. |
+
+**Residual limitation, stated plainly.** Packet Tracer `9.0.1.0858` exposes no
+path this repository can use to attribute an inserted module to its requested
+slot. Branch A stays available if a confirmed backend path is ever found; it
+must be verified against Cisco's reference before use (`AGENTS.md` rule 6) and
+not guessed. Until then, no claim about physical module placement may be made
+from this product.
+
+Regressions: `tests/test_module_port_effect_contract.py` (rows 1–11, driving the
+real runtime against the measured Packet Tracer payload) and
+`tests/test_e95_serial_physical_product_slice.py` (rows 12–13, plus the manifest
+record). `tests/test_e95_module_slot_namespace.py` was retired: it existed to
+force this decision to be deliberate, and everything it pinned is now pinned
+through the real derivation instead of a hand-built observation.
 
 ## TD-TRANSPORT-001 — FileBridge does not provide exactly-once or at-most-once execution
 
