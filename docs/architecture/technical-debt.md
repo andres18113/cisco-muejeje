@@ -1722,6 +1722,11 @@ perfectly well: this repository had simply never written them down.
 Status:
 OPEN
 
+Branch A is implemented and offline-qualified — see "Branch A" below. The entry
+stays **OPEN** because nothing has yet observed Packet Tracer delivering the
+continuation key and returning the next page. Offline qualification is not live
+evidence, and this repository does not close a runtime debt on a capability.
+
 Severity:
 P1
 
@@ -1809,6 +1814,128 @@ One of the following, decided deliberately and recorded with its claim ceiling:
 **No branch may be taken by parsing the buffer the product already flagged as
 truncated.** That flag exists precisely to stop a hidden line being mistaken for
 an absent one, and run 3 deliberately left the refusal in place.
+
+### Ownership — distinct, with an exact seam to TD-RUNTIME-003
+
+Asked before editing anything, because an ID existing is not a reason to keep a
+closure obligation alive.
+
+| Candidate | Verdict |
+| --- | --- |
+| Duplicate of `TD-RUNTIME-003` | **No.** That entry is `RESOLVED` on containment of `show ip protocols` truncation plus a live-captured two-protocol parse fixture. Different query, different milestone (R2-B), different closure basis. Nothing here reopens it. |
+| Child of `TD-RUNTIME-003` | **No.** A child would close when its parent's criterion closed. This one blocks MEG-4 and is scoped to Stage 3A4; `TD-RUNTIME-003` is already closed and cannot carry it. |
+| Distinct Stage 3A4 debt | **Yes.** Kept as its own entry. |
+
+The seam, stated exactly so neither entry drifts into the other:
+
+`TD-RUNTIME-003` closed with a residual ceiling in its own words — *"a future
+stage that needs RIP state on such a device will have to page through or find
+another query."* This is the first stage that had to, and branch A builds the
+primitive that sentence named. **It does not lift that ceiling.**
+`SHOW_IP_PROTOCOLS` is deliberately absent from
+`_PAGINATION_QUALIFIED_QUERIES`, so RIP beside another protocol remains
+`UNOBSERVABLE` through the product read-back, exactly as recorded.
+
+Nothing in `docs/qa/e95-runtime-debt.md` changes either. No register row is
+promoted, and no runtime `UNKNOWN` or `UNOBSERVABLE` becomes anything else: a
+capture primitive is not an observation.
+
+### Branch A — implemented and offline-qualified, 2026-08-18
+
+Commit: `feat: walk the pager for one qualified registered read-only query`,
+on `feature/runtime-ripv2`.
+
+**Branch B was available and was not taken.** Whether the DCE/DTE line sits on
+the captured first page is a measurement frequency, not a protocol guarantee,
+and accepting it would have meant parsing the buffer the product itself flagged
+as truncated. Branch C was not needed: bounded complete capture is possible.
+
+**Qualification is per registered query, not per pager.**
+`_PAGINATION_QUALIFIED_QUERIES` (`ios_terminal.py`) holds exactly
+`SHOW_CONTROLLERS_SERIAL`. Every other registered query keeps the behaviour it
+had: pager encountered → first page kept as evidence → `truncated_by_pager` →
+claim ceiling applies, now recorded as `pager_continuation = not_qualified`.
+That default is what the new `PagerContinuation` enum makes legible rather than
+implicit.
+
+**What the capture is allowed to send.** One key — the single character the
+`--More--` itself consumes — through the same documented `TerminalLine`
+interaction `_cancel_pager` already uses with Ctrl-C. No PT API is guessed
+(`AGENTS.md` rule 6), no raw IOS, no raw JS, and `terminal length 0` is never
+attempted because this build rejects it. `execute()` is unchanged: the
+application layer cannot ask for pagination, cannot pass a key, and cannot
+reach the mechanics, which stay private to the executor.
+
+**Bounds, and it fails closed on every one of them.**
+
+```text
+MAX_PAGES        = 12
+MAX_BYTES        = 65536      (assembled logical output)
+CAPTURE_DEADLINE = 25.0s      (whole capture)
+PAGE_TIMEOUT     = 8.0s       (each continuation, inside the deadline)
+```
+
+Refuses, each with its own reason: a pager marker with no active pager to
+continue; a continuation key the bridge did not confirm; no page within the
+bounded wait; a page that repeats the previous one; a continuation with no new
+output; a window that cannot be attributed to this capture; a lost device
+terminal; a session prompt that changed under it; an end with neither pager nor
+prompt; and a corrupted dispatch, whose pager belongs to whatever IOS actually
+received rather than to this query.
+
+Each page must be an attributable continuation of the previous transcript, so
+no mutation can interleave inside one logical read without breaking that
+attribution — and breaking it is a failure, not a continuation. Session
+identity is bound by the prompt when it is observable; an empty prompt is not
+treated as evidence in either direction, because what `getPrompt()` returns
+while the pager is active has not been measured on this build.
+
+**COMPLETE is now a dimension, not the negation of truncated.**
+
+```text
+paginated but completely captured   pager_continuation = completed
+                                    output_complete    = True
+                                    truncated_by_pager = False
+                                    pager_pages_captured > 1
+
+truncated / incomplete              output_complete    = False
+                                    truncated_by_pager = True
+```
+
+For a single page, `output_complete` means exactly what every current consumer
+already treated as complete — the command's fresh window carried no pager
+marker — so no existing query's semantics move. The assembled text drops only
+the pager's own prompt, which the terminal wrote and the device did not; that
+pagination happened is preserved in the typed fields rather than in the
+characters. Page seams are joined verbatim, so a line the pager split in half
+comes back whole.
+
+The observation carries the same split through to the E5 gate — `executed`,
+`fresh_evidence`, `complete`, `truncated`, `parseable`,
+`interface_identity_match`, `pages_captured`, `pagination` — and
+`_evidence_problem` refuses on each independently. The serial clock verifier
+now requires `output_complete` instead of merely "not truncated", which is
+strictly stronger than what it asked before.
+
+Regressions: `tests/test_e95_serial_orientation_pager_capture.py`, 26 cases
+driving the real `ControlledIosExecutor` through the same JS bridge the
+production path uses. None of them sets `truncated_by_pager = False` or injects
+a DCE/DTE role: a role line split across a page boundary parses only after the
+whole capture closes, and a first page that already shows the role is still
+refused when the capture cannot finish. Full suite: **2061 passed**.
+
+**What this does not establish.**
+
+```text
+BOUNDED_MULTI_PAGE_CAPTURE = IMPLEMENTED / OFFLINE_QUALIFIED
+PAGER_CONTINUATION_KEY_DELIVERED_BY_PACKET_TRACER = NOT_OBSERVED
+SERIAL_ORIENTATION_OBSERVED_LIVE                  = NO  (unchanged)
+```
+
+The fakes reproduce the pager mechanics this repository has measured — the
+tail rewrite when IOS erases its own `--More--`, and the single key it consumes
+— but no live run has yet sent that key to Packet Tracer. Until the MEG-4
+rerun measures it, this entry stays OPEN.
 
 ---
 
