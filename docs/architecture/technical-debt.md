@@ -2252,6 +2252,237 @@ next to the probe and runtime providers — and it is deliberately **not** taken
 here. Whoever opens MEG-5 will meet it again, because the reference models need
 qualifying anyway.
 
+### Post-closure audit — 2026-08-18, at `a86ab5f`
+
+Read-only re-audit of everything this entry closed, plus the two questions its
+resolution left implicit. The entry stays **RESOLVED**: its own criterion is
+about capability evidence reaching E5 with UNKNOWN preserved, and run 5
+measured exactly that. Two findings are recorded rather than left to be
+rediscovered.
+
+**Finding 1 — a residual case in the required-batch rule, found and closed.**
+The rule refused a plan when a REQUIRED action was refused directly. It did not
+refuse when a REQUIRED action depended on an OPTIONAL one that was refused, and
+that dependent can then never execute. `satisfies_apply_dependency` kept it
+from being applied, so nothing was ever misapplied, but the rest of the batch
+still mutated a live device for a transaction already known to be
+incompletable — the same harm one layer down. Closed in
+`fix: refuse the batch when a required action depends on a refused one`, with
+the refusal set now closed transitively over `depends_on` before any mutation.
+
+No executed run was affected: nothing in the repository declares an optional
+action today, so the closure was empty in runs 1–5.
+
+**Finding 2 — `endpoint_*` markers are not capabilities, and that is why they
+are excluded.** `endpoint_static_ipv4` and `endpoint_dhcp` are the
+`required_capability` of the four endpoint actions, and both the compiler
+(`configuration_compiler.py:1178`) and the applicator skip anything with that
+prefix. Audited rather than assumed: **neither name is a field of
+`DeviceCapabilities`**. Gating on them would resolve UNKNOWN against every
+profile, including a fully measured one, making every endpoint action
+permanently unauthorizable — a guaranteed dead end, not a safety property.
+
+So the exclusion is correct and symmetric, and PC-PT resolving UNKNOWN did not
+"silently bypass" anything in run 5: there is no capability that could have
+authorized or refused those actions. Their contract is exact target identity
+resolved from the manifest during preflight, plus structured post-application
+read-back. A regression now fails if either name is ever added to
+`DeviceCapabilities`, so the decision has to be made rather than inherited.
+
+**Evidence provenance, re-verified at its ceiling.** Both promotions were
+re-read from the stored snapshots and traced to the probe that produced them:
+
+| | `IE-2000 : supports_vlan` | `2911 : layer3` |
+| --- | --- | --- |
+| producer | `vlan-probe` | `layer3-probe` |
+| operation | `vlan 999` + name, via `configureIosDevice` | `ip address` + `no shutdown` on the model's probe interface |
+| positive read-back | `getProcess('VlanManager')` → VLAN 999 present | registered `show ip interface brief` → exact interface carries the exact address |
+| negative control | `no vlan 999` → absent again | `no ip address` → address gone again |
+| method / status | `cli_plus_readback`, SUPPORTED, verified | `cli_plus_readback`, SUPPORTED, verified |
+| observed value | `999` | — (presence of the exact address row) |
+| build / provenance | `9.0.1.0858`, `declared_environment` | `9.0.1.0858`, `declared_environment` |
+
+Both require the positive **and** the negative read-back before returning
+SUPPORTED; command acceptance alone fails them. This is above the ceiling the
+claim needs, and no HARD STOP is warranted.
+
+**Reproduction procedure for the residual.** The evidence lives in gitignored
+`data/capabilities`, so a clean checkout resolves UNKNOWN and refuses the plan —
+fail-closed, and not a defect. It is regenerable through the governed producer,
+and the exact procedure is recorded here so it is not folklore:
+
+```text
+CapabilityDiscoveryService(
+    runtime=PacketTracerBridgeProbeRuntime(send_and_wait,
+                packet_tracer_version="9.0.1.0858", send=send,
+                transport_channel="file"),
+    snapshots=CapabilitySnapshotStore(<root>/data/capabilities),
+    identity_for=EnterpriseCapabilityAdapter().identity_for,
+).run(ProbeRequest(models=[M], capabilities=[C],
+                   packet_tracer_version="9.0.1.0858", force=True))
+
+for (M, C) in (("IE-2000", "supports_vlan"), ("2911", "layer3"))
+```
+
+Preceded by G2 isolation and a read-only G3 classification, on a disposable
+workspace. Each session creates and deletes its own `__MCP_PROBE_*` devices and
+reports `inventory_restored`. Nothing about this makes the snapshots product
+truth: they stay machine-local exact-build evidence.
+
+## TD-ACCESSPORT-READBACK-001 — ConfigureAccessPort has no direct read-back, and the E5 aggregate gate is stricter than the acceptance criterion
+
+Status:
+OPEN
+
+Severity:
+P1
+
+Discovered:
+Stage 3A4 MEG-4 bounded live qualification, run 5, 2026-08-18, on PT
+`9.0.1.0858`. Evidence: `stage-3a4-bounded-live-qualification.md`, "Run 5".
+Opened after a read-only audit at `a86ab5f`; no live run was performed to open
+it.
+
+Description:
+
+Run 5 applied all seventeen compiled configuration actions. Six of them —
+every `ConfigureAccessPort` — came back `UNOBSERVABLE`:
+
+```text
+verification_kind = access_port
+evidence_method   = runtime_observability_limit
+message           = "No independent getter is registered for access_port."
+fields            = {interface: unobservable, vlan_id: unobservable}
+expected          = FastEthernet1/1, FastEthernet1/2, GigabitEthernet1/1 @ vlan 10
+                    on each of the two IE-2000 switches
+```
+
+`enterprise_configuration_runtime.py:265` routes `VerificationKind.ACCESS_PORT`
+(and `DHCP_POOL`) straight to `_unobservable`. The repository has never
+registered a read-back for either.
+
+**Searched before concluding, in the order the ticket prescribes.** No adequate
+existing path exists:
+
+| Surface | What it gives | Adequate? |
+| --- | --- | --- |
+| `OperationalQueryId` | 20 registered queries; none reads switchport state | No |
+| IOS parsers | trunk, STP, EtherChannel, OSPF, EIGRP, RIP, controllers, interface brief | No |
+| `pt_read_vlans` / `_verify_vlan` | VLAN **database**: number, name, is_default, max_vlans, vlan_interfaces — through `getProcess('VlanManager')` | No — device-level VLAN existence, not port membership |
+| capability probes | `vlan-probe` creates and removes VLAN 999, read back through `VlanManager` | No — same surface |
+| physical/topology observation | ports, links, models, coordinates | No |
+
+`switchport` appears in `src/` only in **generators** (`vlan_cli_generator.py`),
+never in an observer. Nothing anywhere reads a port's access VLAN or its
+switchport mode.
+
+**Not classified `BACKEND_LIMITATION`.** Whether Packet Tracer exposes such a
+getter has not been probed, and `AGENTS.md` rule 6 forbids guessing a PT API.
+Equally, no IOS command was chosen: writing a parser for output nobody has
+captured would be the same error in a different place. This is a **missing
+registered query in this repository** until a controlled reproduction says
+otherwise.
+
+### Minimum sufficient direct evidence, defined before any command is chosen
+
+A `ConfigureAccessPort` verification may claim VERIFIED only from a single
+fresh observation that establishes **all** of:
+
+```text
+device identity      the exact deployed device the manifest binds
+interface identity   the exact port, matched with the project's interface
+                     equivalence rule, never a prefix or a substring
+switchport mode      access — a port that is trunk, dynamic or routed is not
+                     a verified access port even if its VLAN happens to match
+access VLAN id       exactly the compiled vlan_id
+freshness            attributable to the current read, not a stale buffer
+completeness         non-truncated; a paginated capture must fail closed unless
+                     that query is separately pagination-qualified
+```
+
+A partial observation must not verify the whole action: mode without VLAN, or
+VLAN without mode, is a narrower claim and has to be reported as such. Field
+statuses stay separate, as `_verify_l3` already does for operational state.
+
+### What run 5 proved about the gate itself, and what it did not
+
+Recovered mechanically from the compiled control plane rather than inferred:
+the RIPv2 plan declares **five** `foundational_requirements` — four
+`l3_interface` and one `link`. There is **no** `access_port` foundation and
+**no** `endpoint_address` foundation.
+
+In run 5 all four `l3_interface` verifications were VERIFIED and the serial
+link was observed. So:
+
+```text
+FOUNDATIONS_REQUIRED_BY_THE_ROUTING_PATH = 5
+FOUNDATIONS_VERIFIED_IN_RUN_5            = 5
+```
+
+Run 5 nonetheless stopped, because `execute_enterprise_reference` gates on the
+**aggregate** result:
+
+```text
+if configuration_result.status is not ConfigurationApplicationStatus.VERIFIED
+```
+
+and `_overall_status` returns PARTIAL whenever *any* verification is
+UNOBSERVABLE or PARTIAL, regardless of whether a foundation needed it.
+
+`TD-ACCEPTANCE-001` row 4 asks for something narrower: *"Statuses and hashes
+must be produced by `apply_configuration` from real readback, so
+`ControlPlaneApplicator`'s gate decides on evidence instead of on an
+assertion."* That is a **foundation-scoped** criterion, and run 5 satisfied it
+for every foundation the plan declares.
+
+**The gate was not weakened, and must not be weakened to continue.** It is
+recorded here because of a consequence that would otherwise be discovered the
+expensive way:
+
+> Closing the access-port gap alone **cannot** make MEG-4 reach E9 under the
+> current aggregate rule. The four `set_endpoint_static` verifications return
+> PARTIAL because gateway and DNS are unobservable by measured backend limit —
+> `enterprise_configuration_runtime.py:568` hardcodes `gateway:null, dns:null`
+> with the recorded reason *"PT 9.0.1 evidence confirms only IP/mask getters"* —
+> and PARTIAL keeps the aggregate off VERIFIED exactly as UNOBSERVABLE does.
+
+So MEG-4's remaining blocker is two decisions, not one:
+
+1. **access-port observability** — this entry, closable by real evidence;
+2. **the scope of the E5→E9 gate** — whether it stays aggregate or becomes
+   foundation-scoped in line with `TD-ACCEPTANCE-001` row 4. That is a governed
+   claim-scope decision, not a repair, and it is deliberately **not** taken
+   here. Whoever takes it must state which acceptance line it moves and must
+   not let it promote any UNOBSERVABLE or PARTIAL row to VERIFIED.
+
+Blocks Stage 3A4:
+**Yes, for MEG-4**, jointly with decision 2 above.
+
+Blocks claims of:
+any statement that an access port was configured with a given VLAN on this
+backend. `APPLIED` is the ceiling today.
+
+RESOLVE_BEFORE:
+Stage 3A4 MEG-4 completion.
+
+Closure criterion:
+
+A registered, typed read-back that establishes the minimum evidence set above,
+qualified against **real captured Packet Tracer output** from a controlled
+read-only session on a disposable switch, and failing closed on wrong
+interface, wrong VLAN, non-access mode, missing field, stale output, truncated
+output, ambiguous output, wrong device identity and parser failure.
+
+Explicitly out of scope for that closure: `DHCP_POOL`, which shares the
+`_unobservable` branch and keeps its current ceiling until its own bounded
+path requires it. Qualifying access ports must promote nothing else.
+
+Pagination note: the new query must **not** be added to
+`_PAGINATION_QUALIFIED_QUERIES` by assumption. `SHOW_CONTROLLERS_SERIAL`
+remains the only pagination-qualified query. An interface-targeted query is
+preferred precisely so that pagination does not arise; if a measured capture
+paginates, that query needs its own pagination qualification first.
+
 ---
 
 ## TD-TRANSPORT-001 — FileBridge does not provide exactly-once or at-most-once execution
