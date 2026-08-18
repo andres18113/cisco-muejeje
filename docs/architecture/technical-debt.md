@@ -1328,6 +1328,33 @@ the new use case for model-name literals. They are clean today and cannot
 silently stop being clean. **No closure of this entry may depend on such an
 exception.**
 
+### Note — which evidence tier eligibility rests on, 2026-08-18
+
+Recorded by `TD-CATALOG-PORT-001`, which is a **distinct** entry and closes
+nothing here. It answers a different question about different evidence: this
+entry asks whether capability evidence reconciles into an *eligible* model;
+that one asks whether the concrete port *names* a chosen model is bound by are
+authorised by the backend. Either can hold without the other.
+
+The seam between them is worth stating so a future closure does not assume more
+than it has. `DeviceSelector` filters on `min_access_ports` / `min_uplinks` and
+ranks on surplus port count, and those counts come from the declared catalogue,
+not from measurement. Eligibility therefore reconciles on **DECLARED**-tier
+data. That is legitimate — planning is not binding, and the tier model now says
+so in the data — but whoever closes this entry should name the tier its
+eligibility evidence came from rather than leave it implied.
+
+Measured during MEG-4 run 2 and unchanged by that work:
+
+```text
+CAPABILITY_CONSUMER_INVOKED       = YES  (plan_enterprise_hardware, bound to 9.0.1.0858)
+PINNED_BACKEND_EVIDENCE_AVAILABLE = NO   (no capability snapshot exists for any build)
+PINNED_BACKEND_EVIDENCE_USED      = NO
+TD_HARDWARE_LITERAL_CRITERION     = NOT_SATISFIED
+```
+
+`TD-HARDWARE-001` therefore remains **OPEN** against its E9.5 deadline.
+
 ---
 
 ## TD-MODULE-SLOT-001 — Module slot placement is unverifiable, and the gate compares two namespaces
@@ -1493,7 +1520,7 @@ through the real derivation instead of a hand-built observation.
 ## TD-CATALOG-PORT-001 — Catalogued port names are not verified against the backend
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P1
@@ -1543,9 +1570,12 @@ PRODUCT_DEFECT in catalogued data + MISSING_VERIFICATION of the catalogue
 ```
 
 Blocks Stage 3A4:
-**Yes, for MEG-4.** The bounded live qualification cannot complete while the
-product plans ports that do not exist on the model it selected. It does not
-block the offline surface, and it does not touch any claim already recorded.
+**No, since the resolution below.** At discovery this read **Yes, for MEG-4**:
+the bounded qualification could not complete while the product planned ports
+that did not exist on the model it selected. The bounded path is now qualified.
+What remains is not this entry's residue but its contract in force -- MEG-5
+cannot open until the reference run's own models are measured for the build it
+will run against. That is recorded in the resolution.
 
 Blocks claims of:
 any statement that capability-driven hardware selection produces a deployable
@@ -1554,27 +1584,136 @@ plan for a model outside the hand-pinned reference set.
 RESOLVE_BEFORE:
 Stage 3A4 MEG-4 completion.
 
-Closure criterion:
+Closure criterion, refined 2026-08-18:
 
-One of the following, decided deliberately:
+The original criterion was written as a choice between correcting one row (A)
+and certifying every selectable model (B). Both readings were wrong in the same
+way: they treated the catalogue as the thing to fix. The catalogue was not
+wrong to *declare* what a model should have — it was wrong for the product to
+treat a declaration as authorisation. The criterion below replaces that
+either/or; it is a narrowing, not a widening, and the entry is evaluated
+against it.
 
-- **A.** Correct the IE-2000 declaration from measured backend evidence and
-  state explicitly that only the models actually measured are verified, leaving
-  the rest declared-but-unverified. Narrow, honest, and it unblocks MEG-4 — but
-  it leaves the same class of defect latent in every unmeasured model.
-- **B.** Verify catalogued port lists against the backend for every model the
-  enterprise resolver can select, and record which models are backend-verified
-  and which are only declared. Broader, and it closes the class rather than the
-  instance.
+- declared port schema is distinct from backend-verified evidence, in the data
+  rather than by convention;
+- an executable live binding requires adequate evidence for the selected model
+  in the backend context it will run against;
+- missing or mismatched evidence stays UNKNOWN and fails closed;
+- no model-name special casing enters planning or runtime;
+- the model/build combinations the Stage 3A4 bounded path requires are
+  qualified;
+- every other selectable model remains declared/UNKNOWN, with no bulk
+  promotion;
+- no runtime observation silently rewrites backend-agnostic catalogue truth.
 
-Either way, the verified/declared distinction must end up visible in the data
-rather than implied, so a future selection cannot silently rely on an unmeasured
-list.
+### Relationship to TD-HARDWARE-001 — distinct, with one shared seam
 
-**Neither branch may be taken by steering the selector away from the failing
-model.** A `preferred_switch_model` knob would make the bounded run pass and
-leave the catalogue exactly as wrong as it is now; the run that found this
-deliberately did not add one.
+These are **not** duplicates, and this entry is not a subproblem of
+TD-HARDWARE-001. They answer different questions about different evidence:
+
+```text
+TD-HARDWARE-001   does CAPABILITY evidence reach the resolver and reconcile
+                  into ELIGIBLE hardware?          -> which model may be chosen
+TD-CATALOG-PORT   does PORT evidence authorise the concrete NAMES the chosen
+                  model will be bound by?          -> what may be said to the backend
+```
+
+Either can hold without the other. Perfect capability evidence still names
+ports from a declaration; a fully measured port inventory still says nothing
+about whether a model supports layer 3. Closing this entry therefore closes
+nothing of TD-HARDWARE-001, and TD-HARDWARE-001 is left exactly as it was.
+
+**The one seam worth recording**, because it is where a future reader would
+otherwise assume more than is true: `DeviceSelector` filters on
+`min_access_ports` / `min_uplinks` and ranks on surplus port count, and those
+counts are derived from the same declared port list. Eligibility therefore
+rests on DECLARED-tier data. That is legitimate — it is planning, not binding,
+and the tier model says so explicitly — but it means TD-HARDWARE-001's
+"reconcile deterministically into eligible physical hardware" is satisfied on
+declared counts, not measured ones. For IE-2000 the counts happened to agree
+with the backend (ten physical ports either way); only the names differed.
+Whoever closes TD-HARDWARE-001 should say which tier its eligibility evidence
+came from rather than leave it implied.
+
+### Resolution — 2026-08-18, commit `571809c`
+
+Implemented as **B's evidence model with A's qualification scope**: the
+declared/backend-verified distinction is global, live qualification is not.
+
+```text
+DECLARED          static catalogue knowledge. Plan with it, never bind with it.
+BACKEND_VERIFIED  one build's own report, for one model, in one module state.
+UNKNOWN           neither. Not permission.
+```
+
+Evidence is scoped to model, build and module state and migrates along none of
+them. A port that exists only once a card is installed is not evidence about
+the same device without it, so the `2911` measurement answers for
+`2911 + HWIC-2T@0/0` and stays silent about an empty chassis.
+
+A concrete-port preflight runs before the first mutation and fails closed, so a
+plan naming ports nothing authorises is refused offline rather than discovered
+against a live workspace. The resolver is injectable for the same reason the
+runtime is: a caller driving a substitute backend must supply the port evidence
+of *that* backend instead of borrowing measurements taken against a real one.
+The default is the measured catalogue, so a caller that says nothing gets the
+strict contract.
+
+`devices.py` is untouched and still declares `FastEthernet0/1..0/8` for the
+IE-2000. It is backend-agnostic, and correcting it from one observation would
+convert a planning declaration into a claim about a specific build — the exact
+confusion this entry exists to undo. The measurements live in
+`infrastructure/catalog/measured_port_inventories.py`, build-pinned, in the
+shape `link_mode_capabilities.py` already established.
+
+Qualified, all from MEG-4 run 2's own production read-backs on `9.0.1.0858`:
+
+| Model | Module state | Ports as reported |
+| --- | --- | --- |
+| `2911` | `HWIC-2T@0/0` | `Gi0/0`, `Gi0/1`, `Gi0/2`, `Se0/0/0`, `Se0/0/1`, `Vlan1` |
+| `IE-2000` | none | `Fa1/1..1/8`, `Gi1/1`, `Gi1/2`, `Vlan1` |
+| `PC-PT` | none | `Bluetooth`, `FastEthernet0` |
+
+Each list is the complete inventory as observed, logical interfaces included;
+trimming them in the record would turn an observation into an interpretation.
+They do not become planning descriptors — that filter is by interface class,
+not by model name.
+
+Criteria, one at a time:
+
+| # | Criterion | Verdict |
+| --- | --- | --- |
+| 1 | Declared distinguished from backend-verified in the data | **Holds.** `PortInventoryEvidenceTier`, carried on every resolution and on `PortDescriptor.source`. |
+| 2 | Executable binding requires adequate evidence | **Holds.** `_port_evidence_errors` runs in preflight, before the first mutation, and returns `PORT_EVIDENCE_UNAVAILABLE`. |
+| 3 | Missing or mismatched evidence fails closed | **Holds.** Wrong build, wrong model and wrong module state each resolve UNKNOWN with a distinct reason, and UNKNOWN authorises nothing — not even partially. |
+| 4 | No model-name special casing | **Holds.** The measured data is data; a structural regression guards the six planning/runtime files where such a branch would go. |
+| 5 | Stage 3A4 bounded model/build combinations qualified | **Holds.** The three above, which is exactly what the bounded path selects. |
+| 6 | Everything else stays declared/UNKNOWN | **Holds, and is load-bearing.** `2960-24TT`, `1941` and every other selectable model resolve UNKNOWN. Pinned by regressions so a later commit cannot promote them quietly. |
+| 7 | No observation rewrites universal catalogue truth | **Holds.** `devices.py` unchanged, pinned by a regression that reads it. |
+
+**What this costs, said plainly rather than buried.** MEG-5 cannot open on the
+41-device reference until `2960-24TT` — and any other model that run selects —
+has a measured port inventory for the build it will run against. That is the
+contract working, not a residue of this entry: the reference has never been
+executed through the production physical seam, so nothing has ever confirmed
+that its declared port names are the ones Packet Tracer accepts. Before this
+change the run would have discovered that live; now it is refused offline.
+
+A second defect surfaced while qualifying this one and is fixed in the same
+commit: cleanup walked `topology.devices` and asked to remove all eight planned
+names even when the preflight had refused before creating any of them. Planned
+is not created, and removing by name what the transaction never made is a
+mutation against resources that could belong to someone else. It now removes
+exactly what the deployment reported attempting.
+
+Regressions: `tests/test_port_inventory_evidence.py` for the twelve contract
+rows, plus the end-to-end refusal and the cleanup case in
+`tests/test_stage3a4_offline_adversarial_matrix.py` and
+`tests/test_enterprise_reference_execution.py`.
+
+Status: **RESOLVED.** The architectural defect is gone and the bounded path is
+qualified. It is not `BACKEND_LIMITATION`: Packet Tracer reports its ports
+perfectly well: this repository had simply never written them down.
 
 ---
 
