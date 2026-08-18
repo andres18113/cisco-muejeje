@@ -1490,6 +1490,94 @@ record). `tests/test_e95_module_slot_namespace.py` was retired: it existed to
 force this decision to be deliberate, and everything it pinned is now pinned
 through the real derivation instead of a hand-built observation.
 
+## TD-CATALOG-PORT-001 — Catalogued port names are not verified against the backend
+
+Status:
+OPEN
+
+Severity:
+P1
+
+Discovered:
+Stage 3A4 MEG-4 bounded live qualification, run 2, 2026-08-18, on PT `9.0.1.0858`.
+Evidence: `stage-3a4-bounded-live-qualification.md`, "Run 2".
+
+Description:
+
+`infrastructure/catalog/devices.py` declares each model's physical ports by
+hand, and those names are the ones the product asks Packet Tracer for. Measured
+live, at least one model's declaration is wrong:
+
+```text
+model    : IE-2000
+declared : FastEthernet0/1..0/8, GigabitEthernet0/1, GigabitEthernet0/2
+           (devices.py:173)
+observed : FastEthernet1/1..1/8, GigabitEthernet1/1, GigabitEthernet1/2, Vlan1
+           (fresh read-back of a device Packet Tracer had just created)
+```
+
+Every port name is in the wrong slot namespace — `0/x` where the device uses
+`1/x` — so no port the plan names exists. The wrong names propagate through the
+whole product: `port_descriptors_for` → `HardwareCandidate.ports` →
+`HardwarePlanner` port assignment → `EnterpriseCompiler` link endpoints → the
+deployer's required-port set. The deployment then fails at device port
+observation with `port_observation_failed`, which is the correct outcome: the
+gate refused to bind links to ports it could not observe.
+
+**The scope of the entry is wider than the one wrong model, deliberately.** What
+the run established is not merely that IE-2000 is misdeclared; it is that
+*nothing verifies any catalogued port list against the backend*. The models the
+pinned reference uses happen to be right — `2960-24TT` really is a `0/x` device
+— and that is exactly why this survived: capability-driven selection reaches
+models the hand-pinned reference never exercises. IE-2000 is the first one
+measured, not necessarily the only one wrong.
+
+Why the selector reached it: the bounded intent asks for two endpoints per site,
+and IE-2000 is the smallest viable access switch in the catalogue. Choosing the
+smallest viable model is correct behaviour; it just walks into unverified data.
+
+Classification:
+```text
+STAGE_3A4_SCOPE
+PRODUCT_DEFECT in catalogued data + MISSING_VERIFICATION of the catalogue
+```
+
+Blocks Stage 3A4:
+**Yes, for MEG-4.** The bounded live qualification cannot complete while the
+product plans ports that do not exist on the model it selected. It does not
+block the offline surface, and it does not touch any claim already recorded.
+
+Blocks claims of:
+any statement that capability-driven hardware selection produces a deployable
+plan for a model outside the hand-pinned reference set.
+
+RESOLVE_BEFORE:
+Stage 3A4 MEG-4 completion.
+
+Closure criterion:
+
+One of the following, decided deliberately:
+
+- **A.** Correct the IE-2000 declaration from measured backend evidence and
+  state explicitly that only the models actually measured are verified, leaving
+  the rest declared-but-unverified. Narrow, honest, and it unblocks MEG-4 — but
+  it leaves the same class of defect latent in every unmeasured model.
+- **B.** Verify catalogued port lists against the backend for every model the
+  enterprise resolver can select, and record which models are backend-verified
+  and which are only declared. Broader, and it closes the class rather than the
+  instance.
+
+Either way, the verified/declared distinction must end up visible in the data
+rather than implied, so a future selection cannot silently rely on an unmeasured
+list.
+
+**Neither branch may be taken by steering the selector away from the failing
+model.** A `preferred_switch_model` knob would make the bounded run pass and
+leave the catalogue exactly as wrong as it is now; the run that found this
+deliberately did not add one.
+
+---
+
 ## TD-TRANSPORT-001 — FileBridge does not provide exactly-once or at-most-once execution
 
 Status:
