@@ -1998,7 +1998,12 @@ measurement, and qualifying one is an explicit act — adding it to
 ## TD-CONFIG-CAPABILITY-001 — The E5 configuration capability gate has no evidence source in the product path
 
 Status:
-OPEN
+RESOLVED
+
+Closed by MEG-4 run 5: the exact-version evidence path reaches E5, the required
+set of a ConfigurationPlan became one preflight unit, and 17 of 17 actions
+applied on measured evidence while every unmeasured capability stayed UNKNOWN.
+See "Resolution — MEG-4 run 5" at the end of this entry.
 
 Severity:
 P1
@@ -2100,6 +2105,152 @@ it entirely and a real device mutation applied without consulting any evidence.
 Whether a serial clock should declare a requirement is a separate question from
 this entry's closure, and answering it by stamping one without measuring what
 it should resolve against would just move the UNKNOWN.
+
+### Resolution — MEG-4 run 5, 2026-08-18
+
+Commits: `feat: make the required set of a ConfigurationPlan one preflight unit`
+and this record, on `feature/runtime-ripv2`.
+
+**What the run-4 report got right, and the one thing it got wrong.** It was
+right that no capability evidence reached the E5 gate for any model, and that
+the gate itself was correct. It was wrong to say the serial clock "applied
+without consulting any evidence": the clock has its own typed authorisation
+contract, established here from source and stronger than the generic flags.
+That correction is recorded under "ConfigureSerialClock" below rather than left
+standing.
+
+#### 1. The 17-action matrix, recovered rather than inferred
+
+Recomposed offline from the same intent, policy and build, and joined to the
+committed run-4 result by action id — all seventeen ids match, so the
+reconstruction is the plan that actually ran.
+
+| Actions | Type | Model | Required | Declared capability | Run-4 outcome |
+| --- | --- | --- | --- | --- | --- |
+| 2 | `create_vlan` | IE-2000 | REQUIRED | `supports_vlan` | UNKNOWN → skipped |
+| 6 | `configure_access_port` | IE-2000 | REQUIRED | `supports_vlan` | UNKNOWN → skipped |
+| 4 | `configure_routed_interface` | 2911 | REQUIRED | `layer3` | UNKNOWN → skipped |
+| 4 | `set_endpoint_static` | PC-PT | REQUIRED | `endpoint_static_ipv4` | ungated by contract → dependency-blocked |
+| 1 | `configure_serial_clock` | 2911 | REQUIRED | *(none)* | not evaluated by the gate → **applied** |
+
+Every action in the plan is `critical=True`. The gated dimensions are exactly
+two model/capability pairs: `IE-2000:supports_vlan` and `2911:layer3`.
+Capabilities prefixed `endpoint_` are excluded from the gate by contract — an
+endpoint address is not a model capability.
+
+#### 2. Root cause: the path was incompletely wired, not absent
+
+Answered from source rather than assumed. The exact-version composition root
+`packet_tracer_enterprise_capability_adapter` has existed since MEG-2 and
+already fed `plan_enterprise_hardware`. Both `compile_enterprise_configuration`
+and `ConfigurationApplicator.apply` already declared a `capabilities`
+parameter — and every production call site omitted it, so E5 always resolved
+`capabilities = None`, which is UNKNOWN for everything.
+
+Fixed by routing, not by inventing: one adapter per composition, shared by
+hardware selection and E5, with the resolved map published on
+`EnterpriseReferenceComposition.capabilities` and applied by the executor from
+that same map. Resolving twice would let compile and apply disagree about one
+build. No second E5 truth database was created.
+
+#### 3. ConfigureSerialClock — a valid typed contract, narrower than the flags
+
+It declares no `required_capability`, and that is correct. Its authorisation is
+four gates, all of which run before any mutation:
+
+```text
+exact build      compile_enterprise_configuration raises unless the requested
+                 version equals PT_2911_HWIC2T_SERIAL_CLOCK.backend_version
+verified rate    LinkPerformancePlanner emits only verified_rates_bps
+                 (64k, 128k, 2M, 4M measured; 3M and 8M measured as rejected)
+observed DCE     DeploymentManifest.resolve_serial_clock_target refuses unless
+                 the manifest endpoint is DCE, from fresh orientation, and
+                 refuses to swap an orientation the runtime contradicts
+exact interface  the same call resolves the bound interface against live inventory
+```
+
+Assigning it `layer3` or `supports_vlan` would have been wrong twice: a serial
+clock is a physical DCE property rather than IP routing or switching, and a
+coarse flag is weaker than model + module + build + verified rate. The contract
+is preserved, and a regression pins that authorising the clock grants no VLAN
+or layer-3 permission.
+
+What was genuinely defective was not its contract but **when** it ran.
+
+#### 4. Required-batch preflight — the real defect, and the fix
+
+Run 4's twelve refusals were all decided before the first mutation; the gate
+simply did not stop. `critical` — declared on five plan models since they were
+written and read by nothing in `src/` — was the typed REQUIRED/OPTIONAL
+distinction, dead on arrival.
+
+The required set of a `ConfigurationPlan` is now one preflight unit: any
+refused REQUIRED action returns a preflight failure with **zero mutation**,
+carrying `CAPABILITY_UNKNOWN` or `CAPABILITY_UNSUPPORTED`, which stay distinct.
+A non-critical action is still skipped without stopping the batch, so an
+explicitly declared optional action keeps the older semantics. Nothing declares
+one today, so the observable change is exactly the intended one.
+
+Three existing tests were re-expressed rather than deleted. Missing snapshot
+still means UNKNOWN and still is not blindly applied; UNKNOWN still does not
+become UNSUPPORTED and still does not spread to layer 2; an UNSUPPORTED action
+is still never attempted. Each now also asserts that nothing else was attempted.
+
+#### 5. Evidence, produced by the existing governed producer
+
+No capability evidence existed to reuse. `data/capabilities/` is gitignored and
+absent, and the "Stage 2D" snapshots the reconciliation tests refer to are
+hermetic fixtures built in `tmp_path`, not machine evidence — that test says so
+itself. So the evidence was produced, through `CapabilityDiscoveryService`,
+bounded to the two pairs the plan requires:
+
+```text
+IE-2000 : supports_vlan   SUPPORTED / verified / controlled_probe / 9.0.1.0858
+2911    : layer3          SUPPORTED / verified / controlled_probe / 9.0.1.0858
+```
+
+Both sessions created and deleted their own `__MCP_PROBE_*` devices,
+reported `cleanup_status = clean` and `inventory_restored = True`, and an
+independent re-observation afterwards found zero semantic devices. The probe
+graph also measured `layer2`, `configuration_channel`, `port_inventory` and
+`model_exists` for those two models, because they are prerequisites; they are
+recorded because they were measured.
+
+`2960-24TT`, `1941`, `3560`, `3650` and `PC-PT` remain UNKNOWN on every
+functional dimension. Qualifying the reference topology's models belongs to the
+pre-MEG-5 pass.
+
+#### 6. Measured end to end
+
+MEG-4 run 5 applied **17 of 17** actions on that evidence, against run 4's one.
+Four routed-interface expectations verified from `show ip interface brief`,
+two VLANs from the VLAN manager object state, and the serial clock from
+`show controllers`. Evidence: `stage-3a4-bounded-live-qualification.md`,
+"Run 5".
+
+Criteria, one at a time:
+
+| # | Criterion | Verdict |
+| --- | --- | --- |
+| 1 | Capability evidence for the exact build reaches the E5 gate through the product path | **Holds.** Measured live: the twelve actions run 4 refused all applied. |
+| 2 | UNKNOWN preserved wherever nothing was measured | **Holds.** `2911:supports_vlan`, `PC-PT:*`, `2960-24TT:*` all stayed UNKNOWN in the same run. |
+| 3 | Evidence scoped to model **and** build, refusing to migrate across either | **Holds.** Regressions cover another build and another model; both stay UNKNOWN. |
+| 4 | No model-string special casing | **Holds.** The map is built from the deployed models; the resolver contains no model literal. |
+| 5 | A regression fails if UNKNOWN is treated as permissive | **Holds.** Whole-batch refusal, catalogue-only refusal, wrong-build and wrong-model refusals. |
+| 6 | Not closed on a fixture | **Holds.** `.supported()` and fixture leakage remain prohibited by an existing regression, and the evidence used was a controlled probe on the exact build. |
+
+Status: **RESOLVED.**
+
+**Residual, recorded rather than glossed over.** The evidence lives in
+`data/capabilities/`, which is gitignored machine state. A clean checkout of
+this commit resolves every capability UNKNOWN again and would refuse the same
+plan — correctly, and fail-closed, but it means the qualification is not
+reproducible from Git the way `measured_port_inventories.py` made port evidence
+reproducible for `TD-CATALOG-PORT-001`. Making capability evidence survive a
+checkout is a real decision with its own trade-offs — a third evidence surface
+next to the probe and runtime providers — and it is deliberately **not** taken
+here. Whoever opens MEG-5 will meet it again, because the reference models need
+qualifying anyway.
 
 ---
 

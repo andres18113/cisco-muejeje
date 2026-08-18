@@ -68,7 +68,7 @@ that Packet Tracer has been measured in this E9.5 run.
 | 3560 SVI | Typed L3 configuration and fresh operational verification paths keep configured/admin state separate from line protocol state. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION` on a fresh 3560 device/session. |
 | PoE | Capability discovery preserves absent reliable port-power evidence as unknown. | [ADVERTENCIA] `UNKNOWN — PENDING_CONTROLLED_REPRODUCTION`; do not infer from model names. |
 | Modules | Product deployment now separates one-shot module application, fresh physical-effect readback, and exact identity. The 2911/HWIC-2T slice verifies added serial ports without equating requested slot `0/0`, observed module number `0`, or requested identity. | [OK] `BACKEND_LIMITATION_CONFIRMED` for exact module identity on Packet Tracer `9.0.1.0858` / 2911: the direct name remained absent while the physical effect was `VERIFIED`. Scope is this exact model/module slice; other modular models remain `UNKNOWN`. Evidence: `../architecture/stage-3a4-serial-product-slice-2a.md`. |
-| Access-port direct getter | E5 can return `UNOBSERVABLE` when no independent direct getter is available. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION`; application acceptance is not read-back. |
+| Access-port direct getter | E5 can return `UNOBSERVABLE` when no independent direct getter is available. | [ADVERTENCIA] `UNKNOWN — PENDING_REGISTERED_QUERY_AND_LIVE_VALIDATION`. Reached live for the first time in Stage 3A4 MEG-4 run 5: six applied access-port actions returned `UNOBSERVABLE` with `runtime_observability_limit`, because `enterprise_configuration_runtime.py:265` routes `ACCESS_PORT` to `_unobservable` — this repository registers no access-port read-back. Whether Packet Tracer exposes one was NOT probed, so this is a missing registered query, not a backend limitation. Evidence: `../architecture/stage-3a4-bounded-live-qualification.md`, "Run 5". |
 | DHCP pool getter | E5 models direct DHCP-pool observation separately from application. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION`. |
 | DHCP gateway getter | Gateway is an independent DHCP verification field. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION`. |
 | DHCP DNS getter | DNS is an independent DHCP verification field. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION`. |
@@ -117,6 +117,27 @@ rows. For example:
 If a row remains `UNKNOWN` after bounded investigation and E10 depends on it,
 the final recommendation must not be `START_E10`. If E10 does not depend on the
 row, preserve the precise limitation and gate only the affected scenario.
+
+## E5 read-back coverage — measured 2026-08-18
+
+Stage 3A4 MEG-4 run 5 is the first run in which every compiled E5 action was
+authorised and applied, so it is the first measurement of what the product can
+actually read back after applying. Recorded per verification kind, from that
+one run on PT `9.0.1.0858`:
+
+| Verification kind | Result | Method |
+| --- | --- | --- |
+| VLAN | `VERIFIED` | `vlan_manager_object_state` |
+| Serial controller | `VERIFIED` | `fresh_show_controllers_serial` (multi-page capture) |
+| L3 interface | `VERIFIED` | `fresh_show_ip_interface_brief` — interface, ipv4, admin state, status, protocol |
+| Access port | `UNOBSERVABLE` | no registered getter |
+| Endpoint addressing | `PARTIAL` | `structured_endpoint_getters` — ipv4 and netmask verified; gateway and DNS unobservable |
+
+Only the access-port row is promoted from a work state above, and only to a
+sharper work state. The endpoint gateway/DNS observation is **not** the same
+claim as the `DHCP gateway getter` and `DHCP DNS getter` rows, which are about
+a DHCP server's pool configuration rather than a statically addressed endpoint;
+those rows are untouched. No other row moves.
 
 ## OSPF observation ceiling — recorded 2026-08-17
 

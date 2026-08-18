@@ -18,9 +18,9 @@ win.
 Corrected figures, measured rather than carried forward:
 
 ```text
-canonical regression   2061 passed, 3 pre-existing warnings
+canonical regression   2082 passed, 3 pre-existing warnings
                        ./.venv/Scripts/python.exe -m pytest, no custom PYTHONPATH
-Graphify               7709 nodes, 26446 edges, 263 communities
+Graphify               7806 nodes, 26696 edges, 270 communities
 ```
 
 ## Stage 3A4 execution — gates 1–3 CLOSED, gate 4 still open
@@ -41,13 +41,16 @@ MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
 MEG-7  Stage 3A4 closure ...................... NOT_STARTED
 ```
 
-MEG-4 has now been executed four times against Packet Tracer `9.0.1.0858`, each
-time failing clean with the workspace restored. Run 4 reached configuration
-application: physical deployment VERIFIED, serial orientation VERIFIED with
-exactly one DCE and one DTE, clock applied to the observed DCE and read back
-VERIFIED. It stopped because the E5 capability gate has no evidence source
-(`TD-CONFIG-CAPABILITY-001`). The "MEG-4 is blocked, and on what" section below
-describes run *zero* — the state before any run — and is history, not status.
+MEG-4 has now been executed five times against Packet Tracer `9.0.1.0858`, each
+time failing clean with the workspace restored. Run 5 applied **17 of 17**
+configuration actions on measured exact-version capability evidence: physical
+deployment VERIFIED, serial orientation VERIFIED with exactly one DCE and one
+DTE, serial transit addressing VERIFIED, clock on the observed DCE read back
+VERIFIED. It stopped because six applied access-port actions cannot be read
+back at all — this repository registers no access-port getter — so E5 ended
+`partial` and only VERIFIED may carry the control plane. The "MEG-4 is blocked,
+and on what" section below describes run *zero* — the state before any run —
+and is history, not status.
 
 ```text
 MEG_5               = NOT_OPENED
