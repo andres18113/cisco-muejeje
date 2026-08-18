@@ -55,6 +55,7 @@ class PhysicalDeploymentFailureCode(str, Enum):
     WORKSPACE_NOT_EMPTY = "workspace_not_empty"
     DEVICE_APPLICATION_FAILED = "device_application_failed"
     DEVICE_OBSERVATION_FAILED = "device_observation_failed"
+    PORT_EVIDENCE_UNAVAILABLE = "port_evidence_unavailable"
     PORT_OBSERVATION_FAILED = "port_observation_failed"
     MODULE_APPLICATION_FAILED = "module_application_failed"
     MODULE_OBSERVATION_UNAVAILABLE = "module_observation_unavailable"

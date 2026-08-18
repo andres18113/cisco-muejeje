@@ -85,6 +85,16 @@ from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
     WanLinkRequirement,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+    PhysicalDeploymentFailureCode,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
+    PortInventoryEvidenceTier,
+    PortInventoryResolution,
+)
+from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+    HardwarePlanningPolicy,
+)
 from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
@@ -358,12 +368,25 @@ class _ForbiddenControlPlaneRuntime:
         return _forbidden
 
 
-def _run(*, physical, configuration, control_plane, intent=None):
+#: Las etapas posteriores solo se alcanzan con una topologia desplegable, y eso
+#: ahora exige inventario de puertos verificado contra el backend. `2911` lo
+#: tiene; la seleccion sin preferencia elige `1941`, que no. Dirigir aqui no
+#: hace verde nada que estuviera roto: mueve la corrida a un modelo calificado
+#: para que la fila bajo prueba -- el orden de las etapas -- llegue a ejercerse.
+#: Que un plan SIN dirigir se rechace esta fijado aparte, mas abajo.
+_QUALIFIED = HardwarePlanningPolicy(preferred_router_model="2911")
+
+
+def _run(*, physical, configuration, control_plane, intent=None, policy=_QUALIFIED):
     intent = intent or _bounded_intent()
     # El fake sintetiza puertos desde el plan, asi que necesita conocerlo. La
-    # composicion es determinista, de modo que la que se ata aqui es byte a byte
-    # la que el caso de uso volvera a producir internamente.
-    topology = compose_enterprise_reference(intent).topology
+    # composicion es determinista PARA LAS MISMAS ENTRADAS, y desde el contrato
+    # de evidencia de puertos el build es una de ellas: con un inventario medido
+    # los nombres salen de lo observado. Por eso aqui se compone con la misma
+    # version y la misma politica que usara el caso de uso.
+    topology = compose_enterprise_reference(
+        intent, policy=policy, packet_tracer_version="9.0.1.0858",
+    ).topology
     physical.bind(topology)
     return execute_enterprise_reference(
         intent,
@@ -377,6 +400,7 @@ def _run(*, physical, configuration, control_plane, intent=None):
         environment_fingerprint=FINGERPRINT,
         import_preflight=_isolated_preflight(),
         packet_tracer_version="9.0.1.0858",
+        policy=policy,
     )
 
 
@@ -506,6 +530,7 @@ class TestTheDefaultSelectionIsRecordedNotAssumed:
             physical=physical,
             configuration=_FailingConfigurationRuntime([]),
             control_plane=_ForbiddenControlPlaneRuntime(),
+            policy=None,
         )
         routers = {
             item.model for item in result.composition.topology.devices
@@ -513,6 +538,52 @@ class TestTheDefaultSelectionIsRecordedNotAssumed:
         }
 
         assert routers == {"1941"}, "si cambia la seleccion, revisar el gate en vivo"
+
+
+class TestSelectionMustCarryPortEvidenceBeforeItCanBind:
+    """Fila 6 del contrato de puertos, de punta a punta por el entry point.
+
+    Seleccionar un modelo es una decision de planificacion; vincular un nombre
+    de puerto concreto contra un backend es otra cosa, y necesita evidencia de
+    ese backend. `1941` es una seleccion legitima que nadie ha medido nunca por
+    este seam, asi que el despliegue se niega ANTES de mutar. Que se niegue no
+    dice que el modelo este mal: dice que no se sabe.
+    """
+
+    def test_an_unmeasured_model_is_refused_before_any_mutation(self):
+        physical = _GenericPhysicalRuntime()
+
+        result = _run(
+            physical=physical,
+            configuration=_FailingConfigurationRuntime([]),
+            control_plane=_ForbiddenControlPlaneRuntime(),
+            policy=None,
+        )
+
+        assert result.stopped_at is EnterpriseExecutionStage.PHYSICAL_DEPLOYMENT
+        assert result.deployment is not None
+        assert result.deployment.failure_code is (
+            PhysicalDeploymentFailureCode.PORT_EVIDENCE_UNAVAILABLE
+        )
+        assert any("1941" in message for message in result.errors)
+        assert physical.devices == {}
+        assert physical.removed == []
+
+    def test_a_measured_model_reaches_the_next_stage(self):
+        """El contraste: con el mismo camino y un modelo medido, el gate deja pasar."""
+        physical = _GenericPhysicalRuntime()
+
+        result = _run(
+            physical=physical,
+            configuration=_FailingConfigurationRuntime([]),
+            control_plane=_ForbiddenControlPlaneRuntime(),
+        )
+
+        assert result.deployment is not None
+        assert result.deployment.failure_code is not (
+            PhysicalDeploymentFailureCode.PORT_EVIDENCE_UNAVAILABLE
+        )
+        assert result.stopped_at is EnterpriseExecutionStage.CONFIGURATION_APPLY
 
 
 class TestTheGateGrantsNoLivePermission:
@@ -534,6 +605,41 @@ class TestTheGateGrantsNoLivePermission:
             assert type(double).__module__ == __name__, type(double)
 
 
+def _double_port_inventory(topology):
+    """La evidencia de puertos DEL DOBLE, que es el backend de este archivo.
+
+    El doble sintetiza sus interfaces desde el plan, asi que su inventario
+    verificado es exactamente lo que el plan pide de cada modelo. Dejar el
+    resolutor por defecto le prestaria las mediciones tomadas contra Packet
+    Tracer real, es decir, le atribuiria una conformidad que nadie observo en
+    el -- que es justo el prestamo de evidencia que el contrato prohibe.
+    """
+    by_model: dict[str, set[str]] = {}
+    model_of = {item.name: item.model for item in topology.devices}
+    for device in topology.devices:
+        by_model.setdefault(device.model, set())
+    for link in topology.links:
+        for name, port in (
+            (link.device_a, link.port_a), (link.device_b, link.port_b),
+        ):
+            model = model_of.get(name)
+            if model:
+                by_model.setdefault(model, set()).add(port)
+
+    def _resolve(model, *, backend="packet_tracer", backend_version="", installed_modules=None):
+        return PortInventoryResolution(
+            model=model,
+            backend=backend,
+            backend_version=backend_version,
+            installed_modules=sorted(installed_modules or []),
+            tier=PortInventoryEvidenceTier.BACKEND_VERIFIED,
+            ports=sorted(by_model.get(model, set()), key=str.casefold),
+            reason="synthesised by the physical double in this test module",
+        )
+
+    return _resolve
+
+
 def _oriented_manifest_for(topology):
     """Manifiesto orientado desde el despliegue del doble, no fabricado a mano.
 
@@ -542,7 +648,9 @@ def _oriented_manifest_for(topology):
     existe para impedir.
     """
     runtime = _GenericPhysicalRuntime().bind(topology)
-    deployment = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    deployment = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(topology),
+    ).deploy(
         topology,
         environment_fingerprint=FINGERPRINT,
         require_empty_workspace=True,

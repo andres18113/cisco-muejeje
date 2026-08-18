@@ -72,7 +72,14 @@ def _composed_with_control_plane(*, policy):
     )
 
     intent = _bounded_intent()
-    topology = compose_enterprise_reference(intent, policy=policy).topology
+    # La version entra en las DOS composiciones. Desde el contrato de evidencia
+    # de puertos, el build es una entrada de la composicion -- un modelo con
+    # inventario medido se planifica con los nombres observados -- asi que
+    # componer una vez sin version y otra con ella produce dos topologias
+    # distintas y un manifiesto que no corresponde.
+    topology = compose_enterprise_reference(
+        intent, policy=policy, packet_tracer_version="9.0.1.0858",
+    ).topology
     return compose_enterprise_reference(
         intent,
         policy=policy,

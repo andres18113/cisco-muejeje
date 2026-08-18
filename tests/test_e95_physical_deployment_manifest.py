@@ -55,6 +55,43 @@ def _topology() -> TopologyPlan:
     return topology
 
 
+def _double_port_inventory(topology):
+    """La evidencia de puertos DEL DOBLE, que es el backend de estos tests.
+
+    Estos casos ejercitan la MECANICA del desplegador contra un runtime falso,
+    no la conformidad de Packet Tracer. El resolutor por defecto solo autoriza
+    modelos realmente medidos, asi que dejarlo aqui haria que el doble tomara
+    prestada evidencia tomada contra el backend real. Se declara la del doble,
+    igual que ya se declaran sus observaciones.
+    """
+    from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
+        PortInventoryEvidenceTier,
+        PortInventoryResolution,
+    )
+
+    by_model: dict[str, set[str]] = {item.model: set() for item in topology.devices}
+    model_of = {item.name: item.model for item in topology.devices}
+    for link in topology.links:
+        for name, port in (
+            (link.device_a, link.port_a), (link.device_b, link.port_b),
+        ):
+            if model_of.get(name):
+                by_model.setdefault(model_of[name], set()).add(port)
+
+    def _resolve(model, *, backend="packet_tracer", backend_version="", installed_modules=None):
+        return PortInventoryResolution(
+            model=model,
+            backend=backend,
+            backend_version=backend_version,
+            installed_modules=sorted(installed_modules or []),
+            tier=PortInventoryEvidenceTier.BACKEND_VERIFIED,
+            ports=sorted(by_model.get(model, set()), key=str.casefold),
+            reason="synthesised by the physical double in this test module",
+        )
+
+    return _resolve
+
+
 def _fingerprint() -> EnvironmentFingerprint:
     return EnvironmentFingerprint(
         backend="packet_tracer",
@@ -194,7 +231,9 @@ def test_verified_physical_deployment_produces_manifest_from_fresh_observations(
     topology = _topology()
     runtime = FakePhysicalRuntime()
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(topology),
+    ).deploy(
         topology,
         environment_fingerprint=_fingerprint(),
         deployment_id="deployment/live-reference",
@@ -235,7 +274,9 @@ def test_missing_model_port_or_link_observation_blocks_manifest(mutation, failur
     else:
         runtime.link_observations["link/r1-sw1"].observed = False
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(_topology()),
+    ).deploy(
         _topology(), environment_fingerprint=_fingerprint(),
     )
 
@@ -250,7 +291,9 @@ def test_partial_application_failure_never_produces_manifest_and_marks_recoverab
     runtime = FakePhysicalRuntime()
     runtime.fail_device = "sw1"
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(_topology()),
+    ).deploy(
         _topology(), environment_fingerprint=_fingerprint(),
     )
 
@@ -270,7 +313,9 @@ def test_layout_transform_after_compilation_does_not_invalidate_physical_identit
     transformed.devices[1].x -= 300
     transformed.name = "Visual title changed"
 
-    result = EnterprisePhysicalTopologyDeployer(FakePhysicalRuntime()).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        FakePhysicalRuntime(), port_inventory=_double_port_inventory(transformed),
+    ).deploy(
         transformed, environment_fingerprint=_fingerprint(),
     )
 
@@ -282,7 +327,9 @@ def test_layout_transform_after_compilation_does_not_invalidate_physical_identit
 def test_stale_or_missing_environment_identity_blocks_before_runtime_mutation():
     runtime = FakePhysicalRuntime()
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(_topology()),
+    ).deploy(
         _topology(),
         environment_fingerprint=EnvironmentFingerprint(
             backend="packet_tracer", backend_version="",
@@ -301,7 +348,9 @@ def test_stale_physical_hash_blocks_before_runtime_mutation():
     topology.devices[0].model = "1941"
     runtime = FakePhysicalRuntime()
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(topology),
+    ).deploy(
         topology, environment_fingerprint=_fingerprint(),
     )
 
@@ -321,7 +370,9 @@ def test_crossed_semantic_id_and_deployed_name_blocks_before_mutation():
     stamp_topology_hashes(topology)
     runtime = FakePhysicalRuntime()
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(topology),
+    ).deploy(
         topology,
         environment_fingerprint=_fingerprint(),
     )
@@ -337,7 +388,9 @@ def test_unobservable_cable_identity_does_not_block_exact_endpoint_manifest():
     runtime = FakePhysicalRuntime()
     runtime.link_observations["link/r1-sw1"].cable_observed = False
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(_topology()),
+    ).deploy(
         _topology(), environment_fingerprint=_fingerprint(),
     )
 
@@ -360,7 +413,9 @@ def test_planned_module_without_independent_readback_blocks_manifest_before_muta
     stamp_topology_hashes(topology)
     runtime = FakePhysicalRuntime()
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(topology),
+    ).deploy(
         topology,
         environment_fingerprint=_fingerprint(),
     )
@@ -380,7 +435,9 @@ def test_planned_module_requires_exact_device_slot_and_model_readback():
     runtime = FakePhysicalRuntime()
     runtime.module_observation_supported = True
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(topology),
+    ).deploy(
         topology,
         environment_fingerprint=_fingerprint(),
     )

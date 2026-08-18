@@ -49,8 +49,10 @@ from ...domain.enterprise.models.deployment import DeploymentManifest, Environme
 from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
 from ...domain.enterprise.models.physical_deployment import (
+    PhysicalDeploymentItemStatus,
     PhysicalDeploymentResult,
     PhysicalMutationResult,
+    PhysicalObjectKind,
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
 )
@@ -227,6 +229,24 @@ class _ExecutionState:
         )
         return self._result(status, stage, ())
 
+    def _attempted(self, device) -> bool:
+        """True when the deployment reported reaching this device at all.
+
+        No deployment result means the run never got as far as the deployer, so
+        nothing was created. An item still `NOT_ATTEMPTED` means the deployer
+        stopped before it. Either way the product owns nothing to remove.
+        """
+
+        if self.deployment is None:
+            return False
+        target_id = device.id or device.name
+        return any(
+            item.target_kind is PhysicalObjectKind.DEVICE
+            and item.target_id == target_id
+            and item.status is not PhysicalDeploymentItemStatus.NOT_ATTEMPTED
+            for item in self.deployment.item_results
+        )
+
     def _cleanup(
         self, runtimes: EnterpriseRuntimes, topology, e4_identity: str,
     ) -> None:
@@ -235,7 +255,14 @@ class _ExecutionState:
         # despliegue y vive en el manifiesto, nunca en el TopologyPlan.
         self.e4_identity_preserved = topology.physical_identity_hash == e4_identity
 
+        # Lo PLANIFICADO no es lo CREADO. Si el despliegue se nego antes de
+        # mutar -- un preflight que no autoriza un nombre de puerto, por
+        # ejemplo -- el producto no es dueno de ningun dispositivo, y borrar por
+        # nombre igual seria mutar recursos que podrian ser de otro. Se limpia
+        # exactamente lo que el despliegue reporto haber intentado.
         for device in reversed(list(topology.devices)):
+            if not self._attempted(device):
+                continue
             try:
                 self.cleanup_results.append(runtimes.physical.remove_device(device))
             except Exception as exc:

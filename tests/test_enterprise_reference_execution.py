@@ -19,6 +19,9 @@ from __future__ import annotations
 import ast
 import pathlib
 
+from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+    HardwarePlanningPolicy,
+)
 from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     EnterpriseExecutionStage,
     EnterpriseExecutionStatus,
@@ -34,6 +37,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.deployment import Environmen
 from src.packet_tracer_mcp.domain.enterprise.models.link_performance import TrafficFlowIntent
 from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     MutationDisposition,
+    PhysicalDeploymentFailureCode,
     PhysicalMutationResult,
     PhysicalObjectKind,
     PhysicalWorkspaceDeviceObservation,
@@ -61,6 +65,37 @@ def _intent():
             ),
         ],
     })
+
+
+def _bounded_intent():
+    """Un solo sitio, sin WAN y sin modulos: la forma minima que despliega.
+
+    Sin enlace serial no hay HWIC que insertar, asi que el doble de este archivo
+    -- que rechaza `module_effect_capability` a proposito -- llega intacto hasta
+    `ensure_device`, que es lo que estos casos examinan. Los tres modelos que
+    salen (`IE-2000`, `PC-PT`, y ningun router) tienen inventario de puertos
+    medido, de modo que el preflight de puertos deja pasar.
+    """
+    from src.packet_tracer_mcp.domain.enterprise.models.intent import (
+        EnterpriseIntent, SiteIntent, SiteType,
+    )
+    from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
+        EndpointRequirement,
+    )
+    from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+
+    return EnterpriseIntent(
+        name="bounded execution slice",
+        address_space="10.0.0.0/8",
+        default_growth_percent=0,
+        internet_required=False,
+        sites=[
+            SiteIntent(
+                name="A", type=SiteType.HQ,
+                endpoints=[EndpointRequirement(role=DeviceRole.USER_PC, count=2)],
+            ),
+        ],
+    )
 
 
 def _control_plane_intent():
@@ -147,7 +182,16 @@ def _runtimes(physical) -> EnterpriseRuntimes:
     )
 
 
-def _run(physical, *, preflight, intent=None):
+#: Las etapas posteriores solo se alcanzan con una topologia desplegable, y eso
+#: exige inventario de puertos verificado contra el backend. La seleccion sin
+#: preferencia elige `1941`, que nadie midio nunca, asi que el preflight de
+#: puertos cortaria antes de llegar a lo que estos tests examinan. Dirigir a un
+#: modelo calificado mueve la corrida hasta la etapa bajo prueba; el rechazo del
+#: modelo sin medir esta fijado en `test_stage3a4_offline_adversarial_matrix`.
+_QUALIFIED = HardwarePlanningPolicy(preferred_router_model="2911")
+
+
+def _run(physical, *, preflight, intent=None, policy=_QUALIFIED):
     return execute_enterprise_reference(
         intent or _intent(),
         _runtimes(physical),
@@ -155,6 +199,7 @@ def _run(physical, *, preflight, intent=None):
         environment_fingerprint=FINGERPRINT,
         import_preflight=preflight,
         packet_tracer_version="9.0.1.0858",
+        policy=policy,
     )
 
 
@@ -244,13 +289,41 @@ class TestAFailedStageStopsTheRestAndStillCleansUp:
         assert result.foundational_statuses == {}
 
     def test_a_failed_deployment_still_removes_what_it_attempted(self):
+        """Se usa la forma acotada porque el sujeto es la limpieza, no el tamano.
+
+        La intencion de referencia elige `2950T-24` para sus bloques de acceso,
+        y ese modelo no tiene inventario de puertos medido, asi que el preflight
+        cortaria antes de intentar el primer dispositivo -- sin intento no hay
+        nada que limpiar, y esta fila dejaria de probar su enunciado. Con la
+        forma acotada la corrida llega al `ensure_device` que el doble hace
+        fallar, que es exactamente la condicion bajo prueba.
+        """
         physical = _RecordingPhysicalRuntime(fail_devices=True)
 
-        result = _run(physical, preflight=_isolated_preflight())
+        result = _run(physical, preflight=_isolated_preflight(), intent=_bounded_intent())
 
         assert physical.removed, "cleanup must run after a failure"
         assert result.cleanup_results
         assert "observe_workspace" in physical.calls[-1:] or result.final_inventory is not None
+
+    def test_a_preflight_refusal_removes_nothing_at_all(self):
+        """Lo planificado no es lo creado, y borrar por nombre seria mutar ajeno.
+
+        La intencion de referencia selecciona un modelo sin inventario medido,
+        asi que el despliegue se niega antes de tocar nada. Antes de esta
+        correccion la limpieza recorria `topology.devices` y pedia borrar los
+        ocho nombres igual.
+        """
+        physical = _RecordingPhysicalRuntime()
+
+        result = _run(physical, preflight=_isolated_preflight())
+
+        assert result.deployment is not None
+        assert result.deployment.failure_code is (
+            PhysicalDeploymentFailureCode.PORT_EVIDENCE_UNAVAILABLE
+        )
+        assert physical.removed == []
+        assert result.cleanup_results == []
 
     def test_cleanup_re_observes_instead_of_trusting_the_removal_calls(self):
         physical = _RecordingPhysicalRuntime(fail_devices=True)

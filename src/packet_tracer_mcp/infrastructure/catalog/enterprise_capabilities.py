@@ -18,11 +18,33 @@ from ...domain.enterprise.services.capability_resolver import (
     CapabilityProvider,
     CatalogDeviceFacts,
 )
+from ...domain.enterprise.models.link_performance import port_kind_of
 from .aliases import MODEL_ALIASES
-from .devices import ALL_MODELS, DeviceModel
+from .devices import ALL_MODELS, DeviceModel, PortSpec
+from .measured_port_inventories import backend_verified_port_inventory
 from .modules import ALL_MODULES, get_serial_module
 from .capability_providers import ProbeCapabilityProvider, RuntimeCapabilityProvider
 from ..persistence.capability_snapshot_store import CapabilitySnapshotStore
+
+
+#: Los tipos de interfaz que el catálogo sabe describir físicamente. Una lectura
+#: real trae además interfaces lógicas (`Vlan1`) o de radio (`Bluetooth`); se
+#: conservan en el registro de evidencia y no se convierten en puertos de
+#: planificación, porque el planificador no tiene nada que hacer con ellas.
+_PHYSICAL_PORT_KINDS = frozenset({
+    "Ethernet", "FastEthernet", "GigabitEthernet", "TenGigabitEthernet", "Serial",
+})
+
+
+def _measured_port_specs(ports: list[str]) -> list[PortSpec]:
+    """Convierte nombres observados en specs, conservando el orden observado."""
+    specs: list[PortSpec] = []
+    for name in ports:
+        kind = port_kind_of(name)
+        if kind not in _PHYSICAL_PORT_KINDS:
+            continue
+        specs.append(PortSpec(speed=kind, slot=name[len(kind):], full_name=name))
+    return specs
 
 
 _SERIAL_MODULE_SLOT_BY_MODEL = {
@@ -82,12 +104,40 @@ class EnterpriseCapabilityAdapter:
             for model in sorted(models, key=lambda item: item.pt_type.casefold())
         ]
 
-    def port_descriptors_for(self, model_name: str) -> list[PortDescriptor]:
-        """Adapta nombres y velocidades reales del catálogo a clases físicas E3."""
+    def port_descriptors_for(
+        self,
+        model_name: str,
+        *,
+        backend_version: str = "",
+        installed_modules: list[str] | tuple[str, ...] | None = None,
+    ) -> list[PortDescriptor]:
+        """Adapta nombres y velocidades reales del catálogo a clases físicas E3.
+
+        Con un build concreto y una medición para ese modelo y ese estado de
+        módulos, los nombres salen de lo OBSERVADO en vez de lo declarado: el
+        catálogo dice qué debería haber, y una vez que un backend dijo qué hay,
+        planificar contra lo declarado es planificar contra algo que ya se sabe
+        distinto. Sin medición adecuada se usa lo declarado, que sirve para
+        planificar y no autoriza ningún binding -- eso lo decide el preflight
+        de despliegue.
+        """
         canonical = self.normalize_model_name(model_name)
         if canonical is None:
             return []
         model = ALL_MODELS[canonical]
+        if backend_version:
+            resolution = backend_verified_port_inventory(
+                canonical,
+                backend_version=backend_version,
+                installed_modules=installed_modules,
+            )
+            if resolution.backend_verified:
+                return [
+                    self._port_descriptor(
+                        model, port, source=f"backend_verified:{backend_version}",
+                    )
+                    for port in _measured_port_specs(resolution.ports)
+                ]
         return [self._port_descriptor(model, port) for port in model.ports]
 
     def coverage_report(self, observed_models: list[str] | None = None) -> CatalogCoverageReport:
@@ -120,7 +170,12 @@ class EnterpriseCapabilityAdapter:
             candidates.append(HardwareCandidate(
                 model=capability.model,
                 capabilities=capability,
-                ports=self.port_descriptors_for(capability.model),
+                # Sin módulos: en este momento ninguno está instalado todavía, y
+                # una medición tomada CON tarjeta no responde por este estado.
+                ports=self.port_descriptors_for(
+                    capability.model,
+                    backend_version=packet_tracer_version or "",
+                ),
                 module_options=module_options,
                 available_module_slots=[
                     option.slot for option in module_options if option.slot is not None
@@ -214,7 +269,9 @@ class EnterpriseCapabilityAdapter:
     def _speed_value(speed: object) -> str:
         return str(getattr(speed, "value", speed))
 
-    def _port_descriptor(self, model: DeviceModel, port) -> PortDescriptor:
+    def _port_descriptor(
+        self, model: DeviceModel, port, *, source: str = "catalog",
+    ) -> PortDescriptor:
         speed = self._speed_value(port.speed)
         normalized_speed = {
             "Ethernet": NormalizedPortSpeed.SPEED_10M,
@@ -236,6 +293,7 @@ class EnterpriseCapabilityAdapter:
             classes=classes,
             speed=normalized_speed,
             slot=port.slot,
+            source=source,
         )
 
     @staticmethod

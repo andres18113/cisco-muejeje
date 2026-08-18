@@ -18,6 +18,43 @@ from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runti
 )
 
 
+def _double_port_inventory(topology):
+    """La evidencia de puertos DEL DOBLE, que es el backend de estos tests.
+
+    Estos casos ejercitan la MECANICA del desplegador contra un runtime falso,
+    no la conformidad de Packet Tracer. El resolutor por defecto solo autoriza
+    modelos realmente medidos, asi que dejarlo aqui haria que el doble tomara
+    prestada evidencia tomada contra el backend real. Se declara la del doble,
+    igual que ya se declaran sus observaciones.
+    """
+    from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
+        PortInventoryEvidenceTier,
+        PortInventoryResolution,
+    )
+
+    by_model: dict[str, set[str]] = {item.model: set() for item in topology.devices}
+    model_of = {item.name: item.model for item in topology.devices}
+    for link in topology.links:
+        for name, port in (
+            (link.device_a, link.port_a), (link.device_b, link.port_b),
+        ):
+            if model_of.get(name):
+                by_model.setdefault(model_of[name], set()).add(port)
+
+    def _resolve(model, *, backend="packet_tracer", backend_version="", installed_modules=None):
+        return PortInventoryResolution(
+            model=model,
+            backend=backend,
+            backend_version=backend_version,
+            installed_modules=sorted(installed_modules or []),
+            tier=PortInventoryEvidenceTier.BACKEND_VERIFIED,
+            ports=sorted(by_model.get(model, set()), key=str.casefold),
+            reason="synthesised by the physical double in this test module",
+        )
+
+    return _resolve
+
+
 class FakePacketTracerTransport:
     def __init__(self) -> None:
         self.devices = {
@@ -121,8 +158,11 @@ def test_existing_exact_runtime_state_is_no_op_and_produces_manifest():
     transport = FakePacketTracerTransport()
     runtime = PacketTracerPhysicalTopologyRuntime(transport)
 
-    result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
-        _topology(),
+    topology = _topology()
+    result = EnterprisePhysicalTopologyDeployer(
+        runtime, port_inventory=_double_port_inventory(topology),
+    ).deploy(
+        topology,
         environment_fingerprint=EnvironmentFingerprint(
             backend="packet_tracer",
             backend_version="9.0.1.0858",
@@ -200,6 +240,7 @@ def test_lost_mutation_ack_is_unknown_dirty_and_never_replayed():
 
     result = EnterprisePhysicalTopologyDeployer(
         PacketTracerPhysicalTopologyRuntime(transport),
+        port_inventory=_double_port_inventory(topology),
     ).deploy(
         topology,
         environment_fingerprint=EnvironmentFingerprint(

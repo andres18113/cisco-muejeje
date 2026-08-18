@@ -50,6 +50,24 @@ from ...domain.enterprise.models.physical_deployment import (
 )
 from ...domain.enterprise.services.topology_identity import compute_topology_hashes
 from ...domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
+from ...domain.enterprise.models.port_inventory import PortInventoryResolution
+from ...infrastructure.catalog.measured_port_inventories import (
+    backend_verified_port_inventory,
+    module_state_token,
+)
+
+
+class PortInventoryResolver(Protocol):
+    """Authorises concrete port names for one model, build and module state."""
+
+    def __call__(
+        self,
+        model: str,
+        *,
+        backend: str = ...,
+        backend_version: str = ...,
+        installed_modules: list[str] | tuple[str, ...] | None = ...,
+    ) -> PortInventoryResolution: ...
 
 
 _SUCCESSFUL_DISPOSITIONS = {
@@ -115,8 +133,19 @@ def disposable_workspace_error(observation: PhysicalWorkspaceObservation) -> str
 class EnterprisePhysicalTopologyDeployer:
     """Ensure E4 physical state and issue a manifest only after exact read-back."""
 
-    def __init__(self, runtime: PhysicalTopologyRuntime) -> None:
+    def __init__(
+        self,
+        runtime: PhysicalTopologyRuntime,
+        *,
+        port_inventory: PortInventoryResolver = backend_verified_port_inventory,
+    ) -> None:
         self._runtime = runtime
+        #: Where concrete port names are authorised from.  It is injectable for
+        #: the same reason the runtime is: a caller driving a substitute backend
+        #: must supply the port evidence of *that* backend rather than borrow
+        #: measurements taken against a real one.  The default is the measured
+        #: catalogue, so a caller that says nothing gets the strict contract.
+        self._port_inventory = port_inventory
 
     def deploy(
         self,
@@ -140,6 +169,7 @@ class EnterprisePhysicalTopologyDeployer:
         preflight_errors, failure_code = _preflight(
             topology,
             environment_fingerprint=environment_fingerprint,
+            port_inventory=self._port_inventory,
         )
         if preflight_errors:
             for message in preflight_errors:
@@ -793,6 +823,7 @@ def _preflight(
     topology: TopologyPlan,
     *,
     environment_fingerprint: EnvironmentFingerprint,
+    port_inventory: PortInventoryResolver = backend_verified_port_inventory,
 ) -> tuple[list[str], PhysicalDeploymentFailureCode]:
     errors: list[str] = []
     if topology.errors:
@@ -873,10 +904,68 @@ def _preflight(
             used_ports.add(port_key)
         if not link.cable.strip():
             errors.append(f"Link {_link_id(link)!r} has no cable identity.")
-    return errors, (
-        PhysicalDeploymentFailureCode.INVALID_TOPOLOGY
-        if errors else PhysicalDeploymentFailureCode.NONE
+    if errors:
+        return errors, PhysicalDeploymentFailureCode.INVALID_TOPOLOGY
+
+    port_evidence_errors = _port_evidence_errors(
+        topology,
+        environment_fingerprint=environment_fingerprint,
+        port_inventory=port_inventory,
     )
+    if port_evidence_errors:
+        return (
+            port_evidence_errors,
+            PhysicalDeploymentFailureCode.PORT_EVIDENCE_UNAVAILABLE,
+        )
+    return [], PhysicalDeploymentFailureCode.NONE
+
+
+def _port_evidence_errors(
+    topology: TopologyPlan,
+    *,
+    environment_fingerprint: EnvironmentFingerprint,
+    port_inventory: PortInventoryResolver,
+) -> list[str]:
+    """Refuse concrete port names no backend evidence authorises.
+
+    A declared catalogue says what a model should have; only a measurement says
+    what this build actually reports.  Binding a link to a name from the first
+    is how a run reaches Packet Tracer asking for a port that does not exist,
+    so the check runs in preflight, before anything is mutated.
+
+    The query carries the module state the device will be in at binding time,
+    because a port that only exists once a card is installed is not evidence
+    about the same device without it.
+    """
+
+    planned = _planned_ports(topology)
+    modules_by_device: dict[str, list[str]] = {}
+    for module in topology.modules:
+        modules_by_device.setdefault(module.device, []).append(
+            module_state_token(module.module, module.slot),
+        )
+
+    errors: list[str] = []
+    for device in sorted(topology.devices, key=_device_id):
+        required = sorted(planned.get(_device_id(device), set()), key=str.casefold)
+        if not required:
+            continue
+        resolution = port_inventory(
+            device.model,
+            backend=environment_fingerprint.backend,
+            backend_version=environment_fingerprint.backend_version,
+            installed_modules=modules_by_device.get(device.name, ()),
+        )
+        unsupported = resolution.unsupported_ports(required)
+        if not unsupported:
+            continue
+        errors.append(
+            f"Device {_device_id(device)!r} ({device.model}) plans port(s) "
+            f"{', '.join(unsupported)} that no backend-verified port inventory "
+            f"authorises on {environment_fingerprint.backend} "
+            f"{environment_fingerprint.backend_version}: {resolution.reason or 'declared only'}"
+        )
+    return errors
 
 
 def _device_id(device: DevicePlan) -> str:
