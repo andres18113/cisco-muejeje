@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ...domain.enterprise.models.capabilities import DeviceCapabilities
 from ...domain.enterprise.models.control_plane import ControlPlaneIntent, ControlPlanePlan
 from ...domain.enterprise.models.configuration import ConfigurationPlan
 from ...domain.enterprise.models.deployment import DeploymentManifest
@@ -39,7 +40,11 @@ from ...domain.models.plans import TopologyPlan
 from .compile_configuration import compile_enterprise_configuration
 from .compile_control_plane import compile_enterprise_control_plane
 from .compile_enterprise import compile_enterprise_topology
-from .plan_enterprise_hardware import EnterpriseHardwareComposition, plan_enterprise_hardware
+from .plan_enterprise_hardware import (
+    EnterpriseHardwareComposition,
+    capability_catalog_for,
+    plan_enterprise_hardware,
+)
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,10 @@ class EnterpriseReferenceComposition:
     traffic: TrafficAttributionResult | None = None
     configuration: ConfigurationPlan | None = None
     control_plane: ControlPlanePlan | None = None
+    #: La resolucion de capacidades con la que se compilo E5, publicada para
+    #: que quien aplique use EXACTAMENTE la misma. Resolverla dos veces dejaria
+    #: que compilacion y aplicacion discrepen sobre que soporta el build.
+    capabilities: dict[str, DeviceCapabilities] = field(default_factory=dict)
     issues: list[str] = field(default_factory=list)
 
     @property
@@ -99,10 +108,17 @@ def compose_enterprise_reference(
         ] or ["E4 design produced no plan."])
     enterprise = designed.plan
 
+    # Un solo adapter para toda la composicion: la seleccion de hardware y la
+    # autorizacion de E5 tienen que leer la MISMA evidencia, de la misma
+    # version exacta. Construir uno por consumidor abre la puerta a que
+    # discrepen sin que nadie lo note.
+    capability_catalog = capability_catalog_for(
+        packet_tracer_version, capability_store=capability_store,
+    )
     hardware = plan_enterprise_hardware(
         enterprise,
         packet_tracer_version=packet_tracer_version,
-        capability_store=capability_store,
+        capability_catalog=capability_catalog,
         policy=policy,
     )
 
@@ -118,22 +134,35 @@ def compose_enterprise_reference(
             or ["E5 compilation produced no topology."],
         )
     topology = compiled.plan
+    # Resuelto sobre los modelos realmente desplegados. Un modelo sin
+    # evidencia no queda fuera del mapa: entra con todo en UNKNOWN, que es
+    # rechazo explicito y no una ausencia que alguien pueda leer como permiso.
+    capabilities = {
+        model: (
+            capability_catalog.capabilities_for(model, packet_tracer_version)
+            or DeviceCapabilities(model=model)
+        )
+        for model in sorted({device.model for device in topology.devices})
+    }
 
     traffic = attribute_enterprise_traffic(enterprise, topology)
     if not traffic.is_valid:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
+            capabilities=capabilities,
             issues=[f"traffic: {issue.message}" for issue in traffic.issues],
         )
 
     if deployment_manifest is None:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
+            capabilities=capabilities,
         )
 
     configuration = compile_enterprise_configuration(
         enterprise,
         topology,
+        capabilities=capabilities,
         deployment_manifest=deployment_manifest,
         traffic_by_link=traffic.contributions_by_link,
         packet_tracer_version=packet_tracer_version or "",
@@ -141,6 +170,7 @@ def compose_enterprise_reference(
     if not configuration.is_valid or configuration.plan is None:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
+            capabilities=capabilities,
             issues=[f"E5 configuration: {issue.message}" for issue in configuration.issues]
             or ["Configuration compilation produced no plan."],
         )
@@ -148,7 +178,7 @@ def compose_enterprise_reference(
     if control_plane_intent is None:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
-            configuration=configuration.plan,
+            capabilities=capabilities, configuration=configuration.plan,
         )
 
     control_plane = compile_enterprise_control_plane(
@@ -160,7 +190,7 @@ def compose_enterprise_reference(
     if not control_plane.is_valid or control_plane.plan is None:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
-            configuration=configuration.plan,
+            capabilities=capabilities, configuration=configuration.plan,
             issues=[f"E9 control plane: {issue.message}" for issue in control_plane.issues]
             or ["Control-plane compilation produced no plan."],
         )
@@ -170,6 +200,7 @@ def compose_enterprise_reference(
         hardware=hardware,
         topology=topology,
         traffic=traffic,
+        capabilities=capabilities,
         configuration=configuration.plan,
         control_plane=control_plane.plan,
     )

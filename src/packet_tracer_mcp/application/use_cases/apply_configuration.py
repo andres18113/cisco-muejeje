@@ -227,8 +227,38 @@ class ConfigurationApplicator:
                 deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
             )
 
+        # El conjunto REQUERIDO del plan es UNA unidad de preflight. Si alguna
+        # accion critica no esta autorizada, el plan no se aplica en parte:
+        # mutar un device en vivo por una transaccion que ya se sabe
+        # incompletable es exactamente lo que midio MEG-4 run 4, donde el reloj
+        # serial llego al router mientras doce acciones requeridas ya estaban
+        # resueltas UNKNOWN. `critical` es la distincion tipada que el modelo
+        # declara; una accion NO critica sigue pudiendo saltarse.
+        refusals = self._capability_refusals(plan, targets, capabilities)
+        required = [item for item in refusals if item[0].critical]
+        if required:
+            return self._preflight_failure(
+                plan,
+                (
+                    ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
+                    if any(
+                        status is CapabilityStatus.UNSUPPORTED
+                        for _action, status, _model in required
+                    )
+                    else ConfigurationFailureCode.CAPABILITY_UNKNOWN
+                ),
+                *sorted({
+                    f"{action.device_name}: required capability "
+                    f"{action.required_capability} is {status.value} for {model}."
+                    for action, status, model in required
+                }),
+                runtime_context=runtime_context,
+                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                started=started,
+            )
+
         results: dict[str, ActionApplicationResult] = {}
-        self._apply_capability_gates(plan, targets, capabilities, results)
+        self._capability_refusal_results(refusals, results)
 
         for phase in sorted({action.phase for action in plan.actions}):
             ready: list[ConfigurationAction] = []
@@ -425,13 +455,22 @@ class ConfigurationApplicator:
         return ""
 
     @staticmethod
-    def _apply_capability_gates(
+    def _capability_refusals(
         plan: ConfigurationPlan,
         targets: dict[str, RuntimeConfigurationTarget],
         capabilities: dict[str, DeviceCapabilities] | None,
-        results: dict[str, ActionApplicationResult],
-    ) -> None:
+    ) -> list[tuple[ConfigurationAction, CapabilityStatus, str]]:
+        """Resuelve TODA capacidad requerida antes de que exista una mutacion.
+
+        Las acciones con prefijo `endpoint_` quedan fuera por contrato: su
+        autorizacion no es una capacidad de modelo. Las que no declaran
+        requisito tampoco se evaluan aca -- no porque no tengan autorizacion,
+        sino porque la suya es de otra clase y vive en su propia barrera, como
+        el reloj serial, que se autoriza con evidencia de version exacta y un
+        DCE observado y ligado al manifiesto.
+        """
         capabilities = capabilities or {}
+        refusals: list[tuple[ConfigurationAction, CapabilityStatus, str]] = []
         for action in plan.actions:
             if not action.required_capability or action.required_capability.startswith("endpoint_"):
                 continue
@@ -443,16 +482,24 @@ class ConfigurationApplicator:
             )
             if status is CapabilityStatus.SUPPORTED:
                 continue
-            failure = (
-                ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
-                if status is CapabilityStatus.UNSUPPORTED
-                else ConfigurationFailureCode.CAPABILITY_UNKNOWN
-            )
+            refusals.append((action, status, target.model))
+        return refusals
+
+    @staticmethod
+    def _capability_refusal_results(
+        refusals: list[tuple[ConfigurationAction, CapabilityStatus, str]],
+        results: dict[str, ActionApplicationResult],
+    ) -> None:
+        for action, status, model in refusals:
             results[action.id] = ActionApplicationResult(
                 action_id=action.id,
                 status=ActionExecutionStatus.SKIPPED,
-                failure_code=failure,
-                message=f"{action.required_capability} is {status.value} for {target.model}.",
+                failure_code=(
+                    ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
+                    if status is CapabilityStatus.UNSUPPORTED
+                    else ConfigurationFailureCode.CAPABILITY_UNKNOWN
+                ),
+                message=f"{action.required_capability} is {status.value} for {model}.",
             )
 
     def _verify(

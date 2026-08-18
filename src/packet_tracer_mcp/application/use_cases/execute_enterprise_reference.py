@@ -437,6 +437,10 @@ def _execute_mutating_stages(
         configuration_result = ConfigurationApplicator(runtimes.configuration).apply(
             composed.configuration,
             actual_source_topology_hash=e4_identity,
+            # Exactamente el mapa con el que se compilo, no una segunda
+            # resolucion: si compilacion y aplicacion consultaran evidencia por
+            # separado podrian discrepar sobre el mismo build.
+            capabilities=composed.capabilities,
             runtime_context=runtime_context,
             deployment_manifest=oriented,
         )

@@ -143,6 +143,15 @@ def test_dependency_cycle_stops_preflight_before_inventory_or_mutation():
 
 
 def test_missing_capability_snapshot_is_unknown_and_not_blindly_applied():
+    """Sin snapshot no hay permiso, y ahora tampoco hay mutacion parcial.
+
+    Antes este test comprobaba que cada accion de red quedaba SKIPPED con
+    CAPABILITY_UNKNOWN mientras el resto del lote seguia. Lo primero se
+    conserva como codigo de fallo; lo segundo dejo de ser cierto a proposito:
+    MEG-4 run 4 midio que un plan con acciones requeridas UNKNOWN igual mutaba
+    un router en vivo, y el conjunto requerido pasa a ser una sola unidad de
+    preflight.
+    """
     topology, plan = _compiled()
     runtime = FakeConfigurationRuntime(topology)
 
@@ -150,18 +159,16 @@ def test_missing_capability_snapshot_is_unknown_and_not_blindly_applied():
         plan,
         actual_source_topology_hash=plan.source_topology_hash,
     )
-    network_actions = [
-        item for item in result.action_results
-        if next(action for action in plan.actions if action.id == item.action_id)
-        .required_capability.startswith("supports_")
+    gated = [
+        action for action in plan.actions
+        if action.required_capability.startswith("supports_")
     ]
 
-    assert network_actions
-    assert all(item.status is ActionExecutionStatus.SKIPPED for item in network_actions)
-    assert all(
-        item.failure_code is ConfigurationFailureCode.CAPABILITY_UNKNOWN
-        for item in network_actions
-    )
+    assert gated
+    assert runtime.apply_calls == []
+    assert result.status is ConfigurationApplicationStatus.FAILED
+    assert result.failure_code is ConfigurationFailureCode.CAPABILITY_UNKNOWN
+    assert any("unknown" in message for message in result.preflight_errors)
 
 
 def test_runtime_model_mismatch_stops_preflight_without_partial_application():
@@ -264,13 +271,16 @@ def test_unknown_svi_is_skipped_without_becoming_unsupported_or_blocking_l2():
     svi_actions = plan.actions_of_type(ConfigurationActionType.CONFIGURE_SVI)
     vlan_actions = plan.actions_of_type(ConfigurationActionType.CREATE_VLAN)
 
-    assert result.status is ConfigurationApplicationStatus.PARTIAL
-    assert all(by_id[action.id].status is ActionExecutionStatus.SKIPPED for action in svi_actions)
-    assert all(
-        by_id[action.id].failure_code is ConfigurationFailureCode.CAPABILITY_UNKNOWN
-        for action in svi_actions
-    )
-    assert all(by_id[action.id].status is ActionExecutionStatus.APPLIED for action in vlan_actions)
+    # Lo que este test siempre defendio y sigue defendiendo: UNKNOWN no se
+    # convierte en UNSUPPORTED, y no contagia a la capa 2. Lo que cambia es que
+    # una accion REQUERIDA sin autorizar ya no deja aplicar el resto del lote.
+    assert result.status is ConfigurationApplicationStatus.FAILED
+    assert result.failure_code is ConfigurationFailureCode.CAPABILITY_UNKNOWN
+    assert result.failure_code is not ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
+    assert svi_actions and vlan_actions
+    assert by_id == {}
+    assert runtime.apply_calls == []
+    assert capabilities["2960-24TT"].supports_vlan is CapabilityStatus.SUPPORTED
 
 
 def test_explicitly_unsupported_required_action_is_not_attempted():
@@ -285,12 +295,13 @@ def test_explicitly_unsupported_required_action_is_not_attempted():
         capabilities=capabilities,
     )
     pool = plan.actions_of_type(ConfigurationActionType.CONFIGURE_DHCP_POOL)[0]
-    pool_result = next(item for item in result.action_results if item.action_id == pool.id)
     attempted = {action_id for call in runtime.apply_calls for action_id in call}
 
-    assert pool_result.status is ActionExecutionStatus.SKIPPED
-    assert pool_result.failure_code is ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
+    assert pool.critical
     assert pool.id not in attempted
+    assert attempted == set()
+    assert result.status is ConfigurationApplicationStatus.FAILED
+    assert result.failure_code is ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
 
 
 def test_applied_is_not_promoted_to_verified_when_readback_is_partial():
