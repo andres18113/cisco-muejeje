@@ -285,6 +285,19 @@ def test_unobservable_requested_identity_does_not_erase_verified_module_effect()
         for item in identity_evidence
     )
 
+    placement_evidence = [
+        item for item in result.evidence_records
+        if item.id.startswith("e4/module-placement/")
+    ]
+    assert len(placement_evidence) == 2
+    assert all(
+        item.observation_status is ObservationStatus.UNOBSERVABLE
+        and item.verification_status is VerificationStatus.UNVERIFIED
+        and not item.verifies_claim
+        and item.limitations
+        for item in placement_evidence
+    ), "un manifiesto callado sobre la ubicacion se leeria como si la afirmara"
+
 
 def test_serial_manifest_binding_uses_fresh_two_ended_readback_and_runtime_identity():
     result = _deploy(SerialEffectRuntime())
