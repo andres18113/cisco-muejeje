@@ -16,7 +16,13 @@ from .command_dispatch import (
     classify_echo,
     terminal_is_idle,
 )
-from .ios_terminal import extract_terminal_command_window
+from .ios_terminal import (
+    DeviceIdentityEvidence,
+    DeviceIdentityProvenance,
+    classify_execution_identity,
+    execution_attribution_js,
+    extract_terminal_command_window,
+)
 
 
 # El `[^\n]*` final existe para que `group(0)` sea la LINEA de estadistica
@@ -61,6 +67,12 @@ class TypedPingResult:
     # ventana atribuible. Existe para que un caller pueda mostrar la medida sin
     # volver a leer la consola por fuera de esta frontera.
     statistics: str = ""
+    # Procedencia de la EJECUCION, no del pedido. Misma clasificacion que la
+    # consulta IOS registrada: sin atribucion unica, la identidad de la fuente
+    # de esta medida sigue siendo inobservable.
+    observed_device_name: str = ""
+    device_identity_provenance: str = DeviceIdentityProvenance.NOT_OBSERVED.value
+    device_identity_evidence: str = DeviceIdentityEvidence.NONE.value
 
 
 class TypedPingExecutor:
@@ -212,12 +224,44 @@ class TypedPingExecutor:
                 break
             self._sleep(self._interval)
 
+        # La ultima lectura ATRIBUYE: la estadistica que se va a interpretar y
+        # el device al que se le atribuye salen de la misma pasada. Una medida
+        # de reenvio sin fuente atribuida no es una medida de este device.
+        attribution = self._json_result(
+            execution_attribution_js(
+                source, before, command, prefer_command_prompt=True,
+            ),
+            5.0,
+        )
+        identity = classify_execution_identity(source_device, attribution)
+        if (
+            identity["device_identity_provenance"]
+            == DeviceIdentityProvenance.MISMATCHED.value
+        ):
+            # La sesion que respondio es de OTRO device. Su estadistica no dice
+            # nada del origen pedido, asi que no se devuelve ninguna medida.
+            return TypedPingResult(
+                False, False,
+                window_strategy=window.strategy,
+                failure_reason=(
+                    "device_provenance_mismatch:"
+                    + identity["observed_device_name"]
+                ),
+                **identity,
+            )
+        attributed = str(attribution.get("output") or "")
+        if attributed:
+            # Reinterpretar sobre la transcripcion del device atribuido, no
+            # sobre la de la busqueda por nombre.
+            window = extract_terminal_command_window(before, attributed, command)
+
         if not window.fresh:
             return TypedPingResult(
                 False,
                 False,
                 window_strategy=window.strategy,
                 failure_reason="no_fresh_ping_result",
+                **identity,
             )
         if not window.query_echo_found:
             # Un eco corrompido y un eco ausente son cosas distintas: el primero
@@ -233,6 +277,7 @@ class TypedPingExecutor:
                     if classification is DispatchClassification.ECHO_UNOBSERVABLE
                     else f"command_dispatch_mismatch:{classification.value}:{echoed}"
                 ),
+                **identity,
             )
         counts = _PACKET_COUNTS.search(window.output)
         if counts is not None:
@@ -243,6 +288,7 @@ class TypedPingExecutor:
                     fresh_output_observed=True,
                     window_strategy=window.strategy,
                     statistics=counts.group(0),
+                    **identity,
                 )
         ios = _IOS_SUCCESS_RATE.search(window.output)
         if ios is not None:
@@ -253,12 +299,14 @@ class TypedPingExecutor:
                     fresh_output_observed=True,
                     window_strategy=window.strategy,
                     statistics=ios.group(0),
+                    **identity,
                 )
         return TypedPingResult(
             False,
             False,
             window_strategy=window.strategy,
             failure_reason="no_fresh_ping_result",
+            **identity,
         )
 
     def _json_result(self, script: str, timeout: float) -> dict:

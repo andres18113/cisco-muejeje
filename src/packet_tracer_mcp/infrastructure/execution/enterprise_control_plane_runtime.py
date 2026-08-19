@@ -853,21 +853,31 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             )
         expected = expected_value
         matched = observed.reachable is expected
-        status = (
-            ActionExecutionStatus.VERIFIED if matched else ActionExecutionStatus.FAILED
-        )
+        # Contabilidad normal de campos, igual que toda otra observacion. Antes
+        # este era el unico observador que construia `fields` a mano, y por eso
+        # un `source_device_name` reclamado desaparecia del resultado en vez de
+        # reportarse: una afirmacion se estrechaba sin que su techo de evidencia
+        # se moviera, que es exactamente lo que `_unobservable_fields` existe
+        # para impedir.
+        fields = self._unobservable_fields(expectation)
+        fields["reachable"] = self._field(matched)
+        # Falla cerrado: sin atribucion unica de la sesion que midio, la
+        # identidad de la fuente sigue inobservable, y con ella el agregado.
+        self._certify_source_device(fields, expectation, observed)
+        # Ningun otro campo se toca. Un eco ICMP no observa que protocolo
+        # instalo la ruta, ni a que flujo compilado pertenece la afirmacion, ni
+        # -- desde este lado de la frontera -- que direccion se despacho. Todos
+        # quedan UNOBSERVABLE en vez de desaparecer, que es la diferencia entre
+        # declarar un techo y ocultarlo. La ruta que este reenvio exige como
+        # prerequisito NO los sustituye: ese es el contrato de esta etapa.
+        status = self._aggregate_status(fields)
         return RuntimeControlPlaneVerification(
             expectation_id=expectation.id,
             stage=ControlPlaneExecutionStage.BEHAVIOR,
             status=status,
             evidence_method="typed_ping_current_command_window",
             fresh_evidence=True,
-            fields={
-                "reachable": (
-                    FieldVerificationStatus.VERIFIED
-                    if matched else FieldVerificationStatus.FAILED
-                )
-            },
+            fields=fields,
             message=(
                 f"Fresh typed ping matched reachable={expected}."
                 if matched else f"Fresh typed ping differed from reachable={expected}."
@@ -1465,15 +1475,20 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         )
 
     @staticmethod
-    def _direct_observation(expectation, fields, evidence_method, message):
+    def _aggregate_status(fields) -> ActionExecutionStatus:
+        """Un campo fallado FALLA; todo verificado VERIFICA; lo demas no afirma."""
         statuses = set(fields.values())
-        status = (
+        return (
             ActionExecutionStatus.FAILED
             if FieldVerificationStatus.FAILED in statuses
             else ActionExecutionStatus.VERIFIED
             if statuses == {FieldVerificationStatus.VERIFIED}
             else ActionExecutionStatus.UNOBSERVABLE
         )
+
+    @classmethod
+    def _direct_observation(cls, expectation, fields, evidence_method, message):
+        status = cls._aggregate_status(fields)
         return RuntimeControlPlaneVerification(
             expectation_id=expectation.id,
             stage=ControlPlaneExecutionStage.OBSERVED,

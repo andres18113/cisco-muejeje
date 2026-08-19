@@ -164,9 +164,17 @@ def test_only_typed_reachability_can_be_verified():
     source = actions[reachability.action_id].device_name
     assert ping.calls == [(source, reachability.expected["destination_ipv4"])]
     assert verified.stage is ControlPlaneExecutionStage.BEHAVIOR
-    assert verified.status is ActionExecutionStatus.VERIFIED
     assert verified.fresh_evidence
-    assert verified.fields == {"reachable": FieldVerificationStatus.VERIFIED}
+    # Contabilidad normal: TODO campo reclamado aparece. Esta prueba afirmaba
+    # antes `fields == {"reachable": ...}`, que era el defecto: el observador
+    # construia el mapa a mano y los demas campos reclamados desaparecian del
+    # resultado en lugar de reportarse como no observados.
+    assert set(verified.fields) == set(reachability.expected)
+    assert verified.fields["reachable"] is FieldVerificationStatus.VERIFIED
+    # Un eco ICMP no observa que protocolo instalo la ruta. El agregado se
+    # queda abajo por eso, que es el techo real de una afirmacion de reenvio.
+    assert verified.fields["protocol"] is FieldVerificationStatus.UNOBSERVABLE
+    assert verified.status is ActionExecutionStatus.UNOBSERVABLE
     assert unobservable.stage is ControlPlaneExecutionStage.OBSERVED
     assert unobservable.status is ActionExecutionStatus.UNOBSERVABLE
     assert not unobservable.fresh_evidence

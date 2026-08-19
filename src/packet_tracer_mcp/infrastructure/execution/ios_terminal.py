@@ -1129,6 +1129,117 @@ class _PagerCapture:
         )
 
 
+def execution_attribution_js(
+    device_literal: str,
+    baseline: str,
+    command: str,
+    *,
+    prefer_command_prompt: bool = False,
+) -> str:
+    """Script que LEE la salida y ATRIBUYE la sesion en la misma enumeracion.
+
+    No pregunta "como se llama el device que pedi". Recorre la red y se queda
+    con el unico device que puede haber producido esta sesion, ya sea porque su
+    objeto terminal es el mismo al que se despacho, ya sea porque su
+    transcripcion retiene el contexto de despacho con el comando detras. La
+    salida devuelta sale de ESE device, no de una segunda busqueda por nombre:
+    asi la evidencia y su procedencia no pueden venir de dos devices distintos.
+
+    `prefer_command_prompt` existe porque un endpoint responde por
+    `getCommandPrompt` y un IOS por `getCommandLine`. El objetivo y los
+    candidatos se resuelven SIEMPRE con el mismo orden de accesores: comparar
+    terminales obtenidas por caminos distintos no compararia lo mismo.
+    """
+    resolve = (
+        "var __term=function(dev){var r=null;"
+        + (
+            "try{if(dev&&typeof dev.getCommandPrompt==='function'){"
+            "r=dev.getCommandPrompt();if(r)return r;}}catch(pe){}"
+            if prefer_command_prompt else ""
+        )
+        + "try{if(dev&&typeof dev.getCommandLine==='function'){"
+        "r=dev.getCommandLine();if(r)return r;}}catch(le){}return null;};"
+    )
+    return "".join((
+        "try{var net=ipc.network();", resolve,
+        "var d=net.getDevice(", device_literal, ");var t=__term(d);",
+        "if(!t||typeof t.getOutput!=='function'){",
+        "reportResult(JSON.stringify({found:false,",
+        "failure_reason:'IOS terminal unavailable'}));}else{",
+        "var base=", json.dumps(baseline), ";",
+        "var cmd=", json.dumps(command), ";",
+        # Anclar por el SUFIJO retenido, no por prefijo. Es la misma algebra de
+        # frescura que `fresh_command_window` ya midio en este build: `after`
+        # puede dejar de empezar por `before` sin haber perdido nada -- el pager
+        # borra su `--More--` al salir, y un buffer largo rueda por la cabeza.
+        # Exigir prefijo rechazaba justamente esas sesiones, que son frescas y
+        # atribuibles.
+        "var anchor=base;",
+        "while(anchor.length&&anchor.charCodeAt(anchor.length-1)<=32)"
+        "{anchor=anchor.substring(0,anchor.length-1);}",
+        "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
+        "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
+        "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
+        "for(var i=0;i<n;i++){var dev=null;",
+        "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
+        "if(!dev)continue;var cl=__term(dev);",
+        "if(!cl||typeof cl.getOutput!=='function')continue;",
+        "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
+        "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
+        "if(cl===t){byObject.push(nm);outObject=co;}",
+        # Contexto retenido MAS el comando despachado detras de el. El gemelo
+        # ocioso no basta con compartir banner: tendria que haber recibido este
+        # mismo comando justo despues de este mismo contexto, y los despachos
+        # registrados van de a uno.
+        "if(anchor!==''){var at=co.indexOf(anchor);",
+        "if(at>=0&&co.substring(at+anchor.length).indexOf(cmd)>=0){",
+        "byTranscript.push(nm);outTranscript=co;}}}",
+        "var owner='',evidence='none',candidates=0,out='';",
+        "if(byObject.length===1){owner=byObject[0];",
+        "evidence='terminal_object_identity';candidates=1;out=outObject;}",
+        "else if(byObject.length>1){candidates=byObject.length;}",
+        "else if(byTranscript.length===1){owner=byTranscript[0];",
+        "evidence='session_transcript_continuity';candidates=1;",
+        "out=outTranscript;}else{candidates=byTranscript.length;}",
+        "if(owner===''){out=String(t.getOutput());}",
+        "reportResult(JSON.stringify({found:true,",
+        "configuration_channel:out!==base,output:out,owner_name:owner,",
+        "owner_evidence:evidence,owner_candidates:candidates,",
+        "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
+    ))
+
+
+def classify_execution_identity(
+    device_name: str, attribution: dict,
+) -> dict[str, str]:
+    """Clasifica la atribucion. Nunca deriva identidad del nombre pedido."""
+    owner = str(attribution.get("owner_name") or "")
+    candidates = attribution.get("owner_candidates")
+    evidence = _identity_evidence(attribution.get("owner_evidence"))
+    # Un nombre sin via de atribucion reconocida no es atribucion. Aceptarlo
+    # seria confiar en un dato cuya procedencia no se sabe, que es justamente
+    # lo que este campo no puede hacer.
+    if owner and evidence is not DeviceIdentityEvidence.NONE:
+        return {
+            "observed_device_name": owner,
+            "device_identity_provenance": (
+                DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+                if owner == device_name
+                else DeviceIdentityProvenance.MISMATCHED.value
+            ),
+            "device_identity_evidence": evidence.value,
+        }
+    return {
+        "observed_device_name": "",
+        "device_identity_provenance": (
+            DeviceIdentityProvenance.AMBIGUOUS.value
+            if type(candidates) is int and candidates > 1
+            else DeviceIdentityProvenance.NOT_OBSERVED.value
+        ),
+        "device_identity_evidence": DeviceIdentityEvidence.NONE.value,
+    }
+
+
 def _identity_evidence(value: object) -> DeviceIdentityEvidence:
     """Una via de atribucion desconocida no se acepta como si fuera prueba."""
     try:
@@ -1301,64 +1412,8 @@ class ControlledIosExecutor:
                 return {"found": False, "failure_reason": "IOS output was malformed."}
 
         def attribute() -> dict:
-            """Lee la salida Y atribuye la sesion en la MISMA enumeracion.
-
-            No pregunta "como se llama el device que pedi". Recorre la red y se
-            queda con el unico device que puede haber producido esta sesion, ya
-            sea porque su objeto terminal es el mismo al que se despacho, ya
-            sea porque su transcripcion continua exactamente la linea base. La
-            salida devuelta sale de ESE device, no de una segunda busqueda por
-            nombre: asi la evidencia y su procedencia no pueden venir de dos
-            devices distintos.
-            """
-            attribution_js = "".join((
-                "try{var net=ipc.network();var d=net.getDevice(", name, ");",
-                "var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
-                "if(!t||typeof t.getOutput!=='function'){",
-                "reportResult(JSON.stringify({found:false,",
-                "failure_reason:'IOS terminal unavailable'}));}else{",
-                "var base=", json.dumps(baseline), ";",
-                "var cmd=", command_json, ";",
-                # Anclar por el SUFIJO retenido, no por prefijo. Es la misma
-                # algebra de frescura que `fresh_command_window` ya midio en
-                # este build: `after` puede dejar de empezar por `before` sin
-                # haber perdido nada -- el pager borra su `--More--` al salir, y
-                # un buffer largo rueda por la cabeza. Exigir prefijo rechazaba
-                # justamente esas sesiones, que son frescas y atribuibles.
-                "var anchor=base;",
-                "while(anchor.length&&anchor.charCodeAt(anchor.length-1)<=32)"
-                "{anchor=anchor.substring(0,anchor.length-1);}",
-                "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
-                "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
-                "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
-                "for(var i=0;i<n;i++){var dev=null;",
-                "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
-                "if(!dev||typeof dev.getCommandLine!=='function')continue;",
-                "var cl=null;try{cl=dev.getCommandLine();}catch(ce){cl=null;}",
-                "if(!cl||typeof cl.getOutput!=='function')continue;",
-                "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
-                "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
-                "if(cl===t){byObject.push(nm);outObject=co;}",
-                # Contexto retenido MAS el comando despachado detras de el. El
-                # gemelo ocioso no basta con compartir banner: tendria que haber
-                # recibido este mismo comando justo despues de este mismo
-                # contexto, y las consultas registradas van de a una.
-                "if(anchor!==''){var at=co.indexOf(anchor);",
-                "if(at>=0&&co.substring(at+anchor.length).indexOf(cmd)>=0){",
-                "byTranscript.push(nm);outTranscript=co;}}}",
-                "var owner='',evidence='none',candidates=0,out='';",
-                "if(byObject.length===1){owner=byObject[0];",
-                "evidence='terminal_object_identity';candidates=1;out=outObject;}",
-                "else if(byObject.length>1){candidates=byObject.length;}",
-                "else if(byTranscript.length===1){owner=byTranscript[0];",
-                "evidence='session_transcript_continuity';candidates=1;",
-                "out=outTranscript;}else{candidates=byTranscript.length;}",
-                "if(owner===''){out=String(t.getOutput());}",
-                "reportResult(JSON.stringify({found:true,",
-                "configuration_channel:out!==base,output:out,owner_name:owner,",
-                "owner_evidence:evidence,owner_candidates:candidates,",
-                "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
-            ))
+            """Lee la salida Y atribuye la sesion en la MISMA enumeracion."""
+            attribution_js = execution_attribution_js(name, baseline, command)
             attributed = self._send_and_wait(attribution_js, 5.0)
             if attributed is None or attributed.startswith("ERROR:"):
                 return {"found": False}
@@ -1371,7 +1426,7 @@ class ControlledIosExecutor:
         elapsed = int((monotonic() - started) * 1000)
         attribution = attribute()
         output = str(attribution.get("output") or "")
-        identity = self._execution_identity(device_name, attribution)
+        identity = classify_execution_identity(device_name, attribution)
         if (
             identity["device_identity_provenance"]
             == DeviceIdentityProvenance.MISMATCHED.value
@@ -1465,39 +1520,6 @@ class ControlledIosExecutor:
                 **identity,
             ))
         return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(capture.output), failure_reason=capture.failure_reason, duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=capture.truncated, output_complete=capture.complete, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed, **identity))
-
-    @staticmethod
-    def _execution_identity(
-        device_name: str, attribution: dict,
-    ) -> dict[str, str]:
-        """Clasifica la atribucion. Nunca deriva identidad del nombre pedido."""
-        owner = str(attribution.get("owner_name") or "")
-        candidates = attribution.get("owner_candidates")
-        evidence = _identity_evidence(attribution.get("owner_evidence"))
-        # Un nombre sin via de atribucion reconocida no es atribucion. Aceptarlo
-        # seria confiar en un dato cuya procedencia no se sabe, que es
-        # justamente lo que este campo no puede hacer.
-        if owner and evidence is not DeviceIdentityEvidence.NONE:
-            return {
-                "observed_device_name": owner,
-                "device_identity_provenance": (
-                    DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
-                    if owner == device_name
-                    else DeviceIdentityProvenance.MISMATCHED.value
-                ),
-                "device_identity_evidence": evidence.value,
-            }
-        ambiguous = (
-            type(candidates) is int and candidates > 1
-        )
-        return {
-            "observed_device_name": "",
-            "device_identity_provenance": (
-                DeviceIdentityProvenance.AMBIGUOUS.value if ambiguous
-                else DeviceIdentityProvenance.NOT_OBSERVED.value
-            ),
-            "device_identity_evidence": DeviceIdentityEvidence.NONE.value,
-        }
 
     @staticmethod
     def _registered_command(query_id: OperationalQueryId, *, interface: str) -> str:
