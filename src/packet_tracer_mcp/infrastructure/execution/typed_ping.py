@@ -70,6 +70,11 @@ class TypedPingResult:
     # Procedencia de la EJECUCION, no del pedido. Misma clasificacion que la
     # consulta IOS registrada: sin atribucion unica, la identidad de la fuente
     # de esta medida sigue siendo inobservable.
+    # Destino que el ejecutor REALMENTE despacho y cuyo eco exacto confirmo.
+    # No es el argumento pedido de vuelta: solo se rellena en los retornos que
+    # ya pasaron la comprobacion de eco, asi que un despacho corrompido o una
+    # ventana rancia lo dejan vacio y nadie puede certificar la direccion.
+    dispatched_destination: str = ""
     observed_device_name: str = ""
     device_identity_provenance: str = DeviceIdentityProvenance.NOT_OBSERVED.value
     device_identity_evidence: str = DeviceIdentityEvidence.NONE.value
@@ -288,6 +293,7 @@ class TypedPingExecutor:
                     fresh_output_observed=True,
                     window_strategy=window.strategy,
                     statistics=counts.group(0),
+                    dispatched_destination=target,
                     **identity,
                 )
         ios = _IOS_SUCCESS_RATE.search(window.output)
@@ -299,6 +305,7 @@ class TypedPingExecutor:
                     fresh_output_observed=True,
                     window_strategy=window.strategy,
                     statistics=ios.group(0),
+                    dispatched_destination=target,
                     **identity,
                 )
         return TypedPingResult(

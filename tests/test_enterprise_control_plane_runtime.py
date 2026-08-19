@@ -171,10 +171,11 @@ def test_only_typed_reachability_can_be_verified():
     # resultado en lugar de reportarse como no observados.
     assert set(verified.fields) == set(reachability.expected)
     assert verified.fields["reachable"] is FieldVerificationStatus.VERIFIED
-    # Un eco ICMP no observa que protocolo instalo la ruta. El agregado se
-    # queda abajo por eso, que es el techo real de una afirmacion de reenvio.
-    assert verified.fields["protocol"] is FieldVerificationStatus.UNOBSERVABLE
+    # El agregado se queda abajo porque esta expectativa reclama campos que
+    # ninguna medida observa. Es el techo real de una afirmacion de reenvio, no
+    # un fallo: nada se cae, simplemente no todo se observa.
     assert verified.status is ActionExecutionStatus.UNOBSERVABLE
+    assert FieldVerificationStatus.FAILED not in set(verified.fields.values())
     assert unobservable.stage is ControlPlaneExecutionStage.OBSERVED
     assert unobservable.status is ActionExecutionStatus.UNOBSERVABLE
     assert not unobservable.fresh_evidence

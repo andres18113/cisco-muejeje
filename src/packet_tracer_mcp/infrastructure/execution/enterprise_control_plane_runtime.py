@@ -24,6 +24,7 @@ from ...domain.enterprise.models.control_plane import (
     ControlPlaneAction,
     ControlPlaneVerificationExpectation,
     ControlPlaneVerificationKind,
+    DynamicRoutingProtocol,
     EtherChannelProtocol,
     LinkFailureScenario,
     StpMode,
@@ -864,12 +865,29 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         # Falla cerrado: sin atribucion unica de la sesion que midio, la
         # identidad de la fuente sigue inobservable, y con ella el agregado.
         self._certify_source_device(fields, expectation, observed)
-        # Ningun otro campo se toca. Un eco ICMP no observa que protocolo
-        # instalo la ruta, ni a que flujo compilado pertenece la afirmacion, ni
-        # -- desde este lado de la frontera -- que direccion se despacho. Todos
-        # quedan UNOBSERVABLE en vez de desaparecer, que es la diferencia entre
-        # declarar un techo y ocultarlo. La ruta que este reenvio exige como
-        # prerequisito NO los sustituye: ese es el contrato de esta etapa.
+        # La direccion la reporta el EJECUTOR, no el llamador: solo la rellena
+        # en los retornos que ya confirmaron el eco exacto de `ping <ip>`, asi
+        # que compararla contra lo reclamado ata la medida a esta direccion. Un
+        # despacho corrompido la deja vacia y el campo se queda inobservable.
+        if "destination_ipv4" in fields:
+            dispatched = str(getattr(observed, "dispatched_destination", "") or "")
+            if dispatched:
+                fields["destination_ipv4"] = self._field(dispatched == destination)
+        # El protocolo se ata a la ACCION APLICADA cuyo comportamiento se mide,
+        # no al valor reclamado. `action` sale de `_applied_actions`, es decir
+        # de lo que este producto aplico de verdad en esta corrida; una
+        # expectativa que reclamase otro protocolo del que se aplico FALLA.
+        if "protocol" in fields:
+            applied_protocol = self._applied_protocol(action)
+            if applied_protocol:
+                fields["protocol"] = self._field(
+                    applied_protocol == expectation.expected.get("protocol")
+                )
+        # `traffic_flow_id` NO se toca. Es la etiqueta con la que el compilador
+        # identifica la afirmacion, no algo que ninguna medida pueda observar:
+        # el unico comando registrado es `ping <ip>` y nada lo devuelve. Se
+        # reporta UNOBSERVABLE en vez de desaparecer, que es la diferencia entre
+        # declarar un techo y ocultarlo.
         status = self._aggregate_status(fields)
         return RuntimeControlPlaneVerification(
             expectation_id=expectation.id,
@@ -1473,6 +1491,17 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             FieldVerificationStatus.VERIFIED
             if matched else FieldVerificationStatus.FAILED
         )
+
+    @staticmethod
+    def _applied_protocol(action) -> str:
+        """Protocolo de la accion tipada que de verdad se aplico."""
+        if isinstance(action, ConfigureRipv2):
+            return DynamicRoutingProtocol.RIPV2.value
+        if isinstance(action, ConfigureOspfv2):
+            return DynamicRoutingProtocol.OSPFV2.value
+        if isinstance(action, ConfigureEigrpIpv4):
+            return DynamicRoutingProtocol.EIGRP.value
+        return ""
 
     @staticmethod
     def _aggregate_status(fields) -> ActionExecutionStatus:

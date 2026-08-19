@@ -218,10 +218,17 @@ def test_only_dimensions_with_live_attributed_evidence_are_supported():
     # vivo de R2-0 lo demuestra sobre este modelo y este build.
     # ROUTING_ROUTE_STATE se anade con la evidencia de R2-B fase 4, donde
     # `show ip route rip` se leyo en vivo en este mismo modelo y build.
+    # ROUTING_BEHAVIOR se anade con R3: el `TypedPingExecutor` de produccion
+    # despacho su `ping` registrado en el terminal de un 2911 disposable de este
+    # build, con ventana fresca, eco exacto, estadistica parseada y sesion
+    # atribuida a un unico device enumerado. Es el CANAL de medida, no su
+    # resultado -- R3 cerro con `Success rate is 0 percent (0/5)` y cualifica
+    # igual, porque lo que se midio es que se puede medir.
     assert supported == {
         Dimension.RIPV2_CONFIG,
         Dimension.ROUTING_PROCESS_STATE,
         Dimension.ROUTING_ROUTE_STATE,
+        Dimension.ROUTING_BEHAVIOR,
     }
 
 

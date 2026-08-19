@@ -237,3 +237,71 @@ block: `MCP-PROBE-R2B-R1`, `-R2`, `-PCA`, `-PCC`.
 Residue of `MCP-PROBE-R2B-*`: none. Semantic probe links remaining: 0. The
 backend-managed `Power Distribution Device` was preserved, as it is not probe
 residue and is not removable by this project.
+
+---
+
+# R3 — typed measurement channel on 2911, 2026-08-19
+
+Qualifies the capability the control-plane gate protects: whether the
+**production** `TypedPingExecutor` can measure at all on this model and build.
+It deliberately does not qualify forwarding. Whether a destination answers is
+`reachable`, which the product measures per run.
+
+## Environment and slice
+
+| Item | Value |
+| --- | --- |
+| Packet Tracer version | `9.0.1.0858`, confirmed at OS level from the running GUI process |
+| Device | one disposable `2911`, probe name `__MCP_PROBE_RB_R1` |
+| Import isolation | `ISOLATED`, measured in the qualifying process before any mutation |
+| Baseline workspace | 0 semantic devices, 0 links |
+| Path | production runtimes only — physical create, typed `ConfigureRoutedInterface`, registered `SHOW_IP_INTERFACE_BRIEF`, `TypedPingExecutor` |
+
+`GigabitEthernet0/0` was addressed `10.254.254.1/30` through the typed
+configuration action and read back live as
+`GigabitEthernet0/0 10.254.254.1 down down` — unlinked, so nothing answers.
+
+## What was measured live
+
+| Claim | Result |
+| --- | --- |
+| Typed ping dispatches on a 2911 IOS terminal | yes, after the registered read-back settled the session |
+| Fresh attributable window | yes, `window_strategy = prefix_delta` |
+| Exact echo of the dispatched `ping <ip>` | yes — no `command_dispatch_mismatch` |
+| Statistics line parsed by the production parser | `Success rate is 0 percent (0/5)`, both measurements |
+| Execution provenance | `confirmed_unique`, `observed_device_name = __MCP_PROBE_RB_R1`, evidence `session_transcript_continuity` |
+| Reachability | `False` on the interface address and on an unreachable target |
+
+**Both measurements returned `reachable = False`, and that is what qualifies
+the channel.** The dimension is measurability, not success. A qualification
+that had required a successful ping would have been qualifying forwarding.
+
+Recorded rather than smoothed over: the first attempt returned
+`prompt_not_ready_command_in_flight`. The idle guard refused to dispatch into a
+terminal still printing the configuration batch. That is the guard working; a
+registered query was used to settle the session before measuring.
+
+## Cleanup
+
+`__MCP_PROBE_RB_R1` deleted by exact name in a finally-protected block.
+Semantic inventory returned to 0 devices and 0 links. Backend-managed
+`Power Distribution Device` objects went from two to three; they are
+backend-created, zero-port, not probe residue and not removable by this
+project.
+
+## Limitations of this evidence
+
+1. One model (`2911`), one build (`9.0.1.0858`), one session. A qualification,
+   not a statistical claim.
+2. It qualifies the **measurement channel only**. It says nothing about whether
+   any route forwards, and must never be cited for that.
+3. The interface was `down/down`, so no ICMP left the device. What was
+   exercised is dispatch, echo, window attribution, statistic parsing and
+   execution provenance — precisely what the gate protects.
+
+## Result
+
+```text
+ROUTING_BEHAVIOR_CHANNEL_2911_9_0_1_0858 = QUALIFIED
+FORWARDING_SUCCESS                       = NOT CLAIMED BY THIS QUALIFICATION
+```

@@ -67,21 +67,40 @@ def test_the_behaviour_dimension_gates_the_measurement_and_never_carries_it():
     }
 
 
-def test_the_catalogue_leaves_forwarding_behaviour_unknown_until_it_is_measured():
-    """UNKNOWN no se hereda ni se deduce de las dimensiones vecinas."""
+def test_forwarding_behaviour_is_granted_only_where_it_was_measured():
+    """R3 midio el canal en 2911/9.0.1.0858; nadie mas lo hereda."""
     profiles = packet_tracer_control_plane_capabilities("9.0.1.0858")
     profile = profiles["2911"]
 
     assert profile.status(
-        ControlPlaneCapabilityDimension.RIPV2_CONFIG,
+        ControlPlaneCapabilityDimension.ROUTING_BEHAVIOR,
     ) is SecurityCapabilityStatus.SUPPORTED
+    assert "R3" in profile.evidence_source
+    # Cualificar el canal de medida no cualifica nada mas: las dimensiones sin
+    # medicion atribuida siguen UNKNOWN en el mismo modelo.
     assert profile.status(
-        ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
-    ) is SecurityCapabilityStatus.SUPPORTED
-    # Saber leer el proceso y la ruta NO afirma nada sobre reenviar.
+        ControlPlaneCapabilityDimension.ROUTING_FAILOVER,
+    ) is SecurityCapabilityStatus.UNKNOWN
     assert profile.status(
+        ControlPlaneCapabilityDimension.HSRP_BEHAVIOR,
+    ) is SecurityCapabilityStatus.UNKNOWN
+
+
+def test_another_model_never_inherits_the_measured_behaviour_channel():
+    """La evidencia es por modelo: otro modelo no se autoriza con la ajena."""
+    profiles = packet_tracer_control_plane_capabilities("9.0.1.0858")
+
+    assert profiles["2960-24TT"].status(
         ControlPlaneCapabilityDimension.ROUTING_BEHAVIOR,
     ) is SecurityCapabilityStatus.UNKNOWN
+
+
+def test_a_different_build_carries_its_own_profile_version():
+    """La evidencia es por build: el perfil se emite version-scoped."""
+    other = packet_tracer_control_plane_capabilities("8.2.2.0400")["2911"]
+
+    assert other.packet_tracer_version == "8.2.2.0400"
+    assert "9.0.1.0858" not in (other.packet_tracer_version or "")
 
 
 def test_authorising_the_measurement_does_not_fabricate_its_success():
@@ -162,19 +181,64 @@ def test_a_measurement_taken_on_another_device_never_certifies_the_claimed_one()
 
 
 def test_the_forwarding_result_is_not_satisfied_by_route_evidence():
-    """Un eco ICMP no observa qué protocolo instaló la ruta que usó.
+    """La ruta ORDENA la evidencia de reenvío; no la sustituye.
 
-    El prerequisito de ruta ORDENA la evidencia; no la sustituye. Por eso
-    `protocol` se reporta UNOBSERVABLE en lugar de heredarse de la ruta ya
-    verificada, y el agregado de reenvío se queda abajo con él.
+    `reachable` sale del ping y de nada mas, y `traffic_flow_id` sigue sin ser
+    observable por ninguna medida, asi que una ruta verificada no puede llevar
+    el agregado de reenvio a VERIFIED por si sola.
     """
     expectation = _reachability_expectation(source="A-EDGE-RTR-01")
     result = _verify(expectation, _ping(reachable=True, source="A-EDGE-RTR-01"))
 
-    assert result.fields["protocol"] is FieldVerificationStatus.UNOBSERVABLE
+    assert result.fields["reachable"] is FieldVerificationStatus.VERIFIED
     assert result.fields["traffic_flow_id"] is FieldVerificationStatus.UNOBSERVABLE
     assert result.status is ActionExecutionStatus.UNOBSERVABLE
     assert result.evidence_method == "typed_ping_current_command_window"
+
+
+def test_the_protocol_is_bound_to_the_action_that_was_actually_applied():
+    """No basta con reclamarlo: se compara contra lo que se aplico de verdad."""
+    expectation = _reachability_expectation(source="A-EDGE-RTR-01")
+    result = _verify(expectation, _ping(reachable=True, source="A-EDGE-RTR-01"))
+
+    assert result.fields["protocol"] is FieldVerificationStatus.VERIFIED
+
+
+def test_a_protocol_claim_that_contradicts_the_applied_action_fails():
+    expectation = _reachability_expectation(source="A-EDGE-RTR-01")
+    expectation = expectation.model_copy(update={
+        "expected": {**expectation.expected, "protocol": "ospfv2"},
+    })
+    result = _verify(expectation, _ping(reachable=True, source="A-EDGE-RTR-01"))
+
+    assert result.fields["protocol"] is FieldVerificationStatus.FAILED
+    assert result.status is ActionExecutionStatus.FAILED
+
+
+def test_the_destination_is_certified_from_the_dispatched_echo_not_the_request():
+    expectation = _reachability_expectation(source="A-EDGE-RTR-01")
+
+    echoed = _verify(
+        expectation,
+        _ping(reachable=True, source="A-EDGE-RTR-01", dispatched="10.0.0.10"),
+    )
+    crossed = _verify(
+        expectation,
+        _ping(reachable=True, source="A-EDGE-RTR-01", dispatched="10.0.0.99"),
+    )
+    unreported = _verify(
+        expectation,
+        _ping(reachable=True, source="A-EDGE-RTR-01", dispatched=""),
+    )
+
+    assert echoed.fields["destination_ipv4"] is FieldVerificationStatus.VERIFIED
+    # Un resultado cruzado, de otra medida, no puede certificar esta direccion.
+    assert crossed.fields["destination_ipv4"] is FieldVerificationStatus.FAILED
+    assert crossed.status is ActionExecutionStatus.FAILED
+    # Y sin eco confirmado el ejecutor no la reporta: falla cerrado.
+    assert unreported.fields["destination_ipv4"] is (
+        FieldVerificationStatus.UNOBSERVABLE
+    )
 
 
 def test_an_unmeasurable_ping_stays_unobservable_rather_than_failing():
@@ -238,6 +302,7 @@ def _ping(
     *,
     reachable: bool,
     source: str,
+    dispatched: str = "10.0.0.10",
     provenance: DeviceIdentityProvenance = (
         DeviceIdentityProvenance.CONFIRMED_UNIQUE
     ),
@@ -247,6 +312,7 @@ def _ping(
         fresh_output_observed=True,
         window_strategy="prefix_delta",
         statistics="Success rate is 100 percent (5/5)",
+        dispatched_destination=dispatched,
         observed_device_name=source,
         device_identity_provenance=(
             provenance.value if source

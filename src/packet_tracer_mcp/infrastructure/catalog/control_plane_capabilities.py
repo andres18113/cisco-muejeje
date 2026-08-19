@@ -24,7 +24,7 @@ from ...domain.enterprise.models.security_plan import SecurityCapabilityStatus a
 _RIPV2_LIVE_QUALIFICATION = (
     "R2-0 and R2-B controlled Packet Tracer live qualifications on disposable "
     "2911 routers; configuration and routing-process state from R2-0, learned "
-    "route state from R2-B phase 4; "
+    "route state from R2-B phase 4, typed measurement channel from R3; "
     "see docs/architecture/ripv2-runtime-qualification.md"
 )
 
@@ -65,6 +65,18 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
             # exigiendo su propia consulta y su propio parseo fresco, y
             # devuelve UNOBSERVABLE cuando no hay filas que leer.
             Dimension.ROUTING_ROUTE_STATE: Status.SUPPORTED,
+            # R3 midio en vivo, sobre este modelo y build, que el
+            # `TypedPingExecutor` de produccion despacha su `ping` registrado en
+            # el terminal de un 2911, obtiene ventana fresca con eco exacto,
+            # parsea la linea de estadistica y atribuye la sesion a un unico
+            # device enumerado del runtime.
+            #
+            # La dimension es el CANAL DE MEDIDA, no su resultado: R3 cerro sus
+            # dos medidas con `Success rate is 0 percent (0/5)` y eso la
+            # cualifica igual. Que un destino conteste es `reachable`, y lo mide
+            # el producto en cada corrida. Marcarla SUPPORTED autoriza medir; no
+            # afirma que nada reenvie.
+            Dimension.ROUTING_BEHAVIOR: Status.SUPPORTED,
         },
     ),
     "2960-24TT": (_NO_MODEL_ATTRIBUTED_EVIDENCE, {}),
