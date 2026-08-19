@@ -74,7 +74,7 @@ ORIENTATION            = VERIFIED
 E5                     = 88 of 88 APPLIED; aggregate `partial` (truthful)
                          15 verified / 38 unobservable / 35 partial
 FOUNDATIONS            = 12 declared (9 l3_interface + 3 link), all VERIFIED
-                         before the runtime was touched
+                         before the runtime was touched -- see row 4 below
 RIPV2_PROCESS          = VERIFIED x3, fresh_show_ip_protocols, 7 fields each
 LEARNED_ROUTES         = VERIFIED x9, fresh_show_ip_route_rip, first read each
 FORWARDING             = VERIFIED, reachable=True, 1 bounded measurement
@@ -85,6 +85,30 @@ CLEANUP                = 41 entries all applied, restored=True,
 Independent post-run re-observation, separate process with its own G2: 0
 semantic devices, 0 links, 3 backend-managed Power Distribution Devices,
 Realtime confirmed by reading it rather than by setting it.
+
+### Row 4 — the foundational-evidence record, exactly
+
+```text
+REQUIRED_FOUNDATION_COUNT = 12
+REQUIRED_FOUNDATION_KINDS = l3_interface x9, link x3
+FOUNDATION_STATUSES       = VERIFIED, all 12
+FOUNDATION_HASHES_PRESENT = NO -- and correctly no
+FOUNDATION_SOURCE         = apply_configuration real readback
+CONTROL_PLANE_GATE        = PASSED, before the runtime was touched
+```
+
+`FOUNDATION_HASHES_PRESENT = NO` is a contract, not a gap, and is spelled out
+because the short form reads like one. Only `kind="security"` requirements carry
+a `source_hash`; a routing-only plan declares none, so
+`derive_foundational_hashes` returns `{}` and
+`ControlPlaneApplicator._foundation_errors` compares a hash only where one is
+declared (`if requirement.source_hash and ...`). Verified against this exact
+plan: 12 requirements, **0** declaring a `source_hash`, derived map empty.
+
+What decided the gate was therefore the **statuses**, and those came from
+`derive_foundational_statuses` over executed `apply_configuration` results —
+there is no parameter through which a status could be supplied. The gate refused
+nothing because all 12 were VERIFIED.
 
 ### Ceilings this run did not move
 
@@ -104,7 +128,14 @@ of a VLAN membership or of a default gateway.
 TD_ACCEPTANCE_001 = RESOLVED   rows 1-6 in this same run; it upgrades
                     CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION and
                     FULL_PRODUCT_PIPELINE_ACCEPTANCE off NOT_ESTABLISHED
-TD_HARDWARE_001   = OPEN, measured not assumed: composing the reference with no
+TD_HARDWARE_001   = OPEN            <- recovered from the entry, not from prose
+  RESOLVE_BEFORE    = E9.5 final closure
+  BLOCKS_STAGE_3A4  = NO (the entry says so in its own words)
+  CRITERION         = "Capability evidence used by the enterprise resolver must
+                      reconcile deterministically into eligible physical
+                      hardware without model-string special casing, while
+                      UNKNOWN remains UNKNOWN."
+                    NOT satisfied, measured not assumed: composing the reference with no
                     store, with the exact build and with a deliberately wrong
                     build returned identical devices and identical candidate
                     lists, so this run exercised evidence at the E5 and E9
@@ -347,22 +378,41 @@ TD_ACCEPTANCE_001          = OPEN
 NONE FOR MEG-4. It PASSES at 14854bf, reproducibly.
 ```
 
-## Next task
+## Final Stage 3A4 checkpoint
 
-Stage 3A4 is **CLOSED**. Nothing in this session opened E9.5 or CP3, and neither
-should be entered on the strength of this closure alone.
+```text
+MEG_4               = CLOSED / PASS
+MEG_5               = CLOSED / PASS
+MEG_5_EXECUTION     = EXECUTED
+REFERENCE_41_41_RUN = EXECUTED / PASS / SAME-RUN
+TD_ACCEPTANCE_001   = RESOLVED
+STAGE_3A4           = CLOSED
+```
 
-Carried forward, unchanged and untouched by 3A4:
+Residuals, explicit and unmoved:
 
-- `TD-ACCESSPORT-READBACK-001` and the endpoint gateway — E9.5 deadline. A
-  direct read-back is now ordinary work: no diagnosis depends on it.
-- `TD-HARDWARE-001` — E9.5 deadline. Needs a live gate where capability
-  evidence decides *eligibility*, which the reference run demonstrably is not.
-- `TD-MODULE-SLOT-001`, `TD-TRANSPORT-001` — backend limitations, recorded.
-- `TD-SECURITY-001`, `TD-VOICE-001`, `TD-RUNTIME-006`, `TD-PUBLIC-001` — their
-  own milestones.
-- The capability-evidence-survives-a-checkout question, recorded as a residual
-  at both `TD-CONFIG-CAPABILITY-001` and `TD-ACCEPTANCE-001`.
+```text
+TD_ACCESSPORT_READBACK_001   = OPEN
+ACCESS_PORT                  = UNOBSERVABLE
+ENDPOINT_GATEWAY             = UNOBSERVABLE
+MODULE_IDENTITY              = existing backend ceiling (TD-MODULE-SLOT-001)
+CONFIGURATION_FULLY_VERIFIED = NO
+CAPABILITY_EVIDENCE          = machine-local, gitignored (`data/capabilities/`).
+                               A fresh checkout resolves it UNKNOWN and refuses
+                               the same plan, fail-closed. It must be
+                               regenerated by the governed qualification path;
+                               it may not be hand-written or assumed.
+
+E9_5     = OPEN
+CP3_HARD = NOT_READY
+SKILLS   = not entered
+```
+
+## Next phase
+
+E9.5 — runtime/debt closure according to the current governed contract.
+
+Not designed and not started here.
 
 ## Operating constraints, still in force
 
