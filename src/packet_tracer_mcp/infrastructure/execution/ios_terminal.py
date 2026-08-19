@@ -1318,6 +1318,17 @@ class ControlledIosExecutor:
                 "reportResult(JSON.stringify({found:false,",
                 "failure_reason:'IOS terminal unavailable'}));}else{",
                 "var base=", json.dumps(baseline), ";",
+                "var cmd=", command_json, ";",
+                # Anclar por el SUFIJO retenido, no por prefijo. Es la misma
+                # algebra de frescura que `fresh_command_window` ya midio en
+                # este build: `after` puede dejar de empezar por `before` sin
+                # haber perdido nada -- el pager borra su `--More--` al salir, y
+                # un buffer largo rueda por la cabeza. Exigir prefijo rechazaba
+                # justamente esas sesiones, que son frescas y atribuibles.
+                "var anchor=base;",
+                "while(anchor.length&&anchor.charCodeAt(anchor.length-1)<=32)"
+                "{anchor=anchor.substring(0,anchor.length-1);}",
+                "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
                 "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
                 "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
                 "for(var i=0;i<n;i++){var dev=null;",
@@ -1328,12 +1339,13 @@ class ControlledIosExecutor:
                 "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
                 "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
                 "if(cl===t){byObject.push(nm);outObject=co;}",
-                # `co.length>base.length` descarta al gemelo ocioso: dos
-                # devices recien arrancados comparten banner, pero solo el que
-                # ejecuto vio crecer su transcripcion. Nunca puede excluir al
-                # verdadero -- si el suyo no crecio, no hay salida que atribuir.
-                "if(base!==''&&co.indexOf(base)===0&&co.length>base.length){",
-                "byTranscript.push(nm);outTranscript=co;}}",
+                # Contexto retenido MAS el comando despachado detras de el. El
+                # gemelo ocioso no basta con compartir banner: tendria que haber
+                # recibido este mismo comando justo despues de este mismo
+                # contexto, y las consultas registradas van de a una.
+                "if(anchor!==''){var at=co.indexOf(anchor);",
+                "if(at>=0&&co.substring(at+anchor.length).indexOf(cmd)>=0){",
+                "byTranscript.push(nm);outTranscript=co;}}}",
                 "var owner='',evidence='none',candidates=0,out='';",
                 "if(byObject.length===1){owner=byObject[0];",
                 "evidence='terminal_object_identity';candidates=1;out=outObject;}",

@@ -130,7 +130,17 @@ def test_the_attribution_enumerates_the_network_instead_of_trusting_the_request(
     # La atribución se decide comparando el objeto terminal y la continuidad de
     # la transcripción, no el nombre pedido.
     assert "cl===t" in attribution_script
-    assert "co.indexOf(base)===0" in attribution_script
+    # Ancla por SUFIJO retenido, no por prefijo: `fresh_command_window` ya midió
+    # que una sesión fresca puede dejar de empezar por su línea base -- el pager
+    # borra su marcador al salir y un buffer largo rueda por la cabeza. Exigir
+    # prefijo dejaba esas lecturas sin atribuir, que es el hueco que MEG-4 run 7
+    # midió en vivo.
+    assert "co.indexOf(anchor)" in attribution_script
+    assert "co.indexOf(base)===0" not in attribution_script
+    # Y el comando despachado detrás de ese contexto: un gemelo ocioso no basta
+    # con compartir banner de arranque.
+    assert '"show ip protocols"' in attribution_script
+    assert "indexOf(cmd)>=0" in attribution_script
 
 
 def test_a_session_owned_by_another_device_never_returns_evidence_for_the_requested_one():
