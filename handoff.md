@@ -13,7 +13,7 @@ worktree          .claude/worktrees/runtime-ripv2   (operational location only)
 interpreter       ./.venv/Scripts/python.exe        (worktree-local, authoritative)
 PYTHONPATH        unset
 regression        2121 passed, 3 pre-existing pytest deprecation warnings
-Graphify          7935 nodes, 27057 edges, 277 communities
+Graphify          7948 nodes, 27070 edges, 273 communities
 ```
 
 Run the suite as `./.venv/Scripts/python.exe -m pytest` from the worktree root.
