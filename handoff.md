@@ -3,17 +3,17 @@
 ## Current checkpoint
 
 Executable state, from Git rather than from memory. Everything below was
-measured at `14854bf`; this commit is docs-only and changes none of it.
+measured at `63c9f18`; this commit is docs-only and changes none of it.
 
 ```text
 branch            feature/runtime-ripv2
-HEAD              14854bf
+HEAD              63c9f18
 working tree      clean  (git status --short empty, git diff --check clean)
 worktree          .claude/worktrees/runtime-ripv2   (operational location only)
 interpreter       ./.venv/Scripts/python.exe        (worktree-local, authoritative)
 PYTHONPATH        unset
-regression        2187 passed, 3 pre-existing pytest deprecation warnings
-Graphify          8156 nodes, 27666 edges, 270 communities
+regression        2229 passed, 3 pre-existing pytest deprecation warnings
+Graphify          8264 nodes, 27945 edges, 297 communities
 ```
 
 Run the suite as `./.venv/Scripts/python.exe -m pytest` from the worktree root.
@@ -38,13 +38,13 @@ MEG-2  capability consumer / TD-HARDWARE ....... CLOSED   ea4eb3a, 06217ac
 MEG-3  product execution surface ............... CLOSED   7de805a, 6ef25bf
 OAG    offline adversarial matrix .............. CLOSED   c1ea586
 MEG-4  bounded live qualification ............ PASS     14854bf, runs 12-13
-MEG-5  full same-run 41/41 acceptance ......... NOT_OPENED
+MEG-5  reference qualification (its opening) .. PASS     6e965fb, 63c9f18
 MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
 MEG-7  Stage 3A4 closure ...................... NOT_STARTED
 
-MEG_5               = NOT_OPENED
-MEG_5_EXECUTION     = BLOCKED
-REFERENCE_41_41_RUN = NOT_EXECUTED
+MEG_5               = OPEN / PASS
+MEG_5_EXECUTION     = AUTHORISED   (no evidence gate refuses the reference)
+REFERENCE_41_41_RUN = NOT_EXECUTED (deliberately not started)
 ```
 
 ## MEG-4 run 12 — the current executed state
@@ -181,12 +181,89 @@ already measured that a fresh session need not — the pager erases its
 `--More--` and long buffers roll. `38e4a8c` anchors on the retained suffix plus
 the dispatched command instead, which is strictly more discriminating.
 
+## MEG-5 — what its contract actually said, and what closed it
+
+The one-line summary in the table used to read *"full same-run 41/41
+acceptance"*, which reads as if MEG-5 **were** the reference run. It is not, and
+the governed record separates them in three keys. The literal contract is in
+`technical-debt.md`, twice:
+
+* `TD-CATALOG-PORT-001`: *"MEG-5 cannot open on the 41-device reference until
+  `2960-24TT` — and any other model that run selects — has a measured port
+  inventory for the build it will run against."*
+* `TD-CONFIG-CAPABILITY-001`: *"Qualifying the reference topology's models
+  belongs to the pre-MEG-5 pass"*, and *"the 41-device reference would meet the
+  same gate on its first VLAN action"*.
+
+So MEG-5 is the **qualification that makes the reference executable**. The
+reference run itself is `REFERENCE_41_41_RUN`, and it has not been started.
+
+### What the reference actually selects
+
+Composed offline, capability-driven, no hand-pinned candidates:
+
+```text
+1941       x3   routers, HWIC-2T@0/0 each
+2950T-24   x2   access switches
+IE-2000    x1   access switch
+PC-PT      x35  endpoints
+```
+
+Not `2960-24TT` — that is what the *hand-pinned* reference uses, and nothing
+this repository executes selects it. It stays unmeasured, and a test says so.
+
+### Three gates, measured in order
+
+```text
+1. PORT EVIDENCE     5 refusals across 1941 and 2950T-24   ->  0
+2. E5 CAPABILITY     supports_vlan unknown for 2950T-24    ->  88/88 authorised
+3. E9 CAPABILITY     1941 had no control-plane profile     ->  3/3 applied
+```
+
+**Gate 1** had a circle in it: port evidence came from a device the *product* had
+deployed and read back, and a model the gate refuses to deploy could never be
+read back. `PortInventoryQualifier` breaks it without touching the gate — one
+disposable `__MCP_PORTQUAL_*` device per (model, module state), read back through
+the same production seam, then removed. It refuses to emit an inventory when the
+read-back saw no interfaces, or when a declared module did not apply, and it
+writes nothing: pinning a record is a versioned act, because that evidence has
+to survive a checkout.
+
+**Gate 2** exposed a real defect. `1941` came back `layer3` UNKNOWN — *"No
+model-specific IPv4 probe target is available for this device"* — with `2911`
+already qualified by the identical mechanism, because the probe strategy was a
+hand-listed model map. Routers now come from the catalogue's category; multilayer
+switches stay listed, because `switch` covers a 2950 and a 3560 and only one of
+them reaches an IPv4 of its own.
+
+**Gate 3** is R4, recorded in `ripv2-runtime-qualification.md`: two disposable
+1941s over a serial WAN, production runtimes only, all four dimensions from their
+own fresh read-backs, routes verified in both directions. Two faults in that
+slice were mine and are written down — a class-C `network` statement that
+advertises nothing, and a router LAN that stays `down/down` with nothing cabled
+to it.
+
+### What MEG-5 does NOT claim
+
+```text
+REFERENCE_41_41_RUN          = NOT_EXECUTED. Authorised is not executed.
+ACCESS_PORT                  = UNOBSERVABLE, TD-ACCESSPORT-READBACK-001 OPEN
+ENDPOINT_GATEWAY             = UNOBSERVABLE
+CONFIGURATION_FULLY_VERIFIED = NO
+MODULE_IDENTITY              = UNOBSERVABLE, TD-MODULE-SLOT-001 backend limit
+2960-24TT / 3560-24PS / 2901 = UNKNOWN, untouched by this pass
+```
+
+No gate was relaxed to get here, and a test asserts an unmeasured model is still
+refused by the same predicate.
+
 ## Governed debt — current states
 
 ```text
 TD_ORIENTATION_PAGER_001   = RESOLVED
 TD_MODULE_SLOT_001         = BACKEND_LIMITATION
-TD_CATALOG_PORT_001        = RESOLVED
+TD_CATALOG_PORT_001        = RESOLVED — its MEG-5 contract is now satisfied
+                             too: 1941 and 2950T-24 are measured
 TD_CONFIG_CAPABILITY_001   = RESOLVED
 TD_HARDWARE_001            = OPEN
 TD_ACCESSPORT_READBACK_001 = OPEN — no longer diagnosis-relevant: run 11's
@@ -203,15 +280,16 @@ NONE FOR MEG-4. It PASSES at 14854bf, reproducibly.
 
 ## Next task
 
-MEG-4 is closed. What it did **not** close, in the order the master runs them:
+MEG-5 is closed. The reference run is the next executable thing and was
+deliberately **not** started:
 
-- `TD-ACCEPTANCE-001` — MEG-4 satisfies its Stage 3A4 closure line; confirm that
-  against the document rather than against this file before marking it.
-- `TD-ACCESSPORT-READBACK-001` and the endpoint gateway stay OPEN. A read-back
-  is now a normal work item, not a diagnosis: nothing about the failing path
-  depends on it any more.
-- MEG-5 and the 41/41 reference run are **NOT_OPENED / NOT_EXECUTED** and were
-  deliberately not started here.
+- `REFERENCE_41_41_RUN` — 41 devices, 41 links, 3 serial WAN, through the same
+  single product entry point. Every evidence gate now authorises it; whether it
+  *works* is exactly what the run would measure. Expect it to be long: MEG-4's
+  8-device run took ~65 s.
+- `MEG-6` (`TD-ACCEPTANCE-001` closure) and `MEG-7` (Stage 3A4 closure) follow.
+- `TD-ACCESSPORT-READBACK-001` and the endpoint gateway stay OPEN, unchanged by
+  MEG-4 and MEG-5 alike.
 
 ## Operating constraints, still in force
 
@@ -219,7 +297,8 @@ MEG-4 is closed. What it did **not** close, in the order the master runs them:
   but must not edit the same seam;
 - no Skills modifications during Stage 3A4 work;
 - no access-port investigation now;
-- no MEG-5 and no 41/41 reference run before MEG-4 closes;
+- no 41/41 reference run until it is deliberately opened; MEG-4 and MEG-5
+  are both closed and neither authorises starting it as a side effect;
 - no raw IOS or raw JS product bypass; no harness-performed mutation;
 - no fabricated identity, capability, foundation or readback evidence;
 - current source, tests and Git beat stale historical prose — including this

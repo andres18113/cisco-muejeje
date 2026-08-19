@@ -305,3 +305,82 @@ project.
 ROUTING_BEHAVIOR_CHANNEL_2911_9_0_1_0858 = QUALIFIED
 FORWARDING_SUCCESS                       = NOT CLAIMED BY THIS QUALIFICATION
 ```
+
+
+# R4 — control-plane channel on 1941, 2026-08-19
+
+Opened for MEG-5. The 41-device reference selects `1941`, and a model with no
+control-plane profile resolves UNKNOWN, which leaves its actions **SKIPPED** --
+so the reference's three routers would never have applied RIPv2. `2911`'s
+evidence is not transferable: the catalogue is model-attributed on purpose.
+
+## Environment and slice
+
+| Item | Value |
+| --- | --- |
+| Packet Tracer version | `9.0.1.0858`, file bridge |
+| Routers | 2x `1941` with `HWIC-2T@0/0`, serial port **discovered** as `Serial0/0/0` |
+| LAN neighbours | 1x `PC-PT` each, cabled to `GigabitEthernet0/0` |
+| Probe names | `MCP-PROBE-R4-R1`, `-R2`, `-PCA`, `-PCB` |
+| Serial roles | `show controllers`: R1 **DCE** @ 2000000, R2 **DTE** |
+| Addressing | R1 LAN `198.18.200.0/24`, R2 LAN `198.18.201.0/24`, WAN `198.18.202.0/30` |
+| Runtimes | production only: physical, serial orientation, configuration, control plane |
+
+Connectivity across the WAN was proven **before** RIP existed -- R1 reached
+`198.18.202.2` 3/5 -- so a later failure could not be misattributed to routing.
+
+## What was measured live
+
+```text
+RIPV2_CONFIG          VERIFIED  fresh_show_ip_protocols
+ROUTING_PROCESS_STATE VERIFIED  protocol, version_send, version_recv, networks,
+                                passive_interfaces, auto_summary,
+                                source_device_name -- all seven fields
+ROUTING_ROUTE_STATE   VERIFIED  both directions, first read:
+                                R1 learned 198.18.201.0/24
+                                R2 learned 198.18.200.0/24
+ROUTING_BEHAVIOR      VERIFIED  typed ping R1 -> 198.18.201.1, reachable=True
+                                after 1 bounded measurement
+```
+
+Both route directions were read, which is more than the dimension requires and
+less ambiguous than one.
+
+## Two faults in the slice, both mine and both recorded
+
+Neither was a product defect, and both would have been easy to guess wrong.
+
+1. **`network 198.18.0.0` advertises nothing.** 198.18 is class C, so RIP needs
+   one statement per `/24`. The first attempt hand-wrote a single classful
+   statement and no route ever appeared while `show ip protocols` verified
+   happily -- the device really was configured the way the expectation claimed.
+   Fixed by deriving the statements with the compiler's own `_classful_network`
+   instead of writing them.
+2. **A router LAN with nothing cabled to it stays `down/down`,** and RIP does
+   not advertise a network whose interface is down. `show ip interface brief`
+   showed `GigabitEthernet0/0 ... down down` on both routers. The LAN
+   neighbours exist for that reason.
+
+The second was found with the registered `SHOW_IP_INTERFACE_BRIEF` query rather
+than by inspection, which is why it took one run instead of several.
+
+## Cleanup
+
+All four disposable devices removed in reverse order in a `finally` block. Final
+observation: 0 semantic devices, 0 links. The backend-managed
+`Power Distribution Device` count moved and is not probe residue.
+
+## Claim ceiling
+
+`ROUTING_BEHAVIOR` remains the **channel**, not its result. R4 measured
+`reachable=True` here; marking the dimension SUPPORTED authorises measuring and
+asserts nothing about any topology forwarding. The product measures that in
+every run.
+
+Nothing here is inherited from the 2911, and nothing here transfers to any other
+model.
+
+```text
+MEG_5_E9_QUALIFICATION = 1941 / 9.0.1.0858 / four dimensions VERIFIED
+REFERENCE_41_41_RUN    = NOT_EXECUTED
+```
