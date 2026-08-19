@@ -533,6 +533,20 @@ class ControlPlaneApplicator:
         plan: ControlPlanePlan,
         deployed_names: dict[str, str],
     ) -> ControlPlanePlan:
+        # La atribucion de una observacion viva vuelve por el NOMBRE del device
+        # que ejecuto. Si el manifiesto ata dos devices semanticos al mismo
+        # nombre desplegado, ese nombre ya no identifica a ninguno, y una
+        # observacion certificada quedaria asignada al device equivocado.
+        bound: dict[str, str] = {}
+        for identifier, name in sorted(deployed_names.items()):
+            if name in bound:
+                raise DeploymentIdentityError(
+                    f"DeploymentManifest binds {bound[name]!r} and {identifier!r} to "
+                    f"the same runtime target {name!r}; an observed device name "
+                    "cannot identify which semantic device produced the evidence."
+                )
+            bound[name] = identifier
+
         def resolve(identifier: str, label: str) -> str:
             if not identifier:
                 raise DeploymentIdentityError(f"{label} has no semantic device ID.")

@@ -98,6 +98,37 @@ class PagerContinuation(str, Enum):
     FAILED = "failed"
 
 
+class DeviceIdentityProvenance(str, Enum):
+    """Quien produjo la salida, separado de a quien se le pidio.
+
+    `NOT_OBSERVED` es el default y no afirma nada. `AMBIGUOUS` es distinto de
+    no observar: mas de un device del runtime pudo haber producido la misma
+    evidencia, asi que atribuirla a uno seria elegir. `MISMATCHED` es el caso
+    que esta clasificacion existe para no dejar pasar -- la sesion que ejecuto
+    pertenece a OTRO device, y entonces ninguna consulta puede certificar al
+    pedido.
+    """
+
+    NOT_OBSERVED = "not_observed"
+    CONFIRMED_UNIQUE = "confirmed_unique"
+    AMBIGUOUS = "ambiguous"
+    MISMATCHED = "mismatched"
+
+
+class DeviceIdentityEvidence(str, Enum):
+    """Por que via se atribuyo la sesion. Ninguna de las dos usa el nombre pedido.
+
+    `TERMINAL_OBJECT_IDENTITY` compara el objeto terminal al que se despacho
+    contra el que devuelve la enumeracion de la red. `SESSION_TRANSCRIPT_CONTINUITY`
+    ata la sesion por su transcripcion: la linea que ejecuto es la unica cuya
+    salida continua exactamente la linea base capturada al despachar.
+    """
+
+    NONE = "none"
+    TERMINAL_OBJECT_IDENTITY = "terminal_object_identity"
+    SESSION_TRANSCRIPT_CONTINUITY = "session_transcript_continuity"
+
+
 class IosSessionState(str, Enum):
     WAITING_FOR_BOOT = "waiting_for_boot"
     BOOT_COMPLETE = "boot_complete"
@@ -213,6 +244,14 @@ class IosCommandResult:
     dispatch_classification: str = DispatchClassification.ECHO_UNOBSERVABLE.value
     echo_observed: str = ""
     dispatch_attempts: int = 1
+    # Procedencia de la EJECUCION, no del pedido. `device_name` sigue siendo a
+    # quien se le pidio; `observed_device_name` sale de enumerar la red y
+    # quedarse con el unico device que puede haber producido esta sesion. Los
+    # defaults no afirman nada: sin atribucion, la identidad de la fuente sigue
+    # siendo inobservable.
+    observed_device_name: str = ""
+    device_identity_provenance: str = DeviceIdentityProvenance.NOT_OBSERVED.value
+    device_identity_evidence: str = DeviceIdentityEvidence.NONE.value
 
 
 @dataclass(frozen=True)
@@ -1090,6 +1129,15 @@ class _PagerCapture:
         )
 
 
+def _identity_evidence(value: object) -> DeviceIdentityEvidence:
+    """Una via de atribucion desconocida no se acepta como si fuera prueba."""
+    try:
+        evidence = DeviceIdentityEvidence(str(value))
+    except ValueError:
+        return DeviceIdentityEvidence.NONE
+    return evidence
+
+
 class ControlledIosExecutor:
     """Ejecuta exclusivamente consultas IOS registradas; nunca CLI del usuario."""
 
@@ -1251,9 +1299,84 @@ class ControlledIosExecutor:
                 return json.loads(observed)
             except json.JSONDecodeError:
                 return {"found": False, "failure_reason": "IOS output was malformed."}
+
+        def attribute() -> dict:
+            """Lee la salida Y atribuye la sesion en la MISMA enumeracion.
+
+            No pregunta "como se llama el device que pedi". Recorre la red y se
+            queda con el unico device que puede haber producido esta sesion, ya
+            sea porque su objeto terminal es el mismo al que se despacho, ya
+            sea porque su transcripcion continua exactamente la linea base. La
+            salida devuelta sale de ESE device, no de una segunda busqueda por
+            nombre: asi la evidencia y su procedencia no pueden venir de dos
+            devices distintos.
+            """
+            attribution_js = "".join((
+                "try{var net=ipc.network();var d=net.getDevice(", name, ");",
+                "var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
+                "if(!t||typeof t.getOutput!=='function'){",
+                "reportResult(JSON.stringify({found:false,",
+                "failure_reason:'IOS terminal unavailable'}));}else{",
+                "var base=", json.dumps(baseline), ";",
+                "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
+                "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
+                "for(var i=0;i<n;i++){var dev=null;",
+                "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
+                "if(!dev||typeof dev.getCommandLine!=='function')continue;",
+                "var cl=null;try{cl=dev.getCommandLine();}catch(ce){cl=null;}",
+                "if(!cl||typeof cl.getOutput!=='function')continue;",
+                "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
+                "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
+                "if(cl===t){byObject.push(nm);outObject=co;}",
+                # `co.length>base.length` descarta al gemelo ocioso: dos
+                # devices recien arrancados comparten banner, pero solo el que
+                # ejecuto vio crecer su transcripcion. Nunca puede excluir al
+                # verdadero -- si el suyo no crecio, no hay salida que atribuir.
+                "if(base!==''&&co.indexOf(base)===0&&co.length>base.length){",
+                "byTranscript.push(nm);outTranscript=co;}}",
+                "var owner='',evidence='none',candidates=0,out='';",
+                "if(byObject.length===1){owner=byObject[0];",
+                "evidence='terminal_object_identity';candidates=1;out=outObject;}",
+                "else if(byObject.length>1){candidates=byObject.length;}",
+                "else if(byTranscript.length===1){owner=byTranscript[0];",
+                "evidence='session_transcript_continuity';candidates=1;",
+                "out=outTranscript;}else{candidates=byTranscript.length;}",
+                "if(owner===''){out=String(t.getOutput());}",
+                "reportResult(JSON.stringify({found:true,",
+                "configuration_channel:out!==base,output:out,owner_name:owner,",
+                "owner_evidence:evidence,owner_candidates:candidates,",
+                "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
+            ))
+            attributed = self._send_and_wait(attribution_js, 5.0)
+            if attributed is None or attributed.startswith("ERROR:"):
+                return {"found": False}
+            try:
+                return json.loads(attributed)
+            except json.JSONDecodeError:
+                return {"found": False}
+
         convergence = StateConvergenceWaiter(observe, timeout_seconds=8.0).wait()
         elapsed = int((monotonic() - started) * 1000)
-        output = str(observe().get("output") or "")
+        attribution = attribute()
+        output = str(attribution.get("output") or "")
+        identity = self._execution_identity(device_name, attribution)
+        if (
+            identity["device_identity_provenance"]
+            == DeviceIdentityProvenance.MISMATCHED.value
+        ):
+            # La consulta corrio, pero sobre OTRO device. Devolver su salida
+            # como evidencia del pedido seria exactamente la sustitucion que
+            # esta barrera existe para impedir, asi que no se devuelve: ningun
+            # consumidor puede certificar al device pedido con esto.
+            return complete(IosCommandResult(
+                device_name, query_id, False,
+                failure_reason=(
+                    f"DEVICE_PROVENANCE_MISMATCH: requested {device_name!r} but "
+                    "the executing session is owned by "
+                    f"{identity['observed_device_name']!r}."
+                ),
+                duration_ms=elapsed, session_state=session, **identity,
+            ))
         window = extract_terminal_command_window(baseline, output, command)
         classification, echoed = classify_echo(command, window.output)
         capture = _PagerCapture.not_encountered(window.output, output)
@@ -1304,11 +1427,12 @@ class ControlledIosExecutor:
                     pager_continuation=capture.continuation.value,
                     dispatch_classification=classification.value,
                     echo_observed=echoed,
+                    **identity,
                 ))
         if not convergence.configuration_channel:
-            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=capture.truncated, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed))
+            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=capture.truncated, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed, **identity))
         if not window.fresh:
-            return complete(IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy, dispatch_classification=classification.value, echo_observed=echoed))
+            return complete(IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy, dispatch_classification=classification.value, echo_observed=echoed, **identity))
         if is_command_corrupted(classification):
             # NO se clasifica como consulta rechazada: IOS jamás recibió la
             # consulta pedida, así que su `% Invalid input` no habla de ella.
@@ -1326,8 +1450,42 @@ class ControlledIosExecutor:
                 pager_continuation=capture.continuation.value,
                 dispatch_classification=classification.value,
                 echo_observed=echoed,
+                **identity,
             ))
-        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(capture.output), failure_reason=capture.failure_reason, duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=capture.truncated, output_complete=capture.complete, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed))
+        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(capture.output), failure_reason=capture.failure_reason, duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=capture.truncated, output_complete=capture.complete, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed, **identity))
+
+    @staticmethod
+    def _execution_identity(
+        device_name: str, attribution: dict,
+    ) -> dict[str, str]:
+        """Clasifica la atribucion. Nunca deriva identidad del nombre pedido."""
+        owner = str(attribution.get("owner_name") or "")
+        candidates = attribution.get("owner_candidates")
+        evidence = _identity_evidence(attribution.get("owner_evidence"))
+        # Un nombre sin via de atribucion reconocida no es atribucion. Aceptarlo
+        # seria confiar en un dato cuya procedencia no se sabe, que es
+        # justamente lo que este campo no puede hacer.
+        if owner and evidence is not DeviceIdentityEvidence.NONE:
+            return {
+                "observed_device_name": owner,
+                "device_identity_provenance": (
+                    DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+                    if owner == device_name
+                    else DeviceIdentityProvenance.MISMATCHED.value
+                ),
+                "device_identity_evidence": evidence.value,
+            }
+        ambiguous = (
+            type(candidates) is int and candidates > 1
+        )
+        return {
+            "observed_device_name": "",
+            "device_identity_provenance": (
+                DeviceIdentityProvenance.AMBIGUOUS.value if ambiguous
+                else DeviceIdentityProvenance.NOT_OBSERVED.value
+            ),
+            "device_identity_evidence": DeviceIdentityEvidence.NONE.value,
+        }
 
     @staticmethod
     def _registered_command(query_id: OperationalQueryId, *, interface: str) -> str:

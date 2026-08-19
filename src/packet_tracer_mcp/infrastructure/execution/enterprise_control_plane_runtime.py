@@ -42,6 +42,7 @@ from ..generator.control_plane_renderer import (
 from .configuration_runtime import PacketTracerConfigurationRuntime
 from .ios_terminal import (
     ControlledIosExecutor,
+    DeviceIdentityProvenance,
     IosCommandResult,
     OperationalQueryId,
     parse_show_etherchannel_summary,
@@ -904,6 +905,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 "Fresh spanning-tree output had no parser-backed instance.",
             )
         fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
         vlan_ids = self._typed_int_list(expectation.expected.get("vlan_ids"))
         root_vlans = self._typed_int_list(
             expectation.expected.get("root_primary_vlans")
@@ -958,6 +960,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 "Fresh EtherChannel output had no parser-backed group row.",
             )
         fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
         expected_port = expectation.expected.get("port_channel_interface")
         expected_port_key = (
             self._interface_key(expected_port)
@@ -1109,6 +1112,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             query_cache.pop(key, None)
 
         fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
         for field in ("protocol", "network", "prefix_length"):
             fields[field] = self._field(match is not None)
         observation = self._direct_observation(
@@ -1153,10 +1157,19 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             )
         observed = parse_show_ip_protocols_rip(show.output)
         fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
         if observed is None:
+            # La procedencia sobrevive: que el device no corra RIP no borra la
+            # evidencia de QUE device contesto.
             return self._direct_observation(
                 expectation,
-                {field: FieldVerificationStatus.FAILED for field in fields},
+                {
+                    field: (
+                        status if field == "source_device_name"
+                        else FieldVerificationStatus.FAILED
+                    )
+                    for field, status in fields.items()
+                },
                 "fresh_show_ip_protocols",
                 "Fresh output reports no RIP routing process on the device.",
             )
@@ -1223,6 +1236,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 "Fresh OSPF output had no parser-backed neighbor row.",
             )
         fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
         fields["protocol"] = FieldVerificationStatus.VERIFIED
         return self._direct_observation(
             expectation, fields, "fresh_show_ip_ospf_neighbor",
@@ -1255,6 +1269,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             None,
         )
         fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
         fields["protocol"] = FieldVerificationStatus.VERIFIED
         if isinstance(peer_id, str):
             fields["peer_router_id"] = self._field(peer_row is not None)
@@ -1303,6 +1318,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             None,
         )
         fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
         fields["protocol"] = self._field(route is not None)
         if isinstance(network, str):
             fields["network"] = self._field(route is not None)
@@ -1411,6 +1427,35 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 *getattr(expectation, "unclaimed_fields", ()),
             )
         }
+
+    @classmethod
+    def _certify_source_device(cls, fields, expectation, show) -> None:
+        """Ata `source_device_name` a QUIEN ejecuto, no a quien se pidio.
+
+        Solo una atribucion unica del runtime certifica. Sin atribucion, o con
+        mas de un candidato, el campo se queda UNOBSERVABLE: la alternativa
+        seria escribir el nombre pedido, que es exactamente la sustitucion que
+        esta evidencia existe para impedir. Y si la sesion atribuida no es la
+        que el manifiesto ata a este device semantico, el campo FALLA -- no se
+        omite, porque una mezcla de resultados entre devices es un defecto, no
+        una ausencia de evidencia.
+        """
+        if "source_device_name" not in fields:
+            return
+        claimed = str(expectation.expected.get("source_device_name") or "")
+        if not claimed:
+            return
+        try:
+            provenance = DeviceIdentityProvenance(show.device_identity_provenance)
+        except ValueError:
+            # Una clasificacion que este observador no conoce no puede
+            # certificar: no saber que significa no es haber observado.
+            return
+        if provenance is not DeviceIdentityProvenance.CONFIRMED_UNIQUE:
+            return
+        fields["source_device_name"] = cls._field(
+            show.observed_device_name == claimed
+        )
 
     @staticmethod
     def _field(matched: bool) -> FieldVerificationStatus:
