@@ -45,6 +45,7 @@ class OperationalQueryId(str, Enum):
     SHOW_IP_ROUTE_EIGRP = "show_ip_route_eigrp"
     SHOW_IP_PROTOCOLS = "show_ip_protocols"
     SHOW_IP_ROUTE_RIP = "show_ip_route_rip"
+    SHOW_INTERFACES_SWITCHPORT = "show_interfaces_switchport"
 
 
 class TrunkQueryClassification(str, Enum):
@@ -167,6 +168,11 @@ _INTERFACE_COMMANDS = {
     OperationalQueryId.SHOW_INTERFACE: "show interfaces {interface}",
     OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE:
         "show port-security interface {interface}",
+    # Acotada a UNA interfaz a proposito: el modo switchport y la VLAN de
+    # acceso son propiedades del puerto, y la forma global de esta consulta
+    # pagina en cuanto el switch tiene mas de un punado de puertos.
+    OperationalQueryId.SHOW_INTERFACES_SWITCHPORT:
+        "show interfaces {interface} switchport",
 }
 _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_EPHONE,
@@ -178,6 +184,7 @@ _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE,
     OperationalQueryId.SHOW_IP_DHCP_SNOOPING,
     OperationalQueryId.SHOW_IP_ARP_INSPECTION,
+    OperationalQueryId.SHOW_INTERFACES_SWITCHPORT,
 }
 _INTERFACE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9./:-]{0,79}$")
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"

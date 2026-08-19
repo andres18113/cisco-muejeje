@@ -122,6 +122,43 @@ _MULTILAYER_PROBE_IPV4_ADDRESS = "198.18.130.1"
 _MULTILAYER_PROBE_IPV4_MASK = "255.255.255.0"
 
 
+def bounded_reach(
+    ping_once,
+    *,
+    retry_budget_seconds: float,
+    clock=time.monotonic,
+    sleeper=time.sleep,
+    interval_seconds: float = 1.0,
+):
+    """Reintento acotado cuyo presupuesto acota los REINTENTOS, no la medición.
+
+    El deadline arrancaba ANTES de la primera medición. `TypedPingExecutor.ping`
+    hace hasta cuatro intentos con sus propias esperas, así que una primera
+    medición lenta se comía el presupuesto entero y el bucle no llegaba a
+    evaluarse ni una vez. Medido en vivo sobre `3560-24PS` / PT `9.0.1.0858`:
+    `endpoint_a_to_svi=unreachable` con `gateway_ping_retries=0/0`.
+
+    Cero reintentos sobre un endpoint inalcanzable no significaba "no hizo
+    falta". Significaba "no se pudo", y las dos cosas se reportaban igual. Por
+    eso además de arrancar el deadline después del primer intento, esto devuelve
+    si el presupuesto quedó agotado.
+
+    Devuelve `(resultado, reintentos, presupuesto_agotado)`.
+    """
+    result = ping_once()
+    if result.reachable:
+        return result, 0, False
+    deadline = clock() + retry_budget_seconds
+    attempts = 0
+    while clock() < deadline:
+        attempts += 1
+        sleeper(interval_seconds)
+        result = ping_once()
+        if result.reachable:
+            return result, attempts, False
+    return result, attempts, True
+
+
 class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
     """Implementación live mínima basada exclusivamente en APIs ya usadas aquí.
 
@@ -621,19 +658,21 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         ping = TypedPingExecutor(self._send_and_wait, measurement_attempts=4)
 
         def reach(source: str, destination: str, budget: float):
-            """Reintento acotado adicional: el ARP inicial puede perder el primer eco."""
-            deadline = time.monotonic() + budget
-            attempts = 0
-            result = ping.ping(source, destination)
-            while not result.reachable and time.monotonic() < deadline:
-                attempts += 1
-                time.sleep(1.0)
-                result = ping.ping(source, destination)
-            return result, attempts
+            return bounded_reach(
+                lambda: ping.ping(source, destination), retry_budget_seconds=budget,
+            )
 
-        gateway_a, retries_a = reach(endpoints[0], _MULTILAYER_SLICE_GATEWAY_A, 20.0)
-        gateway_b, retries_b = reach(endpoints[1], _MULTILAYER_SLICE_GATEWAY_B, 20.0)
+        gateway_a, retries_a, spent_a = reach(endpoints[0], _MULTILAYER_SLICE_GATEWAY_A, 20.0)
+        gateway_b, retries_b, spent_b = reach(endpoints[1], _MULTILAYER_SLICE_GATEWAY_B, 20.0)
         dimensions["gateway_ping_retries"] = f"{retries_a}/{retries_b}"
+        # "0 reintentos" ya no es ambiguo: se dice aparte si el presupuesto se
+        # agotó, porque "no hizo falta" y "no se pudo" son estados distintos.
+        exhausted = [
+            name for name, spent in (("a", spent_a), ("b", spent_b)) if spent
+        ]
+        dimensions["gateway_retry_budget"] = (
+            "exhausted:" + ",".join(exhausted) if exhausted else "not_exhausted"
+        )
         dimensions["endpoint_a_to_svi"] = "reachable" if gateway_a.reachable else "unreachable"
         dimensions["endpoint_b_to_svi"] = "reachable" if gateway_b.reachable else "unreachable"
         if not (gateway_a.reachable and gateway_b.reachable):
@@ -642,7 +681,7 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = "no_gateway_baseline"
             dimensions[MultilayerDimension.IP_ROUTING.value] = "unproven"
             return
-        crossed, retries_x = reach(endpoints[0], _MULTILAYER_SLICE_HOST_B, 20.0)
+        crossed, retries_x, _spent_x = reach(endpoints[0], _MULTILAYER_SLICE_HOST_B, 20.0)
         dimensions["intervlan_ping_retries"] = str(retries_x)
         dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = (
             "reachable" if crossed.reachable else "unreachable"

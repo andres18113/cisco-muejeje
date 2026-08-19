@@ -28,6 +28,7 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_ip_interface,
 )
 from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import (
+    bounded_reach,
     layer3_strategy_for,
 )
 
@@ -169,3 +170,109 @@ class TestTheLayer3StrategyComesFromTheCatalogueNotAHandList:
             model for model in _LAYER3_STRATEGY_BY_MODEL
             if (resolve_model(model) or None) and resolve_model(model).category == "router"
         ]
+
+
+class TestTheRetryBudgetBoundsRetriesNotTheFirstMeasurement:
+    """El presupuesto acotado se lo comía la PRIMERA medición.
+
+    Medido en vivo sobre `3560-24PS` / PT `9.0.1.0858`: el probe multicapa
+    devolvió `endpoint_a_to_svi=unreachable` con `gateway_ping_retries=0/0`.
+    Cero reintentos sobre un endpoint inalcanzable no es "no hizo falta": es que
+    `TypedPingExecutor.ping`, con sus cuatro intentos de medición, agotó el
+    deadline antes de que el bucle pudiera evaluarse una sola vez. La dimensión
+    reportaba entonces lo mismo para "no hizo falta reintentar" y para "no se
+    pudo reintentar", que son estados distintos.
+    """
+
+    @staticmethod
+    def _reachability(*outcomes):
+        results = list(outcomes)
+
+        def ping_once():
+            return _Reach(results.pop(0) if results else False)
+
+        return ping_once
+
+    def test_a_slow_first_measurement_still_leaves_the_whole_retry_budget(self):
+        clock = _Clock(start=0.0)
+        ping_once = self._reachability(False, True)
+
+        # La primera medición sola consume más que el presupuesto entero.
+        result, retries, exhausted = bounded_reach(
+            _timed(ping_once, clock, cost=30.0),
+            retry_budget_seconds=20.0,
+            clock=clock,
+            sleeper=clock.advance,
+        )
+
+        assert retries == 1
+        assert result.reachable is True
+        assert exhausted is False
+
+    def test_a_reachable_first_measurement_never_retries(self):
+        clock = _Clock(start=0.0)
+        result, retries, exhausted = bounded_reach(
+            _timed(self._reachability(True), clock, cost=1.0),
+            retry_budget_seconds=20.0,
+            clock=clock,
+            sleeper=clock.advance,
+        )
+
+        assert retries == 0
+        assert result.reachable is True
+        assert exhausted is False
+
+    def test_an_endpoint_that_never_answers_exhausts_the_budget_and_says_so(self):
+        clock = _Clock(start=0.0)
+        result, retries, exhausted = bounded_reach(
+            _timed(self._reachability(), clock, cost=1.0),
+            retry_budget_seconds=5.0,
+            clock=clock,
+            sleeper=clock.advance,
+        )
+
+        assert result.reachable is False
+        assert retries >= 1
+        assert exhausted is True
+
+    def test_the_budget_is_bounded_and_does_not_retry_forever(self):
+        clock = _Clock(start=0.0)
+        result, retries, exhausted = bounded_reach(
+            _timed(self._reachability(), clock, cost=0.0),
+            retry_budget_seconds=5.0,
+            clock=clock,
+            sleeper=clock.advance,
+            interval_seconds=1.0,
+        )
+
+        assert exhausted is True
+        assert retries <= 6
+        assert clock.now() <= 30.0
+
+
+class _Reach:
+    def __init__(self, reachable: bool) -> None:
+        self.reachable = reachable
+        self.fresh_output_observed = True
+
+
+class _Clock:
+    def __init__(self, start: float = 0.0) -> None:
+        self._now = start
+
+    def now(self) -> float:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        self._now += seconds
+
+    def __call__(self) -> float:
+        return self._now
+
+
+def _timed(ping_once, clock: _Clock, *, cost: float):
+    def call():
+        clock.advance(cost)
+        return ping_once()
+
+    return call

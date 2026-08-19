@@ -66,6 +66,27 @@ _IOS_ACTIONS = (
 _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 
 
+#: `SwitchPort.getAdminOpMode()` para `switchport mode access`. MEDIDO, no
+#: supuesto: cualificación en vivo sobre PT `9.0.1.0858` / `2950T-24`, tres
+#: puertos en la misma pasada, cada código corroborado por la lectura IOS
+#: independiente `show interfaces <if> switchport` de esa misma sesión.
+#:
+#: Se mide el CÓDIGO, no un nombre. Un código fuera de esta tabla no es un modo
+#: desconocido que se pueda tratar como no-acceso: es un modo que nadie midió,
+#: y el campo sale UNOBSERVABLE.
+#:
+#: `isAccessPort()` existe en el mismo objeto y NO sirve para esto: devuelve
+#: True tanto para `static access` como para `dynamic desirable`. Usarlo como
+#: gate del modo convertiría un puerto sin configurar en un puerto de acceso
+#: verificado.
+ADMIN_OP_MODE_ACCESS = 3
+MEASURED_ADMIN_OP_MODES = {
+    0: "dynamic desirable",
+    2: "trunk",
+    ADMIN_OP_MODE_ACCESS: "static access",
+}
+
+
 class PacketTracerEnterpriseConfigurationRuntime:
     """Usa los canales oficiales existentes; no expone IOS/JS arbitrario."""
 
@@ -262,7 +283,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 results.append(self._verify_serial_controller(expectation))
             elif expectation.kind is VerificationKind.ENDPOINT_ADDRESSING:
                 results.append(self._verify_endpoint(expectation))
-            elif expectation.kind in {VerificationKind.ACCESS_PORT, VerificationKind.DHCP_POOL}:
+            elif expectation.kind is VerificationKind.ACCESS_PORT:
+                results.append(self._verify_access_port(expectation))
+            elif expectation.kind is VerificationKind.DHCP_POOL:
                 results.append(self._unobservable(expectation))
         return results
 
@@ -501,6 +524,116 @@ class PacketTracerEnterpriseConfigurationRuntime:
             convergence=convergence,
         )
 
+    def _verify_access_port(
+        self, expectation: VerificationExpectation,
+    ) -> RuntimeVerification:
+        """Lee el puerto como OBJETO, que es donde este backend lo expone.
+
+        `show interfaces <if> switchport` trae los mismos campos y fue capturado
+        en la misma cualificación, pero pagina incluso acotado a UNA interfaz:
+        la captura cerró en `--More--` con `output_complete=False`. Esa consulta
+        NO está en `_PAGINATION_QUALIFIED_QUERIES` y no se la agrega por
+        conveniencia, así que no puede sostener una afirmación completa. La
+        lectura de objeto no tiene pager y devuelve el registro entero o nada.
+
+        Cada campo se decide por separado. Una observación parcial no verifica
+        el todo: modo sin VLAN es una afirmación más angosta y se reporta así.
+        """
+        expected_interface = str(expectation.expected["interface"])
+        expected_vlan = int(expectation.expected["vlan_id"])
+        device = json.dumps(expectation.device_name)
+        port = json.dumps(expected_interface)
+        js = "".join((
+            "try{var __d=ipc.network().getDevice(", device, ");",
+            "if(!__d){reportResult(JSON.stringify({device_found:false,port_found:false}));}",
+            "else{var __p=(typeof __d.getPort===", json.dumps("function"), ")?__d.getPort(", port, "):null;",
+            "if(!__p){reportResult(JSON.stringify({device_found:true,port_found:false}));}",
+            "else{var __r={device_found:true,port_found:true,complete:true};",
+            "try{__r.owner_device_name=String(__p.getOwnerDevice().getName());}catch(__oe){__r.complete=false;}",
+            "try{__r.interface=String(__p.getName());}catch(__ne){__r.complete=false;}",
+            "try{__r.admin_op_mode=__p.getAdminOpMode();}catch(__me){__r.complete=false;}",
+            "try{__r.access_vlan=__p.getAccessVlan();}catch(__ve){__r.complete=false;}",
+            "reportResult(JSON.stringify(__r));}}}",
+            "catch(__e){reportResult(", json.dumps("ERROR:"), "+__e);}",
+        ))
+        observation = self._access_port_observation(js)
+        if observation is None or observation.get("port_found") is not True:
+            return self._unobservable(
+                expectation,
+                message=(
+                    "The switch port object could not be observed."
+                    if observation is not None
+                    else "The access-port read-back returned no usable observation."
+                ),
+                extra_fields=("switchport_mode", "device_identity"),
+            )
+
+        # Completa significa dos cosas, y las dos hacen falta: que ningún getter
+        # haya fallado, y que estén TODAS las claves del contrato. Un getter que
+        # devuelve `undefined` no dispara el `catch`, así que no baja el flag --
+        # pero `JSON.stringify` le borra la clave, y esa ausencia es la única
+        # señal que queda.
+        complete = observation.get("complete") is True and all(
+            key in observation
+            for key in ("owner_device_name", "interface", "admin_op_mode", "access_vlan")
+        )
+        fields = {
+            "device_identity": _field_status(
+                observation.get("owner_device_name"), _as_text,
+                lambda value: value == expectation.device_name,
+            ),
+            "interface": _field_status(
+                observation.get("interface"), _as_text,
+                lambda value: self._same_interface(value, expected_interface),
+            ),
+            "switchport_mode": self._switchport_mode_field(
+                observation.get("admin_op_mode"),
+            ),
+            "vlan_id": _field_status(
+                observation.get("access_vlan"), _as_vlan_id,
+                lambda value: value == expected_vlan,
+            ),
+        }
+        statuses = set(fields.values())
+        if FieldVerificationStatus.FAILED in statuses:
+            status = ActionExecutionStatus.FAILED
+        elif statuses == {FieldVerificationStatus.VERIFIED} and complete:
+            status = ActionExecutionStatus.VERIFIED
+        else:
+            status = ActionExecutionStatus.PARTIAL
+        return RuntimeVerification(
+            expectation_id=expectation.id,
+            status=status,
+            evidence_method="switch_port_object_state",
+            fresh_evidence=True,
+            fields=fields,
+            message=(
+                "" if status is ActionExecutionStatus.VERIFIED
+                else "The access-port observation did not establish every field."
+            ),
+        )
+
+    @staticmethod
+    def _switchport_mode_field(value: object) -> FieldVerificationStatus:
+        """Un código medido decide; uno que nadie midió no afirma nada."""
+        if not isinstance(value, int) or isinstance(value, bool):
+            return FieldVerificationStatus.UNOBSERVABLE
+        if value == ADMIN_OP_MODE_ACCESS:
+            return FieldVerificationStatus.VERIFIED
+        if value in MEASURED_ADMIN_OP_MODES:
+            return FieldVerificationStatus.FAILED
+        return FieldVerificationStatus.UNOBSERVABLE
+
+    def _access_port_observation(self, js: str) -> dict | None:
+        raw = self._send_and_wait(js, 6.0)
+        if raw is None or raw.startswith(("ERROR:", "PT_ERROR:")):
+            return None
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) else None
+
     def _converged_ios_query(
         self,
         expectation: VerificationExpectation,
@@ -649,17 +782,25 @@ class PacketTracerEnterpriseConfigurationRuntime:
         }
 
     @staticmethod
-    def _unobservable(expectation: VerificationExpectation) -> RuntimeVerification:
+    def _unobservable(
+        expectation: VerificationExpectation,
+        *,
+        message: str = "",
+        extra_fields: tuple[str, ...] = (),
+    ) -> RuntimeVerification:
+        fields = {
+            field: FieldVerificationStatus.UNOBSERVABLE
+            for field in (*expectation.expected, *extra_fields)
+        }
         return RuntimeVerification(
             expectation_id=expectation.id,
             status=ActionExecutionStatus.UNOBSERVABLE,
             evidence_method="runtime_observability_limit",
             fresh_evidence=False,
-            fields={
-                field: FieldVerificationStatus.UNOBSERVABLE
-                for field in expectation.expected
-            },
-            message=f"No independent getter is registered for {expectation.kind.value}.",
+            fields=fields,
+            message=message or (
+                f"No independent getter is registered for {expectation.kind.value}."
+            ),
         )
 
     def _json_result(self, js: str, timeout: float) -> dict:
@@ -698,3 +839,42 @@ class PacketTracerEnterpriseConfigurationRuntime:
             return result
 
         return normalize(observed) == normalize(expected)
+
+
+def _field_status(value: object, read, matches) -> FieldVerificationStatus:
+    """Ausente no es contradicho. ILEGIBLE tampoco. Legible y distinto sí.
+
+    Los tres estados son distintos y colapsarlos en dos fue un defecto real:
+    `getAccessVlan()` vuelve sin envolver, así que un retorno que
+    `JSON.stringify` renderice como `"742"` o `{}` llegaba acá y salía FAILED
+    -- diciéndole al operador que el puerto CONTRADICE lo esperado a partir de
+    una observación que no estableció nada. `read` devuelve el valor
+    normalizado o `None` si el tipo no es el que el getter promete.
+    """
+    if value is None:
+        return FieldVerificationStatus.UNOBSERVABLE
+    readable = read(value)
+    if readable is None:
+        return FieldVerificationStatus.UNOBSERVABLE
+    return (
+        FieldVerificationStatus.VERIFIED if matches(readable)
+        else FieldVerificationStatus.FAILED
+    )
+
+
+def _as_text(value: object) -> str | None:
+    """Un nombre es una cadena. Un número o un objeto no es un nombre ilegible:
+    es algo que no se puede leer como nombre."""
+    return value if isinstance(value, str) and value else None
+
+
+def _as_vlan_id(value: object) -> int | None:
+    """Un id de VLAN es un entero. Un float íntegro es el mismo número; una
+    cadena, un booleano o un objeto no son un id que se pueda comparar."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None

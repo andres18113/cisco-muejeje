@@ -97,6 +97,24 @@ class ApplicationExecutionJournal(BaseModel):
     dirty_state: DirtyState = DirtyState.CLEAN
     preflight_errors: list[str] = Field(default_factory=list)
     cleanup_status: CompensationStatus = CompensationStatus.NOT_ATTEMPTED
+    #: `mark_cleanup` ejecutó inversos contra lo aplicado; un restore de
+    #: escenario no. Es lo único que distingue a los dos veredictos cuando
+    #: SUCCEEDED, y se conserva para poder RECOMPONER el estado final en vez
+    #: de escribirlo una sola vez y quedar a merced del siguiente `append`.
+    cleanup_undid_mutations: bool = False
+    #: Cuántas entradas había cuando se registró el veredicto. Una compensación
+    #: sólo pudo deshacer lo que ya estaba: reaplicarla a entradas posteriores
+    #: lavaría una mutación que la compensación nunca vio. `-1` significa "sin
+    #: veredicto registrado", y hace que la composición cubra el journal entero,
+    #: que es lo que hacía antes de existir este campo.
+    cleanup_ordinal: int = -1
+    #: El residuo más fuerte que CUALQUIER veredicto ya registrado estableció.
+    #: Sólo sube. Un veredicto posterior puede empeorar el estado; ninguno puede
+    #: borrar lo que otro ya probó que quedó sin deshacer.
+    residue_floor: DirtyState = DirtyState.CLEAN
+    #: El transporte no pudo probar que la mutación no ocurrió. Es pegajoso:
+    #: una entrada posterior no despeja esa duda.
+    transport_unknown: bool = False
 
     @property
     def applied_dirty_state(self) -> DirtyState:
@@ -114,17 +132,17 @@ class ApplicationExecutionJournal(BaseModel):
                 f"Journal ordinal {entry.ordinal} is invalid; expected {expected}."
             )
         self.entries.append(entry)
-        self.dirty_state = _derive_dirty_state(self.entries)
+        self._recompose()
 
     def mark_preflight_failure(self, message: str) -> None:
         self.preflight_errors.append(message)
-        if not self.entries:
-            self.dirty_state = DirtyState.CLEAN
+        self._recompose()
 
     def mark_transport_unknown(self, message: str = "") -> None:
         if message:
             self.preflight_errors.append(message)
-        self.dirty_state = DirtyState.UNKNOWN
+        self.transport_unknown = True
+        self._recompose()
 
     def mark_cleanup(self, status: CompensationStatus) -> None:
         """Compone el estado final con lo que la compensación puede probar.
@@ -136,21 +154,8 @@ class ApplicationExecutionJournal(BaseModel):
         precisamente porque no había inverso que ejecutar.
         """
         self.cleanup_status = status
-        applied = self.applied_dirty_state
-        if status is CompensationStatus.SUCCEEDED:
-            self.dirty_state = (
-                DirtyState.CLEAN
-                if applied in {DirtyState.CLEAN, DirtyState.DIRTY_RECOVERABLE}
-                else applied
-            )
-        elif status is CompensationStatus.FAILED:
-            # Sin cambios respecto al contrato previo, y a proposito: una
-            # compensacion fallida se reporta como residuo que nadie puede
-            # deshacer solo, que es la señal mas fuerte para pedir atencion.
-            # Degradarla a UNKNOWN seria mas debil, no mas honesto.
-            self.dirty_state = DirtyState.DIRTY_UNRECOVERABLE
-        elif status is CompensationStatus.UNKNOWN:
-            self.dirty_state = DirtyState.UNKNOWN
+        self.cleanup_undid_mutations = True
+        self._record_verdict(status)
 
     def record_scenario_restore(self, status: CompensationStatus) -> None:
         """Restauración de un escenario inyectado, que NO compensa la aplicación.
@@ -164,10 +169,76 @@ class ApplicationExecutionJournal(BaseModel):
         borre una suciedad que nadie deshizo.
         """
         self.cleanup_status = status
+        self.cleanup_undid_mutations = False
+        self._record_verdict(status)
+
+    def _record_verdict(self, status: CompensationStatus) -> None:
+        """Fija hasta dónde llega este veredicto y qué residuo deja probado.
+
+        Dos cosas que la primera versión de la composición no tenía, y que una
+        revisión adversarial encontró como debilitamientos reales:
+
+        1. el veredicto sólo cubre las entradas que existían cuando se
+           registró. Una compensación exitosa no pudo deshacer una mutación
+           añadida después, así que reaplicarla la lavaría;
+        2. un residuo ya probado no se borra porque llegue otro veredicto. El
+           piso sólo sube: `record_scenario_restore(SUCCEEDED)` después de un
+           `mark_cleanup(FAILED)` dejaba CLEAN una suciedad que nadie deshizo,
+           contradiciendo la docstring del propio método.
+        """
+        self.cleanup_ordinal = len(self.entries)
         if status is CompensationStatus.FAILED:
-            self.dirty_state = DirtyState.DIRTY_UNRECOVERABLE
+            floor = DirtyState.DIRTY_UNRECOVERABLE
         elif status is CompensationStatus.UNKNOWN:
-            self.dirty_state = DirtyState.UNKNOWN
+            floor = DirtyState.UNKNOWN
+        else:
+            floor = DirtyState.CLEAN
+        self.residue_floor = max(
+            self.residue_floor, floor, key=_RESIDUE_SEVERITY.__getitem__,
+        )
+        self._recompose()
+
+    def _recompose(self) -> None:
+        """Recompone el estado final desde lo aplicado y el veredicto vigente.
+
+        Escribir `dirty_state` una sola vez dejaba el estado a merced del
+        siguiente `append` o marcador de preflight, que recomputaban desde
+        `entries` sin mirar `cleanup_status`. Componer en cada transición es lo
+        que impide que un veredicto residual ya registrado quede contradicho.
+
+        La semántica de cada veredicto es la de siempre, verbatim: una
+        compensación exitosa sólo limpia lo que un inverso podía deshacer, un
+        restore de escenario no limpia nada, y FAILED/UNKNOWN mandan. Lo único
+        nuevo es que se vuelve a aplicar en vez de recordarse.
+        """
+        covered = (
+            self.entries if self.cleanup_ordinal < 0
+            else self.entries[:self.cleanup_ordinal]
+        )
+        uncovered = (
+            [] if self.cleanup_ordinal < 0
+            else self.entries[self.cleanup_ordinal:]
+        )
+        state = _derive_dirty_state(covered)
+        if self.cleanup_status is CompensationStatus.SUCCEEDED:
+            if self.cleanup_undid_mutations and state in {
+                DirtyState.CLEAN, DirtyState.DIRTY_RECOVERABLE,
+            }:
+                state = DirtyState.CLEAN
+        elif self.cleanup_status is CompensationStatus.FAILED:
+            # Sin cambios respecto al contrato previo, y a proposito: una
+            # compensacion fallida se reporta como residuo que nadie puede
+            # deshacer solo, que es la señal mas fuerte para pedir atencion.
+            # Degradarla a UNKNOWN seria mas debil, no mas honesto.
+            state = DirtyState.DIRTY_UNRECOVERABLE
+        elif self.cleanup_status is CompensationStatus.UNKNOWN:
+            state = DirtyState.UNKNOWN
+        # Lo aplicado DESPUÉS del veredicto no lo cubrió ninguna compensación,
+        # así que entra por su cuenta y sólo puede empeorar el resultado.
+        floors = [state, self.residue_floor, _derive_dirty_state(uncovered)]
+        if self.transport_unknown:
+            floors.append(DirtyState.UNKNOWN)
+        self.dirty_state = max(floors, key=_RESIDUE_SEVERITY.__getitem__)
 
     def compact_summary(self) -> dict[str, object]:
         counts: dict[str, int] = {}
@@ -245,6 +316,17 @@ def journal_from_action_results(
             message=getattr(result, "message", ""),
         ))
     return journal
+
+
+#: Cuánto afirma cada residuo. Sólo se usa para que una duda de transporte no
+#: pueda PISAR un residuo ya conocido: UNKNOWN dice "no sé si mutó", y eso es
+#: más débil que saber que mutó y que nadie lo deshizo.
+_RESIDUE_SEVERITY = {
+    DirtyState.CLEAN: 0,
+    DirtyState.DIRTY_RECOVERABLE: 1,
+    DirtyState.UNKNOWN: 2,
+    DirtyState.DIRTY_UNRECOVERABLE: 3,
+}
 
 
 def _derive_dirty_state(entries: list[ExecutionJournalEntry]) -> DirtyState:

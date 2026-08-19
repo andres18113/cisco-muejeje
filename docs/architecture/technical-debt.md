@@ -634,7 +634,14 @@ than convergence, which has its own tests with a deterministic clock.
 ## TD-RUNTIME-006 — Two unreachable journal lifecycle transitions
 
 Status:
-OPEN
+RESOLVED
+
+Closed at E9.5 by composition rather than by refusal: `dirty_state` is now
+recomputed from `entries` **and** the recorded verdict on every transition, so
+no later `append`, preflight marker or transport marker can contradict a
+verdict already registered. All four orderings the CP2 correction enumerated —
+not the two this entry opened with — are covered, plus `mark_transport_unknown`.
+See "Resolution — E9.5" at the end of this entry.
 
 Severity:
 P2
@@ -727,6 +734,102 @@ complete caller inventory — `mark_cleanup` is called only from
 construction or precedes any append. Stage 3A4 drives the same applicators, so
 it cannot reach these orderings either. The severity is not raised: four
 unreachable orderings are no more reachable than two.
+
+### Resolution — E9.5, journal composition
+
+```text
+TD_RUNTIME_006 = RESOLVED
+CLOSURE        = ARCHITECTURALLY_RESOLVED  (model, regressions, no live surface)
+```
+
+The criterion offered two routes — *"either the journal refuses these orderings
+explicitly, or the composition accounts for a recorded cleanup verdict"*. The
+second was taken, because refusing would make a legitimate future caller
+(Diagnosis/Autofix, the consumer this entry was deadlined against) unable to
+append at all after a cleanup, which is a worse contract than composing.
+
+**What changed.** `ApplicationExecutionJournal._recompose` derives the final
+state on every transition from the current `applied_dirty_state` and the
+verdict already on the record. `append`, `mark_preflight_failure`,
+`mark_transport_unknown`, `mark_cleanup` and `record_scenario_restore` all route
+through it. Two new persisted fields carry what recomposition needs and nothing
+more: `cleanup_undid_mutations` (only `mark_cleanup` executed inverses, so only
+it may clear a `DIRTY_RECOVERABLE`) and `transport_unknown` (sticky: a later
+entry does not resolve a doubt about whether a mutation happened).
+
+**No reachable sequence changes its answer.** Measured rather than asserted: a
+differential sweep of `git show HEAD` against the new module over **11 200**
+reachable sequences — every combination of 0-3 entries drawn from all seven
+dispositions, both inverse-availability values, all six compensation statuses
+and both recorders, with no post-verdict transition — reports **0 divergences**.
+Every pre-existing assertion in `tests/test_post_cleanup_dirty_state.py` passes
+unchanged, including the one pinning `mark_cleanup(UNKNOWN)` over a
+`DIRTY_RECOVERABLE` journal.
+
+**Three deviations from HEAD exist, all on sequences no caller can reach, and
+all in the strengthening direction.** Naming them individually because "verbatim"
+would be false:
+
+| sequence | HEAD | now |
+| --- | --- | --- |
+| `mark_transport_unknown()` over an applied `DIRTY_UNRECOVERABLE` | `UNKNOWN` | `DIRTY_UNRECOVERABLE` |
+| `mark_transport_unknown()` then `mark_preflight_failure()` on an empty journal | `CLEAN` | `UNKNOWN` |
+| a second verdict of any kind after a residual first verdict | erases the first | keeps the stronger |
+
+The first two are `mark_transport_unknown`, which has **no caller in `src/` or
+`tests/`**; `UNKNOWN` claims less than knowing a mutation happened with no
+inverse, so overwriting a residue with it was a weakening. The third is the
+`residue_floor` rule below.
+
+**Two weakenings this change itself introduced, found by adversarial review and
+fixed before commit.** Both were real and both are now regressions:
+
+1. `record_scenario_restore(SUCCEEDED)` after `mark_cleanup(FAILED)` recomposed
+   to `CLEAN`, contradicting `record_scenario_restore`'s own docstring — *"sólo
+   puede empeorar el estado, nunca mejorarlo"*. Recording a second verdict
+   replaced the first. Fixed by `residue_floor`, which only ever rises: no
+   verdict can erase a residue another verdict already established.
+2. `mark_cleanup(SUCCEEDED)` followed by appends recomposed those **later**
+   entries as though the compensation had undone them. It ran before they
+   existed. Fixed by `cleanup_ordinal`: a verdict composes only over the entries
+   present when it was recorded, and anything appended afterwards joins on its
+   own and can only make the state worse.
+
+**One pre-existing weakening observed and deliberately NOT changed.**
+`mark_cleanup(UNKNOWN)` still writes `UNKNOWN` over an applied
+`DIRTY_UNRECOVERABLE`, which claims less than the run knows. It is the existing
+governed composition, it is pinned by a regression, and rewriting it is a
+claim-scope decision rather than the ordering repair this entry describes.
+
+**`mark_transport_unknown` was kept, not deleted.** The CP2 correction allowed
+either. Keeping it under the composition rule preserves the documented intent
+and removes the defect a future caller would otherwise inherit; it now
+contributes a floor of `UNKNOWN` and can no longer overwrite a residue that
+claims more.
+
+**Nothing rehydrates a journal today.** No `model_validate` on
+`ApplicationExecutionJournal` exists in `src/`; only `compact_summary` leaves the
+object. The new fields therefore change no persisted contract. `cleanup_ordinal`
+defaults to `-1` meaning "no verdict recorded", which makes a hypothetical
+rehydrated journal compose over its whole entry list exactly as HEAD did.
+
+**Regressions:** `tests/test_journal_ordering_contradictions.py`, 30 cases —
+`append` and `mark_preflight_failure` after each of `mark_cleanup` and
+`record_scenario_restore`, for both residual verdicts; the transport marker
+surviving a later append and refusing to downgrade an unrecoverable residue; a
+2 x 6 x 3 sweep over recorder, verdict and successor; verdict-after-verdict in
+both directions; and a compensation that must not clear entries appended after
+it ran. Fourteen failed before the composition; five more failed before the two
+adversarial fixes.
+
+**Caller inventory, re-measured — the CP2 list is stale by one.** `mark_cleanup`
+is called from `apply_security.py` **and** from
+`qualify_serial_physical_slice.py:224`, which did not exist when CP2 wrote
+"called only from `apply_security.py`". The new site is still unreachable for
+these orderings — it marks cleanup after the deployment has finished appending —
+but the entry should not carry a caller list that Git contradicts.
+
+---
 
 ---
 
@@ -1216,7 +1319,14 @@ length, which previously fell back to matching on network address alone.
 ## TD-HARDWARE-001 — Capability-to-hardware reconciliation remains partial
 
 Status:
-OPEN
+RESOLVED
+
+Closed at E9.5 from the live gate this entry deferred to: real controlled-probe
+evidence, produced by the governed qualification path at the exact build, moved
+`3560-24PS` from `needs_verification` to `selected` for a layer-3-requiring
+role, while every unmeasured model stayed UNKNOWN and both the no-store and
+wrong-build compositions selected nothing. See "Resolution — E9.5" at the end
+of this entry.
 
 Severity:
 P1
@@ -1435,6 +1545,117 @@ configuration gate and at the E9 control-plane gate, and **not** at the
 selection resolver. The criterion is about *eligible physical hardware*, so it
 is untouched. The entry keeps its E9.5 deadline and continues not to block
 Stage 3A4.
+
+### Resolution — E9.5, the live gate this entry deferred to
+
+```text
+TD_HARDWARE_001 = RESOLVED
+CLOSURE         = FIXED_AND_VERIFIED
+BACKEND         = Packet Tracer 9.0.1.0858
+EVIDENCE        = controlled_probe, multilayer_intervlan, verified=True, 3560-24PS
+```
+
+**What was actually missing, measured rather than assumed.** The MEG-2 record
+said the mechanism existed and the consumer did not; MEG-2 built the consumer.
+The 2026-08-19 reference acceptance then measured that composing three ways
+returned identical devices, and concluded the selection resolver had not been
+exercised. Re-measured here, that is precisely right, and the reason is narrow:
+the only capability keys any eligibility gate reads are `supports_poe`,
+`layer3` and `supports_modules`; `layer3` is asked only of **switches**
+(`hardware_planner.py:720`, every non-edge role), and **no switch had layer3
+evidence**, so the gate refused everything identically with or without a store.
+The resolver was not being bypassed. It was being fed nothing it could act on.
+
+**The blocker was a defect in the evidence producer, not in the resolver.** The
+first governed discovery run on `3560-24PS` returned
+`multilayer_intervlan = UNKNOWN`, honestly:
+
+```text
+endpoint_a_to_svi     = unreachable
+endpoint_b_to_svi     = reachable
+gateway_ping_retries  = 0/0
+intervlan_forwarding  = no_gateway_baseline
+svi_admin_state       = up      svi_operational_state = up
+svi_address_readback  = observed
+```
+
+Both SVIs converged and one endpoint reached its gateway; the other did not,
+after **zero** retries. `_observe_multilayer_behavior` started its 20 s retry
+deadline *before* the first measurement, and `TypedPingExecutor.ping` makes up
+to four attempts with its own waits — so a slow first measurement consumed the
+whole budget and the retry loop never evaluated once. `0/0` therefore did not
+mean "no retry was needed"; it meant "no retry was possible", and the dimension
+reported both states identically.
+
+Extracted to `bounded_reach` with an injectable clock: the budget now bounds the
+**retries**, starting after the first attempt, and the pass reports
+`gateway_retry_budget = exhausted:<endpoints>` so the two states can never be
+confused again. Four regressions in `tests/test_e95_multilayer_probe.py`.
+Re-run against the same model on the same build, inter-VLAN forwarding was
+demonstrated and the probe returned SUPPORTED / verified.
+
+**The reconciliation, measured through the production path.**
+
+| composition | store | build asked | selection for a layer-3 role |
+| --- | --- | --- | --- |
+| governed | real snapshots | `9.0.1.0858` | **SUPPORTED, `3560-24PS`** |
+| no evidence | none | `9.0.1.0858` | PARTIALLY_SUPPORTED, **nothing selected** |
+| wrong build | real snapshots | `0.0.0.0000` | PARTIALLY_SUPPORTED, **nothing selected** |
+
+Every other switch — `2950-24`, `2950T-24`, `2960-24TT`, `3650-24PS`,
+`IE-2000`, `Switch-PT`, `Switch-PT-Empty` — stayed `layer3 = UNKNOWN` and
+stayed in `needs_verification`. The chain is
+`multilayer_intervlan SUPPORTED+verified` → `_with_semantic_implications`
+(one-way, model-neutral) → `layer3 SUPPORTED` → `DeviceSelector._problems`,
+which branches on `CapabilityStatus` and never on a name.
+
+**No model-string special casing, proved by moving the evidence.**
+`test_the_decision_follows_the_evidence_and_not_the_model_name` puts the same
+capability on `3650-24PS` instead, and the selection follows it. A branch that
+privileged `3560-24PS` would fail that test. The pre-existing
+`test_no_model_name_exception_lives_in_planning` still scans the planning
+modules for model literals.
+
+**The tier its eligibility rests on, named as the 2026-08-18 note required.**
+
+```text
+capability eligibility (layer3 / poe / modules) = MEASURED for what a probe
+                                                  established; UNKNOWN otherwise
+port-count eligibility (min_access_ports, min_uplinks, ranking)
+                                                = DECLARED catalogue data
+supports_modules with no evidence               = DECLARED. `capability_resolver.py:60`
+                                                  sets it SUPPORTED from the catalogue's
+                                                  compatible-module list, so it is never
+                                                  UNKNOWN and a measured UNSUPPORTED is
+                                                  what would override it
+```
+
+That is stated rather than implied because the WAN-router path
+(`hardware_planner.py:555`) gates on `supports_modules` alone, so the serial
+routers the 41-device reference selects were made eligible by **DECLARED**-tier
+data. Legitimate — planning is not binding, and the deployment preflight is what
+authorises a concrete port — but it is not capability measurement and this entry
+does not claim it as such. `TD-CATALOG-PORT-001` owns the port half and is
+RESOLVED.
+
+**The `3650-24PS` claim stays unsubstantiated.** This entry has warned since CP2
+that "3650 has multilayer runtime evidence" has no provenance. Measured again
+here: `3650-24PS.layer3` is UNKNOWN with the real store, and it was never
+probed. Nothing in this closure assumes it.
+
+**What did not change.** No gate was relaxed, no requirement removed, no
+capability promoted without evidence. A model with no evidence is still refused
+for a role that needs it; a measured UNSUPPORTED is still rejected outright
+rather than left to verify. Regressions:
+`tests/test_hardware_eligibility_reconciliation.py`, 9 cases.
+
+**Capability evidence remains machine-local.** `data/capabilities/` is
+gitignored. A fresh checkout resolves every capability UNKNOWN and refuses the
+same role fail-closed, which is the behaviour the second and third rows above
+measure. Re-establishing it requires re-running the governed qualification path;
+it may not be hand-written or assumed.
+
+---
 
 ## TD-MODULE-SLOT-001 — Module slot placement is unverifiable, and the gate compares two namespaces
 
@@ -2411,7 +2632,13 @@ truth: they stay machine-local exact-build evidence.
 ## TD-ACCESSPORT-READBACK-001 — ConfigureAccessPort has no direct read-back, and the E5 aggregate gate is stricter than the acceptance criterion
 
 Status:
-OPEN
+RESOLVED
+
+Closed at E9.5 by a registered typed read-back over Packet Tracer's own
+`SwitchPort` object, qualified live on `9.0.1.0858` / `2950T-24` against three
+controls in one session. `ACCESS_PORT` no longer routes to `_unobservable`.
+`DHCP_POOL` keeps its ceiling untouched. See "Resolution — E9.5" at the end of
+this entry.
 
 Severity:
 P1
@@ -2684,6 +2911,131 @@ operation that never required it. It is **not** classified
 getter — and it is not merged into the runtime register's row, which it owns
 rather than duplicates: the register row records the runtime state, this entry
 records the missing registered query and its minimum evidence contract.
+
+### Resolution — E9.5, the object path, measured
+
+```text
+TD_ACCESSPORT_READBACK_001 = RESOLVED
+CLOSURE                    = FIXED_AND_VERIFIED
+BACKEND                    = Packet Tracer 9.0.1.0858, model 2950T-24
+EVIDENCE_METHOD            = switch_port_object_state
+```
+
+**The answer was an existing upstream primitive, not a new parser.** This entry
+searched `OperationalQueryId`, the IOS parsers, `pt_read_vlans` and the
+capability probes and concluded no adequate path existed. It did not enumerate
+the port object itself, because `AGENTS.md` rule 6 forbids writing code on an
+unconfirmed PT signature — and the entry correctly refused to guess. What was
+missing was a way to *ask* without guessing.
+
+`infrastructure/execution/access_port_probe.py` is that way. It reports which of
+a candidate list of names are functions (`typeof`), invokes only those matching
+`^(get|is|has)[A-Z]`, and enumerates the object's own members. Asking for a name
+is not calling it, and a setter is never called. Run against a disposable
+`2950T-24`, `getPort(...)` returns a **`SwitchPort`** exposing 67 members,
+including `getAccessVlan`, `getAdminOpMode`, `isAccessPort`, `getOwnerDevice`
+and `getName`.
+
+**Three controls in ONE session, each corroborated by an independent IOS read.**
+
+| port           | `Administrative Mode` (IOS) | `getAdminOpMode` | `isAccessPort` | `getAccessVlan` |
+| -------------- | --------------------------- | ---------------- | -------------- | --------------- |
+| access, VLAN 742 | static access             | **3**            | True           | **742**         |
+| trunk          | trunk                       | **2**            | False          | 1               |
+| untouched      | dynamic desirable           | **0**            | True           | 1               |
+
+**`isAccessPort()` is not the mode, and that is the important measurement.** It
+returns `True` for a `dynamic desirable` port — a port nobody configured. Wiring
+it as the mode gate would have turned an untouched port into a verified access
+port, which is exactly the fabrication this entry exists to prevent. The gate
+therefore reads `getAdminOpMode()`, and `tests/test_access_port_readback.py`
+asserts the dispatched JS contains no `isAccessPort` at all.
+
+**Codes are measured, never mapped by name.** `ADMIN_OP_MODE_ACCESS = 3`, and
+`MEASURED_ADMIN_OP_MODES` holds the three codes this session established. A code
+outside that table is **not** treated as non-access: it is a mode nobody
+measured, so `switchport_mode` returns `UNOBSERVABLE` and the action reports
+`PARTIAL`. Only a measured non-access code contradicts.
+
+**The minimum evidence set, field by field.** Every dimension the entry defined
+before any command was chosen is now a separate field status:
+
+```text
+device identity     getOwnerDevice().getName() == the bound device   FAILED on mismatch
+interface identity  getName() through _same_interface                FAILED on mismatch;
+                    Fa0/1 never matches FastEthernet0/11
+switchport mode     getAdminOpMode() against the measured table      FAILED / UNOBSERVABLE
+access VLAN id      getAccessVlan() == the compiled vlan_id          FAILED on mismatch
+freshness           the getter is invoked during this request; the
+                    file bridge names each request from (boot token,
+                    pid, seq) so no earlier response can satisfy it
+completeness        the object read has no pager. `complete` is True
+                    only when the flag is literally `true` AND all
+                    four contract keys are present -- a getter that
+                    returns `undefined` throws nothing, so the flag
+                    alone would miss it and only the dropped key
+                    remains as evidence
+```
+
+**An unreadable value is not a contradiction, and that distinction was a defect
+until adversarial review caught it.** `getAccessVlan()` returns unwrapped, unlike
+the name getters, so a Java-wrapped return that `JSON.stringify` renders as
+`"742"` or `{}` reaches Python. The first implementation compared it and reported
+`vlan_id: FAILED` — telling the operator the port *contradicts* the expectation
+from an observation that established nothing. `_field_status` now takes a reader
+that normalises or returns `None`: absent, unreadable and readable-but-different
+are three states, not two. A `742.0` is the same VLAN number; a `"742"`, a
+`True` or an `{}` is `UNOBSERVABLE`. `port_found` and `complete` are compared
+with `is True` rather than truthiness for the same reason.
+
+**Fails closed on all ten named conditions**, one regression each: wrong
+interface, prefix-only interface, wrong VLAN, trunk mode, dynamic mode,
+unmeasured mode code, missing field, incomplete observation, absent port, absent
+device, wrong device identity, malformed JSON, `ERROR:`/`PT_ERROR:`, timeout,
+and every unreadable value type for each of the three non-enum fields.
+Forty-five cases in `tests/test_access_port_readback.py`.
+
+The live qualification was **re-run after those type fixes**, because the reader
+had changed materially and only a live pass can re-establish what it claims:
+same three controls, same outcomes — `verified` on the access port, `failed` on
+the trunk and on the untouched port — with `restored=True`.
+
+**The IOS query was registered and measured, and it does NOT carry the claim.**
+`SHOW_INTERFACES_SWITCHPORT` (`show interfaces {interface} switchport`) is now a
+registered, interface-targeted, privileged query, and its live capture contains
+`Administrative Mode` and `Access Mode VLAN` for all three controls. It is
+nonetheless **truncated**: even scoped to one interface on a 2950T-24, PT
+9.0.1.0858 closes the page at `--More--` after `Protected: false`, so
+`output_complete` is `False`. Per this entry's own pagination note it was **not**
+added to `_PAGINATION_QUALIFIED_QUERIES`. It corroborates the object read in the
+qualification record; it cannot support a VERIFIED status on its own.
+`SHOW_CONTROLLERS_SERIAL` remains the only pagination-qualified query.
+
+**The qualification pass is production code, not a harness.**
+`application/use_cases/qualify_access_port_readback.py` observes the workspace,
+refuses a workspace it did not find empty, creates one `__MCP_APQUAL_*`
+disposable, applies the **typed** `CreateVlan` + `ConfigureAccessPort` +
+`ConfigureTrunk` actions through the product runtime, runs the shipped read-back
+against all three ports, captures the registered query, and removes the device in
+reverse order comparing restoration against the baseline. Measured:
+`restored=True`, `removed=(the disposable,)`, workspace back to 0 semantic
+devices.
+
+**A real leak, found and fixed here.** The first live attempt raised a pydantic
+`ValidationError` while building the action. The exception escaped before the
+result reported "created", so cleanup ran against an empty list and the probe
+switch was **left in the operator's workspace**. It was removed through the
+product's own `remove_device`, and the use case now records the disposable for
+cleanup the moment it exists.
+`test_an_exception_that_escapes_the_measurement_still_cleans_up` pins it.
+
+**What this does not promote.** `DHCP_POOL` shared the `_unobservable` branch and
+is untouched, pinned by its own regression. `ENDPOINT_GATEWAY` is untouched.
+Nothing about the E5→E9 gate scope changed. No acceptance line moves here: this
+entry closes an observability gap, and whether any run now reaches a different
+aggregate is that run's business, not this entry's claim.
+
+---
 
 ---
 
