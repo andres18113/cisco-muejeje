@@ -77,6 +77,11 @@ from ...infrastructure.execution.bridge_token import (
 )
 from ...infrastructure.execution.file_bridge import FileBridge
 from ...infrastructure.execution.bridge_preflight import BridgeReadinessPreflight
+from ...infrastructure.execution.simulation_trace_runtime import (
+    packet_trace_js,
+    simulation_mode_js,
+    simulation_step_js,
+)
 from ...infrastructure.execution.topology_observation import (
     LinkEndpoint,
     LinkExpectation,
@@ -4231,18 +4236,10 @@ def register_tools(mcp: FastMCP) -> None:
         if err:
             return err
 
-        want = "true" if on else "false"
-        js = (
-            "try {"
-            "  var __s = ipc.simulation();"
-            "  var __before = !!__s.isSimulationMode();"
-            f"  __s.setSimulationMode({want});"
-            "  reportResult(JSON.stringify({"
-            "    before: __before, after: !!__s.isSimulationMode(),"
-            "    frames: __s.getFrameInstanceCount(), sim_time: __s.getCurrentSimTime()"
-            "  }));"
-            "} catch (__e) { reportResult('ERROR:' + __e); }"
-        )
+        # El JS vive debajo de la fachada, en simulation_trace_runtime: el
+        # runtime gobernado de diagnostico lee las MISMAS primitivas y no puede
+        # divergir de lo que esta tool publica.
+        js = simulation_mode_js(on)
         raw = _bridge_send_and_wait(js, timeout=10.0)
         if raw is None:
             return _TIMEOUT_MSG
@@ -4289,26 +4286,8 @@ def register_tools(mcp: FastMCP) -> None:
             )
         steps = max(1, min(int(times), 100))
 
-        call = {"forward": "__s.forward();", "back": "__s.backward();",
-                "reset": "__s.resetSimulation();"}[act]
-        loop = call if act == "reset" else f"for (var __i = 0; __i < {steps}; __i++) {{ {call} }}"
-        js = (
-            "try {"
-            "  var __s = ipc.simulation();"
-            "  if (!__s.isSimulationMode()) {"
-            "    reportResult(JSON.stringify({ simulation_mode: false }));"
-            "  } else {"
-            "    var __b = __s.getFrameInstanceCount();"
-            f"   {loop}"
-            "    reportResult(JSON.stringify({"
-            "      simulation_mode: true, frames_before: __b,"
-            "      frames_after: __s.getFrameInstanceCount(),"
-            "      sim_time: __s.getCurrentSimTime(),"
-            "      current_index: __s.getCurrentFrameInstanceIndex()"
-            "    }));"
-            "  }"
-            "} catch (__e) { reportResult('ERROR:' + __e); }"
-        )
+        js = simulation_step_js(act, steps)
+
         raw = _bridge_send_and_wait(js, timeout=15.0)
         if raw is None:
             return _TIMEOUT_MSG
@@ -4362,70 +4341,7 @@ def register_tools(mcp: FastMCP) -> None:
         if err:
             return err
 
-        lim = max(1, min(int(limit), 200))
-        want = json.dumps(device.strip())
-        dec = "true" if include_decisions else "false"
-        js = (
-            "try {"
-            "  var __s = ipc.simulation();"
-            f"  var __lim = {lim}; var __want = {want}; var __wd = {dec};"
-            "  var __n = __s.getFrameInstanceCount();"
-            "  var __out = [];"
-            "  for (var __i = 0; __i < __n && __out.length < __lim; __i++) {"
-            "    try {"
-            "      var __f = __s.getFrameInstanceAt(__i);"
-            "      if (!__f) continue;"
-            "      var __dev = __f.getDevice();"
-            "      var __dn = __dev ? __dev.getName() : '';"
-            "      if (__want && __dn !== __want) continue;"
-            "      var __prev = __f.getPreviousDevice();"
-            "      var __ip = __f.getInPort();"
-            "      var __op = null;"
-            # getOutPort(0) lanza cuando getOutPortCount() es 0 (frame en buffer,
-            # todavía sin puerto de salida elegido).
-            "      try {"
-            "        if (__f.getOutPortCount() > 0) {"
-            "          var __o = __f.getOutPort(0); __op = __o ? __o.getName() : null;"
-            "        }"
-            "      } catch (__oe) {}"
-            "      var __dl = [];"
-            "      if (__wd) {"
-            # No hay getDecisionCount(); el conteo de nodos del flowchart coincide
-            # con el de decisiones (verificado: 6/6 y 3/3 en un ping real).
-            "        var __dc = __f.getFlowChartNodeCount();"
-            "        for (var __j = 0; __j < __dc; __j++) {"
-            "          try {"
-            # getFrameDecsionAt: el typo es de PT, no nuestro.
-            "            var __d = __f.getFrameDecsionAt(__j);"
-            "            if (!__d) continue;"
-            "            __dl.push({ layer: __d.osiLayer, inbound: !!__d.osiIn,"
-            "                        description: __d.description });"
-            "          } catch (__de) {}"
-            "        }"
-            "      }"
-            "      __out.push({"
-            "        index: __i, device: __dn,"
-            "        previous_device: __prev ? __prev.getName() : null,"
-            "        in_port: __ip ? __ip.getName() : null, out_port: __op,"
-            "        source: __f.getSourceString(), destination: __f.getDestinationString(),"
-            "        traffic_type_raw: __f.getUserTrafficType(),"
-            "        sim_time: __f.getStartSimTime(), transit_time: __f.getTransitTime(),"
-            "        sent: !!__f.isFrameSent(), accepted: !!__f.isFrameAccepted(),"
-            "        dropped: !!__f.isFrameDropped(), buffered: !!__f.isFrameBuffered(),"
-            "        in_transit: !!__f.isFrameOnTransit(),"
-            "        collided_at_device: !!__f.isFrameCollidedAtDevice(),"
-            "        collided_on_link: !!__f.isFrameCollidedOnLink(),"
-            "        not_forwarded: !!__f.isFrameNotForwarded(),"
-            "        unexpected: !!__f.isFrameUnexpected(),"
-            "        decisions: __dl"
-            "      });"
-            "    } catch (__pe) {}"
-            "  }"
-            "  reportResult(JSON.stringify({"
-            "    total: __n, simulation_mode: !!__s.isSimulationMode(), frames: __out"
-            "  }));"
-            "} catch (__e) { reportResult('ERROR:' + __e); }"
-        )
+        js = packet_trace_js(limit, device, include_decisions)
 
         raw = _bridge_send_and_wait(js, timeout=20.0)
         if raw is None:

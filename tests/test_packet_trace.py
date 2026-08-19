@@ -138,10 +138,23 @@ class TestSummarizeTrace:
 
 
 class TestSimulationReaders:
-    """Guards sobre el JS. Son closures en register_tools, así que se verifican
-    por texto, igual que TestReconcileWiring en test_live_reconcile.py."""
+    """Guards sobre el JS, que ahora vive debajo de la fachada.
+
+    Estos guards nacieron leyendo `tool_registry.py`, donde el JS estaba
+    inlineado dentro de closures de `register_tools`. Desde que el runtime
+    gobernado de diagnostico lee las mismas primitivas, las definiciones se
+    unificaron en `simulation_trace_runtime`: mantenerlas duplicadas era la
+    unica forma de que la tool publica y el runtime divergieran en silencio.
+    Se sigue verificando por texto porque lo que se fija es el JS, no el valor
+    de retorno de una llamada a Packet Tracer que aca no existe.
+    """
 
     def _src(self) -> str:
+        return Path(
+            "src/packet_tracer_mcp/infrastructure/execution/simulation_trace_runtime.py"
+        ).read_text(encoding="utf-8")
+
+    def _facade_src(self) -> str:
         return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
             encoding="utf-8"
         )
@@ -166,5 +179,6 @@ class TestSimulationReaders:
 
     def test_step_action_is_validated_before_reaching_js(self):
         """`action` no se interpola: se mapea a una llamada de una lista cerrada."""
-        src = self._src()
-        assert 'if act not in ("forward", "back", "reset")' in src
+        assert 'if act not in ("forward", "back", "reset")' in self._facade_src()
+        # La misma lista cerrada, del lado del runtime gobernado.
+        assert "call = _STEP_CALLS[action]" in self._src()
