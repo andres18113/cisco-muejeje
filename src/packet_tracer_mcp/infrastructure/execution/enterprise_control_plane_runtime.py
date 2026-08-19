@@ -667,6 +667,18 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         route_convergence_timeout_seconds: float = 45.0,
         route_convergence_interval_seconds: float = 5.0,
         route_convergence_attempts: int = 10,
+        # Medido en MEG-4 run 11 con el trace de simulacion de Packet Tracer:
+        # la primera medida de reenvio salio `0/5` mientras el camino ya estaba
+        # bien cableado y bien configurado, y ~30 s despues el MISMO ping
+        # recibio Echo Reply. Entre medio no cambio ninguna configuracion: lo
+        # que faltaba era convergencia -- ARP sobre la LAN de destino y un
+        # switch de acceso recien creado cuyos puertos todavia no reenviaban.
+        # Toda otra observacion de este runtime que depende de un plano que
+        # converge ya tiene su ventana acotada de RELECTURA; esta, que depende
+        # de la mas larga de todas, se media una sola vez.
+        reachability_convergence_timeout_seconds: float = 90.0,
+        reachability_convergence_interval_seconds: float = 5.0,
+        reachability_convergence_attempts: int = 6,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
@@ -680,6 +692,22 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             or route_convergence_attempts < 1
         ):
             raise ValueError("route_convergence_attempts must be a positive integer.")
+        if reachability_convergence_timeout_seconds < 0:
+            raise ValueError(
+                "reachability_convergence_timeout_seconds must be non-negative.",
+            )
+        if reachability_convergence_interval_seconds < 0:
+            raise ValueError(
+                "reachability_convergence_interval_seconds must be non-negative.",
+            )
+        if (
+            isinstance(reachability_convergence_attempts, bool)
+            or not isinstance(reachability_convergence_attempts, int)
+            or reachability_convergence_attempts < 1
+        ):
+            raise ValueError(
+                "reachability_convergence_attempts must be a positive integer.",
+            )
         self._query_inventory = query_inventory
         self._configuration = PacketTracerConfigurationRuntime(send)
         self._renderer = renderer or PacketTracerControlPlaneRenderer()
@@ -710,6 +738,9 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         self._route_timeout = route_convergence_timeout_seconds
         self._route_interval = route_convergence_interval_seconds
         self._route_attempts = route_convergence_attempts
+        self._reach_timeout = reachability_convergence_timeout_seconds
+        self._reach_interval = reachability_convergence_interval_seconds
+        self._reach_attempts = reachability_convergence_attempts
         self._clock = clock
         self._sleep = sleeper
         self._device_names_by_id: dict[str, str] = {}
@@ -838,22 +869,43 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 ControlPlaneExecutionStage.BEHAVIOR,
                 "The reachability expectation is not a typed boolean.",
             )
-        try:
-            observed = self._ping.ping(source, destination)
-        except Exception as exc:
-            return self._unobservable(
-                expectation,
-                ControlPlaneExecutionStage.BEHAVIOR,
-                f"Typed ping raised {type(exc).__name__}: {exc}",
-            )
-        if not observed.fresh_output_observed:
-            return self._unobservable(
-                expectation,
-                ControlPlaneExecutionStage.BEHAVIOR,
-                observed.failure_reason or "No fresh typed-ping result was observed.",
-            )
+        # Ventana de convergencia ACOTADA, la misma forma que `_observe_rip_route`
+        # y por la misma razon: una sola medida confunde "todavia no converge"
+        # con "no va a converger". Lo unico que se repite es la MEDIDA -- aqui
+        # no se reaplica ni se redispacha ninguna configuracion.
+        #
+        # No es un reintento en busca de un resultado favorable. Corta en cuanto
+        # la medida coincide con lo esperado, exactamente como el bucle de rutas
+        # corta en cuanto la ruta aparece; si lo esperado fuera `reachable=False`
+        # cortaria en el primer False y seguiria midiendo mientras diera True.
+        # Y una ventana no fresca aborta de inmediato: esperar no la vuelve
+        # atribuible, y agotar el presupuesto la disfrazaria de fallo.
         expected = expected_value
-        matched = observed.reachable is expected
+        deadline = self._clock() + self._reach_timeout
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                observed = self._ping.ping(source, destination)
+            except Exception as exc:
+                return self._unobservable(
+                    expectation,
+                    ControlPlaneExecutionStage.BEHAVIOR,
+                    f"Typed ping raised {type(exc).__name__}: {exc}",
+                )
+            if not observed.fresh_output_observed:
+                return self._unobservable(
+                    expectation,
+                    ControlPlaneExecutionStage.BEHAVIOR,
+                    observed.failure_reason
+                    or "No fresh typed-ping result was observed.",
+                )
+            matched = observed.reachable is expected
+            if matched or attempts >= self._reach_attempts:
+                break
+            if self._clock() + self._reach_interval >= deadline:
+                break
+            self._sleep(self._reach_interval)
         # Contabilidad normal de campos, igual que toda otra observacion. Antes
         # este era el unico observador que construia `fields` a mano, y por eso
         # un `source_device_name` reclamado desaparecia del resultado en vez de
@@ -883,11 +935,12 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 fields["protocol"] = self._field(
                     applied_protocol == expectation.expected.get("protocol")
                 )
-        # `traffic_flow_id` NO se toca. Es la etiqueta con la que el compilador
-        # identifica la afirmacion, no algo que ninguna medida pueda observar:
-        # el unico comando registrado es `ping <ip>` y nada lo devuelve. Se
-        # reporta UNOBSERVABLE en vez de desaparecer, que es la diferencia entre
-        # declarar un techo y ocultarlo.
+        # El flujo del intent NO aparece aca, y no porque se oculte: viaja en
+        # `expectation.source_traffic_flow_id`, que es procedencia igual que
+        # `action_id`. Un campo de `expected` es una propiedad del device que
+        # alguna consulta registrada podria leer; una etiqueta del compilador
+        # nunca lo fue. Cualquier OTRO campo reclamado que no se pueda observar
+        # sigue rindiendo UNOBSERVABLE via `_unobservable_fields`.
         status = self._aggregate_status(fields)
         return RuntimeControlPlaneVerification(
             expectation_id=expectation.id,
@@ -897,11 +950,14 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             fresh_evidence=True,
             fields=fields,
             message=(
-                f"Fresh typed ping matched reachable={expected}."
-                if matched else f"Fresh typed ping differed from reachable={expected}."
+                f"Fresh typed ping matched reachable={expected} after "
+                f"{attempts} bounded measurement(s)."
+                if matched else
+                f"Fresh typed ping differed from reachable={expected} across "
+                f"{attempts} bounded measurement(s); nothing was redispatched."
             ),
             convergence=ConvergenceReport(
-                attempts=1,
+                attempts=attempts,
                 final_status=status,
                 last_observable_state=f"reachable={observed.reachable}",
             ),

@@ -349,6 +349,17 @@ class ControlPlaneVerificationExpectation(BaseModel):
     device_id: str
     peer_device_id: str = ""
     source_link_id: str = ""
+    #: El flujo del intent cuya alcanzabilidad afirma esta expectativa.
+    #:
+    #: Es PROCEDENCIA, igual que `source_link_id` y `action_id`: dice de que
+    #: elemento del intent salio la afirmacion. NO es una propiedad del device,
+    #: y por eso no vive en `expected` ni en `unclaimed_fields`. Ninguna consulta
+    #: registrada podria devolverlo -- el unico comando es `ping <ip>` -- asi que
+    #: contarlo como lectura pendiente describia mal el techo de evidencia:
+    #: confundia "no se pudo leer esta propiedad del device" con "esto no es una
+    #: propiedad del device". La etiqueta se conserva y sigue auditable; lo que
+    #: cambia es donde se declara, no cuanto se reclama.
+    source_traffic_flow_id: str = ""
     required_capability: ControlPlaneCapabilityDimension
     expected: dict[str, str | int | bool | list[str] | list[int]] = Field(
         default_factory=dict,

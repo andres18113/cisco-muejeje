@@ -320,7 +320,12 @@ def test_ripv2_compiles_typed_flow_behavior_after_exact_route_readback():
         if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
     ]
     assert len(behavior) == 1
-    assert behavior[0].expected["traffic_flow_id"] == "flow/a-to-c"
+    # El flujo del intent sigue atado a la expectativa, como PROCEDENCIA:
+    # es una etiqueta del compilador, no una propiedad del device que alguna
+    # consulta registrada pudiera leer.
+    assert behavior[0].source_traffic_flow_id == "flow/a-to-c"
+    assert "traffic_flow_id" not in behavior[0].expected
+    assert "traffic_flow_id" not in behavior[0].unclaimed_fields
     assert behavior[0].expected["destination_ipv4"]
     route_ids = {
         item.id for item in compiled.plan.verification_expectations

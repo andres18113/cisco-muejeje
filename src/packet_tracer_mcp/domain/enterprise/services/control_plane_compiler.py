@@ -1775,10 +1775,12 @@ class ControlPlaneCompiler:
                 action_id=source_action.id,
                 device_id=source_id,
                 peer_device_id=target_id,
+                # Procedencia, no afirmacion observable: ver
+                # ControlPlaneVerificationExpectation.source_traffic_flow_id.
+                source_traffic_flow_id=flow.id,
                 required_capability=
                     ControlPlaneCapabilityDimension.ROUTING_BEHAVIOR,
                 expected={
-                    "traffic_flow_id": flow.id,
                     "destination_ipv4": destination,
                     "reachable": True,
                     "protocol": DynamicRoutingProtocol.RIPV2.value,
