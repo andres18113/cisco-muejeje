@@ -139,24 +139,34 @@ claim as the `DHCP gateway getter` and `DHCP DNS getter` rows, which are about
 a DHCP server's pool configuration rather than a statically addressed endpoint;
 those rows are untouched. No other row moves.
 
-## RIPv2 control-plane observation ceiling — measured 2026-08-18
+## RIPv2 control-plane observation ceiling — remeasured 2026-08-19
 
-Stage 3A4 MEG-4 run 6 applied RIPv2 through the typed product path and read it
-back. The rows below are measured on PT `9.0.1.0858`, not derived from source.
+Stage 3A4 MEG-4 run 8 applied RIPv2 through the typed product path, read it
+back, and closed the source-identity field. The rows below are measured on PT
+`9.0.1.0858`, not derived from source. They supersede the 2026-08-18 rows
+measured at run 6.
 
 | Row | Observed | State |
 | --- | --- | --- |
-| RIP routing-process observation | `protocol`, `version_send`, `version_recv`, `auto_summary`, `networks`, `passive_interfaces` all VERIFIED on both routers from a fresh `show ip protocols` | `PARTIAL — aggregate UNOBSERVABLE`. `source_device_name` is not reported by the query; the expectation claims it, and narrowing is refused by `_unobservable_fields`. |
-| RIP learned-route observation | `network`, `prefix_length`, `protocol` VERIFIED on both routers from a fresh `show ip route rip`; each router learned the far-side prefix across the serial WAN | `PARTIAL — aggregate UNOBSERVABLE`, same single field. |
-| RIP end-to-end forwarding | not attempted | `DEPENDENCY_BLOCKED` by the route row. The prerequisite gate refused to ping for a claim that had not closed. |
+| RIP routing-process observation | `protocol`, `version_send`, `version_recv`, `auto_summary`, `networks`, `passive_interfaces`, `source_device_name` all VERIFIED on both routers from a fresh `show ip protocols` | `CLOSED — aggregate VERIFIED`. |
+| RIP learned-route observation | `network`, `prefix_length`, `protocol`, `source_device_name` VERIFIED on both routers from a fresh `show ip route rip`; each router learned the far-side prefix across the serial WAN | `CLOSED — aggregate VERIFIED`. |
+| RIP end-to-end forwarding | not attempted | `CAPABILITY_UNKNOWN`. The verification-prerequisite gate is now satisfied; `control_plane_capability_gate` refuses because `2911:routing_behavior` is UNKNOWN. |
 
-This is the same shape as the OSPF ceiling below and is deliberately not merged
-with it: that one is `router_id` on OSPF, this one is `source_device_name` on
-RIP, and neither promotes the other. No row here is closed, and nothing is
-promoted — `PARTIAL` describes the field detail, and the aggregate each
-expectation reports remains `UNOBSERVABLE`.
+What closed the first two rows is **execution provenance**, not a new IOS
+command. `show ip protocols` and `show ip route rip` still print no hostname.
+The identity comes from the envelope: the read enumerates the runtime network
+and keeps the single device that can have produced that session, and the output
+that gets parsed is that device's. Requested-name substitution is refused by
+construction — a session owned by another device returns no output at all.
 
-Evidence: `../architecture/stage-3a4-bounded-live-qualification.md`, "Run 6".
+The forwarding row is a **capability-evidence** limitation, not an observation
+ceiling. `control_plane_capabilities.py` claims a dimension only from live
+evidence attributed to a model; no forwarding measurement has ever been
+attributed to `2911`. Closing it needs a governed decision about how first-time
+behaviour evidence may be obtained, and nothing here may be promoted without
+one.
+
+Evidence: `../architecture/stage-3a4-bounded-live-qualification.md`, "Run 8".
 
 ## OSPF observation ceiling — recorded 2026-08-17
 

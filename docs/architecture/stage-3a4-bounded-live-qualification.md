@@ -1,8 +1,8 @@
 # Stage 3A4 — MEG-4 bounded live qualification
 
-Three runs so far, all on `feature/runtime-ripv2`, worktree
-`.claude/worktrees/runtime-ripv2`. **Run 3, at the end of this document, is
-the current state.** Runs 1 and 2 are left exactly as they were recorded —
+Eight runs so far, all on `feature/runtime-ripv2`, worktree
+`.claude/worktrees/runtime-ripv2`. **Run 8, at the end of this document, is
+the current state.** Every earlier run is left exactly as it was recorded —
 they are history, not a summary of where things stand.
 
 ## Run 1 — 2026-08-17
@@ -1617,3 +1617,222 @@ REFERENCE_41_41_RUN    = NOT_EXECUTED
 MEG-5 must not open. The bounded run still has to succeed, rows 10–12 are not
 closed, and the reference topology's own models still have neither measured
 capability evidence nor measured port inventories.
+
+---
+
+# Run 7 — 2026-08-19, first run with execution-envelope provenance
+
+## Outcome, stated first
+
+```text
+MEG_4_STATUS                  = FAILED / CLEAN
+STOPPED_AT                    = control_plane_apply
+HEAD                          = ad5b8fe
+LIVE_PACKET_TRACER_RUN        = YES
+PHYSICAL_DEPLOYMENT           = VERIFIED
+SERIAL_ORIENTATION            = VERIFIED  (4 pages per endpoint)
+E5_ACTIONS_APPLIED            = 17 of 17
+REQUIRED_FOUNDATIONS          = VERIFIED
+RIPV2_APPLIED                 = YES, both routers
+SOURCE_DEVICE_NAME            = VERIFIED on 3 of 4 observations
+SEMANTIC_INVENTORY_RESTORED   = YES
+E4_IDENTITY_PRESERVED         = YES
+RAW_IOS_OR_JS_USED            = NONE
+HARNESS_PERFORMED_A_MUTATION  = NO
+```
+
+`physical_topology_hash = 1d2324aa7cf334584f2b6ecb27791e113676a5076a54c7c5c32285ca22d67692`,
+unchanged from runs 3-6. Duration 42 s.
+
+## What the provenance change did
+
+`source_device_name` was VERIFIED for the first time — on both learned-route
+observations and on one of the two routing-process observations:
+
+```text
+cp/verify-rip-process/f988ae8c   verified     source_device_name verified
+cp/verify-rip-route/5d922032     verified     source_device_name verified
+cp/verify-rip-route/90182acd     verified     source_device_name verified
+cp/verify-rip-process/ee78a086   unobservable source_device_name unobservable   <- the gap
+```
+
+No name was ever substituted. The one that did not close reported exactly what
+it measured: the session was not uniquely attributed, so the field stayed
+UNOBSERVABLE.
+
+## The defect this run found
+
+The attribution predicate required a candidate device's transcript to **start
+with** the baseline captured at dispatch. This repository had already measured
+that a fresh session need not: `fresh_command_window`
+(`command_dispatch.py:215-245`) names two cases where `after` stops beginning
+with `before` and is still fresh and attributable — IOS erases its `--More--`
+on leaving the pager, and a long buffer rolls off the head. A strict prefix
+rejects exactly those reads, and `show ip protocols` is read with the pager
+permitted.
+
+Fixed at `38e4a8c` by anchoring on the **retained suffix** instead — the
+trailing 512 characters of the baseline, whitespace-trimmed — and additionally
+requiring the dispatched command to appear behind that anchor. That is strictly
+more discriminating than the rule it replaces, not looser: an idle twin router
+no longer qualifies by sharing a boot banner.
+
+## Also surfaced
+
+With both learned-route claims closed, the forwarding expectation stopped being
+`dependency_blocked` and reached the next gate:
+
+```text
+cp/verify-flow-reachability/1a2c4b34  behavior  unobservable
+    evidence_method = control_plane_capability_gate
+    message         = "2911:routing_behavior is unknown."
+```
+
+The verification-prerequisite gate is satisfied. What now blocks typed
+forwarding is capability evidence, not provenance.
+
+---
+
+# Run 8 — 2026-08-19, after the retained-suffix anchor
+
+## Outcome, stated first
+
+```text
+MEG_4_STATUS                  = FAILED / CLEAN
+STOPPED_AT                    = control_plane_apply
+HEAD                          = 38e4a8c
+LIVE_PACKET_TRACER_RUN        = YES
+PHYSICAL_DEPLOYMENT           = VERIFIED   (status verified, dirty_state clean)
+SERIAL_ORIENTATION            = VERIFIED   (A-EDGE-RTR-01 dce @ 2000000 bps,
+                                            B-EDGE-RTR-01 dte; 4 pages each,
+                                            pagination completed)
+E5_ACTIONS_APPLIED            = 17 of 17
+E5_AGGREGATE                  = partial / observability_limitation
+CONFIGURATION_FULLY_VERIFIED  = NO         (stated explicitly)
+REQUIRED_FOUNDATIONS          = VERIFIED   (4 x l3_interface + 1 x link)
+E9_OBSERVED_STATUS            = VERIFIED   <- first time
+RIPV2_PROCESS_AGGREGATE       = VERIFIED, both routers
+LEARNED_ROUTE_AGGREGATE       = VERIFIED, both routers
+SOURCE_DEVICE_NAME            = VERIFIED on 4 of 4 observations
+TYPED_FORWARDING              = UNOBSERVABLE / capability gate
+SEMANTIC_INVENTORY_RESTORED   = YES  (independent re-observation, separate process)
+E4_IDENTITY_PRESERVED         = YES
+RAW_IOS_OR_JS_USED            = NONE
+HARNESS_PERFORMED_A_MUTATION  = NO
+NO_PKT_SAVED                  = YES
+```
+
+Duration 43 s. Same hash, same shape, same 17 E5 actions as runs 3-7.
+
+## The control plane, measured
+
+```text
+configured = compiled   applied = applied   observed = VERIFIED
+behavior   = unobservable          failover = skipped
+```
+
+All four observations, `fresh_evidence = true`:
+
+```text
+cp/verify-rip-process/ee78a086  verified  fresh_show_ip_protocols
+    protocol, version_send, version_recv, auto_summary, networks,
+    passive_interfaces, source_device_name   -- all verified
+cp/verify-rip-process/f988ae8c  verified  fresh_show_ip_protocols
+    same seven fields, all verified
+cp/verify-rip-route/5d922032    verified  fresh_show_ip_route_rip
+    network, prefix_length, protocol, source_device_name -- all verified
+    convergence: 1 read, last_observable_state 10.0.0.8/29
+cp/verify-rip-route/90182acd    verified  fresh_show_ip_route_rip
+    same four fields, all verified
+    convergence: 1 read, last_observable_state 10.0.0.0/29
+```
+
+`source_device_name` is established by execution provenance, never by the
+requested name. The output that was parsed and the device it is attributed to
+come from the same enumeration pass, so evidence and provenance cannot
+originate on different devices.
+
+## The blocker this run leaves
+
+```text
+cp/verify-flow-reachability/1a2c4b34  end_to_end_reachability  behavior
+    status          = unobservable
+    evidence_method = control_plane_capability_gate
+    fields          = {capability: unobservable}
+    message         = "2911:routing_behavior is unknown."
+```
+
+`infrastructure/catalog/control_plane_capabilities.py` grants `2911` only
+`RIPV2_CONFIG`, `ROUTING_PROCESS_STATE` and `ROUTING_ROUTE_STATE`, each from a
+model-attributed live qualification. `ROUTING_BEHAVIOR` is UNKNOWN because no
+live measurement of forwarding behaviour has ever been attributed to this
+model, and that catalogue refuses to claim a dimension without one.
+
+**Not worked around.** Adding the dimension to the catalogue, or admitting
+UNKNOWN into `_RUNNABLE_CAPABILITIES`, would fabricate exactly the
+model-attributed evidence the gate exists to require. Invoking the ping
+directly would bypass the product path. Recorded as the next blocker; the
+decision about how first-time behaviour evidence may be obtained is **not**
+taken in this run.
+
+## G4 — cleanup and restoration
+
+```text
+cleanup entries    = 8, all applied, exactly the planned names
+inventory_restored = True
+```
+
+Independent post-run re-observation, separate process with its own G2:
+
+```text
+semantic_device_count = 0
+link_count            = 0
+backend_managed       = 2  (both "Power Distribution Device", zero ports)
+```
+
+Unchanged from this run's baseline — unlike run 6, no additional
+power-distribution object appeared.
+
+## Exit matrix
+
+| # | Item | Result |
+| --- | --- | --- |
+| 1 | exact-version capability consumption by the normal path | **PASS** |
+| 2 | product-generated `TopologyPlan` | **PASS** |
+| 3 | module effect containment | **PASS** |
+| 4 | fresh two-ended serial orientation | **PASS** |
+| 5 | exactly one DCE and one DTE | **PASS** |
+| 6 | typed E5 serial transit addressing | **PASS** |
+| 7 | clock on the observed DCE only | **PASS** |
+| 8 | independent clock readback | **PASS** |
+| 9 | authentic foundational evidence | **PASS** |
+| 10 | typed RIPv2 process state | **PASS** — every claimed field verified on both routers, aggregate VERIFIED |
+| 11 | typed learned-route readback | **PASS** — every claimed field verified on both routers, aggregate VERIFIED |
+| 12 | typed forwarding behaviour | **NOT REACHED** — `2911:routing_behavior` is UNKNOWN |
+| 13 | semantic cleanup / restoration | **PASS** — verified by independent re-observation |
+
+Rows 10 and 11 move PARTIAL to **PASS**, both for the first time.
+
+## What this does and does not establish
+
+```text
+CONTROL_PLANE_SOURCE_PROVENANCE        = ESTABLISHED (4 of 4, live)
+RIPV2_PROCESS_SEMANTICS_OBSERVED       = YES, aggregate VERIFIED
+RIPV2_LEARNED_ROUTES_OBSERVED          = YES, aggregate VERIFIED
+TYPED_FORWARDING_OBSERVED              = NO (capability gate, not attempted)
+CONFIGURATION_FULLY_VERIFIED           = NO
+FULL_PRODUCT_PIPELINE_ACCEPTANCE       = NOT_ESTABLISHED (unchanged)
+TD_ACCEPTANCE_001                      = OPEN (unchanged)
+TD_HARDWARE_001                        = OPEN (unchanged)
+TD_MODULE_SLOT_001                     = BACKEND_LIMITATION (unchanged)
+TD_CATALOG_PORT_001                    = RESOLVED (unchanged)
+TD_ORIENTATION_PAGER_001               = RESOLVED (unchanged)
+TD_CONFIG_CAPABILITY_001               = RESOLVED (unchanged)
+TD_ACCESSPORT_READBACK_001             = OPEN, still not blocking MEG-4
+```
+
+```text
+MEG_5                  = NOT_OPENED
+MEG_5_EXECUTION        = BLOCKED
+REFERENCE_41_41_RUN    = NOT_EXECUTED
+```

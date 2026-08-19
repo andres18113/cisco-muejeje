@@ -3,19 +3,17 @@
 ## Current checkpoint
 
 Executable state, from Git rather than from memory. Everything below was
-measured at `8f1a478`; this file's own commit is docs-only and changes none of
-it.
+measured at `38e4a8c`.
 
 ```text
 branch            feature/runtime-ripv2
-HEAD              8f1a478853957b0d1276e4de2b6374f94a2867d0
+HEAD              38e4a8c
 working tree      clean  (git status --short empty, git diff --check clean)
-worktree          .claude/worktrees/runtime-ripv2   (operational location only;
-                  no product code depends on it — verified, see below)
+worktree          .claude/worktrees/runtime-ripv2   (operational location only)
 interpreter       ./.venv/Scripts/python.exe        (worktree-local, authoritative)
 PYTHONPATH        unset
-regression        2103 passed, 3 pre-existing pytest deprecation warnings
-Graphify          7872 nodes, 26873 edges, 273 communities
+regression        2121 passed, 3 pre-existing pytest deprecation warnings
+Graphify          7935 nodes, 27057 edges, 277 communities
 ```
 
 Run the suite as `./.venv/Scripts/python.exe -m pytest` from the worktree root.
@@ -23,11 +21,11 @@ The `python` on `PATH` is a different installation with no `pytest`.
 
 **Authority order.** Current Git, source and tests win over any prose in this
 file. The authoritative MEG-4 record is
-`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose **run 6** is
+`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose **run 8** is
 the current state; the authoritative debt state is
 `docs/architecture/technical-debt.md`; the runtime register is
-`docs/qa/e95-runtime-debt.md`. Everything from "What happened since the last
-handoff" onward in this file is Slice 2B/3 history, not status.
+`docs/qa/e95-runtime-debt.md`. Everything from "History below this line" onward
+is Slice 2B/3 history, not status.
 
 ## MEG status
 
@@ -39,7 +37,7 @@ MEG-1  live import isolation ................... CLOSED   0587995, 5641445
 MEG-2  capability consumer / TD-HARDWARE ....... CLOSED   ea4eb3a, 06217ac
 MEG-3  product execution surface ............... CLOSED   7de805a, 6ef25bf
 OAG    offline adversarial matrix .............. CLOSED   c1ea586
-MEG-4  bounded live qualification ............. FAILED / CLEAN, 6 runs
+MEG-4  bounded live qualification ............. FAILED / CLEAN, 8 runs
 MEG-5  full same-run 41/41 acceptance ......... NOT_OPENED
 MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
 MEG-7  Stage 3A4 closure ...................... NOT_STARTED
@@ -49,57 +47,66 @@ MEG_5_EXECUTION     = BLOCKED
 REFERENCE_41_41_RUN = NOT_EXECUTED
 ```
 
-## MEG-4 run 6 — the current executed state
+## MEG-4 run 8 — the current executed state
 
-Six bounded live runs against PT `9.0.1.0858`, every one failing clean with the
-workspace restored. Run 6 is the first to reach the control plane.
+Eight bounded live runs against PT `9.0.1.0858`, every one failing clean with
+the workspace restored. Run 8 is the first whose control-plane observations all
+report VERIFIED.
 
 ```text
 MEG_4                          = FAILED / CLEAN
 STOPPED_AT                     = control_plane_apply
 
-PHYSICAL_DEPLOYMENT            = VERIFIED   (8 devices, 7 links, 17 items observed)
-MODULE_PORT_EFFECT             = VERIFIED   (both routers)
-MODULE_IDENTITY                = UNOBSERVABLE
-MODULE_PLACEMENT               = UNOBSERVABLE
-PORT_BINDINGS                  = BACKEND_VERIFIED inventory
-SERIAL_ORIENTATION             = VERIFIED   (one DCE, one DTE; 4 pages captured per endpoint)
-
+PHYSICAL_DEPLOYMENT            = VERIFIED   (dirty_state clean)
+SERIAL_ORIENTATION             = VERIFIED   (one DCE @ 2000000 bps, one DTE;
+                                             4 pages captured per endpoint)
 E5_ACTIONS                     = 17 of 17 APPLIED
-ACCESS_PORT                    = UNOBSERVABLE   (preserved, not required, not promoted)
-ENDPOINT_STATIC                = PARTIAL        (preserved; acceptable for the current
-                                                 routing foundation — no endpoint_address
-                                                 foundation is declared)
-CONFIGURATION_FULLY_VERIFIED   = NO             (stated explicitly in the result)
+E5_AGGREGATE                   = partial / observability_limitation
+ACCESS_PORT                    = UNOBSERVABLE   (preserved, not required)
+ENDPOINT_STATIC                = PARTIAL        (preserved; acceptable)
+CONFIGURATION_FULLY_VERIFIED   = NO             (stated explicitly)
 
 AUTHENTIC_FOUNDATION_GATE      = PASS
-REQUIRED_FOUNDATIONS           = derived from the typed ControlPlanePlan:
-                                 4 x l3_interface + 1 x link, all VERIFIED
-                                 (no access_port, no endpoint_address)
+REQUIRED_FOUNDATIONS           = 4 x l3_interface + 1 x link, all VERIFIED
 
-E9_REACHED                     = YES, first time. Preflight passed, no errors.
-RIPV2_APPLIED                  = YES, both routers, typed product path
-RIPV2_PROCESS_PAYLOAD_OBSERVED = YES — protocol, version_send, version_recv,
-                                 auto_summary, networks, passive_interfaces all
-                                 VERIFIED on both routers (fresh show ip protocols)
-LEARNED_ROUTE_PAYLOAD_OBSERVED = YES — network, prefix_length, protocol VERIFIED on
-                                 both routers (fresh show ip route rip); each router
-                                 learned the far-side prefix across the serial WAN
-SOURCE_DEVICE_NAME             = UNOBSERVABLE
-PROCESS_AGGREGATE_CLAIM        = PARTIAL   (held UNOBSERVABLE by that one field)
-ROUTE_AGGREGATE_CLAIM          = PARTIAL   (same field)
-TYPED_FORWARDING               = dependency_blocked / NOT_REACHED
+E9_OBSERVED_STATUS             = VERIFIED
+RIPV2_PROCESS_AGGREGATE        = VERIFIED, both routers
+LEARNED_ROUTE_AGGREGATE        = VERIFIED, both routers
+SOURCE_DEVICE_NAME             = VERIFIED, 4 of 4 observations
+TYPED_FORWARDING               = UNOBSERVABLE / control_plane_capability_gate
 
 E4_IDENTITY_PRESERVED          = YES
-SEMANTIC_INVENTORY_RESTORED    = YES  (independent re-observation, separate process:
-                                       0 semantic devices, 0 links)
+SEMANTIC_INVENTORY_RESTORED    = YES  (independent re-observation, separate
+                                       process: 0 semantic devices, 0 links,
+                                       2 zero-port Power Distribution Devices,
+                                       unchanged from this run's baseline)
 ```
 
-Recorded rather than smoothed over: the backend-managed power-distribution
-object count went from **1 to 2** during run 6. Both are backend-created and
-zero-port, and the restoration comparison covers the semantic inventory, which
-returned to zero devices and zero links. **No claim is made about raw backend
-inventory identity.**
+## What closed the previous blocker
+
+`source_device_name` is now established by **execution provenance**, not by a
+new IOS command and never by the requested name. When a registered query's
+output is read, the same script enumerates the runtime network and keeps the
+single device that can have produced that session — its terminal object is the
+one dispatched to, or its transcript retains the dispatch-time baseline with
+the dispatched command behind it — and the output that gets parsed comes from
+that device.
+
+Refusals, not promotions:
+
+```text
+requested A, session owned by B  -> executor returns NO output; nothing can certify A
+no attribution / >1 candidate    -> source_device_name stays UNOBSERVABLE
+attributed, but not the manifest-bound device -> FAILED (cross-device mixing)
+unknown provenance classification -> certifies nothing
+manifest binding two semantic devices to one runtime target -> DeploymentIdentityError
+```
+
+Run 7 attributed 3 of 4 and left one gap; the predicate had required the
+candidate transcript to *start with* the baseline. `fresh_command_window`
+already measured that a fresh session need not — the pager erases its
+`--More--` and long buffers roll. `38e4a8c` anchors on the retained suffix plus
+the dispatched command instead, which is strictly more discriminating.
 
 ## Governed debt — current states
 
@@ -109,41 +116,38 @@ TD_MODULE_SLOT_001         = BACKEND_LIMITATION
 TD_CATALOG_PORT_001        = RESOLVED
 TD_CONFIG_CAPABILITY_001   = RESOLVED
 TD_HARDWARE_001            = OPEN
-TD_ACCESSPORT_READBACK_001 = OPEN — not the current MEG-4 blocker; blocks E9.5
-                             per the current ledger
+TD_ACCESSPORT_READBACK_001 = OPEN — not the MEG-4 blocker; blocks E9.5
 TD_ACCEPTANCE_001          = OPEN
 ```
-
-`apply_security.py` still carries the pre-correction partial-mutation shape
-(capability-refused actions skipped, the rest mutate, no critical check, no
-dependency closure). It is **out of current Stage 3A4 scope** — the bounded path
-compiles no security plan — and stays owned by existing debt rather than
-duplicated into a new entry.
 
 ## Current blocker
 
 ```text
-CONTROL-PLANE SOURCE DEVICE PROVENANCE
+2911:routing_behavior IS UNKNOWN
 ```
 
-`source_device_name` is claimed by the RIPv2 process and learned-route
-expectations and reported by neither registered query, so two otherwise fully
-verified observations sit at UNOBSERVABLE and typed forwarding is
-dependency-blocked behind them. Narrowing is refused by design:
-`enterprise_control_plane_runtime.py::_unobservable_fields` folds
-`unclaimed_fields` in precisely so that shrinking an expectation cannot raise
-its conclusion.
+Typed forwarding is no longer dependency-blocked — the verification
+prerequisite gate is satisfied. `apply_control_plane.py:812-828` refuses to run
+it because `ControlPlaneCapabilityDimension.ROUTING_BEHAVIOR` is UNKNOWN for
+`2911`, and `infrastructure/catalog/control_plane_capabilities.py` claims a
+dimension only from live evidence **attributed to a model**. No forwarding
+measurement has ever been attributed to `2911`.
+
+This is a genuine evidence limitation with a bootstrapping shape: the gate
+wants prior behaviour evidence, and the only thing that would produce it is the
+measurement the gate refuses. Resolving it is a **governance decision**, not an
+implementation defect. Forbidden without one:
+
+- adding `ROUTING_BEHAVIOR` to the 2911 profile (fabricates the attribution);
+- admitting UNKNOWN into `_RUNNABLE_CAPABILITIES` (removes the gate);
+- invoking the typed ping outside the product path.
 
 ## Next task
 
-Trace whether control-plane registered query execution already carries
-independent terminal/session/runtime-device provenance that can be uniquely
-manifest-bound to semantic source identity. The requested target alone is not
-evidence — the device this process *asked* is not the device the output
-*claims*. Prefer execution-envelope provenance, and do not invent an IOS
-hostname query unless existing provenance is demonstrably insufficient.
-Preserve `source_device_name` as UNOBSERVABLE throughout, and HARD STOP if no
-authentic provenance exists.
+Take the governed decision on how first-time model-attributed **behaviour**
+evidence may be obtained — the shape R2-0 and R2-B used for RIPv2
+configuration and route state, applied to forwarding on `2911`. Until that
+decision exists, MEG-4 row 12 stays NOT REACHED and MEG-5 stays closed.
 
 ## Operating constraints, still in force
 
@@ -158,8 +162,8 @@ authentic provenance exists.
   file's history sections.
 
 Production code carries no dependency on Claude, `.claude`, a worktree name or
-an absolute filesystem path; the only match in `src/` is a comment naming a test
-file. `PT_MCP_GOVERNED_ROOT` stays an operator-declared, process-local input.
+an absolute filesystem path. `PT_MCP_GOVERNED_ROOT` stays an operator-declared,
+process-local input.
 
 ---
 
