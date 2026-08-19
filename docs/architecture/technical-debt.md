@@ -3042,7 +3042,13 @@ aggregate is that run's business, not this entry's claim.
 ## TD-TRANSPORT-001 — FileBridge does not provide exactly-once or at-most-once execution
 
 Status:
-BACKEND_LIMITATION
+BACKEND_LIMITATION — **branch B discharged at E9.5**
+
+The limitation itself is unchanged and cannot be closed from this repository:
+branch A needs a recompiled `.pts` with PTBuilder dependencies that are not
+redistributed here. What its `RESOLVE_BEFORE` asked for was branch B, and that
+is now satisfied and regression-pinned. See "Resolution — E9.5, branch B" at the
+end of this entry.
 
 Severity:
 BACKEND_LIMITATION
@@ -3123,6 +3129,71 @@ Sufficient for Stage 3A4: 3A4 dispatches link-mode, bandwidth and serial-clock
 mutations — the same families Stage 3A3 already dispatched under this
 containment, each with typed readback and no blind retry. No new mutation
 family is introduced that would need a fresh classification.
+
+---
+
+### Resolution — E9.5, branch B
+
+```text
+TD_TRANSPORT_001 = BACKEND_LIMITATION (unchanged)
+BRANCH_B         = DISCHARGED
+CLOSURE          = BACKEND_LIMITATION_CONFIRMED
+```
+
+Branch B reads: *"the limitation remains explicitly classified and every E9.5
+product mutation family is safely contained with no claim stronger than the
+available evidence."* Two halves, and the second is the one that rots quietly.
+
+**Classified.** `tests/test_transport_mutation_containment.py` carries the
+table: for every mutation family, the module that dispatches it, the containment
+that covers it, and the ceiling of what it may claim.
+
+| family | containment | ceiling |
+| --- | --- | --- |
+| physical | pre-readback, bounded ACK, an UNKNOWN outcome is never replayed | acknowledgement is not effect |
+| shared dispatch | the single choke point for IOS and endpoint mutation; never retries on its own | its boolean is transport acceptance, not device effect |
+| configuration | whole batch rendered and routed before the first device is touched | APPLIED is dispatch, not change |
+| control plane | typed actions only; a rendering failure refuses rather than dispatches | APPLIED is separate from VERIFIED |
+| security | typed actions with a separate typed removal payload | direct read-back per action, no behavioural claim |
+| services | typed actions, capability-gated | compile readiness is not behaviour |
+| voice | typed actions, capability-gated; no profile means SKIPPED without dispatch | `create cnf-files` replay stays UNKNOWN (TD-VOICE-001) |
+| probe | disposable `__MCP_PROBE_*` only, with inventory fingerprints either side | evidence about the probe, never about a deployed device |
+| simulation mode | mutates only PT's Realtime/Simulation mode, reporting before and after | diagnostic; promotes nothing to VERIFIED |
+
+**And locked, which is the part that matters.** The suite does not trust that
+table — it *derives* the family list from the AST: any module calling a mutating
+Python primitive, or embedding a mutating Packet Tracer API name in a
+non-docstring string, must appear in it. A new mutation family breaks the tests
+instead of inheriting a containment nobody checked, and a stale entry naming a
+module that no longer dispatches breaks them too.
+
+**The sweep immediately earned its keep.** Two families a hand-written table
+would have missed, both caught on first run:
+
+1. `enterprise_service_runtime.py` dispatches through **its own JS payload**
+   (`setEnable`, `setPageContents`, `addARecordToNameServerDb`) rather than
+   through `configure_ios`, so a primitive-only sweep never saw it;
+2. `configuration_runtime.py` is the shared choke point every IOS and endpoint
+   mutation passes through, and belongs in the table in its own right.
+
+Docstrings are excluded deliberately: `live_bridge.py` documents
+`addDevice('R1','2911',100,100)` as a usage example and dispatches nothing.
+
+**The limitation stays structural, not asserted.**
+`RequestDisposition.proves_no_execution` returns `False` for **every** value, and
+a regression enumerates the enum to keep it that way. No caller can assume a
+cancelled request did not run.
+
+**No mutation is retried blindly.** The only retry in the dispatch path is
+`ControlledIosExecutor`'s, bounded by `_READ_ONLY_DISPATCH_ATTEMPTS` and gated on
+`_is_retryable_corruption` — proved corruption of the dispatch, which means IOS
+never received the request at all. The physical path says so in its own words for
+an ambiguous mutation: *"the mutation will not be replayed"*.
+
+**What this does not claim.** The backend still publishes no claim marker, so
+exactly-once and at-most-once remain unproven and the entry stays
+`BACKEND_LIMITATION`. Branch B does not make the transport safe; it makes every
+claim built on it no stronger than the transport can support.
 
 ---
 
