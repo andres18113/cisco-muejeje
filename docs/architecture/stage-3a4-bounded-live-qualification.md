@@ -1,7 +1,7 @@
 # Stage 3A4 — MEG-4 bounded live qualification
 
-Eight runs so far, all on `feature/runtime-ripv2`, worktree
-`.claude/worktrees/runtime-ripv2`. **Run 8, at the end of this document, is
+Nine runs so far, all on `feature/runtime-ripv2`, worktree
+`.claude/worktrees/runtime-ripv2`. **Run 9, at the end of this document, is
 the current state.** Every earlier run is left exactly as it was recorded —
 they are history, not a summary of where things stand.
 
@@ -1830,6 +1830,152 @@ TD_ORIENTATION_PAGER_001               = RESOLVED (unchanged)
 TD_CONFIG_CAPABILITY_001               = RESOLVED (unchanged)
 TD_ACCESSPORT_READBACK_001             = OPEN, still not blocking MEG-4
 ```
+
+```text
+MEG_5                  = NOT_OPENED
+MEG_5_EXECUTION        = BLOCKED
+REFERENCE_41_41_RUN    = NOT_EXECUTED
+```
+
+---
+
+# Run 9 — 2026-08-19, after the reachability field accounting
+
+## Outcome, stated first
+
+```text
+MEG_4_STATUS                  = FAILED / CLEAN
+STOPPED_AT                    = control_plane_apply
+HEAD                          = 4803f5e
+LIVE_PACKET_TRACER_RUN        = YES
+PHYSICAL_DEPLOYMENT           = VERIFIED   (dirty_state clean)
+SERIAL_ORIENTATION            = VERIFIED
+E5_ACTIONS_APPLIED            = 17 of 17
+CONFIGURATION_FULLY_VERIFIED  = NO
+E9_OBSERVED_STATUS            = VERIFIED
+RIPV2_PROCESS_AGGREGATE       = VERIFIED, both routers
+LEARNED_ROUTE_AGGREGATE       = VERIFIED, both routers
+SOURCE_DEVICE_NAME            = VERIFIED, 4 of 4 observations
+FORWARDING_GATE               = control_plane_capability_gate
+TYPED_FORWARDING              = UNOBSERVABLE — "2911:routing_behavior is unknown."
+SEMANTIC_INVENTORY_RESTORED   = YES  (independent re-observation, separate process)
+E4_IDENTITY_PRESERVED         = YES
+RAW_IOS_OR_JS_USED            = NONE
+HARNESS_PERFORMED_A_MUTATION  = NO
+NO_PKT_SAVED                  = YES
+```
+
+Same hash `1d2324aa…`, same shape, 43 s. This run exists to prove the field
+accounting and shared-provenance changes regressed nothing live, and to record
+that the gate is unchanged. It did not move any exit-matrix row.
+
+## The gate is not circular — traced, not assumed
+
+The question put to this session was whether `routing_behavior` must be known
+before running the measurement that produces `routing_behavior` evidence. It
+does not, because the dimension is not the result.
+
+```text
+required_capability   = what authorises EXECUTING the measurement
+expected / fields     = what the measurement ESTABLISHES
+```
+
+The whole behaviour family is built that way, and the pattern is uniform:
+
+```text
+STP_BEHAVIOR           expected {loop_free, forwarding_converged}
+ETHERCHANNEL_BEHAVIOR  expected {reachable, bundled}
+HSRP_BEHAVIOR          expected {...}
+ROUTING_BEHAVIOR       expected {traffic_flow_id, destination_ipv4,
+                                 reachable, protocol}
+```
+
+`LINK_FAILURE_CONTROL` is the same shape one step further: a *control* channel
+required to induce a fault, separate from the `*_FAILOVER` dimension that
+authorises observing the result. So requiring `ROUTING_BEHAVIOR` before pinging
+asks "may this model be measured this way", not "does it already forward".
+`docs/architecture/stage-3a4-serial-product-slice-2b.md:96` states the same
+split in words: the expectation "keeps its own `ROUTING_BEHAVIOR` dimension and
+its own `reachable`, satisfied only by a typed ping".
+
+**The gate is preserved.** No dimension was promoted, no model hardcoded,
+`_RUNNABLE_CAPABILITIES` is untouched at `{SUPPORTED, PARTIAL}`, and
+regressions now pin all three.
+
+## The actual missing evidence producer
+
+Traced end to end: `packet_tracer_control_plane_capabilities` is the **only**
+producer of control-plane capability profiles in the product. There is no
+runtime discovery path for any control-plane dimension — E3.5
+`CapabilityDiscoveryService` produces hardware dimensions (`supports_vlan`,
+`layer3`, model identity), not these. Every dimension `2911` holds today was
+established out of band, by a governed live qualification, and then encoded:
+`docs/architecture/ripv2-runtime-qualification.md` is cited in the catalogue
+for exactly that reason.
+
+So the producer path exists and is not blocked by the gate — it runs outside
+it. `ControlPlaneApplicator.__init__` even carries the injection seam
+(`capability_provider`) such a qualification would feed.
+
+What is missing is a governed live qualification of **forwarding** on `2911`,
+attributed to model and build, of the same kind that produced the three
+dimensions already granted. Noted and deliberately not acted on: R2-B phase 4
+already records forwarding rows on 2911 / `9.0.1.0858` — endpoint-to-endpoint
+4/4 each way, and router-to-router 5/5 across the WAN, the latter measured
+before RIP existed. Whether those rows qualify **this** dimension, whose gate
+protects the typed product measurement channel, is a claim-scope decision. It
+is not taken here, and nothing was promoted on the strength of it.
+
+## A second ceiling, now visible rather than hidden
+
+Fixing the reachability observer's field accounting exposed a ceiling that the
+old hand-built `fields` map had been concealing. The observer claimed four
+fields and reported one:
+
+```text
+before   fields = {reachable}                       aggregate could reach VERIFIED
+after    fields = {traffic_flow_id, destination_ipv4, reachable,
+                   protocol, source_device_name}
+```
+
+`reachable` is measured and `source_device_name` is certified from execution
+provenance, fail-closed. `protocol` and `traffic_flow_id` are reported
+UNOBSERVABLE, because an ICMP echo observes neither which protocol installed
+the route nor which compiled flow the claim belongs to. The route prerequisite
+orders that evidence and, by this stage's stated contract, does not substitute
+for it.
+
+**Consequence, stated plainly.** With honest accounting a reachability
+expectation cannot reach VERIFIED today, so MEG-4 row 12 now has two
+independent blockers rather than one:
+
+```text
+1. capability   2911:routing_behavior is UNKNOWN — needs the governed
+                qualification described above
+2. claim ceiling  protocol / traffic_flow_id are not observable from a typed
+                ping — needs a governed decision on what a behaviour
+                expectation may claim
+```
+
+Neither was created by this session; the second was previously invisible
+because the fields were dropped instead of reported. Recorded as a ceiling, not
+repaired by narrowing.
+
+## G4 — cleanup and restoration
+
+```text
+cleanup entries    = 8, all applied
+inventory_restored = True
+```
+
+Independent post-run re-observation, separate process with its own G2:
+`semantic_device_count = 0`, `link_count = 0`, `backend_managed = 2`, both
+zero-port Power Distribution Devices — unchanged from this run's baseline.
+
+## Exit matrix — unchanged from run 8
+
+Rows 1–11 and 13 **PASS**; row 12 **NOT REACHED**, now for two recorded
+reasons rather than one.
 
 ```text
 MEG_5                  = NOT_OPENED

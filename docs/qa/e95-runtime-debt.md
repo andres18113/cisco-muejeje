@@ -150,7 +150,7 @@ measured at run 6.
 | --- | --- | --- |
 | RIP routing-process observation | `protocol`, `version_send`, `version_recv`, `auto_summary`, `networks`, `passive_interfaces`, `source_device_name` all VERIFIED on both routers from a fresh `show ip protocols` | `CLOSED — aggregate VERIFIED`. |
 | RIP learned-route observation | `network`, `prefix_length`, `protocol`, `source_device_name` VERIFIED on both routers from a fresh `show ip route rip`; each router learned the far-side prefix across the serial WAN | `CLOSED — aggregate VERIFIED`. |
-| RIP end-to-end forwarding | not attempted | `CAPABILITY_UNKNOWN`. The verification-prerequisite gate is now satisfied; `control_plane_capability_gate` refuses because `2911:routing_behavior` is UNKNOWN. |
+| RIP end-to-end forwarding | not attempted | `CAPABILITY_UNKNOWN` **and** `CLAIM_CEILING`. Two independent blockers, both recorded at run 9. |
 
 What closed the first two rows is **execution provenance**, not a new IOS
 command. `show ip protocols` and `show ip route rip` still print no hostname.
@@ -159,14 +159,29 @@ and keeps the single device that can have produced that session, and the output
 that gets parsed is that device's. Requested-name substitution is refused by
 construction — a session owned by another device returns no output at all.
 
-The forwarding row is a **capability-evidence** limitation, not an observation
-ceiling. `control_plane_capabilities.py` claims a dimension only from live
-evidence attributed to a model; no forwarding measurement has ever been
-attributed to `2911`. Closing it needs a governed decision about how first-time
-behaviour evidence may be obtained, and nothing here may be promoted without
-one.
+The forwarding row carries two separate blockers and neither may be promoted
+without a governed decision.
 
-Evidence: `../architecture/stage-3a4-bounded-live-qualification.md`, "Run 8".
+**1 — capability evidence.** The verification-prerequisite gate is satisfied;
+`control_plane_capability_gate` refuses because `2911:routing_behavior` is
+UNKNOWN. The gate is **not circular**: `required_capability` authorises
+executing the measurement and `expected`/`fields` carry what it establishes, the
+same split every `*_BEHAVIOR` dimension uses. `packet_tracer_control_plane_capabilities`
+is the only producer of control-plane profiles and there is no runtime discovery
+path for them, so every dimension `2911` holds was established by an out-of-band
+governed qualification and then encoded. What is missing is that qualification
+for forwarding.
+
+**2 — claim ceiling.** A reachability expectation claims `traffic_flow_id`,
+`destination_ipv4`, `reachable` and `source_device_name`. A typed ping measures
+`reachable`, and execution provenance certifies the source. It observes neither
+which protocol installed the route nor which compiled flow the claim belongs to,
+so those stay UNOBSERVABLE and hold the aggregate down. Until run 9 this was
+invisible: the observer built its `fields` map by hand and the unmeasured fields
+were dropped rather than reported. The route prerequisite orders that evidence
+and does not substitute for it.
+
+Evidence: `../architecture/stage-3a4-bounded-live-qualification.md`, "Run 9".
 
 ## OSPF observation ceiling — recorded 2026-08-17
 
