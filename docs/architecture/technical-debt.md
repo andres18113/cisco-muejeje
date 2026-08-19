@@ -255,7 +255,7 @@ standard.
 ## TD-ACCEPTANCE-001 — The physical/configuration product pipeline has never been live-accepted
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P1
@@ -483,6 +483,66 @@ implies failure or recovery state.
 RIPv2 expectations are untouched and keep all three fields.
 
 ---
+
+### Resolution — Stage 3A4 reference acceptance, 2026-08-19, at `cd6272d`
+
+**RESOLVED.** One live run of the reference topology through the single product
+entry point, first attempt, 162.4 s. Evidence:
+`stage-3a4-bounded-live-qualification.md`, "Reference acceptance".
+
+```text
+DEVICES / LINKS   41 / 41   (38 straight, 3 serial), 3x HWIC-2T @ 0/0
+MODELS            1941 x3, 2950T-24 x2, IE-2000 x1, PC-PT x35
+                  chosen by capability-driven selection, no steering
+STATUS            completed / completed
+SAME_RUN          YES -- one call; no evidence combined across attempts
+```
+
+Row by row against the closure table above, which was written as a one-to-one
+answer to what the University harness did:
+
+| # | Verdict |
+| --- | --- |
+| 1 | **SATISFIED.** All 41 devices and all 41 links deployed by `EnterprisePhysicalTopologyDeployer` / `PacketTracerPhysicalTopologyRuntime`. Manifest emitted from fresh exact read-back: 41 device bindings, 41 link bindings, every one by composite fingerprint, `dirty_state=clean`. |
+| 2 | **SATISFIED.** Three serial WAN links expressed by the product from `LinkMedia.SERIAL`, deployed, orientation verified. This is the row that once said the reference "cannot currently express a serial link at all". |
+| 3 | **SATISFIED.** 88 of 88 typed actions applied through `compile_configuration` → `configuration_renderer` → `apply_configuration`, including all 35 PC addresses as `set_endpoint_static`. No hand-written IOS and no raw `configurePcIp`. |
+| 4 | **SATISFIED.** Twelve declared foundations (9 `l3_interface`, 3 `link`) derived by `derive_foundational_evidence` from executed results only; `ControlPlaneApplicator` decided on them before touching the runtime and admitted E9. This is the row the harness satisfied with a comprehension. |
+| 5 | **SATISFIED and unregressed**, which is why the row exists. |
+| 6 | **SATISFIED.** Read-back through `topology_observation.py` and the physical runtime; RIP state through registered `SHOW_IP_PROTOCOLS` / `SHOW_IP_ROUTE_RIP`; forwarding through `TypedPingExecutor`. No parallel reimplementation. |
+
+The three rules: the harness orchestrated and performed no mutation; no missing
+capability was worked around, because none was missing; and the lines upgraded
+are named below.
+
+**The two lines this closes, as the entry requires:**
+
+```text
+CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION = ESTABLISHED
+FULL_PRODUCT_PIPELINE_ACCEPTANCE                   = ESTABLISHED
+```
+
+The other five acceptance lines were already PASS and are untouched.
+
+**What resolution does NOT claim, stated as plainly as the rest:**
+
+```text
+ACCESS_PORT                  = UNOBSERVABLE (38), TD-ACCESSPORT-READBACK-001 OPEN
+ENDPOINT_GATEWAY             = UNOBSERVABLE (35 endpoint actions PARTIAL)
+CONFIGURATION_FULLY_VERIFIED = NO -- the E5 aggregate is `partial` and is
+                               reported as `partial`
+MODULE_IDENTITY              = UNOBSERVABLE, TD-MODULE-SLOT-001 unchanged
+```
+
+End-to-end forwarding verified and promoted nothing. A ping is not a read-back
+of a VLAN membership or of a default gateway, and neither moved.
+
+**Residual, recorded rather than glossed over.** The capability evidence the run
+consumed lives in `data/capabilities/`, which is gitignored machine state — the
+same residual `TD-CONFIG-CAPABILITY-001` recorded at its own closure. A clean
+checkout resolves those capabilities UNKNOWN again and would refuse the same
+plan, correctly and fail-closed. Port evidence, by contrast, is reproducible
+from Git in `measured_port_inventories.py`. Making capability evidence survive a
+checkout remains open work with its own trade-offs and is **not** taken here.
 
 ## TD-RUNTIME-007 — Route expectations have no convergence window
 
@@ -1356,6 +1416,25 @@ TD_HARDWARE_LITERAL_CRITERION     = NOT_SATISFIED
 `TD-HARDWARE-001` therefore remains **OPEN** against its E9.5 deadline.
 
 ---
+
+### Progress — Stage 3A4 reference acceptance, 2026-08-19
+
+```text
+TD_HARDWARE_001 = OPEN
+```
+
+The reference acceptance ran with the capability store passed and the exact
+build declared, and it is **not** the live gate this entry defers to. Measured
+rather than assumed: the reference was composed three ways against the same
+store — no store, exact build `9.0.1.0858`, and a deliberately wrong build — and
+all three returned the identical 41 devices and the identical switch and router
+candidate lists.
+
+So the run exercised real exact-version capability evidence at the E5
+configuration gate and at the E9 control-plane gate, and **not** at the
+selection resolver. The criterion is about *eligible physical hardware*, so it
+is untouched. The entry keeps its E9.5 deadline and continues not to block
+Stage 3A4.
 
 ## TD-MODULE-SLOT-001 — Module slot placement is unverifiable, and the gate compares two namespaces
 

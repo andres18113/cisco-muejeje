@@ -1,19 +1,20 @@
-# Handoff — Stage 3A4
+# Handoff — Stage 3A4, CLOSED
 
 ## Current checkpoint
 
 Executable state, from Git rather than from memory. Everything below was
-measured at `63c9f18`; this commit is docs-only and changes none of it.
+measured at `cd6272d`; the reference acceptance ran against that tree and
+this commit is docs-only, so it changes none of it.
 
 ```text
 branch            feature/runtime-ripv2
-HEAD              63c9f18
+HEAD              cd6272d
 working tree      clean  (git status --short empty, git diff --check clean)
 worktree          .claude/worktrees/runtime-ripv2   (operational location only)
 interpreter       ./.venv/Scripts/python.exe        (worktree-local, authoritative)
 PYTHONPATH        unset
 regression        2229 passed, 3 pre-existing pytest deprecation warnings
-Graphify          8264 nodes, 27945 edges, 297 communities
+Graphify          8283 nodes, 27964 edges, 286 communities
 ```
 
 Run the suite as `./.venv/Scripts/python.exe -m pytest` from the worktree root.
@@ -39,13 +40,81 @@ MEG-3  product execution surface ............... CLOSED   7de805a, 6ef25bf
 OAG    offline adversarial matrix .............. CLOSED   c1ea586
 MEG-4  bounded live qualification ............ PASS     14854bf, runs 12-13
 MEG-5  reference qualification (its opening) .. PASS     6e965fb, 63c9f18
-MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
-MEG-7  Stage 3A4 closure ...................... NOT_STARTED
+MEG-6  TD-ACCEPTANCE-001 closure .............. CLOSED   reference acceptance
+MEG-7  Stage 3A4 closure ...................... CLOSED
 
-MEG_5               = OPEN / PASS
-MEG_5_EXECUTION     = AUTHORISED   (no evidence gate refuses the reference)
-REFERENCE_41_41_RUN = NOT_EXECUTED (deliberately not started)
+MEG_5               = CLOSED / PASS
+MEG_5_EXECUTION     = EXECUTED
+REFERENCE_41_41_RUN = EXECUTED / PASS   (41/41, first attempt, 162.4 s)
+STAGE_3A4           = CLOSED
 ```
+
+## Reference acceptance — the state that closed Stage 3A4
+
+One live run of the 41-device reference through the single product entry point,
+**first attempt**, no defect to fix. Full record in
+`docs/architecture/stage-3a4-bounded-live-qualification.md`, "Reference
+acceptance". Nothing here is inferred from MEG-4 or MEG-5.
+
+```text
+REFERENCE_RESULT       = PASS
+STATUS / STOPPED_AT    = completed / completed
+DURATION               = 162.4 s
+SAME_RUN               = YES   one call; no evidence combined across attempts
+
+DEVICES / LINKS        = 41 / 41   (38 straight, 3 serial), 3x HWIC-2T @ 0/0
+MODELS                 = 1941 x3, 2950T-24 x2, IE-2000 x1, PC-PT x35
+                         capability-driven selection, no steering
+physical_topology_hash = d34103311e097ef914c8742626edbff348fd0015e8a0551afda381c33a8d6cf0
+
+DEPLOY                 = VERIFIED, dirty_state clean, 85 items
+                         manifest 41 device + 41 link bindings, all by
+                         composite fingerprint
+ORIENTATION            = VERIFIED
+E5                     = 88 of 88 APPLIED; aggregate `partial` (truthful)
+                         15 verified / 38 unobservable / 35 partial
+FOUNDATIONS            = 12 declared (9 l3_interface + 3 link), all VERIFIED
+                         before the runtime was touched
+RIPV2_PROCESS          = VERIFIED x3, fresh_show_ip_protocols, 7 fields each
+LEARNED_ROUTES         = VERIFIED x9, fresh_show_ip_route_rip, first read each
+FORWARDING             = VERIFIED, reachable=True, 1 bounded measurement
+CLEANUP                = 41 entries all applied, restored=True,
+                         e4_identity_preserved=True
+```
+
+Independent post-run re-observation, separate process with its own G2: 0
+semantic devices, 0 links, 3 backend-managed Power Distribution Devices,
+Realtime confirmed by reading it rather than by setting it.
+
+### Ceilings this run did not move
+
+```text
+ACCESS_PORT                  = UNOBSERVABLE, TD-ACCESSPORT-READBACK-001 OPEN
+ENDPOINT_GATEWAY             = UNOBSERVABLE
+CONFIGURATION_FULLY_VERIFIED = NO
+MODULE_IDENTITY              = UNOBSERVABLE, TD-MODULE-SLOT-001 backend limit
+```
+
+Forwarding verified end to end and promoted nothing. A ping is not a read-back
+of a VLAN membership or of a default gateway.
+
+### Debt
+
+```text
+TD_ACCEPTANCE_001 = RESOLVED   rows 1-6 in this same run; it upgrades
+                    CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION and
+                    FULL_PRODUCT_PIPELINE_ACCEPTANCE off NOT_ESTABLISHED
+TD_HARDWARE_001   = OPEN, measured not assumed: composing the reference with no
+                    store, with the exact build and with a deliberately wrong
+                    build returned identical devices and identical candidate
+                    lists, so this run exercised evidence at the E5 and E9
+                    gates and NOT at the selection resolver. E9.5 deadline;
+                    does not block Stage 3A4
+```
+
+`TD-ACCEPTANCE-001` was the only entry whose `RESOLVE_BEFORE` was Stage 3A4
+closure. Every other open entry is deadlined at E9.5 or later, or is a recorded
+backend limitation. **That is why Stage 3A4 closes here and not earlier.**
 
 ## MEG-4 run 12 — the current executed state
 
@@ -280,16 +349,20 @@ NONE FOR MEG-4. It PASSES at 14854bf, reproducibly.
 
 ## Next task
 
-MEG-5 is closed. The reference run is the next executable thing and was
-deliberately **not** started:
+Stage 3A4 is **CLOSED**. Nothing in this session opened E9.5 or CP3, and neither
+should be entered on the strength of this closure alone.
 
-- `REFERENCE_41_41_RUN` — 41 devices, 41 links, 3 serial WAN, through the same
-  single product entry point. Every evidence gate now authorises it; whether it
-  *works* is exactly what the run would measure. Expect it to be long: MEG-4's
-  8-device run took ~65 s.
-- `MEG-6` (`TD-ACCEPTANCE-001` closure) and `MEG-7` (Stage 3A4 closure) follow.
-- `TD-ACCESSPORT-READBACK-001` and the endpoint gateway stay OPEN, unchanged by
-  MEG-4 and MEG-5 alike.
+Carried forward, unchanged and untouched by 3A4:
+
+- `TD-ACCESSPORT-READBACK-001` and the endpoint gateway — E9.5 deadline. A
+  direct read-back is now ordinary work: no diagnosis depends on it.
+- `TD-HARDWARE-001` — E9.5 deadline. Needs a live gate where capability
+  evidence decides *eligibility*, which the reference run demonstrably is not.
+- `TD-MODULE-SLOT-001`, `TD-TRANSPORT-001` — backend limitations, recorded.
+- `TD-SECURITY-001`, `TD-VOICE-001`, `TD-RUNTIME-006`, `TD-PUBLIC-001` — their
+  own milestones.
+- The capability-evidence-survives-a-checkout question, recorded as a residual
+  at both `TD-CONFIG-CAPABILITY-001` and `TD-ACCEPTANCE-001`.
 
 ## Operating constraints, still in force
 

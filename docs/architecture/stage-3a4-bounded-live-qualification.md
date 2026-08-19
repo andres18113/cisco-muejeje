@@ -1,10 +1,11 @@
 # Stage 3A4 — MEG-4 bounded live qualification
 
-Thirteen runs so far, all on `feature/runtime-ripv2`, worktree
-`.claude/worktrees/runtime-ripv2`. **Run 12, at the end of this document, is
-the current state, and it PASSES**; run 13 reproduced it. Every earlier run is
-left exactly as it was recorded — they are history, not a summary of where
-things stand.
+Thirteen bounded runs plus the reference acceptance, all on
+`feature/runtime-ripv2`, worktree `.claude/worktrees/runtime-ripv2`. **The
+reference acceptance at the end of this document is the current state, and it
+PASSES.** Bounded run 12 (reproduced by 13) closed MEG-4 and is kept below as
+history. Every earlier run is left exactly as it was recorded — they are
+history, not a summary of where things stand.
 
 ## Run 1 — 2026-08-17
 
@@ -2322,3 +2323,151 @@ MEG_5                  = NOT_OPENED
 MEG_5_EXECUTION        = BLOCKED (not opened in this session)
 REFERENCE_41_41_RUN    = NOT_EXECUTED
 ```
+
+
+# Reference acceptance — 2026-08-19, 41/41 through the product, first run
+
+This is the run `TD-ACCEPTANCE-001` was written for. It is **not** a MEG-4 or
+MEG-5 result and nothing here is inferred from either: those closed the bounded
+slice and the model qualification respectively, and this is the reference.
+
+## Outcome, stated first
+
+```text
+REFERENCE_RESULT              = PASS
+HEAD                          = cd6272d
+STATUS / STOPPED_AT           = completed / completed
+DURATION                      = 162.4 s
+SAME_RUN                      = YES (one call to execute_enterprise_reference;
+                                no evidence combined from any other attempt)
+ATTEMPTS                      = 1 (first run; no defect required fixing)
+E4_IDENTITY_PRESERVED         = YES
+RAW_IOS_OR_JS_USED            = NONE on the product path
+HARNESS_PERFORMED_A_MUTATION  = NO
+NO_PKT_SAVED                  = YES
+ERRORS                        = []
+```
+
+## Gates
+
+```text
+G2  ISOLATED, loaded_identities = ['packet_tracer_mcp'] (exactly one)
+G3  observed=True, semantic_devices=0, links=0, backend_managed=3
+    message = fresh_complete_workspace_inventory
+G4  cleanup=41, all applied, inventory_restored=True
+```
+
+Independent post-run re-observation, separate process with its own G2:
+
+```text
+semantic_device_count = 0
+link_count            = 0
+backend_managed       = 3  (Power Distribution Device0..2, zero ports)
+simulation_mode       = before=False  (Realtime confirmed by reading it)
+```
+
+## The topology, derived from the typed plan rather than assumed
+
+```text
+DEVICE_COUNT           = 41
+LINK_COUNT             = 41   (38 straight, 3 serial)
+MODELS                 = 1941 x3, 2950T-24 x2, IE-2000 x1, PC-PT x35
+REQUIRED_MODULE_STATES = HWIC-2T @ 0/0, x3
+physical_topology_hash = d34103311e097ef914c8742626edbff348fd0015e8a0551afda381c33a8d6cf0
+```
+
+Hardware came from capability-driven selection over the whole catalogue, with no
+`preferred_router_model` steering and no hand-pinned candidates.
+
+## Stage by stage, from the run's own result
+
+```text
+DEPLOY   status=verified  dirty_state=clean  items=85 (41 devices + 41 links + 3 modules)
+         manifest: 41 device bindings, 41 link bindings,
+                   identity_methods = {composite_fingerprint: 41}
+                   semantic_hash a48c63ed...
+ORIENT   verified=True, errors=[]
+E5       88 of 88 actions APPLIED
+         verification: 15 verified / 38 unobservable / 35 partial
+         aggregate = partial   <- truthful, and preserved deliberately
+FOUND    12 required foundations declared by the control plane
+         (9 l3_interface + 3 link), all VERIFIED before the runtime was touched
+E9       status=verified  applied=applied  observed=verified  behavior=verified
+```
+
+### E9 in full
+
+```text
+3 x configure_ripv2                       APPLIED
+3 x routing_process    VERIFIED  fresh_show_ip_protocols, 7 fields each
+9 x route_present      VERIFIED  fresh_show_ip_route_rip, first read each
+      learned prefixes observed: 10.0.0.0/27, 10.0.0.32/27, 10.0.0.64/28,
+                                 10.0.0.80/30, 10.0.0.84/30, 10.0.0.88/30
+1 x end_to_end_reachability  VERIFIED  typed_ping_current_command_window
+      reachable=True after 1 bounded measurement
+      fields: destination_ipv4, protocol, reachable, source_device_name
+```
+
+Nine learned routes across three routers and three serial WAN links, each read
+fresh and matched against prefixes derived from the E5 L3 identities — not from
+the classful `network` statement.
+
+## Claim ceilings, unchanged by this run
+
+```text
+ACCESS_PORT                  = UNOBSERVABLE   38 of them, TD-ACCESSPORT-READBACK-001 OPEN
+ENDPOINT_GATEWAY             = UNOBSERVABLE   35 endpoint actions PARTIAL
+CONFIGURATION_FULLY_VERIFIED = NO
+MODULE_IDENTITY              = UNOBSERVABLE   TD-MODULE-SLOT-001, backend limitation
+```
+
+The E5 aggregate is `partial` and is reported as `partial`. Behavioural
+forwarding verified end to end and promoted **nothing**: no access port and no
+default gateway was read, and neither moved.
+
+## TD-ACCEPTANCE-001, row by row
+
+| # | What closure requires | This run |
+| --- | --- | --- |
+| 1 | Production physical deployment through `deploy_enterprise_topology` / `packet_tracer_physical_runtime`, manifest from fresh exact read-back | **SATISFIED.** 41 devices and 41 links deployed by the product; manifest emitted with 41 + 41 bindings, every one by composite fingerprint; `dirty_state=clean` |
+| 2 | Serial topology support in the product; the reference must carry serial | **SATISFIED.** 3 serial WAN links compiled from `LinkMedia.SERIAL`, deployed, and orientation verified |
+| 3 | Production configuration and addressing through `compile_configuration` → `configuration_renderer` → `apply_configuration`, including host addressing | **SATISFIED.** 88 of 88 typed actions applied, including 35 `set_endpoint_static` for the PCs. No hand-written IOS, no raw `configurePcIp` |
+| 4 | Authentic foundational evidence; statuses and hashes from real read-back so the gate decides on evidence | **SATISFIED.** 12 declared foundations derived by `derive_foundational_statuses` from executed results; `ControlPlaneApplicator` refused nothing because all 12 were VERIFIED, decided before the runtime was touched |
+| 5 | Typed control plane, capability resolution left to the product | **SATISFIED.** `compile_control_plane` → `ControlPlaneApplicator.apply` → `PacketTracerEnterpriseControlPlaneRuntime`, with the capability store passed and the product resolving |
+| 6 | Authoritative read-back and traffic evidence through `topology_observation.py`, registered `OperationalQueryId` queries and the typed traffic primitives | **SATISFIED.** Workspace, device, module and two-ended link read-back through the physical runtime; RIP state through `SHOW_IP_PROTOCOLS` and `SHOW_IP_ROUTE_RIP`; forwarding through `TypedPingExecutor`. No parallel reimplementation |
+
+The three rules:
+
+* **the harness orchestrated and did not mutate.** It ran G2, read the workspace,
+  composed the intent, made one call, and read the result. Every mutation was the
+  product's;
+* **no missing capability was worked around.** Nothing needed one;
+* **the lines this upgrades are named**, below.
+
+One thing recorded rather than glossed: the runtimes take `query_inventory` as a
+constructor dependency, and the harness supplies the same read-only device
+enumeration the MCP facade supplies at its own composition root. That is
+dependency injection at a composition root, not a parallel read-back — every
+piece of *evidence* went through a production seam.
+
+## What this upgrades
+
+```text
+CONTROL_PLANE_FOUNDATIONAL_REQUIREMENT_INTEGRATION = ESTABLISHED  (was NOT_ESTABLISHED)
+FULL_PRODUCT_PIPELINE_ACCEPTANCE                   = ESTABLISHED  (was NOT_ESTABLISHED)
+```
+
+Both move because rows 1–4 and 6 were satisfied **in this same run**, which is
+the condition the entry set for them.
+
+## What it does not upgrade, measured rather than assumed
+
+`TD-HARDWARE-001` stays **OPEN**. Its criterion is that capability evidence used
+by the enterprise resolver reconciles into *eligible physical hardware*. Composed
+three ways against this same store — no store, exact build `9.0.1.0858`, and a
+deliberately wrong build — selection returned the identical 41 devices and the
+identical candidate lists. So this run exercised evidence at the configuration
+and control-plane gates, not at the selection resolver, and it is not the
+"first governed live gate that exercises real exact-version capability
+consumption" that entry defers to. Its deadline is E9.5 final closure and it
+does not block Stage 3A4.
