@@ -175,6 +175,98 @@ is a compiler label, read by no code, and no registered command can return it.
 It holds the reachability aggregate below VERIFIED, but it is not what made the
 measurement negative and chasing it would not move the diagnosis.
 
+## Upstream-assisted diagnosis — what it settled (2026-08-19, `3247b47`)
+
+An upstream audit ran before any new code. Its three answers, stated so nobody
+repeats them:
+
+```text
+SIX NAMED TOOLS vs UPSTREAM      = AT PARITY. pt_inspect_ports, pt_read_vlans,
+                                   pt_verify_connectivity, pt_simulation_mode,
+                                   pt_simulation_step and pt_read_packet_trace
+                                   are byte-identical to origin/main except one
+                                   emoji and one timeout (20 -> 30 s). Nothing
+                                   to port.
+UPSTREAM COMMITS WE LACK         = exactly two functional ones, c762219 and
+                                   fd61f5e. NEITHER touches the MEG-4 path.
+CAUSE OF reachable=False         = STILL NOT ESTABLISHED.
+```
+
+Why the two missing commits are not the cause, from source rather than from
+their messages:
+
+* **`c762219`** — its load-bearing half is `pt_add_link` inferring the cable
+  category from `getClassName()`, which classifies by behaviour (a 3560 answers
+  "Router"). The governed path never does that: `link.cable` is compiled
+  offline by `PacketTracerTopologyCatalogAdapter.cable_for` from
+  `model.category` in the catalogue — the same source upstream's fix moved to.
+  Its other half, `addModule` being fire-and-forget, is already **superseded**
+  here: `generate_module_command` checks `addModule(...) === true` and records
+  `native_rejected`. The rest (rename collisions, `setHideDevLabel`,
+  `pt_fix_plan`, 1941 slot docs) is facade-only or 1941-only.
+* **`fd61f5e`** — the HTTP bridge's global FIFO `/result` queue, which can hand
+  one operation another's answer. Real, still unported, and **latent on the
+  public HTTP path**. It cannot have touched any MEG-4 run: those ran on the
+  **file bridge**, which correlates per request by name (`req_<n>.js` ->
+  `res_<n>.txt`). Recorded as an unported upstream defect, not as MEG-4 debt.
+
+The offline plan was also re-derived and is coherent — A LAN `10.0.0.0/29`
+(router `.1`, PCs `.2/.3`), B LAN `10.0.0.8/29` (router `.9`, PCs `.10/.11`),
+transit `10.0.0.16/30`, gateways matching, `network 10.0.0.0` + `no auto-summary`
+on both routers, `passive-interface Gi0/0` on the LAN side only. The measured
+flow pings `10.0.0.10` from `A-EDGE-RTR-01`, so the reply depends on
+`B-DEFAULT-PC-01`'s default gateway. `configurePcIp` is called with the gateway
+in argument 5, which matches the Script Engine helper's real signature.
+
+**A useful negative about the two suspects.** A *uniform* access-port failure
+is benign in this shape: if every port stayed in VLAN 1, the router-facing
+`Gi1/1` and the PC-facing `Fa1/1` would still share one broadcast domain. Only a
+*partial* one breaks it. Nothing here promotes that reasoning into evidence —
+`ACCESS_PORT` stays `UNOBSERVABLE` — but it says where to look first.
+
+## New capability, deliberately unwired
+
+`infrastructure/execution/simulation_trace_runtime.py` reads Packet Tracer's
+Simulation event list: per frame the hop (device, in port, out port) and the
+per-OSI-layer decision log. `first_failing_hop` and `localization()` turn an
+aggregate negative into a device, a port and PT's own last decision.
+
+```text
+STATUS       = built, 19 regressions, NOT called by any product path
+CLASS        = DIAGNOSTIC. It localises; it certifies nothing.
+FORBIDDEN    = trace outcome -> ACCESS_PORT VERIFIED
+               trace outcome -> endpoint gateway VERIFIED
+               (pinned by TestItStaysDiagnostic, which fails if the module ever
+                imports the configuration evidence types)
+```
+
+The JS moved *below* the MCP facade rather than being copied: `tool_registry`
+now imports the same three builders, so the public tool and the governed
+runtime cannot drift.
+
+**Also settled, so step 5 is not re-litigated:** upstream's `pt_inspect_ports`
+and `pt_read_vlans` do **not** carry the ACCESS_PORT claim. `pt_inspect_ports`
+reads `Port` (`isPortUp`, `getIpAddress`, `getMacAddress`, `getNatMode`,
+`getAclInID`, ...) and has **no VLAN field at all**; `pt_read_vlans` reads the
+switch's `VlanManager` **database** (`getVlanNumber`, `getName`, `isDefault`,
+`getMaxVlans`) and never port membership. Neither observes which VLAN a port
+belongs to. If the trace localises there, this is a backend evidence gap, not a
+missing port.
+
+## Blocker for this session
+
+```text
+PACKET TRACER PROCESS = NOT RUNNING  (9.0.1.0858 installed, no process, no bridge)
+STEPS 4-6             = CANNOT EXECUTE
+```
+
+Localising run 10 needs a live backend. To continue: open Packet Tracer, open
+**Extensions > MCP BUILDER > MCP Control Center**, leave the workspace empty,
+then run MEG-4 with the trace seam reading between the typed ping and cleanup —
+Simulation mode on, dispatch the existing `TypedPingExecutor` ping, step the
+event list forward, read the trace, Realtime back. That sequence mutates no
+device and needs no new getter.
+
 ## Next task
 
 Localise the failure before repairing anything. Use **bounded typed
