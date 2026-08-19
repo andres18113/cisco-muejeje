@@ -3,11 +3,12 @@
 ## Current checkpoint
 
 Executable state, from Git rather than from memory. Everything below was
-measured at `60ef5c7`.
+measured at `60ef5c7`; `2718763` and this commit are docs-only and change none
+of it.
 
 ```text
 branch            feature/runtime-ripv2
-HEAD              60ef5c7
+HEAD              2718763
 working tree      clean  (git status --short empty, git diff --check clean)
 worktree          .claude/worktrees/runtime-ripv2   (operational location only)
 interpreter       ./.venv/Scripts/python.exe        (worktree-local, authoritative)
@@ -81,10 +82,21 @@ TYPED_FORWARDING               = EXECUTED, reachable measured False
 
 E4_IDENTITY_PRESERVED          = YES
 SEMANTIC_INVENTORY_RESTORED    = YES  (independent re-observation, separate
-                                       process: 0 semantic devices, 0 links,
-                                       2 zero-port Power Distribution Devices,
-                                       unchanged from this run's baseline)
+                                       process: 0 semantic devices, 0 links)
+
+ROUTING_BEHAVIOR_CHANNEL       = SUPPORTED for 2911 / PT 9.0.1.0858, from the
+                                 governed R3 qualification. Measurability, not
+                                 success: both R3 measurements returned
+                                 `Success rate is 0 percent (0/5)`.
 ```
+
+Backend-managed `Power Distribution Device` counts, as measured rather than as
+expected: run 10 opened and closed on **3**, unchanged across the run — the
+third arrived during the R3 qualification, not during this run. The independent
+re-observation afterwards reported **0**: Packet Tracer collapses them once the
+workspace is empty. No claim is made about raw backend inventory identity; the
+restoration comparison covers the semantic inventory, which returned to zero
+devices and zero links.
 
 ## What closed the previous blocker
 
@@ -120,7 +132,8 @@ TD_MODULE_SLOT_001         = BACKEND_LIMITATION
 TD_CATALOG_PORT_001        = RESOLVED
 TD_CONFIG_CAPABILITY_001   = RESOLVED
 TD_HARDWARE_001            = OPEN
-TD_ACCESSPORT_READBACK_001 = OPEN — not the MEG-4 blocker; blocks E9.5
+TD_ACCESSPORT_READBACK_001 = OPEN — now diagnosis-relevant: it owns one of the
+                             two unobservable hops on the failing path
 TD_ACCEPTANCE_001          = OPEN
 ```
 
@@ -157,19 +170,33 @@ echoed, and the protocol matched the action actually applied. One attempt is
 correct — `TypedPingExecutor.ping` retries only while no attributable window
 exists, never for a more favourable answer.
 
-`traffic_flow_id` remains UNOBSERVABLE and is a separate, smaller question: it
+`traffic_flow_id` remains UNOBSERVABLE and is **not the current blocker**. It
 is a compiler label, read by no code, and no registered command can return it.
+It holds the reachability aggregate below VERIFIED, but it is not what made the
+measurement negative and chasing it would not move the diagnosis.
 
 ## Next task
 
-Isolate the failing hop. That means access-port read-back
-(`TD-ACCESSPORT-READBACK-001`) or a diagnostic run designed to observe the
-access segment and the endpoint gateway before cleanup — both explicitly out of
-the last session's scope, and the first is its own governed work item.
+Localise the failure before repairing anything. Use **bounded typed
+reachability diagnostics inside the same disposable MEG-4 topology**, taken
+before cleanup, to identify the first failing hop or segment: measure along the
+path rather than only end to end, so the negative is attributed to a segment
+instead of to the whole flow.
 
-Still open and unchanged: whether `traffic_flow_id` belongs in `expected` at
-all, given that nothing can observe it and `unclaimed_fields` folds into
-UNOBSERVABLE identically.
+Two constraints on that work, both load-bearing:
+
+- **Do not implement access-port or endpoint-gateway getters yet.** Build a
+  read-back only once the diagnostic evidence actually points at the owning
+  gap. Writing both getters first would be guessing at which one is broken.
+- **Behavioural reachability may localise a fault; it must never be promoted
+  into direct configuration read-back.** A ping that fails between two points
+  narrows where to look. It does not observe VLAN membership, and it does not
+  observe a default gateway. `ACCESS_PORT` and the endpoint gateway stay
+  UNOBSERVABLE until something reads them directly.
+
+Still open and unchanged, and smaller than the above: whether `traffic_flow_id`
+belongs in `expected` at all, given that nothing can observe it and
+`unclaimed_fields` folds into UNOBSERVABLE identically.
 
 ## Operating constraints, still in force
 
