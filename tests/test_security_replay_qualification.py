@@ -288,3 +288,204 @@ def test_restoration_is_compared_against_the_baseline():
 
     assert result.restored is True
     assert result.removed == (result.device_name,)
+
+
+# ===================== el slice de comportamiento ==========================
+
+
+class _Ping:
+    """Alcanzabilidad GUIONADA en el tiempo para el flujo que la ACL toca.
+
+    Un fake que devolviera siempre lo mismo no puede representar la pasada: el
+    flujo denegado tiene que ALCANZAR en el baseline -- antes de que la ACL
+    exista -- y dejar de alcanzar después. Modelarlo como un valor fijo fue un
+    defecto de este fake, y hacía que el baseline nunca coincidiera.
+    """
+
+    def __init__(
+        self,
+        denied_script=(True, False, False),
+        *,
+        gateway_reachable: bool = True,
+        fresh: bool = True,
+    ) -> None:
+        self._denied = list(denied_script)
+        self._gateway_reachable = gateway_reachable
+        self._fresh = fresh
+        self.calls: list[tuple[str, str]] = []
+
+    def ping(self, source_device: str, destination: str):
+        self.calls.append((source_device, destination))
+        if destination == _DENIED:
+            reachable = self._denied.pop(0) if self._denied else False
+        else:
+            reachable = self._gateway_reachable
+        return _PingResult(reachable=reachable, fresh=self._fresh)
+
+
+class _PingResult:
+    def __init__(self, *, reachable: bool, fresh: bool) -> None:
+        self.reachable = reachable
+        self.fresh_output_observed = fresh
+        self.attempts = 1
+        self.statistics = "Success rate is 0 percent"
+
+
+class _Configuration:
+    def __init__(self, *, applied: bool = True) -> None:
+        self._applied = applied
+        self.actions: list = []
+
+    def inventory(self) -> list:
+        return []
+
+    def apply_actions(self, actions) -> list:
+        self.actions.extend(actions)
+        return [
+            RuntimeActionMutation(action_id=item.id, applied=self._applied, message="")
+            for item in actions
+        ]
+
+
+class _PhysicalWithLinks(_Physical):
+    def __init__(self, *, link_ok: bool = True, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._link_ok = link_ok
+        self.links: list[str] = []
+
+    def ensure_link(self, link):
+        self.links.append(f"{link.device_a}:{link.port_a}->{link.device_b}:{link.port_b}")
+        return PhysicalMutationResult(
+            target_id=link.id, target_kind=PhysicalObjectKind.LINK,
+            disposition=(
+                MutationDisposition.CHANGED if self._link_ok
+                else MutationDisposition.FAILED
+            ),
+            applied=self._link_ok, message="" if self._link_ok else "no free port",
+        )
+
+
+_DENIED = "198.18.161.10"
+_GATEWAY = "198.18.160.1"
+
+
+def _behavioural(physical=None, ping=None, configuration=None, security=None):
+    physical = physical or _PhysicalWithLinks()
+    return SecurityReplayQualifier(
+        physical,
+        security or _Security(),
+        _Query(),
+        configuration=configuration or _Configuration(),
+        ping=ping or _Ping(),
+        name_token="tok",
+    ).qualify("1941"), physical
+
+
+def test_the_slice_measures_baseline_then_both_passes():
+    result, _ = _behavioural()
+
+    assert len(result.baseline_flows) == 2
+    assert all(len(item.flows) == 2 for item in result.readings)
+
+
+def test_the_positive_control_travels_with_every_measurement():
+    """Sin él, "la red se cayó" se leería como "la ACL filtra"."""
+    result, _ = _behavioural()
+
+    for group in (result.baseline_flows, *(item.flows for item in result.readings)):
+        assert {item.label for item in group} == {"denied", "permitted"}
+        assert next(item for item in group if item.label == "permitted").expected_reachable
+
+
+def test_the_baseline_expects_the_denied_flow_to_reach_before_the_acl_exists():
+    result, _ = _behavioural()
+
+    baseline = next(item for item in result.baseline_flows if item.label == "denied")
+    enforced = next(item for item in result.readings[0].flows if item.label == "denied")
+    assert baseline.expected_reachable is True
+    assert enforced.expected_reachable is False
+
+
+def test_behaviour_survives_the_replay_when_both_passes_match():
+    result, _ = _behavioural()
+
+    assert result.behaviour_survived_the_replay is True
+
+
+def test_a_replay_that_stopped_denying_is_reported():
+    """Baseline alcanza, la pasada 1 deniega, y la 2 vuelve a dejar pasar."""
+    result, _ = _behavioural(ping=_Ping((True, False, True)))
+
+    assert result.readings[0].behaviour_matched is True
+    assert result.readings[1].behaviour_matched is False
+    assert result.behaviour_survived_the_replay is False
+
+
+def test_a_baseline_that_never_reached_cannot_decide_anything():
+    """Sin baseline alcanzable, un flujo bloqueado no distingue ACL de red rota."""
+    result, _ = _behavioural(ping=_Ping((False, False, False), gateway_reachable=False))
+
+    assert result.behaviour_survived_the_replay is None
+
+
+def test_a_slice_whose_denied_flow_never_reached_is_not_evidence_of_filtering():
+    """El caso peligroso: la ACL "funciona" porque el slice nunca funcionó."""
+    result, _ = _behavioural(ping=_Ping((False, False, False)))
+
+    baseline = next(item for item in result.baseline_flows if item.label == "denied")
+    assert baseline.matched is False
+    assert result.readings[0].behaviour_matched is True
+    assert result.behaviour_survived_the_replay is None
+
+
+def test_a_stale_measurement_never_matches():
+    result, _ = _behavioural(ping=_Ping(fresh=False))
+
+    assert all(not item.matched for item in result.baseline_flows)
+    assert result.behaviour_survived_the_replay is None
+
+
+def test_without_collaborators_the_pass_measures_no_behaviour_at_all():
+    """La mitad de comportamiento es opcional y su ausencia no se disfraza."""
+    result, _, _, _ = _qualify()
+
+    assert result.baseline_flows == ()
+    assert all(item.flows == () for item in result.readings)
+    assert all(item.behaviour_matched is None for item in result.readings)
+    assert result.behaviour_survived_the_replay is None
+
+
+def test_the_acl_permits_everything_it_does_not_explicitly_deny():
+    """Un `deny` numerado arrastra el deny implícito y tumbaría el control."""
+    _, _, security, _ = _qualify()
+
+    rules = [
+        item for item in security.applications[0]
+        if item.action_type is SecurityActionType.ADD_ACL_RULE
+    ]
+    decisions = [(item.sequence, item.decision.value) for item in rules]
+    assert decisions == [(10, "deny"), (20, "allow")]
+
+
+def test_every_disposable_of_the_slice_is_removed():
+    result, physical = _behavioural()
+
+    assert physical.live == []
+    assert len(result.removed) == 3
+    assert all(item.startswith(QUALIFICATION_PREFIX) for item in result.removed)
+
+
+def test_a_slice_that_could_not_be_linked_measures_no_behaviour_and_still_cleans_up():
+    result, physical = _behavioural(_PhysicalWithLinks(link_ok=False))
+
+    assert result.baseline_flows == ()
+    assert physical.live == []
+    assert any("link_not_created" in item for item in result.errors)
+
+
+def test_a_slice_whose_addressing_was_refused_measures_no_behaviour():
+    result, physical = _behavioural(configuration=_Configuration(applied=False))
+
+    assert result.baseline_flows == ()
+    assert physical.live == []
+    assert any("slice_configuration_refused" in item for item in result.errors)

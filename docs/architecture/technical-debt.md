@@ -3200,7 +3200,14 @@ claim built on it no stronger than the transport can support.
 ## TD-SECURITY-001 — ACL/NAT replay safety is not proven
 
 Status:
-OPEN
+RESOLVED
+
+Closed at E9.5 by the controlled reproduction its criterion asked for: the same
+typed ACL/NAT batch applied twice on a disposable 1941, direct read-back after
+each pass, and behavioural verification with a positive and a negative control
+in the **same run**. The reported defect did not reproduce. The product posture
+stays `TREAT_AS_REPLAY_UNSAFE_FOR_PRODUCT_SAFETY`, because the measurement is
+scoped and that posture costs nothing. See "Resolution — E9.5" at the end.
 
 Severity:
 P1
@@ -3268,12 +3275,13 @@ only the standalone generator.
 
 Does not block Stage 3A4, which dispatches no ACL or NAT mutation.
 
-### Progress — E9.5, the replay half is measured; the behavioural half is not
+### Resolution — E9.5, read-back and behaviour, one run
 
 ```text
-TD_SECURITY_001            = OPEN
+TD_SECURITY_001            = RESOLVED
+CLOSURE                    = NOT_REPRODUCED_WITH_EVIDENCE
 READBACK_HALF              = MEASURED
-BEHAVIOURAL_HALF           = NOT PERFORMED
+BEHAVIOURAL_HALF           = MEASURED, same run
 BACKEND                    = Packet Tracer 9.0.1.0858, model 1941
 ```
 
@@ -3305,17 +3313,47 @@ emits no `no access-list` reset, so it is structurally additive. What is now
 measured is the *backend's* answer to that additivity for an **identical** ACE.
 
 **The classification is scoped, deliberately.** What this does NOT establish: a
-*different* ACE reusing the same sequence number; more than one ACE per list;
-other router models; any behaviour under load. `TREAT_AS_REPLAY_UNSAFE_FOR_PRODUCT_SAFETY`
-therefore **stays** as the product posture — it costs nothing, and it covers
-every case this measurement did not.
+*different* ACE reusing the same sequence number; lists longer than the two ACEs
+measured; other router models; NAT modes other than PAT; any behaviour under
+load. `TREAT_AS_REPLAY_UNSAFE_FOR_PRODUCT_SAFETY` therefore **stays** as the
+product posture — it costs nothing, it covers every case this measurement did
+not, and `TD-TRANSPORT-001`'s containment matrix records it as this family's
+standing classification regardless of what was measured here.
 
-**Why the entry does not close.** Its criterion reads *"followed by direct
-readback **and** behavioral verification"*. The behavioural half — that a
-replayed ACL still permits and denies what it did before — was **not performed**:
-it needs a two-endpoint slice with a positive and a negative flow, which this
-pass does not build. Closing on the readback alone would be reading "and" as
-"or". The entry stays OPEN with the readback half discharged.
+**The behavioural half, in the same run.** The criterion reads *"followed by
+direct readback **and** behavioral verification"*, and measuring the two in
+separate runs would leave open whether the state that was read is the state that
+filtered. The pass therefore builds a two-endpoint slice through the product's
+own typed seams — a 1941 with a PC per directly-connected subnet, addressed by
+`ConfigureRoutedInterface` and `SetEndpointStaticAddress` — and measures three
+times:
+
+```text
+                      A -> B (denied flow)      A -> its gateway (control)
+baseline, no ACL      REACHABLE   expected      REACHABLE   expected
+pass 1, ACL applied   unreachable expected      REACHABLE   expected
+pass 2, reapplied     unreachable expected      REACHABLE   expected
+
+behaviour_survived_the_replay = True
+```
+
+Every measurement was fresh. The ACL's own hit counters advanced to
+`(4 match(es))` on both ACEs by pass 2, which is independent evidence that the
+list is evaluating traffic rather than merely present in the configuration.
+
+**The positive control is not decoration.** Without `A -> its own gateway`, a
+slice that never worked would read exactly like an ACL that filters perfectly.
+`behaviour_survived_the_replay` returns `None` — not `True` — whenever the
+baseline did not reach, and a regression pins that: an enforcement "match" over
+a dead baseline establishes nothing. The ACL carries an explicit
+`permit ip any any` at sequence 20 for the same reason; without it the implicit
+deny would take the control flow down with the measured one.
+
+**Classification, from evidence.** Repeated identical typed ACL/NAT application
+on this backend and model is idempotent in **both** state and behaviour. The
+closure classification is `NOT_REPRODUCED_WITH_EVIDENCE`: the reported defect —
+ACE accumulation under replay — did not reproduce under the recorded controlled
+conditions.
 
 **A real parser defect this reproduction exposed, fixed here.**
 `parse_show_access_lists` recognised only `Extended IP access list` headers.
