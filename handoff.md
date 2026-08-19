@@ -3,18 +3,17 @@
 ## Current checkpoint
 
 Executable state, from Git rather than from memory. Everything below was
-measured at `60ef5c7`; `2718763` and this commit are docs-only and change none
-of it.
+measured at `14854bf`; this commit is docs-only and changes none of it.
 
 ```text
 branch            feature/runtime-ripv2
-HEAD              2718763
+HEAD              14854bf
 working tree      clean  (git status --short empty, git diff --check clean)
 worktree          .claude/worktrees/runtime-ripv2   (operational location only)
 interpreter       ./.venv/Scripts/python.exe        (worktree-local, authoritative)
 PYTHONPATH        unset
-regression        2139 passed, 3 pre-existing pytest deprecation warnings
-Graphify          8012 nodes, 27234 edges, 284 communities
+regression        2187 passed, 3 pre-existing pytest deprecation warnings
+Graphify          8156 nodes, 27666 edges, 270 communities
 ```
 
 Run the suite as `./.venv/Scripts/python.exe -m pytest` from the worktree root.
@@ -22,8 +21,8 @@ The `python` on `PATH` is a different installation with no `pytest`.
 
 **Authority order.** Current Git, source and tests win over any prose in this
 file. The authoritative MEG-4 record is
-`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose **run 10** is
-the current state; the authoritative debt state is
+`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose **run 12** is
+the current state and PASSES (run 13 reproduced it); the authoritative debt state is
 `docs/architecture/technical-debt.md`; the runtime register is
 `docs/qa/e95-runtime-debt.md`. Everything from "History below this line" onward
 is Slice 2B/3 history, not status.
@@ -38,7 +37,7 @@ MEG-1  live import isolation ................... CLOSED   0587995, 5641445
 MEG-2  capability consumer / TD-HARDWARE ....... CLOSED   ea4eb3a, 06217ac
 MEG-3  product execution surface ............... CLOSED   7de805a, 6ef25bf
 OAG    offline adversarial matrix .............. CLOSED   c1ea586
-MEG-4  bounded live qualification ............ FAILED / CLEAN, 10 runs
+MEG-4  bounded live qualification ............ PASS     14854bf, runs 12-13
 MEG-5  full same-run 41/41 acceptance ......... NOT_OPENED
 MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
 MEG-7  Stage 3A4 closure ...................... NOT_STARTED
@@ -48,20 +47,20 @@ MEG_5_EXECUTION     = BLOCKED
 REFERENCE_41_41_RUN = NOT_EXECUTED
 ```
 
-## MEG-4 run 10 — the current executed state
+## MEG-4 run 12 — the current executed state
 
-Ten bounded live runs against PT `9.0.1.0858`, every one failing clean with the
-workspace restored. Run 10 is the first in which typed forwarding actually
-EXECUTED: the capability gate authorised it, the product measured it, and the
-measurement returned a negative.
+Thirteen bounded live runs against PT `9.0.1.0858`. Runs 1-11 failed clean with
+the workspace restored; **run 12 completed**, and run 13 reproduced it. Run 11
+is the one that made the difference: it read Packet Tracer's simulation event
+list over the failing flow and turned an aggregate negative into a device, a
+port and PT's own decision.
 
 ```text
-MEG_4                          = FAILED / CLEAN
-STOPPED_AT                     = control_plane_apply
-
+MEG_4                          = PASS
+STATUS / STOPPED_AT            = completed / completed
+DURATION                       = 65.5 s (run 12), 65.1 s (run 13)
 PHYSICAL_DEPLOYMENT            = VERIFIED   (dirty_state clean)
-SERIAL_ORIENTATION             = VERIFIED   (one DCE @ 2000000 bps, one DTE;
-                                             4 pages captured per endpoint)
+SERIAL_ORIENTATION             = VERIFIED   (one DCE, one DTE)
 E5_ACTIONS                     = 17 of 17 APPLIED
 E5_AGGREGATE                   = partial / observability_limitation
 ACCESS_PORT                    = UNOBSERVABLE   (preserved, not required)
@@ -71,34 +70,92 @@ CONFIGURATION_FULLY_VERIFIED   = NO             (stated explicitly)
 AUTHENTIC_FOUNDATION_GATE      = PASS
 REQUIRED_FOUNDATIONS           = 4 x l3_interface + 1 x link, all VERIFIED
 
-E9_OBSERVED_STATUS             = VERIFIED
-RIPV2_PROCESS_AGGREGATE        = VERIFIED, both routers
-LEARNED_ROUTE_AGGREGATE        = VERIFIED, both routers
-SOURCE_DEVICE_NAME             = VERIFIED, 4 of 4 observations
-E9_BEHAVIOR_STATUS             = FAILED  (measured, not gated)
-TYPED_FORWARDING               = EXECUTED, reachable measured False
-                                 destination_ipv4 / protocol / source_device_name
-                                 all VERIFIED; traffic_flow_id UNOBSERVABLE
+E9_STATUS                      = VERIFIED
+RIPV2_PROCESS                  = VERIFIED, both routers
+LEARNED_ROUTES                 = VERIFIED, both routers
+TYPED_FORWARDING               = VERIFIED   reachable=True after 2 bounded
+                                 measurements; destination_ipv4, protocol and
+                                 source_device_name all VERIFIED
 
 E4_IDENTITY_PRESERVED          = YES
 SEMANTIC_INVENTORY_RESTORED    = YES  (independent re-observation, separate
                                        process: 0 semantic devices, 0 links)
-
-ROUTING_BEHAVIOR_CHANNEL       = SUPPORTED for 2911 / PT 9.0.1.0858, from the
-                                 governed R3 qualification. Measurability, not
-                                 success: both R3 measurements returned
-                                 `Success rate is 0 percent (0/5)`.
+PACKET_TRACER_MODE             = Realtime, confirmed by reading `before`
 ```
 
-Backend-managed `Power Distribution Device` counts, as measured rather than as
-expected: run 10 opened and closed on **3**, unchanged across the run — the
-third arrived during the R3 qualification, not during this run. The independent
-re-observation afterwards reported **0**: Packet Tracer collapses them once the
-workspace is empty. No claim is made about raw backend inventory identity; the
-restoration comparison covers the semantic inventory, which returned to zero
-devices and zero links.
+Reproduced: run 12 (65.5 s) and run 13 (65.1 s) are identical in outcome,
+in the number of bounded measurements and in restoration.
 
-## What closed the previous blocker
+## What closed it
+
+Two product defects, both found by Packet Tracer's own simulation trace in
+**run 11** rather than argued from outside. The trace read the event list over
+the very flow the product had just recorded as `reachable=False`:
+
+```text
+FIRST_FAILING_DEVICE = B-EDGE-RTR-01
+FIRST_FAILING_PORT   = in=Serial0/0/0
+PT_DECISION          = "The next-hop IP address is not in the ARP table..."
+THEN, same event list = ARP resolves; the next echo crosses router -> switch ->
+                        PC and A-EDGE-RTR-01 reports
+                        "The Ping process received an Echo Reply message."
+```
+
+The path worked. The measurement was premature.
+
+1. **No convergence window on the forwarding measurement.** Every other
+   observation in the control-plane runtime that depends on a plane that
+   converges already had a bounded RE-READ (`_observe_rip_route`, 45 s, because
+   RIP advertises every 30 s). Reachability — which depends on RIP plus ARP on
+   the destination LAN plus a just-created access switch — was measured once.
+   It now has the same bounded window, and the same discipline: it stops on
+   **agreement**, not on a favourable answer; an unattributable window aborts
+   at once as UNOBSERVABLE; nothing is ever redispatched.
+   `TypedPingExecutor`'s own contract is untouched.
+
+2. **`traffic_flow_id` was accounted as a device property.** It is the
+   compiler's label for which intent flow the claim covers, and no registered
+   query could return it. Inside `expected` it rendered UNOBSERVABLE on every
+   reachability observation, and `_overall` turns one UNOBSERVABLE into
+   PARTIAL — so E9 could never be VERIFIED regardless of the network. It moved
+   to `source_traffic_flow_id`, beside `source_link_id`, which is the pattern
+   the model already used for plan identifiers. The claim did not narrow: the
+   four claimed device properties are exactly the previous four, and putting the
+   label back into `expected` makes it count again. Both pinned by tests.
+
+## What MEG-4 passing does NOT mean
+
+```text
+ACCESS_PORT                = UNOBSERVABLE, TD-ACCESSPORT-READBACK-001 still OPEN
+ENDPOINT_GATEWAY           = UNOBSERVABLE, no PT getter exists
+MODULE_IDENTITY            = UNOBSERVABLE, TD-MODULE-SLOT-001 backend limitation
+CONFIGURATION_FULLY_VERIFIED = NO
+```
+
+Forwarding was measured **behaviourally**. A frame crossing a switch is not a
+reading of a port's VLAN, and a host replying is not a reading of its default
+gateway. The simulation trace is diagnostic and promotes nothing; the runtime
+that reads it is pinned by a test that fails if it ever imports the
+configuration evidence types. What the trace did change is that the segment
+those two gaps own is no longer a *suspect* — it was observed carrying traffic.
+
+## New seams from this session
+
+```text
+simulation_trace_runtime.py        PT event list -> typed observation. DIAGNOSTIC.
+                                   The JS lives below the MCP facade and
+                                   tool_registry imports it, so the public tool
+                                   and the governed runtime cannot drift.
+pre_cleanup_diagnostic             The PRODUCT invokes an observer once, after
+                                   the terminal stage and before cleanup. Its
+                                   output lands only in `result.diagnostics`:
+                                   it cannot reach status, errors, configuration
+                                   evidence or foundations, a broken observer
+                                   cannot fail a run, a clean one cannot rescue
+                                   one, and a BLOCKED run never calls it.
+```
+
+
 
 `source_device_name` is now established by **execution provenance**, not by a
 new IOS command and never by the requested name. When a registered query's
@@ -132,163 +189,29 @@ TD_MODULE_SLOT_001         = BACKEND_LIMITATION
 TD_CATALOG_PORT_001        = RESOLVED
 TD_CONFIG_CAPABILITY_001   = RESOLVED
 TD_HARDWARE_001            = OPEN
-TD_ACCESSPORT_READBACK_001 = OPEN — now diagnosis-relevant: it owns one of the
-                             two unobservable hops on the failing path
+TD_ACCESSPORT_READBACK_001 = OPEN — no longer diagnosis-relevant: run 11's
+                             trace observed that segment carrying traffic, so it
+                             is a read-back gap, not a suspect
 TD_ACCEPTANCE_001          = OPEN
 ```
 
 ## Current blocker
 
 ```text
-TYPED FORWARDING MEASURED reachable = False
-CAUSE NOT ESTABLISHED
+NONE FOR MEG-4. It PASSES at 14854bf, reproducibly.
 ```
-
-The two previous blockers are gone. `2911:routing_behavior` is SUPPORTED from
-the **R3 qualification** — one disposable 2911 on this build, production
-runtimes only, the production `TypedPingExecutor` dispatching, echo-confirming,
-parsing and attributing a `ping`. Both of R3's measurements returned
-`Success rate is 0 percent (0/5)` and that is what qualifies the channel: the
-dimension is measurability, not success. The gate was preserved throughout.
-`destination_ipv4` and `protocol` are now bound to the execution rather than to
-the request.
-
-What replaced them is a real negative. Every hop this stage can observe is
-verified — serial orientation, transit and routed L3, RIPv2 process, learned
-routes on both routers, endpoint ipv4 and netmask. The two it cannot observe
-are exactly the remaining ones:
-
-```text
-access-port VLAN membership   UNOBSERVABLE   TD-ACCESSPORT-READBACK-001, OPEN
-endpoint gateway              UNOBSERVABLE   applied, but no PT getter exists
-```
-
-Neither can be confirmed or excluded, so **no cause is claimed**. The
-measurement itself is sound and is not the suspect: the session was attributed
-to the claimed source, the executor confirmed the destination it dispatched and
-echoed, and the protocol matched the action actually applied. One attempt is
-correct — `TypedPingExecutor.ping` retries only while no attributable window
-exists, never for a more favourable answer.
-
-`traffic_flow_id` remains UNOBSERVABLE and is **not the current blocker**. It
-is a compiler label, read by no code, and no registered command can return it.
-It holds the reachability aggregate below VERIFIED, but it is not what made the
-measurement negative and chasing it would not move the diagnosis.
-
-## Upstream-assisted diagnosis — what it settled (2026-08-19, `3247b47`)
-
-An upstream audit ran before any new code. Its three answers, stated so nobody
-repeats them:
-
-```text
-SIX NAMED TOOLS vs UPSTREAM      = AT PARITY. pt_inspect_ports, pt_read_vlans,
-                                   pt_verify_connectivity, pt_simulation_mode,
-                                   pt_simulation_step and pt_read_packet_trace
-                                   are byte-identical to origin/main except one
-                                   emoji and one timeout (20 -> 30 s). Nothing
-                                   to port.
-UPSTREAM COMMITS WE LACK         = exactly two functional ones, c762219 and
-                                   fd61f5e. NEITHER touches the MEG-4 path.
-CAUSE OF reachable=False         = STILL NOT ESTABLISHED.
-```
-
-Why the two missing commits are not the cause, from source rather than from
-their messages:
-
-* **`c762219`** — its load-bearing half is `pt_add_link` inferring the cable
-  category from `getClassName()`, which classifies by behaviour (a 3560 answers
-  "Router"). The governed path never does that: `link.cable` is compiled
-  offline by `PacketTracerTopologyCatalogAdapter.cable_for` from
-  `model.category` in the catalogue — the same source upstream's fix moved to.
-  Its other half, `addModule` being fire-and-forget, is already **superseded**
-  here: `generate_module_command` checks `addModule(...) === true` and records
-  `native_rejected`. The rest (rename collisions, `setHideDevLabel`,
-  `pt_fix_plan`, 1941 slot docs) is facade-only or 1941-only.
-* **`fd61f5e`** — the HTTP bridge's global FIFO `/result` queue, which can hand
-  one operation another's answer. Real, still unported, and **latent on the
-  public HTTP path**. It cannot have touched any MEG-4 run: those ran on the
-  **file bridge**, which correlates per request by name (`req_<n>.js` ->
-  `res_<n>.txt`). Recorded as an unported upstream defect, not as MEG-4 debt.
-
-The offline plan was also re-derived and is coherent — A LAN `10.0.0.0/29`
-(router `.1`, PCs `.2/.3`), B LAN `10.0.0.8/29` (router `.9`, PCs `.10/.11`),
-transit `10.0.0.16/30`, gateways matching, `network 10.0.0.0` + `no auto-summary`
-on both routers, `passive-interface Gi0/0` on the LAN side only. The measured
-flow pings `10.0.0.10` from `A-EDGE-RTR-01`, so the reply depends on
-`B-DEFAULT-PC-01`'s default gateway. `configurePcIp` is called with the gateway
-in argument 5, which matches the Script Engine helper's real signature.
-
-**A useful negative about the two suspects.** A *uniform* access-port failure
-is benign in this shape: if every port stayed in VLAN 1, the router-facing
-`Gi1/1` and the PC-facing `Fa1/1` would still share one broadcast domain. Only a
-*partial* one breaks it. Nothing here promotes that reasoning into evidence —
-`ACCESS_PORT` stays `UNOBSERVABLE` — but it says where to look first.
-
-## New capability, deliberately unwired
-
-`infrastructure/execution/simulation_trace_runtime.py` reads Packet Tracer's
-Simulation event list: per frame the hop (device, in port, out port) and the
-per-OSI-layer decision log. `first_failing_hop` and `localization()` turn an
-aggregate negative into a device, a port and PT's own last decision.
-
-```text
-STATUS       = built, 19 regressions, NOT called by any product path
-CLASS        = DIAGNOSTIC. It localises; it certifies nothing.
-FORBIDDEN    = trace outcome -> ACCESS_PORT VERIFIED
-               trace outcome -> endpoint gateway VERIFIED
-               (pinned by TestItStaysDiagnostic, which fails if the module ever
-                imports the configuration evidence types)
-```
-
-The JS moved *below* the MCP facade rather than being copied: `tool_registry`
-now imports the same three builders, so the public tool and the governed
-runtime cannot drift.
-
-**Also settled, so step 5 is not re-litigated:** upstream's `pt_inspect_ports`
-and `pt_read_vlans` do **not** carry the ACCESS_PORT claim. `pt_inspect_ports`
-reads `Port` (`isPortUp`, `getIpAddress`, `getMacAddress`, `getNatMode`,
-`getAclInID`, ...) and has **no VLAN field at all**; `pt_read_vlans` reads the
-switch's `VlanManager` **database** (`getVlanNumber`, `getName`, `isDefault`,
-`getMaxVlans`) and never port membership. Neither observes which VLAN a port
-belongs to. If the trace localises there, this is a backend evidence gap, not a
-missing port.
-
-## Blocker for this session
-
-```text
-PACKET TRACER PROCESS = NOT RUNNING  (9.0.1.0858 installed, no process, no bridge)
-STEPS 4-6             = CANNOT EXECUTE
-```
-
-Localising run 10 needs a live backend. To continue: open Packet Tracer, open
-**Extensions > MCP BUILDER > MCP Control Center**, leave the workspace empty,
-then run MEG-4 with the trace seam reading between the typed ping and cleanup —
-Simulation mode on, dispatch the existing `TypedPingExecutor` ping, step the
-event list forward, read the trace, Realtime back. That sequence mutates no
-device and needs no new getter.
 
 ## Next task
 
-Localise the failure before repairing anything. Use **bounded typed
-reachability diagnostics inside the same disposable MEG-4 topology**, taken
-before cleanup, to identify the first failing hop or segment: measure along the
-path rather than only end to end, so the negative is attributed to a segment
-instead of to the whole flow.
+MEG-4 is closed. What it did **not** close, in the order the master runs them:
 
-Two constraints on that work, both load-bearing:
-
-- **Do not implement access-port or endpoint-gateway getters yet.** Build a
-  read-back only once the diagnostic evidence actually points at the owning
-  gap. Writing both getters first would be guessing at which one is broken.
-- **Behavioural reachability may localise a fault; it must never be promoted
-  into direct configuration read-back.** A ping that fails between two points
-  narrows where to look. It does not observe VLAN membership, and it does not
-  observe a default gateway. `ACCESS_PORT` and the endpoint gateway stay
-  UNOBSERVABLE until something reads them directly.
-
-Still open and unchanged, and smaller than the above: whether `traffic_flow_id`
-belongs in `expected` at all, given that nothing can observe it and
-`unclaimed_fields` folds into UNOBSERVABLE identically.
+- `TD-ACCEPTANCE-001` — MEG-4 satisfies its Stage 3A4 closure line; confirm that
+  against the document rather than against this file before marking it.
+- `TD-ACCESSPORT-READBACK-001` and the endpoint gateway stay OPEN. A read-back
+  is now a normal work item, not a diagnosis: nothing about the failing path
+  depends on it any more.
+- MEG-5 and the 41/41 reference run are **NOT_OPENED / NOT_EXECUTED** and were
+  deliberately not started here.
 
 ## Operating constraints, still in force
 

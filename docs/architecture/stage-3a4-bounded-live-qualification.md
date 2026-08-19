@@ -1,9 +1,10 @@
 # Stage 3A4 — MEG-4 bounded live qualification
 
-Ten runs so far, all on `feature/runtime-ripv2`, worktree
-`.claude/worktrees/runtime-ripv2`. **Run 10, at the end of this document, is
-the current state.** Every earlier run is left exactly as it was recorded —
-they are history, not a summary of where things stand.
+Thirteen runs so far, all on `feature/runtime-ripv2`, worktree
+`.claude/worktrees/runtime-ripv2`. **Run 12, at the end of this document, is
+the current state, and it PASSES**; run 13 reproduced it. Every earlier run is
+left exactly as it was recorded — they are history, not a summary of where
+things stand.
 
 ## Run 1 — 2026-08-17
 
@@ -2104,5 +2105,220 @@ measuring at all.
 ```text
 MEG_5                  = NOT_OPENED
 MEG_5_EXECUTION        = BLOCKED
+REFERENCE_41_41_RUN    = NOT_EXECUTED
+```
+
+# Run 11 — 2026-08-19, the simulation trace localizes the negative
+
+## Outcome, stated first
+
+```text
+MEG_4_STATUS        = FAILED / CLEAN
+STOPPED_AT          = control_plane_apply
+HEAD                = bd04b5a
+TYPED_FORWARDING    = EXECUTED, reachable measured False (as in runs 10)
+TRACE_COMPLETE      = YES   89 frames, simulation_mode confirmed
+CAUSE               = ESTABLISHED, for the first time
+REALTIME_RESTORED   = YES
+NO_PKT_SAVED        = YES
+```
+
+Same hash `1d2324aa`, same 17 of 17 E5 actions, same four control-plane
+observations, same `reachable=False`. What is new is that the product invoked
+the pre-cleanup diagnostic and Packet Tracer said what happened.
+
+## What the trace measured
+
+Correlated to the run's own compiled flow, not to a historical one:
+
+```text
+PING_SOURCE           = A-EDGE-RTR-01
+PING_DESTINATION      = 10.0.0.10
+EXPECTATION_ID        = cp/verify-flow-reachability/1a2c4b34322ee7f0
+SIM_MODE              = entered (before=False, after=True), reset to 0 frames
+SIM_STEP              = 1 -> 89 frames
+TRACE                 = observed, simulation_mode=True, 89 hops
+FIRST_FAILING_DEVICE  = B-EDGE-RTR-01
+FIRST_FAILING_PORT    = in=Serial0/0/0
+FIRST_FAILING_LAYER   = 2   (the decision PT attributes to the ARP process)
+PT_DECISION           = "The next-hop IP address is not in the ARP table. The
+                         ARP process tries to send an ARP request for that IP
+                         address and drops this packet."
+```
+
+And then, in the same event list:
+
+```text
+idx 2..7    ARP broadcast   B-EDGE-RTR-01 -> switch -> B-DEFAULT-PC-01 -> back
+            "The ARP process updates the ARP table with received information."
+idx 16..21  ICMP echo       A-RTR -> serial -> B-RTR -> switch -> B-PC -> back
+idx 22      A-EDGE-RTR-01   "The Ping process received an Echo Reply message."
+```
+
+**The path works.** The access ports bridge the frames, the endpoint answers,
+and its reply routes back across the WAN. The first echo is lost to ARP, which
+is ordinary, and the ones after it are not.
+
+## What that does and does not establish
+
+```text
+FORWARDING_PATH_FUNCTIONAL_AT_TRACE_TIME = YES, by PT's own decision log
+ACCESS_PORT                              = UNOBSERVABLE  (unchanged)
+ENDPOINT_GATEWAY                         = UNOBSERVABLE  (unchanged)
+```
+
+Neither is promoted, and the trace is not evidence for either. A frame crossing
+a switch is not a reading of a port's VLAN, and a host replying is not a
+reading of its default gateway. The gap named in run 10 is exactly as open as
+it was; what changed is that it is no longer a *suspect*, because the segment it
+owns was observed carrying traffic.
+
+## The defects this run found
+
+Two, both in the product, neither in the network.
+
+**1. The forwarding measurement had no convergence window.** Every other
+observation in `PacketTracerEnterpriseControlPlaneRuntime` that depends on a
+plane that converges already had a bounded re-read: `_observe_rip_route`
+retries up to 45 s because RIP advertises every 30 s. The reachability
+measurement — which depends on RIP *plus* ARP on the destination LAN *plus* a
+just-created access switch — was taken exactly once, immediately after apply.
+Run 11 measured `False` at t≈0 and the trace measured Echo Replies ~30 s later
+over the same unchanged topology.
+
+**2. `traffic_flow_id` was accounted as a device property.** It is the
+compiler's label for which intent flow the claim covers; no registered query can
+return it, because the only command is `ping <ip>`. Inside `expected` it
+rendered UNOBSERVABLE on every reachability observation, so the aggregate could
+never be VERIFIED no matter what the network did — and `_overall` turns a single
+UNOBSERVABLE into PARTIAL, which is what `execute_enterprise_reference` gates
+E9 on.
+
+Both are fixed in `14854bf`, with regressions that pin the discipline: the
+window stops on **agreement**, not on a favourable answer, and moving the label
+to `source_traffic_flow_id` narrows nothing — the four claimed device
+properties are exactly the previous four, and putting the label back into
+`expected` makes it count again.
+
+## G4
+
+```text
+cleanup entries    = 8, all applied
+inventory_restored = True
+REALTIME_RESTORED  = YES (set_simulation_mode(False), observed after=False)
+```
+
+---
+
+# Run 12 — 2026-08-19, MEG-4 PASSES
+
+## Outcome, stated first
+
+```text
+MEG_4_STATUS                  = PASS
+HEAD                          = 14854bf
+STATUS / STOPPED_AT           = completed / completed
+DURATION                      = 65.5 s
+E9_STATUS                     = VERIFIED
+TYPED_FORWARDING              = VERIFIED   reachable=True after 2 bounded
+                                measurements; nothing redispatched
+SEMANTIC_INVENTORY_RESTORED   = YES  (independent re-observation, separate process)
+E4_IDENTITY_PRESERVED         = YES
+RAW_IOS_OR_JS_USED            = NONE
+HARNESS_PERFORMED_A_MUTATION  = NO
+NO_PKT_SAVED                  = YES
+ERRORS                        = []
+```
+
+Confirmed by a second run (**run 13**, 65.1 s) with the same result, same two
+bounded measurements, same restoration. The pass is reproducible, not a
+one-off.
+
+## The measurement that closes row 12
+
+```text
+cp/verify-flow-reachability/1a2c4b34322ee7f0  end_to_end_reachability  behavior
+    status          = verified
+    evidence_method = typed_ping_current_command_window
+    fresh_evidence  = true
+    fields = {destination_ipv4: verified, protocol: verified,
+              reachable: verified, source_device_name: verified}
+    message = "Fresh typed ping matched reachable=True after 2 bounded
+               measurement(s)."
+    convergence: attempts=2, last_observable_state=reachable=True
+```
+
+Two measurements, not one — and the second is the first that agreed. That is
+the defect run 11 found, measured closing.
+
+The pre-cleanup diagnostic ran and reported `no_failing_reachability_observation`:
+there was no negative to localize, so it never entered Simulation mode. Packet
+Tracer stayed in Realtime for the whole run.
+
+## Control plane, in full
+
+```text
+cp/verify-rip-process   x2   VERIFIED   protocol, version_send, version_recv,
+                                        networks, passive_interfaces,
+                                        auto_summary, source_device_name
+cp/verify-rip-route     x2   VERIFIED   network, prefix_length, protocol,
+                                        source_device_name
+cp/verify-flow-reach    x1   VERIFIED   as above
+CONTROL_PLANE_STATUS         = VERIFIED
+```
+
+## What is deliberately still not VERIFIED
+
+```text
+CONFIGURATION_STATUS         = partial
+CONFIGURATION_FULLY_VERIFIED = NO
+ACCESS_PORT                  = UNOBSERVABLE   x6, TD-ACCESSPORT-READBACK-001 OPEN
+ENDPOINT_STATIC              = PARTIAL        x4 (gateway unreadable)
+```
+
+Unchanged and preserved. The E5→E9 gate is foundation-scoped (run 6), and every
+declared foundation is VERIFIED: four L3 interfaces, two VLANs, the serial clock
+and all seven links. **MEG-4 passing does not close `TD-ACCESSPORT-READBACK-001`
+and does not make the endpoint gateway observable.** Forwarding was measured
+behaviourally; neither field was read.
+
+## G4 — cleanup and restoration
+
+```text
+cleanup entries    = 8, all applied
+inventory_restored = True
+```
+
+Independent post-run re-observation, separate process with its own G2:
+
+```text
+G2                    = ISOLATED
+semantic_device_count = 0
+link_count            = 0
+backend_managed       = 1  ("Power Distribution Device0", zero ports)
+simulation_mode       = before=False   (Realtime confirmed, not merely set)
+```
+
+## Exit matrix
+
+| # | Item | Result |
+| --- | --- | --- |
+| 1 | exact-version capability consumption by the normal path | **PASS** |
+| 2 | product-generated `TopologyPlan` | **PASS** |
+| 3 | module effect containment | **PARTIAL** — port effect verified; slot placement unobservable (`TD-MODULE-SLOT-001`, backend limitation) |
+| 4 | fresh two-ended serial orientation | **PASS** |
+| 5 | exactly one DCE and one DTE | **PASS** |
+| 6 | typed E5 serial transit addressing | **PASS** |
+| 7 | clock on the observed DCE only | **PASS** |
+| 8 | independent clock readback | **PASS** |
+| 9 | authentic foundational evidence | **PASS** |
+| 10 | typed RIPv2 process state | **PASS** |
+| 11 | typed learned-route readback | **PASS** |
+| 12 | typed forwarding behaviour | **PASS** — verified, reproducibly |
+| 13 | semantic cleanup / restoration | **PASS** — verified by re-observation |
+
+```text
+MEG_5                  = NOT_OPENED
+MEG_5_EXECUTION        = BLOCKED (not opened in this session)
 REFERENCE_41_41_RUN    = NOT_EXECUTED
 ```
