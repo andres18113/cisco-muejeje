@@ -1,0 +1,7 @@
+show access-lists
+Extended IP access list 181
+    10 permit ip 198.18.160.0 0.0.0.255 198.18.161.0 0.0.0.255
+Standard IP access list 82
+    10 permit 198.18.160.0 0.0.0.255
+
+Router#

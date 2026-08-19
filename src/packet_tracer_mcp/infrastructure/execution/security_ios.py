@@ -70,30 +70,63 @@ class DynamicArpInspectionState:
     active_vlans: list[int] = field(default_factory=list)
 
 
+#: Una cabecera reconocida abre una lista; CUALQUIER otra cabecera la cierra.
+#: Ese "la cierra" es la mitad importante: mientras sólo se reconocía
+#: `Extended`, una `Standard IP access list` dejaba el nombre anterior en pie y
+#: sus ACEs quedaban atribuidas a la lista extendida previa. `_observe_acl`
+#: filtra por nombre, así que una ACL de filtrado sin reglas podía verificar
+#: desde una ACE de la ACL de traducción NAT. Medido en vivo sobre PT
+#: `9.0.1.0858` durante la reproducción de replay de TD-SECURITY-001.
+_ACL_HEADER = re.compile(r"^(Standard|Extended) IP access list\s+(\S+)\s*$", re.I)
+_ANY_ACL_HEADER = re.compile(r"^\S.*access list\b", re.I)
+
+#: Una ACE extendida nombra el protocolo; una estándar empieza directo por la
+#: red de origen. Distinguirlas por forma evita leer `198.18.160.0` como si
+#: fuera un protocolo.
+_EXTENDED_ACE = re.compile(
+    r"^\s*(\d+)\s+(permit|deny)\s+([A-Za-z][\w-]*)\s+(.+?)"
+    r"(?:\s+\((\d+)\s+matches?\))?\s*$",
+    re.I,
+)
+_STANDARD_ACE = re.compile(
+    r"^\s*(\d+)\s+(permit|deny)\s+(.+?)"
+    r"(?:\s+\((\d+)\s+matches?\))?\s*$",
+    re.I,
+)
+
+
 def parse_show_access_lists(value: str) -> list[AccessListRuleRow]:
-    """Parse numbered extended ACLs from the current PT query window."""
+    """Parse numbered standard and extended ACLs from the current PT window."""
     acl_name = ""
+    standard = False
     rows: list[AccessListRuleRow] = []
     for line in normalize_terminal_output(value).splitlines():
-        header = re.match(r"^Extended IP access list\s+(\S+)\s*$", line.strip(), re.I)
+        stripped = line.strip()
+        header = _ACL_HEADER.match(stripped)
         if header:
-            acl_name = header.group(1)
+            standard = header.group(1).casefold() == "standard"
+            acl_name = header.group(2)
             continue
-        match = re.match(
-            r"^\s*(\d+)\s+(permit|deny)\s+(\S+)\s+(.+?)"
-            r"(?:\s+\((\d+)\s+matches?\))?\s*$",
-            line,
-            re.I,
-        )
-        if not acl_name or match is None:
+        if _ANY_ACL_HEADER.match(stripped):
+            # Una cabecera que este parser no sabe leer no puede heredar el
+            # nombre de la anterior: lo que venga debajo no le pertenece.
+            acl_name = ""
             continue
+        if not acl_name:
+            continue
+        match = _STANDARD_ACE.match(line) if standard else _EXTENDED_ACE.match(line)
+        if match is None:
+            continue
+        protocol = "" if standard else match.group(3).lower()
+        expression = (match.group(3) if standard else match.group(4)).strip()
+        hits = match.group(4) if standard else match.group(5)
         rows.append(AccessListRuleRow(
             acl_name=acl_name,
             sequence=int(match.group(1)),
             decision=match.group(2).lower(),
-            protocol=match.group(3).lower(),
-            expression=match.group(4).strip(),
-            hit_count=int(match.group(5)) if match.group(5) is not None else None,
+            protocol=protocol,
+            expression=expression,
+            hit_count=int(hits) if hits is not None else None,
         ))
     return rows
 

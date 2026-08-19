@@ -3197,6 +3197,91 @@ only the standalone generator.
 
 Does not block Stage 3A4, which dispatches no ACL or NAT mutation.
 
+### Progress — E9.5, the replay half is measured; the behavioural half is not
+
+```text
+TD_SECURITY_001            = OPEN
+READBACK_HALF              = MEASURED
+BEHAVIOURAL_HALF           = NOT PERFORMED
+BACKEND                    = Packet Tracer 9.0.1.0858, model 1941
+```
+
+`application/use_cases/qualify_security_replay.py` applies the **same** typed E8
+batch twice on a disposable router and re-reads through registered queries after
+each pass, covering both paths CP2 named — a typed extended filter ACL with its
+interface attachment, and a typed NAT PAT policy with its inline translation
+ACL. Raw captured output, both passes identical:
+
+```text
+show access-lists
+Extended IP access list 181
+    10 permit ip 198.18.160.0 0.0.0.255 198.18.161.0 0.0.0.255
+Standard IP access list 82
+    10 permit 198.18.160.0 0.0.0.255
+```
+
+```text
+ACL 181 (typed filter)      second pass added 0 ACEs
+ACL 82  (NAT translation)   second pass added 0 ACEs
+readings                    executed, fresh, complete, both passes
+cleanup                     typed removal path applied; workspace restored
+```
+
+**The reported defect did not reproduce.** Repeated identical typed application
+did **not** accumulate duplicate ACEs on this backend and model. What this
+entry has always said about the *generator* stays true and source-verified: it
+emits no `no access-list` reset, so it is structurally additive. What is now
+measured is the *backend's* answer to that additivity for an **identical** ACE.
+
+**The classification is scoped, deliberately.** What this does NOT establish: a
+*different* ACE reusing the same sequence number; more than one ACE per list;
+other router models; any behaviour under load. `TREAT_AS_REPLAY_UNSAFE_FOR_PRODUCT_SAFETY`
+therefore **stays** as the product posture — it costs nothing, and it covers
+every case this measurement did not.
+
+**Why the entry does not close.** Its criterion reads *"followed by direct
+readback **and** behavioral verification"*. The behavioural half — that a
+replayed ACL still permits and denies what it did before — was **not performed**:
+it needs a two-endpoint slice with a positive and a negative flow, which this
+pass does not build. Closing on the readback alone would be reading "and" as
+"or". The entry stays OPEN with the readback half discharged.
+
+**A real parser defect this reproduction exposed, fixed here.**
+`parse_show_access_lists` recognised only `Extended IP access list` headers.
+Faced with the two-list output above it did not merely skip the standard list —
+it kept the previous `acl_name`, so ACL 82's ACE was reported as a rule **of ACL
+181**, with `198.18.160.0` read as its protocol. `_observe_acl` filters by
+`acl_name` and gates on `bool(rules and bound)`, so a filter ACL whose rules had
+been removed could still have verified from an ACE belonging to the NAT
+translation list. Both list forms are now parsed, protocol is empty for a
+standard ACE, and **any** unrecognised header clears the current name instead of
+leaking it. Fixture: `packet_tracer_9_0_1_0858_show_access_lists_mixed.txt`,
+captured in this run.
+
+**One thing that looked like a defect and was not.** The first pass of this
+qualification put the NAT translation ACL at 182 and the ACL never appeared.
+`access-list 182 permit <net> <wildcard>` is a standard-form ACE with an
+extended-range number, and IOS rejected it. The product does not do this:
+`security_compiler` allocates NAT translation ACLs in range 1-99 with a comment
+saying exactly why. The wrong number was the qualification's, not the product's,
+and the pass now takes its control numbers from the same ranges the compiler
+uses. Recorded because "the ACL was absent" read like a product failure for one
+full run.
+
+**And one honesty defect in the qualification itself, fixed.**
+`duplication_for` returned `0` for an ACL that was never observed at all — "did
+not duplicate" asserted over something unmeasured. It returns `None` when the
+list is absent from both readings, and a regression pins it.
+
+**Observability note, not a defect.** `show ip nat statistics` reports the
+inside/outside interface roles and an empty `Dynamic mappings:` section even
+with a valid translation ACL in place, so the installation of
+`ip nat inside source list N interface X overload` is not observable through it
+on this build. That matches the existing ceiling in `_observe_nat`, which claims
+only the interface roles. Nothing here promotes the NAT translation rows.
+
+---
+
 ---
 
 ## TD-VOICE-001 — `create cnf-files` replay behavior is unknown
