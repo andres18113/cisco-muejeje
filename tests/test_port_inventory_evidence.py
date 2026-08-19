@@ -165,12 +165,20 @@ class TestRow3EvidenceNeverMigratesAcrossBuilds:
 
 class TestRow4EvidenceNeverMigratesAcrossModels:
     def test_another_models_evidence_is_not_reused(self):
-        resolution = backend_verified_port_inventory("2950T-24", backend_version=BUILD)
+        # `2960-24TT` sigue sin medir: la seleccion por capacidades elige
+        # `2950T-24` para ese rol, asi que nada de lo que este repo ejecuta lo
+        # necesita. Antes esta fila usaba `2950T-24`, que la cualificacion MEG-5
+        # midio; la fila es sobre PRESTAR evidencia, no sobre ese modelo.
+        resolution = backend_verified_port_inventory("2960-24TT", backend_version=BUILD)
 
         assert resolution.tier is PortInventoryEvidenceTier.UNKNOWN
         assert "No backend-verified port inventory exists" in resolution.reason
         # El IE-2000 tiene evidencia; prestarsela a otro modelo seria inventarla.
         assert resolution.permits(["FastEthernet1/1"]) is False
+        # Y el `2950T-24`, que si esta medido, tampoco se la presta.
+        assert backend_verified_port_inventory(
+            "2960-24TT", backend_version=BUILD,
+        ).permits(["FastEthernet0/1"]) is False
 
     def test_module_state_is_part_of_the_scope(self):
         """Un 2911 vacio no hereda la medicion del 2911 con la tarjeta puesta."""
@@ -407,17 +415,35 @@ class TestRow12TheUniversalCatalogueIsNotRewritten:
         )
         assert all(record.source for record in MEASURED_PORT_INVENTORIES)
 
-    def test_only_the_stage_3a4_bounded_models_are_qualified(self):
-        """El alcance, fijado. Ampliarlo debe ser una decision, no un descuido."""
+    def test_only_measured_models_are_qualified(self):
+        """El alcance, fijado. Ampliarlo debe ser una decision, no un descuido.
+
+        Se amplio una vez, deliberadamente: la cualificacion MEG-5 midio `1941`
+        (vacio y con HWIC-2T) y `2950T-24` porque la referencia de 41
+        dispositivos los selecciona y el gate de puertos la rechazaba. Cada
+        entrada nombra la pasada que la produjo.
+        """
         assert sorted({record.model for record in MEASURED_PORT_INVENTORIES}) == [
-            "2911", "IE-2000", "PC-PT",
+            "1941", "2911", "2950T-24", "IE-2000", "PC-PT",
         ]
 
+    def test_the_hand_pinned_reference_switch_is_still_unmeasured(self):
+        """`2960-24TT` no se colo: nada que este repo ejecute lo selecciona."""
+        assert "2960-24TT" not in {
+            record.model for record in MEASURED_PORT_INVENTORIES
+        }
 
-@pytest.mark.parametrize("model", ["2911", "IE-2000", "PC-PT"])
-def test_every_qualified_model_carries_its_provenance(model):
+
+@pytest.mark.parametrize("model,pass_token", [
+    ("2911", "meg4-run2"),
+    ("IE-2000", "meg4-run2"),
+    ("PC-PT", "meg4-run2"),
+    ("1941", "meg5-port-qualification"),
+    ("2950T-24", "meg5-port-qualification"),
+])
+def test_every_qualified_model_carries_its_provenance(model, pass_token):
     record = next(item for item in MEASURED_PORT_INVENTORIES if item.model == model)
 
     assert record.backend == "packet_tracer"
     assert record.backend_version == BUILD
-    assert "meg4-run2" in record.source
+    assert pass_token in record.source

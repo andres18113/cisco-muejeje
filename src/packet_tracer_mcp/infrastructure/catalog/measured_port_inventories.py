@@ -15,9 +15,18 @@ interpretation.
 
 **What is absent is unmeasured, which is not the same as wrong.** Every model
 not listed resolves UNKNOWN for concrete backend binding and stays planning-only.
-Notably `2960-24TT`, the model the pinned reference topology uses by hand, has
-no record here — the reference has never been run through this seam, and it is
-not this module's job to assume it would agree.
+`2960-24TT`, the model the *hand-pinned* reference topology uses, still has no
+record here and stays UNKNOWN: capability-driven selection picks `2950T-24` for
+the same role, so nothing this repository executes needs it, and it is not this
+module's job to assume the two would agree.
+
+The `1941` and `2950T-24` records came later, from the Stage 3A4 **MEG-5**
+port-inventory qualification: the 41-device reference selects them and the port
+evidence gate refused it until they were measured. That pass creates one
+disposable `__MCP_PORTQUAL_*` device per (model, module state) through
+`PortInventoryQualifier`, reads it back through this same production seam, and
+removes it — the measurement path is identical to run 2's, only the occasion
+differs.
 
 `IE-2000` is the reason this module exists. Its declared inventory numbers ports
 `0/x`; Packet Tracer numbers them `1/x`. The declaration is not corrected —
@@ -37,6 +46,7 @@ PACKET_TRACER_BACKEND = "packet_tracer"
 MEASURED_BACKEND_VERSION = "9.0.1.0858"
 
 _MEG4_RUN_2 = "stage-3a4-meg4-run2/observe_device"
+_MEG5_QUALIFICATION = "stage-3a4-meg5-port-qualification/observe_device"
 
 #: Un 2911 recien creado CON el HWIC-2T ya insertado en `0/0`. El estado de
 #: modulo importa: sin la tarjeta, `Serial0/0/0` y `Serial0/0/1` no existen, y
@@ -91,8 +101,86 @@ _PT_PC = BackendVerifiedPortInventory(
     source=_MEG4_RUN_2,
 )
 
+
+#: El `1941` vacio, medido en la cualificacion MEG-5. Sirve para el binding de
+#: sus puertos Gigabit; NO responde por los Serial, que no existen sin tarjeta.
+_PT_1941 = BackendVerifiedPortInventory(
+    model="1941",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=[
+        "GigabitEthernet0/0",
+        "GigabitEthernet0/1",
+        "Vlan1",
+    ],
+    source=_MEG5_QUALIFICATION,
+)
+
+#: El mismo `1941` CON el HWIC-2T en `0/0`. Es el estado en el que la referencia
+#: lo despliega, y el unico que autoriza `Serial0/0/x`. Dos slots HWIC, no
+#: cuatro: el bare de arriba y este se midieron en la misma pasada, uno detras
+#: del otro, y la diferencia entre ambos es exactamente lo que la tarjeta anade.
+_PT_1941_WITH_HWIC2T = BackendVerifiedPortInventory(
+    model="1941",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=["HWIC-2T@0/0"],
+    ports=[
+        "GigabitEthernet0/0",
+        "GigabitEthernet0/1",
+        "Serial0/0/0",
+        "Serial0/0/1",
+        "Vlan1",
+    ],
+    source=_MEG5_QUALIFICATION,
+)
+
+#: `2950T-24`, el switch de acceso que la seleccion por capacidades elige para
+#: la referencia. Numera `0/x`, al reves que el `IE-2000`; por eso ninguno de
+#: los dos puede responder por el otro.
+_PT_2950T_24 = BackendVerifiedPortInventory(
+    model="2950T-24",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=[
+        "FastEthernet0/1",
+        "FastEthernet0/10",
+        "FastEthernet0/11",
+        "FastEthernet0/12",
+        "FastEthernet0/13",
+        "FastEthernet0/14",
+        "FastEthernet0/15",
+        "FastEthernet0/16",
+        "FastEthernet0/17",
+        "FastEthernet0/18",
+        "FastEthernet0/19",
+        "FastEthernet0/2",
+        "FastEthernet0/20",
+        "FastEthernet0/21",
+        "FastEthernet0/22",
+        "FastEthernet0/23",
+        "FastEthernet0/24",
+        "FastEthernet0/3",
+        "FastEthernet0/4",
+        "FastEthernet0/5",
+        "FastEthernet0/6",
+        "FastEthernet0/7",
+        "FastEthernet0/8",
+        "FastEthernet0/9",
+        "GigabitEthernet0/1",
+        "GigabitEthernet0/2",
+        "Vlan1",
+    ],
+    source=_MEG5_QUALIFICATION,
+)
+
 MEASURED_PORT_INVENTORIES: tuple[BackendVerifiedPortInventory, ...] = (
+    _PT_1941,
+    _PT_1941_WITH_HWIC2T,
     _PT_2911_WITH_HWIC2T,
+    _PT_2950T_24,
     _PT_IE_2000,
     _PT_PC,
 )

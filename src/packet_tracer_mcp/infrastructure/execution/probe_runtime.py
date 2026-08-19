@@ -72,20 +72,40 @@ def _backend_managed_identity(item: dict) -> str:
 
 # Estrategia L3 por modelo. Declarada, no deducida: un 2960 soporta VLANs sin
 # poder enrutar entre ellas, así que `supports_vlan` no implica multilayer.
+#: Sólo lo que la categoría NO alcanza a decidir.
+#:
+#: `switch` cubre tanto un 2950 L2 como un 3560 multilayer, y sólo el segundo
+#: alcanza una IPv4 propia por SVI, así que los multilayer se siguen declarando
+#: uno a uno. Los routers no: ver `layer3_strategy_for`.
 _LAYER3_STRATEGY_BY_MODEL: dict[str, Layer3ProbeStrategy] = {
-    "2911": Layer3ProbeStrategy.ROUTED_PHYSICAL_INTERFACE,
     "3560-24PS": Layer3ProbeStrategy.SVI,
     "3650-24PS": Layer3ProbeStrategy.SVI,
 }
 
 
 def layer3_strategy_for(runtime_model: str) -> Layer3ProbeStrategy:
-    """Resuelve por nombre de catálogo exacto, no por subcadena del modelo."""
+    """Resuelve por nombre de catálogo exacto, no por subcadena del modelo.
+
+    Los routers salen de la CATEGORÍA del catálogo, no de una lista a mano.
+    Enrutar sobre una interfaz física es lo que hace router a un router; que el
+    mapa tuviera que nombrarlos uno a uno significaba que cada router nuevo
+    entraba con `layer3` UNKNOWN aunque el mecanismo fuera idéntico. Medido en
+    la cualificación MEG-5: `1941` — el router que la referencia de 41
+    dispositivos selecciona — se saltó con "No model-specific IPv4 probe target
+    is available for this device", con `2911` ya cualificado por el mismo probe.
+
+    La categoría no se usa para switches a propósito: `switch` no implica capa 3.
+    """
     resolved = resolve_model(runtime_model)
     key = resolved.pt_type if resolved else runtime_model
-    return _LAYER3_STRATEGY_BY_MODEL.get(
-        key, _LAYER3_STRATEGY_BY_MODEL.get(runtime_model, Layer3ProbeStrategy.NONE),
+    declared = _LAYER3_STRATEGY_BY_MODEL.get(
+        key, _LAYER3_STRATEGY_BY_MODEL.get(runtime_model),
     )
+    if declared is not None:
+        return declared
+    if resolved is not None and resolved.category == "router":
+        return Layer3ProbeStrategy.ROUTED_PHYSICAL_INTERFACE
+    return Layer3ProbeStrategy.NONE
 
 
 # Slice multilayer: dos VLANs con SVI en rango de laboratorio, sin colisionar

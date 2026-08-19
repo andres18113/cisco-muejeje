@@ -309,14 +309,22 @@ class TestAFailedStageStopsTheRestAndStillCleansUp:
     def test_a_preflight_refusal_removes_nothing_at_all(self):
         """Lo planificado no es lo creado, y borrar por nombre seria mutar ajeno.
 
-        La intencion de referencia selecciona un modelo sin inventario medido,
-        asi que el despliegue se niega antes de tocar nada. Antes de esta
-        correccion la limpieza recorria `topology.devices` y pedia borrar los
-        ocho nombres igual.
+        Se dirige a un router que ninguna pasada midio, para que el despliegue
+        se niegue antes de tocar nada. Antes de esta correccion la limpieza
+        recorria `topology.devices` y pedia borrar los nombres igual.
+
+        Antes bastaba con NO dirigir: la seleccion elegia `1941`, que nadie
+        habia medido. La cualificacion MEG-5 lo midio porque la referencia de 41
+        dispositivos lo selecciona, asi que el ejemplar se mueve a uno que sigue
+        sin medir. Lo que la fila prueba -- rechazo sin mutacion -- no cambia.
         """
         physical = _RecordingPhysicalRuntime()
 
-        result = _run(physical, preflight=_isolated_preflight())
+        result = _run(
+            physical,
+            preflight=_isolated_preflight(),
+            policy=HardwarePlanningPolicy(preferred_router_model="2901"),
+        )
 
         assert result.deployment is not None
         assert result.deployment.failure_code is (

@@ -556,15 +556,30 @@ class TestTheDefaultSelectionIsRecordedNotAssumed:
         assert routers == {"1941"}, "si cambia la seleccion, revisar el gate en vivo"
 
 
+#: Un router del catalogo que ninguna pasada ha medido por este seam. `1941`
+#: cumplia ese papel hasta que la cualificacion MEG-5 lo midio -- la referencia
+#: de 41 dispositivos lo selecciona. La fila es sobre EVIDENCIA AUSENTE, no
+#: sobre un modelo concreto, asi que se mueve a uno que sigue sin medir.
+_UNMEASURED_ROUTER = HardwarePlanningPolicy(preferred_router_model="2901")
+
+
 class TestSelectionMustCarryPortEvidenceBeforeItCanBind:
     """Fila 6 del contrato de puertos, de punta a punta por el entry point.
 
     Seleccionar un modelo es una decision de planificacion; vincular un nombre
     de puerto concreto contra un backend es otra cosa, y necesita evidencia de
-    ese backend. `1941` es una seleccion legitima que nadie ha medido nunca por
-    este seam, asi que el despliegue se niega ANTES de mutar. Que se niegue no
-    dice que el modelo este mal: dice que no se sabe.
+    ese backend. Un modelo que nadie ha medido nunca por este seam hace que el
+    despliegue se niegue ANTES de mutar. Que se niegue no dice que el modelo
+    este mal: dice que no se sabe.
     """
+
+    def test_the_exemplar_model_really_is_unmeasured(self):
+        """Si alguien lo mide, esta fila deja de probar lo que dice probar."""
+        from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+            MEASURED_PORT_INVENTORIES,
+        )
+
+        assert "2901" not in {item.model for item in MEASURED_PORT_INVENTORIES}
 
     def test_an_unmeasured_model_is_refused_before_any_mutation(self):
         physical = _GenericPhysicalRuntime()
@@ -573,7 +588,7 @@ class TestSelectionMustCarryPortEvidenceBeforeItCanBind:
             physical=physical,
             configuration=_FailingConfigurationRuntime([]),
             control_plane=_ForbiddenControlPlaneRuntime(),
-            policy=None,
+            policy=_UNMEASURED_ROUTER,
         )
 
         assert result.stopped_at is EnterpriseExecutionStage.PHYSICAL_DEPLOYMENT
@@ -581,7 +596,7 @@ class TestSelectionMustCarryPortEvidenceBeforeItCanBind:
         assert result.deployment.failure_code is (
             PhysicalDeploymentFailureCode.PORT_EVIDENCE_UNAVAILABLE
         )
-        assert any("1941" in message for message in result.errors)
+        assert any("2901" in message for message in result.errors)
         assert physical.devices == {}
         assert physical.removed == []
 

@@ -119,3 +119,53 @@ class TestMultilayerDimensions:
             MultilayerDimension.IP_ROUTING
             is not MultilayerDimension.INTERVLAN_FORWARDING
         )
+
+
+class TestTheLayer3StrategyComesFromTheCatalogueNotAHandList:
+    """MEG-5: `1941` se saltaba con `layer3` UNKNOWN por no estar en el mapa.
+
+    Medido en la cualificacion MEG-5 contra PT 9.0.1.0858: el probe respondio
+    "No model-specific IPv4 probe target is available for this device" para el
+    router que la referencia de 41 dispositivos selecciona, con `2911` ya
+    cualificado por el mismo mecanismo. Enrutar sobre una interfaz fisica es lo
+    que hace router a un router; enumerarlos a mano garantizaba que cada router
+    nuevo entrara UNKNOWN.
+    """
+
+    def test_a_router_the_map_never_named_still_routes_on_a_physical_interface(self):
+        assert layer3_strategy_for("1941") is (
+            Layer3ProbeStrategy.ROUTED_PHYSICAL_INTERFACE
+        )
+
+    def test_every_router_in_the_catalogue_resolves_a_strategy(self):
+        from src.packet_tracer_mcp.infrastructure.catalog.devices import ALL_MODELS
+
+        routers = [
+            model.pt_type for model in ALL_MODELS.values()
+            if model.category == "router"
+        ]
+
+        assert routers
+        assert all(
+            layer3_strategy_for(item) is Layer3ProbeStrategy.ROUTED_PHYSICAL_INTERFACE
+            for item in routers
+        )
+
+    def test_switch_category_alone_never_grants_layer3(self):
+        """`switch` cubre L2 y multilayer; solo el segundo alcanza una IPv4."""
+        assert layer3_strategy_for("2950T-24") is Layer3ProbeStrategy.NONE
+        assert layer3_strategy_for("IE-2000") is Layer3ProbeStrategy.NONE
+        assert layer3_strategy_for("3560-24PS") is Layer3ProbeStrategy.SVI
+
+    def test_the_declared_map_holds_only_what_the_category_cannot_decide(self):
+        from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import (
+            _LAYER3_STRATEGY_BY_MODEL,
+        )
+        from src.packet_tracer_mcp.infrastructure.catalog.devices import resolve_model
+
+        # Un router en el mapa seria una entrada que la categoria ya deriva, y
+        # es exactamente la clase de duplicado que dejo a 1941 fuera.
+        assert not [
+            model for model in _LAYER3_STRATEGY_BY_MODEL
+            if (resolve_model(model) or None) and resolve_model(model).category == "router"
+        ]
