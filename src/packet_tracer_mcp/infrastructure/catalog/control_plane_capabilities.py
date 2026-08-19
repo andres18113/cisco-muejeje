@@ -28,6 +28,15 @@ _RIPV2_LIVE_QUALIFICATION = (
     "see docs/architecture/ripv2-runtime-qualification.md"
 )
 
+_RIPV2_1941_QUALIFICATION = (
+    "R4 controlled Packet Tracer live qualification on a disposable 1941 slice "
+    "(2x 1941 with HWIC-2T over a serial WAN, one LAN neighbour each) on "
+    "9.0.1.0858; configuration and routing-process state from "
+    "fresh_show_ip_protocols, learned routes from fresh_show_ip_route_rip in "
+    "both directions, typed measurement channel from the production "
+    "TypedPingExecutor; see docs/architecture/ripv2-runtime-qualification.md"
+)
+
 _NO_MODEL_ATTRIBUTED_EVIDENCE = (
     "The E9 live baseline in docs/architecture/enterprise-control-plane.md "
     "records no per-model attribution, so no dimension is claimed for this model"
@@ -76,6 +85,28 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
             # cualifica igual. Que un destino conteste es `reachable`, y lo mide
             # el producto en cada corrida. Marcarla SUPPORTED autoriza medir; no
             # afirma que nada reenvie.
+            Dimension.ROUTING_BEHAVIOR: Status.SUPPORTED,
+        },
+    ),
+    # 1941 / las cuatro dimensiones:
+    #   La referencia de 41 dispositivos selecciona este modelo, y sin perfil el
+    #   gate E9 dejaba sus acciones en SKIPPED -- capacidad UNKNOWN no autoriza.
+    #   R4 lo midio sobre el mismo build con los runtimes de produccion: las
+    #   cuatro salieron de una lectura fresca propia, ninguna se hereda del 2911.
+    #
+    #   Las rutas se verificaron en AMBOS sentidos (R1 aprendio
+    #   `198.18.201.0/24`, R2 aprendio `198.18.200.0/24`), que es mas de lo que
+    #   la dimension exige y menos ambiguo que una sola direccion.
+    #
+    #   ROUTING_BEHAVIOR sigue siendo el CANAL, no su resultado: R4 lo midio
+    #   `reachable=True`, pero marcarla SUPPORTED autoriza medir y no afirma que
+    #   ninguna topologia reenvie. Eso lo mide el producto en cada corrida.
+    "1941": (
+        _RIPV2_1941_QUALIFICATION,
+        {
+            Dimension.RIPV2_CONFIG: Status.SUPPORTED,
+            Dimension.ROUTING_PROCESS_STATE: Status.SUPPORTED,
+            Dimension.ROUTING_ROUTE_STATE: Status.SUPPORTED,
             Dimension.ROUTING_BEHAVIOR: Status.SUPPORTED,
         },
     ),

@@ -120,10 +120,15 @@ def test_authorising_the_measurement_does_not_fabricate_its_success():
 
 
 def test_a_supported_profile_is_never_built_from_an_absent_model():
-    """Un modelo ausente del catálogo no obtiene perfil ni estado por omisión."""
+    """Un modelo ausente del catálogo no obtiene perfil ni estado por omisión.
+
+    El ejemplar era `1941` hasta que la cualificacion R4 de MEG-5 lo midio --
+    la referencia de 41 dispositivos lo selecciona. La fila es sobre AUSENCIA,
+    no sobre ese modelo, asi que usa uno que sigue sin perfil.
+    """
     profiles = packet_tracer_control_plane_capabilities("9.0.1.0858")
 
-    assert "1941" not in profiles
+    assert "2901" not in profiles
     profile = profiles["2960-24TT"]
     assert all(
         profile.status(dimension) is SecurityCapabilityStatus.UNKNOWN

@@ -189,11 +189,19 @@ class TestSteeringIsWhatTheLiveGateNeeds:
         assert steered.control_plane is not None
         assert len(default.control_plane.actions) == len(steered.control_plane.actions)
 
-    def test_the_only_router_with_live_control_plane_evidence_is_the_steered_one(self):
-        """El catalogo tambien perfila un switch; lo que importa es el router.
+    def test_the_steered_router_is_the_one_meg4_qualified(self):
+        """El tripwire salto, y la decision se tomo: la direccion se queda.
 
-        Si algun dia se mide otro router, esto falla y hay que decidir a
-        proposito si la corrida en vivo cambia de modelo.
+        Esta fila decia "el unico router con evidencia viva es el dirigido" y
+        avisaba de que medir otro obligaria a decidir a proposito. `1941` la
+        hizo saltar: la cualificacion R4 de MEG-5 lo midio porque la referencia
+        de 41 dispositivos lo selecciona. La decision es no mover la corrida
+        acotada -- MEG-4 esta cerrado sobre `2911` y reabrirlo para cambiar de
+        modelo no aporta evidencia nueva.
+
+        Lo que la fila protege ahora es que el modelo dirigido siga teniendo su
+        perfil: si `2911` lo perdiera, la corrida acotada quedaria sin autorizar
+        y habria que dirigir a otro lado.
         """
         from src.packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
             packet_tracer_control_plane_capabilities,
@@ -201,10 +209,11 @@ class TestSteeringIsWhatTheLiveGateNeeds:
 
         profiled = set(packet_tracer_control_plane_capabilities())
 
-        assert "2911" in profiled
-        assert "1941" not in profiled, (
-            "1941 gained a control-plane profile; the steering rationale changed"
+        assert "2911" in profiled, (
+            "the bounded MEG-4 run is steered to 2911 and would lose its E9 gate"
         )
+        # `1941` lo tiene desde MEG-5, y por eso la referencia puede abrirse.
+        assert "1941" in profiled
 
     def test_steering_selects_the_model_that_has_that_evidence(self):
         composed = _composed_with_control_plane(
