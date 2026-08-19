@@ -3,17 +3,17 @@
 ## Current checkpoint
 
 Executable state, from Git rather than from memory. Everything below was
-measured at `4803f5e`.
+measured at `60ef5c7`.
 
 ```text
 branch            feature/runtime-ripv2
-HEAD              4803f5e
+HEAD              60ef5c7
 working tree      clean  (git status --short empty, git diff --check clean)
 worktree          .claude/worktrees/runtime-ripv2   (operational location only)
 interpreter       ./.venv/Scripts/python.exe        (worktree-local, authoritative)
 PYTHONPATH        unset
-regression        2134 passed, 3 pre-existing pytest deprecation warnings
-Graphify          7989 nodes, 27198 edges, 267 communities
+regression        2139 passed, 3 pre-existing pytest deprecation warnings
+Graphify          8012 nodes, 27234 edges, 284 communities
 ```
 
 Run the suite as `./.venv/Scripts/python.exe -m pytest` from the worktree root.
@@ -21,7 +21,7 @@ The `python` on `PATH` is a different installation with no `pytest`.
 
 **Authority order.** Current Git, source and tests win over any prose in this
 file. The authoritative MEG-4 record is
-`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose **run 9** is
+`docs/architecture/stage-3a4-bounded-live-qualification.md`, whose **run 10** is
 the current state; the authoritative debt state is
 `docs/architecture/technical-debt.md`; the runtime register is
 `docs/qa/e95-runtime-debt.md`. Everything from "History below this line" onward
@@ -37,7 +37,7 @@ MEG-1  live import isolation ................... CLOSED   0587995, 5641445
 MEG-2  capability consumer / TD-HARDWARE ....... CLOSED   ea4eb3a, 06217ac
 MEG-3  product execution surface ............... CLOSED   7de805a, 6ef25bf
 OAG    offline adversarial matrix .............. CLOSED   c1ea586
-MEG-4  bounded live qualification ............. FAILED / CLEAN, 9 runs
+MEG-4  bounded live qualification ............ FAILED / CLEAN, 10 runs
 MEG-5  full same-run 41/41 acceptance ......... NOT_OPENED
 MEG-6  TD-ACCEPTANCE-001 closure .............. NOT_STARTED
 MEG-7  Stage 3A4 closure ...................... NOT_STARTED
@@ -47,12 +47,12 @@ MEG_5_EXECUTION     = BLOCKED
 REFERENCE_41_41_RUN = NOT_EXECUTED
 ```
 
-## MEG-4 run 9 — the current executed state
+## MEG-4 run 10 — the current executed state
 
-Nine bounded live runs against PT `9.0.1.0858`, every one failing clean with
-the workspace restored. Run 8 was the first whose control-plane observations
-all report VERIFIED; run 9 confirms that live after the field-accounting and
-shared-provenance changes, and moves no exit-matrix row.
+Ten bounded live runs against PT `9.0.1.0858`, every one failing clean with the
+workspace restored. Run 10 is the first in which typed forwarding actually
+EXECUTED: the capability gate authorised it, the product measured it, and the
+measurement returned a negative.
 
 ```text
 MEG_4                          = FAILED / CLEAN
@@ -74,7 +74,10 @@ E9_OBSERVED_STATUS             = VERIFIED
 RIPV2_PROCESS_AGGREGATE        = VERIFIED, both routers
 LEARNED_ROUTE_AGGREGATE        = VERIFIED, both routers
 SOURCE_DEVICE_NAME             = VERIFIED, 4 of 4 observations
-TYPED_FORWARDING               = UNOBSERVABLE / control_plane_capability_gate
+E9_BEHAVIOR_STATUS             = FAILED  (measured, not gated)
+TYPED_FORWARDING               = EXECUTED, reachable measured False
+                                 destination_ipv4 / protocol / source_device_name
+                                 all VERIFIED; traffic_flow_id UNOBSERVABLE
 
 E4_IDENTITY_PRESERVED          = YES
 SEMANTIC_INVENTORY_RESTORED    = YES  (independent re-observation, separate
@@ -124,65 +127,49 @@ TD_ACCEPTANCE_001          = OPEN
 ## Current blocker
 
 ```text
-1. 2911:routing_behavior IS UNKNOWN        (capability evidence)
-2. protocol / traffic_flow_id ARE NOT      (behaviour claim ceiling)
-   OBSERVABLE FROM A TYPED PING
+TYPED FORWARDING MEASURED reachable = False
+CAUSE NOT ESTABLISHED
 ```
 
-Typed forwarding is not dependency-blocked — the verification prerequisite is
-satisfied. Two independent things now hold it, and neither may be promoted
-without a governed decision.
+The two previous blockers are gone. `2911:routing_behavior` is SUPPORTED from
+the **R3 qualification** — one disposable 2911 on this build, production
+runtimes only, the production `TypedPingExecutor` dispatching, echo-confirming,
+parsing and attributing a `ping`. Both of R3's measurements returned
+`Success rate is 0 percent (0/5)` and that is what qualifies the channel: the
+dimension is measurability, not success. The gate was preserved throughout.
+`destination_ipv4` and `protocol` are now bound to the execution rather than to
+the request.
 
-**The gate is not circular, and was preserved.** Traced this session:
-`required_capability` authorises EXECUTING a measurement, and the expectation's
-own fields carry what it ESTABLISHES. Every behaviour dimension is built that
-way — `STP_BEHAVIOR` with `{loop_free, forwarding_converged}`,
-`ETHERCHANNEL_BEHAVIOR` with `{reachable, bundled}`, `ROUTING_BEHAVIOR` with
-`{reachable, ...}` — and `LINK_FAILURE_CONTROL` is the same idea one step
-further. Nothing was hardcoded, no dimension promoted, and
-`_RUNNABLE_CAPABILITIES` stays `{SUPPORTED, PARTIAL}`; regressions pin all
-three.
+What replaced them is a real negative. Every hop this stage can observe is
+verified — serial orientation, transit and routed L3, RIPv2 process, learned
+routes on both routers, endpoint ipv4 and netmask. The two it cannot observe
+are exactly the remaining ones:
 
-**Blocker 1 — the missing producer.**
-`packet_tracer_control_plane_capabilities` is the only producer of
-control-plane profiles, and there is no runtime discovery path for them: E3.5
-discovery produces hardware dimensions, not these. Every dimension `2911` holds
-was established by an out-of-band governed live qualification and then encoded,
-which is why the catalogue cites `ripv2-runtime-qualification.md`. That
-producer path is not blocked by the gate — it runs outside it, and
-`ControlPlaneApplicator.__init__` carries the `capability_provider` seam it
-would feed. What is missing is a governed forwarding qualification on `2911`,
-attributed to model and build.
+```text
+access-port VLAN membership   UNOBSERVABLE   TD-ACCESSPORT-READBACK-001, OPEN
+endpoint gateway              UNOBSERVABLE   applied, but no PT getter exists
+```
 
-Noted, not acted on: R2-B phase 4 already records forwarding on 2911 /
-`9.0.1.0858` — 4/4 each way endpoint-to-endpoint, 5/5 router-to-router across
-the WAN, the latter measured before RIP existed. Whether those rows qualify
-*this* dimension, whose gate protects the typed product measurement channel, is
-a claim-scope decision. It was not taken, and nothing was promoted on it.
+Neither can be confirmed or excluded, so **no cause is claimed**. The
+measurement itself is sound and is not the suspect: the session was attributed
+to the claimed source, the executor confirmed the destination it dispatched and
+echoed, and the protocol matched the action actually applied. One attempt is
+correct — `TypedPingExecutor.ping` retries only while no attributable window
+exists, never for a more favourable answer.
 
-**Blocker 2 — the ceiling the accounting fix exposed.** The reachability
-observer was the only one building its `fields` map by hand, so three of its
-four claimed fields were dropped rather than reported. With the normal
-accounting, `reachable` is measured and `source_device_name` is certified from
-execution provenance (fail-closed), while `protocol` and `traffic_flow_id` are
-reported UNOBSERVABLE — a typed ping observes neither. The route prerequisite
-orders that evidence and does not substitute for it. So a behaviour expectation
-cannot reach VERIFIED today. This ceiling is not new; it was previously
-invisible.
+`traffic_flow_id` remains UNOBSERVABLE and is a separate, smaller question: it
+is a compiler label, read by no code, and no registered command can return it.
 
 ## Next task
 
-Two governed decisions, in this order:
+Isolate the failing hop. That means access-port read-back
+(`TD-ACCESSPORT-READBACK-001`) or a diagnostic run designed to observe the
+access segment and the endpoint gateway before cleanup — both explicitly out of
+the last session's scope, and the first is its own governed work item.
 
-1. how first-time model-attributed **behaviour** evidence may be obtained for
-   `2911`, and whether R2-B phase 4's existing forwarding rows already qualify
-   it;
-2. what a behaviour expectation may legitimately claim — whether
-   `traffic_flow_id` and `protocol` belong in `expected` at all, given that no
-   ICMP measurement can observe them and `unclaimed_fields` folds into
-   UNOBSERVABLE identically.
-
-Until both exist, MEG-4 row 12 stays NOT REACHED and MEG-5 stays closed.
+Still open and unchanged: whether `traffic_flow_id` belongs in `expected` at
+all, given that nothing can observe it and `unclaimed_fields` folds into
+UNOBSERVABLE identically.
 
 ## Operating constraints, still in force
 

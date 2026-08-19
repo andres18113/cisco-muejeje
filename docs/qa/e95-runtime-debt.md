@@ -150,7 +150,7 @@ measured at run 6.
 | --- | --- | --- |
 | RIP routing-process observation | `protocol`, `version_send`, `version_recv`, `auto_summary`, `networks`, `passive_interfaces`, `source_device_name` all VERIFIED on both routers from a fresh `show ip protocols` | `CLOSED — aggregate VERIFIED`. |
 | RIP learned-route observation | `network`, `prefix_length`, `protocol`, `source_device_name` VERIFIED on both routers from a fresh `show ip route rip`; each router learned the far-side prefix across the serial WAN | `CLOSED — aggregate VERIFIED`. |
-| RIP end-to-end forwarding | not attempted | `CAPABILITY_UNKNOWN` **and** `CLAIM_CEILING`. Two independent blockers, both recorded at run 9. |
+| RIP end-to-end forwarding | measured live at run 10: fresh typed ping, session attributed, destination and protocol bound to the execution, `reachable = False` | `MEASURED — FAILED`. The capability blocker is closed by the R3 qualification; the claim ceiling now affects only `traffic_flow_id`. The cause of the negative is **not established**. |
 
 What closed the first two rows is **execution provenance**, not a new IOS
 command. `show ip protocols` and `show ip route rip` still print no hostname.
@@ -159,29 +159,32 @@ and keeps the single device that can have produced that session, and the output
 that gets parsed is that device's. Requested-name substitution is refused by
 construction — a session owned by another device returns no output at all.
 
-The forwarding row carries two separate blockers and neither may be promoted
-without a governed decision.
+The forwarding row was measured for the first time at run 10 and returned a
+negative. Both earlier blockers moved.
 
-**1 — capability evidence.** The verification-prerequisite gate is satisfied;
-`control_plane_capability_gate` refuses because `2911:routing_behavior` is
-UNKNOWN. The gate is **not circular**: `required_capability` authorises
-executing the measurement and `expected`/`fields` carry what it establishes, the
-same split every `*_BEHAVIOR` dimension uses. `packet_tracer_control_plane_capabilities`
-is the only producer of control-plane profiles and there is no runtime discovery
-path for them, so every dimension `2911` holds was established by an out-of-band
-governed qualification and then encoded. What is missing is that qualification
-for forwarding.
+**1 — capability evidence: CLOSED.** `2911:routing_behavior` is SUPPORTED from
+the R3 qualification (`../architecture/ripv2-runtime-qualification.md`), which
+measured that the production `TypedPingExecutor` can dispatch, echo-confirm,
+parse and attribute a `ping` on this model and build. Both of R3's own
+measurements returned `Success rate is 0 percent (0/5)`, and that is what
+qualifies the channel: the dimension is measurability, not success. The gate
+was preserved and nothing was promoted without a measurement.
 
-**2 — claim ceiling.** A reachability expectation claims `traffic_flow_id`,
-`destination_ipv4`, `reachable` and `source_device_name`. A typed ping measures
-`reachable`, and execution provenance certifies the source. It observes neither
-which protocol installed the route nor which compiled flow the claim belongs to,
-so those stay UNOBSERVABLE and hold the aggregate down. Until run 9 this was
-invisible: the observer built its `fields` map by hand and the unmeasured fields
-were dropped rather than reported. The route prerequisite orders that evidence
-and does not substitute for it.
+**2 — claim ceiling: NARROWED.** `destination_ipv4` is now certified from the
+destination the executor reports dispatching and echo-confirming, and
+`protocol` from the control-plane action actually applied. `traffic_flow_id`
+remains UNOBSERVABLE: it is the label the compiler attaches to the claim, read
+by no code, and no registered command can return it.
 
-Evidence: `../architecture/stage-3a4-bounded-live-qualification.md`, "Run 9".
+**3 — new, and the current blocker.** `reachable` measured `False`. Every hop
+this stage can observe is verified — serial orientation, transit and routed L3,
+RIPv2 process, learned routes on both routers, endpoint ipv4 and netmask. The
+two it cannot observe are exactly the remaining ones: access-port VLAN
+membership (`TD-ACCESSPORT-READBACK-001`, OPEN) and the endpoint gateway, which
+is applied but has no PT getter. Neither can be confirmed or excluded, so **no
+cause is claimed**.
+
+Evidence: `../architecture/stage-3a4-bounded-live-qualification.md`, "Run 10".
 
 ## OSPF observation ceiling — recorded 2026-08-17
 

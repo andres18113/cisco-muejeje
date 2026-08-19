@@ -1,7 +1,7 @@
 # Stage 3A4 — MEG-4 bounded live qualification
 
-Nine runs so far, all on `feature/runtime-ripv2`, worktree
-`.claude/worktrees/runtime-ripv2`. **Run 9, at the end of this document, is
+Ten runs so far, all on `feature/runtime-ripv2`, worktree
+`.claude/worktrees/runtime-ripv2`. **Run 10, at the end of this document, is
 the current state.** Every earlier run is left exactly as it was recorded —
 they are history, not a summary of where things stand.
 
@@ -1976,6 +1976,130 @@ zero-port Power Distribution Devices — unchanged from this run's baseline.
 
 Rows 1–11 and 13 **PASS**; row 12 **NOT REACHED**, now for two recorded
 reasons rather than one.
+
+```text
+MEG_5                  = NOT_OPENED
+MEG_5_EXECUTION        = BLOCKED
+REFERENCE_41_41_RUN    = NOT_EXECUTED
+```
+
+---
+
+# Run 10 — 2026-08-19, typed forwarding executes for the first time
+
+## Outcome, stated first
+
+```text
+MEG_4_STATUS                  = FAILED / CLEAN
+STOPPED_AT                    = control_plane_apply
+HEAD                          = 60ef5c7
+E9_STATUS                     = partial / verification_failed
+E9_OBSERVED_STATUS            = VERIFIED
+E9_BEHAVIOR_STATUS            = FAILED        <- measured, not gated
+TYPED_FORWARDING              = EXECUTED and MEASURED reachable=False
+SEMANTIC_INVENTORY_RESTORED   = YES  (independent re-observation, separate process)
+E4_IDENTITY_PRESERVED         = YES
+RAW_IOS_OR_JS_USED            = NONE
+HARNESS_PERFORMED_A_MUTATION  = NO
+NO_PKT_SAVED                  = YES
+```
+
+Same hash `1d2324aa…`, 17 of 17 E5 actions applied, all four control-plane
+observations VERIFIED as in runs 8 and 9. Duration 56 s.
+
+## The measurement
+
+`2911:routing_behavior` is SUPPORTED as of the R3 qualification, so the gate
+authorised the measurement and the product ran it:
+
+```text
+cp/verify-flow-reachability/1a2c4b34  end_to_end_reachability  behavior
+    status          = failed
+    evidence_method = typed_ping_current_command_window
+    fresh_evidence  = true
+    fields = {traffic_flow_id:  unobservable,
+              destination_ipv4: verified,
+              reachable:        failed,
+              protocol:         verified,
+              source_device_name: verified}
+    message = "Fresh typed ping differed from reachable=True."
+    convergence: attempts=1, last_observable_state=reachable=False
+```
+
+**The measurement itself is sound and says so field by field.** The session was
+attributed to the claimed source device, the executor confirmed it dispatched
+and echoed the claimed destination, and the protocol matched the RIPv2 action
+actually applied. What failed is `reachable`: the fresh typed ping measured
+`False` where the flow claims `True`.
+
+One attempt is correct here and is not a thinness of the measurement.
+`TypedPingExecutor.ping` retries only while no attributable window exists — "un
+resultado fresco, alcanzable o no, se devuelve de inmediato: el reintento busca
+evidencia atribuible, nunca un resultado favorable". Retrying a fresh
+`reachable=False` until it turned true would be manufacturing the result.
+
+`traffic_flow_id` stays UNOBSERVABLE, unchanged: it is the label the compiler
+attaches to the claim, read by no code, and the only registered command is
+`ping <ip>`, which returns nothing that could carry it.
+
+## What this establishes, and what it does not
+
+```text
+FORWARDING_MEASUREMENT_CHANNEL   = WORKS on this model and build (R3, then live here)
+FORWARDING_MEASURED              = YES, first time in this stage
+FORWARDING_SUCCEEDED             = NO
+CAUSE_OF_THE_FAILURE             = NOT ESTABLISHED by this run
+```
+
+The claim is deliberately narrow. The measurement ran and returned a negative;
+this run did not diagnose why.
+
+## Where the failure sits, from evidence already in this run
+
+The measured path is `A-EDGE-RTR-01 → serial WAN → B-EDGE-RTR-01 → access
+switch → PC`, because `_destination_address_for` prefers a static endpoint in
+the destination site over the far router's own interface — deliberately, so the
+claim covers the whole path rather than stopping at the edge.
+
+Every hop this stage **can** observe is verified:
+
+```text
+serial orientation      VERIFIED  (one DCE @ 2000000 bps, one DTE)
+transit + routed L3     VERIFIED  (4 of 4 foundations)
+RIPv2 process           VERIFIED  both routers
+learned routes          VERIFIED  both routers, far-side prefix across the WAN
+endpoint ipv4/netmask   VERIFIED  all four PCs
+```
+
+The hops it **cannot** observe are exactly the remaining ones:
+
+```text
+access-port VLAN membership   UNOBSERVABLE   TD-ACCESSPORT-READBACK-001, OPEN
+endpoint gateway              UNOBSERVABLE   no PT getter evidence exists
+```
+
+The gateway is applied (`configurePcIp(..., gateway, ...)`) and the access
+ports are applied, but neither is readable in this backend, so neither can be
+confirmed or excluded as the cause. **No cause is claimed here.** Isolating it
+needs access-port read-back — its own governed work item, explicitly out of
+this session's scope — or a diagnostic run designed to observe that segment.
+
+## G4 — cleanup and restoration
+
+```text
+cleanup entries    = 8, all applied
+inventory_restored = True
+```
+
+Independent post-run re-observation, separate process with its own G2:
+`semantic_device_count = 0`, `link_count = 0`, `backend_managed = 0`.
+
+## Exit matrix
+
+Rows 1–11 and 13 unchanged (**PASS**). Row 12 moves NOT REACHED → **FAIL**:
+typed forwarding was measured for the first time and did not reach the
+destination. That is a stronger, worse and more useful result than not
+measuring at all.
 
 ```text
 MEG_5                  = NOT_OPENED
