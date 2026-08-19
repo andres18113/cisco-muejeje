@@ -383,7 +383,8 @@ class _ForbiddenControlPlaneRuntime:
 _QUALIFIED = HardwarePlanningPolicy(preferred_router_model="2911")
 
 
-def _run(*, physical, configuration, control_plane, intent=None, policy=_QUALIFIED):
+def _run(*, physical, configuration, control_plane, intent=None, policy=_QUALIFIED,
+         pre_cleanup_diagnostic=None):
     intent = intent or _bounded_intent()
     # El fake sintetiza puertos desde el plan, asi que necesita conocerlo. La
     # composicion es determinista PARA LAS MISMAS ENTRADAS, y desde el contrato
@@ -407,6 +408,7 @@ def _run(*, physical, configuration, control_plane, intent=None, policy=_QUALIFI
         import_preflight=_isolated_preflight(),
         packet_tracer_version="9.0.1.0858",
         policy=policy,
+        pre_cleanup_diagnostic=pre_cleanup_diagnostic,
     )
 
 

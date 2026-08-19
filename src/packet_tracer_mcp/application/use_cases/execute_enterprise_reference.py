@@ -33,6 +33,7 @@ de despliegue y viaja en el manifiesto; nunca vuelve al TopologyPlan.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -77,6 +78,11 @@ from .observe_serial_orientation import SerialOrientationObserver, SerialOrienta
 from .qualify_serial_physical_slice import DisposablePhysicalTopologyRuntime
 
 
+#: Firma del observador previo a la limpieza. Devuelve lineas legibles; el
+#: producto no interpreta ninguna.
+DiagnosticHook = Callable[["EnterpriseDiagnosticContext"], "Sequence[str] | None"]
+
+
 class EnterpriseExecutionStage(str, Enum):
     IMPORT_PREFLIGHT = "import_preflight"
     WORKSPACE_INVENTORY = "workspace_inventory"
@@ -110,6 +116,30 @@ class EnterpriseRuntimes:
 
 
 @dataclass(frozen=True)
+class EnterpriseDiagnosticContext:
+    """Lo que el producto le ofrece a un diagnostico previo a la limpieza.
+
+    Existe porque la limpieza vive DENTRO de esta secuencia: cuando el caso de
+    uso devuelve, la topologia ya no esta y cualquier observacion posterior es
+    imposible. Un harness que quisiera mirar antes tendria que ordenar las
+    etapas, que es exactamente lo que MEG-3 prohibe.
+
+    Es de SOLO LECTURA y solo diagnostico. Lo que devuelva no entra en
+    `status`, ni en `errors`, ni en ninguna evidencia de configuracion o de
+    fundacion: se acumula aparte, en `diagnostics`. Un diagnostico que explota
+    no puede convertir una corrida en fallida, y uno que sale limpio no puede
+    promover nada.
+    """
+
+    stage: EnterpriseExecutionStage
+    topology: object
+    oriented_manifest: DeploymentManifest | None
+    composition: EnterpriseReferenceComposition | None
+    configuration_result: ConfigurationApplicationResult | None
+    control_plane_result: ControlPlaneApplicationResult | None
+
+
+@dataclass(frozen=True)
 class EnterpriseExecutionResult:
     status: EnterpriseExecutionStatus
     stopped_at: EnterpriseExecutionStage
@@ -126,6 +156,9 @@ class EnterpriseExecutionResult:
     control_plane_result: ControlPlaneApplicationResult | None = None
     cleanup_results: list[PhysicalMutationResult] = field(default_factory=list)
     e4_identity_preserved: bool | None = None
+    # Lineas producidas por el diagnostico previo a la limpieza. NO son
+    # evidencia: no se derivan estados de aca y `status` las ignora.
+    diagnostics: list[str] = field(default_factory=list)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     errors: list[str] = field(default_factory=list)
@@ -187,6 +220,7 @@ class EnterpriseExecutionResult:
             "inventory_restored": self.inventory_restored,
             "e4_identity_preserved": self.e4_identity_preserved,
             "cleanup": [item.model_dump(mode="json") for item in self.cleanup_results],
+            "diagnostics": list(self.diagnostics),
             "errors": list(self.errors),
         }
 
@@ -214,7 +248,10 @@ class _ExecutionState:
         self.control_plane_result: ControlPlaneApplicationResult | None = None
         self.cleanup_results: list[PhysicalMutationResult] = []
         self.e4_identity_preserved: bool | None = None
+        self.diagnostics: list[str] = []
         self.errors: list[str] = []
+        self.diagnostic: DiagnosticHook | None = None
+        self._diagnostic_ran = False
 
     def blocked(
         self, stage: EnterpriseExecutionStage, *errors: str,
@@ -229,12 +266,14 @@ class _ExecutionState:
         e4_identity: str,
         *errors: str,
     ) -> EnterpriseExecutionResult:
+        self._diagnose(stage, topology)
         self._cleanup(runtimes, topology, e4_identity)
         return self._result(EnterpriseExecutionStatus.FAILED, stage, errors)
 
     def completed_run(
         self, runtimes: EnterpriseRuntimes, topology, e4_identity: str,
     ) -> EnterpriseExecutionResult:
+        self._diagnose(EnterpriseExecutionStage.CONTROL_PLANE_APPLY, topology)
         self._cleanup(runtimes, topology, e4_identity)
         status = (
             EnterpriseExecutionStatus.COMPLETED
@@ -247,6 +286,32 @@ class _ExecutionState:
             else EnterpriseExecutionStage.CONTROL_PLANE_APPLY
         )
         return self._result(status, stage, ())
+
+    def _diagnose(self, stage: EnterpriseExecutionStage, topology) -> None:
+        """Corre el diagnostico una sola vez, justo antes de destruir la escena.
+
+        Aislado a proposito: cualquier excepcion queda anotada en `diagnostics`
+        y NO en `errors`, porque un observador roto no es una corrida rota. La
+        limpieza corre despues pase lo que pase.
+        """
+        if self.diagnostic is None or self._diagnostic_ran:
+            return
+        self._diagnostic_ran = True
+        context = EnterpriseDiagnosticContext(
+            stage=stage,
+            topology=topology,
+            oriented_manifest=self.oriented_manifest,
+            composition=self.composition,
+            configuration_result=self.configuration_result,
+            control_plane_result=self.control_plane_result,
+        )
+        try:
+            lines = self.diagnostic(context)
+        except Exception as exc:
+            self.diagnostics.append(f"diagnostic_failed: {type(exc).__name__}: {exc}")
+            return
+        for line in lines or ():
+            self.diagnostics.append(str(line))
 
     def _attempted(self, device) -> bool:
         """True when the deployment reported reaching this device at all.
@@ -324,6 +389,7 @@ class _ExecutionState:
             control_plane_result=self.control_plane_result,
             cleanup_results=list(self.cleanup_results),
             e4_identity_preserved=self.e4_identity_preserved,
+            diagnostics=list(self.diagnostics),
             started_at=self.started_at,
             finished_at=datetime.now(timezone.utc),
             errors=[*self.errors, *errors],
@@ -342,10 +408,17 @@ def execute_enterprise_reference(
     deployment_id: str = "",
     require_empty_workspace: bool = True,
     policy: HardwarePlanningPolicy | None = None,
+    pre_cleanup_diagnostic: DiagnosticHook | None = None,
 ) -> EnterpriseExecutionResult:
-    """Ejecuta el producto de punta a punta y limpia pase lo que pase."""
+    """Ejecuta el producto de punta a punta y limpia pase lo que pase.
+
+    `pre_cleanup_diagnostic` es un observador opcional que el PRODUCTO invoca
+    una vez, despues de la etapa terminal y antes de la limpieza. No ordena
+    etapas y no puede cambiar el resultado: ver `EnterpriseDiagnosticContext`.
+    """
     started_at = datetime.now(timezone.utc)
     state = _ExecutionState(started_at=started_at)
+    state.diagnostic = pre_cleanup_diagnostic
 
     isolation = import_preflight.ensure_isolated()
     state.import_isolation = isolation
