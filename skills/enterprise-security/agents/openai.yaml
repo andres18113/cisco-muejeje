@@ -1,4 +1,4 @@
 interface:
-  display_name: "enterprise-security"
-  short_description: "Enterprise networking workflow for enterprise-security"
-  default_prompt: "Use the enterprise-security workflow for this request."
+  display_name: "Enterprise Security"
+  short_description: "Policy enforcement, not whole-network acceptance"
+  default_prompt: "Use $enterprise-security to plan and verify the requested security policy."

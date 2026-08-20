@@ -1,4 +1,4 @@
 interface:
-  display_name: "routing-igp"
-  short_description: "Enterprise networking workflow for routing-igp"
-  default_prompt: "Use the routing-igp workflow for this request."
+  display_name: "IPv4 IGP Routing"
+  short_description: "RIPv2, OSPFv2, and EIGRP route behavior"
+  default_prompt: "Use $routing-igp to assess RIPv2, OSPFv2, or EIGRP routing behavior."

@@ -1,42 +1,29 @@
 ---
 name: enterprise-hardware
-description: Selecciona y dimensiona routers, switches, módulos e interfaces a partir de capacidad, resiliencia y capabilities observadas, después de IPAM y antes del compilador físico.
+description: Select Packet Tracer device models, modules, and physical interfaces that satisfy approved capacity, topology, and resilience demand using current capability evidence. Use after demand is known; do not use to estimate capacity or discover capabilities by guesswork.
 ---
 
 # Enterprise Hardware Planning
 
-## Responsibility
+Own physical candidate selection after logical design and capacity demand are approved. Consume capability evidence; do not create or probe it.
 
-Resolver HardwarePlan y DeviceRequirements sin convertir catálogos en evidencia runtime.
+## Workflow
 
-## Core workflow
+1. Confirm resolved topology intent, capacity demand, and resilience requirements. Route missing demand to `enterprise-ipam-capacity`.
+2. Resolve the relevant Packet Tracer environment and obtain current candidate evidence, using `packet-tracer-capabilities` for missing or unknown requirements.
+3. Evaluate candidates only against approved demand and current evidence. Reserve physical uplinks before endpoint attachment; logical interfaces never satisfy cable demand.
+4. Keep incomplete-evidence selections provisional. Preserve reasons for rejection, uncertainty, and unresolved requirements.
+5. Hand only a sufficiently resolved, deterministic hardware plan to the physical topology compiler.
 
-CapacityDemand -> DeviceRequirements -> capability resolution -> candidate evaluation -> device groups -> HardwarePlan.
+## Boundaries and stops
 
-## Rules
+- Do not maintain a model, module, port, or capability catalog in this Skill.
+- Do not invent modules, infer support from model names, rerun capacity growth, or probe capabilities inside hardware planning.
+- Aggregate capacity does not prove that each device or failure domain is viable.
+- When no candidate satisfies a mandatory requirement, stop. When evidence is unknown, request only the evidence needed to decide; unknown is neither support nor rejection.
 
-- Consultar CapabilityRegistry y Runtime snapshots.
-- UNKNOWN obligatorio produce NEEDS_VERIFICATION, nunca soporte ficticio.
-- Distinguir interfaces físicas de interfaces lógicas.
-- Reservar uplinks antes de puertos de endpoint.
-- Validar capacidad por dispositivo, no sólo globalmente.
-- PoE port count y PoE power budget son hechos distintos.
-- No inventar módulos.
-- HardwarePlanner no ejecuta probes.
-- Preservar FailureDomains.
+## Evidence and source navigation
 
-## Evidence / readiness
+Trace every final selection to approved demand and current evidence. Use Graphify only to locate symbols, then read `HardwarePlanner`, `plan_enterprise_hardware`, and focused hardware tests. Read physical compiler tests for cableable-interface validation, and inspect current MCP registration before claiming public exposure.
 
-Cada candidato queda COMPATIBLE, NEEDS_VERIFICATION o INCOMPATIBLE con razones de selección y rechazo.
-
-## Stop conditions
-
-Detener ante capacidad insuficiente, módulo desconocido, capability obligatoria UNKNOWN o confusión entre puerto físico y SVI/Port-channel.
-
-## Completion
-
-HardwarePlan determinista, explicable y listo para el compilador físico.
-
-## References
-
-- Consultar device-selection.md.
+Read [device selection](references/device-selection.md) only when comparing concrete candidates, assigning physical ports, or resolving module-dependent demand.

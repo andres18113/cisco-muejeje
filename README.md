@@ -118,25 +118,28 @@ Download **`V5.pts`** from [**Releases**](https://github.com/Mats2208/MCP-Packet
 
 > **v0.6.0+ requires V5.** The bridge now authenticates with a per-machine token that the V5 extension reads automatically; builds before V5 can't authenticate.
 
-**4. Install the Claude Code Skill** — _recommended; makes the AI use the MCP correctly instead of guessing_
+**4. Export the governed Claude Skills** — _recommended; installs only eligible operational Skills_
 
-The repo ships a companion **[Agent Skill](skill/SKILL.md)** that teaches the model the exact tool
-catalog, the discover→plan→validate→deploy workflow, and the precise Script-Engine API (so it never
-invents method/model/port names). Install it **globally** from the repo root:
+The canonical inventory lives in [`skills/manifest.json`](skills/manifest.json). Export a Claude
+projection to an explicit staging directory; the command selects ACTIVE operation Skills and leaves
+PLANNED Skills such as `network-autofix` out of normal distribution.
 
 _Linux · macOS · Git Bash:_
 
 ```bash
-mkdir -p ~/.claude/skills/packet-tracer && cp skill/SKILL.md ~/.claude/skills/packet-tracer/SKILL.md
+python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
 ```
 
 _Windows PowerShell:_
 
 ```powershell
-New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null; Copy-Item skill\SKILL.md "$HOME\.claude\skills\packet-tracer\SKILL.md"
+python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
 ```
 
-Then run `/reload-skills` in Claude Code (or restart it) and confirm with `/skills`. Details →
+The destination must not already exist; remove it after copying or choose a fresh staging path for
+the next export. Do not overlay the result onto an older installation: use the bounded replacement
+steps in the Skill docs so removed references and suppressed Skills cannot remain visible. Then
+reload/restart the client and confirm its Skill catalog. Details →
 **[Skill docs](https://mats2208.github.io/MCP-Packet-Tracer/skill/)**.
 
 > Requires **Python 3.11+** (deps `mcp[cli]>=1.13`, `pydantic>=2.11` install automatically).

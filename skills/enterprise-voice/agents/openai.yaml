@@ -1,4 +1,4 @@
 interface:
-  display_name: "enterprise-voice"
-  short_description: "Enterprise networking workflow for enterprise-voice"
-  default_prompt: "Use the enterprise-voice workflow for this request."
+  display_name: "Enterprise Voice"
+  short_description: "IP telephony registration and call workflows"
+  default_prompt: "Use $enterprise-voice to assess phone registration and call behavior."

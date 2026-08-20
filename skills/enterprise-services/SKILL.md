@@ -1,39 +1,28 @@
 ---
 name: enterprise-services
-description: Planifica, aplica y verifica DNS, HTTP/HTTPS, NTP y TFTP en Packet Tracer mediante ServicePlan, dependencias tipadas y evidencia directa o conductual.
+description: Plan or assess DNS, HTTP/HTTPS, NTP, and TFTP service behavior in an enterprise Packet Tracer topology. Use for service placement, dependencies, and client-visible outcomes; use enterprise-voice for telephony and enterprise-configuration for foundational device configuration.
 ---
 
 # Enterprise Services
 
-## Responsibility
+Own service intent, placement, dependencies, and evidence that clients can use the intended service.
 
-Resolver servicios y demostrar tanto su estado como su uso por clientes.
+Do not own addressing, DHCP, base interface configuration, voice, or whole-network acceptance. Those are inputs or handoffs. An implemented `ServicePlan`, compiler, applicator, or runtime is not by itself proof that the same workflow is exposed through the current public MCP surface.
 
-## Core workflow
+## Decision flow
 
-ServiceRequirement -> ServicePlan -> placement -> typed actions -> apply -> direct observation -> behavioral verification -> composed verification.
+1. Identify the requested service and its declared client outcome.
+2. Reuse approved host identities, addressing, and connectivity rather than recreating them.
+3. Check the current public typed surface and current capability evidence before promising an operational action.
+4. Build or inspect typed service intent through the existing plan/compiler seam.
+5. Apply only through a currently exposed governed path.
+6. Collect fresh service-state evidence and a service-specific client observation when the environment can provide one.
+7. Report unsupported, unknown, or unobservable dimensions without converting them into success or failure.
 
-## Rules
+Keep service state separate from client behavior. For example, a configured record is not a successful lookup, and a reachable server is not proof that the requested content or time/file operation worked.
 
-- La identidad y dirección de hosts vienen de E4/E5.
-- No asumir soporte de Server-PT sin capability evidence.
-- Separar service state, record/content state y client behavior.
-- DNS requiere lookup positivo y negativo cuando el intent lo pide.
-- HTTP se verifica por IP y por hostname cuando DNS participa.
-- NTP/TFTP pueden permanecer UNOBSERVABLE.
+Stop when placement, foundational connectivity, capability evidence, or the required observation path is missing. Do not invent an alternate API or substitute a generic reachability check for service behavior.
 
-## Evidence / readiness
+## Source navigation
 
-APPLIED no equivale a VERIFIED; una cadena hostname -> DNS -> HTTP sólo es VERIFIED si cada enlace tiene evidencia.
-
-## Stop conditions
-
-Detener si falta host placement, connectivity foundation, capability o evidencia independiente.
-
-## Completion
-
-ServicePlan con dependencias, acciones, resultados directos, conductuales y limitaciones.
-
-## References
-
-Usar los metadatos ServicePlan existentes y registrar quirks del runtime, no hardcodearlos aquí.
+When implementation detail matters, locate the current `ServicePlan`, `ServiceCompiler`, `ServiceApplicator`, and `PacketTracerEnterpriseServiceRuntime`, then read their focused tests. Treat those sources and fresh runtime results as authoritative; do not preserve their fields, supported operations, or evidence status in this Skill.

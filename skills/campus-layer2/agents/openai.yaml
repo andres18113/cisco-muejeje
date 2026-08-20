@@ -1,4 +1,4 @@
 interface:
-  display_name: "campus-layer2"
-  short_description: "Enterprise networking workflow for campus-layer2"
-  default_prompt: "Use the campus-layer2 workflow for this request."
+  display_name: "Campus Layer 2"
+  short_description: "STP and EtherChannel resilience, not VLAN setup"
+  default_prompt: "Use $campus-layer2 to assess STP or EtherChannel resilience."

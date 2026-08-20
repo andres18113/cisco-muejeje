@@ -377,7 +377,8 @@
       "source_anchors": [
         {
           "path": "src/packet_tracer_mcp/domain/services/auto_fixer.py",
-          "symbol": "fix_plan"
+          "symbol": "fix_plan",
+          "role": "negative_boundary"
         }
       ],
       "supporter_sets": [],
@@ -399,7 +400,11 @@
         },
         {
           "path": "src/packet_tracer_mcp/adapters/mcp/tool_registry.py",
-          "symbol": "register_tools"
+          "symbol": "pt_health_check"
+        },
+        {
+          "path": "src/packet_tracer_mcp/adapters/mcp/tool_registry.py",
+          "symbol": "pt_read_packet_trace"
         }
       ],
       "supporter_sets": [
@@ -456,7 +461,11 @@
         },
         {
           "path": "src/packet_tracer_mcp/adapters/mcp/tool_registry.py",
-          "symbol": "register_tools"
+          "symbol": "pt_probe_capabilities"
+        },
+        {
+          "path": "src/packet_tracer_mcp/adapters/mcp/tool_registry.py",
+          "symbol": "pt_capability_report"
         }
       ],
       "supporter_sets": [],

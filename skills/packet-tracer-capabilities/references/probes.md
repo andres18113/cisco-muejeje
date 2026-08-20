@@ -1,5 +1,7 @@
 # Probe protocol
 
-Resolve the requirement, choose a registered typed probe, allocate a fresh ProbeSession, mutate only session-owned resources, observe through an independent path, bound the wait, clean up and verify inventory.
+Read this reference only after matching stored evidence fails to resolve the capability question and a probe is authorized.
 
-Probe definitions must be versioned and safe. Do not expose arbitrary command, JavaScript or target selection as a discovery interface.
+Select a registered typed probe for the exact requirement. Establish a fresh isolated session, limit mutation to session-owned resources, use an independent observation path, bound every wait, and verify cleanup before accepting the result. If isolation, read-back, or cleanup fails, preserve the inconclusive outcome instead of converting it to unsupported.
+
+Read `CapabilityProbeRegistry` and `CapabilityDiscoveryService` in `src/packet_tracer_mcp/application/use_cases/capability_discovery.py` for the current protocol. Inspect `src/packet_tracer_mcp/infrastructure/execution/probe_runtime.py` and `tests/test_e95_probe_isolation.py` only when probe execution or isolation behavior matters.

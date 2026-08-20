@@ -1,39 +1,29 @@
 ---
 name: packet-tracer-layout
-description: Genera layouts jerárquicos, deterministas y legibles para topologías Enterprise sin alterar la semántica física o lógica de la red.
+description: Arrange an already-defined Packet Tracer topology into a deterministic, readable hierarchy while preserving every device, link, interface, address, and policy decision. Use for coordinates and visual grouping; do not use to design or change the network.
 ---
 
 # Packet Tracer Layout
 
-## Responsibility
+Own presentation state only: compute or apply coordinates for an existing topology without changing network semantics.
 
-Convertir Concrete TopologyPlan en posiciones visuales limpias y reproducibles.
+## Operating modes
 
-## Core workflow
+- For a whole planned topology, use the offline `LayoutPlanner` and approved layout profile.
+- For one bounded live move, establish runtime readiness and identity before using the current public move operation. Do not invent a batch mutation surface.
 
-site -> building -> floor -> zone -> infrastructure role -> endpoint rows -> relative layout checks.
+## Workflow
 
-## Rules
+1. Require a concrete topology with stable device identities and links.
+2. Read hierarchy and role metadata from the plan; do not infer semantics from names or current canvas position.
+3. Compute deterministic placement through the current planner.
+4. Compare device and link inventory before and after. Physical identity must remain unchanged while layout identity may change.
+5. For live movement, retain the request, acknowledgement, read-back when available, tolerance, and transport result. Acknowledgement alone is not exact placement proof.
 
-- Layout es presentation state, no topology.
-- No cambiar dispositivos, addresses, links, VLANs, routing ni redundancy.
-- Centrar filas respecto al site, respetar capas y alinear peers redundantes.
-- Usar IDs estables sólo como tie-breaker determinista.
-- Tratar Port-channel, SVI y Vlan interfaces como lógicos, nunca cableables.
-- Verificar propiedades relativas si PT no ofrece getter exacto.
+## Stops and evidence
 
-## Evidence / readiness
+- Stop if the request changes a device, link, interface, address, site, zone, redundancy path, or policy.
+- Stop when the intended runtime device cannot be resolved. Hand design changes to `enterprise-network-design` and live lifecycle concerns to `packet-tracer-runtime`.
+- Check deterministic placement, supported non-overlap guarantees, unchanged physical identity, and bounded live read-back.
 
-Preservar physical_topology_hash; un cambio visual puede cambiar layout_hash y artifact_hash, pero no el hash físico.
-
-## Stop conditions
-
-Detener si el layout intenta elegir hardware, cablear interfaz lógica o modificar la topología.
-
-## Completion
-
-Layout determinista, enviado a PT cuando corresponde y reportado como aplicado o parcialmente releído.
-
-## References
-
-Consultar el perfil de layout y el plan físico existente antes de tocar coordenadas.
+Use Graphify only to locate symbols, then read `LayoutPlanner` and focused compiler tests. Read topology identity tests for layout-only change, and current move/observation source for live evidence semantics. Source and tests own exact hashing and tolerance behavior.

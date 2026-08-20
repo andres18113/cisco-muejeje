@@ -1,39 +1,28 @@
 ---
 name: enterprise-security
-description: Compila, aplica y verifica ACL, NAT/PAT, port-security, DHCP Snooping, DAI y hardening mediante políticas tipadas y controles positivos y negativos.
+description: Plan, apply, or assess enterprise ACL, NAT, and Layer 2 security enforcement in Packet Tracer. Use for policy placement and positive/negative behavior evidence; use network-acceptance for a whole-deployment verdict and enterprise-configuration for non-security mechanics.
 ---
 
 # Enterprise Security
 
-## Responsibility
+Own security policy intent, placement, governed application, and evidence that the intended traffic is allowed or denied.
 
-Demostrar enforcement, no sólo presencia de configuración.
+Do not use this Skill to certify the entire deployment, diagnose unrelated failures, or take ownership of foundational addressing and interface configuration. Treat the typed security plan/compiler/applicator/runtime as implementation seams. Before live work, confirm which bounded security operation is exposed by the current public MCP registry; internal support is not public exposure.
 
-## Core workflow
+## Enforcement method
 
-SecurityIntent -> SecurityPlan -> placement/dependencies -> typed enforcement -> direct read-back -> positive behavior -> negative behavior -> cleanup -> recovery.
+1. Translate the requested policy into explicit protected paths and expected positive and negative flows.
+2. Derive placement from the current topology and Layer 3 boundaries, not interface-name intuition.
+3. Confirm current capability evidence and the governed typed path for the requested control.
+4. Compile and validate the policy with the existing security source owners.
+5. Establish a known-good positive baseline before introducing a negative enforcement test.
+6. Apply, read back, and exercise the specific policy behavior using the minimum sufficient evidence.
+7. When mutation occurs, verify cleanup or restoration separately from the enforcement result.
 
-## Rules
+Configuration presence is not enforcement proof. Keep read-back, allowed behavior, denied behavior, and recovery distinct. Unknown or unavailable probes must remain explicit.
 
-- Resolver ACL placement desde topology, L3 boundaries y path; no elegir interfaces por intuición.
-- No raw ACE/IOS en el dominio.
-- Cada deny requiere baseline allow conocido.
-- Preferir ALLOW before -> DENY after -> cleanup -> ALLOW after.
-- No usar ping como sustituto de DNS, HTTP, voz, NTP o TFTP.
-- No exponer secretos.
+Stop when placement, baseline behavior, capability evidence, a typed probe, or a safe restoration path is missing. Do not bypass the governed typed surface or expose secrets.
 
-## Evidence / readiness
+## Source navigation
 
-Separar COMPILED, APPLIED, DIRECTLY_OBSERVED, BEHAVIORALLY_VERIFIED y recovery; UNKNOWN no es PASS.
-
-## Stop conditions
-
-Detener si faltan source hashes, placement, baseline, capability, probe tipado o rollback.
-
-## Completion
-
-SecurityPlan con evidencia de allow/deny, read-back, cleanup y limitaciones.
-
-## References
-
-Reutilizar SecurityPlan, renderer y runtime E8; no crear un segundo executor.
+Locate the current `SecurityPlan`, `SecurityCompiler`, `SecurityApplicator`, `PacketTracerEnterpriseSecurityRuntime`, public registry entries, and focused security tests when details matter. Read those owners rather than copying policy fields, commands, supported controls, or current observations into this Skill.

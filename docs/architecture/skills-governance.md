@@ -52,9 +52,10 @@ portable `SKILL.md` frontmatter.
 
 `skills/` is the canonical logical operational Skill root.
 
-`skill/SKILL.md` is currently a non-authoritative legacy/compatibility
-companion pending later migration decisions. Its presence does not give it
-precedence over `skills/`, governance, source, tests, or runtime evidence.
+`skill/SKILL.md` is a DEPRECATED, non-authoritative compatibility artifact for
+existing manual installations. It is not a router and is never a source for
+canonical distribution. Its presence does not give it precedence over
+`skills/`, governance, source, tests, or runtime evidence.
 
 Two independently maintained operational Skill authorities are invalid.
 Client-specific installations and compatibility artifacts may project or wrap
@@ -73,6 +74,8 @@ Each entry records canonical identity and path, lifecycle, consumer, one
 primary responsibility, stable source anchors, allowed same-step supporter
 sets, and distribution mode/audiences. Eligibility is derived from lifecycle,
 consumer, mode, and audience rather than stored as another mutable boolean.
+An anchor marked `negative_boundary` identifies adjacent current behavior that
+must not be mistaken for implementation of the Skill's responsibility.
 Each supporter set contains at most two Skills; multiple sets represent
 alternatives, not simultaneous recursive loading.
 
@@ -202,8 +205,8 @@ cannot silently become a current universal fact.
 
 ## Distribution
 
-The project must eventually have one canonical logical Skill inventory. Client
-installations are projections of that inventory, not second authorities.
+The project has one canonical logical Skill inventory. Client installations
+are projections of that inventory, not second authorities.
 
 Normal operational distribution includes eligible ACTIVE operational Skills:
 
@@ -212,9 +215,15 @@ Normal operational distribution includes eligible ACTIVE operational Skills:
 - DEPRECATED Skills are explicit-only when a client can enforce that safely;
   otherwise they are excluded from normal distribution.
 
-Distribution must preserve canonical identity, lifecycle eligibility, routing
-semantics, and evidence/public-surface boundaries. This contract does not
-implement a distribution mechanism.
+`python -m tools.skills_governance export` produces deterministic projections
+to an explicit, absent staging destination. Selection is derived from
+lifecycle, audience, and distribution mode; the exporter never reads the
+deprecated companion. Portable and Claude projections exclude client adapters,
+while the OpenAI projection adds only each selected Skill's
+`agents/openai.yaml`. Generated output is not another canonical tree.
+Installing an updated projection must replace matching project-managed Skill
+directories rather than overlay them, so deleted references and suppressed
+lifecycles cannot survive; unrelated user Skills must remain untouched.
 
 ## Client adapters
 
@@ -267,9 +276,11 @@ Automated governance must cover:
 - reference integrity;
 - visibility of context-cost regressions.
 
-`python -m tools.skills_governance` implements deterministic repository checks
-and reports context metrics. Those checks prove structure and consistency, not
-semantic routing quality or current runtime capability.
+`python -m tools.skills_governance validate` implements deterministic
+repository checks, and `python -m tools.skills_governance metrics` reports
+context measurements. The legacy no-subcommand invocation still validates.
+Those checks prove structure and consistency, not semantic routing quality or
+current runtime capability.
 
 ## Migration safety
 

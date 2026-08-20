@@ -1,4 +1,4 @@
 interface:
-  display_name: "network-diagnosis"
-  short_description: "Enterprise networking workflow for network-diagnosis"
-  default_prompt: "Use the network-diagnosis workflow for this request."
+  display_name: "Network Diagnosis"
+  short_description: "Explain observed network failures without mutating state"
+  default_prompt: "Use $network-diagnosis to form and test evidence-supported causal hypotheses without changing the network or certifying readiness."

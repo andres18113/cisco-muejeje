@@ -1,63 +1,84 @@
-# Claude Code Skill (recommended)
+# Governed Agent Skills
 
-The repo ships a companion **[Agent Skill](https://docs.claude.com/en/docs/claude-code/skills)**
-for Claude Code —
-[`skill/SKILL.md`](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/skill/SKILL.md). It is an
-operating guide that loads into the model's context *before* it drives the MCP, so the LLM acts from
-**verified facts instead of guesses**.
+The repository provides 17 portable Agent Skill contracts under [`skills/`](../skills/).
+[`skills/manifest.json`](../skills/manifest.json) is the single machine-readable inventory for
+lifecycle, consumer, responsibility, support relationships, and distribution. Portable `SKILL.md`
+files remain client-neutral; client metadata is applied only while exporting a projection.
 
-Why it matters: the `pt_*` tools are powerful, but a model that *invents* a model name, a port, a
-slot id, a cable type, or a raw Script-Engine method will fail — and a bad raw-JS call can even pop
-a modal that freezes the live bridge. The Skill encodes the exact, correct facts so that doesn't
-happen.
+The old [`skill/SKILL.md`](../skill/SKILL.md) file is a DEPRECATED compatibility artifact for
+existing manual installations. It is not a router, capability source, tool catalog, or canonical
+operational authority. New installations must use the manifest-driven exporter.
 
-## What the Skill covers
+## Export a projection
 
-- **A "discover, never invent" discipline** — always look up models/ports/modules first.
-- The **full 46-tool catalog** and the mandatory `discover → plan → validate → deploy` workflow.
-- The **exact PT Script-Engine API** for the opt-in developer/capability-investigation
-  `pt_send_raw` compatibility tool (e.g. `ipc.network().getDevice(name)` and the
-  global `getDevices(filter)` — there is **no** global `getDevice`). The default
-  enterprise public surface does not register it.
-- A **wrong → right mistakes table**, the **15 cable types**, **exact port names**, the **IP/DHCP/routing
-  conventions**, and the **module-install slot matrix by router family** (HWIC `"0/x"`, NM `"1"`,
-  NIM `"0/1"`).
-- The current **known rough edges**, so the model works around them.
+Run from the cloned repository root. Every export requires a new, explicit staging destination and
+validates the canonical inventory before writing. Normal projections contain eligible ACTIVE
+Skills for the requested audience; PLANNED and RETIRED Skills are suppressed.
 
-## Install (global — recommended)
-
-Run from the cloned repo root. This copies the Skill to your **user** skills folder so it's available
-in **every** project where you use the MCP.
-
-=== "Linux / macOS / Git Bash"
+=== "Claude Code"
 
     ```bash
-    mkdir -p ~/.claude/skills/packet-tracer
-    cp skill/SKILL.md ~/.claude/skills/packet-tracer/SKILL.md
+    python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
+    skill_root="$HOME/.claude/skills"
+    mkdir -p "$skill_root"
+    for source in .skill-staging-claude/skills/*; do
+        target="$skill_root/$(basename "$source")"
+        rm -rf -- "$target"
+        cp -R -- "$source" "$target"
+    done
+    rm -rf -- "$skill_root/network-autofix" "$skill_root/packet-tracer"
     ```
 
-=== "Windows PowerShell"
+    In PowerShell, perform the same bounded replacement without touching unrelated Skills:
 
     ```powershell
-    New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null
-    Copy-Item skill\SKILL.md "$HOME\.claude\skills\packet-tracer\SKILL.md"
+    python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
+    $skillRoot = Join-Path $HOME ".claude\skills"
+    New-Item -ItemType Directory -Force -Path $skillRoot | Out-Null
+    Get-ChildItem -LiteralPath ".skill-staging-claude\skills" -Directory | ForEach-Object {
+        $target = Join-Path $skillRoot $_.Name
+        if (Test-Path -LiteralPath $target) { Remove-Item -Recurse -Force -LiteralPath $target }
+        Copy-Item -Recurse -LiteralPath $_.FullName -Destination $target
+    }
+    foreach ($name in @("network-autofix", "packet-tracer")) {
+        $target = Join-Path $skillRoot $name
+        if (Test-Path -LiteralPath $target) { Remove-Item -Recurse -Force -LiteralPath $target }
+    }
     ```
 
-=== "Windows cmd.exe"
+=== "Codex / OpenAI"
 
-    ```bat
-    mkdir "%USERPROFILE%\.claude\skills\packet-tracer" 2>nul
-    copy skill\SKILL.md "%USERPROFILE%\.claude\skills\packet-tracer\SKILL.md"
+    ```bash
+    python -m tools.skills_governance export --destination .skill-staging-openai --audience operation --client openai
+    skill_root="${CODEX_HOME:-$HOME/.codex}/skills"
+    mkdir -p "$skill_root"
+    for source in .skill-staging-openai/skills/*; do
+        target="$skill_root/$(basename "$source")"
+        rm -rf -- "$target"
+        cp -R -- "$source" "$target"
+    done
+    rm -rf -- "$skill_root/network-autofix" "$skill_root/packet-tracer"
     ```
 
-Then run **`/reload-skills`** in Claude Code (or restart it). Verify with **`/skills`** — you should
-see **`packet-tracer`** listed. Claude loads it automatically whenever you work with the MCP.
+    The OpenAI projection adds each selected Skill's `agents/openai.yaml`; it does not move
+    lifecycle, responsibility, or capability truth into that adapter.
 
-!!! tip "Project-local alternative"
-    Prefer it active only inside one project? Copy the file to that project's
-    `.claude/skills/packet-tracer/SKILL.md` instead of the global folder.
+=== "Portable"
+
+    ```bash
+    python -m tools.skills_governance export --destination .skill-staging-portable --audience operation --client portable
+    ```
+
+    Replace matching directories under the target client's Skill root instead of merging their
+    contents. Remove `network-autofix` and the legacy `packet-tracer` directory if present, while
+    leaving unrelated user Skills untouched. This projection contains no client adapter.
+
+Use `--audience development` for repository-development workflows. `--include-explicit` is reserved
+for an intentional explicit-only projection; it never makes a PLANNED or RETIRED Skill eligible.
 
 ## Updating
 
-The Skill ships with the repo and tracks the MCP version. After `git pull`, re-run the copy command
-above to refresh your installed copy, then `/reload-skills`.
+After `git pull`, export to a fresh or removed staging destination and replace each previously
+managed directory rather than overlaying it. If changing audiences, remove any unselected IDs from
+the canonical `skills/manifest.json` inventory; preserve every unrelated user Skill. Do not edit
+staged output or commit it as another canonical Skill tree.

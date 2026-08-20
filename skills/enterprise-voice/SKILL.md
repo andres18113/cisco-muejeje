@@ -1,38 +1,25 @@
 ---
 name: enterprise-voice
-description: Diseña y opera telefonía IP empresarial en Packet Tracer mediante VoicePlan, voice VLAN, bootstrap, extensiones, call-control y verificación de registro y llamada.
+description: Plan or assess enterprise IP telephony in Packet Tracer, including voice access intent, bootstrap, registration, call control, and call evidence. Use enterprise-services for non-voice services and enterprise-configuration for foundational VLAN or interface mechanics.
 ---
 
 # Enterprise Voice
 
-## Responsibility
+Own voice-specific intent and the evidence chain from an approved network foundation to phone registration and call behavior.
 
-Coordinar voz sin convertir limitaciones de la UI en API falsa.
+Voice consumes addressing, access configuration, and service reachability; it does not silently take ownership of those domains. Keep logical phone identity distinct from physical attachment, and keep registration, call setup, call state, and media observability as separate questions.
 
-## Core workflow
+## Voice sequence
 
-VoiceIntent -> VoicePlan -> voice VLAN/addressing -> call-control -> bootstrap -> registration -> call initiation -> call behavior -> teardown.
+1. Confirm the requested voice outcome, endpoint identities, numbering policy, and approved voice access intent.
+2. Resolve current capability evidence before choosing a bootstrap or call-control mechanism.
+3. Use the existing typed voice plan/compiler seam to detect collisions and unsatisfied prerequisites.
+4. Verify that the intended operation is available through the current public surface before attempting live work. Internal applicator/runtime support does not create a public entrypoint.
+5. Observe registration before initiating a call, then record call behavior and any evidence ceiling separately.
+6. Preserve unknown or unobservable stages instead of inferring success from configuration or UI state.
 
-## Rules
+Stop if endpoint identity, addressing, foundational connectivity, capability evidence, or the required governed adapter is absent. Do not invent callbacks, UI coordinates, dialing routines, or a raw fallback.
 
-- Voice VLAN es explícita y no se reutiliza silenciosamente como data VLAN.
-- Teléfono usa identidad lógica, no el puerto físico passthrough.
-- Extensiones deterministas; detectar colisiones y agotamiento.
-- Seleccionar CME/SCCP/SIP sólo por capability evidence.
-- TFTP/bootstrap, registration, call initiation, connection y audio son evidencias distintas.
+## Source navigation
 
-## Evidence / readiness
-
-Conservar STRUCTURED_API, PACKET_TRACER_NATIVE_UI, HYBRID o UNOBSERVABLE. APPLIED_BY_UI no equivale a CALL_VERIFIED ni a RTP/audio probado.
-
-## Stop conditions
-
-No llamar callbacks, coordenadas o dial routines desde otras Skills. Detener si falta PhoneControl adapter o evidencia de runtime.
-
-## Completion
-
-VoicePlan aplicado con estados de registro/llamada separados y limitaciones explícitas.
-
-## References
-
-Consultar el VoicePlan y VoiceApplicator existentes; no duplicar sus adaptadores.
+For development or disputed behavior, locate the current `VoicePlan`, `VoiceCompiler`, `VoiceApplicator`, `PacketTracerEnterpriseVoiceRuntime`, and their focused tests. Read those owners directly for supported actions and observation semantics; runtime registration and call results remain dynamic evidence.

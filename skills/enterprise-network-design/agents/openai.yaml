@@ -1,4 +1,4 @@
 interface:
-  display_name: "enterprise-network-design"
-  short_description: "Enterprise networking workflow for enterprise-network-design"
-  default_prompt: "Use the enterprise-network-design workflow for this request."
+  display_name: 'Enterprise Network Design'
+  short_description: 'Define logical topology before addressing or hardware'
+  default_prompt: 'Use $enterprise-network-design to turn these requirements into a logical enterprise plan.'

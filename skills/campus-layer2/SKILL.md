@@ -1,39 +1,30 @@
 ---
 name: campus-layer2
-description: Diseña, aplica y verifica resiliencia Layer 2 con STP/Rapid-PVST/MST y EtherChannel, incluyendo roles, bundles, fallo y recuperación según capabilities observadas.
+description: Design or assess campus Layer 2 resilience through STP-family behavior and EtherChannel bundling, including forwarding roles, controlled failure, and recovery. Do not use for routine VLAN/trunk plumbing, first-hop gateway failover, or IP routing.
 ---
 
 # Campus Layer 2
 
-## Responsibility
+Own loop-prevention and link-aggregation resilience over an already approved physical and foundational switching design.
 
-Resolver loop prevention y agregación sobre los enlaces físicos exactos de E4.
+Routine VLAN creation, access/trunk configuration, and interface mechanics belong to enterprise configuration. Gateway role belongs to first-hop redundancy; route exchange belongs to routing IGP.
 
-## Core workflow
+## Resilience workflow
 
-L2 intent -> root/member policy -> typed plan -> apply -> current state -> forwarding baseline -> controlled failure -> alternate forwarding -> recovery.
+1. Classify the request as STP-family, EtherChannel, or a coordinated L2 resilience scenario.
+2. Confirm the exact topology links, intended redundancy, and current capability evidence.
+3. Inspect or compile the relevant typed control-plane intent without assuming that every internally implemented action is publicly exposed.
+4. Establish fresh state and a working forwarding baseline.
+5. If failure testing is authorized, change one controlled condition and observe alternate forwarding.
+6. Restore the condition and verify recovery independently.
 
-## Rules
+For STP, keep root identity, port role/state, forwarding behavior, and convergence distinct. For EtherChannel, keep logical bundle state, member state, and traffic behavior distinct. Never infer one protocol or mode from evidence for another.
 
-- Root intent explícito y determinista.
-- Edge ports no son infraestructura, trunk ni miembros EtherChannel.
-- Port-channel es lógico y no cableable.
-- STP observa el bundle lógico, no inventa miembros independientes.
-- Rapid-PVST verificado no implica MST ni PAgP/static.
+Stop before mutation when the topology has no intended redundant path, the baseline is not working, current support is unknown, or cleanup cannot be verified.
 
-## Evidence / readiness
+## Selective detail
 
-Separar root/role/state, bundle/member state, forwarding, failover y recovery.
+- Read [the STP reference](references/stp.md) only for root, edge-port, role/state, or STP recovery work.
+- Read [the EtherChannel reference](references/etherchannel.md) only for bundle membership, negotiation, forwarding, or bundle recovery work.
 
-## Stop conditions
-
-Detener si E4 no contiene camino redundante, el baseline no funciona o la capability del modo es UNKNOWN.
-
-## Completion
-
-Estado L2 actual, forwarding baseline, failover y recovery con cleanup verificado.
-
-## References
-
-- Consultar stp.md.
-- Consultar etherchannel.md.
+When source detail matters, locate `ControlPlanePlan`, `ControlPlaneCompiler`, `ControlPlaneApplicator`, the current control-plane runtime, and the focused L2 tests. Source and fresh observations own current behavior and exposure.

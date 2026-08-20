@@ -1,63 +1,74 @@
-# Enterprise Skills v1
+# Enterprise Skills Architecture
 
-The repository keeps the E1-E9 networking workflow as 17 progressively
-loaded Skills under the top-level skills directory. Each Skill has a compact
-SKILL.md with responsibility, workflow, rules, evidence/readiness,
-stop-conditions and completion semantics. Detailed procedures live in the
-direct references directory of the Skill that owns them.
+This page is a compact companion to
+[`skills-governance.md`](skills-governance.md). That document owns policy;
+[`skills/manifest.json`](../../skills/manifest.json) owns the canonical project
+inventory, lifecycle, consumers, source anchors, support relationships, and
+distribution rules. This page describes how the current responsibilities fit
+together without redefining either contract.
 
-This page describes the architecture of the current canonical 17-Skill set.
-[`skills-governance.md`](skills-governance.md) owns Skill governance,
-precedence, lifecycle, and routing rules; this architecture page does not
-redefine them.
+## Canonical inventory
 
-## Activation model
+The manifest contains 17 canonical Skill identities.
 
-The orchestrator is loaded for end-to-end enterprise requests. It selects
-specialized Skills from the requested operation:
+Sixteen are ACTIVE:
 
-- design: enterprise-network-design, enterprise-ipam-capacity,
-  enterprise-hardware;
-- physical/runtime: packet-tracer-capabilities, packet-tracer-runtime,
-  packet-tracer-layout;
-- configuration and services: enterprise-configuration, enterprise-services,
-  enterprise-voice, enterprise-security;
-- control plane: campus-layer2, first-hop-redundancy, routing-igp;
-- outcomes: network-acceptance, network-diagnosis, network-autofix.
+- planning and sequencing: `enterprise-network-design`,
+  `enterprise-ipam-capacity`, `enterprise-hardware`,
+  `enterprise-orchestrator`;
+- foundational and domain configuration: `enterprise-configuration`,
+  `enterprise-services`, `enterprise-voice`, `enterprise-security`;
+- control-plane behavior: `campus-layer2`, `first-hop-redundancy`,
+  `routing-igp`;
+- Packet Tracer and outcomes: `packet-tracer-capabilities`,
+  `packet-tracer-layout`, `packet-tracer-runtime`, `network-acceptance`,
+  `network-diagnosis`.
 
-packet-tracer-runtime is transversal only when Packet Tracer is actually
-operated. A simple design request must not load live-runtime references.
+`network-autofix` is PLANNED and is excluded from normal distribution. The
+deprecated `skill/SKILL.md` compatibility artifact is not a canonical Skill and
+has no authority over this inventory.
 
-## Boundary with the source code
+## Routing model
 
-SKILL.md describes how an agent should reason about enterprise networking.
-AGENTS.md describes how an agent may modify this repository. Domain models,
-typed actions, dependency DAGs, evidence provenance, semantic hashes and
-runtime safety remain source-code contracts; Skills do not replace them.
+Each reasoning step has one PRIMARY Skill and zero to two allowed SUPPORTING
+Skills. The manifest records the allowed relationships; the task's current
+intent determines which relationship is needed.
 
-Skills must consume the existing E4-E9 plans and runtimes. They must not create
-a second IOS executor, dependency sorter, capability taxonomy or arbitrary
-CLI/JavaScript path.
+Use `enterprise-orchestrator` as primary only for a genuinely multi-domain
+request that needs classification and sequencing. After classification, one
+domain Skill owns the active reasoning step at a time. A handoff changes that
+owner; it does not claim that earlier context is physically evicted. Direct
+single-domain requests should route to their specialist without activating the
+orchestrator.
 
-## Dynamic facts
+Capabilities, runtime operation, and typed configuration mechanics can support
+a domain owner when the step needs them. Planning outputs normally pass forward
+as artifacts rather than keeping every earlier Skill active.
 
-Model support, Packet Tracer build behavior and runtime anomalies do not belong
-in static Skills. They remain in CapabilityRegistry, runtime snapshots and
-RuntimeQuirkRegistry, matched by environment fingerprint. Lack of evidence is
-UNKNOWN, not UNSUPPORTED.
+## Control-plane boundary
 
-## Evidence contract
+The shared `ControlPlanePlan`, compiler, applicator, and runtime are source-code
+ownership. They do not collapse three agent responsibilities:
 
-All Skills preserve the common state distinction:
+- `campus-layer2` owns STP-family and EtherChannel resilience, not routine
+  VLAN/trunk plumbing;
+- `first-hop-redundancy` owns virtual-gateway roles, forwarding, failover, and
+  recovery;
+- `routing-igp` owns typed IPv4 IGP behavior for RIPv2, OSPFv2, and EIGRP.
 
-COMPILED != APPLIED != DIRECTLY_OBSERVED != BEHAVIORALLY_VERIFIED
+The specialists may read the same implementation seam while retaining distinct
+positive intents, negative boundaries, and evidence questions.
 
-Control-plane and resilience Skills additionally separate adjacency, route
-state, forwarding, failover and recovery. Acceptance, diagnosis and autofix
-consume these results and never manufacture missing evidence.
+## Content and fact ownership
 
-## Deferred scope
+Skills preserve compact operational methodology: responsibility boundaries,
+decision flow, hard stops, evidence expectations, and conditional navigation.
+They do not reproduce deterministic source behavior or current environment
+state.
 
-The canonical set intentionally does not include BGP, IPv6 routing or route
-redistribution. Those belong to E10 after Packet Tracer capability evidence
-exists.
+Current source and tests own implemented types, algorithms, public exposure,
+and deterministic behavior. Capability discovery and fresh runtime evidence own
+environment-specific support, observability, and results. When a current fact
+matters, locate the focal source or test and read it directly; do not rely on a
+static capability snapshot or a historical implementation narrative in a
+Skill.

@@ -1,38 +1,32 @@
 ---
 name: network-autofix
-description: Propone y ejecuta correcciones Enterprise acotadas únicamente después de un diagnóstico respaldado por evidencia, con análisis de impacto, read-back, retest y rollback.
+description: Registra la futura remediación gobernada de una red después de un diagnóstico demostrado; no usar para diagnóstico, pt_fix_plan ni reparaciones operativas actuales.
 ---
 
 # Network Autofix
 
 ## Responsibility
 
-Aplicar un ChangeSet pequeño, idempotente y reversible cuando la causa esté demostrada.
+Definir el contrato futuro para una corrección acotada, autorizada, reversible y respaldada por evidencia.
 
-## Core workflow
+## Availability
 
-RootCauseHypothesis -> Candidate ChangeSet -> impact analysis -> preconditions -> rollback -> one atomic mutation -> fresh read-back -> affected acceptance -> regression -> commit or restore.
+Esta responsabilidad no es operativa. Consultar `skills/manifest.json`: mientras su distribución sea `none`, no seleccionarla como Skill primaria ni ejecutar mutaciones en su nombre.
 
-## Rules
+El `fix_plan` actual corrige de forma determinista un conjunto pequeño de defectos de `TopologyPlan`. No es diagnóstico de una red live, no consume una causa raíz y no implementa un ChangeSet con rollback.
 
-- Requiere acceptance failure, root cause con evidencia, DeploymentManifest limpio y capability suficiente.
-- Nunca arreglar síntomas ni cambiar mecanismos no relacionados.
-- Nunca sustituir un protocolo salvo autorización arquitectónica.
-- No continuar desde DIRTY sin recovery policy.
-- Toda mutación tiene inversa o rollback explícito.
+## Future workflow boundary
 
-## Evidence / readiness
+Una implementación futura deberá recibir un diagnóstico sustentado, limitar impacto y precondiciones, preparar la inversa antes de mutar, obtener read-back fresco, repetir sólo las verificaciones afectadas y restaurar ante fracaso.
 
-Registrar scope, hashes, preconditions, change, read-back, retests, rollback y resultado.
+No describir comandos, cambios de configuración ni atajos de ejecución hasta que esos contratos existan en source/tests y tengan exposición gobernada.
 
-## Stop conditions
+## Routing
 
-No mutar si root cause es hipótesis débil, identity está stale, capability es UNKNOWN, impact no está acotado o rollback no existe.
+- Para explicar una falla, usar `network-diagnosis`.
+- Para corregir un `TopologyPlan` con el helper existente, usar el flujo actual de planificación/validación.
+- Para aplicar configuración ya aprobada, usar el owner de dominio con `enterprise-configuration` y, si corresponde, `packet-tracer-runtime`.
 
-## Completion
+## Hard stop
 
-ChangeSet exitoso con acceptance recuperado, o restaurado y marcado unsuccessful; nunca redefine silenciosamente EnterprisePlan.
-
-## References
-
-Usar network-diagnosis y network-acceptance antes de ejecutar cualquier cambio.
+Detener cualquier intento de activación normal, mutación o afirmación de rollback soportado. No convertir esta memoria futura en capacidad presente.

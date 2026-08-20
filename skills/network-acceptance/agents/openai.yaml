@@ -1,4 +1,4 @@
 interface:
-  display_name: "network-acceptance"
-  short_description: "Enterprise networking workflow for network-acceptance"
-  default_prompt: "Use the network-acceptance workflow for this request."
+  display_name: "Network Acceptance"
+  short_description: "Issue evidence-bounded readiness and acceptance verdicts"
+  default_prompt: "Use $network-acceptance to evaluate readiness evidence and issue a bounded acceptance verdict without diagnosing or repairing."

@@ -1,4 +1,4 @@
 interface:
-  display_name: "packet-tracer-capabilities"
-  short_description: "Enterprise networking workflow for packet-tracer-capabilities"
-  default_prompt: "Use the packet-tracer-capabilities workflow for this request."
+  display_name: 'Packet Tracer Capabilities'
+  short_description: 'Resolve current Packet Tracer capability evidence'
+  default_prompt: 'Use $packet-tracer-capabilities to resolve whether the requested Packet Tracer feature is supported by current evidence.'

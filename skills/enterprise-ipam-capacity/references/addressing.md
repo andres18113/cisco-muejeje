@@ -1,5 +1,15 @@
-# Addressing reference
+# Initial addressing
 
-Allocate site-summary blocks first, then segment prefixes with deterministic VLSM. Reserve infrastructure addresses for management, SVI, physical FHRP members, VIPs, transit links and loopbacks before endpoint hosts.
+Read this reference only for new enterprise IPv4 allocation.
 
-Check overlap, host count, growth reserve, summarization and deterministic ordering. The allocation result is an input to E4/E5, not a runtime observation.
+Supply the complete logical plan and declared address space to the current IPAM service. Let source code own subnet sizing, ordering, gateway conventions, site-block selection, and transit allocation; do not recreate those deterministic rules manually.
+
+Review the result for:
+
+- containment within the approved address space;
+- non-overlapping site, segment, and transit allocations;
+- sufficient usable capacity after the declared growth and reservations;
+- stable output for equivalent input;
+- a clear relationship between each allocation and its logical demand.
+
+If a caller requests a fixed block, validate it through the current planner. Do not silently move or enlarge it to make the plan pass.

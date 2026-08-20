@@ -1,38 +1,35 @@
 ---
 name: network-diagnosis
-description: Diagnostica fallos Enterprise a partir de resultados de acceptance y evidencia estructurada, identificando el primer invariante causal sin modificar la red.
+description: Explica una falla de red mediante razonamiento causal sustentado en evidencia fresca y sin mutaciones; no usar para certificar readiness ni ejecutar correcciones.
 ---
 
 # Network Diagnosis
 
 ## Responsibility
 
-Explicar evidencia, no perseguir síntomas ni mutar Packet Tracer.
+Encontrar el primer invariante causal respaldado por evidencia y proponer la observación mínima que discrimine las hipótesis restantes.
 
-## Core workflow
+## Boundary
 
-EvidenceBundle -> first failing invariant -> ranked hypotheses -> contradicting evidence -> next discriminating observation.
+Diagnosis interpreta evidencia; no cambia configuración, no declara acceptance, no eleva un estado de evidencia y no presupone un executor dedicado que el repositorio no expone.
 
-## Rules
+## Decision sequence
 
-- Orden: identity/runtime -> interface/link -> L2 -> FHRP -> L3 -> routing -> security -> service.
-- Separar evidencia de configuración, control-plane, RIB y forwarding.
-- No diagnosticar BGP por una interfaz física caída.
-- No convertir hipótesis en hechos.
-- No ejecutar IOS mutante.
+1. Partir del resultado fallido y conservar su identidad, alcance, método, frescura y ceilings.
+2. Separar hechos observados, contradicciones, supuestos y datos faltantes.
+3. Seguir dependencias causales desde el primer prerequisite fallido, cargando sólo el owner del dominio afectado.
+4. Ordenar hipótesis por evidencia explicativa, no por cantidad de síntomas compatibles.
+5. Solicitar una sola observación tipada y discriminante cuando la evidencia actual no baste.
+6. Entregar causa respaldada o incertidumbre explícita, con evidencia a favor, en contra y siguiente paso.
 
-## Evidence / readiness
+## Evidence discipline
 
-Cada RootCauseHypothesis incluye supporting evidence, contradicting evidence, confidence y siguiente observación.
+Las primitivas actuales de health, auditoría y packet trace pueden aportar observaciones; ninguna certifica por sí sola la causa. Una hipótesis no se vuelve hecho por coincidir con un nombre de modelo, configuración esperada o resultado histórico.
 
-## Stop conditions
+## Hard stops
 
-Detener si el bundle está stale, falta identity, hay cleanup pendiente o el supuesto causal sólo se basa en un model name.
+Detener si la identidad cambió, el bundle está stale, cleanup sigue pendiente, la observación requerida no existe o el siguiente paso implicaría mutación. Devolver la incertidumbre sin alterar el estado gobernado.
 
-## Completion
+## Source-of-truth navigation
 
-Diagnóstico ordenado y no mutante, listo para acceptance o un ChangeSet explícitamente autorizado.
-
-## References
-
-Usar los modelos de aceptación, runtime quirks y evidence bundle del repositorio.
+Usar Graphify para localizar el parser, trace runtime o resultado de dominio pertinente. Leer después su source/test exacto y consultar `packet-tracer-runtime` sólo cuando haga falta una observación live.

@@ -1,4 +1,4 @@
 interface:
-  display_name: "first-hop-redundancy"
-  short_description: "Enterprise networking workflow for first-hop-redundancy"
-  default_prompt: "Use the first-hop-redundancy workflow for this request."
+  display_name: "First-Hop Redundancy"
+  short_description: "Virtual-gateway failover, not dynamic routing"
+  default_prompt: "Use $first-hop-redundancy to assess virtual-gateway failover and recovery."

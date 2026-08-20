@@ -1,4 +1,4 @@
 interface:
-  display_name: "enterprise-orchestrator"
-  short_description: "Enterprise networking workflow for enterprise-orchestrator"
-  default_prompt: "Use the enterprise-orchestrator workflow for this request."
+  display_name: "Enterprise Orchestrator"
+  short_description: "Sequence genuinely multi-domain enterprise network work"
+  default_prompt: "Use $enterprise-orchestrator to classify this multi-domain request and hand off one reasoning step at a time."

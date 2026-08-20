@@ -1,4 +1,4 @@
 interface:
-  display_name: "enterprise-ipam-capacity"
-  short_description: "Enterprise networking workflow for enterprise-ipam-capacity"
-  default_prompt: "Use the enterprise-ipam-capacity workflow for this request."
+  display_name: 'Enterprise IPAM and Capacity'
+  short_description: 'Plan IPv4 ownership and physical capacity demand'
+  default_prompt: 'Use $enterprise-ipam-capacity to plan or reconcile addressing and quantify pre-hardware capacity demand.'

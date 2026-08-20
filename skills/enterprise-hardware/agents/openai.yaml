@@ -1,4 +1,4 @@
 interface:
-  display_name: "enterprise-hardware"
-  short_description: "Enterprise networking workflow for enterprise-hardware"
-  default_prompt: "Use the enterprise-hardware workflow for this request."
+  display_name: 'Enterprise Hardware Planning'
+  short_description: 'Select hardware from approved demand and evidence'
+  default_prompt: 'Use $enterprise-hardware to select viable devices and physical interfaces from approved demand and current evidence.'

@@ -1,40 +1,32 @@
 ---
 name: routing-igp
-description: Diseña, compila y verifica OSPFv2 y EIGRP IPv4 según capabilities observadas, separando adyacencia, RIB, forwarding, failover y recovery.
+description: Design or assess typed IPv4 IGP behavior in Packet Tracer for RIPv2, OSPFv2, or EIGRP, including adjacency or peer state, learned routes, forwarding, convergence, and recovery. Do not use for first-hop gateway roles, static routing, or Layer 2 resilience.
 ---
 
 # Enterprise IGP Routing
 
-## Responsibility
+Own dynamic IPv4 routing intent and protocol-specific evidence for RIPv2, OSPFv2, or EIGRP over an approved addressing and interface foundation.
 
-Compilar routing IGP desde identidades E4/E5 sin inventar addresses ni peers.
+Do not invent addresses, peers, networks, or protocol substitutions. The unified `ControlPlanePlan` and compiler are source ownership, not a reason to merge this responsibility with Layer 2 or first-hop redundancy.
 
-## Core workflow
+## Routing workflow
 
-RoutingIntent -> process/AS/IDs -> networks/passive interfaces -> typed plan -> apply -> neighbor read-back -> route read-back -> forwarding -> failure -> recovery.
+1. Identify the requested protocol and whether the task concerns design, application, observation, or controlled failure.
+2. Reuse approved router/interface identities and obtain current capability/public-exposure evidence.
+3. Read only the matching protocol reference below.
+4. Build or inspect typed intent through the existing control-plane plan/compiler seam.
+5. Apply only through a currently exposed governed path.
+6. Query fresh protocol state, learned routes, and forwarding evidence appropriate to that protocol.
+7. For authorized convergence tests, require a working baseline, observe the changed path, restore it, and verify recovery separately.
 
-## Rules
+Configuration, protocol state, route installation, forwarding, convergence, and recovery are distinct evidence dimensions. In particular, retrieve current EIGRP evidence before making a claim; preserve `UNKNOWN` or `UNOBSERVABLE` ceilings when current capability/runtime evidence does not support stronger conclusions.
 
-- Router IDs únicos y deterministas.
-- Areas, networks, peers y passive interfaces vienen del plan.
-- Adjacency, RIB, forwarding y convergence son evidencias distintas.
-- Baseline obligatorio antes de fallos.
-- No sustituir OSPF por EIGRP ni viceversa sin intent explícito.
-- Consultar RuntimeQuirkRegistry antes de generalizar.
+Stop on stale output, unresolved capability, missing baseline routes/forwarding, or an unsafe restoration path. Do not reinterpret an empty or unsupported observation as proof that a protocol is unavailable.
 
-## Evidence / readiness
+## Protocol detail
 
-OSPF requiere configuración, vecino FULL, ruta remota y forwarding. EIGRP requiere configuración, vecino, ruta y forwarding; si falta cualquiera, permanece parcial.
+- Read [the RIPv2 reference](references/ripv2.md) only for RIPv2 intent, route evidence, or convergence work.
+- Read [the OSPFv2 reference](references/ospf.md) only for OSPF area, adjacency, route, or convergence work.
+- Read [the EIGRP reference](references/eigrp.md) only for EIGRP intent or evidence work.
 
-## Stop conditions
-
-Detener failover si neighbors/routes baseline no están verificados o si aparece output stale.
-
-## Completion
-
-Estado IGP con frescura, parser, next-hop, forwarding, convergence y recovery separados.
-
-## References
-
-- Consultar ospf.md.
-- Consultar eigrp.md.
+For implementation truth, locate `ControlPlanePlan`, `ControlPlaneCompiler`, `ControlPlaneApplicator`, the current control-plane runtime, and focused protocol tests, including the typed RIPv2 tests.

@@ -1,9 +1,11 @@
-# Hierarchy reference
+# Hierarchy decisions
 
-Canonical order:
+Read this reference only when hierarchy or aggregation changes the logical plan.
 
-site -> building -> floor -> zone -> network role -> segment -> endpoint group.
+- Preserve identities supplied by the intent; do not rename or merge scopes for visual convenience.
+- Treat site, building, floor, and zone as distinct placement and ownership boundaries when the requirements distinguish them.
+- A zone is not automatically a VLAN or security boundary. Create segmentation only from explicit network intent.
+- Keep endpoint populations grouped while designing. Downstream planners can consume counts without inventing individual devices.
+- Add a default or inferred grouping only when the current source contract supports it, and surface the assumption in the result.
 
-Keep identity stable across plans. A site can contain multiple buildings and floors; a zone is a logical placement boundary, not automatically a VLAN. Record the reason for every aggregation or split.
-
-Infrastructure roles include WAN edge, core, distribution, access, services and management. Endpoints remain grouped until hardware planning requires concrete counts.
+Confirm exact hierarchy normalization and validation in the current enterprise planning source and tests rather than copying model fields here.

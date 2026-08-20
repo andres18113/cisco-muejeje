@@ -1,4 +1,4 @@
 interface:
-  display_name: "enterprise-configuration"
-  short_description: "Enterprise networking workflow for enterprise-configuration"
-  default_prompt: "Use the enterprise-configuration workflow for this request."
+  display_name: 'Enterprise Configuration'
+  short_description: 'Apply typed foundational network configuration'
+  default_prompt: 'Use $enterprise-configuration to compile and apply this approved foundational network configuration.'

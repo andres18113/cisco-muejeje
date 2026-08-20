@@ -103,28 +103,28 @@ To stream topologies into a **running** Packet Tracer, also install this project
 
 Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.
 
-## Claude Code Skill (recommended)
+## Governed Skills (recommended)
 
-The repo ships a companion **Agent Skill** (`skill/SKILL.md`) that teaches the model the exact tool
-catalog, the discover→plan→validate→deploy workflow, and the precise Script-Engine API — so the AI
-drives the MCP from verified facts instead of guessing. Install it **globally** from the repo root:
+[`skills/manifest.json`](../skills/manifest.json) is the canonical inventory. Export a client
+projection from the cloned repo instead of installing the deprecated `skill/SKILL.md` companion.
+The exporter selects by lifecycle, audience, and distribution mode; normal operation excludes
+PLANNED Skills such as `network-autofix`.
 
 === "Linux / macOS / Git Bash"
 
     ```bash
-    mkdir -p ~/.claude/skills/packet-tracer
-    cp skill/SKILL.md ~/.claude/skills/packet-tracer/SKILL.md
+    python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
     ```
 
 === "Windows PowerShell"
 
     ```powershell
-    New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null
-    Copy-Item skill\SKILL.md "$HOME\.claude\skills\packet-tracer\SKILL.md"
+    python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
     ```
 
-Then run `/reload-skills` (or restart Claude Code) and confirm with `/skills`. Full details, including
-what it covers and a project-local alternative → **[Claude Code Skill](skill.md)**.
+The destination must not already exist; delete it after copying or use a fresh staging path for the
+next export. Do not merge it over older Skill directories; bounded replacement steps that preserve
+unrelated user Skills, plus Codex/OpenAI and portable examples → **[Governed Skills](skill.md)**.
 
 ## Transport modes
 

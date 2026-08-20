@@ -1,10 +1,15 @@
-# Redundancy reference
+# Redundancy decisions
 
-Model separately:
+Read this reference only when the request includes availability, failover, path diversity, or tolerated-failure requirements.
 
-- multiple links;
-- multiple paths;
-- multiple devices;
-- independent failure domains.
+Describe redundancy as an outcome:
 
-For every requirement record the tolerated failure, expected surviving path, recovery behavior and whether the failure is testable in Packet Tracer. Two links through one failed device are not independent redundancy.
+- the failure to tolerate;
+- the service or path that must remain available;
+- the expected recovery behavior;
+- the independent failure boundary;
+- whether the outcome can be tested with the available evidence.
+
+Separate link multiplicity, path diversity, device redundancy, and failure-domain independence. Duplicated links or devices do not by themselves prove a surviving independent path.
+
+Leave protocol-specific mechanisms to the Layer 2, first-hop redundancy, or IGP Skill selected for that reasoning step.
