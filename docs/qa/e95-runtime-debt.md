@@ -150,7 +150,7 @@ measured at run 6.
 | --- | --- | --- |
 | RIP routing-process observation | `protocol`, `version_send`, `version_recv`, `auto_summary`, `networks`, `passive_interfaces`, `source_device_name` all VERIFIED on both routers from a fresh `show ip protocols` | `CLOSED — aggregate VERIFIED`. |
 | RIP learned-route observation | `network`, `prefix_length`, `protocol`, `source_device_name` VERIFIED on both routers from a fresh `show ip route rip`; each router learned the far-side prefix across the serial WAN | `CLOSED — aggregate VERIFIED`. |
-| RIP end-to-end forwarding | measured live at run 10: fresh typed ping, session attributed, destination and protocol bound to the execution, `reachable = False` | `MEASURED — FAILED`. The capability blocker is closed by the R3 qualification; the claim ceiling now affects only `traffic_flow_id`. The cause of the negative is **not established**. |
+| RIP end-to-end forwarding | measured live at runs 12 and 13: fresh typed ping, session attributed, destination and protocol bound to the execution, `reachable = True` after a bounded convergence window; reproduced in the 41-device reference acceptance with one bounded measurement | `CLOSED — VERIFIED`. Superseded run 10's `MEASURED — FAILED`, whose cause **is** now established: the measurement was premature, not the path broken. See "Reconciliation" below. |
 
 What closed the first two rows is **execution provenance**, not a new IOS
 command. `show ip protocols` and `show ip route rip` still print no hostname.
@@ -160,7 +160,9 @@ that gets parsed is that device's. Requested-name substitution is refused by
 construction — a session owned by another device returns no output at all.
 
 The forwarding row was measured for the first time at run 10 and returned a
-negative. Both earlier blockers moved.
+negative. Both earlier blockers moved. The three numbered notes below record the
+run-10 state; the negative itself was superseded at runs 12-13 — see
+"Reconciliation — runs 11-13".
 
 **1 — capability evidence: CLOSED.** `2911:routing_behavior` is SUPPORTED from
 the R3 qualification (`../architecture/ripv2-runtime-qualification.md`), which
@@ -176,15 +178,49 @@ destination the executor reports dispatching and echo-confirming, and
 remains UNOBSERVABLE: it is the label the compiler attaches to the claim, read
 by no code, and no registered command can return it.
 
-**3 — new, and the current blocker.** `reachable` measured `False`. Every hop
-this stage can observe is verified — serial orientation, transit and routed L3,
-RIPv2 process, learned routes on both routers, endpoint ipv4 and netmask. The
-two it cannot observe are exactly the remaining ones: access-port VLAN
-membership (`TD-ACCESSPORT-READBACK-001`, OPEN) and the endpoint gateway, which
-is applied but has no PT getter. Neither can be confirmed or excluded, so **no
-cause is claimed**.
+**3 — at run 10, the then-current blocker.** `reachable` measured `False`. Every
+hop that stage could observe was verified — serial orientation, transit and
+routed L3, RIPv2 process, learned routes on both routers, endpoint ipv4 and
+netmask. The two it could not observe were access-port VLAN membership and the
+endpoint gateway, so at that point **no cause was claimed**.
 
 Evidence: `../architecture/stage-3a4-bounded-live-qualification.md`, "Run 10".
+
+### Reconciliation — runs 11-13, absorbed at Debt Checkpoint 3, 2026-08-20
+
+The paragraph above was left standing after the runs that superseded it, and
+CP3 absorbed it rather than closing E9.5 over a stale negative. **The cause of
+run 10's negative is established, and it was ours.** Run 11 read Packet Tracer's
+own simulation event list over the failing flow: the first echo was dropped
+because the next-hop IP was not yet in the ARP table, and in the same event list
+ARP then resolved and the following echo crossed. The path worked; the
+measurement was premature.
+
+Two product defects followed from that, both fixed:
+
+- reachability had **no bounded convergence window**, while every other
+  observation depending on a converging plane already had one
+  (`_observe_rip_route`, 45 s). It now re-reads under the same discipline —
+  it stops on *agreement*, not on a favourable answer, an unattributable window
+  aborts at once as UNOBSERVABLE, and nothing is ever redispatched;
+- `traffic_flow_id` was accounted as a device property, so it rendered
+  UNOBSERVABLE on every reachability observation and one UNOBSERVABLE turned
+  the aggregate PARTIAL — E9 could never reach VERIFIED regardless of the
+  network. It moved to `source_traffic_flow_id`. The claim did not narrow.
+
+```text
+run 12 / run 13   TYPED_FORWARDING = VERIFIED, reachable=True after 2 bounded
+                  measurements (run 13 reproduced it)
+reference         FORWARDING = VERIFIED, reachable=True, 1 bounded measurement,
+                  41 devices / 41 links
+```
+
+`traffic_flow_id` remains UNOBSERVABLE as a *device* property — that part of the
+run-10 ceiling stands. `TD-ACCESSPORT-READBACK-001`, recorded as OPEN in run
+10's own exit record, is **RESOLVED**; access-port VLAN membership is no longer a suspect, because run
+11's trace observed that segment carrying traffic. The endpoint gateway remains
+UNOBSERVABLE, and forwarding verifying end to end promotes neither it nor
+access-port DHCP state.
 
 ## OSPF observation ceiling — recorded 2026-08-17
 
@@ -202,3 +238,102 @@ Do not promote either row on the strength of the narrowing itself. Only a live
 run producing new registered evidence can move them, and neither `router_id`
 nor `wildcard`/`segment_id` is obtainable from the currently registered queries
 at all.
+
+## Final E9.5 recommendation — Debt Checkpoint 3 (HARD), 2026-08-20
+
+```text
+CP3_HARD           = PASS
+E9_5               = CLOSED
+RECOMMENDATION     = NOT_START_E10
+UNKNOWN_ROWS       = 33   31 whose closure state is UNKNOWN, plus the residual
+                          UNKNOWN scopes on `Modules` (other modular models) and
+                          `Phone UI call adapter` (live call behavior), both of
+                          which carry a final closure classification otherwise
+ROWS_PROMOTED      = 0    of those 33
+ROWS_RECONCILED    = 1    `RIP end-to-end forwarding`, which was not among them
+```
+
+This is the recommendation the header of this file requires before E9.5 closes.
+Full reasoning: `../architecture/technical-debt.md`, "Debt Checkpoint 3 — HARD
+— result".
+
+**No row moved, and that is the finding rather than an absence of one.** Every
+row above was classified against the current typed contracts — what it claims,
+whether E9.5 claims it, whether an E9.5 product path depends on it, whether E10
+depends on it instead, and whether authentic evidence already exists that this
+register has not absorbed. Five promotions were proposed on the strength of the
+five live qualifications E9.5 ran; an adversarial pass refuted all five, in each
+case because the evidence measured a different claim, a different model or a
+different protocol than the row it was offered for. The `3560 SVI` row is the
+sharpest example: `svi_admin_state` and `svi_operational_state` were both
+observed, but both read `up`, so the state-collapse hazard the row exists to
+guard against was never exercised, and the evidence does not satisfy the
+required evidence packet above: no isolation fingerprint, no negative control
+and no post-probe fingerprint.
+
+**Dispositions.**
+
+```text
+BLOCKS_E9_5 ..............  0
+NO_E9_5_CLAIM_DEPENDS .... 29   no E9.5 claim asserts the property, and either
+                                no E9.5 path depends on the row or the path that
+                                does is fail-closed. Where a written ceiling
+                                exists it is cited on the row; most of these 29
+                                have none, and an absence of measurement is not
+                                a ceiling
+DEFERRED_TO_E10 ..........  2   EIGRP adjacency, EIGRP routes
+OUTSIDE_E9_5_CLAIM .......  2   HTTPS behavior, NTP sync — no E9.5 claim asserts
+                                HTTPS behavior or NTP synchronization. The
+                                replay matrix does reach `EnableHttpsService`
+                                and `ConfigureNtpService`, but claims only that
+                                the enable flag is set and read back, on a
+                                PAYLOAD_SHAPE_ONLY basis: activation is not
+                                behavior, and `ServiceApplicator` has no product
+                                caller
+```
+
+The 29 are **not** a count of rows with an explicit written ceiling. Only two
+explicit ceilings were measured for this checkpoint, both on backend
+limitations (TD-MODULE-SLOT-001, TD-TRANSPORT-001), and that narrow permission
+is not extended here to rows that are not backend limitations.
+
+**Why UNKNOWN is correct rather than outstanding.** E9.5 is a stabilization
+boundary for identity, deployment, evidence, mutation, verification and failure
+semantics. It declares itself not to be Packet Tracer evidence, and its gate
+discipline holds a runtime status at `UNKNOWN` until a controlled reproduction
+exists. These rows are that contract being honoured. An UNKNOWN invalidates an
+E9.5 claim only where E9.5 claims the property or an E9.5 path depends on it —
+and where a path does depend on one, `Bridge command-path health`, the gate is
+fail-closed: an unselectable transport refuses the operation instead of making a
+weaker claim.
+
+**Why the recommendation is not `START_E10`.** `EIGRP adjacency` and `EIGRP
+routes` remain UNKNOWN after bounded investigation, and E10 depends on them: E10
+owns protocol redistribution, redistribution verification reads routes learned
+by a source protocol, and E9 places overlapping routing domains outside its
+scope. The rule stated above in "Update discipline" is therefore applied
+literally. This gates E10's start; it does not hold E9.5 open, because
+qualifying EIGRP is unstarted work belonging to the milestone that needs it
+rather than an unresolved E9.5 defect.
+
+**Unchanged by this checkpoint**, and stated so that a later reader does not
+read closure as coverage: `ACCESS_PORT` is observable only for the fields listed
+in TD-ACCESSPORT-READBACK-001 and `DHCP_POOL` is untouched; `ENDPOINT_GATEWAY`
+remains UNOBSERVABLE; `MODULE_IDENTITY` and `MODULE_PLACEMENT` remain the
+TD-MODULE-SLOT-001 backend ceiling; `CONFIGURATION_FULLY_VERIFIED = NO`;
+`traffic_flow_id` remains UNOBSERVABLE as a device property; and capability
+evidence remains machine-local and gitignored, so a fresh checkout resolves
+every capability UNKNOWN and refuses the same plan, fail-closed.
+
+**`OSPF failover` and `OSPF recovery` remain UNKNOWN and E9 scope.** They are
+named here explicitly because Debt Checkpoint 2 instructed that "no later
+milestone may treat it as discharged here", and CP3 is the last gate before
+E9.5 closes. CP3 did not advance them, does not discharge them, and counts them
+among the rows no E9.5 claim rests on — not among rows anything established.
+
+**One row was reconciled rather than closed over.** `RIP end-to-end forwarding`
+was still recorded as `MEASURED — FAILED` from run 10 while runs 12, 13 and the
+reference acceptance had measured `reachable = True`. CP3 absorbed that
+evidence — see "Reconciliation — runs 11-13" above. It was found by adversarial
+review of this checkpoint's own diff, after the checkpoint had refused five
+promotions for want of evidence and missed the one row where evidence existed.

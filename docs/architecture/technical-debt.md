@@ -223,6 +223,250 @@ was **not** discharged here. It remains E9 scope and UNKNOWN in
 criterion touched at this checkpoint was satisfiable from persisted evidence,
 and rerunning the acceptance to improve wording was explicitly out of scope.
 
+
+---
+
+# Debt Checkpoint 3 — HARD — result, 2026-08-20
+
+```text
+DEBT_CHECKPOINT_3   = PASS
+E9_5                = CLOSED
+NEXT                = NOT_START_E10 — see "The E10 recommendation" below
+```
+
+Ran on `feature/runtime-ripv2` at `bb7810f`, worktree clean, regression
+2417 passed / 3 pre-existing warnings. No live Packet Tracer run was performed
+and none was required: every criterion below was decidable from the current
+typed contracts, the ledger's own recorded evidence, and the runtime register.
+The 41-device reference acceptance was **not** re-run — no source changed here.
+
+## The four requirements, measured
+
+```text
+P0 open debt ............................................. 0
+P1 correctness/evidence debt affecting E9.5 claims ....... 0
+UNKNOWN states that invalidate final E9.5 claims ......... 0
+debt that blocks E10 (ledger entries) .................... 0
+   ...but 2 non-debt UNKNOWN register rows gate E10's start
+   (EIGRP adjacency, EIGRP routes) — see "The E10 recommendation"
+backend limitations, containment + ceiling explicit ...... 2 of 2
+```
+
+**Clause 4 is measured over `## TD-` ledger entries, and that scope is declared
+rather than assumed — including the part that is genuinely arguable.** The word
+"debt" is not unambiguous here: this ledger's entries are debt, and so is every
+row of a file titled *E9.5 runtime debt register*. Reading clause 4 the second
+way, two EIGRP rows gate E10's start, clause 4 is not 0, and E9.5 could not
+close. That reading is not dismissed by definition; it is answered by the
+register's own Update discipline, which prescribes exactly one consequence for
+an UNKNOWN row E10 depends on — the final recommendation must not be
+`START_E10` — and pointedly does not prescribe holding E9.5 open. Had the
+register meant an E10-dependent UNKNOWN to block E9.5's closure, that is where
+it would say so.
+
+So clause 4 is reported over ledger entries, the two register rows are disclosed
+on the same line rather than netted out of it, and the recommendation carries the
+consequence the register does prescribe. What this checkpoint does **not** claim
+is that nothing stands between the project and E10.
+
+**P0 and P1.** Of the 19 `## TD-` entries, exactly three are not RESOLVED:
+TD-MODULE-SLOT-001 (BACKEND_LIMITATION), TD-TRANSPORT-001
+(BACKEND_LIMITATION) and TD-PUBLIC-001 (P2, DEFERRED_TO_DECLARED_MILESTONE).
+There is no open P0 and no open P1. The single P0 the ledger ever carried,
+TD-CAPABILITY-001, is RESOLVED.
+
+**Backend limitations.** Both remaining limitations satisfy the rule that one
+may remain *only* when its containment and claim ceiling are explicit, and both
+are explicit in writing rather than by implication:
+
+- **TD-MODULE-SLOT-001** — containment is structural, not asserted: the verdict
+  is a `@computed_field` that cannot be assigned, so no caller and no test
+  double can declare success (`physical_deployment.py:252-262`), and
+  `deploy_enterprise_topology.py:678-683` refuses unless the port effect is
+  VERIFIED. Ceiling: "any claim that a module was installed in a specific slot",
+  with `EXACT_MODULE_IDENTITY` and `EXACT_MODULE_PLACEMENT` recorded
+  UNOBSERVABLE.
+- **TD-TRANSPORT-001** — containment is the per-family matrix, and it is
+  *derived* by an AST sweep over the whole package rather than hand-maintained,
+  so a new mutation family breaks the suite instead of inheriting a containment
+  nobody checked. Ceiling per family, plus the global "What this does not
+  claim": exactly-once and at-most-once remain unproven, and branch B "makes
+  every claim built on it no stronger than the transport can support".
+
+**TD-PUBLIC-001 does not block E10**, and the reason is scope rather than
+severity: E10 is BGP, IPv6 routing, redistribution, route maps, tagging/loop
+prevention and dual-stack path verification, none of which has a public-facade
+prerequisite. Its deadline is the separate Skills/public-facade phase, which
+CP2 recorded as not establishable from the repository — so it is treated as not
+passed, not as quietly satisfied. Its P2 severity is *not* the argument:
+clauses 3 and 4 carry no severity qualifier, and a P2 that blocked E10 would
+still cross clause 4.
+
+## The UNKNOWN rows — the part that needed judgement
+
+The runtime register carries **33 rows with an open UNKNOWN**: 31 whose closure
+state is UNKNOWN, plus the residual UNKNOWN scopes on `Modules` (other modular
+models) and `Phone UI call adapter` (live call behavior), which carry a final
+closure classification in every other respect. Each was classified against
+the *current typed contracts*, not against model names or historical prose,
+asking what the row claims, whether E9.5 claims it, whether an E9.5 product path
+depends on it, whether E10 depends on it instead, and whether authentic evidence
+already exists that the register has not absorbed.
+
+```text
+BLOCKS_E9_5 ..............  0
+NO_E9_5_CLAIM_DEPENDS .... 29   no E9.5 claim asserts the property, and either
+                                no E9.5 path depends on the row or the path that
+                                does is fail-closed
+DEFERRED_TO_E10 ..........  2   EIGRP adjacency, EIGRP routes
+OUTSIDE_E9_5_CLAIM .......  2   HTTPS behavior, NTP sync
+RECONCILED ...............  0   of these 33; separately, one row outside this
+                                set was reconciled — see "What review caught"
+                           ---
+                            33
+```
+
+**Why zero rows moved, which is the honest outcome rather than the convenient
+one.** Five reconciliations were proposed on the strength of the five live
+qualifications E9.5 ran, and an adversarial pass refuted **all five**:
+
+- **3560 SVI.** The governed 3560-24PS discovery did record
+  `svi_address_readback = observed` with `svi_admin_state` and
+  `svi_operational_state` as separate fields. But both read `up`, so the
+  collapse hazard this row exists to guard against is unexercised; the quoted
+  block comes from the run whose overall result was `multilayer_intervlan =
+  UNKNOWN`; and the evidence does not satisfy the required evidence packet — no
+  isolation fingerprint, no negative control, no post-probe fingerprint. Promoting it would have
+  substituted source policy for observation.
+- **Modules, other models.** No modular model other than 2911/HWIC-2T was
+  exercised at all, and on that one only the port *effect* was verified — exact
+  module identity remained UNOBSERVABLE there too.
+- **Direct low-level link creation.** The reference acceptance did exercise
+  `verify_exact_link_convergence` 41 times — but through the enterprise
+  deployment path. `pt_add_link`'s own tool surface was never on that path, and
+  the run's own record states `RAW_IOS_OR_JS_USED = NONE on the product path`.
+- **DHCP DNS getter** and **EIGRP behavior.** Cited evidence measured a
+  different claim, and in the EIGRP case a different protocol.
+
+That refusal is the register's own rule applied to ourselves: *exact static NAT
+evidence does not close dynamic NAT*, and a probe having run is not the row's
+claim having been observed.
+
+**The security replay promoted nothing, and says so.** TD-SECURITY-001 measured
+ACL replay safety and behavioural enforcement on a 1941 and explicitly records
+that `show ip nat statistics` does not reveal the installed translation on this
+build: "Nothing here promotes the NAT translation rows." Static NAT, Dynamic
+NAT, port-security violation, DAI, 2811 security and 3560 security are all
+untouched by it; no 2811 or 3560 security probe exists in source at all.
+
+**The closest row to a blocker, and why it is not one.** *Bridge command-path
+health* is genuinely depended on by four mutating MCP tools, which call
+`_operation_transport_selection(require_command_path=True)`. The dependency is
+fail-closed: `TransportHealth.selectable` returns `command_path_responsive`
+once a probe was attempted, and an unselectable transport **refuses the
+operation** rather than producing a weaker claim. An UNKNOWN that causes a
+refusal cannot invalidate a claim; it prevents one.
+
+**Why UNKNOWN is the contractually correct state here.** E9.5 is a stabilization
+boundary that makes identity, deployment, evidence, mutation, verification and
+failure semantics explicit; it declares itself "not Packet Tracer evidence", and
+its gate discipline says that until a controlled reproduction exists "the runtime
+status remains `UNKNOWN` or pending in the debt register". These 33 rows are that
+contract being honoured, not that contract being violated.
+
+## The E10 recommendation
+
+**`NEXT = NOT_START_E10`.** Two rows E10 depends on remain UNKNOWN after bounded
+investigation: **EIGRP adjacency** and **EIGRP routes**. E10 owns protocol
+redistribution, redistribution verification reads routes learned by a source
+protocol, and E9 rejects overlapping routing domains as outside its scope — so
+E10 needs a second protocol's adjacency and route observability classified
+before it starts. The register's own rule is followed literally: a row that
+remains UNKNOWN and that E10 depends on means the final recommendation must not
+be `START_E10`.
+
+This does not hold E9.5 open, and the distinction is deliberate rather than
+convenient. Qualifying EIGRP is unstarted work belonging to the milestone that
+needs it, not an unresolved E9.5 defect; there is no ledger entry for it because
+nothing is broken. E10's own entry gate is separate and unchanged: it starts
+only once every runtime capability it depends on carries a precise
+classification backed by the required evidence.
+
+**CP2 is not the authority for this, and citing it as precedent would be a
+borrowed permission.** CP2 did close while OSPF failover and recovery remained
+UNKNOWN and E9 scope — but CP2 carries a *When* and a *Purpose* and no
+requirement clauses at all. It is the only checkpoint with nothing those
+UNKNOWNs could breach, so its closing proves nothing about a HARD gate whose
+clauses are numeric zeroes. The argument here rests on the register's own Update
+discipline rule, which prescribes `NOT_START_E10` and nothing further.
+
+CP2's instruction about those two rows is honoured rather than inherited: it
+said that they remain E9 scope and that "no later milestone may treat it as
+discharged here". CP3 is the last gate before E9.5 closes, so `OSPF failover`
+and `OSPF recovery` are named explicitly in the register's "Unchanged by this
+checkpoint" list. They are counted among the rows no E9.5 claim depends on —
+never among rows anything established.
+
+## Recorded, not acted on
+
+Two prose drifts were found where a document describes a basis the current typed
+contract no longer uses. Neither inflates a claim — in both cases the typed
+contract is the stricter of the two — so neither was changed here:
+
+- `e95-stabilization.md` still lists module-tree evidence as part of what
+  verifies the physical module effect; branch B dropped the module-tree read
+  from the gate, and `module_tree_observed` survives only as recorded evidence;
+- TD-TRANSPORT-001's `Blocks now` field is still phrased around RIPv2
+  qualification rather than E9.5 closure.
+
+One conflict **was** corrected, in `docs/qa/capability-probes.md`, because it
+would misdirect a future measurement rather than merely read oddly: the
+2026-08-02 baseline states that 3560 IPv4 read-back fails even on an isolated
+temporary device, and the 2026-08-19 governed run observed the opposite on the
+same build. The later observation is recorded there as superseding, and it does
+**not** move the register's `3560 SVI` row, which is a different claim.
+
+## What review caught, and it was the thing this checkpoint existed to find
+
+An adversarial review of this checkpoint's own diff found a stale negative that
+the checkpoint had walked straight past — and it was a row where authentic
+evidence existed, which is the exact condition CP3's method is written to
+detect. `RIP end-to-end forwarding` still read `MEASURED — FAILED` from run 10,
+"the cause of the negative is **not established**", while runs 12 and 13 and the
+41-device reference acceptance had all measured `reachable = True`, and run 11
+had established the cause. This checkpoint refused five promotions for want of
+evidence and then re-published that stale negative in the very paragraph written
+so a later reader would not read closure as coverage.
+
+It is now reconciled in the register under "Reconciliation — runs 11-13". The
+cause was ours, not the network's: reachability was measured once, with no
+bounded convergence window, on a plane that had not converged — Packet Tracer's
+own event list showed the first echo dropped for an unresolved ARP entry and the
+next one crossing. Both that and the `traffic_flow_id` accounting defect were
+fixed in product code before MEG-4 passed.
+
+Recorded plainly because the failure mode matters more than the fix: a
+checkpoint that only scrutinises what it is asked to promote will miss what it
+should have promoted.
+
+**And the count is stated honestly, because understating it here would repeat
+the same fault.** The review raised **eleven** findings against this
+checkpoint's own diff, not one. Ten besides the stale negative were corrected in
+this same commit: an imprecise row count (33 conflated UNKNOWN-state rows with
+residual UNKNOWN scopes); a disposition label asserting an explicit ceiling that
+most of its 29 members do not have; an undeclared scope on clause 4; a borrowed
+CP2 precedent; three stale or unverifiable fields in `handoff.md` (a placeholder
+where a commit belongs, three entries listed OPEN that are RESOLVED, and a
+supersession pointer aimed at the wrong section); a misattributed capability-probe
+provenance in `capability-probes.md`; wording that implied module identity had
+been observed on 2911/HWIC-2T; and an invalid severity argument for why
+TD-PUBLIC-001 does not block E10. A second review pass then caught that the CP2
+precedent had been withdrawn in this ledger but left standing in `handoff.md`,
+and that clause 4's first justification was self-refuting. Both were fixed.
+
+**Not done, deliberately:** Stage 3A4 was not reopened, 41/41 was not re-run, no
+live qualification was performed, no Skills file was touched, and E10 was not
+entered.
 ---
 
 # Documentation limitation

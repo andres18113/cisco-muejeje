@@ -82,6 +82,26 @@ convergencia de lectura posterior a una mutacion. El 3560 L3 no se promovio:
 el read-back de IPv4 falla incluso en un temporal aislado, por lo que requiere
 investigacion del runtime antes de habilitar el gate jerarquico.
 
+**Superado en ese punto concreto — 2026-08-19, mismo build `9.0.1.0858`.** La
+frase anterior queda como registro de lo observado el 2026-08-02, pero ya no
+describe el comportamiento medido: la **primera** corrida de capability
+discovery gobernada sobre `3560-24PS` del cierre de `TD-HARDWARE-001` configuró
+dos SVIs en un temporal y las leyó de vuelta con
+`svi_address_readback = observed`, es decir la IPv4 leída coincidió con el
+gateway configurado en ambas.
+
+La atribución importa: el resultado global de esa misma corrida fue
+`multilayer_intervlan = UNKNOWN`, y la re-corrida posterior que sí cerró la
+entrada no registra valores de campo SVI. Lo medido es el read-back de IPv4;
+no repetir aquí la investigación de un fallo que esa medición no reproduce,
+pero tampoco citar la corrida de cierre como fuente de este dato.
+
+Esto **no** promueve la fila `3560 SVI` de `e95-runtime-debt.md`, que es otra
+afirmación: esa fila exige que el estado administrativo y el line protocol se
+mantengan separados, y ambos se leyeron `up`, sin control negativo que
+distinguiera un `admin up / protocol down`. El read-back de IPv4 está medido;
+la separación de esos dos estados no.
+
 La validación del 2026-08-02 sobre Packet Tracer `9.0.1.0858` produjo el
 snapshot `db16439e39bbea0b06cd9ff945e2fa25f53c13469034625c531875be33fa5ee8`.
 La sesión `probe-829e47044f34` terminó `clean`: cuatro dispositivos temporales
