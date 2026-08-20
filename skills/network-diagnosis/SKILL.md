@@ -1,6 +1,6 @@
 ---
 name: network-diagnosis
-description: Explica una falla de red mediante razonamiento causal sustentado en evidencia fresca y sin mutaciones; no usar para certificar readiness ni ejecutar correcciones.
+description: Explica una falla de red mediante razonamiento causal sustentado en evidencia fresca y sin mutaciones; no usar para certificar readiness, ejecutar correcciones ni investigar registro o llamadas de voz, que pertenecen a enterprise-voice.
 ---
 
 # Network Diagnosis

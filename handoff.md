@@ -1,5 +1,26 @@
 # Handoff — E9.5 canonicalization audit
 
+## Skills governance restructuring closure — 2026-08-20
+
+Phase 4 now has authenticated fresh-client evidence. The deterministic NEW
+projection passed all 26 representative scenarios after one ordinary
+voice-versus-diagnosis routing defect was fixed and rerun. The 10-case OLD
+comparison passed 8/10: it rejected governed RIPv2 ownership in one case and
+activated the legacy network-autofix workflow in another. The durable evidence
+record is docs/architecture/skills-governance-phase4-closure.md.
+
+~~~text
+SKILLS_GOVERNANCE_RESTRUCTURING = CLOSED
+BEHAVIORAL_VALIDATION            = PASS / 26 OF 26
+E9_5                             = OPEN / UNCHANGED
+CP3_HARD                         = FAIL / UNCHANGED / GOVERNED BELOW
+E10                              = NOT_STARTABLE
+~~~
+
+This later Skills closure supersedes only the earlier statement that the
+restructuring was ready but not entered. It does not rewrite the E9.5/CP3
+evidence below, start E10, or change Packet Tracer product/runtime behavior.
+
 ## Canonical audit result — 2026-08-20
 
 This section supersedes the recorded CP3 closure below. The literal CP3-HARD

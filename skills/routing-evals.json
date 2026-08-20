@@ -211,6 +211,14 @@
       ]
     },
     {
+      "intent": "A phone that should follow the approved voice plan failed to register; isolate its voice-specific prerequisite using current observations.",
+      "expected_primary": "enterprise-voice",
+      "excluded_primaries": [
+        "enterprise-services",
+        "network-diagnosis"
+      ]
+    },
+    {
       "intent": "Define and verify an ACL policy with both permitted and denied traffic evidence.",
       "expected_primary": "enterprise-security",
       "excluded_primaries": [

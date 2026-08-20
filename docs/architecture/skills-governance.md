@@ -282,6 +282,20 @@ context measurements. The legacy no-subcommand invocation still validates.
 Those checks prove structure and consistency, not semantic routing quality or
 current runtime capability.
 
+## Phase 4 behavioral closure
+
+The Skills governance restructuring is closed. Authenticated fresh-client
+evidence, the 26-scenario NEW matrix, the bounded OLD comparison, the one
+ordinary routing defect and its successful rerun, token/context observations,
+process-ownership evidence, validation results, and claim limits are recorded
+in
+[the Phase 4 behavioral closure](skills-governance-phase4-closure.md).
+
+This closure establishes semantic routing behavior for the governed Skill
+projection. It does not establish Packet Tracer runtime capability, alter an
+evidence ceiling, close E9.5, change the governed CP3-HARD result, or make E10
+startable.
+
 ## Migration safety
 
 No rename, merge, split, deprecation, or deletion is justified by a Phase-1

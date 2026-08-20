@@ -1,6 +1,6 @@
 ---
 name: enterprise-voice
-description: Plan or assess enterprise IP telephony in Packet Tracer, including voice access intent, bootstrap, registration, call control, and call evidence. Use enterprise-services for non-voice services and enterprise-configuration for foundational VLAN or interface mechanics.
+description: Plan, verify, or troubleshoot enterprise IP telephony in Packet Tracer, including failed phone registration, voice access intent, bootstrap, call control, and call evidence. Use enterprise-services for non-voice services and enterprise-configuration for foundational VLAN or interface mechanics.
 ---
 
 # Enterprise Voice

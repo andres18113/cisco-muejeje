@@ -35,6 +35,32 @@ def test_canonical_skill_governance_is_valid() -> None:
     assert all(metric.body_characters > 0 for metric in report.metrics)
 
 
+def test_voice_registration_failure_stays_with_voice_owner() -> None:
+    routing_cases = json.loads(
+        (REPO_ROOT / "skills" / "routing-evals.json").read_text(encoding="utf-8")
+    )["cases"]
+    regression = next(
+        case
+        for case in routing_cases
+        if case["intent"].startswith("A phone that should follow the approved voice plan")
+    )
+    voice = parse_skill_text(
+        (REPO_ROOT / "skills" / "enterprise-voice" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+    )
+    diagnosis = parse_skill_text(
+        (REPO_ROOT / "skills" / "network-diagnosis" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert regression["expected_primary"] == "enterprise-voice"
+    assert "network-diagnosis" in regression["excluded_primaries"]
+    assert "failed phone registration" in voice.description.lower()
+    assert "enterprise-voice" in diagnosis.description
+
+
 @pytest.mark.parametrize(
     ("mutate", "expected"),
     [
