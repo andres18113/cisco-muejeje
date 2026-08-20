@@ -6,6 +6,11 @@ SKILL.md with responsibility, workflow, rules, evidence/readiness,
 stop-conditions and completion semantics. Detailed procedures live in the
 direct references directory of the Skill that owns them.
 
+This page describes the architecture of the current canonical 17-Skill set.
+[`skills-governance.md`](skills-governance.md) owns Skill governance,
+precedence, lifecycle, and routing rules; this architecture page does not
+redefine them.
+
 ## Activation model
 
 The orchestrator is loaded for end-to-end enterprise requests. It selects
