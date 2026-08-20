@@ -1,0 +1,575 @@
+{
+  "schema_version": 1,
+  "canonical_root": "skills",
+  "skills": [
+    {
+      "id": "campus-layer2",
+      "path": "skills/campus-layer2/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "campus Layer 2 resilience",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/control_plane.py",
+          "symbol": "StpIntent"
+        },
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/control_plane.py",
+          "symbol": "EtherChannelIntent"
+        },
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/control_plane_compiler.py",
+          "symbol": "ControlPlaneCompiler"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "enterprise-configuration",
+          "packet-tracer-runtime"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "enterprise-configuration",
+      "path": "skills/enterprise-configuration/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "typed foundational configuration mechanics",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/configuration_compiler.py",
+          "symbol": "ConfigurationCompiler"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/apply_configuration.py",
+          "symbol": "ConfigurationApplicator"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/execution/enterprise_configuration_runtime.py",
+          "symbol": "PacketTracerEnterpriseConfigurationRuntime"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "packet-tracer-runtime"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "enterprise-hardware",
+      "path": "skills/enterprise-hardware/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "operation",
+      "primary_responsibility": "enterprise hardware selection",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/hardware_planner.py",
+          "symbol": "HardwarePlanner"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/plan_enterprise_hardware.py",
+          "symbol": "plan_enterprise_hardware"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "packet-tracer-capabilities"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "enterprise-ipam-capacity",
+      "path": "skills/enterprise-ipam-capacity/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "operation",
+      "primary_responsibility": "enterprise addressing and capacity demand",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/ipam_planner.py",
+          "symbol": "IPAMPlanner"
+        },
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/address_reconciler.py",
+          "symbol": "AddressReconciler"
+        },
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/capacity_planner.py",
+          "symbol": "CapacityPlanner"
+        }
+      ],
+      "supporter_sets": [],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "enterprise-network-design",
+      "path": "skills/enterprise-network-design/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "operation",
+      "primary_responsibility": "logical enterprise network design",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/enterprise_designer.py",
+          "symbol": "EnterpriseDesigner"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/compose_enterprise_reference.py",
+          "symbol": "compose_enterprise_reference"
+        }
+      ],
+      "supporter_sets": [],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "enterprise-orchestrator",
+      "path": "skills/enterprise-orchestrator/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "multi-domain enterprise workflow orchestration",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/compose_enterprise_reference.py",
+          "symbol": "compose_enterprise_reference"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/execute_enterprise_reference.py",
+          "symbol": "execute_enterprise_reference"
+        }
+      ],
+      "supporter_sets": [],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "enterprise-security",
+      "path": "skills/enterprise-security/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "enterprise security policy and enforcement",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/security_plan.py",
+          "symbol": "SecurityPlan"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/apply_security.py",
+          "symbol": "SecurityApplicator"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/execution/enterprise_security_runtime.py",
+          "symbol": "PacketTracerEnterpriseSecurityRuntime"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "enterprise-configuration",
+          "packet-tracer-runtime"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "enterprise-services",
+      "path": "skills/enterprise-services/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "enterprise application services",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/service_plan.py",
+          "symbol": "ServicePlan"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/apply_services.py",
+          "symbol": "ServiceApplicator"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/execution/enterprise_service_runtime.py",
+          "symbol": "PacketTracerEnterpriseServiceRuntime"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "enterprise-configuration",
+          "packet-tracer-runtime"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "enterprise-voice",
+      "path": "skills/enterprise-voice/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "enterprise voice registration and calling",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/voice_plan.py",
+          "symbol": "VoicePlan"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/apply_voice.py",
+          "symbol": "VoiceApplicator"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/execution/enterprise_voice_runtime.py",
+          "symbol": "PacketTracerEnterpriseVoiceRuntime"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "enterprise-configuration",
+          "packet-tracer-runtime"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "first-hop-redundancy",
+      "path": "skills/first-hop-redundancy/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "first-hop gateway redundancy",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/control_plane.py",
+          "symbol": "FirstHopRedundancyIntent"
+        },
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/control_plane_compiler.py",
+          "symbol": "ControlPlaneCompiler"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/apply_control_plane.py",
+          "symbol": "ControlPlaneApplicator"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "enterprise-configuration",
+          "packet-tracer-runtime"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "network-acceptance",
+      "path": "skills/network-acceptance/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "enterprise network acceptance evaluation",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/execute_enterprise_reference.py",
+          "symbol": "EnterpriseExecutionResult"
+        },
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/execute_enterprise_reference.py",
+          "symbol": "execute_enterprise_reference"
+        },
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/control_plane_runtime.py",
+          "symbol": "ControlPlaneApplicationResult"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "packet-tracer-runtime",
+          "campus-layer2"
+        ],
+        [
+          "packet-tracer-runtime",
+          "enterprise-configuration"
+        ],
+        [
+          "packet-tracer-runtime",
+          "enterprise-security"
+        ],
+        [
+          "packet-tracer-runtime",
+          "enterprise-services"
+        ],
+        [
+          "packet-tracer-runtime",
+          "enterprise-voice"
+        ],
+        [
+          "packet-tracer-runtime",
+          "first-hop-redundancy"
+        ],
+        [
+          "packet-tracer-runtime",
+          "routing-igp"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "network-autofix",
+      "path": "skills/network-autofix/SKILL.md",
+      "lifecycle": "planned",
+      "consumer": "operation",
+      "primary_responsibility": "future governed live network remediation",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/services/auto_fixer.py",
+          "symbol": "fix_plan"
+        }
+      ],
+      "supporter_sets": [],
+      "distribution": {
+        "mode": "none",
+        "audiences": []
+      }
+    },
+    {
+      "id": "network-diagnosis",
+      "path": "skills/network-diagnosis/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "operation",
+      "primary_responsibility": "evidence-supported network diagnosis",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/execution/simulation_trace_runtime.py",
+          "symbol": "SimulationTraceRuntime"
+        },
+        {
+          "path": "src/packet_tracer_mcp/adapters/mcp/tool_registry.py",
+          "symbol": "register_tools"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "packet-tracer-runtime",
+          "campus-layer2"
+        ],
+        [
+          "packet-tracer-runtime",
+          "enterprise-configuration"
+        ],
+        [
+          "packet-tracer-runtime",
+          "enterprise-security"
+        ],
+        [
+          "packet-tracer-runtime",
+          "enterprise-services"
+        ],
+        [
+          "packet-tracer-runtime",
+          "enterprise-voice"
+        ],
+        [
+          "packet-tracer-runtime",
+          "first-hop-redundancy"
+        ],
+        [
+          "packet-tracer-runtime",
+          "routing-igp"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "packet-tracer-capabilities",
+      "path": "skills/packet-tracer-capabilities/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "Packet Tracer capability evidence resolution",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/application/use_cases/capability_discovery.py",
+          "symbol": "CapabilityDiscoveryService"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/persistence/capability_snapshot_store.py",
+          "symbol": "CapabilitySnapshotStore"
+        },
+        {
+          "path": "src/packet_tracer_mcp/adapters/mcp/tool_registry.py",
+          "symbol": "register_tools"
+        }
+      ],
+      "supporter_sets": [],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "packet-tracer-layout",
+      "path": "skills/packet-tracer-layout/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "operation",
+      "primary_responsibility": "semantic-preserving Packet Tracer layout",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/layout_planner.py",
+          "symbol": "LayoutPlanner"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/execution/topology_observation.py",
+          "symbol": "LayoutApplicationEvidence"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "packet-tracer-runtime"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "packet-tracer-runtime",
+      "path": "skills/packet-tracer-runtime/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "controlled live Packet Tracer operation",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/deployment.py",
+          "symbol": "DeploymentManifest"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/execution/enterprise_configuration_runtime.py",
+          "symbol": "PacketTracerEnterpriseConfigurationRuntime"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/persistence/deployment_manifest_store.py",
+          "symbol": "DeploymentManifestStore"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "packet-tracer-capabilities"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    },
+    {
+      "id": "routing-igp",
+      "path": "skills/routing-igp/SKILL.md",
+      "lifecycle": "active",
+      "consumer": "both",
+      "primary_responsibility": "enterprise IPv4 interior gateway routing",
+      "source_anchors": [
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/control_plane.py",
+          "symbol": "DynamicRoutingIntent"
+        },
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/models/control_plane.py",
+          "symbol": "ConfigureRipv2"
+        },
+        {
+          "path": "src/packet_tracer_mcp/domain/enterprise/services/control_plane_compiler.py",
+          "symbol": "ControlPlaneCompiler"
+        },
+        {
+          "path": "src/packet_tracer_mcp/infrastructure/execution/enterprise_control_plane_runtime.py",
+          "symbol": "PacketTracerEnterpriseControlPlaneRuntime"
+        },
+        {
+          "path": "tests/test_typed_ripv2_control_plane.py",
+          "symbol": "test_compiler_emits_a_typed_ripv2_action_per_router"
+        }
+      ],
+      "supporter_sets": [
+        [
+          "enterprise-configuration",
+          "packet-tracer-runtime"
+        ]
+      ],
+      "distribution": {
+        "mode": "normal",
+        "audiences": [
+          "development",
+          "operation"
+        ]
+      }
+    }
+  ]
+}

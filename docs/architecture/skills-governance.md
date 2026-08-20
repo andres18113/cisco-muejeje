@@ -3,9 +3,9 @@
 This document is the canonical project-governance contract for repository
 Skills. It governs authority, precedence, lifecycle, ownership, routing,
 progressive disclosure, distribution, client adapters, drift, future
-verification, and migration safety. It does not assign lifecycle states to the
-current Skills, define a machine-readable governance manifest, or change the
-portable Agent Skill format.
+verification, and migration safety. Per-Skill lifecycle and ownership records
+live in the machine-readable inventory; this document remains their governing
+policy and does not change the portable Agent Skill format.
 
 ## Authority and truth
 
@@ -44,9 +44,9 @@ Three layers remain separate:
 
 Portable Skill semantics remain agent-neutral. Project governance must not be
 encoded as client-specific behavior, and a client adapter must not become a
-second source of project truth. This phase introduces no project-specific
-top-level `SKILL.md` frontmatter fields and does not define the future
-machine-readable manifest format.
+second source of project truth. Project-specific lifecycle, consumer,
+responsibility, source-anchor, support, and distribution records stay outside
+portable `SKILL.md` frontmatter.
 
 ## Canonical authority and precedence
 
@@ -60,6 +60,25 @@ Two independently maintained operational Skill authorities are invalid.
 Client-specific installations and compatibility artifacts may project or wrap
 the canonical logical inventory, but they cannot establish an independent
 operational authority.
+
+## Machine-readable inventory
+
+`skills/manifest.json` is the canonical machine-readable inventory. JSON keeps
+validation and distribution on the Python standard library; the project does
+not declare a YAML dependency. The manifest owns project governance only. It
+does not duplicate portable descriptions, capability matrices, runtime
+observations, tool catalogs, or Packet Tracer inventory facts.
+
+Each entry records canonical identity and path, lifecycle, consumer, one
+primary responsibility, stable source anchors, allowed same-step supporter
+sets, and distribution mode/audiences. Eligibility is derived from lifecycle,
+consumer, mode, and audience rather than stored as another mutable boolean.
+Each supporter set contains at most two Skills; multiple sets represent
+alternatives, not simultaneous recursive loading.
+
+`skills/routing-evals.json` preserves positive and near-miss routing cases for
+later behavioral evaluation. Fixture completeness is mechanically validated;
+the fixtures do not prove that a client will trigger a Skill correctly.
 
 ## Lifecycle
 
@@ -229,9 +248,9 @@ projection of portable Skill semantics and project governance.
 The more specific classes may refine a finding after evidence identifies its
 seam; they do not let Skill prose override current implementation.
 
-## Future verification contract
+## Verification contract
 
-Later automated governance must cover:
+Automated governance must cover:
 
 - portable format and frontmatter validity;
 - lifecycle validity;
@@ -248,8 +267,9 @@ Later automated governance must cover:
 - reference integrity;
 - visibility of context-cost regressions.
 
-This phase defines that verification contract but implements none of its
-checks.
+`python -m tools.skills_governance` implements deterministic repository checks
+and reports context metrics. Those checks prove structure and consistency, not
+semantic routing quality or current runtime capability.
 
 ## Migration safety
 

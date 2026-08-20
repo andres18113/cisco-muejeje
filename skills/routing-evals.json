@@ -1,0 +1,430 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "intent": "Plan and sequence a new campus that needs addressing, hardware, security, services, voice, redundancy, dynamic routing, deployment, and validation.",
+      "expected_primary": "enterprise-orchestrator",
+      "excluded_primaries": [
+        "enterprise-network-design",
+        "routing-igp",
+        "network-acceptance"
+      ]
+    },
+    {
+      "intent": "Coordinate the phased migration of an enterprise topology across design, capacity, configuration, domain services, and acceptance.",
+      "expected_primary": "enterprise-orchestrator",
+      "excluded_primaries": [
+        "enterprise-ipam-capacity",
+        "enterprise-configuration",
+        "enterprise-services"
+      ]
+    },
+    {
+      "intent": "Break a multi-domain branch rollout into owned work steps and define the handoffs between them.",
+      "expected_primary": "enterprise-orchestrator",
+      "excluded_primaries": [
+        "enterprise-hardware",
+        "enterprise-security",
+        "packet-tracer-runtime"
+      ]
+    },
+    {
+      "intent": "Define the logical site hierarchy, trust zones, and resilience objectives for a new campus.",
+      "expected_primary": "enterprise-network-design",
+      "excluded_primaries": [
+        "enterprise-orchestrator",
+        "enterprise-ipam-capacity",
+        "packet-tracer-layout"
+      ]
+    },
+    {
+      "intent": "Translate business connectivity requirements into a logical enterprise topology before assigning addresses or device models.",
+      "expected_primary": "enterprise-network-design",
+      "excluded_primaries": [
+        "enterprise-ipam-capacity",
+        "enterprise-hardware",
+        "packet-tracer-layout"
+      ]
+    },
+    {
+      "intent": "Review whether a proposed campus hierarchy and redundancy intent form a coherent logical design.",
+      "expected_primary": "enterprise-network-design",
+      "excluded_primaries": [
+        "enterprise-ipam-capacity",
+        "packet-tracer-layout",
+        "network-acceptance"
+      ]
+    },
+    {
+      "intent": "Allocate growth-aware IPv4 subnets and reservations for the floors and shared services.",
+      "expected_primary": "enterprise-ipam-capacity",
+      "excluded_primaries": [
+        "enterprise-network-design",
+        "enterprise-hardware"
+      ]
+    },
+    {
+      "intent": "Reconcile deployed IPv4 identities with a revised addressing plan while preserving valid assignments.",
+      "expected_primary": "enterprise-ipam-capacity",
+      "excluded_primaries": [
+        "enterprise-network-design",
+        "enterprise-hardware"
+      ]
+    },
+    {
+      "intent": "Calculate access ports, PoE demand, uplinks, and growth headroom before choosing hardware.",
+      "expected_primary": "enterprise-ipam-capacity",
+      "excluded_primaries": [
+        "enterprise-network-design",
+        "enterprise-hardware"
+      ]
+    },
+    {
+      "intent": "Select switch and router models that satisfy an approved port, PoE, uplink, and redundancy demand.",
+      "expected_primary": "enterprise-hardware",
+      "excluded_primaries": [
+        "enterprise-ipam-capacity",
+        "packet-tracer-capabilities"
+      ]
+    },
+    {
+      "intent": "Choose modules and interfaces for a hardware plan using the currently established capability evidence.",
+      "expected_primary": "enterprise-hardware",
+      "excluded_primaries": [
+        "enterprise-ipam-capacity",
+        "packet-tracer-capabilities"
+      ]
+    },
+    {
+      "intent": "Evaluate candidate device selections against the approved physical capacity requirements.",
+      "expected_primary": "enterprise-hardware",
+      "excluded_primaries": [
+        "enterprise-ipam-capacity",
+        "packet-tracer-capabilities"
+      ]
+    },
+    {
+      "intent": "Arrange the existing campus devices into a readable hierarchical layout without changing connectivity.",
+      "expected_primary": "packet-tracer-layout",
+      "excluded_primaries": [
+        "enterprise-network-design",
+        "packet-tracer-runtime"
+      ]
+    },
+    {
+      "intent": "Reposition already-defined devices deterministically while preserving topology semantics.",
+      "expected_primary": "packet-tracer-layout",
+      "excluded_primaries": [
+        "enterprise-network-design",
+        "packet-tracer-runtime"
+      ]
+    },
+    {
+      "intent": "Improve the visual placement of a deployed topology without adding tiers, links, or policies.",
+      "expected_primary": "packet-tracer-layout",
+      "excluded_primaries": [
+        "enterprise-network-design",
+        "packet-tracer-runtime"
+      ]
+    },
+    {
+      "intent": "Compile and apply an already-approved foundational configuration plan through typed actions.",
+      "expected_primary": "enterprise-configuration",
+      "excluded_primaries": [
+        "enterprise-security",
+        "enterprise-services",
+        "routing-igp"
+      ]
+    },
+    {
+      "intent": "Apply approved interface, VLAN, trunk, and addressing mechanics without redesigning domain policy.",
+      "expected_primary": "enterprise-configuration",
+      "excluded_primaries": [
+        "campus-layer2",
+        "enterprise-security",
+        "enterprise-voice"
+      ]
+    },
+    {
+      "intent": "Inspect why a typed foundational configuration action failed to apply or read back.",
+      "expected_primary": "enterprise-configuration",
+      "excluded_primaries": [
+        "packet-tracer-runtime",
+        "enterprise-services",
+        "first-hop-redundancy"
+      ]
+    },
+    {
+      "intent": "Correct an approved access-port configuration through the existing typed configuration workflow.",
+      "expected_primary": "enterprise-configuration",
+      "excluded_primaries": [
+        "network-autofix",
+        "network-diagnosis"
+      ]
+    },
+    {
+      "intent": "Define and verify DNS and NTP behavior for the enterprise services plan.",
+      "expected_primary": "enterprise-services",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "enterprise-voice"
+      ]
+    },
+    {
+      "intent": "Configure the approved HTTP, HTTPS, and TFTP service intent and collect service-specific evidence.",
+      "expected_primary": "enterprise-services",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "enterprise-voice"
+      ]
+    },
+    {
+      "intent": "Check whether enterprise clients can use the declared infrastructure services without testing phone calls.",
+      "expected_primary": "enterprise-services",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "enterprise-voice"
+      ]
+    },
+    {
+      "intent": "Provision the approved voice workflow and verify that phones register with call control.",
+      "expected_primary": "enterprise-voice",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "enterprise-services"
+      ]
+    },
+    {
+      "intent": "Collect evidence for an end-to-end call between registered enterprise phones.",
+      "expected_primary": "enterprise-voice",
+      "excluded_primaries": [
+        "enterprise-services",
+        "network-acceptance"
+      ]
+    },
+    {
+      "intent": "Investigate a failed phone registration using the voice plan and current voice observations.",
+      "expected_primary": "enterprise-voice",
+      "excluded_primaries": [
+        "enterprise-services",
+        "network-diagnosis"
+      ]
+    },
+    {
+      "intent": "Define and verify an ACL policy with both permitted and denied traffic evidence.",
+      "expected_primary": "enterprise-security",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "enterprise-orchestrator",
+        "network-acceptance"
+      ]
+    },
+    {
+      "intent": "Apply an approved NAT policy and evaluate its security-specific translation evidence.",
+      "expected_primary": "enterprise-security",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "network-acceptance"
+      ]
+    },
+    {
+      "intent": "Assess port-security or other layer-two enforcement for a specific security control.",
+      "expected_primary": "enterprise-security",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "network-acceptance"
+      ]
+    },
+    {
+      "intent": "Choose and verify the spanning-tree root and recovery behavior for the campus access layer.",
+      "expected_primary": "campus-layer2",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "first-hop-redundancy",
+        "routing-igp"
+      ]
+    },
+    {
+      "intent": "Validate EtherChannel membership, bundle state, and failover without changing ordinary trunk plumbing.",
+      "expected_primary": "campus-layer2",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "first-hop-redundancy",
+        "routing-igp"
+      ]
+    },
+    {
+      "intent": "Investigate a campus layer-two resilience failure using current STP and EtherChannel evidence.",
+      "expected_primary": "campus-layer2",
+      "excluded_primaries": [
+        "first-hop-redundancy",
+        "routing-igp",
+        "network-diagnosis"
+      ]
+    },
+    {
+      "intent": "Define the redundant default-gateway virtual IP and verify gateway role behavior.",
+      "expected_primary": "first-hop-redundancy",
+      "excluded_primaries": [
+        "campus-layer2",
+        "enterprise-configuration",
+        "routing-igp"
+      ]
+    },
+    {
+      "intent": "Test first-hop gateway failover and recovery for hosts that use the virtual gateway.",
+      "expected_primary": "first-hop-redundancy",
+      "excluded_primaries": [
+        "campus-layer2",
+        "routing-igp",
+        "network-acceptance"
+      ]
+    },
+    {
+      "intent": "Inspect current FHRP role and forwarding evidence without evaluating route exchange.",
+      "expected_primary": "first-hop-redundancy",
+      "excluded_primaries": [
+        "campus-layer2",
+        "packet-tracer-capabilities",
+        "routing-igp"
+      ]
+    },
+    {
+      "intent": "Configure typed RIPv2 intent and verify learned routes and forwarding behavior.",
+      "expected_primary": "routing-igp",
+      "excluded_primaries": [
+        "campus-layer2",
+        "enterprise-configuration",
+        "first-hop-redundancy"
+      ]
+    },
+    {
+      "intent": "Evaluate OSPFv2 adjacency and routing evidence for an approved control-plane design.",
+      "expected_primary": "routing-igp",
+      "excluded_primaries": [
+        "campus-layer2",
+        "first-hop-redundancy",
+        "packet-tracer-capabilities"
+      ]
+    },
+    {
+      "intent": "Investigate EIGRP route exchange while preserving UNKNOWN or UNOBSERVABLE evidence where current probes cannot decide.",
+      "expected_primary": "routing-igp",
+      "excluded_primaries": [
+        "campus-layer2",
+        "first-hop-redundancy",
+        "network-diagnosis"
+      ]
+    },
+    {
+      "intent": "Determine whether the current Packet Tracer environment supports the device feature needed by a proposed plan.",
+      "expected_primary": "packet-tracer-capabilities",
+      "excluded_primaries": [
+        "enterprise-hardware",
+        "packet-tracer-runtime"
+      ]
+    },
+    {
+      "intent": "Run an isolated capability probe and interpret UNKNOWN without treating it as unsupported.",
+      "expected_primary": "packet-tracer-capabilities",
+      "excluded_primaries": [
+        "enterprise-hardware",
+        "packet-tracer-runtime"
+      ]
+    },
+    {
+      "intent": "Resolve current protocol support from governed capability evidence before selecting an operational path.",
+      "expected_primary": "packet-tracer-capabilities",
+      "excluded_primaries": [
+        "enterprise-hardware",
+        "packet-tracer-runtime"
+      ]
+    },
+    {
+      "intent": "Deploy an approved topology into Packet Tracer and confirm fresh read-back before continuing.",
+      "expected_primary": "packet-tracer-runtime",
+      "excluded_primaries": [
+        "packet-tracer-capabilities",
+        "packet-tracer-layout"
+      ]
+    },
+    {
+      "intent": "Operate the controlled live lifecycle through readiness, convergence, observation, and cleanup.",
+      "expected_primary": "packet-tracer-runtime",
+      "excluded_primaries": [
+        "enterprise-orchestrator",
+        "packet-tracer-capabilities"
+      ]
+    },
+    {
+      "intent": "Query current device state and verify the observation is fresh without deciding domain policy.",
+      "expected_primary": "packet-tracer-runtime",
+      "excluded_primaries": [
+        "enterprise-configuration",
+        "packet-tracer-capabilities"
+      ]
+    },
+    {
+      "intent": "Evaluate whether the completed deployment satisfies its declared expectations using fresh governed evidence.",
+      "expected_primary": "network-acceptance",
+      "excluded_primaries": [
+        "enterprise-security",
+        "network-diagnosis"
+      ]
+    },
+    {
+      "intent": "Produce an acceptance verdict for the approved scenario without inferring that completion alone means verification.",
+      "expected_primary": "network-acceptance",
+      "excluded_primaries": [
+        "enterprise-security",
+        "network-diagnosis"
+      ]
+    },
+    {
+      "intent": "Check whether readiness, forwarding, services, security, and recovery evidence meet the deployment intent.",
+      "expected_primary": "network-acceptance",
+      "excluded_primaries": [
+        "enterprise-security",
+        "network-diagnosis"
+      ]
+    },
+    {
+      "intent": "Explain why a previously accepted connectivity expectation is now failing using the first evidence-supported causal invariant.",
+      "expected_primary": "network-diagnosis",
+      "excluded_primaries": [
+        "network-acceptance",
+        "network-autofix"
+      ]
+    },
+    {
+      "intent": "Trace a packet failure and identify the earliest supported cause without changing the topology.",
+      "expected_primary": "network-diagnosis",
+      "excluded_primaries": [
+        "network-acceptance",
+        "network-autofix"
+      ]
+    },
+    {
+      "intent": "Investigate a failed validation result with current observations while preserving unknown evidence states.",
+      "expected_primary": "network-diagnosis",
+      "excluded_primaries": [
+        "network-acceptance",
+        "network-autofix"
+      ]
+    },
+    {
+      "intent": "Run the current pt_fix_plan helper on a TopologyPlan with an invalid cable type or insufficient router ports.",
+      "expected_primary": null,
+      "excluded_primaries": [
+        "network-autofix"
+      ]
+    },
+    {
+      "intent": "Automatically diagnose and repair whatever is wrong in the live network, then roll back if the repair fails.",
+      "expected_primary": null,
+      "excluded_primaries": [
+        "network-autofix"
+      ]
+    }
+  ]
+}
