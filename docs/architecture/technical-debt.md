@@ -467,6 +467,41 @@ and that clause 4's first justification was self-refuting. Both were fixed.
 **Not done, deliberately:** Stage 3A4 was not reopened, 41/41 was not re-run, no
 live qualification was performed, no Skills file was touched, and E10 was not
 entered.
+
+## Canonicalization audit correction — 2026-08-20
+
+The CP3 result above is superseded. At `bb7810f`, the literal fourth
+requirement was `debt that blocks E10: 0`; it did not say `(ledger entries)`.
+The closure commit added that scope only after it found two UNKNOWN rows in the
+E9.5 runtime debt register — `EIGRP adjacency` and `EIGRP routes` — that gate
+E10's start. Calling them `non-debt UNKNOWN register rows` in that same commit
+does not establish a pre-existing contract scope.
+
+The runtime register's update discipline predates CP3-HARD and requires a final
+recommendation other than `START_E10` when E10 depends on an UNKNOWN row. The
+later CP3-HARD contract then requires zero debt blocking E10 before E9.5 may
+close. Both rules apply; the checkpoint cannot narrow the later clause while
+measuring it.
+
+```text
+CP3_E10_CLAUSE_SCOPE_PREEXISTED = NO
+DEBT_CHECKPOINT_3               = FAIL
+E9_5                            = OPEN
+CANONICAL_E9_5_BASELINE         = NOT_READY
+E10_BLOCKING_REGISTER_DEBT      = 2
+```
+
+The row audit remains useful and unchanged: 29 rows are
+`NO_E9_5_CLAIM_DEPENDS`, two are `OUTSIDE_E9_5_CLAIM`, and exactly two explicit
+claim ceilings exist, both on contained backend limitations. The 29 rows must
+not be relabeled `CEILING_ACCEPTED`.
+
+The next governed phase is Skills Governance / Restructuring, not E10
+implementation. TD-PUBLIC-001 is still
+`DEFERRED_TO_DECLARED_MILESTONE` with `RESOLVE_BEFORE: Skills/public MCP facade
+phase`; its closure criterion has not been satisfied, so the restructuring
+prerequisite is `BLOCKED_BY_TD_PUBLIC_001`.
+
 ---
 
 # Documentation limitation

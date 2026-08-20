@@ -337,3 +337,27 @@ reference acceptance had measured `reachable = True`. CP3 absorbed that
 evidence — see "Reconciliation — runs 11-13" above. It was found by adversarial
 review of this checkpoint's own diff, after the checkpoint had refused five
 promotions for want of evidence and missed the one row where evidence existed.
+
+## Canonicalization audit correction — 2026-08-20
+
+The `CP3_HARD = PASS` and `E9_5 = CLOSED` recommendation above is superseded.
+The literal CP3-HARD clause at its parent commit required `debt that blocks
+E10: 0`. The closure commit introduced `(ledger entries)` only after this
+register identified `EIGRP adjacency` and `EIGRP routes` as UNKNOWN debts that
+gate E10's start. That scope did not pre-exist the closure and cannot be added
+by the checkpoint being measured.
+
+```text
+CP3_E10_CLAUSE_SCOPE_PREEXISTED = NO
+CP3_HARD                        = FAIL
+E9_5                            = OPEN
+CANONICAL_E9_5_BASELINE         = NOT_READY
+UNKNOWN_DEBTS_BLOCKING_E10      = 2
+```
+
+The classifications remain exact: 29 rows are
+`NO_E9_5_CLAIM_DEPENDS`, not `CEILING_ACCEPTED`; two rows are
+`OUTSIDE_E9_5_CLAIM`; and the only two explicit ceiling rows are the contained
+backend limitations TD-MODULE-SLOT-001 and TD-TRANSPORT-001. E10 still requires
+fresh governed EIGRP adjacency and learned-route evidence with precise register
+classifications before it can start.
