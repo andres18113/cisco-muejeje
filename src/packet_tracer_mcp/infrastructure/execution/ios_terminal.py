@@ -426,6 +426,17 @@ _IOS_SYSLOG = re.compile(r"(?m)^\s*%[A-Z][A-Z0-9_]*-\d+-[A-Z0-9_]+\s*:")
 _IOS_ERROR = re.compile(r"(?m)^\s*%.*$")
 
 
+def is_ios_syslog(line: str) -> bool:
+    """`%FACILITY-severidad-MNEMONICO:` es ruido asincrono, no una respuesta.
+
+    Expuesto porque un consumidor que decide si ALGO respondio necesita la misma
+    definicion que usa el clasificador de rechazos. Reimplementarla mas debil
+    fue un defecto real: un `%LINEPROTO-5-UPDOWN` contado como respuesta
+    convierte dos silencios en una equivalencia.
+    """
+    return bool(_IOS_SYSLOG.match(line))
+
+
 def ios_rejection_reason(value: str) -> str | None:
     """Devuelve el texto del rechazo, o None si IOS no rechazo nada.
 

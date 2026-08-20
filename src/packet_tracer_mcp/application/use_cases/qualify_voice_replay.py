@@ -54,6 +54,9 @@ from ...infrastructure.execution.access_port_probe import DeviceObserverDiscover
 from ...infrastructure.execution.ios_terminal import (
     IosCommandResult,
     OperationalQueryId,
+    ios_rejection_reason,
+    is_ios_syslog,
+    normalize_terminal_output,
 )
 
 #: Prefijo reservado, con la misma intención que los demás desechables.
@@ -71,6 +74,11 @@ _OBSERVATION_QUERIES = (
     OperationalQueryId.SHOW_TELEPHONY_SERVICE,
     OperationalQueryId.SHOW_EPHONE,
 )
+
+#: Procesos medidos que existen en el dispositivo y NO dicen nada de telefonía.
+#: `VlanManager` expone `getVlan*` y nada más: enumerado en vivo sobre
+#: `9.0.1.0858`. La lista es de exclusiones MEDIDAS, no de conveniencia.
+_NOT_TELEPHONY_PROCESSES = frozenset({"vlanmanager"})
 
 
 class VoicePhysicalRuntime(Protocol):
@@ -112,17 +120,59 @@ class QueryObservation:
     failure_reason: str = ""
 
     @property
+    def rejection(self) -> str | None:
+        """El rechazo tal como lo escribió IOS, o `None` si no rechazó.
+
+        Delega en `ios_rejection_reason`, que este repositorio ya midió: no todo
+        rechazo dice "Invalid input" -- `%Duplex cannot be set to half...` es uno
+        con otra forma -- y el syslog que empieza por `%` no es un rechazo.
+        Buscar la subcadena "invalid input" a mano se equivocaba en los dos
+        sentidos a la vez.
+        """
+        return ios_rejection_reason(self.output)
+
+    @property
     def rejected_by_ios(self) -> bool:
-        """IOS dijo que el comando no existe. No es lo mismo que responder vacío."""
-        return "invalid input" in self.output.casefold()
+        """IOS rechazó el comando. No es lo mismo que responder vacío."""
+        return self.rejection is not None
+
+    @property
+    def answer_lines(self) -> tuple[str, ...]:
+        """Lo que es RESPUESTA: ni el eco, ni el prompt, ni el syslog.
+
+        El syslog es la razón por la que esto existe. El router se acaba de
+        crear y direccionar, así que `%LINEPROTO-5-UPDOWN` en la ventana del
+        comando es el caso ESPERADO; contarlo como respuesta convertía dos
+        silencios en `no_observable_difference`.
+
+        La primera línea se descarta como eco. Cuando la ventana no empieza en
+        el eco, eso descarta una línea de datos -- un error en la dirección
+        conservadora, que sólo puede empujar hacia `unobservable` y nunca hacia
+        una equivalencia inventada.
+        """
+        lines = normalize_terminal_output(self.output).splitlines()
+        return tuple(
+            stripped for line in lines[1:]
+            if (stripped := line.strip())
+            and not stripped.endswith("#")
+            and not is_ios_syslog(line)
+        )
 
     @property
     def answered_empty(self) -> bool:
-        body = [
-            line for line in self.output.splitlines()[1:]
-            if line.strip() and not line.strip().endswith("#")
-        ]
-        return self.executed and not body and not self.rejected_by_ios
+        return self.executed and not self.answer_lines and not self.rejected_by_ios
+
+    @property
+    def comparable_state(self) -> tuple:
+        """Todo lo que puede diferir entre pasadas, no sólo el texto.
+
+        `executed` y `failure_reason` entran porque "no pude mirar" no es "miré
+        y vi lo mismo", y comparar sólo la salida hacía que fueran iguales.
+        """
+        return (
+            self.query, self.executed, self.complete,
+            self.failure_reason, self.output,
+        )
 
 
 @dataclass(frozen=True)
@@ -137,14 +187,38 @@ class VoiceReplayPass:
 
     @property
     def observable_state(self) -> tuple:
-        """La huella de TODO lo observable, para comparar pasadas."""
+        """La huella de TODO lo observable, para comparar pasadas.
+
+        Incluye el despacho -- `applied` y `message` -- porque un
+        `%Error: cnf files already exist` en la segunda pasada ES el resultado
+        que esta deuda busca, y comparar sólo las consultas lo tiraba.
+        """
         return (
-            tuple((item.query, item.output) for item in self.queries),
+            self.applied,
+            self.message,
+            tuple(item.comparable_state for item in self.queries),
             () if self.discovery is None else (
                 self.discovery.device_class_name,
                 self.discovery.enumerated_members,
                 self.discovery.processes_present,
+                tuple(sorted(self.discovery.process_members.items())),
             ),
+        )
+
+    @property
+    def answering_processes(self) -> tuple[str, ...]:
+        """Procesos que existen Y exponen algo, salvo los medidos como ajenos.
+
+        Estar presente no es observar. `TftpServer` está en la lista de
+        candidatos: contarlo por su mero nombre, sin un solo miembro detrás,
+        hacía `unobservable` inalcanzable para cualquier backend que lo tenga.
+        """
+        if self.discovery is None:
+            return ()
+        return tuple(
+            name for name in self.discovery.processes_present
+            if name.casefold() not in _NOT_TELEPHONY_PROCESSES
+            and self.discovery.process_members.get(name)
         )
 
     @property
@@ -155,10 +229,7 @@ class VoiceReplayPass:
             for item in self.queries
         ):
             return True
-        return bool(self.discovery and self.discovery.processes_present and any(
-            name.casefold() != "vlanmanager"
-            for name in self.discovery.processes_present
-        ))
+        return bool(self.answering_processes)
 
 
 @dataclass(frozen=True)
@@ -189,7 +260,10 @@ class VoiceReplayQualificationResult:
         desenlaces que el criterio de `TD-VOICE-001` admite, y sólo puede
         afirmarse habiendo mirado por todos los caminos disponibles.
         """
-        if not self.dispatched_twice:
+        if not self.dispatched_twice or not self.setup_applied:
+            # Una corrida cuyo call-control no se aplicó no reprodujo nada, y
+            # `unobservable` es exactamente la cadena sobre la que descansa el
+            # cierre de esta deuda. No puede salir de una corrida vacía.
             return "not_reproduced"
         if not self.any_observer_answered:
             return "unobservable"

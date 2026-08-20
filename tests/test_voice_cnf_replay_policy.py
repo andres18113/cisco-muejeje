@@ -98,3 +98,37 @@ def test_the_evidence_names_the_backend_it_was_measured_on():
 
     assert "9.0.1.0858" in policy.evidence
     assert "2811" in policy.evidence
+
+
+def test_an_unobservable_repeat_can_never_be_registered_as_replay_safe(monkeypatch):
+    """La regla estaba escrita en la docstring de la base y nada la impedía.
+
+    Este registro rechaza en todos los demás sitios la contención escrita en
+    prosa; su propia regla no podía ser la excepción.
+    """
+    import pytest
+
+    from src.packet_tracer_mcp.domain.enterprise import mutation_replay as module
+
+    offending = module.MutationReplayPolicy(
+        surface=module.MutationSurface.VOICE,
+        family="Fabricated",
+        entrypoint="somewhere",
+        classification=ReplayClassification.REPLAY_SAFE,
+        basis=EvidenceBasis.MEASURED_CONTROLLED_REPEAT_UNOBSERVABLE,
+        containment=(ReplayContainment.DECLARATIVE_REAPPLICATION,),
+        evidence="looked and saw nothing",
+    )
+    monkeypatch.setattr(
+        module, "PRODUCT_MUTATION_REPLAY_REGISTRY",
+        (*module.PRODUCT_MUTATION_REPLAY_REGISTRY, offending),
+    )
+
+    with pytest.raises(RuntimeError, match="UNOBSERVABLE"):
+        module._validate_registry()
+
+
+def test_the_registry_as_shipped_still_validates():
+    from src.packet_tracer_mcp.domain.enterprise import mutation_replay as module
+
+    module._validate_registry()

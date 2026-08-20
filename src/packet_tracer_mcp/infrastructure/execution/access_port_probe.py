@@ -219,7 +219,15 @@ class DeviceObserverDiscovery:
             object.__setattr__(self, "process_members", {})
 
 
-def _device_discovery_js(device: str, process_names: str) -> str:
+def _device_discovery_js(device_name: str, process_candidates: tuple[str, ...]) -> str:
+    """Recibe los valores CRUDOS y los codifica acá dentro.
+
+    La primera versión tomaba texto JS ya codificado, igual de correcta en su
+    único llamador y una trampa para el segundo: pasar un nombre sin codificar
+    por esa firma es ejecución de código, y la firma no avisaba.
+    """
+    device = json.dumps(device_name)
+    process_names = json.dumps(list(process_candidates))
     return "".join((
         "try{var __d=ipc.network().getDevice(", device, ");",
         "if(!__d){reportResult(JSON.stringify({device_found:false}));}else{",
@@ -253,12 +261,16 @@ def discover_device_observers(
     justamente lo que `AGENTS.md` regla 6 pide.
     """
     probe = PacketTracerAccessPortProbe(send_and_wait)
-    js = _device_discovery_js(json.dumps(device_name), json.dumps(list(process_candidates)))
+    js = _device_discovery_js(device_name, process_candidates)
     try:
         data = probe._json_result(js, timeout)  # noqa: SLF001 - mismo módulo
     except Exception as exc:  # noqa: BLE001 - la pasada reporta, no decide
         return DeviceObserverDiscovery(error=f"{type(exc).__name__}: {exc}")
+    # El backend responde lo que responde: si `process_members` no viniera como
+    # objeto, tratarlo como mapa reventaría FUERA del try que protege al resto.
     members = data.get("process_members")
+    if not isinstance(members, dict):
+        members = {}
     return DeviceObserverDiscovery(
         device_found=bool(data.get("device_found")),
         device_class_name=str(data.get("device_class_name") or ""),

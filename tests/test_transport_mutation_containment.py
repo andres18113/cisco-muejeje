@@ -107,7 +107,10 @@ CONTAINED_MUTATION_FAMILIES = {
             "typed actions only, capability-gated; with no supplied profile "
             "every action resolves UNKNOWN and is SKIPPED without dispatch"
         ),
-        "ceiling": "`create cnf-files` replay behaviour is UNKNOWN -- TD-VOICE-001",
+        "ceiling": (
+            "`create cnf-files` repeat effect measured UNOBSERVABLE on 9.0.1.0858 "
+            "/ 2811, so the family stays TREAT_AS_REPLAY_UNSAFE -- TD-VOICE-001"
+        ),
     },
     "probe": {
         "owner": "infrastructure/execution/probe_runtime.py",
@@ -182,6 +185,26 @@ PAYLOAD_BUILDERS_AND_PROSE = {
 }
 
 
+#: Métodos por los que un ORQUESTADOR provoca una mutación sin despacharla él:
+#: se los pide a un runtime inyectado, que sí es una familia clasificada.
+_ORCHESTRATION_CALLS = {
+    "ensure_device", "ensure_link", "ensure_module", "remove_device",
+    "create_temporary_device", "delete_temporary_device",
+    "apply_actions", "cleanup_actions",
+}
+
+#: Un orquestador NO agrega superficie de ambigüedad de transporte: hereda la
+#: del despachador al que llama. Lo que sí importa es que no aparezca uno FUERA
+#: de la capa donde esa mediación está garantizada, y eso es una regla
+#: estructural en vez de una lista que se queda vieja sola.
+#:
+#: El barrido de despachadores no ve a estos módulos -- `qualify_voice_replay.py`
+#: crea y borra un router de verdad y aun así no llama a ninguna primitiva de
+#: mutación -- así que sin esta segunda regla la partición tenía un agujero del
+#: tamaño de `application/`.
+_ORCHESTRATION_LAYER = "application/use_cases/"
+
+
 def _docstrings(tree: ast.AST) -> set[int]:
     """Los `id()` de las constantes que son docstring, para no confundir un
     ejemplo de uso en prosa con un despacho real. `live_bridge.py` documenta
@@ -222,6 +245,23 @@ def _modules_dispatching_mutations() -> dict[str, set[str]]:
                 used.update(
                     name for name in _MUTATING_PT_APIS if name in node.value
                 )
+        if used:
+            found[path.relative_to(PACKAGE).as_posix()] = used
+    return found
+
+
+def _modules_orchestrating_mutations() -> dict[str, set[str]]:
+    """Módulos que le PIDEN una mutación a un runtime, sin despacharla."""
+    found: dict[str, set[str]] = {}
+    for path in sorted(PACKAGE.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        used = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _ORCHESTRATION_CALLS
+        }
         if used:
             found[path.relative_to(PACKAGE).as_posix()] = used
     return found
@@ -296,6 +336,52 @@ def test_the_sweep_covers_the_whole_package_and_not_one_directory():
 
     assert any(not item.startswith("infrastructure/execution/") for item in dispatching)
     assert "application/use_cases/apply_acl.py" in dispatching
+
+
+# ===================== y los orquestadores, que no despachan ==============
+
+
+def test_every_orchestrator_sits_in_the_layer_where_a_runtime_mediates():
+    """El agujero que el barrido de despachadores no podía ver.
+
+    Una pasada de cualificación crea y borra un router de verdad sin llamar a
+    ninguna primitiva de mutación: se lo pide al runtime físico. Eso está bien
+    -- hereda su contención -- pero sólo mientras viva donde esa mediación es
+    obligatoria. Un orquestador en otra capa es una mutación que nadie clasificó.
+    """
+    orchestrating = _modules_orchestrating_mutations()
+
+    stray = {
+        module for module in orchestrating
+        if not module.startswith(_ORCHESTRATION_LAYER)
+        and module not in _accounted_for()
+    }
+
+    assert stray == set(), (
+        f"These modules ask a runtime to mutate from outside "
+        f"{_ORCHESTRATION_LAYER!r} and are not a classified dispatcher: "
+        f"{sorted(stray)}."
+    )
+
+
+def test_the_qualification_passes_are_seen_as_orchestrators():
+    """Si dejaran de serlo -- despachando por su cuenta -- esto lo dice."""
+    orchestrating = _modules_orchestrating_mutations()
+    dispatching = _modules_dispatching_mutations()
+
+    for module in (
+        "application/use_cases/qualify_voice_replay.py",
+        "application/use_cases/qualify_security_replay.py",
+        "application/use_cases/qualify_access_port_readback.py",
+    ):
+        assert module in orchestrating
+        assert module not in dispatching
+
+
+def test_an_orchestrator_never_counts_as_its_own_containment_family():
+    assert not (_owners() & set(_modules_orchestrating_mutations())) - {
+        "infrastructure/execution/probe_runtime.py",
+    }
 
 
 # ===================== ninguna mutación se reintenta a ciegas =============

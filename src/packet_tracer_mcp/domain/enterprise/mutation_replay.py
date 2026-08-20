@@ -93,8 +93,10 @@ class ReplayClassification(str, Enum):
 class EvidenceBasis(str, Enum):
     """How the classification was established -- never how well it was argued.
 
-    The three states are ordered by strength and are NOT interchangeable.
-    UNKNOWN classification requires UNMEASURED here; nothing else may.
+    The states are ordered by strength and are NOT interchangeable. UNKNOWN
+    classification requires UNMEASURED here; nothing else may, and
+    MEASURED_CONTROLLED_REPEAT_UNOBSERVABLE can never carry REPLAY_SAFE.
+    Both rules are enforced in `_validate_registry`, not merely written here.
     """
 
     #: Repetición controlada sobre Packet Tracer real, con relectura semántica.
@@ -650,6 +652,19 @@ def _validate_registry() -> None:
             raise RuntimeError(
                 f"{item.family}: a measured controlled repeat must record "
                 "CONTROLLED_REPEAT_QUALIFIED containment."
+            )
+
+        # No observar un efecto no es haber observado que no lo hay. La base lo
+        # dice en su docstring; sin esta regla lo decía y nada lo impedía, que
+        # es la clase de contención escrita en prosa que este registro rechaza
+        # en todos los demás sitios.
+        if (
+            item.basis is EvidenceBasis.MEASURED_CONTROLLED_REPEAT_UNOBSERVABLE
+            and item.classification is ReplayClassification.REPLAY_SAFE
+        ):
+            raise RuntimeError(
+                f"{item.family}: a controlled repeat whose effect was "
+                "UNOBSERVABLE can never establish REPLAY_SAFE."
             )
 
 

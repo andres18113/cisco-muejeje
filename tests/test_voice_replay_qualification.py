@@ -141,10 +141,17 @@ class _Query:
 
 
 def _probe(processes=("VlanManager",), members=("getPort", "getProcess")):
+    """`members` es lo que cada proceso presente expone.
+
+    Un proceso presente SIN miembros no es un observador -- estar no es
+    observar -- así que el fake tiene que poder representar ambos estados.
+    """
     def call(device_name: str) -> DeviceObserverDiscovery:
         return DeviceObserverDiscovery(
             device_found=True, device_class_name="Router",
-            enumerated_members=tuple(members), processes_present=tuple(processes),
+            enumerated_members=("getPort", "getProcess"),
+            processes_present=tuple(processes),
+            process_members={name: tuple(members) for name in processes},
         )
     return call
 
@@ -304,3 +311,165 @@ def test_an_exception_that_escapes_the_measurement_still_cleans_up():
     assert physical.live == []
     assert result.removed == (result.device_name,)
     assert any("qualification_raised" in item for item in result.errors)
+
+
+# ===================== lo que la revisión adversarial encontró =============
+#
+# Cuatro formas de sacarle a esta pasada una respuesta tranquilizadora sobre una
+# corrida que no estableció nada. Cada una es un test.
+
+
+_SYSLOG_EPHONE = (
+    "show ephone\n"
+    "%LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/0, "
+    "changed state to up\nRouter#"
+)
+_OTHER_SYSLOG_EPHONE = (
+    "show ephone\n"
+    "%LINK-5-CHANGED: Interface FastEthernet0/1, changed state to up\nRouter#"
+)
+_INCOMPLETE = "show telephony-service\n% Incomplete command.\nRouter#"
+
+
+def test_ios_syslog_is_not_a_telephony_answer():
+    """El caso esperado, no el raro: el router acaba de arrancar y direccionarse.
+
+    `%LINEPROTO-5-UPDOWN` aterriza en la ventana del comando -- este repositorio
+    ya lo midió y tiene `_IOS_SYSLOG` para eso. Contarlo como respuesta convertía
+    dos silencios en `no_observable_difference`.
+    """
+    result, _, _ = _qualify(query=_Query([_SYSLOG_EPHONE, _SYSLOG_EPHONE]))
+
+    assert result.any_observer_answered is False
+    assert result.repeat_effect == "unobservable"
+
+
+def test_two_different_syslogs_are_not_a_replay_difference():
+    """Atribuirle a `create cnf-files` un cambio de estado de línea sería inventar."""
+    result, _, _ = _qualify(query=_Query([_SYSLOG_EPHONE, _OTHER_SYSLOG_EPHONE]))
+
+    assert result.repeat_effect == "unobservable"
+
+
+def test_a_rejection_that_does_not_say_invalid_input_is_still_a_rejection():
+    """Medido en este repositorio: no todo rechazo de IOS dice "Invalid input"."""
+    result, _, _ = _qualify(query=_Query([_INCOMPLETE, _INCOMPLETE]))
+
+    queries = {item.query: item for item in result.passes[0].queries}
+    assert queries["show_ephone"].rejected_by_ios is True
+    assert result.repeat_effect == "unobservable"
+
+
+def test_a_process_present_without_members_is_not_an_observer():
+    """`TftpServer` está en la lista de candidatos; existir no es observar."""
+    result, _, _ = _qualify(
+        probe=_probe(processes=("VlanManager", "TftpServer"), members=()),
+    )
+
+    assert result.any_observer_answered is False
+    assert result.repeat_effect == "unobservable"
+
+
+def test_a_process_with_members_does_count_as_an_observer():
+    result, _, _ = _qualify(
+        probe=_probe(processes=("VlanManager", "TftpServer"), members=("getFile",)),
+    )
+
+    assert result.any_observer_answered is True
+
+
+def test_a_setup_that_did_not_apply_can_never_report_unobservable():
+    """El desenlace sobre el que descansa el cierre, desde una corrida vacía."""
+    class _SetupRefusing:
+        def __init__(self):
+            self.batches: list[list] = []
+
+        def inventory(self):
+            return []
+
+        def apply_actions(self, actions):
+            self.batches.append(list(actions))
+            applied = any(
+                item.action_type is VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES
+                for item in actions
+            )
+            return [
+                RuntimeActionMutation(action_id=item.id, applied=applied, message="")
+                for item in actions
+            ]
+
+    result, _, _ = _qualify(voice=_SetupRefusing())
+
+    assert result.setup_applied is False
+    assert result.repeat_effect == "not_reproduced"
+    assert result.repeat_effect != "unobservable"
+
+
+def test_a_pass_whose_query_never_executed_is_not_equal_to_one_that_answered():
+    """"No pude mirar" no es "miré y vi lo mismo"."""
+    class _HalfDead(_Query):
+        def __init__(self):
+            super().__init__([_ANSWERING_EPHONE, _ANSWERING_EPHONE])
+            self._seen = 0
+
+        def execute(self, device_name, query_id, *, interface=""):
+            show = super().execute(device_name, query_id, interface=interface)
+            self._seen += 1
+            if self._seen > 2:  # la segunda pasada no ejecuta
+                return show.__class__(
+                    device_name=device_name, query_id=query_id, executed=False,
+                    output=show.output, session_state=show.session_state,
+                    fresh_output_observed=False, output_complete=False,
+                )
+            return show
+
+    result, _, _ = _qualify(query=_HalfDead())
+
+    assert result.repeat_effect == "observable_difference"
+
+
+def test_a_different_dispatch_message_is_an_observable_difference():
+    """`%Error: cnf files already exist` en la segunda pasada es EL resultado."""
+    class _Talking:
+        def __init__(self):
+            self._seen = 0
+
+        def inventory(self):
+            return []
+
+        def apply_actions(self, actions):
+            out = []
+            for item in actions:
+                message = ""
+                if item.action_type is VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES:
+                    self._seen += 1
+                    message = "" if self._seen == 1 else "cnf files already exist"
+                out.append(RuntimeActionMutation(
+                    action_id=item.id, applied=True, message=message,
+                ))
+            return out
+
+    result, _, _ = _qualify(voice=_Talking(), probe=_probe(
+        processes=("VlanManager", "TftpServer"), members=("getFile",),
+    ))
+
+    assert result.repeat_effect == "observable_difference"
+
+
+def test_process_members_are_compared_and_not_only_process_names():
+    class _Growing:
+        def __init__(self):
+            self._seen = 0
+
+        def __call__(self, device_name):
+            self._seen += 1
+            return DeviceObserverDiscovery(
+                device_found=True, device_class_name="Router",
+                enumerated_members=("getPort",),
+                processes_present=("TftpServer",),
+                process_members={"TftpServer": ("a",) if self._seen == 1 else ("a", "b")},
+            )
+
+    result, _, _ = _qualify(probe=_Growing())
+
+    assert result.repeat_effect == "observable_difference"

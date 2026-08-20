@@ -3156,7 +3156,7 @@ that covers it, and the ceiling of what it may claim.
 | control plane | typed actions only; a rendering failure refuses rather than dispatches | APPLIED is separate from VERIFIED |
 | security | typed actions with a separate typed removal payload | direct read-back per action, no behavioural claim |
 | services | typed actions, capability-gated | compile readiness is not behaviour |
-| voice | typed actions, capability-gated; no profile means SKIPPED without dispatch | `create cnf-files` replay stays UNKNOWN (TD-VOICE-001) |
+| voice | typed actions, capability-gated; no profile means SKIPPED without dispatch | `create cnf-files` repeat effect measured UNOBSERVABLE on 9.0.1.0858 / 2811, so the family stays TREAT_AS_REPLAY_UNSAFE (TD-VOICE-001) |
 | probe | disposable `__MCP_PROBE_*` only, with inventory fingerprints either side | evidence about the probe, never about a deployed device |
 | legacy raw ACL | **none established**, named rather than dressed up; bypasses the typed chain and dispatches only when handed a `bridge_send` | TREAT_AS_REPLAY_UNSAFE — the payload is structurally additive |
 | MCP tool surface | operator-facing tools, each pinning a transport and requiring its own read-back | a tool result reports what the channel accepted, not what the device did |
@@ -3197,6 +3197,18 @@ call as text, `infrastructure/generator/ptbuilder_generator.py` generates a
 script, and `settings.py` documents the tools in a module-level string.
 Docstrings are excluded for the same reason: `live_bridge.py` documents
 `addDevice('R1','2911',100,100)` as a usage example and dispatches nothing.
+
+**A second blind spot, found by adversarial review: orchestrators.** A
+dispatcher sweep cannot see `qualify_voice_replay.py`, which creates and deletes
+a real router without calling a single mutation primitive — it asks the physical
+runtime. Fourteen modules do that. They add no transport-ambiguity surface,
+because they inherit the containment of the dispatcher they call; what matters
+is that none appears *outside* the layer where that mediation is structural. The
+suite now sweeps `ensure_device`, `ensure_link`, `ensure_module`,
+`remove_device`, `create_temporary_device`, `delete_temporary_device`,
+`apply_actions` and `cleanup_actions`, and asserts every caller is either a
+classified dispatcher or lives under `application/use_cases/`. A structural rule
+rather than a list, so it cannot go stale by omission.
 
 **The limitation stays structural, not asserted.**
 `RequestDisposition.proves_no_execution` returns `False` for **every** value, and
@@ -3556,6 +3568,46 @@ caller-supplied profile every voice action resolves UNKNOWN and is SKIPPED and
 `create cnf-files` is never dispatched at all. `CAPABILITY_GATE` and
 `NO_BLIND_RETRY` are real and stay; they are what
 `TD-TRANSPORT-001`'s matrix records for this family.
+
+**Four ways the first version of this pass could have answered reassuringly,
+all found by adversarial review and all fixed before commit.** The measurement
+was unaffected — the captures contain no syslog and the setup applied — but the
+code could have produced the same string from a run that established nothing,
+and that is the same defect whether or not it fired:
+
+1. **syslog counted as an answer.** `rejected_by_ios` matched only the literal
+   `"invalid input"`, and any non-prompt line counted as body. The router is
+   created and addressed immediately before pass 1, so `%LINEPROTO-5-UPDOWN` in
+   the command window is the *expected* case — this repository had already
+   measured it and carries `_IOS_SYSLOG` for exactly that. Two silences with
+   different syslog would have read as `observable_difference`, attributing a
+   line-state change to `create cnf-files`. It now delegates to the existing
+   `ios_rejection_reason` and filters syslog out of the answer;
+2. **rejections that do not say "invalid input"** — measured here as
+   `%Duplex cannot be set to half...` — were read as answers. Same fix;
+3. **a process counted as an observer by name alone.** `TftpServer` is in the
+   candidate list; present-with-no-members now counts as nothing, because
+   existing is not observing;
+4. **`repeat_effect` ignored `setup_applied`.** A run whose call-control was
+   refused still returned `unobservable` — the exact string this closure rests
+   on, from a run where nothing was ever configured to be observable. It returns
+   `not_reproduced` now.
+
+`observable_state` also omitted the dispatch message, the per-process member
+lists, and whether the query executed at all, so `%Error: cnf files already
+exist` on the second pass — which would have *been* the result — compared equal,
+and "could not look" compared equal to "looked and saw the same". All three are
+in the comparison now.
+
+**The qualification was re-run live after those fixes**, because the
+classification logic had changed materially: same backend, same three paths,
+`setup_applied=True`, `dispatched_twice=True`, `REPEAT_EFFECT=unobservable`,
+workspace restored.
+
+**And the rule the new basis states is now enforced.** Its docstring said it can
+never carry `REPLAY_SAFE`; `_validate_registry` said nothing, which is the
+prose-as-containment this registry rejects everywhere else. A regression builds
+an offending policy and asserts the validator refuses it.
 
 **Scope.** One model, one build, one CME configuration. Whether a future
 Packet Tracer image implements `show telephony-service` is not decided here, and
