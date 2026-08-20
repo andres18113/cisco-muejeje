@@ -12,7 +12,7 @@ from ...infrastructure.catalog.devices import ALL_MODELS
 from ...infrastructure.catalog.cables import CABLE_TYPES
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
-from ...shared.constants import CAPABILITIES
+from ...shared.constants import CAPABILITIES, DEVELOPER_CLI_CAPABILITIES
 
 
 def register_resources(mcp: FastMCP) -> None:
@@ -67,18 +67,30 @@ def register_resources(mcp: FastMCP) -> None:
         cualquier razón, cae a los valores estáticos de CAPABILITIES.
         """
         caps = dict(CAPABILITIES)
+        caps["features"] = list(caps["features"])
+        caps["public_surface"] = "enterprise"
+        caps["supported_via_cli"] = []
         try:
             tools = await mcp.list_tools()
             names = sorted(t.name for t in tools)
+            raw_js_enabled = "pt_send_raw" in names
             caps["tools_count"] = len(names)
             caps["tools"] = names
+            caps["public_surface"] = (
+                "developer-capability-investigation"
+                if raw_js_enabled
+                else "enterprise"
+            )
+            if raw_js_enabled:
+                caps["features"].append("raw_js")
+                caps["supported_via_cli"] = list(DEVELOPER_CLI_CAPABILITIES)
             # Feature → soporte derivado de la presencia real del tool (sin drift posible)
             caps["supported_live"] = {
                 "nat": any(n.startswith("pt_apply_nat") for n in names),
                 "acl": any(n.startswith("pt_apply_acl") for n in names),
                 "modules": any("module" in n for n in names),
                 "live_deploy": "pt_live_deploy" in names,
-                "raw_js": "pt_send_raw" in names,
+                "raw_js": raw_js_enabled,
             }
         except Exception:
             pass

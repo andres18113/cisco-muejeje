@@ -55,7 +55,17 @@ still open. Every tool below works over either. See [Live deploy](live-deploy.md
 | `pt_export_topology` | Full snapshot: positions, per-interface IPs, links, cable info. |
 | `pt_save_project` | Save the running topology as a real `.pkt` file. |
 | `pt_open_project` | Open a `.pkt` in PT (replaces the current topology). |
-| `pt_send_raw` | Run arbitrary JS in PT's Script Engine (`wait_result` injects `reportResult`). |
+
+### Developer/capability-investigation compatibility surface
+
+The default `enterprise` MCP surface does **not** register `pt_send_raw` or
+advertise raw IOS/JavaScript as an enterprise capability. For controlled IPC
+investigation, set
+`PT_MCP_PUBLIC_SURFACE=developer-capability-investigation` before starting the
+server. That explicit opt-in preserves the legacy `pt_send_raw(js_code,
+wait_result=False)` name and signature. It does not make arbitrary code typed,
+replay-safe, or suitable for normal enterprise operations. The
+`pt://capabilities` resource reports the active `public_surface`.
 
 ## Live editing
 
@@ -168,9 +178,9 @@ describing the network and starts showing it.
 !!! note "NetFlow is configured natively; QoS can only be read"
     These two look symmetric but are not. `pt_apply_netflow` configures the
     exporter directly and verifies the result — no CLI involved. QoS, by
-    contrast, can be **read** but not created programmatically, so class-maps and
-    policy-maps are authored through IOS CLI (`pt_send_raw` →
-    `configureIosDevice`) and `pt_read_qos` is how you confirm it landed.
+    contrast, can be **read** but not created on the enterprise surface.
+    `pt_read_qos` verifies a policy that was applied through a separately
+    governed process; it is not a raw CLI authoring path.
 
 ## Simulation
 

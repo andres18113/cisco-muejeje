@@ -15,8 +15,10 @@ happen.
 
 - **A "discover, never invent" discipline** — always look up models/ports/modules first.
 - The **full 46-tool catalog** and the mandatory `discover → plan → validate → deploy` workflow.
-- The **exact PT Script-Engine API** for `pt_send_raw` (e.g. `ipc.network().getDevice(name)` and the
-  global `getDevices(filter)` — there is **no** global `getDevice`), so raw JS is written correctly.
+- The **exact PT Script-Engine API** for the opt-in developer/capability-investigation
+  `pt_send_raw` compatibility tool (e.g. `ipc.network().getDevice(name)` and the
+  global `getDevices(filter)` — there is **no** global `getDevice`). The default
+  enterprise public surface does not register it.
 - A **wrong → right mistakes table**, the **15 cable types**, **exact port names**, the **IP/DHCP/routing
   conventions**, and the **module-install slot matrix by router family** (HWIC `"0/x"`, NM `"1"`,
   NIM `"0/1"`).

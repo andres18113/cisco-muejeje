@@ -81,7 +81,11 @@ the Script Engine — no pairing, no pasting. See [SECURITY.md](https://github.c
     MCP Control Center) is this project's own — see [Credits & Attribution](credits.md).
 
 !!! warning "Trust model"
-    `/queue` and `pt_send_raw` execute arbitrary JavaScript in PT's Script Engine
-    **by design**. The token stops a browser page from reaching `:54321`, and the
-    file channel is confined to a user-owned directory. This is a single-user
-    local desktop tool — run it on a machine and with topologies you trust.
+    `/queue` is the authenticated internal bridge endpoint. The default
+    `enterprise` MCP surface does not expose arbitrary JavaScript.
+    `pt_send_raw` exists only when the operator explicitly selects
+    `PT_MCP_PUBLIC_SURFACE=developer-capability-investigation`; it remains an
+    untyped compatibility tool, not a normal enterprise operation. The token
+    stops a browser page from reaching `:54321`, and the file channel is confined
+    to a user-owned directory. Run the developer surface only on a machine and
+    with topologies you trust.

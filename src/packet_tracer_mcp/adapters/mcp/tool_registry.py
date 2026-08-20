@@ -128,10 +128,18 @@ from ...shared.utils import (
 from ...domain.services.canvas import (
     CanvasImageError, decode_pt_image, normalize_format, validate_color,
 )
+from .public_surface import PublicMcpSurface
 
 
-def register_tools(mcp: FastMCP) -> None:
+def register_tools(
+    mcp: FastMCP,
+    *,
+    public_surface: PublicMcpSurface = PublicMcpSurface.ENTERPRISE,
+) -> None:
     """Registra todas las tools en el servidor MCP."""
+
+    if not isinstance(public_surface, PublicMcpSurface):
+        raise TypeError('public_surface must be a PublicMcpSurface')
 
     capability_discovery_service = None
 
@@ -2317,7 +2325,6 @@ def register_tools(mcp: FastMCP) -> None:
         except Exception:
             return f"Respuesta inesperada: {result}"
 
-    @mcp.tool()
     def pt_send_raw(js_code: str, wait_result: bool = False) -> str:
         """
         Send arbitrary JavaScript to Packet Tracer via bridge.
@@ -2350,6 +2357,17 @@ def register_tools(mcp: FastMCP) -> None:
     # ------------------------------------------------------------------
     # MODULES — instalar módulos de expansión en dispositivos vivos
     # ------------------------------------------------------------------
+
+    if public_surface is PublicMcpSurface.DEVELOPER_CAPABILITY_INVESTIGATION:
+        mcp.add_tool(
+            pt_send_raw,
+            title='Developer capability investigation: raw Packet Tracer JS',
+            description=(
+                'Compatibility-only developer/capability-investigation tool. '
+                'Executes arbitrary JavaScript and is not a normal enterprise '
+                'operation or a typed mutation contract.'
+            ),
+        )
 
     @mcp.tool()
     def pt_list_modules(
@@ -5020,8 +5038,8 @@ def register_tools(mcp: FastMCP) -> None:
         Lee la configuración de QoS REAL de un dispositivo: class-maps y policy-maps.
 
         Solo lectura: QoS no se puede crear programáticamente en PT, así que para
-        CONFIGURARLO hay que mandar el CLI IOS con pt_send_raw
-        (`configureIosDevice`). Esta tool sirve para verificar que quedó aplicado.
+        CONFIGURARLO no forma parte de la superficie enterprise. Esta tool solo
+        verifica una politica que ya fue aplicada por un medio gobernado.
 
         Devuelve, por class-map, su tipo de match y su representación CLI; por
         policy-map, cuántas clases tiene y qué features usa (bandwidth, priority,

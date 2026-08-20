@@ -214,10 +214,12 @@ the full suite runs offline with `python -m pytest` — no Packet Tracer require
 > unauthenticated bridge and are vulnerable to exactly the attack above.
 > **Upgrade — there is no safe configuration of the old bridge.**
 
-**Deliberate, documented behaviour:** `pt_send_raw` executes arbitrary JavaScript
-inside Packet Tracer by design — it is the escape hatch for exploring the IPC
-API. It is reachable only by an MCP client you have already authorised, over the
-authenticated bridge. That is a capability, not a vulnerability.
+**Deliberate, documented compatibility boundary:** the default `enterprise`
+public surface does not register `pt_send_raw`. Operators doing controlled IPC
+API investigation may explicitly start the server with
+`PT_MCP_PUBLIC_SURFACE=developer-capability-investigation`; that preserves the
+legacy tool name and signature, but it remains arbitrary JavaScript rather than
+a typed enterprise operation. The authenticated bridge is still required.
 
 Found a vulnerability? Report it privately via
 [GitHub Security Advisories](https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new),

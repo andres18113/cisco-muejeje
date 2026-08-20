@@ -172,16 +172,12 @@ CONTAINED_MUTATION_FAMILIES = {
 #:
 #: * los dos generadores devuelven TEXTO -- una llamada JS o un script -- y no
 #:   tienen ningún canal por el que mandarlo;
-#: * `settings.py` documenta las tools en una cadena de módulo, que es prosa
-#:   aunque no sea un docstring.
-#:
 #: Si alguno empezara a despachar, dejaría de pertenecer acá y tendría que
 #: entrar en la tabla de familias. Nada en este archivo lo detecta solo, y por
 #: eso la lista es corta y cada entrada dice por qué.
 PAYLOAD_BUILDERS_AND_PROSE = {
     "shared/ios_config.py": "returns the configureIosDevice call as text",
     "infrastructure/generator/ptbuilder_generator.py": "generates a PTBuilder script",
-    "settings.py": "documents the MCP tools in a module-level string",
 }
 
 

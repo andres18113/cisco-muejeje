@@ -497,10 +497,9 @@ claim ceilings exist, both on contained backend limitations. The 29 rows must
 not be relabeled `CEILING_ACCEPTED`.
 
 The next governed phase is Skills Governance / Restructuring, not E10
-implementation. TD-PUBLIC-001 is still
-`DEFERRED_TO_DECLARED_MILESTONE` with `RESOLVE_BEFORE: Skills/public MCP facade
-phase`; its closure criterion has not been satisfied, so the restructuring
-prerequisite is `BLOCKED_BY_TD_PUBLIC_001`.
+implementation. TD-PUBLIC-001 is now `RESOLVED` at its declared
+Skills/public-facade milestone, so the restructuring prerequisite is `READY`.
+This does not change CP3-HARD, E9.5, or the E10 blocker.
 
 ---
 
@@ -3470,10 +3469,10 @@ enforcement that keeps it that way. The sweep now walks `src/packet_tracer_mcp`
 entirely, and a regression asserts it finds dispatchers outside
 `infrastructure/execution/` so the scope cannot quietly narrow again.
 
-**Three modules name a mutating API without dispatching**, each exempted for a
+**Two modules name a mutating API without dispatching**, each exempted for a
 stated reason rather than by convenience: `shared/ios_config.py` returns the
-call as text, `infrastructure/generator/ptbuilder_generator.py` generates a
-script, and `settings.py` documents the tools in a module-level string.
+call as text and `infrastructure/generator/ptbuilder_generator.py` generates a
+script. The enterprise server instructions no longer name a raw mutation API.
 Docstrings are excluded for the same reason: `live_bridge.py` documents
 `addDevice('R1','2911',100,100)` as a usage example and dispatches nothing.
 
@@ -4269,7 +4268,7 @@ Known limits of this closure, recorded rather than glossed:
 ## TD-PUBLIC-001 — Raw fire-and-forget tool remains publicly invokable
 
 Status:
-DEFERRED_TO_DECLARED_MILESTONE
+RESOLVED
 
 Severity:
 P2
@@ -4331,6 +4330,36 @@ so nothing in the repository can establish whether the deadline has arrived.
 This is the same class of gap the Documentation limitation section above
 records. Treated as NOT passed at CP2, on the facade reading.
 
+### Resolution — Skills/public MCP facade, 2026-08-20
+
+The default `enterprise` MCP surface no longer registers `pt_send_raw`, teaches
+it in the server instructions, or advertises `raw_js` / raw CLI capability in
+`pt://capabilities`. The same tool name and signature remain available only
+when the operator explicitly sets
+`PT_MCP_PUBLIC_SURFACE=developer-capability-investigation`; ambiguous values
+fail closed instead of enabling a raw surface accidentally.
+
+That compatibility surface is named and disclosed as developer/capability
+investigation. Its tool description states that arbitrary JavaScript is not a
+normal enterprise operation or typed mutation contract. Normal read-only tools
+do not recommend crossing into it, and the public documentation keeps the two
+surfaces separate. Existing typed planning, configuration, control-plane,
+security, service, voice and physical paths are unchanged.
+
+Focused evidence:
+`tests/test_fire_and_forget_surface.py` registers both surfaces, proves the
+enterprise tool list and capability resource omit raw execution, proves the
+exact developer opt-in preserves compatibility, rejects ambiguous environment
+values, checks the production composition root, and pins the instruction and
+QoS-description boundaries. No Packet Tracer run is required because the
+criterion is MCP registration and public-surface governance, not backend
+behavior.
+
+Regression: `2429 passed, 3 pre-existing warnings` with the checkout-local
+`.venv` interpreter and no custom `PYTHONPATH`.
+
+The literal closure criterion is satisfied.
+
 Does not block Stage 3A4. Stage 3A4 must not use this tool: its rule is that a
 missing production seam is named and implemented, never bypassed with raw JS or
 raw IOS.
@@ -4357,6 +4386,14 @@ Missing planned functionality is not automatically technical debt.
 Move an item here only when its closure criterion has been satisfied.
 
 Do not delete historical debt entries.
+
+- **TD-PUBLIC-001** — resolved 2026-08-20. The default enterprise MCP facade
+  excludes and does not advertise arbitrary raw IOS/JS. The compatibility tool
+  is available only through the exact operator-selected
+  `developer-capability-investigation` surface, remains explicitly untyped, and
+  cannot be mistaken for a normal enterprise operation. Focused registration,
+  capability-resource, instruction and fail-closed policy tests pin the
+  boundary; no live Packet Tracer evidence is required.
 
 - **TD-RUNTIME-003** — resolved 2026-08-11. Both remaining read-back shapes now
   have live evidence on PT 9.0.1.0858. A paginated `show ip protocols` is

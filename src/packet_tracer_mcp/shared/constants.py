@@ -34,7 +34,7 @@ CAPABILITIES = {
                  "floating_routes", "ospf_multi_process", "eigrp_as_config",
                  "acl_standard", "acl_extended", "acl_apply_via_bridge",
                  "nat_static", "nat_dynamic", "nat_pat",
-                 "modules", "module_compat_check", "live_deploy", "raw_js",
+                 "modules", "module_compat_check", "live_deploy",
                  # Lectura del estado vivo: no consultan el plan, consultan el
                  # dispositivo. Verificadas contra PT 9.0.0.0810.
                  "security_audit", "port_inspect", "vlan_read", "device_power",
@@ -42,11 +42,11 @@ CAPABILITIES = {
                  "netflow", "qos_read",
                  "config_backup", "project_metadata", "workspace_options",
                  "screenshot", "canvas_annotations"],
-    # Soportado HOY vía IOS CLI cruda (configureIosDevice / pt_send_raw) pero sin tool
+    # Solo en la superficie developer: IOS CLI cruda (configureIosDevice / pt_send_raw)
     # dedicada de alto nivel todavía — candidatos a futura expansión, NO "imposibles".
     # vlan/trunk/stp/port_security/ipv6 salieron de acá: ya tienen tool propia.
     # QoS se queda: se puede LEER con pt_read_qos pero no crear por API.
-    "supported_via_cli": ["qos", "bgp", "hsrp", "voip"],
+    "supported_via_cli": [],
     # Genuinamente no implementado en ninguna forma. Originar un PDU no está:
     # PT no lo expone a las extensiones (el "Add Simple PDU" es solo GUI).
     "unsupported": ["originate_pdu"],
@@ -54,6 +54,8 @@ CAPABILITIES = {
     "max_pcs_per_lan": 24,
     "max_switches_per_router": 4,
 }
+
+DEVELOPER_CLI_CAPABILITIES = ("qos", "bgp", "hsrp", "voip")
 
 # PT IpcAPI DeviceType enum values (de class_logical_workspace.html addDevice doc).
 # Usado por lwAddDevice helper para crear devices visibles en la Logical view

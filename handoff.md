@@ -17,22 +17,27 @@ CP3_HARD                        = FAIL
 E9_5                            = OPEN
 CANONICAL_E9_5_BASELINE         = NOT_READY
 
-REGRESSION                      = 2417 passed
+REGRESSION                      = 2429 passed, 3 pre-existing warnings
 PT_EVIDENCE_BUILD               = 9.0.1.0858
 NO_E9_5_CLAIM_DEPENDS           = 29
 EXPLICIT_CEILING_ROWS           = 2
 
 FINAL_DEBT_STATE                = 0 open P0; 0 open P1; 2 contained backend
-                                  limitations; TD-PUBLIC-001 deferred; EIGRP
+                                  limitations; TD-PUBLIC-001 resolved; EIGRP
                                   adjacency and routes remain UNKNOWN and gate
                                   E10
-LATER_DEADLINE_DEBT             = TD-PUBLIC-001
+LATER_DEADLINE_DEBT             = NONE
 E10_PREREQUISITES               = fresh governed EIGRP adjacency evidence and
                                   fresh governed EIGRP learned-route evidence,
                                   each with a precise register classification
 
-TD_PUBLIC_001                   = DEFERRED_TO_DECLARED_MILESTONE
-SKILLS_RESTRUCTURING_PREREQUISITE = BLOCKED_BY_TD_PUBLIC_001
+TD_PUBLIC_001                   = RESOLVED
+PUBLIC_SURFACE_BEFORE           = pt_send_raw unconditionally registered and
+                                  advertised as a normal MCP capability
+PUBLIC_SURFACE_AFTER            = enterprise default excludes raw IOS/JS;
+                                  exact developer-capability-investigation
+                                  opt-in preserves compatibility
+SKILLS_RESTRUCTURING_PREREQUISITE = READY
 NEXT_PHASE                      = SKILLS_GOVERNANCE_RESTRUCTURING
 ```
 
@@ -40,12 +45,13 @@ The 29 `NO_E9_5_CLAIM_DEPENDS` rows are dispositions, not accepted claim
 ceilings. Exactly two explicit ceiling rows exist: TD-MODULE-SLOT-001 and
 TD-TRANSPORT-001.
 
-`TD-PUBLIC-001` reaches its declared milestone in the next governed phase. Its
-literal closure criterion remains unsatisfied: public-surface governance must
-limit arbitrary raw IOS/JS to the controlled developer/capability-investigation
-boundary and prevent it from being treated as a normal enterprise operation.
-Therefore Skills Governance / Restructuring is the next phase, but its
-prerequisite is blocked by TD-PUBLIC-001. E10 implementation is not entered.
+`TD-PUBLIC-001` is resolved at its declared milestone. The default enterprise
+registration no longer exposes or advertises arbitrary raw IOS/JS. The legacy
+`pt_send_raw` name and signature remain available only when the operator selects
+the exact `developer-capability-investigation` surface; invalid surface values
+fail closed. Typed product paths are unchanged. The Skills restructuring
+prerequisite is READY, but restructuring is not entered here. E10 remains not
+startable and is not entered.
 
 Everything from the superseded checkpoint section below through its closure
 recommendation is retained as the `8ddc36d` historical record, not current

@@ -6,7 +6,7 @@ VERSION = "0.8.0"
 
 SERVER_NAME = "Packet Tracer MCP"
 
-SERVER_INSTRUCTIONS = """\
+_SERVER_INSTRUCTIONS_WITH_DEVELOPER_GUIDANCE = """\
 Eres un agente especializado en automatizar Cisco Packet Tracer mediante PTBuilder.
 
 ## REGLA OBLIGATORIA — leer antes de actuar
@@ -147,9 +147,8 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
 - `pt_apply_netflow(device, name, destination_ip, ...)`: configura el exportador
   directamente (no por CLI) y lo relee para confirmar. Si el nombre ya existe lo
   reconfigura en vez de duplicar. Acepta `remove=True` y `dry_run=True`.
-- `pt_read_qos(device)`: SOLO LECTURA. QoS no se puede crear programáticamente, así
-  que para CONFIGURARLO hay que mandar CLI IOS con `configureIosDevice`; esta tool
-  sirve para verificar que quedó aplicado.
+- `pt_read_qos(device)`: SOLO LECTURA. La superficie enterprise no configura
+  QoS; esta tool verifica una política aplicada por un medio gobernado.
 
 ## Simulación paso a paso
 Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivity`)
@@ -169,4 +168,26 @@ Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivi
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.
 """
+
+_DEVELOPER_GUIDANCE_HEADING = '### Bridge JS'
+_NEXT_ENTERPRISE_HEADING = '## Protocolo de routing'
+_enterprise_prefix, _developer_tail = (
+    _SERVER_INSTRUCTIONS_WITH_DEVELOPER_GUIDANCE.split(
+        _DEVELOPER_GUIDANCE_HEADING,
+        1,
+    )
+)
+_developer_body, _enterprise_suffix = _developer_tail.split(
+    _NEXT_ENTERPRISE_HEADING,
+    1,
+)
+DEVELOPER_CAPABILITY_INVESTIGATION_INSTRUCTIONS = (
+    _DEVELOPER_GUIDANCE_HEADING + _developer_body.rstrip()
+)
+SERVER_INSTRUCTIONS = (
+    _enterprise_prefix.rstrip()
+    + '\n\n'
+    + _NEXT_ENTERPRISE_HEADING
+    + _enterprise_suffix
+)
 

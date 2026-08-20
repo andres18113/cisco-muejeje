@@ -53,7 +53,7 @@ en el buzón que el Script Engine lee en disco (ver `_pick_channel` y el módulo
 | | `pt_add_link` | Agregar enlace (valida puertos y cable) |
 | | `pt_delete_link` | Eliminar enlace |
 | | `pt_set_port` | Configurar un puerto |
-| | `pt_send_raw` | Enviar JS arbitrario al Script Engine |
+| **Compatibilidad developer (opt-in)** | `pt_send_raw` | JS arbitrario, solo con `PT_MCP_PUBLIC_SURFACE=developer-capability-investigation`; nunca es una operación enterprise normal |
 | **Módulos** | `pt_add_module` | Instalar un módulo en un slot |
 | | `pt_install_modules_batch` | Instalar varios módulos en lote |
 | **Config avanzada** | `pt_apply_vlan` | Aplicar VLANs |

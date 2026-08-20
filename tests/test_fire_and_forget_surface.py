@@ -15,17 +15,31 @@ que la reejecucion duplicada del motor este clasificada como lo que es.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from pathlib import Path
 
 import pytest
+from mcp.server.fastmcp import FastMCP
 
+from src.packet_tracer_mcp.adapters.mcp import tool_registry
+from src.packet_tracer_mcp.adapters.mcp.resource_registry import register_resources
+from src.packet_tracer_mcp.adapters.mcp.public_surface import (
+    PUBLIC_MCP_SURFACE_ENV_VAR,
+    PublicMcpSurface,
+    public_mcp_surface_from_env,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     RuntimeActionMutation,
     mutation_execution_status,
 )
 from src.packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
+from src.packet_tracer_mcp.settings import (
+    DEVELOPER_CAPABILITY_INVESTIGATION_INSTRUCTIONS,
+    SERVER_INSTRUCTIONS,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 PACKAGE = REPO / "src" / "packet_tracer_mcp"
@@ -125,6 +139,102 @@ def test_every_applicator_uses_the_single_domain_definition():
 
 
 # -- 5/6. matriz de superficies y contencion del camino raw ---------------
+
+def _registered_tool_names(
+    public_surface: PublicMcpSurface = PublicMcpSurface.ENTERPRISE,
+) -> set[str]:
+    server = FastMCP('test')
+    tool_registry.register_tools(server, public_surface=public_surface)
+    return {tool.name for tool in server._tool_manager.list_tools()}
+
+
+def _published_capabilities(public_surface: PublicMcpSurface) -> dict:
+    server = FastMCP('test')
+    tool_registry.register_tools(server, public_surface=public_surface)
+    register_resources(server)
+    contents = asyncio.run(server.read_resource('pt://capabilities'))
+    return json.loads(contents[0].content)
+
+
+def test_the_enterprise_public_facade_does_not_expose_arbitrary_javascript():
+    assert 'pt_send_raw' not in _registered_tool_names()
+
+
+def test_the_compatibility_tool_requires_the_explicit_developer_surface():
+    server = FastMCP('test')
+    tool_registry.register_tools(
+        server,
+        public_surface=PublicMcpSurface.DEVELOPER_CAPABILITY_INVESTIGATION,
+    )
+    raw_tool = next(
+        tool for tool in server._tool_manager.list_tools()
+        if tool.name == 'pt_send_raw'
+    )
+
+    assert raw_tool.parameters['required'] == ['js_code']
+    assert raw_tool.parameters['properties']['wait_result']['default'] is False
+    assert 'not a normal enterprise operation' in raw_tool.description
+
+    names = _registered_tool_names(
+        PublicMcpSurface.DEVELOPER_CAPABILITY_INVESTIGATION,
+    )
+
+    assert 'pt_send_raw' in names
+
+
+def test_enterprise_capabilities_do_not_advertise_the_raw_compatibility_path():
+    capabilities = _published_capabilities(PublicMcpSurface.ENTERPRISE)
+
+    assert capabilities['public_surface'] == 'enterprise'
+    assert capabilities['supported_live']['raw_js'] is False
+    assert 'raw_js' not in capabilities['features']
+    assert capabilities['supported_via_cli'] == []
+
+
+def test_developer_capabilities_disclose_the_raw_compatibility_path():
+    capabilities = _published_capabilities(
+        PublicMcpSurface.DEVELOPER_CAPABILITY_INVESTIGATION,
+    )
+
+    assert capabilities['public_surface'] == 'developer-capability-investigation'
+    assert capabilities['supported_live']['raw_js'] is True
+    assert 'raw_js' in capabilities['features']
+    assert capabilities['supported_via_cli']
+
+
+def test_default_instructions_do_not_teach_the_hidden_raw_tool():
+    assert 'pt_send_raw' not in SERVER_INSTRUCTIONS
+    assert 'configureIosDevice' not in SERVER_INSTRUCTIONS
+    assert 'pt_send_raw' in DEVELOPER_CAPABILITY_INVESTIGATION_INSTRUCTIONS
+
+
+def test_normal_qos_tool_does_not_recommend_the_hidden_raw_tool():
+    registry = (PACKAGE / 'adapters' / 'mcp' / 'tool_registry.py').read_text(
+        encoding='utf-8',
+    )
+    qos_tool = registry.split('def pt_read_qos')[1]
+
+    assert 'pt_send_raw' not in qos_tool
+
+
+def test_the_public_surface_policy_defaults_closed_and_accepts_one_exact_opt_in():
+    assert public_mcp_surface_from_env({}) is PublicMcpSurface.ENTERPRISE
+    assert public_mcp_surface_from_env({
+        PUBLIC_MCP_SURFACE_ENV_VAR: 'developer-capability-investigation',
+    }) is PublicMcpSurface.DEVELOPER_CAPABILITY_INVESTIGATION
+
+
+@pytest.mark.parametrize('value', ['1', 'true', 'developer', 'raw', 'unknown'])
+def test_ambiguous_public_surface_values_fail_closed(value):
+    with pytest.raises(ValueError, match=PUBLIC_MCP_SURFACE_ENV_VAR):
+        public_mcp_surface_from_env({PUBLIC_MCP_SURFACE_ENV_VAR: value})
+
+
+def test_the_server_composition_root_applies_the_public_surface_policy():
+    server_source = (PACKAGE / 'server.py').read_text(encoding='utf-8')
+
+    assert 'public_mcp_surface_from_env()' in server_source
+    assert 'register_tools(mcp, public_surface=PUBLIC_MCP_SURFACE)' in server_source
 
 def test_the_raw_fire_and_forget_tool_cannot_satisfy_a_typed_mutation_contract():
     """`pt_send_raw` no participa de ningun contrato de mutacion tipada.

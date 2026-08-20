@@ -15,19 +15,34 @@ from mcp.server.fastmcp import FastMCP
 
 from .adapters.mcp.resource_registry import register_resources
 from .adapters.mcp.tool_registry import register_tools
-from .settings import SERVER_NAME, SERVER_INSTRUCTIONS
+from .adapters.mcp.public_surface import (
+    PublicMcpSurface,
+    public_mcp_surface_from_env,
+)
+from .settings import (
+    DEVELOPER_CAPABILITY_INVESTIGATION_INSTRUCTIONS,
+    SERVER_INSTRUCTIONS,
+    SERVER_NAME,
+)
 
 TRANSPORT_PORT = 39000
+PUBLIC_MCP_SURFACE = public_mcp_surface_from_env()
+
+public_instructions = SERVER_INSTRUCTIONS
+if PUBLIC_MCP_SURFACE is PublicMcpSurface.DEVELOPER_CAPABILITY_INVESTIGATION:
+    public_instructions += (
+        '\n\n' + DEVELOPER_CAPABILITY_INVESTIGATION_INSTRUCTIONS
+    )
 
 mcp = FastMCP(
     SERVER_NAME,
-    instructions=SERVER_INSTRUCTIONS,
+    instructions=public_instructions,
     host="127.0.0.1",
     port=TRANSPORT_PORT,
     stateless_http=True,
 )
 
-register_tools(mcp)
+register_tools(mcp, public_surface=PUBLIC_MCP_SURFACE)
 register_resources(mcp)
 
 
