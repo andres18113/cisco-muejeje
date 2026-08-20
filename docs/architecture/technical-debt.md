@@ -3158,25 +3158,44 @@ that covers it, and the ceiling of what it may claim.
 | services | typed actions, capability-gated | compile readiness is not behaviour |
 | voice | typed actions, capability-gated; no profile means SKIPPED without dispatch | `create cnf-files` replay stays UNKNOWN (TD-VOICE-001) |
 | probe | disposable `__MCP_PROBE_*` only, with inventory fingerprints either side | evidence about the probe, never about a deployed device |
+| legacy raw ACL | **none established**, named rather than dressed up; bypasses the typed chain and dispatches only when handed a `bridge_send` | TREAT_AS_REPLAY_UNSAFE — the payload is structurally additive |
+| MCP tool surface | operator-facing tools, each pinning a transport and requiring its own read-back | a tool result reports what the channel accepted, not what the device did |
 | simulation mode | mutates only PT's Realtime/Simulation mode, reporting before and after | diagnostic; promotes nothing to VERIFIED |
 
 **And locked, which is the part that matters.** The suite does not trust that
-table — it *derives* the family list from the AST: any module calling a mutating
-Python primitive, or embedding a mutating Packet Tracer API name in a
-non-docstring string, must appear in it. A new mutation family breaks the tests
-instead of inheriting a containment nobody checked, and a stale entry naming a
-module that no longer dispatches breaks them too.
+table — it *derives* the family list from the AST over the **whole package**:
+any module calling a mutating Python primitive, or embedding a mutating Packet
+Tracer API name in a non-docstring string, must appear either in the family
+table or in a short, individually justified list of payload builders and prose.
+A new mutation family breaks the tests instead of inheriting a containment
+nobody checked, and a stale entry naming a module that no longer dispatches
+breaks them too.
 
-**The sweep immediately earned its keep.** Two families a hand-written table
-would have missed, both caught on first run:
+**The sweep earned its keep four times, and twice at my own expense.** Families
+a hand-written table would have missed:
 
 1. `enterprise_service_runtime.py` dispatches through **its own JS payload**
    (`setEnable`, `setPageContents`, `addARecordToNameServerDb`) rather than
    through `configure_ios`, so a primitive-only sweep never saw it;
 2. `configuration_runtime.py` is the shared choke point every IOS and endpoint
-   mutation passes through, and belongs in the table in its own right.
+   mutation passes through, and belongs in the table in its own right;
+3. `application/use_cases/apply_acl.py` dispatches when a caller hands it a
+   `bridge_send`, and lives outside `infrastructure/execution/`;
+4. `adapters/mcp/tool_registry.py` dispatches the operator-facing tools.
 
-Docstrings are excluded deliberately: `live_bridge.py` documents
+**The first version of this sweep scanned one directory, and that was the
+defect.** It would have passed while (3) and (4) sat outside its scope — a lock
+on the door with the window open. Both were already classified in
+`mutation_replay.py`, so nothing was uncontained; what was missing was the
+enforcement that keeps it that way. The sweep now walks `src/packet_tracer_mcp`
+entirely, and a regression asserts it finds dispatchers outside
+`infrastructure/execution/` so the scope cannot quietly narrow again.
+
+**Three modules name a mutating API without dispatching**, each exempted for a
+stated reason rather than by convenience: `shared/ios_config.py` returns the
+call as text, `infrastructure/generator/ptbuilder_generator.py` generates a
+script, and `settings.py` documents the tools in a module-level string.
+Docstrings are excluded for the same reason: `live_bridge.py` documents
 `addDevice('R1','2911',100,100)` as a usage example and dispatches nothing.
 
 **The limitation stays structural, not asserted.**
@@ -3396,7 +3415,13 @@ only the interface roles. Nothing here promotes the NAT translation rows.
 ## TD-VOICE-001 — `create cnf-files` replay behavior is unknown
 
 Status:
-OPEN
+RESOLVED
+
+Closed at E9.5 on the third outcome its own criterion admits: the controlled
+disposable probe ran, and the repeat effect is **UNOBSERVABLE** on this
+backend — established by looking down every path this repository has, not by
+not looking. The containment rule was updated accordingly, and two claims that
+the measurement did not support were withdrawn. See "Resolution — E9.5".
 
 Severity:
 P2
@@ -3463,6 +3488,79 @@ measurement supports; the live probe must either substantiate it or the
 declaration must change.
 
 Does not block Stage 3A4, which dispatches no voice action.
+
+---
+
+### Resolution — E9.5, measured and unobservable
+
+```text
+TD_VOICE_001  = RESOLVED
+CLOSURE       = BACKEND_LIMITATION_CONFIRMED
+BACKEND       = Packet Tracer 9.0.1.0858, model 2811
+REPEAT_EFFECT = unobservable
+```
+
+`application/use_cases/qualify_voice_replay.py` creates one disposable CME
+router, addresses its call-control source, applies the typed call-control and
+extension batch, dispatches `create cnf-files` **twice**, and after each pass
+looks down all three paths this repository has:
+
+```text
+show telephony-service    % Invalid input detected  -- not implemented in this image
+show ephone               valid, and ANSWERS EMPTY  -- a different fact, kept apart
+getProcess(name)          9 candidates; only `VlanManager` answers
+Router object members     146 enumerated; not one touches telephony
+                          (the only near-misses are getFtpPasswd / getFtpUsername)
+```
+
+Both passes were byte-identical on every observable, the setup applied, the
+device was removed and the workspace restored.
+
+**Why that is a result and not a shrug.** The criterion offers three outcomes —
+replay-safe, additional side effects, or *remains unobservable*. The third is
+only admissible from a controlled reproduction that searched, and the search is
+what took the work: `show telephony-service` had to be registered and run before
+its absence was a measurement rather than an assumption, and the port-level
+discovery probe had to be generalised to devices before "no telephony process
+exists" could be said at all.
+
+**Two identical silences are not idempotence.** `repeat_effect` returns
+`unobservable` — never `no_observable_difference` — whenever no observer
+answered, and a regression pins exactly that. Comparing two empty readings and
+calling the command replay-safe would be the fabrication this entry exists to
+prevent.
+
+**Three corrections the measurement forced.** Each withdraws a claim:
+
+| was | now | why |
+| --- | --- | --- |
+| `EvidenceBasis.UNMEASURED` | `MEASURED_CONTROLLED_REPEAT_UNOBSERVABLE` | the repeat happened; what it established is that no observer exists |
+| `ReplayClassification.UNKNOWN` | `TREAT_AS_REPLAY_UNSAFE` | having looked and found no observer is stronger than not having looked, and the product must assume the worst |
+| `ReplayContainment.INDEPENDENT_READBACK` | **withdrawn** | it was **false**. No independent read-back can exist here, and a containment that does not exist is worse than none, because it counts as a control when the table is read |
+
+The new basis is deliberately its own value rather than
+`MEASURED_CONTROLLED_REPEAT`, which requires a semantic read-back this run could
+not perform. It can never carry `REPLAY_SAFE`: not observing an effect is not
+having observed that there is none.
+
+**And the declaration CP2 flagged, resolved the way CP2 required.** That note
+said the live probe must either substantiate `operation: Literal[REPLACE]` or
+the declaration must change. It did not substantiate it — `REPLACE` asserts that
+reapplying *replaces* prior state, which is exactly what nothing could observe.
+`GeneratePhoneConfigurationFiles` now declares `EXECUTE_ONCE`, which is what the
+evidence supports. No gate weakens: the over-claim was in the declaration.
+
+**Containment is unchanged in strength and is now honestly described.**
+`apply_voice.py` still has no default capability provider, so with no
+caller-supplied profile every voice action resolves UNKNOWN and is SKIPPED and
+`create cnf-files` is never dispatched at all. `CAPABILITY_GATE` and
+`NO_BLIND_RETRY` are real and stay; they are what
+`TD-TRANSPORT-001`'s matrix records for this family.
+
+**Scope.** One model, one build, one CME configuration. Whether a future
+Packet Tracer image implements `show telephony-service` is not decided here, and
+the entry's ceiling — no claim that a phone bootstrap file was generated — is
+unchanged.
 
 ---
 

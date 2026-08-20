@@ -192,3 +192,82 @@ def _rows(value: object) -> tuple[ObserverProbe, ...]:
             error=str(item.get("error") or ""),
         ))
     return tuple(rows)
+
+
+#: Nombres de proceso candidatos para la telefonía. `VlanManager` es el único
+#: confirmado en este repositorio, así que todo lo demás se PREGUNTA. Pedir un
+#: proceso inexistente devuelve null y no rompe nada.
+TELEPHONY_PROCESS_CANDIDATES = (
+    "TelephonyService", "CallManager", "CME", "CallManagerExpress",
+    "VoIPService", "Telephony", "SipServer", "TftpServer", "VlanManager",
+)
+
+
+@dataclass(frozen=True)
+class DeviceObserverDiscovery:
+    """Qué expone un dispositivo, y qué procesos responden por nombre."""
+
+    device_found: bool = False
+    device_class_name: str = ""
+    enumerated_members: tuple[str, ...] = ()
+    processes_present: tuple[str, ...] = ()
+    process_members: dict[str, tuple[str, ...]] = None  # type: ignore[assignment]
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        if self.process_members is None:
+            object.__setattr__(self, "process_members", {})
+
+
+def _device_discovery_js(device: str, process_names: str) -> str:
+    return "".join((
+        "try{var __d=ipc.network().getDevice(", device, ");",
+        "if(!__d){reportResult(JSON.stringify({device_found:false}));}else{",
+        "var __m=[];try{for(var __k in __d){__m.push(String(__k));}}catch(__me){}",
+        "var __cls='';try{__cls=String(__d.getClassName());}catch(__ce){__cls='';}",
+        "var __names=", process_names, ";var __present=[];var __members={};",
+        "for(var __i=0;__i<__names.length;__i++){var __p=null;",
+        "try{__p=(typeof __d.getProcess==='function')?__d.getProcess(__names[__i]):null;}",
+        "catch(__pe){__p=null;}",
+        "if(__p){__present.push(__names[__i]);var __pm=[];",
+        "try{for(var __q in __p){__pm.push(String(__q));}}catch(__qe){}",
+        "__members[__names[__i]]=__pm;}}",
+        "reportResult(JSON.stringify({device_found:true,device_class_name:__cls,",
+        "members:__m,processes_present:__present,process_members:__members}));}}",
+        "catch(__e){reportResult('ERROR:'+__e);}",
+    ))
+
+
+def discover_device_observers(
+    send_and_wait: Callable[[str, float], str | None],
+    device_name: str,
+    *,
+    process_candidates: tuple[str, ...] = TELEPHONY_PROCESS_CANDIDATES,
+    timeout: float = 12.0,
+) -> DeviceObserverDiscovery:
+    """Enumera los miembros de un dispositivo y qué procesos responden.
+
+    Misma disciplina que `discover_port_observers`: preguntar por un nombre no
+    lo ejecuta, y un proceso ausente sale ausente. Existe porque decidir que
+    algo es INOBSERVABLE exige haber buscado, y buscar sin adivinar firmas es
+    justamente lo que `AGENTS.md` regla 6 pide.
+    """
+    probe = PacketTracerAccessPortProbe(send_and_wait)
+    js = _device_discovery_js(json.dumps(device_name), json.dumps(list(process_candidates)))
+    try:
+        data = probe._json_result(js, timeout)  # noqa: SLF001 - mismo módulo
+    except Exception as exc:  # noqa: BLE001 - la pasada reporta, no decide
+        return DeviceObserverDiscovery(error=f"{type(exc).__name__}: {exc}")
+    members = data.get("process_members")
+    return DeviceObserverDiscovery(
+        device_found=bool(data.get("device_found")),
+        device_class_name=str(data.get("device_class_name") or ""),
+        enumerated_members=tuple(str(item) for item in data.get("members", []) or ()),
+        processes_present=tuple(
+            str(item) for item in data.get("processes_present", []) or ()
+        ),
+        process_members={
+            str(key): tuple(str(item) for item in value or ())
+            for key, value in (members or {}).items()
+        },
+    )

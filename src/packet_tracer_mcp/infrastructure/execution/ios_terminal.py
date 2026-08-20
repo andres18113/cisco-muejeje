@@ -46,6 +46,7 @@ class OperationalQueryId(str, Enum):
     SHOW_IP_PROTOCOLS = "show_ip_protocols"
     SHOW_IP_ROUTE_RIP = "show_ip_route_rip"
     SHOW_INTERFACES_SWITCHPORT = "show_interfaces_switchport"
+    SHOW_TELEPHONY_SERVICE = "show_telephony_service"
 
 
 class TrunkQueryClassification(str, Enum):
@@ -160,6 +161,7 @@ _COMMANDS = {
     # Observado en EXEC de usuario durante R2-0; no requiere `enable`.
     OperationalQueryId.SHOW_IP_PROTOCOLS: "show ip protocols",
     OperationalQueryId.SHOW_IP_ROUTE_RIP: "show ip route rip",
+    OperationalQueryId.SHOW_TELEPHONY_SERVICE: "show telephony-service",
 }
 _INTERFACE_COMMANDS = {
     OperationalQueryId.SHOW_IP_INTERFACE: "show ip interface {interface}",
@@ -185,6 +187,7 @@ _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_IP_DHCP_SNOOPING,
     OperationalQueryId.SHOW_IP_ARP_INSPECTION,
     OperationalQueryId.SHOW_INTERFACES_SWITCHPORT,
+    OperationalQueryId.SHOW_TELEPHONY_SERVICE,
 }
 _INTERFACE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9./:-]{0,79}$")
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"

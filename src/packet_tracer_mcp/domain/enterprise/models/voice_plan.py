@@ -161,10 +161,27 @@ class ConfigureVoiceDhcpOption(BaseVoiceAction):
 
 
 class GeneratePhoneConfigurationFiles(BaseVoiceAction):
+    """`create cnf-files`, declarado por lo que se midió y no por lo que se supuso.
+
+    Declaraba `REPLACE`, que afirma que reaplicar SUSTITUYE el estado anterior.
+    Nadie lo había medido, y la reproducción controlada sobre PT `9.0.1.0858` /
+    `2811` no pudo observarlo: `show telephony-service` no existe en esa imagen,
+    `show ephone` responde vacío, ninguno de los 146 miembros enumerados del
+    objeto `Router` toca la telefonía, y de nueve nombres de proceso candidatos
+    sólo responde `VlanManager`.
+
+    `EXECUTE_ONCE` es lo que la evidencia sostiene: un comando imperativo cuyo
+    efecto repetido este backend no publica. Degradar la declaración no debilita
+    ningún gate -- afirmar `REPLACE` sin poder observarlo era la afirmación de
+    más.
+    """
+
     action_type: Literal[
         VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES
     ] = VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES
-    operation: Literal[OperationSemantics.REPLACE] = OperationSemantics.REPLACE
+    operation: Literal[
+        OperationSemantics.EXECUTE_ONCE
+    ] = OperationSemantics.EXECUTE_ONCE
 
 
 class ConfigureDialRule(BaseVoiceAction):

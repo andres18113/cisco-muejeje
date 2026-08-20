@@ -34,7 +34,8 @@ from src.packet_tracer_mcp.infrastructure.execution.file_bridge import (
 )
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-EXECUTION = REPO / "src" / "packet_tracer_mcp" / "infrastructure" / "execution"
+PACKAGE = REPO / "src" / "packet_tracer_mcp"
+EXECUTION = PACKAGE / "infrastructure" / "execution"
 
 #: Las primitivas Python que MUTAN Packet Tracer. Todo lo demás lee.
 _MUTATION_PRIMITIVES = {
@@ -57,10 +58,16 @@ _MUTATING_PT_APIS = {
 }
 
 #: Cada familia, con la contención que la cubre y el techo de lo que puede
-#: afirmar. `owner` es el módulo donde vive el despacho.
+#: afirmar. `owner` es la ruta, relativa al paquete, donde vive el despacho.
+#:
+#: El barrido recorre el PAQUETE ENTERO, no sólo `infrastructure/execution/`.
+#: La primera versión miraba una sola carpeta y por eso no veía `apply_acl.py`
+#: -- que despacha cuando recibe un `bridge_send` -- ni la superficie de tools
+#: MCP. Una tabla cerrada sobre un subdirectorio no es un cerrojo: es un cerrojo
+#: en una puerta con la ventana abierta.
 CONTAINED_MUTATION_FAMILIES = {
     "physical": {
-        "owner": "packet_tracer_physical_runtime.py",
+        "owner": "infrastructure/execution/packet_tracer_physical_runtime.py",
         "containment": (
             "pre-readback before every mutation; a bounded ACK classifies "
             "ACCEPTED / REJECTED / UNKNOWN; an UNKNOWN outcome is never replayed"
@@ -68,7 +75,7 @@ CONTAINED_MUTATION_FAMILIES = {
         "ceiling": "acknowledgement is not effect; an independent read-back decides",
     },
     "configuration": {
-        "owner": "enterprise_configuration_runtime.py",
+        "owner": "infrastructure/execution/enterprise_configuration_runtime.py",
         "containment": (
             "the whole batch is rendered and routed before the first device is "
             "touched; a refused batch mutates nothing"
@@ -76,12 +83,12 @@ CONTAINED_MUTATION_FAMILIES = {
         "ceiling": "APPLIED means the channel accepted the dispatch, not that the device changed",
     },
     "control_plane": {
-        "owner": "enterprise_control_plane_runtime.py",
+        "owner": "infrastructure/execution/enterprise_control_plane_runtime.py",
         "containment": "typed actions only; a rendering failure refuses instead of dispatching",
         "ceiling": "APPLIED is separate from VERIFIED; fresh registered read-back decides",
     },
     "security": {
-        "owner": "enterprise_security_runtime.py",
+        "owner": "infrastructure/execution/enterprise_security_runtime.py",
         "containment": (
             "typed actions only, with a separate typed removal payload; the "
             "family is classified TREAT_AS_REPLAY_UNSAFE regardless of the "
@@ -90,12 +97,12 @@ CONTAINED_MUTATION_FAMILIES = {
         "ceiling": "direct read-back per action; no behavioural claim from application alone",
     },
     "services": {
-        "owner": "enterprise_service_runtime.py",
+        "owner": "infrastructure/execution/enterprise_service_runtime.py",
         "containment": "typed actions only; capability-gated before dispatch",
         "ceiling": "compile readiness is not behaviour",
     },
     "voice": {
-        "owner": "enterprise_voice_runtime.py",
+        "owner": "infrastructure/execution/enterprise_voice_runtime.py",
         "containment": (
             "typed actions only, capability-gated; with no supplied profile "
             "every action resolves UNKNOWN and is SKIPPED without dispatch"
@@ -103,7 +110,7 @@ CONTAINED_MUTATION_FAMILIES = {
         "ceiling": "`create cnf-files` replay behaviour is UNKNOWN -- TD-VOICE-001",
     },
     "probe": {
-        "owner": "probe_runtime.py",
+        "owner": "infrastructure/execution/probe_runtime.py",
         "containment": (
             "disposable `__MCP_PROBE_*` resources only, created and removed by "
             "the same pass, with inventory fingerprints either side"
@@ -111,7 +118,7 @@ CONTAINED_MUTATION_FAMILIES = {
         "ceiling": "a probe result is evidence about the probe, never about a deployed device",
     },
     "shared_dispatch": {
-        "owner": "configuration_runtime.py",
+        "owner": "infrastructure/execution/configuration_runtime.py",
         "containment": (
             "the single choke point every IOS and endpoint mutation passes "
             "through; it sends and reports only whether the CHANNEL accepted, "
@@ -122,8 +129,29 @@ CONTAINED_MUTATION_FAMILIES = {
             "caller must read the device back to claim anything"
         ),
     },
+    "legacy_raw_acl": {
+        "owner": "application/use_cases/apply_acl.py",
+        "containment": (
+            "NONE ESTABLISHED, and named as such rather than dressed up: this "
+            "path bypasses the typed compile/render/apply chain entirely and "
+            "dispatches only when a caller hands it a bridge_send"
+        ),
+        "ceiling": (
+            "TREAT_AS_REPLAY_UNSAFE -- generate_acl_cli emits no preceding "
+            "`no access-list N`, so the payload is structurally additive"
+        ),
+    },
+    "mcp_tool_surface": {
+        "owner": "adapters/mcp/tool_registry.py",
+        "containment": (
+            "the operator-facing tools, each pinning a transport and requiring "
+            "its own read-back; the raw fire-and-forget tool remains separately "
+            "ledgered as TD-PUBLIC-001"
+        ),
+        "ceiling": "a tool result reports what the channel accepted, not what the device did",
+    },
     "simulation_mode": {
-        "owner": "simulation_trace_runtime.py",
+        "owner": "infrastructure/execution/simulation_trace_runtime.py",
         "containment": (
             "the only mutation is Packet Tracer's own Realtime/Simulation mode, "
             "which reports the state before and after rather than assuming it"
@@ -133,6 +161,24 @@ CONTAINED_MUTATION_FAMILIES = {
             "VERIFIED, and nothing from it enters ConfigurationApplicationResult"
         ),
     },
+}
+
+
+#: Módulos que NOMBRAN una API mutante sin despacharla. Cada uno está acá por
+#: una razón distinta y verificable, no por conveniencia:
+#:
+#: * los dos generadores devuelven TEXTO -- una llamada JS o un script -- y no
+#:   tienen ningún canal por el que mandarlo;
+#: * `settings.py` documenta las tools en una cadena de módulo, que es prosa
+#:   aunque no sea un docstring.
+#:
+#: Si alguno empezara a despachar, dejaría de pertenecer acá y tendría que
+#: entrar en la tabla de familias. Nada en este archivo lo detecta solo, y por
+#: eso la lista es corta y cada entrada dice por qué.
+PAYLOAD_BUILDERS_AND_PROSE = {
+    "shared/ios_config.py": "returns the configureIosDevice call as text",
+    "infrastructure/generator/ptbuilder_generator.py": "generates a PTBuilder script",
+    "settings.py": "documents the MCP tools in a module-level string",
 }
 
 
@@ -157,7 +203,7 @@ def _docstrings(tree: ast.AST) -> set[int]:
 def _modules_dispatching_mutations() -> dict[str, set[str]]:
     """Descubre desde el AST qué módulos despachan mutaciones, y con qué."""
     found: dict[str, set[str]] = {}
-    for path in sorted(EXECUTION.glob("*.py")):
+    for path in sorted(PACKAGE.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         skip = _docstrings(tree)
         used = {
@@ -177,12 +223,16 @@ def _modules_dispatching_mutations() -> dict[str, set[str]]:
                     name for name in _MUTATING_PT_APIS if name in node.value
                 )
         if used:
-            found[path.name] = used
+            found[path.relative_to(PACKAGE).as_posix()] = used
     return found
 
 
 def _owners() -> set[str]:
     return {item["owner"] for item in CONTAINED_MUTATION_FAMILIES.values()}
+
+
+def _accounted_for() -> set[str]:
+    return _owners() | set(PAYLOAD_BUILDERS_AND_PROSE)
 
 
 # ===================== la limitación sigue clasificada ====================
@@ -204,7 +254,7 @@ def test_every_module_that_dispatches_a_mutation_is_a_classified_family():
     """El cerrojo: una familia nueva sin clasificar rompe acá, no en producción."""
     dispatching = set(_modules_dispatching_mutations())
 
-    unclassified = dispatching - _owners()
+    unclassified = dispatching - _accounted_for()
 
     assert unclassified == set(), (
         "These modules dispatch a Packet Tracer mutation and belong to no "
@@ -218,7 +268,7 @@ def test_no_classified_family_names_a_module_that_stopped_dispatching():
     """Y al revés: una entrada que ya no corresponde a nada es ruido."""
     dispatching = set(_modules_dispatching_mutations())
 
-    stale = _owners() - dispatching
+    stale = _accounted_for() - dispatching
 
     assert stale == set(), (
         f"These families name a module that dispatches no mutation: {sorted(stale)}."
@@ -231,7 +281,21 @@ def test_every_family_states_a_containment_and_a_ceiling(family):
 
     assert entry["containment"].strip()
     assert entry["ceiling"].strip()
-    assert (EXECUTION / entry["owner"]).exists()
+    assert (PACKAGE / entry["owner"]).exists()
+
+
+@pytest.mark.parametrize("module", sorted(PAYLOAD_BUILDERS_AND_PROSE))
+def test_every_exempted_module_exists_and_says_why(module):
+    assert (PACKAGE / module).exists()
+    assert PAYLOAD_BUILDERS_AND_PROSE[module].strip()
+
+
+def test_the_sweep_covers_the_whole_package_and_not_one_directory():
+    """El agujero literal de la primera versión de este barrido."""
+    dispatching = set(_modules_dispatching_mutations())
+
+    assert any(not item.startswith("infrastructure/execution/") for item in dispatching)
+    assert "application/use_cases/apply_acl.py" in dispatching
 
 
 # ===================== ninguna mutación se reintenta a ciegas =============

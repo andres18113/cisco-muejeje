@@ -99,6 +99,12 @@ class EvidenceBasis(str, Enum):
 
     #: Repetición controlada sobre Packet Tracer real, con relectura semántica.
     MEASURED_CONTROLLED_REPEAT = "measured_controlled_repeat"
+    #: La repetición controlada SÍ se ejecutó, y el backend no publica ningún
+    #: observador de su efecto. Es estrictamente más fuerte que UNMEASURED --
+    #: se buscó -- y estrictamente más débil que MEASURED_CONTROLLED_REPEAT, que
+    #: exige relectura semántica. Nunca puede sostener REPLAY_SAFE: no observar
+    #: un efecto no es haber observado que no lo hay.
+    MEASURED_CONTROLLED_REPEAT_UNOBSERVABLE = "measured_controlled_repeat_unobservable"
     #: El payload emitido se ejecutó en un motor JS real contra una llamada
     #: nativa instrumentada. Prueba el flujo del guard, no el backend.
     PAYLOAD_EXECUTION_SIMULATED = "payload_execution_simulated"
@@ -444,13 +450,23 @@ PRODUCT_MUTATION_REPLAY_REGISTRY: tuple[MutationReplayPolicy, ...] = (
     ),
     _action_policy(
         MutationSurface.VOICE, GeneratePhoneConfigurationFiles,
-        _VOICE_ENTRYPOINT, ReplayClassification.UNKNOWN, _UNMEASURED,
+        _VOICE_ENTRYPOINT, ReplayClassification.TREAT_AS_REPLAY_UNSAFE,
+        EvidenceBasis.MEASURED_CONTROLLED_REPEAT_UNOBSERVABLE,
+        # `INDEPENDENT_READBACK` estaba declarada y es FALSA: no existe relectura
+        # que pueda observar el efecto de este comando en este backend. Una
+        # contención inventada es peor que ninguna, porque se cuenta como
+        # control al leer la tabla.
         (
             ReplayContainment.CAPABILITY_GATE,
             ReplayContainment.NO_BLIND_RETRY,
-            ReplayContainment.INDEPENDENT_READBACK,
         ),
-        "The imperative create cnf-files command has no controlled repeat evidence.",
+        "Controlled repeat on Packet Tracer 9.0.1.0858 / 2811: create cnf-files "
+        "was dispatched twice and no observer exists. `show telephony-service` "
+        "is not implemented in that image, `show ephone` answers empty, none of "
+        "the 146 enumerated Router members touches telephony, and only "
+        "`VlanManager` answers getProcess out of nine candidates. Both passes "
+        "were byte-identical on every observable, which establishes that nothing "
+        "changed in what can be seen -- not that nothing changed.",
     ),
     _action_policy(
         MutationSurface.VOICE, ConfigureDialRule, _VOICE_ENTRYPOINT,
