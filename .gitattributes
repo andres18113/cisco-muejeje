@@ -1,0 +1,2 @@
+# Historical CP-SCALE inputs are immutable byte-for-byte reference artifacts.
+docs/reference/cp-scale/*.md -text -diff
