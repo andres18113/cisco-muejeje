@@ -93,9 +93,9 @@ that Packet Tracer has been measured in this E9.5 run.
 | HSRP direct role readback | HSRP forwarding and steady active/standby role observation are distinct claims. | [ADVERTENCIA] `UNKNOWN — PENDING_CONTROLLED_QUERY_REPRODUCTION`; forwarding cannot substitute for roles. |
 | OSPF failover | E9 has typed failure scenarios, bounded convergence, exact links, and restore semantics. | [ADVERTENCIA] `UNKNOWN — PENDING_ROOT_CAUSE_AND_LIVE_FAILOVER`. |
 | OSPF recovery | Restore is a separate mandatory stage and cannot silently restart OSPF to manufacture recovery. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_RESTORE_AND_RECOVERY`. |
-| EIGRP adjacency | Process/application evidence is separate from neighbor adjacency. | [ADVERTENCIA] `UNKNOWN — PENDING_ROOT_CAUSE_AND_FRESH_NEIGHBOR_OUTPUT`. |
-| EIGRP routes | Learned-route state is separate from process and neighbor state. | [ADVERTENCIA] `UNKNOWN — PENDING_FRESH_ROUTE_OUTPUT`. |
-| EIGRP behavior | Forwarding is separate from configured, adjacent, and route-learned states. | [ADVERTENCIA] `UNKNOWN — PENDING_TYPED_BEHAVIOR`. |
+| EIGRP adjacency | Process/application evidence is separate from neighbor adjacency. | [OK] `FIXED_AND_VERIFIED` on PT `9.0.1.0858` / 1941: two fresh complete neighbor tables verified both transit peers through the typed runtime; peer router IDs were independently corroborated from the applied peer processes. See `../architecture/eigrp-runtime-qualification.md`. |
+| EIGRP routes | Learned-route state is separate from process and neighbor state. | [OK] `FIXED_AND_VERIFIED` on PT `9.0.1.0858` / 1941: both routers exposed the exact opposite /24 as code `D`; protocol, prefix, length, and derived wildcard are verified. Aggregate remains `PARTIAL` only because semantic `segment_id` is not a device property. See `../architecture/eigrp-runtime-qualification.md`. |
+| EIGRP behavior | Forwarding is separate from configured, adjacent, and route-learned states. | [OK] `NOT_REPRODUCED_WITH_EVIDENCE` on the exact PT `9.0.1.0858` / 2x1941 slice: both cross-LAN typed flows changed from fresh 100% loss before EIGRP to fresh 0% loss after EIGRP, with uniquely attributed sources. See `../architecture/eigrp-runtime-qualification.md`. |
 | EIGRP failover | Failover requires a verified baseline, fault transition, convergence, and restoration. | [ADVERTENCIA] `UNKNOWN — PENDING_COMPOSED_LIVE_SCENARIO`. |
 | Bridge command-path health | Health distinguishes transport-up, polling, full command round trip, degraded, and unresponsive; selection is pinned per operation. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_HTTP_AND_FILE_HEALTH_SLICE`. |
 | Direct low-level link creation | `pt_add_link` validates inputs, pins a transport, receives an ACK, and requires bounded exact two-ended peer/port read-back. | [ADVERTENCIA] `UNKNOWN — PENDING_LIVE_VALIDATION`; ACK alone is not closure. |
@@ -361,3 +361,38 @@ The classifications remain exact: 29 rows are
 backend limitations TD-MODULE-SLOT-001 and TD-TRANSPORT-001. E10 still requires
 fresh governed EIGRP adjacency and learned-route evidence with precise register
 classifications before it can start.
+
+## EIGRP blocker qualification and CP3-HARD closure — 2026-08-20
+
+This section supersedes only the two blocker counts in the canonicalization
+audit immediately above. It does not alter the 29 `NO_E9_5_CLAIM_DEPENDS`
+dispositions, the two `OUTSIDE_E9_5_CLAIM` rows, or the two contained backend
+limitations.
+
+The governed disposable 2x1941 run on Packet Tracer `9.0.1.0858` established
+both E10 prerequisites through current typed product paths. Two process reads
+and two neighbor reads were `VERIFIED`. Both exact learned /24 routes verified
+protocol, network, prefix length, and wildcard; their aggregate is `PARTIAL`
+only for `segment_id`, which is semantic plan provenance and not IOS state.
+Forwarding supplied its required negative and positive controls: both directions
+were fresh 100% loss before EIGRP and fresh 0% loss afterward. Cleanup was
+observed twice by the runner and again from an independent isolated process.
+
+Durable evidence: `../architecture/eigrp-runtime-qualification.md`.
+
+```text
+EIGRP_ADJACENCY                 = FIXED_AND_VERIFIED
+EIGRP_LEARNED_ROUTES            = FIXED_AND_VERIFIED / CORE RIB CLAIM
+EIGRP_FORWARDING                = NOT_REPRODUCED_WITH_EVIDENCE
+UNKNOWN_DEBTS_BLOCKING_E10      = 0
+
+P0_OPEN                         = 0
+P1_AFFECTING_E9_5               = 0
+UNKNOWN_INVALIDATING_E9_5       = 0
+DEBT_BLOCKING_E10               = 0
+
+CP3_HARD                        = PASS
+E9_5                            = CLOSED
+CANONICAL_E9_5_BASELINE         = READY
+E10_STARTABLE                   = YES / NOT_ENTERED
+```

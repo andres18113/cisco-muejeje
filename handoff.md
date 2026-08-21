@@ -1,4 +1,42 @@
-# Handoff — E9.5 canonicalization audit
+# Handoff — E9.5 product closure
+
+## Current governed state — 2026-08-20
+
+Fresh governed product evidence now supersedes the canonical audit's two EIGRP
+blocker counts. It does not rewrite that audit: the audit correctly reopened
+E9.5 when adjacency and learned routes were still UNKNOWN. The current
+qualification resolves both through typed product paths on a disposable 2x1941
+slice in Packet Tracer `9.0.1.0858`.
+
+```text
+PRODUCT_QUALIFICATION_COMMIT     = bd3814de216b29ab8fffe0ed81a7729a4ab41fa0
+SKILLS_GOVERNANCE_RESTRUCTURING  = CLOSED
+
+EIGRP_PROCESS                    = VERIFIED / 2 OF 2
+EIGRP_ADJACENCY                  = FIXED_AND_VERIFIED / 2 OF 2
+EIGRP_LEARNED_ROUTES             = FIXED_AND_VERIFIED / 2 OF 2 CORE RIB CLAIMS
+EIGRP_FORWARDING                 = VERIFIED TRANSITION / 2 OF 2 DIRECTIONS
+EIGRP_FAILOVER                   = UNKNOWN / NOT QUALIFIED
+
+CP3_HARD                         = PASS
+E9_5                             = CLOSED
+CANONICAL_E9_5_BASELINE          = READY
+E10                              = STARTABLE / NOT_ENTERED
+
+REGRESSION                       = 2483 tests; 0 failures; 0 errors; 0 skipped
+PT_EVIDENCE_BUILD                = 9.0.1.0858
+WORKSPACE_AFTER_CLEANUP          = 0 semantic devices; 0 links; 1 backend PDD
+```
+
+The exact evidence, negative/positive forwarding controls, field ceilings,
+cleanup, implementation root cause, and model scope are recorded in
+`docs/architecture/eigrp-runtime-qualification.md`. The literal current
+CP3-HARD evaluation is recorded in `docs/architecture/technical-debt.md`; the
+runtime-row classifications are in `docs/qa/e95-runtime-debt.md`.
+
+E10 was not entered in this work. The older sections below are retained as
+chronological evidence and are superseded where they report the prior EIGRP
+UNKNOWN counts, CP3-HARD failure, or E9.5 open state.
 
 ## Skills governance restructuring closure — 2026-08-20
 

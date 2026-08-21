@@ -501,6 +501,41 @@ implementation. TD-PUBLIC-001 is now `RESOLVED` at its declared
 Skills/public-facade milestone, so the restructuring prerequisite is `READY`.
 This does not change CP3-HARD, E9.5, or the E10 blocker.
 
+## EIGRP blocker closure and literal CP3-HARD re-evaluation — 2026-08-20
+
+The canonicalization correction above was correct for its evidence state and
+remains the historical reason product work resumed. It is now superseded by
+fresh governed evidence, not by narrowing the clause.
+
+On a disposable 2x1941 topology in Packet Tracer `9.0.1.0858`, current typed
+product paths established two EIGRP processes, two reciprocal adjacencies, two
+exact learned /24 routes, and a fresh bidirectional forwarding transition from
+100% loss before EIGRP to 0% loss after it. Cleanup restored zero semantic
+devices and zero links and was independently re-observed. The implementation
+defect was the empty-only parser/runtime path, not a backend ceiling. Full
+details and claim ceilings are in `eigrp-runtime-qualification.md`.
+
+The two rows that the audit correctly identified as blocking E10 now carry
+`FIXED_AND_VERIFIED` classifications. Re-evaluating all four literal clauses at
+the current tree gives:
+
+```text
+P0 open debt                                  = 0
+P1 correctness/evidence affecting E9.5       = 0
+UNKNOWN invalidating final E9.5 claims        = 0
+debt that blocks E10                          = 0
+
+DEBT_CHECKPOINT_3                             = PASS
+E9_5                                          = CLOSED
+CANONICAL_E9_5_BASELINE                       = READY
+E10_STARTABLE                                 = YES / NOT_ENTERED
+```
+
+The only remaining explicit backend ceilings are still TD-MODULE-SLOT-001 and
+TD-TRANSPORT-001, with their existing containment unchanged. EIGRP failover was
+not qualified and is not promoted by this result. EIGRP capability promotion is
+scoped to model 1941 and this exact build; 2911 remains UNKNOWN.
+
 ---
 
 # Documentation limitation
