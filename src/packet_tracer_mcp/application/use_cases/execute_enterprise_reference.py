@@ -37,6 +37,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from time import perf_counter_ns
+
+from pydantic import BaseModel
 
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -49,6 +52,8 @@ from ...domain.enterprise.models.control_plane import ControlPlaneIntent
 from ...domain.enterprise.models.control_plane_runtime import ControlPlaneApplicationResult
 from ...domain.enterprise.models.deployment import DeploymentManifest, EnvironmentFingerprint
 from ...domain.enterprise.models.intent import EnterpriseIntent
+from ...domain.enterprise.models.voice_plan import VoiceCapabilityProfile, VoiceIntent
+from ...domain.enterprise.models.voice_runtime import VoiceApplicationResult
 from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
 from ...domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentItemStatus,
@@ -65,6 +70,7 @@ from ...infrastructure.execution.import_isolation_preflight import (
 from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 from .apply_configuration import ConfigurationApplicator, ConfigurationRuntime
 from .apply_control_plane import ControlPlaneApplicator, ControlPlaneRuntime
+from .apply_voice import VoiceApplicator, VoiceRuntime
 from .compose_enterprise_reference import (
     EnterpriseReferenceComposition,
     compose_enterprise_reference,
@@ -92,7 +98,11 @@ class EnterpriseExecutionStage(str, Enum):
     CONFIGURATION_COMPILE = "configuration_compile"
     CONFIGURATION_APPLY = "configuration_apply"
     FOUNDATIONAL_EVIDENCE = "foundational_evidence"
+    VOICE_APPLY = "voice_apply"
     CONTROL_PLANE_APPLY = "control_plane_apply"
+    CLEANUP = "cleanup"
+    POST_CLEANUP_OBSERVATION_1 = "post_cleanup_observation_1"
+    POST_CLEANUP_OBSERVATION_2 = "post_cleanup_observation_2"
     COMPLETED = "completed"
 
 
@@ -105,6 +115,16 @@ class EnterpriseExecutionStatus(str, Enum):
     FAILED = "failed"
 
 
+class EnterpriseExecutionStageMetric(BaseModel):
+    """Measured work for one reached stage; durations are descriptive, not gates."""
+
+    stage: EnterpriseExecutionStage
+    duration_ms: float
+    item_count: int = 0
+    issue_count: int = 0
+    outcome: str = "completed"
+
+
 @dataclass(frozen=True)
 class EnterpriseRuntimes:
     """Los cuatro runtimes de produccion que la secuencia necesita."""
@@ -113,6 +133,7 @@ class EnterpriseRuntimes:
     serial_orientation: object
     configuration: ConfigurationRuntime
     control_plane: ControlPlaneRuntime
+    voice: VoiceRuntime | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +157,7 @@ class EnterpriseDiagnosticContext:
     oriented_manifest: DeploymentManifest | None
     composition: EnterpriseReferenceComposition | None
     configuration_result: ConfigurationApplicationResult | None
+    voice_result: VoiceApplicationResult | None
     control_plane_result: ControlPlaneApplicationResult | None
 
 
@@ -147,18 +169,22 @@ class EnterpriseExecutionResult:
     import_isolation: ImportIsolationResult | None = None
     baseline_inventory: PhysicalWorkspaceObservation | None = None
     final_inventory: PhysicalWorkspaceObservation | None = None
+    confirmation_inventory: PhysicalWorkspaceObservation | None = None
     inventory_restored: bool | None = None
+    cleanup_confirmed_twice: bool | None = None
     deployment: PhysicalDeploymentResult | None = None
     oriented_manifest: DeploymentManifest | None = None
     orientation: SerialOrientationResult | None = None
     configuration_result: ConfigurationApplicationResult | None = None
     foundational_statuses: dict[str, ActionExecutionStatus] = field(default_factory=dict)
+    voice_result: VoiceApplicationResult | None = None
     control_plane_result: ControlPlaneApplicationResult | None = None
     cleanup_results: list[PhysicalMutationResult] = field(default_factory=list)
     e4_identity_preserved: bool | None = None
     # Lineas producidas por el diagnostico previo a la limpieza. NO son
     # evidencia: no se derivan estados de aca y `status` las ignora.
     diagnostics: list[str] = field(default_factory=list)
+    stage_metrics: list[EnterpriseExecutionStageMetric] = field(default_factory=list)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     errors: list[str] = field(default_factory=list)
@@ -213,14 +239,17 @@ class EnterpriseExecutionResult:
             "foundational_statuses": {
                 key: value.value for key, value in sorted(self.foundational_statuses.items())
             },
+            "voice_status": self.voice_result.status.value if self.voice_result else None,
             "control_plane_status": (
                 self.control_plane_result.status.value
                 if self.control_plane_result else None
             ),
             "inventory_restored": self.inventory_restored,
+            "cleanup_confirmed_twice": self.cleanup_confirmed_twice,
             "e4_identity_preserved": self.e4_identity_preserved,
             "cleanup": [item.model_dump(mode="json") for item in self.cleanup_results],
             "diagnostics": list(self.diagnostics),
+            "stages": [item.model_dump(mode="json") for item in self.stage_metrics],
             "errors": list(self.errors),
         }
 
@@ -239,19 +268,40 @@ class _ExecutionState:
         self.composition: EnterpriseReferenceComposition | None = None
         self.baseline_inventory: PhysicalWorkspaceObservation | None = None
         self.final_inventory: PhysicalWorkspaceObservation | None = None
+        self.confirmation_inventory: PhysicalWorkspaceObservation | None = None
         self.inventory_restored: bool | None = None
+        self.cleanup_confirmed_twice: bool | None = None
         self.deployment: PhysicalDeploymentResult | None = None
         self.oriented_manifest: DeploymentManifest | None = None
         self.orientation: SerialOrientationResult | None = None
         self.configuration_result: ConfigurationApplicationResult | None = None
         self.foundational_statuses: dict[str, ActionExecutionStatus] = {}
+        self.voice_result: VoiceApplicationResult | None = None
         self.control_plane_result: ControlPlaneApplicationResult | None = None
         self.cleanup_results: list[PhysicalMutationResult] = []
         self.e4_identity_preserved: bool | None = None
         self.diagnostics: list[str] = []
+        self.stage_metrics: list[EnterpriseExecutionStageMetric] = []
         self.errors: list[str] = []
         self.diagnostic: DiagnosticHook | None = None
         self._diagnostic_ran = False
+
+    def record_stage(
+        self,
+        stage: EnterpriseExecutionStage,
+        started_ns: int,
+        *,
+        item_count: int = 0,
+        issue_count: int = 0,
+        outcome: str = "completed",
+    ) -> None:
+        self.stage_metrics.append(EnterpriseExecutionStageMetric(
+            stage=stage,
+            duration_ms=round((perf_counter_ns() - started_ns) / 1_000_000, 3),
+            item_count=item_count,
+            issue_count=issue_count,
+            outcome=outcome,
+        ))
 
     def blocked(
         self, stage: EnterpriseExecutionStage, *errors: str,
@@ -303,6 +353,7 @@ class _ExecutionState:
             oriented_manifest=self.oriented_manifest,
             composition=self.composition,
             configuration_result=self.configuration_result,
+            voice_result=self.voice_result,
             control_plane_result=self.control_plane_result,
         )
         try:
@@ -344,6 +395,8 @@ class _ExecutionState:
         # ejemplo -- el producto no es dueno de ningun dispositivo, y borrar por
         # nombre igual seria mutar recursos que podrian ser de otro. Se limpia
         # exactamente lo que el despliegue reporto haber intentado.
+        cleanup_started = perf_counter_ns()
+        errors_before_cleanup = len(self.errors)
         for device in reversed(list(topology.devices)):
             if not self._attempted(device):
                 continue
@@ -351,21 +404,65 @@ class _ExecutionState:
                 self.cleanup_results.append(runtimes.physical.remove_device(device))
             except Exception as exc:
                 self.errors.append(f"Cleanup failed for {device.name!r}: {exc}")
+        self.record_stage(
+            EnterpriseExecutionStage.CLEANUP,
+            cleanup_started,
+            item_count=len(self.cleanup_results),
+            issue_count=len(self.errors) - errors_before_cleanup,
+            outcome="failed" if len(self.errors) > errors_before_cleanup else "completed",
+        )
 
+        observation_started = perf_counter_ns()
         try:
             self.final_inventory = runtimes.physical.observe_workspace()
         except Exception as exc:
             self.errors.append(f"Final workspace inventory failed: {exc}")
             self.final_inventory = None
+        self.record_stage(
+            EnterpriseExecutionStage.POST_CLEANUP_OBSERVATION_1,
+            observation_started,
+            item_count=(
+                len(self.final_inventory.devices) if self.final_inventory is not None else 0
+            ),
+            issue_count=0 if self.final_inventory is not None else 1,
+            outcome="completed" if self.final_inventory is not None else "failed",
+        )
 
-        if self.baseline_inventory is None or self.final_inventory is None:
+        confirmation_started = perf_counter_ns()
+        try:
+            self.confirmation_inventory = runtimes.physical.observe_workspace()
+        except Exception as exc:
+            self.errors.append(f"Confirmation workspace inventory failed: {exc}")
+            self.confirmation_inventory = None
+        self.record_stage(
+            EnterpriseExecutionStage.POST_CLEANUP_OBSERVATION_2,
+            confirmation_started,
+            item_count=(
+                len(self.confirmation_inventory.devices)
+                if self.confirmation_inventory is not None else 0
+            ),
+            issue_count=0 if self.confirmation_inventory is not None else 1,
+            outcome="completed" if self.confirmation_inventory is not None else "failed",
+        )
+
+        if (
+            self.baseline_inventory is None
+            or self.final_inventory is None
+            or self.confirmation_inventory is None
+        ):
             # Sin las dos observaciones no se puede afirmar restauracion. None es
             # la respuesta honesta; escribir False afirmaria lo contrario.
             self.inventory_restored = None
+            self.cleanup_confirmed_twice = None
             return
-        self.inventory_restored = physical_workspace_restoration_matches(
+        first_restored = physical_workspace_restoration_matches(
             self.baseline_inventory, self.final_inventory,
         )
+        second_restored = physical_workspace_restoration_matches(
+            self.baseline_inventory, self.confirmation_inventory,
+        )
+        self.cleanup_confirmed_twice = first_restored and second_restored
+        self.inventory_restored = self.cleanup_confirmed_twice
 
     def _result(
         self,
@@ -380,16 +477,20 @@ class _ExecutionState:
             import_isolation=self.import_isolation,
             baseline_inventory=self.baseline_inventory,
             final_inventory=self.final_inventory,
+            confirmation_inventory=self.confirmation_inventory,
             inventory_restored=self.inventory_restored,
+            cleanup_confirmed_twice=self.cleanup_confirmed_twice,
             deployment=self.deployment,
             oriented_manifest=self.oriented_manifest,
             orientation=self.orientation,
             configuration_result=self.configuration_result,
             foundational_statuses=dict(self.foundational_statuses),
+            voice_result=self.voice_result,
             control_plane_result=self.control_plane_result,
             cleanup_results=list(self.cleanup_results),
             e4_identity_preserved=self.e4_identity_preserved,
             diagnostics=list(self.diagnostics),
+            stage_metrics=list(self.stage_metrics),
             started_at=self.started_at,
             finished_at=datetime.now(timezone.utc),
             errors=[*self.errors, *errors],
@@ -405,6 +506,8 @@ def execute_enterprise_reference(
     import_preflight: ImportIsolationPreflight,
     packet_tracer_version: str | None = None,
     capability_store: CapabilitySnapshotStore | None = None,
+    voice_intent: VoiceIntent | None = None,
+    voice_capabilities: dict[str, VoiceCapabilityProfile] | None = None,
     deployment_id: str = "",
     require_empty_workspace: bool = True,
     policy: HardwarePlanningPolicy | None = None,
@@ -420,17 +523,32 @@ def execute_enterprise_reference(
     state = _ExecutionState(started_at=started_at)
     state.diagnostic = pre_cleanup_diagnostic
 
+    stage_started = perf_counter_ns()
     isolation = import_preflight.ensure_isolated()
     state.import_isolation = isolation
+    state.record_stage(
+        EnterpriseExecutionStage.IMPORT_PREFLIGHT,
+        stage_started,
+        item_count=1,
+        issue_count=0 if isolation.isolated else 1,
+        outcome="completed" if isolation.isolated else "blocked",
+    )
     if not isolation.isolated:
         # Antes de tocar nada: un gate que rechaza no deja mutar.
         return state.blocked(
             EnterpriseExecutionStage.IMPORT_PREFLIGHT, isolation.render(),
         )
 
+    stage_started = perf_counter_ns()
     try:
         baseline = runtimes.physical.observe_workspace()
     except Exception as exc:
+        state.record_stage(
+            EnterpriseExecutionStage.WORKSPACE_INVENTORY,
+            stage_started,
+            issue_count=1,
+            outcome="blocked",
+        )
         return state.blocked(
             EnterpriseExecutionStage.WORKSPACE_INVENTORY,
             f"Read-only workspace inventory failed: {exc}",
@@ -439,10 +557,24 @@ def execute_enterprise_reference(
     if require_empty_workspace:
         workspace_error = disposable_workspace_error(baseline)
         if workspace_error:
+            state.record_stage(
+                EnterpriseExecutionStage.WORKSPACE_INVENTORY,
+                stage_started,
+                item_count=len(baseline.devices),
+                issue_count=1,
+                outcome="blocked",
+            )
             return state.blocked(
                 EnterpriseExecutionStage.WORKSPACE_INVENTORY, workspace_error,
             )
 
+    state.record_stage(
+        EnterpriseExecutionStage.WORKSPACE_INVENTORY,
+        stage_started,
+        item_count=len(baseline.devices),
+    )
+
+    stage_started = perf_counter_ns()
     composition = compose_enterprise_reference(
         intent,
         packet_tracer_version=packet_tracer_version,
@@ -450,6 +582,13 @@ def execute_enterprise_reference(
         policy=policy,
     )
     state.composition = composition
+    state.record_stage(
+        EnterpriseExecutionStage.COMPOSE,
+        stage_started,
+        item_count=len(composition.topology.devices) if composition.topology else 0,
+        issue_count=len(composition.issues),
+        outcome="completed" if composition.valid else "blocked",
+    )
     if not composition.valid or composition.topology is None:
         return state.blocked(EnterpriseExecutionStage.COMPOSE, *composition.issues)
 
@@ -465,6 +604,8 @@ def execute_enterprise_reference(
         environment_fingerprint=environment_fingerprint,
         packet_tracer_version=packet_tracer_version,
         capability_store=capability_store,
+        voice_intent=voice_intent,
+        voice_capabilities=voice_capabilities,
         deployment_id=deployment_id,
         require_empty_workspace=require_empty_workspace,
         policy=policy,
@@ -541,12 +682,15 @@ def _execute_mutating_stages(
     environment_fingerprint: EnvironmentFingerprint,
     packet_tracer_version: str | None,
     capability_store: CapabilitySnapshotStore | None,
+    voice_intent: VoiceIntent | None,
+    voice_capabilities: dict[str, VoiceCapabilityProfile] | None,
     deployment_id: str,
     require_empty_workspace: bool,
     policy: HardwarePlanningPolicy | None,
 ) -> EnterpriseExecutionResult:
     """Desde aqui se muta, asi que desde aqui la limpieza es obligatoria."""
     stage = EnterpriseExecutionStage.PHYSICAL_DEPLOYMENT
+    stage_started = perf_counter_ns()
     try:
         deployment = EnterprisePhysicalTopologyDeployer(runtimes.physical).deploy(
             topology,
@@ -555,33 +699,71 @@ def _execute_mutating_stages(
             require_empty_workspace=require_empty_workspace,
         )
         state.deployment = deployment
+        state.record_stage(
+            stage,
+            stage_started,
+            item_count=len(deployment.item_results),
+            issue_count=len(deployment.errors),
+            outcome="completed" if deployment.manifest is not None else "failed",
+        )
         if deployment.manifest is None:
             return state.failed(stage, runtimes, topology, e4_identity, *deployment.errors)
 
         stage = EnterpriseExecutionStage.SERIAL_ORIENTATION
+        stage_started = perf_counter_ns()
         orientation = SerialOrientationObserver(runtimes.serial_orientation).observe(
             topology, deployment.manifest,
         )
         state.orientation = orientation
+        state.record_stage(
+            stage,
+            stage_started,
+            item_count=len(orientation.observations),
+            issue_count=len(orientation.errors),
+            outcome="completed" if orientation.verified else "failed",
+        )
         if not orientation.verified or orientation.oriented_manifest is None:
             return state.failed(stage, runtimes, topology, e4_identity, *orientation.errors)
         oriented = orientation.oriented_manifest
         state.oriented_manifest = oriented
 
         stage = EnterpriseExecutionStage.CONFIGURATION_COMPILE
+        stage_started = perf_counter_ns()
         composed = compose_enterprise_reference(
             intent,
             packet_tracer_version=packet_tracer_version,
             capability_store=capability_store,
             deployment_manifest=oriented,
             control_plane_intent=control_plane_intent,
+            voice_intent=voice_intent,
+            voice_capabilities=voice_capabilities,
             policy=policy,
         )
         state.composition = composed
-        if not composed.valid or composed.configuration is None or composed.control_plane is None:
+        required_voice_missing = voice_intent is not None and composed.voice is None
+        state.record_stage(
+            stage,
+            stage_started,
+            item_count=(
+                len(composed.configuration.actions) if composed.configuration else 0
+            ) + (len(composed.voice.actions) if composed.voice else 0)
+            + (len(composed.control_plane.actions) if composed.control_plane else 0),
+            issue_count=len(composed.issues),
+            outcome=(
+                "completed"
+                if composed.valid and not required_voice_missing else "failed"
+            ),
+        )
+        if (
+            not composed.valid
+            or composed.configuration is None
+            or composed.control_plane is None
+            or required_voice_missing
+        ):
             return state.failed(stage, runtimes, topology, e4_identity, *composed.issues)
 
         stage = EnterpriseExecutionStage.CONFIGURATION_APPLY
+        stage_started = perf_counter_ns()
         runtime_context = ConfigurationRuntimeContext(
             environment_fingerprint=oriented.environment_fingerprint,
         )
@@ -596,6 +778,23 @@ def _execute_mutating_stages(
             deployment_manifest=oriented,
         )
         state.configuration_result = configuration_result
+        state.record_stage(
+            stage,
+            stage_started,
+            item_count=len(configuration_result.action_results),
+            issue_count=(
+                len(configuration_result.preflight_errors)
+                + sum(
+                    item.status is ActionExecutionStatus.FAILED
+                    for item in configuration_result.action_results
+                )
+            ),
+            outcome=(
+                "failed"
+                if configuration_result.status is ConfigurationApplicationStatus.FAILED
+                else "completed"
+            ),
+        )
         # APPLIED != VERIFIED, y el enum lo distingue. Seguir sobre APPLIED seria
         # tratar "la mutacion volvio bien" como evidencia de efecto, que es
         # exactamente lo que el ceiling de este proyecto prohibe.
@@ -604,6 +803,7 @@ def _execute_mutating_stages(
             return state.failed(stage, runtimes, topology, e4_identity, contradiction)
 
         stage = EnterpriseExecutionStage.FOUNDATIONAL_EVIDENCE
+        stage_started = perf_counter_ns()
         # Derivada de resultados ejecutados. No hay parametro por el que un
         # estado pudiera suministrarse: esa es la diferencia con el harness.
         foundational_statuses = derive_foundational_statuses(
@@ -611,13 +811,70 @@ def _execute_mutating_stages(
             physical_result=state.deployment,
         )
         state.foundational_statuses = foundational_statuses
+        state.record_stage(
+            stage,
+            stage_started,
+            item_count=len(foundational_statuses),
+            issue_count=sum(
+                item is not ActionExecutionStatus.VERIFIED
+                for item in foundational_statuses.values()
+            ),
+            outcome="completed" if foundational_statuses else "failed",
+        )
         if not foundational_statuses:
             return state.failed(
                 stage, runtimes, topology, e4_identity,
                 "No foundational evidence was derived from the executed results.",
             )
 
+        if voice_intent is not None:
+            stage = EnterpriseExecutionStage.VOICE_APPLY
+            stage_started = perf_counter_ns()
+            if runtimes.voice is None or composed.voice is None:
+                state.record_stage(stage, stage_started, issue_count=1, outcome="failed")
+                return state.failed(
+                    stage, runtimes, topology, e4_identity,
+                    "Voice was requested but no voice runtime or plan is available.",
+                )
+            voice_result = VoiceApplicator(runtimes.voice).apply(
+                composed.voice,
+                actual_source_topology_hash=e4_identity,
+                actual_source_configuration_hash=composed.configuration.semantic_hash,
+                foundational_statuses=foundational_statuses,
+                capabilities=composed.voice_capabilities,
+                runtime_context=runtime_context,
+                deployment_manifest=oriented,
+            )
+            state.voice_result = voice_result
+            state.record_stage(
+                stage,
+                stage_started,
+                item_count=len(voice_result.action_results),
+                issue_count=(
+                    len(voice_result.preflight_errors)
+                    + sum(
+                        item.status is ActionExecutionStatus.FAILED
+                        for item in voice_result.action_results
+                    )
+                ),
+                outcome=(
+                    "failed"
+                    if voice_result.status is ActionExecutionStatus.FAILED
+                    else "bounded" if voice_result.status is not ActionExecutionStatus.VERIFIED
+                    else "completed"
+                ),
+            )
+            # UNKNOWN/PARTIAL observations remain explicit and bounded. An
+            # observed failure or rejected foundation cannot support later claims.
+            if voice_result.status is ActionExecutionStatus.FAILED:
+                return state.failed(
+                    stage, runtimes, topology, e4_identity,
+                    "Voice application or verification failed.",
+                    *voice_result.preflight_errors,
+                )
+
         stage = EnterpriseExecutionStage.CONTROL_PLANE_APPLY
+        stage_started = perf_counter_ns()
         control_plane_result = ControlPlaneApplicator(runtimes.control_plane).apply(
             composed.control_plane,
             actual_source_topology_hash=e4_identity,
@@ -628,6 +885,23 @@ def _execute_mutating_stages(
             deployment_manifest=oriented,
         )
         state.control_plane_result = control_plane_result
+        state.record_stage(
+            stage,
+            stage_started,
+            item_count=len(control_plane_result.action_results),
+            issue_count=(
+                len(control_plane_result.preflight_errors)
+                + sum(
+                    item.status is ActionExecutionStatus.FAILED
+                    for item in control_plane_result.action_results
+                )
+            ),
+            outcome=(
+                "completed"
+                if control_plane_result.status is ConfigurationApplicationStatus.VERIFIED
+                else "failed"
+            ),
+        )
         # E9 es la operacion terminal de esta secuencia: no hay consumidor
         # posterior al que acotar su claim, asi que aca el agregado SI manda.
         # Hasta ahora nadie lo miraba, y un E9 que se nego en preflight -- por
@@ -649,4 +923,6 @@ def _execute_mutating_stages(
             )
         return state.completed_run(runtimes, topology, e4_identity)
     except Exception as exc:  # la limpieza corre igual
+        if not state.stage_metrics or state.stage_metrics[-1].stage is not stage:
+            state.record_stage(stage, stage_started, issue_count=1, outcome="failed")
         return state.failed(stage, runtimes, topology, e4_identity, f"{type(exc).__name__}: {exc}")

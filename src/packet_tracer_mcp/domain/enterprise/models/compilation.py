@@ -39,6 +39,12 @@ class CompilationIssueCode(str, Enum):
     POE_CAPABILITY_UNKNOWN = "POE_CAPABILITY_UNKNOWN"
     MODULE_CAPABILITY_UNKNOWN = "MODULE_CAPABILITY_UNKNOWN"
     LAYOUT_COLLISION = "LAYOUT_COLLISION"
+    LAYOUT_DUPLICATE_COORDINATE = "LAYOUT_DUPLICATE_COORDINATE"
+    LAYOUT_OUT_OF_BOUNDS = "LAYOUT_OUT_OF_BOUNDS"
+    LAYOUT_LINK_ENDPOINT_INVALID = "LAYOUT_LINK_ENDPOINT_INVALID"
+    LAYOUT_SITE_OWNERSHIP = "LAYOUT_SITE_OWNERSHIP"
+    LAYOUT_CLUSTER_OWNERSHIP = "LAYOUT_CLUSTER_OWNERSHIP"
+    LAYOUT_GROUP_COMPACTNESS = "LAYOUT_GROUP_COMPACTNESS"
     LAYOUT_COORDINATE_READBACK_PARTIAL = "LAYOUT_COORDINATE_READBACK_PARTIAL"
 
 
@@ -97,6 +103,8 @@ class LayoutProfile(BaseModel):
     paired_endpoint_offset: int = 55
     origin_x: int = 100
     origin_y: int = 100
+    canvas_width: int = 16_000
+    canvas_height: int = 8_000
 
 
 class LayoutRegion(BaseModel):
@@ -109,6 +117,49 @@ class LayoutRegion(BaseModel):
     height: int
 
 
+class PhysicalSubstitutionEvidence(BaseModel):
+    """Aggregated proof that semantic demand used a generic physical model."""
+
+    requested_role: DeviceRole
+    actual_model: str
+    endpoint_count: int
+    generic: bool = True
+    exact_model_claim: bool = False
+
+
+class LayoutMetrics(BaseModel):
+    device_count: int = 0
+    device_footprint_width: int = 0
+    device_footprint_height: int = 0
+    canvas_width: int = 0
+    canvas_height: int = 0
+    rectangle_overlaps: int = 0
+    duplicate_coordinates: int = 0
+    out_of_bounds_devices: int = 0
+    link_endpoint_references: int = 0
+    valid_link_endpoint_references: int = 0
+    valid_link_endpoint_percent: float = 100.0
+    site_ownership_violations: int = 0
+    cluster_ownership_violations: int = 0
+    endpoint_group_compactness_violations: int = 0
+    edge_crossings: int = 0
+    average_link_length: float = 0.0
+    maximum_link_length: float = 0.0
+    maximum_group_dispersion: float = 0.0
+
+    @property
+    def is_valid(self) -> bool:
+        return not any((
+            self.rectangle_overlaps,
+            self.duplicate_coordinates,
+            self.out_of_bounds_devices,
+            self.link_endpoint_references - self.valid_link_endpoint_references,
+            self.site_ownership_violations,
+            self.cluster_ownership_violations,
+            self.endpoint_group_compactness_violations,
+        ))
+
+
 class EnterpriseCompileSummary(BaseModel):
     plan_id: str
     semantic_hash: str = ""
@@ -119,6 +170,9 @@ class EnterpriseCompileSummary(BaseModel):
     network_devices: int = 0
     endpoints: int = 0
     endpoints_by_role: dict[str, int] = Field(default_factory=dict)
+    workload_endpoints: int = 0
+    access_points: int = 0
+    infrastructure_devices: int = 0
     devices: int = 0
     links: int = 0
     endpoint_access_links: int = 0
@@ -139,6 +193,8 @@ class EnterpriseCompileResult(BaseModel):
     summary: EnterpriseCompileSummary
     issues: list[CompilationIssue] = Field(default_factory=list)
     layout_regions: list[LayoutRegion] = Field(default_factory=list)
+    substitutions: list[PhysicalSubstitutionEvidence] = Field(default_factory=list)
+    layout_metrics: LayoutMetrics = Field(default_factory=LayoutMetrics)
 
     @property
     def is_valid(self) -> bool:
@@ -149,4 +205,8 @@ class EnterpriseCompileResult(BaseModel):
             **self.summary.model_dump(mode="json"),
             "valid": self.is_valid,
             "issues": [issue.model_dump(mode="json") for issue in self.issues],
+            "substitutions": [
+                item.model_dump(mode="json") for item in self.substitutions
+            ],
+            "layout_metrics": self.layout_metrics.model_dump(mode="json"),
         }

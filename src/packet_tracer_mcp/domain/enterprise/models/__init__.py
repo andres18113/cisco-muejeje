@@ -13,8 +13,8 @@ from .capabilities import (
 from .capacity import AccessCapacityRequirement, CapacityPlan, PortAttachmentPolicy
 from .compilation import (
     CompilationIssue, CompilationIssueCode, CompilationIssueSeverity, ConcreteLinkRole,
-    EnterpriseCompileResult, EnterpriseCompileSummary, LayoutProfile, LayoutRegion,
-    PhysicalCompilationProfile, PhysicalModelProfile,
+    EnterpriseCompileResult, EnterpriseCompileSummary, LayoutMetrics, LayoutProfile, LayoutRegion,
+    PhysicalCompilationProfile, PhysicalModelProfile, PhysicalSubstitutionEvidence,
 )
 from .configuration import (
     ConfigurationActionType, ConfigurationCompileResult, ConfigurationIssue,
@@ -159,9 +159,9 @@ __all__ = [
     "EnterprisePlan", "EvidenceSource", "FloorIntent",
     "EnterpriseCompileResult", "EnterpriseCompileSummary",
     "HardwareCandidate", "HardwareLinkRequirement", "HardwarePlan", "HardwarePlanStatus",
-    "HierarchyMode", "LayoutProfile", "LayoutRegion", "LinkRole", "ModelIdentityStatus", "ModuleInstallation", "NetworkLayer", "NormalizedPortSpeed",
+    "HierarchyMode", "LayoutMetrics", "LayoutProfile", "LayoutRegion", "LinkRole", "ModelIdentityStatus", "ModuleInstallation", "NetworkLayer", "NormalizedPortSpeed",
     "NetworkSegment", "PlannedNetworkDevice", "PortAssignmentRange", "PortAttachmentPolicy",
-    "PhysicalCompilationProfile", "PhysicalModelProfile", "PortClass", "PortDescriptor", "ProbeCost", "ProbeDefinition", "ProbeExecutionStatus",
+    "PhysicalCompilationProfile", "PhysicalModelProfile", "PhysicalSubstitutionEvidence", "PortClass", "PortDescriptor", "ProbeCost", "ProbeDefinition", "ProbeExecutionStatus",
     "InventoryRestoration", "ProbeIsolationLevel", "classify_inventory_restoration",
     "ProbeLevel", "ProbeRequest", "ProbeSafety", "ProbeSession", "ProbeSessionResult",
     "ResiliencyLevel", "RuntimeDeviceDescriptor", "RuntimePortDescriptor", "SegmentRequirement", "SegmentRole",

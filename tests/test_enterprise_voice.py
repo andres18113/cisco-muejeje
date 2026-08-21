@@ -145,6 +145,26 @@ def _compile(phone_count: int = 2):
     )
 
 
+def test_unpaired_phone_on_direct_voice_access_vlan_is_a_valid_foundation():
+    enterprise, topology, configuration, intent, capabilities = _fixture(1)
+    phone = topology.devices[-1]
+    phone.metadata["pair_id"] = ""
+    access = next(
+        item for item in configuration.actions
+        if isinstance(item, ConfigureAccessPort)
+    )
+    access.data_vlan_id = 20
+    access.voice_vlan_id = None
+
+    result = compile_enterprise_voice(
+        intent, enterprise, topology, configuration, capabilities=capabilities,
+    )
+
+    assert result.is_valid
+    assert result.summary.phone_count == 1
+    assert result.plan.phone_assignments[0].voice_vlan_id == 20
+
+
 def test_voice_plan_is_deterministic_10_of_10_and_input_order_independent():
     enterprise, topology, configuration, intent, capabilities = _fixture(30)
     hashes = {

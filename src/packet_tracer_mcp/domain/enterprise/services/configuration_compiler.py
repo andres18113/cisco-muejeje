@@ -224,7 +224,7 @@ class ConfigurationCompiler:
         ))
 
         trunk_actions, switch_trunk_vlans = self._trunk_actions(
-            topology, devices, links, segment_vlans, switch_local_vlans,
+            topology, devices, links, site_segments, segment_vlans, switch_local_vlans,
             router_trunk_links, policy,
         )
         actions.extend(trunk_actions)
@@ -898,6 +898,7 @@ class ConfigurationCompiler:
         topology: TopologyPlan,
         devices: dict[str, DevicePlan],
         links: list[LinkPlan],
+        site_segments: dict[tuple[str, SegmentRole], NetworkSegment],
         segment_vlans: dict[str, int],
         local_vlans: dict[str, set[int]],
         router_trunk_links: set[str],
@@ -906,13 +907,11 @@ class ConfigurationCompiler:
         actions: list[ConfigureTrunk] = []
         switch_vlans: dict[str, set[int]] = defaultdict(set)
         site_vlans: dict[str, set[int]] = defaultdict(set)
-        for device in topology.devices:
-            if device.site_id:
-                site_vlans[device.site_id].update(
-                    segment_vlans.values() if len({item.site_id for item in topology.devices}) == 1 else []
-                )
-        # For multiple sites, derive from segment names through the already-local sets;
-        # upper-layer trunks conservatively carry the union required inside that site.
+        for (site_id, _), segment in site_segments.items():
+            if segment.name in segment_vlans:
+                site_vlans[site_id].add(segment_vlans[segment.name])
+        # Upper-layer trunks carry the complete typed segment set for their site,
+        # including a wireless segment whose association remains unqualified.
         for device_id, values in local_vlans.items():
             if device_id in devices:
                 site_vlans[devices[device_id].site_id].update(values)
@@ -928,11 +927,8 @@ class ConfigurationCompiler:
             access_switch = next(
                 (device for device in switches if device.network_layer == "access"), None,
             )
-            allowed = sorted(
-                local_vlans.get(_device_key(access_switch), set())
-                if access_switch is not None
-                else site_vlans.get(switches[0].site_id, set())
-            )
+            del access_switch
+            allowed = sorted(site_vlans.get(switches[0].site_id, set()))
             for switch in switches:
                 switch_id = _device_key(switch)
                 interface = link.port_a if link.device_a_id == switch_id else link.port_b

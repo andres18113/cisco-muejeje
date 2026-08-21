@@ -40,6 +40,33 @@ physical ownership, coordinates, link validity, configuration coverage, and
 semantic hashes. It cannot establish Packet Tracer model identity, wireless
 association, live convergence, phone registration, calls, or cleanup behavior.
 
+## Offline qualification checkpoint
+
+The governed offline run on 2026-08-20 compiled the canonical point D through
+the normal designers, planners, compilers, and typed control-plane and voice
+use cases. Full generated plans and evidence were written beneath the ignored
+`data/cp-scale/offline-full/` directory; only the bounded audit summary is
+recorded here.
+
+| Measure | Observed result |
+| --- | --- |
+| Workload endpoints / access points / network devices | `279 / 17 / 22` |
+| Total devices / links / serial WAN links | `318 / 235 / 3` |
+| Configuration / control-plane / voice actions | `615 / 164 / 159` |
+| Hard layout metrics | zero overlaps, duplicates, out-of-bounds devices, ownership violations, and compactness violations; `100%` valid link endpoints |
+| Generic substitutions | `26 webcam`, `42 smoke`, `22 motion`, `2 humiture`, `3 temperature` realized as generic `Thing`, with `exact_model_claim=false` |
+| Physical hash | `dbe1cd39a7a192412dd99c2d4743f9514996b51d93126475f63eb931acb918b1` |
+| Layout hash | `9b67d11e6bca339649139e53b64607a268238a3d024af23f31c49cc85b9c692e` |
+| Artifact hash | `36163ca2d53fc0088c89db6620756ec227ac9b9e008406f9fee74d6ead1b57dc` |
+| Configuration hash | `3e5cfcd6f8a5e6c228a3a776850d8ec938b81607a51d42d051071bd331d2d031` |
+| Control-plane hash | `080f479bf2eaec96ad2886d6e71a68b434cfb9073339419db01afdabcd705274` |
+| Voice hash | `a225fb9ca6fe7e7bb56e2748f19eefe937f706a324ed4123bce8c1d0dd51de20` |
+
+Ten complete offline qualifications produced one stable tuple across all six
+hash dimensions. Timing was measured per stage and was not used as a pass/fail
+threshold. The full governed repository suite passed with `2507` tests and the
+same four pre-existing warnings; `compileall` also passed.
+
 A generic `Thing` is therefore evidence of a physical substitution, not proof
 of an exact sensor class. Exact device models and runtime behavior remain
 unknown until registered capability discovery and a fresh typed qualification
@@ -62,6 +89,14 @@ the same process that will mutate. Each point records typed stage results,
 fresh observations, bounded convergence, cleanup, and two independent
 post-cleanup inventories. A skipped dimension is recorded as zero/not-run; it
 is never promoted to supported.
+
+The read-only live preflight on 2026-08-20 could not establish a current
+Packet Tracer fingerprint because `GET /ping` on the local bridge timed out.
+No mutation was attempted. Point A is therefore recorded as `blocked`; points
+B, C, and D and every dependent dimension are explicitly `not_run/0`. The
+mechanically verified live workload envelope for this run is `0`, while the
+canonical target remains 279. This is an availability result, not evidence
+against the offline plans or an inferred Packet Tracer scale ceiling.
 
 ## Closure
 

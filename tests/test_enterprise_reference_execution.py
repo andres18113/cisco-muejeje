@@ -342,6 +342,37 @@ class TestAFailedStageStopsTheRestAndStillCleansUp:
         assert result.inventory_restored is True
         assert physical.calls.count("observe_workspace") >= 2
 
+    def test_cleanup_requires_two_independent_post_cleanup_observations(self):
+        physical = _RecordingPhysicalRuntime(fail_devices=True)
+
+        result = _run(physical, preflight=_isolated_preflight())
+
+        assert physical.calls.count("observe_workspace") >= 4
+        assert physical.calls[-2:] == ["observe_workspace", "observe_workspace"]
+        assert result.final_inventory is not None
+        assert result.confirmation_inventory is not None
+        assert result.cleanup_confirmed_twice is True
+
+    def test_execution_reports_reached_stage_durations_and_counters(self):
+        physical = _RecordingPhysicalRuntime(fail_devices=True)
+
+        result = _run(physical, preflight=_isolated_preflight())
+
+        stages = [item.stage for item in result.stage_metrics]
+        assert stages[:4] == [
+            EnterpriseExecutionStage.IMPORT_PREFLIGHT,
+            EnterpriseExecutionStage.WORKSPACE_INVENTORY,
+            EnterpriseExecutionStage.COMPOSE,
+            EnterpriseExecutionStage.PHYSICAL_DEPLOYMENT,
+        ]
+        assert stages[-3:] == [
+            EnterpriseExecutionStage.CLEANUP,
+            EnterpriseExecutionStage.POST_CLEANUP_OBSERVATION_1,
+            EnterpriseExecutionStage.POST_CLEANUP_OBSERVATION_2,
+        ]
+        assert all(item.duration_ms >= 0 for item in result.stage_metrics)
+        assert all(item.item_count >= 0 for item in result.stage_metrics)
+
     def test_e4_identity_is_unchanged_across_the_whole_run(self):
         physical = _RecordingPhysicalRuntime(fail_devices=True)
 

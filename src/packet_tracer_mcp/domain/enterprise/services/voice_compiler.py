@@ -165,8 +165,12 @@ class VoiceCompiler:
             expected_vlan = vlan_by_segment.get(selected_addressing.segment_id)
             voice_access = [
                 item for item in access
-                if item.voice_vlan_id is not None
-                and (expected_vlan is None or item.voice_vlan_id == expected_vlan)
+                if expected_vlan is None
+                or item.voice_vlan_id == expected_vlan
+                or (
+                    item.voice_vlan_id is None
+                    and item.data_vlan_id == expected_vlan
+                )
             ]
             if not voice_access:
                 issues.append(_error(

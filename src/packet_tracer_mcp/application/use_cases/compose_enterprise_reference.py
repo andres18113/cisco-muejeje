@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...domain.enterprise.models.capabilities import DeviceCapabilities
+from ...domain.enterprise.models.compilation import EnterpriseCompileSummary
 from ...domain.enterprise.models.control_plane import ControlPlaneIntent, ControlPlanePlan
 from ...domain.enterprise.models.configuration import ConfigurationPlan
 from ...domain.enterprise.models.deployment import DeploymentManifest
@@ -31,6 +32,11 @@ from ...domain.enterprise.models.enterprise_plan import EnterprisePlan
 from ...domain.enterprise.models.hardware import HardwarePlan
 from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.link_performance import TrafficAttributionResult
+from ...domain.enterprise.models.voice_plan import (
+    VoiceCapabilityProfile,
+    VoiceIntent,
+    VoicePlan,
+)
 from ...domain.enterprise.services.enterprise_designer import EnterpriseDesigner
 from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
 from ...domain.enterprise.services.traffic_attribution import attribute_enterprise_traffic
@@ -40,6 +46,7 @@ from ...domain.models.plans import TopologyPlan
 from .compile_configuration import compile_enterprise_configuration
 from .compile_control_plane import compile_enterprise_control_plane
 from .compile_enterprise import compile_enterprise_topology
+from .compile_voice import compile_enterprise_voice
 from .plan_enterprise_hardware import (
     EnterpriseHardwareComposition,
     capability_catalog_for,
@@ -54,13 +61,16 @@ class EnterpriseReferenceComposition:
     enterprise: EnterprisePlan | None = None
     hardware: EnterpriseHardwareComposition | None = None
     topology: TopologyPlan | None = None
+    topology_summary: EnterpriseCompileSummary | None = None
     traffic: TrafficAttributionResult | None = None
     configuration: ConfigurationPlan | None = None
+    voice: VoicePlan | None = None
     control_plane: ControlPlanePlan | None = None
     #: La resolucion de capacidades con la que se compilo E5, publicada para
     #: que quien aplique use EXACTAMENTE la misma. Resolverla dos veces dejaria
     #: que compilacion y aplicacion discrepen sobre que soporta el build.
     capabilities: dict[str, DeviceCapabilities] = field(default_factory=dict)
+    voice_capabilities: dict[str, VoiceCapabilityProfile] = field(default_factory=dict)
     issues: list[str] = field(default_factory=list)
 
     @property
@@ -78,12 +88,19 @@ class EnterpriseReferenceComposition:
             "sites": len(self.enterprise.sites) if self.enterprise else 0,
             "devices": len(self.topology.devices) if self.topology else 0,
             "links": len(self.topology.links) if self.topology else 0,
+            "workload_endpoints": (
+                self.topology_summary.workload_endpoints if self.topology_summary else 0
+            ),
+            "access_points": (
+                self.topology_summary.access_points if self.topology_summary else 0
+            ),
             "physical_topology_hash": (
                 self.topology.physical_identity_hash if self.topology else ""
             ),
             "configuration_actions": (
                 len(self.configuration.actions) if self.configuration else 0
             ),
+            "voice_actions": len(self.voice.actions) if self.voice else 0,
             "control_plane_actions": (
                 len(self.control_plane.actions) if self.control_plane else 0
             ),
@@ -98,13 +115,15 @@ def compose_enterprise_reference(
     capability_store: CapabilitySnapshotStore | None = None,
     deployment_manifest: DeploymentManifest | None = None,
     control_plane_intent: ControlPlaneIntent | None = None,
+    voice_intent: VoiceIntent | None = None,
+    voice_capabilities: dict[str, VoiceCapabilityProfile] | None = None,
     policy: HardwarePlanningPolicy | None = None,
 ) -> EnterpriseReferenceComposition:
     """Compone el producto offline y se detiene en la primera etapa invalida."""
     designed = EnterpriseDesigner().design(intent)
     if not designed.validation.is_valid or designed.plan is None:
         return EnterpriseReferenceComposition(issues=[
-            f"E4 design: {issue.message}" for issue in designed.validation.issues
+            f"E4 design: {issue.message}" for issue in designed.validation.errors
         ] or ["E4 design produced no plan."])
     enterprise = designed.plan
 
@@ -130,6 +149,7 @@ def compose_enterprise_reference(
         return EnterpriseReferenceComposition(
             enterprise=enterprise,
             hardware=hardware,
+            topology_summary=compiled.summary,
             issues=[f"E5 compile: {issue.message}" for issue in compiled.issues]
             or ["E5 compilation produced no topology."],
         )
@@ -149,6 +169,7 @@ def compose_enterprise_reference(
     if not traffic.is_valid:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
+            topology_summary=compiled.summary,
             capabilities=capabilities,
             issues=[f"traffic: {issue.message}" for issue in traffic.issues],
         )
@@ -156,6 +177,7 @@ def compose_enterprise_reference(
     if deployment_manifest is None:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
+            topology_summary=compiled.summary,
             capabilities=capabilities,
         )
 
@@ -170,15 +192,41 @@ def compose_enterprise_reference(
     if not configuration.is_valid or configuration.plan is None:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
+            topology_summary=compiled.summary,
             capabilities=capabilities,
             issues=[f"E5 configuration: {issue.message}" for issue in configuration.issues]
             or ["Configuration compilation produced no plan."],
         )
 
+    compiled_voice: VoicePlan | None = None
+    resolved_voice_capabilities = voice_capabilities or {}
+    if voice_intent is not None:
+        voice = compile_enterprise_voice(
+            voice_intent,
+            enterprise,
+            topology,
+            configuration.plan,
+            capabilities=resolved_voice_capabilities,
+        )
+        if not voice.is_valid or voice.plan is None:
+            return EnterpriseReferenceComposition(
+                enterprise=enterprise, hardware=hardware, topology=topology,
+                topology_summary=compiled.summary,
+                traffic=traffic, capabilities=capabilities,
+                voice_capabilities=resolved_voice_capabilities,
+                configuration=configuration.plan,
+                issues=[f"E7 voice: {issue.message}" for issue in voice.issues]
+                or ["Voice compilation produced no plan."],
+            )
+        compiled_voice = voice.plan
+
     if control_plane_intent is None:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
-            capabilities=capabilities, configuration=configuration.plan,
+            topology_summary=compiled.summary,
+            capabilities=capabilities,
+            voice_capabilities=resolved_voice_capabilities,
+            configuration=configuration.plan, voice=compiled_voice,
         )
 
     control_plane = compile_enterprise_control_plane(
@@ -190,7 +238,10 @@ def compose_enterprise_reference(
     if not control_plane.is_valid or control_plane.plan is None:
         return EnterpriseReferenceComposition(
             enterprise=enterprise, hardware=hardware, topology=topology, traffic=traffic,
-            capabilities=capabilities, configuration=configuration.plan,
+            topology_summary=compiled.summary,
+            capabilities=capabilities,
+            voice_capabilities=resolved_voice_capabilities,
+            configuration=configuration.plan, voice=compiled_voice,
             issues=[f"E9 control plane: {issue.message}" for issue in control_plane.issues]
             or ["Control-plane compilation produced no plan."],
         )
@@ -199,8 +250,11 @@ def compose_enterprise_reference(
         enterprise=enterprise,
         hardware=hardware,
         topology=topology,
+        topology_summary=compiled.summary,
         traffic=traffic,
         capabilities=capabilities,
+        voice_capabilities=resolved_voice_capabilities,
         configuration=configuration.plan,
+        voice=compiled_voice,
         control_plane=control_plane.plan,
     )

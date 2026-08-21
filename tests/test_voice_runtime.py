@@ -15,9 +15,11 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     BindPhoneToExtension,
     CallExpectationResult,
+    EnableCallControl,
     VoiceCapabilityDimension,
     VoiceCapabilityProfile,
     VoiceCapabilityStatus,
+    VoicePhase,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     CallState,
@@ -398,6 +400,28 @@ def test_trusted_renderer_translates_only_typed_actions_and_runtime_mac():
     assert "option 150 ip 198.18.170.1" in payload
     assert "create cnf-files" in payload
     assert "configureIosDevice" in batches[0].js_call
+
+
+def test_renderer_preserves_qualified_site_capacity_above_historical_42():
+    action = EnableCallControl(
+        id="voice/enable/large",
+        phase=VoicePhase.CALL_CONTROL,
+        call_control_id="call-control/large",
+        host_device_id="r-large",
+        host_device_name="LARGE-RTR",
+        host_model="2911",
+        site_id="large-branch",
+        required_capability=VoiceCapabilityDimension.CALL_CONTROL_CONFIG,
+        max_phones=51,
+        max_extensions=51,
+    )
+
+    batches = PacketTracerVoiceRenderer().render_device_batches(
+        "LARGE-RTR", "2911", [action],
+    )
+
+    assert "max-ephones 51" in batches[0].ios_payload
+    assert "max-dn 51" in batches[0].ios_payload
 
 
 def test_renderer_rejects_missing_or_malformed_phone_identity():

@@ -17,10 +17,12 @@ from ..models.compilation import (
     ConcreteLinkRole,
     EnterpriseCompileResult,
     EnterpriseCompileSummary,
+    LayoutMetrics,
     LayoutProfile,
     LayoutRegion,
     PhysicalCompilationProfile,
     PhysicalModelProfile,
+    PhysicalSubstitutionEvidence,
 )
 from ..models.enterprise_plan import EnterprisePlan
 from ..models.hardware import (
@@ -36,6 +38,7 @@ from ..models.link_performance import LinkMedia
 from ..models.roles import DeviceRole
 from .endpoint_expander import EndpointGroupExpander, ExpandedEndpoint, iter_zone_contexts
 from .layout_planner import LayoutPlanner
+from .layout_metrics import LayoutMetricsEvaluator
 from .naming import DeterministicNamingService
 from .physical_ports import is_logical_interface, natural_interface_key, physical_ports
 from .topology_identity import stamp_topology_hashes
@@ -52,6 +55,14 @@ _SERVER_ROLES = {
     DeviceRole.NTP_SERVER,
     DeviceRole.TFTP_SERVER,
     DeviceRole.NVR,
+}
+
+_SCALE_LAYOUT_ROLES = {
+    DeviceRole.WEBCAM.value,
+    DeviceRole.SMOKE_DETECTOR.value,
+    DeviceRole.MOTION_DETECTOR.value,
+    DeviceRole.HUMITURE_MONITOR.value,
+    DeviceRole.TEMPERATURE_MONITOR.value,
 }
 
 
@@ -228,6 +239,8 @@ class EnterpriseCompiler:
             return self._result(topology, enterprise, issues, [], valid=False)
 
         topology, regions = LayoutPlanner().plan(topology, layout_profile)
+        layout_metrics = LayoutMetricsEvaluator().evaluate(topology, layout_profile)
+        issues.extend(_layout_metric_issues(layout_metrics))
         issues.extend(validate_concrete_topology(
             topology,
             {
@@ -243,16 +256,37 @@ class EnterpriseCompiler:
         ))
         issues = _deduplicate_issues(issues)
         if any(issue.severity is CompilationIssueSeverity.ERROR for issue in issues):
-            return self._result(topology, enterprise, issues, regions, valid=False)
+            return self._result(
+                topology, enterprise, issues, regions,
+                valid=False, layout_metrics=layout_metrics,
+            )
 
         topology.warnings = [issue.message for issue in issues if issue.severity is CompilationIssueSeverity.WARNING]
         topology.errors = []
+        default_layout = LayoutProfile()
+        canvas_affects_identity = (
+            any(item.enterprise_role in _SCALE_LAYOUT_ROLES for item in topology.devices)
+            or layout_profile.canvas_width != default_layout.canvas_width
+            or layout_profile.canvas_height != default_layout.canvas_height
+        )
+        identity_regions = (
+            regions if canvas_affects_identity
+            else [item for item in regions if item.kind != "canvas"]
+        )
+        identity_profile = (
+            layout_profile
+            if canvas_affects_identity
+            else layout_profile.model_dump(exclude={"canvas_width", "canvas_height"})
+        )
         stamp_topology_hashes(
             topology,
-            layout_regions=regions,
-            layout_profile=layout_profile,
+            layout_regions=identity_regions,
+            layout_profile=identity_profile,
         )
-        return self._result(topology, enterprise, issues, regions, valid=True)
+        return self._result(
+            topology, enterprise, issues, regions,
+            valid=True, layout_metrics=layout_metrics,
+        )
 
     @staticmethod
     def _compile_network_devices(
@@ -362,6 +396,7 @@ class EnterpriseCompiler:
     ) -> dict[str, _CompiledEndpoint]:
         compiled: dict[str, _CompiledEndpoint] = {}
         generic_roles_reported: set[tuple[DeviceRole, str]] = set()
+        role_counts = Counter(item.role for item in expanded)
         for endpoint in expanded:
             model_name = physical_profile.endpoint_role_models.get(endpoint.role)
             model_profile = physical_profile.model_by_name(model_name) if model_name else None
@@ -377,6 +412,10 @@ class EnterpriseCompiler:
                     CompilationIssueCode.ENDPOINT_MODEL_GENERIC,
                     f"El rol {endpoint.role.value} usa el modelo físico genérico {model_profile.model}.",
                     endpoint.role.value,
+                    requested_role=endpoint.role.value,
+                    actual_model=model_profile.model,
+                    endpoint_count=role_counts[endpoint.role],
+                    generic=True,
                 ))
                 generic_roles_reported.add(generic_key)
             if endpoint.wired and not endpoint.wireless and not model_profile.network_port:
@@ -392,6 +431,13 @@ class EnterpriseCompiler:
                 "actual_endpoint": "true",
                 "growth_reserve": "false",
             }
+            if model_profile.generic and model_profile.model == "Thing":
+                metadata.update({
+                    "physical_model_generic": "true",
+                    "requested_role": endpoint.role.value,
+                    "actual_model": model_profile.model,
+                    "exact_model_claim": "false",
+                })
             metadata.update({f"requirement.{key}": value for key, value in endpoint.requirement_metadata.items()})
             device = DevicePlan(
                 id=endpoint.id,
@@ -633,6 +679,7 @@ class EnterpriseCompiler:
         regions: list[LayoutRegion],
         *,
         valid: bool,
+        layout_metrics: LayoutMetrics | None = None,
     ) -> EnterpriseCompileResult:
         ordered_issues = sorted(
             _deduplicate_issues(issues),
@@ -641,6 +688,18 @@ class EnterpriseCompiler:
         role_counts = Counter(
             device.enterprise_role for device in topology.devices if not device.network_layer
         )
+        access_points = role_counts[DeviceRole.ACCESS_POINT.value]
+        network_devices = sum(bool(device.network_layer) for device in topology.devices)
+        substitutions = [
+            PhysicalSubstitutionEvidence(
+                requested_role=DeviceRole(issue.details["requested_role"]),
+                actual_model=str(issue.details["actual_model"]),
+                endpoint_count=int(issue.details["endpoint_count"]),
+            )
+            for issue in ordered_issues
+            if issue.code is CompilationIssueCode.ENDPOINT_MODEL_GENERIC
+            and "requested_role" in issue.details
+        ]
         bounds = [region for region in regions if region.kind == "site"]
         width = max((region.x + region.width for region in bounds), default=0) - min(
             (region.x for region in bounds), default=0,
@@ -655,9 +714,12 @@ class EnterpriseCompiler:
             layout_hash=topology.layout_hash if valid else "",
             artifact_hash=topology.artifact_hash if valid else "",
             sites=len(enterprise.sites),
-            network_devices=sum(bool(device.network_layer) for device in topology.devices),
+            network_devices=network_devices,
             endpoints=sum(not device.network_layer for device in topology.devices),
             endpoints_by_role=dict(sorted(role_counts.items())),
+            workload_endpoints=sum(role_counts.values()) - access_points,
+            access_points=access_points,
+            infrastructure_devices=network_devices + access_points,
             devices=len(topology.devices),
             links=len(topology.links),
             endpoint_access_links=sum(
@@ -689,6 +751,8 @@ class EnterpriseCompiler:
             summary=summary,
             issues=ordered_issues,
             layout_regions=regions if valid else [],
+            substitutions=substitutions if valid else [],
+            layout_metrics=layout_metrics or LayoutMetrics(),
         )
 
 
@@ -812,6 +876,51 @@ def _hardware_plan_resolution_issues(hardware: HardwarePlan) -> list[Compilation
         )
         for cause, reasons in classified
         if reasons
+    ]
+
+
+def _layout_metric_issues(metrics: LayoutMetrics) -> list[CompilationIssue]:
+    checks = (
+        (
+            metrics.rectangle_overlaps,
+            CompilationIssueCode.LAYOUT_COLLISION,
+            "El layout contiene rectángulos de dispositivo solapados.",
+        ),
+        (
+            metrics.duplicate_coordinates,
+            CompilationIssueCode.LAYOUT_DUPLICATE_COORDINATE,
+            "El layout contiene coordenadas de dispositivo duplicadas.",
+        ),
+        (
+            metrics.out_of_bounds_devices,
+            CompilationIssueCode.LAYOUT_OUT_OF_BOUNDS,
+            "El layout coloca dispositivos fuera del canvas explícito.",
+        ),
+        (
+            metrics.link_endpoint_references - metrics.valid_link_endpoint_references,
+            CompilationIssueCode.LAYOUT_LINK_ENDPOINT_INVALID,
+            "El layout contiene extremos de enlace sin dispositivo válido.",
+        ),
+        (
+            metrics.site_ownership_violations,
+            CompilationIssueCode.LAYOUT_SITE_OWNERSHIP,
+            "El layout contiene enlaces que violan la propiedad del sitio.",
+        ),
+        (
+            metrics.cluster_ownership_violations,
+            CompilationIssueCode.LAYOUT_CLUSTER_OWNERSHIP,
+            "El layout contiene endpoints fuera de su cluster físico o visual.",
+        ),
+        (
+            metrics.endpoint_group_compactness_violations,
+            CompilationIssueCode.LAYOUT_GROUP_COMPACTNESS,
+            "El layout excede el ancho compacto de un grupo de endpoints.",
+        ),
+    )
+    return [
+        _error(code, message, violation_count=count)
+        for count, code, message in checks
+        if count
     ]
 
 

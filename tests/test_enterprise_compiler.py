@@ -630,6 +630,57 @@ def test_resolved_reference_keeps_only_non_blocking_e4_runtime_warnings():
     assert sum(issue.code is CompilationIssueCode.ENDPOINT_MODEL_GENERIC for issue in result.issues) == 1
 
 
+def test_generic_thing_emits_structured_substitution_without_losing_semantic_role():
+    intent = EnterpriseIntent(
+        name="Generic sensor evidence",
+        default_growth_percent=0,
+        sites=[SiteIntent(
+            name="Branch",
+            type=SiteType.BRANCH,
+            endpoints=[
+                _requirement(DeviceRole.USER_PC, 1),
+                _requirement(
+                    DeviceRole.SMOKE_DETECTOR, 2, wired=False, wireless=True,
+                ),
+                _requirement(DeviceRole.ACCESS_POINT, 1, poe=True),
+            ],
+        )],
+    )
+
+    _, _, result = _compile(intent)
+
+    assert result.is_valid and result.plan is not None
+    assert [item.model_dump(mode="json") for item in result.substitutions] == [{
+        "requested_role": "smoke_detector",
+        "actual_model": "Thing",
+        "endpoint_count": 2,
+        "generic": True,
+        "exact_model_claim": False,
+    }]
+    warning = next(
+        item for item in result.issues
+        if item.code is CompilationIssueCode.ENDPOINT_MODEL_GENERIC
+        and item.subject == DeviceRole.SMOKE_DETECTOR.value
+    )
+    assert warning.details == {
+        "requested_role": "smoke_detector",
+        "actual_model": "Thing",
+        "endpoint_count": 2,
+        "generic": True,
+    }
+    sensors = [
+        item for item in result.plan.devices
+        if item.enterprise_role == DeviceRole.SMOKE_DETECTOR.value
+    ]
+    assert {item.model for item in sensors} == {"Thing"}
+    assert all(item.metadata["physical_model_generic"] == "true" for item in sensors)
+    assert all(item.metadata["exact_model_claim"] == "false" for item in sensors)
+    assert result.summary.endpoints == 4
+    assert result.summary.workload_endpoints == 3
+    assert result.summary.access_points == 1
+    assert result.summary.infrastructure_devices == result.summary.network_devices + 1
+
+
 def test_compact_summary_omits_full_plan_and_semantic_hash_is_stable():
     _, _, result = _reference()
     compact = result.compact_summary()

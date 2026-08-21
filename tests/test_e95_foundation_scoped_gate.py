@@ -53,6 +53,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationKind,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceIntent
 
 from test_e95_e5_capability_evidence import (
     BOUNDED_REQUIREMENTS,
@@ -152,6 +153,23 @@ class _RecordingControlPlaneRuntime:
         return _record
 
 
+class _EmptyVoiceRuntime:
+    """Exercises the governed voice stage without fabricating phone behavior."""
+
+    def inventory(self):
+        return []
+
+    def apply_actions(self, actions):
+        assert actions == []
+        return []
+
+    def observe_registration(self, expectation):
+        raise AssertionError("an empty voice plan has no registration expectations")
+
+    def verify_call(self, expectation, call_attempt_id, started_ns):
+        raise AssertionError("an empty voice plan has no call expectations")
+
+
 @pytest.fixture
 def measured_store(tmp_path):
     return _store(tmp_path, "measured", [
@@ -246,6 +264,41 @@ def test_a_not_fully_verified_configuration_still_reaches_the_control_plane(meas
         result.control_plane_result.failure_code
         is not ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING
     )
+
+
+def test_bounded_voice_observation_runs_before_control_plane_without_promotion(
+    measured_store,
+):
+    intent, topology, control_plane_intent = _compose(measured_store)
+    physical = _GenericPhysicalRuntime().bind(topology)
+    configuration = _ShapedConfigurationRuntime(physical, topology)
+    control_plane = _RecordingControlPlaneRuntime()
+
+    result = execute_enterprise_reference(
+        intent,
+        EnterpriseRuntimes(
+            physical=physical,
+            serial_orientation=_GenericOrientationRuntime(),
+            configuration=configuration,
+            control_plane=control_plane,
+            voice=_EmptyVoiceRuntime(),
+        ),
+        control_plane_intent,
+        environment_fingerprint=FINGERPRINT,
+        import_preflight=_isolated_preflight(),
+        packet_tracer_version=MEASURED_VERSION,
+        capability_store=measured_store,
+        policy=_QUALIFIED,
+        voice_intent=VoiceIntent(id="voice/bounded-observation"),
+    )
+
+    assert result.voice_result is not None
+    assert result.voice_result.status is ActionExecutionStatus.PARTIAL
+    stages = [item.stage for item in result.stage_metrics]
+    assert stages.index(EnterpriseExecutionStage.VOICE_APPLY) < stages.index(
+        EnterpriseExecutionStage.CONTROL_PLANE_APPLY,
+    )
+    assert control_plane.inventory_calls == 1
 
 
 def test_the_aggregate_configuration_status_is_never_rewritten(measured_store):

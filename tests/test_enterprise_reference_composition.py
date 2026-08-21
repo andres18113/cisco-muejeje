@@ -19,6 +19,8 @@ from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference im
     compose_enterprise_reference,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.link_performance import TrafficFlowIntent
+from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import ExtensionRange, VoiceIntent
+from tests.test_stage3a4_product_composition import _oriented_manifest
 from tests.test_e95_serial_product_planning import _reference_planning_intent
 
 
@@ -119,6 +121,42 @@ class TestItStopsWhereTheEvidenceStops:
         assert composed.enterprise is not None
         assert composed.topology is None
         assert all(issue.startswith("E5 compile") for issue in composed.issues)
+
+    def test_voice_is_an_optional_part_of_the_normal_composition(self):
+        structural = compose_enterprise_reference(_intent())
+        topology = structural.topology
+        manifest = _oriented_manifest(topology)
+        routers = {
+            item.site_id: item.id
+            for item in topology.devices
+            if item.category == "router"
+        }
+        voice_intent = VoiceIntent(
+            id="voice/reference",
+            call_control_device_ids=routers,
+            extension_ranges={
+                site_id: ExtensionRange(
+                    start=3001 + (index * 1000),
+                    end=3999 + (index * 1000),
+                )
+                for index, site_id in enumerate(sorted(routers))
+            },
+            intersite_calling=True,
+        )
+
+        composed = compose_enterprise_reference(
+            _intent(),
+            deployment_manifest=manifest,
+            packet_tracer_version="9.0.1.0858",
+            voice_intent=voice_intent,
+        )
+
+        assert composed.valid, composed.issues
+        assert composed.configuration is not None
+        assert composed.voice is not None
+        assert composed.voice.source_topology_hash == composed.topology.physical_identity_hash
+        assert composed.voice.source_configuration_hash == composed.configuration.semantic_hash
+        assert composed.control_plane is None
 
 
 class TestTheSummaryIsHonest:

@@ -17,6 +17,11 @@ _ENDPOINT_MODELS = {
     DeviceRole.IP_PHONE: "7960",
     DeviceRole.PRINTER: "Printer-PT",
     DeviceRole.IP_CAMERA: "WiredEndDevice-PT",
+    DeviceRole.WEBCAM: "Thing",
+    DeviceRole.SMOKE_DETECTOR: "Thing",
+    DeviceRole.MOTION_DETECTOR: "Thing",
+    DeviceRole.HUMITURE_MONITOR: "Thing",
+    DeviceRole.TEMPERATURE_MONITOR: "Thing",
     DeviceRole.ACCESS_POINT: "AccessPoint-PT",
     DeviceRole.SERVER: "Server-PT",
     DeviceRole.WEB_SERVER: "Server-PT",
@@ -41,7 +46,7 @@ class PacketTracerTopologyCatalogAdapter:
                 physical_ports=ports,
                 network_port=self._network_port(model.pt_type, ports),
                 passthrough_port="PC" if model.pt_type == "7960" else "",
-                generic=model.pt_type == "WiredEndDevice-PT",
+                generic=model.pt_type in {"WiredEndDevice-PT", "Thing"},
             ))
         return PhysicalCompilationProfile(
             models=models,

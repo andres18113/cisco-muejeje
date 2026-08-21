@@ -21,6 +21,7 @@ from .compose_enterprise_reference import (
 from .execute_enterprise_reference import (
     EnterpriseExecutionResult,
     EnterpriseExecutionStage,
+    EnterpriseExecutionStageMetric,
     EnterpriseExecutionStatus,
     EnterpriseRuntimes,
     execute_enterprise_reference,
@@ -47,4 +48,19 @@ from .apply_control_plane import ControlPlaneApplicator, ControlPlaneRuntime
 from .observe_serial_orientation import (
     SerialOrientationObserver,
     SerialOrientationRuntime,
+)
+from .qualify_cp_scale_offline import (
+    CPScaleOfflineQualification,
+    CPScaleStageMetric,
+    qualify_cp_scale_offline,
+    write_cp_scale_offline_artifacts,
+)
+from .qualify_cp_scale_live import (
+    CPScaleLiveQualification,
+    CPScaleLivePointResult,
+    CPScalePointStatus,
+    CPScaleRepositoryState,
+    qualify_cp_scale_progressive,
+    read_git_repository_state,
+    write_cp_scale_live_artifacts,
 )

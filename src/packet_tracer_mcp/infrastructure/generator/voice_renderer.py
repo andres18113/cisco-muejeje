@@ -70,8 +70,11 @@ class PacketTracerVoiceRenderer:
         lines = []
         for action in actions:
             if isinstance(action, EnableCallControl):
-                if not 1 <= action.max_phones <= 42 or not 1 <= action.max_extensions <= 144:
-                    raise ValueError("Packet Tracer CME limits are 42 phones and 144 extensions.")
+                if not 1 <= action.max_phones <= 144 or not 1 <= action.max_extensions <= 144:
+                    raise ValueError(
+                        "Typed CME structural capacity must be between 1 and 144; "
+                        "live Packet Tracer acceptance is qualified separately."
+                    )
                 lines.extend([
                     "telephony-service", f" max-ephones {action.max_phones}",
                     f" max-dn {action.max_extensions}",

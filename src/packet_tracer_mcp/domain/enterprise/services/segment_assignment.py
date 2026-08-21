@@ -13,6 +13,11 @@ class SegmentAssignmentPolicy:
     _BY_ROLE = {
         DeviceRole.IP_PHONE: SegmentRole.VOICE,
         DeviceRole.IP_CAMERA: SegmentRole.CCTV,
+        DeviceRole.WEBCAM: SegmentRole.CCTV,
+        DeviceRole.SMOKE_DETECTOR: SegmentRole.CCTV,
+        DeviceRole.MOTION_DETECTOR: SegmentRole.CCTV,
+        DeviceRole.HUMITURE_MONITOR: SegmentRole.CCTV,
+        DeviceRole.TEMPERATURE_MONITOR: SegmentRole.CCTV,
         DeviceRole.PRINTER: SegmentRole.PRINTERS,
         DeviceRole.ACCESS_POINT: SegmentRole.MANAGEMENT,
         DeviceRole.SERVER: SegmentRole.SERVERS,
