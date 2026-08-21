@@ -432,6 +432,27 @@ def test_ospf_expectations_require_only_registered_show_fields():
     )
 
 
+def test_eigrp_neighbor_expectation_depends_on_both_applied_processes():
+    plan = _compile().plan
+    eigrp_actions = {
+        item.device_id: item.id
+        for item in plan.actions
+        if isinstance(item, ConfigureEigrpIpv4)
+    }
+    neighbors = [
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_NEIGHBOR
+        and item.expected.get("protocol") == DynamicRoutingProtocol.EIGRP.value
+    ]
+
+    assert neighbors
+    for item in neighbors:
+        assert set(item.depends_on) == {
+            eigrp_actions[item.device_id],
+            eigrp_actions[item.peer_device_id],
+        }
+
+
 def test_failure_scenario_keeps_exact_e4_fault_and_restore_identity():
     scenario = _compile().plan.failure_scenarios[0]
 

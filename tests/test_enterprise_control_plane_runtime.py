@@ -12,6 +12,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 )
 from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityDimension,
+    ControlPlaneVerificationExpectation,
     ControlPlaneVerificationKind,
     EtherChannelProtocol,
     StpMode,
@@ -30,6 +31,11 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
 from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
 from test_enterprise_control_plane import _compile
 from test_ios_terminal import (
+    _PT_9_0_1_0858_EIGRP_NEIGHBORS_R1,
+    _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY,
+    _PT_9_0_1_0858_EIGRP_PROTOCOL_R1,
+    _PT_9_0_1_0858_EIGRP_ROUTE_R1,
+    _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY,
     _PT_9_0_1_0858_ETHERCHANNEL_SUMMARY,
     _PT_9_0_1_0858_OSPF_NEIGHBOR_R1,
     _PT_9_0_1_0858_OSPF_ROUTE_R1,
@@ -69,6 +75,7 @@ class FakeControlPlaneIos:
             output=value,
             session_state=IosSessionState.EXEC_PROMPT_READY,
             fresh_output_observed=True,
+            output_complete=True,
             window_strategy="prefix_delta",
         )
 
@@ -306,6 +313,7 @@ def test_direct_control_plane_state_uses_only_fresh_registered_ios_evidence():
         ("HQ-SW1", OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY),
         ("HQ-R1", OperationalQueryId.SHOW_IP_OSPF_NEIGHBOR),
         ("HQ-R1", OperationalQueryId.SHOW_IP_ROUTE_OSPF),
+        ("BR-R1", OperationalQueryId.SHOW_IP_PROTOCOLS),
     ]
 
 
@@ -536,7 +544,7 @@ def test_hsrp_role_readback_is_explicitly_unobservable_without_a_query():
     assert "role" in result.message.casefold()
 
 
-def test_eigrp_process_readback_is_explicitly_unobservable_without_row_fixtures():
+def test_eigrp_process_readback_is_unobservable_without_current_output():
     plan = _compile().plan
     expectation = next(
         item for item in plan.verification_expectations
@@ -553,9 +561,180 @@ def test_eigrp_process_readback_is_explicitly_unobservable_without_row_fixtures(
     result = runtime.verify([expectation])[0]
 
     assert result.status is ActionExecutionStatus.UNOBSERVABLE
-    assert result.evidence_method == "eigrp_readback_unavailable"
-    assert "AS" in result.message
-    assert ios.calls == []
+    assert ios.calls == [("BR-R1", OperationalQueryId.SHOW_IP_PROTOCOLS)]
+
+
+def test_fresh_eigrp_process_neighbor_and_route_rows_are_typed_evidence():
+    plan = _compile().plan
+    process = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+        and item.device_id == "b1"
+    )
+    neighbor = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_NEIGHBOR
+        and item.device_id == "b1"
+    )
+    action = next(item for item in plan.actions if item.id == process.action_id)
+    route = ControlPlaneVerificationExpectation(
+        id="verify-eigrp-route-b1",
+        kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
+        action_id=action.id,
+        device_id="b1",
+        peer_device_id="b2",
+        required_capability=ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
+        expected={
+            "network": "10.1.20.0",
+            "prefix_length": 24,
+            "protocol": "eigrp",
+            "wildcard": "0.0.0.255",
+            "segment_id": "branch-b2-lan",
+        },
+        depends_on=[action.id],
+    )
+    local_process = (
+        _PT_9_0_1_0858_EIGRP_PROTOCOL_R1
+        .replace(" 100 ", " 200 ")
+        .replace("AS(100)", "AS(200)")
+        .replace("198.18.210.1", "10.1.10.2")
+    )
+    peer_process = local_process.replace("10.1.10.2", "10.1.10.3")
+    neighbor_output = (
+        _PT_9_0_1_0858_EIGRP_NEIGHBORS_R1
+        .replace("process 100", "process 200")
+        .replace("198.18.212.2", "10.255.1.2")
+    )
+    route_output = _PT_9_0_1_0858_EIGRP_ROUTE_R1.replace(
+        "198.18.211.0", "10.1.20.0",
+    )
+    ios = FakeControlPlaneIos({
+        ("BR-R1", OperationalQueryId.SHOW_IP_PROTOCOLS): local_process,
+        ("BR-R2", OperationalQueryId.SHOW_IP_PROTOCOLS): peer_process,
+        ("BR-R1", OperationalQueryId.SHOW_IP_EIGRP_NEIGHBORS): neighbor_output,
+        ("BR-R1", OperationalQueryId.SHOW_IP_ROUTE_EIGRP): route_output,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+        route_convergence_attempts=1,
+    )
+    runtime.apply_actions(plan.actions)
+
+    process_result, neighbor_result, route_result = runtime.verify(
+        [process, neighbor, route],
+    )
+
+    assert process_result.status is ActionExecutionStatus.VERIFIED
+    assert set(process_result.fields.values()) == {FieldVerificationStatus.VERIFIED}
+    assert process_result.evidence_method == "fresh_show_ip_protocols_eigrp"
+
+    assert neighbor_result.status is ActionExecutionStatus.VERIFIED
+    assert set(neighbor_result.fields.values()) == {FieldVerificationStatus.VERIFIED}
+    assert neighbor_result.evidence_method == "fresh_show_ip_eigrp_neighbors"
+
+    assert route_result.status is ActionExecutionStatus.PARTIAL
+    assert route_result.fields["network"] is FieldVerificationStatus.VERIFIED
+    assert route_result.fields["prefix_length"] is FieldVerificationStatus.VERIFIED
+    assert route_result.fields["protocol"] is FieldVerificationStatus.VERIFIED
+    assert route_result.fields["wildcard"] is FieldVerificationStatus.VERIFIED
+    assert route_result.fields["segment_id"] is FieldVerificationStatus.UNOBSERVABLE
+    assert route_result.evidence_method == "fresh_show_ip_route_eigrp"
+
+
+def test_fresh_supported_empty_eigrp_tables_fail_required_state():
+    plan = _compile().plan
+    neighbor = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_NEIGHBOR
+        and item.device_id == "b1"
+    )
+    action = next(item for item in plan.actions if item.id == neighbor.action_id)
+    route = ControlPlaneVerificationExpectation(
+        id="verify-eigrp-route-absent",
+        kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
+        action_id=action.id,
+        device_id="b1",
+        peer_device_id="b2",
+        required_capability=ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
+        expected={
+            "network": "10.1.20.0", "prefix_length": 24,
+            "protocol": "eigrp",
+        },
+    )
+    peer_process = (
+        _PT_9_0_1_0858_EIGRP_PROTOCOL_R1
+        .replace(" 100 ", " 200 ")
+        .replace("AS(100)", "AS(200)")
+        .replace("198.18.210.1", "10.1.10.3")
+    )
+    ios = FakeControlPlaneIos({
+        ("BR-R1", OperationalQueryId.SHOW_IP_EIGRP_NEIGHBORS):
+            _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY.replace("process 90", "process 200"),
+        ("BR-R2", OperationalQueryId.SHOW_IP_PROTOCOLS): peer_process,
+        ("BR-R1", OperationalQueryId.SHOW_IP_ROUTE_EIGRP):
+            _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+        route_convergence_attempts=1,
+    )
+    runtime.apply_actions(plan.actions)
+
+    neighbor_result, route_result = runtime.verify([neighbor, route])
+
+    assert neighbor_result.status is ActionExecutionStatus.FAILED
+    assert neighbor_result.fields["adjacent"] is FieldVerificationStatus.FAILED
+    assert route_result.status is ActionExecutionStatus.FAILED
+    assert route_result.convergence.last_observable_state == "route_absent"
+
+
+def test_incomplete_eigrp_route_window_cannot_verify_or_fail_route_state():
+    plan = _compile().plan
+    process = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+        and item.device_id == "b1"
+    )
+    action = next(item for item in plan.actions if item.id == process.action_id)
+    route = ControlPlaneVerificationExpectation(
+        id="verify-eigrp-route-incomplete",
+        kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
+        action_id=action.id,
+        device_id="b1",
+        required_capability=ControlPlaneCapabilityDimension.ROUTING_ROUTE_STATE,
+        expected={
+            "network": "10.1.20.0", "prefix_length": 24,
+            "protocol": "eigrp",
+        },
+    )
+    incomplete = IosCommandResult(
+        device_name="BR-R1",
+        query_id=OperationalQueryId.SHOW_IP_ROUTE_EIGRP,
+        executed=True,
+        output=_PT_9_0_1_0858_EIGRP_ROUTE_R1.replace(
+            "198.18.211.0", "10.1.20.0",
+        ),
+        session_state=IosSessionState.EXEC_PROMPT_READY,
+        fresh_output_observed=True,
+        output_complete=False,
+        window_strategy="prefix_delta",
+    )
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]),
+        ios_executor=FakeControlPlaneIos({
+            ("BR-R1", OperationalQueryId.SHOW_IP_ROUTE_EIGRP): incomplete,
+        }),
+        route_convergence_attempts=1,
+    )
+    runtime.apply_actions(plan.actions)
+
+    result = runtime.verify([route])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.evidence_method == "eigrp_route_readback_incomplete"
 
 
 def test_fresh_ospf_rows_must_match_the_expected_neighbor_instance():

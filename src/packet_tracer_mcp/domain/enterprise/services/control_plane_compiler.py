@@ -1561,6 +1561,15 @@ class ControlPlaneCompiler:
                 action = action_by_device.get(local.device_id)
                 if action is None:
                     continue
+                neighbor_dependencies = [action.id]
+                if policy.protocol is DynamicRoutingProtocol.EIGRP:
+                    # The PT EIGRP neighbor table exposes the peer address but
+                    # not its router ID. The typed observer corroborates that
+                    # field from the peer's applied EIGRP process, so both
+                    # processes are real prerequisites for the claim.
+                    peer_action = action_by_device.get(peer.device_id)
+                    if peer_action is not None:
+                        neighbor_dependencies.append(peer_action.id)
                 expectations.append(ControlPlaneVerificationExpectation(
                     id=_stable_id("verify-neighbor", link.id, local.device_id),
                     kind=ControlPlaneVerificationKind.ROUTING_NEIGHBOR,
@@ -1576,7 +1585,7 @@ class ControlPlaneCompiler:
                         "protocol": policy.protocol.value,
                         "adjacent": True,
                     },
-                    depends_on=[action.id],
+                    depends_on=sorted(neighbor_dependencies),
                 ))
         for local_id, local_action in sorted(action_by_device.items()):
             local_networks = {

@@ -8,7 +8,6 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from time import monotonic, sleep
 from collections.abc import Callable
-from typing import Never
 
 from ...domain.enterprise.models.discovery import DeviceInitializationResult
 from .command_dispatch import (
@@ -80,6 +79,7 @@ class OspfQueryClassification(str, Enum):
 
 
 class EigrpQueryClassification(str, Enum):
+    SUPPORTED_WITH_ROWS = "supported_with_rows"
     SUPPORTED_EMPTY = "supported_empty"
     PROCESS_MISMATCH = "process_mismatch"
     QUERY_TIMEOUT = "query_timeout"
@@ -352,6 +352,37 @@ class OspfRouteStatusRow:
     next_hop: str
     age: str
     interface: str
+
+
+@dataclass(frozen=True)
+class EigrpNeighborStatusRow:
+    handle: int
+    address: str
+    interface: str
+    hold_seconds: int
+    uptime: str
+    srtt_ms: int
+    rto_ms: int
+    queue_count: int
+    sequence_number: int
+
+
+@dataclass(frozen=True)
+class EigrpRouteStatusRow:
+    code: str
+    prefix: str
+    prefix_length: int
+    administrative_distance: int
+    metric: int
+    next_hop: str
+    age: str
+    interface: str
+
+
+@dataclass(frozen=True)
+class EigrpProtocolStatus:
+    as_number: int
+    router_id: str
 
 
 @dataclass(frozen=True)
@@ -905,9 +936,47 @@ def classify_show_ip_route_ospf(
     return OspfQueryClassification.PARSER_UNAVAILABLE
 
 
-def parse_show_ip_eigrp_neighbors(_value: str) -> list[Never]:
-    """No EIGRP neighbor row was observed in PT 9.0.1.0858."""
-    return []
+_EIGRP_PROCESS_HEADER = re.compile(
+    r"IP-EIGRP neighbors for process (?P<as_number>\d+)"
+)
+
+
+def _show_ip_eigrp_process_as(value: str) -> int | None:
+    for line in normalize_terminal_output(value).splitlines():
+        match = _EIGRP_PROCESS_HEADER.fullmatch(line.strip())
+        if match is not None:
+            return int(match.group("as_number"))
+    return None
+
+
+def parse_show_ip_eigrp_neighbors(value: str) -> list[EigrpNeighborStatusRow]:
+    """Parse the EIGRP neighbor row observed in PT 9.0.1.0858."""
+    row_pattern = re.compile(
+        r"\s*(?P<handle>\d+)\s+"
+        r"(?P<address>\d{1,3}(?:\.\d{1,3}){3})\s+"
+        r"(?P<interface>\S+)\s+"
+        r"(?P<hold>\d+)\s+"
+        r"(?P<uptime>\d{2}:\d{2}:\d{2})\s+"
+        r"(?P<srtt>\d+)\s+(?P<rto>\d+)\s+"
+        r"(?P<queue>\d+)\s+(?P<sequence>\d+)\s*"
+    )
+    rows: list[EigrpNeighborStatusRow] = []
+    for line in normalize_terminal_output(value).splitlines():
+        match = row_pattern.fullmatch(line)
+        if match is None:
+            continue
+        rows.append(EigrpNeighborStatusRow(
+            handle=int(match.group("handle")),
+            address=match.group("address"),
+            interface=match.group("interface"),
+            hold_seconds=int(match.group("hold")),
+            uptime=match.group("uptime"),
+            srtt_ms=int(match.group("srtt")),
+            rto_ms=int(match.group("rto")),
+            queue_count=int(match.group("queue")),
+            sequence_number=int(match.group("sequence")),
+        ))
+    return rows
 
 
 def classify_show_ip_eigrp_neighbors(
@@ -918,6 +987,12 @@ def classify_show_ip_eigrp_neighbors(
 ) -> EigrpQueryClassification:
     if not executed:
         return EigrpQueryClassification.QUERY_TIMEOUT
+    observed_as = _show_ip_eigrp_process_as(value)
+    if expected_as_number is not None and observed_as != expected_as_number:
+        if observed_as is not None:
+            return EigrpQueryClassification.PROCESS_MISMATCH
+    if observed_as is not None and parse_show_ip_eigrp_neighbors(value):
+        return EigrpQueryClassification.SUPPORTED_WITH_ROWS
     lines = tuple(
         line.strip()
         for line in normalize_terminal_output(value).splitlines()
@@ -929,16 +1004,46 @@ def classify_show_ip_eigrp_neighbors(
             lines[1],
         )
         if process is not None and re.fullmatch(r"\S+[>#]", lines[2]):
-            observed_as = int(process.group("as_number"))
-            if expected_as_number is not None and observed_as != expected_as_number:
+            observed_empty_as = int(process.group("as_number"))
+            if (
+                expected_as_number is not None
+                and observed_empty_as != expected_as_number
+            ):
                 return EigrpQueryClassification.PROCESS_MISMATCH
             return EigrpQueryClassification.SUPPORTED_EMPTY
     return EigrpQueryClassification.PARSER_UNAVAILABLE
 
 
-def parse_show_ip_route_eigrp(_value: str) -> list[Never]:
-    """No EIGRP route row was observed in PT 9.0.1.0858."""
-    return []
+def parse_show_ip_route_eigrp(value: str) -> list[EigrpRouteStatusRow]:
+    """Parse the internal EIGRP route row observed in PT 9.0.1.0858."""
+    row_pattern = re.compile(
+        r"\s*(?P<code>D)\s+"
+        r"(?P<prefix>\d{1,3}(?:\.\d{1,3}){3})/"
+        r"(?P<prefix_length>\d{1,2})\s+"
+        r"\[(?P<distance>\d+)/(?P<metric>\d+)\]\s+"
+        r"via\s+(?P<next_hop>\d{1,3}(?:\.\d{1,3}){3}),\s+"
+        r"(?P<age>\d{2}:\d{2}:\d{2}),\s+"
+        r"(?P<interface>\S+)\s*"
+    )
+    rows: list[EigrpRouteStatusRow] = []
+    for line in normalize_terminal_output(value).splitlines():
+        match = row_pattern.fullmatch(line)
+        if match is None:
+            continue
+        prefix_length = int(match.group("prefix_length"))
+        if prefix_length > 32:
+            continue
+        rows.append(EigrpRouteStatusRow(
+            code=match.group("code"),
+            prefix=match.group("prefix"),
+            prefix_length=prefix_length,
+            administrative_distance=int(match.group("distance")),
+            metric=int(match.group("metric")),
+            next_hop=match.group("next_hop"),
+            age=match.group("age"),
+            interface=match.group("interface"),
+        ))
+    return rows
 
 
 def classify_show_ip_route_eigrp(
@@ -948,6 +1053,8 @@ def classify_show_ip_route_eigrp(
 ) -> EigrpQueryClassification:
     if not executed:
         return EigrpQueryClassification.QUERY_TIMEOUT
+    if parse_show_ip_route_eigrp(value):
+        return EigrpQueryClassification.SUPPORTED_WITH_ROWS
     lines = tuple(
         line.strip()
         for line in normalize_terminal_output(value).splitlines()
@@ -960,6 +1067,35 @@ def classify_show_ip_route_eigrp(
     ):
         return EigrpQueryClassification.SUPPORTED_EMPTY
     return EigrpQueryClassification.PARSER_UNAVAILABLE
+
+
+def parse_show_ip_protocols_eigrp(value: str) -> EigrpProtocolStatus | None:
+    """Parse EIGRP AS and local router ID before PT's unqualified pager."""
+    normalized = normalize_terminal_output(value)
+    protocol = re.search(
+        r'^\s*Routing Protocol is\s+"eigrp\s+(?P<as_number>\d+)\s*"',
+        normalized,
+        re.MULTILINE | re.IGNORECASE,
+    )
+    detail = re.search(
+        r"^\s*EIGRP-IPv4 Protocol for AS\((?P<as_number>\d+)\)\s*$",
+        normalized,
+        re.MULTILINE,
+    )
+    router_id = re.search(
+        r"^\s*Router-ID:\s*(?P<router_id>\d{1,3}(?:\.\d{1,3}){3})\s*$",
+        normalized,
+        re.MULTILINE,
+    )
+    if protocol is None or detail is None or router_id is None:
+        return None
+    as_number = int(protocol.group("as_number"))
+    if as_number != int(detail.group("as_number")):
+        return None
+    return EigrpProtocolStatus(
+        as_number=as_number,
+        router_id=router_id.group("router_id"),
+    )
 
 
 # Packet Tracer indenta las entradas de red e interfaz pasiva con TAB, no con

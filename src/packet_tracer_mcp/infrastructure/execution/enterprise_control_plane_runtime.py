@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from ipaddress import IPv4Network
 from time import monotonic, sleep
 from typing import Protocol
 
@@ -44,12 +45,18 @@ from .configuration_runtime import PacketTracerConfigurationRuntime
 from .ios_terminal import (
     ControlledIosExecutor,
     DeviceIdentityProvenance,
+    EigrpQueryClassification,
     IosCommandResult,
     OperationalQueryId,
+    classify_show_ip_eigrp_neighbors,
+    classify_show_ip_route_eigrp,
     parse_show_etherchannel_summary,
     parse_show_ip_ospf_neighbor,
+    parse_show_ip_eigrp_neighbors,
     parse_show_ip_interface,
     parse_show_ip_protocols_rip,
+    parse_show_ip_protocols_eigrp,
+    parse_show_ip_route_eigrp,
     parse_show_ip_route_rip,
     parse_show_ip_route_ospf,
     parse_show_spanning_tree,
@@ -1093,13 +1100,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         if isinstance(action, ConfigureRipv2):
             return self._observe_rip_process(expectation, action, query_cache)
         if isinstance(action, ConfigureEigrpIpv4):
-            return self._unobservable(
-                expectation,
-                ControlPlaneExecutionStage.OBSERVED,
-                f"EIGRP AS {action.as_number} query support is known, but no "
-                "non-empty PT neighbor row is fixture-backed.",
-                evidence_method="eigrp_readback_unavailable",
-            )
+            return self._observe_eigrp_process(expectation, action, query_cache)
         return self._observe_ospf_process(expectation, action, query_cache)
 
     def _observe_routing_neighbor(self, expectation, action, query_cache):
@@ -1111,25 +1112,203 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 evidence_method="rip_neighbor_readback_unavailable",
             )
         if isinstance(action, ConfigureEigrpIpv4):
-            return self._unobservable(
-                expectation,
-                ControlPlaneExecutionStage.OBSERVED,
-                "EIGRP adjacency cannot be promoted from an empty neighbor table.",
-                evidence_method="eigrp_readback_unavailable",
-            )
+            return self._observe_eigrp_neighbor(expectation, action, query_cache)
         return self._observe_ospf_neighbor(expectation, action, query_cache)
 
     def _observe_route(self, expectation, action, query_cache):
         if isinstance(action, ConfigureRipv2):
             return self._observe_rip_route(expectation, action, query_cache)
         if isinstance(action, ConfigureEigrpIpv4):
-            return self._unobservable(
-                expectation,
-                ControlPlaneExecutionStage.OBSERVED,
-                "EIGRP route state cannot be promoted from an empty route table.",
-                evidence_method="eigrp_readback_unavailable",
-            )
+            return self._observe_eigrp_route(expectation, action, query_cache)
         return self._observe_ospf_route(expectation, action, query_cache)
+
+    def _observe_eigrp_process(self, expectation, action, query_cache):
+        if not self._is_eigrp_expectation(expectation, action):
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "No registered live-fixture-backed query observes this EIGRP process.",
+            )
+        show = self._fresh_show(
+            action.device_name, OperationalQueryId.SHOW_IP_PROTOCOLS,
+            expectation, query_cache, permit_truncated=True,
+        )
+        if isinstance(show, RuntimeControlPlaneVerification):
+            return show
+        process = parse_show_ip_protocols_eigrp(show.output)
+        if process is None:
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "Fresh SHOW output had no parser-backed EIGRP process block.",
+                evidence_method="fresh_show_ip_protocols_eigrp",
+            )
+        fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
+        fields["protocol"] = self._field(process.as_number == action.as_number)
+        router_id = expectation.expected.get("router_id")
+        if isinstance(router_id, str):
+            fields["router_id"] = self._field(process.router_id == router_id)
+        return self._direct_observation(
+            expectation, fields, "fresh_show_ip_protocols_eigrp",
+            "Fresh EIGRP process AS and local router ID were compared exactly.",
+        )
+
+    def _observe_eigrp_neighbor(self, expectation, action, query_cache):
+        if not self._is_eigrp_expectation(expectation, action):
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "No registered live-fixture-backed query observes this EIGRP neighbor.",
+            )
+        show = self._fresh_show(
+            action.device_name, OperationalQueryId.SHOW_IP_EIGRP_NEIGHBORS,
+            expectation, query_cache,
+        )
+        if isinstance(show, RuntimeControlPlaneVerification):
+            return show
+        if not show.output_complete:
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "The fresh EIGRP neighbor read-back did not close on a prompt.",
+                evidence_method="eigrp_neighbor_readback_incomplete",
+            )
+        classification = classify_show_ip_eigrp_neighbors(
+            show.output, expected_as_number=action.as_number,
+        )
+        if classification not in {
+            EigrpQueryClassification.SUPPORTED_WITH_ROWS,
+            EigrpQueryClassification.SUPPORTED_EMPTY,
+        }:
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                f"Fresh EIGRP neighbor output classified as {classification.value}.",
+                evidence_method="fresh_show_ip_eigrp_neighbors",
+            )
+        rows = parse_show_ip_eigrp_neighbors(show.output)
+        peer_ip = expectation.expected.get("peer_ipv4")
+        peer_row = next(
+            (
+                item for item in rows
+                if isinstance(peer_ip, str) and item.address == peer_ip
+            ),
+            None,
+        )
+        fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
+        fields["protocol"] = FieldVerificationStatus.VERIFIED
+        if isinstance(peer_ip, str):
+            fields["peer_ipv4"] = self._field(peer_row is not None)
+        adjacent = expectation.expected.get("adjacent")
+        if isinstance(adjacent, bool):
+            fields["adjacent"] = self._field((peer_row is not None) is adjacent)
+
+        peer_router_id = expectation.expected.get("peer_router_id")
+        peer_action = self._applied_eigrp_action_for_device(
+            expectation.peer_device_id,
+        )
+        if isinstance(peer_router_id, str) and peer_action is not None:
+            peer_show = self._fresh_show(
+                peer_action.device_name, OperationalQueryId.SHOW_IP_PROTOCOLS,
+                expectation, query_cache, permit_truncated=True,
+            )
+            if not isinstance(peer_show, RuntimeControlPlaneVerification):
+                peer_process = parse_show_ip_protocols_eigrp(peer_show.output)
+                if peer_process is not None:
+                    fields["peer_router_id"] = self._field(
+                        peer_process.as_number == action.as_number
+                        and peer_process.router_id == peer_router_id
+                    )
+        return self._direct_observation(
+            expectation, fields, "fresh_show_ip_eigrp_neighbors",
+            "Fresh EIGRP neighbor rows were matched by process AS and peer IPv4; "
+            "the peer router ID was independently read from the applied peer.",
+            allow_partial=True,
+        )
+
+    def _observe_eigrp_route(self, expectation, action, query_cache):
+        if not self._is_eigrp_expectation(expectation, action):
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "No registered live-fixture-backed query observes this EIGRP route.",
+            )
+        network = expectation.expected.get("network")
+        prefix_length = expectation.expected.get("prefix_length")
+        if not isinstance(network, str) or type(prefix_length) is not int:
+            return self._unobservable(
+                expectation, ControlPlaneExecutionStage.OBSERVED,
+                "The EIGRP route expectation lacks a typed prefix and length.",
+                evidence_method="eigrp_route_expectation_untyped",
+            )
+        key = (action.device_name, OperationalQueryId.SHOW_IP_ROUTE_EIGRP)
+        deadline = self._clock() + self._route_timeout
+        attempts = 0
+        route = None
+        while True:
+            attempts += 1
+            show = self._fresh_show(
+                action.device_name, OperationalQueryId.SHOW_IP_ROUTE_EIGRP,
+                expectation, query_cache,
+            )
+            if isinstance(show, RuntimeControlPlaneVerification):
+                return show
+            if not show.output_complete:
+                return self._unobservable(
+                    expectation, ControlPlaneExecutionStage.OBSERVED,
+                    "The fresh EIGRP route read-back did not close on a prompt.",
+                    evidence_method="eigrp_route_readback_incomplete",
+                )
+            classification = classify_show_ip_route_eigrp(show.output)
+            if classification not in {
+                EigrpQueryClassification.SUPPORTED_WITH_ROWS,
+                EigrpQueryClassification.SUPPORTED_EMPTY,
+            }:
+                return self._unobservable(
+                    expectation, ControlPlaneExecutionStage.OBSERVED,
+                    f"Fresh EIGRP route output classified as {classification.value}.",
+                    evidence_method="fresh_show_ip_route_eigrp",
+                )
+            route = next(
+                (
+                    item for item in parse_show_ip_route_eigrp(show.output)
+                    if item.prefix == network
+                    and item.prefix_length == prefix_length
+                ),
+                None,
+            )
+            if route is not None or attempts >= self._route_attempts:
+                break
+            if self._clock() + self._route_interval >= deadline:
+                break
+            self._sleep(self._route_interval)
+            query_cache.pop(key, None)
+
+        fields = self._unobservable_fields(expectation)
+        self._certify_source_device(fields, expectation, show)
+        for field in ("protocol", "network", "prefix_length"):
+            fields[field] = self._field(route is not None)
+        wildcard = expectation.expected.get("wildcard")
+        if isinstance(wildcard, str) and route is not None:
+            observed_wildcard = str(
+                IPv4Network(f"0.0.0.0/{route.prefix_length}").hostmask
+            )
+            fields["wildcard"] = self._field(observed_wildcard == wildcard)
+        observation = self._direct_observation(
+            expectation, fields, "fresh_show_ip_route_eigrp",
+            f"Fresh EIGRP route rows matched the exact learned prefix after "
+            f"{attempts} read(s)."
+            if route is not None else
+            f"The expected EIGRP route did not appear within {attempts} bounded "
+            f"read(s); no configuration was redispatched.",
+            allow_partial=True,
+        )
+        return observation.model_copy(update={
+            "convergence": ConvergenceReport(
+                attempts=attempts,
+                final_status=observation.status,
+                last_observable_state=(
+                    f"{network}/{prefix_length}" if route is not None
+                    else "route_absent"
+                ),
+            ),
+        })
 
     def _observe_rip_route(self, expectation, action, query_cache):
         """Ruta APRENDIDA por RIP, distinta de la configuración leída.
@@ -1469,6 +1648,25 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         )
 
     @staticmethod
+    def _is_eigrp_expectation(expectation, action) -> bool:
+        return (
+            isinstance(action, ConfigureEigrpIpv4)
+            and expectation.expected.get("protocol") == "eigrp"
+        )
+
+    def _applied_eigrp_action_for_device(
+        self, device_id: str,
+    ) -> ConfigureEigrpIpv4 | None:
+        return next(
+            (
+                item for item in self._applied_actions.values()
+                if isinstance(item, ConfigureEigrpIpv4)
+                and item.device_id == device_id
+            ),
+            None,
+        )
+
+    @staticmethod
     def _typed_int_list(value) -> list[int] | None:
         if not isinstance(value, list) or any(type(item) is not int for item in value):
             return None
@@ -1572,8 +1770,19 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         )
 
     @classmethod
-    def _direct_observation(cls, expectation, fields, evidence_method, message):
+    def _direct_observation(
+        cls, expectation, fields, evidence_method, message, *, allow_partial=False,
+    ):
         status = cls._aggregate_status(fields)
+        if (
+            allow_partial
+            and status is ActionExecutionStatus.UNOBSERVABLE
+            and FieldVerificationStatus.VERIFIED in set(fields.values())
+        ):
+            # PARTIAL is reserved for a new direct observation that proves at
+            # least one claimed field while preserving another explicit ceiling.
+            # Merely narrowing an expectation still cannot promote its status.
+            status = ActionExecutionStatus.PARTIAL
         return RuntimeControlPlaneVerification(
             expectation_id=expectation.id,
             stage=ControlPlaneExecutionStage.OBSERVED,

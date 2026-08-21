@@ -37,6 +37,15 @@ _RIPV2_1941_QUALIFICATION = (
     "TypedPingExecutor; see docs/architecture/ripv2-runtime-qualification.md"
 )
 
+_EIGRP_1941_QUALIFICATION = (
+    "CP3-HARD controlled EIGRP live qualification on a disposable 2x1941 "
+    "slice on 9.0.1.0858; typed EIGRP configuration was applied in both "
+    "directions, process AS/router IDs came from fresh_show_ip_protocols, "
+    "adjacency rows from fresh_show_ip_eigrp_neighbors, learned routes from "
+    "fresh_show_ip_route_eigrp, and forwarding from TypedPingExecutor; see "
+    "docs/architecture/eigrp-runtime-qualification.md"
+)
+
 _NO_MODEL_ATTRIBUTED_EVIDENCE = (
     "The E9 live baseline in docs/architecture/enterprise-control-plane.md "
     "records no per-model attribution, so no dimension is claimed for this model"
@@ -102,10 +111,12 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
     #   `reachable=True`, pero marcarla SUPPORTED autoriza medir y no afirma que
     #   ninguna topologia reenvie. Eso lo mide el producto en cada corrida.
     "1941": (
-        _RIPV2_1941_QUALIFICATION,
+        f"{_RIPV2_1941_QUALIFICATION}; {_EIGRP_1941_QUALIFICATION}",
         {
             Dimension.RIPV2_CONFIG: Status.SUPPORTED,
+            Dimension.EIGRP_IPV4_CONFIG: Status.SUPPORTED,
             Dimension.ROUTING_PROCESS_STATE: Status.SUPPORTED,
+            Dimension.ROUTING_NEIGHBOR_STATE: Status.SUPPORTED,
             Dimension.ROUTING_ROUTE_STATE: Status.SUPPORTED,
             Dimension.ROUTING_BEHAVIOR: Status.SUPPORTED,
         },

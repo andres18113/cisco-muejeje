@@ -232,6 +232,17 @@ def test_only_dimensions_with_live_attributed_evidence_are_supported():
     }
 
 
+def test_1941_eigrp_capabilities_are_scoped_to_the_live_qualified_model():
+    qualified = packet_tracer_control_plane_capabilities("9.0.1.0858")["1941"]
+    unqualified = packet_tracer_control_plane_capabilities("9.0.1.0858")["2911"]
+
+    assert qualified.status(Dimension.EIGRP_IPV4_CONFIG) is Status.SUPPORTED
+    assert qualified.status(Dimension.ROUTING_NEIGHBOR_STATE) is Status.SUPPORTED
+    assert "EIGRP" in qualified.evidence_source
+    assert unqualified.status(Dimension.EIGRP_IPV4_CONFIG) is Status.UNKNOWN
+    assert unqualified.status(Dimension.ROUTING_NEIGHBOR_STATE) is Status.UNKNOWN
+
+
 # ===================== completitud del mapeo ================================
 
 
@@ -503,8 +514,8 @@ def test_every_routing_protocol_shares_the_same_process_state_gate():
     ) == 2
 
 
-def test_a_supported_process_state_gate_still_leaves_eigrp_unobservable():
-    """El estrechamiento por protocolo es del runtime, no del gate."""
+def test_a_supported_process_state_gate_does_not_fabricate_eigrp_evidence():
+    """El gate autoriza observar; sin salida actual el runtime no promueve."""
     from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
         ConfigureEigrpIpv4, ControlPlanePhase, ControlPlaneVerificationExpectation,
         ControlPlaneVerificationKind, RoutingNetwork,
@@ -538,7 +549,7 @@ def test_a_supported_process_state_gate_still_leaves_eigrp_unobservable():
     observed = runtime.verify([expectation])[0]
 
     assert observed.status is ActionExecutionStatus.UNOBSERVABLE
-    assert observed.evidence_method == "eigrp_readback_unavailable"
+    assert observed.evidence_method == "runtime_observability_limit"
     assert not observed.fresh_evidence
 
 
@@ -553,7 +564,9 @@ def test_the_runtime_narrows_by_mode_for_other_families_too():
         "mst_readback_unavailable",
         "etherchannel_protocol_readback_unavailable",
         "hsrp_role_readback_unavailable",
-        "eigrp_readback_unavailable",
+        "fresh_show_ip_protocols_eigrp",
+        "fresh_show_ip_eigrp_neighbors",
+        "fresh_show_ip_route_eigrp",
     ):
         assert evidence_method in source
 

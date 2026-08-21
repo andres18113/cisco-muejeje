@@ -14,6 +14,7 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     extract_terminal_command_window, normalize_terminal_output, parse_show_ephone,
     parse_show_etherchannel_summary, parse_show_interfaces_trunk,
     parse_show_ip_eigrp_neighbors, parse_show_ip_interface_brief,
+    parse_show_ip_protocols_eigrp,
     parse_show_ip_ospf_neighbor, parse_show_ip_route_eigrp,
     parse_show_ip_route_ospf, parse_show_spanning_tree,
 )
@@ -124,6 +125,32 @@ _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY = """show ip route eigrp
 
 
 Router>"""
+
+# Captured by the governed CP3-HARD disposable 2x1941 qualification on
+# Packet Tracer 9.0.1.0858. These are complete current-command windows.
+_PT_9_0_1_0858_EIGRP_NEIGHBORS_R1 = """show ip eigrp neighbors
+IP-EIGRP neighbors for process 100
+H   Address         Interface      Hold Uptime    SRTT   RTO   Q   Seq
+                                   (sec)          (ms)        Cnt  Num
+0   198.18.212.2    Gig0/1         13   00:00:01  40     1000  0   3
+
+Router>"""
+
+_PT_9_0_1_0858_EIGRP_ROUTE_R1 = """show ip route eigrp
+     198.18.210.0/24 is variably subnetted, 2 subnets, 2 masks
+D    198.18.211.0/24 [90/28416] via 198.18.212.2, 00:00:03, GigabitEthernet0/1
+
+Router>"""
+
+_PT_9_0_1_0858_EIGRP_PROTOCOL_R1 = """show ip protocols
+
+Routing Protocol is "eigrp  100 "
+  Redistributing: eigrp 100
+  EIGRP-IPv4 Protocol for AS(100)
+    Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
+    Router-ID: 198.18.210.1
+  Routing for Networks:
+ --More-- """
 
 
 def test_ios_executor_only_emits_registered_query():
@@ -578,6 +605,36 @@ def test_packet_tracer_eigrp_live_outputs_are_supported_empty():
     assert classify_show_ip_eigrp_neighbors(
         _PT_9_0_1_0858_EIGRP_NEIGHBORS_EMPTY,
     ) is EigrpQueryClassification.SUPPORTED_EMPTY
+
+
+def test_packet_tracer_eigrp_live_rows_are_parsed_semantically():
+    neighbors = parse_show_ip_eigrp_neighbors(
+        _PT_9_0_1_0858_EIGRP_NEIGHBORS_R1,
+    )
+    routes = parse_show_ip_route_eigrp(_PT_9_0_1_0858_EIGRP_ROUTE_R1)
+    process = parse_show_ip_protocols_eigrp(_PT_9_0_1_0858_EIGRP_PROTOCOL_R1)
+
+    assert len(neighbors) == 1
+    assert neighbors[0].address == "198.18.212.2"
+    assert neighbors[0].interface == "Gig0/1"
+    assert neighbors[0].queue_count == 0
+    assert classify_show_ip_eigrp_neighbors(
+        _PT_9_0_1_0858_EIGRP_NEIGHBORS_R1,
+        expected_as_number=100,
+    ) is EigrpQueryClassification.SUPPORTED_WITH_ROWS
+
+    assert len(routes) == 1
+    assert routes[0].code == "D"
+    assert routes[0].prefix == "198.18.211.0"
+    assert routes[0].prefix_length == 24
+    assert routes[0].next_hop == "198.18.212.2"
+    assert classify_show_ip_route_eigrp(
+        _PT_9_0_1_0858_EIGRP_ROUTE_R1,
+    ) is EigrpQueryClassification.SUPPORTED_WITH_ROWS
+
+    assert process is not None
+    assert process.as_number == 100
+    assert process.router_id == "198.18.210.1"
     assert parse_show_ip_route_eigrp(
         _PT_9_0_1_0858_EIGRP_ROUTES_EMPTY,
     ) == []

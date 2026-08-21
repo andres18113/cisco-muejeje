@@ -3,7 +3,9 @@
 from __future__ import annotations
 import ipaddress
 import re
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Protocol
 from .constants import PREFIX_TO_MASK
 
 # Caracteres permitidos en un componente de ruta. Todo lo demás se reemplaza por "_",
@@ -20,6 +22,58 @@ _WINDOWS_RESERVED = {
 }
 
 _MAX_COMPONENT_LEN = 100
+
+
+class _TypedPingEvidence(Protocol):
+    reachable: bool
+    fresh_output_observed: bool
+    window_strategy: str
+    failure_reason: str
+    attempts: int
+    statistics: str
+    dispatched_destination: str
+    observed_device_name: str
+    device_identity_provenance: str
+    device_identity_evidence: str
+
+
+def serialize_typed_ping_evidence(
+    result: _TypedPingEvidence,
+) -> dict[str, object]:
+    """Serialize the stable public evidence carried by a typed ping result."""
+    return {
+        "reachable": result.reachable,
+        "fresh_output_observed": result.fresh_output_observed,
+        "window_strategy": result.window_strategy,
+        "failure_reason": result.failure_reason,
+        "attempts": result.attempts,
+        "statistics": result.statistics,
+        "dispatched_destination": result.dispatched_destination,
+        "observed_device_name": result.observed_device_name,
+        "device_identity_provenance": result.device_identity_provenance,
+        "device_identity_evidence": result.device_identity_evidence,
+    }
+
+
+def typed_ping_behavior_transition_verified(
+    before: Iterable[_TypedPingEvidence],
+    after: Iterable[_TypedPingEvidence],
+) -> bool:
+    """Require fresh unreachable controls before and fresh reachability after."""
+    negative = tuple(before)
+    positive = tuple(after)
+    return (
+        bool(negative)
+        and bool(positive)
+        and all(
+            item.fresh_output_observed and not item.reachable
+            for item in negative
+        )
+        and all(
+            item.fresh_output_observed and item.reachable
+            for item in positive
+        )
+    )
 
 
 def safe_name_component(name: str, fallback: str = "topology") -> str:
