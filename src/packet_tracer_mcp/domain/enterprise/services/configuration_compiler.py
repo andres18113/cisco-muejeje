@@ -10,6 +10,7 @@ from collections.abc import Callable
 from enum import Enum
 
 from ...models.plans import DevicePlan, LinkPlan, TopologyPlan
+from ....shared.utils import safe_ios_identifier
 from ..models.addressing import SubnetAllocation, WanTransitAllocation
 from ..models.capabilities import CapabilityStatus, DeviceCapabilities
 from ..models.configuration import (
@@ -25,6 +26,7 @@ from ..models.configuration import (
     ConfigurationPolicy,
     ConfigureAccessPort,
     ConfigureDhcpPool,
+    ConfigureHostname,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
     ConfigureSubinterface,
@@ -195,6 +197,24 @@ class ConfigurationCompiler:
             ))
 
         devices = {_device_key(device): device for device in topology.devices}
+        for device_id, device in sorted(devices.items()):
+            if device.category not in {"router", "switch"}:
+                continue
+            if safe_ios_identifier(device.name, max_length=63) != device.name:
+                issues.append(_warning(
+                    ConfigurationIssueCode.HOSTNAME_NOT_IOS_COMPATIBLE,
+                    f"Semantic name {device.name!r} cannot be applied exactly as an IOS hostname.",
+                    device_id,
+                ))
+                continue
+            actions.append(ConfigureHostname(
+                id=_action_id("hostname", device_id, device.name),
+                phase=ConfigurationPhase.IDENTITY,
+                device_id=device_id,
+                device_name=device.name,
+                site_id=device.site_id,
+                hostname=device.name,
+            ))
         names_to_ids = {device.name: _device_key(device) for device in topology.devices}
         links = [self._resolved_link(link, names_to_ids) for link in topology.links]
         site_segments, segment_vlans = self._segments(enterprise, policy, issues)
@@ -1199,7 +1219,10 @@ class ConfigurationCompiler:
             kind: VerificationKind
             query = ""
             expected: dict[str, str | int | bool | list[int]] = {}
-            if isinstance(action, CreateVlan):
+            if isinstance(action, ConfigureHostname):
+                kind = VerificationKind.HOSTNAME
+                expected = {"hostname": action.hostname}
+            elif isinstance(action, CreateVlan):
                 kind = VerificationKind.VLAN
                 expected = {"vlan_id": action.vlan_id}
             elif isinstance(action, ConfigureAccessPort):

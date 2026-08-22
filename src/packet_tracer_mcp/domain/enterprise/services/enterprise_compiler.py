@@ -30,6 +30,7 @@ from ..models.hardware import (
     HardwarePlan,
     HardwarePlanStatus,
     LinkRole,
+    NormalizedPortSpeed,
     PlannedNetworkDevice,
     PortClass,
     PortDescriptor,
@@ -117,7 +118,20 @@ class _PortAllocator:
                 required_class=required_class.value,
             ))
             return None
-        port = sorted(candidates, key=lambda item: natural_interface_key(item.name))[0]
+        speed_order = {
+            NormalizedPortSpeed.SPEED_10G: 4,
+            NormalizedPortSpeed.SPEED_1G: 3,
+            NormalizedPortSpeed.SPEED_100M: 2,
+            NormalizedPortSpeed.SPEED_10M: 1,
+            NormalizedPortSpeed.UNKNOWN: 0,
+        }
+        port = sorted(
+            candidates,
+            key=lambda item: (
+                -speed_order[item.speed],
+                natural_interface_key(item.name),
+            ),
+        )[0]
         self._used[(device_id, port.name)] = reservation
         return port.name
 

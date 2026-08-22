@@ -12,6 +12,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigureAccessPort,
     ConfigureDhcpPool,
     ConfigureEthernetLinkMode,
+    ConfigureHostname,
     ConfigureInterfaceBandwidth,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
@@ -59,7 +60,8 @@ class UnrenderableConfigurationAction(ValueError):
 # Acciones que este renderer convierte a CLI. La tupla es la definicion
 # operativa de "renderizable".
 _RENDERABLE = (
-    CreateVlan, ConfigureAccessPort, ConfigureTrunk, ConfigureRoutedInterface,
+    ConfigureHostname, CreateVlan, ConfigureAccessPort, ConfigureTrunk,
+    ConfigureRoutedInterface,
     ConfigureSvi, ConfigureSubinterface, ConfigureDhcpPool,
     ConfigureSerialClock, ConfigureInterfaceBandwidth, ConfigureEthernetLinkMode,
 )
@@ -136,6 +138,16 @@ class PacketTracerIosRenderer:
         return batches
 
     def _render_body(self, model: str, actions: list[ConfigurationAction]) -> list[str]:
+        lines: list[str] = []
+        for action in actions:
+            if isinstance(action, ConfigureHostname):
+                hostname = safe_ios_identifier(action.hostname, max_length=63)
+                if hostname != action.hostname:
+                    raise ValueError(
+                        f"Semantic hostname {action.hostname!r} is not an exact IOS hostname."
+                    )
+                lines.append(f"hostname {hostname}")
+
         vlans = [
             VLANConfig(vlan_id=action.vlan_id, name=action.name)
             for action in actions if isinstance(action, CreateVlan)
@@ -158,9 +170,9 @@ class PacketTracerIosRenderer:
             )
             for action in actions if isinstance(action, ConfigureTrunk)
         ]
-        lines = generate_switch_vlan_cli(
+        lines.extend(generate_switch_vlan_cli(
             vlans, access, trunks, supports_encap=switch_supports_encap(model),
-        )
+        ))
 
         subinterfaces = [
             SubinterfaceConfig(

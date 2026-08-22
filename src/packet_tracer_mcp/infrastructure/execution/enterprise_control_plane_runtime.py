@@ -667,6 +667,9 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         convergence_interval_seconds: float = 0.25,
         stable_samples: int = 2,
         max_probe_attempts: int = 6,
+        stp_convergence_timeout_seconds: float = 12.0,
+        stp_convergence_interval_seconds: float = 2.0,
+        stp_convergence_attempts: int = 7,
         # RIP anuncia cada 30 s. Medido en R2-B fase 4: tras esperar 35 s las
         # rutas ya estaban, con edades 00:00:26 y 00:00:00. El presupuesto
         # cubre un ciclo completo de actualizacion con margen, y se agota
@@ -689,6 +692,16 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
+        if stp_convergence_timeout_seconds < 0:
+            raise ValueError("stp_convergence_timeout_seconds must be non-negative.")
+        if stp_convergence_interval_seconds < 0:
+            raise ValueError("stp_convergence_interval_seconds must be non-negative.")
+        if (
+            isinstance(stp_convergence_attempts, bool)
+            or not isinstance(stp_convergence_attempts, int)
+            or stp_convergence_attempts < 1
+        ):
+            raise ValueError("stp_convergence_attempts must be a positive integer.")
         if route_convergence_timeout_seconds < 0:
             raise ValueError("route_convergence_timeout_seconds must be non-negative.")
         if route_convergence_interval_seconds < 0:
@@ -748,6 +761,9 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         self._reach_timeout = reachability_convergence_timeout_seconds
         self._reach_interval = reachability_convergence_interval_seconds
         self._reach_attempts = reachability_convergence_attempts
+        self._stp_timeout = stp_convergence_timeout_seconds
+        self._stp_interval = stp_convergence_interval_seconds
+        self._stp_attempts = stp_convergence_attempts
         self._clock = clock
         self._sleep = sleeper
         self._device_names_by_id: dict[str, str] = {}
@@ -990,11 +1006,45 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         if isinstance(show, RuntimeControlPlaneVerification):
             return show
         instances = parse_show_spanning_tree(show.output)
+        attempts = 1
+        deadline = self._clock() + self._stp_timeout
+        key = (action.device_name, OperationalQueryId.SHOW_SPANNING_TREE)
+        while (
+            not instances
+            and attempts < self._stp_attempts
+            and self._clock() + self._stp_interval < deadline
+        ):
+            self._sleep(self._stp_interval)
+            attempts += 1
+            # Re-observe only; never re-render or redispatch the typed action.
+            query_cache.pop(key, None)
+            show = self._fresh_show(
+                action.device_name,
+                OperationalQueryId.SHOW_SPANNING_TREE,
+                expectation,
+                query_cache,
+            )
+            if isinstance(show, RuntimeControlPlaneVerification):
+                return show.model_copy(update={
+                    "convergence": ConvergenceReport(
+                        attempts=attempts,
+                        final_status=show.status,
+                        last_observable_state="unobservable",
+                    ),
+                })
+            instances = parse_show_spanning_tree(show.output)
         if not instances:
-            return self._unobservable(
+            result = self._unobservable(
                 expectation, ControlPlaneExecutionStage.OBSERVED,
                 "Fresh spanning-tree output had no parser-backed instance.",
             )
+            return result.model_copy(update={
+                "convergence": ConvergenceReport(
+                    attempts=attempts,
+                    final_status=result.status,
+                    last_observable_state="no_parser_backed_instance",
+                ),
+            })
         fields = self._unobservable_fields(expectation)
         self._certify_source_device(fields, expectation, show)
         vlan_ids = self._typed_int_list(expectation.expected.get("vlan_ids"))
@@ -1019,10 +1069,17 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 vlan in by_vlan and by_vlan[vlan].root_is_local
                 for vlan in root_vlans
             ))
-        return self._direct_observation(
+        result = self._direct_observation(
             expectation, fields, "fresh_show_spanning_tree",
             "Fresh parser-backed STP instances were compared by VLAN.",
         )
+        return result.model_copy(update={
+            "convergence": ConvergenceReport(
+                attempts=attempts,
+                final_status=result.status,
+                last_observable_state="parser_backed_instances",
+            ),
+        })
 
     def _observe_etherchannel(self, expectation, action, query_cache):
         if not isinstance(action, ConfigureEtherChannel):

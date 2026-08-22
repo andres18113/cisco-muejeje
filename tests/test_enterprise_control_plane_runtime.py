@@ -317,6 +317,53 @@ def test_direct_control_plane_state_uses_only_fresh_registered_ios_evidence():
     ]
 
 
+def test_stp_state_reobserves_without_redispatch_until_an_instance_converges():
+    plan = _compile().plan
+    stp = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.STP_STATE
+        and item.device_id == "sw1"
+    )
+
+    def result(output: str) -> IosCommandResult:
+        return IosCommandResult(
+            device_name="HQ-SW1",
+            query_id=OperationalQueryId.SHOW_SPANNING_TREE,
+            executed=True,
+            output=output,
+            session_state=IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=True,
+            output_complete=True,
+            window_strategy="prefix_delta",
+        )
+
+    ios = SequenceControlPlaneIos((result(""), result(_stp_output(root_vlans={10}))))
+    dispatched: list[str] = []
+
+    def dispatch(script: str) -> bool:
+        dispatched.append(script)
+        return True
+
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], dispatch, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]),
+        ios_executor=ios,
+        stp_convergence_timeout_seconds=1.0,
+        stp_convergence_interval_seconds=0.0,
+        stp_convergence_attempts=2,
+    )
+    runtime.apply_actions(plan.actions)
+    mutation_count = len(dispatched)
+
+    observed = runtime.verify([stp])[0]
+
+    assert observed.status is ActionExecutionStatus.VERIFIED
+    assert observed.convergence is not None
+    assert observed.convergence.attempts == 2
+    assert len(dispatched) == mutation_count
+    assert len(ios.calls) == 2
+
+
 def test_stale_or_unparseable_ios_output_never_promotes_direct_state():
     plan = _compile().plan
     stp = next(item for item in plan.verification_expectations

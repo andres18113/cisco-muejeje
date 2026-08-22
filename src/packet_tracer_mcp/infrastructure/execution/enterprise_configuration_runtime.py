@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 
@@ -12,6 +13,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigureAccessPort,
     ConfigureDhcpPool,
     ConfigureEthernetLinkMode,
+    ConfigureHostname,
     ConfigureInterfaceBandwidth,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
@@ -52,6 +54,7 @@ from .runtime_inventory import normalize_runtime_inventory
 # rendimiento de enlace, de modo que el runtime las descartaba antes
 # incluso de llegar al renderer: el mismo fallo mudo, una capa mas abajo.
 _IOS_ACTIONS = (
+    ConfigureHostname,
     CreateVlan,
     ConfigureAccessPort,
     ConfigureTrunk,
@@ -96,6 +99,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         send: Callable[[str], bool],
         send_and_wait: Callable[[str, float], str | None],
         *,
+        hostname_timeout_seconds: float = 8.0,
         vlan_timeout_seconds: float = 5.0,
         endpoint_timeout_seconds: float = 30.0,
         trunk_timeout_seconds: float = 8.0,
@@ -110,6 +114,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._ios = ControlledIosExecutor(send_and_wait)
         self._renderer = PacketTracerIosRenderer()
         self._targets: dict[str, RuntimeConfigurationTarget] = {}
+        self._hostname_timeout = hostname_timeout_seconds
         self._vlan_timeout = vlan_timeout_seconds
         self._endpoint_timeout = endpoint_timeout_seconds
         self._trunk_timeout = trunk_timeout_seconds
@@ -273,7 +278,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ios_cache: dict[tuple[str, OperationalQueryId], object] = {}
         results: list[RuntimeVerification] = []
         for expectation in expectations:
-            if expectation.kind is VerificationKind.VLAN:
+            if expectation.kind is VerificationKind.HOSTNAME:
+                results.append(self._verify_hostname(expectation))
+            elif expectation.kind is VerificationKind.VLAN:
                 results.append(self._verify_vlan(expectation))
             elif expectation.kind is VerificationKind.TRUNK:
                 results.append(self._verify_trunk(expectation, ios_cache))
@@ -288,6 +295,109 @@ class PacketTracerEnterpriseConfigurationRuntime:
             elif expectation.kind is VerificationKind.DHCP_POOL:
                 results.append(self._unobservable(expectation))
         return results
+
+    def _verify_hostname(
+        self, expectation: VerificationExpectation,
+    ) -> RuntimeVerification:
+        expected = str(expectation.expected["hostname"])
+        name = json.dumps(expectation.device_name)
+        last_observed: dict = {}
+
+        def inspect() -> dict:
+            js = "".join((
+                "try{var d=ipc.network().getDevice(", name, ");",
+                "var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
+                "var hs=!!d&&typeof d.getHostName==='function';",
+                "var h=hs?String(d.getHostName()):'';",
+                "var p=t&&typeof t.getPrompt==='function'?String(t.getPrompt()):'';",
+                "var o=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
+                "reportResult(JSON.stringify({found:!!d,terminal:!!t,",
+                "hostname_supported:hs,hostname:h,prompt:p,output:o}));",
+                "}catch(e){reportResult('ERROR:'+e);}",
+            ))
+            current = self._json_result(js, 3.0)
+            actual = str(current.get("hostname") or "").strip()
+            method = "packet_tracer_device_hostname_getter"
+            if not actual:
+                prompt = str(current.get("prompt") or "").strip()
+                actual = self._hostname_from_prompt(prompt)
+                method = "ios_terminal_prompt_identity"
+                if not actual:
+                    actual = self._hostname_from_output(
+                        str(current.get("output") or "")
+                    )
+                    method = "ios_terminal_output_prompt_identity"
+            current["actual_hostname"] = actual
+            current["evidence_method"] = method
+            current["configuration_channel"] = actual == expected
+            last_observed.clear()
+            last_observed.update(current)
+            return current
+
+        convergence = StateConvergenceWaiter(
+            inspect,
+            timeout_seconds=self._hostname_timeout,
+            interval_seconds=self._convergence_interval,
+        ).wait()
+        actual = str(last_observed.get("actual_hostname") or "")
+        evidence_method = str(
+            last_observed.get("evidence_method")
+            or "ios_terminal_prompt_identity"
+        )
+        if (
+            not last_observed.get("found")
+            or not actual
+        ):
+            return self._unobservable(expectation)
+        verified = (
+            convergence.state is DeviceInitializationState.CONFIGURATION_READY
+            and actual == expected
+        )
+        return RuntimeVerification(
+            expectation_id=expectation.id,
+            status=(
+                ActionExecutionStatus.VERIFIED
+                if verified else ActionExecutionStatus.FAILED
+            ),
+            evidence_method=evidence_method,
+            fresh_evidence=True,
+            fields={
+                "hostname": (
+                    FieldVerificationStatus.VERIFIED
+                    if verified else FieldVerificationStatus.FAILED
+                ),
+            },
+            message="" if verified else f"IOS prompt identity is {actual!r}.",
+            convergence=ConvergenceReport(
+                attempts=convergence.attempts,
+                elapsed_ms=convergence.elapsed_ms,
+                final_status=(
+                    ActionExecutionStatus.VERIFIED
+                    if verified else ActionExecutionStatus.FAILED
+                ),
+                last_observable_state=actual or "unobservable",
+            ),
+        )
+
+    @staticmethod
+    def _hostname_from_prompt(prompt: str) -> str:
+        match = re.fullmatch(r"([^\s()]+)[>#]", prompt.strip())
+        return match.group(1) if match else ""
+
+    @classmethod
+    def _hostname_from_output(cls, output: str) -> str:
+        # PT 9.0.1 may expose an empty getPrompt() on a 3560 while getOutput()
+        # still retains the current IOS prompt. Ignore asynchronous syslog at
+        # the tail and select the latest complete EXEC prompt, never a device
+        # display name or an inferred model default.
+        for line in reversed(output.splitlines()):
+            candidate = line.strip()
+            if not candidate or candidate.startswith("%"):
+                continue
+            hostname = cls._hostname_from_prompt(candidate)
+            if hostname:
+                return hostname
+        return ""
 
     def _verify_serial_controller(
         self,

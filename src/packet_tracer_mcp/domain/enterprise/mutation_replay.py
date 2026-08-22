@@ -20,6 +20,7 @@ from .models.configuration import (
     ConfigureAccessPort,
     ConfigureDhcpPool,
     ConfigureEthernetLinkMode,
+    ConfigureHostname,
     ConfigureInterfaceBandwidth,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
@@ -266,6 +267,12 @@ def _physical_policy(
 
 
 PRODUCT_MUTATION_REPLAY_REGISTRY: tuple[MutationReplayPolicy, ...] = (
+    _action_policy(
+        MutationSurface.CONFIGURATION, ConfigureHostname,
+        _CONFIGURATION_ENTRYPOINT, ReplayClassification.REPLAY_SAFE, _SHAPE,
+        _DECLARATIVE,
+        "IOS hostname is a single declarative device identity value.",
+    ),
     _action_policy(
         MutationSurface.CONFIGURATION, CreateVlan, _CONFIGURATION_ENTRYPOINT,
         ReplayClassification.REPLAY_SAFE, _SHAPE, _DECLARATIVE,

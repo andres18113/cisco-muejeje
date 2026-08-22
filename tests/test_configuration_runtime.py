@@ -117,6 +117,97 @@ def test_vlan_verifier_uses_existing_vlan_manager_and_bounded_convergence():
     assert all("VlanManager" in payload for payload in payloads)
 
 
+def test_hostname_verifier_requires_exact_fresh_ios_prompt_identity():
+    expectation = VerificationExpectation(
+        id="verify-hostname",
+        action_id="hostname",
+        kind=VerificationKind.HOSTNAME,
+        device_id="sw1",
+        device_name="HQ-DIST-SW-01",
+        expected={"hostname": "HQ-DIST-SW-01"},
+    )
+    observed = json.dumps({
+        "found": True,
+        "terminal": True,
+        "prompt": expectation.expected["hostname"] + "#",
+    })
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: observed,
+    )
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.fresh_evidence
+    assert result.evidence_method == "ios_terminal_prompt_identity"
+    assert result.fields["hostname"] is FieldVerificationStatus.VERIFIED
+
+
+def test_hostname_verifier_uses_terminal_output_when_pt_prompt_field_is_empty():
+    expectation = VerificationExpectation(
+        id="verify-hostname-output",
+        action_id="hostname-output",
+        kind=VerificationKind.HOSTNAME,
+        device_id="dist-1",
+        device_name="HQ-DIST-SW-01",
+        expected={"hostname": "HQ-DIST-SW-01"},
+    )
+    observed = json.dumps({
+        "found": True,
+        "terminal": True,
+        "prompt": "",
+        "output": (
+            "Switch#\nHQ-DIST-SW-01#\n"
+            "%SYS-5-CONFIG_I: Configured from console"
+        ),
+    })
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: observed,
+        convergence_interval_seconds=0,
+    )
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.fields["hostname"] is FieldVerificationStatus.VERIFIED
+    assert result.fresh_evidence
+
+
+def test_hostname_verifier_prefers_exact_packet_tracer_device_getter():
+    expectation = VerificationExpectation(
+        id="verify-hostname-getter",
+        action_id="hostname-getter",
+        kind=VerificationKind.HOSTNAME,
+        device_id="dist-1",
+        device_name="HQ-DIST-SW-01",
+        expected={"hostname": "HQ-DIST-SW-01"},
+    )
+    observed = json.dumps({
+        "found": True,
+        "terminal": True,
+        "hostname_supported": True,
+        "hostname": "HQ-DIST-SW-01",
+        "prompt": "",
+        "output": "",
+    })
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: observed,
+        convergence_interval_seconds=0,
+    )
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.evidence_method == "packet_tracer_device_hostname_getter"
+    assert result.fields["hostname"] is FieldVerificationStatus.VERIFIED
+
+
 def test_l3_verifier_uses_controlled_fresh_show_window():
     _, plan = _plan()
     expectation = next(

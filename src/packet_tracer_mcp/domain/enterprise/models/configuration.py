@@ -14,6 +14,7 @@ from .verification import VerificationPrerequisite
 
 
 class ConfigurationPhase(IntEnum):
+    IDENTITY = 10
     L2_DEFINITIONS = 20
     L2_INTERFACES = 30
     L3_INTERFACES = 40
@@ -23,6 +24,7 @@ class ConfigurationPhase(IntEnum):
 
 
 class ConfigurationActionType(str, Enum):
+    CONFIGURE_HOSTNAME = "configure_hostname"
     CREATE_VLAN = "create_vlan"
     CONFIGURE_ACCESS_PORT = "configure_access_port"
     CONFIGURE_TRUNK = "configure_trunk"
@@ -63,6 +65,7 @@ class ConfigurationIssueCode(str, Enum):
     DEPENDENCY_CYCLE = "DEPENDENCY_CYCLE"
     CAPABILITY_UNVERIFIED = "CAPABILITY_UNVERIFIED"
     CAPABILITY_UNSUPPORTED = "CAPABILITY_UNSUPPORTED"
+    HOSTNAME_NOT_IOS_COMPATIBLE = "HOSTNAME_NOT_IOS_COMPATIBLE"
     SOURCE_CONFIGURATION_HASH_MISSING = "SOURCE_CONFIGURATION_HASH_MISSING"
     SOURCE_CONFIGURATION_TOPOLOGY_MISMATCH = "SOURCE_CONFIGURATION_TOPOLOGY_MISMATCH"
     SERVICE_TYPE_INVALID = "SERVICE_TYPE_INVALID"
@@ -180,6 +183,13 @@ class BaseConfigurationAction(BaseModel):
     operation: OperationSemantics = OperationSemantics.SET_VALUE
     compensation_available: bool = False
     inverse_action_id: str = ""
+
+
+class ConfigureHostname(BaseConfigurationAction):
+    action_type: Literal[
+        ConfigurationActionType.CONFIGURE_HOSTNAME
+    ] = ConfigurationActionType.CONFIGURE_HOSTNAME
+    hostname: str
 
 
 class CreateVlan(BaseConfigurationAction):
@@ -330,7 +340,8 @@ class ConfigureEthernetLinkMode(BaseConfigurationAction):
 
 
 ConfigurationAction = Annotated[
-    CreateVlan
+    ConfigureHostname
+    | CreateVlan
     | ConfigureAccessPort
     | ConfigureTrunk
     | ConfigureRoutedInterface
@@ -347,6 +358,7 @@ ConfigurationAction = Annotated[
 
 
 class VerificationKind(str, Enum):
+    HOSTNAME = "hostname"
     VLAN = "vlan"
     ACCESS_PORT = "access_port"
     TRUNK = "trunk"

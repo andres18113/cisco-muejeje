@@ -26,6 +26,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationAction,
     ConfigurationPhase,
     ConfigureEthernetLinkMode,
+    ConfigureHostname,
     ConfigureInterfaceBandwidth,
     ConfigureSerialClock,
     CreateVlan,
@@ -88,6 +89,19 @@ class TestTheRendererFailsClosed:
         )
 
         assert batches and "vlan 10" in batches[0].ios_payload
+
+    def test_semantic_hostname_renders_as_an_exact_typed_identity(self):
+        action = ConfigureHostname(
+            **_common(id="hostname-1", phase=ConfigurationPhase.IDENTITY),
+            hostname="HQ-DIST-SW-01",
+        )
+
+        batches = PacketTracerIosRenderer().render_device_batches(
+            "HQ-DIST-SW-01", "3560-24PS", [action],
+        )
+
+        assert len(batches) == 1
+        assert "hostname HQ-DIST-SW-01" in batches[0].ios_payload
 
     @pytest.mark.parametrize("action, expected", [
         (ConfigureSerialClock(**_common(), interface="Serial0/0/0",

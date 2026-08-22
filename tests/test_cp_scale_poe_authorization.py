@@ -128,7 +128,7 @@ def test_poe_evidence_does_not_cross_model_or_build_and_names_do_not_promote(tmp
     assert unmeasured_named_model.supports_poe is CapabilityStatus.UNKNOWN
 
 
-def test_stage_a_does_not_allocate_the_819_duplicate_port_alias(tmp_path):
+def test_stage_a_uses_one_exact_routed_819_uplink_without_the_duplicate_alias(tmp_path):
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
     _save_supported_3560(store)
 
@@ -148,8 +148,23 @@ def test_stage_a_does_not_allocate_the_819_duplicate_port_alias(tmp_path):
         for link in composition.topology.links
         if router.id in {link.device_a_id, link.device_b_id}
     }
-    assert router_ports == {"FastEthernet0", "FastEthernet1"}
+    assert router_ports == {"GigabitEthernet0"}
     assert "Ethernet1" not in router_ports
+
+    edge_links = [
+        link for link in composition.topology.links
+        if link.link_role == "edge_link"
+    ]
+    distribution_peers = [
+        link for link in composition.topology.links
+        if link.link_role == "redundant_link"
+        and {link.device_a_id, link.device_b_id}.issubset({
+            item.id for item in composition.topology.devices
+            if item.network_layer == "distribution"
+        })
+    ]
+    assert len(edge_links) == 1
+    assert len(distribution_peers) == 1
 
 
 def test_corrected_stage_a_identity_preserves_only_phone_and_ap_poe_demand(

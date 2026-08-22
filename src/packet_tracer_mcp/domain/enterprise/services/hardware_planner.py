@@ -435,8 +435,17 @@ class HardwarePlanner:
                 cores, edges, LinkRole.EDGE_LINK, policy.resiliency,
             ))
         elif distributions:
+            # A single router-on-a-stick gateway terminates one deliberate
+            # trunk.  Connecting every distribution directly to that same
+            # router would leave all but one link without a valid L2/L3 role.
+            # Keep the redundant distribution domain connected with explicit
+            # peer trunks and bind one deterministic distribution to the edge.
             uplinks.extend(redundancy.connect_layer(
-                distributions, edges, LinkRole.EDGE_LINK, policy.resiliency,
+                distributions[:1], edges, LinkRole.EDGE_LINK, policy.resiliency,
+            ))
+            uplinks.extend(redundancy.connect_layer(
+                distributions[1:], distributions[:1],
+                LinkRole.REDUNDANT_LINK, policy.resiliency,
             ))
         warnings.extend(redundancy_warnings)
         pattern = site.topology.pattern if site.topology else TopologyPattern.STAR
