@@ -93,6 +93,7 @@ class PacketTracerPhysicalTopologyRuntime:
         self._mutation_timeout_seconds = max(0.1, mutation_timeout_seconds)
         self._observation_timeout_seconds = max(0.1, observation_timeout_seconds)
         self._module_baselines: dict[str, _ModuleRuntimeState] = {}
+        self._owned_device_attempts: set[str] = set()
         self._owned_new_devices: set[str] = set()
 
     def ensure_device(self, device: DevicePlan) -> PhysicalMutationResult:
@@ -118,6 +119,7 @@ class PacketTracerPhysicalTopologyRuntime:
                 PhysicalObjectKind.DEVICE,
                 "Device pre-readback was inconclusive: " + observation.message,
             )
+        self._owned_device_attempts.add(device.name)
         ack_status, ack_message = self._mutation_ack(generate_device_command(device))
         if ack_status is _MutationAckStatus.UNKNOWN:
             return PhysicalMutationResult(
@@ -207,12 +209,21 @@ class PacketTracerPhysicalTopologyRuntime:
         )
 
     def remove_device(self, device: DevicePlan) -> PhysicalMutationResult:
-        """Remove only the exact disposable device identity supplied by caller."""
+        """Remove an exact disposable device attempted by this runtime instance."""
 
         target_id = _device_id(device)
+        if device.name not in self._owned_device_attempts:
+            return _failure(
+                target_id,
+                PhysicalObjectKind.DEVICE,
+                "Refusing cleanup because this runtime recorded no creation attempt "
+                "for the disposable device.",
+            )
         observation = self.observe_device(device)
         if not observation.observed:
             if observation.message == "not_found":
+                self._owned_device_attempts.discard(device.name)
+                self._owned_new_devices.discard(device.name)
                 return PhysicalMutationResult(
                     target_id=target_id,
                     target_kind=PhysicalObjectKind.DEVICE,
@@ -248,6 +259,7 @@ class PacketTracerPhysicalTopologyRuntime:
                 PhysicalObjectKind.DEVICE,
                 f"Packet Tracer rejected exact device cleanup: {ack_message}",
             )
+        self._owned_device_attempts.discard(device.name)
         self._owned_new_devices.discard(device.name)
         return PhysicalMutationResult(
             target_id=target_id,

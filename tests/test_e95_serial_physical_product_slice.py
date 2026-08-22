@@ -659,9 +659,35 @@ class DeviceCleanupTransport:
         raise AssertionError(f"unexpected script: {script}")
 
 
+class AmbiguousCreationCleanupTransport:
+    def __init__(self) -> None:
+        self.created = False
+        self.remove_mutations = 0
+
+    def __call__(self, script: str, _timeout: float) -> str | None:
+        if "removeDevice" in script:
+            self.created = False
+            self.remove_mutations += 1
+            return '{"ack": true}'
+        if "lwAddDevice(" in script:
+            self.created = True
+            return None
+        if "getPortCount" in script:
+            if not self.created:
+                return '{"found": false}'
+            return __import__("json").dumps({
+                "found": True,
+                "name": "MCP-PROBE-S3A4-S2A-R1",
+                "model": "2911",
+                "ports": ["GigabitEthernet0/0"],
+            })
+        raise AssertionError(f"unexpected script: {script}")
+
+
 def test_packet_tracer_cleanup_deletes_only_exact_disposable_device_identity():
     transport = DeviceCleanupTransport()
     runtime = PacketTracerPhysicalTopologyRuntime(transport)
+    runtime._owned_device_attempts.add(_device().name)
 
     mutation = runtime.remove_device(_device())
 
@@ -670,9 +696,34 @@ def test_packet_tracer_cleanup_deletes_only_exact_disposable_device_identity():
     assert transport.remove_mutations == 1
 
 
+def test_packet_tracer_cleanup_refuses_a_device_never_attempted_by_this_runtime():
+    transport = DeviceCleanupTransport()
+    runtime = PacketTracerPhysicalTopologyRuntime(transport)
+
+    mutation = runtime.remove_device(_device())
+
+    assert mutation.disposition is MutationDisposition.FAILED
+    assert "creation attempt" in mutation.message.casefold()
+    assert transport.remove_mutations == 0
+
+
+def test_packet_tracer_cleanup_covers_an_ambiguous_owned_creation_attempt():
+    transport = AmbiguousCreationCleanupTransport()
+    runtime = PacketTracerPhysicalTopologyRuntime(transport)
+
+    creation = runtime.ensure_device(_device())
+    cleanup = runtime.remove_device(_device())
+
+    assert creation.disposition is MutationDisposition.UNKNOWN
+    assert cleanup.disposition is MutationDisposition.CHANGED
+    assert cleanup.applied
+    assert transport.remove_mutations == 1
+
+
 def test_packet_tracer_cleanup_refuses_same_name_with_wrong_model():
     transport = DeviceCleanupTransport(model="3560-24PS")
     runtime = PacketTracerPhysicalTopologyRuntime(transport)
+    runtime._owned_device_attempts.add(_device().name)
 
     mutation = runtime.remove_device(_device())
 
