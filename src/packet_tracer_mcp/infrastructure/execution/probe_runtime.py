@@ -262,15 +262,26 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         name = json.dumps(temporary_name)
         catalog_model = resolve_model(runtime_model)
         device_type = PT_DEVICE_TYPE.get(catalog_model.category, PT_DEVICE_TYPE_DEFAULT) if catalog_model else PT_DEVICE_TYPE_DEFAULT
-        js = (
+        js = "".join((
             "try{"
-            f"var __model={model};var __name={name};var __type={device_type};var __net=ipc.network();"
+            "var __model=", model, ";var __name=", name,
+            ";var __type=", json.dumps(device_type), ";var __net=ipc.network();",
             "if(__net.getDevice(__name)){reportResult(JSON.stringify({error:'duplicate probe name'}));}"
             "else if(typeof lwAddDevice!=='function'){reportResult(JSON.stringify({error:'lwAddDevice unavailable'}));}"
             "else{lwAddDevice(__name,__type,__model,9000,9000);var __d=__net.getDevice(__name);"
             "if(!__d){reportResult(JSON.stringify({found:false}));}else{var __ports=[];"
             "for(var __i=0;__i<__d.getPortCount();__i++){try{var __p=__d.getPortAt(__i);"
-            "if(__p){__ports.push({name:__p.getName(),bandwidth_kbps:(typeof __p.getBandwidth==='function')?__p.getBandwidth():null});}}catch(__pe){}}"
+            "if(__p){var __entry={name:__p.getName(),"
+            "bandwidth_kbps:(typeof __p.getBandwidth==='function')?__p.getBandwidth():null,"
+            "power_admin_observed:false,power_admin_enabled:null,"
+            "power_runtime_observed:false,power_runtime_on:null};"
+            "try{if(typeof __p.getPower==='function'){var __admin=__p.getPower();"
+            "if(typeof __admin==='boolean'){__entry.power_admin_observed=true;"
+            "__entry.power_admin_enabled=__admin;}}}catch(__pae){}"
+            "try{if(typeof __p.isPowerOn==='function'){var __runtime=__p.isPowerOn();"
+            "if(typeof __runtime==='boolean'){__entry.power_runtime_observed=true;"
+            "__entry.power_runtime_on=__runtime;}}}catch(__pre){}"
+            "__ports.push(__entry);}}catch(__pe){}}"
             # La lectura de módulos va en su propio try: si falla, la creación
             # sigue siendo válida y el slot simplemente queda sin observar.
             "var __mods=[];try{var __root=__d.getRootModule();"
@@ -283,7 +294,7 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             "__mods.push(__entry);}}}catch(__re){__mods=[];}"
             "reportResult(JSON.stringify({found:true,runtime_id:(typeof __d.getModel==='function')?__d.getModel():__model,display_name:__d.getName(),ports:__ports,modules:__mods}));}}"
             "}catch(__e){reportResult('ERROR:'+__e); }"
-        )
+        ))
         data = self._json_result(js, timeout=15.0)
         if data.get("error"):
             return RuntimeDeviceObservation(error=str(data["error"]))
@@ -858,6 +869,20 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         match = _INTERFACE_TYPE.match(name)
         bandwidth = value.get("bandwidth_kbps")
         logical = bool(re.match(r"^(Vlan|Loopback|Tunnel|Port-channel|BVI)", name, re.IGNORECASE))
+        power_admin = _strict_observed_bool(
+            value, "power_admin_observed", "power_admin_enabled",
+        )
+        power_runtime = _strict_observed_bool(
+            value, "power_runtime_observed", "power_runtime_on",
+        )
+        complete = power_admin is not None and power_runtime is not None
+        poe_status = (
+            CapabilityStatus.SUPPORTED
+            if complete and power_admin is True and power_runtime is True
+            else CapabilityStatus.UNSUPPORTED
+            if complete and power_admin is False and power_runtime is False
+            else CapabilityStatus.UNKNOWN
+        )
         return RuntimePortDescriptor(
             name=name,
             interface_type=match.group(0) if match else "",
@@ -865,5 +890,19 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             physical=not logical,
             logical=logical,
             evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
-            poe_status=CapabilityStatus.UNKNOWN,
+            power_admin_enabled=power_admin,
+            power_runtime_on=power_runtime,
+            # No powered endpoint was attached by this observation.
+            power_delivery_active=None,
+            power_observation_complete=complete,
+            poe_status=poe_status,
         )
+
+
+def _strict_observed_bool(
+    value: dict, observed_key: str, value_key: str,
+) -> bool | None:
+    if value.get(observed_key) is not True:
+        return None
+    observed = value.get(value_key)
+    return observed if type(observed) is bool else None

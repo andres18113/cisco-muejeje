@@ -43,6 +43,7 @@ PORT_OBSERVER_CANDIDATES = (
     # build los expusiera sería información, y preguntar cuesta cero.
     "getAccessVlan", "isAccessPort", "getAdminOpMode", "isAdminModeSet",
     "getNativeVlanId", "getVoipVlanId", "isPortUp", "isProtocolUp",
+    "getPower", "isPowerOn",
     "getPortNameNumber", "getType", "getClassName",
     "getName", "getMacAddress", "getBandwidth",
     "getVlanId", "getVlan", "getVlanNumber", "getSwitchportMode", "getPortMode",

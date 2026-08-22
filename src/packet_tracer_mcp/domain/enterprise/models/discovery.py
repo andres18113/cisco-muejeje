@@ -330,6 +330,14 @@ class RuntimePortDescriptor(BaseModel):
     module: str | None = None
     physical: bool = True
     logical: bool = False
+    # `getPower()` and `isPowerOn()` are separate observations on PT's port
+    # object.  Neither is powered-device delivery: a fresh, unlinked 3560 port
+    # reports both as true.  Keep the dimensions separate and leave delivery
+    # unobserved until a governed powered-device control exists.
+    power_admin_enabled: bool | None = None
+    power_runtime_on: bool | None = None
+    power_delivery_active: bool | None = None
+    power_observation_complete: bool = False
     poe_status: CapabilityStatus = CapabilityStatus.UNKNOWN
     access_capable: CapabilityStatus = CapabilityStatus.UNKNOWN
     uplink_capable: CapabilityStatus = CapabilityStatus.UNKNOWN

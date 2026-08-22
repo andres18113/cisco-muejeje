@@ -13,6 +13,7 @@ from ...domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CapabilityBackend,
+    CapabilityVerificationMethod,
     CatalogGapReport,
     CleanupStatus,
     DeviceIdentity,
@@ -104,7 +105,8 @@ class CapabilityProbeRegistry:
             isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
         "supports_poe": ProbeDefinition(
-            id="poe-inventory", capability="supports_poe", prerequisites=["port_inventory"],
+            id="poe-inventory", probe_version="2", capability="supports_poe",
+            prerequisites=["port_inventory"],
             cost=ProbeCost.CHEAP, isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
         "layer2": ProbeDefinition(
@@ -538,12 +540,43 @@ class CapabilityDiscoveryService:
                     observed_value=len(named) or None,
                 ))
             elif capability == "supports_poe":
-                statuses = {port.poe_status for port in descriptor.ports}
+                access_ports = [
+                    port for port in descriptor.ports
+                    if port.physical
+                    and port.interface_type.casefold() in {"ethernet", "fastethernet"}
+                ]
+                statuses = {port.poe_status for port in access_ports}
                 status = _observed_status(statuses)
+                supported_count = sum(
+                    port.poe_status is CapabilityStatus.SUPPORTED
+                    for port in access_ports
+                )
+                if status is CapabilityStatus.SUPPORTED:
+                    summary = (
+                        f"{supported_count} fresh access port(s) exposed complete "
+                        "administrative/runtime power-on state; powered-device "
+                        "delivery was not observed."
+                    )
+                elif status is CapabilityStatus.UNSUPPORTED:
+                    summary = (
+                        f"{len(access_ports)} fresh access port(s) exposed complete "
+                        "administrative/runtime power-off state; powered-device "
+                        "delivery was not observed."
+                    )
+                else:
+                    summary = (
+                        "Access-port power fields were empty, missing, malformed, "
+                        "mixed, or incomplete; powered-device delivery remains "
+                        "unobserved."
+                    )
                 results.append(_physical_result(
                     model, capability, status, version,
-                    "Port power state observed." if status is not CapabilityStatus.UNKNOWN else "Runtime does not expose reliable PoE state.",
-                    observed_value=sum(port.poe_status is CapabilityStatus.SUPPORTED for port in descriptor.ports) if status is CapabilityStatus.SUPPORTED else None,
+                    summary,
+                    observed_value=(
+                        supported_count
+                        if status is CapabilityStatus.SUPPORTED else None
+                    ),
+                    verification_method=CapabilityVerificationMethod.OBJECT_STATE,
                 ))
 
     def _run_runtime_probes(
@@ -761,6 +794,7 @@ def _observed_status(statuses: set[CapabilityStatus]) -> CapabilityStatus:
 def _physical_result(
     model: str, capability: str, status: CapabilityStatus, version: str | None, summary: str,
     observed_value: int | None = None,
+    verification_method: CapabilityVerificationMethod | None = None,
 ) -> CapabilityProbeResult:
     return CapabilityProbeResult(
         probe_id=capability.replace("_", "-"), model=model, capability=capability, status=status,
@@ -768,6 +802,7 @@ def _physical_result(
         evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
         verified=status is not CapabilityStatus.UNKNOWN,
         raw_summary=summary, observed_value=observed_value, packet_tracer_version=version,
+        verification_method=verification_method,
     )
 
 

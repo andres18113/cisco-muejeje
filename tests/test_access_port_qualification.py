@@ -16,6 +16,8 @@ se niega a hacer, y una regresión que ya costó una fuga real:
 
 from __future__ import annotations
 
+import json
+
 from src.packet_tracer_mcp.application.use_cases.qualify_access_port_readback import (
     CONTROL_VLAN_ID,
     QUALIFICATION_PREFIX,
@@ -41,6 +43,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
+)
+from src.packet_tracer_mcp.infrastructure.execution.access_port_probe import (
+    PacketTracerAccessPortProbe,
 )
 
 _PORTS = [f"FastEthernet0/{index}" for index in range(1, 6)] + ["Vlan1"]
@@ -305,3 +310,38 @@ def test_the_ios_query_is_targeted_at_one_interface():
 
     assert len(query.calls) == 3
     assert all(interface for _device, interface in query.calls)
+
+
+def test_confirmed_power_observers_are_read_without_invoking_the_setter():
+    """PT 9.0.1.0858 enumerated both readers on a 3560 SwitchPort."""
+    calls: list[str] = []
+
+    def send_and_wait(script: str, _timeout: float) -> str:
+        calls.append(script)
+        return json.dumps({
+            "device_found": True,
+            "port_found": True,
+            "members": ["getPower", "isPowerOn", "setPower"],
+            "port_observers": [
+                {
+                    "name": "getPower", "present": True,
+                    "is_callable": True, "invoked": True, "value": 1,
+                },
+                {
+                    "name": "isPowerOn", "present": True,
+                    "is_callable": True, "invoked": True, "value": False,
+                },
+            ],
+        })
+
+    observed = PacketTracerAccessPortProbe(send_and_wait).discover_port_observers(
+        "SW-POE", "FastEthernet0/1",
+    )
+
+    assert [(item.name, item.value) for item in observed.readable_port_observers] == [
+        ("getPower", 1),
+        ("isPowerOn", False),
+    ]
+    assert "getPower" in calls[0]
+    assert "isPowerOn" in calls[0]
+    assert "setPower" not in calls[0]

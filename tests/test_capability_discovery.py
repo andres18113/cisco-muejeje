@@ -263,6 +263,118 @@ def test_runtime_port_descriptor_marks_svis_as_logical_interfaces():
     assert ethernet.physical and not ethernet.logical
 
 
+def test_runtime_port_power_observation_keeps_admin_runtime_and_delivery_separate():
+    supported = PacketTracerBridgeProbeRuntime._port_descriptor({
+        "name": "FastEthernet0/1",
+        "power_admin_observed": True,
+        "power_admin_enabled": True,
+        "power_runtime_observed": True,
+        "power_runtime_on": True,
+    })
+    unsupported = PacketTracerBridgeProbeRuntime._port_descriptor({
+        "name": "FastEthernet0/2",
+        "power_admin_observed": True,
+        "power_admin_enabled": False,
+        "power_runtime_observed": True,
+        "power_runtime_on": False,
+    })
+    partial = PacketTracerBridgeProbeRuntime._port_descriptor({
+        "name": "FastEthernet0/3",
+        "power_admin_observed": True,
+        "power_admin_enabled": True,
+    })
+    malformed = PacketTracerBridgeProbeRuntime._port_descriptor({
+        "name": "FastEthernet0/4",
+        "power_admin_observed": True,
+        "power_admin_enabled": 1,
+        "power_runtime_observed": True,
+        "power_runtime_on": "true",
+    })
+
+    assert supported.poe_status is CapabilityStatus.SUPPORTED
+    assert supported.power_admin_enabled is True
+    assert supported.power_runtime_on is True
+    assert supported.power_delivery_active is None
+    assert supported.power_observation_complete is True
+    assert unsupported.poe_status is CapabilityStatus.UNSUPPORTED
+    assert partial.poe_status is CapabilityStatus.UNKNOWN
+    assert malformed.poe_status is CapabilityStatus.UNKNOWN
+    assert malformed.power_admin_enabled is None
+    assert malformed.power_runtime_on is None
+
+
+def test_bridge_runtime_reads_only_confirmed_port_power_getters():
+    sent: list[str] = []
+
+    def send_and_wait(script: str, _timeout: float):
+        sent.append(script)
+        return (
+            '{"found":true,"runtime_id":"3560-24PS",'
+            '"display_name":"SW","ports":[{'
+            '"name":"FastEthernet0/1","bandwidth_kbps":100000,'
+            '"power_admin_observed":true,"power_admin_enabled":true,'
+            '"power_runtime_observed":true,"power_runtime_on":true}],'
+            '"modules":[]}'
+        )
+
+    runtime = PacketTracerBridgeProbeRuntime(send_and_wait)
+    runtime._wait_for_operational_readiness = lambda *_args: None
+    observed = runtime.create_temporary_device("3560-24PS", "__MCP_PROBE_POWER_01")
+
+    assert observed.ports[0].poe_status is CapabilityStatus.SUPPORTED
+    assert "getPower" in sent[0]
+    assert "isPowerOn" in sent[0]
+    assert "setPower" not in sent[0]
+
+
+def test_poe_inventory_requires_complete_nonempty_homogeneous_port_observation(tmp_path):
+    supported = _observation(poe=CapabilityStatus.SUPPORTED)
+    supported.ports[0].power_admin_enabled = True
+    supported.ports[0].power_runtime_on = True
+    supported.ports[0].power_observation_complete = True
+    supported.ports[0].interface_type = "FastEthernet"
+    supported.ports[1].power_admin_enabled = True
+    supported.ports[1].power_runtime_on = True
+    supported.ports[1].power_observation_complete = True
+    unsupported = _observation(poe=CapabilityStatus.UNSUPPORTED)
+    unsupported.ports[0].power_admin_enabled = False
+    unsupported.ports[0].power_runtime_on = False
+    unsupported.ports[0].power_observation_complete = True
+    unsupported.ports[0].interface_type = "FastEthernet"
+    mixed = _observation()
+    mixed.ports = [
+        RuntimePortDescriptor(
+            name="FastEthernet0/1", interface_type="FastEthernet",
+            poe_status=CapabilityStatus.SUPPORTED,
+        ),
+        RuntimePortDescriptor(
+            name="FastEthernet0/2", interface_type="FastEthernet",
+            poe_status=CapabilityStatus.UNKNOWN,
+        ),
+    ]
+    empty = RuntimeDeviceObservation(
+        found=True, runtime_id="3560-24PS", display_name="3560-24PS", ports=[],
+    )
+
+    observations = (supported, unsupported, mixed, empty)
+    expected = (
+        (CapabilityStatus.SUPPORTED, ProbeExecutionStatus.VERIFIED, 1),
+        (CapabilityStatus.UNSUPPORTED, ProbeExecutionStatus.VERIFIED, None),
+        (CapabilityStatus.UNKNOWN, ProbeExecutionStatus.SKIPPED, None),
+        (CapabilityStatus.UNKNOWN, ProbeExecutionStatus.SKIPPED, None),
+    )
+    for index, (observation, outcome) in enumerate(zip(observations, expected)):
+        runtime = FakePacketTracerProbeRuntime({"3560-24PS": observation})
+        snapshot, _ = _service(tmp_path / str(index), runtime).run(ProbeRequest(
+            models=["3560-24PS"], capabilities=["supports_poe"], force=True,
+        ))
+        result = next(
+            item for item in snapshot.session.results
+            if item.capability == "supports_poe"
+        )
+        assert (result.status, result.execution_status, result.observed_value) == outcome
+
+
 def test_bridge_runtime_vlan_probe_requires_configure_readback_and_cleanup():
     sent: list[str] = []
 

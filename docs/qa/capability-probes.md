@@ -127,6 +127,28 @@ creados y eliminados, 24 capabilities consultadas, 11 `SUPPORTED`, una
   `NOT_REPRODUCED_ON_PT_9.0.1.0858`, pero DHCP aún no tiene una lease
   configure/read-back controlada para PC-PT y Server-PT.
 
+## CP-SCALE: observación tipada de potencia de puerto
+
+La calificación live del 2026-08-22 sobre Packet Tracer `9.0.1.0858` confirmó
+que `SwitchPort.getPower()` e `isPowerOn()` son lectores disponibles. En
+dispositivos frescos y sin enlaces, los 24 puertos FastEthernet de
+`3560-24PS` devolvieron `true/true`, mientras los 24 de `2950T-24` devolvieron
+`false/false`. Los dos puertos Gigabit de cada modelo se conservaron como
+uplinks y no se contaron como capacidad PoE de acceso.
+
+El probe físico registrado ahora guarda por separado el estado administrativo
+y el estado runtime, exige booleanos estrictos y una observación completa y
+homogénea. Ausencia, valores malformados o resultados mixtos permanecen
+`UNKNOWN`; modelo o build distintos no heredan la evidencia. El snapshot
+exacto `3560-24PS` / `9.0.1.0858` quedó `SUPPORTED`, `VERIFIED`, con 24 puertos
+de acceso y método `object_state` (hash
+`ae52cee8f8e23d032141aaa025c6ea466aa82b90bc5cc156660f67f625b9156e`).
+
+Esta afirmación autoriza capacidad hardware PoE, no entrega activa a un equipo
+alimentado. No se conectó un powered device y `power_delivery_active` continúa
+sin observarse. La sesión eliminó el temporal por identidad exacta, confirmó
+dos veces el workspace semántico vacío y preservó el PDD preexistente.
+
 ## Si algo falla
 
 Un timeout, callback inválido o disconnect del bridge es `UNKNOWN` y debe conservar el nombre de la sesión para inspección. No cambiarlo a `UNSUPPORTED`. Si hay `DIRTY_SESSION`, eliminar manualmente sólo los nombres temporales indicados; nunca borrar dispositivos del usuario.
