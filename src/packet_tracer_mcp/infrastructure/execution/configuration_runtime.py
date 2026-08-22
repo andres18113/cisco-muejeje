@@ -28,4 +28,15 @@ class PacketTracerConfigurationRuntime:
             json.dumps(device), "false",
             json.dumps(address), json.dumps(mask), json.dumps(gateway),
         ))
-        return self._send(f"configurePcIp({arguments});")
+        return self._send("configurePcIp(" + arguments + ");")
+
+    def configure_endpoint_dhcp(
+        self, device: str, interface: str = "FastEthernet0",
+    ) -> bool:
+        """Solicita DHCP por el helper tipado que usa el runtime enterprise."""
+
+        arguments = ",".join((
+            json.dumps(device), "true", "null", "null", "null", "null",
+            json.dumps(interface),
+        ))
+        return self._send("configurePcIp(" + arguments + ");")

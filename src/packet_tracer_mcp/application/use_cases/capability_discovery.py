@@ -125,7 +125,8 @@ class CapabilityProbeRegistry:
             isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
         "supports_trunk": ProbeDefinition(
-            id="trunk-probe", capability="supports_trunk", prerequisites=["supports_vlan"],
+            id="trunk-probe", probe_version="2", capability="supports_trunk",
+            prerequisites=["supports_vlan"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE, requires_fresh_device=True,
             isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
@@ -149,6 +150,13 @@ class CapabilityProbeRegistry:
         "supports_ospf": ProbeDefinition(
             id="ospf-probe", capability="supports_ospf", prerequisites=["layer3"],
             cost=ProbeCost.NORMAL, safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
+        ),
+        "supports_dhcp_server": ProbeDefinition(
+            id="dhcp-server-behavior", capability="supports_dhcp_server",
+            prerequisites=["layer3"], cost=ProbeCost.EXPENSIVE,
+            safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            requires_fresh_device=True,
             isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
     }

@@ -221,6 +221,22 @@ def test_registry_declares_dependencies_without_accepting_raw_user_commands():
     assert all(item.requires_fresh_device for item in definitions[-2:])
 
 
+def test_registry_declares_dhcp_server_as_a_behavioral_layer3_probe():
+    definitions = CapabilityProbeRegistry().definitions_for([
+        "supports_dhcp_server",
+    ])
+
+    assert [item.capability for item in definitions] == [
+        "model_exists",
+        "port_inventory",
+        "configuration_channel",
+        "layer3",
+        "supports_dhcp_server",
+    ]
+    assert definitions[-1].requires_fresh_device
+    assert all(not hasattr(item, "command") for item in definitions)
+
+
 def test_compact_summary_counts_large_snapshot_without_expanding_models(tmp_path):
     runtime = FakePacketTracerProbeRuntime({
         f"model-{index}": _observation(f"model-{index}") for index in range(100)
@@ -399,6 +415,117 @@ def test_bridge_runtime_vlan_probe_requires_configure_readback_and_cleanup():
     assert "no vlan" in configured[1]
 
 
+def test_bridge_runtime_trunk_probe_requires_admin_mode_readback_and_cleanup():
+    configured: list[str] = []
+    runtime = PacketTracerBridgeProbeRuntime(
+        lambda _js, _timeout: '{"found":true}',
+        send=lambda js: configured.append(js) is None,
+    )
+    runtime._physical_access_ports = lambda _device, _count: ["FastEthernet0/1"]
+    observed_modes = iter((True, True))
+    runtime._wait_for_admin_mode = (
+        lambda _device, _port, _expected: next(observed_modes)
+    )
+    definition = CapabilityProbeRegistry().definitions_for(["supports_trunk"])[-1]
+
+    result = runtime.probe_capability(
+        "__MCP_PROBE_01", "supports_trunk", definition,
+    )
+
+    assert result.status is CapabilityStatus.SUPPORTED
+    assert result.configured and result.verified
+    assert "switchport trunk encapsulation dot1q" in configured[0]
+    assert "switchport mode trunk" in configured[0]
+    assert "switchport mode access" in configured[1]
+
+
+def test_bridge_runtime_dhcp_server_probe_requires_a_fresh_client_lease():
+    configured: list[str] = []
+    deleted: list[str] = []
+    runtime = PacketTracerBridgeProbeRuntime(
+        lambda _js, _timeout: '{"found":true}',
+        send=lambda js: configured.append(js) is None,
+    )
+    runtime._layer3_target = lambda _device: ("GigabitEthernet0", False)
+    runtime._create_probe_endpoint = lambda _name: True
+    runtime._link_probe_endpoint = lambda _endpoint, _router, _port: True
+    runtime._wait_for_dhcp_lease = lambda _endpoint: {
+        "ipv4": "198.18.37.2",
+        "netmask": "255.255.255.248",
+    }
+    runtime.delete_temporary_device = (
+        lambda name: deleted.append(name) is None
+    )
+    definition = CapabilityProbeRegistry().definitions_for([
+        "supports_dhcp_server",
+    ])[-1]
+
+    result = runtime.probe_capability(
+        "__MCP_PROBE_01", "supports_dhcp_server", definition,
+    )
+
+    assert result.status is CapabilityStatus.SUPPORTED
+    assert result.configured and result.verified
+    assert "ip dhcp pool MCP_CAPABILITY_PROBE" in configured[0]
+    assert "configurePcIp" in configured[1]
+    assert "true" in configured[1]
+    assert deleted == ["__MCP_PROBE_01_DHCP"]
+
+
+def test_bridge_runtime_dhcp_server_probe_preserves_unknown_without_a_lease():
+    runtime = PacketTracerBridgeProbeRuntime(
+        lambda _js, _timeout: '{"found":true}',
+        send=lambda _js: True,
+    )
+    runtime._layer3_target = lambda _device: ("GigabitEthernet0", False)
+    runtime._create_probe_endpoint = lambda _name: True
+    runtime._link_probe_endpoint = lambda _endpoint, _router, _port: True
+    runtime._wait_for_dhcp_lease = lambda _endpoint: None
+    runtime.delete_temporary_device = lambda _name: True
+    definition = CapabilityProbeRegistry().definitions_for([
+        "supports_dhcp_server",
+    ])[-1]
+
+    result = runtime.probe_capability(
+        "__MCP_PROBE_01", "supports_dhcp_server", definition,
+    )
+
+    assert result.status is CapabilityStatus.UNKNOWN
+    assert result.execution_status is ProbeExecutionStatus.VERIFY_FAILED
+    assert not result.verified
+
+
+def test_dhcp_server_observation_rejects_missing_malformed_or_foreign_leases():
+    invalid = (
+        {},
+        {"ipv4": "", "netmask": "255.255.255.248"},
+        {"ipv4": "not-an-address", "netmask": "255.255.255.248"},
+        {"ipv4": "198.18.37.2", "netmask": "255.255.255.0"},
+        {"ipv4": "198.18.38.2", "netmask": "255.255.255.248"},
+        {"ipv4": "198.18.37.1", "netmask": "255.255.255.248"},
+    )
+
+    assert all(
+        not PacketTracerBridgeProbeRuntime._dhcp_lease_matches(item)
+        for item in invalid
+    )
+    assert PacketTracerBridgeProbeRuntime._dhcp_lease_matches({
+        "ipv4": "198.18.37.2",
+        "netmask": "255.255.255.248",
+    })
+
+
+def test_routed_probe_prefers_a_gigabit_port_over_lower_speed_aliases():
+    runtime = PacketTracerBridgeProbeRuntime(
+        lambda _js, _timeout: (
+            '{"interfaces":["Ethernet1","FastEthernet0",'
+            '"GigabitEthernet0"]}'
+        ),
+    )
+
+    assert runtime._first_ethernet_port("R1") == "GigabitEthernet0"
+
+
 def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
     sent: list[str] = []
 
@@ -406,7 +533,7 @@ def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
         # La estrategia L3 se resuelve en dos pasos: primero el modelo observado
         # y su estrategia declarada, y sólo entonces la interfaz concreta.
         '{"model":"2911"}',
-        '{"interface":"GigabitEthernet0/0"}',
+        '{"interfaces":["GigabitEthernet0/0"]}',
         '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
         '{"ok":true,"before":""}',
         '{"found":true,"configuration_channel":true,"output":"Interface IP-Address"}',

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import time
@@ -120,6 +121,13 @@ _MULTILAYER_SLICE_GATEWAY_B = "198.18.141.1"
 _MULTILAYER_SLICE_HOST_B = "198.18.141.10"
 _MULTILAYER_PROBE_IPV4_ADDRESS = "198.18.130.1"
 _MULTILAYER_PROBE_IPV4_MASK = "255.255.255.0"
+_TRUNK_ADMIN_OP_MODE = 2
+_ACCESS_ADMIN_OP_MODE = 3
+_DHCP_PROBE_POOL = "MCP_CAPABILITY_PROBE"
+_DHCP_PROBE_NETWORK = "198.18.37.0"
+_DHCP_PROBE_PREFIX = 29
+_DHCP_PROBE_MASK = "255.255.255.248"
+_DHCP_PROBE_GATEWAY = "198.18.37.1"
 
 
 def bounded_reach(
@@ -338,10 +346,14 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             return self._probe_configuration_channel(temporary_name, definition)
         if capability == "supports_vlan":
             return self._probe_vlan(temporary_name, definition)
+        if capability == "supports_trunk":
+            return self._probe_trunk(temporary_name, definition)
         if capability == "layer3":
             return self._probe_layer3(temporary_name, definition)
         if capability == "multilayer_intervlan":
             return self._probe_multilayer_intervlan(temporary_name, definition)
+        if capability == "supports_dhcp_server":
+            return self._probe_dhcp_server(temporary_name, definition)
         return CapabilityProbeResult(
             probe_id=definition.id,
             model="",
@@ -411,6 +423,201 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             configured=True, verified=True, observed_value=CAPABILITY_PROBE_VLAN_ID,
             verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
             raw_summary="VLAN configured through configureIosDevice, read back through VlanManager, and removed successfully.",
+        )
+
+    def _probe_trunk(
+        self, temporary_name: str, definition: ProbeDefinition,
+    ) -> CapabilityProbeResult:
+        ports = self._physical_access_ports(temporary_name, 1)
+        if not ports:
+            return self._failure(
+                definition, ProbeExecutionStatus.VERIFY_FAILED,
+                "No physical Ethernet port was observed for the trunk probe.",
+            )
+        interface = ports[0]
+        configure = "\n".join((
+            "enable", "configure terminal", f"interface {interface}",
+            "switchport trunk encapsulation dot1q", "switchport mode trunk",
+            "no shutdown", "end",
+        ))
+        if not self._configuration.configure_ios(temporary_name, configure):
+            return self._failure(
+                definition, ProbeExecutionStatus.BRIDGE_ERROR,
+                "Official configuration channel rejected the trunk payload.",
+            )
+        configured = self._wait_for_admin_mode(
+            temporary_name, interface, _TRUNK_ADMIN_OP_MODE,
+        )
+        cleanup = "\n".join((
+            "enable", "configure terminal", f"interface {interface}",
+            "switchport mode access", "shutdown", "end",
+        ))
+        cleanup_sent = self._configuration.configure_ios(temporary_name, cleanup)
+        cleaned = cleanup_sent and self._wait_for_admin_mode(
+            temporary_name, interface, _ACCESS_ADMIN_OP_MODE,
+        )
+        if not configured or not cleaned:
+            return self._failure(
+                definition, ProbeExecutionStatus.VERIFY_FAILED,
+                "Trunk configure/read-back/cleanup evidence was incomplete.",
+                configured=configured,
+            )
+        return CapabilityProbeResult(
+            probe_id=definition.id, model="", capability=definition.capability,
+            status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED,
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=True, verified=True,
+            verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
+            raw_summary=(
+                "Trunk administrative mode was configured through "
+                "configureIosDevice, read back from the typed SwitchPort "
+                "object, and restored to access mode."
+            ),
+        )
+
+    def _wait_for_admin_mode(
+        self, temporary_name: str, interface: str, expected: int,
+    ) -> bool:
+        name = json.dumps(temporary_name)
+        port = json.dumps(interface)
+
+        def inspect() -> dict:
+            js = "".join((
+                "try{var __d=ipc.network().getDevice(", name, ");",
+                "var __p=__d&&typeof __d.getPort==='function'?__d.getPort(",
+                port, "):null;var __mode=null;",
+                "if(__p&&typeof __p.getAdminOpMode==='function'){",
+                "__mode=Number(__p.getAdminOpMode());}",
+                "reportResult(JSON.stringify({found:!!__d,port_found:!!__p,",
+                "admin_op_mode:__mode,configuration_channel:__mode===",
+                str(expected), "}));}catch(__e){reportResult('ERROR:'+__e);}",
+            ))
+            return self._json_result(js, timeout=3.0)
+
+        return StateConvergenceWaiter(
+            inspect, timeout_seconds=8.0,
+        ).wait().configuration_channel
+
+    def _probe_dhcp_server(
+        self, temporary_name: str, definition: ProbeDefinition,
+    ) -> CapabilityProbeResult:
+        target = self._layer3_target(temporary_name)
+        if target is None or target[1]:
+            return self._failure(
+                definition, ProbeExecutionStatus.SKIPPED,
+                "No routed physical interface is available for the DHCP behavior slice.",
+            )
+        interface = target[0]
+        endpoint = temporary_name + "_DHCP"
+        configured = False
+        lease: dict[str, str] | None = None
+        endpoint_removed = False
+        try:
+            payload = "\n".join((
+                "enable", "configure terminal", f"interface {interface}",
+                f"ip address {_DHCP_PROBE_GATEWAY} {_DHCP_PROBE_MASK}",
+                "no shutdown", "exit",
+                f"ip dhcp excluded-address {_DHCP_PROBE_GATEWAY}",
+                f"ip dhcp pool {_DHCP_PROBE_POOL}",
+                f"network {_DHCP_PROBE_NETWORK} {_DHCP_PROBE_MASK}",
+                f"default-router {_DHCP_PROBE_GATEWAY}", "end",
+            ))
+            configured = self._configuration.configure_ios(
+                temporary_name, payload,
+            )
+            if (
+                configured
+                and self._create_probe_endpoint(endpoint)
+                and self._link_probe_endpoint(endpoint, temporary_name, interface)
+                and self._configuration.configure_endpoint_dhcp(endpoint)
+            ):
+                lease = self._wait_for_dhcp_lease(endpoint)
+        finally:
+            try:
+                endpoint_removed = self.delete_temporary_device(endpoint)
+            except Exception:
+                endpoint_removed = False
+        verified = bool(
+            configured and lease is not None and endpoint_removed
+        )
+        if not verified:
+            reason = (
+                "DHCP server behavior was not demonstrated by a fresh client lease."
+                if lease is None
+                else "The DHCP lease was observed but disposable client cleanup failed."
+            )
+            return self._failure(
+                definition, ProbeExecutionStatus.VERIFY_FAILED, reason,
+                configured=configured,
+            )
+        return CapabilityProbeResult(
+            probe_id=definition.id, model="", capability=definition.capability,
+            status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED,
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=True, verified=True,
+            verification_method=CapabilityVerificationMethod.SIMULATION_TRACE,
+            raw_summary=(
+                "A disposable client obtained fresh IPv4/mask state from the "
+                "controlled DHCP pool and was removed successfully."
+            ),
+            dimensions={
+                "client_ipv4": str(lease["ipv4"]),
+                "client_netmask": str(lease["netmask"]),
+                "client_cleanup": "verified",
+            },
+        )
+
+    def _wait_for_dhcp_lease(self, endpoint: str) -> dict[str, str] | None:
+        name = json.dumps(endpoint)
+        latest: dict[str, object] = {}
+
+        def inspect() -> dict:
+            nonlocal latest
+            js = "".join((
+                "try{var __d=ipc.network().getDevice(", name, ");var __p=null;",
+                "if(__d){for(var __i=0;__i<__d.getPortCount();__i++){",
+                "var __candidate=__d.getPortAt(__i);if(__candidate&&",
+                "typeof __candidate.getIpAddress==='function'){__p=__candidate;break;}}}",
+                "var __ip=__p?String(__p.getIpAddress()):'';",
+                "var __mask=__p?String(__p.getSubnetMask()):'';",
+                "reportResult(JSON.stringify({found:!!__d,port_found:!!__p,",
+                "ipv4:__ip,netmask:__mask}));}",
+                "catch(__e){reportResult('ERROR:'+__e);}",
+            ))
+            latest = self._json_result(js, timeout=3.0)
+            latest["configuration_channel"] = self._dhcp_lease_matches(latest)
+            return latest
+
+        converged = StateConvergenceWaiter(
+            inspect, timeout_seconds=30.0, interval_seconds=0.5,
+        ).wait().configuration_channel
+        if not converged or not self._dhcp_lease_matches(latest):
+            return None
+        return {
+            "ipv4": str(latest.get("ipv4") or ""),
+            "netmask": str(latest.get("netmask") or ""),
+        }
+
+    @staticmethod
+    def _dhcp_lease_matches(observation: dict[str, object]) -> bool:
+        if str(observation.get("netmask") or "") != _DHCP_PROBE_MASK:
+            return False
+        try:
+            address = ipaddress.ip_address(str(observation.get("ipv4") or ""))
+            network = ipaddress.ip_network(
+                f"{_DHCP_PROBE_NETWORK}/{_DHCP_PROBE_PREFIX}", strict=True,
+            )
+        except ValueError:
+            return False
+        return (
+            address in network
+            and address not in {
+                network.network_address,
+                network.broadcast_address,
+                ipaddress.ip_address(_DHCP_PROBE_GATEWAY),
+            }
         )
 
     def _probe_layer3(self, temporary_name: str, definition: ProbeDefinition) -> CapabilityProbeResult:
@@ -802,12 +1009,28 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
     def _first_ethernet_port(self, temporary_name: str) -> str:
         name = json.dumps(temporary_name)
         js = "".join((
-            "try{var __d=ipc.network().getDevice(", name, ");var __iface='';",
+            "try{var __d=ipc.network().getDevice(", name, ");var __ifaces=[];",
             "for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);",
-            "if(__p&&String(__p.getName()).indexOf('Ethernet')>=0){__iface=__p.getName();break;}}",
-            "reportResult(JSON.stringify({interface:__iface}));}catch(__e){reportResult('ERROR:'+__e);}",
+            "if(__p&&String(__p.getName()).indexOf('Ethernet')>=0){__ifaces.push(String(__p.getName()));}}",
+            "reportResult(JSON.stringify({interfaces:__ifaces}));}catch(__e){reportResult('ERROR:'+__e);}",
         ))
-        return str(self._json_result(js, timeout=5.0).get("interface") or "")
+        observed = self._json_result(js, timeout=5.0).get("interfaces", [])
+        if not isinstance(observed, list):
+            return ""
+        interfaces = [str(item) for item in observed if item]
+
+        def preference(interface: str) -> tuple[int, str]:
+            folded = interface.casefold()
+            if folded.startswith("gigabitethernet"):
+                return 0, folded
+            if folded.startswith("fastethernet"):
+                return 1, folded
+            return 2, folded
+
+        # Fresh runtime names decide the candidates.  The ordering merely avoids
+        # selecting a lower-speed compatibility alias when a native routed port
+        # is present; capability is still established only by configure/readback.
+        return min(interfaces, key=preference) if interfaces else ""
 
     def _wait_for_ip(self, temporary_name: str, interface: str, *, present: bool) -> bool:
         name, port = json.dumps(temporary_name), json.dumps(interface)
