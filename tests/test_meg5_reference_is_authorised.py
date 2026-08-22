@@ -185,7 +185,7 @@ class TestWhatThisDoesNotClaim:
 
     def test_unmeasured_models_stay_unknown_everywhere(self):
         """La cualificacion no se derramo sobre el resto del catalogo."""
-        for model in ("2960-24TT", "3560-24PS", "2901"):
+        for model in ("2960-24TT", "3650-24PS", "2901"):
             assert backend_verified_port_inventory(
                 model, backend_version=BUILD,
             ).tier is PortInventoryEvidenceTier.UNKNOWN

@@ -28,6 +28,12 @@ disposable `__MCP_PORTQUAL_*` device per (model, module state) through
 removes it — the measurement path is identical to run 2's, only the occasion
 differs.
 
+The `AccessPoint-PT`, `7960`, `Printer-PT`, `819HG-4G-IOX`, and `3560-24PS`
+records came from the same bounded qualifier when CP-SCALE Stage A reached the
+physical port-evidence gate. They were measured together on an empty semantic
+workspace and each observed model identity matched its requested model before
+the evidence was admitted.
+
 `IE-2000` is the reason this module exists. Its declared inventory numbers ports
 `0/x`; Packet Tracer numbers them `1/x`. The declaration is not corrected —
 `devices.py` still says what it always said — but a concrete binding now comes
@@ -47,6 +53,7 @@ MEASURED_BACKEND_VERSION = "9.0.1.0858"
 
 _MEG4_RUN_2 = "stage-3a4-meg4-run2/observe_device"
 _MEG5_QUALIFICATION = "stage-3a4-meg5-port-qualification/observe_device"
+_CP_SCALE_STAGE_A_QUALIFICATION = "cp-scale-stage-a-port-qualification/observe_device"
 
 #: Un 2911 recien creado CON el HWIC-2T ya insertado en `0/0`. El estado de
 #: modulo importa: sin la tarjeta, `Serial0/0/0` y `Serial0/0/1` no existen, y
@@ -176,13 +183,102 @@ _PT_2950T_24 = BackendVerifiedPortInventory(
     source=_MEG5_QUALIFICATION,
 )
 
+_PT_ACCESS_POINT = BackendVerifiedPortInventory(
+    model="AccessPoint-PT",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=["Port 0", "Port 1"],
+    source=_CP_SCALE_STAGE_A_QUALIFICATION,
+)
+
+_PT_IP_PHONE_7960 = BackendVerifiedPortInventory(
+    model="7960",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=["PC", "Switch", "Vlan1"],
+    source=_CP_SCALE_STAGE_A_QUALIFICATION,
+)
+
+_PT_PRINTER = BackendVerifiedPortInventory(
+    model="Printer-PT",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=["FastEthernet0"],
+    source=_CP_SCALE_STAGE_A_QUALIFICATION,
+)
+
+_PT_819HG_4G_IOX = BackendVerifiedPortInventory(
+    model="819HG-4G-IOX",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=[
+        "Cellular0",
+        "Ethernet1",
+        "FastEthernet0",
+        "FastEthernet1",
+        "FastEthernet2",
+        "FastEthernet3",
+        "GigabitEthernet0",
+        "Serial0",
+        "VirtualPortGroup0",
+        "Vlan1",
+    ],
+    source=_CP_SCALE_STAGE_A_QUALIFICATION,
+)
+
+_PT_3560_24PS = BackendVerifiedPortInventory(
+    model="3560-24PS",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=[
+        "FastEthernet0/1",
+        "FastEthernet0/10",
+        "FastEthernet0/11",
+        "FastEthernet0/12",
+        "FastEthernet0/13",
+        "FastEthernet0/14",
+        "FastEthernet0/15",
+        "FastEthernet0/16",
+        "FastEthernet0/17",
+        "FastEthernet0/18",
+        "FastEthernet0/19",
+        "FastEthernet0/2",
+        "FastEthernet0/20",
+        "FastEthernet0/21",
+        "FastEthernet0/22",
+        "FastEthernet0/23",
+        "FastEthernet0/24",
+        "FastEthernet0/3",
+        "FastEthernet0/4",
+        "FastEthernet0/5",
+        "FastEthernet0/6",
+        "FastEthernet0/7",
+        "FastEthernet0/8",
+        "FastEthernet0/9",
+        "GigabitEthernet0/1",
+        "GigabitEthernet0/2",
+        "Vlan1",
+    ],
+    source=_CP_SCALE_STAGE_A_QUALIFICATION,
+)
+
 MEASURED_PORT_INVENTORIES: tuple[BackendVerifiedPortInventory, ...] = (
+    _PT_3560_24PS,
+    _PT_819HG_4G_IOX,
     _PT_1941,
     _PT_1941_WITH_HWIC2T,
     _PT_2911_WITH_HWIC2T,
     _PT_2950T_24,
+    _PT_ACCESS_POINT,
     _PT_IE_2000,
+    _PT_IP_PHONE_7960,
     _PT_PC,
+    _PT_PRINTER,
 )
 
 

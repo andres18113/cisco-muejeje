@@ -69,6 +69,23 @@ OBSERVED_IE2000 = [
 ]
 
 
+@pytest.mark.parametrize(("model", "required_ports"), [
+    ("AccessPoint-PT", ["Port 0"]),
+    ("7960", ["PC", "Switch"]),
+    ("Printer-PT", ["FastEthernet0"]),
+    ("819HG-4G-IOX", ["FastEthernet0", "GigabitEthernet0"]),
+    ("3560-24PS", ["FastEthernet0/1", "GigabitEthernet0/1"]),
+])
+def test_cp_scale_stage_a_models_have_exact_build_port_authorization(
+    model: str, required_ports: list[str],
+):
+    resolution = backend_verified_port_inventory(model, backend_version=BUILD)
+
+    assert resolution.tier is PortInventoryEvidenceTier.BACKEND_VERIFIED
+    assert resolution.permits(required_ports) is True
+    assert "cp-scale-stage-a-port-qualification" in resolution.reason
+
+
 def _fingerprint(version: str = BUILD) -> EnvironmentFingerprint:
     return EnvironmentFingerprint(
         backend="packet_tracer",
@@ -421,10 +438,13 @@ class TestRow12TheUniversalCatalogueIsNotRewritten:
         Se amplio una vez, deliberadamente: la cualificacion MEG-5 midio `1941`
         (vacio y con HWIC-2T) y `2950T-24` porque la referencia de 41
         dispositivos los selecciona y el gate de puertos la rechazaba. Cada
-        entrada nombra la pasada que la produjo.
+        entrada nombra la pasada que la produjo. CP-SCALE Stage A hizo lo mismo
+        para sus cinco modelos antes no medidos.
         """
         assert sorted({record.model for record in MEASURED_PORT_INVENTORIES}) == [
-            "1941", "2911", "2950T-24", "IE-2000", "PC-PT",
+            "1941", "2911", "2950T-24", "3560-24PS", "7960",
+            "819HG-4G-IOX", "AccessPoint-PT", "IE-2000", "PC-PT",
+            "Printer-PT",
         ]
 
     def test_the_hand_pinned_reference_switch_is_still_unmeasured(self):
@@ -440,6 +460,11 @@ class TestRow12TheUniversalCatalogueIsNotRewritten:
     ("PC-PT", "meg4-run2"),
     ("1941", "meg5-port-qualification"),
     ("2950T-24", "meg5-port-qualification"),
+    ("3560-24PS", "cp-scale-stage-a-port-qualification"),
+    ("7960", "cp-scale-stage-a-port-qualification"),
+    ("819HG-4G-IOX", "cp-scale-stage-a-port-qualification"),
+    ("AccessPoint-PT", "cp-scale-stage-a-port-qualification"),
+    ("Printer-PT", "cp-scale-stage-a-port-qualification"),
 ])
 def test_every_qualified_model_carries_its_provenance(model, pass_token):
     record = next(item for item in MEASURED_PORT_INVENTORIES if item.model == model)

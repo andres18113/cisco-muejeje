@@ -99,7 +99,12 @@ class PortInventoryMeasurement:
         lectura de interfaces cerrara, y -- cuando el objetivo declara modulo --
         que la insercion se haya aplicado de verdad.
         """
-        if not (self.observed and self.interfaces_observed and self.ports):
+        if not (
+            self.observed
+            and self.interfaces_observed
+            and self.observed_model == self.target.model
+            and self.ports
+        ):
             return False
         return self.module_applied is not False
 

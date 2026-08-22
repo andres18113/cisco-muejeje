@@ -149,6 +149,16 @@ alimentado. No se conectó un powered device y `power_delivery_active` continúa
 sin observarse. La sesión eliminó el temporal por identidad exacta, confirmó
 dos veces el workspace semántico vacío y preservó el PDD preexistente.
 
+Al alcanzar después el preflight de despliegue físico, Stage A identificó cinco
+inventarios exact-build ausentes sin ejecutar ninguna mutación de topología. El
+`PortInventoryQualifier` existente midió de forma acotada `AccessPoint-PT`,
+`7960`, `Printer-PT`, `819HG-4G-IOX` y `3560-24PS` mediante el mismo
+`observe_device` de producción. Las cinco identidades observadas coincidieron
+con el modelo solicitado, expusieron inventarios no vacíos y quedaron
+versionadas para `9.0.1.0858`; otra identidad o build no recibe autorización.
+Los cinco temporales se eliminaron en orden inverso, dos observaciones finales
+restauraron el baseline y `Power Distribution Device0` se preservó.
+
 ## Si algo falla
 
 Un timeout, callback inválido o disconnect del bridge es `UNKNOWN` y debe conservar el nombre de la sesión para inspección. No cambiarlo a `UNSUPPORTED`. Si hay `DIRTY_SESSION`, eliminar manualmente sólo los nombres temporales indicados; nunca borrar dispositivos del usuario.

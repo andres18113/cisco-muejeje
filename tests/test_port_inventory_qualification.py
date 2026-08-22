@@ -23,6 +23,7 @@ import pytest
 
 from src.packet_tracer_mcp.application.use_cases.qualify_port_inventories import (
     QUALIFICATION_PREFIX,
+    PortInventoryMeasurement,
     PortInventoryQualifier,
     PortInventoryTarget,
 )
@@ -177,6 +178,18 @@ class TestItMeasuresWhatTheBackendReports:
 
 
 class TestItRefusesToInventEvidence:
+    def test_a_different_observed_model_cannot_authorise_the_requested_model(self):
+        measurement = PortInventoryMeasurement(
+            target=PortInventoryTarget(model="3560-24PS"),
+            observed=True,
+            interfaces_observed=True,
+            observed_model="2950T-24",
+            ports=("FastEthernet0/1",),
+        )
+
+        assert measurement.usable is False
+        assert measurement.as_evidence(**_BACKEND) is None
+
     def test_a_module_that_did_not_apply_yields_no_inventory(self):
         """Medir un 1941 sin su HWIC y llamarlo "con HWIC" seria fabricarlo."""
         physical = _Physical(_ROUTER_PORTS, module_ok=False)

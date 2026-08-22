@@ -527,10 +527,12 @@ class TestRow14ForeignObjectsAreNeverDeleted:
 class TestTheDefaultSelectionIsRecordedNotAssumed:
     """Cual modelo elige el catalogo por si solo, fijado para el gate en vivo.
 
-    Sin preferencia la seleccion por capacidad elige `1941` para esta forma
-    acotada. La evidencia de capacidad de plano de control en vivo existe solo
-    para `2911`, asi que la corrida en vivo debe DIRIGIR la seleccion en vez de
-    confiar en que el catalogo acierte.
+    La calificacion acotada de CP-SCALE observo que `819HG-4G-IOX` tiene un
+    `Serial0` integrado. Sin preferencia, esa evidencia exact-build hace que la
+    seleccion por capacidad lo elija para esta forma acotada sin instalar un
+    modulo. La evidencia de capacidad de plano de control en vivo sigue
+    existiendo solo para `2911`, asi que esta corrida E9.5 debe DIRIGIR la
+    seleccion en vez de confiar en que el catalogo acierte.
 
     Nota correctiva: la compilacion del plano de control NO depende del modelo
     -- 1941 y 2911 compilan igual. La capacidad se consulta al aplicar. Una
@@ -539,7 +541,7 @@ class TestTheDefaultSelectionIsRecordedNotAssumed:
     `test_enterprise_preferred_router_model.py`.
     """
 
-    def test_the_unsteered_selection_is_1941(self):
+    def test_the_unsteered_selection_is_the_measured_819(self):
         physical = _GenericPhysicalRuntime()
 
         result = _run(
@@ -553,7 +555,9 @@ class TestTheDefaultSelectionIsRecordedNotAssumed:
             if item.category == "router"
         }
 
-        assert routers == {"1941"}, "si cambia la seleccion, revisar el gate en vivo"
+        assert routers == {"819HG-4G-IOX"}, (
+            "si cambia la seleccion, revisar evidencia de puertos y el gate en vivo"
+        )
 
 
 #: Un router del catalogo que ninguna pasada ha medido por este seam. `1941`
