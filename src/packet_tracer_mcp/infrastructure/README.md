@@ -132,9 +132,11 @@ Servidor HTTP en `127.0.0.1:54321` para comunicación bidireccional con PT:
 | `/queue` | POST | Python encola comando JS |
 | `/ping` | GET | Heartbeat |
 | `/result` | POST | PT reporta resultado de ejecución |
+| `/result` | GET | Python espera el resultado de un `rid` conocido |
 | `/status` | GET | Estado de conectividad PT |
 
-Clase: `PTCommandBridge` — Singleton con `ThreadingHTTPServer`, thread-safe Queue, CORS.
+Clase: `PTCommandBridge` — Singleton con `ThreadingHTTPServer`, cola de comandos y
+tabla acotada de resultados correlacionados por `rid`.
 Autenticado con un token local auto-generado (ver `bridge_token.py`).
 
 ### `file_bridge.py` — File Bridge (ventana cerrada)

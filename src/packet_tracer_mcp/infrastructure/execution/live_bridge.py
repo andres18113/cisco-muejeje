@@ -1,81 +1,135 @@
-"""
-HTTP Command Bridge for Packet Tracer.
+"""Authenticated HTTP command bridge for Packet Tracer.
 
-Allows Python to send JavaScript commands to PT via the MCP Control Center
-extension. Works by running a local HTTP server that the PT webview polls for
-commands.
+The Packet Tracer webview polls this loopback server for JavaScript commands.
+Every endpoint except ``/ping`` requires the shared bridge token. Loopback is
+not an authentication boundary: browser pages can send CORS-simple requests to
+it, so the token, Host validation, body limit, and queue limit are mandatory.
 
-SECURITY: every endpoint except /ping requires the shared token from
-bridge_token.py. Binding to 127.0.0.1 is NOT a security control here — a POST
-with Content-Type text/plain is a CORS-simple request, so any web page open in
-any browser on this host could reach /queue, and PT executes whatever it finds
-there via new Function(). The token is what closes that; see bridge_token.py.
-
-The extension gets the token by reading the token file through PT's Script
-Engine (ipc.systemFileManager), so there is nothing to pair and no window in
-which the secret is served over HTTP.
-
-Usage:
-    1. Start the bridge: bridge = PTCommandBridge(); bridge.start()
-    2. Open the MCP Control Center in PT — it authenticates on its own
-    3. Send commands: bridge.send("addDevice('R1','2911',100,100)")
+Result-bearing commands are registered with a unique ``rid`` before they are
+queued. Packet Tracer returns that same ``rid`` with the result, and a waiter
+can consume only the result registered for its own operation.
 """
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hmac
 import http.server
+import json
+import math
+import re
+import secrets
 import threading
 import time
-import json
-import hmac
 from http.server import ThreadingHTTPServer
-from queue import Queue, Empty, Full
-from urllib.parse import urlparse, parse_qs
+from queue import Empty, Full, Queue
+from typing import Callable
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from .bridge_token import get_bridge_token, token_fingerprint
 
+
 DEFAULT_PORT = 54321
 
-# 1 MiB. Los comandos reales son de unos pocos KB; esto solo corta el abuso.
+# 1 MiB. Real commands are only a few KiB; this bounds abusive input.
 MAX_BODY_BYTES = 1 << 20
 
-# Cola acotada: si PT se cuelga, la cola no puede crecer sin techo.
+# Both queues and correlated-result storage remain bounded if PT stalls.
 MAX_QUEUE_ITEMS = 1000
+MAX_RESULT_ITEMS = 256
 
-# /next espera hasta este tiempo a que aparezca un comando en vez de contestar
-# vacío al instante. Baja la latencia (el comando sale apenas se encola, no en el
-# siguiente tick de 500 ms) y elimina el goteo de peticiones vacías.
+# The caller owns the operation budget, subject to one global server ceiling.
+MAX_RESULT_WAIT_SECONDS = 60.0
+RESULT_SOCKET_GRACE_SECONDS = 5.0
+DEFAULT_RESULT_WAIT_SECONDS = 9.0
+
+# Consumed, timed-out, and orphaned results retain a short tombstone so late or
+# duplicate writes fail deterministically instead of being reassigned.
+RESULT_TTL_SECONDS = 120.0
+
+# /next waits briefly for the first command, then drains a bounded batch.
 NEXT_LONGPOLL_SECONDS = 2.0
-
-# Comandos que /next entrega por respuesta. PT los ejecuta en un solo runCode.
-# Medido contra PT 9.0: 10 dispositivos + enlaces + config IOS en ~100 ms
-# ejecutados de corrido, sin necesidad de espaciarlos.
 MAX_BATCH_COMMANDS = 200
 
+_RID_PATTERN = re.compile(r"[0-9a-f]{32}")
 
 
-def report_result_js(port: int = DEFAULT_PORT, token: str = "") -> str:
-    """JS que define reportResult() para devolver resultados al bridge.
+@dataclass
+class _ResultSlot:
+    state: str
+    updated_at: float
+    body: str | None = None
 
-    Se define inline con cada comando para compartir el scope de runCode.
-    Enruta el resultado por el XMLHttpRequest del webview, porque el Script
-    Engine de PT no tiene XMLHttpRequest propio.
+
+def next_rid() -> str:
+    """Return a unique identity for one result-bearing HTTP operation."""
+    return secrets.token_hex(16)
+
+
+def bounded_result_wait(wait: float) -> float:
+    """Normalize a caller wait budget while preserving the global ceiling."""
+    value = float(wait)
+    if not math.isfinite(value):
+        raise ValueError("result wait must be finite")
+    return min(max(value, 0.0), MAX_RESULT_WAIT_SECONDS)
+
+
+def _valid_rid(rid: str) -> bool:
+    return _RID_PATTERN.fullmatch(rid) is not None
+
+
+def report_result_js(port: int, token: str, rid: str) -> str:
+    """Build the single-line JS callback that returns one correlated result.
+
+    Packet Tracer executes this function in the Script Engine, while the XHR
+    itself must run in the webview. Every serialized field passes through JSON
+    encoding; ``JSON.stringify`` serializes the dynamic result into the nested
+    webview program.
     """
-    q = chr(39)   # '
-    dq = chr(34)  # "
-    bs = chr(92)  # \
+    if not _valid_rid(rid):
+        raise ValueError("invalid bridge result rid")
+    query = urlencode({"t": token, "rid": rid})
+    result_url = "http://127.0.0.1:" + str(int(port)) + "/result?" + query
+    inner_prefix = (
+        "var x=new XMLHttpRequest();"
+        "x.open('POST'," + json.dumps(result_url) + ",true);"
+        "x.setRequestHeader('Content-Type','text/plain');"
+        "x.send("
+    )
     return (
-        "function reportResult(d){"
-        "var s=String(d)"
-        f".replace(/{bs}{bs}/g,{q}{bs}{bs}{bs}{bs}{q})"
-        f".replace(/{q}/g,{dq}{bs}{bs}{q}{dq})"
-        f".replace(/{bs}n/g,{q}{bs}{bs}n{q});"
+        "function reportResult(d){var s=String(d);"
         "window.webview.evaluateJavaScriptAsync("
-        f"{q}var x=new XMLHttpRequest();"
-        f"x.open({bs}{q}POST{bs}{q},{bs}{q}http://127.0.0.1:{port}/result?t={token}{bs}{q},true);"
-        f"x.setRequestHeader({bs}{q}Content-Type{bs}{q},{bs}{q}text/plain{bs}{q});"
-        f"x.send({bs}{q}{q}+s+{q}{bs}{q});{q}"
-        ")}"
+        + json.dumps(inner_prefix)
+        + "+JSON.stringify(s)+"
+        + json.dumps(");")
+        + ")}"
     )
 
+
+def correlated_http_send_and_wait(
+    js_code: str,
+    timeout: float,
+    *,
+    base_url: str,
+    port: int,
+    token: str,
+    http_post: Callable[[str, str, float], tuple[int | None, str | None]],
+    http_get: Callable[[str, float], tuple[int | None, str | None]],
+) -> str | None:
+    """Queue one HTTP operation and consume only its correlated result."""
+    rid = next_rid()
+    wait = bounded_result_wait(timeout)
+    wrapped = report_result_js(port, token, rid) + ";" + js_code
+    queue_url = base_url + "/queue?" + urlencode({"rid": rid})
+    status_post, _ = http_post(queue_url, wrapped, 3.0)
+    if status_post != 200:
+        return None
+    result_url = base_url + "/result?" + urlencode({"rid": rid, "wait": wait})
+    status_get, body = http_get(
+        result_url,
+        wait + RESULT_SOCKET_GRACE_SECONDS,
+    )
+    return body if status_get == 200 else None
 
 
 class PTCommandBridge:
@@ -86,21 +140,18 @@ class PTCommandBridge:
         self.token = token or get_bridge_token()
         self.token_id = token_fingerprint(self.token)
         self._queue: Queue[str] = Queue(maxsize=MAX_QUEUE_ITEMS)
-        self._results: Queue[str] = Queue(maxsize=MAX_QUEUE_ITEMS)
+        self._results: dict[str, _ResultSlot] = {}
+        self._results_cv = threading.Condition()
+        self._result_ttl = RESULT_TTL_SECONDS
+        self._max_result_items = MAX_RESULT_ITEMS
         self._server = None
         self._thread = None
         self._connected = False
-        self._last_poll_time: float = 0.0
-        # Diagnóstico: distinguir "PT no está" de "PT está pero lo rechazamos".
-        self._unauth_count: int = 0
-        self._unauth_last: float = 0.0
+        self._last_poll_time = 0.0
+        self._unauth_count = 0
+        self._unauth_last = 0.0
         self._unauth_paths: set[str] = set()
-        # Lo que PT manda realmente en su primer poll autenticado. Es la única
-        # forma de saber qué Origin usa el webview sin adivinar.
         self._client_headers: dict[str, str] = {}
-
-
-    # -- estado ---------------------------------------------------------
 
     @property
     def is_connected(self) -> bool:
@@ -110,12 +161,8 @@ class PTCommandBridge:
 
     @property
     def saw_recent_unauthorized(self) -> bool:
-        """True si algo intentó hablar sin token hace poco.
-
-        Es lo que separa 'PT no está abierto' de 'PT está pero su extensión es
-        vieja y la estamos rechazando' — dos situaciones que se veían idénticas.
-        """
-        return self._unauth_last > 0 and (time.time() - self._unauth_last) < 30.0
+        """Whether an unauthenticated request was observed recently."""
+        return self._unauth_last > 0 and time.time() - self._unauth_last < 30.0
 
     def status_dict(self) -> dict:
         ago = time.time() - self._last_poll_time
@@ -129,51 +176,117 @@ class PTCommandBridge:
             "token_id": self.token_id,
         }
 
-    def drain_commands(self) -> list[str]:
-        """Espera al primer comando y se lleva todos los que ya estén en cola.
+    def _purge_results_locked(self) -> None:
+        now = time.monotonic()
+        expired = [
+            rid
+            for rid, slot in self._results.items()
+            if now - slot.updated_at >= self._result_ttl
+        ]
+        for rid in expired:
+            del self._results[rid]
 
-        Entregar de a uno cada 500 ms hacía que una topología de 40 comandos
-        tardara decenas de segundos. PT ejecuta el lote entero en un solo
-        runCode, y cada comando ya trae su propio try/catch.
-        """
-        cmds: list[str] = []
+    def _make_result_capacity_locked(self) -> bool:
+        """Evict only terminal tombstones when admitting a new operation."""
+        if len(self._results) < self._max_result_items:
+            return True
+        terminal = sorted(
+            (
+                (rid, slot.updated_at)
+                for rid, slot in self._results.items()
+                if slot.state in {"consumed", "timed_out"}
+            ),
+            key=lambda item: item[1],
+        )
+        for rid, _ in terminal:
+            del self._results[rid]
+            if len(self._results) < self._max_result_items:
+                return True
+        return False
+
+    def register_result(self, rid: str) -> str:
+        """Register a result-bearing operation before queueing its command."""
+        with self._results_cv:
+            self._purge_results_locked()
+            if rid in self._results:
+                return "duplicate"
+            if not self._make_result_capacity_locked():
+                return "full"
+            self._results[rid] = _ResultSlot("pending", time.monotonic())
+            return "registered"
+
+    def discard_registered_result(self, rid: str) -> None:
+        """Roll back registration when the command queue rejects a command."""
+        with self._results_cv:
+            slot = self._results.get(rid)
+            if slot is not None and slot.state == "pending":
+                del self._results[rid]
+
+    def put_result(self, rid: str, body: str) -> str:
+        """Associate a PT result with its known pending operation."""
+        with self._results_cv:
+            self._purge_results_locked()
+            slot = self._results.get(rid)
+            if slot is None:
+                return "unknown"
+            if slot.state == "timed_out":
+                return "late"
+            if slot.state != "pending":
+                return "duplicate"
+            slot.state = "ready"
+            slot.body = body
+            slot.updated_at = time.monotonic()
+            self._results_cv.notify_all()
+            return "stored"
+
+    def take_result(self, rid: str, wait: float) -> tuple[str, str | None]:
+        """Wait for and consume only the result registered to ``rid``."""
+        deadline = time.monotonic() + bounded_result_wait(wait)
+        with self._results_cv:
+            self._purge_results_locked()
+            while True:
+                slot = self._results.get(rid)
+                if slot is None:
+                    return "unknown", None
+                if slot.state == "ready":
+                    body = slot.body
+                    slot.state = "consumed"
+                    slot.body = None
+                    slot.updated_at = time.monotonic()
+                    return "result", body
+                if slot.state != "pending":
+                    return "gone", None
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    slot.state = "timed_out"
+                    slot.updated_at = time.monotonic()
+                    return "timeout", None
+                self._results_cv.wait(remaining)
+
+    def drain_commands(self) -> list[str]:
+        """Wait for the first command and drain one bounded PT batch."""
+        commands: list[str] = []
         try:
-            cmds.append(self._queue.get(timeout=NEXT_LONGPOLL_SECONDS))
+            commands.append(self._queue.get(timeout=NEXT_LONGPOLL_SECONDS))
         except Empty:
-            return cmds
-        while len(cmds) < MAX_BATCH_COMMANDS:
+            return commands
+        while len(commands) < MAX_BATCH_COMMANDS:
             try:
-                cmds.append(self._queue.get_nowait())
+                commands.append(self._queue.get_nowait())
             except Empty:
                 break
-        return cmds
+        return commands
 
-    # -- servidor -------------------------------------------------------
-
-    def start(self):
-        """Start the HTTP command server."""
+    def start(self) -> None:
+        """Start the loopback HTTP command server."""
         bridge = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            # -- helpers --
-
             def _parse(self):
-                """Separa ruta y query.
-
-                Sin esto, comparar self.path literalmente hace que TODA petición
-                con ?t=... caiga en el 404: era el bug latente que rompía el
-                token antes de que llegara a validarse.
-                """
                 parsed = urlparse(self.path)
                 return parsed.path, parse_qs(parsed.query)
 
             def _host_ok(self) -> bool:
-                """El Host lo deriva el cliente de la URL que pidió.
-
-                PT siempre manda 127.0.0.1:<port>. Una petición reenlazada por DNS
-                rebinding llega con Host: evil.com:<port>, así que esto la corta
-                y no puede romper a PT.
-                """
                 host = (self.headers.get("Host") or "").strip().lower()
                 return host in (
                     f"127.0.0.1:{bridge.port}",
@@ -181,13 +294,16 @@ class PTCommandBridge:
                     f"[::1]:{bridge.port}",
                 )
 
-            def _token_from(self, qs: dict) -> str:
-                return (qs.get("t", [""])[0]) or self.headers.get("X-PT-Token", "")
+            def _token_from(self, query: dict) -> str:
+                return (
+                    query.get("t", [""])[0]
+                    or self.headers.get("X-PT-Token", "")
+                )
 
-            def _authorized(self, qs: dict) -> bool:
+            def _authorized(self, query: dict) -> bool:
                 if not self._host_ok():
                     return False
-                return hmac.compare_digest(self._token_from(qs), bridge.token)
+                return hmac.compare_digest(self._token_from(query), bridge.token)
 
             def _note_unauth(self, path: str) -> None:
                 bridge._unauth_count += 1
@@ -197,13 +313,17 @@ class PTCommandBridge:
             def _remember_client(self) -> None:
                 if bridge._client_headers:
                     return
-                for h in ("Origin", "Sec-Fetch-Site", "Sec-Fetch-Mode", "User-Agent"):
-                    v = self.headers.get(h)
-                    if v:
-                        bridge._client_headers[h] = v
+                for header in (
+                    "Origin",
+                    "Sec-Fetch-Site",
+                    "Sec-Fetch-Mode",
+                    "User-Agent",
+                ):
+                    value = self.headers.get(header)
+                    if value:
+                        bridge._client_headers[header] = value
 
             def _read_body(self) -> str | None:
-                """Lee el body con techo. None si hay que rechazar."""
                 try:
                     length = int(self.headers.get("Content-Length", 0) or 0)
                 except ValueError:
@@ -216,73 +336,102 @@ class PTCommandBridge:
                     return ""
                 return self.rfile.read(length).decode("utf-8", "replace")
 
-            def _deny(self, code: int = 401, path: str = "") -> None:
+            def _deny(
+                self,
+                code: int = 401,
+                path: str = "",
+                *,
+                body_already_read: bool = False,
+            ) -> None:
                 if code == 401 and path:
                     self._note_unauth(path)
-                # Drenar un cuerpo pequeño antes de responder: si cerramos
-                # mientras el cliente todavía escribe, ve un reset en vez del
-                # código de error (WinError 10053 en Windows). Los cuerpos
-                # grandes NO se leen a propósito — ese es el punto del 413.
-                try:
-                    length = int(self.headers.get("Content-Length", 0) or 0)
-                except ValueError:
-                    length = 0
-                if 0 < length <= 65536:
+                if not body_already_read:
                     try:
-                        self.rfile.read(length)
-                    except OSError:
-                        pass
+                        length = int(self.headers.get("Content-Length", 0) or 0)
+                    except ValueError:
+                        length = 0
+                    if 0 < length <= 65536:
+                        try:
+                            self.rfile.read(length)
+                        except OSError:
+                            pass
                 self.close_connection = True
                 self.send_response(code)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Content-Length", "0")
                 self.send_header("Connection", "close")
-                # Sin cabeceras CORS: nada legítimo lee un error, y así una web
-                # atacante no puede siquiera distinguir por qué falló.
                 self.end_headers()
 
-            # -- rutas --
+            def _required_rid(
+                self,
+                query: dict,
+                *,
+                body_already_read: bool = False,
+            ) -> str | None:
+                values = query.get("rid", [])
+                if len(values) != 1 or not _valid_rid(values[0]):
+                    self._deny(400, body_already_read=body_already_read)
+                    return None
+                return values[0]
 
             def do_GET(self):
-                path, qs = self._parse()
+                path, query = self._parse()
 
                 if path == "/ping":
-                    # Sin autenticar a propósito: hace falta para detectar quién
-                    # ocupa el puerto ANTES de saber si es nuestro bridge. Solo
-                    # devuelve una huella no invertible del token.
-                    self._respond(200, json.dumps({
-                        "service": "pt-mcp-bridge",
-                        "proto": 1,
-                        "id": bridge.token_id,
-                    }))
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "service": "pt-mcp-bridge",
+                                "proto": 1,
+                                "id": bridge.token_id,
+                            }
+                        ),
+                    )
                     return
 
-                if not self._authorized(qs):
+                if not self._authorized(query):
                     self._deny(401, path)
                     return
 
                 if path == "/next":
                     self._remember_client()
-                    # Marcar la conexión ANTES del long-poll: si no, mientras se
-                    # espera en la cola el bridge se cree desconectado.
                     bridge._connected = True
                     bridge._last_poll_time = time.time()
                     self._respond(200, "\n".join(bridge.drain_commands()))
                 elif path == "/status":
                     self._respond(200, json.dumps(bridge.status_dict()))
                 elif path == "/result":
+                    rid = self._required_rid(query)
+                    if rid is None:
+                        return
                     try:
-                        result = bridge._results.get(timeout=9.0)
-                        self._respond(200, result)
-                    except Empty:
+                        wait_values = query.get(
+                            "wait",
+                            [str(DEFAULT_RESULT_WAIT_SECONDS)],
+                        )
+                        if len(wait_values) != 1:
+                            raise ValueError
+                        wait = bounded_result_wait(float(wait_values[0]))
+                    except (TypeError, ValueError):
+                        self._deny(400)
+                        return
+                    outcome, result = bridge.take_result(rid, wait)
+                    if outcome == "result":
+                        self._respond(200, result or "")
+                    elif outcome == "timeout":
                         self._respond(204, "")
+                    elif outcome == "unknown":
+                        self._deny(404)
+                    else:
+                        self._deny(410)
                 else:
                     self._deny(404)
 
             def do_POST(self):
-                path, qs = self._parse()
+                path, query = self._parse()
 
-                if not self._authorized(qs):
+                if not self._authorized(query):
                     self._deny(401, path)
                     return
 
@@ -291,85 +440,88 @@ class PTCommandBridge:
                     return
 
                 if path == "/result":
-                    try:
-                        bridge._results.put_nowait(body)
-                    except Full:
-                        self._deny(503)
+                    rid = self._required_rid(query, body_already_read=True)
+                    if rid is None:
                         return
-                    self._respond(200, "ok")
+                    outcome = bridge.put_result(rid, body)
+                    if outcome == "stored":
+                        self._respond(200, "ok")
+                    elif outcome == "unknown":
+                        self._deny(404, body_already_read=True)
+                    elif outcome == "late":
+                        self._deny(410, body_already_read=True)
+                    else:
+                        self._deny(409, body_already_read=True)
                 elif path == "/queue":
+                    rid_values = query.get("rid", [])
+                    rid = ""
+                    if rid_values:
+                        if len(rid_values) != 1 or not _valid_rid(rid_values[0]):
+                            self._deny(400, body_already_read=True)
+                            return
+                        if not body:
+                            self._deny(400, body_already_read=True)
+                            return
+                        rid = rid_values[0]
+                        registration = bridge.register_result(rid)
+                        if registration == "duplicate":
+                            self._deny(409, body_already_read=True)
+                            return
+                        if registration == "full":
+                            self._deny(503, body_already_read=True)
+                            return
                     if body:
                         try:
                             bridge._queue.put_nowait(body)
                         except Full:
-                            self._deny(503)
+                            if rid:
+                                bridge.discard_registered_result(rid)
+                            self._deny(503, body_already_read=True)
                             return
                     self._respond(200, "queued")
                 else:
-                    self._deny(404)
+                    self._deny(404, body_already_read=True)
 
             def do_OPTIONS(self):
                 self.send_response(200)
                 self._cors_headers()
                 self.end_headers()
 
-            def _respond(self, code, body):
+            def _respond(self, code: int, body: str) -> None:
                 self.send_response(code)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self._cors_headers()
                 self.end_headers()
                 self.wfile.write(body.encode("utf-8"))
 
-            def _cors_headers(self):
-                # Se mantiene permisivo en las respuestas OK: el webview de PT
-                # depende de CORS para leerlas y no sabemos aún qué Origin manda
-                # (se registra en _remember_client para poder ajustarlo luego).
-                # CORS nunca impidió que la petición se ENVIARA — ese era el bug,
-                # y lo que lo cierra es el token, no esta cabecera.
+            def _cors_headers(self) -> None:
+                # PT's observed webview origin requires readable successful
+                # responses. Authentication, not CORS, protects the bridge.
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-PT-Token")
+                self.send_header(
+                    "Access-Control-Allow-Headers",
+                    "Content-Type, X-PT-Token",
+                )
 
             def log_message(self, format, *args):
-                pass  # Silence logs
+                pass
 
         self._server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
-        # port=0 pide un puerto efímero; hay que recuperar el real para que la
-        # validación de Host y el bootstrap apunten al sitio correcto.
         self.port = self._server.server_address[1]
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread = threading.Thread(
+            target=self._server.serve_forever,
+            daemon=True,
+        )
         self._thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the HTTP server."""
         if self._server:
             self._server.shutdown()
             self._server.server_close()
             self._server = None
 
-    # -- envío ----------------------------------------------------------
-
-    def send(self, js_code: str, timeout: float = 10.0) -> bool:
-        """Queue a JavaScript command for execution in PT."""
-        try:
-            self._queue.put_nowait(js_code)
-        except Full:
-            return False
-        return True
-
-    def send_and_wait(self, js_code: str, timeout: float = 10.0) -> str | None:
-        """Send a command and wait for result callback."""
-        wrapped = (
-            f"{report_result_js(self.port, self.token)};"
-            f"try {{ var __r = (function(){{ {js_code} }})(); "
-            f"reportResult(String(__r)); "
-            f"}} catch(__e) {{ reportResult('ERROR:' + __e); }}"
-        )
-        try:
-            self._queue.put_nowait(wrapped)
-        except Full:
-            return None
-        try:
-            return self._results.get(timeout=timeout)
-        except Empty:
-            return None
+    # Result-bearing callers use the HTTP endpoints through
+    # ``correlated_http_send_and_wait``. A second in-process send/wait path
+    # would duplicate the correlation contract and permit drift.

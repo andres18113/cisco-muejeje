@@ -284,7 +284,9 @@ def test_report_result_js_carries_token_and_stays_single_line():
         report_result_js,
     )
 
-    js = report_result_js(54321, TOKEN)
+    rid = "a" * 32
+    js = report_result_js(54321, TOKEN, rid)
     assert f"/result?t={TOKEN}" in js
+    assert f"rid={rid}" in js
     assert "function reportResult(d)" in js
     assert "\n" not in js

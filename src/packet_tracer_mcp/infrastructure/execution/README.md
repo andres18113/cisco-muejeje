@@ -85,12 +85,21 @@ Servidor HTTP local que permite comunicación bidireccional entre Python y Packe
 class PTCommandBridge:
     def __init__(port=54321)
     def start() → None
-    def send(js_code) → bool
-    def send_and_wait(js_code, timeout) → str | None
-    def report_result_js(port, token) → str
+    def register_result(rid) → str
+    def put_result(rid, body) → str
+    def take_result(rid, wait) → tuple[str, str | None]
     @property
     def is_connected → bool
+
+def report_result_js(port, token, rid) → str
+def correlated_http_send_and_wait(...) → str | None
 ```
+
+Cada operacion HTTP que espera resultado registra un `rid` unico en
+`POST /queue?rid=...`. Packet Tracer devuelve el mismo `rid` por
+`POST /result?rid=...`, y el caller consume exclusivamente ese resultado con
+`GET /result?rid=...&wait=...`. Resultados tardios, duplicados o desconocidos
+se rechazan; las tumbas expiran y la tabla tiene un techo duro.
 
 **Endpoints HTTP:**
 | Método | Ruta | Descripción |

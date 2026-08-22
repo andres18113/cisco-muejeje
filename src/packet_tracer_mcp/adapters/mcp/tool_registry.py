@@ -69,7 +69,7 @@ from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
 from ...infrastructure.execution.manual_executor import ManualExecutor
 from ...infrastructure.execution.deploy_executor import DeployExecutor
 from ...infrastructure.execution.live_bridge import (
-    PTCommandBridge, DEFAULT_PORT, report_result_js,
+    PTCommandBridge, DEFAULT_PORT, correlated_http_send_and_wait,
 )
 from ...infrastructure.execution.bridge_token import (
     get_bridge_token, has_persisted_bridge_token, token_fingerprint,
@@ -826,9 +826,9 @@ def register_tools(
     # con topologías grandes, y para que el progreso sea visible en PT.
     _DEPLOY_BATCH = 50
 
-    # report_result_js() vive en live_bridge.py (un solo lugar) y se genera bajo
-    # demanda porque lleva el token adentro. La rama HTTP de _bridge_send_and_wait
-    # lo antepone al comando; por el canal de archivo lo inyecta el Script Engine.
+    # correlated_http_send_and_wait() vive en live_bridge.py para que la rama
+    # HTTP tenga una sola implementacion de rid, espera y socket budget. Por el
+    # canal de archivo, el Script Engine correlaciona mediante el mailbox.
 
     # Singleton bridge interno — se inicia automáticamente dentro del proceso MCP
     _bridge_instance: PTCommandBridge | None = None
@@ -1538,12 +1538,15 @@ def register_tools(
             "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
         )
         if ch == "http":
-            wrapped = report_result_js(_BRIDGE_PORT, get_bridge_token()) + ";" + guarded
-            status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", wrapped)
-            if status_post != 200:
-                return None
-            status_get, body = _http_get(f"{_BRIDGE_URL}/result", timeout=timeout)
-            return body if status_get == 200 else None
+            return correlated_http_send_and_wait(
+                guarded,
+                timeout,
+                base_url=_BRIDGE_URL,
+                port=_BRIDGE_PORT,
+                token=get_bridge_token(),
+                http_post=_http_post,
+                http_get=_http_get,
+            )
         if ch == "file":
             return _file_bridge.send_and_wait(guarded, timeout=timeout)
         return None
