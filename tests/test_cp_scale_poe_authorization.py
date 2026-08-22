@@ -150,3 +150,43 @@ def test_stage_a_does_not_allocate_the_819_duplicate_port_alias(tmp_path):
     }
     assert router_ports == {"FastEthernet0", "FastEthernet1"}
     assert "Ethernet1" not in router_ports
+
+
+def test_corrected_stage_a_identity_preserves_only_phone_and_ap_poe_demand(
+    tmp_path,
+):
+    store = CapabilitySnapshotStore(tmp_path / "capabilities")
+    _save_supported_3560(store)
+
+    composition = compose_enterprise_reference(
+        cp_scale_intent_for(CPScalePoint.A),
+        packet_tracer_version=BUILD,
+        capability_store=store,
+    )
+
+    assert composition.valid and composition.topology is not None
+    poe_devices = [
+        item for item in composition.topology.devices if item.requires_poe
+    ]
+    assert {
+        role: sum(item.enterprise_role == role for item in poe_devices)
+        for role in {DeviceRole.IP_PHONE.value, DeviceRole.ACCESS_POINT.value}
+    } == {
+        DeviceRole.IP_PHONE.value: 21,
+        DeviceRole.ACCESS_POINT.value: 3,
+    }
+    smoke = [
+        item for item in composition.topology.devices
+        if item.enterprise_role == DeviceRole.SMOKE_DETECTOR.value
+    ]
+    assert len(smoke) == 11
+    assert {item.model for item in smoke} == {"Smoke Detector"}
+    assert not any(item.requires_poe for item in smoke)
+
+    blocks = [
+        block
+        for site in composition.hardware_plan.site_hardware
+        for block in site.access_blocks
+    ]
+    assert len(blocks) == 1
+    assert blocks[0].required_poe_ports == 29

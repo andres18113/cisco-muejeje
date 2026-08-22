@@ -325,15 +325,15 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
 
     def delete_temporary_device(self, temporary_name: str) -> bool:
         name = json.dumps(temporary_name)
-        js = (
-            "try{"
-            f"var __name={name};var __d=ipc.network().getDevice(__name);"
+        js = "".join((
+            "try{var __name=", name,
+            ";var __d=ipc.network().getDevice(__name);"
             "if(!__d){reportResult(JSON.stringify({deleted:true}));}"
             "else{var __lw=ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
             "if(typeof __lw.removeDevice!=='function'){reportResult(JSON.stringify({deleted:false}));}"
             "else{__lw.removeDevice(__d.getName());reportResult(JSON.stringify({deleted:!ipc.network().getDevice(__name)}));}}"
             "}catch(__e){reportResult('ERROR:'+__e); }"
-        )
+        ))
         return bool(self._json_result(js, timeout=10.0).get("deleted"))
 
     def probe_capability(

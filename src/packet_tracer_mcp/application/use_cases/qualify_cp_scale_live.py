@@ -286,8 +286,8 @@ def qualify_cp_scale_progressive(
         else:
             stopped = True
 
-    # Wireless association and exact IoT realization remain deliberately
-    # unqualified, so the current product cannot honestly emit FULL_TARGET_VERIFIED.
+    # Wireless association and IoT function remain deliberately unqualified,
+    # so exact catalog identity alone cannot emit FULL_TARGET_VERIFIED.
     return CPScaleLiveQualification(
         points=results,
         reliable_workload_envelope=reliable_envelope,
@@ -413,7 +413,10 @@ def _execution_dimensions(
         ),
         "iot_function": CPScaleDimensionMetric(
             status="not_run", count=0,
-            message="Generic Thing substitution is structural, not exact functional evidence.",
+            message=(
+                "Exact catalog model identity is structural; IoT function "
+                "remains unqualified."
+            ),
         ),
     }
 

@@ -630,9 +630,9 @@ def test_resolved_reference_keeps_only_non_blocking_e4_runtime_warnings():
     assert sum(issue.code is CompilationIssueCode.ENDPOINT_MODEL_GENERIC for issue in result.issues) == 1
 
 
-def test_generic_thing_emits_structured_substitution_without_losing_semantic_role():
+def test_smoke_detector_role_compiles_to_the_exact_packet_tracer_model():
     intent = EnterpriseIntent(
-        name="Generic sensor evidence",
+        name="Exact smoke detector evidence",
         default_growth_percent=0,
         sites=[SiteIntent(
             name="Branch",
@@ -650,31 +650,19 @@ def test_generic_thing_emits_structured_substitution_without_losing_semantic_rol
     _, _, result = _compile(intent)
 
     assert result.is_valid and result.plan is not None
-    assert [item.model_dump(mode="json") for item in result.substitutions] == [{
-        "requested_role": "smoke_detector",
-        "actual_model": "Thing",
-        "endpoint_count": 2,
-        "generic": True,
-        "exact_model_claim": False,
-    }]
-    warning = next(
-        item for item in result.issues
-        if item.code is CompilationIssueCode.ENDPOINT_MODEL_GENERIC
+    assert result.substitutions == []
+    assert not any(
+        item.code is CompilationIssueCode.ENDPOINT_MODEL_GENERIC
         and item.subject == DeviceRole.SMOKE_DETECTOR.value
+        for item in result.issues
     )
-    assert warning.details == {
-        "requested_role": "smoke_detector",
-        "actual_model": "Thing",
-        "endpoint_count": 2,
-        "generic": True,
-    }
     sensors = [
         item for item in result.plan.devices
         if item.enterprise_role == DeviceRole.SMOKE_DETECTOR.value
     ]
-    assert {item.model for item in sensors} == {"Thing"}
-    assert all(item.metadata["physical_model_generic"] == "true" for item in sensors)
-    assert all(item.metadata["exact_model_claim"] == "false" for item in sensors)
+    assert {item.model for item in sensors} == {"Smoke Detector"}
+    assert all("physical_model_generic" not in item.metadata for item in sensors)
+    assert all("exact_model_claim" not in item.metadata for item in sensors)
     assert result.summary.endpoints == 4
     assert result.summary.workload_endpoints == 3
     assert result.summary.access_points == 1

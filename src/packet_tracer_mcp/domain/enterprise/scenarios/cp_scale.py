@@ -84,7 +84,7 @@ def _workload(role: DeviceRole, count: int) -> EndpointRequirement:
     metadata = {"workload_endpoint": "true"}
     if wireless:
         metadata.update({
-            "physical_realization": "generic_substitution_allowed",
+            "physical_realization": "exact_catalog_model",
             "wireless_association": "unqualified",
         })
     return EndpointRequirement(

@@ -465,11 +465,30 @@ FIBER_WALL_MOUNT = DeviceModel(
 )
 
 # =====================================================================
-# IOT (generic — represents all ~80 IoT Type 39 devices)
+# IOT
 # =====================================================================
 THING_PT = DeviceModel(
     pt_type="Thing", category="iot", display_name="IoT Thing",
     ports=(),
+)
+WEBCAM_PT = DeviceModel(
+    pt_type="Webcam", category="iot", display_name="Webcam", ports=(),
+)
+SMOKE_DETECTOR_PT = DeviceModel(
+    pt_type="Smoke Detector", category="iot", display_name="Smoke Detector",
+    ports=(),
+)
+MOTION_DETECTOR_PT = DeviceModel(
+    pt_type="Motion Detector", category="iot", display_name="Motion Detector",
+    ports=(),
+)
+HUMITURE_MONITOR_PT = DeviceModel(
+    pt_type="Humiture Monitor", category="iot", display_name="Humiture Monitor",
+    ports=(),
+)
+TEMPERATURE_MONITOR_PT = DeviceModel(
+    pt_type="Temperature Monitor", category="iot",
+    display_name="Temperature Monitor", ports=(),
 )
 
 
@@ -523,7 +542,8 @@ ALL_MODELS: dict[str, DeviceModel] = {
         POWER_DISTRIBUTION, COPPER_PATCH_PANEL, FIBER_PATCH_PANEL,
         COPPER_WALL_MOUNT, FIBER_WALL_MOUNT,
         # IoT
-        THING_PT,
+        THING_PT, WEBCAM_PT, SMOKE_DETECTOR_PT, MOTION_DETECTOR_PT,
+        HUMITURE_MONITOR_PT, TEMPERATURE_MONITOR_PT,
     ]
 }
 

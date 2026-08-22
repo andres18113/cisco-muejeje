@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from collections import Counter
 
-from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
-    CompilationIssueCode,
-)
 from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
 from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
     CP_SCALE_ACCESS_POINT_COUNT,
@@ -130,6 +127,10 @@ def test_iot_semantics_are_wireless_and_segmented_without_claiming_association()
     assert all(policy.segment_for(item) is SegmentRole.CCTV for item in iot)
     assert all(item.metadata.get("wireless_association") == "unqualified" for item in iot)
     assert all(
+        item.metadata.get("physical_realization") == "exact_catalog_model"
+        for item in iot
+    )
+    assert all(
         item.wired and not item.wireless
         for item in _requirements(intent)
         if item.role in {DeviceRole.PRINTER, DeviceRole.LAPTOP, DeviceRole.ACCESS_POINT}
@@ -152,13 +153,21 @@ def test_design_and_expansion_keep_exact_roles_and_unique_names():
     assert len({item.name for item in expanded}) == len(expanded)
 
 
-def test_generic_thing_is_an_explicit_substitution_not_an_exact_sensor_model():
+def test_cp_scale_iot_roles_resolve_to_distinct_exact_packet_tracer_models():
     profile = PacketTracerTopologyCatalogAdapter().compilation_profile()
-    thing = profile.model_by_name("Thing")
+    expected = {
+        DeviceRole.WEBCAM: "Webcam",
+        DeviceRole.SMOKE_DETECTOR: "Smoke Detector",
+        DeviceRole.MOTION_DETECTOR: "Motion Detector",
+        DeviceRole.HUMITURE_MONITOR: "Humiture Monitor",
+        DeviceRole.TEMPERATURE_MONITOR: "Temperature Monitor",
+    }
 
-    assert thing is not None and thing.generic
     assert {
-        profile.endpoint_role_models[role] for role in _IOT_ROLES
-    } == {"Thing"}
-    assert CompilationIssueCode.ENDPOINT_MODEL_GENERIC.value == "ENDPOINT_MODEL_GENERIC"
-
+        role: profile.endpoint_role_models[role] for role in _IOT_ROLES
+    } == expected
+    assert all(
+        profile.model_by_name(model) is not None
+        and not profile.model_by_name(model).generic
+        for model in expected.values()
+    )

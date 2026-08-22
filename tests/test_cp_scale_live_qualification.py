@@ -168,7 +168,7 @@ def test_progressive_runner_stops_at_first_failure_and_retains_lower_envelope():
     assert result.points[-1].dimensions["voice"].count == 0
 
 
-def test_full_progression_keeps_wireless_and_generic_iot_claims_bounded(tmp_path):
+def test_full_progression_keeps_wireless_and_iot_function_claims_bounded(tmp_path):
     result = qualify_cp_scale_progressive(
         _RUNTIMES,
         environment_fingerprint=_FINGERPRINT,
