@@ -586,6 +586,59 @@ def test_packet_tracer_workspace_inventory_is_strict_and_pdd_exception_is_exact(
     assert "removeDevice" not in scripts[0]
 
 
+def test_packet_tracer_workspace_inventory_observes_one_ended_antenna_links():
+    scripts: list[str] = []
+
+    def transport(script: str, _timeout: float) -> str:
+        scripts.append(script)
+        if "__class==='Antenna'" not in script or ".getPort()" not in script:
+            return __import__("json").dumps({
+                "items": [],
+                "links": [{"kind": "link", "index": 0, "unreadable": True}],
+            })
+        return __import__("json").dumps({
+            "items": [],
+            "links": [{
+                "kind": "link",
+                "class_name": "Antenna",
+                "a_device": "AP1",
+                "a_port": "Port 1",
+                "b_device": "",
+                "b_port": "",
+            }],
+        })
+
+    inventory = PacketTracerPhysicalTopologyRuntime(transport).observe_workspace()
+
+    assert inventory.observed
+    assert len(inventory.links) == 1
+    assert inventory.links[0].identity_key() == (
+        "Antenna", (("", ""), ("AP1", "Port 1")),
+    )
+    assert not inventory.safe_for_disposable_mutation
+
+
+def test_packet_tracer_workspace_inventory_rejects_one_ended_wired_links():
+    payload = {
+        "items": [],
+        "links": [{
+            "kind": "link",
+            "class_name": "CopperStraightThrough",
+            "a_device": "SW1",
+            "a_port": "FastEthernet0/1",
+            "b_device": "",
+            "b_port": "",
+        }],
+    }
+
+    inventory = PacketTracerPhysicalTopologyRuntime(
+        lambda _script, _timeout: __import__("json").dumps(payload),
+    ).observe_workspace()
+
+    assert not inventory.observed
+    assert inventory.message == "malformed_workspace_link"
+
+
 class DeviceCleanupTransport:
     def __init__(self, *, model: str = "2911", mutation_reply: str | None = None) -> None:
         self.model = model

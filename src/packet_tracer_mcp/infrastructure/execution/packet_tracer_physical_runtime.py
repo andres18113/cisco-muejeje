@@ -348,6 +348,20 @@ class PacketTracerPhysicalTopologyRuntime:
                     message="malformed_workspace_link",
                 )
             class_name, device_a, port_a, device_b, port_b = values
+            antenna = class_name == "Antenna"
+            if (
+                not class_name
+                or not device_a
+                or not port_a
+                or (antenna and (device_b or port_b))
+                or (not antenna and (not device_b or not port_b))
+            ):
+                return PhysicalWorkspaceObservation(
+                    observed=False,
+                    devices=devices,
+                    links=links,
+                    message="malformed_workspace_link",
+                )
             links.append(PhysicalWorkspaceLinkObservation(
                 class_name=class_name,
                 device_a=device_a,
@@ -915,12 +929,21 @@ def _workspace_observation_js() -> str:
         "unreadable:true,error:String(__de)});}}"
         "for(var __l=0;__l<__n.getLinkCount();__l++){try{"
         "var __link=__n.getLinkAt(__l);if(!__link){throw new Error('missing link');}"
+        "var __class=(typeof __link.getClassName==='function'"
+        "?String(__link.getClassName()):'');"
+        "if(__class==='Antenna'){"
+        "if(typeof __link.getPort!=='function'){throw new Error('antenna endpoint unavailable');}"
+        "var __antennaPort=__link.getPort();"
+        "if(!__antennaPort){throw new Error('missing antenna endpoint');}"
+        "__links.push({kind:'link',class_name:__class,"
+        "a_device:String(__antennaPort.getOwnerDevice().getName()),"
+        "a_port:String(__antennaPort.getName()),b_device:'',b_port:''});continue;}"
         "if(typeof __link.getPort1!=='function'||typeof __link.getPort2!=='function'){"
         "throw new Error('link endpoints unavailable');}"
         "var __p1=__link.getPort1(),__p2=__link.getPort2();"
         "if(!__p1||!__p2){throw new Error('missing link endpoint');}"
         "__links.push({kind:'link',"
-        "class_name:(typeof __link.getClassName==='function'?String(__link.getClassName()):''),"
+        "class_name:__class,"
         "a_device:String(__p1.getOwnerDevice().getName()),a_port:String(__p1.getName()),"
         "b_device:String(__p2.getOwnerDevice().getName()),b_port:String(__p2.getName())});}"
         "catch(__le){__links.push({kind:'link',index:__l,unreadable:true,"
