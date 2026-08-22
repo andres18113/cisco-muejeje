@@ -6,7 +6,7 @@
 BRANCH                     = feature/runtime-ripv2
 UPSTREAM                   = personal/feature/runtime-ripv2
 SESSION_BASE               = e72b1280fa3c56225ffca7fae311084813ec846b
-PRE_HANDOFF_HEAD           = 3ce7b090fc40fbe8a52297f8c840b9e23b974c48
+PRE_HANDOFF_HEAD           = 9c62096b8431eaf610d03d85a9c9dc94ea097a09
 PT_BUILD                   = 9.0.1.0858
 CP_SCALE                   = OPEN
 E10                        = BLOCKED_BY_CP_SCALE
@@ -22,6 +22,8 @@ ad66e5e feat(runtime): qualify CP-SCALE port inventories
 466b362 fix(runtime): observe Packet Tracer antenna links
 838d5b9 feat(capabilities): qualify Stage A runtime gates
 3ce7b09 fix(topology): map CP-SCALE IoT roles exactly
+fbaaa63 fix(runtime): confine disposable device cleanup
+9c62096 test(governance): stabilize refreshed runtime baseline
 ```
 
 Use only `./.venv/Scripts/python.exe` from this worktree. Before every live
@@ -166,51 +168,98 @@ cleanup mutation was required.
 ## Validation and evidence boundaries
 
 ```text
-FULL_PYTEST_BEFORE_NETWORK_CHANGES = 2545 passed, 4 warnings
-CURRENT_AFFECTED_REGRESSION        = 140 passed, 2 warnings
+FULL_PYTEST_CURRENT                = 2554 passed, 4 warnings
+CURRENT_AFFECTED_REGRESSION        = 188 passed
 COMPILEALL_SRC                     = PASS
 GIT_DIFF_CHECK                     = PASS
+GRAPHIFY_UPDATE                    = 9187 nodes / 30853 edges / 289 communities
 LAST_CORRECTED_OFFLINE_COMPOSE     = 318 devices / 235 links /
-                                     615 configuration actions /
+                                     637 configuration actions /
                                      164 control-plane actions /
                                      159 voice actions /
                                      zero hard layout violations /
                                      zero generic substitutions
 ```
 
-The canonical `data/cp-scale/offline-full/summary.json` predates the exact IoT
-mapping and still lists `Thing` substitutions. Do not use that stale artifact as
-current evidence; regenerate the canonical offline evidence before the next live
-Stage A run. Full pytest and Graphify have not been rerun after the current
-networking source changes. The last Graphify update, after the IoT correction,
-was 9205 nodes, 30786 edges, 284 communities.
+The ignored canonical `data/cp-scale/offline-full/` artifacts were regenerated
+from current source and the exact-build capability store. `summary.json` is
+valid, has zero substitutions, and records physical/configuration/control-plane/
+voice hashes `0b44a90a... / d0c7c79b... / 1b21d1bb... / 2978a2d1...`.
 
 The stale pre-correction Stage A run is not qualification evidence: it used
 generic IoT models and the old duplicate router links/ports. It stopped during
 configuration with 57 verified, 3 unobservable, 2 partial, 71 failed; control
 plane and voice did not run. Do not infer the corrected result from it.
 
-## Exact next active step
+## 2026-08-22 bounded continuation result
+
+The fixed-code Stage-A network qualification ran against PT `9.0.1.0858` with
+the checkout-local interpreter, one production namespace, a fresh heartbeat,
+and an empty semantic workspace. Hostname and VLAN 10 were VERIFIED. The typed
+Rapid-PVST mutation was APPLIED, but four fresh registered STP reads returned
+no parser-backed instance, so mode/VLAN/root stayed UNOBSERVABLE. Cleanup was
+attempted only after the post-gate creation attempt and two final inventories
+both matched baseline. Promote no Rapid-PVST dimension; CP-SCALE remains PVST
+intent with deterministic `24576/28672` ownership, not a live PVST readback
+claim.
+
+A fail-first review exposed that the ignored session script previously called
+cleanup even when a pre-mutation gate failed. The local runner now gates cleanup
+on a post-gate creation attempt. More importantly, tracked production runtime
+commit `fbaaa63` refuses `remove_device()` for a device this runtime never
+attempted, while preserving cleanup after an ambiguous attempted creation.
+
+The full suite first exposed a stale hostname taxonomy count and a wall-clock
+TTL race in the bridge capacity test. Both were corrected; the final governed
+run is `2554 passed, 4 warnings`, and `compileall src` passes. Graphify was
+refreshed to `9187 nodes / 30853 edges / 289 communities`.
+
+## Mechanically established topology governance hard stop
+
+Do not start Checkpoint 1 until one topology is made authoritative in current
+typed source/tests. The two candidates cannot be silently combined:
 
 ```text
-NEXT_ACTIVE_STEP = With the usual same-process import/build/empty-workspace
-                   gates, rerun only
-                   data/cp-scale/stage-a-network-qualification/session.py.
+CURRENT PRODUCT AUTHORITY (cp_scale.py + normal compiler)
+  318 devices / 235 links / 22 network devices
+  3x 1941 + 19x 3560-24PS
+  deterministic generated semantic names
+
+HISTORICAL NAMED PHYSICAL REFERENCE (mission checkpoints)
+  Router4/Router0/Router3 = 3x 2811
+  Switch10/floor/Router3 access = 2960-24TT
+  Router0 branch includes 3650-24PS
+  314 devices / 219 derived cabled links / 18 network devices
 ```
 
-If its bounded STP reread verifies exact Rapid-PVST mode, VLAN 10, and local
-root ownership on `3560-24PS` / `9.0.1.0858`, add only the exact-model/build
-capability dimensions, change the CP-SCALE plan to Rapid-PVST, and add the
-deterministic root regression. If it remains PARTIAL/UNOBSERVABLE, promote
-nothing and preserve the current ceiling.
+`docs/architecture/cp-scale-qualification.md` explicitly makes the former
+product authority and the historical documents immutable workload inputs. The
+current CP-SCALE points also have no governed three-router-core-only slice:
+points A-C are only the large branch and Router0/Router3 first appear at D.
 
-Then regenerate canonical offline CP-SCALE evidence, run affected/full tests
-and `graphify update .`, and execute fresh Stage A. Inspect wireless endpoint
-addressing before treating a failure as backend scale: exact IoT devices carry
-`wireless_association=unqualified`, and no stale generic-Thing DHCP result may
-be reused. Only after authentic Stage A success continue B, C, and D.
+The historical shape cannot pass the current product preflight anyway:
+
+- `2811`, `2960-24TT`, `3650-24PS`, and `Laptop-PT` have no exact-build measured
+  port inventory; deployment fails `PORT_EVIDENCE_UNAVAILABLE` before mutation.
+- `2811` has no model-attributed control-plane profile. Canonical RIPv2 therefore
+  stays UNKNOWN for configuration/process/routes/behavior on the required core.
+- `2960-24TT` has all STP dimensions UNKNOWN; the unobservable 3560 Rapid result
+  cannot authorize another model.
+- Several historical endpoint-to-switch port assignments are explicitly left
+  unresolved, so exact links cannot be guessed.
+
+The last live observation after qualification is zero semantic devices and zero
+links, with one backend-managed Power Distribution Device preserved. No core or
+presentation topology was mutated.
 
 ```text
-CP_SCALE = OPEN
-E10      = BLOCKED_BY_CP_SCALE
+NEXT_ACTIVE_STEP = Obtain a governed topology-identity decision in source/tests:
+                   either execute the current 318/235 product plan, which does
+                   not satisfy the named Router4/2811 checkpoints, or promote
+                   the historical 314/219 design into typed product authority
+                   and qualify every missing exact model/build/port/control-
+                   plane dimension first. Never merge the two shapes or borrow
+                   evidence across models.
+CP_SCALE         = OPEN / HARD_STOP_TOPOLOGY_IDENTITY_AND_MODEL_EVIDENCE
+E10              = BLOCKED_BY_CP_SCALE
 ```
