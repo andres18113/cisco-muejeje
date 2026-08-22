@@ -151,7 +151,7 @@ def test_governed_wait_longer_than_the_old_fixed_window_is_honored(bridge):
 
 def test_orphan_storage_is_bounded_and_stale_entries_expire(bridge):
     bridge._max_result_items = 3
-    bridge._result_ttl = 0.05
+    bridge._result_ttl = 60.0
 
     for index in range(3):
         rid = f"{index:032x}"
@@ -162,7 +162,7 @@ def test_orphan_storage_is_bounded_and_stale_entries_expire(bridge):
     assert _queue_result_operation(bridge, rejected_rid) == 503
     assert len(bridge._results) == 3
 
-    time.sleep(0.1)
+    bridge._result_ttl = 0.0
     fresh_rid = "f" * 32
     assert _queue_result_operation(bridge, fresh_rid) == 200
     assert list(bridge._results) == [fresh_rid]

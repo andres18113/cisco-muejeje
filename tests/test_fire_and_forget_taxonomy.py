@@ -67,7 +67,7 @@ def test_the_counts_are_stated_explicitly():
     }
 
     assert counts == {
-        "Enterprise Configuration": 12,
+        "Enterprise Configuration": 13,
         "Control Plane": 7,
         "Security": 8,
         "Voice": 7,
@@ -77,7 +77,7 @@ def test_the_counts_are_stated_explicitly():
         # resto no puede ser la via por la que se queda sin clasificar.
         "Legacy / raw CLI": 1,
     }
-    assert len(_families()) == 47
+    assert len(_families()) == 48
 
 
 def test_non_product_paths_cannot_masquerade_as_registered_product_families():
