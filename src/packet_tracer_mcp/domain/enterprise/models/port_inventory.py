@@ -56,6 +56,10 @@ class BackendVerifiedPortInventory(BaseModel):
     backend_version: str
     installed_modules: list[str] = Field(default_factory=list)
     ports: list[str] = Field(default_factory=list)
+    # Names enumerated by the backend that resolve to another physical port.
+    # They remain in `ports` as observed evidence, but cannot authorize a
+    # second concrete binding.
+    port_aliases: dict[str, str] = Field(default_factory=dict)
     source: str = ""
 
     def matches(
@@ -84,11 +88,18 @@ class PortInventoryResolution(BaseModel):
     installed_modules: list[str] = Field(default_factory=list)
     tier: PortInventoryEvidenceTier = PortInventoryEvidenceTier.UNKNOWN
     ports: list[str] = Field(default_factory=list)
+    port_aliases: dict[str, str] = Field(default_factory=dict)
     reason: str = ""
 
     @property
     def backend_verified(self) -> bool:
         return self.tier is PortInventoryEvidenceTier.BACKEND_VERIFIED
+
+    @property
+    def bindable_ports(self) -> list[str]:
+        """Observed names that represent independent exact-link endpoints."""
+
+        return [item for item in self.ports if item not in self.port_aliases]
 
     def unsupported_ports(self, required: list[str] | tuple[str, ...]) -> list[str]:
         """Required ports this resolution cannot authorise, in a stable order.
@@ -100,7 +111,7 @@ class PortInventoryResolution(BaseModel):
         wanted = sorted({item for item in required if item}, key=str.casefold)
         if not self.backend_verified:
             return wanted
-        available = set(self.ports)
+        available = set(self.bindable_ports)
         return [item for item in wanted if item not in available]
 
     def permits(self, required: list[str] | tuple[str, ...]) -> bool:
@@ -148,6 +159,7 @@ def resolve_port_inventory(
                 installed_modules=state,
                 tier=PortInventoryEvidenceTier.BACKEND_VERIFIED,
                 ports=list(record.ports),
+                port_aliases=dict(record.port_aliases),
                 reason=record.source,
             )
 

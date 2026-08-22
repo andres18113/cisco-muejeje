@@ -159,6 +159,15 @@ versionadas para `9.0.1.0858`; otra identidad o build no recibe autorización.
 Los cinco temporales se eliminaron en orden inverso, dos observaciones finales
 restauraron el baseline y `Power Distribution Device0` se preservó.
 
+La primera ejecución física reveló además que el inventario enumerado del
+`819HG-4G-IOX` contiene un alias no independiente. Tras verificar un enlace en
+`FastEthernet0`, el pre-readback exacto rechazó `Ethernet1` como ya enlazado;
+`GigabitEthernet0` aceptó y verificó un segundo enlace distinto. El inventario
+conserva ambos nombres observados, pero registra
+`Ethernet1 -> FastEthernet0` como alias no canónico: no cuenta como otro puerto
+ni autoriza un binding concreto. El control limpió sus dos dispositivos y
+enlaces, confirmó dos veces la restauración y preservó ambos PDD retenidos.
+
 ## Si algo falla
 
 Un timeout, callback inválido o disconnect del bridge es `UNKNOWN` y debe conservar el nombre de la sesión para inspección. No cambiarlo a `UNSUPPORTED`. Si hay `DIRTY_SESSION`, eliminar manualmente sólo los nombres temporales indicados; nunca borrar dispositivos del usuario.

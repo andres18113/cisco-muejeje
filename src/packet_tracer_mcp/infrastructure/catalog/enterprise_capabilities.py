@@ -136,7 +136,7 @@ class EnterpriseCapabilityAdapter:
                     self._port_descriptor(
                         model, port, source=f"backend_verified:{backend_version}",
                     )
-                    for port in _measured_port_specs(resolution.ports)
+                    for port in _measured_port_specs(resolution.bindable_ports)
                 ]
         return [self._port_descriptor(model, port) for port in model.ports]
 

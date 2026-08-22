@@ -5,6 +5,9 @@ from __future__ import annotations
 from src.packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
     plan_enterprise_hardware,
 )
+from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+    compose_enterprise_reference,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
@@ -123,3 +126,27 @@ def test_poe_evidence_does_not_cross_model_or_build_and_names_do_not_promote(tmp
     assert wrong_build is not None and wrong_build.supports_poe is CapabilityStatus.UNKNOWN
     assert unmeasured_named_model is not None
     assert unmeasured_named_model.supports_poe is CapabilityStatus.UNKNOWN
+
+
+def test_stage_a_does_not_allocate_the_819_duplicate_port_alias(tmp_path):
+    store = CapabilitySnapshotStore(tmp_path / "capabilities")
+    _save_supported_3560(store)
+
+    composition = compose_enterprise_reference(
+        cp_scale_intent_for(CPScalePoint.A),
+        packet_tracer_version=BUILD,
+        capability_store=store,
+    )
+
+    assert composition.valid and composition.topology is not None
+    router = next(
+        item for item in composition.topology.devices
+        if item.model == "819HG-4G-IOX"
+    )
+    router_ports = {
+        link.port_a if link.device_a_id == router.id else link.port_b
+        for link in composition.topology.links
+        if router.id in {link.device_a_id, link.device_b_id}
+    }
+    assert router_ports == {"FastEthernet0", "FastEthernet1"}
+    assert "Ethernet1" not in router_ports

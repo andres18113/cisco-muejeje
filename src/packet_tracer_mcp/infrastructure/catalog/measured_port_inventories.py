@@ -54,6 +54,9 @@ MEASURED_BACKEND_VERSION = "9.0.1.0858"
 _MEG4_RUN_2 = "stage-3a4-meg4-run2/observe_device"
 _MEG5_QUALIFICATION = "stage-3a4-meg5-port-qualification/observe_device"
 _CP_SCALE_STAGE_A_QUALIFICATION = "cp-scale-stage-a-port-qualification/observe_device"
+_CP_SCALE_819_ALIAS_QUALIFICATION = (
+    "cp-scale-stage-a-link-alias-qualification/exact-link-readback"
+)
 
 #: Un 2911 recien creado CON el HWIC-2T ya insertado en `0/0`. El estado de
 #: modulo importa: sin la tarjeta, `Serial0/0/0` y `Serial0/0/1` no existen, y
@@ -227,7 +230,12 @@ _PT_819HG_4G_IOX = BackendVerifiedPortInventory(
         "VirtualPortGroup0",
         "Vlan1",
     ],
-    source=_CP_SCALE_STAGE_A_QUALIFICATION,
+    port_aliases={"Ethernet1": "FastEthernet0"},
+    source=(
+        _CP_SCALE_STAGE_A_QUALIFICATION
+        + ";"
+        + _CP_SCALE_819_ALIAS_QUALIFICATION
+    ),
 )
 
 _PT_3560_24PS = BackendVerifiedPortInventory(

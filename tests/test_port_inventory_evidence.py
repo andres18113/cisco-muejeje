@@ -86,6 +86,25 @@ def test_cp_scale_stage_a_models_have_exact_build_port_authorization(
     assert "cp-scale-stage-a-port-qualification" in resolution.reason
 
 
+def test_819_observed_alias_is_not_an_independent_bindable_port():
+    resolution = backend_verified_port_inventory(
+        "819HG-4G-IOX", backend_version=BUILD,
+    )
+
+    assert resolution.port_aliases == {"Ethernet1": "FastEthernet0"}
+    assert "Ethernet1" in resolution.ports
+    assert "Ethernet1" not in resolution.bindable_ports
+    assert resolution.permits(["Ethernet1"]) is False
+    assert resolution.permits(["FastEthernet0", "GigabitEthernet0"]) is True
+
+    descriptors = EnterpriseCapabilityAdapter().port_descriptors_for(
+        "819HG-4G-IOX", backend_version=BUILD,
+    )
+    names = {item.name for item in descriptors}
+    assert "Ethernet1" not in names
+    assert {"FastEthernet0", "GigabitEthernet0"} <= names
+
+
 def _fingerprint(version: str = BUILD) -> EnvironmentFingerprint:
     return EnvironmentFingerprint(
         backend="packet_tracer",
