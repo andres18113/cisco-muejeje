@@ -1049,6 +1049,18 @@ class ConfigurationCompiler:
                 endpoint_id = _device_key(endpoint)
                 segment = endpoint_segments[endpoint_id]
                 interface = endpoint_interfaces.get(endpoint_id, "")
+                if not interface:
+                    # An address has to land on an interface. Emitting the
+                    # action anyway produced a critical mutation aimed at
+                    # nothing, which then read back as a contradiction about
+                    # a port nobody configured.
+                    issues.append(_error(
+                        ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
+                        f"Endpoint {endpoint.name} has no addressable network "
+                        f"interface for segment {segment_id}.",
+                        endpoint_id,
+                    ))
+                    continue
                 preference = endpoint.metadata.get("addressing_preference", "unspecified")
                 use_dhcp = preference == AddressingPreference.DHCP.value or (
                     preference == AddressingPreference.UNSPECIFIED.value and segment.dhcp
@@ -1275,7 +1287,13 @@ class ConfigurationCompiler:
                 }
             else:
                 kind = VerificationKind.ENDPOINT_ADDRESSING
-                expected = {"mode": "dhcp" if isinstance(action, SetEndpointDhcp) else "static"}
+                # The interface travels with the expectation because the
+                # read-back has to look at the port the action addressed, not
+                # at whichever port the device happens to enumerate first.
+                expected = {
+                    "mode": "dhcp" if isinstance(action, SetEndpointDhcp) else "static",
+                    "interface": action.interface,
+                }
                 if isinstance(action, SetEndpointDhcp):
                     expected.update({
                         "network": action.network,

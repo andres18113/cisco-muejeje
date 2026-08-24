@@ -156,7 +156,21 @@ _BUILD_STAGES = tuple(
 
 
 class CanonicalLiveFailure(RuntimeError):
-    """One governed stage failed after the session had acquired ownership."""
+    """One governed stage failed after the session had acquired ownership.
+
+    `stage_evidence` is whatever that stage had already journalled when it gave
+    up. A stage that fails is exactly the stage whose read-backs are worth
+    keeping, and they only exist inside `_execute_stage` until it returns.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        stage_evidence: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.stage_evidence = stage_evidence
 
 
 def _packet_tracer_processes() -> list[dict[str, object]]:
@@ -482,17 +496,21 @@ def _execute_stage(
             if delta_deployment is not None else None
         ),
     }
+    def _failed(message: str) -> CanonicalLiveFailure:
+        """Fail with the journal this stage has so far, never without it."""
+        return CanonicalLiveFailure(message, stage_evidence=evidence)
+
     if (
         deployment.status is not PhysicalDeploymentStatus.VERIFIED
         or deployment.manifest is None
     ):
-        raise CanonicalLiveFailure(
+        raise _failed(
             f"Physical stage {projection.stage.value!r} was not VERIFIED: "
             + "; ".join(deployment.errors)
         )
 
     if (verified_serial_topology is None) != (verified_serial_manifest is None):
-        raise CanonicalLiveFailure(
+        raise _failed(
             "Verified serial topology and manifest must be provided together."
         )
     if verified_serial_topology is None:
@@ -508,7 +526,7 @@ def _execute_stage(
         )
     evidence["serial_orientation"] = orientation.model_dump(mode="json")
     if not orientation.verified or orientation.oriented_manifest is None:
-        raise CanonicalLiveFailure(
+        raise _failed(
             f"Serial orientation at {projection.stage.value!r} was not VERIFIED: "
             + "; ".join(orientation.errors)
         )
@@ -525,7 +543,7 @@ def _execute_stage(
     contradiction = configuration_application_contradiction(configuration)
     evidence["configuration_contradictions"] = [contradiction]
     if contradiction:
-        raise CanonicalLiveFailure(
+        raise _failed(
             f"Configuration at {projection.stage.value!r} contradicted the plan: "
             + contradiction
         )
@@ -536,7 +554,7 @@ def _execute_stage(
     )
     evidence["serial_interfaces"] = serial_evidence
     if not serial_ready:
-        raise CanonicalLiveFailure(
+        raise _failed(
             f"Serial interfaces lost up/up convergence at {projection.stage.value!r}."
         )
 
@@ -562,7 +580,7 @@ def _execute_stage(
         contradiction = configuration_application_contradiction(configuration)
         evidence["configuration_contradictions"].append(contradiction)
         if contradiction:
-            raise CanonicalLiveFailure(
+            raise _failed(
                 f"Configuration re-read at {projection.stage.value!r} "
                 "contradicted the plan: " + contradiction
             )
@@ -572,7 +590,7 @@ def _execute_stage(
     evidence["configuration"] = configuration.model_dump(mode="json")
     evidence["configuration_acceptance_error"] = configuration_error
     if configuration_error:
-        raise CanonicalLiveFailure(
+        raise _failed(
             f"Configuration at {projection.stage.value!r} exceeded its governed "
             "observability envelope: " + configuration_error
         )
@@ -593,7 +611,7 @@ def _execute_stage(
     )
     evidence["control_plane"] = control.model_dump(mode="json")
     if control.status is not ConfigurationApplicationStatus.VERIFIED:
-        raise CanonicalLiveFailure(
+        raise _failed(
             f"Control plane at {projection.stage.value!r} was not VERIFIED: "
             f"{control.status.value}/{control.failure_code.value}"
         )
@@ -609,7 +627,7 @@ def _execute_stage(
     evidence["core_forwarding"] = forwarding
     evidence["core_forwarding_verified"] = forwarding_verified
     if not forwarding_verified:
-        raise CanonicalLiveFailure(
+        raise _failed(
             f"Core forwarding regressed at {projection.stage.value!r}."
         )
 
@@ -621,7 +639,7 @@ def _execute_stage(
     evidence["workspace_second"] = second.compact_summary()
     evidence["workspace_verified_twice"] = not first_error and not second_error
     if first_error or second_error:
-        raise CanonicalLiveFailure(
+        raise _failed(
             f"Canonical workspace reconciliation failed at "
             f"{projection.stage.value!r}: {first_error or second_error}"
         )
@@ -1139,6 +1157,12 @@ def run(
         return 0
     except Exception as exc:
         evidence["failure"] = f"{type(exc).__name__}: {exc}"
+        partial = getattr(exc, "stage_evidence", None)
+        if isinstance(partial, dict):
+            # Durable, and marked for what it is: this stage did not pass.
+            evidence.setdefault("stages", []).append({
+                **partial, "stage_outcome": "failed",
+            })
         return 1
     finally:
         if (

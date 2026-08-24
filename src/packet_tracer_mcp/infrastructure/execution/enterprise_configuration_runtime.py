@@ -788,18 +788,42 @@ class PacketTracerEnterpriseConfigurationRuntime:
         return show, convergence, converged
 
     def _verify_endpoint(self, expectation: VerificationExpectation) -> RuntimeVerification:
+        """Read back the exact interface the action addressed.
+
+        Walking the port list and taking the first one exposing `getIpAddress`
+        only ever agreed with the plan by accident: on a single-port endpoint the
+        addressed port IS the first port. On a 7960 (`Switch`, `PC`, logical
+        `Vlan1`) or an AccessPoint-PT it is not, and the mismatch was reported as
+        a contradiction -- an observation about a port nobody configured, which
+        is a strictly stronger claim than the evidence supported.
+
+        A named interface that cannot be found or cannot expose an address is
+        UNOBSERVABLE, never FAILED: not having looked at the right thing is not
+        the same as having looked and seen the opposite.
+        """
         expected = expectation.expected
         name = json.dumps(expectation.device_name)
+        interface = str(expected.get("interface") or "")
+        if not interface:
+            return self._unobservable(
+                expectation,
+                message="The expectation names no addressed interface to read.",
+            )
+        wanted = json.dumps(interface)
 
         def inspect() -> dict:
             js = "".join((
-                "try{var d=ipc.network().getDevice(", name, ");var p=null;",
+                "try{var d=ipc.network().getDevice(", name, ");",
+                "var want=", wanted, ";var p=null;",
                 "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
-                "if(c&&typeof c.getIpAddress==='function'){p=c;break;}}}",
-                "var ip=p?String(p.getIpAddress()):'';var mask=p?String(p.getSubnetMask()):'';",
+                "if(c&&typeof c.getName==='function'&&String(c.getName())===want){p=c;break;}}}",
+                "var able=!!p&&typeof p.getIpAddress==='function';",
+                "var ip=able?String(p.getIpAddress()):'';",
+                "var mask=able?String(p.getSubnetMask()):'';",
                 # PT 9.0.1 evidence confirms only IP/mask getters. Gateway and DNS
                 # remain deliberately unobservable until Cisco API evidence exists.
-                "reportResult(JSON.stringify({found:!!d,configuration_channel:!!p,ipv4:ip,netmask:mask,gateway:null,dns:null}));",
+                "reportResult(JSON.stringify({found:!!d,port_found:!!p,interface:want,",
+                "configuration_channel:able,ipv4:ip,netmask:mask,gateway:null,dns:null}));",
                 "}catch(e){reportResult('ERROR:'+e);}",
             ))
             observed = self._json_result(js, 3.0)
@@ -812,6 +836,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
             interval_seconds=self._convergence_interval,
         ).wait()
         observed = inspect()
+        if not observed.get("port_found"):
+            return self._unobservable(
+                expectation,
+                message=(
+                    f"{interface} was not exposed by {expectation.device_name}, so "
+                    "its addressing was never read."
+                ),
+            )
         ipv4_ok = self._ipv4_matches(expected, str(observed.get("ipv4") or ""))
         mask_ok = str(observed.get("netmask") or "") == str(expected.get("netmask") or "")
         fields = {

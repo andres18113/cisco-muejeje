@@ -97,8 +97,8 @@ def test_vlan_verifier_uses_existing_vlan_manager_and_bounded_convergence():
         if item.kind.value == "vlan"
     )
     responses = iter((
-        '{"found":true,"configuration_channel":false,"present":false}',
-        '{"found":true,"configuration_channel":true,"present":true}',
+        '{"found":true,"port_found":true,"configuration_channel":false,"present":false}',
+        '{"found":true,"port_found":true,"configuration_channel":true,"present":true}',
     ))
     payloads: list[str] = []
     runtime = PacketTracerEnterpriseConfigurationRuntime(
@@ -217,8 +217,8 @@ def test_l3_verifier_uses_controlled_fresh_show_window():
     responses = iter((
         '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
         '{"ok":true,"before":"R1#"}',
-        '{"found":true,"configuration_channel":true,"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\nGig0/0.10 198.18.150.1 YES manual up up\\nR1#"}',
-        '{"found":true,"configuration_channel":true,"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\nGig0/0.10 198.18.150.1 YES manual up up\\nR1#"}',
+        '{"found":true,"port_found":true,"configuration_channel":true,"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\nGig0/0.10 198.18.150.1 YES manual up up\\nR1#"}',
+        '{"found":true,"port_found":true,"configuration_channel":true,"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\nGig0/0.10 198.18.150.1 YES manual up up\\nR1#"}',
     ))
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
@@ -242,7 +242,7 @@ def test_l3_verifier_does_not_emit_unclaimed_down_link_fields_as_unknown():
         if item.required_query == "show_ip_interface_brief"
     )
     current = (
-        '{"found":true,"configuration_channel":true,'
+        '{"found":true,"port_found":true,"configuration_channel":true,'
         '"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\n'
         'Gig0/0.10 198.18.150.1 YES manual down down\\nR1#"}'
     )
@@ -277,7 +277,7 @@ def test_l3_verifier_requires_administratively_down_state_when_requested():
     )
     expectation.expected["administrative_up"] = False
     current = (
-        '{"found":true,"configuration_channel":true,'
+        '{"found":true,"port_found":true,"configuration_channel":true,'
         '"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\n'
         'Gig0/0.10 198.18.150.1 YES manual up up\\nR1#"}'
     )
@@ -311,7 +311,7 @@ def test_l3_verifier_accepts_fresh_administratively_down_state_when_requested():
     )
     expectation.expected["administrative_up"] = False
     current = (
-        '{"found":true,"configuration_channel":true,'
+        '{"found":true,"port_found":true,"configuration_channel":true,'
         '"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\n'
         'Gig0/0.10 198.18.150.1 YES manual administratively down down\\nR1#"}'
     )
@@ -416,7 +416,7 @@ def test_endpoint_dhcp_verification_keeps_gateway_and_dns_unobservable():
         if item.expected.get("mode") == "dhcp"
     )
     observed = (
-        '{"found":true,"configuration_channel":true,'
+        '{"found":true,"port_found":true,"configuration_channel":true,'
         '"ipv4":"198.18.150.54","netmask":"255.255.255.0",'
         '"gateway":null,"dns":null}'
     )
@@ -471,11 +471,11 @@ def test_endpoint_timeout_cannot_be_promoted_by_a_late_matching_read():
         calls += 1
         if calls == 1:
             return (
-                '{"found":true,"configuration_channel":false,'
+                '{"found":true,"port_found":true,"configuration_channel":false,'
                 '"ipv4":"","netmask":"","gateway":null,"dns":null}'
             )
         return (
-            '{"found":true,"configuration_channel":true,'
+            '{"found":true,"port_found":true,"configuration_channel":true,'
             '"ipv4":"198.18.150.54","netmask":"255.255.255.0",'
             '"gateway":null,"dns":null}'
         )
