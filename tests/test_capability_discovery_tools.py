@@ -34,6 +34,10 @@ class _StubCatalog:
     def identity_for(*args, **kwargs):
         return None
 
+    @staticmethod
+    def access_ports_for(*args, **kwargs) -> frozenset[str]:
+        return frozenset()
+
 
 class _SpyDiscoveryService:
     """Registra cada construcción y cada `run` sin tocar Packet Tracer."""
@@ -41,7 +45,10 @@ class _SpyDiscoveryService:
     constructions: list[dict] = []
     runs: list[object] = []
 
-    def __init__(self, runtime=None, snapshots=None, identity_for=None):
+    def __init__(
+        self, runtime=None, snapshots=None, identity_for=None,
+        registry=None, *, access_ports_for=None,
+    ):
         type(self).constructions.append({"runtime": runtime})
 
     @property

@@ -1607,6 +1607,7 @@ def register_tools(
                 runtime=runtime,
                 snapshots=CapabilitySnapshotStore(),
                 identity_for=catalog.identity_for,
+                access_ports_for=catalog.access_ports_for,
             )
         if capability_discovery_service is None:
             catalog = EnterpriseCapabilityAdapter()
@@ -1619,6 +1620,7 @@ def register_tools(
                 runtime=runtime,
                 snapshots=CapabilitySnapshotStore(),
                 identity_for=catalog.identity_for,
+                access_ports_for=catalog.access_ports_for,
             )
         return capability_discovery_service
 

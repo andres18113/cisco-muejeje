@@ -55,6 +55,7 @@ def _service(tmp_path, runtime: FakePacketTracerProbeRuntime):
     adapter = EnterpriseCapabilityAdapter()
     return CapabilityDiscoveryService(
         runtime, CapabilitySnapshotStore(tmp_path / "capabilities"), adapter.identity_for,
+        access_ports_for=adapter.access_ports_for,
     )
 
 
@@ -609,3 +610,94 @@ def test_scenario_readiness_does_not_require_endpoint_poe_or_routing(tmp_path):
     assert report.full_poe_e4.value == "ready"
     assert report.blockers_by_role == {}
     assert report.required_capabilities_by_role["endpoint"] == ["model_exists", "port_inventory"]
+
+
+def _measured_3650_observation():
+    """The exact shape PT 9.0.1.0858 returned for a fresh 3650-24PS.
+
+    Every port -- the 24 `Gi1/0/x` access ports and the 4 `Gi1/1/x` uplink
+    module ports -- reported complete administrative and runtime power-on state.
+    """
+    ports = [RuntimePortDescriptor(
+        name="Vlan1", interface_type="Vlan", physical=False, logical=True,
+        power_admin_enabled=False, power_runtime_on=False,
+        power_observation_complete=True, poe_status=CapabilityStatus.UNSUPPORTED,
+    )]
+    ports.extend(
+        RuntimePortDescriptor(
+            name=name, interface_type="GigabitEthernet",
+            power_admin_enabled=True, power_runtime_on=True,
+            power_observation_complete=True,
+            poe_status=CapabilityStatus.SUPPORTED,
+        )
+        for name in (
+            *(f"GigabitEthernet1/0/{index}" for index in range(1, 25)),
+            *(f"GigabitEthernet1/1/{index}" for index in range(1, 5)),
+        )
+    )
+    return RuntimeDeviceObservation(
+        found=True, runtime_id="3650-24PS", display_name="3650-24PS", ports=ports,
+    )
+
+
+def test_a_switch_whose_access_ports_are_gigabit_can_still_evidence_poe(tmp_path):
+    """PoE is decided on the model's access ports, not on their speed name.
+
+    The 3650-24PS has no FastEthernet at all: its 24 access ports are
+    `Gi1/0/1..24`. Selecting access ports by interface-type name left the set
+    empty and collapsed a fully observed, homogeneous power-on state to UNKNOWN,
+    which fails closed -- so a PoE switch could never be admitted for PoE.
+    """
+    runtime = FakePacketTracerProbeRuntime({"3650-24PS": _measured_3650_observation()})
+
+    snapshot, _ = _service(tmp_path, runtime).run(ProbeRequest(
+        models=["3650-24PS"], capabilities=["supports_poe"], force=True,
+    ))
+
+    result = next(
+        item for item in snapshot.session.results
+        if item.capability == "supports_poe"
+    )
+    assert result.status is CapabilityStatus.SUPPORTED
+    assert result.execution_status is ProbeExecutionStatus.VERIFIED
+    assert result.observed_value == 24, "the 4 uplink module ports are not a budget"
+
+
+def test_uplink_power_signals_never_inflate_the_admitted_powered_budget(tmp_path):
+    """A 3560-24PS still evidences exactly its 24 powered access ports.
+
+    Its `Gi0/1-0/2` uplinks report power too. They were never counted and must
+    not start being counted now.
+    """
+    ports = [
+        RuntimePortDescriptor(
+            name=f"FastEthernet0/{index}", interface_type="FastEthernet",
+            power_admin_enabled=True, power_runtime_on=True,
+            power_observation_complete=True,
+            poe_status=CapabilityStatus.SUPPORTED,
+        )
+        for index in range(1, 25)
+    ]
+    ports.extend(
+        RuntimePortDescriptor(
+            name=f"GigabitEthernet0/{index}", interface_type="GigabitEthernet",
+            power_admin_enabled=True, power_runtime_on=True,
+            power_observation_complete=True,
+            poe_status=CapabilityStatus.SUPPORTED,
+        )
+        for index in (1, 2)
+    )
+    runtime = FakePacketTracerProbeRuntime({"3560-24PS": RuntimeDeviceObservation(
+        found=True, runtime_id="3560-24PS", display_name="3560-24PS", ports=ports,
+    )})
+
+    snapshot, _ = _service(tmp_path, runtime).run(ProbeRequest(
+        models=["3560-24PS"], capabilities=["supports_poe"], force=True,
+    ))
+
+    result = next(
+        item for item in snapshot.session.results
+        if item.capability == "supports_poe"
+    )
+    assert result.status is CapabilityStatus.SUPPORTED
+    assert result.observed_value == 24

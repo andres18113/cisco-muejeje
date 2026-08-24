@@ -190,11 +190,14 @@ class CapabilityDiscoveryService:
         snapshots: SnapshotRepository,
         identity_for: Callable[[str, str | None], DeviceIdentity],
         registry: CapabilityProbeRegistry | None = None,
+        *,
+        access_ports_for: Callable[[str], frozenset[str]] | None = None,
     ) -> None:
         self._runtime = runtime
         self._snapshots = snapshots
         self._identity_for = identity_for
         self._registry = registry or CapabilityProbeRegistry()
+        self._access_ports_for = access_ports_for
 
     @property
     def known_capabilities(self) -> list[str]:
@@ -548,11 +551,7 @@ class CapabilityDiscoveryService:
                     observed_value=len(named) or None,
                 ))
             elif capability == "supports_poe":
-                access_ports = [
-                    port for port in descriptor.ports
-                    if port.physical
-                    and port.interface_type.casefold() in {"ethernet", "fastethernet"}
-                ]
+                access_ports = self._poe_access_ports(model, descriptor)
                 statuses = {port.poe_status for port in access_ports}
                 status = _observed_status(statuses)
                 supported_count = sum(
@@ -586,6 +585,27 @@ class CapabilityDiscoveryService:
                     ),
                     verification_method=CapabilityVerificationMethod.OBJECT_STATE,
                 ))
+
+    def _poe_access_ports(self, model: str, descriptor) -> list:
+        """The observed physical ports that carry endpoints on this model.
+
+        PoE is a property of the ports an endpoint plugs into, so the budget is
+        measured over access ports and uplinks are deliberately excluded even
+        when they report power. Selecting them by interface-type name worked
+        only while access ports happened to be FastEthernet: a 3650-24PS has no
+        FastEthernet at all, so the set came back empty and a fully observed,
+        homogeneous power-on state collapsed to UNKNOWN.
+        """
+        physical = [port for port in descriptor.ports if port.physical]
+        declared = (
+            self._access_ports_for(model) if self._access_ports_for else frozenset()
+        )
+        if declared:
+            return [port for port in physical if port.name in declared]
+        return [
+            port for port in physical
+            if port.interface_type.casefold() in {"ethernet", "fastethernet"}
+        ]
 
     def _run_runtime_probes(
         self, name: str, model: str, capabilities: list[str], results: list[CapabilityProbeResult], version: str | None,

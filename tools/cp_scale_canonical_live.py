@@ -789,6 +789,7 @@ def run(
             runtime=probe_runtime,
             snapshots=capability_store,
             identity_for=EnterpriseCapabilityAdapter().identity_for,
+            access_ports_for=EnterpriseCapabilityAdapter().access_ports_for,
         )
         capability_evidence = []
         for model, capabilities in required_capabilities.items():

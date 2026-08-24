@@ -299,6 +299,24 @@ class EnterpriseCapabilityAdapter:
     def _speed_value(speed: object) -> str:
         return str(getattr(speed, "value", speed))
 
+    def access_ports_for(self, model: str) -> frozenset[str]:
+        """The access ports this model declares, by the one existing definition.
+
+        `_port_descriptor` already decides access from `access_port_names` when
+        the catalogue states them and from speed otherwise. A second, divergent
+        notion of "access port" is how a switch whose access ports are Gigabit
+        became undiscoverable for PoE, so there is only this one.
+        """
+        resolved = ALL_MODELS.get(self.normalize_model_name(model) or model)
+        if resolved is None or resolved.category != "switch":
+            return frozenset()
+        if resolved.access_port_names or resolved.uplink_port_names:
+            return frozenset(resolved.access_port_names)
+        return frozenset(
+            port.full_name for port in resolved.ports
+            if self._speed_value(port.speed) in {"Ethernet", "FastEthernet"}
+        )
+
     def _port_descriptor(
         self, model: DeviceModel, port, *, source: str = "catalog",
     ) -> PortDescriptor:
