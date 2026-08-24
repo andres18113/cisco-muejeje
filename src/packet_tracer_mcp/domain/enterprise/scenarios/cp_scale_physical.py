@@ -182,40 +182,48 @@ def _block(
 
 
 def _large_bindings() -> list[EndpointPortBinding]:
+    """Powered endpoints on powered access ports; uplinks on the uplink ports.
+
+    Every access point here used to sit on `GigabitEthernet0/1-0/2` while the
+    switch spent FastEthernet access ports on its infrastructure uplinks. That
+    is backwards in both directions, and PoE is where it stopped being merely
+    untidy: the powered-port evidence for these builds covers the 24 access
+    ports, so an AP on an uplink is a powered attachment nothing can power.
+    """
     return [
         *_range(SW4, "FastEthernet0/", 1, Z1, DeviceRole.USER_PC, 1, 22, "FastEthernet0"),
-        _binding(SW4, "GigabitEthernet0/2", Z1, DeviceRole.USER_PC, 23, "FastEthernet0"),
-        _binding(SW4, "GigabitEthernet0/1", Z1, DeviceRole.ACCESS_POINT, 1, "Port 0"),
+        _binding(SW4, "FastEthernet0/23", Z1, DeviceRole.ACCESS_POINT, 1, "Port 0"),
+        _binding(SW4, "FastEthernet0/24", Z1, DeviceRole.USER_PC, 23, "FastEthernet0"),
         *_range(SW5, "FastEthernet0/", 1, Z1, DeviceRole.IP_PHONE, 1, 21, "Switch"),
-        _binding(SW5, "FastEthernet0/22", Z1, DeviceRole.PRINTER, 1, "FastEthernet0", provenance="implementation_allocation"),
-        _binding(SW5, "FastEthernet0/23", Z1, DeviceRole.PRINTER, 2, "FastEthernet0", provenance="implementation_allocation"),
-        _binding(SW5, "GigabitEthernet0/1", Z1, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
-        _binding(SW5, "GigabitEthernet0/2", Z1, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
+        _binding(SW5, "FastEthernet0/22", Z1, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
+        _binding(SW5, "FastEthernet0/23", Z1, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
+        _binding(SW5, "FastEthernet0/24", Z1, DeviceRole.PRINTER, 1, "FastEthernet0", provenance="implementation_allocation"),
+        _binding(SW5, "GigabitEthernet0/2", Z1, DeviceRole.PRINTER, 2, "FastEthernet0", provenance="implementation_allocation"),
 
         *_range(SW6, "FastEthernet0/", 1, Z2, DeviceRole.USER_PC, 1, 20, "FastEthernet0"),
-        _binding(SW6, "GigabitEthernet0/1", Z2, DeviceRole.ACCESS_POINT, 1, "Port 0"),
+        _binding(SW6, "FastEthernet0/21", Z2, DeviceRole.ACCESS_POINT, 1, "Port 0"),
         *_range(SW7, "FastEthernet0/", 1, Z2, DeviceRole.IP_PHONE, 1, 14, "Switch"),
+        _binding(SW7, "FastEthernet0/15", Z2, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
+        _binding(SW7, "FastEthernet0/16", Z2, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
         _binding(SW7, "FastEthernet0/22", Z2, DeviceRole.PRINTER, 1, "FastEthernet0", provenance="implementation_allocation"),
         _binding(SW7, "FastEthernet0/23", Z2, DeviceRole.PRINTER, 2, "FastEthernet0", provenance="implementation_allocation"),
-        _binding(SW7, "GigabitEthernet0/1", Z2, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
-        _binding(SW7, "GigabitEthernet0/2", Z2, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
 
         *_range(SW8, "FastEthernet0/", 1, ZC, DeviceRole.USER_PC, 1, 22, "FastEthernet0"),
-        _binding(SW8, "GigabitEthernet0/2", ZC, DeviceRole.USER_PC, 23, "FastEthernet0"),
-        _binding(SW8, "GigabitEthernet0/1", ZC, DeviceRole.ACCESS_POINT, 1, "Port 0"),
+        _binding(SW8, "FastEthernet0/23", ZC, DeviceRole.ACCESS_POINT, 1, "Port 0"),
+        _binding(SW8, "FastEthernet0/24", ZC, DeviceRole.USER_PC, 23, "FastEthernet0"),
         *_range(SW9, "FastEthernet0/", 1, ZC, DeviceRole.IP_PHONE, 1, 3, "Switch"),
+        _binding(SW9, "FastEthernet0/4", ZC, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
+        _binding(SW9, "FastEthernet0/5", ZC, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
         _binding(SW9, "FastEthernet0/22", ZC, DeviceRole.PRINTER, 1, "FastEthernet0", provenance="implementation_allocation"),
         _binding(SW9, "FastEthernet0/23", ZC, DeviceRole.PRINTER, 2, "FastEthernet0", provenance="implementation_allocation"),
-        _binding(SW9, "GigabitEthernet0/1", ZC, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
-        _binding(SW9, "GigabitEthernet0/2", ZC, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
 
         *_range(SW0, "FastEthernet0/", 1, ZD, DeviceRole.USER_PC, 1, 20, "FastEthernet0"),
-        _binding(SW0, "GigabitEthernet0/1", ZD, DeviceRole.ACCESS_POINT, 1, "Port 0"),
+        _binding(SW0, "FastEthernet0/21", ZD, DeviceRole.ACCESS_POINT, 1, "Port 0"),
         *_range(SW1, "FastEthernet0/", 1, ZD, DeviceRole.IP_PHONE, 1, 13, "Switch"),
+        _binding(SW1, "FastEthernet0/14", ZD, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
+        _binding(SW1, "FastEthernet0/15", ZD, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
         _binding(SW1, "FastEthernet0/22", ZD, DeviceRole.PRINTER, 1, "FastEthernet0", provenance="implementation_allocation"),
         _binding(SW1, "FastEthernet0/23", ZD, DeviceRole.PRINTER, 2, "FastEthernet0", provenance="implementation_allocation"),
-        _binding(SW1, "GigabitEthernet0/1", ZD, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
-        _binding(SW1, "GigabitEthernet0/2", ZD, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
     ]
 
 
@@ -238,8 +246,8 @@ def _small_bindings() -> list[EndpointPortBinding]:
         *_range(SW3, "FastEthernet0/", 1, SB, DeviceRole.USER_PC, 1, 6, "FastEthernet0"),
         *_range(SW3, "FastEthernet0/", 7, SB, DeviceRole.IP_PHONE, 1, 7, "Switch"),
         _binding(SW3, "FastEthernet0/14", SB, DeviceRole.LAPTOP, 1, "FastEthernet0"),
-        _binding(SW3, "GigabitEthernet0/1", SB, DeviceRole.ACCESS_POINT, 1, "Port 0", provenance="implementation_allocation"),
-        _binding(SW3, "GigabitEthernet0/2", SB, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
+        _binding(SW3, "FastEthernet0/15", SB, DeviceRole.ACCESS_POINT, 1, "Port 0", provenance="implementation_allocation"),
+        _binding(SW3, "FastEthernet0/16", SB, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
     ]
 
 
@@ -254,27 +262,27 @@ def cp_scale_physical_design() -> PhysicalDesignSpec:
         devices=[
             _device(R4, LARGE, "Router4", DeviceRole.EDGE_ROUTER, NetworkLayer.EDGE, "2811", additional_roles=(DeviceRole.WAN_ROUTER,), modules=(_NM_4A_S,)),
             _device(SW10, LARGE, "Switch10", DeviceRole.DISTRIBUTION_SWITCH, NetworkLayer.DISTRIBUTION, "2960-24TT"),
-            _device(SW4, LARGE, "Switch4", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=Z1),
-            _device(SW5, LARGE, "Switch5", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=Z1),
-            _device(SW6, LARGE, "Switch6", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=Z2),
-            _device(SW7, LARGE, "Switch7", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=Z2),
-            _device(SW8, LARGE, "Switch8", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=ZC),
-            _device(SW9, LARGE, "Switch9", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=ZC),
-            _device(SW0, LARGE, "Switch0", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=ZD),
-            _device(SW1, LARGE, "Switch1", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=ZD),
+            _device(SW4, LARGE, "Switch4", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=Z1),
+            _device(SW5, LARGE, "Switch5", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=Z1),
+            _device(SW6, LARGE, "Switch6", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=Z2),
+            _device(SW7, LARGE, "Switch7", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=Z2),
+            _device(SW8, LARGE, "Switch8", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=ZC),
+            _device(SW9, LARGE, "Switch9", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=ZC),
+            _device(SW0, LARGE, "Switch0", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=ZD),
+            _device(SW1, LARGE, "Switch1", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=ZD),
         ],
         links=[
             _link(R4, "Serial1/1", R3, "Serial1/1", LinkRole.WAN_LINK, serial=True),
             _link(R4, "Serial1/0", R0, "Serial1/0", LinkRole.WAN_LINK, serial=True),
             _link(R4, "FastEthernet0/0", SW10, "GigabitEthernet0/1", LinkRole.EDGE_LINK),
-            _link(SW10, "FastEthernet0/1", SW4, "FastEthernet0/23", LinkRole.DISTRIBUTION_LINK),
-            _link(SW10, "FastEthernet0/2", SW6, "FastEthernet0/23", LinkRole.DISTRIBUTION_LINK),
-            _link(SW10, "FastEthernet0/3", SW8, "FastEthernet0/23", LinkRole.DISTRIBUTION_LINK),
-            _link(SW10, "FastEthernet0/4", SW0, "FastEthernet0/23", LinkRole.DISTRIBUTION_LINK),
-            _link(SW4, "FastEthernet0/24", SW5, "FastEthernet0/24", LinkRole.ACCESS_LINK),
-            _link(SW6, "FastEthernet0/24", SW7, "FastEthernet0/24", LinkRole.ACCESS_LINK),
-            _link(SW8, "FastEthernet0/24", SW9, "FastEthernet0/24", LinkRole.ACCESS_LINK),
-            _link(SW0, "FastEthernet0/24", SW1, "FastEthernet0/24", LinkRole.ACCESS_LINK),
+            _link(SW10, "FastEthernet0/1", SW4, "GigabitEthernet0/1", LinkRole.DISTRIBUTION_LINK),
+            _link(SW10, "FastEthernet0/2", SW6, "GigabitEthernet0/1", LinkRole.DISTRIBUTION_LINK),
+            _link(SW10, "FastEthernet0/3", SW8, "GigabitEthernet0/1", LinkRole.DISTRIBUTION_LINK),
+            _link(SW10, "FastEthernet0/4", SW0, "GigabitEthernet0/1", LinkRole.DISTRIBUTION_LINK),
+            _link(SW4, "GigabitEthernet0/2", SW5, "GigabitEthernet0/1", LinkRole.ACCESS_LINK),
+            _link(SW6, "GigabitEthernet0/2", SW7, "GigabitEthernet0/1", LinkRole.ACCESS_LINK),
+            _link(SW8, "GigabitEthernet0/2", SW9, "GigabitEthernet0/1", LinkRole.ACCESS_LINK),
+            _link(SW0, "GigabitEthernet0/2", SW1, "GigabitEthernet0/1", LinkRole.ACCESS_LINK),
         ],
         access_blocks=[
             _block(LARGE, Z1, [SW4, SW5], 49, 24),
@@ -324,10 +332,10 @@ def cp_scale_physical_design() -> PhysicalDesignSpec:
         network_layers=[NetworkLayer.ACCESS, NetworkLayer.EDGE, NetworkLayer.WAN],
         devices=[
             _device(R3, SMALL, "Router3", DeviceRole.EDGE_ROUTER, NetworkLayer.EDGE, "2811", additional_roles=(DeviceRole.WAN_ROUTER,), modules=(_NM_4A_S,)),
-            _device(SW3, SMALL, "Switch3", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "2960-24TT", zone=SB, additional_roles=(DeviceRole.DISTRIBUTION_SWITCH,)),
+            _device(SW3, SMALL, "Switch3", DeviceRole.ACCESS_SWITCH, NetworkLayer.ACCESS, "3560-24PS", zone=SB, additional_roles=(DeviceRole.DISTRIBUTION_SWITCH,)),
         ],
         links=[
-            _link(R3, "FastEthernet0/0", SW3, "FastEthernet0/15", LinkRole.EDGE_LINK),
+            _link(R3, "FastEthernet0/0", SW3, "GigabitEthernet0/1", LinkRole.EDGE_LINK),
         ],
         access_blocks=[_block(SMALL, SB, [SW3], 16, 9)],
         endpoint_bindings=_small_bindings(),

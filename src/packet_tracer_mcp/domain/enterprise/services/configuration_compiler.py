@@ -293,7 +293,9 @@ class ConfigurationCompiler:
         actions.extend(pool_actions)
         for endpoint, segment, interface, access_dependency in pending_dhcp:
             pool = pool_by_segment.get(segment.name)
-            if pool is None:
+            if pool is None or not interface:
+                # An entry with no interface only kept its segment's pool alive;
+                # it was never a client this plan can configure.
                 continue
             allocation = allocations[segment.name]
             dependencies = [pool.id]
@@ -1049,23 +1051,35 @@ class ConfigurationCompiler:
                 endpoint_id = _device_key(endpoint)
                 segment = endpoint_segments[endpoint_id]
                 interface = endpoint_interfaces.get(endpoint_id, "")
-                if not interface:
-                    # An address has to land on an interface. Emitting the
-                    # action anyway produced a critical mutation aimed at
-                    # nothing, which then read back as a contradiction about
-                    # a port nobody configured.
-                    issues.append(_error(
-                        ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
-                        f"Endpoint {endpoint.name} has no addressable network "
-                        f"interface for segment {segment_id}.",
-                        endpoint_id,
-                    ))
-                    continue
                 preference = endpoint.metadata.get("addressing_preference", "unspecified")
                 use_dhcp = preference == AddressingPreference.DHCP.value or (
                     preference == AddressingPreference.UNSPECIFIED.value and segment.dhcp
                 )
                 access_dependency = endpoint_access.get(endpoint_id, "")
+                if not interface:
+                    # An address has to land on an interface. Emitting the action
+                    # anyway produced a critical mutation aimed at nothing, which
+                    # then read back as a contradiction about a port nobody
+                    # configured.
+                    #
+                    # For a wireless endpoint this is not a defect: its
+                    # association is carried as `unqualified`, so its addressing
+                    # was never claimed either, and its VLAN still exists
+                    # structurally. For a wired one it is -- something that owns
+                    # a cable should own an interface.
+                    issues.append((_warning if endpoint.wireless else _error)(
+                        ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
+                        f"Endpoint {endpoint.name} exposes no addressable network "
+                        f"interface, so no addressing is claimed for it on "
+                        f"segment {segment_id}.",
+                        endpoint_id,
+                    ))
+                    if use_dhcp:
+                        # The segment still asked for DHCP. Withdrawing the pool
+                        # too would quietly delete a designed router service
+                        # because one client could not be configured.
+                        pending_dhcp.append((endpoint, segment, "", access_dependency))
+                    continue
                 if use_dhcp:
                     pending_dhcp.append((endpoint, segment, interface, access_dependency))
                     continue

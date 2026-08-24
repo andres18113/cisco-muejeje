@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+    CapabilityStatus,
     DeviceCandidateStatus,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
@@ -194,15 +195,31 @@ def _rebudget(candidates, model: str, poe_ports: int):
     ]
 
 
+def _unmeasured(candidates, model: str):
+    """The same build, with its PoE question deliberately unanswered."""
+    return [
+        item.model_copy(update={
+            "capabilities": item.capabilities.model_copy(update={
+                "supports_poe": CapabilityStatus.UNKNOWN,
+                "poe_ports": None,
+            }),
+        })
+        if item.model == model else item
+        for item in candidates
+    ]
+
+
 def test_unknown_poe_evidence_never_admits_a_powered_endpoint_binding():
-    """A 2960-24TT reports no PoE evidence, so it may not power a phone.
+    """UNKNOWN is not permission.
 
     The exact-reference path used to hand this design to E5 as VALID with
     `poe_capacity=None`: a powered-port requirement admitted with no capability
-    evidence at all. UNKNOWN is not permission.
+    evidence at all.
     """
+    candidates = _unmeasured(_switch_candidates(), "2960-24TT")
+
     result = ReferenceHardwarePlanner().plan(
-        _poe_enterprise(), _poe_design(model="2960-24TT"), _switch_candidates(),
+        _poe_enterprise(), _poe_design(model="2960-24TT"), candidates,
     )
 
     assert result.status is HardwarePlanStatus.PARTIALLY_RESOLVED
@@ -212,6 +229,25 @@ def test_unknown_poe_evidence_never_admits_a_powered_endpoint_binding():
     assert any(
         "2960-24TT" in item and "unknown" in item.casefold()
         for item in result.warnings
+    )
+
+
+def test_a_build_measured_to_deliver_no_power_is_refused_outright():
+    """2960-24TT is not unknown any more; it is measured.
+
+    Every one of its 24 access ports reported complete administrative and
+    runtime power-OFF state on 9.0.1.0858. That is a decided answer, so a
+    powered endpoint bound to it is a contradiction rather than a gap.
+    """
+    result = ReferenceHardwarePlanner().plan(
+        _poe_enterprise(), _poe_design(model="2960-24TT"), _switch_candidates(),
+    )
+
+    assert result.status is HardwarePlanStatus.UNRESOLVED
+    device = result.site_hardware[0].devices[0]
+    assert device.selection_status is DeviceCandidateStatus.INCOMPATIBLE
+    assert any(
+        "2960-24TT" in item and "no PoE" in item for item in result.warnings
     )
 
 

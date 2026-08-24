@@ -38,7 +38,10 @@ def test_product_composes_the_exact_canonical_topology_and_plans():
     assert composition.control_plane is not None
     assert len(composition.topology.devices) == 314
     assert len(composition.topology.links) == 219
-    assert len(composition.configuration.actions) == 609
+    # 514, not 609: the 95 wireless IoT endpoints expose no addressable
+    # network interface, so no addressing is claimed for them. Their VLAN and
+    # its DHCP pool still exist -- what stopped is the pretence.
+    assert len(composition.configuration.actions) == 514
     assert len(composition.control_plane.actions) == 217
 
 

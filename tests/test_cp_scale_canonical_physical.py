@@ -7,19 +7,28 @@ from collections import Counter
 from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
     compile_enterprise_topology,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import HardwarePlanStatus
+from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+    HardwarePlanStatus,
+    PortClass,
+)
 from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import cp_scale_intent
 from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     cp_scale_physical_design,
 )
+from src.packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
+    EndpointGroupExpander,
+)
 from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
+)
+from src.packet_tracer_mcp.domain.enterprise.services.naming import (
+    DeterministicNamingService,
 )
 from src.packet_tracer_mcp.domain.enterprise.services.reference_hardware_planner import (
     ReferenceHardwarePlanner,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
-    EnterpriseCapabilityAdapter,
+    packet_tracer_enterprise_capability_adapter,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
@@ -32,7 +41,9 @@ from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories impo
 def _compile():
     designed = EnterpriseDesigner().design(cp_scale_intent())
     assert designed.validation.is_valid and designed.plan is not None
-    catalog = EnterpriseCapabilityAdapter()
+    # The productive exact-version root: the canonical design is only true
+    # against the evidence the live path actually resolves.
+    catalog = packet_tracer_enterprise_capability_adapter(MEASURED_BACKEND_VERSION)
     candidates = [
         *catalog.hardware_candidates("router", MEASURED_BACKEND_VERSION),
         *catalog.hardware_candidates("switch", MEASURED_BACKEND_VERSION),
@@ -58,9 +69,9 @@ def test_canonical_hardware_uses_the_exact_18_network_devices_and_modules():
     assert len(devices) == 18
     assert Counter(item.selected_model for item in devices) == {
         "2811": 3,
-        "2960-24TT": 10,
+        "2960-24TT": 1,
         "3650-24PS": 3,
-        "3560-24PS": 2,
+        "3560-24PS": 11,
     }
     assert {item.semantic_name for item in devices} == {
         "Router0", "Router3", "Router4", "Switch10",
@@ -93,9 +104,9 @@ def test_canonical_topology_is_exactly_314_devices_and_219_links():
     assert "Thing" not in {item.model for item in compiled.plan.devices}
     assert Counter(item.model for item in compiled.plan.devices) == {
         "2811": 3,
-        "2960-24TT": 10,
+        "2960-24TT": 1,
         "3650-24PS": 3,
-        "3560-24PS": 2,
+        "3560-24PS": 11,
         "PC-PT": 104,
         "Laptop-PT": 3,
         "7960": 69,
@@ -164,10 +175,69 @@ def test_only_documented_ambiguities_are_marked_as_implementation_allocations():
     ]
 
     assert len(allocated) == 18
-    assert all(
-        item.device_port in {
-            "FastEthernet0/22", "FastEthernet0/23",
-            "GigabitEthernet0/1", "GigabitEthernet0/2",
-        }
-        for item in allocated
-    )
+
+
+def test_every_powered_endpoint_sits_on_a_powered_access_port():
+    """The invariant the canonical design used to violate on every access switch.
+
+    Access points were bound to `GigabitEthernet0/1-0/2` while the switch spent
+    FastEthernet access ports on its uplinks. The exact-build PoE evidence for
+    these switches covers their 24 access ports, so those bindings asked an
+    uplink to power a device -- on models (2960-24TT) since measured to deliver
+    no power at all.
+    """
+    _, hardware, _ = _compile()
+    designed = EnterpriseDesigner().design(cp_scale_intent())
+    powered = {
+        item.id
+        for item in EndpointGroupExpander().expand(
+            designed.plan, DeterministicNamingService(),
+        )
+        if item.requires_poe
+    }
+
+    assert hardware.status is HardwarePlanStatus.VALID, hardware.warnings
+    seen = 0
+    for site in hardware.site_hardware:
+        devices = {item.id: item for item in site.devices}
+        for binding in site.endpoint_bindings:
+            if binding.endpoint_id not in powered:
+                continue
+            seen += 1
+            switch = devices[binding.device_id]
+            descriptor = next(
+                item for item in switch.port_descriptors
+                if item.name == binding.device_port
+            )
+            assert switch.poe_capacity is not None, switch.semantic_name
+            assert PortClass.ACCESS_CAPABLE in descriptor.classes, (
+                f"{switch.semantic_name}:{binding.device_port} cannot be powered"
+            )
+    assert seen == 86
+
+
+def test_no_access_switch_exceeds_its_evidenced_powered_port_budget():
+    """86 powered endpoints, and every switch inside its own measured 24."""
+    _, hardware, _ = _compile()
+    designed = EnterpriseDesigner().design(cp_scale_intent())
+    powered = {
+        item.id
+        for item in EndpointGroupExpander().expand(
+            designed.plan, DeterministicNamingService(),
+        )
+        if item.requires_poe
+    }
+
+    demand: Counter = Counter()
+    for site in hardware.site_hardware:
+        for binding in site.endpoint_bindings:
+            if binding.endpoint_id in powered:
+                demand[binding.device_id] += 1
+
+    for site in hardware.site_hardware:
+        for device in site.devices:
+            if not demand[device.id]:
+                continue
+            assert device.poe_capacity is not None
+            assert demand[device.id] <= device.poe_capacity, device.semantic_name
+    assert sum(demand.values()) == 86

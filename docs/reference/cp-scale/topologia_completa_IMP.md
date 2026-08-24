@@ -129,14 +129,19 @@ Enlaces:
 | Origen | Destino |
 |---|---|
 | `Router4 Fa0/0` | `Switch10 Gi0/1` |
-| `Switch10 Fa0/1` | `Switch4 Fa0/23` |
-| `Switch10 Fa0/2` | `Switch6 Fa0/23` |
-| `Switch10 Fa0/3` | `Switch8 Fa0/23` |
-| `Switch10 Fa0/4` | `Switch0 Fa0/23` |
-| `Switch4 Fa0/24` | `Switch5 Fa0/24` |
-| `Switch6 Fa0/24` | `Switch7 Fa0/24` |
-| `Switch8 Fa0/24` | `Switch9 Fa0/24` |
-| `Switch0 Fa0/24` | `Switch1 Fa0/24` |
+| `Switch10 Fa0/1` | `Switch4 Gi0/1` |
+| `Switch10 Fa0/2` | `Switch6 Gi0/1` |
+| `Switch10 Fa0/3` | `Switch8 Gi0/1` |
+| `Switch10 Fa0/4` | `Switch0 Gi0/1` |
+| `Switch4 Gi0/2` | `Switch5 Gi0/1` |
+| `Switch6 Gi0/2` | `Switch7 Gi0/1` |
+| `Switch8 Gi0/2` | `Switch9 Gi0/1` |
+| `Switch0 Gi0/2` | `Switch1 Gi0/1` |
+
+Los uplinks viven en los puertos Gigabit de cada switch de acceso, y los 24
+puertos FastEthernet quedan integros para endpoints. `Switch10` conserva
+`Fa0/1-Fa0/4` hacia abajo porque solo tiene dos puertos Gigabit y uno ya sube
+a `Router4`; no alimenta ningun endpoint, asi que nada depende de ello.
 
 ---
 
@@ -186,27 +191,33 @@ Switch5 además conecta 2 Printer-PT.
 Switch4:
 
 ```text
-Fa0/1-Fa0/22 + Gi0/2 → 23 PCs
-Gi0/1                 → AP4
-Fa0/23                → uplink Switch10
-Fa0/24                → Switch5
+Fa0/1-Fa0/22 → 22 PCs
+Fa0/23        → AP4          (alimentado)
+Fa0/24        → PC 23
+Gi0/1         → uplink Switch10
+Gi0/2         → Switch5
 ```
 
 Switch5:
 
 ```text
-Fa0/1-Fa0/21 → 21 teléfonos
-Fa0/24       → Switch4
+Fa0/1-Fa0/21 → 21 teléfonos  (alimentados)
+Gi0/1        → Switch4
 ```
 
 Puertos físicos de acceso IoT/impresión conocidos como conjunto:
 
 ```text
-Fa0/22
-Fa0/23
-Gi0/1
-Gi0/2
+Fa0/22   AP5    (alimentado)
+Fa0/23   AP6    (alimentado)
+Fa0/24   Printer-PT
+Gi0/2    Printer-PT
 ```
+
+Los 23 endpoints alimentados de `Switch5` -- 21 teléfonos y 2 access points --
+caben en los 24 puertos de acceso que la evidencia mide como alimentados. Las
+dos impresoras no requieren PoE, asi que una de ellas puede ocupar el segundo
+puerto Gigabit sin reclamar energia que nadie observo.
 
 Conectan:
 
@@ -267,25 +278,25 @@ Switch6:
 
 ```text
 Fa0/1-Fa0/20 → 20 PCs
-Gi0/1         → AP de 4 webcams
-Fa0/23        → Switch10
-Fa0/24        → Switch7
+Fa0/21        → AP de 4 webcams  (alimentado)
+Gi0/1         → Switch10
+Gi0/2         → Switch7
 ```
 
 Switch7:
 
 ```text
-Fa0/1-Fa0/14 → 14 teléfonos
-Fa0/24       → Switch6
+Fa0/1-Fa0/14 → 14 teléfonos  (alimentados)
+Gi0/1        → Switch6
 ```
 
 Puertos IoT/impresión como conjunto:
 
 ```text
-Fa0/22
-Fa0/23
-Gi0/1
-Gi0/2
+Fa0/15   AP2    (alimentado)
+Fa0/16   AP3    (alimentado)
+Fa0/22   Printer-PT
+Fa0/23   Printer-PT
 ```
 
 Conectan:
@@ -362,26 +373,27 @@ Puertos:
 Switch8:
 
 ```text
-Fa0/1-Fa0/22 + Gi0/2 → 23 PCs
-Gi0/1                 → AP0
-Fa0/23                → Switch10
-Fa0/24                → Switch9
+Fa0/1-Fa0/22 → 22 PCs
+Fa0/23        → AP0          (alimentado)
+Fa0/24        → PC 23
+Gi0/1         → Switch10
+Gi0/2         → Switch9
 ```
 
 Switch9:
 
 ```text
-Fa0/1-Fa0/3 → 3 teléfonos
-Fa0/24      → Switch8
+Fa0/1-Fa0/3 → 3 teléfonos  (alimentados)
+Gi0/1       → Switch8
 ```
 
 IoT/impresión:
 
 ```text
-Fa0/22
-Fa0/23
-Gi0/1
-Gi0/2
+Fa0/4    AP7    (alimentado)
+Fa0/5    AP8    (alimentado)
+Fa0/22   Printer-PT
+Fa0/23   Printer-PT
 ```
 
 corresponden al conjunto:
@@ -439,25 +451,25 @@ Switch0:
 
 ```text
 Fa0/1-Fa0/20 → 20 PCs
-Gi0/1         → AP12
-Fa0/23        → Switch10
-Fa0/24        → Switch1
+Fa0/21        → AP12         (alimentado)
+Gi0/1         → Switch10
+Gi0/2         → Switch1
 ```
 
 Switch1:
 
 ```text
-Fa0/1-Fa0/13 → 13 teléfonos
-Fa0/24       → Switch0
+Fa0/1-Fa0/13 → 13 teléfonos  (alimentados)
+Gi0/1        → Switch0
 ```
 
 IoT/impresión:
 
 ```text
-Fa0/22
-Fa0/23
-Gi0/1
-Gi0/2
+Fa0/14   AP13   (alimentado)
+Fa0/15   AP14   (alimentado)
+Fa0/22   Printer-PT
+Fa0/23   Printer-PT
 ```
 
 corresponden al conjunto:
@@ -737,9 +749,9 @@ Puertos:
 ```text
 Fa0/1-Fa0/6 → 6 PCs
 Fa0/14      → 1 Laptop
-Fa0/7-Fa0/13 → 7 teléfonos
-Gi0/1-Gi0/2 → AP0(1) y AP2(1)
-Fa0/15      → Router3
+Fa0/7-Fa0/13 → 7 teléfonos  (alimentados)
+Fa0/15-Fa0/16 → AP0(1) y AP2(1)  (alimentados)
+Gi0/1       → Router3
 ```
 
 No se determinó:
@@ -791,33 +803,68 @@ TOTAL   = 279
 └── Router4
 ```
 
-## Switches 2960
+## Switches de acceso
 
 ```text
-Switch10
+Switch10  → Cisco 2960-24TT   (distribucion, sin PoE)
 
 Piso 1:
-  Switch4
-  Switch5
+  Switch4 → Cisco 3560-24PS
+  Switch5 → Cisco 3560-24PS
 
 Piso 2:
-  Switch6
-  Switch7
+  Switch6 → Cisco 3560-24PS
+  Switch7 → Cisco 3560-24PS
 
 Piso 3:
-  Switch8
-  Switch9
-  Switch0
-  Switch1
+  Switch8 → Cisco 3560-24PS
+  Switch9 → Cisco 3560-24PS
+  Switch0 → Cisco 3560-24PS
+  Switch1 → Cisco 3560-24PS
 
 Rama Router3:
-  Switch3
+  Switch3 → Cisco 3560-24PS
 ```
 
 Total:
 
 ```text
-10 Cisco 2960-24TT
+1 Cisco 2960-24TT
+9 Cisco 3560-24PS
+```
+
+### Por que los switches de acceso son PoE
+
+Estos nueve switches alimentan telefonos IP y access points. La medicion
+exacta sobre Packet Tracer `9.0.1.0858` decide el modelo, no el nombre:
+
+```text
+2960-24TT → supports_poe = UNSUPPORTED (verificado)
+             24 puertos de acceso con estado de energia administrativo y
+             de runtime completo en OFF
+3560-24PS → supports_poe = SUPPORTED,  24 puertos de acceso alimentados
+3650-24PS → supports_poe = SUPPORTED,  24 puertos de acceso alimentados
+```
+
+El `2960-24TT` no entrega PoE, igual que el chasis real: las variantes con
+PoE de esa familia son `-PC` y `-LT`, no `-TT`. Un diseño que colgara 21
+telefonos de un `Switch5` 2960-24TT no era implementable, solo no verificado.
+
+`Switch10` no alimenta ningun endpoint, asi que conserva su `2960-24TT`.
+
+### Puertos de acceso y uplinks
+
+Los uplinks de infraestructura usan los puertos Gigabit; los endpoints usan
+los 24 puertos FastEthernet de acceso. Antes ocurria al reves -- los access
+points colgaban de `GigabitEthernet0/1-0/2` mientras los uplinks ocupaban
+`FastEthernet0/23-0/24` -- y esa inversion es la que dejaba dispositivos
+alimentados en puertos que la evidencia de PoE no cubre: el presupuesto
+medido es de 24 puertos **de acceso**, y un uplink no alimenta nada.
+
+```text
+uplink de distribucion  → GigabitEthernet0/1
+uplink entre parejas    → GigabitEthernet0/2 (lado superior)
+endpoints               → FastEthernet0/1..24
 ```
 
 ## Switches multicapa de rama Router0

@@ -22,6 +22,7 @@ from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
+    ConfigurationIssueCode,
     VerificationKind,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
@@ -183,29 +184,53 @@ def _fixture_with_wireless_sensor():
     return enterprise, topology, policy
 
 
-def test_an_endpoint_with_no_addressable_interface_fails_closed():
-    """A device the catalog gives no network port may not be planned as addressed.
+def test_a_wireless_endpoint_with_no_interface_is_not_claimed_as_addressed():
+    """The 19 wireless IoT contradictions, at their root.
 
-    The 19 wireless IoT contradictions were exactly this: `Motion Detector`,
-    `Smoke Detector` and `Webcam` expose an empty port inventory, so the compiler
-    emitted `interface=""` and the applicator's own target check skips empty
-    interfaces -- a critical action planned against nothing at all, then read
-    back as a contradiction.
+    `Motion Detector`, `Smoke Detector` and `Webcam` expose an empty port
+    inventory, so the compiler emitted `interface=""`; the applicator's target
+    check skips empty interfaces, so a `critical=True` action reached a live
+    device aimed at nothing and was then read back as a contradiction.
+
+    Nothing about that device was ever claimed: CP-SCALE carries these devices
+    with `wireless_association=unqualified`, and addressing rides on
+    association. So the topology stays valid and its VLAN stays structural --
+    what stops is the pretence that an address was configured.
     """
     enterprise, topology, policy = _fixture_with_wireless_sensor()
 
     result = compile_enterprise_configuration(enterprise, topology, policy)
 
-    blocking = [item for item in result.issues if item.subject == "sensor-1"]
-    assert blocking, [item.message for item in result.issues]
-    assert not result.is_valid
+    assert result.is_valid, [item.message for item in result.issues]
+    assert any(
+        item.subject == "sensor-1"
+        and item.code is ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING
+        for item in result.issues
+    )
+    assert result.plan is not None
     assert not any(
         item.action_type in {
             ConfigurationActionType.SET_ENDPOINT_DHCP,
             ConfigurationActionType.SET_ENDPOINT_STATIC,
         }
         and item.device_id == "sensor-1"
-        for item in (result.plan.actions if result.plan else [])
+        for item in result.plan.actions
+    )
+
+
+def test_a_wired_endpoint_with_no_interface_fails_closed():
+    """Something holding a cable should own an interface; if not, stop."""
+    enterprise, topology, policy = _fixture_with_wireless_sensor()
+    sensor = next(item for item in topology.devices if item.id == "sensor-1")
+    sensor.wireless = False
+
+    result = compile_enterprise_configuration(enterprise, topology, policy)
+
+    assert not result.is_valid
+    assert any(
+        item.subject == "sensor-1"
+        and item.code is ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING
+        for item in result.issues
     )
 
 
