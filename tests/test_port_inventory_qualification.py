@@ -33,6 +33,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalMutationResult,
     PhysicalObjectKind,
     PhysicalWorkspaceDeviceObservation,
+    PhysicalWorkspaceLinkObservation,
     PhysicalWorkspaceObservation,
 )
 
@@ -292,6 +293,98 @@ class TestItCleansUpAfterItself:
 
         assert result.measurements == ()
         assert physical.calls == ["observe_workspace"]
+        assert any("refuses to mutate" in item for item in result.errors)
+
+    def test_an_ambiguous_creation_receipt_is_still_cleaned_by_exact_name(self):
+        class _AmbiguousCreation(_Physical):
+            def ensure_device(self, device):
+                self.calls.append(f"ensure_device:{device.name}")
+                self.live[device.name] = (device.model, "")
+                return PhysicalMutationResult(
+                    target_id=device.id,
+                    target_kind=PhysicalObjectKind.DEVICE,
+                    disposition=MutationDisposition.UNKNOWN,
+                    applied=False,
+                    message="receipt timed out after dispatch",
+                )
+
+        physical = _AmbiguousCreation(_ROUTER_PORTS)
+
+        result = PortInventoryQualifier(physical, name_token="t").qualify([
+            PortInventoryTarget(model="1941"),
+        ])
+
+        assert physical.live == {}
+        assert result.removed == (f"{QUALIFICATION_PREFIX}t_00",)
+        assert result.restored is True
+
+    def test_creation_exception_after_dispatch_is_still_cleaned(self):
+        class _RaisedAfterDispatch(_Physical):
+            def ensure_device(self, device):
+                self.calls.append(f"ensure_device:{device.name}")
+                self.live[device.name] = (device.model, "")
+                raise TimeoutError("receipt lost after dispatch")
+
+        physical = _RaisedAfterDispatch(_ROUTER_PORTS)
+
+        result = PortInventoryQualifier(physical, name_token="t").qualify([
+            PortInventoryTarget(model="1941"),
+        ])
+
+        assert physical.live == {}
+        assert result.removed == (f"{QUALIFICATION_PREFIX}t_00",)
+        assert result.restored is True
+
+    def test_cleanup_no_op_after_ambiguous_attempt_is_not_a_cleanup_error(self):
+        class _AlreadyAbsent(_Physical):
+            def remove_device(self, device):
+                self.calls.append(f"remove_device:{device.name}")
+                self.live.pop(device.name, None)
+                return PhysicalMutationResult(
+                    target_id=device.id,
+                    target_kind=PhysicalObjectKind.DEVICE,
+                    disposition=MutationDisposition.NO_OP,
+                    applied=False,
+                    message="already absent",
+                )
+
+        physical = _AlreadyAbsent(_ROUTER_PORTS)
+
+        result = PortInventoryQualifier(physical, name_token="t").qualify([
+            PortInventoryTarget(model="1941"),
+        ])
+
+        assert result.restored is True
+        assert result.errors == ()
+        assert result.removed == ()
+
+    @pytest.mark.parametrize("baseline", [
+        PhysicalWorkspaceObservation(observed=False, message="incomplete"),
+        PhysicalWorkspaceObservation(
+            observed=True,
+            links=[PhysicalWorkspaceLinkObservation(
+                class_name="CopperStraightThrough",
+                device_a="A",
+                port_a="FastEthernet0",
+                device_b="B",
+                port_b="FastEthernet0",
+            )],
+        ),
+    ])
+    def test_incomplete_or_links_only_workspace_is_never_mutated(self, baseline):
+        class _UnsafeBaseline(_Physical):
+            def observe_workspace(self):
+                self.calls.append("observe_workspace")
+                return baseline
+
+        physical = _UnsafeBaseline(_ROUTER_PORTS)
+
+        result = PortInventoryQualifier(physical, name_token="t").qualify([
+            PortInventoryTarget(model="1941"),
+        ])
+
+        assert result.measurements == ()
+        assert not any(item.startswith("ensure_device:") for item in physical.calls)
         assert any("refuses to mutate" in item for item in result.errors)
 
 

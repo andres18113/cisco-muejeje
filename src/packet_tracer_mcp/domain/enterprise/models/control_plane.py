@@ -361,7 +361,10 @@ class ControlPlaneVerificationExpectation(BaseModel):
     #: cambia es donde se declara, no cuanto se reclama.
     source_traffic_flow_id: str = ""
     required_capability: ControlPlaneCapabilityDimension
-    expected: dict[str, str | int | bool | list[str] | list[int]] = Field(
+    expected: dict[
+        str,
+        str | int | bool | list[str] | list[int] | dict[int, int],
+    ] = Field(
         default_factory=dict,
     )
     #: Campos que esta expectativa deliberadamente NO reclama, porque ninguna

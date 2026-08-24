@@ -48,7 +48,7 @@ from ...domain.enterprise.models.voice_plan import (
     VoiceCompileResult,
     VoiceIntent,
 )
-from ...domain.enterprise.scenarios.cp_scale import cp_scale_intent
+from ...domain.enterprise.scenarios.cp_scale import cp_scale_scale_fixture_intent
 from ...domain.enterprise.services.enterprise_designer import EnterpriseDesigner
 from ...domain.enterprise.services.hardware_planner import (
     HardwarePlanner,
@@ -155,7 +155,7 @@ def qualify_cp_scale_offline(
     voice_capabilities: dict[str, VoiceCapabilityProfile] | None = None,
 ) -> CPScaleOfflineQualification:
     """Compile every existing-scope typed plan; no bridge or runtime is touched."""
-    result = CPScaleOfflineQualification(intent=cp_scale_intent())
+    result = CPScaleOfflineQualification(intent=cp_scale_scale_fixture_intent())
 
     started = perf_counter_ns()
     designed = EnterpriseDesigner().design(result.intent)

@@ -21,7 +21,10 @@ from ...domain.enterprise.services.capability_resolver import (
 from ...domain.enterprise.models.link_performance import port_kind_of
 from .aliases import MODEL_ALIASES
 from .devices import ALL_MODELS, DeviceModel, PortSpec
-from .measured_port_inventories import backend_verified_port_inventory
+from .measured_port_inventories import (
+    backend_verified_port_inventory,
+    module_state_token,
+)
 from .modules import ALL_MODULES, get_serial_module
 from .capability_providers import ProbeCapabilityProvider, RuntimeCapabilityProvider
 from ..persistence.capability_snapshot_store import CapabilitySnapshotStore
@@ -49,6 +52,7 @@ def _measured_port_specs(ports: list[str]) -> list[PortSpec]:
 
 _SERIAL_MODULE_SLOT_BY_MODEL = {
     "1941": "0/0",
+    "2811": "1",
     "2901": "0/0",
     "2911": "0/0",
     "ISR4321": "0",
@@ -166,7 +170,9 @@ class EnterpriseCapabilityAdapter:
         """Provee candidatos físicos al dominio sin que éste importe el catálogo PT."""
         candidates: list[HardwareCandidate] = []
         for capability in self.all_capabilities(category, packet_tracer_version):
-            module_options = self._serial_module_options(capability.model)
+            module_options = self._serial_module_options(
+                capability.model, packet_tracer_version or "",
+            )
             candidates.append(HardwareCandidate(
                 model=capability.model,
                 capabilities=capability,
@@ -282,6 +288,13 @@ class EnterpriseCapabilityAdapter:
         classes: list[PortClass] = []
         if speed == "Serial":
             classes.extend([PortClass.SERIAL, PortClass.WAN])
+        elif model.category == "switch" and (
+            model.access_port_names or model.uplink_port_names
+        ):
+            if port.full_name in model.access_port_names:
+                classes.append(PortClass.ACCESS_CAPABLE)
+            if port.full_name in model.uplink_port_names:
+                classes.append(PortClass.UPLINK_CAPABLE)
         elif model.category == "switch" and speed in {"Ethernet", "FastEthernet"}:
             classes.append(PortClass.ACCESS_CAPABLE)
         elif model.category == "switch" and speed in {"GigabitEthernet", "TenGigabitEthernet"}:
@@ -297,17 +310,28 @@ class EnterpriseCapabilityAdapter:
         )
 
     @staticmethod
-    def _serial_module_options(model: str) -> list[ModuleInstallation]:
+    def _serial_module_options(
+        model: str, backend_version: str = "",
+    ) -> list[ModuleInstallation]:
         module = get_serial_module(model)
         slot = _SERIAL_MODULE_SLOT_BY_MODEL.get(model)
         if module is None or slot is None:
             return []
-        return [ModuleInstallation(
+        option = ModuleInstallation(
             module=module.name,
             slot=slot,
             provided_ports=list(module.ports_added),
             provided_port_classes=[PortClass.SERIAL, PortClass.WAN],
-        )]
+        )
+        if backend_version:
+            evidence = backend_verified_port_inventory(
+                model,
+                backend_version=backend_version,
+                installed_modules=[module_state_token(module.name, slot)],
+            )
+            if not evidence.backend_verified or not evidence.permits(option.provided_ports):
+                return []
+        return [option]
 
 
 def packet_tracer_enterprise_capability_adapter(

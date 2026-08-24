@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from .hierarchy import BuildingIntent
 from .requirements import EndpointRequirement, ServiceRequirement, WanLinkRequirement
 from .link_performance import TrafficFlowIntent
+from .segments import SegmentRequirement
 
 
 class SiteType(str, Enum):
@@ -31,6 +32,7 @@ class SiteIntent(BaseModel):
     address_block: str | None = None
     pair_pc_with_ip_phone: bool | None = None
     uplinks: list[WanLinkRequirement] = Field(default_factory=list)
+    segments: list[SegmentRequirement] = Field(default_factory=list)
 
 
 class EnterpriseIntent(BaseModel):

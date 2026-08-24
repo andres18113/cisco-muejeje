@@ -17,6 +17,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
     LayoutProfile,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+    EndpointPortBinding,
     HardwareCandidate,
     HardwarePlanStatus,
     HierarchyMode,
@@ -188,6 +189,66 @@ def test_natural_interface_order_and_logical_interface_exclusion():
         PortDescriptor(name="Vlan1", physical=False, classes=[PortClass.ACCESS_CAPABLE]),
         PortDescriptor(name="FastEthernet0/2", classes=[PortClass.ACCESS_CAPABLE]),
     ])] == ["FastEthernet0/2"]
+
+
+def _compile_one_pc_with_exact_binding(device_port: str):
+    intent = EnterpriseIntent(
+        name="Exact physical binding",
+        sites=[SiteIntent(
+            name="Site",
+            type=SiteType.BRANCH,
+            endpoints=[_requirement(DeviceRole.USER_PC, 1)],
+        )],
+    )
+    enterprise = _design(intent)
+    hardware = HardwarePlanner().plan(enterprise, [_candidate()])
+    site = hardware.site_hardware[0]
+    switch = site.devices[0]
+    exact_site = site.model_copy(update={
+        "devices": [switch.model_copy(update={"semantic_name": "Switch10"})],
+        "endpoint_bindings": [EndpointPortBinding(
+            endpoint_id="endpoint/site/default/user_pc/001",
+            device_id=switch.id,
+            device_port=device_port,
+            endpoint_port="FastEthernet0",
+            provenance="canonical_reference",
+        )],
+    })
+    catalog = PacketTracerTopologyCatalogAdapter()
+    return compile_enterprise_topology(
+        enterprise,
+        hardware.model_copy(update={"site_hardware": [exact_site]}),
+        catalog.compilation_profile(),
+        catalog.cable_for,
+    )
+
+
+def test_exact_semantic_name_and_endpoint_port_binding_override_generated_allocation():
+    result = _compile_one_pc_with_exact_binding("FastEthernet0/24")
+
+    assert result.is_valid, [item.model_dump(mode="json") for item in result.issues]
+    assert result.plan is not None
+    switch = next(item for item in result.plan.devices if item.network_layer == "access")
+    endpoint_link = next(
+        item for item in result.plan.links
+        if item.link_role == ConcreteLinkRole.ENDPOINT_ACCESS.value
+    )
+    assert switch.name == "Switch10"
+    assert endpoint_link.device_a_id == switch.id
+    assert endpoint_link.port_a == "FastEthernet0/24"
+    assert endpoint_link.port_b == "FastEthernet0"
+    assert endpoint_link.metadata["binding_provenance"] == "canonical_reference"
+
+
+def test_an_exact_endpoint_binding_to_a_missing_port_fails_closed():
+    result = _compile_one_pc_with_exact_binding("FastEthernet0/99")
+
+    assert result.is_valid is False
+    assert result.plan is None
+    assert any(
+        item.code is CompilationIssueCode.PHYSICAL_PORT_MISSING
+        for item in result.issues
+    )
 
 
 def test_reference_expands_actual_endpoints_without_growth_phantoms():

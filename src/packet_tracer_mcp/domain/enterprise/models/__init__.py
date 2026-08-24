@@ -82,9 +82,10 @@ from .discovery import (
     classify_inventory_restoration,
 )
 from .hardware import (
-    AccessBlockPlan, CatalogCoverageReport, HardwareCandidate, HardwareLinkRequirement,
+    AccessBlockPlan, CatalogCoverageReport, EndpointPortBinding, HardwareCandidate, HardwareLinkRequirement,
     HardwarePlan, HardwarePlanStatus, HierarchyMode, LinkRole, ModuleInstallation,
-    NormalizedPortSpeed, PlannedNetworkDevice, PortAssignmentRange, PortClass,
+    NormalizedPortSpeed, PhysicalDesignDevice, PhysicalDesignSpec, PhysicalSiteDesign,
+    PlannedNetworkDevice, PortAssignmentRange, PortClass,
     PortDescriptor, ResiliencyLevel, SiteHardwarePlan,
 )
 from .intent import EnterpriseIntent, SiteIntent, SiteType
@@ -154,13 +155,14 @@ __all__ = [
     "ConfigurationRuntimeContext", "FieldVerificationStatus", "RuntimeActionMutation", "RuntimeConfigurationTarget",
     "RuntimeVerification", "VerificationResult",
     "DeviceCandidateStatus", "DeviceCapabilities", "DeviceIdentity", "DeviceRequirement",
-    "DeviceRole", "DeviceSelectionResult", "EndpointRequirement", "ServiceRequirement", "WanLinkRequirement",
+    "DeviceRole", "DeviceSelectionResult", "EndpointPortBinding", "EndpointRequirement", "ServiceRequirement", "WanLinkRequirement",
     "DiscoverySource", "E4ReadinessReport", "E4ReadinessState", "EndpointGroup", "EnterpriseIntent",
     "EnterprisePlan", "EvidenceSource", "FloorIntent",
     "EnterpriseCompileResult", "EnterpriseCompileSummary",
     "HardwareCandidate", "HardwareLinkRequirement", "HardwarePlan", "HardwarePlanStatus",
     "HierarchyMode", "LayoutMetrics", "LayoutProfile", "LayoutRegion", "LinkRole", "ModelIdentityStatus", "ModuleInstallation", "NetworkLayer", "NormalizedPortSpeed",
-    "NetworkSegment", "PlannedNetworkDevice", "PortAssignmentRange", "PortAttachmentPolicy",
+    "NetworkSegment", "PhysicalDesignDevice", "PhysicalDesignSpec", "PhysicalSiteDesign",
+    "PlannedNetworkDevice", "PortAssignmentRange", "PortAttachmentPolicy",
     "PhysicalCompilationProfile", "PhysicalModelProfile", "PhysicalSubstitutionEvidence", "PortClass", "PortDescriptor", "ProbeCost", "ProbeDefinition", "ProbeExecutionStatus",
     "InventoryRestoration", "ProbeIsolationLevel", "classify_inventory_restoration",
     "ProbeLevel", "ProbeRequest", "ProbeSafety", "ProbeSession", "ProbeSessionResult",

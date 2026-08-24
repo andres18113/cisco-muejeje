@@ -27,6 +27,9 @@ class SegmentRequirement(BaseModel):
     hosts: int
     dhcp: bool = False
     security_zone: str = ""
+    vlan_id: int | None = None
+    subnet: str | None = None
+    gateway: str | None = None
 
 
 class NetworkSegment(BaseModel):

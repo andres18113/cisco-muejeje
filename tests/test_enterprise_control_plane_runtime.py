@@ -364,6 +364,85 @@ def test_stp_state_reobserves_without_redispatch_until_an_instance_converges():
     assert len(ios.calls) == 2
 
 
+def test_pvst_state_verifies_ieee_mode_and_compiled_numeric_priorities():
+    plan = _compile().plan
+    original_action = next(
+        item for item in plan.actions
+        if item.device_id == "sw1" and item.action_type.value == "configure_stp"
+    )
+    action = original_action.model_copy(update={
+        "mode": StpMode.PVST,
+        "required_capability": ControlPlaneCapabilityDimension.STP_PVST_CONFIG,
+    })
+    original_expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.STP_STATE
+        and item.device_id == "sw1"
+    )
+    expectation = original_expectation.model_copy(update={
+        "expected": {
+            "mode": "pvst",
+            "vlan_ids": [10, 20],
+            "root_primary_vlans": [10],
+            "root_secondary_vlans": [20],
+            "priorities": {10: 24576, 20: 28672},
+        },
+    })
+    output = _stp_output(root_vlans={10}).replace(
+        "enabled protocol rstp", "enabled protocol ieee",
+    )
+    ios = FakeControlPlaneIos({
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE): output,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions([action])
+
+    observed = runtime.verify([expectation])[0]
+
+    assert observed.status is ActionExecutionStatus.VERIFIED
+    assert observed.fields == {
+        "mode": FieldVerificationStatus.VERIFIED,
+        "vlan_ids": FieldVerificationStatus.VERIFIED,
+        "root_primary_vlans": FieldVerificationStatus.VERIFIED,
+        "root_secondary_vlans": FieldVerificationStatus.VERIFIED,
+        "priorities": FieldVerificationStatus.VERIFIED,
+    }
+
+
+def test_stp_numeric_priority_mismatch_fails_fresh_readback():
+    plan = _compile().plan
+    action = next(
+        item for item in plan.actions
+        if item.device_id == "sw1" and item.action_type.value == "configure_stp"
+    )
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.STP_STATE
+        and item.device_id == "sw1"
+    )
+    output = _stp_output(root_vlans={10}).replace(
+        "(priority 24576 sys-id-ext 1)",
+        "(priority 32768 sys-id-ext 1)",
+        1,
+    )
+    ios = FakeControlPlaneIos({
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE): output,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
+    )
+    runtime.apply_actions([action])
+
+    observed = runtime.verify([expectation])[0]
+
+    assert observed.status is ActionExecutionStatus.FAILED
+    assert observed.fields["priorities"] is FieldVerificationStatus.FAILED
+
+
 def test_stale_or_unparseable_ios_output_never_promotes_direct_state():
     plan = _compile().plan
     stp = next(item for item in plan.verification_expectations

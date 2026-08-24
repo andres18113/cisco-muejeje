@@ -31,6 +31,11 @@ class DeviceModel:
     category: str
     ports: tuple[PortSpec, ...]
     display_name: str = ""
+    # Clasificacion fisica explicita cuando la velocidad no determina el uso.
+    # Los nombres son exactos; un build puede medir un namespace distinto sin
+    # que una heuristica por prefijo lo ascienda silenciosamente.
+    access_port_names: tuple[str, ...] = ()
+    uplink_port_names: tuple[str, ...] = ()
 
 
 def _gig(slot: str) -> PortSpec:
@@ -167,6 +172,13 @@ SWITCH_3560 = DeviceModel(
 SWITCH_3650 = DeviceModel(
     pt_type="3650-24PS", category="switch", display_name="Cisco 3650-24PS",
     ports=_switch_3650_ports(),
+    access_port_names=tuple(
+        f"GigabitEthernet1/0/{index}" for index in range(1, 25)
+    ),
+    uplink_port_names=(
+        *(f"GigabitEthernet1/0/{index}" for index in range(1, 25)),
+        *(f"GigabitEthernet1/1/{index}" for index in range(1, 5)),
+    ),
 )
 SWITCH_IE2000 = DeviceModel(
     pt_type="IE-2000", category="switch", display_name="Cisco IE-2000",

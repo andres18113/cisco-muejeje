@@ -153,6 +153,63 @@ def test_design_and_expansion_keep_exact_roles_and_unique_names():
     assert len({item.name for item in expanded}) == len(expanded)
 
 
+def test_canonical_logical_plan_pins_three_vlans_nine_lans_and_three_transits():
+    designed = EnterpriseDesigner().design(cp_scale_intent())
+
+    assert designed.validation.is_valid, designed.validation.error_messages()
+    assert designed.plan is not None and designed.plan.addressing is not None
+    segments = [item for site in designed.plan.sites for item in site.segments]
+    assert {item.vlan_id for item in segments} == {10, 20, 30}
+    assert {item.role for item in segments} == {
+        SegmentRole.DATA, SegmentRole.VOICE, SegmentRole.CCTV,
+    }
+    assert {
+        (item.network, item.prefix, item.gateway)
+        for item in designed.plan.addressing.allocations
+    } == {
+        (f"172.{site}.{vlan}.0", 24, f"172.{site}.{vlan}.1")
+        for site in (16, 17, 18)
+        for vlan in (10, 20, 30)
+    }
+    assert {
+        (
+            item.source_site_id,
+            item.target_site_id,
+            item.network,
+            item.source_ipv4,
+            item.target_ipv4,
+        )
+        for item in designed.plan.addressing.transit_allocations
+    } == {
+        ("large-branch", "multilayer-branch", "10.0.0.0", "10.0.0.1", "10.0.0.2"),
+        ("large-branch", "small-branch", "10.0.0.4", "10.0.0.5", "10.0.0.6"),
+        ("multilayer-branch", "small-branch", "10.0.0.8", "10.0.0.10", "10.0.0.9"),
+    }
+
+
+def test_canonical_pairing_and_iot_segment_overrides_match_the_physical_design():
+    designed = EnterpriseDesigner().design(cp_scale_intent())
+    assert designed.plan is not None
+    expanded = EndpointGroupExpander().expand(
+        designed.plan, DeterministicNamingService(),
+    )
+
+    assert {
+        site.site_id: site.pair_pc_with_ip_phone for site in designed.plan.sites
+    } == {
+        "large-branch": False,
+        "multilayer-branch": True,
+        "small-branch": False,
+    }
+    assert len({item.pair_id for item in expanded if item.pair_id}) == 2
+    assert sum(bool(item.pair_id) for item in expanded) == 4
+    assert all(
+        item.segment_role is SegmentRole.CCTV
+        for item in expanded
+        if item.role in {DeviceRole.PRINTER, DeviceRole.ACCESS_POINT}
+    )
+
+
 def test_cp_scale_iot_roles_resolve_to_distinct_exact_packet_tracer_models():
     profile = PacketTracerTopologyCatalogAdapter().compilation_profile()
     expected = {

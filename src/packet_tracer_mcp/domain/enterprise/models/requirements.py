@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from .link_performance import LinkMedia
 from .roles import DeviceRole
+from .segments import SegmentRole
 from .service_plan import DnsRecordRequirement, ServiceType, TftpFileRequirement
 
 
@@ -23,6 +24,9 @@ class WanLinkRequirement(BaseModel):
 
     target_site_id: str
     media: LinkMedia = LinkMedia.ETHERNET
+    network: str | None = None
+    source_ipv4: str | None = None
+    target_ipv4: str | None = None
 
 
 class EndpointRequirement(BaseModel):
@@ -34,6 +38,7 @@ class EndpointRequirement(BaseModel):
     wired: bool = True
     wireless: bool = False
     addressing_preference: AddressingPreference = AddressingPreference.UNSPECIFIED
+    segment_role: SegmentRole | None = None
     metadata: dict[str, str] = Field(default_factory=dict)
 
 

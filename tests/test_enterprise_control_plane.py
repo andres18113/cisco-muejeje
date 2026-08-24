@@ -368,6 +368,23 @@ def test_exact_e4_e5_foundations_portfast_safety_and_stable_allocations():
     } <= sources
 
 
+def test_stp_expectations_preserve_primary_secondary_and_numeric_priorities():
+    plan = _compile().plan
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.STP_STATE
+        and item.device_id == "sw1"
+    )
+
+    assert expectation.expected == {
+        "mode": "rapid-pvst",
+        "vlan_ids": [10, 20],
+        "root_primary_vlans": [10],
+        "root_secondary_vlans": [20],
+        "priorities": {10: 24576, 20: 28672},
+    }
+
+
 def test_actions_form_closed_shared_dag_and_expectations_cover_acceptance():
     plan = _compile().plan
     positions = {item.id: index for index, item in enumerate(plan.actions)}

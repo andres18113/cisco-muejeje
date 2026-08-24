@@ -49,6 +49,7 @@ from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
 )
+from ...domain.enterprise.models.execution import MutationDisposition
 from ...domain.enterprise.models.port_inventory import BackendVerifiedPortInventory
 from ...domain.models.plans import DevicePlan, ModulePlan
 from ...infrastructure.catalog.measured_port_inventories import module_state_token
@@ -157,14 +158,16 @@ class PortInventoryQualifier:
             return PortInventoryQualificationResult(
                 errors=(f"Read-only workspace inventory failed: {exc}",),
             )
-        if require_empty_workspace and baseline.semantic_devices:
+        if require_empty_workspace and not baseline.safe_for_disposable_mutation:
             # Mismo criterio que el producto: sobre un workspace ajeno no se
             # crea nada, ni siquiera desechable.
             return PortInventoryQualificationResult(
                 baseline_inventory=baseline,
                 errors=(
-                    "The workspace already holds "
-                    f"{len(baseline.semantic_devices)} semantic device(s); "
+                    "The workspace inventory is not a complete empty baseline "
+                    f"(observed={baseline.observed}, "
+                    f"semantic_devices={len(baseline.semantic_devices)}, "
+                    f"links={len(baseline.links)}); "
                     "the qualification refuses to mutate a workspace it did not find empty.",
                 ),
             )
@@ -211,7 +214,10 @@ class PortInventoryQualifier:
                     target=target, observed=False, interfaces_observed=False,
                     message=f"device_creation_raised: {type(exc).__name__}: {exc}",
                 ),
-                False,
+                # La llamada pudo despacharse antes de perder su recibo. El
+                # nombre es nuestro y el baseline era vacio: intentar borrarlo
+                # es la unica salida que no puede filtrar un desechable.
+                True,
             )
         if not creation.applied:
             return (
@@ -219,7 +225,7 @@ class PortInventoryQualifier:
                     target=target, observed=False, interfaces_observed=False,
                     message=f"device_not_created: {creation.message}",
                 ),
-                False,
+                creation.disposition is MutationDisposition.UNKNOWN,
             )
 
         module_applied: bool | None = None
@@ -282,7 +288,7 @@ class PortInventoryQualifier:
                 continue
             if result.applied:
                 removed.append(device.name)
-            else:
+            elif result.disposition is not MutationDisposition.NO_OP:
                 errors.append(f"Cleanup did not apply for {device.name!r}: {result.message}")
 
         try:

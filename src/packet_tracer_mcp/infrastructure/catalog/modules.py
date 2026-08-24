@@ -1008,6 +1008,7 @@ ALL_MODULES: dict[str, ModuleSpec] = {
 SERIAL_MODULES: dict[str, str] = {
     # router pt_type → módulo que agrega serial
     "1941":    "HWIC-2T",
+    "2811":    "NM-4A/S",
     "2901":    "HWIC-2T",
     "2911":    "HWIC-2T",
     "ISR4321": "NIM-2T",

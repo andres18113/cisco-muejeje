@@ -1051,6 +1051,12 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         root_vlans = self._typed_int_list(
             expectation.expected.get("root_primary_vlans")
         )
+        secondary_vlans = self._typed_int_list(
+            expectation.expected.get("root_secondary_vlans")
+        )
+        priorities = self._typed_int_mapping(
+            expectation.expected.get("priorities")
+        )
         by_vlan = {item.vlan_id: item for item in instances}
         selected = [by_vlan[item] for item in vlan_ids or [] if item in by_vlan]
         all_vlans_present = (
@@ -1059,15 +1065,40 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         if vlan_ids is not None:
             fields["vlan_ids"] = self._field(all_vlans_present)
         mode = expectation.expected.get("mode")
-        if mode == "rapid-pvst" and all_vlans_present:
+        expected_protocol = {
+            StpMode.PVST.value: "ieee",
+            StpMode.RAPID_PVST.value: "rstp",
+        }.get(mode)
+        if expected_protocol is not None and all_vlans_present:
             fields["mode"] = self._field(
                 bool(selected)
-                and all(item.protocol.casefold() == "rstp" for item in selected)
+                and all(
+                    item.protocol.casefold() == expected_protocol
+                    for item in selected
+                )
             )
         if root_vlans is not None:
             fields["root_primary_vlans"] = self._field(all(
                 vlan in by_vlan and by_vlan[vlan].root_is_local
                 for vlan in root_vlans
+            ))
+        if secondary_vlans is not None and all(
+            vlan in by_vlan
+            and by_vlan[vlan].bridge_base_priority is not None
+            for vlan in secondary_vlans
+        ):
+            fields["root_secondary_vlans"] = self._field(all(
+                by_vlan[vlan].bridge_base_priority == 28672
+                for vlan in secondary_vlans
+            ))
+        if priorities is not None and all(
+            vlan in by_vlan
+            and by_vlan[vlan].bridge_base_priority is not None
+            for vlan in priorities
+        ):
+            fields["priorities"] = self._field(all(
+                by_vlan[vlan].bridge_base_priority == priority
+                for vlan, priority in priorities.items()
             ))
         result = self._direct_observation(
             expectation, fields, "fresh_show_spanning_tree",
@@ -1728,6 +1759,23 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         if not isinstance(value, list) or any(type(item) is not int for item in value):
             return None
         return value
+
+    @staticmethod
+    def _typed_int_mapping(value) -> dict[int, int] | None:
+        if not isinstance(value, dict):
+            return None
+        result: dict[int, int] = {}
+        for raw_key, raw_value in value.items():
+            if type(raw_value) is not int:
+                return None
+            if type(raw_key) is int:
+                key = raw_key
+            elif isinstance(raw_key, str) and raw_key.isdigit():
+                key = int(raw_key)
+            else:
+                return None
+            result[key] = raw_value
+        return result
 
     @staticmethod
     def _typed_str_list(value) -> list[str] | None:

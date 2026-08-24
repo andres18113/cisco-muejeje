@@ -38,6 +38,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalMutationResult,
     PhysicalObjectKind,
     PhysicalWorkspaceDeviceObservation,
+    PhysicalWorkspaceLinkObservation,
     PhysicalWorkspaceObservation,
 )
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
@@ -292,6 +293,79 @@ def test_a_device_the_backend_refused_to_create_leaves_nothing_behind():
     assert physical.live == []
     assert result.removed == ()
     assert any("device_not_created" in item for item in result.errors)
+
+
+def test_an_ambiguous_creation_receipt_is_still_cleaned_by_exact_name():
+    class _AmbiguousCreation(_Physical):
+        def ensure_device(self, device):
+            self.calls.append(f"ensure_device:{device.name}")
+            self.live.append(device.name)
+            return PhysicalMutationResult(
+                target_id=device.id,
+                target_kind=PhysicalObjectKind.DEVICE,
+                disposition=MutationDisposition.UNKNOWN,
+                applied=False,
+                message="receipt timed out after dispatch",
+            )
+
+    physical = _AmbiguousCreation()
+
+    result, physical, _, _ = _qualify(physical)
+
+    assert physical.live == []
+    assert result.removed == (result.device_name,)
+    assert result.restored is True
+
+
+def test_cleanup_no_op_after_an_attempt_is_not_a_cleanup_error():
+    class _AlreadyAbsent(_Physical):
+        def remove_device(self, device):
+            self.calls.append(f"remove_device:{device.name}")
+            if device.name in self.live:
+                self.live.remove(device.name)
+            return PhysicalMutationResult(
+                target_id=device.id,
+                target_kind=PhysicalObjectKind.DEVICE,
+                disposition=MutationDisposition.NO_OP,
+                applied=False,
+                message="already absent",
+            )
+
+    physical = _AlreadyAbsent()
+
+    result, _, _, _ = _qualify(physical)
+
+    assert result.restored is True
+    assert result.errors == ()
+    assert result.removed == ()
+
+
+def test_incomplete_or_links_only_workspace_is_never_mutated():
+    baselines = [
+        PhysicalWorkspaceObservation(observed=False, message="incomplete"),
+        PhysicalWorkspaceObservation(
+            observed=True,
+            links=[PhysicalWorkspaceLinkObservation(
+                class_name="CopperStraightThrough",
+                device_a="A",
+                port_a="FastEthernet0",
+                device_b="B",
+                port_b="FastEthernet0",
+            )],
+        ),
+    ]
+    for baseline in baselines:
+        class _UnsafeBaseline(_Physical):
+            def observe_workspace(self):
+                self.calls.append("observe_workspace")
+                return baseline
+
+        physical = _UnsafeBaseline()
+        result, physical, _, _ = _qualify(physical)
+
+        assert result.captures == ()
+        assert not any(item.startswith("ensure_device:") for item in physical.calls)
+        assert any("refuses to mutate" in item for item in result.errors)
 
 
 # ===================== lo que la captura afirma y lo que no ================

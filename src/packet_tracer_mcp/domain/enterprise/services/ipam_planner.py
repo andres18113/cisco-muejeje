@@ -120,14 +120,52 @@ class IPAMPlanner:
             site_blocks[site.site_id] = block
 
         transit_allocations: list[WanTransitAllocation] = []
-        for source, target, media in self._wan_pairs(enterprise_plan):
-            subnet, available = self._take_subnet(available, 30)
-            if subnet is None:
-                return self._error(
-                    result,
-                    ErrorCode.ENTERPRISE_NO_USABLE_SUBNET,
-                    f"No hay /30 disponible para el tránsito {source}<->{target}.",
-                )
+        used_transits: list[ipaddress.IPv4Network] = []
+        for source, target, media, network, source_ipv4, target_ipv4 in self._wan_pairs(
+            enterprise_plan,
+        ):
+            if network:
+                try:
+                    subnet = ipaddress.ip_network(network, strict=True)
+                    source_address = ipaddress.ip_address(source_ipv4)
+                    target_address = ipaddress.ip_address(target_ipv4)
+                except ValueError:
+                    return self._error(
+                        result,
+                        ErrorCode.ENTERPRISE_ADDRESS_SPACE_INVALID,
+                        f"El tránsito explícito {source}<->{target} no es IPv4 válido.",
+                    )
+                if (
+                    not isinstance(subnet, ipaddress.IPv4Network)
+                    or subnet.prefixlen != 30
+                    or source_address not in subnet.hosts()
+                    or target_address not in subnet.hosts()
+                    or source_address == target_address
+                ):
+                    return self._error(
+                        result,
+                        ErrorCode.ENTERPRISE_ADDRESS_SPACE_INVALID,
+                        f"El tránsito explícito {source}<->{target} debe declarar "
+                        "dos hosts distintos dentro de una red IPv4 /30.",
+                    )
+                if any(subnet.overlaps(item) for item in used_transits):
+                    return self._error(
+                        result,
+                        ErrorCode.SUBNET_OVERLAP,
+                        f"El tránsito explícito {source}<->{target} se solapa.",
+                    )
+                available = self._exclude(available, subnet)
+            else:
+                subnet, available = self._take_subnet(available, 30)
+                if subnet is None:
+                    return self._error(
+                        result,
+                        ErrorCode.ENTERPRISE_NO_USABLE_SUBNET,
+                        f"No hay /30 disponible para el tránsito {source}<->{target}.",
+                    )
+                source_address = subnet[1]
+                target_address = subnet[2]
+            used_transits.append(subnet)
             transit_allocations.append(WanTransitAllocation(
                 id=f"transit/{source}/{target}",
                 source_site_id=source,
@@ -136,8 +174,8 @@ class IPAMPlanner:
                 network=str(subnet.network_address),
                 prefix=subnet.prefixlen,
                 netmask=str(subnet.netmask),
-                source_ipv4=str(subnet[1]),
-                target_ipv4=str(subnet[2]),
+                source_ipv4=str(source_address),
+                target_ipv4=str(target_address),
             ))
 
         allocations: list[SubnetAllocation] = []
@@ -179,25 +217,43 @@ class IPAMPlanner:
         return sorted(requirements, key=lambda item: (item.prefix, item.segment_id))
 
     @staticmethod
-    def _wan_pairs(enterprise_plan: EnterprisePlan) -> list[tuple[str, str, str]]:
-        media_by_pair: dict[tuple[str, str], set[str]] = {}
+    def _wan_pairs(
+        enterprise_plan: EnterprisePlan,
+    ) -> list[tuple[str, str, str, str, str, str]]:
+        declarations: dict[
+            tuple[str, str],
+            list[tuple[str, str, str, str, str, str]],
+        ] = {}
         known = {site.site_id for site in enterprise_plan.sites}
         for site in enterprise_plan.sites:
             for uplink in site.uplinks:
                 if uplink.target_site_id not in known or uplink.target_site_id == site.site_id:
                     continue
                 pair = tuple(sorted((site.site_id, uplink.target_site_id)))
-                media_by_pair.setdefault(pair, set()).add(uplink.media.value)
+                declarations.setdefault(pair, []).append((
+                    site.site_id,
+                    uplink.target_site_id,
+                    uplink.media.value,
+                    uplink.network or "",
+                    uplink.source_ipv4 or "",
+                    uplink.target_ipv4 or "",
+                ))
         # El filtro `len(media) == 1` NO es una política de descarte silencioso:
         # un par con medios incompatibles ya fue rechazado antes de llegar acá,
         # por `requirements_validator` con ENTERPRISE_WAN_MEDIA_CONFLICT. Acá es
         # defensa en profundidad -- ante un plan imposible se prefiere no
         # inventar un medio a elegir uno de los dos.
-        return [
-            (pair[0], pair[1], next(iter(media)))
-            for pair, media in sorted(media_by_pair.items())
-            if len(media) == 1
-        ]
+        resolved: list[tuple[str, str, str, str, str, str]] = []
+        for pair, entries in sorted(declarations.items()):
+            media = {item[2] for item in entries}
+            if len(media) != 1:
+                continue
+            explicit = [item for item in entries if any(item[3:])]
+            if explicit:
+                resolved.append(sorted(explicit)[0])
+            else:
+                resolved.append((pair[0], pair[1], next(iter(media)), "", "", ""))
+        return resolved
 
     @staticmethod
     def _site_prefix(requirements: list[SubnetRequirement]) -> int:
@@ -249,7 +305,48 @@ class IPAMPlanner:
     ) -> tuple[list[SubnetAllocation], PlanError | None]:
         available = [block]
         allocations: list[SubnetAllocation] = []
+        segment_by_id = {item.name: item for item in site.segments}
+        automatic: list[SubnetRequirement] = []
+        explicit_networks: list[ipaddress.IPv4Network] = []
         for requirement in requirements:
+            segment = segment_by_id[requirement.segment_id]
+            if not segment.subnet:
+                automatic.append(requirement)
+                continue
+            try:
+                subnet = ipaddress.ip_network(segment.subnet, strict=True)
+                gateway = ipaddress.ip_address(segment.gateway or "")
+            except ValueError:
+                return [], PlanError(
+                    ErrorCode.ENTERPRISE_ADDRESS_SPACE_INVALID,
+                    f"El segmento {segment.name!r} no declara subnet/gateway IPv4 válidos.",
+                    site.name,
+                )
+            if (
+                not isinstance(subnet, ipaddress.IPv4Network)
+                or not subnet.subnet_of(block)
+                or gateway not in subnet.hosts()
+                or usable_hosts(subnet.prefixlen) < requirement.required_usable_hosts
+            ):
+                return [], PlanError(
+                    ErrorCode.SEGMENT_ADDRESS_SPACE_TOO_SMALL,
+                    f"El segmento explícito {segment.name!r} no cabe en {block} "
+                    "o no satisface su demanda.",
+                    site.name,
+                )
+            if any(subnet.overlaps(item) for item in explicit_networks):
+                return [], PlanError(
+                    ErrorCode.SUBNET_OVERLAP,
+                    f"El segmento explícito {segment.name!r} se solapa.",
+                    site.name,
+                )
+            explicit_networks.append(subnet)
+            available = self._exclude(available, subnet)
+            allocations.append(self._allocation(
+                subnet, requirement, gateway=str(gateway),
+            ))
+
+        for requirement in automatic:
             subnet, available = self._take_subnet(available, requirement.prefix)
             if subnet is None:
                 return [], PlanError(
@@ -261,13 +358,18 @@ class IPAMPlanner:
         return allocations, None
 
     @staticmethod
-    def _allocation(network: ipaddress.IPv4Network, requirement: SubnetRequirement) -> SubnetAllocation:
+    def _allocation(
+        network: ipaddress.IPv4Network,
+        requirement: SubnetRequirement,
+        *,
+        gateway: str | None = None,
+    ) -> SubnetAllocation:
         return SubnetAllocation(
             segment_id=requirement.segment_id,
             network=str(network.network_address),
             prefix=network.prefixlen,
             netmask=str(network.netmask),
-            gateway=str(network[1]),
+            gateway=gateway or str(network[1]),
             first_usable=str(network[1]),
             last_usable=str(network[-2]),
             broadcast=str(network.broadcast_address),

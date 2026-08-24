@@ -48,6 +48,7 @@ from ...domain.enterprise.models.configuration import (
     VerificationKind,
 )
 from ...domain.enterprise.models.configuration_runtime import RuntimeVerification
+from ...domain.enterprise.models.execution import MutationDisposition
 from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
@@ -172,13 +173,15 @@ class AccessPortReadbackQualifier:
                 model=model,
                 errors=(f"Read-only workspace inventory failed: {exc}",),
             )
-        if require_empty_workspace and baseline.semantic_devices:
+        if require_empty_workspace and not baseline.safe_for_disposable_mutation:
             return AccessPortReadbackQualificationResult(
                 model=model,
                 baseline_inventory=baseline,
                 errors=(
-                    "The workspace already holds "
-                    f"{len(baseline.semantic_devices)} semantic device(s); "
+                    "The workspace inventory is not a complete empty baseline "
+                    f"(observed={baseline.observed}, "
+                    f"semantic_devices={len(baseline.semantic_devices)}, "
+                    f"links={len(baseline.links)}); "
                     "the qualification refuses to mutate a workspace it did not "
                     "find empty.",
                 ),
@@ -232,6 +235,10 @@ class AccessPortReadbackQualifier:
             created.append(device)
             return (), (), [f"device_creation_raised: {type(exc).__name__}: {exc}"]
         if not creation.applied:
+            if creation.disposition is MutationDisposition.UNKNOWN:
+                # Recibo ambiguo: la llamada puede haberse aplicado. El nombre
+                # reservado y el baseline vacio permiten una limpieza exacta.
+                created.append(device)
             return (), (), [f"device_not_created: {creation.message}"]
         created.append(device)
 
@@ -398,7 +405,7 @@ class AccessPortReadbackQualifier:
                 continue
             if result.applied:
                 removed.append(device.name)
-            else:
+            elif result.disposition is not MutationDisposition.NO_OP:
                 errors.append(
                     f"Cleanup did not apply for {device.name!r}: {result.message}"
                 )

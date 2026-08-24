@@ -13,7 +13,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.compilation import LayoutProfile
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import HardwarePlanStatus
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import cp_scale_intent
+from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
+    cp_scale_scale_fixture_intent,
+)
 from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
@@ -36,7 +38,7 @@ _LAYOUT = LayoutProfile(canvas_width=16_000, canvas_height=8_000)
 
 
 def _compile():
-    designed = EnterpriseDesigner().design(cp_scale_intent())
+    designed = EnterpriseDesigner().design(cp_scale_scale_fixture_intent())
     assert designed.validation.is_valid and designed.plan is not None
     catalog = EnterpriseCapabilityAdapter()
     switch = next(
@@ -160,4 +162,3 @@ def test_ten_full_rebuilds_keep_all_e4_hashes_stable():
     assert len({item.layout_hash for item in results}) == 1
     assert len({item.artifact_hash for item in results}) == 1
     assert len({item.semantic_hash for item in results}) == 1
-

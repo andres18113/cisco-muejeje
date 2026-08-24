@@ -50,16 +50,33 @@ def plan_site(intent: SiteIntent, default_growth_percent: float) -> SitePlan:
                 counts[role] += endpoint.count
                 dhcp[role] = dhcp[role] or endpoint.addressing_preference == AddressingPreference.DHCP
 
-    plan.segments = [
-        NetworkSegment(
-            name=f"{plan.site_id}-{role.value}",
-            role=role,
-            site=plan.site_id,
-            host_requirement=count,
-            growth_percent=None,
-            dhcp=dhcp[role],
-        )
-        for role, count in sorted(counts.items(), key=lambda item: item[0].value)
-    ]
+    if intent.segments:
+        plan.segments = [
+            NetworkSegment(
+                name=f"{plan.site_id}-{segment.role.value}",
+                role=segment.role,
+                site=plan.site_id,
+                host_requirement=segment.hosts,
+                growth_percent=None,
+                dhcp=segment.dhcp,
+                security_zone=segment.security_zone,
+                vlan_id=segment.vlan_id,
+                subnet=segment.subnet,
+                gateway=segment.gateway,
+            )
+            for segment in sorted(intent.segments, key=lambda item: item.role.value)
+        ]
+    else:
+        plan.segments = [
+            NetworkSegment(
+                name=f"{plan.site_id}-{role.value}",
+                role=role,
+                site=plan.site_id,
+                host_requirement=count,
+                growth_percent=None,
+                dhcp=dhcp[role],
+            )
+            for role, count in sorted(counts.items(), key=lambda item: item[0].value)
+        ]
     plan.topology = HierarchyPlanner().design(plan)
     return plan

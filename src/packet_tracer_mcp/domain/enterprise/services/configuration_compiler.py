@@ -228,7 +228,8 @@ class ConfigurationCompiler:
         )
         pair_members = self._pair_members(topology.devices)
         access_actions, endpoint_access, switch_local_vlans = self._access_actions(
-            topology, links, devices, endpoint_segments, segment_vlans, pair_members, issues,
+            topology, links, devices, site_segments, endpoint_segments,
+            segment_vlans, pair_members, issues,
         )
         actions.extend(access_actions)
 
@@ -656,8 +657,15 @@ class ConfigurationCompiler:
                     _device_key(endpoint),
                 ))
                 continue
+            try:
+                explicit_segment = SegmentRole(endpoint.metadata["segment_role"])
+            except (KeyError, ValueError):
+                explicit_segment = None
             segment_role = assignment.segment_for(EndpointRequirement(
-                role=role, count=1, wireless=endpoint.wireless,
+                role=role,
+                count=1,
+                wireless=endpoint.wireless,
+                segment_role=explicit_segment,
             ))
             segment = segments.get((endpoint.site_id, segment_role))
             if segment is None:
@@ -684,6 +692,7 @@ class ConfigurationCompiler:
         topology: TopologyPlan,
         links: list[LinkPlan],
         devices: dict[str, DevicePlan],
+        site_segments: dict[tuple[str, SegmentRole], NetworkSegment],
         endpoint_segments: dict[str, NetworkSegment],
         segment_vlans: dict[str, int],
         pairs: dict[str, dict[str, DevicePlan]],
@@ -718,17 +727,25 @@ class ConfigurationCompiler:
             voice_vlan: int | None = None
             endpoint_ids = [endpoint_id]
             pair_id = endpoint.metadata.get("pair_id", "")
-            if endpoint.enterprise_role == DeviceRole.IP_PHONE.value and pair_id in pairs:
-                pc = pairs[pair_id].get(DeviceRole.USER_PC.value)
+            if endpoint.enterprise_role == DeviceRole.IP_PHONE.value:
                 voice_segment = endpoint_segments.get(endpoint_id)
-                data_segment = endpoint_segments.get(_device_key(pc)) if pc else None
+                pc = (
+                    pairs[pair_id].get(DeviceRole.USER_PC.value)
+                    if pair_id in pairs else None
+                )
+                data_segment = (
+                    endpoint_segments.get(_device_key(pc))
+                    if pc is not None
+                    else site_segments.get((endpoint.site_id, SegmentRole.DATA))
+                )
                 if voice_segment and data_segment:
                     voice_vlan = segment_vlans.get(voice_segment.name)
                     paired_data_vlan = segment_vlans.get(data_segment.name)
                     if voice_vlan is None or paired_data_vlan is None:
                         continue
                     data_vlan = paired_data_vlan
-                    endpoint_ids.append(_device_key(pc))
+                    if pc is not None:
+                        endpoint_ids.append(_device_key(pc))
             action = ConfigureAccessPort(
                 id=_action_id("access", switch_id, switch_port, data_vlan, voice_vlan or ""),
                 phase=ConfigurationPhase.L2_INTERFACES,

@@ -37,6 +37,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
     PortInventoryEvidenceTier,
     resolve_port_inventory,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.hardware import PortClass
 from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     compute_topology_hashes,
@@ -67,6 +68,94 @@ OBSERVED_IE2000 = [
     "FastEthernet1/5", "FastEthernet1/6", "FastEthernet1/7", "FastEthernet1/8",
     "GigabitEthernet1/1", "GigabitEthernet1/2", "Vlan1",
 ]
+
+
+@pytest.mark.parametrize(("model", "modules", "expected_ports"), [
+    (
+        "2811",
+        [],
+        ["FastEthernet0/0", "FastEthernet0/1", "Vlan1"],
+    ),
+    (
+        "2811",
+        [module_state_token("NM-4A/S", "1")],
+        [
+            "FastEthernet0/0", "FastEthernet0/1",
+            "Serial1/0", "Serial1/1", "Serial1/2", "Serial1/3", "Vlan1",
+        ],
+    ),
+    (
+        "2960-24TT",
+        [],
+        sorted([
+            *(f"FastEthernet0/{index}" for index in range(1, 25)),
+            "GigabitEthernet0/1", "GigabitEthernet0/2", "Vlan1",
+        ]),
+    ),
+    (
+        "3650-24PS",
+        [],
+        sorted([
+            *(f"GigabitEthernet1/0/{index}" for index in range(1, 25)),
+            *(f"GigabitEthernet1/1/{index}" for index in range(1, 5)),
+            "Vlan1",
+        ]),
+    ),
+    ("Laptop-PT", [], ["Bluetooth", "FastEthernet0"]),
+])
+def test_cp_scale_canonical_models_have_fresh_exact_build_port_evidence(
+    model: str, modules: list[str], expected_ports: list[str],
+):
+    resolution = backend_verified_port_inventory(
+        model,
+        backend_version=BUILD,
+        installed_modules=modules,
+    )
+
+    assert resolution.tier is PortInventoryEvidenceTier.BACKEND_VERIFIED
+    assert resolution.ports == expected_ports
+    assert resolution.permits(expected_ports[:-1]) is True
+    assert "cp-scale-canonical-port-qualification" in resolution.reason
+
+
+def test_2811_serial_option_matches_the_fresh_module_state_evidence():
+    candidate = next(
+        item
+        for item in EnterpriseCapabilityAdapter().hardware_candidates("router", BUILD)
+        if item.model == "2811"
+    )
+
+    assert len(candidate.module_options) == 1
+    option = candidate.module_options[0]
+    assert option.module == "NM-4A/S"
+    assert option.slot == "1"
+    assert option.provided_ports == [
+        "Serial1/0", "Serial1/1", "Serial1/2", "Serial1/3",
+    ]
+    carded = backend_verified_port_inventory(
+        "2811",
+        backend_version=BUILD,
+        installed_modules=[module_state_token(option.module, option.slot or "")],
+    )
+    assert carded.permits(option.provided_ports) is True
+
+
+def test_3650_measured_gigabit_access_bank_keeps_typed_port_roles():
+    candidate = next(
+        item
+        for item in EnterpriseCapabilityAdapter().hardware_candidates("switch", BUILD)
+        if item.model == "3650-24PS"
+    )
+    by_name = {item.name: set(item.classes) for item in candidate.ports}
+
+    for index in range(1, 25):
+        classes = by_name[f"GigabitEthernet1/0/{index}"]
+        assert PortClass.ACCESS_CAPABLE in classes
+        assert PortClass.UPLINK_CAPABLE in classes
+    for index in range(1, 5):
+        classes = by_name[f"GigabitEthernet1/1/{index}"]
+        assert PortClass.ACCESS_CAPABLE not in classes
+        assert PortClass.UPLINK_CAPABLE in classes
 
 
 @pytest.mark.parametrize(("model", "required_ports"), [
@@ -201,11 +290,9 @@ class TestRow3EvidenceNeverMigratesAcrossBuilds:
 
 class TestRow4EvidenceNeverMigratesAcrossModels:
     def test_another_models_evidence_is_not_reused(self):
-        # `2960-24TT` sigue sin medir: la seleccion por capacidades elige
-        # `2950T-24` para ese rol, asi que nada de lo que este repo ejecuta lo
-        # necesita. Antes esta fila usaba `2950T-24`, que la cualificacion MEG-5
-        # midio; la fila es sobre PRESTAR evidencia, no sobre ese modelo.
-        resolution = backend_verified_port_inventory("2960-24TT", backend_version=BUILD)
+        # La fila es sobre PRESTAR evidencia, no sobre un modelo concreto. El
+        # 2901 sigue sin medir aunque otros routers y switches ya se midieron.
+        resolution = backend_verified_port_inventory("2901", backend_version=BUILD)
 
         assert resolution.tier is PortInventoryEvidenceTier.UNKNOWN
         assert "No backend-verified port inventory exists" in resolution.reason
@@ -213,7 +300,7 @@ class TestRow4EvidenceNeverMigratesAcrossModels:
         assert resolution.permits(["FastEthernet1/1"]) is False
         # Y el `2950T-24`, que si esta medido, tampoco se la presta.
         assert backend_verified_port_inventory(
-            "2960-24TT", backend_version=BUILD,
+            "2901", backend_version=BUILD,
         ).permits(["FastEthernet0/1"]) is False
 
     def test_module_state_is_part_of_the_scope(self):
@@ -235,22 +322,17 @@ class TestRow4EvidenceNeverMigratesAcrossModels:
 # --------------------------------------------------------------------------
 
 class TestRow5DeclaredOnlyModelsStayDeclared:
-    def test_the_reference_switch_has_no_backend_evidence(self):
-        """`2960-24TT` es el modelo que fija la topologia de referencia.
-
-        Nunca se corrio por este seam, asi que no tiene evidencia y no debe
-        obtenerla por parecerse a los que si la tienen.
-        """
-        resolution = backend_verified_port_inventory("2960-24TT", backend_version=BUILD)
+    def test_an_unmeasured_router_has_no_backend_evidence(self):
+        resolution = backend_verified_port_inventory("2901", backend_version=BUILD)
 
         assert resolution.tier is PortInventoryEvidenceTier.UNKNOWN
-        assert resolution.permits(["FastEthernet0/1"]) is False
+        assert resolution.permits(["GigabitEthernet0/0"]) is False
 
     def test_the_declared_catalogue_still_describes_it(self):
-        declared = EnterpriseCapabilityAdapter().port_descriptors_for("2960-24TT")
+        declared = EnterpriseCapabilityAdapter().port_descriptors_for("2901")
 
         assert [item.name for item in declared][:2] == [
-            "FastEthernet0/1", "FastEthernet0/2",
+            "GigabitEthernet0/0", "GigabitEthernet0/1",
         ]
         assert {item.source for item in declared} == {"catalog"}
 
@@ -360,7 +442,7 @@ class TestRow8NoModelNameSpecialCase:
 class TestRow9PreflightFailureMutatesNothing:
     def test_a_model_without_port_evidence_never_reaches_a_mutation(self):
         runtime = _RefusesEveryMutation()
-        topology = _topology("2960-24TT", ["FastEthernet0/1"])
+        topology = _topology("2901", ["GigabitEthernet0/0"])
 
         result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
             topology, environment_fingerprint=_fingerprint(),
@@ -369,7 +451,7 @@ class TestRow9PreflightFailureMutatesNothing:
         assert result.failure_code is PhysicalDeploymentFailureCode.PORT_EVIDENCE_UNAVAILABLE
         assert runtime.calls == []
         assert result.manifest is None
-        assert any("2960-24TT" in message for message in result.errors)
+        assert any("2901" in message for message in result.errors)
 
     def test_declared_port_names_on_a_measured_model_are_refused(self):
         """El caso exacto de MEG-4 run 2, ahora detectado sin mutar nada."""
@@ -415,7 +497,7 @@ class TestRow10And11NothingIsRemovedOnAPortEvidenceFailure:
     def test_a_preflight_refusal_leaves_the_workspace_untouched(self):
         """Sin mutacion no hay nada que limpiar, y limpiar igual seria tocar lo ajeno."""
         runtime = _RefusesEveryMutation()
-        topology = _topology("2960-24TT", ["FastEthernet0/1"])
+        topology = _topology("2901", ["GigabitEthernet0/0"])
 
         result = EnterprisePhysicalTopologyDeployer(runtime).deploy(
             topology, environment_fingerprint=_fingerprint(),
@@ -458,17 +540,17 @@ class TestRow12TheUniversalCatalogueIsNotRewritten:
         (vacio y con HWIC-2T) y `2950T-24` porque la referencia de 41
         dispositivos los selecciona y el gate de puertos la rechazaba. Cada
         entrada nombra la pasada que la produjo. CP-SCALE Stage A hizo lo mismo
-        para sus cinco modelos antes no medidos.
+        para sus cinco modelos antes no medidos; la pasada canonica agrego los
+        cuatro modelos y los dos estados de 2811 que exige el diseno fisico.
         """
         assert sorted({record.model for record in MEASURED_PORT_INVENTORIES}) == [
-            "1941", "2911", "2950T-24", "3560-24PS", "7960",
-            "819HG-4G-IOX", "AccessPoint-PT", "IE-2000", "PC-PT",
-            "Printer-PT",
+            "1941", "2811", "2911", "2950T-24", "2960-24TT",
+            "3560-24PS", "3650-24PS", "7960", "819HG-4G-IOX",
+            "AccessPoint-PT", "IE-2000", "Laptop-PT", "PC-PT", "Printer-PT",
         ]
 
-    def test_the_hand_pinned_reference_switch_is_still_unmeasured(self):
-        """`2960-24TT` no se colo: nada que este repo ejecute lo selecciona."""
-        assert "2960-24TT" not in {
+    def test_an_unqualified_router_is_still_unmeasured(self):
+        assert "2901" not in {
             record.model for record in MEASURED_PORT_INVENTORIES
         }
 
@@ -484,6 +566,10 @@ class TestRow12TheUniversalCatalogueIsNotRewritten:
     ("819HG-4G-IOX", "cp-scale-stage-a-port-qualification"),
     ("AccessPoint-PT", "cp-scale-stage-a-port-qualification"),
     ("Printer-PT", "cp-scale-stage-a-port-qualification"),
+    ("2811", "cp-scale-canonical-port-qualification"),
+    ("2960-24TT", "cp-scale-canonical-port-qualification"),
+    ("3650-24PS", "cp-scale-canonical-port-qualification"),
+    ("Laptop-PT", "cp-scale-canonical-port-qualification"),
 ])
 def test_every_qualified_model_carries_its_provenance(model, pass_token):
     record = next(item for item in MEASURED_PORT_INVENTORIES if item.model == model)

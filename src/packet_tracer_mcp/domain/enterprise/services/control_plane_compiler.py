@@ -675,6 +675,8 @@ class ControlPlaneCompiler:
                     "mode": policy.mode.value,
                     "vlan_ids": action.vlan_ids,
                     "root_primary_vlans": action.root_primary_vlans,
+                    "root_secondary_vlans": action.root_secondary_vlans,
+                    "priorities": action.priorities,
                 },
                 depends_on=[action_id],
             ))

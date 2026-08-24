@@ -1,39 +1,72 @@
 # CP-SCALE current handoff
 
-## Git and governed state
+## Checkpoint identity
 
 ```text
-BRANCH                     = feature/runtime-ripv2
-UPSTREAM                   = personal/feature/runtime-ripv2
-SESSION_BASE               = e72b1280fa3c56225ffca7fae311084813ec846b
-PRE_HANDOFF_HEAD           = 9c62096b8431eaf610d03d85a9c9dc94ea097a09
-PT_BUILD                   = 9.0.1.0858
-CP_SCALE                   = OPEN
-E10                        = BLOCKED_BY_CP_SCALE
-PT_MCP_RELIABLE_ENVELOPE   = 0 qualified live points
+BRANCH                    = feature/runtime-ripv2
+UPSTREAM                  = personal/feature/runtime-ripv2
+PRE_CHECKPOINT_HEAD       = 39a403dc8cbc234df1cc5c46e51fc5c6049f0fe8
+PT_BUILD                  = 9.0.1.0858
+STAGE                     = CANONICAL_314_219_TYPED_PLAN_COMPLETE
+LIVE_GATE                 = PRE_LIVE_ROUTING_CORE
+CP_SCALE                  = OPEN
+E10                       = BLOCKED_BY_CP_SCALE
+CANONICAL_CORE_MUTATED    = NO
 ```
 
-Current commits after the session base, before the containing checkpoint commit:
+Use only `./.venv/Scripts/python.exe` from this worktree. Before any live
+Packet Tracer mutation, the executing process must prove the checkout-local
+interpreter, `packet_tracer_mcp.__file__` inside this worktree, exactly one of
+the production/test import namespaces, exact PT build `9.0.1.0858`, and a
+read-only workspace classification. Never mutate manual/user topology.
+
+## Authority and canonical design
+
+The governed authority boundary is now resolved:
+
+- `docs/reference/cp-scale/diseno_logico_IMP.md`
+- `docs/reference/cp-scale/topologia_completa_IMP.md`
+
+Those documents define **what** the CP-SCALE topology is. Current typed source
+and tests define **how** it is represented and compiled. Fresh Packet Tracer
+evidence defines what the exact backend/model/build supports. Historical code
+snippets in the references are not implementation authority.
+
+The historical `318 devices / 235 links` capacity topology remains a regression
+fixture only. It is not the canonical physical target and its historical VLAN
+policy remains isolated from the canonical scenario.
+
+The current canonical typed pipeline is:
 
 ```text
-a1828b7 feat(capabilities): qualify typed PoE hardware evidence
-ad66e5e feat(runtime): qualify CP-SCALE port inventories
-3e3e32c fix(runtime): preserve physical port alias identity
-466b362 fix(runtime): observe Packet Tracer antenna links
-838d5b9 feat(capabilities): qualify Stage A runtime gates
-3ce7b09 fix(topology): map CP-SCALE IoT roles exactly
-fbaaa63 fix(runtime): confine disposable device cleanup
-9c62096 test(governance): stabilize refreshed runtime baseline
+EnterpriseIntent
+  -> EnterprisePlan / explicit IPAM
+  -> reference-governed HardwarePlan
+  -> TopologyPlan
+  -> ConfigurationPlan
+  -> ControlPlanePlan
+
+TOPOLOGY DEVICES          = 314
+TOPOLOGY LINKS            = 219
+NETWORK DEVICES           = 18
+ENDPOINT/AP DEVICES       = 296
+WORKLOAD ENDPOINTS        = 279
+ACCESS POINTS             = 17
+INFRASTRUCTURE LINKS      = 18
+SWITCH-DIRECT LINKS       = 199
+PHONE-PC PASSTHROUGH      = 2
+WIRELESS PLACEMENTS       = 95 visual/ownership only
+WIRELESS LINKPLAN         = 0
+TOPOLOGY SEMANTIC HASH    = 73b55f22bc4670498737025887720c08974ff4af7a429df09914f808f6fb1767
 ```
 
-Use only `./.venv/Scripts/python.exe` from this worktree. Before every live
-mutation, the executing process must prove the checkout-local interpreter,
-`packet_tracer_mcp.__file__` inside this worktree, and exactly one import
-namespace.
+Network hardware is exactly `3x 2811`, `10x 2960-24TT`, `3x 3650-24PS`, and
+`2x 3560-24PS`. Semantic name, PT name, and governed IOS hostname are the
+documented names (`Router0`, `Router3`, `Router4`, `Switch0..10`, `MLS3..7`)
+where applicable. Every 2811 has one typed `NM-4A/S` in slot `1`; the canonical
+serial ports are `Serial1/0..Serial1/3`.
 
-## Current corrected topology and PoE result
-
-Exact canonical endpoint-role mappings now used by CP-SCALE:
+Exact endpoint models are preserved. In particular:
 
 ```text
 WEBCAM              -> Webcam
@@ -43,223 +76,154 @@ HUMITURE_MONITOR    -> Humiture Monitor
 TEMPERATURE_MONITOR -> Temperature Monitor
 ```
 
-All five exact identifiers were created and read back by model/name through the
-typed physical runtime on PT `9.0.1.0858`; cleanup restored the semantic
-workspace twice. Generic `Thing` is no longer the canonical substitute for
-these roles. Smoke detectors are wireless (`Bluetooth`, `Wireless0`) and add no
-PoE demand.
+There is no silent generic `Thing` substitution.
 
-Corrected Stage A composition:
+## Exact model/port qualification and containment
+
+Fresh PT `9.0.1.0858` qualification now records the exact inventories required
+by the canonical compiler:
 
 ```text
-DEVICES                    = 73
-LINKS                      = 55
-WORKLOAD_ENDPOINTS         = 65
-ACCESS_POINTS              = 3
-POE_REQUIRED               = YES
-POE_REQUIREMENT_SOURCE     = 21 phones + 3 access points
-POE_BASE_DEMAND            = 24 ports
-POE_HEADROOM_20_PERCENT    = 5 ports
-POE_DEMAND                 = 29 ports
-HARDWARE_BEFORE            = provisional 2950T-24; PoE UNKNOWN; inadmissible
-HARDWARE_AFTER             = two 3560-24PS access switches; 48 measured PoE ports
-PROVISIONAL_SWITCHES_AFTER = 0
-IMPLEMENTATION_PATH        = A
+2811 bare           = FastEthernet0/0, FastEthernet0/1, Vlan1
+2811 + NM-4A/S@1    = bare ports + Serial1/0..Serial1/3
+2960-24TT           = FastEthernet0/1..24, GigabitEthernet0/1..2, Vlan1
+3650-24PS           = GigabitEthernet1/0/1..24, GigabitEthernet1/1/1..4, Vlan1
+3560-24PS           = previously exact-build qualified inventory/PoE/VLAN/trunk evidence
+Laptop-PT           = Bluetooth, FastEthernet0
 ```
 
-Path A is correct because an existing eligible model has exact-build typed
-evidence; the defects were evidence consumption/eligibility and the endpoint
-identity substitution, not a false phone/AP demand and not a need for a new PoE
-subsystem. UNKNOWN remains fail-closed and there is no model-name promotion.
+The reference hardware planner refuses the canonical design unless every
+required port/module has exact-build evidence. The physical compiler now takes
+typed semantic names and exact endpoint-port bindings; it validates both sides
+and never silently falls back to the old capacity allocator.
 
-## Exact-build capability evidence
+Qualifier containment bugs were proved fail-first and fixed:
 
-Current reusable evidence for PT `9.0.1.0858` includes:
+- disposable mutation requires a safe read-only baseline classification;
+- incomplete or links-only baselines cannot authorize mutation;
+- ambiguous or raised creation attempts clean up only the exact reserved name;
+- cleanup is never attempted before a post-gate creation attempt;
+- cleanup `NO_OP` is accepted when fresh readback already proves absence;
+- manual/user topology remains outside the disposable ownership boundary.
 
-- `3560-24PS`: model existence, 27-port inventory, 24 access ports with complete
-  administrative/runtime power-on state, PoE capability `SUPPORTED` with
-  observed value 24, VLAN creation/readback, and trunk configuration/readback.
-- `819HG-4G-IOX`: model existence, 10-port inventory, typed L3 interface
-  configuration/readback, and controlled DHCP-server behavior.
-- Exact Stage A port inventories and physical alias normalization; an 819 alias
-  no longer produces duplicate physical-link identity.
-- Antenna links are observed through the typed physical topology runtime.
-- The five IoT models listed above are exact model/build observations.
+All disposable exact-model/port probes were removed. No canonical core device
+or link has been created in Packet Tracer.
 
-All qualification sessions restored owned objects and independently re-observed
-their baselines. Evidence is exact-model and exact-build scoped.
-
-## Router-on-a-stick and distribution correction
-
-Current intent is router-on-a-stick, not a routed L3 distribution-edge transit.
-The prior collapsed-core topology generated two distribution-to-one-router
-links while configuration governed only one, leaving the other at IOS/VLAN 1
-defaults. Current source now:
-
-- creates one deterministic distribution-to-edge-router link per collapsed-core
-  site;
-- creates a distribution-peer `redundant_link` trunk for the second
-  distribution switch;
-- preserves access-switch uplinks to both distinct distribution switches as
-  ordinary STP redundancy, never as one cross-device EtherChannel;
-- allocates the highest-speed compatible physical port first, so the 819
-  router-on-a-stick link uses `GigabitEthernet0`, not FastEthernet aliases;
-- requires typed trunk actions for governed switch-facing infrastructure links;
-- carries the explicit site VLAN set and excludes VLAN 1 from allowed VLANs;
-- emits all 819 router subinterfaces on the one selected Gigabit trunk.
-
-The current profile defines VLANs `10,20,30,40,99`. It defines no native or
-parking VLAN, so no VLAN 999 or unused-port shutdown policy was invented.
-Existing endpoint topology logic continues to apply PortFast/BPDU Guard only to
-proven endpoint-facing access ports and keeps phone data/voice VLAN duties
-separate. No HSRP is present in CP-SCALE.
-
-## Typed IOS hostname identity
-
-The canonical configuration architecture now has an identity phase and typed
-`ConfigureHostname` action. The compiler emits it for routers/switches only when
-the semantic name is already an exact safe IOS identifier; it warns and emits
-nothing rather than silently changing an invalid name. Rendering, runtime
-routing, replay classification, and verification are typed.
-
-Live disposable `3560-24PS` evidence on PT `9.0.1.0858` verified:
+## Canonical configuration result
 
 ```text
-CONFIGURE_HOSTNAME mutation = accepted
-CONFIGURE_VLAN_10 mutation  = accepted
-HOSTNAME readback           = VERIFIED / packet_tracer_device_hostname_getter
-VLAN readback               = VERIFIED / vlan_manager_object_state
+CONFIGURATION ACTIONS      = 609
+CONFIGURATION ERRORS       = 0
+CONFIGURATION WARNINGS     = 7 evidence ceilings
+CONFIGURATION HASH         = 0ed0dd39f9beac78c9ece9e32c0c3389508762e5cd186f55db8d98669108d586
+
+configure_hostname         = 18
+create_vlan                = 45
+configure_access_port      = 199
+configure_trunk            = 27
+configure_subinterface     = 9
+configure_dhcp_pool        = 9
+configure_routed_interface = 6
+set_endpoint_dhcp          = 271
+set_endpoint_static        = 25
 ```
 
-`getPrompt()` is empty for this model/build, so the verifier now prefers the
-existing structured `getHostName()` device getter. Terminal prompt/output
-identity remains a fail-closed fallback. Exact mismatch fails.
-
-## STP current state
-
-The existing `ControlPlanePlan` already represents STP mode and explicit
-per-VLAN primary/secondary ownership with priorities `24576/28672`. CP-SCALE
-currently requests PVST and deterministically places all site VLAN roots on the
-first distribution with the second as secondary; placement is plan-derived,
-not MAC-order-derived. Redundant access uplinks remain an STP topology.
-
-Rapid-PVST is NOT yet qualified or promoted for `3560-24PS`:
+Each site has only the explicit governed VLANs:
 
 ```text
-RAPID_PVST typed mutation       = ACCEPTED in the completed disposable run
-VLAN 10 / priority 24576        = applied through typed control-plane action
-fresh show spanning-tree parse  = UNOBSERVABLE / no parser-backed instance
-3560 Rapid capability profile  = ABSENT
-CP-SCALE requested STP mode     = PVST / unchanged
+VLAN 10 DATA
+VLAN 20 VOICE
+VLAN 30 IOT / printers / access points
 ```
 
-After that result, the shared control-plane runtime gained a bounded STP
-observation window: it reissues only the registered read query, never the
-configuration mutation, and preserves UNOBSERVABLE if no parser-backed instance
-appears. The fail-first regression now passes. The live rerun of this current
-code was deliberately interrupted before completion and MUST NOT be treated as
-qualification evidence.
+Every trunk allows exactly `[10,20,30]`; VLAN 1 is excluded from the allowed
+set. No native/parking VLAN policy is claimed beyond the typed plan. Every
+phone-facing switch port uses access/data VLAN 10 plus voice VLAN 20. PortFast
+and BPDU Guard compile only for the 199 proven endpoint-facing switch ports,
+never for router or switch infrastructure links; exact live edge-policy
+readback remains a later capability gate.
 
-At checkpoint recovery, no qualification Python process was running. A fresh
-governed typed workspace observation showed zero semantic devices and zero
-links, with four backend-managed Power Distribution Devices preserved. No
-cleanup mutation was required.
-
-## Validation and evidence boundaries
+Router-on-a-stick is explicit on `FastEthernet0/0` for all three routers:
 
 ```text
-FULL_PYTEST_CURRENT                = 2554 passed, 4 warnings
-CURRENT_AFFECTED_REGRESSION        = 188 passed
-COMPILEALL_SRC                     = PASS
-GIT_DIFF_CHECK                     = PASS
-GRAPHIFY_UPDATE                    = 9187 nodes / 30853 edges / 289 communities
-LAST_CORRECTED_OFFLINE_COMPOSE     = 318 devices / 235 links /
-                                     637 configuration actions /
-                                     164 control-plane actions /
-                                     159 voice actions /
-                                     zero hard layout violations /
-                                     zero generic substitutions
+Router4 = 172.16.10.1/24, 172.16.20.1/24, 172.16.30.1/24
+Router3 = 172.17.10.1/24, 172.17.20.1/24, 172.17.30.1/24
+Router0 = 172.18.10.1/24, 172.18.20.1/24, 172.18.30.1/24
 ```
 
-The ignored canonical `data/cp-scale/offline-full/` artifacts were regenerated
-from current source and the exact-build capability store. `summary.json` is
-valid, has zero substitutions, and records physical/configuration/control-plane/
-voice hashes `0b44a90a... / d0c7c79b... / 1b21d1bb... / 2978a2d1...`.
-
-The stale pre-correction Stage A run is not qualification evidence: it used
-generic IoT models and the old duplicate router links/ports. It stopped during
-configuration with 57 verified, 3 unobservable, 2 partial, 71 failed; control
-plane and voice did not run. Do not infer the corrected result from it.
-
-## 2026-08-22 bounded continuation result
-
-The fixed-code Stage-A network qualification ran against PT `9.0.1.0858` with
-the checkout-local interpreter, one production namespace, a fresh heartbeat,
-and an empty semantic workspace. Hostname and VLAN 10 were VERIFIED. The typed
-Rapid-PVST mutation was APPLIED, but four fresh registered STP reads returned
-no parser-backed instance, so mode/VLAN/root stayed UNOBSERVABLE. Cleanup was
-attempted only after the post-gate creation attempt and two final inventories
-both matched baseline. Promote no Rapid-PVST dimension; CP-SCALE remains PVST
-intent with deterministic `24576/28672` ownership, not a live PVST readback
-claim.
-
-A fail-first review exposed that the ignored session script previously called
-cleanup even when a pre-mutation gate failed. The local runner now gates cleanup
-on a post-gate creation attempt. More importantly, tracked production runtime
-commit `fbaaa63` refuses `remove_device()` for a device this runtime never
-attempted, while preserving cleanup after an ambiguous attempted creation.
-
-The full suite first exposed a stale hostname taxonomy count and a wall-clock
-TTL race in the bridge capacity test. Both were corrected; the final governed
-run is `2554 passed, 4 warnings`, and `compileall src` passes. Graphify was
-refreshed to `9187 nodes / 30853 edges / 289 communities`.
-
-## Mechanically established topology governance hard stop
-
-Do not start Checkpoint 1 until one topology is made authoritative in current
-typed source/tests. The two candidates cannot be silently combined:
+The three intentional transit networks are:
 
 ```text
-CURRENT PRODUCT AUTHORITY (cp_scale.py + normal compiler)
-  318 devices / 235 links / 22 network devices
-  3x 1941 + 19x 3560-24PS
-  deterministic generated semantic names
-
-HISTORICAL NAMED PHYSICAL REFERENCE (mission checkpoints)
-  Router4/Router0/Router3 = 3x 2811
-  Switch10/floor/Router3 access = 2960-24TT
-  Router0 branch includes 3650-24PS
-  314 devices / 219 derived cabled links / 18 network devices
+Router4 Serial1/0 <-> Router0 Serial1/0 = 10.0.0.1/30 <-> 10.0.0.2/30
+Router4 Serial1/1 <-> Router3 Serial1/1 = 10.0.0.5/30 <-> 10.0.0.6/30
+Router3 Serial1/0 <-> Router0 Serial1/1 = 10.0.0.9/30 <-> 10.0.0.10/30
 ```
 
-`docs/architecture/cp-scale-qualification.md` explicitly makes the former
-product authority and the historical documents immutable workload inputs. The
-current CP-SCALE points also have no governed three-router-core-only slice:
-points A-C are only the large branch and Router0/Router3 first appear at D.
+Serial DCE orientation must be observed after link creation; clocking may be
+applied only to the freshly observed DCE side.
 
-The historical shape cannot pass the current product preflight anyway:
+## STP governed state
 
-- `2811`, `2960-24TT`, `3650-24PS`, and `Laptop-PT` have no exact-build measured
-  port inventory; deployment fails `PORT_EVIDENCE_UNAVAILABLE` before mutation.
-- `2811` has no model-attributed control-plane profile. Canonical RIPv2 therefore
-  stays UNKNOWN for configuration/process/routes/behavior on the required core.
-- `2960-24TT` has all STP dimensions UNKNOWN; the unobservable 3560 Rapid result
-  cannot authorize another model.
-- Several historical endpoint-to-switch port assignments are explicitly left
-  unresolved, so exact links cannot be guessed.
-
-The last live observation after qualification is zero semantic devices and zero
-links, with one backend-managed Power Distribution Device preserved. No core or
-presentation topology was mutated.
+The canonical plan deliberately uses ordinary PVST as the strongest governed
+fallback. Root ownership is explicit and numeric:
 
 ```text
-NEXT_ACTIVE_STEP = Obtain a governed topology-identity decision in source/tests:
-                   either execute the current 318/235 product plan, which does
-                   not satisfy the named Router4/2811 checkpoints, or promote
-                   the historical 314/219 design into typed product authority
-                   and qualify every missing exact model/build/port/control-
-                   plane dimension first. Never merge the two shapes or borrow
-                   evidence across models.
-CP_SCALE         = OPEN / HARD_STOP_TOPOLOGY_IDENTITY_AND_MODEL_EVIDENCE
-E10              = BLOCKED_BY_CP_SCALE
+large-branch      primary Switch8 / secondary Switch10 / 24576 / 28672
+multilayer-branch primary MLS3    / secondary MLS7      / 24576 / 28672
+small-branch      primary Switch3 / no secondary        / 24576
+```
+
+The compiler preserves primary, secondary, and numeric priorities in typed
+verification expectations. Runtime verification understands PVST protocol
+`ieee`, Rapid-PVST protocol `rstp`, and compares the parser-backed bridge base
+priority rather than the VLAN-extended priority. This unit/runtime path is not
+itself model-attributed live capability evidence.
+
+Rapid-PVST remains **UNOBSERVABLE** on the exact build. Its typed mutation was
+accepted on a disposable 3560, but four fresh registered `show spanning-tree`
+reads produced no parser-backed instance. No Rapid-PVST capability was promoted.
+Cleanup restored the owned disposable baseline.
+
+## RIPv2 current state
+
+The canonical control-plane plan compiles `217` actions, `57` verification
+expectations, and exactly three typed `ConfigureRipv2` actions for Router4,
+Router0, and Router3. Each router advertises its connected `10.0.0.0` classful
+transit foundation plus its site `172.16/17/18.0.0` foundation; all three LAN
+subinterfaces are passive and the serial interfaces remain active.
+
+RIPv2 is the current governed IGP and introduces no E10 features. The typed
+renderer and registered process/learned-route/forwarding readback paths exist,
+but exact-model `2811` RIPv2 configuration/process/route/behavior capability is
+still UNKNOWN until the live core qualification. RIP has no adjacency-state
+table in this contract; do not invent or claim an adjacency readback.
+
+```text
+CONTROL-PLANE HASH        = 29be238e89d68e8d4aeb2eb6f72fe846ed9b1b2f83c888c2bb51812d591b41ba
+RIPV2 LIVE ON 2811        = NOT YET QUALIFIED
+RIPV2 ADJACENCY CLAIM     = N/A
+```
+
+## Checkpoint validation and live boundary
+
+```text
+AFFECTED REGRESSION       = 1 passed
+BOUNDED AFFECTED SUITE    = 432 passed
+COMPILEALL src            = PASS
+GIT DIFF CHECK            = PASS
+GRAPHIFY UPDATE           = PASS
+FULL SUITE                = not requested at this bounded checkpoint
+CANONICAL CORE LIVE       = NOT STARTED
+```
+
+The affected historical-fixture regression remains valid without weakening
+canonical semantics: canonical printers/APs stay on VLAN 30, while the explicit
+318/235 regression fixture retains its old five-segment capacity policy.
+
+No Router0/Router3/Router4 canonical core mutation has occurred. The next live
+step must start from fresh same-process isolation/build/workspace gates and use
+only typed/product paths.
+
+```text
+NEXT_ACTIVE_STEP = live Router0/Router3/Router4 core qualification
 ```

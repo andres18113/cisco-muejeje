@@ -36,6 +36,8 @@ class SegmentAssignmentPolicy:
     }
 
     def segment_for(self, requirement: EndpointRequirement) -> SegmentRole:
+        if requirement.segment_role is not None:
+            return requirement.segment_role
         if requirement.role is DeviceRole.LAPTOP and requirement.wireless:
             return SegmentRole.WIRELESS_CORPORATE
         return self._BY_ROLE.get(requirement.role, SegmentRole.DATA)

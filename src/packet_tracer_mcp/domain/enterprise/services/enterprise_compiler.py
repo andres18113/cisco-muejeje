@@ -368,7 +368,10 @@ class EnterpriseCompiler:
                     )
                 compiled_device = DevicePlan(
                     id=device.id,
-                    name=naming.network_name(site.site_id, device.role, index, zone_id),
+                    name=(
+                        device.semantic_name
+                        or naming.network_name(site.site_id, device.role, index, zone_id)
+                    ),
                     model=model,
                     category=model_profile.category,
                     role=_topology_role(device.role),
@@ -445,6 +448,8 @@ class EnterpriseCompiler:
                 "actual_endpoint": "true",
                 "growth_reserve": "false",
             }
+            if endpoint.segment_role is not None:
+                metadata["segment_role"] = endpoint.segment_role.value
             if model_profile.generic and model_profile.model == "Thing":
                 metadata.update({
                     "physical_model_generic": "true",
@@ -577,6 +582,91 @@ class EnterpriseCompiler:
         for items in attachable.values():
             items.sort(key=lambda item: (item.expanded.source_index, item.expanded.id))
 
+        bindings = sorted(
+            (
+                binding
+                for site in hardware.site_hardware
+                for binding in site.endpoint_bindings
+            ),
+            key=lambda item: (
+                item.endpoint_id, item.device_id, natural_interface_key(item.device_port),
+            ),
+        )
+        explicitly_bound = {item.endpoint_id for item in bindings}
+        for binding in bindings:
+            endpoint = endpoints.get(binding.endpoint_id)
+            if endpoint is None:
+                issues.append(_error(
+                    CompilationIssueCode.ENDPOINT_ASSIGNMENT_MISSING,
+                    f"El binding referencia el endpoint inexistente {binding.endpoint_id}.",
+                    binding.endpoint_id,
+                ))
+                continue
+            if binding.endpoint_id in attached:
+                issues.append(_error(
+                    CompilationIssueCode.ENDPOINT_ASSIGNMENT_MISSING,
+                    f"El endpoint {binding.endpoint_id} tiene mas de un binding fisico.",
+                    binding.endpoint_id,
+                ))
+                continue
+            if endpoint.expanded.wireless or not endpoint.expanded.wired:
+                issues.append(_error(
+                    CompilationIssueCode.ENDPOINT_ASSIGNMENT_MISSING,
+                    f"El endpoint {binding.endpoint_id} no admite un enlace cableado.",
+                    binding.endpoint_id,
+                ))
+                continue
+            if endpoint.expanded.role is DeviceRole.USER_PC and endpoint.expanded.pair_id:
+                issues.append(_error(
+                    CompilationIssueCode.ENDPOINT_ASSIGNMENT_MISSING,
+                    f"El PC pareado {binding.endpoint_id} debe enlazarse por el telefono.",
+                    binding.endpoint_id,
+                ))
+                continue
+            switch = network_devices.get(binding.device_id)
+            if switch is None:
+                issues.append(_error(
+                    CompilationIssueCode.LINK_ENDPOINT_MISSING,
+                    f"El binding referencia el hardware inexistente {binding.device_id}.",
+                    binding.device_id,
+                ))
+                continue
+            endpoint_port = binding.endpoint_port or endpoint.profile.network_port
+            if (
+                not endpoint_port
+                or is_logical_interface(endpoint_port)
+                or endpoint_port not in endpoint.profile.physical_ports
+            ):
+                issues.append(_error(
+                    CompilationIssueCode.PHYSICAL_PORT_MISSING,
+                    f"{binding.endpoint_id}: {endpoint_port or '<empty>'} no existe "
+                    "en el inventario fisico del endpoint.",
+                    binding.endpoint_id,
+                ))
+                continue
+            reservation = f"endpoint:{binding.endpoint_id}"
+            switch_port = allocator.allocate(
+                binding.device_id,
+                reservation,
+                PortClass.ACCESS_CAPABLE,
+                binding.device_port,
+                allow_class_fallback=False,
+            )
+            if not switch_port:
+                continue
+            role = (
+                ConcreteLinkRole.SERVER_ACCESS
+                if endpoint.expanded.role in _SERVER_ROLES
+                else ConcreteLinkRole.ENDPOINT_ACCESS
+            )
+            link = _link_plan(
+                switch, switch_port, endpoint.device, endpoint_port,
+                role, "access", "", physical_profile, cable_resolver,
+            )
+            link.metadata["binding_provenance"] = binding.provenance
+            links.append(link)
+            attached.add(binding.endpoint_id)
+
         assignments = sorted(
             (
                 assignment
@@ -593,20 +683,24 @@ class EnterpriseCompiler:
                     f"La asignación referencia el switch inexistente {assignment.device_id}.", assignment.device_id,
                 ))
                 continue
-            candidates = [
+            selected = [
                 item for item in attachable.get(assignment.source_group, [])
                 if assignment.start_index <= item.expanded.source_index < assignment.start_index + assignment.count
-                and item.expanded.id not in attached
             ]
-            if len(candidates) != assignment.count:
+            if len(selected) != assignment.count:
                 issues.append(_error(
                     CompilationIssueCode.ENDPOINT_ASSIGNMENT_MISSING,
-                    f"{assignment.source_group}: se esperaban {assignment.count} endpoints y se hallaron {len(candidates)}.",
+                    f"{assignment.source_group}: se esperaban {assignment.count} endpoints y se hallaron {len(selected)}.",
                     assignment.source_group,
                 ))
                 continue
             switch = network_devices[assignment.device_id]
-            for endpoint in candidates:
+            for endpoint in selected:
+                if (
+                    endpoint.expanded.id in attached
+                    or endpoint.expanded.id in explicitly_bound
+                ):
+                    continue
                 reservation = f"endpoint:{endpoint.expanded.id}"
                 switch_port = allocator.allocate(
                     assignment.device_id, reservation, PortClass.ACCESS_CAPABLE,

@@ -15,10 +15,6 @@ interpretation.
 
 **What is absent is unmeasured, which is not the same as wrong.** Every model
 not listed resolves UNKNOWN for concrete backend binding and stays planning-only.
-`2960-24TT`, the model the *hand-pinned* reference topology uses, still has no
-record here and stays UNKNOWN: capability-driven selection picks `2950T-24` for
-the same role, so nothing this repository executes needs it, and it is not this
-module's job to assume the two would agree.
 
 The `1941` and `2950T-24` records came later, from the Stage 3A4 **MEG-5**
 port-inventory qualification: the 41-device reference selects them and the port
@@ -33,6 +29,12 @@ records came from the same bounded qualifier when CP-SCALE Stage A reached the
 physical port-evidence gate. They were measured together on an empty semantic
 workspace and each observed model identity matched its requested model before
 the evidence was admitted.
+
+The canonical CP-SCALE qualification later measured the exact models required
+by the documented physical design: bare and `NM-4A/S@1` states of `2811`,
+`2960-24TT`, `3650-24PS`, and `Laptop-PT`. The same qualifier and production
+read-back seam were used, and all five disposable devices were removed before
+the empty baseline was accepted as restored.
 
 `IE-2000` is the reason this module exists. Its declared inventory numbers ports
 `0/x`; Packet Tracer numbers them `1/x`. The declaration is not corrected —
@@ -54,6 +56,9 @@ MEASURED_BACKEND_VERSION = "9.0.1.0858"
 _MEG4_RUN_2 = "stage-3a4-meg4-run2/observe_device"
 _MEG5_QUALIFICATION = "stage-3a4-meg5-port-qualification/observe_device"
 _CP_SCALE_STAGE_A_QUALIFICATION = "cp-scale-stage-a-port-qualification/observe_device"
+_CP_SCALE_CANONICAL_PORT_QUALIFICATION = (
+    "cp-scale-canonical-port-qualification/observe_device"
+)
 _CP_SCALE_819_ALIAS_QUALIFICATION = (
     "cp-scale-stage-a-link-alias-qualification/exact-link-readback"
 )
@@ -275,8 +280,123 @@ _PT_3560_24PS = BackendVerifiedPortInventory(
     source=_CP_SCALE_STAGE_A_QUALIFICATION,
 )
 
+_PT_2811 = BackendVerifiedPortInventory(
+    model="2811",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=["FastEthernet0/0", "FastEthernet0/1", "Vlan1"],
+    source=_CP_SCALE_CANONICAL_PORT_QUALIFICATION,
+)
+
+_PT_2811_WITH_NM_4A_S = BackendVerifiedPortInventory(
+    model="2811",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=["NM-4A/S@1"],
+    ports=[
+        "FastEthernet0/0",
+        "FastEthernet0/1",
+        "Serial1/0",
+        "Serial1/1",
+        "Serial1/2",
+        "Serial1/3",
+        "Vlan1",
+    ],
+    source=_CP_SCALE_CANONICAL_PORT_QUALIFICATION,
+)
+
+_PT_2960_24TT = BackendVerifiedPortInventory(
+    model="2960-24TT",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=[
+        "FastEthernet0/1",
+        "FastEthernet0/10",
+        "FastEthernet0/11",
+        "FastEthernet0/12",
+        "FastEthernet0/13",
+        "FastEthernet0/14",
+        "FastEthernet0/15",
+        "FastEthernet0/16",
+        "FastEthernet0/17",
+        "FastEthernet0/18",
+        "FastEthernet0/19",
+        "FastEthernet0/2",
+        "FastEthernet0/20",
+        "FastEthernet0/21",
+        "FastEthernet0/22",
+        "FastEthernet0/23",
+        "FastEthernet0/24",
+        "FastEthernet0/3",
+        "FastEthernet0/4",
+        "FastEthernet0/5",
+        "FastEthernet0/6",
+        "FastEthernet0/7",
+        "FastEthernet0/8",
+        "FastEthernet0/9",
+        "GigabitEthernet0/1",
+        "GigabitEthernet0/2",
+        "Vlan1",
+    ],
+    source=_CP_SCALE_CANONICAL_PORT_QUALIFICATION,
+)
+
+_PT_3650_24PS = BackendVerifiedPortInventory(
+    model="3650-24PS",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=[
+        "GigabitEthernet1/0/1",
+        "GigabitEthernet1/0/10",
+        "GigabitEthernet1/0/11",
+        "GigabitEthernet1/0/12",
+        "GigabitEthernet1/0/13",
+        "GigabitEthernet1/0/14",
+        "GigabitEthernet1/0/15",
+        "GigabitEthernet1/0/16",
+        "GigabitEthernet1/0/17",
+        "GigabitEthernet1/0/18",
+        "GigabitEthernet1/0/19",
+        "GigabitEthernet1/0/2",
+        "GigabitEthernet1/0/20",
+        "GigabitEthernet1/0/21",
+        "GigabitEthernet1/0/22",
+        "GigabitEthernet1/0/23",
+        "GigabitEthernet1/0/24",
+        "GigabitEthernet1/0/3",
+        "GigabitEthernet1/0/4",
+        "GigabitEthernet1/0/5",
+        "GigabitEthernet1/0/6",
+        "GigabitEthernet1/0/7",
+        "GigabitEthernet1/0/8",
+        "GigabitEthernet1/0/9",
+        "GigabitEthernet1/1/1",
+        "GigabitEthernet1/1/2",
+        "GigabitEthernet1/1/3",
+        "GigabitEthernet1/1/4",
+        "Vlan1",
+    ],
+    source=_CP_SCALE_CANONICAL_PORT_QUALIFICATION,
+)
+
+_PT_LAPTOP = BackendVerifiedPortInventory(
+    model="Laptop-PT",
+    backend=PACKET_TRACER_BACKEND,
+    backend_version=MEASURED_BACKEND_VERSION,
+    installed_modules=[],
+    ports=["Bluetooth", "FastEthernet0"],
+    source=_CP_SCALE_CANONICAL_PORT_QUALIFICATION,
+)
+
 MEASURED_PORT_INVENTORIES: tuple[BackendVerifiedPortInventory, ...] = (
+    _PT_2811,
+    _PT_2811_WITH_NM_4A_S,
+    _PT_2960_24TT,
     _PT_3560_24PS,
+    _PT_3650_24PS,
     _PT_819HG_4G_IOX,
     _PT_1941,
     _PT_1941_WITH_HWIC2T,
@@ -285,6 +405,7 @@ MEASURED_PORT_INVENTORIES: tuple[BackendVerifiedPortInventory, ...] = (
     _PT_ACCESS_POINT,
     _PT_IE_2000,
     _PT_IP_PHONE_7960,
+    _PT_LAPTOP,
     _PT_PC,
     _PT_PRINTER,
 )

@@ -8,6 +8,7 @@ from ..models.enterprise_plan import EnterprisePlan, SitePlan
 from ..models.hierarchy import EndpointGroup, ZonePlan
 from ..models.requirements import AddressingPreference
 from ..models.roles import DeviceRole
+from ..models.segments import SegmentRole
 from .naming import DeterministicNamingService
 
 
@@ -35,6 +36,7 @@ class ExpandedEndpoint:
     wired: bool
     wireless: bool
     addressing_preference: AddressingPreference
+    segment_role: SegmentRole | None = None
     requirement_metadata: dict[str, str] = field(default_factory=dict)
     pair_id: str = ""
 
@@ -107,6 +109,7 @@ class EndpointGroupExpander:
                         wired=requirement.wired,
                         wireless=requirement.wireless,
                         addressing_preference=requirement.addressing_preference,
+                        segment_role=requirement.segment_role,
                         requirement_metadata=dict(sorted(requirement.metadata.items())),
                     ))
         return endpoints

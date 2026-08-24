@@ -1,4 +1,4 @@
-"""Authoritative offline qualification for the canonical CP-SCALE intent."""
+"""Historical 318/235 CP-SCALE capacity fixture remains a regression."""
 
 from __future__ import annotations
 
@@ -60,6 +60,7 @@ def test_offline_qualification_covers_existing_scope_without_protocol_expansion(
     assert qualified.topology.summary.workload_endpoints == 279
     assert qualified.topology.summary.access_points == 17
     assert qualified.topology.summary.devices == 318
+    assert qualified.topology.summary.links == 235
 
     configuration = qualified.configuration.plan
     assert len(configuration.actions_of_type(

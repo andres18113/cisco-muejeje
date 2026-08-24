@@ -67,6 +67,16 @@ class PortAssignmentRange(BaseModel):
     requires_poe: bool = False
 
 
+class EndpointPortBinding(BaseModel):
+    """Exact physical attachment chosen by a governed reference design."""
+
+    endpoint_id: str
+    device_id: str
+    device_port: str
+    endpoint_port: str = ""
+    provenance: str = "reference_design"
+
+
 class LinkRole(str, Enum):
     ACCESS_LINK = "access_link"
     UPLINK = "uplink"
@@ -121,6 +131,7 @@ class PlannedNetworkDevice(BaseModel):
     additional_roles: list[DeviceRole] = Field(default_factory=list)
     network_layer: NetworkLayer
     selection_status: DeviceCandidateStatus
+    semantic_name: str = ""
     selected_model: str | None = None
     provisional_model: str | None = None
     candidate_models: list[str] = Field(default_factory=list)
@@ -169,8 +180,44 @@ class SiteHardwarePlan(BaseModel):
     devices: list[PlannedNetworkDevice] = Field(default_factory=list)
     links: list[HardwareLinkRequirement] = Field(default_factory=list)
     access_blocks: list[AccessBlockPlan] = Field(default_factory=list)
+    endpoint_bindings: list[EndpointPortBinding] = Field(default_factory=list)
     resiliency: ResiliencyLevel = ResiliencyLevel.BASIC
     warnings: list[str] = Field(default_factory=list)
+
+
+class PhysicalDesignDevice(BaseModel):
+    """One exact network device required by a governed physical design."""
+
+    id: str
+    site_id: str
+    semantic_name: str
+    role: DeviceRole
+    additional_roles: list[DeviceRole] = Field(default_factory=list)
+    network_layer: NetworkLayer
+    model: str
+    modules: list[ModuleInstallation] = Field(default_factory=list)
+    parent_group: str = ""
+    redundancy_group: str | None = None
+
+
+class PhysicalSiteDesign(BaseModel):
+    site_id: str
+    topology_pattern: TopologyPattern
+    hierarchy_mode: HierarchyMode
+    network_layers: list[NetworkLayer] = Field(default_factory=list)
+    devices: list[PhysicalDesignDevice] = Field(default_factory=list)
+    links: list[HardwareLinkRequirement] = Field(default_factory=list)
+    access_blocks: list[AccessBlockPlan] = Field(default_factory=list)
+    endpoint_bindings: list[EndpointPortBinding] = Field(default_factory=list)
+    resiliency: ResiliencyLevel = ResiliencyLevel.BASIC
+
+
+class PhysicalDesignSpec(BaseModel):
+    """Typed exact topology input for reference-driven hardware planning."""
+
+    id: str
+    sites: list[PhysicalSiteDesign] = Field(default_factory=list)
+    provenance: str = "reference_design"
 
 
 class HardwarePlan(BaseModel):
