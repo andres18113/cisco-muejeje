@@ -20,6 +20,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScalePointStatus,
     CPScalePreparedPoint,
     CPScaleRepositoryState,
+    canonical_stage_workspace_error,
     qualify_cp_scale_progressive,
     read_git_repository_state,
     write_cp_scale_live_artifacts,
@@ -32,7 +33,16 @@ from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import CPScalePo
 from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.models.plans import TopologyPlan
+from src.packet_tracer_mcp.domain.models.plans import (
+    DevicePlan,
+    LinkPlan,
+    TopologyPlan,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+    PhysicalWorkspaceDeviceObservation,
+    PhysicalWorkspaceLinkObservation,
+    PhysicalWorkspaceObservation,
+)
 from src.packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
@@ -205,3 +215,117 @@ def test_repository_reader_observes_current_exact_branch_upstream_and_head():
     assert state.branch == "feature/runtime-ripv2"
     assert state.upstream == "personal/feature/runtime-ripv2"
     assert len(state.head) == 40
+
+
+def test_canonical_stage_resume_gate_requires_exact_device_and_link_ownership():
+    topology = TopologyPlan(
+        id="owned-stage",
+        devices=[
+            DevicePlan(id="r4", name="Router4", model="2811", category="router"),
+            DevicePlan(
+                id="sw10", name="Switch10", model="2960-24TT", category="switch",
+            ),
+        ],
+        links=[LinkPlan(
+            id="edge",
+            device_a="Router4",
+            port_a="FastEthernet0/0",
+            device_b="Switch10",
+            port_b="GigabitEthernet0/1",
+            device_a_id="r4",
+            device_b_id="sw10",
+        )],
+    )
+    exact = PhysicalWorkspaceObservation(
+        devices=[
+            PhysicalWorkspaceDeviceObservation(
+                name="Router4", model="2811", ports=["FastEthernet0/0"],
+            ),
+            PhysicalWorkspaceDeviceObservation(
+                name="Switch10", model="2960-24TT", ports=["GigabitEthernet0/1"],
+            ),
+        ],
+        links=[PhysicalWorkspaceLinkObservation(
+            device_a="Switch10",
+            port_a="GigabitEthernet0/1",
+            device_b="Router4",
+            port_b="FastEthernet0/0",
+        )],
+        message="fresh_complete_workspace_inventory",
+    )
+
+    assert canonical_stage_workspace_error(exact, topology) == ""
+    assert "model" in canonical_stage_workspace_error(
+        exact.model_copy(update={
+            "devices": [
+                exact.devices[0],
+                exact.devices[1].model_copy(update={"model": "3560-24PS"}),
+            ],
+        }),
+        topology,
+    ).casefold()
+    assert "link" in canonical_stage_workspace_error(
+        exact.model_copy(update={"links": []}), topology,
+    ).casefold()
+    assert "device" in canonical_stage_workspace_error(
+        exact.model_copy(update={
+            "devices": [
+                *exact.devices,
+                PhysicalWorkspaceDeviceObservation(
+                    name="ManualPC", model="PC-PT", ports=["FastEthernet0"],
+                ),
+            ],
+        }),
+        topology,
+    ).casefold()
+
+
+def test_canonical_stage_resume_gate_accepts_only_owned_implicit_antennas():
+    topology = TopologyPlan(
+        id="wireless-stage",
+        devices=[
+            DevicePlan(
+                id="ap1",
+                name="AP1",
+                model="AccessPoint-PT",
+                category="accesspoint",
+            ),
+            DevicePlan(
+                id="iot1",
+                name="SMOKE1",
+                model="Smoke Detector",
+                category="iot",
+                wireless=True,
+            ),
+        ],
+    )
+    exact = PhysicalWorkspaceObservation(
+        devices=[
+            PhysicalWorkspaceDeviceObservation(
+                name="AP1", model="AccessPoint-PT", ports=["Port 0", "Port 1"],
+            ),
+            PhysicalWorkspaceDeviceObservation(
+                name="SMOKE1", model="Smoke Detector", ports=["Wireless0"],
+            ),
+        ],
+        links=[
+            PhysicalWorkspaceLinkObservation(
+                class_name="Antenna", device_a="AP1", port_a="Port 1",
+            ),
+            PhysicalWorkspaceLinkObservation(
+                class_name="Antenna", device_a="SMOKE1", port_a="Wireless0",
+            ),
+        ],
+        message="fresh_complete_workspace_inventory",
+    )
+
+    assert canonical_stage_workspace_error(exact, topology) == ""
+    foreign = exact.model_copy(update={
+        "links": [
+            *exact.links,
+            PhysicalWorkspaceLinkObservation(
+                class_name="Antenna", device_a="ManualAP", port_a="Port 1",
+            ),
+        ],
+    })
+    assert "antenna" in canonical_stage_workspace_error(foreign, topology).casefold()

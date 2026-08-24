@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime
@@ -17,12 +18,24 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from ...domain.enterprise.models.configuration import ConfigurationPlan, VerificationKind
+from ...domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    ConfigurationApplicationResult,
+    ConfigurationApplicationStatus,
+    FieldVerificationStatus,
+)
 from ...domain.enterprise.models.deployment import EnvironmentFingerprint
+from ...domain.enterprise.models.physical_deployment import (
+    PhysicalWorkspaceObservation,
+    physical_workspace_restoration_matches,
+)
 from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.voice_plan import VoiceCapabilityProfile, VoiceIntent
 from ...domain.enterprise.models.control_plane import ControlPlaneIntent
 from ...domain.enterprise.scenarios.cp_scale import CPScalePoint, cp_scale_intent_for
 from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
+from ...domain.models.plans import TopologyPlan
 from ...infrastructure.execution.import_isolation_preflight import ImportIsolationPreflight
 from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 from ...shared.utils import resolve_within, safe_name_component
@@ -304,6 +317,292 @@ def read_git_repository_state(root: Path) -> CPScaleRepositoryState:
         return CPScaleRepositoryState(branch=branch, upstream=upstream, head=head)
     except (OSError, subprocess.CalledProcessError) as exc:
         return CPScaleRepositoryState(error=str(exc))
+
+
+def canonical_checkpoint_repository_error(
+    *,
+    branch: str,
+    upstream: str,
+    head: str,
+    upstream_head: str,
+    dirty: bool,
+    governed_source_changed: bool,
+) -> str:
+    """Return why a retained LIVE checkpoint may not advance."""
+
+    errors: list[str] = []
+    if branch != EXPECTED_BRANCH:
+        errors.append(f"Expected branch {EXPECTED_BRANCH!r}; observed {branch!r}.")
+    if upstream != EXPECTED_UPSTREAM:
+        errors.append(
+            f"Expected upstream {EXPECTED_UPSTREAM!r}; observed {upstream!r}."
+        )
+    if dirty:
+        errors.append("Checkpoint worktree is not clean.")
+    if not head or head != upstream_head:
+        errors.append("Checkpoint HEAD is not pushed to the configured upstream.")
+    if governed_source_changed:
+        errors.append("Governed source changed after the LIVE process started.")
+    return " ".join(errors)
+
+
+def canonical_cleanup_restoration_error(
+    baseline: PhysicalWorkspaceObservation,
+    first: PhysicalWorkspaceObservation,
+    second: PhysicalWorkspaceObservation,
+) -> str:
+    """Require two fresh restorations of the exact pre-session workspace."""
+
+    if not physical_workspace_restoration_matches(baseline, first):
+        return "First cleanup observation did not restore the exact baseline."
+    if not physical_workspace_restoration_matches(baseline, second):
+        return "Second cleanup observation did not restore the exact baseline."
+    return ""
+
+
+def canonical_stage_resume_error(
+    verified_snapshot: PhysicalWorkspaceObservation,
+    current: PhysicalWorkspaceObservation,
+    topology: TopologyPlan,
+) -> str:
+    """Refuse a post-checkpoint mutation when retained physical state drifted."""
+
+    if not physical_workspace_restoration_matches(verified_snapshot, current):
+        return (
+            "Retained canonical workspace no longer matches the last VERIFIED "
+            "snapshot."
+        )
+    return canonical_stage_workspace_error(current, topology)
+
+
+def canonical_stage_configuration_error(
+    plan: ConfigurationPlan,
+    result: ConfigurationApplicationResult,
+) -> str:
+    """Accept only the two exact measured CP-SCALE E5 read-back ceilings."""
+
+    identity_errors: list[str] = []
+    if result.config_plan_id != plan.id:
+        identity_errors.append("configuration plan id")
+    if result.config_semantic_hash != plan.semantic_hash:
+        identity_errors.append("configuration semantic hash")
+    if result.source_topology_hash != plan.source_topology_hash:
+        identity_errors.append("source topology hash")
+    if identity_errors:
+        return "Configuration result mismatched " + ", ".join(identity_errors) + "."
+    if result.preflight_errors:
+        return "Configuration preflight reported: " + "; ".join(result.preflight_errors)
+
+    expected_action_ids = Counter(item.id for item in plan.actions)
+    observed_action_ids = Counter(item.action_id for item in result.action_results)
+    if expected_action_ids != observed_action_ids:
+        return "Configuration action result inventory did not match the typed plan."
+    allowed_actions = {
+        ActionExecutionStatus.APPLIED,
+        ActionExecutionStatus.NO_OP,
+        ActionExecutionStatus.REASSERTED,
+    }
+    invalid_actions = sorted(
+        f"{item.action_id}:{item.status.value}"
+        for item in result.action_results
+        if item.status not in allowed_actions
+    )
+    if invalid_actions:
+        return "Configuration action status is fail-closed: " + ", ".join(invalid_actions)
+
+    expectations = {item.id: item for item in plan.verification_expectations}
+    if len(expectations) != len(plan.verification_expectations):
+        return "Configuration plan contains duplicate verification identifiers."
+    if Counter(expectations.keys()) != Counter(
+        item.expectation_id for item in result.verification_results
+    ):
+        return "Configuration verification inventory did not match the typed plan."
+
+    ceiling_present = False
+    for item in result.verification_results:
+        expectation = expectations[item.expectation_id]
+        invalid_fields = sorted(
+            f"{name}:{status.value}"
+            for name, status in item.fields.items()
+            if status in {
+                FieldVerificationStatus.UNKNOWN,
+                FieldVerificationStatus.FAILED,
+            }
+        )
+        if invalid_fields:
+            return (
+                f"Configuration verification {item.expectation_id!r} contains "
+                "fail-closed UNKNOWN/FAILED field evidence: "
+                + ", ".join(invalid_fields)
+            )
+
+        if expectation.kind is VerificationKind.DHCP_POOL:
+            ceiling_present = True
+            if (
+                item.status is not ActionExecutionStatus.UNOBSERVABLE
+                or item.fresh_evidence
+                or item.evidence_method != "runtime_observability_limit"
+                or set(item.fields) != set(expectation.expected)
+                or set(item.fields.values()) != {FieldVerificationStatus.UNOBSERVABLE}
+            ):
+                return (
+                    f"DHCP verification {item.expectation_id!r} exceeded or "
+                    "departed from its exact UNOBSERVABLE getter ceiling."
+                )
+            continue
+
+        if expectation.kind is VerificationKind.ENDPOINT_ADDRESSING:
+            ceiling_present = True
+            expected_fields = {
+                "ipv4": FieldVerificationStatus.VERIFIED,
+                "netmask": FieldVerificationStatus.VERIFIED,
+                "gateway": FieldVerificationStatus.UNOBSERVABLE,
+                "dns": FieldVerificationStatus.UNOBSERVABLE,
+            }
+            if (
+                item.status is not ActionExecutionStatus.PARTIAL
+                or not item.fresh_evidence
+                or item.evidence_method != "structured_endpoint_getters"
+                or item.fields != expected_fields
+            ):
+                return (
+                    f"Endpoint verification {item.expectation_id!r} departed "
+                    "from the exact IP/mask VERIFIED and gateway/DNS "
+                    "UNOBSERVABLE ceiling."
+                )
+            continue
+
+        if (
+            item.status is not ActionExecutionStatus.VERIFIED
+            or not item.fresh_evidence
+            or any(
+                status is not FieldVerificationStatus.VERIFIED
+                for status in item.fields.values()
+            )
+        ):
+            return (
+                f"Configuration verification {item.expectation_id!r} is "
+                f"{item.status.value}; only fresh VERIFIED evidence is allowed "
+                "outside the two governed ceilings."
+            )
+
+    expected_status = (
+        ConfigurationApplicationStatus.PARTIAL
+        if ceiling_present else ConfigurationApplicationStatus.VERIFIED
+    )
+    if result.status is not expected_status:
+        return (
+            f"Configuration aggregate is {result.status.value}; expected the "
+            f"truthful {expected_status.value} state for this stage."
+        )
+    return ""
+
+
+def canonical_stage_workspace_error(
+    observation: PhysicalWorkspaceObservation,
+    topology: TopologyPlan,
+) -> str:
+    """Fail closed unless a fresh inventory is exactly one canonical stage.
+
+    This is the ownership gate for a persistent LIVE build.  Device names and
+    models, link endpoint/port pairs, and every port used by the plan must all
+    match before a later stage may call an idempotent mutator.  Backend-managed
+    power objects remain subject to the same narrow classification as the
+    disposable-workspace gate.
+    """
+
+    if not observation.observed:
+        return (
+            "Read-only canonical stage inventory was incomplete: "
+            + (observation.message or "unknown observation failure")
+        )
+    invalid_backend_managed = [
+        item
+        for item in observation.backend_managed_devices
+        if item.model.strip().casefold() != "power distribution device"
+        or bool(item.ports)
+    ]
+    if invalid_backend_managed:
+        return (
+            "Canonical stage inventory used an invalid backend-managed device "
+            "classification."
+        )
+
+    expected_devices = Counter((item.name, item.model) for item in topology.devices)
+    observed_devices = Counter(
+        (item.name, item.model) for item in observation.semantic_devices
+    )
+    if observed_devices != expected_devices:
+        return (
+            "Canonical stage device/model inventory mismatch: expected "
+            f"{sum(expected_devices.values())}, observed "
+            f"{sum(observed_devices.values())}."
+        )
+
+    def endpoints(device_a: str, port_a: str, device_b: str, port_b: str):
+        return tuple(sorted(((device_a, port_a), (device_b, port_b))))
+
+    antenna_devices = {
+        item.name
+        for item in topology.devices
+        if item.wireless or item.model == "AccessPoint-PT"
+    }
+    antenna_links = [
+        item for item in observation.links if item.class_name == "Antenna"
+    ]
+    antenna_owners = Counter(item.device_a for item in antenna_links)
+    if antenna_owners != Counter(antenna_devices):
+        return (
+            "Canonical stage implicit antenna ownership mismatch: expected "
+            f"{len(antenna_devices)}, observed {len(antenna_links)}."
+        )
+    ports_by_device = {
+        item.name: {port.casefold() for port in item.ports}
+        for item in observation.semantic_devices
+    }
+    invalid_antennas = sorted(
+        f"{item.device_a}:{item.port_a}"
+        for item in antenna_links
+        if item.device_b
+        or item.port_b
+        or item.device_a not in antenna_devices
+        or item.port_a.casefold() not in ports_by_device.get(item.device_a, set())
+    )
+    if invalid_antennas:
+        return (
+            "Canonical stage implicit antenna endpoint mismatch: "
+            + ", ".join(invalid_antennas)
+        )
+
+    expected_links = Counter(
+        endpoints(item.device_a, item.port_a, item.device_b, item.port_b)
+        for item in topology.links
+    )
+    observed_links = Counter(
+        endpoints(item.device_a, item.port_a, item.device_b, item.port_b)
+        for item in observation.links if item.class_name != "Antenna"
+    )
+    if observed_links != expected_links:
+        return (
+            "Canonical stage link inventory mismatch: expected "
+            f"{sum(expected_links.values())}, observed {sum(observed_links.values())}."
+        )
+
+    missing_ports = sorted({
+        f"{device}:{port}"
+        for link in topology.links
+        for device, port in (
+            (link.device_a, link.port_a),
+            (link.device_b, link.port_b),
+        )
+        if port.casefold() not in ports_by_device.get(device, set())
+    })
+    if missing_ports:
+        return (
+            "Canonical stage required port inventory mismatch: "
+            + ", ".join(missing_ports)
+        )
+    return ""
 
 
 def write_cp_scale_live_artifacts(

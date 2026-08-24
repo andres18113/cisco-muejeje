@@ -612,7 +612,7 @@ def execute_enterprise_reference(
     )
 
 
-def _configuration_contradiction(
+def configuration_application_contradiction(
     result: ConfigurationApplicationResult,
 ) -> str:
     """Por que lo aplicado impide construir encima, o cadena vacia.
@@ -798,7 +798,7 @@ def _execute_mutating_stages(
         # APPLIED != VERIFIED, y el enum lo distingue. Seguir sobre APPLIED seria
         # tratar "la mutacion volvio bien" como evidencia de efecto, que es
         # exactamente lo que el ceiling de este proyecto prohibe.
-        contradiction = _configuration_contradiction(configuration_result)
+        contradiction = configuration_application_contradiction(configuration_result)
         if contradiction:
             return state.failed(stage, runtimes, topology, e4_identity, contradiction)
 

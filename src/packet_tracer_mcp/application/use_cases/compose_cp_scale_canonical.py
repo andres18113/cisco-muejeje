@@ -10,6 +10,7 @@ and bounded LIVE qualification.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 from ...domain.enterprise.models.capabilities import DeviceCapabilities
 from ...domain.enterprise.models.configuration import (
@@ -37,6 +38,17 @@ from ...domain.enterprise.services.traffic_attribution import (
 )
 from ...domain.enterprise.scenarios.cp_scale import cp_scale_intent
 from ...domain.enterprise.scenarios.cp_scale_physical import (
+    LARGE,
+    MULTILAYER,
+    R0,
+    R3,
+    R4,
+    SMALL,
+    SW10,
+    Z1,
+    Z2,
+    ZC,
+    ZD,
     cp_scale_canonical_control_plane_intent,
     cp_scale_physical_design,
 )
@@ -61,6 +73,7 @@ from .plan_enterprise_hardware import (
 
 
 _CORE_ROUTER_NAMES = frozenset(("Router0", "Router3", "Router4"))
+_CORE_ROUTER_IDS = frozenset((R0, R3, R4))
 _CORE_CONFIGURATION_TYPES = frozenset((
     ConfigurationActionType.CONFIGURE_HOSTNAME,
     ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE,
@@ -76,6 +89,40 @@ class CPScaleRoutingCore:
     configuration: ConfigurationPlan
     control_plane: ControlPlanePlan
     forwarding_checks: dict[str, str]
+
+
+class CPScaleCanonicalStage(str, Enum):
+    """Ordered cumulative stages of the governed 314/219 physical design."""
+
+    ROUTING_CORE = "routing-core"
+    ROUTER4_SWITCH10 = "router4-switch10"
+    FLOOR1 = "floor1"
+    FLOOR2 = "floor2"
+    FLOOR3 = "floor3"
+    ROUTER0_BRANCH = "router0-branch"
+    ROUTER3_BRANCH = "router3-branch"
+    REMAINING = "remaining"
+
+
+@dataclass(frozen=True)
+class CPScaleCanonicalStageProjection:
+    """Exact typed plans for one cumulative LIVE construction boundary."""
+
+    stage: CPScaleCanonicalStage
+    topology: TopologyPlan
+    configuration: ConfigurationPlan
+    control_plane: ControlPlanePlan
+    forwarding_checks: dict[str, str]
+
+
+_CANONICAL_STAGE_ORDER = {
+    stage: index for index, stage in enumerate(CPScaleCanonicalStage)
+}
+_CORE_FORWARDING_CHECKS = {
+    "Router4": "10.0.0.10",
+    "Router0": "10.0.0.6",
+    "Router3": "10.0.0.1",
+}
 
 
 def compose_cp_scale_canonical(
@@ -206,6 +253,341 @@ def compose_cp_scale_canonical(
         configuration=configuration.plan,
         control_plane=control.plan,
     )
+
+
+def project_cp_scale_canonical_stage(
+    composition: EnterpriseReferenceComposition,
+    stage: CPScaleCanonicalStage,
+    *,
+    control_plane_capabilities: (
+        dict[str, ControlPlaneCapabilityProfile] | None
+    ) = None,
+) -> CPScaleCanonicalStageProjection:
+    """Project one exact cumulative stage without preconfiguring future links.
+
+    The routing core remains the already-qualified first closure.  Later stages
+    add only canonical devices whose site/zone is in scope, links whose two
+    endpoints are in scope, and configuration actions whose physical source is
+    already present.  This keeps a VERIFIED stage meaningful: no future-facing
+    trunk or access-port action can be counted before its link/endpoint exists.
+    """
+
+    if (
+        not composition.valid
+        or composition.topology is None
+        or composition.configuration is None
+    ):
+        raise ValueError("A complete canonical composition is required.")
+    if stage is CPScaleCanonicalStage.ROUTING_CORE:
+        core = project_cp_scale_routing_core(
+            composition,
+            control_plane_capabilities=control_plane_capabilities,
+        )
+        return CPScaleCanonicalStageProjection(
+            stage=stage,
+            topology=core.topology,
+            configuration=core.configuration,
+            control_plane=core.control_plane,
+            forwarding_checks=dict(core.forwarding_checks),
+        )
+
+    full_topology = composition.topology
+    selected_devices = [
+        item.model_copy(deep=True)
+        for item in full_topology.devices
+        if _stage_includes_device(stage, item.id, item.site_id, item.zone_id)
+    ]
+    selected_ids = {item.id for item in selected_devices}
+    selected_names = {item.name for item in selected_devices}
+    topology = full_topology.model_copy(deep=True)
+    topology.id = f"cp-scale-canonical-{stage.value}"
+    topology.name = f"CP-SCALE canonical {stage.value}"
+    topology.devices = selected_devices
+    topology.modules = [
+        item.model_copy(deep=True)
+        for item in full_topology.modules
+        if item.device in selected_names
+    ]
+    topology.links = [
+        item.model_copy(deep=True)
+        for item in full_topology.links
+        if item.device_a_id in selected_ids and item.device_b_id in selected_ids
+    ]
+    stamp_topology_hashes(topology)
+
+    configuration = _project_stage_configuration(
+        composition.configuration,
+        topology,
+        stage,
+    )
+    control_plane = _project_stage_control_plane(
+        composition,
+        topology,
+        configuration,
+        stage,
+        control_plane_capabilities=control_plane_capabilities,
+    )
+    return CPScaleCanonicalStageProjection(
+        stage=stage,
+        topology=topology,
+        configuration=configuration,
+        control_plane=control_plane,
+        forwarding_checks=dict(_CORE_FORWARDING_CHECKS),
+    )
+
+
+def project_cp_scale_canonical_delta(
+    previous: TopologyPlan,
+    current: TopologyPlan,
+) -> TopologyPlan:
+    """Return the physical delta plus existing link anchors for one stage.
+
+    Already VERIFIED modules are deliberately absent.  Packet Tracer can prove
+    a module's newly caused port effect only in the transaction that installed
+    it; replaying the cumulative module list would turn legitimate NO_OP state
+    into a false causation claim.  Existing devices appear only when a new link
+    needs them as an anchor.
+    """
+
+    previous_device_ids = {item.id for item in previous.devices}
+    current_device_ids = {item.id for item in current.devices}
+    previous_link_ids = {item.id for item in previous.links}
+    current_link_ids = {item.id for item in current.links}
+    if not previous_device_ids <= current_device_ids:
+        raise ValueError("Canonical stage devices are not cumulative.")
+    if not previous_link_ids <= current_link_ids:
+        raise ValueError("Canonical stage links are not cumulative.")
+
+    new_device_ids = current_device_ids - previous_device_ids
+    new_links = [
+        item.model_copy(deep=True)
+        for item in current.links if item.id not in previous_link_ids
+    ]
+    anchor_ids = {
+        identifier
+        for item in new_links
+        for identifier in (item.device_a_id, item.device_b_id)
+    }
+    delta_device_ids = new_device_ids | anchor_ids
+    new_device_names = {
+        item.name for item in current.devices if item.id in new_device_ids
+    }
+    delta = current.model_copy(deep=True)
+    delta.id = f"{current.id}/physical-delta"
+    delta.name = f"{current.name} physical delta"
+    delta.devices = [
+        item.model_copy(deep=True)
+        for item in current.devices if item.id in delta_device_ids
+    ]
+    delta.modules = [
+        item.model_copy(deep=True)
+        for item in current.modules if item.device in new_device_names
+    ]
+    delta.links = new_links
+    stamp_topology_hashes(delta)
+    return delta
+
+
+def _stage_includes_device(
+    stage: CPScaleCanonicalStage,
+    device_id: str,
+    site_id: str,
+    zone_id: str,
+) -> bool:
+    order = _CANONICAL_STAGE_ORDER[stage]
+    if device_id in _CORE_ROUTER_IDS:
+        return True
+    if (
+        order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.ROUTER4_SWITCH10]
+        and device_id == SW10
+    ):
+        return True
+    if order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.FLOOR1] and zone_id == Z1:
+        return True
+    if order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.FLOOR2] and zone_id == Z2:
+        return True
+    if (
+        order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.FLOOR3]
+        and zone_id in {ZC, ZD}
+    ):
+        return True
+    if (
+        order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.ROUTER0_BRANCH]
+        and site_id == MULTILAYER
+    ):
+        return True
+    return (
+        order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.ROUTER3_BRANCH]
+        and site_id == SMALL
+    )
+
+
+def _project_stage_configuration(
+    full: ConfigurationPlan,
+    topology: TopologyPlan,
+    stage: CPScaleCanonicalStage,
+) -> ConfigurationPlan:
+    selected_device_ids = {item.id for item in topology.devices}
+    selected_link_ids = {item.id for item in topology.links}
+    active_sites = _active_lan_sites(stage)
+
+    def in_scope(action) -> bool:
+        if action.device_id not in selected_device_ids:
+            return False
+        source_link_id = getattr(action, "source_link_id", "")
+        if source_link_id and source_link_id not in selected_link_ids:
+            return False
+        endpoint_ids = set(getattr(action, "endpoint_ids", ()))
+        if endpoint_ids and not endpoint_ids <= selected_device_ids:
+            return False
+        if (
+            action.action_type is ConfigurationActionType.CONFIGURE_DHCP_POOL
+            and action.site_id not in active_sites
+        ):
+            return False
+        return True
+
+    actions = [
+        item.model_copy(deep=True) for item in full.actions if in_scope(item)
+    ]
+    action_ids = {item.id for item in actions}
+    missing_dependencies = sorted({
+        dependency
+        for item in actions
+        for dependency in [*item.depends_on, *item.apply_dependencies]
+        if dependency not in action_ids
+    })
+    if missing_dependencies:
+        raise ValueError(
+            f"Canonical stage {stage.value!r} has omitted configuration "
+            "dependencies: " + ", ".join(missing_dependencies)
+        )
+
+    devices = []
+    for item in full.devices:
+        if item.device_id not in selected_device_ids:
+            continue
+        device_action_ids = [
+            identifier for identifier in item.action_ids if identifier in action_ids
+        ]
+        required = sorted({
+            action.required_capability
+            for action in actions
+            if action.device_id == item.device_id and action.required_capability
+        })
+        devices.append(item.model_copy(update={
+            "action_ids": device_action_ids,
+            "required_capabilities": required,
+        }))
+    configuration = ConfigurationPlan(
+        id=f"cfg_cp-scale-canonical-{stage.value}",
+        source_topology_id=topology.id,
+        source_topology_hash=topology.physical_identity_hash,
+        source_topology_hash_schema="physical-topology-v2",
+        actions=actions,
+        devices=devices,
+        verification_expectations=[
+            item.model_copy(deep=True)
+            for item in full.verification_expectations
+            if item.action_id in action_ids
+        ],
+    )
+    configuration.semantic_hash = configuration_plan_semantic_hash(configuration)
+    return configuration
+
+
+def _project_stage_control_plane(
+    composition: EnterpriseReferenceComposition,
+    topology: TopologyPlan,
+    configuration: ConfigurationPlan,
+    stage: CPScaleCanonicalStage,
+    *,
+    control_plane_capabilities: (
+        dict[str, ControlPlaneCapabilityProfile] | None
+    ),
+) -> ControlPlanePlan:
+    assert composition.topology is not None
+    canonical = cp_scale_canonical_control_plane_intent(composition.topology)
+    stp_sites = _completed_stp_sites(stage)
+    intent = canonical.model_copy(update={
+        "id": f"control-plane/cp-scale-canonical/{stage.value}",
+        "stp_domains": [
+            item for item in canonical.stp_domains if item.site_id in stp_sites
+        ],
+    })
+    compiled = compile_enterprise_control_plane(
+        intent,
+        topology,
+        configuration,
+        capabilities=(
+            control_plane_capabilities
+            if control_plane_capabilities is not None
+            else packet_tracer_control_plane_capabilities()
+        ),
+        traffic_flows=(
+            [
+                item for item in composition.enterprise.traffic_flows
+                if item.source_site_id in _active_lan_sites(stage)
+                and item.destination_site_id in _active_lan_sites(stage)
+            ]
+            if composition.enterprise is not None else None
+        ),
+    )
+    if not compiled.is_valid or compiled.plan is None:
+        raise ValueError(
+            f"Canonical stage {stage.value!r} control plane did not compile: "
+            + "; ".join(item.message for item in compiled.issues)
+        )
+    control = compiled.plan
+    active_prefixes = {
+        LARGE: "172.16.",
+        SMALL: "172.17.",
+        MULTILAYER: "172.18.",
+    }
+    advertised_prefixes = {
+        active_prefixes[item] for item in _active_lan_sites(stage)
+    }
+    control.verification_expectations = [
+        item for item in control.verification_expectations
+        if item.kind is not ControlPlaneVerificationKind.ROUTE_PRESENT
+        or (
+            int(item.expected.get("prefix_length", -1)) == 30
+            and str(item.expected.get("network", "")).startswith("10.0.0.")
+        )
+        or (
+            int(item.expected.get("prefix_length", -1)) == 24
+            and any(
+                str(item.expected.get("network", "")).startswith(prefix)
+                for prefix in advertised_prefixes
+            )
+        )
+    ]
+    control.semantic_hash = control_plane_plan_semantic_hash(control)
+    return control
+
+
+def _active_lan_sites(stage: CPScaleCanonicalStage) -> set[str]:
+    order = _CANONICAL_STAGE_ORDER[stage]
+    sites: set[str] = set()
+    if order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.ROUTER4_SWITCH10]:
+        sites.add(LARGE)
+    if order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.ROUTER0_BRANCH]:
+        sites.add(MULTILAYER)
+    if order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.ROUTER3_BRANCH]:
+        sites.add(SMALL)
+    return sites
+
+
+def _completed_stp_sites(stage: CPScaleCanonicalStage) -> set[str]:
+    order = _CANONICAL_STAGE_ORDER[stage]
+    sites: set[str] = set()
+    if order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.FLOOR3]:
+        sites.add(LARGE)
+    if order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.ROUTER0_BRANCH]:
+        sites.add(MULTILAYER)
+    if order >= _CANONICAL_STAGE_ORDER[CPScaleCanonicalStage.ROUTER3_BRANCH]:
+        sites.add(SMALL)
+    return sites
 
 
 def project_cp_scale_routing_core(
