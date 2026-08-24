@@ -53,6 +53,7 @@ from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_checkpoint_repository_error,
     canonical_cleanup_restoration_error,
+    canonical_configuration_retryable_operational_unknown,
     canonical_stage_configuration_error,
     canonical_stage_resume_error,
     canonical_stage_workspace_error,
@@ -484,22 +485,13 @@ def _execute_stage(
         runtime_context=context,
         deployment_manifest=manifest,
     )
-    evidence["configuration"] = configuration.model_dump(mode="json")
+    evidence["configuration_attempts"] = [configuration.model_dump(mode="json")]
     contradiction = configuration_application_contradiction(configuration)
-    evidence["configuration_contradiction"] = contradiction
+    evidence["configuration_contradictions"] = [contradiction]
     if contradiction:
         raise CanonicalLiveFailure(
             f"Configuration at {projection.stage.value!r} contradicted the plan: "
             + contradiction
-        )
-    configuration_error = canonical_stage_configuration_error(
-        projection.configuration, configuration,
-    )
-    evidence["configuration_acceptance_error"] = configuration_error
-    if configuration_error:
-        raise CanonicalLiveFailure(
-            f"Configuration at {projection.stage.value!r} exceeded its governed "
-            "observability envelope: " + configuration_error
         )
 
     ios = ControlledIosExecutor(transport.send_and_wait)
@@ -510,6 +502,43 @@ def _execute_stage(
     if not serial_ready:
         raise CanonicalLiveFailure(
             f"Serial interfaces lost up/up convergence at {projection.stage.value!r}."
+        )
+
+    configuration_error = canonical_stage_configuration_error(
+        projection.configuration, configuration,
+    )
+    if (
+        configuration_error
+        and canonical_configuration_retryable_operational_unknown(
+            projection.configuration, configuration,
+        )
+    ):
+        configuration = ConfigurationApplicator(configuration_runtime).apply(
+            projection.configuration,
+            actual_source_topology_hash=projection.topology.physical_identity_hash,
+            capabilities=composition.capabilities,
+            runtime_context=context,
+            deployment_manifest=manifest,
+        )
+        evidence["configuration_attempts"].append(
+            configuration.model_dump(mode="json")
+        )
+        contradiction = configuration_application_contradiction(configuration)
+        evidence["configuration_contradictions"].append(contradiction)
+        if contradiction:
+            raise CanonicalLiveFailure(
+                f"Configuration re-read at {projection.stage.value!r} "
+                "contradicted the plan: " + contradiction
+            )
+        configuration_error = canonical_stage_configuration_error(
+            projection.configuration, configuration,
+        )
+    evidence["configuration"] = configuration.model_dump(mode="json")
+    evidence["configuration_acceptance_error"] = configuration_error
+    if configuration_error:
+        raise CanonicalLiveFailure(
+            f"Configuration at {projection.stage.value!r} exceeded its governed "
+            "observability envelope: " + configuration_error
         )
 
     statuses = derive_foundational_statuses(

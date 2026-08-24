@@ -498,6 +498,46 @@ def canonical_stage_configuration_error(
     return ""
 
 
+def canonical_configuration_retryable_operational_unknown(
+    plan: ConfigurationPlan,
+    result: ConfigurationApplicationResult,
+) -> bool:
+    """Whether one typed re-read can close only L3 carrier/protocol UNKNOWNs.
+
+    The caller must first prove convergence independently and then invoke the
+    normal typed applicator again.  This helper never promotes the original
+    evidence; it only identifies the narrow transient shape worth re-reading.
+    """
+
+    expectations = {item.id: item for item in plan.verification_expectations}
+    candidate = result.model_copy(deep=True)
+    found = False
+    for item in candidate.verification_results:
+        expectation = expectations.get(item.expectation_id)
+        unknown_fields = {
+            name for name, status in item.fields.items()
+            if status is FieldVerificationStatus.UNKNOWN
+        }
+        failed_fields = {
+            name for name, status in item.fields.items()
+            if status is FieldVerificationStatus.FAILED
+        }
+        if failed_fields:
+            return False
+        if not unknown_fields:
+            continue
+        if (
+            expectation is None
+            or expectation.kind is not VerificationKind.L3_INTERFACE
+            or not unknown_fields <= {"status", "protocol"}
+        ):
+            return False
+        found = True
+        for name in unknown_fields:
+            item.fields[name] = FieldVerificationStatus.VERIFIED
+    return found and canonical_stage_configuration_error(plan, candidate) == ""
+
+
 def canonical_stage_workspace_error(
     observation: PhysicalWorkspaceObservation,
     topology: TopologyPlan,

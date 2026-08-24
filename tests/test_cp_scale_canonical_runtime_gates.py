@@ -11,6 +11,7 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
 from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_checkpoint_repository_error,
     canonical_cleanup_restoration_error,
+    canonical_configuration_retryable_operational_unknown,
     canonical_stage_configuration_error,
     canonical_stage_resume_error,
 )
@@ -169,6 +170,27 @@ def test_canonical_configuration_accepts_only_exact_known_observability_ceilings
     assert "unobservable" in canonical_stage_configuration_error(
         plan, non_ceiling,
     ).casefold()
+
+
+def test_only_l3_carrier_unknown_is_retryable_after_typed_convergence_proof():
+    plan, result = _floor1_configuration_result()
+    expectations = {item.id: item for item in plan.verification_expectations}
+    l3 = next(
+        item for item in result.verification_results
+        if expectations[item.expectation_id].kind is VerificationKind.L3_INTERFACE
+    )
+    l3.fields = {
+        "interface": FieldVerificationStatus.VERIFIED,
+        "ipv4": FieldVerificationStatus.VERIFIED,
+        "administrative_state": FieldVerificationStatus.VERIFIED,
+        "status": FieldVerificationStatus.UNKNOWN,
+        "protocol": FieldVerificationStatus.UNKNOWN,
+    }
+    assert canonical_stage_configuration_error(plan, result)
+    assert canonical_configuration_retryable_operational_unknown(plan, result)
+
+    l3.fields["ipv4"] = FieldVerificationStatus.UNKNOWN
+    assert not canonical_configuration_retryable_operational_unknown(plan, result)
 
 
 def _delta_result(delta, *, switch_disposition, link_disposition):
