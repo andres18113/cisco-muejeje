@@ -1,231 +1,260 @@
-# CP-SCALE current handoff
+# CP-SCALE continuation handoff
 
-## Checkpoint identity
+## Resume identity and hard boundaries
 
 ```text
-BRANCH                    = feature/runtime-ripv2
-UPSTREAM                  = personal/feature/runtime-ripv2
-PRE_CHECKPOINT_HEAD       = 0846472e8e666120cc7e690563ad8f7c0ed4fe0f
-PT_BUILD                  = 9.0.1.0858
-STAGE                     = CANONICAL_ROUTING_CORE_GOVERNED_VERIFIED
-LIVE_GATE                 = ROUTER4_TO_SWITCH10
-CP_SCALE                  = OPEN
-E10                       = BLOCKED_BY_CP_SCALE
-CANONICAL_CORE_MUTATED    = VERIFIED_THEN_CLEANED
+BRANCH = feature/runtime-ripv2
+UPSTREAM = personal/feature/runtime-ripv2
+HANDOFF_BASE_HEAD = a519987acb168ec6d3af14a7d81c0c1ef034f1f5
+PACKET_TRACER_BUILD = 9.0.1.0858
+ROUTING_CORE = GOVERNED VERIFIED
+ROUTER4_SWITCH10 = GOVERNED VERIFIED
+PT_MCP_RELIABLE_SCALE_ENVELOPE = 4 devices / 4 links
+LIVE_SEMANTIC_WORKSPACE = 0 devices / 0 links
+CLEANUP = VERIFIED twice
+FLOOR1 = NOT VERIFIED
+CP_SCALE = OPEN
+E10 = FORBIDDEN
 ```
 
-Use only `./.venv/Scripts/python.exe` from this worktree. Before any live
-Packet Tracer mutation, the executing process must prove the checkout-local
-interpreter, `packet_tracer_mcp.__file__` inside this worktree, exactly one of
-the production/test import namespaces, exact PT build `9.0.1.0858`, and a
-read-only workspace classification. Never mutate manual/user topology.
+No live run remains active. Persistent exec session `42867` terminated safely after the
+Floor-1 failure and cleanup. Do not resume or reuse it. Stay OFFLINE until both Floor-1
+defect classes below have typed, fail-first fixes and affected/full regression is green.
+Do not re-qualify the routing core or Router4/Switch10 absent a real regression.
 
-## Authority and canonical design
+Commits produced and already pushed during this run, after the requested starting HEAD
+`38bf3665881d5d367f43256668ac37c1745fd496`:
 
-The governed authority boundary is now resolved:
+```text
+420cf38 feat(cp-scale): add governed persistent live staging
+2d90b0c fix(cp-scale): reverify after serial convergence
+8a15b14 fix(e5): keep carrier outside configuration claims
+f324912 chore(cp-scale): checkpoint rematerialized routing core
+390c199 fix(cp-scale): prequalify canonical capabilities
+a9c2e57 chore(cp-scale): checkpoint reverified routing core
+d49cef7 fix(cp-scale): govern trunk readback ceiling
+b424c9e chore(cp-scale): checkpoint core with trunk evidence
+6e8196d fix(cp-scale): retain verified serial orientation
+d96b045 chore(cp-scale): checkpoint core serial inheritance
+a519987 chore(cp-scale): checkpoint Router4 Switch10
+```
+
+## Canonical authority and invariants
+
+The topology authority is:
 
 - `docs/reference/cp-scale/diseno_logico_IMP.md`
 - `docs/reference/cp-scale/topologia_completa_IMP.md`
 
-Those documents define **what** the CP-SCALE topology is. Current typed source
-and tests define **how** it is represented and compiled. Fresh Packet Tracer
-evidence defines what the exact backend/model/build supports. Historical code
-snippets in the references are not implementation authority.
+Typed sources are:
 
-The historical `318 devices / 235 links` capacity topology remains a regression
-fixture only. It is not the canonical physical target and its historical VLAN
-policy remains isolated from the canonical scenario.
+- `src/packet_tracer_mcp/domain/enterprise/scenarios/cp_scale.py`
+- `src/packet_tracer_mcp/domain/enterprise/scenarios/cp_scale_physical.py`
+- `src/packet_tracer_mcp/application/use_cases/compose_cp_scale_canonical.py`
 
-The current canonical typed pipeline is:
+The governed target is exactly 314 devices / 219 links: 18 network devices, 296
+endpoint/AP devices, 279 workload endpoints, 17 APs, 18 infrastructure links, 199
+switch-direct endpoint links, and 2 documented phone-PC passthrough links. Current
+authority pins 3x2811, 10x2960-24TT, 3x3650-24PS, and 2x3560-24PS. If evidence requires
+a stronger successor topology, update typed authority, reference documents, and tests
+together; do not silently substitute a model or change endpoint pairing.
 
-```text
-EnterpriseIntent
-  -> EnterprisePlan / explicit IPAM
-  -> reference-governed HardwarePlan
-  -> TopologyPlan
-  -> ConfigurationPlan
-  -> ControlPlanePlan
+VLAN policy is DATA 10, VOICE 20, and IoT/AP/printers 30. Phone ports require access
+VLAN 10 plus voice VLAN 20. Trunks allow only 10/20/30. The STP ceiling is PVST;
+Rapid-PVST remains unqualified. UNKNOWN fails closed and APPLIED is never VERIFIED.
+Use typed/product paths only: no raw IOS/JS, `pt_send_raw`, or E10.
 
-TOPOLOGY DEVICES          = 314
-TOPOLOGY LINKS            = 219
-NETWORK DEVICES           = 18
-ENDPOINT/AP DEVICES       = 296
-WORKLOAD ENDPOINTS        = 279
-ACCESS POINTS             = 17
-INFRASTRUCTURE LINKS      = 18
-SWITCH-DIRECT LINKS       = 199
-PHONE-PC PASSTHROUGH      = 2
-WIRELESS PLACEMENTS       = 95 visual/ownership only
-WIRELESS LINKPLAN         = 0
-TOPOLOGY SEMANTIC HASH    = 73b55f22bc4670498737025887720c08974ff4af7a429df09914f808f6fb1767
-```
+## Terminated Floor-1 run and durable evidence
 
-Network hardware is exactly `3x 2811`, `10x 2960-24TT`, `3x 3650-24PS`, and
-`2x 3560-24PS`. Semantic name, PT name, and governed IOS hostname are the
-documented names (`Router0`, `Router3`, `Router4`, `Switch0..10`, `MLS3..7`)
-where applicable. Every 2811 has one typed `NM-4A/S` in slot `1`; the canonical
-serial ports are `Serial1/0..Serial1/3`.
-
-Exact endpoint models are preserved. In particular:
+The ignored durable artifact is `data/cp-scale/live-canonical-progress.json` (last write
+`2026-08-24T18:42:56.4327703Z`). It contains only successful `routing-core` and
+`router4-switch10` stage checkpoints; Floor 1 was never checkpointed. Its Floor-1
+failure is:
 
 ```text
-WEBCAM              -> Webcam
-SMOKE_DETECTOR      -> Smoke Detector
-MOTION_DETECTOR     -> Motion Detector
-HUMITURE_MONITOR    -> Humiture Monitor
-TEMPERATURE_MONITOR -> Temperature Monitor
+CanonicalLiveFailure: Configuration at 'floor1' contradicted the plan:
+Configuration read-back contradicted the plan for: <43 action IDs>
 ```
 
-There is no silent generic `Thing` substitution.
+Cleanup reports `verified=true`. It was independently observed twice as 0 semantic
+devices / 0 links. Six backend-managed `Power Distribution Device` objects with zero
+ports remained outside the semantic workspace on both observations. No presentation
+topology was retained.
 
-## Exact model/port qualification and containment
+The user-provided canvas capture is
+`C:\Users\Andres\Downloads\topologia_floor1.png` (198204 bytes; UTC
+`2026-08-24T18:29:25`). It visibly shows all 21 Cisco 7960 switch links red while nearby
+PC/AP links are mostly green. Computer Use confirmed the MCP Control Center/log window
+had HTTP and file bridges connected with valid token state. Two exact Packet Tracer
+window activation/capture attempts timed out, so UI automation was stopped; the user's
+capture is the reliable visual evidence. It proves the symptom, not its cause.
 
-Fresh PT `9.0.1.0858` qualification now records the exact inventories required
-by the canonical compiler:
+## Defect A: PoE admission fails open
+
+This defect is mechanically proven and is independent of the 43 configuration
+contradictions unless later evidence connects them.
+
+- Floor 1 declares `required_poe_ports=24` in `cp_scale_physical.py`.
+- `cp_scale.py` marks every Cisco 7960 and AP `requires_poe=True`.
+- Floor 1 binds 21 phones to Switch5 Fa0/1..21; each phone uses its `Switch` port.
+  Switch4/Switch5 are currently exact-reference `2960-24TT` devices.
+- `ReferenceHardwarePlanner.plan()` in
+  `src/packet_tracer_mcp/domain/enterprise/services/reference_hardware_planner.py`
+  validates model/module/port counts but consumes neither block `required_poe_ports`
+  nor per-binding `ExpandedEndpoint.requires_poe`. It therefore admits a selected
+  exact-reference switch with `poe_capacity=None`.
+- `EnterpriseCompiler._compile_endpoint_links()` and `_capability_warnings()` in
+  `src/packet_tracer_mcp/domain/enterprise/services/enterprise_compiler.py` allocate
+  only `ACCESS_CAPABLE` and reduce unknown PoE to a warning. Explicit `_PortAllocator`
+  reservations also skip required-class validation.
+
+Direct PoE endpoint demand in the current canonical bindings is:
 
 ```text
-2811 bare           = FastEthernet0/0, FastEthernet0/1, Vlan1
-2811 + NM-4A/S@1    = bare ports + Serial1/0..Serial1/3
-2960-24TT           = FastEthernet0/1..24, GigabitEthernet0/1..2, Vlan1
-3650-24PS           = GigabitEthernet1/0/1..24, GigabitEthernet1/1/1..4, Vlan1
-3560-24PS           = previously exact-build qualified inventory/PoE/VLAN/trunk evidence
-Laptop-PT           = Bluetooth, FastEthernet0
+Switch4=1  Switch5=23  Switch6=1  Switch7=16  Switch8=1  Switch9=5
+Switch0=1  Switch1=15  Switch3=9   MLS3=3     MLS4=2     MLS5=8  MLS6=1
 ```
 
-The reference hardware planner refuses the canonical design unless every
-required port/module has exact-build evidence. The physical compiler now takes
-typed semantic names and exact endpoint-port bindings; it validates both sides
-and never silently falls back to the old capacity allocator.
+The fix must derive per-switch demand from expanded endpoint truth plus the exact
+binding, reconcile the block aggregate, require exact-build PoE capability evidence,
+and reject UNKNOWN/unsupported/insufficient capacity from live admission. Do not infer
+PoE from a model name. An aggregate block total alone cannot prove each selected switch
+is compatible.
 
-Qualifier containment bugs were proved fail-first and fixed:
+Port-class blast radius must be handled deliberately: 17 canonical infrastructure
+bindings currently put `UPLINK_CAPABLE` demand on FastEthernet access-only ports and are
+allowed by explicit non-serial fallback; 16 endpoint bindings use Gigabit uplink-only
+ports. A strict allocator fix will expose those endpoint bindings and must not erase the
+documented infrastructure fallback ceiling.
 
-- disposable mutation requires a safe read-only baseline classification;
-- incomplete or links-only baselines cannot authorize mutation;
-- ambiguous or raised creation attempts clean up only the exact reserved name;
-- cleanup is never attempted before a post-gate creation attempt;
-- cleanup `NO_OP` is accepted when fresh readback already proves absence;
-- manual/user topology remains outside the disposable ownership boundary.
+Two temporary fail-first regressions were proved, then reverted when implementation was
+stopped, so the worktree contains no half-fix:
 
-All disposable exact-model/port probes were removed. The canonical core was
-subsequently materialized only inside the governed ownership boundary,
-verified, and restored to the exact empty baseline.
+1. In `tests/test_reference_hardware_planner.py`, one PoE-required IP phone explicitly
+   bound to exact-build 2960 currently returns
+   `valid compatible 2960-24TT None None []` instead of failing closed.
+2. In `tests/test_cp_scale_canonical_physical.py`, every direct PoE endpoint is required
+   to fit an exact per-switch capacity; current selected devices expose
+   `poe_capacity=None`.
 
-## Canonical configuration result
+Recreate those tests first and add a per-switch over-capacity case (for example demands
+3+1 against capacities 2+2). A draft narrow planner fix made its focused regression
+green, but was fully reverted because topology, per-port evidence, and canonical blast
+radius were not yet closed. Preferred semantics to validate are UNKNOWN => provisional
+`PARTIALLY_RESOLVED` / `NEEDS_VERIFICATION`; unsupported or insufficient =>
+`UNRESOLVED`; neither may pass the live compiler gate.
+
+A read-only in-memory candidate was mechanically compiled, but not adopted: replacing
+only Switch5/7/9/1/3 with 3560, consolidating phones/APs on those switches, and enabling
+PC/phone passthrough produced exactly 314 devices / 219 links (142 endpoint-access, 59
+phone-passthrough, 18 infrastructure; models 7x3560, 5x2960, 3x3650, 3x2811). Treat this
+only as evidence that one governed redesign is structurally possible. It changes the
+current canonical pairing/link-role authority and still cannot establish chassis power
+budget or active delivery, so do not select it without closing those governance gaps.
+
+## Exact-build capability evidence
+
+Evidence below is for Packet Tracer `9.0.1.0858` only:
+
+- 2960-24TT: exact port inventory VERIFIED; fresh VLAN/trunk support VERIFIED; PoE is
+  UNKNOWN and no `supports_poe` capability is admitted.
+- 3560-24PS: exact port inventory VERIFIED; VLAN/trunk support VERIFIED; current typed
+  PoE capability reports 24 powered FastEthernet ports. Raw `getPower`/`isPowerOn`
+  signals also appear on Gigabit ports, but must not be counted without a governed
+  contract. `power_delivery_active=None`: powered-device delivery and watt-budget
+  headroom remain unobserved. Twenty-one phones plus three APs would consume all 24
+  admitted powered ports, not prove budget margin.
+- 3650-24PS: exact inventory VERIFIED (Gi1/0/1..24 and Gi1/1/1..4); VLAN/trunk support
+  VERIFIED; PoE is UNKNOWN and no `supports_poe` capability is admitted.
+- Cisco 7960: exact identity and port inventory VERIFIED (`PC`, `Switch`, plus observed
+  logical Vlan1); phone runtime/power delivery is UNKNOWN. Its live switch links were
+  visually red.
+
+`src/packet_tracer_mcp/domain/enterprise/models/discovery.py` explicitly separates
+port `getPower`/`isPowerOn` observations from powered-device delivery. Do not upgrade
+the latter by inference.
+
+## Defect B: 43 independent configuration contradictions
+
+Offline projection maps all 43 failed IDs to `endpoint_addressing`: 3 AP static actions,
+21 Cisco7960 DHCP actions, 4 Motion Detector DHCP actions, 11 Smoke Detector DHCP
+actions, and 4 Webcam DHCP actions. No PC or printer action contradicted. Map expected
+actions with
+`project_cp_scale_canonical_stage(comp, CPScaleCanonicalStage.FLOOR1).configuration`.
 
 ```text
-CONFIGURATION ACTIONS      = 609
-CONFIGURATION ERRORS       = 0
-CONFIGURATION WARNINGS     = 7 evidence ceilings
-CONFIGURATION HASH         = 0ed0dd39f9beac78c9ece9e32c0c3389508762e5cd186f55db8d98669108d586
+AP:
+5182633057691afc bb7bcd44f41d6d47 454539fd45427dd8
 
-configure_hostname         = 18
-create_vlan                = 45
-configure_access_port      = 199
-configure_trunk            = 27
-configure_subinterface     = 9
-configure_dhcp_pool        = 9
-configure_routed_interface = 6
-set_endpoint_dhcp          = 271
-set_endpoint_static        = 25
+PHONE:
+432556a02ddf724f 5457b517cd3f9637 fa24a758f868fc29 38669eb3340e6892
+7ab8a9f84fd7e49b 340d7b7459a80c91 12eb81e8261bcb03 9297694740a6bb36
+79da1d6279963b2d 63d372b30354d120 20042b96a790cc53 b362216e16eef648
+4b72636c210666b4 dfbd3dda98ac7c11 19a5594b874504c4 1b67b90adcb4c169
+c88d6f2e4949a99b 60f73066a2a34381 3f34feb723de1e29 bc5c5cb129183cdc
+3a69cc03bb9c2463
+
+MOTION:
+61b00a15ea63221e 898cf104c8c124de 077535d05c89fd14 cc82f2cfaafa7bcf
+
+SMOKE:
+9d84c297c8272cc5 59feb0d394ba7f49 df8b1f44736fa013 25d3cf1b3a00d079
+d89eebdffb84214a a1ac3b84c4970f5b 472bfe7ef521a2b9 5c4b41d835c72ad5
+3a953e4e1d3174b2 0ed800efcf801051 bd1d9475f715b518
+
+WEBCAM:
+853c8e540de748a0 d317eed31d68ea33 54b85bbd8b1f33c6 ff13c1596933a033
 ```
 
-Each site has only the explicit governed VLANs:
+The IDs live in the artifact's top-level failure string. Exact per-field actual
+readbacks were lost because `_execute_stage()` retains stage evidence locally and the
+outer runner appends it only after stage success; an exception therefore omits partial
+failure evidence from the journal. Before another live attempt, add a fail-first test
+and typed fix for durable partial/failure evidence capture (or another governed method
+that preserves exact actual fields), then group contradictions by observed root cause.
+Do not attribute these actions to PoE without evidence.
+
+## Verification ledger
 
 ```text
-VLAN 10 DATA
-VLAN 20 VOICE
-VLAN 30 IOT / printers / access points
+ROUTING_CORE = GOVERNED VERIFIED
+ROUTER4_SWITCH10 = GOVERNED VERIFIED
+FLOOR1_PHYSICAL = transiently APPLIED, then discredited and cleaned
+FLOOR1_CONFIGURATION = CONTRADICTED
+PHONE_POWER_AND_LINK = NOT VERIFIED
+VOICE_DATA_VLAN_10_20 = NOT VERIFIED
+POE_ADMISSION_DEFECT = PROVEN FAIL-OPEN
+2960_POE = UNKNOWN
+3650_POE = UNKNOWN
+3560_POWERED_PORT_COUNT = SUPPORTED (24 FastEthernet ports)
+3560_ACTIVE_POWER_DELIVERY_AND_WATT_BUDGET = UNKNOWN
 ```
 
-Every trunk allows exactly `[10,20,30]`; VLAN 1 is excluded from the allowed
-set. No native/parking VLAN policy is claimed beyond the typed plan. Every
-phone-facing switch port uses access/data VLAN 10 plus voice VLAN 20. PortFast
-and BPDU Guard compile only for the 199 proven endpoint-facing switch ports,
-never for router or switch infrastructure links; exact live edge-policy
-readback remains a later capability gate.
+Earlier full regression was `2622 passed, 5 warnings`; the last retained affected run
+was `76 passed`. The temporary two-test PoE fail-first run failed for the intended
+product reason; the experimental narrow fix passed before all diagnostic code/test
+edits were reverted. Only this handoff is intended to be uncommitted at checkpoint.
 
-Router-on-a-stick is explicit on `FastEthernet0/0` for all three routers:
+## NEXT_ACTIVE_STEP
 
-```text
-Router4 = 172.16.10.1/24, 172.16.20.1/24, 172.16.30.1/24
-Router3 = 172.17.10.1/24, 172.17.20.1/24, 172.17.30.1/24
-Router0 = 172.18.10.1/24, 172.18.20.1/24, 172.18.30.1/24
-```
-
-The three intentional transit networks are:
-
-```text
-Router4 Serial1/0 <-> Router0 Serial1/0 = 10.0.0.1/30 <-> 10.0.0.2/30
-Router4 Serial1/1 <-> Router3 Serial1/1 = 10.0.0.5/30 <-> 10.0.0.6/30
-Router3 Serial1/0 <-> Router0 Serial1/1 = 10.0.0.9/30 <-> 10.0.0.10/30
-```
-
-Serial DCE orientation must be observed after link creation; clocking may be
-applied only to the freshly observed DCE side.
-
-## STP governed state
-
-The canonical plan deliberately uses ordinary PVST as the strongest governed
-fallback. Root ownership is explicit and numeric:
-
-```text
-large-branch      primary Switch8 / secondary Switch10 / 24576 / 28672
-multilayer-branch primary MLS3    / secondary MLS7      / 24576 / 28672
-small-branch      primary Switch3 / no secondary        / 24576
-```
-
-The compiler preserves primary, secondary, and numeric priorities in typed
-verification expectations. Runtime verification understands PVST protocol
-`ieee`, Rapid-PVST protocol `rstp`, and compares the parser-backed bridge base
-priority rather than the VLAN-extended priority. This unit/runtime path is not
-itself model-attributed live capability evidence.
-
-Rapid-PVST remains **UNOBSERVABLE** on the exact build. Its typed mutation was
-accepted on a disposable 3560, but four fresh registered `show spanning-tree`
-reads produced no parser-backed instance. No Rapid-PVST capability was promoted.
-Cleanup restored the owned disposable baseline.
-
-## RIPv2 current state
-
-The canonical control-plane plan compiles `217` actions, `57` verification
-expectations, and exactly three typed `ConfigureRipv2` actions for Router4,
-Router0, and Router3. Each router advertises its connected `10.0.0.0` classful
-transit foundation plus its site `172.16/17/18.0.0` foundation; all three LAN
-subinterfaces are passive and the serial interfaces remain active.
-
-RIPv2 is the current governed IGP and introduces no E10 features. Exact-model
-`2811` layer3 plus RIPv2 configuration/process/route/behavior are now
-SUPPORTED for exact build `9.0.1.0858` by the R5 canonical-core qualification.
-The final repeat passed both governed applicators and fresh forwarding. RIP has
-no adjacency-state table in this contract; do not invent or claim one.
-
-```text
-CONTROL-PLANE HASH        = 29be238e89d68e8d4aeb2eb6f72fe846ed9b1b2f83c888c2bb51812d591b41ba
-RIPV2 LIVE ON 2811        = GOVERNED VERIFIED
-RIPV2 ADJACENCY CLAIM     = N/A
-```
-
-## Checkpoint validation and live boundary
-
-```text
-AFFECTED REGRESSION       = PASS
-BOUNDED AFFECTED SUITE    = PASS
-COMPILEALL src            = PASS
-GIT DIFF CHECK            = PASS
-GRAPHIFY UPDATE           = PASS
-FULL SUITE                = 2609 passed, 5 warnings
-CANONICAL CORE LIVE       = GOVERNED VERIFIED; CLEANUP VERIFIED
-```
-
-The affected historical-fixture regression remains valid without weakening
-canonical semantics: canonical printers/APs stay on VLAN 30, while the explicit
-318/235 regression fixture retains its old five-segment capacity policy.
-
-The canonical core was materialized, qualified, repeated through governed E5
-and E9, and removed with two baseline-restoration observations. The next live
-stage starts from that clean baseline, rematerializes the verified core, then
-adds the exact Router4-to-Switch10 branch through typed/product paths.
-
-```text
-NEXT_ACTIVE_STEP = rematerialize verified core, then Router4 -> Switch10
-```
+1. Verify branch/HEAD/upstream/worktree, read this file, and inspect the ignored progress
+   artifact. Remain OFFLINE.
+2. Recreate the PoE admission regressions and the per-switch capacity case; fix the typed
+   planner/compiler/capability seam so exact demand, capacity, port class, and UNKNOWN
+   semantics fail closed.
+3. Map all 43 configuration IDs to expected action and exact readback. First preserve
+   partial contradiction evidence durably; then write fail-first tests for each proven
+   root-cause group and AUTOFIX the typed product path independently of PoE.
+4. Reconcile any topology/model change with exact-build capability evidence and update
+   both canonical documents plus typed tests. Do not assume the candidate redesign.
+5. Run affected and full checkout-local `.venv` regression; update graphify after source
+   changes.
+6. Only after offline closure, pass the live-run namespace gate, rematerialize the
+   verified core, Router4/Switch10, and Floor 1 through governed typed staging.
+7. Verify fresh switch/phone physical bindings, cable identity, admin/oper state, actual
+   phone power/runtime state, PoE delivery evidence, access VLAN 10 + voice VLAN 20,
+   endpoint addressing, and fresh readback. Red expected phone links are blocking.
+8. Qualify Floor 1 only with clean LIVE evidence; checkpoint and push to
+   `personal/feature/runtime-ripv2`.
+9. Continue sequentially with Floor 2, Floor 3, Router0/3650, Router3/2960, remaining
+   canonical topology, full CP-SCALE qualification, and a verified visible presentation.
