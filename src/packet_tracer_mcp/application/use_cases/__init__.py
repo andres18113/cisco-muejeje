@@ -49,6 +49,11 @@ from .observe_serial_orientation import (
     SerialOrientationObserver,
     SerialOrientationRuntime,
 )
+from .compose_cp_scale_canonical import (
+    CPScaleRoutingCore,
+    compose_cp_scale_canonical,
+    project_cp_scale_routing_core,
+)
 from .qualify_cp_scale_offline import (
     CPScaleOfflineQualification,
     CPScaleStageMetric,
@@ -63,4 +68,8 @@ from .qualify_cp_scale_live import (
     qualify_cp_scale_progressive,
     read_git_repository_state,
     write_cp_scale_live_artifacts,
+)
+from .qualify_typed_runtime import (
+    qualification_evidence_value,
+    typed_runtime_batch_errors,
 )

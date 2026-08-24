@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import re
 
-from ...domain.enterprise.models.capabilities import CapabilityStatus, DeviceCapabilities
+from ...domain.enterprise.models.capabilities import (
+    CapabilityEvidence,
+    CapabilityStatus,
+    DeviceCapabilities,
+    EvidenceSource,
+)
 from ...domain.enterprise.models.hardware import (
     CatalogCoverageReport,
     HardwareCandidate,
@@ -26,7 +31,11 @@ from .measured_port_inventories import (
     module_state_token,
 )
 from .modules import ALL_MODULES, get_serial_module
-from .capability_providers import ProbeCapabilityProvider, RuntimeCapabilityProvider
+from .capability_providers import (
+    ProbeCapabilityProvider,
+    RuntimeCapabilityProvider,
+    StaticVerifiedCapabilityProvider,
+)
 from ..persistence.capability_snapshot_store import CapabilitySnapshotStore
 
 
@@ -58,6 +67,21 @@ _SERIAL_MODULE_SLOT_BY_MODEL = {
     "ISR4321": "0",
     "ISR4331": "0",
 }
+
+_CP_SCALE_2811_LIVE_EVIDENCE = CapabilityEvidence(
+    capability="layer3",
+    status=CapabilityStatus.SUPPORTED,
+    source=EvidenceSource.STATIC_OVERRIDE,
+    source_detail=(
+        "CP-SCALE CORE governed live qualification: 15 typed routed-interface "
+        "and subinterface actions on three disposable 2811 routers were read "
+        "back exactly before fresh RIPv2 forwarding verification; see "
+        "docs/architecture/ripv2-runtime-qualification.md"
+    ),
+    packet_tracer_version="9.0.1.0858",
+    confidence="live_qualified",
+    verified=True,
+)
 
 
 def _normalization_key(value: str) -> str:
@@ -347,6 +371,9 @@ def packet_tracer_enterprise_capability_adapter(
     snapshots = store or CapabilitySnapshotStore()
     return EnterpriseCapabilityAdapter(
         providers=[
+            StaticVerifiedCapabilityProvider({
+                "2811": [_CP_SCALE_2811_LIVE_EVIDENCE],
+            }),
             ProbeCapabilityProvider(snapshots, version),
             RuntimeCapabilityProvider(snapshots, version),
         ],

@@ -363,7 +363,7 @@ class ConfigurationCompiler:
             devices=device_plans,
             verification_expectations=expectations,
         )
-        plan.semantic_hash = self._semantic_hash(plan)
+        plan.semantic_hash = configuration_plan_semantic_hash(plan)
         return self._result(plan, actions, topology, issues)
 
     @staticmethod
@@ -1315,13 +1315,6 @@ class ConfigurationCompiler:
         ]
 
     @staticmethod
-    def _semantic_hash(plan: ConfigurationPlan) -> str:
-        payload = plan.model_dump(mode="json")
-        payload["semantic_hash"] = ""
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-    @staticmethod
     def _deduplicate_issues(issues: list[ConfigurationIssue]) -> list[ConfigurationIssue]:
         unique = {
             (issue.severity.value, issue.code.value, issue.subject, issue.message): issue
@@ -1362,3 +1355,14 @@ class ConfigurationCompiler:
             summary=summary,
             issues=issues,
         )
+
+
+def configuration_plan_semantic_hash(plan: ConfigurationPlan) -> str:
+    """Return the canonical identity for a product-owned E5 plan projection."""
+
+    payload = plan.model_dump(mode="json")
+    payload["semantic_hash"] = ""
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

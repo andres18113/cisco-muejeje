@@ -13,6 +13,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
 )
 from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
 from src.packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
+from src.packet_tracer_mcp.infrastructure.execution.runtime_inventory import (
+    normalize_runtime_inventory,
+)
 
 
 def _topology() -> TopologyPlan:
@@ -109,6 +112,38 @@ def test_manifest_requires_recorded_composite_fingerprint_during_resolution():
 
     with pytest.raises(DeploymentIdentityError, match="fingerprint"):
         manifest.resolve_target("r1", same_name_without_fingerprint)
+
+
+def test_manifest_identity_survives_configured_logical_interfaces() -> None:
+    before = normalize_runtime_inventory([{
+        "name": "HQ-R1",
+        "model": "2911",
+        "ports": ["GigabitEthernet0/0", "Serial0/0/0", "Vlan1"],
+    }])
+    topology = TopologyPlan(
+        id="e4/logical-interface-stability",
+        devices=[DevicePlan(
+            id="r1", name="HQ-R1", model="2911", category="router",
+        )],
+    )
+    stamp_topology_hashes(topology)
+    manifest = build_deployment_manifest(
+        topology, before, fingerprint=EnvironmentFingerprint(),
+    )
+    after = normalize_runtime_inventory([{
+        "name": "HQ-R1",
+        "model": "2911",
+        "ports": [
+            "GigabitEthernet0/0",
+            "GigabitEthernet0/0.10",
+            "GigabitEthernet0/0.20",
+            "Serial0/0/0",
+            "Vlan1",
+            "Vlan10",
+        ],
+    }])
+
+    assert manifest.resolve_target("r1", after).device_name == "HQ-R1"
 
 
 def test_manifest_semantic_hash_excludes_created_at_metadata():

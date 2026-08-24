@@ -243,6 +243,22 @@ def test_1941_eigrp_capabilities_are_scoped_to_the_live_qualified_model():
     assert unqualified.status(Dimension.ROUTING_NEIGHBOR_STATE) is Status.UNKNOWN
 
 
+def test_2811_ripv2_capabilities_are_scoped_to_cp_scale_live_evidence():
+    profile = packet_tracer_control_plane_capabilities("9.0.1.0858")["2811"]
+
+    assert {
+        dimension
+        for dimension, status in profile.dimensions.items()
+        if status is Status.SUPPORTED
+    } == {
+        Dimension.RIPV2_CONFIG,
+        Dimension.ROUTING_PROCESS_STATE,
+        Dimension.ROUTING_ROUTE_STATE,
+        Dimension.ROUTING_BEHAVIOR,
+    }
+    assert "CP-SCALE CORE" in profile.evidence_source
+
+
 # ===================== completitud del mapeo ================================
 
 

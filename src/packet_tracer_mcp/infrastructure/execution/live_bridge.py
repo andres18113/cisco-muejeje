@@ -24,6 +24,8 @@ import time
 from http.server import ThreadingHTTPServer
 from queue import Empty, Full, Queue
 from typing import Callable
+import urllib.error
+import urllib.request
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from .bridge_token import get_bridge_token, token_fingerprint
@@ -130,6 +132,100 @@ def correlated_http_send_and_wait(
         wait + RESULT_SOCKET_GRACE_SECONDS,
     )
     return body if status_get == 200 else None
+
+
+class PacketTracerHttpTransport:
+    """Reusable authenticated product transport for one fixed HTTP channel.
+
+    The MCP registry and operator-only LIVE runners need the same semantics:
+    one authenticated bridge, guarded fire-and-forget mutations, correlated
+    result-bearing reads, and no transport fallback after an ambiguous send.
+    """
+
+    bridge_transport = "http"
+
+    def __init__(self, port: int = DEFAULT_PORT, token: str | None = None) -> None:
+        self._bridge = PTCommandBridge(port=port, token=token)
+        self.port = port
+        self.token = self._bridge.token
+        self.base_url = ""
+
+    @property
+    def is_connected(self) -> bool:
+        return self._bridge.is_connected
+
+    def status_dict(self) -> dict:
+        return self._bridge.status_dict()
+
+    def start(
+        self,
+        *,
+        wait_for_connection: bool = True,
+        timeout_seconds: float = 8.0,
+        poll_interval_seconds: float = 0.1,
+    ) -> bool:
+        self._bridge.start()
+        self.port = self._bridge.port
+        self.base_url = f"http://127.0.0.1:{self.port}"
+        if not wait_for_connection:
+            return True
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while not self.is_connected and time.monotonic() < deadline:
+            time.sleep(max(0.01, poll_interval_seconds))
+        return self.is_connected
+
+    def stop(self) -> None:
+        self._bridge.stop()
+
+    def send(self, js_code: str) -> bool:
+        guarded = "try{" + js_code + "}catch(__pterr){}"
+        status, _ = self._http_post(self.base_url + "/queue", guarded, 3.0)
+        return status == 200
+
+    def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
+        guarded = (
+            "try{" + js_code
+            + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
+        )
+        return correlated_http_send_and_wait(
+            guarded,
+            timeout,
+            base_url=self.base_url,
+            port=self.port,
+            token=self.token,
+            http_post=self._http_post,
+            http_get=self._http_get,
+        )
+
+    def _signed_url(self, url: str) -> str:
+        separator = "&" if "?" in url else "?"
+        return url + separator + urlencode({"t": self.token})
+
+    def _http_get(
+        self, url: str, timeout: float,
+    ) -> tuple[int | None, str | None]:
+        try:
+            with urllib.request.urlopen(
+                self._signed_url(url), timeout=timeout,
+            ) as response:
+                return response.status, response.read().decode("utf-8")
+        except (OSError, urllib.error.URLError):
+            return None, None
+
+    def _http_post(
+        self, url: str, body: str, timeout: float,
+    ) -> tuple[int | None, str | None]:
+        request = urllib.request.Request(
+            self._signed_url(url),
+            data=body.encode("utf-8"),
+            method="POST",
+        )
+        request.add_header("Content-Type", "text/plain")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.status, response.read().decode("utf-8")
+        except (OSError, urllib.error.URLError):
+            return None, None
 
 
 class PTCommandBridge:

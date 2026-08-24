@@ -48,6 +48,9 @@ from src.packet_tracer_mcp.infrastructure.execution.import_isolation_preflight i
     ImportIsolationState,
 )
 from tests.test_e95_serial_product_planning import _reference_planning_intent
+from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+    CapabilitySnapshotStore,
+)
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 PACKAGE = REPO / "src" / "packet_tracer_mcp"
@@ -191,14 +194,20 @@ def _runtimes(physical) -> EnterpriseRuntimes:
 _QUALIFIED = HardwarePlanningPolicy(preferred_router_model="2911")
 
 
-def _run(physical, *, preflight, intent=None, policy=_QUALIFIED):
+def _run(
+    physical, *, preflight, intent=None, policy=_QUALIFIED,
+    capability_store=None, packet_tracer_version="9.0.1.0858",
+):
     return execute_enterprise_reference(
         intent or _intent(),
         _runtimes(physical),
         _control_plane_intent(),
-        environment_fingerprint=FINGERPRINT,
+        environment_fingerprint=FINGERPRINT.model_copy(update={
+            "backend_version": packet_tracer_version,
+        }),
         import_preflight=preflight,
-        packet_tracer_version="9.0.1.0858",
+        packet_tracer_version=packet_tracer_version,
+        capability_store=capability_store,
         policy=policy,
     )
 
@@ -306,29 +315,30 @@ class TestAFailedStageStopsTheRestAndStillCleansUp:
         assert result.cleanup_results
         assert "observe_workspace" in physical.calls[-1:] or result.final_inventory is not None
 
-    def test_a_preflight_refusal_removes_nothing_at_all(self):
+    def test_a_preflight_refusal_removes_nothing_at_all(self, tmp_path):
         """Lo planificado no es lo creado, y borrar por nombre seria mutar ajeno.
 
-        Se dirige a un router que ninguna pasada midio, para que el despliegue
-        se niegue antes de tocar nada. Antes de esta correccion la limpieza
-        recorria `topology.devices` y pedia borrar los nombres igual.
+        Se usa un store hermetico y el 2811 exact-build ya calificado. El
+        runtime niega la observabilidad del efecto del modulo en preflight,
+        antes de tocar nada. Antes de esta correccion la limpieza recorria
+        `topology.devices` y pedia borrar los nombres igual.
 
-        Antes bastaba con NO dirigir: la seleccion elegia `1941`, que nadie
-        habia medido. La cualificacion MEG-5 lo midio porque la referencia de 41
-        dispositivos lo selecciona, asi que el ejemplar se mueve a uno que sigue
-        sin medir. Lo que la fila prueba -- rechazo sin mutacion -- no cambia.
+        Lo que la fila prueba es rechazo de preflight sin mutacion ni limpieza
+        inventada; el tipo concreto de evidencia negada no cambia ese contrato.
         """
         physical = _RecordingPhysicalRuntime()
+        store = CapabilitySnapshotStore(tmp_path / "capabilities")
 
         result = _run(
             physical,
             preflight=_isolated_preflight(),
-            policy=HardwarePlanningPolicy(preferred_router_model="2901"),
+            policy=HardwarePlanningPolicy(preferred_router_model="2811"),
+            capability_store=store,
         )
 
         assert result.deployment is not None
         assert result.deployment.failure_code is (
-            PhysicalDeploymentFailureCode.PORT_EVIDENCE_UNAVAILABLE
+            PhysicalDeploymentFailureCode.MODULE_OBSERVATION_UNAVAILABLE
         )
         assert physical.removed == []
         assert result.cleanup_results == []

@@ -349,7 +349,7 @@ class ControlPlaneCompiler:
                 failure_scenarios=sorted(scenarios, key=lambda item: item.id),
                 failure_domain_catalog=failure_domain_catalog,
             )
-            plan.semantic_hash = self._semantic_hash(plan)
+            plan.semantic_hash = control_plane_plan_semantic_hash(plan)
         return self._result(
             plan, actions, expectations, scenarios, topology, configuration,
             security_hash, issues,
@@ -2263,15 +2263,6 @@ class ControlPlaneCompiler:
         )
 
     @staticmethod
-    def _semantic_hash(plan: ControlPlanePlan) -> str:
-        payload = plan.model_dump(mode="json")
-        payload["semantic_hash"] = ""
-        canonical = json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-        )
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-    @staticmethod
     def _deduplicate_issues(
         issues: list[ConfigurationIssue],
     ) -> list[ConfigurationIssue]:
@@ -2320,6 +2311,17 @@ class ControlPlaneCompiler:
             summary=summary,
             issues=issues,
         )
+
+
+def control_plane_plan_semantic_hash(plan: ControlPlanePlan) -> str:
+    """Return the canonical identity for a product-owned E9 plan projection."""
+
+    payload = plan.model_dump(mode="json")
+    payload["semantic_hash"] = ""
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _route_for_destination(

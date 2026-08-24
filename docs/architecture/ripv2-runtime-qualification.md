@@ -384,3 +384,133 @@ model.
 MEG_5_E9_QUALIFICATION = 1941 / 9.0.1.0858 / four dimensions VERIFIED
 REFERENCE_41_41_RUN    = NOT_EXECUTED
 ```
+
+
+# R5 — CP-SCALE canonical 2811 routing core, 2026-08-24
+
+This qualification is the first canonical CP-SCALE LIVE checkpoint. It uses
+the exact routing triangle from the 314-device/219-link product composition;
+it does not re-plan the canonical topology.
+
+## Governed environment and physical identity
+
+| Item | Value |
+| --- | --- |
+| Packet Tracer | `9.0.1.0858`, exact OS process/file version |
+| Python | checkout-local `.venv`; production namespace resolves inside this worktree; only one import namespace loaded |
+| Git | `feature/runtime-ripv2`, upstream `personal/feature/runtime-ripv2`, pre-mutation HEAD `0846472e8e666120cc7e690563ad8f7c0ed4fe0f` |
+| Bridge | authenticated HTTP product transport; connected PT webview client |
+| Baseline | two independent observations of 0 semantic devices / 0 links |
+| Routers | `Router4`, `Router0`, `Router3`: 3x `2811` |
+| Modules | 3x `NM-4A/S@1`; observed `Serial1/0` through `Serial1/3` |
+| Links | exact three-link serial triangle, runtime link identity observed |
+
+Serial DCE/DTE identity was read through the registered controller query and
+bound into the deployment manifest. The final orientation was:
+
+```text
+Router4 Serial1/0 DCE --- DTE Serial1/0 Router0
+Router4 Serial1/1 DCE --- DTE Serial1/1 Router3
+Router3 Serial1/0 DCE --- DTE Serial1/1 Router0
+```
+
+## Typed E5 state
+
+The final governed run passed `ConfigurationApplicator` with exact-build
+`2811.layer3` evidence. All 18 actions and all 18 independent readbacks
+verified: three hostnames, six routed serial interfaces and nine canonical LAN
+subinterfaces. The 15 L3 actions are the attributed evidence for promoting
+only `2811.layer3` on this build.
+
+```text
+Router4  Serial1/0 10.0.0.1/30   Serial1/1 10.0.0.5/30
+Router0  Serial1/0 10.0.0.2/30   Serial1/1 10.0.0.10/30
+Router3  Serial1/0 10.0.0.9/30   Serial1/1 10.0.0.6/30
+```
+
+Every listed serial interface was freshly read as `up/up` before RIPv2.
+
+## Typed E9 state and learned routes
+
+The final run passed `ControlPlaneApplicator`; no capability was injected into
+the applicator. Each router had the canonical typed RIPv2 process:
+
+```text
+version 2
+no auto-summary
+network 10.0.0.0
+network 172.16.0.0 / 172.18.0.0 / 172.17.0.0 by site
+passive-interface FastEthernet0/0.10
+passive-interface FastEthernet0/0.20
+passive-interface FastEthernet0/0.30
+```
+
+The bounded pager capture closed on a prompt for all three
+`show ip protocols` reads. All process fields were compared exactly and all
+three observations were fresh `VERIFIED`.
+
+Each router learned the third transit subnet, with two equal-cost RIPv2 next
+hops around the triangle:
+
+| Router | Learned prefix | Fresh observed next hops |
+| --- | --- | --- |
+| Router4 | `10.0.0.8/30` | `10.0.0.6`, `10.0.0.2` |
+| Router0 | `10.0.0.4/30` | `10.0.0.1`, `10.0.0.9` |
+| Router3 | `10.0.0.0/30` | `10.0.0.5`, `10.0.0.10` |
+
+Packet Tracer prints the common `/30` once in the single-mask block header and
+omits it from the individual `R` row. The parser now carries only that explicit
+observed mask into the row; a missing or variable-mask header remains
+fail-closed.
+
+## Representative forwarding transition
+
+Before RIPv2, three fresh typed pings to the remote third transit network were
+all `0/5`. After the six governed process/route observations verified, the
+same source/destination pairs were all `5/5` with unique device attribution:
+
+```text
+Router4 -> 10.0.0.10   false -> true
+Router0 -> 10.0.0.6    false -> true
+Router3 -> 10.0.0.1    false -> true
+```
+
+This is forwarding evidence, separate from configuration and route-table
+evidence. `APPLIED` was never treated as `VERIFIED`.
+
+## Same-scope AUTOFIXes proven by LIVE failures
+
+1. The HTTP bridge became a reusable authenticated product transport for the
+   operator path; malformed file-mailbox responses no longer masquerade as a
+   live channel.
+2. Direct typed qualification batches now require exact action/result and
+   expectation/observation identity plus fresh `VERIFIED` evidence.
+3. `SHOW_IP_PROTOCOLS` uses the existing bounded pager continuation on this
+   exact build; incomplete captures still remain unobservable.
+4. RIP rows inherit only an explicit single-mask block header, fixing the
+   canonical `/30` format without guessing a classful mask.
+5. Runtime target fingerprint v2 excludes known logical interface families.
+   E5-created subinterfaces therefore cannot make E9 reject the same physical
+   router, while model and physical-port drift remain identity failures.
+6. The environment fingerprint records the actual `http` transport rather
+   than the historical file label.
+
+Every defect above received a fail-first regression before its implementation.
+
+## Cleanup and governed closure
+
+The qualification run and the final governed run both removed the three exact
+canonical routers in reverse order inside a `finally` block. Two independent
+post-cleanup observations matched the empty semantic baseline.
+
+```text
+CP_SCALE_CORE_2811_LAYER3_9_0_1_0858 = VERIFIED
+CP_SCALE_CORE_2811_RIPV2_CONFIG       = VERIFIED
+CP_SCALE_CORE_ROUTING_PROCESS_STATE   = VERIFIED
+CP_SCALE_CORE_ROUTING_ROUTE_STATE     = VERIFIED
+CP_SCALE_CORE_ROUTING_BEHAVIOR        = VERIFIED
+CORE_GOVERNED                         = VERIFIED
+```
+
+No evidence in R5 promotes Rapid-PVST, OSPF, EIGRP, security, voice or any
+other model. The current spanning-tree ceiling remains PVST.

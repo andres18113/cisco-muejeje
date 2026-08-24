@@ -95,6 +95,14 @@ from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
 from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanningPolicy,
 )
+from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+    stamp_topology_hashes,
+)
+from src.packet_tracer_mcp.domain.models.plans import (
+    DevicePlan,
+    LinkPlan,
+    TopologyPlan,
+)
 from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
@@ -384,7 +392,8 @@ _QUALIFIED = HardwarePlanningPolicy(preferred_router_model="2911")
 
 
 def _run(*, physical, configuration, control_plane, intent=None, policy=_QUALIFIED,
-         pre_cleanup_diagnostic=None):
+         pre_cleanup_diagnostic=None, capability_store=None,
+         packet_tracer_version="9.0.1.0858"):
     intent = intent or _bounded_intent()
     # El fake sintetiza puertos desde el plan, asi que necesita conocerlo. La
     # composicion es determinista PARA LAS MISMAS ENTRADAS, y desde el contrato
@@ -392,7 +401,8 @@ def _run(*, physical, configuration, control_plane, intent=None, policy=_QUALIFI
     # los nombres salen de lo observado. Por eso aqui se compone con la misma
     # version y la misma politica que usara el caso de uso.
     topology = compose_enterprise_reference(
-        intent, policy=policy, packet_tracer_version="9.0.1.0858",
+        intent, policy=policy, packet_tracer_version=packet_tracer_version,
+        capability_store=capability_store,
     ).topology
     physical.bind(topology)
     return execute_enterprise_reference(
@@ -404,9 +414,12 @@ def _run(*, physical, configuration, control_plane, intent=None, policy=_QUALIFI
             control_plane=control_plane,
         ),
         _control_plane_intent(topology),
-        environment_fingerprint=FINGERPRINT,
+        environment_fingerprint=FINGERPRINT.model_copy(update={
+            "backend_version": packet_tracer_version,
+        }),
         import_preflight=_isolated_preflight(),
-        packet_tracer_version="9.0.1.0858",
+        packet_tracer_version=packet_tracer_version,
+        capability_store=capability_store,
         policy=policy,
         pre_cleanup_diagnostic=pre_cleanup_diagnostic,
     )
@@ -587,17 +600,31 @@ class TestSelectionMustCarryPortEvidenceBeforeItCanBind:
 
     def test_an_unmeasured_model_is_refused_before_any_mutation(self):
         physical = _GenericPhysicalRuntime()
+        topology = TopologyPlan(
+            id="e4/unmeasured-port-gate",
+            devices=[
+                DevicePlan(
+                    id="r1", name="R1", model="2901", category="router",
+                ),
+                DevicePlan(
+                    id="sw1", name="SW1", model="2960-24TT", category="switch",
+                ),
+            ],
+            links=[LinkPlan(
+                id="link/r1-sw1",
+                device_a_id="r1", device_a="R1", port_a="GigabitEthernet0/0",
+                device_b_id="sw1", device_b="SW1", port_b="GigabitEthernet0/1",
+                cable="straight",
+            )],
+        )
+        stamp_topology_hashes(topology)
 
-        result = _run(
-            physical=physical,
-            configuration=_FailingConfigurationRuntime([]),
-            control_plane=_ForbiddenControlPlaneRuntime(),
-            policy=_UNMEASURED_ROUTER,
+        result = EnterprisePhysicalTopologyDeployer(physical).deploy(
+            topology,
+            environment_fingerprint=FINGERPRINT,
         )
 
-        assert result.stopped_at is EnterpriseExecutionStage.PHYSICAL_DEPLOYMENT
-        assert result.deployment is not None
-        assert result.deployment.failure_code is (
+        assert result.failure_code is (
             PhysicalDeploymentFailureCode.PORT_EVIDENCE_UNAVAILABLE
         )
         assert any("2901" in message for message in result.errors)

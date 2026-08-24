@@ -20,6 +20,7 @@ import pytest
 from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
+    StaticVerifiedCapabilityProvider,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
@@ -231,13 +232,17 @@ class TestTheBoundaryIsExactAndVisible:
 
         assert _layer3(wired, "3560-24PS") is CapabilityStatus.SUPPORTED
 
-    def test_product_composition_wires_both_evidence_providers(self):
-        """Ambos providers, no uno: probe y runtime son fuentes distintas."""
+    def test_product_composition_wires_all_evidence_providers(self):
+        """Static live evidence, probes and runtime remain distinct sources."""
         wired = packet_tracer_enterprise_capability_adapter(MEASURED_VERSION)
 
         kinds = {type(provider) for provider in wired._providers}
 
-        assert kinds == {ProbeCapabilityProvider, RuntimeCapabilityProvider}
+        assert kinds == {
+            ProbeCapabilityProvider,
+            RuntimeCapabilityProvider,
+            StaticVerifiedCapabilityProvider,
+        }
 
     def test_the_composition_root_demands_an_exact_version(self):
         """Sin version exacta no hay composicion: no hay default razonable."""

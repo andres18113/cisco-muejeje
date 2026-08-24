@@ -16,6 +16,7 @@ import urllib.request
 import pytest
 
 from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+    PacketTracerHttpTransport,
     PTCommandBridge,
     report_result_js,
 )
@@ -80,6 +81,19 @@ def _get_result(
         f"/result?{query}",
         socket_timeout=max(wait, 0.0) + 5.0,
     )
+
+
+def test_product_http_transport_authenticates_and_guards_fire_and_forget():
+    transport = PacketTracerHttpTransport(port=0, token=TOKEN)
+    assert transport.bridge_transport == "http"
+    transport.start(wait_for_connection=False)
+    try:
+        assert transport.send("noop();")
+        assert transport._bridge.drain_commands() == [
+            "try{noop();}catch(__pterr){}",
+        ]
+    finally:
+        transport.stop()
 
 
 def test_late_result_is_isolated_from_the_next_operation(bridge):

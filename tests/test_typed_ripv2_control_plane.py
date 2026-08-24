@@ -150,6 +150,17 @@ _PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_R2 = (
     "Router>"
 )
 
+# Capturado LIVE en CP-SCALE CORE sobre 2811. A diferencia del fixture R2-B,
+# IOS imprime la mascara una sola vez en el encabezado del bloque.
+_PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_CP_SCALE = (
+    "show ip route rip\n"
+    "     10.0.0.0/30 is subnetted, 3 subnets\n"
+    "R       10.0.0.4 [120/1] via 10.0.0.1, 00:00:12, Serial1/0\n"
+    "                 [120/1] via 10.0.0.9, 00:00:08, Serial1/1\n"
+    "\n"
+    "Router0>"
+)
+
 
 def _rip_output(
     *,
@@ -639,6 +650,16 @@ def test_the_live_rip_route_is_recognised_on_r2():
     assert rows[0].interface == "Serial0/0/0"
 
 
+def test_cp_scale_route_inherits_the_explicit_single_mask_block_header():
+    rows = parse_show_ip_route_rip(
+        _PT_9_0_1_0858_SHOW_IP_ROUTE_RIP_CP_SCALE,
+    )
+
+    assert [(item.prefix, item.prefix_length) for item in rows] == [
+        ("10.0.0.4", 30),
+    ]
+
+
 def test_a_serial_learned_route_is_not_lost_to_an_interface_family_anchor():
     """El parser de OSPF ancla `GigabitEthernet` y por eso no sirve aqui."""
     from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
@@ -704,6 +725,16 @@ def test_the_rip_route_query_is_registered_and_unprivileged():
         OperationalQueryId.SHOW_IP_ROUTE_RIP
     ] == "show ip route rip"
     assert OperationalQueryId.SHOW_IP_ROUTE_RIP not in ios_terminal._PRIVILEGED_QUERIES
+
+
+def test_show_ip_protocols_uses_the_bounded_qualified_pager_capture():
+    """PT 9.0.1.0858 paginates this readback on the canonical 2811 core."""
+    from src.packet_tracer_mcp.infrastructure.execution import ios_terminal
+
+    assert (
+        OperationalQueryId.SHOW_IP_PROTOCOLS
+        in ios_terminal._PAGINATION_QUALIFIED_QUERIES
+    )
 
 
 # ===================== G/H. verificación ===================================

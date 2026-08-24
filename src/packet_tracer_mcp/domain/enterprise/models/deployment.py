@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -486,11 +487,28 @@ def runtime_target_fingerprint(
     """Build the backend-neutral composite used by deployment and applicators."""
 
     return _digest({
-        "schema": "runtime-target-fingerprint-v1",
+        "schema": "runtime-target-fingerprint-v2",
         "device_name": device_name,
         "model": model,
-        "interfaces": sorted(set(interfaces), key=str.casefold),
+        # Logical interfaces are configuration state, not physical identity.
+        # E5 can legitimately add subinterfaces/SVIs between the E4 manifest
+        # and E9 revalidation.  Keeping them in the fingerprint made a device
+        # stop matching itself after governed configuration.  Physical port
+        # drift remains covered because only known logical families are
+        # removed here.
+        "interfaces": sorted({
+            item for item in interfaces
+            if not _LOGICAL_RUNTIME_INTERFACE.fullmatch(item)
+        }, key=str.casefold),
     })
+
+
+_LOGICAL_RUNTIME_INTERFACE = re.compile(
+    r"(?:[A-Za-z][A-Za-z0-9/-]*\.\d+|"
+    r"(?:Vlan|Port-channel|Loopback|Tunnel|Dialer|BVI|Null)\d+|"
+    r"Virtual-Template\d+)",
+    re.IGNORECASE,
+)
 
 
 def _digest(payload: object) -> str:

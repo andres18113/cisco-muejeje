@@ -37,6 +37,16 @@ _RIPV2_1941_QUALIFICATION = (
     "TypedPingExecutor; see docs/architecture/ripv2-runtime-qualification.md"
 )
 
+_RIPV2_2811_CP_SCALE_QUALIFICATION = (
+    "CP-SCALE CORE controlled Packet Tracer live qualification on three "
+    "disposable 2811 routers with NM-4A/S@1 serial modules on 9.0.1.0858; "
+    "typed RIPv2 configuration and complete pager-qualified process readback "
+    "verified on all three routers, each third /30 learned with exact "
+    "fresh_show_ip_route_rip evidence, and three fresh typed pings made a "
+    "false-to-true transition; see "
+    "docs/architecture/ripv2-runtime-qualification.md"
+)
+
 _EIGRP_1941_QUALIFICATION = (
     "CP3-HARD controlled EIGRP live qualification on a disposable 2x1941 "
     "slice on 9.0.1.0858; typed EIGRP configuration was applied in both "
@@ -66,6 +76,15 @@ _NO_MODEL_ATTRIBUTED_EVIDENCE = (
 #   runtime los lee con consultas distintas y sigue exigiendo su propio parseo
 #   fresco antes de promover cualquier afirmación.
 _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
+    "2811": (
+        _RIPV2_2811_CP_SCALE_QUALIFICATION,
+        {
+            Dimension.RIPV2_CONFIG: Status.SUPPORTED,
+            Dimension.ROUTING_PROCESS_STATE: Status.SUPPORTED,
+            Dimension.ROUTING_ROUTE_STATE: Status.SUPPORTED,
+            Dimension.ROUTING_BEHAVIOR: Status.SUPPORTED,
+        },
+    ),
     "2911": (
         _RIPV2_LIVE_QUALIFICATION,
         {

@@ -206,12 +206,14 @@ _PAGER_MARKER = "--More--"
 # angostarla mas, y ese build rechaza `terminal length 0`. Sin recorrer el
 # pager la orientacion DCE/DTE es inobservable.
 #
-# Que exista el primitivo NO promueve ninguna otra consulta. En particular
-# `SHOW_IP_PROTOCOLS` sigue sin cualificar y su techo de TD-RUNTIME-003 -- un
-# device con RIP junto a otro protocolo es UNOBSERVABLE por esta lectura --
-# queda exactamente donde estaba.
+# `SHOW_IP_PROTOCOLS` entra por CP-SCALE CORE en el mismo build exacto. Los
+# 2811 del triangulo RIPv2 paginaron aun con un unico proceso, haciendo que los
+# seis campos tipados quedaran UNOBSERVABLE aunque la consulta fuese fresca.
+# Se recorre hasta prompt con las mismas cotas duras; una captura incompleta
+# conserva el techo fail-closed y nunca se interpreta como ausencia.
 _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+    OperationalQueryId.SHOW_IP_PROTOCOLS,
 })
 
 # Cotas duras de UNA captura logica. Existen para que no haya forma de que la
@@ -1191,6 +1193,11 @@ _RIP_ROUTE_ROW = re.compile(
     r"(?P<age>\d{2}:\d{2}:\d{2}),\s+"
     r"(?P<interface>[A-Za-z][A-Za-z0-9/.]*)\s*"
 )
+_RIP_SINGLE_MASK_HEADER = re.compile(
+    r"\s*\d{1,3}(?:\.\d{1,3}){3}/(?P<prefix_length>\d{1,2})\s+"
+    r"is\s+subnetted,\s+\d+\s+subnets\s*",
+    re.IGNORECASE,
+)
 
 
 def parse_show_ip_route_rip(value: str) -> list[RipRouteStatusRow]:
@@ -1200,13 +1207,22 @@ def parse_show_ip_route_rip(value: str) -> list[RipRouteStatusRow]:
     completa con supuestos: simplemente no es una fila.
     """
     rows: list[RipRouteStatusRow] = []
+    inherited_prefix_length: int | None = None
     for line in normalize_terminal_output(value).splitlines():
+        header = _RIP_SINGLE_MASK_HEADER.fullmatch(line)
+        if header is not None:
+            candidate = int(header.group("prefix_length"))
+            inherited_prefix_length = candidate if candidate <= 32 else None
+            continue
+        if "variably subnetted" in line.casefold():
+            inherited_prefix_length = None
         match = _RIP_ROUTE_ROW.fullmatch(line)
         if match is None:
             continue
         length = (
             int(match.group("prefix_length"))
-            if match.group("prefix_length") is not None else None
+            if match.group("prefix_length") is not None
+            else inherited_prefix_length
         )
         if length is not None and length > 32:
             continue

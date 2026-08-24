@@ -5,13 +5,13 @@
 ```text
 BRANCH                    = feature/runtime-ripv2
 UPSTREAM                  = personal/feature/runtime-ripv2
-PRE_CHECKPOINT_HEAD       = 39a403dc8cbc234df1cc5c46e51fc5c6049f0fe8
+PRE_CHECKPOINT_HEAD       = 0846472e8e666120cc7e690563ad8f7c0ed4fe0f
 PT_BUILD                  = 9.0.1.0858
-STAGE                     = CANONICAL_314_219_TYPED_PLAN_COMPLETE
-LIVE_GATE                 = PRE_LIVE_ROUTING_CORE
+STAGE                     = CANONICAL_ROUTING_CORE_GOVERNED_VERIFIED
+LIVE_GATE                 = ROUTER4_TO_SWITCH10
 CP_SCALE                  = OPEN
 E10                       = BLOCKED_BY_CP_SCALE
-CANONICAL_CORE_MUTATED    = NO
+CANONICAL_CORE_MUTATED    = VERIFIED_THEN_CLEANED
 ```
 
 Use only `./.venv/Scripts/python.exe` from this worktree. Before any live
@@ -106,8 +106,9 @@ Qualifier containment bugs were proved fail-first and fixed:
 - cleanup `NO_OP` is accepted when fresh readback already proves absence;
 - manual/user topology remains outside the disposable ownership boundary.
 
-All disposable exact-model/port probes were removed. No canonical core device
-or link has been created in Packet Tracer.
+All disposable exact-model/port probes were removed. The canonical core was
+subsequently materialized only inside the governed ownership boundary,
+verified, and restored to the exact empty baseline.
 
 ## Canonical configuration result
 
@@ -192,38 +193,39 @@ Router0, and Router3. Each router advertises its connected `10.0.0.0` classful
 transit foundation plus its site `172.16/17/18.0.0` foundation; all three LAN
 subinterfaces are passive and the serial interfaces remain active.
 
-RIPv2 is the current governed IGP and introduces no E10 features. The typed
-renderer and registered process/learned-route/forwarding readback paths exist,
-but exact-model `2811` RIPv2 configuration/process/route/behavior capability is
-still UNKNOWN until the live core qualification. RIP has no adjacency-state
-table in this contract; do not invent or claim an adjacency readback.
+RIPv2 is the current governed IGP and introduces no E10 features. Exact-model
+`2811` layer3 plus RIPv2 configuration/process/route/behavior are now
+SUPPORTED for exact build `9.0.1.0858` by the R5 canonical-core qualification.
+The final repeat passed both governed applicators and fresh forwarding. RIP has
+no adjacency-state table in this contract; do not invent or claim one.
 
 ```text
 CONTROL-PLANE HASH        = 29be238e89d68e8d4aeb2eb6f72fe846ed9b1b2f83c888c2bb51812d591b41ba
-RIPV2 LIVE ON 2811        = NOT YET QUALIFIED
+RIPV2 LIVE ON 2811        = GOVERNED VERIFIED
 RIPV2 ADJACENCY CLAIM     = N/A
 ```
 
 ## Checkpoint validation and live boundary
 
 ```text
-AFFECTED REGRESSION       = 1 passed
-BOUNDED AFFECTED SUITE    = 432 passed
+AFFECTED REGRESSION       = PASS
+BOUNDED AFFECTED SUITE    = PASS
 COMPILEALL src            = PASS
 GIT DIFF CHECK            = PASS
 GRAPHIFY UPDATE           = PASS
-FULL SUITE                = not requested at this bounded checkpoint
-CANONICAL CORE LIVE       = NOT STARTED
+FULL SUITE                = 2609 passed, 5 warnings
+CANONICAL CORE LIVE       = GOVERNED VERIFIED; CLEANUP VERIFIED
 ```
 
 The affected historical-fixture regression remains valid without weakening
 canonical semantics: canonical printers/APs stay on VLAN 30, while the explicit
 318/235 regression fixture retains its old five-segment capacity policy.
 
-No Router0/Router3/Router4 canonical core mutation has occurred. The next live
-step must start from fresh same-process isolation/build/workspace gates and use
-only typed/product paths.
+The canonical core was materialized, qualified, repeated through governed E5
+and E9, and removed with two baseline-restoration observations. The next live
+stage starts from that clean baseline, rematerializes the verified core, then
+adds the exact Router4-to-Switch10 branch through typed/product paths.
 
 ```text
-NEXT_ACTIVE_STEP = live Router0/Router3/Router4 core qualification
+NEXT_ACTIVE_STEP = rematerialize verified core, then Router4 -> Switch10
 ```
