@@ -598,14 +598,6 @@ class PacketTracerEnterpriseConfigurationRuntime:
             and row.status.casefold() == "up"
             and row.protocol.casefold() == "up"
         )
-        if not administrative_state_verified:
-            operational_field = FieldVerificationStatus.FAILED
-        elif not expected_up:
-            operational_field = FieldVerificationStatus.VERIFIED
-        elif operational_up:
-            operational_field = FieldVerificationStatus.VERIFIED
-        else:
-            operational_field = FieldVerificationStatus.UNKNOWN
         verified = address_verified and administrative_state_verified
         return RuntimeVerification(
             expectation_id=expectation.id,
@@ -619,12 +611,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     FieldVerificationStatus.VERIFIED
                     if administrative_state_verified else FieldVerificationStatus.FAILED
                 ),
-                # Operational carrier/protocol state is a different claim from
-                # whether the typed L3 configuration was accepted.  An SVI can
-                # legitimately remain down/down until its VLAN has an active
-                # member; that must not erase fresh IP/admin read-back evidence.
-                "status": operational_field,
-                "protocol": operational_field,
+                # Carrier/protocol are deliberately absent: this expectation
+                # claims interface/IP/admin configuration, not reachability.
+                # Serial up/up and end-to-end behavior have their own typed
+                # operational gates; emitting supplemental UNKNOWN fields here
+                # made an absent future LAN link look like unknown E5 state.
             },
             message=(
                 show.failure_reason

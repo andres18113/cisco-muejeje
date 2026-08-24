@@ -232,11 +232,10 @@ def test_l3_verifier_uses_controlled_fresh_show_window():
     assert result.fresh_evidence
     assert result.fields["ipv4"] is FieldVerificationStatus.VERIFIED
     assert result.fields["interface"] is FieldVerificationStatus.VERIFIED
-    assert result.fields["status"] is FieldVerificationStatus.VERIFIED
-    assert result.fields["protocol"] is FieldVerificationStatus.VERIFIED
+    assert set(result.fields) == {"interface", "ipv4", "administrative_state"}
 
 
-def test_l3_verifier_separates_configured_admin_state_from_down_link_state():
+def test_l3_verifier_does_not_emit_unclaimed_down_link_fields_as_unknown():
     _, plan = _plan()
     expectation = next(
         item for item in plan.verification_expectations
@@ -266,8 +265,7 @@ def test_l3_verifier_separates_configured_admin_state_from_down_link_state():
     assert result.status is ActionExecutionStatus.VERIFIED
     assert result.fields["ipv4"] is FieldVerificationStatus.VERIFIED
     assert result.fields["administrative_state"] is FieldVerificationStatus.VERIFIED
-    assert result.fields["status"] is FieldVerificationStatus.UNKNOWN
-    assert result.fields["protocol"] is FieldVerificationStatus.UNKNOWN
+    assert set(result.fields) == {"interface", "ipv4", "administrative_state"}
     assert "operational link is not up/up" in result.message
 
 
@@ -300,8 +298,9 @@ def test_l3_verifier_requires_administratively_down_state_when_requested():
     result = runtime.verify([expectation])[0]
 
     assert result.status is ActionExecutionStatus.FAILED
-    assert result.fields["status"] is FieldVerificationStatus.FAILED
-    assert result.fields["protocol"] is FieldVerificationStatus.FAILED
+    assert result.fields["administrative_state"] is FieldVerificationStatus.FAILED
+    assert "status" not in result.fields
+    assert "protocol" not in result.fields
 
 
 def test_l3_verifier_accepts_fresh_administratively_down_state_when_requested():
@@ -332,8 +331,9 @@ def test_l3_verifier_accepts_fresh_administratively_down_state_when_requested():
     result = runtime.verify([expectation])[0]
 
     assert result.status is ActionExecutionStatus.VERIFIED
-    assert result.fields["status"] is FieldVerificationStatus.VERIFIED
-    assert result.fields["protocol"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["administrative_state"] is FieldVerificationStatus.VERIFIED
+    assert "status" not in result.fields
+    assert "protocol" not in result.fields
 
 
 def test_trunk_verifier_uses_existing_typed_parser_and_current_query_only():
