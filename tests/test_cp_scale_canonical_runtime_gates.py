@@ -222,6 +222,19 @@ def _floor1_configuration_result():
                     "dns": FieldVerificationStatus.UNOBSERVABLE,
                 },
             ))
+        elif expectation.kind is VerificationKind.TRUNK:
+            verification_results.append(VerificationResult(
+                expectation_id=expectation.id,
+                action_id=expectation.action_id,
+                status=ActionExecutionStatus.VERIFIED,
+                evidence_method="fresh_show_interfaces_trunk",
+                fresh_evidence=True,
+                fields={
+                    "interface": FieldVerificationStatus.VERIFIED,
+                    "status": FieldVerificationStatus.VERIFIED,
+                    "allowed_vlans": FieldVerificationStatus.UNOBSERVABLE,
+                },
+            ))
         else:
             verification_results.append(VerificationResult(
                 expectation_id=expectation.id,
@@ -283,6 +296,41 @@ def test_canonical_configuration_accepts_only_exact_known_observability_ceilings
     assert "unobservable" in canonical_stage_configuration_error(
         plan, non_ceiling,
     ).casefold()
+
+
+def test_canonical_configuration_accepts_exact_trunk_allowed_vlan_ceiling():
+    plan, result = _floor1_configuration_result()
+    expectations = {item.id: item for item in plan.verification_expectations}
+    trunk = next(
+        item for item in result.verification_results
+        if expectations[item.expectation_id].kind is VerificationKind.TRUNK
+    )
+    trunk.status = ActionExecutionStatus.VERIFIED
+    trunk.evidence_method = "fresh_show_interfaces_trunk"
+    trunk.fresh_evidence = True
+    trunk.fields = {
+        "interface": FieldVerificationStatus.VERIFIED,
+        "status": FieldVerificationStatus.VERIFIED,
+        "allowed_vlans": FieldVerificationStatus.UNOBSERVABLE,
+    }
+
+    assert canonical_stage_configuration_error(plan, result) == ""
+
+    unknown = result.model_copy(deep=True)
+    next(
+        item for item in unknown.verification_results
+        if item.expectation_id == trunk.expectation_id
+    ).fields["allowed_vlans"] = FieldVerificationStatus.UNKNOWN
+    assert "unknown" in canonical_stage_configuration_error(
+        plan, unknown,
+    ).casefold()
+
+    stale = result.model_copy(deep=True)
+    next(
+        item for item in stale.verification_results
+        if item.expectation_id == trunk.expectation_id
+    ).fresh_evidence = False
+    assert "trunk" in canonical_stage_configuration_error(plan, stale).casefold()
 
 
 def test_only_l3_carrier_unknown_is_retryable_after_typed_convergence_proof():

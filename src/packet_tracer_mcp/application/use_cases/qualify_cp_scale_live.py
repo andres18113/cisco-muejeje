@@ -496,7 +496,7 @@ def canonical_stage_configuration_error(
     plan: ConfigurationPlan,
     result: ConfigurationApplicationResult,
 ) -> str:
-    """Accept only the two exact measured CP-SCALE E5 read-back ceilings."""
+    """Accept only the exact measured CP-SCALE E5 read-back ceilings."""
 
     identity_errors: list[str] = []
     if result.config_plan_id != plan.id:
@@ -589,6 +589,26 @@ def canonical_stage_configuration_error(
                 )
             continue
 
+        if expectation.kind is VerificationKind.TRUNK:
+            ceiling_present = True
+            expected_fields = {
+                "interface": FieldVerificationStatus.VERIFIED,
+                "status": FieldVerificationStatus.VERIFIED,
+                "allowed_vlans": FieldVerificationStatus.UNOBSERVABLE,
+            }
+            if (
+                item.status is not ActionExecutionStatus.VERIFIED
+                or not item.fresh_evidence
+                or item.evidence_method != "fresh_show_interfaces_trunk"
+                or item.fields != expected_fields
+            ):
+                return (
+                    f"Trunk verification {item.expectation_id!r} departed "
+                    "from the exact operational trunk VERIFIED and allowed "
+                    "VLAN list UNOBSERVABLE ceiling."
+                )
+            continue
+
         if (
             item.status is not ActionExecutionStatus.VERIFIED
             or not item.fresh_evidence
@@ -600,7 +620,7 @@ def canonical_stage_configuration_error(
             return (
                 f"Configuration verification {item.expectation_id!r} is "
                 f"{item.status.value}; only fresh VERIFIED evidence is allowed "
-                "outside the two governed ceilings."
+                "outside the governed ceilings."
             )
 
     expected_status = (
