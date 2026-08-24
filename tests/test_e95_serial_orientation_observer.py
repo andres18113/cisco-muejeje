@@ -10,6 +10,7 @@ from src.packet_tracer_mcp.application.use_cases.observe_serial_orientation impo
     SerialControllerObservation,
     SerialOrientationObserver,
     SerialOrientationStatus,
+    inherit_verified_serial_orientation,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
@@ -164,6 +165,102 @@ def test_fresh_dce_and_dte_return_a_new_oriented_manifest_without_changing_e4():
         ("MCP-R1", "Serial0/0/0"),
         ("MCP-R2", "Serial0/0/0"),
     ]
+
+
+def test_verified_serial_orientation_is_inherited_only_when_serial_topology_is_unchanged():
+    core = _topology()
+    core_manifest = _manifest(core)
+    runtime = _FakeRuntime({
+        ("MCP-R1", "Serial0/0/0"): _observation(
+            "MCP-R1", SerialEndpointOrientation.DCE,
+        ),
+        ("MCP-R2", "Serial0/0/0"): _observation(
+            "MCP-R2", SerialEndpointOrientation.DTE,
+        ),
+    })
+    verified = SerialOrientationObserver(runtime).observe(core, core_manifest)
+    assert verified.oriented_manifest is not None
+
+    expanded = core.model_copy(deep=True)
+    expanded.id = "e4/serial-orientation-expanded"
+    expanded.devices.append(DevicePlan(
+        id="sw1", name="MCP-SW1", model="2960-24TT", category="switch",
+    ))
+    expanded.links.append(LinkPlan(
+        id="link/lan/r1-sw1",
+        device_a_id="r1",
+        device_a="MCP-R1",
+        port_a="FastEthernet0/0",
+        device_b_id="sw1",
+        device_b="MCP-SW1",
+        port_b="GigabitEthernet0/1",
+        cable="copper",
+        link_role="edge_link",
+    ))
+    stamp_topology_hashes(expanded)
+    expanded_manifest = build_deployment_manifest(
+        expanded,
+        [
+            RuntimeConfigurationTarget(
+                device_name="MCP-R1", model="2911",
+                interfaces=["Serial0/0/0", "FastEthernet0/0"],
+            ),
+            RuntimeConfigurationTarget(
+                device_name="MCP-R2", model="2911", interfaces=["Serial0/0/0"],
+            ),
+            RuntimeConfigurationTarget(
+                device_name="MCP-SW1", model="2960-24TT",
+                interfaces=["GigabitEthernet0/1"],
+            ),
+        ],
+        fingerprint=core_manifest.environment_fingerprint,
+        deployment_id="deployment/serial-orientation-expanded",
+        link_bindings=[
+            core_manifest.link_binding_for("link/wan/r1-r2").model_copy(deep=True),
+            DeploymentLinkBinding(
+                semantic_link_id="link/lan/r1-sw1",
+                endpoint_a=DeploymentLinkEndpoint(
+                    semantic_device_id="r1", interface="FastEthernet0/0",
+                ),
+                endpoint_b=DeploymentLinkEndpoint(
+                    semantic_device_id="sw1", interface="GigabitEthernet0/1",
+                ),
+                runtime_link_identifier="runtime-link-2",
+                runtime_link_identity_observed=True,
+            ),
+        ],
+    )
+
+    inherited = inherit_verified_serial_orientation(
+        expanded,
+        expanded_manifest,
+        verified_topology=core,
+        verified_manifest=verified.oriented_manifest,
+    )
+
+    assert inherited.verified and inherited.reused
+    assert inherited.oriented_manifest is not None
+    binding = inherited.oriented_manifest.link_binding_for("link/wan/r1-r2")
+    assert binding.endpoint_a.orientation is SerialEndpointOrientation.DCE
+    assert binding.endpoint_b.orientation is SerialEndpointOrientation.DTE
+    assert inherited.oriented_manifest.physical_topology_hash == (
+        expanded.physical_identity_hash
+    )
+
+    changed = expanded.model_copy(deep=True)
+    serial = next(item for item in changed.links if item.cable == "serial")
+    serial.port_a = "Serial0/0/1"
+    stamp_topology_hashes(changed)
+    refused = inherit_verified_serial_orientation(
+        changed,
+        expanded_manifest.model_copy(update={
+            "physical_topology_hash": changed.physical_identity_hash,
+        }),
+        verified_topology=core,
+        verified_manifest=verified.oriented_manifest,
+    )
+    assert not refused.verified
+    assert "serial topology" in " ".join(refused.errors).casefold()
 
 
 @pytest.mark.parametrize(

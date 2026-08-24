@@ -83,6 +83,8 @@ class SerialOrientationResult(BaseModel):
     oriented_manifest: DeploymentManifest | None = None
     observations: list[SerialEndpointOrientationEvidence] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    reused: bool = False
+    inherited_from_manifest_semantic_hash: str = ""
 
     @property
     def verified(self) -> bool:
@@ -100,6 +102,10 @@ class SerialOrientationResult(BaseModel):
                 self.oriented_manifest.semantic_hash if self.oriented_manifest else ""
             ),
             "observation_count": len(self.observations),
+            "reused": self.reused,
+            "inherited_from_manifest_semantic_hash": (
+                self.inherited_from_manifest_semantic_hash
+            ),
             "errors": list(self.errors),
         }
 
@@ -283,6 +289,136 @@ class SerialOrientationObserver:
             observations=observations,
             errors=sorted(set(errors)),
         )
+
+
+def inherit_verified_serial_orientation(
+    topology: TopologyPlan,
+    manifest: DeploymentManifest,
+    *,
+    verified_topology: TopologyPlan,
+    verified_manifest: DeploymentManifest,
+) -> SerialOrientationResult:
+    """Carry a verified DCE/DTE binding into an unchanged serial subgraph.
+
+    Later cumulative CP-SCALE stages add only LAN objects. Re-running controller
+    discovery on the unchanged routers weakens the retained evidence and can
+    consume unrelated terminal history. This path still validates both
+    manifests and every exact serial endpoint before copying only orientation.
+    """
+
+    physical_hash = topology.physical_identity_hash
+    errors: list[str] = []
+    if not physical_hash or not verified_topology.physical_identity_hash:
+        errors.append("Current and verified topologies require physical hashes.")
+    if _serial_signature(topology) != _serial_signature(verified_topology):
+        errors.append(
+            "Current serial topology differs from the VERIFIED serial topology."
+        )
+    if manifest.physical_topology_hash != physical_hash:
+        errors.append(
+            "Current DeploymentManifest physical topology hash does not match E4."
+        )
+    if manifest.semantic_hash != deployment_manifest_semantic_hash(manifest):
+        errors.append("Current DeploymentManifest semantic hash is invalid.")
+    if (
+        verified_manifest.physical_topology_hash
+        != verified_topology.physical_identity_hash
+    ):
+        errors.append(
+            "VERIFIED DeploymentManifest physical topology hash does not match E4."
+        )
+    if (
+        verified_manifest.semantic_hash
+        != deployment_manifest_semantic_hash(verified_manifest)
+    ):
+        errors.append("VERIFIED DeploymentManifest semantic hash is invalid.")
+    if errors:
+        return SerialOrientationResult(
+            status=SerialOrientationStatus.FAILED,
+            source_manifest_semantic_hash=manifest.semantic_hash,
+            physical_topology_hash=physical_hash,
+            inherited_from_manifest_semantic_hash=verified_manifest.semantic_hash,
+            errors=sorted(set(errors)),
+        )
+
+    inherited = manifest.model_copy(deep=True)
+    for link in sorted(
+        (
+            item for item in topology.links
+            if (item.cable or "").strip().casefold() == "serial"
+        ),
+        key=_link_id,
+    ):
+        link_id = _link_id(link)
+        try:
+            current_binding = inherited.link_binding_for(link_id)
+            verified_binding = verified_manifest.link_binding_for(link_id)
+            current_endpoints = _bound_endpoints(link, current_binding)
+            verified_link = next(
+                item for item in verified_topology.links
+                if _link_id(item) == link_id
+            )
+            _bound_endpoints(verified_link, verified_binding)
+        except (DeploymentIdentityError, StopIteration) as exc:
+            errors.append(str(exc) or f"Serial link {link_id!r} is not reusable.")
+            continue
+        orientations = {
+            endpoint.semantic_device_id: endpoint.orientation
+            for endpoint in (
+                verified_binding.endpoint_a, verified_binding.endpoint_b,
+            )
+        }
+        values = list(orientations.values())
+        if (
+            values.count(SerialEndpointOrientation.DCE) != 1
+            or values.count(SerialEndpointOrientation.DTE) != 1
+        ):
+            errors.append(
+                f"VERIFIED serial link {link_id!r} lacks one DCE and one DTE."
+            )
+            continue
+        for semantic_device_id, _ in current_endpoints:
+            endpoint = (
+                current_binding.endpoint_a
+                if current_binding.endpoint_a.semantic_device_id
+                == semantic_device_id
+                else current_binding.endpoint_b
+            )
+            endpoint.orientation = orientations[semantic_device_id]
+
+    if errors:
+        return SerialOrientationResult(
+            status=SerialOrientationStatus.FAILED,
+            source_manifest_semantic_hash=manifest.semantic_hash,
+            physical_topology_hash=physical_hash,
+            inherited_from_manifest_semantic_hash=verified_manifest.semantic_hash,
+            errors=sorted(set(errors)),
+        )
+    inherited.semantic_hash = deployment_manifest_semantic_hash(inherited)
+    return SerialOrientationResult(
+        status=SerialOrientationStatus.VERIFIED,
+        source_manifest_semantic_hash=manifest.semantic_hash,
+        physical_topology_hash=physical_hash,
+        oriented_manifest=inherited,
+        reused=True,
+        inherited_from_manifest_semantic_hash=verified_manifest.semantic_hash,
+    )
+
+
+def _serial_signature(
+    topology: TopologyPlan,
+) -> tuple[tuple[str, tuple[tuple[str, str], ...]], ...]:
+    return tuple(sorted(
+        (
+            _link_id(link),
+            tuple(sorted((
+                (link.device_a_id or link.device_a, link.port_a),
+                (link.device_b_id or link.device_b, link.port_b),
+            ))),
+        )
+        for link in topology.links
+        if (link.cable or "").strip().casefold() == "serial"
+    ))
 
 
 def _link_id(link: LinkPlan) -> str:

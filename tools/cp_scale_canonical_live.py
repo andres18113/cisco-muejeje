@@ -52,6 +52,7 @@ from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import
 )
 from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
     SerialOrientationObserver,
+    inherit_verified_serial_orientation,
 )
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_capability_probe_error,
@@ -457,7 +458,9 @@ def _execute_stage(
     transport: PacketTracerHttpTransport,
     fingerprint: EnvironmentFingerprint,
     packet_tracer_version: str,
-) -> tuple[dict[str, object], object]:
+    verified_serial_topology=None,
+    verified_serial_manifest=None,
+) -> tuple[dict[str, object], object, object]:
     evidence: dict[str, object] = {
         "stage": projection.stage.value,
         "plan": {
@@ -488,9 +491,21 @@ def _execute_stage(
             + "; ".join(deployment.errors)
         )
 
-    orientation = SerialOrientationObserver(
-        PacketTracerSerialOrientationRuntime(transport.send_and_wait),
-    ).observe(projection.topology, deployment.manifest)
+    if (verified_serial_topology is None) != (verified_serial_manifest is None):
+        raise CanonicalLiveFailure(
+            "Verified serial topology and manifest must be provided together."
+        )
+    if verified_serial_topology is None:
+        orientation = SerialOrientationObserver(
+            PacketTracerSerialOrientationRuntime(transport.send_and_wait),
+        ).observe(projection.topology, deployment.manifest)
+    else:
+        orientation = inherit_verified_serial_orientation(
+            projection.topology,
+            deployment.manifest,
+            verified_topology=verified_serial_topology,
+            verified_manifest=verified_serial_manifest,
+        )
     evidence["serial_orientation"] = orientation.model_dump(mode="json")
     if not orientation.verified or orientation.oriented_manifest is None:
         raise CanonicalLiveFailure(
@@ -855,6 +870,8 @@ def run(
         previous_projection = None
         verified_core_deployment = None
         verified_core_topology = None
+        verified_serial_manifest = None
+        verified_serial_topology = None
         stage_snapshot = None
         for index, stage in enumerate(_BUILD_STAGES):
             projection = project_cp_scale_canonical_stage(
@@ -956,7 +973,7 @@ def run(
                     f"Cumulative physical stage {stage.value!r} was not VERIFIED: "
                     + "; ".join(deployment.errors)
                 )
-            stage_evidence, _, stage_snapshot = _execute_stage(
+            stage_evidence, stage_manifest, stage_snapshot = _execute_stage(
                 projection,
                 composition=composition,
                 deployment=deployment,
@@ -967,7 +984,12 @@ def run(
                 transport=transport,
                 fingerprint=fingerprint,
                 packet_tracer_version=packet_tracer_version,
+                verified_serial_topology=verified_serial_topology,
+                verified_serial_manifest=verified_serial_manifest,
             )
+            if stage is CPScaleCanonicalStage.ROUTING_CORE:
+                verified_serial_topology = projection.topology
+                verified_serial_manifest = stage_manifest
             evidence["stages"].append(stage_evidence)
             evidence["live_devices"] = len(projection.topology.devices)
             evidence["live_links"] = len(projection.topology.links)
@@ -1087,6 +1109,8 @@ def run(
             transport=transport,
             fingerprint=fingerprint,
             packet_tracer_version=packet_tracer_version,
+            verified_serial_topology=verified_serial_topology,
+            verified_serial_manifest=verified_serial_manifest,
         )
         full_evidence["stage"] = "full-qualification"
         evidence["full_qualification"] = full_evidence
