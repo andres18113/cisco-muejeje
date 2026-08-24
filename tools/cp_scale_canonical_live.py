@@ -30,6 +30,9 @@ from packet_tracer_mcp.application.use_cases.apply_configuration import (
 from packet_tracer_mcp.application.use_cases.apply_control_plane import (
     ControlPlaneApplicator,
 )
+from packet_tracer_mcp.application.use_cases.capability_discovery import (
+    CapabilityDiscoveryService,
+)
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     compose_cp_scale_canonical,
@@ -51,9 +54,11 @@ from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
     SerialOrientationObserver,
 )
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+    canonical_capability_probe_error,
     canonical_checkpoint_repository_error,
     canonical_cleanup_restoration_error,
     canonical_configuration_retryable_operational_unknown,
+    canonical_required_capability_probes,
     canonical_stage_configuration_error,
     canonical_stage_resume_error,
     canonical_stage_workspace_error,
@@ -67,8 +72,15 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ConfigurationApplicationStatus,
     ConfigurationRuntimeContext,
 )
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
+    CapabilityStatus,
+)
 from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
+)
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
+    ProbeLevel,
+    ProbeRequest,
 )
 from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentItemStatus,
@@ -77,6 +89,9 @@ from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
 )
 from packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
     packet_tracer_control_plane_capabilities,
+)
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+    EnterpriseCapabilityAdapter,
 )
 from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
@@ -101,11 +116,17 @@ from packet_tracer_mcp.infrastructure.execution.live_environment_preflight impor
 from packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
+from packet_tracer_mcp.infrastructure.execution.probe_runtime import (
+    PacketTracerBridgeProbeRuntime,
+)
 from packet_tracer_mcp.infrastructure.execution.serial_orientation_runtime import (
     PacketTracerSerialOrientationRuntime,
 )
 from packet_tracer_mcp.infrastructure.execution.typed_ping import (
     TypedPingExecutor,
+)
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+    CapabilitySnapshotStore,
 )
 from packet_tracer_mcp.shared.utils import (
     serialize_typed_ping_evidence,
@@ -709,8 +730,12 @@ def run(
             _write_evidence(evidence)
             return 2
 
+        capability_store = CapabilitySnapshotStore(
+            GOVERNED_ROOT / "data" / "capabilities",
+        )
         composition = compose_cp_scale_canonical(
             packet_tracer_version=packet_tracer_version,
+            capability_store=capability_store,
         )
         if not composition.valid:
             raise CanonicalLiveFailure(
@@ -719,6 +744,94 @@ def run(
         assert composition.topology is not None
         assert composition.configuration is not None
         assert composition.control_plane is not None
+
+        required_capabilities = canonical_required_capability_probes(composition)
+        probe_runtime = PacketTracerBridgeProbeRuntime(
+            transport.send_and_wait,
+            packet_tracer_version=packet_tracer_version,
+            send=transport.send,
+            transport_channel=transport.bridge_transport,
+        )
+        capability_discovery = CapabilityDiscoveryService(
+            runtime=probe_runtime,
+            snapshots=capability_store,
+            identity_for=EnterpriseCapabilityAdapter().identity_for,
+        )
+        capability_evidence = []
+        for model, capabilities in required_capabilities.items():
+            snapshot, cached = capability_discovery.run(ProbeRequest(
+                models=[model],
+                capabilities=capabilities,
+                probe_level=ProbeLevel.LOGICAL,
+                force=True,
+                packet_tracer_version=packet_tracer_version,
+            ))
+            probe_error = canonical_capability_probe_error(
+                snapshot,
+                model=model,
+                capabilities=capabilities,
+                packet_tracer_version=packet_tracer_version,
+            )
+            capability_evidence.append({
+                "model": model,
+                "required": capabilities,
+                "cached": cached,
+                "summary": snapshot.compact_summary(),
+                "results": [
+                    item.model_dump(mode="json")
+                    for item in snapshot.session.results
+                    if item.capability in capabilities
+                ],
+                "error": probe_error,
+            })
+            if probe_error:
+                evidence["capability_prequalification"] = capability_evidence
+                raise CanonicalLiveFailure(probe_error)
+
+        post_probe_first = physical.observe_workspace()
+        post_probe_second = physical.observe_workspace()
+        post_probe_error = canonical_cleanup_restoration_error(
+            baseline, post_probe_first, post_probe_second,
+        )
+        evidence["capability_prequalification"] = {
+            "requirements": required_capabilities,
+            "sessions": capability_evidence,
+            "workspace_first": post_probe_first.compact_summary(),
+            "workspace_second": post_probe_second.compact_summary(),
+            "restoration_error": post_probe_error,
+        }
+        if post_probe_error:
+            raise CanonicalLiveFailure(post_probe_error)
+
+        composition = compose_cp_scale_canonical(
+            packet_tracer_version=packet_tracer_version,
+            capability_store=capability_store,
+        )
+        if not composition.valid:
+            raise CanonicalLiveFailure(
+                "Canonical post-probe composition failed: "
+                + "; ".join(composition.issues),
+            )
+        unresolved = sorted(
+            f"{model}:{capability}"
+            for model, capabilities in required_capabilities.items()
+            for capability in capabilities
+            if (
+                composition.capabilities.get(model) is None
+                or getattr(
+                    composition.capabilities[model], capability,
+                    CapabilityStatus.UNKNOWN,
+                ) is not CapabilityStatus.SUPPORTED
+            )
+        )
+        evidence["capability_prequalification"]["unresolved_after_composition"] = (
+            unresolved
+        )
+        if unresolved:
+            raise CanonicalLiveFailure(
+                "Canonical composition did not consume VERIFIED capability evidence: "
+                + ", ".join(unresolved)
+            )
 
         fingerprint = EnvironmentFingerprint(
             backend="packet_tracer",

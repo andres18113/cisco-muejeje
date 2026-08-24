@@ -9,11 +9,17 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     project_cp_scale_canonical_stage,
 )
 from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+    canonical_capability_probe_error,
+    canonical_required_capability_probes,
     canonical_checkpoint_repository_error,
     canonical_cleanup_restoration_error,
     canonical_configuration_retryable_operational_unknown,
     canonical_stage_configuration_error,
     canonical_stage_resume_error,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+    CapabilityStatus,
+    EvidenceSource,
 )
 from src.packet_tracer_mcp.application.use_cases.reconcile_canonical_stage import (
     canonical_delta_deployment_error,
@@ -63,6 +69,19 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+    BackendVersionProvenance,
+    CapabilityProbeResult,
+    CapabilitySnapshot,
+    CleanupStatus,
+    DeviceIdentity,
+    DiscoverySource,
+    ModelIdentityStatus,
+    ProbeExecutionStatus,
+    ProbeSession,
+    ProbeSessionResult,
+    RuntimeDeviceDescriptor,
+)
 
 
 _VERSION = "9.0.1.0858"
@@ -72,6 +91,100 @@ _FINGERPRINT = EnvironmentFingerprint(
     bridge_transport="http",
     runtime_mode="live",
 )
+
+
+def _supported_capability_snapshot(
+    model: str,
+    capabilities: list[str],
+) -> CapabilitySnapshot:
+    session = ProbeSession(
+        session_id="probe-cp-scale",
+        packet_tracer_version=_VERSION,
+        mutations=[f"temporary-device:{model}"],
+        cleanup_status=CleanupStatus.CLEAN,
+    )
+    return CapabilitySnapshot(
+        packet_tracer_version=_VERSION,
+        backend_version_provenance=BackendVersionProvenance.DECLARED_ENVIRONMENT,
+        initial_inventory_hash="empty-baseline",
+        final_inventory_hash="empty-baseline",
+        inventory_restored=True,
+        session=ProbeSessionResult(
+            session=session,
+            devices=[RuntimeDeviceDescriptor(
+                identity=DeviceIdentity(
+                    canonical_id=model,
+                    runtime_id=model,
+                    display_name=model,
+                    packet_tracer_version=_VERSION,
+                    status=ModelIdentityStatus.CATALOG_MATCHED,
+                ),
+                discovery_source=DiscoverySource.CONTROLLED_CREATE_PROBE,
+                observed=True,
+            )],
+            results=[CapabilityProbeResult(
+                probe_id=f"{capability}-probe",
+                model=model,
+                capability=capability,
+                status=CapabilityStatus.SUPPORTED,
+                execution_status=ProbeExecutionStatus.VERIFIED,
+                evidence_source=EvidenceSource.CONTROLLED_PROBE,
+                configured=True,
+                verified=True,
+                packet_tracer_version=_VERSION,
+            ) for capability in capabilities],
+            cleanup_deleted=["__MCP_PROBE_cp_scale_01"],
+        ),
+    )
+
+
+def test_canonical_capability_prequalification_is_plan_derived_and_fail_closed():
+    composition = compose_cp_scale_canonical(packet_tracer_version=_VERSION)
+
+    required = canonical_required_capability_probes(composition)
+
+    assert required == {
+        "2811": ["layer3", "supports_dhcp_server"],
+        "2960-24TT": ["supports_trunk", "supports_vlan"],
+        "3560-24PS": ["supports_trunk", "supports_vlan"],
+        "3650-24PS": ["supports_trunk", "supports_vlan"],
+    }
+    snapshot = _supported_capability_snapshot(
+        "2960-24TT", required["2960-24TT"],
+    )
+    assert canonical_capability_probe_error(
+        snapshot,
+        model="2960-24TT",
+        capabilities=required["2960-24TT"],
+        packet_tracer_version=_VERSION,
+    ) == ""
+
+    unknown = snapshot.model_copy(deep=True)
+    unknown.session.results[0].status = CapabilityStatus.UNKNOWN
+    assert "unknown" in canonical_capability_probe_error(
+        unknown,
+        model="2960-24TT",
+        capabilities=required["2960-24TT"],
+        packet_tracer_version=_VERSION,
+    ).casefold()
+
+    dirty = snapshot.model_copy(deep=True)
+    dirty.session.session.cleanup_status = CleanupStatus.DIRTY_SESSION
+    assert "cleanup" in canonical_capability_probe_error(
+        dirty,
+        model="2960-24TT",
+        capabilities=required["2960-24TT"],
+        packet_tracer_version=_VERSION,
+    ).casefold()
+
+    unrestored = snapshot.model_copy(deep=True)
+    unrestored.inventory_restored = False
+    assert "restor" in canonical_capability_probe_error(
+        unrestored,
+        model="2960-24TT",
+        capabilities=required["2960-24TT"],
+        packet_tracer_version=_VERSION,
+    ).casefold()
 
 
 def _floor1_configuration_result():

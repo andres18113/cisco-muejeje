@@ -18,6 +18,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from ...domain.enterprise.models.capabilities import CapabilityStatus
 from ...domain.enterprise.models.configuration import ConfigurationPlan, VerificationKind
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -26,6 +27,14 @@ from ...domain.enterprise.models.configuration_runtime import (
     FieldVerificationStatus,
 )
 from ...domain.enterprise.models.deployment import EnvironmentFingerprint
+from ...domain.enterprise.models.discovery import (
+    BackendVersionProvenance,
+    CapabilitySnapshot,
+    CleanupStatus,
+    ModelIdentityStatus,
+    ProbeExecutionStatus,
+    inventory_restoration_matches,
+)
 from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
@@ -63,6 +72,114 @@ _POINT_COUNTS = {
     CPScalePoint.C: (217, 12),
     CPScalePoint.D: (279, 17),
 }
+
+
+def canonical_required_capability_probes(
+    composition: EnterpriseReferenceComposition,
+) -> dict[str, list[str]]:
+    """Derive the registered logical probes required by the canonical plan."""
+
+    from .capability_discovery import CapabilityProbeRegistry
+
+    if composition.topology is None or composition.configuration is None:
+        raise ValueError(
+            "Canonical capability prequalification requires complete product plans."
+        )
+    known = set(CapabilityProbeRegistry().known_capabilities)
+    models_by_device = {
+        item.id: item.model for item in composition.topology.devices
+    }
+    required: dict[str, set[str]] = {}
+    for action in composition.configuration.actions:
+        capability = action.required_capability
+        if not capability or capability.startswith("endpoint_"):
+            continue
+        if capability not in known:
+            raise ValueError(
+                f"No registered typed capability probe exists for {capability!r}."
+            )
+        model = models_by_device.get(action.device_id)
+        if not model:
+            raise ValueError(
+                f"Configuration target {action.device_id!r} has no topology model."
+            )
+        required.setdefault(model, set()).add(capability)
+    return {
+        model: sorted(capabilities)
+        for model, capabilities in sorted(required.items())
+    }
+
+
+def canonical_capability_probe_error(
+    snapshot: CapabilitySnapshot,
+    *,
+    model: str,
+    capabilities: list[str],
+    packet_tracer_version: str,
+) -> str:
+    """Reject any capability session that is not exact, clean and VERIFIED."""
+
+    if snapshot.packet_tracer_version != packet_tracer_version:
+        return (
+            "Capability probe Packet Tracer version mismatch: expected "
+            f"{packet_tracer_version!r}, observed {snapshot.packet_tracer_version!r}."
+        )
+    if snapshot.backend_version_provenance is BackendVersionProvenance.UNKNOWN:
+        return "Capability probe backend version provenance is UNKNOWN."
+    if snapshot.session.session.cleanup_status is not CleanupStatus.CLEAN:
+        return (
+            "Capability probe cleanup is "
+            f"{snapshot.session.session.cleanup_status.value}."
+        )
+    if snapshot.session.cleanup_failed:
+        return "Capability probe cleanup retained failed disposable objects."
+    if (
+        snapshot.inventory_restored is not True
+        or not inventory_restoration_matches(
+            snapshot.initial_inventory_hash, snapshot.final_inventory_hash,
+        )
+        or not snapshot.reusable
+    ):
+        return "Capability probe did not prove exact inventory restoration."
+
+    identities = [
+        item for item in snapshot.session.devices
+        if item.identity.canonical_id == model
+        and item.identity.status is ModelIdentityStatus.CATALOG_MATCHED
+        and item.observed
+    ]
+    if len(identities) != 1:
+        return f"Capability probe did not bind one observed catalog identity for {model}."
+
+    results_by_capability = {
+        capability: [
+            item for item in snapshot.session.results
+            if item.model == model and item.capability == capability
+        ]
+        for capability in capabilities
+    }
+    for capability, results in results_by_capability.items():
+        if len(results) != 1:
+            return (
+                f"Capability probe result inventory for {model}:{capability} "
+                f"contained {len(results)} result(s)."
+            )
+        result = results[0]
+        if result.status is not CapabilityStatus.SUPPORTED:
+            return (
+                f"Capability probe {model}:{capability} is "
+                f"{result.status.value}."
+            )
+        if (
+            result.execution_status is not ProbeExecutionStatus.VERIFIED
+            or not result.verified
+            or result.packet_tracer_version != packet_tracer_version
+            or result.evidence() is None
+        ):
+            return (
+                f"Capability probe {model}:{capability} lacks exact VERIFIED evidence."
+            )
+    return ""
 
 
 class CPScalePointStatus(str, Enum):
