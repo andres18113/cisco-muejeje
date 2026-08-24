@@ -5,256 +5,202 @@
 ```text
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
-HANDOFF_BASE_HEAD = a519987acb168ec6d3af14a7d81c0c1ef034f1f5
 PACKET_TRACER_BUILD = 9.0.1.0858
-ROUTING_CORE = GOVERNED VERIFIED
-ROUTER4_SWITCH10 = GOVERNED VERIFIED
-PT_MCP_RELIABLE_SCALE_ENVELOPE = 4 devices / 4 links
-LIVE_SEMANTIC_WORKSPACE = 0 devices / 0 links
-CLEANUP = VERIFIED twice
+ROUTING_CORE = GOVERNED VERIFIED (re-materialized this session)
+ROUTER4_SWITCH10 = GOVERNED VERIFIED (re-materialized this session)
+FLOOR1_PHYSICAL = VERIFIED (74 devices / 55 links / 3 modules, 132 items observed)
+FLOOR1_CONFIGURATION = CONTRADICTED (24 of 49 endpoint addressing read-backs)
 FLOOR1 = NOT VERIFIED
 CP_SCALE = OPEN
 E10 = FORBIDDEN
 ```
 
-No live run remains active. Persistent exec session `42867` terminated safely after the
-Floor-1 failure and cleanup. Do not resume or reuse it. Stay OFFLINE until both Floor-1
-defect classes below have typed, fail-first fixes and affected/full regression is green.
-Do not re-qualify the routing core or Router4/Switch10 absent a real regression.
+No live run is active. Cleanup verified twice; semantic workspace is 0 devices.
+Packet Tracer keeps a growing number of backend-managed `Power Distribution
+Device` objects with zero ports outside the semantic workspace; the governed
+restoration check ignores them and was satisfied on every run this session.
 
-Commits produced and already pushed during this run, after the requested starting HEAD
-`38bf3665881d5d367f43256668ac37c1745fd496`:
+## The scale envelope was wrong
 
-```text
-420cf38 feat(cp-scale): add governed persistent live staging
-2d90b0c fix(cp-scale): reverify after serial convergence
-8a15b14 fix(e5): keep carrier outside configuration claims
-f324912 chore(cp-scale): checkpoint rematerialized routing core
-390c199 fix(cp-scale): prequalify canonical capabilities
-a9c2e57 chore(cp-scale): checkpoint reverified routing core
-d49cef7 fix(cp-scale): govern trunk readback ceiling
-b424c9e chore(cp-scale): checkpoint core with trunk evidence
-6e8196d fix(cp-scale): retain verified serial orientation
-d96b045 chore(cp-scale): checkpoint core serial inheritance
-a519987 chore(cp-scale): checkpoint Router4 Switch10
-```
+The previous handoff recorded `PT_MCP_RELIABLE_SCALE_ENVELOPE = 4 devices / 4
+links`. That is not the limit. Floor 1 deployed **74 devices, 55 links and 3
+modules with all 132 items observed and `status=verified`**, and all 136 typed
+configuration actions applied. Physical scale is not the blocker and has not
+been for some time.
 
-## Canonical authority and invariants
+## What this session closed
 
-The topology authority is:
+Offline: **2645 passed**, no failures.
 
-- `docs/reference/cp-scale/diseno_logico_IMP.md`
-- `docs/reference/cp-scale/topologia_completa_IMP.md`
+### 1. PoE admission failed open -- FIXED
 
-Typed sources are:
+`ReferenceHardwarePlanner` validated model, module and port names but never read
+`AccessBlockPlan.required_poe_ports` nor per-binding `requires_poe`, so a design
+demanding 86 powered ports across 13 access switches compiled `VALID` with
+`poe_capacity=None` on every one of them.
 
-- `src/packet_tracer_mcp/domain/enterprise/scenarios/cp_scale.py`
-- `src/packet_tracer_mcp/domain/enterprise/scenarios/cp_scale_physical.py`
-- `src/packet_tracer_mcp/application/use_cases/compose_cp_scale_canonical.py`
-
-The governed target is exactly 314 devices / 219 links: 18 network devices, 296
-endpoint/AP devices, 279 workload endpoints, 17 APs, 18 infrastructure links, 199
-switch-direct endpoint links, and 2 documented phone-PC passthrough links. Current
-authority pins 3x2811, 10x2960-24TT, 3x3650-24PS, and 2x3560-24PS. If evidence requires
-a stronger successor topology, update typed authority, reference documents, and tests
-together; do not silently substitute a model or change endpoint pairing.
-
-VLAN policy is DATA 10, VOICE 20, and IoT/AP/printers 30. Phone ports require access
-VLAN 10 plus voice VLAN 20. Trunks allow only 10/20/30. The STP ceiling is PVST;
-Rapid-PVST remains unqualified. UNKNOWN fails closed and APPLIED is never VERIFIED.
-Use typed/product paths only: no raw IOS/JS, `pt_send_raw`, or E10.
-
-## Terminated Floor-1 run and durable evidence
-
-The ignored durable artifact is `data/cp-scale/live-canonical-progress.json` (last write
-`2026-08-24T18:42:56.4327703Z`). It contains only successful `routing-core` and
-`router4-switch10` stage checkpoints; Floor 1 was never checkpointed. Its Floor-1
-failure is:
+Powered demand is now derived from expanded endpoint truth joined to the exact
+bindings, reconciled against each block aggregate, and decided per selected
+build:
 
 ```text
-CanonicalLiveFailure: Configuration at 'floor1' contradicted the plan:
-Configuration read-back contradicted the plan for: <43 action IDs>
+UNSUPPORTED               -> UNRESOLVED,         device INCOMPATIBLE
+UNKNOWN                   -> PARTIALLY_RESOLVED, device NEEDS_VERIFICATION
+SUPPORTED but over budget -> UNRESOLVED,         device INCOMPATIBLE
+powered endpoint off an access port -> UNRESOLVED
 ```
 
-Cleanup reports `verified=true`. It was independently observed twice as 0 semantic
-devices / 0 links. Six backend-managed `Power Distribution Device` objects with zero
-ports remained outside the semantic workspace on both observations. No presentation
-topology was retained.
+E5 already refuses anything but `VALID`, so this is the live gate.
 
-The user-provided canvas capture is
-`C:\Users\Andres\Downloads\topologia_floor1.png` (198204 bytes; UTC
-`2026-08-24T18:29:25`). It visibly shows all 21 Cisco 7960 switch links red while nearby
-PC/AP links are mostly green. Computer Use confirmed the MCP Control Center/log window
-had HTTP and file bridges connected with valid token state. Two exact Packet Tracer
-window activation/capture attempts timed out, so UI automation was stopped; the user's
-capture is the reliable visual evidence. It proves the symptom, not its cause.
-
-## Defect A: PoE admission fails open
-
-This defect is mechanically proven and is independent of the 43 configuration
-contradictions unless later evidence connects them.
-
-- Floor 1 declares `required_poe_ports=24` in `cp_scale_physical.py`.
-- `cp_scale.py` marks every Cisco 7960 and AP `requires_poe=True`.
-- Floor 1 binds 21 phones to Switch5 Fa0/1..21; each phone uses its `Switch` port.
-  Switch4/Switch5 are currently exact-reference `2960-24TT` devices.
-- `ReferenceHardwarePlanner.plan()` in
-  `src/packet_tracer_mcp/domain/enterprise/services/reference_hardware_planner.py`
-  validates model/module/port counts but consumes neither block `required_poe_ports`
-  nor per-binding `ExpandedEndpoint.requires_poe`. It therefore admits a selected
-  exact-reference switch with `poe_capacity=None`.
-- `EnterpriseCompiler._compile_endpoint_links()` and `_capability_warnings()` in
-  `src/packet_tracer_mcp/domain/enterprise/services/enterprise_compiler.py` allocate
-  only `ACCESS_CAPABLE` and reduce unknown PoE to a warning. Explicit `_PortAllocator`
-  reservations also skip required-class validation.
-
-Direct PoE endpoint demand in the current canonical bindings is:
+### 2. Exact-build PoE evidence -- MEASURED
 
 ```text
-Switch4=1  Switch5=23  Switch6=1  Switch7=16  Switch8=1  Switch9=5
-Switch0=1  Switch1=15  Switch3=9   MLS3=3     MLS4=2     MLS5=8  MLS6=1
+2960-24TT = UNSUPPORTED, verified   (24 access ports, complete power-OFF state)
+3560-24PS = SUPPORTED,   24 ports,  verified
+3650-24PS = SUPPORTED,   24 ports,  verified
 ```
 
-The fix must derive per-switch demand from expanded endpoint truth plus the exact
-binding, reconcile the block aggregate, require exact-build PoE capability evidence,
-and reject UNKNOWN/unsupported/insufficient capacity from live admission. Do not infer
-PoE from a model name. An aggregate block total alone cannot prove each selected switch
-is compatible.
+`3650-24PS` needed a product fix first: `supports_poe` selected access ports by
+interface-type name (`ethernet`/`fastethernet`) and a 3650 has no FastEthernet
+at all -- its access ports are `Gi1/0/1..24`. The set came back empty and a
+fully observed power-ON state collapsed to UNKNOWN, so a PoE switch could never
+be admitted for PoE. Access-ness now comes from the catalogue's declared
+`access_port_names`, the same rule `_port_descriptor` already used.
 
-Port-class blast radius must be handled deliberately: 17 canonical infrastructure
-bindings currently put `UPLINK_CAPABLE` demand on FastEthernet access-only ports and are
-allowed by explicit non-serial fallback; 16 endpoint bindings use Gigabit uplink-only
-ports. A strict allocator fix will expose those endpoint bindings and must not erase the
-documented infrastructure fallback ceiling.
+**Do not pin this evidence statically.** It was tried and reverted:
+`tests/test_cp_scale_poe_authorization.py` deliberately forbids a model *name*
+from promoting PoE, and a `StaticVerifiedCapabilityProvider` entry does exactly
+that. The consequence is that PoE evidence is environment-local -- it lives in
+the git-ignored `data/capabilities/runtime/9.0.1.0858/` snapshot store, and
+`tests/test_cp_scale_canonical_physical.py` needs that snapshot to pass. On a
+fresh checkout, re-measure with `data/cp-scale/poe-evidence-2960-3650/session.py`
+before expecting the canonical design to compile.
 
-Two temporary fail-first regressions were proved, then reverted when implementation was
-stopped, so the worktree contains no half-fix:
+### 3. Canonical authority corrected
 
-1. In `tests/test_reference_hardware_planner.py`, one PoE-required IP phone explicitly
-   bound to exact-build 2960 currently returns
-   `valid compatible 2960-24TT None None []` instead of failing closed.
-2. In `tests/test_cp_scale_canonical_physical.py`, every direct PoE endpoint is required
-   to fit an exact per-switch capacity; current selected devices expose
-   `poe_capacity=None`.
-
-Recreate those tests first and add a per-switch over-capacity case (for example demands
-3+1 against capacities 2+2). A draft narrow planner fix made its focused regression
-green, but was fully reverted because topology, per-port evidence, and canonical blast
-radius were not yet closed. Preferred semantics to validate are UNKNOWN => provisional
-`PARTIALLY_RESOLVED` / `NEEDS_VERIFICATION`; unsupported or insufficient =>
-`UNRESOLVED`; neither may pass the live compiler gate.
-
-A read-only in-memory candidate was mechanically compiled, but not adopted: replacing
-only Switch5/7/9/1/3 with 3560, consolidating phones/APs on those switches, and enabling
-PC/phone passthrough produced exactly 314 devices / 219 links (142 endpoint-access, 59
-phone-passthrough, 18 infrastructure; models 7x3560, 5x2960, 3x3650, 3x2811). Treat this
-only as evidence that one governed redesign is structurally possible. It changes the
-current canonical pairing/link-role authority and still cannot establish chassis power
-budget or active delivery, so do not select it without closing those governance gaps.
-
-## Exact-build capability evidence
-
-Evidence below is for Packet Tracer `9.0.1.0858` only:
-
-- 2960-24TT: exact port inventory VERIFIED; fresh VLAN/trunk support VERIFIED; PoE is
-  UNKNOWN and no `supports_poe` capability is admitted.
-- 3560-24PS: exact port inventory VERIFIED; VLAN/trunk support VERIFIED; current typed
-  PoE capability reports 24 powered FastEthernet ports. Raw `getPower`/`isPowerOn`
-  signals also appear on Gigabit ports, but must not be counted without a governed
-  contract. `power_delivery_active=None`: powered-device delivery and watt-budget
-  headroom remain unobserved. Twenty-one phones plus three APs would consume all 24
-  admitted powered ports, not prove budget margin.
-- 3650-24PS: exact inventory VERIFIED (Gi1/0/1..24 and Gi1/1/1..4); VLAN/trunk support
-  VERIFIED; PoE is UNKNOWN and no `supports_poe` capability is admitted.
-- Cisco 7960: exact identity and port inventory VERIFIED (`PC`, `Switch`, plus observed
-  logical Vlan1); phone runtime/power delivery is UNKNOWN. Its live switch links were
-  visually red.
-
-`src/packet_tracer_mcp/domain/enterprise/models/discovery.py` explicitly separates
-port `getPower`/`isPowerOn` observations from powered-device delivery. Do not upgrade
-the latter by inference.
-
-## Defect B: 43 independent configuration contradictions
-
-Offline projection maps all 43 failed IDs to `endpoint_addressing`: 3 AP static actions,
-21 Cisco7960 DHCP actions, 4 Motion Detector DHCP actions, 11 Smoke Detector DHCP
-actions, and 4 Webcam DHCP actions. No PC or printer action contradicted. Map expected
-actions with
-`project_cp_scale_canonical_stage(comp, CPScaleCanonicalStage.FLOOR1).configuration`.
+Nine access switches were pinned to `2960-24TT` while carrying 72 powered
+endpoints, and every one of them bound its access points to `Gi0/1-0/2` while
+spending FastEthernet access ports on infrastructure uplinks.
 
 ```text
-AP:
-5182633057691afc bb7bcd44f41d6d47 454539fd45427dd8
-
-PHONE:
-432556a02ddf724f 5457b517cd3f9637 fa24a758f868fc29 38669eb3340e6892
-7ab8a9f84fd7e49b 340d7b7459a80c91 12eb81e8261bcb03 9297694740a6bb36
-79da1d6279963b2d 63d372b30354d120 20042b96a790cc53 b362216e16eef648
-4b72636c210666b4 dfbd3dda98ac7c11 19a5594b874504c4 1b67b90adcb4c169
-c88d6f2e4949a99b 60f73066a2a34381 3f34feb723de1e29 bc5c5cb129183cdc
-3a69cc03bb9c2463
-
-MOTION:
-61b00a15ea63221e 898cf104c8c124de 077535d05c89fd14 cc82f2cfaafa7bcf
-
-SMOKE:
-9d84c297c8272cc5 59feb0d394ba7f49 df8b1f44736fa013 25d3cf1b3a00d079
-d89eebdffb84214a a1ac3b84c4970f5b 472bfe7ef521a2b9 5c4b41d835c72ad5
-3a953e4e1d3174b2 0ed800efcf801051 bd1d9475f715b518
-
-WEBCAM:
-853c8e540de748a0 d317eed31d68ea33 54b85bbd8b1f33c6 ff13c1596933a033
+9 access switches 2960-24TT -> 3560-24PS  (identical port layout, PoE evidenced)
+Switch10 stays 2960-24TT                  (powers nothing)
+uplinks   -> GigabitEthernet
+endpoints -> FastEthernet0/1..24
 ```
 
-The IDs live in the artifact's top-level failure string. Exact per-field actual
-readbacks were lost because `_execute_stage()` retains stage evidence locally and the
-outer runner appends it only after stage success; an exception therefore omits partial
-failure evidence from the journal. Before another live attempt, add a fail-first test
-and typed fix for durable partial/failure evidence capture (or another governed method
-that preserves exact actual fields), then group contradictions by observed root cause.
-Do not attribute these actions to PoE without evidence.
+Target unchanged: 314 devices / 219 links / 18 network devices / 199
+endpoint-access / 2 phone-passthrough, same endpoint pairing. Census is now
+`3x2811, 1x2960-24TT, 11x3560-24PS, 3x3650-24PS`. Both reference documents were
+updated with the models, the port roles and the measurement that decides them.
 
-## Verification ledger
+**Confirmed live**: every `configure_access_port` verification passed, including
+on the new `GigabitEthernet0/1` and `GigabitEthernet0/2` uplinks.
+
+### 4. Endpoint addressing read-back -- FIXED
+
+The read-back walked `getPortAt(i)` and accepted the first port exposing
+`getIpAddress`, which coincides with the addressed port only on single-port
+endpoints. The expectation now carries the addressed interface and the runtime
+reads that exact port; an interface it cannot find is `UNOBSERVABLE`, never
+`FAILED` -- not having looked at the right port is not evidence the plan was
+wrong.
+
+The 19 wireless IoT actions had no interface at all: those catalogue models
+expose an empty port inventory and `_validate_targets` skips empty interfaces,
+so a `critical=True` action reached a live device aimed at nothing. CP-SCALE
+already carries them with `wireless_association=unqualified`, and addressing
+rides on association, so none is claimed for them now. Their VLAN stays
+structural and their segment keeps its DHCP pool.
+
+Configuration actions 609 -> 514; DHCP pools still 9.
+
+### 5. Live failure evidence -- DURABLE
+
+`_execute_stage` journalled the full typed configuration result three lines
+before the raise that discarded it. `CanonicalLiveFailure` now carries
+`stage_evidence`, all ten raise sites attach it, and the runner persists it with
+`stage_outcome="failed"`. This session's root-causing depended entirely on it.
+
+Its regression drives `_execute_stage` in a child process -- importing the tool
+pulls the production `packet_tracer_mcp` namespace into pytest, which is exactly
+what `ImportIsolationPreflight` exists to prevent.
+
+## Floor-1 result: 43 contradictions -> 24
 
 ```text
-ROUTING_CORE = GOVERNED VERIFIED
-ROUTER4_SWITCH10 = GOVERNED VERIFIED
-FLOOR1_PHYSICAL = transiently APPLIED, then discredited and cleaned
-FLOOR1_CONFIGURATION = CONTRADICTED
-PHONE_POWER_AND_LINK = NOT VERIFIED
-VOICE_DATA_VLAN_10_20 = NOT VERIFIED
-POE_ADMISSION_DEFECT = PROVEN FAIL-OPEN
-2960_POE = UNKNOWN
-3650_POE = UNKNOWN
-3560_POWERED_PORT_COUNT = SUPPORTED (24 FastEthernet ports)
-3560_ACTIVE_POWER_DELIVERY_AND_WATT_BUDGET = UNKNOWN
+partial       23 PC-PT + 2 Printer-PT   ipv4/netmask VERIFIED  <- governed ceiling, success
+unobservable   3 DHCP pools                                    <- governed ceiling
+failed        21 x 7960   on Vlan1
+failed         3 x AccessPoint-PT on Port 0
 ```
 
-Earlier full regression was `2622 passed, 5 warnings`; the last retained affected run
-was `76 passed`. The temporary two-test PoE fail-first run failed for the intended
-product reason; the experimental narrow fix passed before all diagnostic code/test
-edits were reverted. Only this handoff is intended to be uncommitted at checkpoint.
+The 19 wireless IoT contradictions are gone. All 136 actions applied; all 49
+access-port verifications passed.
+
+## Defect C -- live staging never applies the voice plan (ROOT-CAUSED, NOT FIXED)
+
+Bounded live probes, each cleaned up and restored twice:
+
+* **PoE works.** A 7960 on a 3560-24PS access port powers on and its `Switch`
+  port comes up (`port_up`, `proto_up`, `power_on` all true). The red phone
+  links in the operator's capture of the previous run were the 2960-24TT
+  delivering no power, and that is fixed.
+* **The port is right.** With the real compiled configuration applied,
+  `FastEthernet0/1` reads `access_vlan=10, voice_vlan=20`, powered and up.
+* **Passthrough works.** The PC behind the phone took `172.31.10.2` by DHCP
+  through the phone.
+* **The phone still never acquires.** Its `Vlan1` stays `0.0.0.0` and down for
+  180 seconds. This is not a convergence timeout -- the address never arrives.
+
+The reason is structural: a Packet Tracer 7960 acquires and registers through
+the **voice** path, and the product already models it --
+`VoiceActionType.CONFIGURE_VOICE_DHCP_OPTION` (option 150),
+`ENABLE_CALL_CONTROL`, `GENERATE_PHONE_CONFIGURATION_FILES`,
+`BIND_PHONE_TO_EXTENSION`. `qualify_cp_scale_offline.py:458`
+(`cp_scale_voice_intent`) builds that intent and the offline qualifier applies
+it. `tools/cp_scale_canonical_live.py` contains **zero** references to voice.
+
+So CP-SCALE plans phone addressing as an ordinary endpoint action, stages it
+live without the mechanism that makes it true, and then reports a contradiction.
+The 3 AccessPoint-PT failures are still unexplained and were not probed; do not
+assume they share this cause.
 
 ## NEXT_ACTIVE_STEP
 
-1. Verify branch/HEAD/upstream/worktree, read this file, and inspect the ignored progress
-   artifact. Remain OFFLINE.
-2. Recreate the PoE admission regressions and the per-switch capacity case; fix the typed
-   planner/compiler/capability seam so exact demand, capacity, port class, and UNKNOWN
-   semantics fail closed.
-3. Map all 43 configuration IDs to expected action and exact readback. First preserve
-   partial contradiction evidence durably; then write fail-first tests for each proven
-   root-cause group and AUTOFIX the typed product path independently of PoE.
-4. Reconcile any topology/model change with exact-build capability evidence and update
-   both canonical documents plus typed tests. Do not assume the candidate redesign.
-5. Run affected and full checkout-local `.venv` regression; update graphify after source
-   changes.
-6. Only after offline closure, pass the live-run namespace gate, rematerialize the
-   verified core, Router4/Switch10, and Floor 1 through governed typed staging.
-7. Verify fresh switch/phone physical bindings, cable identity, admin/oper state, actual
-   phone power/runtime state, PoE delivery evidence, access VLAN 10 + voice VLAN 20,
-   endpoint addressing, and fresh readback. Red expected phone links are blocking.
-8. Qualify Floor 1 only with clean LIVE evidence; checkpoint and push to
-   `personal/feature/runtime-ripv2`.
-9. Continue sequentially with Floor 2, Floor 3, Router0/3650, Router3/2960, remaining
-   canonical topology, full CP-SCALE qualification, and a verified visible presentation.
+1. Decide the governed treatment of phone addressing and implement it fail-first:
+   either stage the voice plan in `_execute_stage` (compile with
+   `cp_scale_voice_intent`, apply with `VoiceApplicator`, gate it) so the
+   addressing claim becomes true, or stop claiming endpoint addressing for
+   IP phones and let the voice path own it. Prefer the former -- the reference
+   design does intend phones on VLAN 20 by DHCP.
+2. Probe the 3 `AccessPoint-PT` `Port 0` failures separately before assuming a
+   cause. An AccessPoint-PT may not be IP-addressable in this build at all, in
+   which case it is the wireless-IoT case again.
+3. Re-run Floor 1, then continue Floor 2 -> Floor 3 -> Router0/3650 ->
+   Router3/2960 -> remaining -> full qualification -> retained presentation.
+
+### Driving the live runner
+
+It is interactive by design. At each `CHECKPOINT_READY` it writes the tracked
+`docs/reference/cp-scale/live_canonical_checkpoint.json` and then refuses to
+advance unless the worktree is clean and HEAD is pushed to upstream -- so the
+operator must **commit and push, then answer `continue`**. Piping a stream of
+`continue` lines fails on the first checkpoint. A working driver is at
+`<scratchpad>/drive_live.py`; do not edit tracked files while a run is in
+flight.
+
+If the run hard-stops on `"Authenticated Packet Tracer HTTP bridge did not
+obtain fresh polling"`, it is usually transient: the PT extension does poll
+`127.0.0.1:54321`, and a direct `PacketTracerHttpTransport.start()` connects in
+about 1.4s. Probe the transport before concluding anything about the extension.
+
+## Commits this session
+
+```text
+1b85c33 fix(cp-scale): fail closed on PoE and read back the addressed interface
+9386817 fix(cp-scale): decide PoE on access ports, and measure 2960/3650
+7e5d639 fix(cp-scale): power the access layer from evidence, not from a model name
+355effb chore(cp-scale): checkpoint routing-core
+c4a2c58 chore(cp-scale): checkpoint router4-switch10
+```
