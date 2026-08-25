@@ -502,6 +502,24 @@ def _trunk_vlan_traversal_evidence(plan, result) -> list[dict[str, object]]:
     return evidence
 
 
+def _record_configuration_attempt(
+    evidence: dict[str, object], plan, result,
+) -> None:
+    """Persist the typed result and its named trunk projection before judging."""
+    attempts = evidence.setdefault("configuration_attempts", [])
+    assert isinstance(attempts, list)
+    attempts.append(result.model_dump(mode="json"))
+
+    traversal = _trunk_vlan_traversal_evidence(plan, result)
+    traversal_attempts = evidence.setdefault("trunk_vlan_traversal_attempts", [])
+    assert isinstance(traversal_attempts, list)
+    traversal_attempts.append(traversal)
+    # Convenience view of the latest attempt. It is intentionally written
+    # before contradiction handling, so a failed stage cannot lose the names
+    # behind opaque expectation identifiers.
+    evidence["trunk_vlan_traversal"] = traversal
+
+
 def _stage_voice(
     projection,
     *,
@@ -729,7 +747,9 @@ def _execute_stage(
         runtime_context=context,
         deployment_manifest=manifest,
     )
-    evidence["configuration_attempts"] = [configuration.model_dump(mode="json")]
+    _record_configuration_attempt(
+        evidence, projection.configuration, configuration,
+    )
     contradiction = configuration_application_contradiction(configuration)
     evidence["configuration_contradictions"] = [contradiction]
     if contradiction:
@@ -764,8 +784,8 @@ def _execute_stage(
             runtime_context=context,
             deployment_manifest=manifest,
         )
-        evidence["configuration_attempts"].append(
-            configuration.model_dump(mode="json")
+        _record_configuration_attempt(
+            evidence, projection.configuration, configuration,
         )
         contradiction = configuration_application_contradiction(configuration)
         evidence["configuration_contradictions"].append(contradiction)
@@ -778,9 +798,6 @@ def _execute_stage(
             projection.configuration, configuration,
         )
     evidence["configuration"] = configuration.model_dump(mode="json")
-    evidence["trunk_vlan_traversal"] = _trunk_vlan_traversal_evidence(
-        projection.configuration, configuration,
-    )
     evidence["configuration_acceptance_error"] = configuration_error
     if configuration_error:
         raise _failed(

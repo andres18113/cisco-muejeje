@@ -69,6 +69,14 @@ _IOS_ACTIONS = (
 _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 
 
+# A trunk verification now claims operational STP forwarding, not merely that
+# IOS accepted `switchport mode trunk`.  A fresh PT 9.0.1.0858 run still had all
+# expected VLANs allowed and active, but none forwarding, when the former 8 s
+# budget expired after 25 complete reads.  Keep the wait bounded while giving
+# the independent forwarding read-back its own lifecycle-sized budget.
+TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS = 45.0
+
+
 #: `SwitchPort.getAdminOpMode()` para `switchport mode access`. MEDIDO, no
 #: supuesto: cualificación en vivo sobre PT `9.0.1.0858` / `2950T-24`, tres
 #: puertos en la misma pasada, cada código corroborado por la lectura IOS
@@ -102,7 +110,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         hostname_timeout_seconds: float = 8.0,
         vlan_timeout_seconds: float = 5.0,
         endpoint_timeout_seconds: float = 30.0,
-        trunk_timeout_seconds: float = 8.0,
+        trunk_timeout_seconds: float = TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS,
         l3_timeout_seconds: float = 8.0,
         convergence_interval_seconds: float = 0.25,
         ios_readiness: Callable[[str], bool] | None = None,

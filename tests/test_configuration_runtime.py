@@ -19,6 +19,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
+from src.packet_tracer_mcp.infrastructure.execution import (
+    enterprise_configuration_runtime as configuration_runtime_module,
+)
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     OperationalQueryId,
@@ -487,6 +490,70 @@ SW#"""
     assert result.convergence is not None
     assert result.convergence.attempts == 2
     assert result.fresh_evidence
+
+
+def test_trunk_default_budget_covers_forwarding_state_convergence(monkeypatch):
+    """A trunk read-back owns STP convergence, not only IOS command latency."""
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    output = """SW#show interfaces trunk
+Port Mode Encapsulation Status Native vlan
+Gig0/1 on 802.1q trunking 1
+
+Port Vlans allowed on trunk
+Gig0/1 10,20
+
+Port Vlans allowed and active in management domain
+Gig0/1 10,20
+
+Port Vlans in spanning tree forwarding state and not pruned
+Gig0/1 10,20
+SW#"""
+    current = json.dumps({
+        "found": True,
+        "configuration_channel": True,
+        "output": output,
+    })
+    responses = iter((
+        '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
+        '{"ok":true,"before":"SW#"}',
+        current,
+        current,
+    ))
+    observed_timeouts: list[float] = []
+    real_waiter = configuration_runtime_module.StateConvergenceWaiter
+
+    class CapturingWaiter:
+        def __init__(
+            self, inspect, *, timeout_seconds: float, interval_seconds: float,
+        ) -> None:
+            observed_timeouts.append(timeout_seconds)
+            # The first read is already ready in this regression; only the
+            # configured production budget is under test, not wall-clock time.
+            self._waiter = real_waiter(
+                inspect, timeout_seconds=0, interval_seconds=interval_seconds,
+            )
+
+        def wait(self):
+            return self._waiter.wait()
+
+    monkeypatch.setattr(
+        configuration_runtime_module, "StateConvergenceWaiter", CapturingWaiter,
+    )
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: next(responses),
+        convergence_interval_seconds=0,
+    )
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert observed_timeouts == [45.0]
 
 
 def test_endpoint_dhcp_verification_keeps_gateway_and_dns_unobservable():

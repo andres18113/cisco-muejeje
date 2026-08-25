@@ -41,6 +41,7 @@ from tools.cp_scale_canonical_live import (
     _execute_stage,
     _trunk_vlan_traversal_evidence,
 )
+import tools.cp_scale_canonical_live as live
 from packet_tracer_mcp.domain.enterprise.models.configuration import VerificationKind
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -80,7 +81,7 @@ trunk_result = SimpleNamespace(verification_results=[SimpleNamespace(
         "forwarding_vlans": FieldVerificationStatus.VERIFIED,
     }},
     message="",
-)])
+)], model_dump=lambda mode="json": {{"status": "failed"}})
 verdict["trunk_vlan_traversal"] = _trunk_vlan_traversal_evidence(
     trunk_plan, trunk_result,
 )
@@ -127,6 +128,52 @@ except CanonicalLiveFailure as exc:
     verdict["physical"] = (evidence or {{}}).get("physical")
 else:
     verdict["raised_with_journal"] = False
+
+# A typed configuration contradiction happens after the full application
+# result exists. Its human-readable trunk projection must escape with the same
+# failed-stage journal, not be deferred until the success-only return path.
+projection.configuration.verification_expectations = (
+    trunk_plan.verification_expectations
+)
+verified_deployment = SimpleNamespace(
+    status=PhysicalDeploymentStatus.VERIFIED,
+    manifest=SimpleNamespace(),
+    errors=[],
+    model_dump=lambda mode="json": {{"status": "verified"}},
+)
+live.ConfigurationApplicator = lambda _runtime: SimpleNamespace(
+    apply=lambda *args, **kwargs: trunk_result,
+)
+live.configuration_application_contradiction = lambda _result: "typed mismatch"
+live.inherit_verified_serial_orientation = lambda *args, **kwargs: SimpleNamespace(
+    verified=True,
+    oriented_manifest=verified_deployment.manifest,
+    errors=[],
+    model_dump=lambda mode="json": {{"verified": True}},
+)
+try:
+    _execute_stage(
+        projection,
+        composition=SimpleNamespace(capabilities={{}}),
+        deployment=verified_deployment,
+        delta_deployment=None,
+        physical=None,
+        configuration_runtime=None,
+        control_runtime=None,
+        voice_runtime=None,
+        transport=None,
+        fingerprint=None,
+        packet_tracer_version="9.0.1.0858",
+        verified_serial_topology=SimpleNamespace(),
+        verified_serial_manifest=SimpleNamespace(),
+    )
+except CanonicalLiveFailure as exc:
+    contradiction_evidence = exc.stage_evidence or {{}}
+    verdict["contradicted_stage_trunk"] = contradiction_evidence.get(
+        "trunk_vlan_traversal"
+    )
+else:
+    verdict["contradicted_stage_trunk"] = None
 
 print(json.dumps(verdict))
 '''
@@ -180,6 +227,10 @@ def test_governed_evidence_names_each_typed_trunk_vlan_traversal(verdict):
         },
         "message": "",
     }]
+
+
+def test_configuration_contradiction_keeps_named_trunk_evidence(verdict):
+    assert verdict["contradicted_stage_trunk"] == verdict["trunk_vlan_traversal"]
 
 
 def test_this_suite_never_loaded_the_production_namespace():

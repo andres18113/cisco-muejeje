@@ -6,27 +6,29 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-HEAD_BEFORE_WORLD_B_IMPLEMENTATION = 78996aa27c6701760c3cb19343c2f4f95dbaee27 (pushed)
+CURRENT_PUSHED_HEAD = 43eba72f18ad4e29e0ff292ebca4dbbd4a47232e
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
-ROUTING_CORE = GOVERNED VERIFIED (fresh run, checkpoint d0db204)
-ROUTER4_SWITCH10 = GOVERNED VERIFIED (fresh run, checkpoint 78996aa)
+WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
+ROUTING_CORE = GOVERNED VERIFIED (latest fresh checkpoint 43eba72)
+ROUTER4_SWITCH10 = LATEST RUN FAILED ITS NEW FORWARDING GATE AT 8 SECONDS
 FLOOR1_PHYSICAL = REACHED; the stage later failed in voice verification
 FLOOR1_DHCP_CLIENT = 21/21 Vlan20 present, readable, TRUE
 FLOOR1_ADDRESSING = 0/21 addressed
 FLOOR1 = NOT VERIFIED
 WORLD_A = REFUTED
-WORLD_B = ACTIVE; typed trunk traversal observation implemented, LIVE pending
+WORLD_B = ACTIVE; allowed/active LIVE-proven, forwarding retry with 45s pending
 CP_SCALE = OPEN
 E10 = FORBIDDEN
 ```
 
-Offline after the World-B implementation: **2718 passed / 0 failed** with the
+Offline after the forwarding-budget/evidence-ordering fix: **2720 passed / 0 failed** with the
 checkout-local `.venv` and a writable, gitignored pytest basetemp. The failed
-Floor-1 run cleaned every owned device and independently re-observed the empty
+`router4-switch10` run cleaned every owned device and independently re-observed the empty
 semantic workspace twice. Packet Tracer is open; its workspace is empty.
 
-The World-B source/test changes described below are not yet checkpointed in this
-paragraph's HEAD. Commit and push them before the next LIVE mutation.
+The 45-second forwarding budget and failure-evidence ordering changes described
+below are not yet checkpointed in this paragraph's HEAD. Commit and push them
+before the next LIVE mutation.
 
 ## Decisive powered-phone measurement -- World A refuted
 
@@ -109,13 +111,44 @@ carries `SHOW_IP_DHCP_SNOOPING` only, which is switch security, not the server
 binding table. Re-audit this immediately before adding anything, and consider it
 only if fresh trunk traversal evidence is still insufficient.
 
+## Fresh World-B LIVE checkpoint -- 8 seconds was not a forwarding lifecycle
+
+FACT: from clean pushed HEAD `6eb0d8e`, the next governed run re-established the
+checkout-local production namespace, a single import namespace, authenticated
+fresh HTTP, a blank semantic workspace, and `safe_for_disposable_mutation`.
+Routing core passed and was checkpointed/pushed at `43eba72`.
+
+FACT: after resuming, `router4-switch10` exited through its own governed failure
+path. On `Switch10 GigabitEthernet0/1` toward Router4, 25 fresh complete typed
+reads over the configured 8-second budget established VLANs 10/20/30 as
+`allowed=VERIFIED` and `active=VERIFIED`, while
+`forwarding_vlans=FAILED` with `forwarding omitted 10,20,30` on the last read.
+
+FACT: cleanup was VERIFIED and two fresh post-cleanup observations contained
+zero semantic devices. The runner was not interrupted.
+
+INFERENCE: this signature is consistent with a trunk observed during STP
+transition; it does not yet prove either eventual forwarding or a persistent
+path defect. The former generic 8-second default was demonstrably too short to
+decide between those states.
+
+FAIL-FIRST: the default-budget regression observed `8.0` where the new contract
+requires `45.0`; the failed-stage journal regression found no named trunk
+projection even though the full typed result already existed. Both failed
+before implementation and now pass. The runtime keeps the same fail-closed
+verdict after a bounded 45 seconds, and the runner writes the named projection
+before contradiction handling. Focused: 9 passed. Affected: 93 passed. Full:
+2720 passed / 0 failed.
+
 ## NEXT_ACTIVE_STEP
 
-1. Commit and push the World-B implementation; require a clean exact upstream
-   HEAD before LIVE.
+1. Commit and push the forwarding-budget/evidence-ordering fix; require a clean
+   exact upstream HEAD before LIVE.
 2. Re-run governed routing-core -> router4-switch10 -> Floor 1 without stopping
    a stage mid-flight.
-3. Read `trunk_vlan_traversal` from the durable Floor-1 journal. In particular,
+3. Require the fresh 45-second `router4-switch10` observation to decide whether
+   forwarding converges or remains observably absent. Then read
+   `trunk_vlan_traversal` from the durable Floor-1 journal. In particular,
    require VLAN 20 to be VERIFIED as allowed, active, and forwarding on both
    ends of Switch4 <-> Switch5.
 4. If any row observably omits VLAN 20, root-cause that typed contradiction.
@@ -148,6 +181,11 @@ The runner then stopped its transport normally after its governed voice failure
 and verified cleanup. A subsequent fresh session remains part of the next LIVE
 preflight; the currently loaded webview source is still not independently
 identifiable from Python.
+
+FACT, fresh run ending after checkpoint `43eba72`: authenticated HTTP again
+connected fresh, remained healthy through routing core and the resume gate, and
+did not create the configuration failure. The runner stopped the transport
+normally after its governed failure and verified cleanup.
 
 UNOBSERVABLE: whether Packet Tracer has actually **loaded** the patched
 `interface.js`. Nothing readable from Python distinguishes the patched loop from
@@ -208,7 +246,10 @@ call control instead of once per phone.
 8d59499 fix(cp-scale): read phone DHCP client state from voice SVI
 d0db204 docs(cp-scale): checkpoint governed routing core
 78996aa docs(cp-scale): checkpoint router4-switch10
+6eb0d8e fix(cp-scale): verify voice VLAN traversal on trunks
+43eba72 docs(cp-scale): checkpoint fresh routing core
 ```
 
-The World-B trunk-observation implementation and this handoff update are the
-next checkpoint; record their final pushed HEAD here on the following turn.
+The forwarding-budget/evidence-ordering implementation and this handoff update
+are the next checkpoint; record their final pushed HEAD here on the following
+turn.
