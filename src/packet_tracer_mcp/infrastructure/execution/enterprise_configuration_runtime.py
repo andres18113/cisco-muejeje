@@ -823,7 +823,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 # PT 9.0.1 evidence confirms only IP/mask getters. Gateway and DNS
                 # remain deliberately unobservable until Cisco API evidence exists.
                 "reportResult(JSON.stringify({found:!!d,port_found:!!p,interface:want,",
-                "configuration_channel:able,ipv4:ip,netmask:mask,gateway:null,dns:null}));",
+                # Whether this port has an address channel at all is a separate
+                # fact from whether the address on it matches, and it has to
+                # survive: `configuration_channel` is overwritten below with the
+                # match, and an overwritten flag cannot say "unreadable".
+                "address_channel:able,ipv4:ip,netmask:mask,gateway:null,dns:null}));",
                 "}catch(e){reportResult('ERROR:'+e);}",
             ))
             observed = self._json_result(js, 3.0)
@@ -842,6 +846,19 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 message=(
                     f"{interface} was not exposed by {expectation.device_name}, so "
                     "its addressing was never read."
+                ),
+            )
+        if not observed.get("address_channel"):
+            # The port exists and carries traffic; it just has no address to
+            # read. An AccessPoint-PT is the measured case on build 9.0.1.0858:
+            # both its ports come up powered and neither exposes `getIpAddress`,
+            # because it bridges rather than hosts. Treating the empty string
+            # that comes back as a wrong address states more than was seen.
+            return self._unobservable(
+                expectation,
+                message=(
+                    f"{interface} on {expectation.device_name} exposes no address "
+                    "channel, so nothing about its addressing was read."
                 ),
             )
         ipv4_ok = self._ipv4_matches(expected, str(observed.get("ipv4") or ""))

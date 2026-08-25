@@ -420,7 +420,7 @@ def test_endpoint_dhcp_verification_keeps_gateway_and_dns_unobservable():
     )
     observed = (
         '{"found":true,"port_found":true,"configuration_channel":true,'
-        '"ipv4":"198.18.150.54","netmask":"255.255.255.0",'
+        '"address_channel":true,"ipv4":"198.18.150.54","netmask":"255.255.255.0",'
         '"gateway":null,"dns":null}'
     )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
@@ -473,12 +473,16 @@ def test_endpoint_timeout_cannot_be_promoted_by_a_late_matching_read():
         nonlocal calls
         calls += 1
         if calls == 1:
+            # The channel exists; the lease has simply not arrived yet. That is
+            # a different state from a port that can never hold an address.
             return (
                 '{"found":true,"port_found":true,"configuration_channel":false,'
+                '"address_channel":true,'
                 '"ipv4":"","netmask":"","gateway":null,"dns":null}'
             )
         return (
             '{"found":true,"port_found":true,"configuration_channel":true,'
+            '"address_channel":true,'
             '"ipv4":"198.18.150.54","netmask":"255.255.255.0",'
             '"gateway":null,"dns":null}'
         )

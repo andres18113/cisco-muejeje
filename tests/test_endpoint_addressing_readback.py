@@ -247,3 +247,40 @@ def test_no_endpoint_addressing_action_is_ever_emitted_without_an_interface():
 
     for _expectation, action in _addressing(plan):
         assert action.interface, f"{action.id} addressed no interface"
+
+
+def test_a_port_that_cannot_expose_an_address_is_unobservable_not_contradicted():
+    """Measured on build 9.0.1.0858: an AccessPoint-PT has no address channel.
+
+    A disposable exact-build probe placed an AccessPoint-PT on a powered access
+    port beside a PC-PT carrying an identical static claim. The PC leased and
+    verified. The AP came up on `Port 0` and `Port 1`, both up and powered, and
+    exposed `getIpAddress`, `setIpAddress`, `getSubnetMask`, `getDefaultGateway`
+    and `isDhcpEnabled` as `undefined` -- at device level and on both ports. It
+    is a bridge, not a host, and it holds no address on this build.
+
+    The read-back already said this was UNOBSERVABLE: "A named interface that
+    cannot be found OR CANNOT EXPOSE AN ADDRESS is UNOBSERVABLE, never FAILED."
+    It only implemented the first half. The port is found, the getter does not
+    exist, the empty string that comes back parses as no address, and the
+    runtime reported a contradiction about a device it could not read.
+    """
+    endpoint = next(
+        item for item, _ in _addressing(_plan())
+        if item.device_name == "__MCP_E5_PC"
+    )
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: (
+            '{"found":true,"port_found":true,"address_channel":false,'
+            '"ipv4":"","netmask":"","gateway":null,"dns":null}'
+        ),
+        endpoint_timeout_seconds=0.2,
+        convergence_interval_seconds=0.05,
+    )
+
+    result = runtime.verify([endpoint])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert set(result.fields.values()) == {FieldVerificationStatus.UNOBSERVABLE}
