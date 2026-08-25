@@ -58,6 +58,7 @@ from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
 )
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_capability_probe_error,
+    canonical_bridge_polling_error,
     canonical_checkpoint_repository_error,
     canonical_cleanup_restoration_error,
     canonical_configuration_retryable_operational_unknown,
@@ -114,6 +115,7 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     OperationalQueryId,
     parse_show_ip_interface_brief,
 )
+from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
 from packet_tracer_mcp.infrastructure.execution.live_bridge import (
     PacketTracerHttpTransport,
 )
@@ -926,9 +928,19 @@ def run(
     composition = None
     try:
         if not transport.start(timeout_seconds=10.0):
-            evidence["http_bridge"] = transport.status_dict()
+            status = transport.status_dict()
+            # Recorded beside it, never instead of it. The two channels are
+            # independent and the file one is alive through every failure of
+            # this one, which is exactly the confusion worth pre-empting in the
+            # hard stop itself.
+            try:
+                status["file_bridge_alive"] = FileBridge().pt_alive()
+            except Exception:
+                pass
+            evidence["http_bridge"] = status
             raise CanonicalLiveFailure(
-                "Authenticated Packet Tracer HTTP bridge did not obtain fresh polling."
+                "Authenticated Packet Tracer HTTP bridge did not obtain fresh "
+                "polling: " + canonical_bridge_polling_error(status)
             )
         evidence["http_bridge"] = transport.status_dict()
         physical = PacketTracerPhysicalTopologyRuntime(

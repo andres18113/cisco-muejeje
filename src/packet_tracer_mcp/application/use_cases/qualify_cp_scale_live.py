@@ -451,6 +451,60 @@ def read_git_repository_state(root: Path) -> CPScaleRepositoryState:
         return CPScaleRepositoryState(error=str(exc))
 
 
+def canonical_bridge_polling_error(status: dict) -> str:
+    """Say WHICH authenticated-bridge failure this is, or "" if there is none.
+
+    Three states reach the same hard stop and want three different actions, and
+    one sentence that named none of them cost a diagnosis every time:
+
+    * no request arrived at all -- the webview's command poll is dead. Its
+      status interval keeps running, so Packet Tracer still looks healthy from
+      the inside and waiting does not help.
+    * requests arrived and were rejected -- a token mismatch, and the token id
+      is the thing to compare across runs before touching anything.
+    * requests arrived and then stopped -- a stall, which is not an absence and
+      must not be reported as one.
+
+    The file bridge is alive in every one of them. It runs in the Script Engine
+    with no window at all, while this channel lives in the webview, so its
+    health is not evidence about this channel and is stated as such wherever it
+    is known.
+    """
+    if status.get("connected"):
+        return ""
+    last_poll = status.get("last_poll_ago")
+    unauthorized = int(status.get("unauth_count") or 0)
+    token_id = str(status.get("token_id") or "")
+    if unauthorized > 0:
+        paths = ", ".join(str(item) for item in (status.get("unauth_paths") or []))
+        reason = (
+            f"{unauthorized} request(s) were rejected as unauthorized"
+            + (f" on {paths}" if paths else "")
+            + f"; the bridge is serving token id {token_id!r}, so compare it "
+            "against the one the extension read before changing either."
+        )
+    elif last_poll is None:
+        reason = (
+            "no request reached the bridge at all, so the extension is not "
+            "polling: re-enable MCP BUILDER in Packet Tracer. Waiting does not "
+            "help -- a dead command poll leaves the status poll running, so "
+            "nothing looks wrong from inside Packet Tracer."
+        )
+    else:
+        reason = (
+            f"the extension last polled {last_poll}s ago and has gone quiet; "
+            "this is a stalled poll, not an absent one."
+        )
+    if "file_bridge_alive" in status:
+        reason += (
+            " The file bridge is "
+            + ("alive" if status.get("file_bridge_alive") else "down")
+            + ", which says nothing about this channel: it runs in the Script "
+            "Engine with no window, and this one lives in the webview."
+        )
+    return reason
+
+
 def canonical_checkpoint_repository_error(
     *,
     branch: str,

@@ -143,7 +143,9 @@ function init() {
 
     // Poll for commands every 500ms
     // Se auto-reencadena (long-poll), no lleva setInterval.
-    pollCommands();
+    startPolling();
+    // Salvo el watchdog, que es lo único que puede resucitarlo si muere.
+    setInterval(pollWatchdog, POLL_WATCHDOG_INTERVAL_MS);
 
     updateQBPreview();
 }
@@ -436,39 +438,105 @@ function handleUnauthorized() {
    devuelve TODOS los comandos en cola de una vez. Antes esto era un setInterval
    de 500 ms que se traía un comando por vuelta, así que una topología de 40
    comandos tardaba decenas de segundos. Se reencadena siempre — nunca hay una
-   rama que deje el bucle muerto. */
-function pollCommands() {
-    if (!S.bridgeUp) { setTimeout(pollCommands, 500); return; }
-    var again = function() { setTimeout(pollCommands, 0); };
+   rama que deje el bucle muerto.
+
+   "Siempre" era la intención y no era cierto. Todo lo que ocurría entre recibir
+   una respuesta y reencadenar corría FUERA de cualquier try: `log()` toca el
+   DOM y compila una RegExp con el texto del buscador, y una sola excepción ahí
+   se llevaba el `again()` por delante. El bucle moría en silencio y
+   `pollBridgeStatus` seguía con su setInterval, así que la ventana se veía
+   sana, el canal de archivo seguía vivo — corre en el Script Engine, sin
+   ventana — y el bridge veía exactamente esto: `last_poll_ago: null`,
+   `unauth_count: 0`, cero peticiones. Una corrida CP-SCALE empuja miles de
+   comandos por este bucle, que es donde esa excepción aparece.
+
+   Ahora hay dos garantías, no una. El reencadenado vive en un `finally` de
+   hecho: nada de lo que pase procesando una respuesta puede saltárselo. Y por
+   encima hay un watchdog, porque un bucle que se reencadena solo sigue sin
+   poder recuperarse de que su ventana se recargue o de una petición que nunca
+   llama a ninguno de sus callbacks. La generación evita que un rescate deje dos
+   cadenas corriendo a la vez. */
+var POLL_WATCHDOG_INTERVAL_MS = 5000;
+// Un ciclo sano marca al menos cada `x.timeout` (8s) aunque el bridge no tenga
+// nada que entregar, así que un silencio de 20s no es lentitud.
+var POLL_WATCHDOG_SILENCE_MS = 20000;
+var _pollGeneration = 0;
+var _pollLastTick = 0;
+var _pollArmed = false;
+
+function schedulePoll(delay, generation) {
+    if (generation !== _pollGeneration) return;
+    setTimeout(function() {
+        if (generation !== _pollGeneration) return;
+        pollCommands(generation);
+    }, delay);
+}
+
+function startPolling() {
+    _pollGeneration++;
+    _pollArmed = true;
+    _pollLastTick = Date.now();
+    pollCommands(_pollGeneration);
+}
+
+/* El bucle no puede vigilarse a sí mismo: si muere, muere con su temporizador.
+   Esto sí es un setInterval, y es el único que puede resucitarlo. */
+function pollWatchdog() {
+    if (!_pollArmed) return;
+    var silent = Date.now() - _pollLastTick;
+    if (silent < POLL_WATCHDOG_SILENCE_MS) return;
+    log("Command polling stalled for " + Math.round(silent / 1000) +
+        "s — restarting the loop", "warn");
+    startPolling();
+}
+
+function pollCommands(generation) {
+    if (generation === undefined) { startPolling(); return; }
+    if (generation !== _pollGeneration) return;
+    // Marcado al entrar, no sólo al recibir: un bridge caído reencadena por la
+    // rama de arriba y eso también es un bucle vivo.
+    _pollLastTick = Date.now();
+    if (!S.bridgeUp) { schedulePoll(500, generation); return; }
     try {
         var x = new XMLHttpRequest();
         x.open("GET", bridgeUrl("/next"), true);
         // Holgado respecto al long-poll del bridge, para no cortarlo nosotros.
         x.timeout = 8000;
         x.onload = function() {
-            if (x.status === 401) { handleUnauthorized(); setTimeout(pollCommands, 1000); return; }
-            if (x.status === 200 && x.responseText) {
-                var batch = x.responseText;
-                var n = batch.split("\n").length;
-                var preview = batch.length > 120 ? batch.substring(0, 120) + "…" : batch;
-                log("MCP → PT (" + n + " cmd" + (n > 1 ? "s" : "") + "): " + preview, "recv");
-                try {
-                    // El lote entero va en un solo runCode: cada comando ya
-                    // trae su try/catch, así que uno malo no tumba a los demás.
-                    $se("runCode", batch);
-                    S.commandCount += n;
-                    log("Batch executed", "ok");
-                    updateCommandCount();
-                } catch(e) {
-                    log("Execution failed: " + e.message, "err");
-                }
+            var delay = 0;
+            try {
+                _pollLastTick = Date.now();
+                if (x.status === 401) { handleUnauthorized(); delay = 1000; }
+                else if (x.status === 200 && x.responseText) { runBatch(x.responseText); }
+            } catch(e) {
+                delay = 500;
             }
-            again();
+            schedulePoll(delay, generation);
         };
-        x.onerror = x.ontimeout = function() { setTimeout(pollCommands, 500); };
+        x.onerror = x.ontimeout = function() { schedulePoll(500, generation); };
         x.send();
     } catch(e) {
-        setTimeout(pollCommands, 1000);
+        schedulePoll(1000, generation);
+    }
+}
+
+/* Ejecutar el lote y CONTARLO son cosas distintas de registrarlo en pantalla.
+   Cada log va en su propio try porque pintar es lo que puede fallar, y que
+   falle pintar no puede costar la ejecución ni el reencadenado. */
+function runBatch(batch) {
+    var n = batch.split("\n").length;
+    try {
+        var preview = batch.length > 120 ? batch.substring(0, 120) + "…" : batch;
+        log("MCP → PT (" + n + " cmd" + (n > 1 ? "s" : "") + "): " + preview, "recv");
+    } catch(e) {}
+    try {
+        // El lote entero va en un solo runCode: cada comando ya trae su
+        // try/catch, así que uno malo no tumba a los demás.
+        $se("runCode", batch);
+        S.commandCount += n;
+        try { log("Batch executed", "ok"); updateCommandCount(); } catch(e) {}
+    } catch(e) {
+        try { log("Execution failed: " + (e && e.message), "err"); } catch(_e) {}
     }
 }
 
