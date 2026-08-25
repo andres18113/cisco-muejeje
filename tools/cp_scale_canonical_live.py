@@ -544,6 +544,15 @@ def _stage_voice(
         1 for item in result.registrations
         if item.endpoint_address_channel and item.endpoint_ipv4
     )
+    # And whether the phone was ever asked to acquire. A voice SVI with DHCP
+    # off did not fail to lease; nothing solicited on it.
+    evidence["voice_interface_dhcp"] = dict(sorted(
+        collections.Counter(
+            "unreadable" if item.endpoint_dhcp_enabled is None
+            else ("enabled" if item.endpoint_dhcp_enabled else "disabled")
+            for item in result.registrations
+        ).items()
+    ))
     evidence["registration_evidence_method"] = dict(sorted(
         collections.Counter(
             item.evidence_method for item in result.registrations

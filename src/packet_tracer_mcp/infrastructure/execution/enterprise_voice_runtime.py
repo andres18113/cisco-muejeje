@@ -299,6 +299,7 @@ class PacketTracerEnterpriseVoiceRuntime:
             endpoint_ipv4 = str(endpoint["ipv4"])
             endpoint_present = bool(endpoint["present"])
             endpoint_channel = bool(endpoint["address_channel"])
+            endpoint_dhcp = endpoint["dhcp"]
             settled = decided.get(index)
             if settled is not None:
                 capture, match, seen_after = settled
@@ -315,6 +316,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_interface=expectation.endpoint_interface,
                     endpoint_interface_present=endpoint_present,
                     endpoint_address_channel=endpoint_channel,
+                    endpoint_dhcp_enabled=endpoint_dhcp,
                     message=(
                         f"SCCP registered at {match.get('ip_address')} after "
                         f"{seen_after} observation(s)."
@@ -336,6 +338,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_interface=expectation.endpoint_interface,
                     endpoint_interface_present=endpoint_present,
                     endpoint_address_channel=endpoint_channel,
+                    endpoint_dhcp_enabled=endpoint_dhcp,
                     message="The current ephone row remained UNREGISTERED before timeout.",
                 )
                 continue
@@ -345,6 +348,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_ipv4=endpoint_ipv4,
                     endpoint_interface_present=endpoint_present,
                     endpoint_address_channel=endpoint_channel,
+                    endpoint_dhcp_enabled=endpoint_dhcp,
                     evidence_method="show_ephone_capture_incomplete",
                     message=(
                         "The show ephone capture was truncated after "
@@ -367,6 +371,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_ipv4=endpoint_ipv4,
                     endpoint_interface_present=endpoint_present,
                     endpoint_address_channel=endpoint_channel,
+                    endpoint_dhcp_enabled=endpoint_dhcp,
                     evidence_method="show_ephone_complete_without_this_row",
                     message=(
                         "A complete show ephone capture of "
@@ -381,6 +386,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                 endpoint_ipv4=endpoint_ipv4,
                 endpoint_interface_present=endpoint_present,
                 endpoint_address_channel=endpoint_channel,
+                endpoint_dhcp_enabled=endpoint_dhcp,
             )
         return observed
 
@@ -400,16 +406,21 @@ class PacketTracerEnterpriseVoiceRuntime:
         script = "".join((
             "try{var d=ipc.network().getDevice(", json.dumps(device), ");",
             "var want=", json.dumps(interface), ";var ip='';var p=null;var able=false;",
+            "var dable=false;var dh=null;",
             "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
             "if(c&&typeof c.getName==='function'&&String(c.getName())===want){",
             "p=c;able=typeof c.getIpAddress==='function';",
             "ip=able?String(c.getIpAddress()):'';",
+            "dable=typeof c.isDhcpEnabled==='function';",
+            "dh=dable?!!c.isDhcpEnabled():null;",
             "break;}}}",
             "reportResult(JSON.stringify({found:!!d,port_found:!!p,",
             # Whether this SVI has an address channel to ask is its own fact and
             # must not be inferred from what came back: an absent getter and a
-            # getter that answered nothing both produce the empty string.
-            "address_channel:able,ipv4:ip}));",
+            # getter that answered nothing both produce the empty string. The
+            # same holds for the DHCP flag, which an AccessPoint-PT port was
+            # already measured not to expose at all.
+            "address_channel:able,ipv4:ip,dhcp_channel:dable,dhcp:dh}));",
             "}catch(e){reportResult('ERROR:'+e);}",
         ))
         observed = self._json_result(script, 5.0)
@@ -420,10 +431,14 @@ class PacketTracerEnterpriseVoiceRuntime:
         # last pair is how an unread channel becomes a finding about DHCP.
         present = bool(observed.get("port_found"))
         able = present and bool(observed.get("address_channel"))
+        readable_dhcp = present and bool(observed.get("dhcp_channel"))
         return {
             "present": present,
             "address_channel": able,
             "ipv4": _reported_address(observed.get("ipv4")) if able else "",
+            # None means the port exposes no DHCP flag, which is not the same
+            # answer as the port saying DHCP is off.
+            "dhcp": bool(observed.get("dhcp")) if readable_dhcp else None,
         }
 
     def _unobservable_registration(
@@ -433,6 +448,7 @@ class PacketTracerEnterpriseVoiceRuntime:
         endpoint_ipv4: str | None = None,
         endpoint_interface_present: bool | None = None,
         endpoint_address_channel: bool | None = None,
+        endpoint_dhcp_enabled: bool | None = None,
         evidence_method: str = (
             "pt_9_0_1_extension_api_has_no_registration_getter"
         ),
@@ -453,6 +469,8 @@ class PacketTracerEnterpriseVoiceRuntime:
                 endpoint_interface_present = bool(endpoint["present"])
             if endpoint_address_channel is None:
                 endpoint_address_channel = bool(endpoint["address_channel"])
+            if endpoint_dhcp_enabled is None:
+                endpoint_dhcp_enabled = endpoint["dhcp"]
         return RuntimePhoneRegistration(
             expectation_id=expectation.id,
             phone_id=expectation.phone_id,
@@ -465,6 +483,7 @@ class PacketTracerEnterpriseVoiceRuntime:
             endpoint_interface=expectation.endpoint_interface,
             endpoint_interface_present=bool(endpoint_interface_present),
             endpoint_address_channel=bool(endpoint_address_channel),
+            endpoint_dhcp_enabled=endpoint_dhcp_enabled,
             message=message,
         )
 

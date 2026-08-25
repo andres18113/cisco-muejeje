@@ -128,10 +128,25 @@ def _addressing_claim(
                 f"{observed.endpoint_interface} exposes no address channel, so "
                 "whether this phone acquired was never read on either channel.",
             )
+        if observed.endpoint_dhcp_enabled is False:
+            # The SVI is there, it can be asked, and it was never asked to
+            # acquire. That is not a lease that failed, and calling it one would
+            # send the investigation to the pool instead of to whatever was
+            # supposed to turn DHCP on.
+            return (
+                ActionExecutionStatus.UNOBSERVABLE,
+                f"{observed.endpoint_interface} holds no address and has DHCP "
+                "disabled, so this phone never solicited one.",
+            )
         return (
             ActionExecutionStatus.UNOBSERVABLE,
             "Neither the call control nor the phone reported an address, and "
-            f"{observed.endpoint_interface} was readable and held none.",
+            f"{observed.endpoint_interface} was readable and held none"
+            + (
+                " with DHCP enabled."
+                if observed.endpoint_dhcp_enabled else
+                "; whether it was asked to acquire was not readable."
+            ),
         )
     if control and endpoint and control != endpoint:
         return (

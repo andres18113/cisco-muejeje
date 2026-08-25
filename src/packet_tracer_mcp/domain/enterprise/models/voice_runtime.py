@@ -63,6 +63,11 @@ class RuntimePhoneRegistration(BaseModel):
     #: question: one is "the phone did not acquire", the other is "we did not
     #: look at anything that could answer".
     endpoint_address_channel: bool = False
+    #: Was this phone ever asked to acquire? A voice SVI with DHCP off has not
+    #: failed to lease -- it never solicited, and the defect is upstream of the
+    #: pool entirely. None is the third state and the honest default: the port
+    #: exposes no DHCP getter, so nothing was read. Absent is not False.
+    endpoint_dhcp_enabled: bool | None = None
 
 
 class RuntimeCallObservation(BaseModel):

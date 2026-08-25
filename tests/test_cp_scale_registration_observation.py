@@ -520,3 +520,81 @@ def test_a_complete_table_without_this_row_says_what_it_did_contain():
     assert "3016" in absent.message
     assert "16 extension(s)" in absent.message
     assert observed["3016"].status is ActionExecutionStatus.FAILED
+
+
+# --------------------------------------------------------------------------
+# 5: whether the phone was ever asked to acquire
+# --------------------------------------------------------------------------
+
+
+def _dhcp_runtime(pages, *, dhcp, getter: bool = True):
+    """A Floor-1 runtime whose phone SVI reports a DHCP state, or cannot."""
+
+    def send_and_wait(source, _timeout):
+        if "getPortCount" in source and "getIpAddress" in source:
+            body = {
+                "found": True, "port_found": True,
+                "address_channel": True, "ipv4": "",
+            }
+            if getter:
+                body["dhcp_channel"] = True
+                body["dhcp"] = dhcp
+            else:
+                body["dhcp_channel"] = False
+                body["dhcp"] = None
+            return json.dumps(body)
+        return "{}"
+
+    runtime = PacketTracerEnterpriseVoiceRuntime(
+        lambda: {"devices": [{"name": "F1-R4", "model": "2811"}]},
+        lambda _source: True,
+        send_and_wait,
+        ios_readiness=lambda _name: True,
+        registration_timeout_seconds=0.2,
+        convergence_interval_seconds=0.05,
+    )
+    for extension in _FLOOR1_EXTENSIONS:
+        runtime._registration_hosts[f"phone-{extension}"] = "F1-R4"  # noqa: SLF001
+    return _CountingCallControl(runtime, pages)
+
+
+def test_a_phone_that_was_never_asked_to_acquire_is_reported_as_such():
+    """An SVI with DHCP off has not failed to acquire; it never solicited.
+
+    Floor 1 gives its twenty-one phones no endpoint addressing action at all --
+    E5 stopped claiming a phone on a voice VLAN, correctly, because the SVI does
+    not exist when E5 is preflighted. Whether anything then asks the phone to
+    acquire is exactly the question that separates "DHCP is broken" from "no
+    DHCP was ever attempted", and it was not being read.
+    """
+    control = _dhcp_runtime(_floor1_pages(), dhcp=False)
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.endpoint_interface_present
+    assert observed.endpoint_address_channel
+    assert observed.endpoint_ipv4 == ""
+    assert observed.endpoint_dhcp_enabled is False
+
+
+def test_a_phone_that_solicited_and_holds_nothing_is_a_different_report():
+    control = _dhcp_runtime(_floor1_pages(), dhcp=True)
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.endpoint_dhcp_enabled is True
+
+
+def test_an_svi_with_no_dhcp_getter_never_reads_as_dhcp_off():
+    """Absent is not False. The AccessPoint-PT lesson, on the third channel."""
+    control = _dhcp_runtime(_floor1_pages(), dhcp=None, getter=False)
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.endpoint_dhcp_enabled is None
