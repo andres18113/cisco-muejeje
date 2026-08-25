@@ -283,10 +283,13 @@ class PacketTracerEnterpriseVoiceRuntime:
         # would let "no lease yet" masquerade as a disagreement between reads.
         return "" if address in {"", "0.0.0.0"} else address
 
-    @staticmethod
     def _unobservable_registration(
-        expectation: VoiceVerificationExpectation,
+        self, expectation: VoiceVerificationExpectation,
     ) -> RuntimePhoneRegistration:
+        # An unreadable registration table says nothing about whether the phone
+        # acquired, and the two questions fail independently: a phone can hold a
+        # lease the call control never saw. Reading its SVI here keeps that
+        # evidence instead of discarding it with the registration.
         return RuntimePhoneRegistration(
             expectation_id=expectation.id,
             phone_id=expectation.phone_id,
@@ -295,6 +298,8 @@ class PacketTracerEnterpriseVoiceRuntime:
             direct_readback=FieldVerificationStatus.UNOBSERVABLE,
             evidence_method="pt_9_0_1_extension_api_has_no_registration_getter",
             fresh_evidence=False,
+            endpoint_ipv4=self._endpoint_address(expectation),
+            endpoint_interface=expectation.endpoint_interface,
             message=(
                 "No fresh show ephone session is bound to this phone; the documented "
                 "extension API has no registration getter."
