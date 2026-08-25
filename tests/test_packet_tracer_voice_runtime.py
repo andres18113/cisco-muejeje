@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
@@ -108,6 +112,61 @@ def test_registration_getter_absence_is_reported_as_unobservable():
     assert observed.status is ActionExecutionStatus.UNOBSERVABLE
     assert observed.direct_readback is FieldVerificationStatus.UNOBSERVABLE
     assert not observed.fresh_evidence
+
+
+@pytest.mark.parametrize(
+    ("exposed_state", "expected"),
+    [(False, False), (True, True), (None, None)],
+)
+def test_the_voice_svi_dhcp_state_is_read_under_the_name_this_build_exposes(
+    exposed_state, expected,
+):
+    """False, true, and no getter remain three different observations.
+
+    The fake surface behaves like the enumerated 7960 Vlan port: its DHCP
+    channel exists only under ``isDhcpClientOn``.  Returning a pre-shaped
+    ``dhcp_channel`` value would test the JSON decoder while completely
+    bypassing the generated getter name -- the defect this regression guards.
+    """
+    captured = []
+
+    def send_and_wait(source, _timeout):
+        captured.append(source)
+        if "getPortCount" not in source or "getIpAddress" not in source:
+            return "{}"
+        asks_exposed_getter = (
+            "typeof c.isDhcpClientOn==='function'" in source
+            and "c.isDhcpClientOn()" in source
+        )
+        readable = exposed_state is not None and asks_exposed_getter
+        return json.dumps({
+            "found": True,
+            "port_found": True,
+            "address_channel": True,
+            "ipv4": "",
+            "dhcp_channel": readable,
+            "dhcp": exposed_state if readable else None,
+            "device_address_channel": False,
+            "device_ipv4": "",
+            "device_dhcp_channel": False,
+            "device_dhcp": None,
+        })
+
+    runtime = PacketTracerEnterpriseVoiceRuntime(
+        lambda: [], lambda _source: True, send_and_wait,
+        ios_readiness=lambda _name: True,
+    )
+
+    observed = runtime.observe_registration(_expectation("3011"))
+
+    assert observed.endpoint_dhcp_enabled is expected
+    endpoint_reads = [item for item in captured if "getPortCount" in item]
+    assert len(endpoint_reads) == 1
+    assert "typeof c.isDhcpClientOn==='function'" in endpoint_reads[0]
+    assert "c.isDhcpEnabled" not in endpoint_reads[0]
+    # The retained census found no device-level DHCP member.  Fixing the SVI
+    # getter must not invent that same method on the device object.
+    assert "d.isDhcpClientOn" not in endpoint_reads[0]
 
 
 def test_registration_uses_fresh_privileged_show_ephone_when_available():

@@ -423,8 +423,8 @@ class PacketTracerEnterpriseVoiceRuntime:
             "if(c&&typeof c.getName==='function'&&String(c.getName())===want){",
             "p=c;able=typeof c.getIpAddress==='function';",
             "ip=able?String(c.getIpAddress()):'';",
-            "dable=typeof c.isDhcpEnabled==='function';",
-            "dh=dable?!!c.isDhcpEnabled():null;",
+            "dable=typeof c.isDhcpClientOn==='function';",
+            "dh=dable?!!c.isDhcpClientOn():null;",
             "break;}}}",
             # The device itself, asked separately. PT puts addressing getters on
             # a device or on its ports and not reliably on both, so a port that
