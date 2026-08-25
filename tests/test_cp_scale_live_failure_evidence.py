@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 _PROBE = '''
 import inspect, json, subprocess, sys
+from dataclasses import replace
 from types import SimpleNamespace
 
 sys.path.insert(0, {root!r})
@@ -46,13 +47,23 @@ from tools.cp_scale_canonical_live import (
     _write_checkpoint_summary,
 )
 import tools.cp_scale_canonical_live as live
-from packet_tracer_mcp.domain.enterprise.models.configuration import VerificationKind
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
+    ConfigurationActionType,
+    VerificationKind,
+)
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
 from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
+)
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    DeviceIdentityEvidence,
+    DeviceIdentityProvenance,
+    IosCommandResult,
+    IosSessionState,
+    OperationalQueryId,
 )
 
 verdict = {{}}
@@ -106,6 +117,86 @@ trunk_result = SimpleNamespace(verification_results=[SimpleNamespace(
 verdict["trunk_vlan_traversal"] = _trunk_vlan_traversal_evidence(
     trunk_plan, trunk_result,
 )
+
+binding_output = """Router4#show ip dhcp binding
+IP address      Client-ID/              Lease expiration        Type
+172.16.10.2     0001.1111.1111          --                      Automatic
+172.16.30.22    0002.2222.2222          --                      Automatic
+Router4#"""
+binding_helper = getattr(live, "_dhcp_server_binding_evidence", None)
+if binding_helper is not None:
+    class BindingIos:
+        def __init__(self, output=binding_output):
+            self.calls = []
+            self.output = output
+
+        def execute(self, device_name, query_id):
+            self.calls.append((device_name, query_id.value))
+            return IosCommandResult(
+                device_name=device_name,
+                query_id=query_id,
+                executed=True,
+                output=self.output,
+                session_state=IosSessionState.EXEC_PROMPT_READY,
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name=device_name,
+                device_identity_provenance=(
+                    DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+                ),
+                device_identity_evidence=(
+                    DeviceIdentityEvidence.TERMINAL_OBJECT_IDENTITY.value
+                ),
+            )
+
+    binding_ios = BindingIos()
+    binding_plan = SimpleNamespace(actions=[
+        SimpleNamespace(
+            action_type=ConfigurationActionType.CONFIGURE_DHCP_POOL,
+            device_name="Router4",
+            segment_id="large-data",
+            network="172.16.10.0",
+            prefix=24,
+        ),
+        SimpleNamespace(
+            action_type=ConfigurationActionType.CONFIGURE_DHCP_POOL,
+            device_name="Router4",
+            segment_id="large-voice",
+            network="172.16.20.0",
+            prefix=24,
+        ),
+    ])
+    binding_voice = SimpleNamespace(phone_assignments=[SimpleNamespace(
+        voice_segment_id="large-voice",
+    )])
+    verdict["dhcp_binding_evidence"] = binding_helper(
+        binding_ios, binding_plan, binding_voice,
+    )
+    verdict["dhcp_binding_calls"] = binding_ios.calls
+    verdict["dhcp_binding_without_rows"] = binding_helper(
+        BindingIos("Router4#show ip dhcp binding\\nRouter4#"),
+        binding_plan,
+        binding_voice,
+    )
+    wrong_identity = BindingIos()
+    original_execute = wrong_identity.execute
+    def mismatched_execute(device_name, query_id):
+        return replace(
+            original_execute(device_name, query_id),
+            observed_device_name="AnotherRouter",
+            device_identity_provenance=(
+                DeviceIdentityProvenance.MISMATCHED.value
+            ),
+        )
+    wrong_identity.execute = mismatched_execute
+    verdict["dhcp_binding_wrong_identity"] = binding_helper(
+        wrong_identity, binding_plan, binding_voice,
+    )
+else:
+    verdict["dhcp_binding_evidence"] = None
+    verdict["dhcp_binding_calls"] = []
+    verdict["dhcp_binding_without_rows"] = None
+    verdict["dhcp_binding_wrong_identity"] = None
 
 projection = SimpleNamespace(
     stage=SimpleNamespace(value="floor1"),
@@ -196,6 +287,44 @@ except CanonicalLiveFailure as exc:
 else:
     verdict["contradicted_stage_trunk"] = None
 
+# A voice contradiction is precisely when server bindings are diagnostic. The
+# additive observation must therefore be journalled before that contradiction
+# escapes, not on the stage's success-only tail.
+live.configuration_application_contradiction = lambda _result: ""
+live.canonical_stage_configuration_error = lambda *args, **kwargs: ""
+live._wait_for_serial_interfaces = lambda *args, **kwargs: (True, [])
+live.derive_foundational_statuses = lambda *args, **kwargs: {{}}
+live._stage_voice = lambda *args, **kwargs: {{
+    "staged": True, "error": "voice mismatch",
+}}
+live._dhcp_server_binding_evidence = lambda *args, **kwargs: [{{
+    "sentinel": "binding evidence retained",
+}}]
+projection.voice = SimpleNamespace(actions=[], phone_assignments=[])
+try:
+    _execute_stage(
+        projection,
+        composition=SimpleNamespace(capabilities={{}}),
+        deployment=verified_deployment,
+        delta_deployment=None,
+        physical=None,
+        configuration_runtime=None,
+        control_runtime=None,
+        voice_runtime=None,
+        transport=SimpleNamespace(send_and_wait=lambda *args, **kwargs: None),
+        fingerprint=None,
+        packet_tracer_version="9.0.1.0858",
+        verified_serial_topology=SimpleNamespace(),
+        verified_serial_manifest=SimpleNamespace(),
+    )
+except CanonicalLiveFailure as exc:
+    voice_failure_evidence = exc.stage_evidence or {{}}
+    verdict["bindings_before_voice_failure"] = voice_failure_evidence.get(
+        "dhcp_server_bindings"
+    )
+else:
+    verdict["bindings_before_voice_failure"] = None
+
 print(json.dumps(verdict))
 '''
 
@@ -262,6 +391,46 @@ def test_governed_evidence_names_each_typed_trunk_vlan_traversal(verdict):
 
 def test_configuration_contradiction_keeps_named_trunk_evidence(verdict):
     assert verdict["contradicted_stage_trunk"] == verdict["trunk_vlan_traversal"]
+
+
+def test_governed_binding_evidence_keeps_zero_distinct_from_unreadable(verdict):
+    evidence = verdict["dhcp_binding_evidence"]
+    assert evidence is not None
+    assert verdict["dhcp_binding_calls"] == [["Router4", "show_ip_dhcp_binding"]]
+    assert evidence[0]["table_readable"] is True
+    assert evidence[0]["bindings"] == ["172.16.10.2", "172.16.30.22"]
+    assert evidence[0]["pools"] == [
+        {
+            "segment_id": "large-data",
+            "network": "172.16.10.0/24",
+            "voice": False,
+            "binding_count": 1,
+            "bindings": ["172.16.10.2"],
+        },
+        {
+            "segment_id": "large-voice",
+            "network": "172.16.20.0/24",
+            "voice": True,
+            "binding_count": 0,
+            "bindings": [],
+        },
+    ]
+
+    unreadable = verdict["dhcp_binding_without_rows"][0]
+    assert unreadable["table_readable"] is False
+    assert all(item["binding_count"] is None for item in unreadable["pools"])
+    assert all(item["bindings"] == [] for item in unreadable["pools"])
+
+    wrong_identity = verdict["dhcp_binding_wrong_identity"][0]
+    assert wrong_identity["device_identity_confirmed"] is False
+    assert wrong_identity["table_readable"] is False
+    assert all(item["binding_count"] is None for item in wrong_identity["pools"])
+
+
+def test_voice_failure_keeps_the_additive_server_binding_observation(verdict):
+    assert verdict["bindings_before_voice_failure"] == [
+        {"sentinel": "binding evidence retained"},
+    ]
 
 
 def test_this_suite_never_loaded_the_production_namespace():

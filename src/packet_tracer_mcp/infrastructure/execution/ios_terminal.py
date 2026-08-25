@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 from dataclasses import dataclass, replace
@@ -35,6 +36,7 @@ class OperationalQueryId(str, Enum):
     SHOW_IP_NAT_STATISTICS = "show_ip_nat_statistics"
     SHOW_PORT_SECURITY_INTERFACE = "show_port_security_interface"
     SHOW_IP_DHCP_SNOOPING = "show_ip_dhcp_snooping"
+    SHOW_IP_DHCP_BINDING = "show_ip_dhcp_binding"
     SHOW_IP_ARP_INSPECTION = "show_ip_arp_inspection"
     SHOW_SPANNING_TREE = "show_spanning_tree"
     SHOW_ETHERCHANNEL_SUMMARY = "show_etherchannel_summary"
@@ -151,6 +153,7 @@ _COMMANDS = {
     OperationalQueryId.SHOW_IP_NAT_TRANSLATIONS: "show ip nat translations",
     OperationalQueryId.SHOW_IP_NAT_STATISTICS: "show ip nat statistics",
     OperationalQueryId.SHOW_IP_DHCP_SNOOPING: "show ip dhcp snooping",
+    OperationalQueryId.SHOW_IP_DHCP_BINDING: "show ip dhcp binding",
     OperationalQueryId.SHOW_IP_ARP_INSPECTION: "show ip arp inspection",
     OperationalQueryId.SHOW_SPANNING_TREE: "show spanning-tree",
     OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY: "show etherchannel summary",
@@ -185,6 +188,7 @@ _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_IP_NAT_STATISTICS,
     OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE,
     OperationalQueryId.SHOW_IP_DHCP_SNOOPING,
+    OperationalQueryId.SHOW_IP_DHCP_BINDING,
     OperationalQueryId.SHOW_IP_ARP_INSPECTION,
     OperationalQueryId.SHOW_INTERFACES_SWITCHPORT,
     OperationalQueryId.SHOW_TELEPHONY_SERVICE,
@@ -226,8 +230,14 @@ _PAGER_MARKER = "--More--"
 # este build -- y no hay manera de angostarla por telefono. Sin recorrer el
 # pager, el canal del call control es inobservable a escala de una planta:
 # no dice UNREGISTERED, no dice nada.
+#
+# `SHOW_IP_DHCP_BINDING` is an additive server-effect observation. At CP-SCALE
+# one server can hold every endpoint lease for several /24 pools, while the
+# diagnostic fact we need may be the ABSENCE of voice-subnet rows. Only a
+# complete bounded table can support that negative; a first page cannot.
 _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+    OperationalQueryId.SHOW_IP_DHCP_BINDING,
     OperationalQueryId.SHOW_INTERFACES_TRUNK,
     OperationalQueryId.SHOW_IP_PROTOCOLS,
     OperationalQueryId.SHOW_EPHONE,
@@ -299,6 +309,13 @@ class EphoneStatusRow:
     ip_address: str
     extension: str
     line_state: str
+
+
+@dataclass(frozen=True)
+class DhcpBindingRow:
+    """One address the DHCP server's current binding table actually exposed."""
+
+    ip_address: str
 
 
 @dataclass(frozen=True)
@@ -692,6 +709,32 @@ def parse_show_ephone(value: str) -> list[EphoneStatusRow]:
             extension=line_match.group("extension"),
             line_state=line_match.group("state").upper(),
         ))
+    return rows
+
+
+def parse_show_ip_dhcp_binding(value: str) -> list[DhcpBindingRow]:
+    """Read only the stable first column of ``show ip dhcp binding`` rows.
+
+    Client identifiers and lease expirations wrap differently across IOS
+    variants. The server address is the only field needed by this diagnostic,
+    and it is accepted only as a complete IPv4 token at the start of a row.
+    """
+    rows: list[DhcpBindingRow] = []
+    seen: set[str] = set()
+    for line in normalize_terminal_output(value).splitlines():
+        match = re.match(
+            r"^\s*(?P<address>\d{1,3}(?:\.\d{1,3}){3})(?:\s+|$)", line,
+        )
+        if match is None:
+            continue
+        try:
+            address = str(ipaddress.IPv4Address(match.group("address")))
+        except ipaddress.AddressValueError:
+            continue
+        if address in seen:
+            continue
+        seen.add(address)
+        rows.append(DhcpBindingRow(ip_address=address))
     return rows
 
 

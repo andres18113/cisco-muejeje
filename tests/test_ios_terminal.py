@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from src.packet_tracer_mcp.infrastructure.execution import ios_terminal as ios_module
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor, EigrpQueryClassification,
     EtherChannelQueryClassification, OperationalQueryId, OspfQueryClassification,
@@ -880,6 +881,45 @@ def test_privileged_ephone_query_enters_enable_and_restores_user_exec():
     assert any('enterCommand("enable")' in item for item in sent)
     assert any('enterCommand("show ephone")' in item for item in sent)
     assert any('enterCommand("disable")' in item for item in sent)
+
+
+def test_dhcp_binding_table_is_registered_privileged_and_pager_complete():
+    """The server-side lease table is one bounded, attributable SHOW."""
+    query = OperationalQueryId._value2member_map_.get("show_ip_dhcp_binding")
+    assert query is not None, "show ip dhcp binding is not registered"
+    parser = getattr(ios_module, "parse_show_ip_dhcp_binding", None)
+    assert parser is not None, "the registered table has no typed parser"
+    assert query in ios_module._PRIVILEGED_QUERIES
+
+    from tests.test_e95_serial_orientation_pager_capture import (
+        _PagedTerminal,
+        _executor,
+    )
+
+    terminal = _PagedTerminal(
+        [
+            (
+                "Bindings from all pools not associated with VRF:\n"
+                "IP address      Client-ID/              Lease expiration        Type\n"
+                "                Hardware address/\n"
+                "                User name\n"
+                "172.16.10.2    0001.1111.1111          --                      Automatic\n"
+            ),
+            (
+                "172.16.30.22   0002.2222.2222          --                      Automatic\n"
+            ),
+        ],
+        command="show ip dhcp binding",
+    )
+
+    result = _executor(terminal).execute("Router4", query)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.output_complete and not result.truncated_by_pager
+    assert result.pager_pages_captured == 2
+    assert [item.ip_address for item in parser(result.output)] == [
+        "172.16.10.2", "172.16.30.22",
+    ]
 
 
 def test_typed_interface_query_rejects_cli_injection_before_bridge_call():

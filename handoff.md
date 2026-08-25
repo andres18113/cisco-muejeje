@@ -6,29 +6,30 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 8b4cdd4ac8da729b334085783dced5c7a5a0353a
+CURRENT_PUSHED_HEAD = e09f606837e9794d32af6290122f0fff0e3e2a69
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
-ROUTING_CORE = GOVERNED VERIFIED (latest fresh checkpoint 43eba72)
-ROUTER4_SWITCH10 = LATEST RUN FAILED ITS NEW FORWARDING GATE AT 8 SECONDS
+ROUTING_CORE = GOVERNED VERIFIED (fresh run at e09f606)
+ROUTER4_SWITCH10 = GOVERNED VERIFIED; forwarding converged at 30.983 seconds
 FLOOR1_PHYSICAL = REACHED; the stage later failed in voice verification
 FLOOR1_DHCP_CLIENT = 21/21 Vlan20 present, readable, TRUE
 FLOOR1_ADDRESSING = 0/21 addressed
 FLOOR1 = NOT VERIFIED
 WORLD_A = REFUTED
-WORLD_B = ACTIVE; allowed/active LIVE-proven, forwarding retry with 45s pending
+WORLD_B_FORWARDING = REFUTED; all five trunk endpoints VERIFIED
+WORLD_B_DHCP_BINDINGS = additive registered observation implemented, LIVE pending
 CP_SCALE = OPEN
 E10 = FORBIDDEN
 ```
 
-Offline after the forwarding-budget/evidence-ordering fix: **2720 passed / 0 failed** with the
-checkout-local `.venv` and a writable, gitignored pytest basetemp. The failed
-`router4-switch10` run cleaned every owned device and independently re-observed the empty
-semantic workspace twice. Packet Tracer is open; its workspace is empty.
+Offline baseline at pushed HEAD `e09f606`: **2722 passed / 0 failed** with the
+checkout-local `.venv` and a writable, gitignored pytest basetemp. The latest
+failed Floor-1 run cleaned every owned device and independently re-observed the
+empty semantic workspace twice. Packet Tracer is open; its workspace is empty.
 
-The 45-second forwarding budget and failure-evidence ordering changes are
-checkpointed in this HEAD. The runtime-checkpoint path fix described below is
-not yet checkpointed; commit and push it before the next LIVE mutation.
+The forwarding and runtime-checkpoint fixes are checkpointed in this HEAD. The
+additive DHCP-binding observation described below is not yet checkpointed;
+commit and push it before the next LIVE mutation.
 
 ## Decisive powered-phone measurement -- World A refuted
 
@@ -106,10 +107,10 @@ Switch10 FastEthernet0/1    <-> Switch4 GigabitEthernet0/1
 Switch4  GigabitEthernet0/2 <-> Switch5 GigabitEthernet0/1
 ```
 
-FACT: `show ip dhcp binding` has **no registered query**. `OperationalQueryId`
-carries `SHOW_IP_DHCP_SNOOPING` only, which is switch security, not the server
-binding table. Re-audit this immediately before adding anything, and consider it
-only if fresh trunk traversal evidence is still insufficient.
+FACT, before the current change: `show ip dhcp binding` had **no registered
+query**. `OperationalQueryId` carried `SHOW_IP_DHCP_SNOOPING` only, which is
+switch security, not the server binding table. The fresh complete path evidence
+below met the gate for adding the server-side observation.
 
 ## Fresh World-B LIVE checkpoint -- 8 seconds was not a forwarding lifecycle
 
@@ -140,6 +141,58 @@ verdict after a bounded 45 seconds, and the runner writes the named projection
 before contradiction handling. Focused: 9 passed. Affected: 93 passed. Full:
 2720 passed / 0 failed.
 
+## Fresh e09f606 LIVE -- complete VLAN20 path, still zero phone addresses
+
+FACT: the governed run started from clean pushed `e09f606`, exact local
+production namespace, build `9.0.1.0858`, authenticated fresh HTTP, blank
+semantic workspace and `safe_for_disposable_mutation`. The runtime checkpoint
+stayed under ignored `data/`; the worktree remained clean and no progress commit
+was needed.
+
+FACT: `router4-switch10` VERIFIED VLANs 10/20/30 as allowed, active and
+forwarding on `Switch10 GigabitEthernet0/1` after 90 reads / 30.983 seconds.
+That directly confirms the former 8-second result was a transition, not a
+persistent forwarding omission.
+
+FACT: Floor 1 then VERIFIED all five trunk endpoints and all three VLAN fields:
+
+```text
+Switch4  Gi0/2  89 reads / 33.250 s  VERIFIED
+Switch4  Gi0/1  cache/current          VERIFIED
+Switch5  Gi0/1  91 reads / 34.734 s  VERIFIED
+Switch10 Fa0/1   1 read  /  0.108 s  VERIFIED
+Switch10 Gi0/1  cache/current          VERIFIED
+```
+
+FACT: all 25 readable E5 endpoint observations verified their IPv4/netmask
+fields, while all 21 phones again exposed `Vlan20`, an address channel and
+`isDhcpClientOn()==true`, but zero held an address. Every one of the 47 E7 voice
+actions was accepted. The complete CME observation remained 19 UNREGISTERED / 2
+UNOBSERVABLE and the stage failed after the full 180-second window.
+
+FACT: HTTP was connected with `last_poll_ago=0.0`, zero unauthenticated requests
+and no resume-gate errors before both post-core stages. The runner exited on its
+own voice contradiction and cleanup was VERIFIED twice with zero semantic
+devices.
+
+CONCLUSION: the complete Router4 -> Switch10 -> Switch4 -> Switch5 VLAN20 path
+is not the missing evidence. World-B forwarding is refuted. The next strongest
+observation is the Router4 server binding table, exactly as the original gate
+specified.
+
+The additive implementation registers privileged `SHOW_IP_DHCP_BINDING`, uses
+the existing bounded pager, parses only the stable IPv4 first column, requires a
+fresh complete source-attributed table with at least one typed row, and projects
+counts for every configured pool. A voice-pool count of zero is emitted only
+when the same complete table successfully exposes other bindings; no rows,
+incomplete output, rejection or wrong device identity yields `None` /
+UNOBSERVABLE. `VerificationKind.DHCP_POOL` is untouched.
+
+FAIL-FIRST: the query/parser regression failed because the query was not
+registered; the runner regressions failed because no additive evidence existed
+and a voice failure discarded any such observation. Focused: 11 passed.
+Affected: 199 passed. Full: 2725 passed / 0 failed.
+
 ## Pre-LIVE checkpoint self-dirty defect -- fresh and independently reproduced
 
 FACT: `8b4cdd4` is the immutable pushed pre-LIVE checkpoint for the 45-second
@@ -167,20 +220,17 @@ reference summary is published only after terminal
 
 ## NEXT_ACTIVE_STEP
 
-1. Commit and push only the runtime-checkpoint path fix; require a clean exact
-   upstream HEAD before LIVE.
+1. Commit/push the additive DHCP-binding observation on a clean exact upstream
+   HEAD.
 2. Re-run governed routing-core -> router4-switch10 -> Floor 1 without stopping
-   a stage mid-flight.
-3. Require the fresh 45-second `router4-switch10` observation to decide whether
-   forwarding converges or remains observably absent. Then read
-   `trunk_vlan_traversal` from the durable Floor-1 journal. In particular,
-   require VLAN 20 to be VERIFIED as allowed, active, and forwarding on both
-   ends of Switch4 <-> Switch5.
-4. If any row observably omits VLAN 20, root-cause that typed contradiction.
-   If the registered trunk evidence is absent/incomplete, do not infer.
-5. Only if the complete path is verified yet the phones remain unaddressed,
-   independently audit and then add the smallest registered DHCP-server binding
-   observation. Do not confuse it with DHCP snooping.
+   a stage mid-flight or creating progress commits.
+3. Read `dhcp_server_bindings` from the durable Floor-1 failed-stage journal.
+   Require fresh, complete, uniquely attributed Router4 evidence before calling
+   a voice-pool binding count zero.
+4. Branch only on that evidence. A binding table with data/CCTV leases but zero
+   `172.16.20.0/24` leases localizes the defect before allocation; actual voice
+   bindings with zero phone-side addresses are a channel contradiction requiring
+   a different root cause. Unreadable remains UNOBSERVABLE.
 
 Do not wire any new DHCP observation into `VerificationKind.DHCP_POOL`: the
 ceiling at `qualify_cp_scale_live.py:625` enforces status UNOBSERVABLE +
@@ -216,6 +266,11 @@ FACT, fresh run at `8b4cdd4`: authenticated HTTP connected and routing core
 completed. The failure was the runner's repository gate after its own tracked
 summary write, not an HTTP disconnect. Transport stopped normally and cleanup
 was verified.
+
+FACT, fresh run at `e09f606`: authenticated HTTP stayed fresh through routing
+core, `router4-switch10`, and the Floor-1 resume gate with zero unauthenticated
+requests. The process completed its full 180-second voice observation, stopped
+the transport normally after the governed failure, and verified cleanup.
 
 UNOBSERVABLE: whether Packet Tracer has actually **loaded** the patched
 `interface.js`. Nothing readable from Python distinguishes the patched loop from
@@ -279,7 +334,8 @@ d0db204 docs(cp-scale): checkpoint governed routing core
 6eb0d8e fix(cp-scale): verify voice VLAN traversal on trunks
 43eba72 docs(cp-scale): checkpoint fresh routing core
 8b4cdd4 fix(cp-scale): allow bounded trunk forwarding convergence
+e09f606 fix(cp-scale): keep runtime checkpoints outside tracked tree
 ```
 
-The runtime-checkpoint path implementation and this handoff update are the next
-fix checkpoint; record their final pushed HEAD here on the following turn.
+The additive DHCP-binding observation and this handoff update are the next fix
+checkpoint; record their final pushed HEAD here on the following turn.

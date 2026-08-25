@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import collections
 import hashlib
+import ipaddress
 import json
 import os
 import subprocess
@@ -76,6 +77,7 @@ from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
+    ConfigurationActionType,
     VerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
@@ -116,6 +118,8 @@ from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight impor
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     OperationalQueryId,
+    ios_rejection_reason,
+    parse_show_ip_dhcp_binding,
     parse_show_ip_interface_brief,
 )
 from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
@@ -526,6 +530,87 @@ def _record_configuration_attempt(
     evidence["trunk_vlan_traversal"] = traversal
 
 
+def _dhcp_server_binding_evidence(
+    ios: ControlledIosExecutor,
+    configuration_plan,
+    voice_plan,
+) -> list[dict[str, object]]:
+    """Observe server lease effects without promoting DHCP_POOL read-back."""
+    pools = [
+        action for action in configuration_plan.actions
+        if action.action_type is ConfigurationActionType.CONFIGURE_DHCP_POOL
+    ]
+    voice_segments = {
+        assignment.voice_segment_id for assignment in voice_plan.phone_assignments
+    } if voice_plan is not None else set()
+    pools_by_device: dict[str, list[object]] = collections.defaultdict(list)
+    for pool in pools:
+        pools_by_device[pool.device_name].append(pool)
+
+    evidence: list[dict[str, object]] = []
+    for device_name, device_pools in sorted(pools_by_device.items()):
+        show = ios.execute(
+            device_name, OperationalQueryId.SHOW_IP_DHCP_BINDING,
+        )
+        rows = parse_show_ip_dhcp_binding(show.output) if show.executed else []
+        rejection = ios_rejection_reason(show.output)
+        identity_confirmed = bool(
+            show.observed_device_name == device_name
+            and show.device_identity_provenance == "confirmed_unique"
+        )
+        # A complete table with at least one typed row proves that the parser
+        # can read this build's table. With no rows at all, an unfamiliar empty
+        # rendering and a genuinely empty table stay deliberately indistinct.
+        table_readable = bool(
+            show.executed
+            and show.fresh_output_observed
+            and show.output_complete
+            and not rejection
+            and identity_confirmed
+            and rows
+        )
+        addresses = sorted(
+            {row.ip_address for row in rows},
+            key=lambda value: int(ipaddress.ip_address(value)),
+        )
+        pool_evidence: list[dict[str, object]] = []
+        for pool in sorted(device_pools, key=lambda item: item.segment_id):
+            network = ipaddress.ip_network(
+                f"{pool.network}/{pool.prefix}", strict=True,
+            )
+            matched = [
+                address for address in addresses
+                if ipaddress.ip_address(address) in network
+            ]
+            pool_evidence.append({
+                "segment_id": pool.segment_id,
+                "network": str(network),
+                "voice": pool.segment_id in voice_segments,
+                "binding_count": len(matched) if table_readable else None,
+                "bindings": matched if table_readable else [],
+            })
+        evidence.append({
+            "device_name": device_name,
+            "query_id": OperationalQueryId.SHOW_IP_DHCP_BINDING.value,
+            "executed": show.executed,
+            "fresh_output_observed": show.fresh_output_observed,
+            "output_complete": show.output_complete,
+            "truncated_by_pager": show.truncated_by_pager,
+            "pager_pages_captured": show.pager_pages_captured,
+            "failure_reason": show.failure_reason,
+            "ios_rejection": rejection or "",
+            "observed_device_name": show.observed_device_name,
+            "device_identity_provenance": show.device_identity_provenance,
+            "device_identity_evidence": show.device_identity_evidence,
+            "device_identity_confirmed": identity_confirmed,
+            "table_readable": table_readable,
+            "bindings": addresses if table_readable else [],
+            "pools": pool_evidence,
+            "output": show.output,
+        })
+    return evidence
+
+
 def _stage_voice(
     projection,
     *,
@@ -832,6 +917,12 @@ def _execute_stage(
         manifest=manifest,
     )
     evidence["voice"] = voice_evidence
+    evidence["dhcp_server_bindings"] = (
+        _dhcp_server_binding_evidence(
+            ios, projection.configuration, projection.voice,
+        )
+        if voice_evidence.get("staged") else []
+    )
     if voice_evidence.get("error"):
         raise _failed(
             f"Voice at {projection.stage.value!r} did not close: "
