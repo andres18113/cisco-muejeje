@@ -57,6 +57,28 @@ from ...domain.enterprise.services.configuration_dependencies import (
 )
 
 
+#: What evidence each foundation kind may rest on.
+#:
+#: VERIFIED everywhere is the rule, and it is the right rule wherever the
+#: backend has a read-back. `VerificationKind.DHCP_POOL` does not: Packet
+#: Tracer exposes no DHCP-pool getter, so that verification is answered
+#: UNOBSERVABLE unconditionally and the canonical stage gate already accepts it
+#: as a governed ceiling. Demanding VERIFIED there is not fail-closed but
+#: fail-impossible -- it asks for evidence the backend cannot produce, and
+#: leaves voice unstageable no matter how healthy the pool is.
+#:
+#: The pool is still not taken on trust. A verification result exists for it
+#: only because its action was applied, an observed FAILED still blocks, and on
+#: the stage where it matters its effect is independently evidenced by every
+#: other endpoint that leased from it and read its address back.
+_VERIFIED_ONLY = frozenset({ActionExecutionStatus.VERIFIED})
+_ADMISSIBLE_FOUNDATION_STATUSES: dict[str, frozenset[ActionExecutionStatus]] = {
+    "voice_dhcp_pool": frozenset({
+        ActionExecutionStatus.VERIFIED, ActionExecutionStatus.UNOBSERVABLE,
+    }),
+}
+
+
 def _in_network(address: str, network: str, prefix: int) -> bool:
     try:
         host = ipaddress.ip_address(address)
@@ -214,7 +236,10 @@ class VoiceApplicator:
             )
         missing = sorted(
             item.source_id for item in plan.foundational_requirements
-            if foundational_statuses.get(item.source_id) is not ActionExecutionStatus.VERIFIED
+            if foundational_statuses.get(item.source_id)
+            not in _ADMISSIBLE_FOUNDATION_STATUSES.get(
+                item.kind, _VERIFIED_ONLY,
+            )
         )
         if missing:
             return self._failure(

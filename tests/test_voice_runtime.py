@@ -7,6 +7,7 @@ from copy import deepcopy
 from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
+    ConfigurationFailureCode,
     ConfigurationRuntimeContext,
     FieldVerificationStatus,
     RuntimeActionMutation,
@@ -445,3 +446,102 @@ def test_compact_runtime_summary_omits_call_history_details():
     assert summary["calls"]["verified"] == 3
     assert "states" not in summary
     assert "action_results" not in summary
+
+
+def _foundations(plan, **overrides):
+    statuses = {
+        item.source_id: ActionExecutionStatus.VERIFIED
+        for item in plan.foundational_requirements
+    }
+    for kind, status in overrides.items():
+        for item in plan.foundational_requirements:
+            if item.kind == kind:
+                statuses[item.source_id] = status
+    return statuses
+
+
+def test_an_unobservable_dhcp_pool_foundation_does_not_block_voice():
+    """Packet Tracer exposes no DHCP-pool getter, and never will on this build.
+
+    `VerificationKind.DHCP_POOL` is answered UNOBSERVABLE unconditionally --
+    a measured limit of the observer, already accepted as a governed ceiling by
+    the canonical stage gate. Requiring VERIFIED for the pool a phone leases
+    from is therefore not fail-closed but fail-impossible: it asks for evidence
+    the backend cannot produce, and voice could never be staged at all.
+
+    The pool is not taken on trust. Its action must have applied for a
+    verification result to exist for it, and on the stage where this matters its
+    effect is independently evidenced by every other endpoint that leased from
+    it and read its address back.
+    """
+    plan = _compile().plan
+    runtime = FakeVoiceRuntime()
+
+    result = VoiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses=_foundations(
+            plan, voice_dhcp_pool=ActionExecutionStatus.UNOBSERVABLE,
+        ),
+        capabilities=_profile(),
+        runtime_context=ConfigurationRuntimeContext(
+            backend="fake", backend_version="9.0.1.0858",
+        ),
+    )
+
+    assert (
+        result.failure_code
+        is not ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING
+    )
+    assert runtime.applied
+
+
+def test_an_unobservable_voice_vlan_foundation_still_blocks_voice():
+    """The ceiling is per kind. A switch port has a read-back and must use it."""
+    plan = _compile().plan
+    runtime = FakeVoiceRuntime()
+
+    result = VoiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses=_foundations(
+            plan, voice_vlan=ActionExecutionStatus.UNOBSERVABLE,
+        ),
+        capabilities=_profile(),
+        runtime_context=ConfigurationRuntimeContext(
+            backend="fake", backend_version="9.0.1.0858",
+        ),
+    )
+
+    assert (
+        result.failure_code
+        is ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING
+    )
+    assert runtime.applied == []
+
+
+def test_a_failed_dhcp_pool_foundation_still_blocks_voice():
+    """Unobservable is not a licence to ignore an observed failure."""
+    plan = _compile().plan
+    runtime = FakeVoiceRuntime()
+
+    result = VoiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses=_foundations(
+            plan, voice_dhcp_pool=ActionExecutionStatus.FAILED,
+        ),
+        capabilities=_profile(),
+        runtime_context=ConfigurationRuntimeContext(
+            backend="fake", backend_version="9.0.1.0858",
+        ),
+    )
+
+    assert (
+        result.failure_code
+        is ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING
+    )
+    assert runtime.applied == []
