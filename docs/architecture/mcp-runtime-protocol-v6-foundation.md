@@ -1,12 +1,13 @@
 # MCP Runtime Protocol V6 — Foundation Audit and Design Slice
 
-Status: **PHASE 1B-OFFLINE IMPLEMENTED (pure, no transport) · PHASE 1B-LIVE NOT STARTED**
+Status: **PHASE 1B-LIVE-A HARNESS IMPLEMENTED OFFLINE · NOT EXECUTED AGAINST PACKET TRACER**
 Branch: `feature/runtime-protocol-v6-foundation`
 Base: `43eba72f18ad4e29e0ff292ebca4dbbd4a47232e` (CP-LIVE checkpoint on `feature/runtime-ripv2`)
 Phase: 0 — audit (accepted) · 0.5 — design corrections (accepted) · 1A — implemented ·
 1A.1 — operation correlation hardened ·
 1B-OFFLINE — client orchestration ·
-1B.1 — finite timeout contract
+1B.1 — finite timeout contract ·
+1B-LIVE-A prep — operator harness, offline
 
 This document is an audit of the **deployed V5 bridge**, the design corrected
 after it, and the record of the first implemented slice. No `.pts` was rebuilt,
@@ -134,6 +135,50 @@ Four decisions, each taken to avoid inventing a fact the seam cannot supply:
 
 Scope: one new module, one new test module, and this document. No existing file
 changed — not the encoder, not the parser, not `execution/__init__.py`.
+
+## Revision 1B-LIVE-A prep — the harness, built and not run
+
+`tools/runtime_v6_identify_live.py` is the operator runner that will make the
+first real `runtime.identify`. **It has not been executed.** No Packet Tracer
+was opened, no HTTP server was started, and no file mailbox was touched:
+`LIVE_EXECUTED = NO`. What exists is `HARNESS_IMPLEMENTED_OFFLINE`, and the two
+must not be read as one.
+
+It is operator-only: not an MCP tool, not on the enterprise surface, and
+`tool_registry.py` is unchanged and does not know it exists.
+
+What it does, when someone eventually runs it in the isolated VM: build the one
+transport named by `--channel http` or `--channel file`, prove that transport is
+ready, hand its own `send_and_wait` to `RuntimeProtocolClient`, run one
+`runtime.identify`, and print one JSON document.
+
+Five decisions worth stating:
+
+- **One invocation owns one channel.** `--channel` is required, restricted to
+  `http` and `file`, and there is no fallback in either direction. A run that
+  could have answered from either channel answers nothing about the one being
+  tested, and the whole purpose is attributable evidence.
+- **The harness owns what it starts.** On HTTP it stops the transport in a
+  `finally` — after success, after a protocol failure, after an integration
+  exception, and after a budget the client refuses once the server is already
+  up. Ten of those paths are asserted, so no server, thread or process outlives
+  a run.
+- **Preflight refuses before dispatch.** Import isolation first (the gate every
+  sibling runner in `tools/` passes, and the one that keeps two module
+  identities from making every enum comparison silently false); then the
+  channel's own evidence — fresh authenticated polling on HTTP, `pt_alive()`
+  on file. A stale heartbeat is reported as a heartbeat fact and nothing more:
+  not a timeout, not an unsupported protocol, not a Packet Tracer failure.
+- **The client stays the authority.** The harness never calls the encoder or the
+  parser. A LIVE run that reimplemented either would validate something other
+  than what ships, so the identity, the single send and the correlation all
+  remain where 1B-OFFLINE built and tested them.
+- **The token never leaves.** It rides in the query string of every signed
+  request, so a `urllib` failure can carry it verbatim. Bridge status is emitted
+  through a key allowlist, and an integration message is redacted before it is
+  bounded — truncating first would leave a prefix of the token in the output.
+  Only the transport's own non-invertible `token_id` is reported.
+
 
 ---
 
@@ -469,7 +514,8 @@ minting in Python and says so.
 | `runtime_session_id` contract | **REQUIRED_FOR_FIRST_SLICE** (contract + encoder) | Behaviour is LIVE-validated in 1B, not claimed in 1A (§3.5). |
 | `runtime.identify` JS encoder | **REQUIRED_FOR_FIRST_SLICE** | The operation the envelope is prototyped against. |
 | Client orchestration over an injected seam | **PHASE 1B-OFFLINE — IMPLEMENTED** | Encoder to parser across a callable supplied from outside (§3.7). Changes no shared file and dispatches nothing. |
-| Transport integration (a real channel) | **PHASE 1B-LIVE** | Layering (Part 5); also forbidden while CP-SCALE is open. |
+| Operator harness wiring a real transport | **PHASE 1B-LIVE-A — IMPLEMENTED OFFLINE** | Builds one declared channel and runs the accepted client over it (§3.8). Written and tested; never executed against Packet Tracer. |
+| LIVE execution against Packet Tracer | **PHASE 1B-LIVE — NOT STARTED** | Layering (Part 5); gated on operator review and an isolated VM, and forbidden while CP-SCALE is open. |
 | JSON *request* envelope | **LATER** | Needs an engine-side parser in the `.pts` — blocked (Q9). |
 | Extension typed dispatcher | **LATER** | The actual architectural milestone. Blocked (Q9). Not claimed by Slice 1 (§3.6). |
 | `extension_version` observed | **LATER** | Requires the `.pts` to state it. Stays `null`. |
@@ -764,7 +810,8 @@ request is parsed by the extension; the extension is unchanged.
 | **typed V6 operation encoder** | Python builds a typed operation into a JS payload whose result is a V6 envelope | **Slice 1 (Phase 1A)** |
 | **V6 result envelope parser** | Python classifies a response document into §3.4 states | **Slice 1 (Phase 1A)** |
 | **V6 protocol client** | Python runs one operation over a `send_and_wait` it is handed, and classifies the answer | **Phase 1B-OFFLINE** |
-| **transport integration** | a real channel carries a V6 payload and returns a V6 document | **PHASE 1B-LIVE — not started** |
+| **operator LIVE harness** | an operator-only runner that builds one declared real transport and drives the client over it | **Phase 1B-LIVE-A — built, not run** |
+| **transport integration** | a real channel carries a V6 payload and returns a V6 document | **PHASE 1B-LIVE — not started; only a real run can establish it** |
 | **extension typed dispatcher** | the Script Engine parses a structured V6 *request* and routes it to a typed handler | **LATER — blocked by Q9** |
 
 `SLICE1_ARCHITECTURE_NAME` = *typed V6 operation encoder + result envelope
@@ -829,6 +876,51 @@ name what it would be replaying — not a default hidden in a protocol client.
 **Classification is not routing.** `NOT_V6` is reported with its legacy text
 intact, and the client sends it nowhere. Routing needs a caller that knows which
 channel answered.
+
+### 3.8 Operator harness contract — IMPLEMENTED OFFLINE (Phase 1B-LIVE-A)
+
+`runtime_v6_identify_live.py --channel {http|file} --timeout-seconds N` emits one
+JSON document with a fixed top-level shape — `phase`, `channel`,
+`timeout_seconds`, `operation`, `transport`, `response`, `runtime`, `observed`,
+`error`, `integration_error`, `verdict`, `exit_code`, `non_claims` — whatever
+the outcome, so two runs can be diffed as evidence.
+
+Three exit codes, and the partition is structural rather than a taste:
+
+| Code | Verdict | Means |
+|---|---|---|
+| `0` | `VALID_V6_OK` | a V6 envelope parsed, correlated, and reported `status: ok` |
+| `1` | `CLASSIFIED_NOT_VALID_V6_OK` | a document arrived and was classified, but it was not that — `NOT_V6`, `PROTOCOL_MISMATCH`, `INVALID_V6`, `CORRELATION_MISMATCH`, or a valid envelope reporting `status: error` |
+| `2` | `NO_CLASSIFIED_DOCUMENT` | no classified document exists: preflight refused, no response document, or an integration exception |
+
+A protocol-valid envelope carrying `status: error` is deliberately **not**
+success. The document parsed perfectly and the operation failed; this is a
+validation harness, not a generic protocol decoder, and the JSON keeps both
+facts separately so nothing is lost by the exit code being blunt.
+
+`error` and `integration_error` are separate keys and never substitute for each
+other. `error` is the engine's own structured failure, and only ever comes from
+a `VALID_V6` envelope. `integration_error` is a Python exception from the
+transport callable: type and a bounded, redacted message. It is never rendered
+as `ENGINE_EXCEPTION`, which asserts the Script Engine ran the operation and
+reported a failure envelope — an execution that, in that case, never happened.
+
+`no_response_document` is reported as `NO_RESPONSE_DOCUMENT` and never as a
+timeout. Neither transport hands timeout provenance to this layer, and the V6
+client carries none (§3.7).
+
+The `runtime` block is populated **only** from a `VALID_V6` envelope. Without
+one, every field is `null` and `observed` is `{}`; nothing is filled in from the
+request, from the transport, or from a document that answered some other
+operation.
+
+Every run also emits `non_claims`, naming what it did not establish: the other
+channel always, its own channel unless the verdict was `VALID_V6_OK`, and
+`SCRIPT_ENGINE_SESSION_PERSISTENCE`, `WEBVIEW_REOPEN_PERSISTENCE`,
+`PT_RESTART_SESSION_CHANGE`, `CROSS_CHANNEL_SESSION_AGREEMENT` and
+`EXTENSION_VERSION` unconditionally. One identify cannot show persistence,
+cannot compare two channels, and cannot observe a version the Phase-1A wire
+holds as null.
 
 ---
 
@@ -1344,20 +1436,117 @@ touched them.
 | The client drifting into "transport integration" | Low | Module name, §3.6 table, and this section |
 | The fake responder mistaken for evidence about Packet Tracer | **Medium** | **Open by construction.** Named in the test docstring, in §3.7, and in the non-claims above; only 1B-LIVE closes it |
 
+### Phase 1B-LIVE-A — the operator harness — IMPLEMENTED OFFLINE
+
+**`LIVE_EXECUTED = NO`.** The harness is written and tested; it has never run
+against Packet Tracer. No instance was opened, no HTTP server was started, no
+mailbox was touched, and the host CP-LIVE runtime was not inspected. The next
+step is an operator review, then a run inside an isolated VM — never against
+the host.
+
+`PHASE1B_LIVE_A_FILES`:
+
+| File | Change |
+|---|---|
+| `tools/runtime_v6_identify_live.py` | **new** (367 lines), operator-only |
+| `tests/test_runtime_v6_identify_live_harness.py` | **new** (840 lines) |
+| `docs/architecture/mcp-runtime-protocol-v6-foundation.md` | this document |
+
+`SHARED_FILES_CHANGED` = **NONE.** `live_bridge.py` and `file_bridge.py` are
+reused and untouched: the harness builds `PacketTracerHttpTransport` and
+`FileBridge` and neither duplicates their logic nor asks them to expose more.
+`tool_registry.py`, `adapters/`, `EXTENSION/` and the three V6 modules are
+unchanged, and a test asserts the registry does not know this harness exists.
+
+**Why the tests run in child processes.** The harness imports the production
+`packet_tracer_mcp` namespace, as every operator runner in `tools/` does.
+Importing it into the pytest process would break three existing assertions that
+it must not be loaded there (`test_cp_scale_live_failure_evidence.py:187`,
+`test_cp_scale_voice_staging.py:321`, `test_import_isolation_preflight.py:148`)
+and would create the second module identity `ImportIsolationPreflight` exists to
+prevent. So the harness is driven in a child with fake transports, the same
+shape `test_cp_scale_live_failure_evidence.py` already uses; the structural
+checks read the source, which needs no import at all.
+
+`PHASE1B_LIVE_A_TESTS` — 126 tests, all passing, written before the harness
+existed. The first run was 121 failures against a file that did not exist yet.
+
+1. `--channel` is required and accepts only `http` and `file`;
+   `--timeout-seconds` is required. Each rejection happens in argument parsing,
+   before any transport is constructed, and prints no JSON.
+2. The declared channel builds its transport **and no other**, in both
+   directions: no HTTP run ever constructs a `FileBridge`, and no file run ever
+   starts an HTTP server, including after a silent or fail-closed outcome.
+3. HTTP starts before it identifies, and stops exactly once as the last thing it
+   does — asserted across ten outcomes: success, engine error, `NOT_V6`,
+   `PROTOCOL_MISMATCH`, `INVALID_V6`, both correlation misses, no response, an
+   integration exception, and a refused readiness. An eleventh covers a budget
+   the client refuses after the server is already up.
+4. A refused import isolation constructs no transport at all.
+5. The file channel checks `pt_alive()` before identifying, and a stale
+   heartbeat costs exactly zero sends. What it reports is the heartbeat fact:
+   the words timeout and unsupported appear nowhere in that verdict.
+6. `RuntimeProtocolClient` is what runs, it receives the **bound method of the
+   selected transport object** (`FakeHttpTransport.send_and_wait` or
+   `FakeFileBridge.send_and_wait`, observed by owner), and the declared budget
+   reaches it unaltered. The harness calls neither the encoder nor the parser,
+   asserted on its AST.
+7. Every outcome costs exactly one send; the source has one `identify` call site
+   and no loop.
+8. The exit code follows the classified outcome across all thirteen scenarios,
+   including `VALID_V6` + `status: error` as a failure and no-response as `2`.
+9. An integration exception is structured, typed, non-swallowed, and never
+   rendered as `ENGINE_EXCEPTION`.
+10. The raw bridge token appears in no output of any scenario — the fake puts
+    it both inside `status_dict()` and inside the raised exception message, so
+    the allowlist and the redaction are each exercised rather than assumed.
+11. The `runtime` block is populated only from a `VALID_V6` envelope; eight
+    non-envelope scenarios leave every field null and `observed` empty. A
+    correlation mismatch still reports the identity that was *sent*, recovered
+    from the payload that actually went out.
+12. The harness names no mutating Packet Tracer API (list imported from the
+    containment sweep), cannot save or create a Packet Tracer file, builds no
+    JavaScript, never calls the fire-and-forget `send` on either transport, and
+    is absent from the registry.
+13. The JSON shape is identical across all thirteen scenarios and survives a
+    round trip, and `non_claims` names what the run did not establish.
+
+Five mutations were applied to the finished harness and each was caught:
+dropping the HTTP `finally` (11 failures), falling back to the file channel
+after an unsuccessful HTTP run (24), dispatching without the heartbeat gate (4),
+emitting the transport status verbatim with its token (11), and dressing an
+integration fault as an engine error (2).
+
+`REGRESSION`: the full suite runs **37 failed, 3010 passed, 6 skipped**. With the
+eight V6 files removed, **37 failed, 2675 passed, 6 skipped**; the failure lists
+were captured and diffed and are byte-identical, and identical again to the
+lists recorded at 1A.1, 1B-OFFLINE and 1B.1. The delta is exactly +335 passing
+(143 protocol + 66 client + 126 harness). The base state has not moved once
+across any of these phases.
+
+**Unchanged and still open**, and a green harness run would not close most of
+them by itself: `HTTP_V6`, `FILE_V6`, `SCRIPT_ENGINE_SESSION_PERSISTENCE`,
+`WEBVIEW_REOPEN_PERSISTENCE`, `PT_RESTART_SESSION_CHANGE`,
+`CROSS_CHANNEL_SESSION_AGREEMENT`, `EXTENSION_VERSION` — all
+**UNVERIFIED_UNTIL_PHASE_1B_LIVE**.
+
 ### Phase 1B-LIVE — a real channel (later, gated)
 
-**Gate: a safe CP-SCALE boundary. Not before.** Phase 1B-OFFLINE does not open
-it: an injected callable is not a channel, and nothing below became cheaper
-because the orchestration above it now exists.
+**Gate: operator review of the harness, then an isolated VM, and a safe
+CP-SCALE boundary. Not before, and never against the host instance.**
+Neither earlier phase opens it: an injected callable is not a channel, and a
+harness that has never run is not evidence about one.
 
 Scope, when it opens:
 
-1. Wiring the Phase 1B-OFFLINE seam to a real `send_and_wait`. The seam itself
-   is built (§3.7); what is missing is a caller that owns a channel. **No import
-   of any `tool_registry` closure**, in either direction — it is an adapter-layer
+1. Running `tools/runtime_v6_identify_live.py` (§3.8) inside an isolated VM,
+   once per channel, after an operator has reviewed it. The caller that owns a
+   channel now exists; what is missing is a run. **No import of any
+   `tool_registry` closure**, in either direction — it is an adapter-layer
    closure, and that is the layering error Part 5 exists to prevent.
 2. First transport invocation of `runtime.identify`. Until it happens, every
-   HTTP and file-bridge claim about V6 stays UNVERIFIED_UNTIL_PHASE_1B_LIVE.
+   HTTP and file-bridge claim about V6 stays UNVERIFIED_UNTIL_PHASE_1B_LIVE —
+   the harness existing changes none of them.
 3. LIVE validation of the §3.5 claims, which is the only way to establish them:
    that `this` is the Script Engine global on the dispatched-command path; that
    the seed survives across commands; that it survives the webview closing and
@@ -1383,12 +1572,15 @@ separate, softer constraint blocks engine-side session minting: `Math.random()`
 is unproven in the Script Engine (§3.5). Neither blocks Phase 1A, which is pure
 Python by design.
 
-**CP_SCALE_INTERFERENCE_RISK** — **NONE for Phase 1A or Phase 1B-OFFLINE, by
-construction.** Between them they add three new modules and three new test files,
-change no shared file, import no transport, perform no dispatch, and send
-nothing to Packet Tracer. 1B-OFFLINE adds no risk over 1A: it holds a channel
-nowhere, and the only thing it ever called was a callable written in its own test
-module. The residual concerns stay operational: creating a worktree-local
+**CP_SCALE_INTERFERENCE_RISK** — **NONE for Phase 1A, 1B-OFFLINE or the
+1B-LIVE-A prep, by construction.** Between them they add three modules, one
+operator runner and four test files, change no shared file, perform no dispatch,
+and send nothing to Packet Tracer. 1B-OFFLINE adds no risk over 1A: it holds a
+channel nowhere, and the only thing it ever called was a callable written in its
+own test module. The 1B-LIVE-A prep adds none either: the harness can reach a
+real transport, and has never been run, so the only processes that have ever
+executed it are pytest children driving fakes. That changes the moment someone
+runs it, which is why it runs in an isolated VM and not against the host. The residual concerns stay operational: creating a worktree-local
 `.venv`, and using it rather than the main checkout's (`AGENTS.md`). The risk
 assessment for Phase 1B-LIVE is deliberately **not** made here — it is a
 precondition of opening that phase, not an inheritance from this one.
