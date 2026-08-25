@@ -1,10 +1,11 @@
 # MCP Runtime Protocol V6 — Foundation Audit and Design Slice
 
-Status: **PHASE 1A IMPLEMENTED (pure, offline) · PHASE 1B NOT STARTED**
+Status: **PHASE 1B-OFFLINE IMPLEMENTED (pure, no transport) · PHASE 1B-LIVE NOT STARTED**
 Branch: `feature/runtime-protocol-v6-foundation`
 Base: `43eba72f18ad4e29e0ff292ebca4dbbd4a47232e` (CP-LIVE checkpoint on `feature/runtime-ripv2`)
 Phase: 0 — audit (accepted) · 0.5 — design corrections (accepted) · 1A — implemented ·
-1A.1 — operation correlation hardened
+1A.1 — operation correlation hardened ·
+1B-OFFLINE — client orchestration
 
 This document is an audit of the **deployed V5 bridge**, the design corrected
 after it, and the record of the first implemented slice. No `.pts` was rebuilt,
@@ -13,7 +14,7 @@ no Packet Tracer instance was touched, and no CP-SCALE run was performed.
 Every claim below is cited to source in this checkout. Where the evidence does
 not reach, the document says so instead of extrapolating. In particular, Phase
 1A executes nothing against Packet Tracer, so every claim about runtime-session
-*behaviour* is marked **UNVERIFIED_UNTIL_PHASE_1B** and none of it was promoted
+*behaviour* is marked **UNVERIFIED_UNTIL_PHASE_1B_LIVE** and none of it was promoted
 because tests pass.
 
 ## Revision 0.5 — what changed and why
@@ -38,8 +39,9 @@ original Part 3–5 were corrected:
    `adapters/mcp/tool_registry.py` (line 1520, nested under line 134) — an
    adapter-layer local that infrastructure must not depend on, and that
    `AGENTS.md` notes tests cannot import at all. Corrected in Part 5 by
-   splitting into Phase 1A (pure, offline, new files only) and Phase 1B
-   (integration seam, later).
+   splitting into Phase 1A (pure, offline, new files only), Phase 1B-OFFLINE
+   (the seam, driven by an injected callable) and Phase 1B-LIVE (a real
+   channel, later and gated).
 
 Two further corrections were made to claims about the runtime session and the
 error taxonomy; see §3.5 and §3.2.
@@ -50,7 +52,7 @@ Phase 1A is implemented: two new modules under `infrastructure/execution/`, two
 new test modules, and this document. Nothing else in the repository changed.
 
 Two design items moved during implementation, both because the evidence did not
-support them: `session_seed_owner` was dropped as uncomputable before Phase 1B,
+support them: `session_seed_owner` was dropped as uncomputable before a live response,
 and an explicit U+2028/U+2029 escape was written and then removed once measured
 to be dead — `json.dumps` already escapes them under its default
 `ensure_ascii=True`. The invariant is now pinned by a test rather than by a
@@ -58,7 +60,7 @@ branch whose comment overstated what it did. Both are recorded in Part 5.
 
 What Phase 1A does **not** establish is unchanged by any of it: the slice sends
 nothing to Packet Tracer, so every runtime-session behaviour stays
-UNVERIFIED_UNTIL_PHASE_1B.
+UNVERIFIED_UNTIL_PHASE_1B_LIVE.
 
 ## Revision 1A.1 — operation correlation hardened
 
@@ -91,6 +93,46 @@ Scope held: the parser, its two test modules, and this document.
 `runtime_operation_encoder.py` needed no behavioural change — it already
 embeds `op` in the envelope it builds — and no shared, transport, adapter or
 extension file was touched.
+
+## Revision 1B-OFFLINE — the three pieces, connected
+
+Phase 1A built an encoder and a parser that had never met. This revision joins
+them through a callable handed in from outside, and stops there.
+
+`runtime_protocol_client.py` runs one `runtime.identify` attempt: encode, call
+`send_and_wait(payload, timeout)` **once**, and classify whatever comes back
+against the identity the encoder minted. It imports no channel, no adapter and
+no tool surface — the injected-seam shape already used at
+`enterprise_control_plane_runtime.py:656` and ten other modules.
+
+**This is not transport integration, and it is not LIVE.** The only responder
+that has ever answered this client is a Python fake in its test module. Whether
+HTTP or the file bridge can carry a V6 envelope, and everything about the Script
+Engine, stays UNVERIFIED_UNTIL_PHASE_1B_LIVE. A fake that answers correctly
+proves the orchestration and proves nothing about a responder never asked.
+
+Four decisions, each taken to avoid inventing a fact the seam cannot supply:
+
+- **One send per attempt, whatever comes back.** No retry, no fallback channel,
+  no replay. `runtime.identify` is read-only, so a retry would be safe *here* —
+  which is exactly why the discipline is set now: the operations that follow will
+  not all be read-only, and a retry hidden inside a protocol client is a replay
+  nobody chose. Retry belongs to a layer that can name what it is replaying.
+- **`None` means `NO_RESPONSE_DOCUMENT`, and nothing else.** Not timeout, not
+  bridge down, not non-200, not unsupported protocol — none of which this seam
+  can observe. `probe_runtime.py:1173` raises `TimeoutError` on the same value,
+  reading a cause off a value that cannot carry one; that is V5 code, it stays as
+  it is, and V6 does not copy the claim.
+- **A raising callable propagates unchanged.** It has broken its own `str | None`
+  contract, and no response document exists. It is emphatically not converted to
+  `ENGINE_EXCEPTION`, which asserts that the Script Engine *ran* the operation and
+  reported a failure envelope — an execution that in this case never happened.
+- **Classification is not routing.** A `NOT_V6` document is reported with its
+  legacy text intact and is not sent down the V5 path from here. What to do with
+  a legacy responder needs a caller that knows which channel it is talking to.
+
+Scope: one new module, one new test module, and this document. No existing file
+changed — not the encoder, not the parser, not `execution/__init__.py`.
 
 ---
 
@@ -364,7 +406,9 @@ inventing a parallel one would be the real risk.
   `enterprise_control_plane_runtime.py:655-656` takes both `send` and
   `send_and_wait: Callable[[str, float], str | None]`. This is the existing,
   correct seam for reaching a transport from `infrastructure/execution/` without
-  importing an adapter. Phase 1B uses it (Part 5).
+  importing an adapter. Phase 1B-OFFLINE takes exactly this shape, from a
+  caller rather than from a transport (§3.7); Phase 1B-LIVE is where a real
+  one is passed in.
 
 ---
 
@@ -423,7 +467,8 @@ minting in Python and says so.
 | Structured error model | **REQUIRED_FOR_FIRST_SLICE** (parser layer only) | Engine-layer codes are reserved-not-producible in 1A (§3.2). |
 | `runtime_session_id` contract | **REQUIRED_FOR_FIRST_SLICE** (contract + encoder) | Behaviour is LIVE-validated in 1B, not claimed in 1A (§3.5). |
 | `runtime.identify` JS encoder | **REQUIRED_FOR_FIRST_SLICE** | The operation the envelope is prototyped against. |
-| Transport integration | **PHASE 1B** | Layering (Part 5); also forbidden while CP-SCALE is open. |
+| Client orchestration over an injected seam | **PHASE 1B-OFFLINE — IMPLEMENTED** | Encoder to parser across a callable supplied from outside (§3.7). Changes no shared file and dispatches nothing. |
+| Transport integration (a real channel) | **PHASE 1B-LIVE** | Layering (Part 5); also forbidden while CP-SCALE is open. |
 | JSON *request* envelope | **LATER** | Needs an engine-side parser in the `.pts` — blocked (Q9). |
 | Extension typed dispatcher | **LATER** | The actual architectural milestone. Blocked (Q9). Not claimed by Slice 1 (§3.6). |
 | `extension_version` observed | **LATER** | Requires the `.pts` to state it. Stays `null`. |
@@ -646,8 +691,10 @@ send/send-and-wait seam, so the behaviour holds on both transports.
 **This is strong evidence, not proof for our path.** It establishes the property
 for *those* payloads. `AGENTS.md` is explicit that anything about the PT
 webview/script-engine boundary cannot be verified from tests. So the storage
-behaviour is a **LIVE-validation item for Phase 1B**, and Phase 1A asserts
-nothing about it.
+behaviour is a **LIVE-validation item for Phase 1B-LIVE**, and neither Phase
+1A nor Phase 1B-OFFLINE asserts anything about it. A fake responder can be made
+to return any session it likes, which is why the client deliberately does not
+check the one it gets back (§3.7).
 
 **Minting origin — Slice 1: Python. Stated, not disguised.** The encoder emits a
 first-writer-wins seed:
@@ -697,7 +744,7 @@ shape the file bridge uses.
 not Packet Tracer. Whether `this` is the Script Engine global on a dispatched
 command's path, whether the seed survives real dispatches, whether it holds
 across a webview reopen, and whether it changes across a PT restart are all
-**UNVERIFIED_UNTIL_PHASE_1B**. The existing evidence for the underlying pattern
+**UNVERIFIED_UNTIL_PHASE_1B_LIVE**. The existing evidence for the underlying pattern
 remains what it was — `this.__mcpE8Http` and `this.__mcpE6HttpClients` in shipped
 runtimes — which is strong evidence about *those* payloads, not proof about this
 one. `AGENTS.md` is explicit that this boundary cannot be verified from tests,
@@ -715,11 +762,60 @@ request is parsed by the extension; the extension is unchanged.
 |---|---|---|
 | **typed V6 operation encoder** | Python builds a typed operation into a JS payload whose result is a V6 envelope | **Slice 1 (Phase 1A)** |
 | **V6 result envelope parser** | Python classifies a response document into §3.4 states | **Slice 1 (Phase 1A)** |
+| **V6 protocol client** | Python runs one operation over a `send_and_wait` it is handed, and classifies the answer | **Phase 1B-OFFLINE** |
+| **transport integration** | a real channel carries a V6 payload and returns a V6 document | **PHASE 1B-LIVE — not started** |
 | **extension typed dispatcher** | the Script Engine parses a structured V6 *request* and routes it to a typed handler | **LATER — blocked by Q9** |
 
 `SLICE1_ARCHITECTURE_NAME` = *typed V6 operation encoder + result envelope
 parser (prototype)*. The module is named `runtime_operation_encoder.py`, not
 `runtime_dispatcher.py`, so the code cannot drift into the stronger claim.
+
+The same discipline applies to Phase 1B-OFFLINE: the module is named
+`runtime_protocol_client.py`, not `runtime_transport.py`. It holds no channel;
+it is handed one.
+
+### 3.7 Client orchestration — IMPLEMENTED (Phase 1B-OFFLINE)
+
+`RuntimeProtocolClient(send_and_wait, *, timeout_seconds).identify()` returns one
+`RuntimeProtocolAttempt`:
+
+| Field | Meaning |
+|---|---|
+| `operation` | the `EncodedOperation` that was sent. The **request authority**: the identity correlated against is read from it, never rebuilt |
+| `raw_response` | what the seam returned, byte-for-byte, or `None` |
+| `parse_outcome` | the §3.4 classification, or `None` |
+
+`raw_response` and `parse_outcome` move together, enforced in `__post_init__`
+rather than promised in prose: a document nobody classified and a classification
+of nothing are both impossible to construct.
+
+**`NO_RESPONSE_DOCUMENT`.** `raw_response is None` says one thing, and the model
+says it structurally instead of naming a state. The seam's return type is
+`str | None`, so the value carries no provenance: naming it TIMEOUT would read a
+cause off a value that cannot hold one. The parser is **not called** on a
+non-response, so nothing downstream can mistake silence for a classification.
+
+**No parallel transport taxonomy.** There is deliberately no state enum here.
+The transport-side facts this repository *can* observe already have vocabularies
+— `RequestDisposition`, `TransportHealthState`, `BridgePreflightState` — and
+they belong to the layers that can establish them (§3.2). A fourth enum invented
+at this seam would have to distinguish timeout from channel-down from non-200,
+none of which is visible from `str | None`.
+
+**`CALLABLE_EXCEPTION`.** A callable that raises has broken its own return
+contract, and no response document exists. The exception propagates unchanged;
+the module contains no `try` at all, which a test asserts on its AST. It is not
+`ENGINE_EXCEPTION`: that code asserts the Script Engine ran the operation and
+reported a failure envelope, and here nothing ran.
+
+**One dispatch per attempt.** Pinned three ways: a call count over eight
+different responder behaviours, no loop anywhere in the module, and exactly one
+call site for the seam in its source. Retry is a policy for a layer that can
+name what it would be replaying — not a default hidden in a protocol client.
+
+**Classification is not routing.** `NOT_V6` is reported with its legacy text
+intact, and the client sends it nowhere. Routing needs a caller that knows which
+channel answered.
 
 ---
 
@@ -872,7 +968,7 @@ Honest limits, stated up front rather than discovered later:
 - `extension_version` stays `null`; the caller-supplied MCP parameter must not
   fill it.
 - Whether `this` is the Script Engine global on every evaluation path is
-  **strong evidence, not proof** (§3.5) and is a Phase 1B LIVE-validation item.
+  **strong evidence, not proof** (§3.5) and is a Phase 1B-LIVE validation item.
   Degrade to `session_id: null`; never fabricate.
 - **Phase 1A executes none of this.** It produces and tests the encoded text.
 
@@ -1134,20 +1230,114 @@ to CP-SCALE.
 | The encoder drifting into "dispatcher" | Low | Module name, docstring, and §3.6 |
 | Reserved codes attracting fabricated tests | Low | Inverted into inertness assertions |
 | The generated JS being syntactically invalid | Medium | Closed offline by `node --check` and execution |
-| `this` not being the engine global in PT | **Medium** | **Open. UNVERIFIED_UNTIL_PHASE_1B**; degradation to null is implemented and tested |
+| `this` not being the engine global in PT | **Medium** | **Open. UNVERIFIED_UNTIL_PHASE_1B_LIVE**; degradation to null is implemented and tested |
 
-### Phase 1B — integration seam (later, gated)
+### Phase 1B-OFFLINE — client orchestration — IMPLEMENTED
 
-**Gate: a safe CP-SCALE boundary. Not before.**
+**Scope held: two new files and this document. No existing file changed, no
+transport imported, no dispatch performed, no Packet Tracer, no CP-SCALE
+surface.** `execution/__init__.py` was again not touched, for the same reason as
+in 1A: it exports a subset, and every test imports these submodules by full path.
+
+`PHASE1B_OFFLINE_FILES`:
+
+| File | Change |
+|---|---|
+| `src/packet_tracer_mcp/infrastructure/execution/runtime_protocol_client.py` | **new** (152 lines) |
+| `tests/test_runtime_protocol_client_v6.py` | **new** (680 lines) |
+| `docs/architecture/mcp-runtime-protocol-v6-foundation.md` | this document |
+
+`SHARED_FILES_CHANGED` = **NONE**, verified by `git diff --name-only` over
+`EXTENSION/`, `live_bridge.py`, `file_bridge.py`, `tool_registry.py`,
+`adapters/`, `tools/` — all empty. The two Phase-1A modules are byte-identical
+to their 1A.1 state: the client was built *on* them, not *into* them.
+
+`PHASE1B_OFFLINE_TESTS` — 54 tests, all passing. Written before the module
+existed: the first run failed at collection with nothing to import, which is the
+only honest fail-first for a file that does not yet exist.
+
+1. One dispatch per attempt, asserted over eight responder behaviours — no
+   response, legacy text, malformed V6, foreign version, both correlation
+   misses, and success. Plus two structural locks: no loop anywhere in the
+   module, and exactly one call site for the seam in its source.
+2. The payload handed to the seam is the encoded payload, unaltered, and the
+   timeout budget reaches it unchanged.
+3. The budget has **no default** — omitting it is a `TypeError` — and five
+   dishonest values are refused at construction. No measurement backs a number
+   here, and this repository keeps its measured budgets next to the measurement.
+4. `None` yields `raw_response is None` **and** `parse_outcome is None`, and the
+   parser is never called: a stand-in that raises on any call is installed, and
+   the attempt still comes back empty.
+5. The attempt model cannot hold half a result — constructing a document
+   without a classification, or a classification without a document, raises.
+6. A conforming responder yields `VALID_V6` with the envelope intact.
+7. The correlated identity comes from the `EncodedOperation`. Proven twice: the
+   rid is random per attempt, so it cannot be a constant; and the encoder is
+   replaced by one naming a different `op`, after which the client follows the
+   encoder rather than the module constant. With one encoded operation those two
+   are the same *string*, so only the second test separates the *mechanism*.
+8. Six real V5 shapes and one structured V5 JSON stay `NOT_V6` with their text
+   byte-identical, and the client routes none of them anywhere.
+9. Malformed V6 stays `INVALID_V6`; a foreign version stays `PROTOCOL_MISMATCH`;
+   all three identity near misses stay `CORRELATION_MISMATCH` with the detail
+   naming the half that missed — the 1A.1 contract surviving the seam.
+10. A raising callable propagates unchanged and is never turned into
+    `ENGINE_EXCEPTION`; the module contains no `try`, asserted on its AST.
+11. The client imports no transport and no adapter, and its non-stdlib imports
+    are exactly the two protocol modules — the dependency direction written as
+    a test rather than as a diagram.
+12. It names no mutating Packet Tracer API (the list imported from the
+    containment sweep that owns it) and builds no JavaScript of its own.
+13. Two attempts share no rid and no session candidate, and a returned
+    `session_id` unequal to the candidate is still `VALID_V6`: enforcing
+    equality would encode a guess about first-writer-wins as a protocol rule.
+14. `extension_version` is whatever the responder said — null on the Phase-1A
+    wire — and the client accepts no parameter of that name.
+
+Four mutations were applied to the finished client and each was caught, so the
+suite detects the regressions it claims to: correlating on the module constant
+instead of the encoded op (1 failure), retrying once on a non-response (3),
+swallowing the seam's exception (3), and handing a non-response to the parser
+(4).
+
+`PHASE1B_OFFLINE_NON_CLAIMS`. The seam that answered every test above is a
+Python callable in the test module. Unchanged and still open: that HTTP carries
+V6; that the file bridge carries V6; that `this` is the Script Engine global on
+the dispatched-command path; that the seed survives across commands, across a
+webview reopen, or changes across a PT restart; that both channels agree on one
+session; and `extension_version`. All **UNVERIFIED_UNTIL_PHASE_1B_LIVE**.
+
+`REGRESSION`: the full suite runs **37 failed, 2872 passed, 6 skipped**. With the
+six V6 files removed, **37 failed, 2675 passed, 6 skipped**; the failure lists
+were captured and diffed and are byte-identical, and identical again to the list
+recorded at 1A.1. The delta is exactly +197 passing (143 protocol + 54 client).
+The base state has not moved across 1A, 1A.1 and 1B-OFFLINE: those 37 belong to
+it, and none of this work touched them.
+
+`PHASE1B_OFFLINE_RISKS`:
+
+| Risk | Severity | Status |
+|---|---|---|
+| A retry appearing later inside the client | Low | Closed structurally: no loop, one call site, and a call-count test over every outcome |
+| A transport fault read as a protocol state | Low | Closed: `None` is modelled as absence, the parser is not called, and no state enum exists to misuse |
+| A seam exception dressed as an engine error | Low | Closed: nothing is caught, asserted on the AST |
+| The client drifting into "transport integration" | Low | Module name, §3.6 table, and this section |
+| The fake responder mistaken for evidence about Packet Tracer | **Medium** | **Open by construction.** Named in the test docstring, in §3.7, and in the non-claims above; only 1B-LIVE closes it |
+
+### Phase 1B-LIVE — a real channel (later, gated)
+
+**Gate: a safe CP-SCALE boundary. Not before.** Phase 1B-OFFLINE does not open
+it: an injected callable is not a channel, and nothing below became cheaper
+because the orchestration above it now exists.
 
 Scope, when it opens:
 
-1. An integration seam taking an injected
-   `send_and_wait: Callable[[str, float], str | None]` — the pattern already
-   used at `enterprise_control_plane_runtime.py:656` and
-   `configuration_runtime.py:13`. **No import of any `tool_registry` closure**,
-   in either direction.
-2. First transport invocation of `runtime.identify`.
+1. Wiring the Phase 1B-OFFLINE seam to a real `send_and_wait`. The seam itself
+   is built (§3.7); what is missing is a caller that owns a channel. **No import
+   of any `tool_registry` closure**, in either direction — it is an adapter-layer
+   closure, and that is the layering error Part 5 exists to prevent.
+2. First transport invocation of `runtime.identify`. Until it happens, every
+   HTTP and file-bridge claim about V6 stays UNVERIFIED_UNTIL_PHASE_1B_LIVE.
 3. LIVE validation of the §3.5 claims, which is the only way to establish them:
    that `this` is the Script Engine global on the dispatched-command path; that
    the seed survives across commands; that it survives the webview closing and
@@ -1155,7 +1345,7 @@ Scope, when it opens:
    behaves under two MCP processes sharing one PT.
 4. Only then may the runtime-session contract be described as validated.
 
-Deferred beyond 1B and explicitly *not* authorised by it: transport-rid
+Deferred beyond 1B-LIVE and explicitly *not* authorised by it: transport-rid
 unification (§3.3), the `run_<name>` claim marker (Q4), extension-reported
 `extension_version`, engine-side JSON request parsing, and the extension typed
 dispatcher (§3.6) — all blocked by Q9.
@@ -1173,10 +1363,12 @@ separate, softer constraint blocks engine-side session minting: `Math.random()`
 is unproven in the Script Engine (§3.5). Neither blocks Phase 1A, which is pure
 Python by design.
 
-**CP_SCALE_INTERFERENCE_RISK** — **NONE for Phase 1A, by construction.** Phase
-1A adds two new modules and two new test files, changes no shared file, imports
-no transport, performs no dispatch, and sends nothing to Packet Tracer. The only
-residual concerns are operational: creating a worktree-local `.venv`, and using
-it rather than the main checkout's (`AGENTS.md`). The risk assessment for Phase
-1B is deliberately **not** made here — it is a precondition of opening that
-phase, not an inheritance from this one.
+**CP_SCALE_INTERFERENCE_RISK** — **NONE for Phase 1A or Phase 1B-OFFLINE, by
+construction.** Between them they add three new modules and three new test files,
+change no shared file, import no transport, perform no dispatch, and send
+nothing to Packet Tracer. 1B-OFFLINE adds no risk over 1A: it holds a channel
+nowhere, and the only thing it ever called was a callable written in its own test
+module. The residual concerns stay operational: creating a worktree-local
+`.venv`, and using it rather than the main checkout's (`AGENTS.md`). The risk
+assessment for Phase 1B-LIVE is deliberately **not** made here — it is a
+precondition of opening that phase, not an inheritance from this one.
