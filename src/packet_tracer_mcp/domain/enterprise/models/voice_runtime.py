@@ -56,6 +56,13 @@ class RuntimePhoneRegistration(BaseModel):
     #: A phone that never learned its voice VLAN and one that learned it and got
     #: no lease both read as no address, and they are different findings.
     endpoint_interface_present: bool = False
+    #: Does that SVI expose an address getter at all? Measured on 9.0.1.0858, an
+    #: AccessPoint-PT port comes up powered and exposes none, and the empty
+    #: string that comes back is indistinguishable from a port that answered and
+    #: holds nothing. On the phone channel that difference is the whole
+    #: question: one is "the phone did not acquire", the other is "we did not
+    #: look at anything that could answer".
+    endpoint_address_channel: bool = False
 
 
 class RuntimeCallObservation(BaseModel):

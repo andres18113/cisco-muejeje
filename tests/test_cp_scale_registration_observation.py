@@ -26,6 +26,8 @@ capture still claims nothing, and each phone's own SVI is still read separately.
 
 from __future__ import annotations
 
+import json
+
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
@@ -186,10 +188,12 @@ def _floor1_runtime(pages, *, complete: bool = True, present: bool = True):
     def send_and_wait(source, _timeout):
         if "getPortCount" in source and "getIpAddress" in source:
             reads.append(source)
-            return (
-                '{"found":true,"port_found":%s,"ipv4":"172.31.20.9"}'
-                % ("true" if present else "false")
-            )
+            return json.dumps({
+                "found": True,
+                "port_found": present,
+                "address_channel": present,
+                "ipv4": "172.31.20.9" if present else "",
+            })
         return "{}"
 
     runtime = PacketTracerEnterpriseVoiceRuntime(
@@ -366,3 +370,153 @@ def test_a_batch_answering_a_different_number_of_phones_is_refused():
         item.status is ActionExecutionStatus.FAILED
         for item in result.registrations
     )
+
+
+# --------------------------------------------------------------------------
+# 4: the phone's own address channel, and the row a complete table lacks
+# --------------------------------------------------------------------------
+
+
+def _endpoint_runtime(pages, *, getter: bool, ipv4: str = "", present: bool = True):
+    """A Floor-1 runtime whose phone SVI may or may not expose an address."""
+    scripts: list[str] = []
+
+    def send_and_wait(source, _timeout):
+        if "getPortCount" in source and "getIpAddress" in source:
+            scripts.append(source)
+            return json.dumps({
+                "found": True,
+                "port_found": present,
+                # `able` is the fact under test: whether this port has an
+                # address channel to ask at all, separate from what it answered.
+                "address_channel": bool(getter and present),
+                "ipv4": ipv4 if (getter and present) else "",
+            })
+        return "{}"
+
+    runtime = PacketTracerEnterpriseVoiceRuntime(
+        lambda: {"devices": [{"name": "F1-R4", "model": "2811"}]},
+        lambda _source: True,
+        send_and_wait,
+        ios_readiness=lambda _name: True,
+        registration_timeout_seconds=0.2,
+        convergence_interval_seconds=0.05,
+    )
+    for extension in _FLOOR1_EXTENSIONS:
+        runtime._registration_hosts[f"phone-{extension}"] = "F1-R4"  # noqa: SLF001
+    control = _CountingCallControl(runtime, pages)
+    control.scripts = scripts
+    return control
+
+
+def test_a_phone_svi_with_no_address_getter_is_not_a_phone_with_no_lease():
+    """The measured AccessPoint-PT case, on the channel that judges the phone.
+
+    An SVI that exposes no `getIpAddress` and an SVI that exposes one and holds
+    nothing both read back as the empty string. Collapsing them turns "we could
+    not look" into "the phone did not acquire" -- which is precisely the finding
+    Floor 1 must not manufacture.
+    """
+    control = _endpoint_runtime(_floor1_pages(), getter=False)
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.endpoint_interface_present
+    assert not observed.endpoint_address_channel
+    assert observed.endpoint_ipv4 == ""
+
+
+def test_a_phone_svi_that_can_answer_and_holds_nothing_says_so():
+    control = _endpoint_runtime(_floor1_pages(), getter=True, ipv4="")
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.endpoint_interface_present
+    assert observed.endpoint_address_channel
+    assert observed.endpoint_ipv4 == ""
+
+
+def test_an_addressed_phone_svi_reports_its_address_and_its_channel():
+    control = _endpoint_runtime(
+        _floor1_pages(registered={"3011"}), getter=True, ipv4="172.16.20.7",
+    )
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.endpoint_address_channel
+    assert observed.endpoint_ipv4 == "172.16.20.7"
+
+
+def test_an_unreadable_phone_address_channel_never_reads_as_a_failed_lease():
+    """The applicator's claim must name the ceiling, not invent an absence."""
+    from src.packet_tracer_mcp.application.use_cases.apply_voice import (
+        _addressing_claim,
+    )
+    from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+        PhoneAssignment,
+    )
+    from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+        RuntimePhoneRegistration,
+    )
+
+    assignment = PhoneAssignment(
+        phone_id="phone-3011", physical_device_name="F1-PHONE-3011",
+        model="7960", site_id="large-branch", extension="3011",
+        call_control_id="cc", voice_vlan_id=20,
+        voice_segment_id="large-branch-voice",
+        access_configuration_action_id="cfg/access/1",
+        addressing_configuration_action_id="",
+        binding_action_id="voice/bind/3011",
+        addressing_interface="Vlan20",
+        voice_network="172.16.20.0", voice_prefix=24,
+    )
+    unreadable = RuntimePhoneRegistration(
+        expectation_id="voice/verify/3011", phone_id="phone-3011",
+        extension="3011", status=ActionExecutionStatus.FAILED,
+        endpoint_interface="Vlan20", endpoint_interface_present=True,
+        endpoint_address_channel=False,
+    )
+    empty = unreadable.model_copy(update={"endpoint_address_channel": True})
+
+    unreadable_status, unreadable_message = _addressing_claim(assignment, unreadable)
+    empty_status, empty_message = _addressing_claim(assignment, empty)
+
+    assert unreadable_status is ActionExecutionStatus.UNOBSERVABLE
+    assert empty_status is ActionExecutionStatus.UNOBSERVABLE
+    # Both are UNOBSERVABLE, and they are not the same observation.
+    assert unreadable_message != empty_message
+    assert "channel" in unreadable_message.casefold()
+
+
+def test_a_complete_table_without_this_row_says_what_it_did_contain():
+    """A row absent from a complete capture is its own fact, not a missing getter.
+
+    Floor 1 read a complete pager-walked table that carried nineteen rows, and
+    the two phones it did not name were reported with the message for a phone no
+    `show ephone` session is bound to at all. That message describes a different
+    failure and makes the real one undiagnosable -- a row missing from a table
+    that WAS read whole is only interpretable against the rows that were in it.
+    """
+    # The first page never arrives, so 3011..3015 have no row in a capture that
+    # nonetheless closed complete.
+    control = _floor1_runtime(["".join(_floor1_pages()[1:])])
+    observed = {
+        item.extension: item
+        for item in control.runtime.observe_registrations([
+            _expectation(extension, phone=f"phone-{extension}")
+            for extension in ("3011", "3016")
+        ])
+    }
+
+    absent = observed["3011"]
+    assert absent.status is ActionExecutionStatus.UNOBSERVABLE
+    assert absent.evidence_method == "show_ephone_complete_without_this_row"
+    assert "3016" in absent.message
+    assert "16 extension(s)" in absent.message
+    assert observed["3016"].status is ActionExecutionStatus.FAILED

@@ -534,6 +534,16 @@ def _stage_voice(
     evidence["voice_interface_present"] = sum(
         1 for item in result.registrations if item.endpoint_interface_present
     )
+    # Present is not the same as readable. A voice SVI that exposes no address
+    # getter answers "" exactly like one that answered and holds no lease, and
+    # only one of those is a statement about DHCP.
+    evidence["voice_interface_address_channel"] = sum(
+        1 for item in result.registrations if item.endpoint_address_channel
+    )
+    evidence["voice_interface_addressed"] = sum(
+        1 for item in result.registrations
+        if item.endpoint_address_channel and item.endpoint_ipv4
+    )
     evidence["registration_evidence_method"] = dict(sorted(
         collections.Counter(
             item.evidence_method for item in result.registrations

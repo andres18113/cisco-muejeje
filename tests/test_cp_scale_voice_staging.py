@@ -169,6 +169,7 @@ def _registration(phone_id, addressing, status, message=""):
         call_control_ipv4="172.16.20.5",
         endpoint_ipv4="172.16.20.5",
         endpoint_interface_present=True,
+        endpoint_address_channel=True,
         evidence_method="fresh_privileged_show_ephone",
     )
 

@@ -298,6 +298,7 @@ class PacketTracerEnterpriseVoiceRuntime:
             endpoint = self._endpoint_observation(expectation)
             endpoint_ipv4 = str(endpoint["ipv4"])
             endpoint_present = bool(endpoint["present"])
+            endpoint_channel = bool(endpoint["address_channel"])
             settled = decided.get(index)
             if settled is not None:
                 capture, match, seen_after = settled
@@ -313,6 +314,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_ipv4=endpoint_ipv4,
                     endpoint_interface=expectation.endpoint_interface,
                     endpoint_interface_present=endpoint_present,
+                    endpoint_address_channel=endpoint_channel,
                     message=(
                         f"SCCP registered at {match.get('ip_address')} after "
                         f"{seen_after} observation(s)."
@@ -333,6 +335,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_ipv4=endpoint_ipv4,
                     endpoint_interface=expectation.endpoint_interface,
                     endpoint_interface_present=endpoint_present,
+                    endpoint_address_channel=endpoint_channel,
                     message="The current ephone row remained UNREGISTERED before timeout.",
                 )
                 continue
@@ -341,6 +344,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                     expectation,
                     endpoint_ipv4=endpoint_ipv4,
                     endpoint_interface_present=endpoint_present,
+                    endpoint_address_channel=endpoint_channel,
                     evidence_method="show_ephone_capture_incomplete",
                     message=(
                         "The show ephone capture was truncated after "
@@ -350,10 +354,33 @@ class PacketTracerEnterpriseVoiceRuntime:
                     ),
                 )
                 continue
+            if last.get("executed"):
+                # The table was read whole and this row is not in it. That is an
+                # observation, and a different one from a phone no `show ephone`
+                # session is bound to at all -- which is what it used to be
+                # reported as. What the capture DID name travels with it, because
+                # a row missing from a complete table is only diagnosable against
+                # the rows that were there.
+                seen = sorted(final_rows)
+                observed[index] = self._unobservable_registration(
+                    expectation,
+                    endpoint_ipv4=endpoint_ipv4,
+                    endpoint_interface_present=endpoint_present,
+                    endpoint_address_channel=endpoint_channel,
+                    evidence_method="show_ephone_complete_without_this_row",
+                    message=(
+                        "A complete show ephone capture of "
+                        f"{last.get('pager_pages_captured')} page(s) named "
+                        f"{len(seen)} extension(s) and not {expectation.extension}: "
+                        + ", ".join(seen)
+                    ),
+                )
+                continue
             observed[index] = self._unobservable_registration(
                 expectation,
                 endpoint_ipv4=endpoint_ipv4,
                 endpoint_interface_present=endpoint_present,
+                endpoint_address_channel=endpoint_channel,
             )
         return observed
 
@@ -372,23 +399,31 @@ class PacketTracerEnterpriseVoiceRuntime:
             return {"present": False, "ipv4": ""}
         script = "".join((
             "try{var d=ipc.network().getDevice(", json.dumps(device), ");",
-            "var want=", json.dumps(interface), ";var ip='';var p=null;",
+            "var want=", json.dumps(interface), ";var ip='';var p=null;var able=false;",
             "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
             "if(c&&typeof c.getName==='function'&&String(c.getName())===want){",
-            "p=c;ip=typeof c.getIpAddress==='function'?String(c.getIpAddress()):'';",
+            "p=c;able=typeof c.getIpAddress==='function';",
+            "ip=able?String(c.getIpAddress()):'';",
             "break;}}}",
-            "reportResult(JSON.stringify({found:!!d,port_found:!!p,ipv4:ip}));",
+            "reportResult(JSON.stringify({found:!!d,port_found:!!p,",
+            # Whether this SVI has an address channel to ask is its own fact and
+            # must not be inferred from what came back: an absent getter and a
+            # getter that answered nothing both produce the empty string.
+            "address_channel:able,ipv4:ip}));",
             "}catch(e){reportResult('ERROR:'+e);}",
         ))
         observed = self._json_result(script, 5.0)
-        # Whether the SVI exists at all is the fact that separates "the phone
-        # never learned its voice VLAN" from "it did, and holds no lease". Both
-        # read as no address, and they are different findings about the voice
-        # path, so the presence travels with the value.
+        # Three different facts, and they were one. Whether the SVI exists at
+        # all separates "the phone never learned its voice VLAN" from "it did";
+        # whether that SVI can be asked for an address separates "the phone did
+        # not acquire" from "nothing here could have answered". Collapsing the
+        # last pair is how an unread channel becomes a finding about DHCP.
         present = bool(observed.get("port_found"))
+        able = present and bool(observed.get("address_channel"))
         return {
             "present": present,
-            "ipv4": _reported_address(observed.get("ipv4")) if present else "",
+            "address_channel": able,
+            "ipv4": _reported_address(observed.get("ipv4")) if able else "",
         }
 
     def _unobservable_registration(
@@ -397,6 +432,7 @@ class PacketTracerEnterpriseVoiceRuntime:
         *,
         endpoint_ipv4: str | None = None,
         endpoint_interface_present: bool | None = None,
+        endpoint_address_channel: bool | None = None,
         evidence_method: str = (
             "pt_9_0_1_extension_api_has_no_registration_getter"
         ),
@@ -409,6 +445,14 @@ class PacketTracerEnterpriseVoiceRuntime:
         # acquired, and the two questions fail independently: a phone can hold a
         # lease the call control never saw. Reading its SVI here keeps that
         # evidence instead of discarding it with the registration.
+        if endpoint_ipv4 is None or endpoint_address_channel is None:
+            endpoint = self._endpoint_observation(expectation)
+            if endpoint_ipv4 is None:
+                endpoint_ipv4 = str(endpoint["ipv4"])
+            if endpoint_interface_present is None:
+                endpoint_interface_present = bool(endpoint["present"])
+            if endpoint_address_channel is None:
+                endpoint_address_channel = bool(endpoint["address_channel"])
         return RuntimePhoneRegistration(
             expectation_id=expectation.id,
             phone_id=expectation.phone_id,
@@ -417,12 +461,10 @@ class PacketTracerEnterpriseVoiceRuntime:
             direct_readback=FieldVerificationStatus.UNOBSERVABLE,
             evidence_method=evidence_method,
             fresh_evidence=False,
-            endpoint_ipv4=(
-                str(self._endpoint_observation(expectation)["ipv4"])
-                if endpoint_ipv4 is None else endpoint_ipv4
-            ),
+            endpoint_ipv4=endpoint_ipv4,
             endpoint_interface=expectation.endpoint_interface,
             endpoint_interface_present=bool(endpoint_interface_present),
+            endpoint_address_channel=bool(endpoint_address_channel),
             message=message,
         )
 

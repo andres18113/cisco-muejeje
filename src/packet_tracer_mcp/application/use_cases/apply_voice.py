@@ -113,9 +113,25 @@ def _addressing_claim(
     control = observed.call_control_ipv4
     endpoint = observed.endpoint_ipv4
     if not control and not endpoint:
+        if not observed.endpoint_interface_present:
+            return (
+                ActionExecutionStatus.UNOBSERVABLE,
+                f"{observed.endpoint_interface} does not exist on this phone, so "
+                "it never reached the point of acquiring an address.",
+            )
+        if not observed.endpoint_address_channel:
+            # The SVI is there and exposes no address getter. Reporting this as
+            # "the phone reported no address" states an observation about DHCP
+            # that nothing here was able to make.
+            return (
+                ActionExecutionStatus.UNOBSERVABLE,
+                f"{observed.endpoint_interface} exposes no address channel, so "
+                "whether this phone acquired was never read on either channel.",
+            )
         return (
             ActionExecutionStatus.UNOBSERVABLE,
-            "Neither the call control nor the phone reported an address.",
+            "Neither the call control nor the phone reported an address, and "
+            f"{observed.endpoint_interface} was readable and held none.",
         )
     if control and endpoint and control != endpoint:
         return (
