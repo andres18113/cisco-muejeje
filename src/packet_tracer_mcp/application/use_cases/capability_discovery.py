@@ -159,6 +159,16 @@ class CapabilityProbeRegistry:
             requires_fresh_device=True,
             isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
         ),
+        # Call control is written under `telephony-service` and read back from
+        # the ephone table, so it needs a routed address to bind its source to
+        # and a device it may reconfigure freely.
+        "supports_cme": ProbeDefinition(
+            id="cme-call-control", capability="supports_cme",
+            prerequisites=["layer3"], cost=ProbeCost.EXPENSIVE,
+            safety=ProbeSafety.DESTRUCTIVE_TO_PROBE_DEVICE,
+            requires_fresh_device=True,
+            isolation_level=ProbeIsolationLevel.FRESH_DEVICE_REQUIRED,
+        ),
     }
 
     def definitions_for(self, capabilities: Iterable[str]) -> list[ProbeDefinition]:

@@ -143,8 +143,12 @@ def test_canonical_capability_prequalification_is_plan_derived_and_fail_closed()
 
     required = canonical_required_capability_probes(composition)
 
+    # `supports_cme` joins the 2811's set because the canonical voice plan puts
+    # a call control on it. E7 skips an action whose model capability is
+    # unmeasured, so without prequalifying it a stage would apply no voice and
+    # still look like it had.
     assert required == {
-        "2811": ["layer3", "supports_dhcp_server"],
+        "2811": ["layer3", "supports_cme", "supports_dhcp_server"],
         "2960-24TT": ["supports_trunk", "supports_vlan"],
         "3560-24PS": ["supports_trunk", "supports_vlan"],
         "3650-24PS": ["supports_trunk", "supports_vlan"],

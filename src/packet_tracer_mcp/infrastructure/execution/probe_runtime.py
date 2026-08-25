@@ -36,6 +36,7 @@ from .ios_terminal import (
     ControlledIosExecutor,
     InterfaceStatusRow,
     OperationalQueryId,
+    parse_show_ephone,
     parse_show_ip_interface,
     parse_show_ip_interface_brief,
 )
@@ -128,6 +129,15 @@ _DHCP_PROBE_NETWORK = "198.18.37.0"
 _DHCP_PROBE_PREFIX = 29
 _DHCP_PROBE_MASK = "255.255.255.248"
 _DHCP_PROBE_GATEWAY = "198.18.37.1"
+#: One disposable CME instance. The MAC belongs to no real phone, so the ephone
+#: it binds can never be claimed by one: the probe measures whether this build
+#: accepts `telephony-service` and reads the registration table back, not
+#: whether any particular phone registered.
+_CME_PROBE_ADDRESS = "198.18.37.9"
+_CME_PROBE_MASK = "255.255.255.248"
+_CME_PROBE_PORT = 2000
+_CME_PROBE_EXTENSION = "9099"
+_CME_PROBE_MAC = "0000.5E00.5309"
 
 
 def bounded_reach(
@@ -354,6 +364,8 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             return self._probe_multilayer_intervlan(temporary_name, definition)
         if capability == "supports_dhcp_server":
             return self._probe_dhcp_server(temporary_name, definition)
+        if capability == "supports_cme":
+            return self._probe_cme(temporary_name, definition)
         return CapabilityProbeResult(
             probe_id=definition.id,
             model="",
@@ -498,6 +510,107 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         return StateConvergenceWaiter(
             inspect, timeout_seconds=8.0,
         ).wait().configuration_channel
+
+    def _probe_cme(
+        self, temporary_name: str, definition: ProbeDefinition,
+    ) -> CapabilityProbeResult:
+        """Does this build accept `telephony-service` and read its table back?
+
+        That is the whole question a model-level capability can answer. Whether
+        one phone registered is not a property of the router and is observed per
+        phone against a live `show ephone`; what is measured here is that the
+        configuration is accepted and that the table exists to be read at all.
+
+        `show telephony-service` is deliberately not used: exact-build evidence
+        already recorded it as absent on 9.0.1.0858, so the read-back rides on
+        `show ephone`, whose parser this project already owns.
+        """
+        target = self._layer3_target(temporary_name)
+        if target is None or target[1]:
+            return self._failure(
+                definition, ProbeExecutionStatus.SKIPPED,
+                "No routed physical interface is available for the CME slice.",
+            )
+        interface = target[0]
+        configured = False
+        rows: list = []
+        try:
+            payload = "\n".join((
+                "enable", "configure terminal", f"interface {interface}",
+                f"ip address {_CME_PROBE_ADDRESS} {_CME_PROBE_MASK}",
+                "no shutdown", "exit",
+                "telephony-service",
+                " max-ephones 1", " max-dn 1",
+                f" ip source-address {_CME_PROBE_ADDRESS} port {_CME_PROBE_PORT}",
+                " exit",
+                "ephone-dn 1", f" number {_CME_PROBE_EXTENSION}", " exit",
+                "ephone 1", f" mac-address {_CME_PROBE_MAC}", " type 7960",
+                " button 1:1", " exit", "end",
+            ))
+            configured = self._configuration.configure_ios(temporary_name, payload)
+            if configured:
+                rows = self._wait_for_ephone_row(temporary_name)
+        finally:
+            # The device is disposable, but leaving CME behind would make the
+            # next probe's baseline a different router than the one it measured.
+            self._configuration.configure_ios(temporary_name, "\n".join((
+                "enable", "configure terminal",
+                "no ephone 1", "no ephone-dn 1", "no telephony-service",
+                f"interface {interface}", "no ip address", "shutdown", "end",
+            )))
+        if not configured:
+            return self._failure(
+                definition, ProbeExecutionStatus.BRIDGE_ERROR,
+                "The official configuration channel rejected the CME payload.",
+            )
+        if not rows:
+            # Accepted but unreadable is not the same as refused, and neither is
+            # evidence of support: without a table there is nothing to verify a
+            # registration against later.
+            return self._failure(
+                definition, ProbeExecutionStatus.VERIFY_FAILED,
+                "`show ephone` produced no parseable row after the controlled "
+                "CME configuration, so no registration read-back path exists.",
+                configured=True,
+            )
+        row = rows[0]
+        return CapabilityProbeResult(
+            probe_id=definition.id, model="", capability=definition.capability,
+            status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED,
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=True, verified=True,
+            verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
+            raw_summary=(
+                "A controlled telephony-service instance was accepted and its "
+                f"ephone-{row.index} row read back as "
+                f"{'REGISTERED' if row.registered else 'UNREGISTERED'}; the "
+                "registration read-back path exists on this build."
+            ),
+            dimensions={
+                "extension": str(row.extension),
+                "registration_readback": "parsed",
+                "registered": "true" if row.registered else "false",
+            },
+        )
+
+    def _wait_for_ephone_row(self, temporary_name: str) -> list:
+        """One ephone row for the probe's own extension, or nothing."""
+        latest: list = []
+
+        def inspect() -> dict:
+            nonlocal latest
+            result = self._ios.execute(temporary_name, OperationalQueryId.SHOW_EPHONE)
+            latest = [
+                item for item in parse_show_ephone(result.output)
+                if str(item.extension) == _CME_PROBE_EXTENSION
+            ] if result.executed else []
+            return {"configuration_channel": bool(latest)}
+
+        DeviceReadinessWaiter(
+            inspect, timeout_seconds=20.0, interval_seconds=1.0,
+        ).wait()
+        return latest
 
     def _probe_dhcp_server(
         self, temporary_name: str, definition: ProbeDefinition,

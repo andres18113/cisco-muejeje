@@ -104,6 +104,21 @@ def canonical_required_capability_probes(
                 f"Configuration target {action.device_id!r} has no topology model."
             )
         required.setdefault(model, set()).add(capability)
+    # E7 gates every voice action on a model capability, and an unmeasured one
+    # skips the action rather than attempting it. Prequalifying the call-control
+    # hosts is what turns that fail-closed default into evidence -- otherwise a
+    # stage would apply no voice at all and still look like it had.
+    for control in getattr(composition.voice, "call_controls", None) or []:
+        model = models_by_device.get(control.host_device_id)
+        if not model:
+            raise ValueError(
+                f"Call-control host {control.host_device_id!r} has no topology model."
+            )
+        if "supports_cme" not in known:
+            raise ValueError(
+                "No registered typed capability probe exists for 'supports_cme'."
+            )
+        required.setdefault(model, set()).add("supports_cme")
     return {
         model: sorted(capabilities)
         for model, capabilities in sorted(required.items())
