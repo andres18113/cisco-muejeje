@@ -85,7 +85,9 @@ LEGACY_V5_RESPONSES = [
 def test_a_legacy_v5_response_is_not_v6_and_is_handed_back_untouched(document):
     rid = new_operation_rid()
 
-    outcome = parse_runtime_result(document, expected_operation_rid=rid)
+    outcome = parse_runtime_result(
+        document, expected_operation_rid=rid, expected_op=RUNTIME_IDENTIFY,
+    )
 
     assert outcome.state is ProtocolParseState.NOT_V6
     assert outcome.envelope is None
@@ -102,7 +104,9 @@ def test_json_is_not_evidence_of_v6():
     )
 
     outcome = parse_runtime_result(
-        structured_but_legacy, expected_operation_rid=rid,
+        structured_but_legacy,
+        expected_operation_rid=rid,
+        expected_op=RUNTIME_IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.NOT_V6
@@ -112,7 +116,9 @@ def test_a_broken_v6_responder_never_degrades_into_a_v5_responder():
     rid = new_operation_rid()
     broken = json.dumps({"v": 6, "op": "runtime.identify"})
 
-    outcome = parse_runtime_result(broken, expected_operation_rid=rid)
+    outcome = parse_runtime_result(
+        broken, expected_operation_rid=rid, expected_op=RUNTIME_IDENTIFY,
+    )
 
     assert outcome.state is ProtocolParseState.INVALID_V6
     assert outcome.routes_to_legacy_v5 is False
@@ -182,20 +188,28 @@ def test_the_encoder_reports_the_identity_it_embedded():
     assert encoded.op == RUNTIME_IDENTIFY == "runtime.identify"
     assert js_string_literal(encoded.operation_rid) in encoded.payload
     assert js_string_literal(encoded.session_candidate) in encoded.payload
+    # Both halves of the operation identity are correlated on, so both have
+    # to be in the text the engine answers from.
+    assert js_string_literal(encoded.op) in encoded.payload
 
 
-def test_the_encoded_rid_round_trips_through_the_parser():
-    """Encoder and parser agree on the wire, not merely on a shared constant."""
-    encoded = encode_runtime_identify()
+def _identify_response(encoded) -> str:
+    """The document a conforming engine would return for `encoded`.
 
-    # Recover the rid from the generated text, then answer as the engine would.
-    embedded = re.search(r'operation_rid:"([0-9a-f]{32})"', encoded.payload)
-    assert embedded is not None
-    document = json.dumps(
+    Both halves of the operation identity are recovered from the generated
+    text rather than read off the `EncodedOperation`, so what follows tests
+    that encoder and parser agree on the wire and not merely on a shared
+    constant.
+    """
+    embedded_rid = re.search(r'operation_rid:"([0-9a-f]{32})"', encoded.payload)
+    embedded_op = re.search(r'op:"([a-z.]+)"', encoded.payload)
+    assert embedded_rid is not None
+    assert embedded_op is not None
+    return json.dumps(
         {
             "v": 6,
-            "operation_rid": embedded.group(1),
-            "op": "runtime.identify",
+            "operation_rid": embedded_rid.group(1),
+            "op": embedded_op.group(1),
             "status": "ok",
             "runtime": {
                 "session_id": encoded.session_candidate,
@@ -209,12 +223,42 @@ def test_the_encoded_rid_round_trips_through_the_parser():
         }
     )
 
+
+def test_the_encoded_operation_identity_round_trips_through_the_parser():
+    """The rid and the op the encoder embedded are the pair that correlates."""
+    encoded = encode_runtime_identify()
+
     outcome = parse_runtime_result(
-        document, expected_operation_rid=encoded.operation_rid,
+        _identify_response(encoded),
+        expected_operation_rid=encoded.operation_rid,
+        expected_op=encoded.op,
     )
 
     assert outcome.state is ProtocolParseState.VALID_V6
+    assert outcome.envelope.operation_rid == encoded.operation_rid
+    assert outcome.envelope.op == encoded.op
     assert outcome.envelope.runtime.session_id == encoded.session_candidate
+
+
+def test_the_encoded_rid_alone_does_not_correlate_an_operation():
+    """The same document and the same rid, under a different expectation.
+
+    Nothing about the response changes here -- only what was asked for. A
+    caller that correlated on the rid alone would consume this as its own
+    result.
+    """
+    encoded = encode_runtime_identify()
+
+    outcome = parse_runtime_result(
+        _identify_response(encoded),
+        expected_operation_rid=encoded.operation_rid,
+        expected_op="some.other.operation",
+    )
+
+    assert outcome.state is ProtocolParseState.CORRELATION_MISMATCH
+    assert outcome.envelope is None
+    assert outcome.legacy_text is None
+    assert outcome.fails_closed is True
 
 
 def test_the_encoder_rejects_an_operation_rid_it_did_not_validate():
@@ -459,7 +503,9 @@ def test_each_branch_builds_an_envelope_this_parser_accepts(
 
     assert len(reported) == 2
     outcome = parse_runtime_result(
-        reported[0], expected_operation_rid=encoded.operation_rid,
+        reported[0],
+        expected_operation_rid=encoded.operation_rid,
+        expected_op=encoded.op,
     )
     assert outcome.state is ProtocolParseState.VALID_V6
     assert outcome.envelope.status.value == status
@@ -474,7 +520,9 @@ def test_an_engine_fault_becomes_a_structured_envelope_not_a_thrown_error(tmp_pa
     reported = _run_in_node(tmp_path, encoded.payload, "throw")
 
     outcome = parse_runtime_result(
-        reported[0], expected_operation_rid=encoded.operation_rid,
+        reported[0],
+        expected_operation_rid=encoded.operation_rid,
+        expected_op=encoded.op,
     )
     assert outcome.envelope.error.code is RuntimeErrorCode.ENGINE_EXCEPTION
     assert "ipc unavailable" in outcome.envelope.error.detail

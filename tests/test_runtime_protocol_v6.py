@@ -28,6 +28,7 @@ from src.packet_tracer_mcp.infrastructure.execution.runtime_protocol import (
     RuntimeErrorCode,
     SessionMintedBy,
     SessionStorage,
+    is_valid_operation_name,
     is_valid_operation_rid,
     new_operation_rid,
     new_session_candidate,
@@ -37,11 +38,20 @@ from src.packet_tracer_mcp.infrastructure.execution.runtime_protocol import (
 
 # --------------------------------------------------------------- helpers ---
 
+#: The one operation Phase 1A encodes, and so the expected `op` for every
+#: document below that is not deliberately answering something else.
+IDENTIFY = "runtime.identify"
+
+#: An operation this build does not encode. Well-formed as a name -- the parser
+#: keeps no registry -- and therefore never a schema fault, only a correlation
+#: one.
+OTHER_OP = "some.other.operation"
+
 
 def envelope_document(
     *,
     operation_rid: str,
-    op: str = "runtime.identify",
+    op: str = IDENTIFY,
     status: str = "ok",
     session_id: str | None = "ses_abc",
     observed: dict | None = None,
@@ -74,7 +84,7 @@ def envelope_document(
     return json.dumps(document)
 
 
-# ------------------------------------------------------- 1. operation_rid ---
+# --------------------------------------------------- 1. operation identity ---
 
 
 def test_generated_operation_rids_are_unique_and_self_validating():
@@ -105,6 +115,25 @@ def test_malformed_operation_rids_are_rejected(candidate):
     assert is_valid_operation_rid(candidate) is False
 
 
+@pytest.mark.parametrize("name", [IDENTIFY, OTHER_OP, "x", "runtime.identify.v2"])
+def test_any_non_empty_string_is_a_well_formed_operation_name(name):
+    """Shape only, by design.
+
+    The parser holds no registry of known operations. A name this build has
+    never encoded is still a name it can correlate *against*, which is what
+    keeps the contract generic as typed operations are added: only the caller's
+    expectation changes, never this layer's schema.
+    """
+    assert is_valid_operation_name(name) is True
+
+
+@pytest.mark.parametrize(
+    "name", ["", None, 6, True, b"runtime.identify", ["runtime.identify"], {}],
+)
+def test_a_malformed_operation_name_is_rejected(name):
+    assert is_valid_operation_name(name) is False
+
+
 def test_session_candidates_are_unique_and_distinguishable_from_rids():
     """A session id must never be mistakable for an operation_rid in a log."""
     candidates = {new_session_candidate() for _ in range(32)}
@@ -120,7 +149,9 @@ def test_a_conforming_document_parses_as_valid_v6():
     rid = new_operation_rid()
 
     outcome = parse_runtime_result(
-        envelope_document(operation_rid=rid), expected_operation_rid=rid,
+        envelope_document(operation_rid=rid),
+        expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.VALID_V6
@@ -149,6 +180,7 @@ def test_a_structured_engine_error_is_a_valid_v6_document():
             error={"code": "ENGINE_EXCEPTION", "detail": "TypeError: x"},
         ),
         expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.VALID_V6
@@ -158,14 +190,63 @@ def test_a_structured_engine_error_is_a_valid_v6_document():
 
 
 # --------------------------------------------- 3. CORRELATION_MISMATCH ----
+#
+# Operation identity is the pair (operation_rid, op). Correlating on the rid
+# alone left a hole exactly one document wide: schema-valid V6, our own rid,
+# somebody else's operation. No other check in the parser compares `op` against
+# what was asked for, so no other check could have caught it.
 
 
-def test_a_document_answering_another_operation_fails_closed():
-    expected = new_operation_rid()
-    other = new_operation_rid()
+def test_a_schema_valid_document_answering_another_op_is_not_valid_v6():
+    """The regression: everything conforms except the operation being answered.
+
+    The rid is the one that was requested and the envelope is schema-valid down
+    to the last field. Only `op` differs -- the responder answered some other
+    operation under our rid.
+    """
+    rid = new_operation_rid()
 
     outcome = parse_runtime_result(
-        envelope_document(operation_rid=other), expected_operation_rid=expected,
+        envelope_document(operation_rid=rid, op=OTHER_OP),
+        expected_operation_rid=rid,
+        expected_op=IDENTIFY,
+    )
+
+    assert outcome.state is ProtocolParseState.CORRELATION_MISMATCH
+    assert outcome.envelope is None
+    assert outcome.legacy_text is None
+    assert outcome.routes_to_legacy_v5 is False
+    assert outcome.fails_closed is True
+
+
+#: Every way to miss a correct operation identity, and which half is wrong.
+NEAR_MISSES = [
+    pytest.param(True, False, ["op"], id="right-rid-wrong-op"),
+    pytest.param(False, True, ["operation_rid"], id="wrong-rid-right-op"),
+    pytest.param(False, False, ["operation_rid", "op"], id="wrong-rid-wrong-op"),
+]
+
+
+def near_miss_document(rid_matches: bool, op_matches: bool, expected_rid: str) -> str:
+    return envelope_document(
+        operation_rid=expected_rid if rid_matches else new_operation_rid(),
+        op=IDENTIFY if op_matches else OTHER_OP,
+    )
+
+
+@pytest.mark.parametrize(
+    ("rid_matches", "op_matches", "mismatched"), NEAR_MISSES,
+)
+def test_every_mismatched_operation_identity_fails_closed(
+    rid_matches, op_matches, mismatched,
+):
+    """One correct half is not a correlation. Both halves, or nothing."""
+    expected_rid = new_operation_rid()
+
+    outcome = parse_runtime_result(
+        near_miss_document(rid_matches, op_matches, expected_rid),
+        expected_operation_rid=expected_rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.CORRELATION_MISMATCH
@@ -174,6 +255,69 @@ def test_a_document_answering_another_operation_fails_closed():
     assert outcome.legacy_text is None
     assert outcome.routes_to_legacy_v5 is False
     assert outcome.fails_closed is True
+
+
+@pytest.mark.parametrize(
+    ("rid_matches", "op_matches", "mismatched"), NEAR_MISSES,
+)
+def test_the_detail_names_which_half_of_the_identity_mismatched(
+    rid_matches, op_matches, mismatched,
+):
+    """A stale answer and a wrong answer are different faults to chase."""
+    expected_rid = new_operation_rid()
+
+    outcome = parse_runtime_result(
+        near_miss_document(rid_matches, op_matches, expected_rid),
+        expected_operation_rid=expected_rid,
+        expected_op=IDENTIFY,
+    )
+
+    # Read the names out of the trailing list rather than searching the whole
+    # detail for them: "operation_rid" contains "op", so a substring test would
+    # report an op mismatch on every rid mismatch.
+    listed = outcome.detail.rsplit(": ", 1)[-1].rstrip(")")
+
+    assert listed.split(", ") == mismatched
+
+
+def test_the_correlation_detail_never_carries_the_document():
+    """Fail closed means the document does not escape -- in prose either.
+
+    `legacy_text` is the routing gate, but a detail string that quoted the
+    responder's own `op` back would put responder-controlled text into a caller
+    that has just been told this document answers nothing it asked for.
+    """
+    rid = new_operation_rid()
+    document = envelope_document(operation_rid=rid, op=OTHER_OP)
+
+    outcome = parse_runtime_result(
+        document, expected_operation_rid=rid, expected_op=IDENTIFY,
+    )
+
+    assert OTHER_OP not in outcome.detail
+    assert rid not in outcome.detail
+    assert document not in outcome.detail
+
+
+def test_a_malformed_op_is_a_schema_fault_not_a_correlation_result():
+    """Order of validation, stated once: schema first, identity second.
+
+    This document misses on *both* halves of the identity and breaks the schema
+    as well. The schema fault is the one to report -- correlating against a
+    document whose shape was never established is not a correlation at all.
+    """
+    document = json.loads(envelope_document(operation_rid=new_operation_rid()))
+    document["op"] = ""
+
+    outcome = parse_runtime_result(
+        json.dumps(document),
+        expected_operation_rid=new_operation_rid(),
+        expected_op=IDENTIFY,
+    )
+
+    assert outcome.state is ProtocolParseState.INVALID_V6
+    assert outcome.envelope is None
+    assert outcome.legacy_text is None
 
 
 # ------------------------------------------------- 6. PROTOCOL_MISMATCH ---
@@ -186,6 +330,7 @@ def test_a_foreign_protocol_version_fails_closed(version):
     outcome = parse_runtime_result(
         envelope_document(operation_rid=rid, version=version),
         expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.PROTOCOL_MISMATCH
@@ -224,7 +369,7 @@ def test_a_malformed_v6_envelope_fails_closed(mutate, why):
     mutate(document)
 
     outcome = parse_runtime_result(
-        json.dumps(document), expected_operation_rid=rid,
+        json.dumps(document), expected_operation_rid=rid, expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.INVALID_V6, why
@@ -246,6 +391,7 @@ def test_status_and_error_must_agree(status, error):
     outcome = parse_runtime_result(
         envelope_document(operation_rid=rid, status=status, error=error),
         expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.INVALID_V6
@@ -268,6 +414,7 @@ def test_a_malformed_runtime_block_fails_closed(overrides):
     outcome = parse_runtime_result(
         envelope_document(operation_rid=rid, runtime_overrides=overrides),
         expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.INVALID_V6
@@ -281,6 +428,7 @@ def test_a_read_only_operation_may_not_carry_mutation_evidence():
     outcome = parse_runtime_result(
         envelope_document(operation_rid=rid, extra={"mutated": {"devices": 1}}),
         expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.INVALID_V6
@@ -294,6 +442,7 @@ def test_a_read_only_operation_may_not_carry_a_null_mutated_key_either():
     outcome = parse_runtime_result(
         envelope_document(operation_rid=rid, extra={"mutated": None}),
         expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.INVALID_V6
@@ -314,13 +463,46 @@ def test_the_parser_refuses_a_non_string_document(document):
     rid = new_operation_rid()
 
     with pytest.raises(TypeError):
-        parse_runtime_result(document, expected_operation_rid=rid)
+        parse_runtime_result(
+            document, expected_operation_rid=rid, expected_op=IDENTIFY,
+        )
 
 
 def test_the_parser_refuses_an_invalid_expected_rid():
     """Asking the parser to correlate against nonsense is a caller bug."""
     with pytest.raises(ValueError):
-        parse_runtime_result("{}", expected_operation_rid="not-a-rid")
+        parse_runtime_result(
+            "{}", expected_operation_rid="not-a-rid", expected_op=IDENTIFY,
+        )
+
+
+def test_the_parser_requires_an_expected_op():
+    """Half an operation identity is not an operation identity.
+
+    `expected_op` has no default, so no caller can quietly fall back to
+    correlating on the rid alone -- and it is not inferrable either: the rid
+    is opaque, and this layer keeps no registry of operations in flight to
+    look one up in.
+    """
+    rid = new_operation_rid()
+
+    with pytest.raises(TypeError):
+        parse_runtime_result(
+            envelope_document(operation_rid=rid), expected_operation_rid=rid,
+        )
+
+
+@pytest.mark.parametrize("expected_op", ["", None, 6, True, b"runtime.identify"])
+def test_the_parser_refuses_an_invalid_expected_op(expected_op):
+    """Correlating against a nonsense op is a caller bug, as a bad rid is."""
+    rid = new_operation_rid()
+
+    with pytest.raises(ValueError):
+        parse_runtime_result(
+            envelope_document(operation_rid=rid),
+            expected_operation_rid=rid,
+            expected_op=expected_op,
+        )
 
 
 # --------------------------------------------------- 9. session_id null ---
@@ -333,6 +515,7 @@ def test_a_null_session_id_is_valid_v6():
     outcome = parse_runtime_result(
         envelope_document(operation_rid=rid, session_id=None),
         expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.state is ProtocolParseState.VALID_V6
@@ -346,7 +529,9 @@ def test_extension_version_is_null_on_the_phase_1a_wire():
     rid = new_operation_rid()
 
     outcome = parse_runtime_result(
-        envelope_document(operation_rid=rid), expected_operation_rid=rid,
+        envelope_document(operation_rid=rid),
+        expected_operation_rid=rid,
+        expected_op=IDENTIFY,
     )
 
     assert outcome.envelope.runtime.extension_version is None
@@ -383,7 +568,9 @@ def test_the_parser_never_invents_an_error_code():
     carried_a_code = False
 
     for document in documents:
-        outcome = parse_runtime_result(document, expected_operation_rid=rid)
+        outcome = parse_runtime_result(
+            document, expected_operation_rid=rid, expected_op=IDENTIFY,
+        )
         if outcome.envelope is None or outcome.envelope.error is None:
             continue
         carried_a_code = True
@@ -438,10 +625,15 @@ def test_only_not_v6_carries_legacy_text():
         envelope_document(operation_rid=new_operation_rid()): (
             ProtocolParseState.CORRELATION_MISMATCH
         ),
+        envelope_document(operation_rid=rid, op=OTHER_OP): (
+            ProtocolParseState.CORRELATION_MISMATCH
+        ),
     }
 
     for document, expected_state in cases.items():
-        outcome = parse_runtime_result(document, expected_operation_rid=rid)
+        outcome = parse_runtime_result(
+            document, expected_operation_rid=rid, expected_op=IDENTIFY,
+        )
         assert outcome.state is expected_state
         assert (outcome.legacy_text is not None) == (
             expected_state is ProtocolParseState.NOT_V6

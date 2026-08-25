@@ -11,9 +11,19 @@ and a parser that classifies a response document without guessing.
 
 Two identities, deliberately separate
 -------------------------------------
-``operation_rid`` is the V6 protocol identity. It is minted here, echoed inside
-the envelope, and its only guarantee is that a document *claims to answer this
-operation*.
+The V6 protocol identity of an operation is the *pair* ``(operation_rid, op)``.
+The rid is minted here and echoed inside the envelope; ``op`` names what was
+asked for. Neither half identifies an operation on its own: a rid alone cannot
+separate "the answer to the ``runtime.identify`` I asked for" from "some other
+operation answered under my rid", and an op alone cannot separate this call's
+answer from the previous call's. So ``parse_runtime_result`` requires both and
+correlates on both, and a document matching one but not the other is
+``CORRELATION_MISMATCH`` -- well-formed V6, answering a different operation.
+
+The expected ``op`` is a caller input and is never inferred from the rid. The
+rid is opaque by construction, so deriving an operation name from one would mean
+this layer keeping a registry of operations in flight -- state Phase 1A does not
+have and must not pretend to.
 
 It is **not** the transport correlation identity. Both deployed transports mint
 their own privately and expose it to nobody: the HTTP path mints and consumes
@@ -88,7 +98,8 @@ class ProtocolParseState(str, Enum):
     PROTOCOL_MISMATCH = "PROTOCOL_MISMATCH"
     #: Announces this protocol version and then breaks its schema.
     INVALID_V6 = "INVALID_V6"
-    #: Well-formed, but answering some other operation.
+    #: Well-formed V6, but it answers a different operation identity: a
+    #: different ``operation_rid``, a different ``op``, or both.
     CORRELATION_MISMATCH = "CORRELATION_MISMATCH"
 
 
@@ -156,6 +167,20 @@ def is_valid_operation_rid(value: object) -> bool:
     if not isinstance(value, str):
         return False
     return _OPERATION_RID_PATTERN.fullmatch(value) is not None
+
+
+def is_valid_operation_name(value: object) -> bool:
+    """Whether a value is a well-formed operation name.
+
+    Shape only -- a non-empty string -- and deliberately *not* a registry of
+    known operations. Phase 1A encodes exactly one, but a parser that rejected
+    every other name would report a responder speaking more of the protocol than
+    this build does as a *broken* responder, when the honest answer is that its
+    document answers an operation we did not ask for. It also keeps the contract
+    generic as typed operations are added: only the caller's expectation has to
+    change, never this layer's schema.
+    """
+    return isinstance(value, str) and bool(value)
 
 
 def new_session_candidate() -> str:
@@ -311,11 +336,17 @@ def parse_runtime_result(
     document: str,
     *,
     expected_operation_rid: str,
+    expected_op: str,
 ) -> RuntimeParseOutcome:
     """Classify one response document that definitely arrived.
 
     ``document`` is a ``str`` by contract. A transport that produced no response
     has no document to classify, and must not reach this layer.
+
+    The operation correlated against is the pair
+    ``(expected_operation_rid, expected_op)``. Both are caller inputs, and
+    ``expected_op`` has no default: an operation identity that could be supplied
+    by halves is the defect this signature exists to prevent.
     """
     if not isinstance(document, str):
         raise TypeError(
@@ -324,6 +355,8 @@ def parse_runtime_result(
         )
     if not is_valid_operation_rid(expected_operation_rid):
         raise ValueError("expected_operation_rid is not a valid protocol identity")
+    if not is_valid_operation_name(expected_op):
+        raise ValueError("expected_op is not a well-formed operation name")
 
     try:
         payload = json.loads(document)
@@ -347,7 +380,7 @@ def parse_runtime_result(
         return _invalid("operation_rid missing or malformed")
 
     op = payload.get("op")
-    if not isinstance(op, str) or not op:
+    if not is_valid_operation_name(op):
         return _invalid("op missing or not a non-empty string")
 
     try:
@@ -377,22 +410,39 @@ def parse_runtime_result(
     if (status is ResultStatus.ERROR) != (error is not None):
         return _invalid("status and error disagree")
 
-    envelope = RuntimeResultEnvelope(
-        operation_rid=operation_rid,
-        op=op,
-        status=status,
-        runtime=runtime,
-        observed=observed,
-        error=error,
-    )
-
-    if operation_rid != expected_operation_rid:
+    # Schema first, identity second, and the order is load-bearing. A malformed
+    # ``op`` is a broken responder and stays INVALID_V6; a well-formed one we did
+    # not ask for is a correlation fault. Collapsing the two would either report
+    # a schema defect that is not there, or correlate against a document whose
+    # schema was never established.
+    mismatched = [
+        field
+        for field, correlates in (
+            ("operation_rid", operation_rid == expected_operation_rid),
+            ("op", op == expected_op),
+        )
+        if not correlates
+    ]
+    if mismatched:
+        # The detail names the field, never its value. A fail-closed outcome
+        # must not leak the document -- in a diagnostic string any more than in
+        # ``legacy_text``.
         return RuntimeParseOutcome(
             state=ProtocolParseState.CORRELATION_MISMATCH,
-            detail="the document answers a different operation",
+            detail=(
+                "the document answers a different operation identity "
+                f"(mismatched: {', '.join(mismatched)})"
+            ),
         )
 
     return RuntimeParseOutcome(
         state=ProtocolParseState.VALID_V6,
-        envelope=envelope,
+        envelope=RuntimeResultEnvelope(
+            operation_rid=operation_rid,
+            op=op,
+            status=status,
+            runtime=runtime,
+            observed=observed,
+            error=error,
+        ),
     )

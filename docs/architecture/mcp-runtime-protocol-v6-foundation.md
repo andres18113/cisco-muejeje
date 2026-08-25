@@ -3,7 +3,8 @@
 Status: **PHASE 1A IMPLEMENTED (pure, offline) · PHASE 1B NOT STARTED**
 Branch: `feature/runtime-protocol-v6-foundation`
 Base: `43eba72f18ad4e29e0ff292ebca4dbbd4a47232e` (CP-LIVE checkpoint on `feature/runtime-ripv2`)
-Phase: 0 — audit (accepted) · 0.5 — design corrections (accepted) · 1A — implemented
+Phase: 0 — audit (accepted) · 0.5 — design corrections (accepted) · 1A — implemented ·
+1A.1 — operation correlation hardened
 
 This document is an audit of the **deployed V5 bridge**, the design corrected
 after it, and the record of the first implemented slice. No `.pts` was rebuilt,
@@ -58,6 +59,38 @@ branch whose comment overstated what it did. Both are recorded in Part 5.
 What Phase 1A does **not** establish is unchanged by any of it: the slice sends
 nothing to Packet Tracer, so every runtime-session behaviour stays
 UNVERIFIED_UNTIL_PHASE_1B.
+
+## Revision 1A.1 — operation correlation hardened
+
+A review of the accepted Phase 1A found one protocol defect. This revision
+fixes that and nothing else.
+
+`parse_runtime_result` correlated on `operation_rid` alone. The envelope
+carries `operation_rid` **and** `op`, so a schema-valid V6 document bearing the
+requested rid and a *different* `op` was classified `VALID_V6` — a well-formed
+answer to some other operation, consumed as the answer to ours. A rid is not an
+operation identity. The pair is.
+
+The contract is now:
+
+- **Operation identity = `operation_rid` + `op`.** `parse_runtime_result`
+  requires `expected_operation_rid` *and* `expected_op`. `expected_op` has no
+  default and is never inferred from the rid: the rid is opaque, and this layer
+  keeps no registry of operations in flight to look one up in.
+- **`CORRELATION_MISMATCH` covers either half, and both together.** No new
+  parse state was added, because all three mean one thing to a caller — a
+  well-formed V6 document that does not answer the requested operation — and
+  the required behaviour is identical: fail closed, no envelope, no legacy
+  text. The `detail` names which half missed, so a stale answer and a wrong
+  answer stay tellable apart; it names the *field*, never the document's own
+  value, so a fail-closed outcome still leaks nothing.
+- **Schema first, identity second.** A malformed `op` is still `INVALID_V6`; a
+  well-formed `op` that was not requested is `CORRELATION_MISMATCH`.
+
+Scope held: the parser, its two test modules, and this document.
+`runtime_operation_encoder.py` needed no behavioural change — it already
+embeds `op` in the envelope it builds — and no shared, transport, adapter or
+extension file was touched.
 
 ---
 
@@ -383,7 +416,7 @@ minting in Python and says so.
 | Item | Classification | Rationale |
 |---|---|---|
 | `protocol_version` | **REQUIRED_FOR_FIRST_SLICE** | Without it nothing can be detected or rolled forward. One integer. |
-| `operation_rid` (protocol identity) | **REQUIRED_FOR_FIRST_SLICE** | Minted by the V6 caller, echoed in the envelope. Independent of transport identity (§3.3). |
+| `operation_rid` + `op` (protocol identity) | **REQUIRED_FOR_FIRST_SLICE** | The operation identity is the pair, minted and named by the V6 caller, echoed in the envelope, and correlated on together. Independent of transport identity (§3.3). |
 | `transport_rid` unification | **LATER** | Requires changing `live_bridge.py` / `file_bridge.py`. Forbidden now (§3.3). |
 | JSON result envelope | **REQUIRED_FOR_FIRST_SLICE** | The whole point. Everything else rides on it. |
 | Protocol parse states | **REQUIRED_FOR_FIRST_SLICE** | The correction in §3.4; without it detection is dishonest. |
@@ -425,8 +458,12 @@ As emitted by `runtime.identify` and accepted by `parse_runtime_result`:
 }
 ```
 
-- `operation_rid` is the **protocol** identity (§3.3). It is *not* the transport
-  correlation id and must never be described as validating one.
+- `operation_rid` and `op` together are the **protocol** identity of an
+  operation (§3.3), and the parser correlates on both. Neither half is
+  sufficient: the rid alone cannot separate our operation's answer from another
+  operation answered under our rid, and `op` alone cannot separate this call's
+  answer from the previous call's. Neither is the transport correlation id, and
+  neither must ever be described as validating one.
 - `mutated` is **absent from the model entirely**, not null. The encoder has no
   branch that can emit the key, and the parser rejects an envelope carrying it
   for an operation in `READ_ONLY_OPERATIONS` — including `"mutated": null`,
@@ -517,13 +554,18 @@ Two independent contracts, therefore:
 | Minted by | the V6 caller (`runtime_protocol`) | `live_bridge` / `file_bridge`, privately |
 | Visible to | the V6 caller and the envelope | nobody outside its own function |
 | Carried | **in-band**, inside the envelope | out-of-band (URL query / filename) |
-| Purpose | proves *this response answers this operation* | proves *this HTTP/file result answers this transport request* |
+| Purpose | with `op`, proves *this response answers this operation*; the rid alone proves only that *some* operation answered under it | proves *this HTTP/file result answers this transport request* |
 | Relationship in Slice 1 | **none — independent** | **none — independent** |
 
-What `operation_rid` honestly buys in Slice 1: a response that is well-formed V6
-but answers a *different* operation is detected and fails closed
+What the operation identity honestly buys in Slice 1: a response that is
+well-formed V6 but answers a *different* operation — a different rid, a
+different `op`, or both — is detected and fails closed
 (`CORRELATION_MISMATCH`, §3.4). That is a real property, and it is achievable
 with zero changes to shared transport code.
+
+It takes **both** halves. Correlating on the rid alone left a document carrying
+our rid and somebody else's `op` indistinguishable from our own result, which
+is the defect Revision 1A.1 closed.
 
 What it does **not** buy: any statement about transport-level correlation. The
 transports' own correlation remains correct and untouched; V6 simply cannot see
@@ -551,13 +593,13 @@ the parser, on a `str` that definitely arrived:
 
 | State | Condition | Handling |
 |---|---|---|
-| `VALID_V6` | parses as a JSON object, `v == 6`, schema-valid, `operation_rid` matches the expected value | consume as V6 |
+| `VALID_V6` | parses as a JSON object, `v == 6`, schema-valid, and **both** `operation_rid` and `op` match the expected values | consume as V6 |
 | `NOT_V6` | not JSON, **or** a JSON value with no `v` key | legacy V5 text/JSON — hand to the existing V5 path unchanged |
 | `PROTOCOL_MISMATCH` | JSON object with `v` present and `v != 6` | **fail closed** |
 | `INVALID_V6` | `v == 6` but the envelope is malformed (missing/ill-typed required fields) | **fail closed** |
-| `CORRELATION_MISMATCH` | `v == 6`, schema-valid, `operation_rid` does not match | **fail closed** |
+| `CORRELATION_MISMATCH` | `v == 6`, schema-valid, and `operation_rid`, `op`, or both do not match | **fail closed** |
 
-Two rules that make this honest:
+Four rules that make this honest:
 
 1. **Fail closed means fail closed.** `INVALID_V6`, `CORRELATION_MISMATCH` and
    `PROTOCOL_MISMATCH` must **never** fall back to V5 parsing. A broken V6
@@ -566,6 +608,19 @@ Two rules that make this honest:
    narrow: it requires the absence of a `v` key, not merely the absence of
    `v == 6`. This is what keeps the 118 existing `JSON.stringify` sites (§1.12)
    from being misclassified in either direction.
+3. **Operation identity is the pair `(operation_rid, op)`.**
+   `parse_runtime_result` requires both from the caller. `expected_op` has no
+   default and is not inferred: the rid is opaque, and this layer holds no
+   registry of operations in flight. `CORRELATION_MISMATCH` covers either half
+   and both together — one meaning, one required caller behaviour, so no
+   second state. Its `detail` names which half missed, and names the field
+   rather than the document's value.
+4. **Schema first, identity second, and the order is load-bearing.** A
+   malformed `op` — missing, empty, not a string — is a broken responder and
+   stays `INVALID_V6`. A well-formed `op` that was not the one requested is
+   `CORRELATION_MISMATCH`. Collapsing the two would either report a schema
+   defect that is not there, or correlate against a document whose shape was
+   never established.
 
 `TRANSPORT_FAILURE_SEPARATION`: the parser's input type is `str`, never
 `str | None`. A caller that has `None` has a transport outcome and must not
@@ -954,14 +1009,17 @@ slice is therefore split.
 
 **Scope held exactly: new files only. No transport, no adapter, no live caller,
 no Packet Tracer, no CP-SCALE surface.** `git status` after implementation shows
-four new untracked files and nothing modified.
+four new untracked files and nothing modified. Revision 1A.1 held the same
+boundary, modifying three of those four files and this document.
 
 Contents as built:
 
 1. `runtime_protocol.py` — `PROTOCOL_VERSION = 6`; `operation_rid` minting and
    validation against its **own** pattern, deliberately not imported from the
-   HTTP transport that happens to use the same shape; the envelope model; the
-   five-state parser of §3.4 over a `str`; the two-layer error model of §3.2.
+   HTTP transport that happens to use the same shape; the operation-name
+   predicate that keeps the contract generic without a registry; the envelope
+   model; the five-state parser of §3.4 over a `str`, correlating on the
+   `(operation_rid, op)` pair; the two-layer error model of §3.2.
 2. `runtime_operation_encoder.py` — builds the `runtime.identify` payload
    (Q5). Every dynamic value passes through one `js_string_literal` choke
    point; the module contains no f-string at all, asserted on its AST.
@@ -972,10 +1030,10 @@ Contents as built:
 
 | File | Change |
 |---|---|
-| `src/packet_tracer_mcp/infrastructure/execution/runtime_protocol.py` | **new** (~380 lines) |
-| `src/packet_tracer_mcp/infrastructure/execution/runtime_operation_encoder.py` | **new** (~150 lines) |
-| `tests/test_runtime_protocol_v6.py` | **new** |
-| `tests/test_runtime_protocol_v6_compatibility.py` | **new** |
+| `src/packet_tracer_mcp/infrastructure/execution/runtime_protocol.py` | **new** (450 lines; 1A.1 changed the parser signature and the correlation check) |
+| `src/packet_tracer_mcp/infrastructure/execution/runtime_operation_encoder.py` | **new** (175 lines; **unchanged by 1A.1**) |
+| `tests/test_runtime_protocol_v6.py` | **new** (640 lines) |
+| `tests/test_runtime_protocol_v6_compatibility.py` | **new** (556 lines) |
 | `docs/architecture/mcp-runtime-protocol-v6-foundation.md` | this document |
 
 `SHARED_FILES_CHANGED` = **NONE**, verified by `git diff HEAD` over
@@ -984,13 +1042,23 @@ Contents as built:
 it exports only a subset of the package and every existing test imports these
 submodules by full path, so the convention did not require an export.
 
-`PHASE1A_TESTS` — 117 tests, all passing:
+`PHASE1A_TESTS` — 143 tests, all passing (117 at Revision 1A, +26 for the
+correlation hardening in 1A.1):
 
 1. `operation_rid` uniqueness and validation, with twelve malformed shapes
-   rejected (wrong length, uppercase, non-hex, whitespace, non-string types).
+   rejected (wrong length, uppercase, non-hex, whitespace, non-string types),
+   and operation-*name* validation as shape only — any non-empty string is a
+   name this parser can correlate against, seven malformed values are not,
+   and no registry of known operations exists to reject an unfamiliar one.
 2. A conforming document parses `VALID_V6` with every field recovered.
-3. A document answering another operation is `CORRELATION_MISMATCH`, carries no
-   envelope, and carries **no legacy text**.
+3. Operation identity is correlated as a pair. All three near misses — right
+   rid with wrong `op`, wrong rid with right `op`, both wrong — are
+   `CORRELATION_MISMATCH`, carry no envelope and **no legacy text**, and fail
+   closed. The `detail` names which half missed, and quotes back neither the
+   document, nor its `op`, nor its rid. A document that both mismatches *and*
+   carries a malformed `op` stays `INVALID_V6`, pinning schema-before-identity.
+   Removing the `op` half of the correlation fails six of these tests across
+   both modules — measured, not assumed.
 4. Twelve real V5 responses — `PT_ERROR:`, `ERROR:`, `OK`, `MISSING`, empty,
    bare scalars, and two verbatim structured shapes from the existing product —
    are `NOT_V6` and returned byte-for-byte unaltered.
@@ -1002,7 +1070,9 @@ submodules by full path, so the convention did not require an export.
 7. Sixteen malformed-envelope mutations are `INVALID_V6`, plus status/error
    disagreement and six malformed runtime blocks.
 8. The parser accepts `str` by annotation, raises `TypeError` on five non-string
-   inputs, and raises `ValueError` on an invalid expected rid.
+   inputs, and raises `ValueError` on an invalid expected rid. `expected_op`
+   has no default, so omitting it is a `TypeError` rather than a silent
+   rid-only correlation, and five malformed expectations are a `ValueError`.
 9. A null `session_id` is `VALID_V6`.
 10. `extension_version` is null on the wire, and neither module accepts a
     parameter of that name.
@@ -1037,10 +1107,14 @@ dispatches and across a second operation in the same batch.
   emitted literal is ASCII-only — which fails immediately if anyone ever passes
   `ensure_ascii=False`. That is the actual regression risk.
 
-`REGRESSION`: the full suite runs **37 failed, 2792 passed, 6 skipped** on the
-worktree-local `.venv`. The identical 37 failures occur at pristine `HEAD` with
-these four files removed (**37 failed, 2675 passed**); the two failure lists were
-captured and diffed and are byte-identical. The delta is exactly +117 passing.
+`REGRESSION`: the full suite runs **37 failed, 2818 passed, 6 skipped** on the
+worktree-local `.venv`. The identical 37 failures occur with these four files
+removed (**37 failed, 2675 passed, 6 skipped**); the two failure lists were
+captured and diffed and are byte-identical. The delta is exactly +143 passing.
+
+The same comparison was re-run for Revision 1A.1 rather than inherited. The
+base state is unchanged — still 2675 passed against the identical 37 failures
+— and the delta moved from +117 to +143 with the correlation-hardening tests.
 
 Those 37 are not ours and were not touched. Thirty-six are CP-SCALE canonical
 and reference-hardware tests in flight at the base checkpoint. The thirty-
@@ -1054,6 +1128,7 @@ to CP-SCALE.
 | Risk | Severity | Status |
 |---|---|---|
 | A V5 JSON response misread as V6 | Low | Closed by requiring absence of `v`, tested against real shapes |
+| A response answering a *different* operation accepted as ours | Medium | **Was open through Revision 1A; closed in 1A.1.** Correlation is the pair `(operation_rid, op)`; removing the `op` half again fails six tests |
 | `bool`/`float` admitted as version 6 | Low | Closed by an explicit `type(...) is int` check, tested |
 | A hostile value reaching the payload as code | Low | Closed by a single escaping choke point, ten hostile inputs tested |
 | The encoder drifting into "dispatcher" | Low | Module name, docstring, and §3.6 |
