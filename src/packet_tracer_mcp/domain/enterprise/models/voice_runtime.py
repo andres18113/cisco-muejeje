@@ -52,6 +52,10 @@ class RuntimePhoneRegistration(BaseModel):
     call_control_ipv4: str = ""
     endpoint_ipv4: str = ""
     endpoint_interface: str = ""
+    #: Did the phone actually create the SVI the plan expects it to address on?
+    #: A phone that never learned its voice VLAN and one that learned it and got
+    #: no lease both read as no address, and they are different findings.
+    endpoint_interface_present: bool = False
 
 
 class RuntimeCallObservation(BaseModel):

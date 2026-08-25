@@ -215,3 +215,102 @@ def test_intersite_runtime_limitation_is_unknown_not_unsupported():
     observed = runtime.apply_actions([intersite])[0]
 
     assert observed.failure_code.value == "capability_unknown"
+
+
+_ONE_EPHONE = (chr(13) + chr(10)).join([
+    'R4#show ephone',
+    'ephone-11  Mac:0001.4218.0E01  TCP socket:[-1] activeLine:0  UNREGISTERED',
+    'mediaActive:0  offhook:0  ringing:0  reset:0  reset_sent:0  paging 0  debug:0',
+    'IP:0.0.0.0   0  Telecaster 7960   keepalive 0 max_line 6',
+    'button 1: dn 1  number 3011 CH1   IDLE',
+    'R4#',
+])
+
+
+def _registration_runtime(output, *, complete):
+    """A voice runtime whose `show ephone` returns exactly one captured window."""
+    from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+        IosCommandResult,
+        IosSessionState,
+        OperationalQueryId,
+    )
+
+    runtime = _runtime([])
+
+    def execute(device_name, query_id, *, interface=""):
+        return IosCommandResult(
+            device_name=device_name,
+            query_id=query_id,
+            executed=True,
+            output=output,
+            session_state=IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=True,
+            window_strategy="current_command",
+            truncated_by_pager=not complete,
+            output_complete=complete,
+            pager_pages_captured=1,
+        )
+
+    runtime._ios.execute = execute  # noqa: SLF001
+    runtime._registration_hosts["phone-1"] = "HQ-R1"  # noqa: SLF001
+    runtime._registration_timeout = 0.2  # noqa: SLF001
+    runtime._convergence_interval = 0.05  # noqa: SLF001
+    return runtime
+
+
+def _expectation(extension):
+    from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+        VoiceVerificationExpectation,
+        VoiceVerificationKind,
+    )
+
+    return VoiceVerificationExpectation(
+        id="voice/verify/1", kind=VoiceVerificationKind.PHONE_REGISTRATION,
+        phone_id="phone-1", extension=extension, call_control_id="cc",
+        action_id="voice/bind/1", endpoint_device_name="HQ-PHONE-01",
+        endpoint_interface="Vlan20",
+    )
+
+
+def test_a_truncated_show_ephone_never_proves_a_row_is_absent():
+    """21 ephones page, and a window that stopped early is not an answer.
+
+    Floor 1 observed exactly this: `show ephone` on a call control hosting 21
+    ephones matched a different scattered handful on each invocation, and every
+    phone whose block missed the captured window was reported as having no
+    registration table at all. `output_complete` is a first-class dimension of
+    the read and the adapter was discarding it, so an incomplete capture and a
+    genuinely absent ephone became the same result.
+    """
+    runtime = _registration_runtime(_ONE_EPHONE, complete=False)
+
+    observed = runtime.observe_registration(_expectation("3016"))
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert "truncat" in observed.message.casefold() or "incomplete" in observed.message.casefold()
+    assert observed.evidence_method != (
+        "pt_9_0_1_extension_api_has_no_registration_getter"
+    )
+
+
+def test_a_complete_show_ephone_without_the_row_is_still_unobservable():
+    """Complete and absent is a real absence, and still claims nothing."""
+    runtime = _registration_runtime(_ONE_EPHONE, complete=True)
+
+    observed = runtime.observe_registration(_expectation("3016"))
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+
+
+def test_an_unregistered_row_reporting_0_0_0_0_carries_no_address():
+    """`IP:0.0.0.0` is the call control saying it has no address for this phone.
+
+    Reported as an address it became "0.0.0.0 is outside the voice segment" --
+    a contradiction manufactured out of an absence.
+    """
+    runtime = _registration_runtime(_ONE_EPHONE, complete=True)
+
+    observed = runtime.observe_registration(_expectation("3011"))
+
+    assert observed.status is ActionExecutionStatus.FAILED
+    assert observed.call_control_ipv4 == ""

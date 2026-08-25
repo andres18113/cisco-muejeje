@@ -528,6 +528,17 @@ def _stage_voice(
     )
     evidence["addressing_by_status"] = dict(sorted(addressing.items()))
     evidence["registration_by_status"] = dict(sorted(registration.items()))
+    # The voice path, one link at a time. A phone that never built its voice SVI
+    # and one that built it and got no lease are different failures, and a
+    # registration table that was truncated is not a statement about either.
+    evidence["voice_interface_present"] = sum(
+        1 for item in result.registrations if item.endpoint_interface_present
+    )
+    evidence["registration_evidence_method"] = dict(sorted(
+        collections.Counter(
+            item.evidence_method for item in result.registrations
+        ).items()
+    ))
     evidence["contradicted_addressing"] = sorted(
         f"{item.phone_id}: {item.addressing_message}"
         for item in result.registrations

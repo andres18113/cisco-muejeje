@@ -36,6 +36,18 @@ from .runtime_inventory import normalize_runtime_inventory
 
 
 _MAC = re.compile(r"^[0-9A-Fa-f]{12}$")
+#: What an unaddressed interface reads as, on both channels. A call control
+#: printing `IP:0.0.0.0` for an unregistered ephone is telling us it has no
+#: address for that phone; carrying it forward as an address turned an absence
+#: into "0.0.0.0 is outside the voice segment", a contradiction manufactured
+#: out of nothing having been seen.
+_UNADDRESSED = frozenset({"", "0.0.0.0"})
+
+
+def _reported_address(value: object) -> str:
+    """The address a channel actually reported, or "" when it reported none."""
+    address = str(value or "").strip()
+    return "" if address in _UNADDRESSED else address
 
 
 class PacketTracerEnterpriseVoiceRuntime:
@@ -190,6 +202,14 @@ class PacketTracerEnterpriseVoiceRuntime:
             "fresh_output_observed": result.fresh_output_observed,
             "window_strategy": result.window_strategy,
             "failure_reason": result.failure_reason,
+            # COMPLETA is a dimension of its own, and dropping it made a window
+            # that stopped early indistinguishable from an ephone that is not
+            # there. With 21 ephones the output pages, and that is exactly the
+            # difference between "this phone did not register" and "this read
+            # did not reach it".
+            "output_complete": result.output_complete,
+            "truncated_by_pager": result.truncated_by_pager,
+            "pager_pages_captured": result.pager_pages_captured,
             "ephones": [item.__dict__ for item in rows],
         }
 
@@ -221,7 +241,10 @@ class PacketTracerEnterpriseVoiceRuntime:
             interval_seconds=self._convergence_interval,
         ).wait()
         match = last.get("match")
-        endpoint_ipv4 = self._endpoint_address(expectation)
+        endpoint = self._endpoint_observation(expectation)
+        endpoint_ipv4 = str(endpoint["ipv4"])
+        endpoint_present = bool(endpoint["present"])
+        complete = bool(last.get("output_complete"))
         if convergence.configuration_channel and isinstance(match, dict):
             return RuntimePhoneRegistration(
                 expectation_id=expectation.id,
@@ -231,9 +254,10 @@ class PacketTracerEnterpriseVoiceRuntime:
                 direct_readback=FieldVerificationStatus.VERIFIED,
                 evidence_method="fresh_privileged_show_ephone",
                 fresh_evidence=bool(last.get("fresh_output_observed")),
-                call_control_ipv4=str(match.get("ip_address") or ""),
+                call_control_ipv4=_reported_address(match.get("ip_address")),
                 endpoint_ipv4=endpoint_ipv4,
                 endpoint_interface=expectation.endpoint_interface,
+                endpoint_interface_present=endpoint_present,
                 message=(
                     f"SCCP registered at {match.get('ip_address')} after "
                     f"{convergence.attempts} observation(s)."
@@ -248,16 +272,34 @@ class PacketTracerEnterpriseVoiceRuntime:
                 direct_readback=FieldVerificationStatus.FAILED,
                 evidence_method="fresh_privileged_show_ephone",
                 fresh_evidence=bool(last.get("fresh_output_observed")),
-                call_control_ipv4=str(match.get("ip_address") or ""),
+                call_control_ipv4=_reported_address(match.get("ip_address")),
                 endpoint_ipv4=endpoint_ipv4,
                 endpoint_interface=expectation.endpoint_interface,
+                endpoint_interface_present=endpoint_present,
                 message="The current ephone row remained UNREGISTERED before timeout.",
             )
-        return self._unobservable_registration(expectation)
+        if last.get("executed") and not complete:
+            return self._unobservable_registration(
+                expectation,
+                endpoint_ipv4=endpoint_ipv4,
+                endpoint_interface_present=endpoint_present,
+                evidence_method="show_ephone_capture_incomplete",
+                message=(
+                    "The show ephone capture was truncated after "
+                    f"{last.get('pager_pages_captured')} page(s), so the absence "
+                    f"of extension {expectation.extension} is a limit of the read "
+                    "and not an observation about this phone."
+                ),
+            )
+        return self._unobservable_registration(
+            expectation,
+            endpoint_ipv4=endpoint_ipv4,
+            endpoint_interface_present=endpoint_present,
+        )
 
-    def _endpoint_address(
+    def _endpoint_observation(
         self, expectation: VoiceVerificationExpectation,
-    ) -> str:
+    ) -> dict[str, object]:
         """What the phone itself reports on the SVI this plan addressed.
 
         Independent of the call control's view on purpose: a phone that has
@@ -267,24 +309,41 @@ class PacketTracerEnterpriseVoiceRuntime:
         device = expectation.endpoint_device_name
         interface = expectation.endpoint_interface
         if not device or not interface:
-            return ""
+            return {"present": False, "ipv4": ""}
         script = "".join((
             "try{var d=ipc.network().getDevice(", json.dumps(device), ");",
-            "var want=", json.dumps(interface), ";var ip='';",
-            "if(d){for(var i=0;i<d.getPortCount();i++){var p=d.getPortAt(i);",
-            "if(p&&typeof p.getName==='function'&&String(p.getName())===want){",
-            "ip=typeof p.getIpAddress==='function'?String(p.getIpAddress()):'';break;}}}",
-            "reportResult(JSON.stringify({found:!!d,ipv4:ip}));",
+            "var want=", json.dumps(interface), ";var ip='';var p=null;",
+            "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
+            "if(c&&typeof c.getName==='function'&&String(c.getName())===want){",
+            "p=c;ip=typeof c.getIpAddress==='function'?String(c.getIpAddress()):'';",
+            "break;}}}",
+            "reportResult(JSON.stringify({found:!!d,port_found:!!p,ipv4:ip}));",
             "}catch(e){reportResult('ERROR:'+e);}",
         ))
         observed = self._json_result(script, 5.0)
-        address = str(observed.get("ipv4") or "")
-        # An unacquired interface reads 0.0.0.0. Reporting that as an address
-        # would let "no lease yet" masquerade as a disagreement between reads.
-        return "" if address in {"", "0.0.0.0"} else address
+        # Whether the SVI exists at all is the fact that separates "the phone
+        # never learned its voice VLAN" from "it did, and holds no lease". Both
+        # read as no address, and they are different findings about the voice
+        # path, so the presence travels with the value.
+        present = bool(observed.get("port_found"))
+        return {
+            "present": present,
+            "ipv4": _reported_address(observed.get("ipv4")) if present else "",
+        }
 
     def _unobservable_registration(
-        self, expectation: VoiceVerificationExpectation,
+        self,
+        expectation: VoiceVerificationExpectation,
+        *,
+        endpoint_ipv4: str | None = None,
+        endpoint_interface_present: bool | None = None,
+        evidence_method: str = (
+            "pt_9_0_1_extension_api_has_no_registration_getter"
+        ),
+        message: str = (
+            "No fresh show ephone session is bound to this phone; the documented "
+            "extension API has no registration getter."
+        ),
     ) -> RuntimePhoneRegistration:
         # An unreadable registration table says nothing about whether the phone
         # acquired, and the two questions fail independently: a phone can hold a
@@ -296,14 +355,15 @@ class PacketTracerEnterpriseVoiceRuntime:
             extension=expectation.extension,
             status=ActionExecutionStatus.UNOBSERVABLE,
             direct_readback=FieldVerificationStatus.UNOBSERVABLE,
-            evidence_method="pt_9_0_1_extension_api_has_no_registration_getter",
+            evidence_method=evidence_method,
             fresh_evidence=False,
-            endpoint_ipv4=self._endpoint_address(expectation),
-            endpoint_interface=expectation.endpoint_interface,
-            message=(
-                "No fresh show ephone session is bound to this phone; the documented "
-                "extension API has no registration getter."
+            endpoint_ipv4=(
+                str(self._endpoint_observation(expectation)["ipv4"])
+                if endpoint_ipv4 is None else endpoint_ipv4
             ),
+            endpoint_interface=expectation.endpoint_interface,
+            endpoint_interface_present=bool(endpoint_interface_present),
+            message=message,
         )
 
     def verify_call(
