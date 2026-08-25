@@ -151,6 +151,9 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationRuntimeContext,
 )
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    PhoneRegistrationResult,
+)
 
 verdict = {{}}
 
@@ -160,14 +163,21 @@ def _assignment(phone_id):
 
 
 def _registration(phone_id, addressing, status, message=""):
-    return SimpleNamespace(
+    # Built from the real result model, not hand-mirrored: the stage reads
+    # whatever fields the observation carries, and a namespace that has to be
+    # kept in step with it breaks on every honest field the runtime learns to
+    # report -- which is exactly what this stage keeps learning to do.
+    return PhoneRegistrationResult(
+        expectation_id="voice/verify/" + phone_id,
         phone_id=phone_id,
+        extension="3001",
         addressing_status=addressing,
         addressing_message=message,
         status=status,
         message=message,
         call_control_ipv4="172.16.20.5",
         endpoint_ipv4="172.16.20.5",
+        endpoint_interface="Vlan20",
         endpoint_interface_present=True,
         endpoint_address_channel=True,
         endpoint_dhcp_enabled=True,

@@ -546,6 +546,19 @@ def _stage_voice(
     )
     # And whether the phone was ever asked to acquire. A voice SVI with DHCP
     # off did not fail to lease; nothing solicited on it.
+    # And the phone itself, which PT does not necessarily answer for in the
+    # same place as its ports.
+    evidence["voice_device_addressed"] = sorted(
+        f"{item.phone_id}={item.device_ipv4}"
+        for item in result.registrations if item.device_ipv4
+    )
+    evidence["voice_device_dhcp"] = dict(sorted(
+        collections.Counter(
+            "unreadable" if item.device_dhcp_enabled is None
+            else ("enabled" if item.device_dhcp_enabled else "disabled")
+            for item in result.registrations
+        ).items()
+    ))
     evidence["voice_interface_dhcp"] = dict(sorted(
         collections.Counter(
             "unreadable" if item.endpoint_dhcp_enabled is None

@@ -300,6 +300,8 @@ class PacketTracerEnterpriseVoiceRuntime:
             endpoint_present = bool(endpoint["present"])
             endpoint_channel = bool(endpoint["address_channel"])
             endpoint_dhcp = endpoint["dhcp"]
+            device_ipv4 = str(endpoint["device_ipv4"])
+            device_dhcp = endpoint["device_dhcp"]
             settled = decided.get(index)
             if settled is not None:
                 capture, match, seen_after = settled
@@ -317,6 +319,8 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_interface_present=endpoint_present,
                     endpoint_address_channel=endpoint_channel,
                     endpoint_dhcp_enabled=endpoint_dhcp,
+                    device_ipv4=device_ipv4,
+                    device_dhcp_enabled=device_dhcp,
                     message=(
                         f"SCCP registered at {match.get('ip_address')} after "
                         f"{seen_after} observation(s)."
@@ -339,6 +343,8 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_interface_present=endpoint_present,
                     endpoint_address_channel=endpoint_channel,
                     endpoint_dhcp_enabled=endpoint_dhcp,
+                    device_ipv4=device_ipv4,
+                    device_dhcp_enabled=device_dhcp,
                     message="The current ephone row remained UNREGISTERED before timeout.",
                 )
                 continue
@@ -349,6 +355,8 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_interface_present=endpoint_present,
                     endpoint_address_channel=endpoint_channel,
                     endpoint_dhcp_enabled=endpoint_dhcp,
+                    device_ipv4=device_ipv4,
+                    device_dhcp_enabled=device_dhcp,
                     evidence_method="show_ephone_capture_incomplete",
                     message=(
                         "The show ephone capture was truncated after "
@@ -372,6 +380,8 @@ class PacketTracerEnterpriseVoiceRuntime:
                     endpoint_interface_present=endpoint_present,
                     endpoint_address_channel=endpoint_channel,
                     endpoint_dhcp_enabled=endpoint_dhcp,
+                    device_ipv4=device_ipv4,
+                    device_dhcp_enabled=device_dhcp,
                     evidence_method="show_ephone_complete_without_this_row",
                     message=(
                         "A complete show ephone capture of "
@@ -387,6 +397,8 @@ class PacketTracerEnterpriseVoiceRuntime:
                 endpoint_interface_present=endpoint_present,
                 endpoint_address_channel=endpoint_channel,
                 endpoint_dhcp_enabled=endpoint_dhcp,
+                device_ipv4=device_ipv4,
+                device_dhcp_enabled=device_dhcp,
             )
         return observed
 
@@ -414,13 +426,22 @@ class PacketTracerEnterpriseVoiceRuntime:
             "dable=typeof c.isDhcpEnabled==='function';",
             "dh=dable?!!c.isDhcpEnabled():null;",
             "break;}}}",
+            # The device itself, asked separately. PT puts addressing getters on
+            # a device or on its ports and not reliably on both, so a port that
+            # cannot answer does not close the question.
+            "var vable=!!d&&typeof d.getIpAddress==='function';",
+            "var vip=vable?String(d.getIpAddress()):'';",
+            "var vdable=!!d&&typeof d.isDhcpEnabled==='function';",
+            "var vdh=vdable?!!d.isDhcpEnabled():null;",
             "reportResult(JSON.stringify({found:!!d,port_found:!!p,",
             # Whether this SVI has an address channel to ask is its own fact and
             # must not be inferred from what came back: an absent getter and a
             # getter that answered nothing both produce the empty string. The
             # same holds for the DHCP flag, which an AccessPoint-PT port was
             # already measured not to expose at all.
-            "address_channel:able,ipv4:ip,dhcp_channel:dable,dhcp:dh}));",
+            "address_channel:able,ipv4:ip,dhcp_channel:dable,dhcp:dh,",
+            "device_address_channel:vable,device_ipv4:vip,",
+            "device_dhcp_channel:vdable,device_dhcp:vdh}));",
             "}catch(e){reportResult('ERROR:'+e);}",
         ))
         observed = self._json_result(script, 5.0)
@@ -439,6 +460,14 @@ class PacketTracerEnterpriseVoiceRuntime:
             # None means the port exposes no DHCP flag, which is not the same
             # answer as the port saying DHCP is off.
             "dhcp": bool(observed.get("dhcp")) if readable_dhcp else None,
+            "device_ipv4": (
+                _reported_address(observed.get("device_ipv4"))
+                if observed.get("device_address_channel") else ""
+            ),
+            "device_dhcp": (
+                bool(observed.get("device_dhcp"))
+                if observed.get("device_dhcp_channel") else None
+            ),
         }
 
     def _unobservable_registration(
@@ -449,6 +478,8 @@ class PacketTracerEnterpriseVoiceRuntime:
         endpoint_interface_present: bool | None = None,
         endpoint_address_channel: bool | None = None,
         endpoint_dhcp_enabled: bool | None = None,
+        device_ipv4: str | None = None,
+        device_dhcp_enabled: bool | None = None,
         evidence_method: str = (
             "pt_9_0_1_extension_api_has_no_registration_getter"
         ),
@@ -471,6 +502,10 @@ class PacketTracerEnterpriseVoiceRuntime:
                 endpoint_address_channel = bool(endpoint["address_channel"])
             if endpoint_dhcp_enabled is None:
                 endpoint_dhcp_enabled = endpoint["dhcp"]
+            if device_ipv4 is None:
+                device_ipv4 = str(endpoint["device_ipv4"])
+            if device_dhcp_enabled is None:
+                device_dhcp_enabled = endpoint["device_dhcp"]
         return RuntimePhoneRegistration(
             expectation_id=expectation.id,
             phone_id=expectation.phone_id,
@@ -484,6 +519,8 @@ class PacketTracerEnterpriseVoiceRuntime:
             endpoint_interface_present=bool(endpoint_interface_present),
             endpoint_address_channel=bool(endpoint_address_channel),
             endpoint_dhcp_enabled=endpoint_dhcp_enabled,
+            device_ipv4=device_ipv4 or "",
+            device_dhcp_enabled=device_dhcp_enabled,
             message=message,
         )
 

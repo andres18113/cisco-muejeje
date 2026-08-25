@@ -598,3 +598,84 @@ def test_an_svi_with_no_dhcp_getter_never_reads_as_dhcp_off():
     )[0]
 
     assert observed.endpoint_dhcp_enabled is None
+
+
+# --------------------------------------------------------------------------
+# 6: the phone as a device, not only the SVI the plan names
+# --------------------------------------------------------------------------
+
+
+def _device_runtime(pages, *, device_ipv4=None, device_dhcp=None):
+    """A Floor-1 runtime whose phone answers at device level as well."""
+
+    def send_and_wait(source, _timeout):
+        if "getPortCount" in source and "getIpAddress" in source:
+            body = {
+                "found": True, "port_found": True,
+                "address_channel": True, "ipv4": "",
+                "dhcp_channel": False, "dhcp": None,
+                "device_address_channel": device_ipv4 is not None,
+                "device_ipv4": device_ipv4 or "",
+                "device_dhcp_channel": device_dhcp is not None,
+                "device_dhcp": device_dhcp,
+            }
+            return json.dumps(body)
+        return "{}"
+
+    runtime = PacketTracerEnterpriseVoiceRuntime(
+        lambda: {"devices": [{"name": "F1-R4", "model": "2811"}]},
+        lambda _source: True,
+        send_and_wait,
+        ios_readiness=lambda _name: True,
+        registration_timeout_seconds=0.2,
+        convergence_interval_seconds=0.05,
+    )
+    for extension in _FLOOR1_EXTENSIONS:
+        runtime._registration_hosts[f"phone-{extension}"] = "F1-R4"  # noqa: SLF001
+    return _CountingCallControl(runtime, pages)
+
+
+def test_the_phone_is_asked_at_device_level_when_its_svi_cannot_answer():
+    """`Vlan20` exposes no DHCP flag, and that is not the end of the question.
+
+    The AccessPoint-PT probe that settled addressability on this build asked the
+    device AND every port, because Packet Tracer does not put the same getters
+    in both places. The phone read asked one port and stopped, so "the SVI has
+    no DHCP flag" closed a question the device itself may still answer.
+    """
+    control = _device_runtime(_floor1_pages(), device_dhcp=False)
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.endpoint_dhcp_enabled is None
+    assert observed.device_dhcp_enabled is False
+
+
+def test_an_address_the_device_holds_is_reported_without_overwriting_the_svi():
+    """The plan names Vlan20 and that claim stays Vlan20's; the device is extra.
+
+    A phone that holds an address somewhere its voice SVI does not report is a
+    finding about where to read, not a phone that acquired on the interface the
+    plan asked about. Both facts travel; neither is silently substituted.
+    """
+    control = _device_runtime(_floor1_pages(), device_ipv4="172.16.20.5")
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.endpoint_ipv4 == ""
+    assert observed.device_ipv4 == "172.16.20.5"
+
+
+def test_a_device_that_exposes_nothing_reports_nothing_rather_than_false():
+    control = _device_runtime(_floor1_pages())
+
+    observed = control.runtime.observe_registrations(
+        [_expectation("3011", phone="phone-3011")],
+    )[0]
+
+    assert observed.device_dhcp_enabled is None
+    assert observed.device_ipv4 == ""

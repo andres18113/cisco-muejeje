@@ -68,6 +68,15 @@ class RuntimePhoneRegistration(BaseModel):
     #: pool entirely. None is the third state and the honest default: the port
     #: exposes no DHCP getter, so nothing was read. Absent is not False.
     endpoint_dhcp_enabled: bool | None = None
+    #: The same two questions asked of the phone itself. Packet Tracer does not
+    #: put the same getters on a device and on its ports -- the AccessPoint-PT
+    #: probe that settled addressability on this build had to ask both -- and a
+    #: voice SVI that exposes no DHCP flag does not mean the phone has none.
+    #: These never overwrite the interface the plan named; they travel beside it,
+    #: because "the phone holds an address its SVI does not report" is a finding
+    #: about where to read and not a phone that acquired on Vlan20.
+    device_ipv4: str = ""
+    device_dhcp_enabled: bool | None = None
 
 
 class RuntimeCallObservation(BaseModel):
