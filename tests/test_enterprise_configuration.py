@@ -118,6 +118,15 @@ def _fixture() -> tuple[EnterprisePlan, TopologyPlan, ConfigurationPolicy]:
             enterprise_role="user_pc", site_id="hq",
             metadata={"pair_id": "pair-1", "addressing_preference": "dhcp"},
         ),
+        # A statically addressed endpoint that is not a phone. The phone used to
+        # play this part, and it was the wrong actor: E5 does not address a
+        # phone on a voice VLAN at all, so using one here made the static path
+        # depend on a claim the compiler no longer makes.
+        DevicePlan(
+            id="pc-2", name="__MCP_E5_STATIC_PC", model="PC-PT", category="pc",
+            enterprise_role="user_pc", site_id="hq",
+            metadata={"addressing_preference": "static"},
+        ),
     ]
     links = [
         LinkPlan(
@@ -139,6 +148,12 @@ def _fixture() -> tuple[EnterprisePlan, TopologyPlan, ConfigurationPolicy]:
             id="phone-pc", device_a="__MCP_E5_PHONE", device_a_id="phone-1",
             port_a="Port 2", device_b="__MCP_E5_PC", device_b_id="pc-1",
             port_b="FastEthernet0", link_role="phone_passthrough",
+        ),
+        LinkPlan(
+            id="access-static-pc", device_a="__MCP_E5_ACCESS", device_a_id="sw-access",
+            port_a="FastEthernet0/2", device_b="__MCP_E5_STATIC_PC",
+            device_b_id="pc-2", port_b="FastEthernet0",
+            link_role="endpoint_access",
         ),
     ]
     topology = TopologyPlan(
@@ -212,11 +227,15 @@ def test_access_port_uses_e4_interface_and_compiles_phone_data_voice_pair_once()
         if action.action_type is ConfigurationActionType.CONFIGURE_ACCESS_PORT
     ]
 
-    assert len(access) == 1
-    assert access[0].device_id == "sw-access"
-    assert access[0].interface == "FastEthernet0/1"
-    assert access[0].data_vlan_id == 10
-    assert access[0].voice_vlan_id == 20
+    paired = [item for item in access if "phone-1" in item.endpoint_ids]
+
+    # One port for the phone and the PC behind it, not one port each.
+    assert len(paired) == 1
+    assert paired[0].device_id == "sw-access"
+    assert paired[0].interface == "FastEthernet0/1"
+    assert paired[0].data_vlan_id == 10
+    assert paired[0].voice_vlan_id == 20
+    assert sorted(paired[0].endpoint_ids) == ["pc-1", "phone-1"]
 
 
 def test_trunks_use_exact_e4_ports_and_minimal_stably_sorted_vlan_sets():
@@ -301,7 +320,9 @@ def test_actions_are_topologically_sorted_and_dependencies_precede_consumers():
     access = next(
         action for action in plan.actions
         if action.action_type is ConfigurationActionType.CONFIGURE_ACCESS_PORT
+        and "phone-1" in action.endpoint_ids
     )
+    # Both VLANs it carries: the data VLAN and the voice VLAN.
     assert len(access.depends_on) == 2
 
 
@@ -365,27 +386,44 @@ def test_dhcp_pool_excludes_gateway_and_static_assignments_and_client_depends_on
         if action.action_type is ConfigurationActionType.SET_ENDPOINT_DHCP
     )
 
+    static = next(
+        action for action in plan.actions
+        if action.action_type is ConfigurationActionType.SET_ENDPOINT_STATIC
+    )
+
     assert pool.gateway == "198.18.150.1"
+    # The gateway and the statically addressed host are both held back, and the
+    # dynamic range starts after them.
     assert pool.excluded_ranges[0].start == "198.18.150.1"
-    assert pool.lease_start == "198.18.150.2"
+    assert static.ipv4 == "198.18.150.2"
+    assert any(
+        item.start <= static.ipv4 <= item.end for item in pool.excluded_ranges
+    )
+    assert pool.lease_start == "198.18.150.3"
     assert pool.lease_end == "198.18.150.254"
     assert pool.id in client.depends_on
 
 
-def test_phone_addressing_targets_logical_vlan1_not_a_cable_port():
-    plan = _compile().plan
-    phone = next(
-        action for action in plan.actions
-        if action.action_type is ConfigurationActionType.SET_ENDPOINT_STATIC
-        and action.device_id == "phone-1"
-    )
-    pc = next(
-        action for action in plan.actions
-        if action.action_type is ConfigurationActionType.SET_ENDPOINT_DHCP
-        and action.device_id == "pc-1"
-    )
+def test_a_phone_on_a_voice_vlan_gets_no_addressing_action_at_all():
+    """This test used to assert the phone was addressed on `Vlan1`.
 
-    assert phone.interface == "Vlan1"
+    Measured on build 9.0.1.0858, both candidate interfaces are unusable from
+    here: `Vlan1` goes down as soon as a voice VLAN is signalled, and the
+    `Vlan20` the phone brings up in its place does not exist yet when this plan
+    is preflighted against the live inventory. E5 builds the phone's network and
+    E7 claims its address; naming either interface here was the defect.
+    """
+    plan = _compile().plan
+    addressing = [
+        action for action in plan.actions
+        if action.action_type in {
+            ConfigurationActionType.SET_ENDPOINT_STATIC,
+            ConfigurationActionType.SET_ENDPOINT_DHCP,
+        }
+    ]
+    pc = next(item for item in addressing if item.device_id == "pc-1")
+
+    assert [item for item in addressing if item.device_id == "phone-1"] == []
     assert pc.interface == "FastEthernet0"
 
 

@@ -191,6 +191,7 @@ class SecurityCompiler:
             segment_networks,
             endpoints,
             endpoint_addresses,
+            self._voice_segment_hosts(voice_plan),
             devices,
             issues,
         )
@@ -429,6 +430,17 @@ class SecurityCompiler:
             ))
 
     @staticmethod
+    def _voice_segment_hosts(voice_plan) -> dict[str, tuple[str, str]]:
+        """A phone per voice segment, with the E5 action that placed it there."""
+        hosts: dict[str, tuple[str, str]] = {}
+        for assignment in getattr(voice_plan, "phone_assignments", []) or []:
+            hosts.setdefault(
+                assignment.voice_segment_id,
+                (assignment.phone_id, assignment.access_configuration_action_id),
+            )
+        return hosts
+
+    @staticmethod
     def _segment_l3(configuration: ConfigurationPlan):
         l3: dict[str, list[object]] = defaultdict(list)
         networks: dict[str, str] = {}
@@ -523,6 +535,7 @@ class SecurityCompiler:
         segment_networks: dict[str, str],
         endpoints: dict[str, list[object]],
         endpoint_addresses: dict[str, object],
+        voice_segment_hosts: dict[str, tuple[str, str]],
         devices: dict[str, DevicePlan],
         issues: list[ConfigurationIssue],
     ) -> list[dict[str, object]]:
@@ -531,7 +544,22 @@ class SecurityCompiler:
             source_l3 = segment_l3.get(policy.source_segment_id, [])
             source_network = segment_networks.get(policy.source_segment_id, "")
             source_endpoint = next(iter(endpoints.get(policy.source_segment_id, [])), None)
-            if not source_l3 or not source_network or source_endpoint is None:
+            # What a policy needs from its source segment is a host to probe
+            # from and a real E5 action to depend on -- not, specifically, an
+            # addressing action. A voice segment's hosts are phones, which E5
+            # deliberately does not address: the phone acquires on the SVI it
+            # creates for the voice VLAN, and it is the access port that puts it
+            # on that VLAN. That access port is the honest foundation here.
+            voice_host = voice_segment_hosts.get(policy.source_segment_id)
+            source_device_id = (
+                source_endpoint.device_id if source_endpoint is not None
+                else voice_host[0] if voice_host else ""
+            )
+            source_action_id = (
+                source_endpoint.id if source_endpoint is not None
+                else voice_host[1] if voice_host else ""
+            )
+            if not source_l3 or not source_network or not source_device_id:
                 issues.append(_error(
                     ConfigurationIssueCode.SECURITY_PLACEMENT_FAILED,
                     f"Source segment {policy.source_segment_id!r} lacks E5 L3 or endpoint state.",
@@ -567,7 +595,6 @@ class SecurityCompiler:
                 and not source_ports and not destination_ports
                 else SecurityProbeKind.UNOBSERVABLE
             )
-            source_action_id = source_endpoint.id
             destination_foundation_id = ""
             voice_call_expectation_id = ""
 
@@ -631,7 +658,7 @@ class SecurityCompiler:
                 if isinstance(destination_endpoint, SetEndpointStaticAddress):
                     destination_address = destination_endpoint.ipv4
 
-            source_device = devices.get(source_endpoint.device_id)
+            source_device = devices.get(source_device_id)
             destination_device = devices.get(destination_device_id)
             for placement, device in placement_devices:
                 resolved.append({
@@ -644,7 +671,7 @@ class SecurityCompiler:
                     "source_ports": source_ports,
                     "destination_ports": destination_ports,
                     "protocol": protocol,
-                    "source_device_id": source_endpoint.device_id,
+                    "source_device_id": source_device_id,
                     "source_device_name": source_device.name if source_device else "",
                     "destination_device_id": destination_device_id,
                     "destination_device_name": destination_device.name if destination_device else "",

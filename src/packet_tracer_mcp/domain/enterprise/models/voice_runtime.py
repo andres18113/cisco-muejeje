@@ -46,6 +46,12 @@ class RuntimePhoneRegistration(BaseModel):
     evidence_method: str = ""
     fresh_evidence: bool = False
     message: str = ""
+    #: What the call control reports the phone registered from, and what the
+    #: phone itself reports on its voice SVI. Two independent reads of one
+    #: fact, kept apart so that agreeing is evidence and differing is a defect.
+    call_control_ipv4: str = ""
+    endpoint_ipv4: str = ""
+    endpoint_interface: str = ""
 
 
 class RuntimeCallObservation(BaseModel):
@@ -66,6 +72,10 @@ class RuntimeCallObservation(BaseModel):
 
 class PhoneRegistrationResult(RuntimePhoneRegistration):
     failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
+    #: E7's own claim about the phone's address, made only where E5 handed
+    #: ownership over. UNKNOWN means E5 still owns it and E7 said nothing.
+    addressing_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
+    addressing_message: str = ""
 
 
 class CallVerificationResult(RuntimeCallObservation):
@@ -80,6 +90,7 @@ class PhoneVoiceOutcome(BaseModel):
     application_status: ActionExecutionStatus
     registration_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
     direct_registration_readback: FieldVerificationStatus = FieldVerificationStatus.UNKNOWN
+    addressing_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
     call_behavior_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
     usability_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
 

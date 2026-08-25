@@ -103,6 +103,11 @@ def _device_key(device: DevicePlan) -> str:
     return device.id or device.name
 
 
+def _phone_addressing_interface(voice_vlan: str) -> str:
+    """The SVI a 7960 actually addresses on, given what its port signals."""
+    return f"Vlan{voice_vlan}" if voice_vlan else "Vlan1"
+
+
 class InterfaceRoutingSemantics(str, Enum):
     """Que dice el plan sobre esta interfaz. Cuatro respuestas, no dos.
 
@@ -766,6 +771,10 @@ class ConfigurationCompiler:
                 switch_vlans[switch_id].add(voice_vlan)
             endpoint_access[endpoint_id] = action.id
             endpoint_access[f"interface:{endpoint_id}"] = endpoint_port
+            if voice_vlan is not None:
+                # The phone's addressed interface is decided here, by what this
+                # port signals, not by the phone's catalogue port list.
+                endpoint_access[f"voice_vlan:{endpoint_id}"] = str(voice_vlan)
             for member_id in endpoint_ids:
                 endpoint_access[member_id] = action.id
         return actions, endpoint_access, switch_vlans
@@ -1051,11 +1060,47 @@ class ConfigurationCompiler:
                 endpoint_id = _device_key(endpoint)
                 segment = endpoint_segments[endpoint_id]
                 interface = endpoint_interfaces.get(endpoint_id, "")
+                is_phone = endpoint.enterprise_role == DeviceRole.IP_PHONE.value
                 preference = endpoint.metadata.get("addressing_preference", "unspecified")
                 use_dhcp = preference == AddressingPreference.DHCP.value or (
                     preference == AddressingPreference.UNSPECIFIED.value and segment.dhcp
                 )
                 access_dependency = endpoint_access.get(endpoint_id, "")
+                signalled_voice_vlan = endpoint_access.get(
+                    f"voice_vlan:{endpoint_id}", "",
+                )
+                if is_phone and signalled_voice_vlan:
+                    # Measured on build 9.0.1.0858. A 7960 enumerates exactly
+                    # `PC`, `Switch` and `Vlan1`. Once its access port signals a
+                    # voice VLAN the phone itself instantiates `Vlan<voice>` --
+                    # up, powered, and the interface that carries the address --
+                    # and takes `Vlan1` down.
+                    #
+                    # Both candidates are therefore unaddressable from here.
+                    # `Vlan1` is the one interface guaranteed to hold nothing,
+                    # and `Vlan<voice>` does not exist yet when this plan is
+                    # preflighted, so naming it would fail target validation
+                    # against the live inventory.
+                    #
+                    # Nothing is lost: the phone leases by itself. What E5 owes
+                    # it is the network -- the VLAN, the voice access port, the
+                    # gateway and the pool -- and all of that is still compiled.
+                    # Option 150 and the call control are E7's, and so is the
+                    # claim that the phone acquired.
+                    issues.append(_warning(
+                        ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
+                        f"Phone {endpoint.name} acquires on the voice SVI it "
+                        f"creates itself, so E5 claims no addressing for it on "
+                        f"segment {segment_id}; E7 owns the acquisition.",
+                        endpoint_id,
+                    ))
+                    if use_dhcp:
+                        pending_dhcp.append((endpoint, segment, "", access_dependency))
+                    continue
+                if is_phone:
+                    # No voice VLAN was signalled, so the phone stays on `Vlan1`
+                    # and `Vlan1` stays up. That one E5 can address.
+                    interface = _phone_addressing_interface(signalled_voice_vlan)
                 if not interface:
                     # An address has to land on an interface. Emitting the action
                     # anyway produced a critical mutation aimed at nothing, which

@@ -221,6 +221,7 @@ class PacketTracerEnterpriseVoiceRuntime:
             interval_seconds=self._convergence_interval,
         ).wait()
         match = last.get("match")
+        endpoint_ipv4 = self._endpoint_address(expectation)
         if convergence.configuration_channel and isinstance(match, dict):
             return RuntimePhoneRegistration(
                 expectation_id=expectation.id,
@@ -230,6 +231,9 @@ class PacketTracerEnterpriseVoiceRuntime:
                 direct_readback=FieldVerificationStatus.VERIFIED,
                 evidence_method="fresh_privileged_show_ephone",
                 fresh_evidence=bool(last.get("fresh_output_observed")),
+                call_control_ipv4=str(match.get("ip_address") or ""),
+                endpoint_ipv4=endpoint_ipv4,
+                endpoint_interface=expectation.endpoint_interface,
                 message=(
                     f"SCCP registered at {match.get('ip_address')} after "
                     f"{convergence.attempts} observation(s)."
@@ -244,9 +248,40 @@ class PacketTracerEnterpriseVoiceRuntime:
                 direct_readback=FieldVerificationStatus.FAILED,
                 evidence_method="fresh_privileged_show_ephone",
                 fresh_evidence=bool(last.get("fresh_output_observed")),
+                call_control_ipv4=str(match.get("ip_address") or ""),
+                endpoint_ipv4=endpoint_ipv4,
+                endpoint_interface=expectation.endpoint_interface,
                 message="The current ephone row remained UNREGISTERED before timeout.",
             )
         return self._unobservable_registration(expectation)
+
+    def _endpoint_address(
+        self, expectation: VoiceVerificationExpectation,
+    ) -> str:
+        """What the phone itself reports on the SVI this plan addressed.
+
+        Independent of the call control's view on purpose: a phone that has
+        acquired but not registered, and a call control that remembers a phone
+        that is gone, are different failures and must not look alike.
+        """
+        device = expectation.endpoint_device_name
+        interface = expectation.endpoint_interface
+        if not device or not interface:
+            return ""
+        script = "".join((
+            "try{var d=ipc.network().getDevice(", json.dumps(device), ");",
+            "var want=", json.dumps(interface), ";var ip='';",
+            "if(d){for(var i=0;i<d.getPortCount();i++){var p=d.getPortAt(i);",
+            "if(p&&typeof p.getName==='function'&&String(p.getName())===want){",
+            "ip=typeof p.getIpAddress==='function'?String(p.getIpAddress()):'';break;}}}",
+            "reportResult(JSON.stringify({found:!!d,ipv4:ip}));",
+            "}catch(e){reportResult('ERROR:'+e);}",
+        ))
+        observed = self._json_result(script, 5.0)
+        address = str(observed.get("ipv4") or "")
+        # An unacquired interface reads 0.0.0.0. Reporting that as an address
+        # would let "no lease yet" masquerade as a disagreement between reads.
+        return "" if address in {"", "0.0.0.0"} else address
 
     @staticmethod
     def _unobservable_registration(

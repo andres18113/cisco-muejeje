@@ -66,12 +66,15 @@ def test_runtime_batches_ios_per_device_phase_and_endpoints_in_one_safe_call():
     assert len(sent) < len(plan.actions)
     assert sum("configurePcIp" in payload for payload in sent) == 1
     endpoint_payload = next(payload for payload in sent if "configurePcIp" in payload)
+    # Two endpoints, one bridge call. The phone is not among them: E5 addresses
+    # no phone that sits on a voice VLAN.
     assert "__MCP_E5_PC" in endpoint_payload
-    assert "__MCP_E5_PHONE" in endpoint_payload
-    assert "198.18.151.2" in endpoint_payload
+    assert "__MCP_E5_STATIC_PC" in endpoint_payload
+    assert "__MCP_E5_PHONE" not in endpoint_payload
+    assert "198.18.150.2" in endpoint_payload
     assert "255.255.255.0" in endpoint_payload
-    assert "198.18.151.1" in endpoint_payload
-    assert '"Vlan1"' in endpoint_payload
+    assert "198.18.150.1" in endpoint_payload
+    assert '"FastEthernet0"' in endpoint_payload
 
 
 def test_runtime_inventory_normalizes_port_objects_and_strings():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from collections.abc import Sequence
 from time import monotonic, time_ns
 from typing import Protocol
@@ -54,6 +55,67 @@ from ...domain.enterprise.services.configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
 )
+
+
+def _in_network(address: str, network: str, prefix: int) -> bool:
+    try:
+        host = ipaddress.ip_address(address)
+        subnet = ipaddress.ip_network(f"{network}/{prefix}", strict=True)
+    except ValueError:
+        return False
+    return (
+        host in subnet
+        and host not in {subnet.network_address, subnet.broadcast_address}
+    )
+
+
+def _addressing_claim(
+    assignment, observed: RuntimePhoneRegistration,
+) -> tuple[ActionExecutionStatus, str]:
+    """E7's claim about the address of a phone whose acquisition it owns.
+
+    Two reads have to agree: what the call control says the phone registered
+    from, and what the phone reports on its own voice SVI. Agreeing is the
+    evidence. Disagreeing is a defect and is reported as one -- it is not
+    resolved by preferring whichever read is more convenient.
+    """
+    if assignment is None or assignment.addressing_configuration_action_id:
+        # E5 addressed this phone itself and claimed it in its own read-back;
+        # E7 says nothing, because two plans must not claim one address.
+        return ActionExecutionStatus.UNKNOWN, ""
+    if not assignment.voice_network or not assignment.voice_prefix:
+        return (
+            ActionExecutionStatus.UNOBSERVABLE,
+            "The assignment carries no voice network to judge an address against.",
+        )
+    control = observed.call_control_ipv4
+    endpoint = observed.endpoint_ipv4
+    if not control and not endpoint:
+        return (
+            ActionExecutionStatus.UNOBSERVABLE,
+            "Neither the call control nor the phone reported an address.",
+        )
+    if control and endpoint and control != endpoint:
+        return (
+            ActionExecutionStatus.FAILED,
+            f"The call control reports {control} and {assignment.addressing_interface} "
+            f"reports {endpoint}; one phone cannot hold two addresses.",
+        )
+    seen = control or endpoint
+    if not _in_network(seen, assignment.voice_network, assignment.voice_prefix):
+        return (
+            ActionExecutionStatus.FAILED,
+            f"{seen} is outside the voice segment "
+            f"{assignment.voice_network}/{assignment.voice_prefix}.",
+        )
+    if not (control and endpoint):
+        # One channel is silent. The address that was seen is real, but a claim
+        # resting on a single read is weaker than this contract promises.
+        return (
+            ActionExecutionStatus.PARTIAL,
+            f"{seen} was observed on one channel only.",
+        )
+    return ActionExecutionStatus.VERIFIED, ""
 
 
 class VoiceRuntime(Protocol):
@@ -262,12 +324,18 @@ class VoiceApplicator:
                 observed_value={
                     "extension": item.extension,
                     "direct_readback": item.direct_readback.value,
+                    "addressing": item.addressing_status.value,
+                    "call_control_ipv4": item.call_control_ipv4,
+                    "endpoint_ipv4": item.endpoint_ipv4,
+                    "endpoint_interface": item.endpoint_interface,
                 },
                 backend=context.evidence_backend,
                 backend_version=context.evidence_backend_version,
                 environment_fingerprint=context.environment_semantic_hash,
                 capability_snapshot_hash=context.capability_snapshot_hash,
-                limitations=[item.message] if item.message else [],
+                limitations=[
+                    text for text in (item.message, item.addressing_message) if text
+                ],
             )
             for item in registrations
         ] + [
@@ -471,8 +539,13 @@ class VoiceApplicator:
                     if observed.status is ActionExecutionStatus.VERIFIED
                     else ConfigurationFailureCode.PHONE_REGISTRATION_TIMEOUT
                 )
+                addressing, addressing_message = _addressing_claim(
+                    plan.assignment_for_phone(expectation.phone_id), observed,
+                )
                 results.append(PhoneRegistrationResult(
                     **observed.model_dump(), failure_code=failure,
+                    addressing_status=addressing,
+                    addressing_message=addressing_message,
                 ))
             except Exception as exc:
                 results.append(PhoneRegistrationResult(
@@ -642,6 +715,10 @@ class VoiceApplicator:
                     registration.direct_readback if registration else FieldVerificationStatus.UNKNOWN
                 ),
                 call_behavior_status=call_status, usability_status=usability,
+                addressing_status=(
+                    registration.addressing_status if registration
+                    else ActionExecutionStatus.UNKNOWN
+                ),
             ))
         return outcomes
 

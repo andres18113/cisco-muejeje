@@ -77,16 +77,21 @@ def test_every_endpoint_expectation_carries_the_interface_it_addressed():
         )
 
 
-def test_the_phone_expectation_names_its_logical_addressing_interface():
-    """A 7960 is addressed on Vlan1, never on `Switch` or `PC`."""
+def test_no_expectation_is_raised_against_a_phone_at_all():
+    """The read-back fix was necessary but not sufficient for the 7960.
+
+    Reading the addressed interface stopped the runtime inventing observations
+    about ports nobody configured. It could not make `Vlan1` hold an address:
+    measured on build 9.0.1.0858, a phone whose access port signals a voice VLAN
+    brings up `Vlan<voice>` and takes `Vlan1` down. E5 now claims nothing here,
+    so there is no expectation to read back at all.
+    """
     pairs = _addressing(_plan())
 
-    phone = next(
-        expectation for expectation, _ in pairs
-        if expectation.device_name == "__MCP_E5_PHONE"
-    )
-
-    assert phone.expected["interface"] == "Vlan1"
+    assert pairs
+    assert "__MCP_E5_PHONE" not in {
+        expectation.device_name for expectation, _ in pairs
+    }
 
 
 def _readback_payloads(expectation) -> list[str]:
@@ -107,33 +112,35 @@ def _readback_payloads(expectation) -> list[str]:
 
 
 def test_endpoint_readback_is_parameterised_by_the_addressed_interface():
-    """Two endpoints, two different addressed interfaces, two different reads.
+    """One endpoint, one named interface, and the read asks about that one.
 
     Positional selection cannot produce this: it emits the same port walk for
-    every endpoint. Only a read-back that carries the addressed interface can
-    ask a phone about `Vlan1` and a PC about `FastEthernet0`.
+    every endpoint regardless of what was configured. Only a read-back that
+    carries the addressed interface can name it in the payload it sends.
     """
     pairs = _addressing(_plan())
-    phone = next(
-        item for item, _ in pairs if item.device_name == "__MCP_E5_PHONE"
-    )
     pc = next(item for item, _ in pairs if item.device_name == "__MCP_E5_PC")
+    static_pc = next(
+        item for item, _ in pairs if item.device_name == "__MCP_E5_STATIC_PC"
+    )
 
-    phone_payloads = _readback_payloads(phone)
     pc_payloads = _readback_payloads(pc)
+    static_payloads = _readback_payloads(static_pc)
 
-    assert phone_payloads and pc_payloads
-    assert all("Vlan1" in payload for payload in phone_payloads)
-    assert not any("Vlan1" in payload for payload in pc_payloads)
-    assert all("FastEthernet0" in payload for payload in pc_payloads)
-    assert not any("FastEthernet0" in payload for payload in phone_payloads)
+    assert pc_payloads and static_payloads
+    for payloads, name in (
+        (pc_payloads, "__MCP_E5_PC"), (static_payloads, "__MCP_E5_STATIC_PC"),
+    ):
+        assert all("FastEthernet0" in payload for payload in payloads)
+        assert all(name in payload for payload in payloads)
+    assert not any("__MCP_E5_STATIC_PC" in payload for payload in pc_payloads)
 
 
 def test_an_unexposed_addressed_interface_is_unobservable_not_contradicted():
     """Not having read the right port is not evidence that the plan is wrong."""
-    phone = next(
+    endpoint = next(
         item for item, _ in _addressing(_plan())
-        if item.device_name == "__MCP_E5_PHONE"
+        if item.device_name == "__MCP_E5_PC"
     )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
@@ -146,7 +153,7 @@ def test_an_unexposed_addressed_interface_is_unobservable_not_contradicted():
         convergence_interval_seconds=0.05,
     )
 
-    result = runtime.verify([phone])[0]
+    result = runtime.verify([endpoint])[0]
 
     assert result.status is ActionExecutionStatus.UNOBSERVABLE
     assert not result.fresh_evidence

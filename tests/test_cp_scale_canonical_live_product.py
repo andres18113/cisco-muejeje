@@ -38,10 +38,18 @@ def test_product_composes_the_exact_canonical_topology_and_plans():
     assert composition.control_plane is not None
     assert len(composition.topology.devices) == 314
     assert len(composition.topology.links) == 219
-    # 514, not 609: the 95 wireless IoT endpoints expose no addressable
-    # network interface, so no addressing is claimed for them. Their VLAN and
-    # its DHCP pool still exist -- what stopped is the pretence.
-    assert len(composition.configuration.actions) == 514
+    # 445, not 609. Two classes of endpoint are no longer addressed here and
+    # both for the same reason -- E5 cannot name an interface that will hold
+    # the address:
+    #
+    #   -95  the wireless IoT endpoints expose no network port at all;
+    #   -69  a 7960 on a voice VLAN brings up the SVI it acquires on only after
+    #        the VLAN is signalled, and takes `Vlan1` down doing it.
+    #
+    # Every VLAN, access port, gateway and DHCP pool that serves them still
+    # exists. What stopped is the pretence, and for the phones the claim moved
+    # to E7, which owns option 150 and the call control that make it true.
+    assert len(composition.configuration.actions) == 445
     assert len(composition.control_plane.actions) == 217
 
 

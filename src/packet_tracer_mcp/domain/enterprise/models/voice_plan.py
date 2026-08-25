@@ -237,6 +237,13 @@ class PhoneAssignment(BaseModel):
     access_configuration_action_id: str
     addressing_configuration_action_id: str
     binding_action_id: str
+    #: Carried so E7 can verify the acquisition it owns without reaching back
+    #: into E5's plan at apply time. An empty
+    #: `addressing_configuration_action_id` is what says E5 addressed nothing
+    #: here and the claim is E7's.
+    addressing_interface: str = ""
+    voice_network: str = ""
+    voice_prefix: int = 0
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
@@ -284,6 +291,11 @@ class VoiceVerificationExpectation(BaseModel):
     call_control_id: str
     action_id: str
     call_expectation_id: str = ""
+    #: The phone as the workspace names it, and the SVI it addresses on. Both
+    #: travel with the expectation so the runtime reads the interface this plan
+    #: chose rather than whichever one the device enumerates first.
+    endpoint_device_name: str = ""
+    endpoint_interface: str = ""
     depends_on: list[str] = Field(default_factory=list)
     verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
 

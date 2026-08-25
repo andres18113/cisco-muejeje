@@ -135,9 +135,15 @@ class VoiceCompiler:
         l3_by_device_segment: dict[tuple[str, str], list[object]] = defaultdict(list)
         dhcp_by_segment: dict[str, list[ConfigureDhcpPool]] = defaultdict(list)
         vlan_by_segment: dict[str, int] = {}
+        # VLAN ids repeat across sites by design -- every branch has its own
+        # VLAN 20 -- so a VLAN id alone does not identify a segment.
+        segment_by_vlan: dict[tuple[str, int], str] = {}
         for action in configuration.actions:
             if isinstance(action, CreateVlan):
                 vlan_by_segment[action.segment_id] = action.vlan_id
+                segment_by_vlan.setdefault(
+                    (action.site_id, action.vlan_id), action.segment_id,
+                )
             elif isinstance(action, ConfigureAccessPort):
                 for endpoint_id in action.endpoint_ids:
                     access_by_phone[endpoint_id].append(action)
@@ -149,20 +155,27 @@ class VoiceCompiler:
                 dhcp_by_segment[action.segment_id].append(action)
 
         foundations: list[VoiceFoundationRequirement] = []
-        usable: list[tuple[DevicePlan, ConfigureAccessPort, object]] = []
+        usable: list[tuple[DevicePlan, ConfigureAccessPort, object, str]] = []
         for phone in phones:
             phone_id = phone.id or phone.name
             access = sorted(access_by_phone.get(phone_id, []), key=lambda item: item.id)
             addressing = sorted(addressing_by_phone.get(phone_id, []), key=lambda item: item.id)
-            if not addressing:
-                issues.append(_error(
-                    ConfigurationIssueCode.PHONE_ADDRESSING_MISSING,
-                    f"Phone {phone.name} has no E5 endpoint addressing action.",
-                    phone_id,
-                ))
-                continue
-            selected_addressing = addressing[0]
-            expected_vlan = vlan_by_segment.get(selected_addressing.segment_id)
+            selected_addressing = addressing[0] if addressing else None
+            if selected_addressing is not None:
+                expected_vlan = vlan_by_segment.get(selected_addressing.segment_id)
+            else:
+                # E5 addressed nothing here, which is not an omission. A 7960
+                # whose port signals a voice VLAN acquires on the SVI it creates
+                # for that VLAN, and neither `Vlan1` nor `Vlan<voice>` is an
+                # interface E5 could honestly have named. The phone's segment is
+                # therefore read from what its access port signals.
+                expected_vlan = next(
+                    (
+                        item.voice_vlan_id for item in access
+                        if item.voice_vlan_id is not None
+                    ),
+                    None,
+                )
             voice_access = [
                 item for item in access
                 if expected_vlan is None
@@ -180,19 +193,53 @@ class VoiceCompiler:
                 ))
                 continue
             selected_access = voice_access[0]
-            usable.append((phone, selected_access, selected_addressing))
-            foundations.extend([
-                VoiceFoundationRequirement(
-                    id=_stable_id("foundation-vlan", phone_id, selected_access.id),
-                    kind="voice_vlan", source_id=selected_access.id,
-                    device_id=selected_access.device_id, site_id=phone.site_id,
-                ),
-                VoiceFoundationRequirement(
+            if selected_addressing is None and expected_vlan is None:
+                issues.append(_error(
+                    ConfigurationIssueCode.PHONE_ADDRESSING_MISSING,
+                    f"Phone {phone.name} has neither an E5 addressing action nor "
+                    f"a signalled voice VLAN, so its segment cannot be resolved.",
+                    phone_id,
+                ))
+                continue
+            voice_vlan_id = int(
+                selected_access.voice_vlan_id
+                if selected_access.voice_vlan_id is not None
+                else selected_access.data_vlan_id
+            )
+            voice_segment_id = (
+                selected_addressing.segment_id if selected_addressing is not None
+                else segment_by_vlan.get((phone.site_id, voice_vlan_id), "")
+            )
+            if not voice_segment_id:
+                issues.append(_error(
+                    ConfigurationIssueCode.PHONE_ADDRESSING_MISSING,
+                    f"Phone {phone.name} sits on VLAN {voice_vlan_id}, which maps "
+                    f"to no E5 segment, so its voice network cannot be resolved.",
+                    phone_id,
+                ))
+                continue
+            usable.append(
+                (phone, selected_access, selected_addressing, voice_segment_id),
+            )
+            foundations.append(VoiceFoundationRequirement(
+                id=_stable_id("foundation-vlan", phone_id, selected_access.id),
+                kind="voice_vlan", source_id=selected_access.id,
+                device_id=selected_access.device_id, site_id=phone.site_id,
+            ))
+            if selected_addressing is not None:
+                # E5 really did address this phone -- it has no voice VLAN, so
+                # it stays on `Vlan1` and `Vlan1` stays up -- and E5's evidence
+                # is a genuine precondition.
+                #
+                # Where E5 addressed nothing there is nothing to wait for, and
+                # requiring the acquisition would ask E7 to wait for its own
+                # output: option 150 and the call control are what make the
+                # lease complete, and they are in this plan.
+                foundations.append(VoiceFoundationRequirement(
                     id=_stable_id("foundation-address", phone_id, selected_addressing.id),
                     kind="phone_addressing", source_id=selected_addressing.id,
                     device_id=phone_id, site_id=phone.site_id,
-                ),
-            ])
+                ))
 
         phones_by_site: dict[str, list[str]] = defaultdict(list)
         usable_by_id = {}
@@ -230,7 +277,7 @@ class VoiceCompiler:
                 ))
                 continue
             segments = sorted({
-                item[2].segment_id for item in usable if item[0].site_id == site_id
+                item[3] for item in usable if item[0].site_id == site_id
             })
             candidates = sorted(
                 (
@@ -325,7 +372,7 @@ class VoiceCompiler:
                 ))
 
         for phone_id in sorted(usable_by_id, key=natural_identity_key):
-            phone, access, addressing = usable_by_id[phone_id]
+            phone, access, addressing, voice_segment_id = usable_by_id[phone_id]
             call_control_id = call_control_for_site[phone.site_id]
             host = call_control_data[call_control_id][0]
             binding_id = _stable_id("binding", call_control_id, phone_id, extensions[phone_id])
@@ -342,18 +389,42 @@ class VoiceCompiler:
                 extension=extensions[phone_id], registration_required=intent.registration_required,
                 directory_index=directory_index_by_phone[phone_id],
             ))
+            voice_vlan_id = int(
+                access.voice_vlan_id
+                if access.voice_vlan_id is not None else access.data_vlan_id
+            )
+            pool = next(
+                iter(sorted(dhcp_by_segment.get(voice_segment_id, []),
+                            key=lambda item: item.id)),
+                None,
+            )
             assignments.append(PhoneAssignment(
                 phone_id=phone_id, physical_device_name=phone.name, model=phone.model,
                 site_id=phone.site_id, floor_id=phone.floor_id, zone_id=phone.zone_id,
                 extension=extensions[phone_id], call_control_id=call_control_id,
-                voice_vlan_id=int(
-                    access.voice_vlan_id
-                    if access.voice_vlan_id is not None else access.data_vlan_id
-                ),
-                voice_segment_id=addressing.segment_id,
+                voice_vlan_id=voice_vlan_id,
+                voice_segment_id=voice_segment_id,
                 access_configuration_action_id=access.id,
-                addressing_configuration_action_id=addressing.id,
+                addressing_configuration_action_id=(
+                    addressing.id if addressing is not None else ""
+                ),
                 binding_action_id=binding_id,
+                # Where E5 addressed the phone, read back what E5 named. Where it
+                # did not, the phone acquires on the SVI it creates for the voice
+                # VLAN, and the range it can acquire from is the pool that serves
+                # that segment.
+                addressing_interface=(
+                    getattr(addressing, "interface", "") if addressing is not None
+                    else f"Vlan{voice_vlan_id}"
+                ),
+                voice_network=(
+                    getattr(addressing, "network", "") if addressing is not None
+                    else (pool.network if pool is not None else "")
+                ),
+                voice_prefix=int(
+                    (getattr(addressing, "prefix", 0) or 0) if addressing is not None
+                    else (pool.prefix if pool is not None else 0)
+                ),
                 metadata=dict(sorted(phone.metadata.items())),
             ))
 
@@ -613,6 +684,8 @@ class VoiceCompiler:
                 phone_id=assignment.phone_id, extension=assignment.extension,
                 call_control_id=assignment.call_control_id,
                 action_id=assignment.binding_action_id,
+                endpoint_device_name=assignment.physical_device_name,
+                endpoint_interface=assignment.addressing_interface,
             ))
         for site_id in sorted(by_site, key=natural_identity_key):
             site_phones = sorted(by_site[site_id], key=lambda item: natural_identity_key(item.phone_id))

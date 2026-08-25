@@ -268,7 +268,7 @@ def test_phone_binding_reuses_e4_identity_e5_voice_vlan_and_addressing():
     assert assignment.call_control_id == "call-control/hq/r1"
 
 
-def test_missing_call_control_voice_vlan_or_phone_addressing_blocks_compile():
+def test_missing_call_control_or_voice_vlan_blocks_compile():
     enterprise, topology, configuration, intent, capabilities = _fixture()
     intent.call_control_device_ids = {"hq": "missing"}
     missing_host = compile_enterprise_voice(
@@ -286,15 +286,48 @@ def test_missing_call_control_voice_vlan_or_phone_addressing_blocks_compile():
     )
     assert any(item.code.value == "FOUNDATIONAL_VOICE_VLAN_MISSING" for item in missing_vlan.issues)
 
+
+
+def test_a_phone_e5_did_not_address_is_resolved_from_what_its_port_signals():
+    """Absent addressing is the normal case now, not a missing foundation.
+
+    E5 does not address a phone that sits on a voice VLAN: the SVI the phone
+    will use does not exist yet when E5 is preflighted, and `Vlan1` goes down as
+    soon as the VLAN is signalled. The phone's segment is read from its access
+    port instead, and the compile stands.
+    """
     enterprise, topology, configuration, intent, capabilities = _fixture()
     configuration.actions = [
         item for item in configuration.actions
-        if not (isinstance(item, SetEndpointDhcp) and item.device_id == "phone-1")
+        if not isinstance(item, SetEndpointDhcp)
     ]
-    missing_address = compile_enterprise_voice(
+
+    resolved = compile_enterprise_voice(
         intent, enterprise, topology, configuration, capabilities=capabilities,
     )
-    assert any(item.code.value == "PHONE_ADDRESSING_MISSING" for item in missing_address.issues)
+
+    assert resolved.is_valid, [item.message for item in resolved.issues]
+    assignment = resolved.plan.phone_assignments[0]
+    assert assignment.addressing_configuration_action_id == ""
+    assert assignment.voice_segment_id == "hq-voice"
+    assert assignment.addressing_interface == "Vlan20"
+
+
+def test_a_phone_on_a_vlan_no_segment_owns_cannot_be_resolved():
+    """Fail-closed: without a segment there is no network to judge it against."""
+    enterprise, topology, configuration, intent, capabilities = _fixture()
+    configuration.actions = [
+        item for item in configuration.actions
+        if not isinstance(item, (SetEndpointDhcp, CreateVlan))
+    ]
+
+    unresolved = compile_enterprise_voice(
+        intent, enterprise, topology, configuration, capabilities=capabilities,
+    )
+
+    assert any(
+        item.code.value == "PHONE_ADDRESSING_MISSING" for item in unresolved.issues
+    )
 
 
 def test_call_control_address_is_reused_from_e5_and_not_invented():
