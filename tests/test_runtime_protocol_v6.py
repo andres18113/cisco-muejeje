@@ -3,7 +3,7 @@
 These tests describe the protocol contract and nothing else. No transport is
 imported, nothing is dispatched, and no claim is made about the Script Engine.
 The runtime-session *behaviour* (first-writer-wins persistence, stability across
-a webview reopen, change across a PT restart) is UNVERIFIED_UNTIL_PHASE_1B by
+a webview reopen, change across a PT restart) is UNVERIFIED_UNTIL_PHASE_1B_LIVE by
 construction: Phase 1A sends nothing, so it can only pin schema, encoding and
 parse behaviour.
 

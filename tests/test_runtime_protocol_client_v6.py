@@ -165,6 +165,68 @@ def test_a_dishonest_timeout_budget_is_refused_at_construction(budget):
         RuntimeProtocolClient(RecordingSeam(answers(None)), timeout_seconds=budget)
 
 
+NON_FINITE_BUDGETS = [
+    pytest.param(float("nan"), id="nan"),
+    pytest.param(float("inf"), id="positive-infinity"),
+    pytest.param(float("-inf"), id="negative-infinity"),
+]
+
+
+@pytest.mark.parametrize("budget", NON_FINITE_BUDGETS)
+def test_a_non_finite_timeout_budget_is_refused(budget):
+    """A value that is not a finite duration is not a budget.
+
+    NaN and positive infinity are both floats, and neither compares `< 0`, so a
+    sign test alone lets both through -- and a caller would then hand a channel
+    a wait it can never satisfy. `live_bridge.py:74` already refuses them with
+    `math.isfinite`; the *property* is reused here, the function is not, because
+    importing the HTTP transport for a one-line check would break the
+    Phase-1B-OFFLINE dependency boundary.
+    """
+    with pytest.raises(ValueError):
+        RuntimeProtocolClient(RecordingSeam(answers(None)), timeout_seconds=budget)
+
+
+@pytest.mark.parametrize("budget", NON_FINITE_BUDGETS)
+def test_a_refused_budget_never_reaches_the_seam(budget):
+    """Refused at construction, so nothing was dispatched to find out."""
+    seam = RecordingSeam(answers(None))
+
+    with pytest.raises(ValueError):
+        RuntimeProtocolClient(seam, timeout_seconds=budget)
+
+    assert seam.calls == []
+
+
+@pytest.mark.parametrize("budget", [0, 0.0, 1, 2.5, 30.0])
+def test_a_finite_non_negative_budget_is_accepted_and_passed_through(budget):
+    """Zero stays allowed, and an accepted budget reaches the seam unaltered.
+
+    `type` as well as value: `bounded_result_wait` normalises through `float()`
+    before clamping, and this layer does neither. What the caller chose is what
+    the channel is asked for.
+    """
+    seam = RecordingSeam(lambda payload: conforming(payload))
+    client = RuntimeProtocolClient(seam, timeout_seconds=budget)
+
+    client.identify()
+
+    _, sent_timeout = seam.calls[0]
+    assert sent_timeout == budget
+    assert type(sent_timeout) is type(budget)
+
+
+def test_no_ceiling_is_imposed_on_an_accepted_budget():
+    """`bounded_result_wait` clamps to a maximum because it owns an HTTP result
+    queue and measured one. This layer owns no channel and has measured nothing,
+    so it imposes no ceiling and no clamp."""
+    seam = RecordingSeam(lambda payload: conforming(payload))
+
+    RuntimeProtocolClient(seam, timeout_seconds=86_400.0).identify()
+
+    assert seam.calls[0][1] == 86_400.0
+
+
 def test_the_timeout_budget_has_no_default():
     """No measurement backs a number here, so none is invented.
 

@@ -51,6 +51,7 @@ policy, and it needs a caller that knows which channel it is talking to.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -108,7 +109,7 @@ class RuntimeProtocolClient:
         *,
         timeout_seconds: float,
     ) -> None:
-        """The budget is required, and belongs to the caller.
+        """The budget is required, finite, and belongs to the caller.
 
         No default: Phase 1B-OFFLINE dispatches nothing real, so any number
         chosen here would be a policy with no measurement behind it. The
@@ -116,15 +117,29 @@ class RuntimeProtocolClient:
         each sit next to the live measurement that produced them, and V6 has no
         such measurement yet.
 
-        The value is handed to the callable and never interpreted here. This
-        layer does not time anything.
+        **Finite** is a separate requirement from non-negative, and a sign
+        test does not imply it: ``float('nan')`` and ``float('inf')`` are both
+        floats, and neither compares ``< 0``. Either would reach a channel as
+        a wait it can never satisfy. ``live_bridge.bounded_result_wait``
+        (``live_bridge.py:74``) already refuses non-finite waits with
+        ``math.isfinite``; the property is reused here and the function is
+        not, because importing the HTTP transport for one check would break
+        this phase's dependency boundary -- and because that function also
+        clamps to a measured HTTP ceiling, which this layer has no basis for.
+
+        Zero stays allowed. There is no default, no maximum and no clamping:
+        the value is handed to the callable unaltered and never interpreted
+        here. This layer does not time anything.
         """
         if (
             isinstance(timeout_seconds, bool)
             or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
             or timeout_seconds < 0
         ):
-            raise ValueError("timeout_seconds must be non-negative.")
+            raise ValueError(
+                "timeout_seconds must be a finite, non-negative number."
+            )
         self._send_and_wait = send_and_wait
         self._timeout = timeout_seconds
 

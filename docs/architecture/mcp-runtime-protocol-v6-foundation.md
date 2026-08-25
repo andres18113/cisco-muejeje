@@ -5,7 +5,8 @@ Branch: `feature/runtime-protocol-v6-foundation`
 Base: `43eba72f18ad4e29e0ff292ebca4dbbd4a47232e` (CP-LIVE checkpoint on `feature/runtime-ripv2`)
 Phase: 0 — audit (accepted) · 0.5 — design corrections (accepted) · 1A — implemented ·
 1A.1 — operation correlation hardened ·
-1B-OFFLINE — client orchestration
+1B-OFFLINE — client orchestration ·
+1B.1 — finite timeout contract
 
 This document is an audit of the **deployed V5 bridge**, the design corrected
 after it, and the record of the first implemented slice. No `.pts` was rebuilt,
@@ -789,6 +790,18 @@ it is handed one.
 rather than promised in prose: a document nobody classified and a classification
 of nothing are both impossible to construct.
 
+**The timeout budget.** Required, with no default, and it must be a *finite*,
+non-negative number. Finite is a separate requirement from non-negative and is
+not implied by it: `float("nan")` and `float("inf")` are both floats and neither
+compares `< 0`, so a sign test alone hands a channel a wait it can never
+satisfy. `live_bridge.bounded_result_wait` (`live_bridge.py:74`) already refuses
+non-finite waits with `math.isfinite`; the *property* is reused here and the
+function is not — importing the HTTP transport for one check would break this
+phase's dependency boundary, and that function additionally clamps to a measured
+HTTP ceiling this layer has no basis for. Zero stays allowed. There is no
+default, no maximum and no clamping: an accepted budget reaches the seam with its
+value and its type unaltered.
+
 **`NO_RESPONSE_DOCUMENT`.** `raw_response is None` says one thing, and the model
 says it structurally instead of naming a state. The seam's return type is
 `str | None`, so the value carries no provenance: naming it TIMEOUT would read a
@@ -1243,8 +1256,8 @@ in 1A: it exports a subset, and every test imports these submodules by full path
 
 | File | Change |
 |---|---|
-| `src/packet_tracer_mcp/infrastructure/execution/runtime_protocol_client.py` | **new** (152 lines) |
-| `tests/test_runtime_protocol_client_v6.py` | **new** (680 lines) |
+| `src/packet_tracer_mcp/infrastructure/execution/runtime_protocol_client.py` | **new** (167 lines) |
+| `tests/test_runtime_protocol_client_v6.py` | **new** (742 lines) |
 | `docs/architecture/mcp-runtime-protocol-v6-foundation.md` | this document |
 
 `SHARED_FILES_CHANGED` = **NONE**, verified by `git diff --name-only` over
@@ -1252,9 +1265,10 @@ in 1A: it exports a subset, and every test imports these submodules by full path
 `adapters/`, `tools/` — all empty. The two Phase-1A modules are byte-identical
 to their 1A.1 state: the client was built *on* them, not *into* them.
 
-`PHASE1B_OFFLINE_TESTS` — 54 tests, all passing. Written before the module
-existed: the first run failed at collection with nothing to import, which is the
-only honest fail-first for a file that does not yet exist.
+`PHASE1B_OFFLINE_TESTS` — 66 tests, all passing (54 as built, +12 for the
+finite-budget correction in 1B.1). Written before the module existed: the first
+run failed at collection with nothing to import, which is the only honest
+fail-first for a file that does not yet exist.
 
 1. One dispatch per attempt, asserted over eight responder behaviours — no
    response, legacy text, malformed V6, foreign version, both correlation
@@ -1262,9 +1276,14 @@ only honest fail-first for a file that does not yet exist.
    module, and exactly one call site for the seam in its source.
 2. The payload handed to the seam is the encoded payload, unaltered, and the
    timeout budget reaches it unchanged.
-3. The budget has **no default** — omitting it is a `TypeError` — and five
-   dishonest values are refused at construction. No measurement backs a number
-   here, and this repository keeps its measured budgets next to the measurement.
+3. The budget has **no default** — omitting it is a `TypeError` — and must be a
+   finite, non-negative number. Five dishonest values and all three non-finite
+   ones (NaN, positive and negative infinity) are refused at construction, and
+   the seam is never reached for any of them. Zero stays allowed, and an
+   accepted budget arrives at the seam with its value *and* its type unaltered —
+   no default, no ceiling, no clamping, none of which this layer has measured.
+   No measurement backs a number here, and this repository keeps its measured
+   budgets next to the measurement that produced them.
 4. `None` yields `raw_response is None` **and** `parse_outcome is None`, and the
    parser is never called: a stand-in that raises on any call is installed, and
    the attempt still comes back empty.
@@ -1307,12 +1326,13 @@ the dispatched-command path; that the seed survives across commands, across a
 webview reopen, or changes across a PT restart; that both channels agree on one
 session; and `extension_version`. All **UNVERIFIED_UNTIL_PHASE_1B_LIVE**.
 
-`REGRESSION`: the full suite runs **37 failed, 2872 passed, 6 skipped**. With the
+`REGRESSION`: the full suite runs **37 failed, 2884 passed, 6 skipped**. With the
 six V6 files removed, **37 failed, 2675 passed, 6 skipped**; the failure lists
 were captured and diffed and are byte-identical, and identical again to the list
-recorded at 1A.1. The delta is exactly +197 passing (143 protocol + 54 client).
-The base state has not moved across 1A, 1A.1 and 1B-OFFLINE: those 37 belong to
-it, and none of this work touched them.
+recorded at 1A.1. The delta is exactly +209 passing (143 protocol + 66 client).
+The base state has not moved across 1A, 1A.1, 1B-OFFLINE and 1B.1 — 2675 passed
+against the same 37 every time. Those 37 belong to it, and none of this work
+touched them.
 
 `PHASE1B_OFFLINE_RISKS`:
 

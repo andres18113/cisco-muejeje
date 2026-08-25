@@ -48,7 +48,7 @@ primitive that is not proven available in the Script Engine, and guessing one is
 exactly what this repository forbids.
 
 None of that seeding behaviour is established by Phase 1A, which executes
-nothing. It stays UNVERIFIED_UNTIL_PHASE_1B.
+nothing. It stays UNVERIFIED_UNTIL_PHASE_1B_LIVE.
 """
 
 from __future__ import annotations

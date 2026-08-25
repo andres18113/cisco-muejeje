@@ -426,7 +426,7 @@ def test_the_encoder_does_not_fall_back_to_legacy_error_prefixes():
 # generated text parses, that its branches build a conforming envelope, and that
 # its seed is first-writer-wins in a conforming engine. It establishes nothing
 # about Packet Tracer's Script Engine: whether `this` is the global there, and
-# whether the seed survives real dispatches, stay UNVERIFIED_UNTIL_PHASE_1B.
+# whether the seed survives real dispatches, stay UNVERIFIED_UNTIL_PHASE_1B_LIVE.
 
 NODE = shutil.which("node")
 

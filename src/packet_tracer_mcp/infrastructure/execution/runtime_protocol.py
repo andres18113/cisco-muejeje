@@ -55,7 +55,7 @@ What Phase 1A does not establish
 Nothing about the Script Engine. This module sends nothing, so every claim about
 runtime-session behaviour -- first-writer-wins seeding, stability across a
 webview reopen, change across a Packet Tracer restart -- stays
-UNVERIFIED_UNTIL_PHASE_1B. The schema can express those facts; only a live run
+UNVERIFIED_UNTIL_PHASE_1B_LIVE. The schema can express those facts; only a live run
 can establish them.
 """
 
