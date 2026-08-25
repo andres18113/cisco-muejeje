@@ -149,7 +149,8 @@ GOVERNED_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_BRANCH = "feature/runtime-ripv2"
 EXPECTED_UPSTREAM = "personal/feature/runtime-ripv2"
 EVIDENCE_PATH = GOVERNED_ROOT / "data" / "cp-scale" / "live-canonical-progress.json"
-CHECKPOINT_PATH = (
+CHECKPOINT_PATH = EVIDENCE_PATH.parent / "live-canonical-checkpoint.json"
+FINAL_CHECKPOINT_PATH = (
     GOVERNED_ROOT / "docs" / "reference" / "cp-scale"
     / "live_canonical_checkpoint.json"
 )
@@ -307,7 +308,12 @@ def _write_evidence(evidence: dict[str, object]) -> None:
     os.replace(temporary, EVIDENCE_PATH)
 
 
-def _write_checkpoint_summary(stage: str, evidence: dict[str, object]) -> None:
+def _write_checkpoint_summary(
+    stage: str,
+    evidence: dict[str, object],
+    *,
+    destination: Path = CHECKPOINT_PATH,
+) -> None:
     stages = evidence.get("stages", [])
     latest = stages[-1] if isinstance(stages, list) and stages else {}
     if stage == "full-qualification":
@@ -342,14 +348,14 @@ def _write_checkpoint_summary(stage: str, evidence: dict[str, object]) -> None:
         "workspace_verified_twice": latest.get("workspace_verified_twice", False),
         "raw_evidence_sha256": raw_digest,
     }
-    CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temporary = CHECKPOINT_PATH.with_suffix(".json.tmp")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(".json.tmp")
     payload = json.dumps(summary, ensure_ascii=False, indent=2) + "\n"
     with temporary.open("w", encoding="utf-8", newline="\n") as stream:
         stream.write(payload)
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(temporary, CHECKPOINT_PATH)
+    os.replace(temporary, destination)
 
 
 def _git_output(*arguments: str) -> str:
@@ -1407,6 +1413,14 @@ def run(
         evidence["presentation_retained"] = True
         evidence["closure"] = "CP_SCALE_GOVERNED_VERIFIED"
         _write_evidence(evidence)
+        # Only a terminal, fully verified run may update the tracked reference
+        # summary. Intermediate progress remains durable under ignored data/
+        # so its own repository gate never demands a progress commit.
+        _write_checkpoint_summary(
+            "full-qualification",
+            evidence,
+            destination=FINAL_CHECKPOINT_PATH,
+        )
         retain_confirmed = True
         print(json.dumps({
             "event": "PRESENTATION_RETAINED",

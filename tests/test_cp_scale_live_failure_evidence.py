@@ -30,16 +30,20 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 _PROBE = '''
-import json, sys
+import inspect, json, subprocess, sys
 from types import SimpleNamespace
 
 sys.path.insert(0, {root!r})
 sys.path.insert(0, {src!r})
 
 from tools.cp_scale_canonical_live import (
+    CHECKPOINT_PATH,
+    EVIDENCE_PATH,
+    FINAL_CHECKPOINT_PATH,
     CanonicalLiveFailure,
     _execute_stage,
     _trunk_vlan_traversal_evidence,
+    _write_checkpoint_summary,
 )
 import tools.cp_scale_canonical_live as live
 from packet_tracer_mcp.domain.enterprise.models.configuration import VerificationKind
@@ -52,6 +56,23 @@ from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
 )
 
 verdict = {{}}
+
+verdict["runtime_checkpoint_sits_with_ignored_evidence"] = (
+    CHECKPOINT_PATH.parent == EVIDENCE_PATH.parent
+)
+verdict["runtime_checkpoint_is_gitignored"] = subprocess.run(
+    ["git", "check-ignore", "-q", str(CHECKPOINT_PATH)],
+    cwd={root!r},
+).returncode == 0
+verdict["runtime_checkpoint_is_writer_default"] = (
+    inspect.signature(_write_checkpoint_summary)
+    .parameters["destination"].default == CHECKPOINT_PATH
+)
+verdict["final_checkpoint_is_tracked"] = subprocess.run(
+    ["git", "ls-files", "--error-unmatch", str(FINAL_CHECKPOINT_PATH)],
+    cwd={root!r},
+    capture_output=True,
+).returncode == 0
 
 carried = CanonicalLiveFailure("boom", stage_evidence={{"stage": "floor1"}})
 verdict["carries_evidence"] = carried.stage_evidence == {{"stage": "floor1"}}
@@ -194,6 +215,16 @@ def verdict() -> dict:
 def test_canonical_live_failure_carries_the_stage_evidence_it_had(verdict):
     assert verdict["carries_evidence"]
     assert verdict["message_intact"]
+
+
+def test_runtime_checkpoint_summary_cannot_dirty_the_governed_worktree(verdict):
+    assert verdict["runtime_checkpoint_sits_with_ignored_evidence"]
+    assert verdict["runtime_checkpoint_is_gitignored"]
+    assert verdict["runtime_checkpoint_is_writer_default"]
+
+
+def test_terminal_reference_checkpoint_remains_a_tracked_artifact(verdict):
+    assert verdict["final_checkpoint_is_tracked"]
 
 
 def test_canonical_live_failure_without_evidence_still_behaves_as_before(verdict):

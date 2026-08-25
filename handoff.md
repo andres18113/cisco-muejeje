@@ -6,7 +6,7 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 43eba72f18ad4e29e0ff292ebca4dbbd4a47232e
+CURRENT_PUSHED_HEAD = 8b4cdd4ac8da729b334085783dced5c7a5a0353a
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
 ROUTING_CORE = GOVERNED VERIFIED (latest fresh checkpoint 43eba72)
@@ -26,9 +26,9 @@ checkout-local `.venv` and a writable, gitignored pytest basetemp. The failed
 `router4-switch10` run cleaned every owned device and independently re-observed the empty
 semantic workspace twice. Packet Tracer is open; its workspace is empty.
 
-The 45-second forwarding budget and failure-evidence ordering changes described
-below are not yet checkpointed in this paragraph's HEAD. Commit and push them
-before the next LIVE mutation.
+The 45-second forwarding budget and failure-evidence ordering changes are
+checkpointed in this HEAD. The runtime-checkpoint path fix described below is
+not yet checkpointed; commit and push it before the next LIVE mutation.
 
 ## Decisive powered-phone measurement -- World A refuted
 
@@ -140,10 +140,35 @@ verdict after a bounded 45 seconds, and the runner writes the named projection
 before contradiction handling. Focused: 9 passed. Affected: 93 passed. Full:
 2720 passed / 0 failed.
 
+## Pre-LIVE checkpoint self-dirty defect -- fresh and independently reproduced
+
+FACT: `8b4cdd4` is the immutable pushed pre-LIVE checkpoint for the 45-second
+trunk observation. A fresh governed run reached routing core VERIFIED on that
+exact HEAD with authenticated HTTP and wrote its checkpoint evidence.
+
+FACT: the runner then modified tracked
+`docs/reference/cp-scale/live_canonical_checkpoint.json` itself and its own
+resume gate immediately refused to advance because the worktree was dirty. The
+run exited rather than bypassing the gate. Cleanup was VERIFIED; both fresh
+post-cleanup inventories contained zero semantic devices.
+
+FACT: this is a runner lifecycle defect exposed by the required no-progress-
+commit discipline. The complete failure evidence remains under ignored
+`data/cp-scale/live-canonical-progress.json`; the accidentally changed tracked
+summary was restored byte-for-byte to the HEAD version.
+
+FAIL-FIRST: `test_runtime_checkpoint_summary_cannot_dirty_the_governed_worktree`
+failed because the runtime summary was neither colocated with ignored evidence
+nor gitignored. The minimum fix makes ignored `data/cp-scale/` the default
+checkpoint destination during every in-flight stage, while the tracked
+reference summary is published only after terminal
+`CP_SCALE_GOVERNED_VERIFIED` retention. Focused/affected: 21 passed. Full:
+2722 passed / 0 failed.
+
 ## NEXT_ACTIVE_STEP
 
-1. Commit and push the forwarding-budget/evidence-ordering fix; require a clean
-   exact upstream HEAD before LIVE.
+1. Commit and push only the runtime-checkpoint path fix; require a clean exact
+   upstream HEAD before LIVE.
 2. Re-run governed routing-core -> router4-switch10 -> Floor 1 without stopping
    a stage mid-flight.
 3. Require the fresh 45-second `router4-switch10` observation to decide whether
@@ -186,6 +211,11 @@ FACT, fresh run ending after checkpoint `43eba72`: authenticated HTTP again
 connected fresh, remained healthy through routing core and the resume gate, and
 did not create the configuration failure. The runner stopped the transport
 normally after its governed failure and verified cleanup.
+
+FACT, fresh run at `8b4cdd4`: authenticated HTTP connected and routing core
+completed. The failure was the runner's repository gate after its own tracked
+summary write, not an HTTP disconnect. Transport stopped normally and cleanup
+was verified.
 
 UNOBSERVABLE: whether Packet Tracer has actually **loaded** the patched
 `interface.js`. Nothing readable from Python distinguishes the patched loop from
@@ -248,8 +278,8 @@ d0db204 docs(cp-scale): checkpoint governed routing core
 78996aa docs(cp-scale): checkpoint router4-switch10
 6eb0d8e fix(cp-scale): verify voice VLAN traversal on trunks
 43eba72 docs(cp-scale): checkpoint fresh routing core
+8b4cdd4 fix(cp-scale): allow bounded trunk forwarding convergence
 ```
 
-The forwarding-budget/evidence-ordering implementation and this handoff update
-are the next checkpoint; record their final pushed HEAD here on the following
-turn.
+The runtime-checkpoint path implementation and this handoff update are the next
+fix checkpoint; record their final pushed HEAD here on the following turn.
