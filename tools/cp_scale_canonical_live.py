@@ -72,13 +72,16 @@ from packet_tracer_mcp.application.use_cases.reconcile_canonical_stage import (
     canonical_delta_deployment_error,
     reconcile_canonical_stage_deployment,
 )
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
+    CapabilityStatus,
+)
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
+    VerificationKind,
+)
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationRuntimeContext,
-)
-from packet_tracer_mcp.domain.enterprise.models.capabilities import (
-    CapabilityStatus,
 )
 from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
@@ -468,6 +471,37 @@ def _attempted_device_ids(deployment) -> set[str]:
     }
 
 
+def _trunk_vlan_traversal_evidence(plan, result) -> list[dict[str, object]]:
+    """Project typed trunk verification into human-auditable path evidence."""
+    expectations = {
+        item.id: item for item in plan.verification_expectations
+        if item.kind is VerificationKind.TRUNK
+    }
+    evidence: list[dict[str, object]] = []
+    for item in result.verification_results:
+        expectation = expectations.get(item.expectation_id)
+        if expectation is None:
+            continue
+        evidence.append({
+            "expectation_id": item.expectation_id,
+            "device_id": expectation.device_id,
+            "device_name": expectation.device_name,
+            "interface": str(expectation.expected.get("interface", "")),
+            "expected_vlans": sorted({
+                int(vlan)
+                for vlan in expectation.expected.get("allowed_vlans", [])
+            }),
+            "status": item.status.value,
+            "evidence_method": item.evidence_method,
+            "fresh_evidence": item.fresh_evidence,
+            "fields": {
+                name: status.value for name, status in sorted(item.fields.items())
+            },
+            "message": item.message,
+        })
+    return evidence
+
+
 def _stage_voice(
     projection,
     *,
@@ -744,6 +778,9 @@ def _execute_stage(
             projection.configuration, configuration,
         )
     evidence["configuration"] = configuration.model_dump(mode="json")
+    evidence["trunk_vlan_traversal"] = _trunk_vlan_traversal_evidence(
+        projection.configuration, configuration,
+    )
     evidence["configuration_acceptance_error"] = configuration_error
     if configuration_error:
         raise _failed(

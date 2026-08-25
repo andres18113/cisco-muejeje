@@ -5,10 +5,11 @@ refused both endpoints because `show controllers Serial0/0/0` on a 2911 with an
 HWIC-2T exceeds one page on PT 9.0.1.0858, and that build rejects
 `terminal length 0` (`ios_terminal.py:462`, `:1153`, `command_dispatch.py:154`).
 
-What is qualified here is one thing only: the registered
-`SHOW_CONTROLLERS_SERIAL` query may walk its own pager until the output closes
-at a prompt. Every other registered query keeps today's behaviour -- a pager
-means truncated, and truncated means the claim ceiling applies.
+This slice qualifies one thing: the registered `SHOW_CONTROLLERS_SERIAL` query
+may walk its own pager until the output closes at a prompt. Pager traversal is
+always allow-listed by registered query id; other independently qualified
+queries, including trunk and ephone observation, retain their own regressions.
+An unqualified pager still means truncated and the claim ceiling still applies.
 
 The fakes below drive the real `ControlledIosExecutor` through the same JS
 bridge the production path uses. Nothing here assigns `truncated_by_pager` or a
@@ -458,6 +459,37 @@ def test_an_unqualified_registered_query_is_never_continued():
     assert result.pager_continuation == PagerContinuation.NOT_QUALIFIED.value
     assert terminal.advances == 0
     assert terminal.cancels == 1
+
+
+def test_the_registered_trunk_query_reaches_its_forwarding_vlan_section():
+    terminal = _PagedTerminal(
+        [
+            (
+                "Port Mode Encapsulation Status Native vlan\n"
+                "Gig0/1 on 802.1q trunking 1\n"
+                "Port Vlans allowed on trunk\n"
+                "Gig0/1 10,20,30\n"
+            ),
+            (
+                "Port Vlans allowed and active in management domain\n"
+                "Gig0/1 10,20,30\n"
+                "Port Vlans in spanning tree forwarding state and not pruned\n"
+                "Gig0/1 10,20,30\n"
+            ),
+        ],
+        prompt="Switch#",
+        command="show interfaces trunk",
+    )
+
+    result = _executor(terminal).execute(
+        "MCP-SW1", OperationalQueryId.SHOW_INTERFACES_TRUNK,
+    )
+
+    assert result.executed and result.output_complete
+    assert result.pager_continuation == PagerContinuation.COMPLETED.value
+    assert result.pager_pages_captured == 2
+    assert "Vlans in spanning tree forwarding state and not pruned" in result.output
+    assert terminal.advances == 1
 
 
 # --------------------------------------------------------------------------

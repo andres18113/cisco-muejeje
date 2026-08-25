@@ -6,115 +6,123 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-HEAD = 884dd5e (pushed)
-ROUTING_CORE = GOVERNED VERIFIED (re-materialized 4x)
-ROUTER4_SWITCH10 = GOVERNED VERIFIED (re-materialized 4x)
-FLOOR1_PHYSICAL = VERIFIED (74 devices / 55 links / 3 modules)
-FLOOR1_CONFIGURATION = VERIFIED (acceptance error empty, zero contradictions)
-FLOOR1_VOICE = APPLIED (47/47, zero refused), NOT VERIFIED
-FLOOR1 = NOT VERIFIED -- phones do not acquire, and the cause is now known
+HEAD_BEFORE_WORLD_B_IMPLEMENTATION = 78996aa27c6701760c3cb19343c2f4f95dbaee27 (pushed)
+READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
+ROUTING_CORE = GOVERNED VERIFIED (fresh run, checkpoint d0db204)
+ROUTER4_SWITCH10 = GOVERNED VERIFIED (fresh run, checkpoint 78996aa)
+FLOOR1_PHYSICAL = REACHED; the stage later failed in voice verification
+FLOOR1_DHCP_CLIENT = 21/21 Vlan20 present, readable, TRUE
+FLOOR1_ADDRESSING = 0/21 addressed
+FLOOR1 = NOT VERIFIED
+WORLD_A = REFUTED
+WORLD_B = ACTIVE; typed trunk traversal observation implemented, LIVE pending
 CP_SCALE = OPEN
 E10 = FORBIDDEN
 ```
 
-Offline: **2709 passed**. Four governed LIVE runs reached Floor 1; all cleaned up
-and re-observed the baseline twice. Packet Tracer workspace is empty.
+Offline after the World-B implementation: **2718 passed / 0 failed** with the
+checkout-local `.venv` and a writable, gitignored pytest basetemp. The failed
+Floor-1 run cleaned every owned device and independently re-observed the empty
+semantic workspace twice. Packet Tracer is open; its workspace is empty.
 
-**The last phase was DIAGNOSTIC. No implementation landed.** The only commits
-since `21d2d94` are two evidence checkpoints (`63edcf7`, `884dd5e`).
+The World-B source/test changes described below are not yet checkpointed in this
+paragraph's HEAD. Commit and push them before the next LIVE mutation.
 
-## ROOT CAUSE -- FOUND AND MEASURED
+## Decisive powered-phone measurement -- World A refuted
 
-**The product asks a getter name that does not exist on this model.**
+FACT: the read defect was fixed first and alone in `8d594994`: the voice SVI is
+read with `isDhcpClientOn`, while the device-level absence remains `None`.
 
-FACT, measured by enumerating the live objects on 9.0.1.0858 (not by guessing
-names -- guessing is how this was missed three times):
+FACT: the next governed run mechanically established build `9.0.1.0858`, the
+checkout-local production namespace, authenticated fresh HTTP, two complete
+zero-device semantic inventories, and `safe_for_disposable_mutation=True`.
+
+FACT: on the 21 powered Cisco 7960 phones in real Floor 1:
 
 ```text
-7960 Vlan port     isDhcpClientOn      present   <- the real name
-                   setDhcpClientFlag   present   <- the real setter
-                   getIpAddress        present
-                   isDhcpEnabled       ABSENT    <- what the product asks
-                   setIpAddress        ABSENT
-7960 device        no dhcp/ip/addr member at all (134 members enumerated)
-7960 Switch/PC     no address members; carry getAccessVlan/getVoipVlanId
+VOICE_INTERFACE_PRESENT = 21
+VOICE_INTERFACE_DHCP_READABLE = 21
+VOICE_INTERFACE_DHCP_TRUE = 21
+VOICE_INTERFACE_DHCP_FALSE = 0
+VOICE_INTERFACE_DHCP_UNOBSERVABLE = 0
+VOICE_INTERFACE_ADDRESS_CHANNEL = 21
+VOICE_INTERFACE_ADDRESSED = 0
+VOICE_DEVICE_DHCP = unreadable:21
 ```
 
-`enterprise_voice_runtime.py:426-427` (port) and `:434-435` (device) both ask
-`isDhcpEnabled`. So `voice_interface_dhcp = {unreadable: 21}` and
-`voice_device_dhcp = {unreadable: 21}` are statements about the **name**, not
-observations about the phones. The device-level answer is a genuine model limit;
-the port-level one was a bug.
+FACT: the stage then observed all 21 phones without an IPv4 address. It failed
+after the configured 180-second voice convergence window because 19 complete
+`show ephone` rows remained `UNREGISTERED`; extensions 3001 and 3007 were absent
+from the complete five-page table and therefore remained `UNOBSERVABLE`.
 
-FACT: a fresh 7960 reads `Vlan1.isDhcpClientOn() == false`.
-FACT: nothing in the Floor-1 plan ever calls `setDhcpClientFlag` -- zero
-configuration actions target any of the 21 phones (the 28 endpoint actions cover
-23 PC-PT, 2 Printer-PT, 3 AccessPoint-PT).
+FACT: the runner exited by its own governed failure path. Cleanup was VERIFIED;
+both fresh post-cleanup inventories were observed and contained zero semantic
+devices.
 
-INFERENCE, strong: the phones are never made DHCP clients, so they never
-solicit. **WORLD A.**
+CONCLUSION: `setDhcpClientFlag(true)` is forbidden on this evidence. No phone
+acquisition action was added. World A is refuted and World B is primary.
 
-Evidence retained at `data/cp-scale/phone-dhcp-client/` (both probes and their
-raw results; `data/` is gitignored, as with `ap-addressability/`).
+## World B -- typed VLAN traversal observation
 
-### What is still open
+The independent source audit confirmed:
 
-UNOBSERVABLE this session: `isDhcpClientOn` on a **powered** phone's `Vlan20` in
-the real topology. The bounded probe placed and powered a 7960 (`setPower`
-returned true) but its ports never came operational without the CP-SCALE PoE
-scaffolding, so `Vlan20` never appeared.
+* FACT: `TrunkStatusRow` and `parse_show_interfaces_trunk` discarded the allowed,
+  active, and STP-forwarding VLAN sections.
+* FACT: `_verify_trunk` hard-coded `allowed_vlans=UNOBSERVABLE` while declaring
+  the trunk verified.
+* FACT: `SHOW_INTERFACES_TRUNK` was registered but not pagination-qualified.
+* INCOMPLETE: no retained raw transcript proved the historical claim that those
+  sections paged away on every relevant switch. The source risk was real; the
+  universal LIVE claim was not accepted.
 
-If a powered `Vlan20` reads `isDhcpClientOn == true`, World A is wrong and the
-VLAN-20 path becomes primary. **Do not skip that check.** Correcting the read
-name is one symbol and settles it on the next Floor-1 run.
+The minimum typed implementation now:
 
-### The path world, if it survives
+* preserves `None` (section absent), `()` (IOS explicitly said `none`), and a
+  populated VLAN tuple as distinct states;
+* captures the registered query through its bounded pager until a prompt;
+* independently verifies the expected VLAN set in `allowed`, `active`, and
+  `forwarding/not pruned` for each configured trunk;
+* fails on an observed omission and remains `UNOBSERVABLE` on absent/incomplete
+  evidence;
+* records named per-device/per-interface traversal evidence in the governed
+  runner.
 
-Not excluded, demoted. If the phone is not a DHCP client, forwarding cannot be
-the primary cause. Re-test only after World A is fixed.
-
-The evidence for it is **already in reach with no new command**:
-
-* FACT: `_verify_trunk` (`enterprise_configuration_runtime.py:515`) already runs
-  `show interfaces trunk`, then hardcodes `"allowed_vlans": UNOBSERVABLE`
-  (`:551`).
-* FACT: `parse_show_interfaces_trunk` keeps only section 1 (`TrunkStatusRow` =
-  interface/mode/encapsulation/status/native_vlan). "Vlans allowed on trunk",
-  "Vlans allowed and active in management domain" and "Vlans in spanning tree
-  forwarding state and not pruned" are discarded -- the last of those is exactly
-  the question.
-* FACT: `SHOW_INTERFACES_TRUNK` is not pagination-qualified, so those sections
-  page away regardless.
+FAIL-FIRST: four targeted regressions failed against the old code (two missing
+row fields, one false VERIFIED result, one truncated pager result). Focused:
+12 passed. Affected files: 101 passed. Full: 2718 passed / 0 failed.
 
 Topology worth remembering: the 23 PCs that lease are all on **Switch4**; all 21
 phones are on **Switch5**, one hop further out, and everything else on Switch5 is
 static or not addressable, so that hop has never been proven to forward DHCP.
 
+The next governed Floor-1 journal will name these five exact trunk endpoints,
+each expecting VLANs 10/20/30:
+
+```text
+Switch10 GigabitEthernet0/1 <-> Router4 FastEthernet0/0
+Switch10 FastEthernet0/1    <-> Switch4 GigabitEthernet0/1
+Switch4  GigabitEthernet0/2 <-> Switch5 GigabitEthernet0/1
+```
+
 FACT: `show ip dhcp binding` has **no registered query**. `OperationalQueryId`
 carries `SHOW_IP_DHCP_SNOOPING` only, which is switch security, not the server
-binding table. Needed only if the path world survives.
+binding table. Re-audit this immediately before adding anything, and consider it
+only if fresh trunk traversal evidence is still insufficient.
 
-## NEXT_ACTIVE_STEP -- for the implementation agent
+## NEXT_ACTIVE_STEP
 
-The full implementation handoff (FILES_TO_CHANGE, SYMBOLS_TO_CHANGE,
-FAIL_FIRST_TEST, LIVE_ACCEPTANCE_CRITERIA, DO_NOT_CHANGE) was delivered
-separately. In short:
-
-1. **Minimum correct fix first, alone:** read `isDhcpClientOn` on the voice SVI,
-   keeping the three-state absent/false/true contract. Re-run Floor 1. This
-   converts the last inference into a measurement.
-2. Only then, gated on that evidence: a typed action making the phone a DHCP
-   client on the SVI it builds (`setDhcpClientFlag(true)`), applied after
-   `Vlan20` can exist, with an independent read-back.
-3. Owning stage is **E7 / voice acquisition, not E5**. `6ea254d` is correct and
-   must stand: `Vlan20` does not exist at E5 preflight. E7 already owns the
-   phone's address claim, so it must own causing the acquisition it judges.
-
-Architectural blocker to solve first: `apply_actions` refuses any batch not
-targeting exactly one call-control host and routes everything through
-`PacketTracerVoiceRenderer` -> `configure_ios(host, payload)`. A phone-side
-acquisition action targets the **phone** and is a structured PT call, not IOS.
-That path does not exist yet.
+1. Commit and push the World-B implementation; require a clean exact upstream
+   HEAD before LIVE.
+2. Re-run governed routing-core -> router4-switch10 -> Floor 1 without stopping
+   a stage mid-flight.
+3. Read `trunk_vlan_traversal` from the durable Floor-1 journal. In particular,
+   require VLAN 20 to be VERIFIED as allowed, active, and forwarding on both
+   ends of Switch4 <-> Switch5.
+4. If any row observably omits VLAN 20, root-cause that typed contradiction.
+   If the registered trunk evidence is absent/incomplete, do not infer.
+5. Only if the complete path is verified yet the phones remain unaddressed,
+   independently audit and then add the smallest registered DHCP-server binding
+   observation. Do not confuse it with DHCP snooping.
 
 Do not wire any new DHCP observation into `VerificationKind.DHCP_POOL`: the
 ceiling at `qualify_cp_scale_live.py:625` enforces status UNOBSERVABLE +
@@ -132,6 +140,14 @@ rechain, while `pollBridgeStatus`'s own interval kept the UI looking healthy.
 
 FACT: a full Floor-1 run completed afterwards and the bridge stayed fresh; three
 further HTTP sessions connected cleanly; no duplicate polling or execution.
+
+FACT, fresh run at `78996aa`: authenticated HTTP connected with a fresh poll,
+remained connected at both governed resume gates, and surfaced no transport
+failure during the complete Floor-1 deployment and 180-second voice observation.
+The runner then stopped its transport normally after its governed voice failure
+and verified cleanup. A subsequent fresh session remains part of the next LIVE
+preflight; the currently loaded webview source is still not independently
+identifiable from Python.
 
 UNOBSERVABLE: whether Packet Tracer has actually **loaded** the patched
 `interface.js`. Nothing readable from Python distinguishes the patched loop from
@@ -169,10 +185,9 @@ so that table stays UNREGISTERED regardless.
 
 ## Driving the live runner
 
-`<scratchpad>/drive_live.py` performs the operator half of each checkpoint --
-commit, push, answer `continue`. It accepts `--stop-after <stage>` and
-`--retain`, and never kills a run: `--stop-after` answers a checkpoint with a
-refusal so the runner raises on its own and its governed `finally` cleans up.
+This session used the persistent runner directly and left it waiting at each
+explicit checkpoint while the Git commit/push was performed externally. No
+scratchpad driver was relied upon or verified from this worktree.
 
 Do not edit tracked files under `src/`, `tests/`,
 `tools/cp_scale_canonical_live.py` or the two reference documents while a run is
@@ -190,8 +205,10 @@ call control instead of once per phone.
 ## Commits since the previous handoff
 
 ```text
-63edcf7 chore(cp-scale): checkpoint routing-core
-884dd5e chore(cp-scale): checkpoint router4-switch10
+8d59499 fix(cp-scale): read phone DHCP client state from voice SVI
+d0db204 docs(cp-scale): checkpoint governed routing core
+78996aa docs(cp-scale): checkpoint router4-switch10
 ```
 
-Both are evidence checkpoints from the diagnostic run. No implementation.
+The World-B trunk-observation implementation and this handoff update are the
+next checkpoint; record their final pushed HEAD here on the following turn.

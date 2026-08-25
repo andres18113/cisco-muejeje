@@ -346,7 +346,19 @@ def test_trunk_verifier_uses_existing_typed_parser_and_current_query_only():
         if item.required_query == "show_interfaces_trunk"
     )
     interface = expectation.expected["interface"]
-    output = "SW#show interfaces trunk\nGig0/1 on 802.1q trunking 1\nSW#"
+    output = """SW#show interfaces trunk
+Port Mode Encapsulation Status Native vlan
+Gig0/1 on 802.1q trunking 1
+
+Port Vlans allowed on trunk
+Gig0/1 10,20
+
+Port Vlans allowed and active in management domain
+Gig0/1 10,20
+
+Port Vlans in spanning tree forwarding state and not pruned
+Gig0/1 10,20
+SW#"""
     current = json.dumps({
         "found": True,
         "configuration_channel": True,
@@ -370,7 +382,60 @@ def test_trunk_verifier_uses_existing_typed_parser_and_current_query_only():
     assert result.fresh_evidence
     assert result.fields["interface"] is FieldVerificationStatus.VERIFIED
     assert result.fields["status"] is FieldVerificationStatus.VERIFIED
-    assert result.fields["allowed_vlans"] is FieldVerificationStatus.UNOBSERVABLE
+    assert result.fields["allowed_vlans"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["active_vlans"] is FieldVerificationStatus.VERIFIED
+    assert result.fields["forwarding_vlans"] is FieldVerificationStatus.VERIFIED
+
+
+def test_trunk_verifier_fails_when_an_expected_vlan_is_not_forwarding():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expectation.expected["allowed_vlans"] = [10, 20]
+    output = """SW#show interfaces trunk
+Port Mode Encapsulation Status Native vlan
+Gig0/1 on 802.1q trunking 1
+
+Port Vlans allowed on trunk
+Gig0/1 10,20
+
+Port Vlans allowed and active in management domain
+Gig0/1 10,20
+
+Port Vlans in spanning tree forwarding state and not pruned
+Gig0/1 10
+SW#"""
+    current = json.dumps({
+        "found": True,
+        "configuration_channel": True,
+        "output": output,
+    })
+    responses = iter((
+        '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
+        '{"ok":true,"before":"SW#"}',
+        current,
+        current,
+    ))
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: next(responses),
+        trunk_timeout_seconds=0,
+        convergence_interval_seconds=0,
+    )
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.fields == {
+        "interface": FieldVerificationStatus.VERIFIED,
+        "status": FieldVerificationStatus.VERIFIED,
+        "allowed_vlans": FieldVerificationStatus.VERIFIED,
+        "active_vlans": FieldVerificationStatus.VERIFIED,
+        "forwarding_vlans": FieldVerificationStatus.FAILED,
+    }
 
 
 def test_trunk_verifier_polls_until_operational_state_converges():
@@ -395,7 +460,19 @@ def test_trunk_verifier_polls_until_operational_state_converges():
         )
 
     empty = "SW#show interfaces trunk\nPort Mode Encapsulation Status Native vlan\nSW#"
-    ready = "SW#show interfaces trunk\nGig0/1 on 802.1q trunking 1\nSW#"
+    ready = """SW#show interfaces trunk
+Port Mode Encapsulation Status Native vlan
+Gig0/1 on 802.1q trunking 1
+
+Port Vlans allowed on trunk
+Gig0/1 10,20
+
+Port Vlans allowed and active in management domain
+Gig0/1 10,20
+
+Port Vlans in spanning tree forwarding state and not pruned
+Gig0/1 10,20
+SW#"""
     responses = iter((*query_responses(empty), *query_responses(ready)))
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],

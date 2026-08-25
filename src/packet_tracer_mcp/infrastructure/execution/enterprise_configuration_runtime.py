@@ -516,40 +516,113 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self, expectation: VerificationExpectation, cache: dict,
     ) -> RuntimeVerification:
         expected_interface = str(expectation.expected["interface"])
+        expected_vlans = frozenset(
+            int(item) for item in expectation.expected.get("allowed_vlans", [])
+        )
+
         def find_row(show: IosCommandResult):
             return next((
                 item for item in parse_show_interfaces_trunk(show.output)
                 if self._same_interface(item.interface, expected_interface)
             ), None) if show.executed else None
 
+        def vlan_status(
+            show: IosCommandResult, row, attribute: str,
+        ) -> FieldVerificationStatus:
+            if (
+                row is None
+                or not show.fresh_output_observed
+                or not show.output_complete
+            ):
+                return FieldVerificationStatus.UNOBSERVABLE
+            observed = getattr(row, attribute)
+            if observed is None:
+                return FieldVerificationStatus.UNOBSERVABLE
+            return (
+                FieldVerificationStatus.VERIFIED
+                if expected_vlans.issubset(observed)
+                else FieldVerificationStatus.FAILED
+            )
+
+        def traverses_expected_vlans(show: IosCommandResult) -> bool:
+            row = find_row(show)
+            return bool(
+                row
+                and row.status.casefold() == "trunking"
+                and all(
+                    vlan_status(show, row, attribute)
+                    is FieldVerificationStatus.VERIFIED
+                    for attribute in (
+                        "allowed_vlans", "active_vlans", "forwarding_vlans",
+                    )
+                )
+            )
+
         show, convergence, converged = self._converged_ios_query(
             expectation,
             OperationalQueryId.SHOW_INTERFACES_TRUNK,
             cache,
-            lambda value: bool(
-                (row := find_row(value)) and row.status.casefold() == "trunking"
-            ),
+            traverses_expected_vlans,
             timeout_seconds=self._trunk_timeout,
         )
         row = next((
             item for item in parse_show_interfaces_trunk(show.output)
             if self._same_interface(item.interface, expected_interface)
         ), None) if show.executed else None
-        verified = bool(
-            converged and row and row.status.casefold() == "trunking"
-            and show.fresh_output_observed
+        interface_status = (
+            FieldVerificationStatus.VERIFIED
+            if row else FieldVerificationStatus.FAILED
         )
+        operational_status = (
+            FieldVerificationStatus.VERIFIED
+            if row and row.status.casefold() == "trunking"
+            else FieldVerificationStatus.FAILED
+        )
+        fields = {
+            "interface": interface_status,
+            "status": operational_status,
+            "allowed_vlans": vlan_status(show, row, "allowed_vlans"),
+            "active_vlans": vlan_status(show, row, "active_vlans"),
+            "forwarding_vlans": vlan_status(show, row, "forwarding_vlans"),
+        }
+        if FieldVerificationStatus.FAILED in fields.values():
+            status = ActionExecutionStatus.FAILED
+        elif converged and all(
+            item is FieldVerificationStatus.VERIFIED for item in fields.values()
+        ):
+            status = ActionExecutionStatus.VERIFIED
+        else:
+            status = ActionExecutionStatus.UNOBSERVABLE
+
+        message = show.failure_reason
+        if not message and status is ActionExecutionStatus.FAILED and row is not None:
+            omissions = []
+            for field_name, attribute in (
+                ("allowed", "allowed_vlans"),
+                ("active", "active_vlans"),
+                ("forwarding", "forwarding_vlans"),
+            ):
+                observed = getattr(row, attribute)
+                if observed is None:
+                    continue
+                missing = sorted(expected_vlans - set(observed))
+                if missing:
+                    omissions.append(
+                        f"{field_name} omitted " + ",".join(map(str, missing))
+                    )
+            message = "; ".join(omissions)
+        if not message and status is ActionExecutionStatus.UNOBSERVABLE:
+            message = (
+                "The complete registered show interfaces trunk output did not "
+                "expose every VLAN traversal section."
+            )
         return RuntimeVerification(
             expectation_id=expectation.id,
-            status=ActionExecutionStatus.VERIFIED if verified else ActionExecutionStatus.FAILED,
+            status=status,
             evidence_method="fresh_show_interfaces_trunk",
             fresh_evidence=show.fresh_output_observed,
-            fields={
-                "interface": FieldVerificationStatus.VERIFIED if row else FieldVerificationStatus.FAILED,
-                "status": FieldVerificationStatus.VERIFIED if verified else FieldVerificationStatus.FAILED,
-                "allowed_vlans": FieldVerificationStatus.UNOBSERVABLE,
-            },
-            message=show.failure_reason or ("" if converged else "Trunk convergence timed out."),
+            fields=fields,
+            message=message or ("" if converged else "Trunk convergence timed out."),
             convergence=convergence,
         )
 

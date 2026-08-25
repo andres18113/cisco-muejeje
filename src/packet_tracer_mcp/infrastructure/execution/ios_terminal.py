@@ -212,6 +212,12 @@ _PAGER_MARKER = "--More--"
 # Se recorre hasta prompt con las mismas cotas duras; una captura incompleta
 # conserva el techo fail-closed y nunca se interpreta como ausencia.
 #
+# `SHOW_INTERFACES_TRUNK` puede partir justo antes de las secciones que dicen si
+# una VLAN esta permitida, activa y en forwarding. La primera tabla sola prueba
+# el modo operacional del puerto, no que una VLAN concreta atraviese el enlace.
+# Se captura como una sola consulta logica para que esas dimensiones no se
+# pierdan por el pager ni se reconstruyan desde otra ejecucion.
+#
 # `SHOW_EPHONE` entra por CP-SCALE FLOOR 1 en el mismo build exacto. Un 2811 con
 # 21 ephones imprime una tabla de ~84 lineas y pagina siempre; cada lectura
 # capturaba una ventana distinta, de modo que la fila de casi todos los telefonos
@@ -222,6 +228,7 @@ _PAGER_MARKER = "--More--"
 # no dice UNREGISTERED, no dice nada.
 _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+    OperationalQueryId.SHOW_INTERFACES_TRUNK,
     OperationalQueryId.SHOW_IP_PROTOCOLS,
     OperationalQueryId.SHOW_EPHONE,
 })
@@ -301,6 +308,13 @@ class TrunkStatusRow:
     encapsulation: str
     status: str
     native_vlan: str
+    # `None` means the corresponding SHOW section was absent or unreadable.
+    # An empty tuple means the section was present and IOS explicitly reported
+    # no VLANs. Keeping those states distinct prevents absence from becoming a
+    # negative forwarding claim.
+    allowed_vlans: tuple[int, ...] | None = None
+    active_vlans: tuple[int, ...] | None = None
+    forwarding_vlans: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -681,10 +695,35 @@ def parse_show_ephone(value: str) -> list[EphoneStatusRow]:
     return rows
 
 
+def _parse_trunk_vlan_values(value: str) -> tuple[int, ...] | None:
+    normalized = value.strip().casefold()
+    if normalized == "none":
+        return ()
+    if not normalized:
+        return None
+
+    vlan_ids: set[int] = set()
+    for token in re.split(r"[\s,]+", normalized):
+        if not token:
+            continue
+        if re.fullmatch(r"\d+", token):
+            start = end = int(token)
+        else:
+            match = re.fullmatch(r"(?P<start>\d+)-(?P<end>\d+)", token)
+            if match is None:
+                return None
+            start, end = int(match.group("start")), int(match.group("end"))
+        if start < 1 or end > 4094 or start > end:
+            return None
+        vlan_ids.update(range(start, end + 1))
+    return tuple(sorted(vlan_ids)) if vlan_ids else None
+
+
 def parse_show_interfaces_trunk(value: str) -> list[TrunkStatusRow]:
-    """Parsea solamente filas de trunk del SHOW actual de Packet Tracer."""
+    """Parse the operational row and each VLAN traversal section independently."""
+    normalized = normalize_terminal_output(value)
     rows: list[TrunkStatusRow] = []
-    for line in normalize_terminal_output(value).splitlines():
+    for line in normalized.splitlines():
         parts = line.split()
         if len(parts) < 5 or parts[0].casefold() in {"port", "switch>"}:
             continue
@@ -693,7 +732,49 @@ def parse_show_interfaces_trunk(value: str) -> list[TrunkStatusRow]:
         if parts[1].casefold() not in {"on", "desirable", "auto", "trunk"}:
             continue
         rows.append(TrunkStatusRow(parts[0], parts[1], parts[2], parts[3], parts[4]))
-    return rows
+
+    sections: dict[str, dict[str, tuple[int, ...] | None]] = {
+        "allowed_vlans": {},
+        "active_vlans": {},
+        "forwarding_vlans": {},
+    }
+    headings = {
+        "port vlans allowed on trunk": "allowed_vlans",
+        "port vlans allowed and active in management domain": "active_vlans",
+        "port vlans in spanning tree forwarding state and not pruned": (
+            "forwarding_vlans"
+        ),
+    }
+    current_section = ""
+    row_interfaces = {row.interface.casefold() for row in rows}
+    for line in normalized.splitlines():
+        collapsed = " ".join(line.casefold().split())
+        if collapsed in headings:
+            current_section = headings[collapsed]
+            continue
+        if collapsed.startswith("port "):
+            current_section = ""
+            continue
+        if not current_section:
+            continue
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2 or parts[0].casefold() not in row_interfaces:
+            continue
+        sections[current_section][parts[0].casefold()] = _parse_trunk_vlan_values(
+            parts[1]
+        )
+
+    return [
+        replace(
+            row,
+            allowed_vlans=sections["allowed_vlans"].get(row.interface.casefold()),
+            active_vlans=sections["active_vlans"].get(row.interface.casefold()),
+            forwarding_vlans=(
+                sections["forwarding_vlans"].get(row.interface.casefold())
+            ),
+        )
+        for row in rows
+    ]
 
 
 def classify_show_interfaces_trunk(value: str, *, executed: bool = True) -> TrunkQueryClassification:

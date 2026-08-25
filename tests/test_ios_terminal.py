@@ -234,6 +234,65 @@ def test_packet_tracer_trunk_parser_reads_configured_rows_from_current_window_on
     assert classify_show_interfaces_trunk(window.output) is TrunkQueryClassification.SUPPORTED_WITH_ROWS
 
 
+def test_trunk_parser_keeps_allowed_active_and_forwarding_vlan_observations_distinct():
+    output = """show interfaces trunk
+Port        Mode         Encapsulation  Status        Native vlan
+Gig0/1      on           802.1q         trunking      1
+Gig0/2      on           802.1q         trunking      1
+
+Port        Vlans allowed on trunk
+Gig0/1      10,20,30
+Gig0/2      10,30
+
+Port        Vlans allowed and active in management domain
+Gig0/1      10,20,30
+Gig0/2      10,30
+
+Port        Vlans in spanning tree forwarding state and not pruned
+Gig0/1      10,20,30
+Gig0/2      10,30
+Switch#"""
+
+    rows = {row.interface: row for row in parse_show_interfaces_trunk(output)}
+
+    assert rows["Gig0/1"].allowed_vlans == (10, 20, 30)
+    assert rows["Gig0/1"].active_vlans == (10, 20, 30)
+    assert rows["Gig0/1"].forwarding_vlans == (10, 20, 30)
+    assert rows["Gig0/2"].allowed_vlans == (10, 30)
+    assert rows["Gig0/2"].active_vlans == (10, 30)
+    assert rows["Gig0/2"].forwarding_vlans == (10, 30)
+
+
+def test_trunk_parser_does_not_turn_absent_vlan_sections_into_empty_sets():
+    rows = parse_show_interfaces_trunk(
+        "show interfaces trunk\nGi0/1 on 802.1q trunking 1\nSwitch#"
+    )
+
+    assert len(rows) == 1
+    assert rows[0].allowed_vlans is None
+    assert rows[0].active_vlans is None
+    assert rows[0].forwarding_vlans is None
+
+
+def test_trunk_parser_preserves_an_explicit_none_as_an_observed_empty_set():
+    output = """show interfaces trunk
+Port Mode Encapsulation Status Native vlan
+Gi0/1 on 802.1q trunking 1
+Port Vlans allowed on trunk
+Gi0/1 none
+Port Vlans allowed and active in management domain
+Gi0/1 none
+Port Vlans in spanning tree forwarding state and not pruned
+Gi0/1 none
+Switch#"""
+
+    row = parse_show_interfaces_trunk(output)[0]
+
+    assert row.allowed_vlans == ()
+    assert row.active_vlans == ()
+    assert row.forwarding_vlans == ()
+
+
 def test_packet_tracer_rpvst_root_output_parses_exact_live_state():
     instances = parse_show_spanning_tree(_PT_9_0_1_0858_STP_ROOT)
 

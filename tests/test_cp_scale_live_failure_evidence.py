@@ -36,7 +36,16 @@ from types import SimpleNamespace
 sys.path.insert(0, {root!r})
 sys.path.insert(0, {src!r})
 
-from tools.cp_scale_canonical_live import CanonicalLiveFailure, _execute_stage
+from tools.cp_scale_canonical_live import (
+    CanonicalLiveFailure,
+    _execute_stage,
+    _trunk_vlan_traversal_evidence,
+)
+from packet_tracer_mcp.domain.enterprise.models.configuration import VerificationKind
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    FieldVerificationStatus,
+)
 from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
 )
@@ -50,6 +59,31 @@ verdict["message_intact"] = str(carried) == "boom"
 bare = CanonicalLiveFailure("boom")
 verdict["defaults_to_none"] = bare.stage_evidence is None
 verdict["still_runtime_error"] = isinstance(bare, RuntimeError)
+
+trunk_plan = SimpleNamespace(verification_expectations=[SimpleNamespace(
+    id="verify-trunk",
+    kind=VerificationKind.TRUNK,
+    device_id="switch-4",
+    device_name="Switch4",
+    expected={{"interface": "GigabitEthernet0/2", "allowed_vlans": [10, 20, 30]}},
+)])
+trunk_result = SimpleNamespace(verification_results=[SimpleNamespace(
+    expectation_id="verify-trunk",
+    status=ActionExecutionStatus.VERIFIED,
+    evidence_method="fresh_show_interfaces_trunk",
+    fresh_evidence=True,
+    fields={{
+        "interface": FieldVerificationStatus.VERIFIED,
+        "status": FieldVerificationStatus.VERIFIED,
+        "allowed_vlans": FieldVerificationStatus.VERIFIED,
+        "active_vlans": FieldVerificationStatus.VERIFIED,
+        "forwarding_vlans": FieldVerificationStatus.VERIFIED,
+    }},
+    message="",
+)])
+verdict["trunk_vlan_traversal"] = _trunk_vlan_traversal_evidence(
+    trunk_plan, trunk_result,
+)
 
 projection = SimpleNamespace(
     stage=SimpleNamespace(value="floor1"),
@@ -125,6 +159,27 @@ def test_a_failed_stage_raises_with_the_journal_it_had_already_written(verdict):
     assert verdict["stage"] == "floor1"
     assert verdict["configuration_hash"] == "config-hash"
     assert verdict["physical"] == {"status": "failed"}
+
+
+def test_governed_evidence_names_each_typed_trunk_vlan_traversal(verdict):
+    assert verdict["trunk_vlan_traversal"] == [{
+        "expectation_id": "verify-trunk",
+        "device_id": "switch-4",
+        "device_name": "Switch4",
+        "interface": "GigabitEthernet0/2",
+        "expected_vlans": [10, 20, 30],
+        "status": "verified",
+        "evidence_method": "fresh_show_interfaces_trunk",
+        "fresh_evidence": True,
+        "fields": {
+            "active_vlans": "verified",
+            "allowed_vlans": "verified",
+            "forwarding_vlans": "verified",
+            "interface": "verified",
+            "status": "verified",
+        },
+        "message": "",
+    }]
 
 
 def test_this_suite_never_loaded_the_production_namespace():

@@ -684,11 +684,12 @@ def canonical_stage_configuration_error(
             continue
 
         if expectation.kind is VerificationKind.TRUNK:
-            ceiling_present = True
             expected_fields = {
                 "interface": FieldVerificationStatus.VERIFIED,
                 "status": FieldVerificationStatus.VERIFIED,
-                "allowed_vlans": FieldVerificationStatus.UNOBSERVABLE,
+                "allowed_vlans": FieldVerificationStatus.VERIFIED,
+                "active_vlans": FieldVerificationStatus.VERIFIED,
+                "forwarding_vlans": FieldVerificationStatus.VERIFIED,
             }
             if (
                 item.status is not ActionExecutionStatus.VERIFIED
@@ -698,8 +699,8 @@ def canonical_stage_configuration_error(
             ):
                 return (
                     f"Trunk verification {item.expectation_id!r} departed "
-                    "from the exact operational trunk VERIFIED and allowed "
-                    "VLAN list UNOBSERVABLE ceiling."
+                    "from the exact allowed, active, and forwarding VLAN "
+                    "traversal proof."
                 )
             continue
 

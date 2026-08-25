@@ -236,7 +236,9 @@ def _floor1_configuration_result():
                 fields={
                     "interface": FieldVerificationStatus.VERIFIED,
                     "status": FieldVerificationStatus.VERIFIED,
-                    "allowed_vlans": FieldVerificationStatus.UNOBSERVABLE,
+                    "allowed_vlans": FieldVerificationStatus.VERIFIED,
+                    "active_vlans": FieldVerificationStatus.VERIFIED,
+                    "forwarding_vlans": FieldVerificationStatus.VERIFIED,
                 },
             ))
         else:
@@ -348,7 +350,7 @@ def test_canonical_configuration_accepts_an_absent_address_channel_ceiling():
     assert canonical_stage_configuration_error(plan, claimed) != ""
 
 
-def test_canonical_configuration_accepts_exact_trunk_allowed_vlan_ceiling():
+def test_canonical_configuration_requires_exact_trunk_vlan_traversal_proof():
     plan, result = _floor1_configuration_result()
     expectations = {item.id: item for item in plan.verification_expectations}
     trunk = next(
@@ -361,7 +363,9 @@ def test_canonical_configuration_accepts_exact_trunk_allowed_vlan_ceiling():
     trunk.fields = {
         "interface": FieldVerificationStatus.VERIFIED,
         "status": FieldVerificationStatus.VERIFIED,
-        "allowed_vlans": FieldVerificationStatus.UNOBSERVABLE,
+        "allowed_vlans": FieldVerificationStatus.VERIFIED,
+        "active_vlans": FieldVerificationStatus.VERIFIED,
+        "forwarding_vlans": FieldVerificationStatus.VERIFIED,
     }
 
     assert canonical_stage_configuration_error(plan, result) == ""
@@ -370,7 +374,7 @@ def test_canonical_configuration_accepts_exact_trunk_allowed_vlan_ceiling():
     next(
         item for item in unknown.verification_results
         if item.expectation_id == trunk.expectation_id
-    ).fields["allowed_vlans"] = FieldVerificationStatus.UNKNOWN
+    ).fields["forwarding_vlans"] = FieldVerificationStatus.UNKNOWN
     assert "unknown" in canonical_stage_configuration_error(
         plan, unknown,
     ).casefold()
