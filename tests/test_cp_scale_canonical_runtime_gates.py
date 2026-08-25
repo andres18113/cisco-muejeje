@@ -302,6 +302,52 @@ def test_canonical_configuration_accepts_only_exact_known_observability_ceilings
     ).casefold()
 
 
+def test_canonical_configuration_accepts_an_absent_address_channel_ceiling():
+    """An AccessPoint-PT holds no address on this build, and says so cleanly.
+
+    Measured on 9.0.1.0858: both its ports come up powered and neither exposes
+    `getIpAddress`; nor does the device. Its designed management address can be
+    applied and can never be read back, which is the same standing limit the
+    DHCP-pool ceiling already accepts. Admitted on the same terms -- every field
+    UNOBSERVABLE, nothing claimed -- and keyed on the exact evidence method, so
+    an interface that was never found is still a failure.
+    """
+    plan, result = _floor1_configuration_result()
+    expectations = {item.id: item for item in plan.verification_expectations}
+    endpoint = next(
+        item for item in result.verification_results
+        if expectations[item.expectation_id].kind
+        is VerificationKind.ENDPOINT_ADDRESSING
+    )
+    expected = expectations[endpoint.expectation_id].expected
+    endpoint.status = ActionExecutionStatus.UNOBSERVABLE
+    endpoint.evidence_method = "structured_endpoint_getters_absent"
+    endpoint.fresh_evidence = False
+    endpoint.fields = {
+        name: FieldVerificationStatus.UNOBSERVABLE for name in expected
+    }
+
+    assert canonical_stage_configuration_error(plan, result) == ""
+
+    # A port that was never found reaches the generic observability limit, and
+    # that must stay a failure: not having looked is not the same as having
+    # measured that there is nothing to look at.
+    not_found = result.model_copy(deep=True)
+    next(
+        item for item in not_found.verification_results
+        if item.expectation_id == endpoint.expectation_id
+    ).evidence_method = "runtime_observability_limit"
+    assert canonical_stage_configuration_error(plan, not_found) != ""
+
+    # Nor may an absent channel come back carrying any claim at all.
+    claimed = result.model_copy(deep=True)
+    next(
+        item for item in claimed.verification_results
+        if item.expectation_id == endpoint.expectation_id
+    ).fields["ipv4"] = FieldVerificationStatus.VERIFIED
+    assert canonical_stage_configuration_error(plan, claimed) != ""
+
+
 def test_canonical_configuration_accepts_exact_trunk_allowed_vlan_ceiling():
     plan, result = _floor1_configuration_result()
     expectations = {item.id: item for item in plan.verification_expectations}

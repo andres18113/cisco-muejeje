@@ -856,6 +856,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
             # that comes back as a wrong address states more than was seen.
             return self._unobservable(
                 expectation,
+                # Distinct from a generic observability limit and from an
+                # interface that was not found: this port is present, and the
+                # device model has no address getter to ask. A governed ceiling
+                # can admit that exact case without also admitting a missing
+                # interface, which would hide a real topology error.
+                evidence_method="structured_endpoint_getters_absent",
                 message=(
                     f"{interface} on {expectation.device_name} exposes no address "
                     "channel, so nothing about its addressing was read."
@@ -937,6 +943,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         *,
         message: str = "",
         extra_fields: tuple[str, ...] = (),
+        evidence_method: str = "runtime_observability_limit",
     ) -> RuntimeVerification:
         fields = {
             field: FieldVerificationStatus.UNOBSERVABLE
@@ -945,7 +952,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         return RuntimeVerification(
             expectation_id=expectation.id,
             status=ActionExecutionStatus.UNOBSERVABLE,
-            evidence_method="runtime_observability_limit",
+            evidence_method=evidence_method,
             fresh_evidence=False,
             fields=fields,
             message=message or (

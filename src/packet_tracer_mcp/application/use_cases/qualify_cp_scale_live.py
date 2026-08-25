@@ -585,6 +585,31 @@ def canonical_stage_configuration_error(
 
         if expectation.kind is VerificationKind.ENDPOINT_ADDRESSING:
             ceiling_present = True
+            if item.evidence_method == "structured_endpoint_getters_absent":
+                # Measured on build 9.0.1.0858: an AccessPoint-PT brings both
+                # `Port 0` and `Port 1` up and powered and exposes no address
+                # getter on either, nor at device level. It bridges rather than
+                # hosts, so its designed management address can be applied and
+                # can never be read back -- the same standing observability
+                # limit the DHCP-pool ceiling already accepts, and admitted here
+                # on the same terms: every field UNOBSERVABLE, nothing claimed.
+                #
+                # Keyed on this exact evidence method so that an interface which
+                # was never found stays a failure rather than being absorbed.
+                if (
+                    item.status is not ActionExecutionStatus.UNOBSERVABLE
+                    or item.fresh_evidence
+                    or set(item.fields) != set(expectation.expected)
+                    or set(item.fields.values()) != {
+                        FieldVerificationStatus.UNOBSERVABLE
+                    }
+                ):
+                    return (
+                        f"Endpoint verification {item.expectation_id!r} claimed "
+                        "an absent address channel without staying entirely "
+                        "unobserved."
+                    )
+                continue
             expected_fields = {
                 "ipv4": FieldVerificationStatus.VERIFIED,
                 "netmask": FieldVerificationStatus.VERIFIED,
