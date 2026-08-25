@@ -1,14 +1,14 @@
 {
   "schema": "cp-scale-live-checkpoint-v1",
-  "checkpoint": "routing-core",
-  "checkpoint_at": "2026-08-25T16:49:11.252272+00:00",
+  "checkpoint": "router4-switch10",
+  "checkpoint_at": "2026-08-25T16:49:29.883487+00:00",
   "packet_tracer_version": "9.0.1.0858",
-  "live_devices": 3,
-  "live_links": 3,
-  "physical_topology_hash": "da9c09183a5e44efc229652c1d1f963b5991482b4cb985ab1fd2720f6eb1f85b",
-  "configuration_status": "verified",
+  "live_devices": 4,
+  "live_links": 4,
+  "physical_topology_hash": "a07dfcadcf58adbc430696dcbc7eef09873cda4a164fdd7a6b41c1ba66deeada",
+  "configuration_status": "partial",
   "control_plane_status": "verified",
   "verification_scope": "VERIFIED_BOUNDED_RETAINED",
   "workspace_verified_twice": true,
-  "raw_evidence_sha256": "df2eb68f619e8a3ff46eec87c1096be4d1a42c83336ac2bccf2968bf85cf0474"
+  "raw_evidence_sha256": "82a53499b0f2b03cacbddd3c29a106f326fd969ddacab9cfaa2b8575e82a1fc4"
 }
