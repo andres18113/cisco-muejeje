@@ -23,6 +23,7 @@ from ..models.control_plane import (
     StpMode,
 )
 from ..models.link_performance import LinkMedia
+from ..models.voice_plan import ExtensionRange, VoiceIntent
 from ..models.roles import DeviceRole
 from ..models.topology import NetworkLayer, TopologyPattern
 from ...models.plans import TopologyPlan
@@ -415,4 +416,49 @@ def cp_scale_canonical_control_plane_intent(
             device_ids=[R4, R0, R3],
             transit_link_ids=sorted(item.id for item in serial_links),
         ),
+    )
+
+
+#: Documented CME placement: each branch's edge router is its call control, at
+#: the voice-VLAN gateway on port 2000. `diseno_logico_IMP.md` section 5.
+_CANONICAL_CALL_CONTROL = {
+    LARGE: R4,
+    MULTILAYER: R0,
+    SMALL: R3,
+}
+#: Extension ranges are per branch and never overlap, so an extension alone
+#: identifies the branch that owns it.
+_CANONICAL_EXTENSION_RANGES = {
+    LARGE: ExtensionRange(start=3001, end=3999),
+    MULTILAYER: ExtensionRange(start=4001, end=4999),
+    SMALL: ExtensionRange(start=5001, end=5999),
+}
+
+
+def cp_scale_canonical_voice_intent(topology: TopologyPlan) -> VoiceIntent:
+    """Bind CME to whichever branches this projection actually contains.
+
+    A stage that has not reached a branch yet has neither its phones nor its
+    router, and naming a call control that is not deployed would fail E7's
+    host resolution rather than simply not applying to that stage.
+
+    Intersite calling stays off: the voice renderer refuses to emit it because
+    it is not verified on this backend, and asking for it would compile a plan
+    whose actions could only ever be skipped.
+    """
+    present = {item.id for item in topology.devices}
+    hosts = {
+        site_id: device_id
+        for site_id, device_id in sorted(_CANONICAL_CALL_CONTROL.items())
+        if device_id in present
+    }
+    return VoiceIntent(
+        id="voice/cp-scale-canonical",
+        call_control_device_ids=hosts,
+        extension_ranges={
+            site_id: value
+            for site_id, value in sorted(_CANONICAL_EXTENSION_RANGES.items())
+            if site_id in hosts
+        },
+        intersite_calling=False,
     )

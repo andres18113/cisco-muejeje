@@ -15,8 +15,11 @@ from enum import Enum
 from ...domain.enterprise.models.capabilities import DeviceCapabilities
 from ...domain.enterprise.models.configuration import (
     ConfigurationActionType,
+    ConfigurationIssueSeverity,
     ConfigurationPlan,
 )
+from ...domain.enterprise.models.roles import DeviceRole
+from ...domain.enterprise.models.voice_plan import VoicePlan
 from ...domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityProfile,
     ControlPlanePlan,
@@ -50,6 +53,7 @@ from ...domain.enterprise.scenarios.cp_scale_physical import (
     ZC,
     ZD,
     cp_scale_canonical_control_plane_intent,
+    cp_scale_canonical_voice_intent,
     cp_scale_physical_design,
 )
 from ...domain.models.plans import TopologyPlan
@@ -59,11 +63,13 @@ from ...infrastructure.catalog.control_plane_capabilities import (
 from ...infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
+from ...infrastructure.catalog.voice_capabilities import voice_capability_profiles
 from ...infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 from .compile_configuration import compile_enterprise_configuration
 from .compile_control_plane import compile_enterprise_control_plane
+from .compile_voice import compile_enterprise_voice
 from .compile_enterprise import compile_enterprise_topology
 from .compose_enterprise_reference import EnterpriseReferenceComposition
 from .plan_enterprise_hardware import (
@@ -113,6 +119,10 @@ class CPScaleCanonicalStageProjection:
     configuration: ConfigurationPlan
     control_plane: ControlPlanePlan
     forwarding_checks: dict[str, str]
+    #: Compiled per stage, never projected from the full plan: E7 binds the
+    #: exact E4/E5 hashes it will be applied against, and a stage's hashes are
+    #: not the full topology's. None where the stage carries no phone yet.
+    voice: VoicePlan | None = None
 
 
 _CANONICAL_STAGE_ORDER = {
@@ -243,6 +253,31 @@ def compose_cp_scale_canonical(
             or ["Control-plane compilation produced no plan."],
         )
 
+    voice_capabilities = voice_capability_profiles(
+        capabilities, packet_tracer_version=packet_tracer_version,
+    )
+    voice = compile_enterprise_voice(
+        cp_scale_canonical_voice_intent(topology),
+        enterprise,
+        topology,
+        configuration.plan,
+        capabilities=voice_capabilities,
+    )
+    if not voice.is_valid or voice.plan is None:
+        return EnterpriseReferenceComposition(
+            enterprise=enterprise,
+            hardware=hardware,
+            topology=topology,
+            topology_summary=compiled.summary,
+            traffic=traffic,
+            capabilities=capabilities,
+            configuration=configuration.plan,
+            control_plane=control.plan,
+            voice_capabilities=voice_capabilities,
+            issues=[f"E7 voice: {item.message}" for item in voice.issues]
+            or ["Voice compilation produced no plan."],
+        )
+
     return EnterpriseReferenceComposition(
         enterprise=enterprise,
         hardware=hardware,
@@ -252,6 +287,8 @@ def compose_cp_scale_canonical(
         capabilities=capabilities,
         configuration=configuration.plan,
         control_plane=control.plan,
+        voice=voice.plan,
+        voice_capabilities=voice_capabilities,
     )
 
 
@@ -333,7 +370,45 @@ def project_cp_scale_canonical_stage(
         configuration=configuration,
         control_plane=control_plane,
         forwarding_checks=dict(_CORE_FORWARDING_CHECKS),
+        voice=_compile_stage_voice(composition, topology, configuration, stage),
     )
+
+
+def _compile_stage_voice(
+    composition: EnterpriseReferenceComposition,
+    topology: TopologyPlan,
+    configuration: ConfigurationPlan,
+    stage: CPScaleCanonicalStage,
+) -> VoicePlan | None:
+    """Compile E7 against this stage's exact E4/E5, or return None for no phones.
+
+    Projecting the full-scale plan would carry the full-scale source hashes, and
+    `VoiceApplicator` refuses a plan whose hashes are not the ones it is being
+    applied against -- correctly. So each stage compiles its own.
+    """
+    if composition.enterprise is None:
+        return None
+    if not any(
+        item.enterprise_role == DeviceRole.IP_PHONE.value
+        for item in topology.devices
+    ):
+        return None
+    compiled = compile_enterprise_voice(
+        cp_scale_canonical_voice_intent(topology),
+        composition.enterprise,
+        topology,
+        configuration,
+        capabilities=composition.voice_capabilities,
+    )
+    if not compiled.is_valid or compiled.plan is None:
+        raise ValueError(
+            f"Canonical stage {stage.value!r} could not compile its voice plan: "
+            + "; ".join(
+                item.message for item in compiled.issues
+                if item.severity is ConfigurationIssueSeverity.ERROR
+            )
+        )
+    return compiled.plan
 
 
 def project_cp_scale_canonical_delta(

@@ -13,6 +13,7 @@ No raw IOS, JavaScript, or bridge command is accepted from the operator.
 from __future__ import annotations
 
 import argparse
+import collections
 import hashlib
 import json
 import os
@@ -30,6 +31,7 @@ from packet_tracer_mcp.application.use_cases.apply_configuration import (
 from packet_tracer_mcp.application.use_cases.apply_control_plane import (
     ControlPlaneApplicator,
 )
+from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
 from packet_tracer_mcp.application.use_cases.capability_discovery import (
     CapabilityDiscoveryService,
 )
@@ -70,6 +72,7 @@ from packet_tracer_mcp.application.use_cases.reconcile_canonical_stage import (
     reconcile_canonical_stage_deployment,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationRuntimeContext,
 )
@@ -99,6 +102,9 @@ from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime
 )
 from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
     PacketTracerEnterpriseControlPlaneRuntime,
+)
+from packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
+    PacketTracerEnterpriseVoiceRuntime,
 )
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
@@ -460,6 +466,103 @@ def _attempted_device_ids(deployment) -> set[str]:
     }
 
 
+def _stage_voice(
+    projection,
+    *,
+    voice_runtime: PacketTracerEnterpriseVoiceRuntime,
+    composition,
+    configuration,
+    statuses: dict,
+    context: ConfigurationRuntimeContext,
+    manifest,
+) -> dict[str, object]:
+    """Apply and judge E7 for one stage. Never claims what it did not observe.
+
+    Three outcomes are acceptable and they are not the same thing:
+
+      * no phone in this stage -- nothing to apply, nothing claimed;
+      * applied, and every phone that E7 owns is addressed and registered;
+      * applied, and the evidence is bounded -- a capability this build does
+        not expose, or a phone whose state could not be read.
+
+    Only a contradiction fails the stage: a phone observed to hold an address
+    outside its voice segment, two channels disagreeing about one phone, or an
+    action Packet Tracer refused. An absent observation is recorded as absent.
+    """
+    plan = getattr(projection, "voice", None)
+    if plan is None or not plan.actions:
+        return {"staged": False, "reason": "This stage carries no phone."}
+
+    result = VoiceApplicator(voice_runtime).apply(
+        plan,
+        actual_source_topology_hash=projection.topology.physical_identity_hash,
+        actual_source_configuration_hash=projection.configuration.semantic_hash,
+        foundational_statuses=statuses,
+        capabilities=composition.voice_capabilities,
+        runtime_context=context,
+        deployment_manifest=manifest,
+    )
+    evidence: dict[str, object] = {
+        "staged": True,
+        "result": result.model_dump(mode="json"),
+        "phones": len(plan.phone_assignments),
+        "actions": len(plan.actions),
+    }
+
+    refused = sorted(
+        f"{item.action_id}: {item.message}" for item in result.action_results
+        if item.status is ActionExecutionStatus.FAILED
+    )
+    if result.preflight_errors:
+        evidence["error"] = "; ".join(result.preflight_errors)
+        return evidence
+    if refused:
+        evidence["error"] = "Packet Tracer refused voice actions: " + "; ".join(refused)
+        return evidence
+
+    addressing = collections.Counter(
+        item.addressing_status.value for item in result.registrations
+    )
+    registration = collections.Counter(
+        item.status.value for item in result.registrations
+    )
+    evidence["addressing_by_status"] = dict(sorted(addressing.items()))
+    evidence["registration_by_status"] = dict(sorted(registration.items()))
+    evidence["contradicted_addressing"] = sorted(
+        f"{item.phone_id}: {item.addressing_message}"
+        for item in result.registrations
+        if item.addressing_status is ActionExecutionStatus.FAILED
+    )
+    evidence["addressed_phones"] = sorted(
+        f"{item.phone_id}={item.call_control_ipv4 or item.endpoint_ipv4}"
+        for item in result.registrations
+        if item.addressing_status in {
+            ActionExecutionStatus.VERIFIED, ActionExecutionStatus.PARTIAL,
+        }
+    )
+    if evidence["contradicted_addressing"]:
+        evidence["error"] = (
+            "Observed phone addressing contradicted the plan: "
+            + "; ".join(evidence["contradicted_addressing"])
+        )
+        return evidence
+    # A registration this build cannot observe is bounded evidence, not a
+    # failure; a registration it can observe and reports UNREGISTERED is a
+    # contradiction of a claim the plan made.
+    evidence["contradicted_registration"] = sorted(
+        f"{item.phone_id}: {item.message}" for item in result.registrations
+        if item.status is ActionExecutionStatus.FAILED
+    )
+    if evidence["contradicted_registration"]:
+        evidence["error"] = (
+            "Observed phone registration contradicted the plan: "
+            + "; ".join(evidence["contradicted_registration"])
+        )
+        return evidence
+    evidence["error"] = ""
+    return evidence
+
+
 def _execute_stage(
     projection,
     *,
@@ -469,6 +572,7 @@ def _execute_stage(
     physical: PacketTracerPhysicalTopologyRuntime,
     configuration_runtime: PacketTracerEnterpriseConfigurationRuntime,
     control_runtime: PacketTracerEnterpriseControlPlaneRuntime,
+    voice_runtime: PacketTracerEnterpriseVoiceRuntime,
     transport: PacketTracerHttpTransport,
     fingerprint: EnvironmentFingerprint,
     packet_tracer_version: str,
@@ -485,6 +589,13 @@ def _execute_stage(
             "modules": len(projection.topology.modules),
             "links": len(projection.topology.links),
             "configuration_actions": len(projection.configuration.actions),
+            "voice_actions": (
+                len(projection.voice.actions) if projection.voice is not None else 0
+            ),
+            "voice_phones": (
+                len(projection.voice.phone_assignments)
+                if projection.voice is not None else 0
+            ),
             "control_plane_actions": len(projection.control_plane.actions),
             "verification_expectations": len(
                 projection.control_plane.verification_expectations
@@ -599,6 +710,29 @@ def _execute_stage(
         configuration_result=configuration,
         physical_result=deployment,
     )
+
+    # L2/VLAN/DHCP foundation is applied and verified above. Voice comes next,
+    # before the control plane, because it is what turns a powered phone on a
+    # voice VLAN into an addressed, registered one: option 150 on the pool the
+    # foundation just created, a call control to answer, an extension per phone
+    # and the configuration files they fetch. Only then is there anything to
+    # verify about a phone at all.
+    voice_evidence = _stage_voice(
+        projection,
+        voice_runtime=voice_runtime,
+        composition=composition,
+        configuration=configuration,
+        statuses=statuses,
+        context=context,
+        manifest=manifest,
+    )
+    evidence["voice"] = voice_evidence
+    if voice_evidence.get("error"):
+        raise _failed(
+            f"Voice at {projection.stage.value!r} did not close: "
+            + str(voice_evidence["error"])
+        )
+
     control = ControlPlaneApplicator(control_runtime).apply(
         projection.control_plane,
         actual_source_topology_hash=projection.topology.physical_identity_hash,
@@ -658,6 +792,10 @@ def _full_qualification_projection(composition):
         configuration=composition.configuration,
         control_plane=composition.control_plane,
         forwarding_checks=projection.forwarding_checks,
+        # The full plans, so the full voice plan: its source hashes bind the
+        # whole topology and configuration, which is exactly what this stage
+        # is applied against.
+        voice=composition.voice,
     )
 
 
@@ -885,6 +1023,16 @@ def run(
             transport.send,
             transport.send_and_wait,
         )
+        # A phone that has just been given option 150 and a call control has to
+        # solicit, lease, fetch its files and register. 30s is the applicator
+        # default and it is a DHCP retry interval, not a provisioning cycle.
+        voice_runtime = PacketTracerEnterpriseVoiceRuntime(
+            lambda: _inventory(physical),
+            transport.send,
+            transport.send_and_wait,
+            registration_timeout_seconds=180.0,
+            convergence_interval_seconds=5.0,
+        )
 
         previous_projection = None
         verified_core_deployment = None
@@ -1000,6 +1148,7 @@ def run(
                 physical=physical,
                 configuration_runtime=configuration_runtime,
                 control_runtime=control_runtime,
+                voice_runtime=voice_runtime,
                 transport=transport,
                 fingerprint=fingerprint,
                 packet_tracer_version=packet_tracer_version,
@@ -1125,6 +1274,7 @@ def run(
             physical=physical,
             configuration_runtime=configuration_runtime,
             control_runtime=control_runtime,
+            voice_runtime=voice_runtime,
             transport=transport,
             fingerprint=fingerprint,
             packet_tracer_version=packet_tracer_version,

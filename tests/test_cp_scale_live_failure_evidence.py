@@ -60,6 +60,7 @@ projection = SimpleNamespace(
     control_plane=SimpleNamespace(
         semantic_hash="control-hash", actions=[], verification_expectations=[],
     ),
+    voice=None,
 )
 deployment = SimpleNamespace(
     status=PhysicalDeploymentStatus.FAILED,
@@ -77,6 +78,7 @@ try:
         physical=None,
         configuration_runtime=None,
         control_runtime=None,
+        voice_runtime=None,
         transport=None,
         fingerprint=None,
         packet_tracer_version="9.0.1.0858",
