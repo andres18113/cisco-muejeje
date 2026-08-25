@@ -216,86 +216,146 @@ class PacketTracerEnterpriseVoiceRuntime:
     def observe_registration(
         self, expectation: VoiceVerificationExpectation,
     ) -> RuntimePhoneRegistration:
-        host = self._registration_hosts.get(expectation.phone_id)
-        if not host:
-            return self._unobservable_registration(expectation)
+        return self.observe_registrations([expectation])[0]
+
+    def observe_registrations(
+        self, expectations: Sequence[VoiceVerificationExpectation],
+    ) -> list[RuntimePhoneRegistration]:
+        """One bounded observation episode per call control, not per phone.
+
+        `show ephone` is ONE table for the whole call control: a single complete
+        capture states, simultaneously, what every ephone row on that host is
+        doing. Reading it once per phone multiplied one bounded wait by the
+        number of phones -- twenty-one 7960s that never register cost 21 x the
+        registration timeout to learn what the first complete capture already
+        said -- without adding a single observation.
+
+        Nothing about the evidence moves. Each phone is still judged on its own
+        row, from a capture that was actually read; the episode only ends early
+        when EVERY phone in the group is registered, so no phone gets a shorter
+        window than the contract gives it; an incomplete capture still claims
+        nothing; and the phone's own SVI is still read per phone, because it is
+        a different fact observed on a different channel.
+        """
+        ordered = list(expectations)
+        results: dict[int, RuntimePhoneRegistration] = {}
+        by_host: dict[str, list[tuple[int, VoiceVerificationExpectation]]] = {}
+        for index, expectation in enumerate(ordered):
+            host = self._registration_hosts.get(expectation.phone_id)
+            if not host:
+                results[index] = self._unobservable_registration(expectation)
+                continue
+            by_host.setdefault(host, []).append((index, expectation))
+        for host, group in by_host.items():
+            results.update(self._observe_host_registrations(host, group))
+        return [results[index] for index in range(len(ordered))]
+
+    def _observe_host_registrations(
+        self,
+        host: str,
+        group: Sequence[tuple[int, VoiceVerificationExpectation]],
+    ) -> dict[int, RuntimePhoneRegistration]:
+        """Walk one call control's registration table until the group settles."""
+        decided: dict[int, tuple[dict[str, object], dict, int]] = {}
         last: dict[str, object] = {}
+        attempts = 0
 
         def inspect() -> dict[str, object]:
-            nonlocal last
+            nonlocal last, attempts
+            attempts += 1
             last = self.inspect_call_control(host)
             rows = last.get("ephones", [])
-            match = next((
-                item for item in rows
-                if str(item.get("extension") or "") == expectation.extension
-            ), None)
-            last["match"] = match
+            by_extension = {
+                str(item.get("extension") or ""): item
+                for item in rows
+                if isinstance(item, dict)
+            }
+            last["by_extension"] = by_extension
+            for index, expectation in group:
+                if index in decided:
+                    continue
+                match = by_extension.get(expectation.extension)
+                if isinstance(match, dict) and match.get("registered"):
+                    decided[index] = (last, match, attempts)
             return {
                 "found": bool(last.get("executed")),
-                "configuration_channel": bool(match and match.get("registered")),
+                # The episode closes early only when every phone on this host
+                # has registered. Anything less keeps reading until the bound.
+                "configuration_channel": len(decided) == len(group),
             }
 
-        convergence = StateConvergenceWaiter(
+        StateConvergenceWaiter(
             inspect,
             timeout_seconds=self._registration_timeout,
             interval_seconds=self._convergence_interval,
         ).wait()
-        match = last.get("match")
-        endpoint = self._endpoint_observation(expectation)
-        endpoint_ipv4 = str(endpoint["ipv4"])
-        endpoint_present = bool(endpoint["present"])
+
+        final_rows = last.get("by_extension")
+        final_rows = final_rows if isinstance(final_rows, dict) else {}
         complete = bool(last.get("output_complete"))
-        if convergence.configuration_channel and isinstance(match, dict):
-            return RuntimePhoneRegistration(
-                expectation_id=expectation.id,
-                phone_id=expectation.phone_id,
-                extension=expectation.extension,
-                status=ActionExecutionStatus.VERIFIED,
-                direct_readback=FieldVerificationStatus.VERIFIED,
-                evidence_method="fresh_privileged_show_ephone",
-                fresh_evidence=bool(last.get("fresh_output_observed")),
-                call_control_ipv4=_reported_address(match.get("ip_address")),
-                endpoint_ipv4=endpoint_ipv4,
-                endpoint_interface=expectation.endpoint_interface,
-                endpoint_interface_present=endpoint_present,
-                message=(
-                    f"SCCP registered at {match.get('ip_address')} after "
-                    f"{convergence.attempts} observation(s)."
-                ),
-            )
-        if isinstance(match, dict):
-            return RuntimePhoneRegistration(
-                expectation_id=expectation.id,
-                phone_id=expectation.phone_id,
-                extension=expectation.extension,
-                status=ActionExecutionStatus.FAILED,
-                direct_readback=FieldVerificationStatus.FAILED,
-                evidence_method="fresh_privileged_show_ephone",
-                fresh_evidence=bool(last.get("fresh_output_observed")),
-                call_control_ipv4=_reported_address(match.get("ip_address")),
-                endpoint_ipv4=endpoint_ipv4,
-                endpoint_interface=expectation.endpoint_interface,
-                endpoint_interface_present=endpoint_present,
-                message="The current ephone row remained UNREGISTERED before timeout.",
-            )
-        if last.get("executed") and not complete:
-            return self._unobservable_registration(
+        observed: dict[int, RuntimePhoneRegistration] = {}
+        for index, expectation in group:
+            endpoint = self._endpoint_observation(expectation)
+            endpoint_ipv4 = str(endpoint["ipv4"])
+            endpoint_present = bool(endpoint["present"])
+            settled = decided.get(index)
+            if settled is not None:
+                capture, match, seen_after = settled
+                observed[index] = RuntimePhoneRegistration(
+                    expectation_id=expectation.id,
+                    phone_id=expectation.phone_id,
+                    extension=expectation.extension,
+                    status=ActionExecutionStatus.VERIFIED,
+                    direct_readback=FieldVerificationStatus.VERIFIED,
+                    evidence_method="fresh_privileged_show_ephone",
+                    fresh_evidence=bool(capture.get("fresh_output_observed")),
+                    call_control_ipv4=_reported_address(match.get("ip_address")),
+                    endpoint_ipv4=endpoint_ipv4,
+                    endpoint_interface=expectation.endpoint_interface,
+                    endpoint_interface_present=endpoint_present,
+                    message=(
+                        f"SCCP registered at {match.get('ip_address')} after "
+                        f"{seen_after} observation(s)."
+                    ),
+                )
+                continue
+            match = final_rows.get(expectation.extension)
+            if isinstance(match, dict):
+                observed[index] = RuntimePhoneRegistration(
+                    expectation_id=expectation.id,
+                    phone_id=expectation.phone_id,
+                    extension=expectation.extension,
+                    status=ActionExecutionStatus.FAILED,
+                    direct_readback=FieldVerificationStatus.FAILED,
+                    evidence_method="fresh_privileged_show_ephone",
+                    fresh_evidence=bool(last.get("fresh_output_observed")),
+                    call_control_ipv4=_reported_address(match.get("ip_address")),
+                    endpoint_ipv4=endpoint_ipv4,
+                    endpoint_interface=expectation.endpoint_interface,
+                    endpoint_interface_present=endpoint_present,
+                    message="The current ephone row remained UNREGISTERED before timeout.",
+                )
+                continue
+            if last.get("executed") and not complete:
+                observed[index] = self._unobservable_registration(
+                    expectation,
+                    endpoint_ipv4=endpoint_ipv4,
+                    endpoint_interface_present=endpoint_present,
+                    evidence_method="show_ephone_capture_incomplete",
+                    message=(
+                        "The show ephone capture was truncated after "
+                        f"{last.get('pager_pages_captured')} page(s), so the absence "
+                        f"of extension {expectation.extension} is a limit of the read "
+                        "and not an observation about this phone."
+                    ),
+                )
+                continue
+            observed[index] = self._unobservable_registration(
                 expectation,
                 endpoint_ipv4=endpoint_ipv4,
                 endpoint_interface_present=endpoint_present,
-                evidence_method="show_ephone_capture_incomplete",
-                message=(
-                    "The show ephone capture was truncated after "
-                    f"{last.get('pager_pages_captured')} page(s), so the absence "
-                    f"of extension {expectation.extension} is a limit of the read "
-                    "and not an observation about this phone."
-                ),
             )
-        return self._unobservable_registration(
-            expectation,
-            endpoint_ipv4=endpoint_ipv4,
-            endpoint_interface_present=endpoint_present,
-        )
+        return observed
 
     def _endpoint_observation(
         self, expectation: VoiceVerificationExpectation,

@@ -512,23 +512,51 @@ class VoiceApplicator:
         # El resto es la definicion unica del dominio: encolar no es aplicar.
         return mutation_execution_status(mutation)
 
+    def _observe_registrations(self, expectations):
+        """Observe a batch of expectations in as few episodes as it takes.
+
+        `show ephone` is one table per call control, so a runtime that can read
+        it once for the whole batch is not observing less -- it is observing the
+        same rows without multiplying one bounded wait by the number of phones.
+        A runtime that offers no batch entry point keeps the per-phone contract
+        exactly as it was.
+        """
+        batch = getattr(self._runtime, "observe_registrations", None)
+        if callable(batch):
+            observed = list(batch(expectations))
+            if len(observed) != len(expectations):
+                raise RuntimeError(
+                    "The voice runtime returned "
+                    f"{len(observed)} observation(s) for {len(expectations)} "
+                    "registration expectation(s).",
+                )
+            return observed
+        return [
+            self._runtime.observe_registration(item) for item in expectations
+        ]
+
     def _registrations(self, plan, actions, capabilities):
         action_results = {item.action_id: item for item in actions}
         controls = {item.id: item for item in plan.call_controls}
-        results = []
-        for expectation in (
+        expectations = [
             item for item in plan.verification_expectations
             if item.kind is VoiceVerificationKind.PHONE_REGISTRATION
-        ):
+        ]
+        # Two passes on purpose: everything that can be settled without touching
+        # the runtime is settled first, so the observation call carries exactly
+        # the phones whose registration is still an open question.
+        settled: dict[int, PhoneRegistrationResult] = {}
+        observable: list[tuple[int, object]] = []
+        for index, expectation in enumerate(expectations):
             action = action_results[expectation.action_id]
             if not satisfies_apply_dependency(action.status):
-                results.append(PhoneRegistrationResult(
+                settled[index] = PhoneRegistrationResult(
                     expectation_id=expectation.id, phone_id=expectation.phone_id,
                     extension=expectation.extension,
                     status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
                     failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                     message=f"Binding action {action.action_id} is not applied.",
-                ))
+                )
                 continue
             control = controls[expectation.call_control_id]
             profile = capabilities.get(control.host_model)
@@ -537,17 +565,17 @@ class VoiceApplicator:
                 if profile else VoiceCapabilityStatus.UNKNOWN
             )
             if support is VoiceCapabilityStatus.UNOBSERVABLE:
-                results.append(PhoneRegistrationResult(
+                settled[index] = PhoneRegistrationResult(
                     expectation_id=expectation.id, phone_id=expectation.phone_id,
                     extension=expectation.extension, status=ActionExecutionStatus.UNOBSERVABLE,
                     direct_readback=FieldVerificationStatus.UNOBSERVABLE,
                     failure_code=ConfigurationFailureCode.PHONE_REGISTRATION_UNOBSERVABLE,
                     evidence_method="runtime_capability_matrix",
                     message="Direct phone registration is unobservable.",
-                ))
+                )
                 continue
             if support is not VoiceCapabilityStatus.SUPPORTED:
-                results.append(PhoneRegistrationResult(
+                settled[index] = PhoneRegistrationResult(
                     expectation_id=expectation.id, phone_id=expectation.phone_id,
                     extension=expectation.extension, status=ActionExecutionStatus.SKIPPED,
                     failure_code=(
@@ -555,30 +583,43 @@ class VoiceApplicator:
                         if support is VoiceCapabilityStatus.UNSUPPORTED
                         else ConfigurationFailureCode.CAPABILITY_UNKNOWN
                     ), message=f"Phone registration is {support.value}.",
-                ))
+                )
                 continue
+            observable.append((index, expectation))
+        if observable:
             try:
-                observed = self._runtime.observe_registration(expectation)
-                failure = (
-                    ConfigurationFailureCode.NONE
-                    if observed.status is ActionExecutionStatus.VERIFIED
-                    else ConfigurationFailureCode.PHONE_REGISTRATION_TIMEOUT
+                observations = self._observe_registrations(
+                    [item for _, item in observable],
                 )
-                addressing, addressing_message = _addressing_claim(
-                    plan.assignment_for_phone(expectation.phone_id), observed,
-                )
-                results.append(PhoneRegistrationResult(
-                    **observed.model_dump(), failure_code=failure,
-                    addressing_status=addressing,
-                    addressing_message=addressing_message,
-                ))
             except Exception as exc:
-                results.append(PhoneRegistrationResult(
-                    expectation_id=expectation.id, phone_id=expectation.phone_id,
-                    extension=expectation.extension, status=ActionExecutionStatus.FAILED,
-                    failure_code=ConfigurationFailureCode.SESSION_FAILED, message=str(exc),
-                ))
-        return results
+                # A batch that could not be read is not a batch of phones that
+                # failed individually, but it is not evidence of anything
+                # either: every phone it was going to answer stays fail-closed.
+                observations = None
+                for index, expectation in observable:
+                    settled[index] = PhoneRegistrationResult(
+                        expectation_id=expectation.id, phone_id=expectation.phone_id,
+                        extension=expectation.extension,
+                        status=ActionExecutionStatus.FAILED,
+                        failure_code=ConfigurationFailureCode.SESSION_FAILED,
+                        message=str(exc),
+                    )
+            if observations is not None:
+                for (index, expectation), observed in zip(observable, observations):
+                    failure = (
+                        ConfigurationFailureCode.NONE
+                        if observed.status is ActionExecutionStatus.VERIFIED
+                        else ConfigurationFailureCode.PHONE_REGISTRATION_TIMEOUT
+                    )
+                    addressing, addressing_message = _addressing_claim(
+                        plan.assignment_for_phone(expectation.phone_id), observed,
+                    )
+                    settled[index] = PhoneRegistrationResult(
+                        **observed.model_dump(), failure_code=failure,
+                        addressing_status=addressing,
+                        addressing_message=addressing_message,
+                    )
+        return [settled[index] for index in range(len(expectations))]
 
     def _calls(self, plan, registrations, capabilities):
         registration_by_phone = {item.phone_id: item for item in registrations}

@@ -211,9 +211,19 @@ _PAGER_MARKER = "--More--"
 # seis campos tipados quedaran UNOBSERVABLE aunque la consulta fuese fresca.
 # Se recorre hasta prompt con las mismas cotas duras; una captura incompleta
 # conserva el techo fail-closed y nunca se interpreta como ausencia.
+#
+# `SHOW_EPHONE` entra por CP-SCALE FLOOR 1 en el mismo build exacto. Un 2811 con
+# 21 ephones imprime una tabla de ~84 lineas y pagina siempre; cada lectura
+# capturaba una ventana distinta, de modo que la fila de casi todos los telefonos
+# quedaba fuera de la captura que iba a juzgarlos. La consulta ya esta acotada a
+# la unica forma que PT 9.0.1 expone -- `show telephony-service` no existe en
+# este build -- y no hay manera de angostarla por telefono. Sin recorrer el
+# pager, el canal del call control es inobservable a escala de una planta:
+# no dice UNREGISTERED, no dice nada.
 _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
     OperationalQueryId.SHOW_IP_PROTOCOLS,
+    OperationalQueryId.SHOW_EPHONE,
 })
 
 # Cotas duras de UNA captura logica. Existen para que no haya forma de que la
