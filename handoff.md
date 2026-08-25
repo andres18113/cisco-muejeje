@@ -6,223 +6,256 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-HEAD = 32df973 (pushed)
-ROUTING_CORE = GOVERNED VERIFIED (re-materialized twice this session)
-ROUTER4_SWITCH10 = GOVERNED VERIFIED (re-materialized twice this session)
-FLOOR1_PHYSICAL = VERIFIED (74 devices / 55 links / 3 modules, 132/132 observed)
+HEAD = 4c881d5 (pushed)
+ROUTING_CORE = GOVERNED VERIFIED (re-materialized 3x this session)
+ROUTER4_SWITCH10 = GOVERNED VERIFIED (re-materialized 3x this session)
+FLOOR1_PHYSICAL = VERIFIED (74 devices / 55 links / 3 modules)
 FLOOR1_CONFIGURATION = VERIFIED (acceptance error empty, zero contradictions)
-FLOOR1_VOICE = APPLIED, NOT VERIFIED
-FLOOR1 = NOT VERIFIED
+FLOOR1_VOICE = APPLIED (47/47, zero refused), NOT VERIFIED
+FLOOR1 = NOT VERIFIED -- phones do not acquire
 CP_SCALE = OPEN
 E10 = FORBIDDEN
 ```
 
-No live run is active. The last run's cleanup restored the workspace and it was
-independently re-observed: semantic 0 devices / 0 links,
-`safe_for_disposable_mutation: True`. Only backend-managed `Power Distribution
-Device` objects remain, which the governed restoration check ignores.
+Offline: **2709 passed**, no failures.
 
-Offline: **2682 passed**, no failures.
+Three governed LIVE runs reached Floor 1 and failed there on the same wall. A
+fourth never started: the authenticated bridge blocker reproduced. Every run
+that acquired ownership cleaned up and re-observed the baseline twice; run four
+created nothing.
 
-## Operational: the extension stops polling after every run
+**A LIVE run cannot start until the operator re-enables MCP BUILDER.** That is
+the current state of the bridge, not a guess -- see below.
 
-This is not a defect in the product and it will cost a retry every time if it is
-not anticipated.
+## The acquisition question is ANSWERED. Its cause is not.
 
-`tools/cp_scale_canonical_live.py` uses the authenticated HTTP bridge
-(`PacketTracerHttpTransport`, loopback `127.0.0.1:54321`). **Every time a run
-ends and its transport disconnects, the MCP BUILDER extension stops polling and
-does not resume on its own.** The next run then hard-stops on
-`"Authenticated Packet Tracer HTTP bridge did not obtain fresh polling"`.
+This is the finding, and it is a finding now rather than an artefact of not
+having looked:
 
-Diagnose it, do not guess:
+```text
+POWER                  VERIFIED   132/132 physical items
+LINK                   VERIFIED   74 devices / 55 links / 3 modules
+VOICE_VLAN             VERIFIED   49/49 access ports, data 10 / voice 20
+VOICE_INTERFACE        VERIFIED   Vlan20 present on 21/21 phones
+PHONE_ADDRESS_CHANNEL  VERIFIED   readable on 21/21 -- the channel answers
+PHONE_DHCP             FAILED     0/21 hold an address (reproduced 3 runs)
+CME_REGISTRATION       FAILED     19 UNREGISTERED from a COMPLETE table
+EPHONE_POPULATION      DEFECT     Router4 holds 19 ephones, not 21
+DUAL_CHANNEL           AGREE      both channels report no address; no phone
+                                  ever had two positive reads to compare
+```
+
+Every phone learns its voice VLAN and builds `Vlan20`. None acquires. The chain
+breaks **at acquisition**, not before it -- so the defect is not in VLAN
+learning, port configuration, power or voice-interface creation, and evidence
+now excludes each of those rather than merely not implicating them.
+
+Do not read `PHONE_DHCP = FAILED` as "DHCP is broken". What is established is
+that no phone holds an address on a channel proven able to report one. Whether
+the phones never solicited or solicited and got nothing is **still open**, and
+the two want opposite investigations.
+
+### The strongest lead
+
+The Floor-1 stage carries **zero configuration actions targeting any of the 21
+phones**. 28 endpoint actions cover 23 PCs, 2 printers and 3 APs; the phones get
+none.
+
+That is a consequence of `6ea254d`, and that commit is right: E5 stopped
+claiming a phone on a voice VLAN because the `Vlan20` it would address does not
+exist when E5 is preflighted against the live inventory. But nothing took over
+the job of telling the phone to acquire on the SVI it later builds. If a PT 7960
+does not solicit by itself, that is the whole defect and it sits upstream of the
+pool, option 150 and reachability alike.
+
+Measured against that lead, and why it is not yet settled:
+
+* `Vlan20` exposes `getIpAddress` and **no `isDhcpEnabled`** -- measured, all 21,
+  run three. So the SVI cannot answer whether it was asked to acquire.
+* `56537ca` asks the phone at **device level** as well, on the precedent of the
+  AccessPoint-PT probe, which had to ask the device AND both ports because this
+  build does not put the same getters in both places. **That read has never
+  run**: run four died at the bridge before deploying anything.
+
+### The other half of the topology worth suspecting
+
+The DHCP server demonstrably works: 23 PCs leased `172.16.10.x` and read their
+addresses back. Those PCs are all on **Switch4**. The phones are all on
+**Switch5**, one hop further out:
+
+```text
+Router4:Fa0/0 (.10 .20 .30 dot1Q, all three pools)
+  |  Switch10:Gi0/1 -- Switch10:Fa0/1   (2960-24TT)
+  |  Switch4:Gi0/1  -- Switch4:Gi0/2    (3560-24PS)  <- 23 PC-PT, DHCP, LEASED
+  |  Switch5:Gi0/1                      (3560-24PS)  <- 21 x 7960, NO LEASE
+```
+
+Everything else on Switch5 -- 2 printers, 2 APs -- is static or not
+IP-addressable, so **nothing has ever proven that the Switch4 <-> Switch5 hop
+forwards DHCP at all**. VLAN 20 is created on all three switches and all five
+trunk ports read back as trunks, but `allowed_vlans` is UNOBSERVABLE on this
+build, so a trunk that does not carry VLAN 20 would look identical.
+
+Two candidate causes remain and they are separable:
+
+1. the phones never solicit (device-level read, already implemented, unexercised);
+2. VLAN 20 does not reach Router4 from Switch5.
+
+If the device-level read comes back unreadable too, the phone's structured API is
+exhausted and the next honest observation is **the server's own record** --
+`show ip dhcp binding` on Router4, which is not a registered query yet. It splits
+the two cleanly: `172.16.10.x` bindings and no `172.16.20.x` means the DISCOVERs
+never arrive; any `172.16.20.x` binding means the phones do acquire and the
+phone-side read is looking in the wrong place.
+
+### Two ephones are missing from the call control
+
+Reproduced exactly in runs one and three, from a **complete** 5-page capture:
+
+```text
+A complete show ephone capture of 5 page(s) named 19 extension(s) and not 3001
+A complete show ephone capture of 5 page(s) named 19 extension(s) and not 3007
+```
+
+Router4 holds 19 ephones, not 21, and the two absent are `ephone-1` and
+`ephone-7`. All 21 `BindPhoneToExtension` actions applied and none was refused,
+so two typed bindings did not survive on the device. A duplicate MAC is the
+obvious suspect -- `_phone_mac` takes each phone's first non-zero port MAC, and
+`ephone N mac-address X` for an X another ephone already holds does not leave two
+rows. Nothing has measured this yet.
+
+The raw capture is **not retained** in the evidence. Fixing that is the cheapest
+next step on this question: the parsed verdicts cannot answer why a row is
+missing, only that it is.
+
+## The bridge blocker: ROOT-CAUSED AND FIXED, NOT VERIFIED
+
+It reproduced on run four with the recorded signature exactly:
+
+```text
+connected: False   last_poll_ago: None   unauth_count: 0
+file bridge: alive   token_id: unchanged
+```
+
+The webview's command loop is documented as reencadenandose siempre, "nunca hay
+una rama que deje el bucle muerto". It was not. Everything between receiving a
+response and rechaining ran outside any `try`: `log()` writes to the DOM and
+compiles a `RegExp` out of the search box, and one exception there took the
+`again()` with it. The loop died silently while `pollBridgeStatus` kept its own
+`setInterval` alive -- which is why the window still looks healthy, and why the
+file bridge (Script Engine, no window) is alive through every occurrence. A
+CP-SCALE run pushes thousands of commands through that loop.
+
+`4c881d5` rechains past everything that can throw and adds a watchdog above it,
+because a self-rechaining loop still cannot recover from its window reloading or
+from a request that calls none of its callbacks. A generation counter stops a
+rescue from leaving two chains running.
+
+**This is APPLIED, NOT VERIFIED.** It takes effect when Packet Tracer reloads the
+extension, and nothing in this session exercised it. The next session should
+confirm the loop survives a full run, and confirm it recovers if it does not.
+
+The runner's hard stop now names which of the three failures it is instead of
+one sentence naming none of them. Diagnose with:
 
 ```bash
 PYTHONPATH=src .venv/Scripts/python.exe -c \
   "from packet_tracer_mcp.infrastructure.execution.live_bridge import PacketTracerHttpTransport as T; \
-   t=T(); print('connected:', t.start(timeout_seconds=15.0)); print(t.status_dict()); t.stop()"
+   from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import canonical_bridge_polling_error; \
+   t=T(); print('connected:', t.start(timeout_seconds=20.0)); \
+   print(canonical_bridge_polling_error(t.status_dict()) or '(nothing to diagnose)'); t.stop()"
 ```
 
-* `last_poll_ago: None` **and** `unauth_count: 0` -> the extension is making no
-  requests at all. Re-enable MCP BUILDER in Packet Tracer. Waiting does not help:
-  it was probed twice for 25s with zero requests.
-* `unauth_count > 0` -> a token mismatch instead. The shared token lives at
-  `%LOCALAPPDATA%\packet-tracer-mcp\bridge_token` and is stable; compare
-  `token_id` across runs before touching it.
-
-The previous handoff described this as "usually transient". On this session it
-was never transient. Note also that the **file bridge stays alive** while the
-HTTP one is dead -- the two channels are independent, so `FileBridge().pt_alive()`
-returning True says nothing about whether a governed run can start. Do not
-repoint the runner at the file bridge to get past it: the authenticated channel
-is the gate that makes a LIVE stage trustworthy.
+Never repoint the runner at the file bridge to get past this. The authenticated
+channel is the gate that makes a LIVE stage trustworthy, and the file bridge is
+alive in every one of these failures.
 
 ## What this session closed
 
-### 1. The 21 x 7960 contradiction -- ROOT-CAUSED AND FIXED
+### 1. `show ephone` was unreadable at floor scale -- FIXED
 
-One mistaken premise, that a phone is an endpoint E5 addresses, failing on
-measured behaviour in two independent ways.
+21 ephones page, and `SHOW_EPHONE` was not a pagination-qualified query, so every
+capture stopped at its first page. Since `32df973` that is reported honestly,
+which left the call-control channel unable to say anything at all about Floor 1 --
+not UNREGISTERED, not registered. It is qualified now, on the same measured
+grounds as the serial controller and `show ip protocols`, with the same hard
+bounds; a capture that cannot close is still truncated and still claims nothing.
 
-Measured on 9.0.1.0858: a 7960 enumerates exactly `PC`, `Switch` and `Vlan1`.
-Once its access port signals a voice VLAN the phone itself brings up
-`Vlan<voice>` -- powered, up, protocol up -- and takes `Vlan1` down. So `Vlan1`
-is the one interface guaranteed to hold no address, and the `Vlan20` that
-replaces it does not exist when E5 is preflighted against the live inventory:
-naming it fails target validation instead of verifying.
+Completeness is **flaky across runs**: runs one and three walked all 5 pages,
+run two truncated after page 1 and read the same scattered four the previous
+handoff recorded (3011, 3016, 3020, 3021). It fails closed every time, so it
+never fabricates absence, but the channel is not yet reliable.
 
-E5 now claims no addressing for a phone on a voice VLAN, exactly as it already
-claims none for a wireless endpoint with no network port. Everything the phone
-needs from E5 -- VLAN, voice access port, gateway, DHCP pool -- is still
-compiled, and the pool survives its only client ceasing to be one this plan
-configures. E7 owns the claim and verifies it two ways that must agree: what
-`show ephone` reports the phone registered from, and what the phone reports on
-the SVI it created.
+### 2. One table, read once -- FIXED
 
-Canonical configuration actions **514 -> 445**. Confirmed live: Floor-1
-configuration acceptance error is now empty with zero contradictions.
+`show ephone` is one table per call control and it was read once per phone: 21
+expectations each opened their own bounded convergence episode over the same
+rows. The observation is now one episode per host, closing early only when every
+phone in the group has registered, so no phone gets a shorter window than the
+contract gives it.
 
-### 2. Voice was unstageable -- TWO CIRCULAR GATES REMOVED
+Floor 1 went from an estimated ~63 minutes of registration polling to a **~7
+minute whole run**. That is what made four iterations possible in one session.
 
-`VoiceApplicator` refused to run until the phone's addressing read back
-VERIFIED, while that acquisition could only happen after the actions it was
-refusing to apply. `phone_addressing` is now a foundation only where E5 really
-did address the phone first.
+### 3. Three channels that could not tell absent from empty -- FIXED
 
-The second gate only appeared once the first was gone: the plan also required
-the **DHCP pool** foundation to be VERIFIED, and `VerificationKind.DHCP_POOL` is
-answered UNOBSERVABLE unconditionally -- Packet Tracer exposes no pool getter.
-That is not fail-closed but fail-impossible. `_ADMISSIBLE_FOUNDATION_STATUSES`
-now names what evidence each foundation kind may rest on; VERIFIED remains the
-rule wherever the backend has a read-back, and a voice VLAN foundation that
-comes back UNOBSERVABLE still blocks.
+The same defect class, three times, and the last one was standing between the
+session and the answer:
 
-### 3. Voice staged in the LIVE pipeline
+* the phone's voice SVI reported `""` both when it had no address getter and when
+  it had one and held nothing. `ce53b15` carries the address channel as its own
+  fact -- this is what turned "no address, cause unknown" into "readable, and
+  holds none";
+* a row absent from a **complete** table was reported with the message for a
+  phone no `show ephone` session is bound to at all. It has its own evidence
+  method now and carries what the capture did contain;
+* `97119e0` and `56537ca` add the DHCP flag and the device-level pair with the
+  same three states throughout: enabled, disabled, and no getter to ask. Absent
+  never collapses into False.
 
-`_execute_stage` applies E7 between foundational evidence and the control plane:
-foundation -> option 150 + call control + extensions + bindings + cnf-files ->
-acquisition -> registration -> fresh verification. Voice is compiled **per
-stage**, because E7 binds the exact E4/E5 hashes it is applied against.
+### 4. A stub that mirrored the model by hand -- FIXED
 
-Confirmed live: Floor 1 applied **all 47 voice actions, zero refused**.
-
-### 4. `supports_cme` -- MEASURED
-
-Voice capability profiles read measured `DeviceCapabilities`, never a model
-name. `_probe_cme` is a controlled configure/read-back on a disposable router: a
-one-ephone `telephony-service` bound to a routed source address, an `ephone-dn`,
-an `ephone`, then `show ephone`. It uses `show ephone` and not
-`show telephony-service`, which exact-build evidence already recorded as absent.
-
-```text
-2811 supports_cme = SUPPORTED, verified (measured twice this session)
-```
-
-Prequalification derives it for every model hosting a call control, so the
-existing "SUPPORTED after composition or hard stop" gate covers voice.
-
-### 5. AccessPoint-PT -- NOT IP-ADDRESSABLE
-
-Bounded exact-build probe, retained at `data/cp-scale/ap-addressability/`. An
-AccessPoint-PT beside a PC-PT carrying an identical static claim on an identical
-powered access port. The PC leased `172.31.10.2` and verified. The AP came up on
-both `Port 0` and `Port 1`, up and powered, and exposed `getIpAddress`,
-`setIpAddress`, `getSubnetMask`, `getDefaultGateway` and `isDhcpEnabled` as
-`undefined` -- at device level and on both ports, before and after addressing.
-It bridges; it does not host. It has no separate management interface.
-
-Two fixes followed. The read-back already promised "a named interface that
-cannot be found **or cannot expose an address** is UNOBSERVABLE, never FAILED"
-and implemented only the first half -- the JS flag answering the second was
-overwritten by the match result one line later. And the governed ceiling then
-rejected the honest answer, so an absent address channel is now its own ceiling,
-keyed on evidence method `structured_endpoint_getters_absent` so that an
-interface which was never found still fails.
-
-Confirmed live: the 3 APs read back UNOBSERVABLE and Floor 1 accepted them.
-
-### 6. Three observation defects -- FIXED, NOT YET RE-RUN
-
-Found by the first run that reached voice. All three are about reporting, not
-provisioning, and together they made one misleading picture:
-
-* `show ephone` **pages at 21 ephones**. Each phone's observation issues its own
-  read and each captured a different scattered window -- extensions 3011, 3016,
-  3020, 3021 matched, the other seventeen were reported as having no
-  registration table at all. `IosCommandResult.output_complete` exists exactly
-  for this and `inspect_call_control` was discarding it. Completeness now travels
-  with the capture, and a truncated read that misses a row says so
-  (`show_ephone_capture_incomplete`) instead of claiming the row is absent.
-* The four rows that parsed reported `IP:0.0.0.0` -- a call control stating it
-  has **no** address. Carried forward as an address it failed the segment check
-  as "0.0.0.0 is outside the voice segment", a contradiction manufactured out of
-  an absence, and the literal reason the stage failed. Both channels normalise
-  it now; the endpoint side already did and the asymmetry was the bug.
-* The phone-side read collapsed "the SVI is not there" into the same empty
-  string as "it is there and holds nothing". Interface presence is now carried
-  as its own fact (`endpoint_interface_present`) and reported per stage.
-
-## The open question
-
-**Whether the phones acquire at all is still genuinely unknown.** No phone was
-observed to acquire -- but seventeen were never read, and the four that were
-read were judged by a rule that was wrong. Do not record "phones do not
-acquire" as a finding: it is not one yet.
-
-What the last Floor-1 run does establish:
-
-```text
-POWER                  VERIFIED  132/132 physical items observed
-LINK                   VERIFIED  74 devices / 55 links / 3 modules
-VOICE_VLAN             VERIFIED  49/49 access ports, data 10 / voice 20
-VOICE_INTERFACE        not captured (fixed since)
-DHCP                   no acquisition observed on any channel that answered
-CME_REGISTRATION       4 observed UNREGISTERED, 17 not read
-DUAL_CHANNEL           not evaluable, no phone had both channels answer
-```
+The voice staging stub drifted three times in one session, once per honest field
+the stage learned to report. It is built from the real result model now.
 
 ## NEXT_ACTIVE_STEP
 
-1. Re-enable MCP BUILDER, confirm `connected: True`, re-run Floor 1. The
-   evidence now separates every link: per phone, whether `Vlan20` exists,
-   whether it holds a lease, whether the `show ephone` capture that judged it
-   was complete, and whether the two channels agree.
-2. Read `voice.voice_interface_present` and
-   `voice.registration_evidence_method` in the stage evidence before concluding
-   anything. If SVIs are present and unaddressed, the defect is in acquisition
-   (option 150 delivery, pool reachability, or CME source address). If SVIs are
-   absent, the phones never learned their voice VLAN and the defect is earlier.
-3. Then Floor 2 -> Floor 3 -> Router0/3650 -> Router3/2960 -> remaining -> full
+1. Re-enable MCP BUILDER. Confirm `connected: True`. **Reload the extension** so
+   `4c881d5` is actually in play, and watch whether the loop survives the run.
+2. Re-run Floor 1. Read `voice_device_dhcp` and `voice_device_addressed` first --
+   they have never run, and they may settle the acquisition cause outright.
+3. If the device level is unreadable too, register `show ip dhcp binding` on the
+   call-control host. It splits "never solicited" from "solicited and got
+   nothing" with the server's own record, independent of every phone getter.
+4. Retain the raw `show ephone` capture in the evidence, then settle why Router4
+   holds 19 ephones and not 21. Check `_phone_mac` for duplicate MACs first.
+5. Then Floor 2 -> Floor 3 -> Router0/3650 -> Router3/2960 -> remaining -> full
    qualification -> retained presentation.
 
 ### Driving the live runner
 
 `<scratchpad>/drive_live.py` performs the operator half of each checkpoint --
 commit, push, answer `continue`. It accepts `--stop-after <stage>` and
-`--retain`. Do not edit tracked files under `src/`, `tests/`,
+`--retain`, and it never kills a run: `--stop-after` answers a checkpoint with a
+refusal so the runner raises on its own and its governed `finally` cleans up.
+Do not edit tracked files under `src/`, `tests/`,
 `tools/cp_scale_canonical_live.py` or the two reference documents while a run is
 in flight: the checkpoint refuses to advance if governed source changed.
+`EXTENSION/` is not governed source.
 
-**Do not stop a run mid-flight.** Physical ownership is runtime-instance-local
-by design, so `remove_device` refuses to delete devices the current process did
-not create, and a killed run leaves its devices behind with no governed way to
-clean them up -- it cost a manual `File -> New` this session. Let a run fail on
-its own: its `finally` cleans up and re-observes the baseline twice.
-
-**Budget the registration wait.** `observe_registration` polls per phone for up
-to 180s. Twenty-one phones that never register is ~63 minutes in that loop
-alone, so a failing Floor 1 takes over an hour. That is bounded and correct, but
-plan around it.
+**Do not stop a run mid-flight.** Physical ownership is runtime-instance-local by
+design, so a killed run leaves its devices behind with no governed way to clean
+them up.
 
 ## Commits this session
 
 ```text
-6ea254d fix(cp-scale): let the plan that owns the mechanism own the phone's address
-4ee1974 feat(cp-scale): stage the voice plan in the governed LIVE pipeline
-cc9a4f4 feat(cp-scale): measure call control instead of assuming it
-e8ee880 fix(cp-scale): keep the phone's own address when its registration is unreadable
-87ed5a0 fix(cp-scale): a port that cannot expose an address is unobservable
-224289c fix(cp-scale): admit an absent address channel as its own governed ceiling
-c2d06c0 fix(cp-scale): let a foundation rest on the ceiling its kind actually has
-32df973 fix(cp-scale): tell absence apart from not having looked, on both channels
+9677e05 fix(cp-scale): read one registration table once, and read all of it
+ce53b15 fix(cp-scale): tell an unread address channel apart from an unacquired phone
+97119e0 feat(cp-scale): read whether the phone was ever asked to acquire
+56537ca feat(cp-scale): ask the phone, not only the interface the plan named
+4c881d5 fix(runtime): let the command poll survive its own logging, and watch it
 ```
+
+plus six `chore(cp-scale): checkpoint ...` commits from the three runs that
+reached and passed routing-core and router4-switch10.
