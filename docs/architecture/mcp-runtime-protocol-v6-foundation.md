@@ -1,16 +1,19 @@
 # MCP Runtime Protocol V6 — Foundation Audit and Design Slice
 
-Status: **DESIGN ONLY — NOT IMPLEMENTED**
+Status: **PHASE 1A IMPLEMENTED (pure, offline) · PHASE 1B NOT STARTED**
 Branch: `feature/runtime-protocol-v6-foundation`
 Base: `43eba72f18ad4e29e0ff292ebca4dbbd4a47232e` (CP-LIVE checkpoint on `feature/runtime-ripv2`)
-Phase: 0 — audit (accepted) · 0.5 — design corrections (this revision)
+Phase: 0 — audit (accepted) · 0.5 — design corrections (accepted) · 1A — implemented
 
-This document is an audit of the **deployed V5 bridge** and a proposal for the
-smallest safe V6 slice. Nothing here was implemented. No `.pts` was rebuilt, no
-Packet Tracer instance was touched, and no CP-SCALE run was performed.
+This document is an audit of the **deployed V5 bridge**, the design corrected
+after it, and the record of the first implemented slice. No `.pts` was rebuilt,
+no Packet Tracer instance was touched, and no CP-SCALE run was performed.
 
 Every claim below is cited to source in this checkout. Where the evidence does
-not reach, the document says so instead of extrapolating.
+not reach, the document says so instead of extrapolating. In particular, Phase
+1A executes nothing against Packet Tracer, so every claim about runtime-session
+*behaviour* is marked **UNVERIFIED_UNTIL_PHASE_1B** and none of it was promoted
+because tests pass.
 
 ## Revision 0.5 — what changed and why
 
@@ -24,7 +27,7 @@ original Part 3–5 were corrected:
    `transport_rid` are now separate contracts, independent for Slice 1.
 2. **Protocol detection conflated transport failure with V5.** "No V6 response
    means V5" silently turned a timeout into evidence about a responder.
-   Corrected in §3.4 — a four-state protocol parser, with transport outcomes
+   Corrected in §3.4 — a five-state protocol parser, with transport outcomes
    kept strictly outside it.
 3. **Slice 1 was misnamed a typed dispatcher.** It generates JavaScript in
    Python and runs it on the legacy V5 executor. That is an *encoder*, not an
@@ -39,6 +42,22 @@ original Part 3–5 were corrected:
 
 Two further corrections were made to claims about the runtime session and the
 error taxonomy; see §3.5 and §3.2.
+
+## Revision 1A — what was built
+
+Phase 1A is implemented: two new modules under `infrastructure/execution/`, two
+new test modules, and this document. Nothing else in the repository changed.
+
+Two design items moved during implementation, both because the evidence did not
+support them: `session_seed_owner` was dropped as uncomputable before Phase 1B,
+and an explicit U+2028/U+2029 escape was written and then removed once measured
+to be dead — `json.dumps` already escapes them under its default
+`ensure_ascii=True`. The invariant is now pinned by a test rather than by a
+branch whose comment overstated what it did. Both are recorded in Part 5.
+
+What Phase 1A does **not** establish is unchanged by any of it: the slice sends
+nothing to Packet Tracer, so every runtime-session behaviour stays
+UNVERIFIED_UNTIL_PHASE_1B.
 
 ---
 
@@ -384,7 +403,9 @@ minting in Python and says so.
 | Transactional / atomic file protocol | **NOT_NEEDED** | Cannot be honestly claimed (Q4). |
 | New bridge endpoints | **NOT_NEEDED** | `/queue` + `/result` already carry everything; `AGENTS.md` rule 3. |
 
-### 3.1 Result envelope (proposed)
+### 3.1 Result envelope — IMPLEMENTED
+
+As emitted by `runtime.identify` and accepted by `parse_runtime_result`:
 
 ```json
 {
@@ -393,30 +414,37 @@ minting in Python and says so.
   "op": "runtime.identify",
   "status": "ok",
   "runtime": {
-    "session_id": "<value held by the Script Engine global>",
+    "session_id": "<value held by the Script Engine global, or null>",
     "session_storage": "script_engine_global",
     "session_minted_by": "mcp_server",
-    "session_seed_owner": true,
     "extension_version": null,
     "protocol_version": 6
   },
-  "observed": {},
+  "observed": {"pt_file_version": "9.0.1.0858", "device_count": 12},
   "error": null
 }
 ```
 
 - `operation_rid` is the **protocol** identity (§3.3). It is *not* the transport
   correlation id and must never be described as validating one.
-- `mutated` is **absent**, not `null`, for a read-only operation. A read-only
-  encoder has no code path that can emit the key at all — see Part 5, test 7.
-  The field is reserved in the schema for mutating operations in a later phase.
-- `session_minted_by: "mcp_server"` is the honest value for Slice 1 (§3.5). It
-  becomes `"extension"` only when the `.pts` mints it.
-- `session_seed_owner` records whether *this* caller's injected candidate is the
-  one the engine kept. It is only computable once a response exists, so it is a
-  **Phase 1B** field; the 1A schema reserves it.
-- `extension_version: null` is the honest value until the `.pts` states it. It
-  must **not** be back-filled from the caller-supplied MCP parameter.
+- `mutated` is **absent from the model entirely**, not null. The encoder has no
+  branch that can emit the key, and the parser rejects an envelope carrying it
+  for an operation in `READ_ONLY_OPERATIONS` — including `"mutated": null`,
+  because a null default still reads as "nothing was mutated" rather than
+  "mutation is not a fact this operation reports".
+- `status` is a closed set — `ok` or `error` — and must agree with `error`:
+  `ok` carrying an error, or `error` without one, is `INVALID_V6`.
+- `session_id` may be `null`, and a null session is `VALID_V6`. Degradation has
+  to stay expressible, or the encoder's only honest failure mode becomes
+  unrepresentable.
+- `session_minted_by: "mcp_server"` is the honest value (§3.5). `"extension"` is
+  declared in the enum and is unreachable from Phase 1A.
+- `session_seed_owner` was **dropped from Phase 1A**. It is computable only once
+  a response exists, so it belongs to 1B; reserving an unused field would have
+  been a claim about a phase that has not run.
+- `extension_version: null`. Modelled as `str | None` for forward compatibility,
+  hard-coded null by the encoder, and a test asserts that neither Phase 1A module
+  so much as accepts a parameter of that name.
 
 ### 3.2 Error model — two layers, separately scoped
 
@@ -433,22 +461,32 @@ envelope's `error` field.
 envelope. RESERVED BY THE SCHEMA, NOT PRODUCIBLE IN PHASE 1A**, because Phase 1A
 performs no transport call and therefore never receives an engine error.
 
-| Code | Layer | Producible in 1A |
+| Code | Layer | Emitted by the Phase 1A encoder |
 |---|---|---|
-| `UNKNOWN_OPERATION` | B — engine | **No** (reserved) |
-| `INVALID_ARGUMENTS` | B — engine | **No** (reserved) |
-| `TARGET_NOT_FOUND` | B — engine | **No** (reserved) |
-| `ENGINE_EXCEPTION` | B — engine | **No** (reserved) |
+| `ENGINE_EXCEPTION` | B — engine | **Yes** — see the decision below |
+| `UNKNOWN_OPERATION` | B — engine | No (reserved) |
+| `INVALID_ARGUMENTS` | B — engine | No (reserved) |
+| `TARGET_NOT_FOUND` | B — engine | No (reserved) |
 
 `PROTOCOL_MISMATCH` was moved **out** of the engine layer. A responder speaking
 a different protocol version is a parser observation, not an engine failure, so
 it is a parse state (§3.4), not an `error.code`.
 
-**Testing rule.** Reserved codes must **not** be given fabricated call sites to
-make them "reachable". Phase 1A asserts the opposite property: that the
-`runtime.identify` encoder emits none of them and that no 1A code path
-constructs one. A reserved code becoming producible is a Phase 1B/2 event with
-its own test.
+**Decision: engine exceptions become envelopes, not `PT_ERROR:` text.** The
+generated code catches its own exceptions and reports a complete V6 envelope
+with `status: "error"` and `ENGINE_EXCEPTION`. The alternative — letting the
+exception escape into the legacy guard that prefixes `PT_ERROR:` — would have
+meant advertising a complete structured error contract while depending on V5
+string semantics underneath for the one case that matters. It costs nothing but
+generated text, so the explicit branch is the honest one. The three remaining
+codes describe a typed dispatcher that does not exist and stay reserved.
+
+**Testing rule, and what it is not.** Reserved codes must **not** be given
+fabricated call sites to make them "reachable". Phase 1A asserts the opposite
+properties: that the pure parser never constructs a code the document did not
+carry, and that the encoder's payload contains `ENGINE_EXCEPTION` and none of
+the other three. A reserved code becoming producible is a later event with its
+own test.
 
 Python-side outcomes that are neither layer keep their own existing vocabulary
 and must not be folded in: `RequestDisposition`, `TransportHealthState`,
@@ -582,16 +620,33 @@ validated offline at all, and adopting an unproven `Math.random()` would violate
 the spirit of `AGENTS.md` rule 6. So engine-side minting is documented as the
 LATER option and not chosen now.
 
-**What the contract honestly proves, once 1B validates it:** *the value returned
+**What the contract will prove, once 1B validates it:** *the value returned
 identifies one Script Engine global, stable from first V6 contact until that
 engine instance ends.* It does **not** prove PT start time, and it does not make
-the identity extension-originated. `session_seed_owner` additionally tells a
-caller whether it won the seed race — informative when several MCP processes
-share one PT.
+the identity extension-originated.
 
-**Degradation rule:** if the global is unreachable on some evaluation path, the
-operation must report `session_id: null`. It must never fabricate a value, and
-it must never echo the injected candidate as if it had been read back.
+**Degradation rule — IMPLEMENTED.** The seeding block has its own `catch`, and
+that branch sets `session_id` to null rather than falling back to the injected
+candidate. Echoing the candidate would be the subtle failure worth guarding
+against: it would look exactly like a successful read-back while proving
+nothing. A test pins the branch.
+
+**What Phase 1A established, precisely.** The generated payload is valid
+JavaScript; each of its branches builds an envelope this parser accepts; and its
+seed is first-writer-wins when a second dispatch hits the same global — a later
+operation does not displace an established session. That was measured by running
+the payload in **Node**, under the same `(new Function("reportResult", js))(report)`
+shape the file bridge uses.
+
+**What that does not establish, and must not be read as establishing.** Node is
+not Packet Tracer. Whether `this` is the Script Engine global on a dispatched
+command's path, whether the seed survives real dispatches, whether it holds
+across a webview reopen, and whether it changes across a PT restart are all
+**UNVERIFIED_UNTIL_PHASE_1B**. The existing evidence for the underlying pattern
+remains what it was — `this.__mcpE8Http` and `this.__mcpE6HttpClients` in shipped
+runtimes — which is strong evidence about *those* payloads, not proof about this
+one. `AGENTS.md` is explicit that this boundary cannot be verified from tests,
+and a green suite does not change that.
 
 `extension_version` remains `null` throughout.
 
@@ -895,78 +950,116 @@ The original single slice planned to call `_bridge_send_and_wait`. That is an
 `AGENTS.md` states such helpers *"cannot be imported by tests"* at all. The
 slice is therefore split.
 
-### Phase 1A — pure protocol model (the approved slice)
+### Phase 1A — pure protocol model — IMPLEMENTED
 
-**Scope: new files only. No transport. No adapter. No live caller. No Packet
-Tracer. No CP-SCALE surface.**
+**Scope held exactly: new files only. No transport, no adapter, no live caller,
+no Packet Tracer, no CP-SCALE surface.** `git status` after implementation shows
+four new untracked files and nothing modified.
 
-Contents:
+Contents as built:
 
-1. `runtime_protocol.py` — `PROTOCOL_VERSION = 6`; `operation_rid` generation
-   and validation; the result-envelope model; the five-state parser of §3.4
-   over a `str` input; the two-layer error model of §3.2 with engine codes
-   declared-but-inert.
-2. `runtime_operation_encoder.py` — builds the `runtime.identify` payload text
-   (Q5), every interpolated field via `json.dumps` per `AGENTS.md` rule 1.
-3. Offline tests. Nothing is executed anywhere.
+1. `runtime_protocol.py` — `PROTOCOL_VERSION = 6`; `operation_rid` minting and
+   validation against its **own** pattern, deliberately not imported from the
+   HTTP transport that happens to use the same shape; the envelope model; the
+   five-state parser of §3.4 over a `str`; the two-layer error model of §3.2.
+2. `runtime_operation_encoder.py` — builds the `runtime.identify` payload
+   (Q5). Every dynamic value passes through one `js_string_literal` choke
+   point; the module contains no f-string at all, asserted on its AST.
+3. Tests. The protocol and encoder are exercised offline; the generated text is
+   additionally executed in Node, which is not Packet Tracer (§3.5).
 
 `PHASE1A_FILES`:
 
 | File | Change |
 |---|---|
-| `src/packet_tracer_mcp/infrastructure/execution/runtime_protocol.py` | **new** |
-| `src/packet_tracer_mcp/infrastructure/execution/runtime_operation_encoder.py` | **new** |
+| `src/packet_tracer_mcp/infrastructure/execution/runtime_protocol.py` | **new** (~380 lines) |
+| `src/packet_tracer_mcp/infrastructure/execution/runtime_operation_encoder.py` | **new** (~150 lines) |
 | `tests/test_runtime_protocol_v6.py` | **new** |
 | `tests/test_runtime_protocol_v6_compatibility.py` | **new** |
 | `docs/architecture/mcp-runtime-protocol-v6-foundation.md` | this document |
 
-`SHARED_FILES_CHANGED` = **NONE**. Explicitly unchanged: `EXTENSION/**`,
-`live_bridge.py`, `file_bridge.py`, `tool_registry.py`, every CP-SCALE tool
-under `tools/`, and every checkpoint file. `execution/__init__.py` is touched
-only if that package's existing convention requires an export line; if it does
-not, it stays untouched too.
+`SHARED_FILES_CHANGED` = **NONE**, verified by `git diff HEAD` over
+`EXTENSION/`, `live_bridge.py`, `file_bridge.py`, `tool_registry.py`,
+`adapters/`, `tools/` — all empty. `execution/__init__.py` was **not** touched:
+it exports only a subset of the package and every existing test imports these
+submodules by full path, so the convention did not require an export.
 
-`PHASE1A_TESTS`:
+`PHASE1A_TESTS` — 117 tests, all passing:
 
-1. A well-formed V6 envelope with a matching `operation_rid` parses `VALID_V6`.
-2. A mismatched `operation_rid` parses `CORRELATION_MISMATCH` and **does not**
-   fall back to V5.
-3. `v == 6` with a missing or ill-typed required field parses `INVALID_V6` and
-   does not fall back to V5.
-4. A JSON object with `v` present and `!= 6` parses `PROTOCOL_MISMATCH`.
-5. Legacy V5 text — `PT_ERROR: ...`, `ERROR:...`, `OK`, `MISSING` — parses
-   `NOT_V6` and is returned unaltered.
-6. A JSON object with **no `v` key** parses `NOT_V6` (guards the 118 existing
-   `JSON.stringify` sites, §1.12).
-7. `runtime.identify` is read-only: the encoder emits **no** `mutated` key at
-   all, and names no mutating PT API — which also keeps
-   `test_transport_mutation_containment.py`'s sweep green by construction.
-8. `extension_version` is `null` in the encoded payload and there is no code
-   path populating it from a caller-supplied parameter.
-9. The encoded payload interpolates every dynamic field through `json.dumps`
-   and contains no f-string interpolation — asserted on source, in the style of
-   `test_probe_naming_contract.py`.
-10. The encoded payload is a self-contained statement that survives `\n`
-    concatenation with other commands (HTTP batching, `live_bridge.py:369`).
-11. Engine-layer error codes (§3.2 Layer B) are **declared and inert**: no
-    Phase 1A code path constructs one. *No fabricated call site is added to make
-    them reachable.*
-12. The parser's signature accepts `str`, not `str | None` — a transport
-    non-response cannot reach the protocol layer (§3.4).
-13. The full existing suite still passes, on a worktree-local `.venv`.
+1. `operation_rid` uniqueness and validation, with twelve malformed shapes
+   rejected (wrong length, uppercase, non-hex, whitespace, non-string types).
+2. A conforming document parses `VALID_V6` with every field recovered.
+3. A document answering another operation is `CORRELATION_MISMATCH`, carries no
+   envelope, and carries **no legacy text**.
+4. Twelve real V5 responses — `PT_ERROR:`, `ERROR:`, `OK`, `MISSING`, empty,
+   bare scalars, and two verbatim structured shapes from the existing product —
+   are `NOT_V6` and returned byte-for-byte unaltered.
+5. A JSON object with no `v` key is `NOT_V6`, including one carrying `status`
+   and `error` keys that could otherwise look V6-ish.
+6. Eight foreign version values are `PROTOCOL_MISMATCH`, including `"6"`,
+   `True` and `6.0` — the last two matter because `bool` is an `int` subclass
+   and `6.0 == 6`, so a naive check would admit both.
+7. Sixteen malformed-envelope mutations are `INVALID_V6`, plus status/error
+   disagreement and six malformed runtime blocks.
+8. The parser accepts `str` by annotation, raises `TypeError` on five non-string
+   inputs, and raises `ValueError` on an invalid expected rid.
+9. A null `session_id` is `VALID_V6`.
+10. `extension_version` is null on the wire, and neither module accepts a
+    parameter of that name.
+11. The encoder emits no `mutated` key, and the parser rejects one on a
+    read-only operation — `null` included.
+12. Ten hostile session candidates reach the payload only as JSON literals that
+    decode back to the exact input, and appear nowhere outside that form.
+13. The payload names none of the canonical mutating Packet Tracer APIs — the
+    list is **imported from the sweep that owns it**, so a new name there starts
+    being enforced here on the same commit.
+14. The parser never constructs an error code the document did not carry, and
+    the encoder emits `ENGINE_EXCEPTION` and none of the other three.
+15. The payload is one line, ends in `;`, contains no `//`, and survives being
+    joined with another payload by a newline and split back apart.
+16. Neither module imports any transport, adapter, or network primitive, and a
+    legacy document is handed back identical.
 
-`PHASE1A_RISKS`:
+Plus, guarded by `skipif` when Node is absent: the payload is syntactically
+valid JavaScript; its success, null-file and throwing branches each build an
+envelope this parser accepts; an engine fault becomes a structured envelope
+rather than a thrown error; and the seed is first-writer-wins across two
+dispatches and across a second operation in the same batch.
 
-| Risk | Severity | Mitigation |
+**Two things the implementation changed about the design, both corrections:**
+
+- `session_seed_owner` was dropped (§3.1). It cannot be computed without a
+  response, so it belonged to 1B.
+- An explicit U+2028/U+2029 escape was written, then **removed as dead code**.
+  The premise was wrong: `json.dumps` defaults to `ensure_ascii=True` and
+  already escapes them. Rather than keep a branch whose comment claimed to close
+  a gap it did not, the invariant is now pinned by a test asserting every
+  emitted literal is ASCII-only — which fails immediately if anyone ever passes
+  `ensure_ascii=False`. That is the actual regression risk.
+
+`REGRESSION`: the full suite runs **37 failed, 2792 passed, 6 skipped** on the
+worktree-local `.venv`. The identical 37 failures occur at pristine `HEAD` with
+these four files removed (**37 failed, 2675 passed**); the two failure lists were
+captured and diffed and are byte-identical. The delta is exactly +117 passing.
+
+Those 37 are not ours and were not touched. Thirty-six are CP-SCALE canonical
+and reference-hardware tests in flight at the base checkpoint. The thirty-
+seventh, `test_repository_reader_observes_current_exact_branch_upstream_and_head`,
+asserts the checkout is on `feature/runtime-ripv2` and so fails on any other
+branch by construction — a branch-context artifact, not a defect, and it belongs
+to CP-SCALE.
+
+`PHASE1A_RISKS` as built:
+
+| Risk | Severity | Status |
 |---|---|---|
-| A V5 JSON response is misread as V6 | Low | `NOT_V6` requires absence of a `v` key, not absence of `v == 6`. Test 6. |
-| The encoder drifts into being called a dispatcher | Low | Module name and §3.6; the term is reserved. |
-| Reserved engine codes attract fabricated tests | Low | Test 11 asserts inertness instead. |
-| Scope creep into transport integration | **Medium** | 1A has no transport import; the seam is 1B. |
-| Scope creep into the claim marker / `.pts` | **Medium** | Blocked by Q9 and stated out-of-scope. |
-
-Phase 1A validates **nothing** about the Script Engine. It cannot: it sends
-nothing. Every runtime-session claim of §3.5 is deferred to 1B.
+| A V5 JSON response misread as V6 | Low | Closed by requiring absence of `v`, tested against real shapes |
+| `bool`/`float` admitted as version 6 | Low | Closed by an explicit `type(...) is int` check, tested |
+| A hostile value reaching the payload as code | Low | Closed by a single escaping choke point, ten hostile inputs tested |
+| The encoder drifting into "dispatcher" | Low | Module name, docstring, and §3.6 |
+| Reserved codes attracting fabricated tests | Low | Inverted into inertness assertions |
+| The generated JS being syntactically invalid | Medium | Closed offline by `node --check` and execution |
+| `this` not being the engine global in PT | **Medium** | **Open. UNVERIFIED_UNTIL_PHASE_1B**; degradation to null is implemented and tested |
 
 ### Phase 1B — integration seam (later, gated)
 
