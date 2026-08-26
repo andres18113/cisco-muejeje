@@ -390,6 +390,49 @@ SW#"""
     assert result.fields["forwarding_vlans"] is FieldVerificationStatus.VERIFIED
 
 
+def test_trunk_readback_exposes_exact_fresh_native_and_traversal_observations():
+    output = """SW#show interfaces trunk
+Port Mode Encapsulation Status Native vlan
+Gig0/1 on 802.1q trunking 1
+
+Port Vlans allowed on trunk
+Gig0/1 742
+
+Port Vlans allowed and active in management domain
+Gig0/1 742
+
+Port Vlans in spanning tree forwarding state and not pruned
+Gig0/1 742
+SW#"""
+    current = json.dumps({
+        "found": True,
+        "configuration_channel": True,
+        "output": output,
+    })
+    responses = iter((
+        '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
+        '{"ok":true,"before":"SW#"}',
+        current,
+        current,
+    ))
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: next(responses),
+    )
+
+    observed = runtime.read_trunk("SW", "GigabitEthernet0/1")
+
+    assert observed.fresh_evidence
+    assert observed.output_complete
+    assert observed.interface == "Gig0/1"
+    assert observed.status == "trunking"
+    assert observed.native_vlan == 1
+    assert observed.allowed_vlans == (742,)
+    assert observed.active_vlans == (742,)
+    assert observed.forwarding_vlans == (742,)
+
+
 def test_trunk_verifier_fails_when_an_expected_vlan_is_not_forwarding():
     _, plan = _plan()
     expectation = next(

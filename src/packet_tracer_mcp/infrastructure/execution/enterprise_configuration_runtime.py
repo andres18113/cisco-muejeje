@@ -7,6 +7,7 @@ import json
 import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from ...domain.enterprise.models.configuration import (
     ConfigurationAction,
@@ -78,6 +79,28 @@ _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS = 45.0
 
 
+@dataclass(frozen=True)
+class TrunkReadbackObservation:
+    """One exact, registered and read-only trunk observation.
+
+    The four VLAN dimensions intentionally remain independent. ``None`` means
+    that dimension was not exposed by a fresh complete query; an empty tuple is
+    an observed empty IOS section.
+    """
+
+    device_name: str
+    requested_interface: str
+    interface: str = ""
+    status: str = ""
+    native_vlan: int | None = None
+    allowed_vlans: tuple[int, ...] | None = None
+    active_vlans: tuple[int, ...] | None = None
+    forwarding_vlans: tuple[int, ...] | None = None
+    fresh_evidence: bool = False
+    output_complete: bool = False
+    failure_reason: str = ""
+
+
 #: `SwitchPort.getAdminOpMode()` para `switchport mode access`. MEDIDO, no
 #: supuesto: cualificación en vivo sobre PT `9.0.1.0858` / `2950T-24`, tres
 #: puertos en la misma pasada, cada código corroborado por la lectura IOS
@@ -136,6 +159,42 @@ class PacketTracerEnterpriseConfigurationRuntime:
         targets = normalize_runtime_inventory(self._query_inventory())
         self._targets = {item.device_name: item for item in targets}
         return targets
+
+    def read_trunk(
+        self, device_name: str, interface: str,
+    ) -> TrunkReadbackObservation:
+        """Read one trunk through the existing registered paged SHOW only."""
+        show = self._ios.execute(
+            device_name, OperationalQueryId.SHOW_INTERFACES_TRUNK,
+        )
+        row = next((
+            item for item in parse_show_interfaces_trunk(show.output)
+            if same_interface_name(item.interface, interface)
+        ), None) if show.executed else None
+        fresh = bool(show.executed and show.fresh_output_observed)
+        complete = bool(show.output_complete)
+        reason = show.failure_reason
+        if not reason and not fresh:
+            reason = "No fresh current show interfaces trunk output was observed."
+        if not reason and not complete:
+            reason = "The show interfaces trunk output was incomplete."
+        if not reason and row is None:
+            reason = f"The fresh trunk table did not contain {interface!r}."
+        return TrunkReadbackObservation(
+            device_name=device_name,
+            requested_interface=interface,
+            interface=row.interface if row is not None else "",
+            status=row.status if row is not None else "",
+            native_vlan=row.native_vlan if row is not None else None,
+            allowed_vlans=row.allowed_vlans if row is not None else None,
+            active_vlans=row.active_vlans if row is not None else None,
+            forwarding_vlans=(
+                row.forwarding_vlans if row is not None else None
+            ),
+            fresh_evidence=fresh,
+            output_complete=complete,
+            failure_reason=reason,
+        )
 
     @staticmethod
     def _refuse_batch(

@@ -256,6 +256,8 @@ Switch#"""
 
     rows = {row.interface: row for row in parse_show_interfaces_trunk(output)}
 
+    assert rows["Gig0/1"].native_vlan == 1
+    assert rows["Gig0/2"].native_vlan == 1
     assert rows["Gig0/1"].allowed_vlans == (10, 20, 30)
     assert rows["Gig0/1"].active_vlans == (10, 20, 30)
     assert rows["Gig0/1"].forwarding_vlans == (10, 20, 30)
@@ -292,6 +294,26 @@ Switch#"""
     assert row.allowed_vlans == ()
     assert row.active_vlans == ()
     assert row.forwarding_vlans == ()
+
+
+def test_trunk_parser_keeps_an_unreadable_native_vlan_separate_from_vlan_sets():
+    output = """show interfaces trunk
+Port Mode Encapsulation Status Native vlan
+Gi0/1 on 802.1q trunking unknown
+Port Vlans allowed on trunk
+Gi0/1 742
+Port Vlans allowed and active in management domain
+Gi0/1 742
+Port Vlans in spanning tree forwarding state and not pruned
+Gi0/1 742
+Switch#"""
+
+    row = parse_show_interfaces_trunk(output)[0]
+
+    assert row.native_vlan is None
+    assert row.allowed_vlans == (742,)
+    assert row.active_vlans == (742,)
+    assert row.forwarding_vlans == (742,)
 
 
 def test_packet_tracer_rpvst_root_output_parses_exact_live_state():

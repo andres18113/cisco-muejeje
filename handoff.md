@@ -937,6 +937,70 @@ reverse cleanup, mode restored and verified, workspace compared to baseline.
 Their orchestration is covered against fakes, so the logic can be changed
 without paying for a run to find out.
 
+## SINGLE-ALLOWED NON-NATIVE trunk audit -- capability exists, pre-LIVE ready
+
+The offline audit found one narrow source seam, not a Packet Tracer evidence
+ceiling.  The same registered and pagination-qualified `show interfaces trunk`
+query already returns every independent observation the control needs.  The
+capabilities before this slice were:
+
+```text
+TRUNK_ALLOWED_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_ACTIVE_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_FORWARDING_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_NATIVE_VLAN_READBACK = IMPLEMENTED_BUT_NOT_MEASURED_ON_THIS_BUILD
+```
+
+Allowed, active, and forwarding/not-pruned were independently retained and
+verified on PT 9.0.1.0858 in the governed `e09f606` LIVE.  Native VLAN was
+already the fifth field of `TrunkStatusRow`, populated from the first table of
+that same registered query, but it remained an unchecked string and no
+governed result projected it.  No new IOS command or PT getter was necessary.
+
+Therefore:
+
+```text
+CAN_PROVE_SINGLE_ALLOWED_VLAN = YES
+CAN_PROVE_TARGET_NON_NATIVE = YES
+CAN_PROVE_FRAME_ADMITTED_FOR_TARGET_VLAN = YES
+CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN = YES
+```
+
+The minimum implementation is additive.  `TrunkStatusRow.native_vlan` is now a
+strict `int | None`; malformed or out-of-range text cannot become VLAN
+identity.  `PacketTracerEnterpriseConfigurationRuntime.read_trunk()` exposes
+one fresh, complete, registered read-only snapshot without collapsing any of
+the four VLAN dimensions.
+
+`TrunkFrameVlanCalibrationQualifier` builds two owned 3560 switches, two owned
+PCs, two access links and two parallel trunk links.  Control A admits only 742
+on its target ingress; control B admits only 743 on a different target ingress.
+Each control requires, on that exact ingress and in one current direct
+readback: operational trunking, allowed exactly the singleton target, active
+exactly the singleton target, forwarding/not-pruned exactly the singleton
+target, and an independently read native VLAN different from the target.  The
+expected VLAN is the singleton readback value after it matches the disposable
+control request, never the source-side port or forwarding intent.
+
+The measured traffic composition is unchanged: arm both endpoint DHCP clients
+in Realtime, enter Simulation, reset and step a bounded window, then enumerate
+at most two frames entering the target switch from the owned source switch.
+Only `getInFrame()` on the exact read-back ingress is eligible.  Endpoint arming,
+frame identity, tag-member presence, ownership, reverse cleanup, mode
+restoration and final baseline equivalence are all journalled separately.
+
+FAIL-FIRST: the native field was the string `"1"`, malformed native text was
+retained, `read_trunk()` did not exist, and the trunk calibration module could
+not import.  Focused: 12 passed.  Affected: 161 passed.  Full: 2997 passed / 0
+failed.  The first full process was interrupted by a Windows access violation
+at 91%; the isolated test passed and two subsequent complete full runs passed,
+the final one after all source changes.
+
+LIVE has NOT run yet in this checkpoint.  It may run once, and only from the
+clean pushed commit containing this section and the implementation.  A valid
+control must still prove the native readback on the real PT build; an offline
+contract is capability, not measurement.
+
 ## Reading the heads
 
 Trust `git rev-parse HEAD`, never the handoff, for what is checked out. The

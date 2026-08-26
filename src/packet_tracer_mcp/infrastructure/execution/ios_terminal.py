@@ -363,7 +363,11 @@ class TrunkStatusRow:
     mode: str
     encapsulation: str
     status: str
-    native_vlan: str
+    # The first table exposes the native VLAN independently from the allowed,
+    # active and forwarding sections.  An unreadable value must stay absent;
+    # retaining arbitrary text here would let a malformed column qualify as a
+    # VLAN identity later.
+    native_vlan: int | None
     # `None` means the corresponding SHOW section was absent or unreadable.
     # An empty tuple means the section was present and IOS explicitly reported
     # no VLANs. Keeping those states distinct prevents absence from becoming a
@@ -857,7 +861,14 @@ def parse_show_interfaces_trunk(value: str) -> list[TrunkStatusRow]:
             continue
         if parts[1].casefold() not in {"on", "desirable", "auto", "trunk"}:
             continue
-        rows.append(TrunkStatusRow(parts[0], parts[1], parts[2], parts[3], parts[4]))
+        native_vlan = (
+            int(parts[4])
+            if re.fullmatch(r"\d+", parts[4]) and 1 <= int(parts[4]) <= 4094
+            else None
+        )
+        rows.append(TrunkStatusRow(
+            parts[0], parts[1], parts[2], parts[3], native_vlan,
+        ))
 
     sections: dict[str, dict[str, tuple[int, ...] | None]] = {
         "allowed_vlans": {},
