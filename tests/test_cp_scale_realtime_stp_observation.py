@@ -54,6 +54,7 @@ from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
 from tools.cp_scale_canonical_live import (
+    _STP_MAX_LOGICAL_ATTEMPTS,
     _phone_edge_ports,
     _stp_realtime_evidence,
 )
@@ -155,16 +156,20 @@ class Result:
         self.device_identity_evidence = overrides.get(
             "device_identity_evidence", "prompt",
         )
+        self.dispatch_classification = overrides.get(
+            "dispatch_classification", "dispatched",
+        )
 
 
 class Ios:
     def __init__(self, result):
-        self._result = result
+        self._results = result if isinstance(result, list) else [result]
         self.calls = []
 
     def execute(self, device_name, query_id, **kwargs):
         self.calls.append((device_name, query_id.value, kwargs))
-        return self._result
+        index = min(len(self.calls) - 1, len(self._results) - 1)
+        return self._results[index]
 
 
 def observe(result, *, actions=None, assignments=None, edge="before"):
@@ -187,6 +192,28 @@ OTHER_VLAN = stp_output(
     ["Fa0/1            Desg FWD 19        128.1    P2p"], vlan=10,
 )
 NO_ROW = stp_output(["Gi0/1            Root FWD 4         128.25   P2p"])
+
+
+def pager_failed(output=FORWARDING, **overrides):
+    """The exact shape the Floor-1 AFTER read returned at 540c746.
+
+    `executed` True is the discriminator: reaching it after an incomplete
+    qualified capture requires the executor's own `_cancel_pager` to have been
+    confirmed, so the terminal is back at a prompt and not quarantined.
+    """
+    fields = {
+        "output_complete": False,
+        "truncated_by_pager": True,
+        "pager_pages_captured": 1,
+        "pager_continuation": "failed",
+        "failure_reason": (
+            "IOS pager continuation window could not be attributed to this "
+            "capture (rolled_unattributable)."
+        ),
+    }
+    fields.update(overrides)
+    return Result(output, **fields)
+
 
 verdict = {}
 
@@ -238,6 +265,43 @@ verdict["derived_ports"] = _phone_edge_ports(
     ),
 )
 verdict["no_voice_plan"] = _phone_edge_ports(Projection([], []))
+
+# --- bounded retry -----------------------------------------------------------
+verdict["max_attempts"] = _STP_MAX_LOGICAL_ATTEMPTS
+# 1: a complete first read is the whole observation.
+verdict["retry_not_needed"] = observe(Result(FORWARDING))
+# 2, 3: retry-safe pager failure, then a complete second read.
+verdict["retry_then_complete"] = observe([pager_failed(), Result(BLOCKING)])
+# 4, 5: both incomplete -- final UNOBSERVABLE and no third execution.
+verdict["retry_then_incomplete"] = observe([pager_failed(), pager_failed()])
+# 6: the executor could not confirm it cancelled the pager.
+verdict["retry_unsafe_terminal"] = observe([
+    pager_failed(
+        "",
+        executed=False,
+        failure_reason=(
+            "IOS pager cancellation could not be confirmed; the terminal "
+            "session remains isolated from new queries."
+        ),
+    ),
+    Result(FORWARDING),
+])
+# 7: IOS provably received a different command.
+verdict["retry_dispatch_corrupted"] = observe([
+    pager_failed(dispatch_classification="prefix_loss"), Result(FORWARDING),
+])
+# 8: the executing session belongs to another device.
+verdict["retry_ambiguous_device"] = observe([
+    pager_failed(device_identity_provenance="ambiguous"), Result(FORWARDING),
+])
+# A pager on an UNQUALIFIED query is a policy state, not a transient failure.
+verdict["retry_not_qualified"] = observe([
+    pager_failed(pager_continuation="not_qualified"), Result(FORWARDING),
+])
+# 15: the measured Floor-1 shape -- complete VLAN 20 carrying only the uplink.
+verdict["complete_without_phone_rows"] = observe([
+    pager_failed(), Result(NO_ROW),
+])
 verdict["untyped_assignment"] = observe(
     Result(FORWARDING), actions=[], assignments=[1, 2],
 )
@@ -584,18 +648,226 @@ def test_handoff_keeps_the_corrected_dhcp_identity_semantics():
 def test_handoff_names_the_realtime_observation_and_keeps_the_fix_out():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
-    assert "## Phone-edge STP in Realtime -- observed, pager gap closed, rerun pending" in handoff
+    assert "## Phone-edge STP in Realtime -- CASE D, bounded retry pending LIVE" in handoff
     assert "PHONE_EDGE_PORTFAST_COMPILED = NO at FLOOR1" in handoff
     assert "SHOW_SPANNING_TREE_PAGER = QUALIFIED by fresh 2f2055c measurement" in handoff
+    assert "STP_REALTIME_LOGICAL_ATTEMPTS = 2" in handoff
 
 
-def test_handoff_records_the_run_that_measured_the_pager_without_claiming_state():
-    """CASE C: the read surface was the finding, not the port state."""
+def test_handoff_records_case_d_without_claiming_a_port_state():
+    """A complete VLAN 20 carrying only the uplink proves representation."""
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
-    assert "STP_REALTIME_BEFORE_VOICE = 21/21 UNOBSERVABLE (PAGER_TRUNCATED)" in handoff
-    assert "STP_REALTIME_AFTER_VOICE  = 21/21 UNOBSERVABLE (PAGER_TRUNCATED)" in handoff
-    assert "VLAN_INSTANCES_CAPTURED = [1]" in handoff
-    assert "STP_BLOCKING_IN_REALTIME = UNOBSERVABLE at 2f2055c (pager, 21/21)" in handoff
+    assert "VLAN20  Gi0/1 ONLY" in handoff
+    assert "VLAN20_PHONE_PORT_ROWS = ABSENT in a COMPLETE capture at 540c746" in handoff
+    assert "VLAN10_PHONE_PORTS_BEFORE_VOICE = 21/21 Desg FWD at 540c746" in handoff
+    assert "CASE_D_REALTIME_STP_REPRESENTATION_UNRESOLVED" in handoff
+    # Absent rows are never promoted to BLOCKING in the narrative either.
+    assert "Absent rows are not BLOCKING." in handoff
+    assert "STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)" in handoff
     # The fork stays open; nothing about the port state was claimed.
     assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
+
+
+# --- bounded retry contract -------------------------------------------------
+#
+# The Floor-1 rerun at 540c746 lost the AFTER observation to a qualified pager
+# continuation that did not close. That read still came back executed=True with
+# confirmed_unique attribution, which is exactly what proves the executor had
+# already cancelled the pager and left the terminal at a prompt. One fresh
+# registered execution is therefore safe -- and only then.
+
+
+def _device(case):
+    return case["devices"][0]
+
+
+def test_the_retry_is_bounded_to_two_logical_attempts(verdict):
+    assert verdict["max_attempts"] == 2
+
+
+def test_a_complete_first_read_is_never_retried(verdict):
+    case = verdict["retry_not_needed"]
+    device = _device(case)
+
+    assert len(case["_calls"]) == 1
+    assert len(device["attempts"]) == 1
+    assert device["selected_attempt"] == 1
+    assert device["retry_eligible"] is False
+    assert device["retry_reason"] == ""
+    assert [item["classification"] for item in case["ports"]] == ["FORWARDING"]
+
+
+def test_a_retry_safe_pager_failure_buys_exactly_one_more_execution(verdict):
+    case = verdict["retry_then_complete"]
+    device = _device(case)
+
+    assert len(case["_calls"]) == 2
+    assert len(device["attempts"]) == 2
+    assert device["retry_eligible"] is True
+    assert device["retry_reason"] == "QUALIFIED_PAGER_CONTINUATION_FAILED"
+    assert device["selected_attempt"] == 2
+    # The second read is what is claimed, and nothing from the first survives
+    # into the parsed state.
+    assert [item["classification"] for item in case["ports"]] == ["BLOCKING"]
+    assert case["ports"][0]["state"] == "BLK"
+
+
+def test_both_attempts_are_retained_independently_and_never_merged(verdict):
+    case = verdict["retry_then_complete"]
+    attempts = _device(case)["attempts"]
+
+    assert [item["attempt"] for item in attempts] == [1, 2]
+    assert attempts[0]["output_complete"] is False
+    assert attempts[0]["truncated_by_pager"] is True
+    assert attempts[0]["pager_continuation"] == "failed"
+    assert attempts[0]["source_error"] == "PAGER_TRUNCATED"
+    assert attempts[1]["output_complete"] is True
+    assert attempts[1]["source_error"] == ""
+    # Two executions are two observations. The failed page is kept as its own
+    # evidence and its output is not spliced into the selected one.
+    assert attempts[0]["output"] != attempts[1]["output"]
+    assert attempts[1]["output"] not in attempts[0]["output"]
+    assert _device(case)["output"] == attempts[1]["output"]
+
+
+def test_every_attempt_retains_its_own_raw_quality_metadata(verdict):
+    for attempt in _device(verdict["retry_then_complete"])["attempts"]:
+        for field in (
+            "executed", "fresh_output_observed", "output_complete",
+            "truncated_by_pager", "pager_pages_captured", "pager_continuation",
+            "dispatch_classification", "failure_reason", "observed_device_name",
+            "device_identity_provenance", "vlan_instances",
+        ):
+            assert field in attempt, field
+
+
+def test_a_second_incomplete_attempt_ends_unobservable_with_no_third(verdict):
+    case = verdict["retry_then_incomplete"]
+    device = _device(case)
+
+    assert len(case["_calls"]) == 2
+    assert len(device["attempts"]) == 2
+    assert device["selected_attempt"] is None
+    assert [item["classification"] for item in case["ports"]] == ["UNOBSERVABLE"]
+    assert case["ports"][0]["failure_reason"] == "PAGER_TRUNCATED"
+
+
+@pytest.mark.parametrize(
+    ("case", "reason"),
+    [
+        ("retry_unsafe_terminal", "TERMINAL_NOT_CONFIRMED_SAFE"),
+        ("retry_dispatch_corrupted", "DISPATCH_CORRUPTED"),
+        ("retry_ambiguous_device", "DEVICE_IDENTITY_NOT_CONFIRMED"),
+        ("retry_not_qualified", "NOT_A_QUALIFIED_PAGER_FAILURE"),
+    ],
+)
+def test_an_unproven_terminal_is_never_retried(verdict, case, reason):
+    """Retry only where the prior result PROVES a fresh query is safe."""
+    observed = verdict[case]
+    device = _device(observed)
+
+    assert len(observed["_calls"]) == 1, case
+    assert len(device["attempts"]) == 1, case
+    assert device["retry_eligible"] is False, case
+    assert device["retry_reason"] == reason, case
+    assert device["selected_attempt"] is None, case
+    assert [item["classification"] for item in observed["ports"]] == ["UNOBSERVABLE"]
+
+
+def test_a_complete_vlan20_without_phone_rows_is_unobservable_not_blocking(verdict):
+    """The measured Floor-1 shape: VLAN 20 carried only the trunk uplink.
+
+    A complete capture proves the table's REPRESENTATION, not the port state.
+    Reading an absent row as BLOCKING would manufacture the very finding this
+    observation exists to test.
+    """
+    case = verdict["complete_without_phone_rows"]
+    device = _device(case)
+
+    assert device["selected_attempt"] == 2
+    assert device["attempts"][1]["output_complete"] is True
+    assert device["attempts"][1]["source_error"] == ""
+    assert device["vlan_instances"] == [20]
+    assert [item["classification"] for item in case["ports"]] == ["UNOBSERVABLE"]
+    assert case["ports"][0]["failure_reason"] == "INTERFACE_ROW_ABSENT"
+    assert case["counts"]["BLOCKING"] == 0
+
+
+# --- the retry belongs to this seam, not to the executor ---------------------
+
+
+def test_the_generic_executor_gained_no_pagination_retry():
+    """ControlledIosExecutor still retries only proven dispatch corruption."""
+    terminal = (
+        ROOT / "src" / "packet_tracer_mcp" / "infrastructure" / "execution"
+        / "ios_terminal.py"
+    ).read_text(encoding="utf-8")
+    start = terminal.index("    def execute(")
+    body = terminal[start:terminal.index("    @staticmethod", start)]
+
+    assert "_is_retryable_corruption" in body
+    for forbidden in (
+        "truncated_by_pager", "pager_continuation", "output_complete",
+        "PagerContinuation", "_STP_MAX_LOGICAL_ATTEMPTS",
+    ):
+        assert forbidden not in body, forbidden
+
+
+def test_the_retry_lives_in_the_cp_scale_observation_seam():
+    source = _runner_source()
+
+    assert "_STP_MAX_LOGICAL_ATTEMPTS = 2" in source
+    start = source.index("def _stp_logical_observation")
+    body = source[start:source.index("\ndef ", start + 10)]
+    # The executor keeps owning pagination mechanics; the seam only re-asks.
+    for forbidden in (
+        "_PAGER_CONTINUATION_KEY", "enterCommand", "_cancel_pager",
+        "String.fromCharCode",
+    ):
+        assert forbidden not in body, forbidden
+    assert "ios.execute(" in body
+
+
+def test_before_and_after_share_one_logical_observation_helper():
+    source = _runner_source()
+    start = source.index("def _execute_stage")
+    body = source[start:]
+
+    before = body.index('evidence["stp_realtime_before_voice"]')
+    after = body.index('evidence["stp_realtime_after_voice"]')
+    for index in (before, after):
+        assert "_stp_realtime_evidence(" in body[index:index + 220]
+    # AFTER is not special-cased with its own retry knob.
+    assert body.count("_stp_realtime_evidence(") == 2
+    assert "attempts=" not in body[before:after + 220]
+
+
+def test_the_logical_observation_completes_before_the_realtime_after_boundary():
+    source = _runner_source()
+    start = source.index("def _execute_stage")
+    body = source[start:]
+
+    assert body.index('evidence["stp_realtime_after_voice"]') < body.index(
+        'continuity["after"] = _voice_window_state',
+    )
+
+
+def test_this_patch_leaves_the_staging_defect_and_dhcp_untouched():
+    """The retry buys evidence. It fixes neither PortFast nor DHCP."""
+    compose = (
+        ROOT / "src" / "packet_tracer_mcp" / "application" / "use_cases"
+        / "compose_cp_scale_canonical.py"
+    ).read_text(encoding="utf-8")
+
+    # Leg 1 of the confirmed defect is still exactly as measured: LARGE's STP
+    # domain, and therefore every edge action, still waits for FLOOR3.
+    marker = compose.index("def _completed_stp_sites")
+    body = compose[marker:compose.index("\ndef ", marker + 10)]
+    assert "CPScaleCanonicalStage.FLOOR3" in body
+    assert "CPScaleCanonicalStage.FLOOR1" not in body
+
+    source = _runner_source()
+    assert "TRAFFIC_TYPES" not in source
+    assert "type7" not in source
+    assert "spanning-tree portfast" not in source

@@ -510,7 +510,7 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert "CURRENT_PUSHED_HEAD = 2f2055c99bb0cf33dae43601671b9dbb348e707b" in handoff
+    assert "CURRENT_PUSHED_HEAD = 540c746711e3076793902d1b42ca160aa5a1d6ed" in handoff
     assert "ACCESS_PORT_VOICE_VLAN = VERIFIED 21/21" in handoff
     assert "data VLAN 10" in handoff and "voice VLAN 20" in handoff
     assert "TARGET_SIM_TIME_SPAN = 60000" in handoff

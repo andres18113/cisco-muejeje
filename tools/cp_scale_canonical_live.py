@@ -117,9 +117,14 @@ from packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import 
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
+from packet_tracer_mcp.infrastructure.execution.command_dispatch import (
+    DispatchClassification,
+    is_command_corrupted,
+)
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     OperationalQueryId,
+    PagerContinuation,
     classify_show_spanning_tree,
     ios_rejection_reason,
     parse_show_ip_dhcp_binding,
@@ -1513,6 +1518,133 @@ def _stp_port_observation(port, instances, source_error: str) -> dict[str, objec
     return observation
 
 
+#: Una observacion logica puede ejecutar como mucho dos consultas registradas.
+#: No es un lazo hasta el exito: el segundo intento existe solo para UN fallo
+#: transitorio de continuacion de pager, y no hay tercero.
+_STP_MAX_LOGICAL_ATTEMPTS = 2
+
+
+def _stp_attempt(show, device_name: str, index: int) -> dict[str, object]:
+    """La calidad cruda de UNA ejecucion registrada, sin interpretarla."""
+    rejection = ios_rejection_reason(show.output) or ""
+    instances = parse_show_spanning_tree(show.output) if show.executed else []
+    return {
+        "attempt": index,
+        "executed": show.executed,
+        "fresh_output_observed": show.fresh_output_observed,
+        "output_complete": show.output_complete,
+        "truncated_by_pager": show.truncated_by_pager,
+        "pager_pages_captured": show.pager_pages_captured,
+        "pager_continuation": show.pager_continuation,
+        "dispatch_classification": show.dispatch_classification,
+        "failure_reason": show.failure_reason,
+        "observed_device_name": show.observed_device_name,
+        "device_identity_provenance": show.device_identity_provenance,
+        "device_identity_confirmed": bool(
+            show.observed_device_name == device_name
+            and show.device_identity_provenance == "confirmed_unique"
+        ),
+        "ios_rejection": rejection,
+        "classification": classify_show_spanning_tree(
+            show.output, executed=show.executed,
+        ).value,
+        "source_error": _stp_source_error(show, rejection),
+        "vlan_instances": sorted(item.vlan_id for item in instances),
+        "output": show.output,
+    }
+
+
+def _stp_retry_refusal(show, device_name: str) -> str:
+    """Vacio solo si ESTE resultado prueba que otra consulta fresca es segura.
+
+    El discriminador es `executed`. Tras una captura cualificada incompleta el
+    ejecutor cancela el pager, y el unico camino que llega a `executed=True` es
+    el de una cancelacion CONFIRMADA: si no pudo confirmarla, pone el device en
+    cuarentena y devuelve `executed=False`. Un resultado ejecutado, con la
+    identidad del comando intacta y el device atribuido de forma unica, es
+    entonces la prueba de que el terminal volvio a un prompt.
+
+    Todo lo demas se niega. No se debilita nada del ejecutor para permitir el
+    reintento: si el terminal sigue mal, su propia guarda atomica rechazara el
+    despacho y el segundo intento sera otro `executed=False`, nunca una lectura
+    mal atribuida.
+    """
+    if not show.executed:
+        return "TERMINAL_NOT_CONFIRMED_SAFE"
+    try:
+        dispatch = DispatchClassification(show.dispatch_classification)
+    except ValueError:
+        # Una clasificacion que no es del enum no prueba que el comando llego
+        # intacto, y no probarlo basta para no reintentar.
+        return "DISPATCH_CORRUPTED"
+    if is_command_corrupted(dispatch):
+        return "DISPATCH_CORRUPTED"
+    if (
+        show.observed_device_name != device_name
+        or show.device_identity_provenance != "confirmed_unique"
+    ):
+        return "DEVICE_IDENTITY_NOT_CONFIRMED"
+    if ios_rejection_reason(show.output):
+        return "IOS_REJECTED"
+    if (
+        show.pager_continuation != PagerContinuation.FAILED.value
+        or not show.truncated_by_pager
+        or show.output_complete
+    ):
+        # `not_qualified` es una politica, no un fallo transitorio: repetir la
+        # consulta daria exactamente la misma primera pagina.
+        return "NOT_A_QUALIFIED_PAGER_FAILURE"
+    return ""
+
+
+def _stp_logical_observation(ios, device_name: str):
+    """UNA observacion logica del arbol de expansion: dos ejecuciones a lo sumo.
+
+    Dos comandos son dos observaciones, no una tabla reconstruida: las paginas
+    y las instancias parseadas nunca se mezclan entre ejecuciones. Se selecciona
+    el PRIMER intento completo, fresco y atribuido de forma unica, y es el unico
+    del que sale el estado afirmado; el intento fallido se conserva entero como
+    su propia evidencia.
+    """
+    attempts: list[dict[str, object]] = []
+    retry_eligible = False
+    retry_reason = ""
+    for index in range(1, _STP_MAX_LOGICAL_ATTEMPTS + 1):
+        show = ios.execute(device_name, OperationalQueryId.SHOW_SPANNING_TREE)
+        attempt = _stp_attempt(show, device_name, index)
+        attempts.append(attempt)
+        if not attempt["source_error"]:
+            break
+        if index == _STP_MAX_LOGICAL_ATTEMPTS:
+            break
+        refusal = _stp_retry_refusal(show, device_name)
+        if refusal:
+            retry_reason = refusal
+            break
+        retry_eligible = True
+        retry_reason = "QUALIFIED_PAGER_CONTINUATION_FAILED"
+
+    selected = next(
+        (item for item in attempts if not item["source_error"]), None,
+    )
+    final = selected if selected is not None else attempts[-1]
+    instances = (
+        parse_show_spanning_tree(str(final["output"]))
+        if selected is not None else []
+    )
+    device = {key: value for key, value in final.items() if key != "attempt"}
+    device.update({
+        "device_name": device_name,
+        "query_id": OperationalQueryId.SHOW_SPANNING_TREE.value,
+        "max_logical_attempts": _STP_MAX_LOGICAL_ATTEMPTS,
+        "attempts": attempts,
+        "selected_attempt": final["attempt"] if selected is not None else None,
+        "retry_eligible": retry_eligible,
+        "retry_reason": retry_reason,
+    })
+    return device, instances
+
+
 def _stp_realtime_evidence(ios, projection, *, edge: str) -> dict[str, object]:
     """El estado de borde de los puertos con teléfono, medido en Realtime.
 
@@ -1529,34 +1661,9 @@ def _stp_realtime_evidence(ios, projection, *, edge: str) -> dict[str, object]:
     devices: list[dict[str, object]] = []
     observations: list[dict[str, object]] = []
     for device_name, device_ports in sorted(by_device.items()):
-        show = ios.execute(device_name, OperationalQueryId.SHOW_SPANNING_TREE)
-        rejection = ios_rejection_reason(show.output) or ""
-        source_error = _stp_source_error(show, rejection)
-        instances = parse_show_spanning_tree(show.output) if show.executed else []
-        devices.append({
-            "device_name": device_name,
-            "query_id": OperationalQueryId.SHOW_SPANNING_TREE.value,
-            "executed": show.executed,
-            "fresh_output_observed": show.fresh_output_observed,
-            "output_complete": show.output_complete,
-            "truncated_by_pager": show.truncated_by_pager,
-            "pager_pages_captured": show.pager_pages_captured,
-            "pager_continuation": show.pager_continuation,
-            "observed_device_name": show.observed_device_name,
-            "device_identity_provenance": show.device_identity_provenance,
-            "device_identity_confirmed": bool(
-                show.observed_device_name == device_name
-                and show.device_identity_provenance == "confirmed_unique"
-            ),
-            "ios_rejection": rejection,
-            "failure_reason": show.failure_reason,
-            "classification": classify_show_spanning_tree(
-                show.output, executed=show.executed,
-            ).value,
-            "source_error": source_error,
-            "vlan_instances": sorted(item.vlan_id for item in instances),
-            "output": show.output,
-        })
+        device, instances = _stp_logical_observation(ios, device_name)
+        devices.append(device)
+        source_error = str(device["source_error"])
         for port in device_ports:
             observations.append(
                 _stp_port_observation(port, instances, source_error),

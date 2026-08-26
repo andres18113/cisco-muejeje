@@ -6,7 +6,7 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 2f2055c99bb0cf33dae43601671b9dbb348e707b
+CURRENT_PUSHED_HEAD = 540c746711e3076793902d1b42ca160aa5a1d6ed
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
 ROUTING_CORE = GOVERNED VERIFIED (fresh run at e09f606)
@@ -28,7 +28,7 @@ DHCP_FRAME_IDENTITY_THIS_RUN = OBSERVED_BY_PT (PT's own text named Discover)
 DHCP_EVENT_LIST_VISIBILITY = OBSERVED
 PERMANENT_TYPE7_MAPPING = NOT_IMPLEMENTED
 STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
-STP_BLOCKING_IN_REALTIME = UNOBSERVABLE at 2f2055c (pager, 21/21)
+STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)
 SOURCE_DEFECT_FOUND = YES
 SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
@@ -36,6 +36,9 @@ PHONE_EDGE_PORTFAST_INTENT = YES
 PHONE_EDGE_PORTFAST_COMPILED = NO at FLOOR1 (YES at FLOOR3+)
 PHONE_EDGE_PORTFAST_APPLIED = NO
 SHOW_SPANNING_TREE_PAGER = QUALIFIED by fresh 2f2055c measurement
+VLAN10_PHONE_PORTS_BEFORE_VOICE = 21/21 Desg FWD at 540c746
+VLAN20_PHONE_PORT_ROWS = ABSENT in a COMPLETE capture at 540c746
+STP_REALTIME_LOGICAL_ATTEMPTS = 2 (bounded, retry only on proven-safe terminal)
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 E10 = FORBIDDEN
 ```
@@ -484,7 +487,7 @@ voice-binding reads are explicitly deferred because the Simulation runtime has
 no typed path for either and adding voice/IOS orchestration would broaden this
 diagnostic.
 
-## Phone-edge STP in Realtime -- observed, pager gap closed, rerun pending
+## Phone-edge STP in Realtime -- CASE D, bounded retry pending LIVE
 
 The bounded Simulation diagnostic ran and changed the fork. Packet Tracer named
 PHONE-02's frames itself -- "DHCP client constructs a Discover packet" -- so DHCP
@@ -577,11 +580,67 @@ pagination-qualified on that measurement, with the same hard bounds as every
 other qualified query and the same fail-closed ceiling on an incomplete capture.
 Both page fixtures are retained in `tests/test_ios_terminal.py`.
 
-Expected decision after the RERUN: phone-facing VLAN 20 ports BLOCKING in
-Realtime connects the staging defect to the voice failure and authorizes the
-two-leg autofix; all FORWARDING refutes it for the observed window and makes the
-Simulation state a divergence to investigate separately -- the staging defect
-still exists either way, but PortFast must not then be claimed to fix DHCP.
+### Rerun at 540c746 -- CASE D, and what a complete capture actually showed
+
+The pager qualification worked. The BEFORE read completed in three pages and
+carried all four instances; the AFTER read lost its continuation and was
+correctly held UNOBSERVABLE. Cleanup verified 74/74, nothing retained.
+
+```text
+BEFORE = COMPLETE (3 pages, continuation completed, confirmed_unique)
+  VLAN1   Gi0/1
+  VLAN10  Fa0/1..Fa0/21 all Desg FWD, + Gi0/1
+  VLAN20  Gi0/1 ONLY
+  VLAN30  Fa0/22 Fa0/23 Fa0/24 Gi0/2 Gi0/1
+AFTER  = INCOMPLETE (1 page, continuation failed, executed True)
+CASE   = CASE_D_REALTIME_STP_REPRESENTATION_UNRESOLVED
+```
+
+Two facts follow and neither is the one the fork needed. The phone-facing ports
+are NOT globally STP-blocked before voice -- all 21 are `Desg FWD` in the data
+VLAN. And VLAN 20 lists only the trunk uplink, in a capture that is complete, so
+that absence is a property of the table, not of the pager.
+
+Absent rows are not BLOCKING. Two readings remain: PT may list a port only under
+its access VLAN, or VLAN 20 membership may appear only after the phone signals.
+The AFTER read is exactly what separates them, and it is the one that was lost.
+
+Do not read VLAN 30's access ports as evidence for the first: those ports' access
+VLAN *is* 30, so they only confirm that a port appears under its access VLAN.
+Real Cisco may expose a voice port under both instances; Packet Tracer is the
+backend under qualification and fresh PT evidence wins.
+
+### Bounded retry -- implemented, LIVE pending
+
+One logical STP observation may now execute at most `_STP_MAX_LOGICAL_ATTEMPTS`
+= 2 registered queries. The second is a NEW `ios.execute`, never a continuation
+of the old transcript, and the runner never sends pager keys itself --
+`ControlledIosExecutor` keeps owning pagination mechanics. The generic executor
+is unchanged and the other six qualified queries are untouched.
+
+Retry safety is derived from the existing result, not assumed. `executed` is the
+discriminator: after an incomplete qualified capture the executor cancels the
+pager, and the only path reaching `executed=True` is a CONFIRMED cancellation --
+an unconfirmed one quarantines the device and returns `executed=False`. So a
+retry is permitted only when the prior result was executed, with uncorrupted
+dispatch, `confirmed_unique` attribution, no IOS rejection, and
+`pager_continuation == "failed"`. Anything else refuses and stays UNOBSERVABLE:
+TERMINAL_NOT_CONFIRMED_SAFE, DISPATCH_CORRUPTED, DEVICE_IDENTITY_NOT_CONFIRMED,
+IOS_REJECTED, NOT_A_QUALIFIED_PAGER_FAILURE. Nothing in the executor was
+weakened to make the retry possible; if the terminal is still bad its own atomic
+guard refuses the dispatch and the second attempt is another `executed=False`.
+
+Both attempts are retained with their own raw quality metadata and outputs are
+never merged -- two commands are two observations. The first complete, fresh,
+uniquely-attributed attempt is selected and is the only one the claimed state
+comes from. BEFORE and AFTER use the same helper; AFTER is not special-cased.
+
+Expected decision after the next LIVE: D1 phone rows present and FORWARDING ->
+Simulation/Realtime divergence, and PortFast is still not a DHCP fix; D2 a
+required row BLOCKING -> the staging defect becomes a strong causal candidate and
+the two-leg autofix proceeds; D3 complete VLAN 20 still without phone rows ->
+the query has proven its representation, not the port state, and a different
+observation surface is required; D4 both attempts incomplete -> UNOBSERVABLE.
 
 ## Historical last-L2 defect -- why direct voice-VLAN readback was required
 
@@ -758,7 +817,8 @@ b989eb0 feat(cp-scale): capture post-failure simulation evidence
 1d2c186 feat(cp-scale): observe phone-facing voice VLAN
 8402d28 feat(cp-scale): bound DHCP diagnostic by simulation time
 2f2055c feat(cp-scale): observe phone-edge STP in realtime
+540c746 feat(cp-scale): qualify the spanning-tree pager on measured evidence
 ```
 
-The SHOW_SPANNING_TREE pager qualification and this handoff update are the next
-checkpoint; record their final pushed HEAD here on the following turn.
+The bounded realtime STP retry and this handoff update are the next checkpoint;
+record their final pushed HEAD here on the following turn.
