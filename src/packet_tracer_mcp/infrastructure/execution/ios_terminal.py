@@ -37,6 +37,9 @@ class OperationalQueryId(str, Enum):
     SHOW_PORT_SECURITY_INTERFACE = "show_port_security_interface"
     SHOW_IP_DHCP_SNOOPING = "show_ip_dhcp_snooping"
     SHOW_IP_DHCP_BINDING = "show_ip_dhcp_binding"
+    SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE = (
+        "show_ip_dhcp_server_statistics_interface"
+    )
     SHOW_IP_ARP_INSPECTION = "show_ip_arp_inspection"
     SHOW_SPANNING_TREE = "show_spanning_tree"
     SHOW_ETHERCHANNEL_SUMMARY = "show_etherchannel_summary"
@@ -178,6 +181,10 @@ _INTERFACE_COMMANDS = {
     # pagina en cuanto el switch tiene mas de un punado de puertos.
     OperationalQueryId.SHOW_INTERFACES_SWITCHPORT:
         "show interfaces {interface} switchport",
+    # Interface scope is mandatory. Global cumulative counters cannot
+    # distinguish the voice exchange from the known data-client traffic.
+    OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE:
+        "show ip dhcp server statistics {interface}",
 }
 _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_EPHONE,
@@ -189,6 +196,7 @@ _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE,
     OperationalQueryId.SHOW_IP_DHCP_SNOOPING,
     OperationalQueryId.SHOW_IP_DHCP_BINDING,
+    OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE,
     OperationalQueryId.SHOW_IP_ARP_INSPECTION,
     OperationalQueryId.SHOW_INTERFACES_SWITCHPORT,
     OperationalQueryId.SHOW_TELEPHONY_SERVICE,
@@ -235,9 +243,15 @@ _PAGER_MARKER = "--More--"
 # one server can hold every endpoint lease for several /24 pools, while the
 # diagnostic fact we need may be the ABSENCE of voice-subnet rows. Only a
 # complete bounded table can support that negative; a first page cannot.
+#
+# `SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE` is deliberately not the global
+# form. DHCP counters are cumulative, and CP-SCALE already has 23 data clients;
+# only a complete voice-subinterface capture can make a before/after delta
+# attributable to the voice acquisition window.
 _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
     OperationalQueryId.SHOW_IP_DHCP_BINDING,
+    OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE,
     OperationalQueryId.SHOW_INTERFACES_TRUNK,
     OperationalQueryId.SHOW_IP_PROTOCOLS,
     OperationalQueryId.SHOW_EPHONE,
@@ -316,6 +330,17 @@ class DhcpBindingRow:
     """One address the DHCP server's current binding table actually exposed."""
 
     ip_address: str
+
+
+@dataclass(frozen=True)
+class DhcpServerStatistics:
+    """DORA counters exposed by one interface-scoped server statistics read."""
+
+    discover_received: int
+    offer_sent: int
+    request_received: int
+    ack_sent: int
+    nak_sent: int
 
 
 @dataclass(frozen=True)
@@ -736,6 +761,50 @@ def parse_show_ip_dhcp_binding(value: str) -> list[DhcpBindingRow]:
         seen.add(address)
         rows.append(DhcpBindingRow(ip_address=address))
     return rows
+
+
+def parse_show_ip_dhcp_server_statistics(
+    value: str,
+) -> DhcpServerStatistics | None:
+    """Parse only the complete DORA subset of server statistics.
+
+    IOS prints the same ``Message`` heading twice, once for received messages
+    and once for sent messages. A counter is accepted only in its documented
+    section and exactly once. Missing or duplicate rows leave the observation
+    unreadable instead of turning an unfamiliar Packet Tracer rendering into
+    zero traffic.
+    """
+    required = {
+        ("received", "dhcpdiscover"): "discover_received",
+        ("received", "dhcprequest"): "request_received",
+        ("sent", "dhcpoffer"): "offer_sent",
+        ("sent", "dhcpack"): "ack_sent",
+        ("sent", "dhcpnak"): "nak_sent",
+    }
+    counters: dict[str, int] = {}
+    section = ""
+    for line in normalize_terminal_output(value).splitlines():
+        heading = re.fullmatch(
+            r"\s*Message\s+(Received|Sent)\s*", line, re.IGNORECASE,
+        )
+        if heading is not None:
+            section = heading.group(1).casefold()
+            continue
+        row = re.fullmatch(
+            r"\s*(?P<message>DHCP[A-Za-z]+)\s+(?P<count>\d+)\s*", line,
+            re.IGNORECASE,
+        )
+        if row is None:
+            continue
+        field = required.get((section, row.group("message").casefold()))
+        if field is None:
+            continue
+        if field in counters:
+            return None
+        counters[field] = int(row.group("count"))
+    if set(counters) != set(required.values()):
+        return None
+    return DhcpServerStatistics(**counters)
 
 
 def _parse_trunk_vlan_values(value: str) -> tuple[int, ...] | None:

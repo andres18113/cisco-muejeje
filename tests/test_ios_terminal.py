@@ -922,6 +922,149 @@ def test_dhcp_binding_table_is_registered_privileged_and_pager_complete():
     ]
 
 
+def test_dhcp_server_statistics_is_interface_scoped_privileged_and_pager_complete():
+    """Only the voice subinterface can make cumulative counters attributable."""
+    query = OperationalQueryId._value2member_map_.get(
+        "show_ip_dhcp_server_statistics_interface",
+    )
+    assert query is not None, "interface-scoped DHCP statistics are not registered"
+    parser = getattr(ios_module, "parse_show_ip_dhcp_server_statistics", None)
+    assert parser is not None, "the registered statistics query has no typed parser"
+    assert query in ios_module._PRIVILEGED_QUERIES
+    assert query in ios_module._PAGINATION_QUALIFIED_QUERIES
+
+    from tests.test_e95_serial_orientation_pager_capture import (
+        _PagedTerminal,
+        _executor,
+    )
+
+    terminal = _PagedTerminal(
+        [
+            (
+                "Memory usage          40392\n"
+                "Address pools         3\n"
+                "Message               Received\n"
+                "BOOTREQUEST           0\n"
+                "DHCPDISCOVER          21\n"
+                "DHCPREQUEST           19\n"
+            ),
+            (
+                "Message               Sent\n"
+                "BOOTREPLY             0\n"
+                "DHCPOFFER             20\n"
+                "DHCPACK               18\n"
+                "DHCPNAK               1\n"
+            ),
+        ],
+        command=(
+            "show ip dhcp server statistics FastEthernet0/0.20"
+        ),
+    )
+
+    result = _executor(terminal).execute(
+        "Router4", query, interface="FastEthernet0/0.20",
+    )
+    statistics = parser(result.output)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.output_complete and not result.truncated_by_pager
+    assert result.pager_pages_captured == 2
+    assert statistics is not None
+    assert statistics.discover_received == 21
+    assert statistics.offer_sent == 20
+    assert statistics.request_received == 19
+    assert statistics.ack_sent == 18
+    assert statistics.nak_sent == 1
+
+
+def test_dhcp_server_statistics_parser_fails_closed_on_incomplete_or_ambiguous_rows():
+    parser = getattr(ios_module, "parse_show_ip_dhcp_server_statistics", None)
+    assert parser is not None, "the statistics parser is absent"
+    incomplete = """Message Received
+DHCPDISCOVER 1
+DHCPREQUEST 1
+Message Sent
+DHCPOFFER 1
+DHCPACK 1
+"""
+    ambiguous = """Message Received
+DHCPDISCOVER 1
+DHCPDISCOVER 2
+DHCPREQUEST 1
+Message Sent
+DHCPOFFER 1
+DHCPACK 1
+DHCPNAK 0
+"""
+
+    assert parser(incomplete) is None
+    assert parser(ambiguous) is None
+
+
+def test_dhcp_server_statistics_keep_observed_zero_apart_from_unobservable():
+    """A silent server and an unreadable one are not the same statement."""
+    parser = ios_module.parse_show_ip_dhcp_server_statistics
+    silent = """Message               Received
+BOOTREQUEST           0
+DHCPDISCOVER          0
+DHCPREQUEST           0
+Message               Sent
+BOOTREPLY             0
+DHCPOFFER             0
+DHCPACK               0
+DHCPNAK               0
+"""
+    observed = parser(silent)
+
+    assert observed is not None
+    assert observed.discover_received == 0
+    assert observed.offer_sent == 0
+    assert observed.request_received == 0
+    assert observed.ack_sent == 0
+    assert observed.nak_sent == 0
+    # An integer zero, never a bool that would compare equal to one.
+    assert all(
+        type(value) is int for value in (
+            observed.discover_received, observed.offer_sent,
+            observed.request_received, observed.ack_sent, observed.nak_sent,
+        )
+    )
+
+    # Packet Tracer support for the scoped form is UNKNOWN. A build that
+    # rejects it must not parse as a server that saw no DHCP at all.
+    assert parser(
+        "Router4#show ip dhcp server statistics FastEthernet0/0.20\n"
+        "% Invalid input detected at '^' marker.\nRouter4#"
+    ) is None
+    assert parser("") is None
+    # Nor may a pager artifact or a prompt become a counter row.
+    assert parser(
+        "Message               Received\nDHCPDISCOVER          3--More--\n"
+        "DHCPREQUEST           3\nMessage               Sent\n"
+        "DHCPOFFER             3\nDHCPACK               3\nDHCPNAK 0\n"
+    ) is None
+
+
+def test_dhcp_server_statistics_renders_only_the_scoped_command():
+    """The scope is the whole point: a global read cannot substitute for it."""
+    query = OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE
+    render = ios_module.ControlledIosExecutor._registered_command
+
+    assert render(query, interface="FastEthernet0/0.20") == (
+        "show ip dhcp server statistics FastEthernet0/0.20"
+    )
+    # No interface means no registered command at all, and the refusal happens
+    # before anything reaches the bridge.
+    sent = []
+    result = ControlledIosExecutor(
+        lambda js, _timeout: sent.append(js) or None,
+    ).execute("Router4", query)
+
+    assert not result.executed
+    assert "valid interface name" in result.failure_reason
+    assert sent == []
+
+
 def test_typed_interface_query_rejects_cli_injection_before_bridge_call():
     sent = []
 

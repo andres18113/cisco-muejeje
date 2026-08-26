@@ -120,6 +120,7 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     OperationalQueryId,
     ios_rejection_reason,
     parse_show_ip_dhcp_binding,
+    parse_show_ip_dhcp_server_statistics,
     parse_show_ip_interface_brief,
 )
 from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
@@ -611,6 +612,326 @@ def _dhcp_server_binding_evidence(
     return evidence
 
 
+def _scoped_dhcp_subinterface(
+    configuration_plan, device_name: str, segment_id: str,
+) -> str:
+    """Render the one subinterface a segment owns on a device, or nothing."""
+    subinterfaces = [
+        action for action in configuration_plan.actions
+        if action.action_type is ConfigurationActionType.CONFIGURE_SUBINTERFACE
+        and action.device_name == device_name
+        and action.segment_id == segment_id
+    ]
+    if len(subinterfaces) != 1:
+        return ""
+    return (
+        f"{subinterfaces[0].parent_interface}.{subinterfaces[0].vlan_id}"
+    )
+
+
+def _voice_dhcp_statistics_target(
+    configuration_plan,
+    voice_plan,
+) -> dict[str, str] | None:
+    """Return one server/interface target only when voice scope is unique.
+
+    The target carries a CONTROL scope beside the voice one, and is refused
+    without it. Packet Tracer support for the interface-scoped form is UNKNOWN,
+    and a build that accepted the interface token and answered with the GLOBAL
+    table would be indistinguishable from a scoped answer -- while carrying the
+    data clients that acquire inside this very window. A second pool-backed
+    subinterface on the SAME server is what makes that difference observable.
+    """
+    if voice_plan is None:
+        return None
+    voice_segments = {
+        assignment.voice_segment_id for assignment in voice_plan.phone_assignments
+    }
+    if len(voice_segments) != 1:
+        return None
+    segment_id = next(iter(voice_segments))
+    pools = [
+        action for action in configuration_plan.actions
+        if action.action_type is ConfigurationActionType.CONFIGURE_DHCP_POOL
+        and action.segment_id == segment_id
+    ]
+    if len(pools) != 1:
+        return None
+    device_name = pools[0].device_name
+    interface = _scoped_dhcp_subinterface(
+        configuration_plan, device_name, segment_id,
+    )
+    if not interface:
+        return None
+    control_segments = sorted(
+        candidate for candidate in {
+            action.segment_id for action in configuration_plan.actions
+            if action.action_type is ConfigurationActionType.CONFIGURE_DHCP_POOL
+            and action.device_name == device_name
+            and action.segment_id != segment_id
+        }
+        if _scoped_dhcp_subinterface(configuration_plan, device_name, candidate)
+    )
+    if not control_segments:
+        return None
+    control_segment_id = control_segments[0]
+    return {
+        "device_name": device_name,
+        "interface": interface,
+        "segment_id": segment_id,
+        "control_interface": _scoped_dhcp_subinterface(
+            configuration_plan, device_name, control_segment_id,
+        ),
+        "control_segment_id": control_segment_id,
+    }
+
+
+def _dhcp_server_statistics_observation(
+    ios: ControlledIosExecutor,
+    target: dict[str, str],
+) -> dict[str, object]:
+    """Read one voice-scoped cumulative counter set, preserving every gate."""
+    device_name = target.get("device_name", "")
+    interface = target.get("interface", "")
+    show = ios.execute(
+        device_name,
+        OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE,
+        interface=interface,
+    )
+    rejection = ios_rejection_reason(show.output)
+    statistics = (
+        parse_show_ip_dhcp_server_statistics(show.output)
+        if show.executed else None
+    )
+    identity_confirmed = bool(
+        show.observed_device_name == device_name
+        and show.device_identity_provenance == "confirmed_unique"
+    )
+    usable = bool(
+        show.executed
+        and show.fresh_output_observed
+        and show.output_complete
+        and not rejection
+        and identity_confirmed
+        and statistics is not None
+    )
+    counters = (
+        {
+            "discover_received": statistics.discover_received,
+            "offer_sent": statistics.offer_sent,
+            "request_received": statistics.request_received,
+            "ack_sent": statistics.ack_sent,
+            "nak_sent": statistics.nak_sent,
+        }
+        if usable and statistics is not None else None
+    )
+    return {
+        **target,
+        "query_id": (
+            OperationalQueryId
+            .SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE.value
+        ),
+        "executed": show.executed,
+        "fresh_output_observed": show.fresh_output_observed,
+        "output_complete": show.output_complete,
+        "truncated_by_pager": show.truncated_by_pager,
+        "pager_pages_captured": show.pager_pages_captured,
+        "failure_reason": show.failure_reason,
+        "ios_rejection": rejection or "",
+        "observed_device_name": show.observed_device_name,
+        "device_identity_provenance": show.device_identity_provenance,
+        "device_identity_evidence": show.device_identity_evidence,
+        "device_identity_confirmed": identity_confirmed,
+        "usable": usable,
+        "counters": counters,
+        "output": show.output,
+    }
+
+
+def _dhcp_server_statistics_point(
+    ios: ControlledIosExecutor,
+    target: dict[str, str],
+) -> dict[str, object]:
+    """Read BOTH scopes at one point, never the voice one alone.
+
+    The pair is what carries the scope question through to the delta. Reading
+    the voice subinterface by itself cannot say whether this build answered for
+    that interface or for the whole server, and the two readings are only
+    comparable when they are taken at the same governed point.
+    """
+    return {
+        "voice": _dhcp_server_statistics_observation(ios, target),
+        "control": _dhcp_server_statistics_observation(ios, {
+            "device_name": target.get("device_name", ""),
+            "interface": target.get("control_interface", ""),
+            "segment_id": target.get("control_segment_id", ""),
+        }),
+    }
+
+
+def _scope_observation(point: object, scope: str) -> dict[str, object]:
+    """One scope of a paired point. A missing scope is unusable, not zero."""
+    if isinstance(point, dict) and isinstance(point.get(scope), dict):
+        return point[scope]
+    return {}
+
+
+_DHCP_STATISTIC_COUNTERS = (
+    "discover_received",
+    "offer_sent",
+    "request_received",
+    "ack_sent",
+    "nak_sent",
+)
+
+
+def _dhcp_counter_delta(
+    baseline: dict[str, object], post: dict[str, object],
+) -> tuple[dict[str, int] | None, str]:
+    """Subtract two observations of ONE scope, or refuse and say why.
+
+    Every refusal returns None. No path here turns a missing, incompatible or
+    decreasing observation into a zero delta: zero is what two real captures of
+    the same scope produced, and nothing else may render it.
+    """
+    for field in ("device_name", "interface", "segment_id"):
+        if baseline.get(field) != post.get(field):
+            return None, "baseline and post observation target different scopes"
+    if not baseline.get("usable") or not post.get("usable"):
+        return None, "baseline or post observation was not usable"
+    before, after = baseline.get("counters"), post.get("counters")
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return None, "counters were not typed"
+    if any(
+        type(before.get(field)) is not int or type(after.get(field)) is not int
+        for field in _DHCP_STATISTIC_COUNTERS
+    ):
+        return None, "counters were incomplete"
+    delta = {
+        field: int(after[field]) - int(before[field])
+        for field in _DHCP_STATISTIC_COUNTERS
+    }
+    if any(value < 0 for value in delta.values()):
+        # A cumulative counter that went down did not observe negative DHCP.
+        # These two captures stopped being two points of one series.
+        return None, "counters reset or wrapped inside the acquisition window"
+    return delta, ""
+
+
+def _dhcp_server_statistics_delta(
+    baseline: dict[str, object],
+    post: dict[str, object],
+    *,
+    voice_binding_count: int | None,
+) -> dict[str, object]:
+    """Classify one attributable voice-interface DORA counter delta.
+
+    The classification is only reached once the interface argument is OBSERVED
+    to scope. Packet Tracer support for the scoped form stays UNKNOWN until a
+    live run says otherwise, and a build that answered every interface with the
+    global table would hand this function the data clients that acquire inside
+    the same window -- as if the voice subinterface had seen them.
+    """
+    evidence: dict[str, object] = {
+        "baseline": baseline,
+        "post": post,
+        "voice_binding_count": voice_binding_count,
+        "delta_readable": False,
+        "counters": None,
+        "control_counters": None,
+        "scope_discriminated": False,
+        "fork": "UNOBSERVABLE",
+        "failure_reason": "",
+    }
+    delta, reason = _dhcp_counter_delta(
+        _scope_observation(baseline, "voice"), _scope_observation(post, "voice"),
+    )
+    if delta is None:
+        evidence["failure_reason"] = f"Voice-scoped DHCP statistics {reason}."
+        return evidence
+    control, control_reason = _dhcp_counter_delta(
+        _scope_observation(baseline, "control"),
+        _scope_observation(post, "control"),
+    )
+    if control is None:
+        evidence["failure_reason"] = (
+            f"The DHCP statistics control scope {control_reason}, so this "
+            "build was never observed to scope the read to one interface."
+        )
+        return evidence
+    evidence["control_counters"] = control
+    # Two different subinterfaces that reported the SAME counters were not two
+    # scopes. That is only harmless when the control scope observed nothing at
+    # all: a global table could not have read zero across this window, and a
+    # server with no traffic has nothing to confound the voice counters with.
+    evidence["scope_discriminated"] = control != delta or not any(control.values())
+    if not evidence["scope_discriminated"]:
+        evidence["fork"] = "SCOPE_UNPROVEN"
+        evidence["failure_reason"] = (
+            "The voice and control subinterfaces reported identical non-zero "
+            "counters, so the interface argument did not scope this read and "
+            "the delta cannot be attributed to the voice exchange."
+        )
+        return evidence
+
+    discover = delta["discover_received"]
+    offer = delta["offer_sent"]
+    request = delta["request_received"]
+    ack = delta["ack_sent"]
+    nak = delta["nak_sent"]
+    if discover == 0:
+        fork = (
+            "A_NO_DISCOVER"
+            if offer == request == ack == nak == 0
+            else "UNCLASSIFIED_COUNTER_PATTERN"
+        )
+    elif offer == 0:
+        fork = (
+            "B_DISCOVER_WITHOUT_OFFER"
+            if request == ack == nak == 0
+            else "UNCLASSIFIED_COUNTER_PATTERN"
+        )
+    elif request == 0:
+        fork = (
+            "C_OFFER_WITHOUT_REQUEST"
+            if ack == nak == 0
+            else "UNCLASSIFIED_COUNTER_PATTERN"
+        )
+    elif ack == 0:
+        fork = "D_REQUEST_WITHOUT_ACK"
+    elif voice_binding_count is None:
+        fork = "ACK_OBSERVED_BINDING_UNOBSERVABLE"
+    elif voice_binding_count == 0:
+        fork = "E_ACK_WITHOUT_BINDING"
+    else:
+        fork = "SERVER_EXCHANGE_AND_BINDING_OBSERVED"
+    evidence.update({
+        "delta_readable": True,
+        "counters": delta,
+        "fork": fork,
+    })
+    return evidence
+
+
+def _voice_binding_count(
+    binding_evidence: list[dict[str, object]],
+    target: dict[str, str],
+) -> int | None:
+    matches = [
+        pool.get("binding_count")
+        for device in binding_evidence
+        if device.get("device_name") == target.get("device_name")
+        for pool in (
+            device.get("pools")
+            if isinstance(device.get("pools"), list) else []
+        )
+        if isinstance(pool, dict)
+        and pool.get("segment_id") == target.get("segment_id")
+        and pool.get("voice") is True
+    ]
+    return matches[0] if len(matches) == 1 and type(matches[0]) is int else None
+
+
 def _stage_voice(
     projection,
     *,
@@ -764,6 +1085,8 @@ def _execute_stage(
     transport: PacketTracerHttpTransport,
     fingerprint: EnvironmentFingerprint,
     packet_tracer_version: str,
+    dhcp_statistics_target: dict[str, str] | None = None,
+    dhcp_statistics_baseline: dict[str, object] | None = None,
     verified_serial_topology=None,
     verified_serial_manifest=None,
 ) -> tuple[dict[str, object], object, object]:
@@ -917,12 +1240,43 @@ def _execute_stage(
         manifest=manifest,
     )
     evidence["voice"] = voice_evidence
-    evidence["dhcp_server_bindings"] = (
+    binding_evidence = (
         _dhcp_server_binding_evidence(
             ios, projection.configuration, projection.voice,
         )
         if voice_evidence.get("staged") else []
     )
+    evidence["dhcp_server_bindings"] = binding_evidence
+    if (
+        voice_evidence.get("staged")
+        and dhcp_statistics_target is not None
+        and dhcp_statistics_baseline is not None
+    ):
+        statistics_post = _dhcp_server_statistics_point(
+            ios, dhcp_statistics_target,
+        )
+        evidence["dhcp_voice_exchange"] = _dhcp_server_statistics_delta(
+            dhcp_statistics_baseline,
+            statistics_post,
+            voice_binding_count=_voice_binding_count(
+                binding_evidence, dhcp_statistics_target,
+            ),
+        )
+    elif voice_evidence.get("staged"):
+        evidence["dhcp_voice_exchange"] = {
+            "baseline": dhcp_statistics_baseline,
+            "post": None,
+            "voice_binding_count": None,
+            "delta_readable": False,
+            "counters": None,
+            "control_counters": None,
+            "scope_discriminated": False,
+            "fork": "UNOBSERVABLE",
+            "failure_reason": (
+                "A unique voice DHCP statistics target or baseline was "
+                "unavailable at this stage."
+            ),
+        }
     if voice_evidence.get("error"):
         raise _failed(
             f"Voice at {projection.stage.value!r} did not close: "
@@ -1211,6 +1565,14 @@ def run(
                 + ", ".join(unresolved)
             )
 
+        floor1_statistics_projection = project_cp_scale_canonical_stage(
+            composition, CPScaleCanonicalStage.FLOOR1,
+        )
+        dhcp_statistics_target = _voice_dhcp_statistics_target(
+            floor1_statistics_projection.configuration,
+            floor1_statistics_projection.voice,
+        )
+
         fingerprint = EnvironmentFingerprint(
             backend="packet_tracer",
             backend_version=packet_tracer_version,
@@ -1246,6 +1608,7 @@ def run(
         verified_serial_manifest = None
         verified_serial_topology = None
         stage_snapshot = None
+        dhcp_statistics_baseline = None
         for index, stage in enumerate(_BUILD_STAGES):
             projection = project_cp_scale_canonical_stage(
                 composition,
@@ -1358,9 +1721,35 @@ def run(
                 transport=transport,
                 fingerprint=fingerprint,
                 packet_tracer_version=packet_tracer_version,
+                dhcp_statistics_target=(
+                    dhcp_statistics_target
+                    if stage is CPScaleCanonicalStage.FLOOR1 else None
+                ),
+                dhcp_statistics_baseline=(
+                    dhcp_statistics_baseline
+                    if stage is CPScaleCanonicalStage.FLOOR1 else None
+                ),
                 verified_serial_topology=verified_serial_topology,
                 verified_serial_manifest=verified_serial_manifest,
             )
+            if stage is CPScaleCanonicalStage.ROUTER4_SWITCH10:
+                if dhcp_statistics_target is None:
+                    dhcp_statistics_baseline = {
+                        "voice": None,
+                        "control": None,
+                        "failure_reason": (
+                            "A unique Floor-1 voice DHCP statistics target "
+                            "with a control scope was unavailable."
+                        ),
+                    }
+                else:
+                    dhcp_statistics_baseline = _dhcp_server_statistics_point(
+                        ControlledIosExecutor(transport.send_and_wait),
+                        dhcp_statistics_target,
+                    )
+                stage_evidence["dhcp_voice_statistics_baseline"] = (
+                    dhcp_statistics_baseline
+                )
             if stage is CPScaleCanonicalStage.ROUTING_CORE:
                 verified_serial_topology = projection.topology
                 verified_serial_manifest = stage_manifest

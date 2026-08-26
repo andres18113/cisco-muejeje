@@ -6,7 +6,7 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = e09f606837e9794d32af6290122f0fff0e3e2a69
+CURRENT_PUSHED_HEAD = 4b9fe11c54001d6f1713831e52814deb94078918
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
 ROUTING_CORE = GOVERNED VERIFIED (fresh run at e09f606)
@@ -17,19 +17,23 @@ FLOOR1_ADDRESSING = 0/21 addressed
 FLOOR1 = NOT VERIFIED
 WORLD_A = REFUTED
 WORLD_B_FORWARDING = REFUTED; all five trunk endpoints VERIFIED
-WORLD_B_DHCP_BINDINGS = additive registered observation implemented, LIVE pending
+WORLD_B_DHCP_BINDINGS = OBSERVED at 4b9fe11: DATA 23, VOICE 0, CCTV 0
+DHCP_EXCHANGE_STATISTICS = implemented, NOT COMMITTED, LIVE pending
+PT_SCOPED_STATISTICS_SUPPORT = UNVERIFIED_UNTIL_LIVE
 CP_SCALE = OPEN
 E10 = FORBIDDEN
 ```
 
-Offline baseline at pushed HEAD `e09f606`: **2722 passed / 0 failed** with the
-checkout-local `.venv` and a writable, gitignored pytest basetemp. The latest
-failed Floor-1 run cleaned every owned device and independently re-observed the
-empty semantic workspace twice. Packet Tracer is open; its workspace is empty.
+Offline baseline at pushed HEAD `4b9fe11`: **2725 passed / 0 failed** with the
+checkout-local `.venv` and a writable, gitignored pytest basetemp. The scoped
+DHCP-exchange work below adds eight tests and runs at **2733 passed / 0 failed**
+in the same checkout. The latest failed Floor-1 run cleaned every owned device
+and independently re-observed the empty semantic workspace twice. Packet Tracer
+is open; its workspace is empty.
 
-The forwarding and runtime-checkpoint fixes are checkpointed in this HEAD. The
-additive DHCP-binding observation described below is not yet checkpointed;
-commit and push it before the next LIVE mutation.
+The DHCP-binding observation is checkpointed in this HEAD and has since produced
+its LIVE reading. The scoped DHCP-exchange statistics described below are NOT
+checkpointed; commit and push them before the next LIVE mutation.
 
 ## Decisive powered-phone measurement -- World A refuted
 
@@ -218,19 +222,74 @@ reference summary is published only after terminal
 `CP_SCALE_GOVERNED_VERIFIED` retention. Focused/affected: 21 passed. Full:
 2722 passed / 0 failed.
 
+## Scoped DHCP exchange statistics -- implemented, PT support UNKNOWN
+
+The Floor-1 binding reading at `4b9fe11` localized the failure BEFORE server-side
+voice lease allocation: Router4's table was fresh, complete, two-page and uniquely
+attributed, with 23 DATA bindings, 0 in `172.16.20.0/24` and 0 CCTV. That says the
+voice lease was never allocated. It does not say which step of the exchange is
+missing, and the binding table cannot say: an absent row is the same absence
+whether the DISCOVER never arrived or the ACK never left.
+
+`SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE` is registered additively for that one
+question. It is read-only, privileged EXEC, pagination-qualified, and goes through
+the same `ControlledIosExecutor` path as every other registered query -- same
+atomic pager guard, same freshness window, same echo classification, same unique
+device attribution. `SHOW_IP_DHCP_BINDING` and the `DHCP_POOL` ceiling are
+untouched.
+
+**Packet Tracer 9.0.1.0858 support for the interface-scoped form is UNKNOWN.**
+Cisco documents it on some IOS trains; that is not evidence about this build. The
+runtime read fails closed on invalid input, an unsupported command, incomplete or
+paged-incomplete output, ambiguous provenance, a malformed layout and any missing
+decisive counter. There is no fallback to the global form: the 23 data clients
+acquire inside the very window being measured, so a global answer cannot stand in
+for a scoped one.
+
+That confound is also why each observation point reads TWO scopes, not one. A
+build that accepted `FastEthernet0/0.20` and answered with the global table would
+be indistinguishable from a scoped answer while carrying every data client. The
+control scope -- the next pool-backed subinterface on the same server, resolved to
+`FastEthernet0/0.30` (CCTV) for Router4 -- makes the difference observable:
+
+* control and voice deltas differ -> the interface argument scoped the read;
+* control delta is all zeros -> no table, scoped or global, could have read zero
+  across a window that carried the data clients;
+* control and voice deltas are identical and non-zero -> `SCOPE_UNPROVEN`, and no
+  fork is named.
+
+`baseline` is captured at the governed `router4-switch10` checkpoint, where
+Router4 already owns `FastEthernet0/0.20` and its voice pool but no Floor-1 client
+exists yet. `post` is captured after the voice acquisition window and BEFORE the
+stage raises, so `CanonicalLiveFailure.stage_evidence` carries it out with the
+binding evidence. A delta needs both points usable, fresh, complete, on the same
+device and scope; a counter that decreased is invalid for interpretation, never
+negative traffic. Nothing fabricates a zero delta from missing evidence.
+
+The fork it can support is bounded and non-causal: `A_NO_DISCOVER`,
+`B_DISCOVER_WITHOUT_OFFER`, `C_OFFER_WITHOUT_REQUEST`, `D_REQUEST_WITHOUT_ACK`,
+`E_ACK_WITHOUT_BINDING`, plus `ACK_OBSERVED_BINDING_UNOBSERVABLE`,
+`UNCLASSIFIED_COUNTER_PATTERN`, `SCOPE_UNPROVEN` and `UNOBSERVABLE`. None of these
+claims a phone did not transmit, a switch dropped a broadcast, or a server
+rejected a client. Shrinking the fork is the whole objective; proving a cause is
+not.
+
 ## NEXT_ACTIVE_STEP
 
-1. Commit/push the additive DHCP-binding observation on a clean exact upstream
-   HEAD.
-2. Re-run governed routing-core -> router4-switch10 -> Floor 1 without stopping
-   a stage mid-flight or creating progress commits.
-3. Read `dhcp_server_bindings` from the durable Floor-1 failed-stage journal.
-   Require fresh, complete, uniquely attributed Router4 evidence before calling
-   a voice-pool binding count zero.
-4. Branch only on that evidence. A binding table with data/CCTV leases but zero
-   `172.16.20.0/24` leases localizes the defect before allocation; actual voice
-   bindings with zero phone-side addresses are a channel contradiction requiring
-   a different root cause. Unreadable remains UNOBSERVABLE.
+1. Commit/push the scoped DHCP-exchange observation on a clean exact upstream
+   HEAD. Files: `ios_terminal.py`, `tools/cp_scale_canonical_live.py`, the two
+   test modules, and this handoff.
+2. Re-run governed routing-core -> router4-switch10 -> Floor 1 from that exact
+   committed HEAD, without stopping a stage mid-flight or creating progress
+   commits.
+3. Read `dhcp_voice_statistics_baseline` from the router4-switch10 stage and
+   `dhcp_voice_exchange` from the durable Floor-1 failed-stage journal. Answer
+   the support question FIRST: if `usable` is false at either point, PT does not
+   expose this observation and the fork stays where `4b9fe11` left it.
+4. If `scope_discriminated` is false, the reading was the server's, not the
+   interface's. Do not interpret its numbers.
+5. Only a readable, scope-discriminated delta names a fork, and it names exactly
+   one step of the exchange -- not a cause.
 
 Do not wire any new DHCP observation into `VerificationKind.DHCP_POOL`: the
 ceiling at `qualify_cp_scale_live.py:625` enforces status UNOBSERVABLE +
@@ -335,7 +394,8 @@ d0db204 docs(cp-scale): checkpoint governed routing core
 43eba72 docs(cp-scale): checkpoint fresh routing core
 8b4cdd4 fix(cp-scale): allow bounded trunk forwarding convergence
 e09f606 fix(cp-scale): keep runtime checkpoints outside tracked tree
+4b9fe11 feat(cp-scale): observe DHCP server bindings
 ```
 
-The additive DHCP-binding observation and this handoff update are the next fix
+The scoped DHCP-exchange observation and this handoff update are the next fix
 checkpoint; record their final pushed HEAD here on the following turn.
