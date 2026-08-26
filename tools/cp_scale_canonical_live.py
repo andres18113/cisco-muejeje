@@ -133,6 +133,9 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_spanning_tree,
 )
 from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
+from packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
+    PacketTracerFrameObserverProbe,
+)
 from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
     TRACE_LIMIT_MAX,
     SimulationTraceRuntime,
@@ -1692,6 +1695,158 @@ def _stp_realtime_evidence(ios, projection, *, edge: str) -> dict[str, object]:
     }
 
 
+#: El texto EXACTO con el que PT identifica cada frame que hay que comparar. Un
+#: frame se elige por lo que Packet Tracer dijo de el, jamas por su clase cruda
+#: de trafico: ningun numero de clase nombra un protocolo en este repositorio, y
+#: seguir tratandolos como sinonimos seria el clasificador que no existe.
+_DHCP_DISCOVER_DECISION = "dhcp client constructs a discover packet"
+_BPDU_DECISION = "stp process sends out a configuration bpdu"
+
+
+def _decision_match(hop: dict, needle: str) -> str:
+    """La decision literal que identifica este frame, o cadena vacia."""
+    for decision in hop.get("decisions") or ():
+        description = str(decision.get("description") or "")
+        if needle in description.casefold():
+            return description
+    return ""
+
+
+def _frame_target(hop: dict, decision: str, role: str) -> dict[str, object]:
+    """Lo que hay que conservar de un frame elegido, antes de enumerarlo."""
+    return {
+        "role": role,
+        "index": hop.get("index"),
+        "device": hop.get("device"),
+        "in_port": hop.get("in_port"),
+        "out_port": hop.get("out_port"),
+        "sim_time": hop.get("sim_time"),
+        "traffic_type_raw": hop.get("traffic_type_raw"),
+        "status": hop.get("status"),
+        "identifying_decision": decision,
+    }
+
+
+def _frame_observer_discovery(
+    transport,
+    *,
+    phone_name: str,
+    switch_name: str,
+    phone_trace,
+    switch_trace,
+) -> dict[str, object]:
+    """Enumera los miembros de los dos frames que la pregunta compara.
+
+    Uno es el DHCP Discover del telefono; el otro es una BPDU que el switch
+    emite por un puerto de telefono. Mismo puerto fisico NO implica misma VLAN,
+    y misma captura NO implica mismo instante: por eso cada objetivo conserva su
+    propio `sim_time` y su propia decision identificadora, y nada aqui deriva
+    una VLAN del tipo de trafico.
+    """
+    observation: dict[str, object] = {
+        "diagnostic": "FRAME_OBSERVER_DISCOVERY",
+        "observes": (
+            "Which members a Simulation frameInstance exposes on this build. "
+            "It reads NO discovered member: a name is evidence that something "
+            "exists, never evidence of what it means."
+        ),
+        "targets": [],
+        "attempted": False,
+        "failure_reason": "",
+    }
+    phone_hops = (phone_trace or {}).get("hops") or []
+    switch_hops = (switch_trace or {}).get("hops") or []
+
+    targets: list[dict[str, object]] = []
+    for hop in phone_hops:
+        if hop.get("device") != phone_name:
+            continue
+        decision = _decision_match(hop, _DHCP_DISCOVER_DECISION)
+        if decision:
+            targets.append(_frame_target(hop, decision, "dhcp_discover"))
+            break
+
+    dropped_ports = {
+        str(hop.get("in_port"))
+        for hop in switch_hops
+        if hop.get("device") == switch_name and hop.get("status") == "dropped"
+        and _decision_match(hop, _DHCP_DISCOVER_DECISION) == ""
+        and hop.get("traffic_type_raw") == 7
+    }
+    bpdu_candidates = [
+        (hop, decision)
+        for hop in switch_hops
+        if hop.get("device") == switch_name
+        and str(hop.get("out_port")) in dropped_ports
+        and (decision := _decision_match(hop, _BPDU_DECISION))
+    ]
+    if bpdu_candidates:
+        hop, decision = bpdu_candidates[0]
+        targets.append(_frame_target(hop, decision, "configuration_bpdu"))
+
+    observation["targets"] = targets
+    observation["dropped_phone_ports"] = sorted(dropped_ports)
+    indices = [
+        int(item["index"]) for item in targets
+        if isinstance(item.get("index"), int)
+    ]
+    if not indices:
+        observation["failure_reason"] = (
+            "No frame carried the exact identifying decision text, so there was "
+            "nothing whose members could be attributed."
+        )
+        return observation
+
+    observation["attempted"] = True
+    discovery = PacketTracerFrameObserverProbe(
+        transport.send_and_wait,
+    ).discover_frame_observers(indices)
+    observation["discovery"] = {
+        "observed": discovery.observed,
+        "simulation_mode": discovery.simulation_mode,
+        "frame_count": discovery.frame_count,
+        "failure_reason": discovery.failure_reason,
+        "frames": [
+            {
+                "index": frame.index,
+                "in_bounds": frame.in_bounds,
+                "frame_found": frame.frame_found,
+                "observed_device": frame.observed_device,
+                "observed_in_port": frame.observed_in_port,
+                "observed_sim_time": frame.observed_sim_time,
+                "observed_traffic_type": frame.observed_traffic_type,
+                "truncated": frame.truncated,
+                "members": list(frame.members),
+                "observers": [
+                    {
+                        "name": item.name,
+                        "type_name": item.type_name,
+                        "is_callable": item.is_callable,
+                        "arity": item.arity,
+                        "read_only_name": item.read_only_name,
+                    }
+                    for item in frame.observers
+                ],
+            }
+            for frame in discovery.frames
+        ],
+    }
+    # La identidad del frame se vuelve a probar contra el objetivo elegido: un
+    # indice sigue nombrando un frame solo mientras ese event list siga en pie.
+    by_index = {frame.index: frame for frame in discovery.frames}
+    for target in targets:
+        frame = by_index.get(target.get("index"))
+        target["identity_reconfirmed"] = bool(
+            frame is not None
+            and frame.matches(
+                device=str(target.get("device") or ""),
+                sim_time=target.get("sim_time"),
+                traffic_type=target.get("traffic_type_raw"),
+            )
+        )
+    return observation
+
+
 def _post_failure_simulation_diagnostic(
     transport,
     projection,
@@ -1872,6 +2027,17 @@ def _post_failure_simulation_diagnostic(
                 "The bounded capture did not complete; what was observed is "
                 "retained and no absence may be read from it."
             )
+        # Still inside Simulation, on the SAME event list the traces came from:
+        # a frame index only names a frame while that list stands. Nothing is
+        # invoked here beyond the getters this repository already measured --
+        # the question is which members exist, not what they return.
+        evidence["frame_observer_discovery"] = _frame_observer_discovery(
+            transport,
+            phone_name=phone_name,
+            switch_name=switch_name,
+            phone_trace=evidence.get("phone_trace"),
+            switch_trace=evidence.get("switch_trace"),
+        )
     except Exception as exc:
         # The diagnostic may never be the reason a governed stage stops running
         # its own failure and cleanup.
