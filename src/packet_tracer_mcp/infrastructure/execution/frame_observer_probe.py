@@ -29,13 +29,20 @@ positivo/negativo contra un frame cuya VLAN se conozca por otra vía.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
 #: Cotas duras de UNA enumeración. Existen para que el descubrimiento no pueda
 #: convertirse en un volcado del objeto ni en una respuesta sin techo.
-MAX_FRAME_TARGETS = 4
+#: `MAX_FRAME_TARGETS` es exactamente lo que esta fase puede pedir en UNA
+#: llamada: los TRES frames de la comparación -- el DHCP del teléfono, su copia
+#: en el switch y la BPDU del mismo puerto físico -- más los DOS controles de
+#: VLAN independiente. Es la cota de la enumeración, no el presupuesto de
+#: Simulación: esta fase no avanza el reloj ni captura un frame más.
+MAX_VLAN_CONTROL_TARGETS = 2
+MAX_FRAME_TARGETS = 3 + MAX_VLAN_CONTROL_TARGETS
 MAX_MEMBER_NAMES = 128
 MAX_MEMBER_NAME_LENGTH = 64
 
@@ -47,6 +54,14 @@ MAX_MEMBER_NAME_LENGTH = 64
 #: este modulo existe para no tener, y el objeto expone mutadores.
 CHILD_FRAME_GETTERS = ("getInFrame", "getOutFrame")
 MAX_CHILD_OBJECTS_PER_FRAME = 2
+
+#: Los CUATRO nombres que la enumeracion de la fase 2 midio sobre el objeto que
+#: devuelven esos getters: los cuatro `number` y ninguno invocable, asi que
+#: leerlos no involucra ninguna firma de llamada. Se escriben literales en el
+#: script por la misma razon que los dos getters -- recorrer los nombres
+#: descubiertos seria el lector generico que este modulo existe para no tener, y
+#: ese mismo objeto expone su carga entera junto a estos cuatro numeros.
+CHILD_TAG_FIELDS = ("vlanId", "tpid", "cfi", "userPriority")
 
 #: Convención de lectura de PT, igual que en `access_port_probe`. Sólo se usa
 #: para CLASIFICAR lo descubierto; en esta fase no se invoca ninguno.
@@ -71,6 +86,23 @@ class FrameMemberProbe:
 
 
 @dataclass(frozen=True)
+class FrameTagField:
+    """Un campo de tag: lo que se leyo, nunca lo que se esperaba leer.
+
+    `observed` significa exactamente una cosa -- vino un numero finito -- y el
+    cero es uno de ellos. Una ausencia, un error o un valor de otro tipo dejan
+    `numeric_value` en None con su `type_name` a la vista: convertirlos en 0
+    fabricaria una lectura indistinguible de una VLAN 0 real.
+    """
+
+    name: str
+    observed: bool = False
+    type_name: str = ""
+    numeric_value: int | float | None = None
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class FrameChildDiscovery:
     """Lo que devolvio UNO de los dos getters medidos, y su forma."""
 
@@ -82,6 +114,14 @@ class FrameChildDiscovery:
     members: tuple[str, ...] = ()
     observers: tuple[FrameMemberProbe, ...] = ()
     truncated: bool = False
+    #: Los cuatro campos medidos, leidos como propiedad. Un hijo nulo no trae
+    #: ninguno: no hay objeto del que leer, y eso no es un tag vacio.
+    tag: tuple[FrameTagField, ...] = ()
+
+    @property
+    def tag_by_name(self) -> dict[str, FrameTagField]:
+        """Lo ya observado, indexado. No lee nada de Packet Tracer."""
+        return {item.name: item for item in self.tag}
 
     def candidates(self, needles: Iterable[str]) -> tuple[str, ...]:
         """Nombres que MERECEN mirarse, no nombres que prueben algo.
@@ -124,12 +164,17 @@ class FrameInstanceDiscovery:
 
     def matches(
         self, *, device: str = "", sim_time: int | None = None,
-        traffic_type: int | None = None,
+        traffic_type: int | None = None, in_port: str = "",
     ) -> bool:
         """True sólo si cada dimensión pedida fue observada e igual."""
         if not self.frame_found:
             return False
         if device and self.observed_device != device:
+            return False
+        # El event list está vivo: el mismo índice puede haber pasado a nombrar
+        # otro frame. Cuando el objetivo entró por un puerto, ese puerto es una
+        # dimensión más de su identidad, no un dato de adorno.
+        if in_port and self.observed_in_port != in_port:
             return False
         if sim_time is not None and self.observed_sim_time != sim_time:
             return False
@@ -196,10 +241,25 @@ def _discovery_js(indices: tuple[int, ...]) -> str:
         "      }"
         "      return {members:__names,observers:__rows,truncated:__cut};"
         "    };"
+        # UN campo medido: lo que trajo, o por qué no trajo nada. Un numero
+        # finito -- el 0 incluido -- es la UNICA forma de quedar observado; un
+        # string, un undefined o un error se quedan sin valor y con su tipo a la
+        # vista, porque un 0 fabricado no se distinguiria de una VLAN 0 real.
+        "    var __fld = function (__nm, __vl, __er) {"
+        "      var __r = {name:__nm,observed:false,type_name:'',"
+        "        numeric_value:null,error:__er};"
+        "      if (__er !== '') { return __r; }"
+        "      __r.type_name = typeof __vl;"
+        "      if (typeof __vl === 'number' && isFinite(__vl)) {"
+        "        __r.numeric_value = __vl; __r.observed = true;"
+        "      }"
+        "      return __r;"
+        "    };"
         # Forma de lo devuelto por UN getter medido, sin volcar el objeto.
         "    var __shape = function (__name, __c, __err) {"
         "      var __row = {getter:__name,invoked:(__err===''),returned_null:false,"
-        "        type_name:'',error:__err,members:[],observers:[],truncated:false};"
+        "        type_name:'',error:__err,members:[],observers:[],truncated:false,"
+        "        tag:[]};"
         "      if (__err !== '') { return __row; }"
         "      __row.type_name = typeof __c;"
         "      if (__c === null || __c === undefined) {"
@@ -209,6 +269,25 @@ def _discovery_js(indices: tuple[int, ...]) -> str:
         "        var __e = __enum(__c);"
         "        __row.members = __e.members; __row.observers = __e.observers;"
         "        __row.truncated = __e.truncated;"
+        # Los CUATRO campos medidos, escritos literales y cada uno en su try.
+        # Leer una propiedad no invoca nada: la fase 2 los midio `number` y no
+        # invocables. Recorrer los nombres enumerados en vez de escribirlos
+        # seria el lector generico que este script no tiene, y entraria en la
+        # carga del frame en la primera vuelta.
+        "        var __tg = [];"
+        "        var __ga = null; var __ha = '';"
+        "        try { __ga = __c.vlanId; } catch (__ja) { __ha = String(__ja); }"
+        "        __tg.push(__fld('vlanId', __ga, __ha));"
+        "        var __gb = null; var __hb = '';"
+        "        try { __gb = __c.tpid; } catch (__jb) { __hb = String(__jb); }"
+        "        __tg.push(__fld('tpid', __gb, __hb));"
+        "        var __gc = null; var __hc = '';"
+        "        try { __gc = __c.cfi; } catch (__jc) { __hc = String(__jc); }"
+        "        __tg.push(__fld('cfi', __gc, __hc));"
+        "        var __gd = null; var __hd = '';"
+        "        try { __gd = __c.userPriority; } catch (__jd) { __hd = String(__jd); }"
+        "        __tg.push(__fld('userPriority', __gd, __hd));"
+        "        __row.tag = __tg;"
         "      }"
         "      return __row;"
         "    };"
@@ -280,6 +359,41 @@ def _member_rows(value: object) -> tuple[FrameMemberProbe, ...]:
     return tuple(rows)
 
 
+def _finite_number(value: object) -> int | float | None:
+    """Un numero finito, o nada. `True` no es 1 y `"20"` no es 20.
+
+    `bool` es subclase de `int` en Python, asi que sin esta comprobacion un
+    `true` de JSON entraria como el valor 1. JSON tampoco tiene NaN ni
+    Infinity: llegan como `null`, y aun asi se comprueba, porque quien decide
+    si hay lectura es este contrato y no el transporte.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _tag_rows(value: object) -> tuple[FrameTagField, ...]:
+    """Los campos leidos, con el cero como valor y sin ninguna coercion."""
+    rows: list[FrameTagField] = []
+    for item in value if isinstance(value, list) else ():
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "")
+        if not name:
+            continue
+        numeric = _finite_number(item.get("numeric_value"))
+        rows.append(FrameTagField(
+            name=name,
+            # Falla cerrado en los DOS lados: un `observed` afirmado sin numero
+            # finito detras no sobrevive a esta lectura.
+            observed=bool(item.get("observed")) and numeric is not None,
+            type_name=str(item.get("type_name") or ""),
+            numeric_value=numeric,
+            error=str(item.get("error") or ""),
+        ))
+    return tuple(rows)
+
+
 def _child_rows(value: object) -> tuple[FrameChildDiscovery, ...]:
     rows: list[FrameChildDiscovery] = []
     for item in value if isinstance(value, list) else ():
@@ -294,6 +408,7 @@ def _child_rows(value: object) -> tuple[FrameChildDiscovery, ...]:
             members=tuple(str(name) for name in item.get("members", []) or ()),
             observers=_member_rows(item.get("observers")),
             truncated=bool(item.get("truncated")),
+            tag=_tag_rows(item.get("tag")),
         ))
     return tuple(rows)
 

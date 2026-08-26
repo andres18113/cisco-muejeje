@@ -134,6 +134,9 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
 )
 from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
 from packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
+    CHILD_TAG_FIELDS,
+    MAX_FRAME_TARGETS,
+    MAX_VLAN_CONTROL_TARGETS,
     PacketTracerFrameObserverProbe,
 )
 from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
@@ -1735,6 +1738,247 @@ def _frame_target(hop: dict, decision: str, role: str) -> dict[str, object]:
     }
 
 
+#: Qué getter hijo pertenece a cada lado del salto. Un frame de EGRESO se lee
+#: en `getOutFrame` y uno de INGRESO en `getInFrame`; cruzarlos compararía dos
+#: lados distintos del mismo salto y llamaría preservación a esa confusión.
+_ROLE_TAG_GETTER = {"phone_dhcp": "getOutFrame", "switch_dhcp": "getInFrame"}
+#: De dónde sale la VLAN que un control da por conocida. No es una lectura de
+#: Packet Tracer: es lo que el plan tipado configuró en ese puerto.
+_CONTROL_VLAN_SOURCE = "TYPED_ACCESS_PORT_PLAN_SINGLE_VLAN"
+
+
+def _tag_field_observation(target, frame, getter: str) -> dict[str, object]:
+    """Los cuatro campos medidos de UN lado, o por qué no hay ninguno.
+
+    La atribución decide primero y sola. Si el frame enumerado no vuelve a ser
+    el que se eligió, no hay valores que reportar: leer el tag de otro frame y
+    ponerle este nombre sería exactamente la sustitución silenciosa que el
+    contrato de identidad existe para impedir, y un valor mal atribuido es peor
+    que ninguno porque parece una respuesta.
+    """
+    observation: dict[str, object] = {
+        "role": target.get("role"),
+        "getter": getter,
+        "frame_index": target.get("index"),
+        "device": target.get("device"),
+        "previous_device": target.get("previous_device"),
+        "in_port": target.get("in_port"),
+        "out_port": target.get("out_port"),
+        "traffic_type_raw": target.get("traffic_type_raw"),
+        "sim_time": target.get("sim_time"),
+        "identifying_decision": target.get("identifying_decision"),
+        "identity_reconfirmed": bool(target.get("identity_reconfirmed")),
+        "observed_sim_time": None,
+        "child_returned": False,
+        "fields": {},
+        "failure_reason": "",
+    }
+    if frame is None or not observation["identity_reconfirmed"]:
+        observation["failure_reason"] = (
+            "The enumerated frame could not be re-attributed to this target, "
+            "so no tag field may be read as belonging to it."
+        )
+        return observation
+    observation["observed_sim_time"] = frame.observed_sim_time
+    child = next(
+        (item for item in frame.children if item.getter == getter), None,
+    )
+    if child is None:
+        observation["failure_reason"] = (
+            f"{getter} left nothing this enumeration retained."
+        )
+        return observation
+    if child.returned_null:
+        observation["failure_reason"] = (
+            f"{getter} returned no object, so there is no tag to read. That is "
+            "an absent reading, never a zero."
+        )
+        return observation
+    observation["child_returned"] = True
+    by_name = child.tag_by_name
+    # Los CUATRO campos viajan siempre, decidido cada uno por su cuenta: un
+    # campo que no vino se queda sin observar en vez de desaparecer, porque una
+    # clave ausente se lee como si nadie la hubiera preguntado.
+    observation["fields"] = {
+        name: {
+            "observed": bool(by_name[name].observed) if name in by_name else False,
+            "type_name": by_name[name].type_name if name in by_name else "",
+            "numeric_value": (
+                by_name[name].numeric_value if name in by_name else None
+            ),
+            "error": by_name[name].error if name in by_name else "",
+        }
+        for name in CHILD_TAG_FIELDS
+    }
+    return observation
+
+
+def _tag_value(side, name: str):
+    """El número de ESE campo, o None si ese lado no lo observó."""
+    row = (side or {}).get("fields", {}).get(name) or {}
+    return row.get("numeric_value") if row.get("observed") else None
+
+
+def _tag_link_comparison(phone_tag, switch_tag) -> dict[str, object]:
+    """El frame que SALE del teléfono contra el que ENTRA al switch.
+
+    Cada igualdad se calcula sólo con dos lecturas frescas del mismo campo. Una
+    ausencia de un lado no vale como acuerdo ni como desacuerdo: se queda
+    UNOBSERVABLE, y una diferencia medida sigue siendo una diferencia aunque el
+    resto de los campos coincida.
+    """
+    comparison: dict[str, object] = {
+        "observes": (
+            "The four measured tag fields on the phone's DHCP egress frame and "
+            "on the switch's ingress copy of that same frame. The member set is "
+            "strongly consistent with an Ethernet frame carrying 802.1Q-shaped "
+            "tag metadata; what is retained here is what those four properties "
+            "returned, not a proven header contract."
+        ),
+        "phone_dhcp_out_tag": phone_tag,
+        "switch_dhcp_in_tag": switch_tag,
+        "field_matches": {name: "UNOBSERVABLE" for name in CHILD_TAG_FIELDS},
+        "vlan_value_match": "UNOBSERVABLE",
+        "tpid_match": "UNOBSERVABLE",
+        "tpid_hex": "",
+        "tag_fields_match": "UNOBSERVABLE",
+        "same_observed_start_sim_time": "UNOBSERVABLE",
+        "failure_reason": "",
+    }
+    if phone_tag is None or switch_tag is None:
+        comparison["failure_reason"] = (
+            "Both sides of the link are required and one of them was never "
+            "selected in this window."
+        )
+        return comparison
+
+    matches: dict[str, str] = {}
+    for name in CHILD_TAG_FIELDS:
+        near = _tag_value(phone_tag, name)
+        far = _tag_value(switch_tag, name)
+        if near is None or far is None:
+            matches[name] = "UNOBSERVABLE"
+        else:
+            matches[name] = "YES" if near == far else "NO"
+    comparison["field_matches"] = matches
+    comparison["vlan_value_match"] = matches["vlanId"]
+    comparison["tpid_match"] = matches["tpid"]
+    if "NO" in matches.values():
+        # Un desacuerdo medido decide solo. El acuerdo del resto de los campos
+        # no lo diluye ni lo convierte en parcial.
+        comparison["tag_fields_match"] = "NO"
+    elif all(verdict == "YES" for verdict in matches.values()):
+        comparison["tag_fields_match"] = "YES"
+    elif any(verdict == "YES" for verdict in matches.values()):
+        comparison["tag_fields_match"] = "PARTIAL"
+
+    # Base 16 del mismo número leído. No es una interpretación: 33024 se
+    # reporta 0x8100 porque eso es lo que 33024 vale, y cualquier otro número
+    # se reporta como el suyo sin traerle semántica de 802.1Q prestada.
+    for side in (phone_tag, switch_tag):
+        tpid = _tag_value(side, "tpid")
+        if isinstance(tpid, int) and not isinstance(tpid, bool):
+            comparison["tpid_hex"] = hex(tpid)
+            break
+
+    near_time = phone_tag.get("observed_sim_time")
+    far_time = switch_tag.get("observed_sim_time")
+    if near_time is not None and far_time is not None:
+        comparison["same_observed_start_sim_time"] = (
+            "YES" if near_time == far_time else "NO"
+        )
+    return comparison
+
+
+def _single_vlan_access_ports(projection, switch_name: str) -> dict[str, int]:
+    """Los puertos de ESTE switch cuya VLAN el plan tipado da sin ambigüedad.
+
+    Un puerto de teléfono lleva datos Y voz, así que un frame suyo no puede
+    calibrar el significado de un campo: cualquiera de los dos valores
+    parecería correcto. Un puerto con VLAN de datos y SIN VLAN de voz tiene una
+    sola respuesta, y esa respuesta sale del plan -- escribir un nombre de
+    interfaz acá convertiría el control en su propia hipótesis.
+    """
+    configuration = getattr(projection, "configuration", None)
+    ports: dict[str, int] = {}
+    for action in getattr(configuration, "actions", []) or ():
+        if not isinstance(action, ConfigureAccessPort):
+            continue
+        if getattr(action, "device_name", "") != switch_name:
+            continue
+        if action.voice_vlan_id is not None:
+            continue
+        vlan = action.data_vlan_id
+        if isinstance(vlan, bool) or not isinstance(vlan, int):
+            continue
+        interface = str(action.interface or "")
+        if interface:
+            ports[interface] = vlan
+    return ports
+
+
+def _vlan_control_candidates(switch_hops, switch_name: str, ports, taken):
+    """Frames YA capturados sobre un puerto de VLAN única conocida.
+
+    No se genera tráfico para tener un control ni se amplía la ventana: si esta
+    captura no trajo ninguno, no hay control y se dice. Un salto cuyos dos
+    extremos son puertos conocidos de VLAN distinta no calibra nada -- no habría
+    forma de decir cuál de las dos debía leerse --, así que se descarta.
+    """
+    candidates: list[dict[str, object]] = []
+    seen_ports: set[str] = set()
+    for hop in switch_hops:
+        if hop.get("device") != switch_name:
+            continue
+        index = hop.get("index")
+        if not isinstance(index, int) or index in taken:
+            continue
+        in_name = str(hop.get("in_port") or "")
+        out_name = str(hop.get("out_port") or "")
+        known_in = ports.get(in_name)
+        known_out = ports.get(out_name)
+        if known_in is not None and known_out is not None and known_in != known_out:
+            continue
+        if known_in is not None:
+            port, side, expected = in_name, "in", known_in
+        elif known_out is not None:
+            port, side, expected = out_name, "out", known_out
+        else:
+            continue
+        if port in seen_ports:
+            continue
+        seen_ports.add(port)
+        candidates.append({
+            "index": index,
+            "device": hop.get("device"),
+            "port": port,
+            "port_side": side,
+            "in_port": hop.get("in_port"),
+            "out_port": hop.get("out_port"),
+            "sim_time": hop.get("sim_time"),
+            "traffic_type_raw": hop.get("traffic_type_raw"),
+            "status": hop.get("status"),
+            "expected_vlan": expected,
+            "expected_vlan_source": _CONTROL_VLAN_SOURCE,
+        })
+    return candidates
+
+
+def _frame_vlan_field_semantics(controls) -> str:
+    """Hasta dónde queda cualificado `vlanId`, y nunca más allá."""
+    judged = [item for item in controls if item.get("vlan_match") is not None]
+    if any(item["vlan_match"] is False for item in judged):
+        # Un control que no cuadra es información, no ruido: se nombra y no se
+        # promedia contra los que sí cuadraron.
+        return "CONTRADICTED_BY_CONTROL"
+    matched = [item for item in judged if item["vlan_match"] is True]
+    if len(matched) >= 2 and len({item["expected_vlan"] for item in matched}) >= 2:
+        return "STRONGLY_SUPPORTED_BY_MULTIVLAN_CONTROL"
+    if matched:
+        return "SUPPORTED_BY_CONTROL"
+    return "DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED"
+
+
 def _frame_observer_discovery(
     transport,
     *,
@@ -1742,6 +1986,7 @@ def _frame_observer_discovery(
     switch_name: str,
     phone_trace,
     switch_trace,
+    single_vlan_ports: dict[str, int] | None = None,
 ) -> dict[str, object]:
     """Enumera los miembros de los dos frames que la pregunta compara.
 
@@ -1754,13 +1999,26 @@ def _frame_observer_discovery(
     observation: dict[str, object] = {
         "diagnostic": "FRAME_OBSERVER_DISCOVERY",
         "observes": (
-            "Which members a Simulation frameInstance exposes on this build. "
-            "It reads NO discovered member: a name is evidence that something "
-            "exists, never evidence of what it means."
+            "Which members a Simulation frameInstance exposes on this build, "
+            "and -- on the child object the two measured getters return -- the "
+            "four measured tag fields, read as values. Every OTHER discovered "
+            "member is still only a name: evidence that something exists, "
+            "never evidence of what it means."
         ),
         "targets": [],
         "attempted": False,
         "switch_bpdu_absent_reason": "",
+        # La calibración es opcional por diseño y va aparte de la comparación
+        # DHCP: un control ausente, o uno que contradice, no puede tocar los
+        # valores que los dos frames del enlace devolvieron.
+        "vlan_controls": [],
+        "vlan_control_absent_reason": "",
+        "vlan_control_dropped": 0,
+        "frame_vlan_field_semantics": "DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED",
+        # Ningún BPDU de esta fase cualifica una lectura de STP por VLAN, y su
+        # ausencia acotada tampoco la refuta.
+        "vlan_scoped_stp_interpretation": "STILL_INFERENCE",
+        "link_tag_comparison": _tag_link_comparison(None, None),
         "failure_reason": "",
     }
     phone_hops = (phone_trace or {}).get("hops") or []
@@ -1849,6 +2107,36 @@ def _frame_observer_discovery(
         )
         return observation
 
+    # El control de calibración viaja en la MISMA llamada y en su propia lista.
+    # Meterlo entre los objetivos le daría su `sim_time` a la comparación DHCP
+    # y haría que el par dejara de verse simultáneo por un frame que no es suyo.
+    ports = dict(single_vlan_ports or {})
+    controls = _vlan_control_candidates(
+        switch_hops, switch_name, ports, set(indices),
+    )
+    budget = max(0, min(MAX_VLAN_CONTROL_TARGETS, MAX_FRAME_TARGETS - len(indices)))
+    observation["vlan_control_dropped"] = max(0, len(controls) - budget)
+    controls = controls[:budget]
+    for position, control in enumerate(controls, start=1):
+        control["role"] = f"vlan_control_{position}"
+    if not controls:
+        observation["vlan_control_absent_reason"] = (
+            f"The typed plan configures no single-VLAN access port on "
+            f"{switch_name!r}, so nothing in this window has an independently "
+            "known VLAN."
+            if not ports else
+            "This bounded capture held no frame on a single-VLAN access port "
+            f"of {switch_name!r}; absence here is a property of the window, "
+            "not of those ports."
+        )
+    elif observation["vlan_control_dropped"]:
+        observation["vlan_control_absent_reason"] = (
+            f"{observation['vlan_control_dropped']} further single-VLAN "
+            "control frame(s) were left out by the enumeration bound of "
+            f"{MAX_FRAME_TARGETS} targets."
+        )
+    indices.extend(int(item["index"]) for item in controls)
+
     observation["attempted"] = True
     discovery = PacketTracerFrameObserverProbe(
         transport.send_and_wait,
@@ -1904,6 +2192,17 @@ def _frame_observer_discovery(
                         "candidates": list(child.candidates(
                             _FRAME_VLAN_CANDIDATE_NEEDLES,
                         )),
+                        # Los cuatro campos medidos, con lo que trajo cada uno.
+                        "tag": [
+                            {
+                                "name": item.name,
+                                "observed": item.observed,
+                                "type_name": item.type_name,
+                                "numeric_value": item.numeric_value,
+                                "error": item.error,
+                            }
+                            for item in child.tag
+                        ],
                     }
                     for child in frame.children
                 ],
@@ -1922,8 +2221,59 @@ def _frame_observer_discovery(
                 device=str(target.get("device") or ""),
                 sim_time=target.get("sim_time"),
                 traffic_type=target.get("traffic_type_raw"),
+                in_port=str(target.get("in_port") or ""),
             )
         )
+
+    # Sólo AHORA, con la atribución hecha, se leen los cuatro campos de cada
+    # lado. Cada rol lee su propio getter: el egreso del teléfono en
+    # `getOutFrame` y el ingreso del switch en `getInFrame`.
+    by_role = {str(item.get("role")): item for item in targets}
+    sides: dict[str, dict[str, object] | None] = {}
+    for role, getter in _ROLE_TAG_GETTER.items():
+        target = by_role.get(role)
+        sides[role] = None if target is None else _tag_field_observation(
+            target, by_index.get(target.get("index")), getter,
+        )
+    observation["link_tag_comparison"] = _tag_link_comparison(
+        sides["phone_dhcp"], sides["switch_dhcp"],
+    )
+
+    qualified: list[dict[str, object]] = []
+    for control in controls:
+        side = str(control.get("port_side") or "")
+        getter = "getInFrame" if side == "in" else "getOutFrame"
+        frame = by_index.get(control.get("index"))
+        control["identity_reconfirmed"] = bool(
+            frame is not None
+            and frame.matches(
+                device=str(control.get("device") or ""),
+                sim_time=control.get("sim_time"),
+                traffic_type=control.get("traffic_type_raw"),
+                in_port=str(control.get("in_port") or "") if side == "in" else "",
+            )
+        )
+        row = _tag_field_observation(control, frame, getter)
+        row.update({
+            # Un control se elige por su puerto, no por un texto de decisión.
+            "identifying_decision": "",
+            "port": control.get("port"),
+            "port_side": side,
+            "status": control.get("status"),
+            "expected_vlan": control.get("expected_vlan"),
+            "expected_vlan_source": control.get("expected_vlan_source"),
+        })
+        observed_vlan = _tag_value(row, "vlanId")
+        row["observed_vlan"] = observed_vlan
+        row["vlan_match"] = (
+            None if observed_vlan is None
+            else observed_vlan == control.get("expected_vlan")
+        )
+        qualified.append(row)
+    observation["vlan_controls"] = qualified
+    observation["frame_vlan_field_semantics"] = _frame_vlan_field_semantics(
+        qualified,
+    )
     return observation
 
 
@@ -2117,6 +2467,7 @@ def _post_failure_simulation_diagnostic(
             switch_name=switch_name,
             phone_trace=evidence.get("phone_trace"),
             switch_trace=evidence.get("switch_trace"),
+            single_vlan_ports=_single_vlan_access_ports(projection, switch_name),
         )
     except Exception as exc:
         # The diagnostic may never be the reason a governed stage stops running
