@@ -1090,13 +1090,53 @@ def test_the_capture_retains_raw_evidence_and_classifies_nothing(verdict):
     # This slice discovers a representation; it does not judge one.
     assert realtime["dhcp_trace_identity"] == "UNOBSERVABLE"
     assert realtime["control_dhcp_visibility"] == "UNOBSERVABLE"
+    assert realtime["positive_control_capability"] == "UNSAFE_OR_MUTATING"
+    assert realtime["positive_control_implemented"] is False
+    assert realtime["dhcp_positive_control_observed"] == "UNOBSERVABLE"
+    assert realtime["capture_scopes"] == {
+        "phone": "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PHONE-02",
+        "switch": "Switch5",
+        "router": "Router4",
+        "control": "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PC-01",
+    }
     # An empty control is not proof that DHCP is filtered.
     assert realtime["control_trace"]["hops_captured"] == 0
     assert realtime["control_dhcp_visibility"] == "UNOBSERVABLE"
 
-    assert realtime["step"]["steps_requested"] >= 1
+    for scope in ("phone", "switch", "router", "control"):
+        scoped = realtime[f"{scope}_trace"]
+        assert scoped["requested_limit"] == 200, scope
+        assert scoped["effective_limit"] == 200, scope
+        assert scoped["observed"] is True, scope
+
+    progression = realtime["progression"]
+    assert progression["limits"] == {
+        "target_sim_time_span": 60_000,
+        "step_batch_size": 10,
+        "hard_max_steps": 600,
+        "hard_wall_clock_seconds": 120,
+        "global_event_list_ceiling": 2_500,
+        "stall_batch_limit": 3,
+    }
+    assert progression["termination_reason"] in {
+        "TARGET_SIM_TIME_SPAN_REACHED", "HARD_MAX_STEPS_REACHED",
+        "HARD_WALL_CLOCK_REACHED", "EVENT_LIST_CEILING",
+        "SIMULATION_STATE_UNOBSERVABLE", "SIM_TIME_NON_MONOTONIC",
+        "SIM_TIME_UNOBSERVABLE", "SIM_TIME_STALLED", "STEP_FAILED",
+    }
+    assert progression["negative_absence_interpretable"] is False
     assert realtime["window_before"]["sim_time"] == 2.5
+    assert realtime["reset_verification"]["sim_time"] == 2.5
     assert realtime["window_after"]["sim_time"] == 2.5
+
+    assert realtime["post_failure_simulation_state"] == {
+        "phone_address_readback": "DEFERRED",
+        "router4_voice_binding_readback": "DEFERRED",
+        "reason": (
+            "No cheap typed read-only post-restoration path is available in "
+            "SimulationTraceRuntime; adding voice or IOS orchestration is deferred."
+        ),
+    }
 
 
 def test_the_diagnostic_never_mutates_the_control_endpoint(verdict):

@@ -17,6 +17,7 @@ import collections
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import subprocess
 import sys
@@ -950,11 +951,18 @@ def _voice_binding_count(
 # observation later. The product is the raw capture.
 # ----------------------------------------------------------------------
 
-#: Explicit and small. It is not tuned to produce a result: whether stepping
-#: exposes a scheduled endpoint retry at all is UNVERIFIED until a live run.
-_SIMULATION_STEP_BUDGET = 40
+#: Simulation time is the primary diagnostic bound.  The remaining ceilings
+#: are independent fail-safes, not alternate ways to infer a negative result.
+_SIMULATION_TARGET_TIME_SPAN = 60_000
+_SIMULATION_STEP_BATCH_SIZE = 10
+_SIMULATION_HARD_MAX_STEPS = 600
+_SIMULATION_HARD_WALL_CLOCK_SECONDS = 120
+_SIMULATION_GLOBAL_EVENT_LIST_CEILING = 2_500
+_SIMULATION_STALL_BATCH_LIMIT = 3
 _REPRESENTATIVE_PHONE_NAME = "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PHONE-02"
+_REPRESENTATIVE_SWITCH_NAME = "Switch5"
 _CONTROL_ENDPOINT_NAME = "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PC-01"
+_VOICE_GATEWAY_NAME = "Router4"
 #: Re-checked against THIS run before any capture is attributed to the phone.
 _PHONE_PREREQUISITES = (
     ("endpoint_interface", "Vlan20"),
@@ -1084,6 +1092,195 @@ def _simulation_step_dict(step) -> dict[str, object]:
     }
 
 
+def _progression_evidence(
+    *,
+    target_sim_time_span: int | float,
+    step_batch_size: int,
+    hard_max_steps: int,
+    hard_wall_clock_seconds: int | float,
+    global_event_list_ceiling: int,
+    stall_batch_limit: int,
+) -> dict[str, object]:
+    """One conservative evidence shape for every bounded terminal path."""
+    return {
+        "limits": {
+            "target_sim_time_span": target_sim_time_span,
+            "step_batch_size": step_batch_size,
+            "hard_max_steps": hard_max_steps,
+            "hard_wall_clock_seconds": hard_wall_clock_seconds,
+            "global_event_list_ceiling": global_event_list_ceiling,
+            "stall_batch_limit": stall_batch_limit,
+        },
+        "monotonicity_policy": (
+            "Each post-batch pure simulation-time read must be greater than or "
+            "equal to the preceding read; a decrease terminates the window."
+        ),
+        "stall_policy": (
+            f"Terminate after {stall_batch_limit} consecutive completed batches "
+            "whose pure simulation-time read does not advance."
+        ),
+        "termination_reason": "",
+        "start_state": None,
+        "end_state": None,
+        "simulation_time_start": None,
+        "simulation_time_end": None,
+        "simulation_time_span": None,
+        "global_frames_start": None,
+        "global_frames_end": None,
+        "steps_completed": 0,
+        "batches_completed": 0,
+        "stall_batches": 0,
+        "wall_clock_elapsed_seconds": 0.0,
+        "progress": [],
+        # Every terminal reason is a capture boundary, never evidence of absence.
+        "negative_absence_interpretable": False,
+    }
+
+
+def _usable_simulation_progress_state(state) -> bool:
+    return bool(
+        state.observed
+        and state.simulation_mode
+        and type(state.frames) is int
+        and state.frames >= 0
+    )
+
+
+def _usable_simulation_time(value) -> bool:
+    return type(value) in (int, float) and math.isfinite(float(value))
+
+
+def _bounded_simulation_progression(
+    runtime,
+    *,
+    target_sim_time_span: int | float = _SIMULATION_TARGET_TIME_SPAN,
+    step_batch_size: int = _SIMULATION_STEP_BATCH_SIZE,
+    hard_max_steps: int = _SIMULATION_HARD_MAX_STEPS,
+    hard_wall_clock_seconds: int | float = _SIMULATION_HARD_WALL_CLOCK_SECONDS,
+    global_event_list_ceiling: int = _SIMULATION_GLOBAL_EVENT_LIST_CEILING,
+    stall_batch_limit: int = _SIMULATION_STALL_BATCH_LIMIT,
+    monotonic=time.monotonic,
+) -> dict[str, object]:
+    """Advance in fixed batches until simulation time or one hard ceiling wins.
+
+    Each successful batch is followed by a PURE state read.  The complete step
+    and state observations are retained even when that read fires a ceiling.
+    No terminal reason makes a missing packet interpretable as a negative.
+    """
+    evidence = _progression_evidence(
+        target_sim_time_span=target_sim_time_span,
+        step_batch_size=step_batch_size,
+        hard_max_steps=hard_max_steps,
+        hard_wall_clock_seconds=hard_wall_clock_seconds,
+        global_event_list_ceiling=global_event_list_ceiling,
+        stall_batch_limit=stall_batch_limit,
+    )
+    started = monotonic()
+    initial = runtime.read_simulation_state()
+    initial_dict = _simulation_state_dict(initial)
+    evidence["start_state"] = initial_dict
+    evidence["end_state"] = initial_dict
+    if not _usable_simulation_progress_state(initial):
+        evidence["termination_reason"] = "SIMULATION_STATE_UNOBSERVABLE"
+        evidence["wall_clock_elapsed_seconds"] = max(0.0, monotonic() - started)
+        return evidence
+    if not _usable_simulation_time(initial.sim_time):
+        evidence["termination_reason"] = "SIM_TIME_UNOBSERVABLE"
+        evidence["wall_clock_elapsed_seconds"] = max(0.0, monotonic() - started)
+        return evidence
+
+    start_sim_time = initial.sim_time
+    previous_sim_time = initial.sim_time
+    evidence.update({
+        "simulation_time_start": start_sim_time,
+        "simulation_time_end": start_sim_time,
+        "simulation_time_span": 0,
+        "global_frames_start": initial.frames,
+        "global_frames_end": initial.frames,
+    })
+    if initial.frames >= global_event_list_ceiling:
+        evidence["termination_reason"] = "EVENT_LIST_CEILING"
+        evidence["wall_clock_elapsed_seconds"] = max(0.0, monotonic() - started)
+        return evidence
+
+    elapsed = 0.0
+    while not evidence["termination_reason"]:
+        completed = int(evidence["steps_completed"])
+        if completed >= hard_max_steps:
+            evidence["termination_reason"] = "HARD_MAX_STEPS_REACHED"
+            break
+        if elapsed >= hard_wall_clock_seconds:
+            evidence["termination_reason"] = "HARD_WALL_CLOCK_REACHED"
+            break
+
+        requested = min(step_batch_size, hard_max_steps - completed)
+        step = runtime.step("forward", times=requested)
+        entry: dict[str, object] = {
+            "batch": int(evidence["batches_completed"]) + 1,
+            "steps_requested": requested,
+            "cumulative_steps": completed,
+            "step": _simulation_step_dict(step),
+            "state": None,
+        }
+        progress = evidence["progress"]
+        assert isinstance(progress, list)
+        progress.append(entry)
+        if not (step.observed and step.simulation_mode):
+            evidence["termination_reason"] = "STEP_FAILED"
+            elapsed = max(0.0, monotonic() - started)
+            evidence["wall_clock_elapsed_seconds"] = elapsed
+            entry["wall_clock_elapsed_seconds"] = elapsed
+            break
+
+        completed += requested
+        evidence["steps_completed"] = completed
+        evidence["batches_completed"] = int(evidence["batches_completed"]) + 1
+        entry["cumulative_steps"] = completed
+
+        state = runtime.read_simulation_state()
+        state_dict = _simulation_state_dict(state)
+        entry["state"] = state_dict
+        evidence["end_state"] = state_dict
+        elapsed = max(0.0, monotonic() - started)
+        evidence["wall_clock_elapsed_seconds"] = elapsed
+        entry["wall_clock_elapsed_seconds"] = elapsed
+        if not _usable_simulation_progress_state(state):
+            evidence["termination_reason"] = "SIMULATION_STATE_UNOBSERVABLE"
+            break
+        if not _usable_simulation_time(state.sim_time):
+            evidence["termination_reason"] = "SIM_TIME_UNOBSERVABLE"
+            break
+
+        current_sim_time = state.sim_time
+        evidence["simulation_time_end"] = current_sim_time
+        evidence["simulation_time_span"] = current_sim_time - start_sim_time
+        evidence["global_frames_end"] = state.frames
+        entry["simulation_time_span"] = evidence["simulation_time_span"]
+
+        if current_sim_time < previous_sim_time:
+            evidence["termination_reason"] = "SIM_TIME_NON_MONOTONIC"
+            break
+        if current_sim_time == previous_sim_time:
+            evidence["stall_batches"] = int(evidence["stall_batches"]) + 1
+        else:
+            evidence["stall_batches"] = 0
+        entry["stall_batches"] = evidence["stall_batches"]
+        previous_sim_time = current_sim_time
+
+        if state.frames >= global_event_list_ceiling:
+            evidence["termination_reason"] = "EVENT_LIST_CEILING"
+        elif current_sim_time - start_sim_time >= target_sim_time_span:
+            evidence["termination_reason"] = "TARGET_SIM_TIME_SPAN_REACHED"
+        elif completed >= hard_max_steps:
+            evidence["termination_reason"] = "HARD_MAX_STEPS_REACHED"
+        elif elapsed >= hard_wall_clock_seconds:
+            evidence["termination_reason"] = "HARD_WALL_CLOCK_REACHED"
+        elif int(evidence["stall_batches"]) >= stall_batch_limit:
+            evidence["termination_reason"] = "SIM_TIME_STALLED"
+
+    return evidence
+
+
 def _traced_hop_dict(hop) -> dict[str, object]:
     """Every measured field. A summary here would be evidence nobody can re-read."""
     return {
@@ -1170,16 +1367,22 @@ def _post_failure_simulation_diagnostic(
     realtime_failure_established: bool = True,
     phone_name: str = _REPRESENTATIVE_PHONE_NAME,
     control_name: str = _CONTROL_ENDPOINT_NAME,
-    step_budget: int = _SIMULATION_STEP_BUDGET,
+    target_sim_time_span: int | float = _SIMULATION_TARGET_TIME_SPAN,
+    step_batch_size: int = _SIMULATION_STEP_BATCH_SIZE,
+    hard_max_steps: int = _SIMULATION_HARD_MAX_STEPS,
+    hard_wall_clock_seconds: int | float = _SIMULATION_HARD_WALL_CLOCK_SECONDS,
+    global_event_list_ceiling: int = _SIMULATION_GLOBAL_EVENT_LIST_CEILING,
+    stall_batch_limit: int = _SIMULATION_STALL_BATCH_LIMIT,
+    monotonic=time.monotonic,
 ) -> dict[str, object]:
     """Bounded raw capture after the voice failure. Never raises, always restores.
 
     Owns one explicit window: read the original mode purely, enter Simulation
-    only if it was not already there, reset, step a fixed budget, capture the
-    representative endpoint and the control, and give the mode back verifying
-    with ANOTHER pure read. A restoration that cannot be verified is recorded
-    on its own key -- it never becomes, hides or overwrites the Floor-1 failure
-    this stage is already carrying.
+    only if it was not already there, reset, advance in fixed batches until the
+    simulation-time target or one independent hard ceiling, capture four raw
+    device scopes, and give the mode back verifying with ANOTHER pure read. A
+    restoration that cannot be verified is recorded on its own key -- it never
+    becomes, hides or overwrites the Floor-1 failure this stage already carries.
     """
     evidence: dict[str, object] = {
         "diagnostic": "POST_FAILURE_SIMULATION_DIAGNOSTIC",
@@ -1194,11 +1397,15 @@ def _post_failure_simulation_diagnostic(
         # UNOBSERVABLE until a live capture shows how this build renders DHCP.
         "dhcp_trace_identity": "UNOBSERVABLE",
         "control_dhcp_visibility": "UNOBSERVABLE",
+        "positive_control_capability": "UNSAFE_OR_MUTATING",
+        "positive_control_implemented": False,
+        "dhcp_positive_control_observed": "UNOBSERVABLE",
         "control_semantics": (
-            "Same-window visibility control only. It is opportunistic: nothing "
-            "solicits it, and an empty control does not establish that the event "
-            "list filters anything. It says nothing about the representative "
-            "endpoint's own switching path."
+            "Passive same-window visibility observation only. No acquisition is "
+            "forced: the repository's governed DHCP acquisition paths mutate an "
+            "endpoint or disposable probe topology/configuration. An empty PC-01 "
+            "trace does not establish event-list eligibility and says nothing "
+            "about the representative phone's own switching path."
         ),
         "phone": None,
         "control_name": control_name,
@@ -1206,6 +1413,14 @@ def _post_failure_simulation_diagnostic(
         "captured": False,
         "restoration_verified": False,
         "failure_reason": "",
+        "post_failure_simulation_state": {
+            "phone_address_readback": "DEFERRED",
+            "router4_voice_binding_readback": "DEFERRED",
+            "reason": (
+                "No cheap typed read-only post-restoration path is available in "
+                "SimulationTraceRuntime; adding voice or IOS orchestration is deferred."
+            ),
+        },
     }
     if not realtime_failure_established:
         # There is no valid normal failure to diagnose. Opening a Simulation
@@ -1222,6 +1437,21 @@ def _post_failure_simulation_diagnostic(
     if not phone["prerequisites_met"]:
         evidence["failure_reason"] = str(phone["failure_reason"])
         return evidence
+    attachment = phone["attachment"]
+    assert isinstance(attachment, dict)
+    switch_name = str(attachment["peer_name"])
+    if switch_name != _REPRESENTATIVE_SWITCH_NAME:
+        evidence["failure_reason"] = (
+            f"The representative phone was attached to {switch_name!r}, not the "
+            f"required attributable access scope {_REPRESENTATIVE_SWITCH_NAME!r}."
+        )
+        return evidence
+    evidence["capture_scopes"] = {
+        "phone": phone_name,
+        "switch": switch_name,
+        "router": _VOICE_GATEWAY_NAME,
+        "control": control_name,
+    }
 
     runtime = SimulationTraceRuntime(transport.send_and_wait)
     original = runtime.read_simulation_state()
@@ -1252,23 +1482,58 @@ def _post_failure_simulation_diagnostic(
         evidence["window_before"] = _simulation_state_dict(
             runtime.read_simulation_state(),
         )
-        evidence["reset"] = _simulation_step_dict(runtime.step("reset"))
-        evidence["step"] = {
-            "steps_requested": step_budget,
-            **_simulation_step_dict(runtime.step("forward", times=step_budget)),
-        }
+        reset = runtime.step("reset")
+        evidence["reset"] = _simulation_step_dict(reset)
+        if reset.observed and reset.simulation_mode:
+            progression = _bounded_simulation_progression(
+                runtime,
+                target_sim_time_span=target_sim_time_span,
+                step_batch_size=step_batch_size,
+                hard_max_steps=hard_max_steps,
+                hard_wall_clock_seconds=hard_wall_clock_seconds,
+                global_event_list_ceiling=global_event_list_ceiling,
+                stall_batch_limit=stall_batch_limit,
+                monotonic=monotonic,
+            )
+        else:
+            reset_state = runtime.read_simulation_state()
+            progression = _progression_evidence(
+                target_sim_time_span=target_sim_time_span,
+                step_batch_size=step_batch_size,
+                hard_max_steps=hard_max_steps,
+                hard_wall_clock_seconds=hard_wall_clock_seconds,
+                global_event_list_ceiling=global_event_list_ceiling,
+                stall_batch_limit=stall_batch_limit,
+            )
+            reset_state_dict = _simulation_state_dict(reset_state)
+            progression.update({
+                "termination_reason": "STEP_FAILED",
+                "start_state": reset_state_dict,
+                "end_state": reset_state_dict,
+                "progress": [{
+                    "batch": 0,
+                    "steps_requested": 0,
+                    "cumulative_steps": 0,
+                    "step": _simulation_step_dict(reset),
+                    "state": reset_state_dict,
+                }],
+            })
+        evidence["progression"] = progression
+        evidence["reset_verification"] = progression["start_state"]
         evidence["window_after"] = _simulation_state_dict(
             runtime.read_simulation_state(),
         )
-        phone_trace = runtime.read_trace(
-            limit=TRACE_LIMIT_MAX, device=phone_name,
-        )
-        evidence["phone_trace"] = _packet_trace_dict(phone_trace)
-        control_trace = runtime.read_trace(
-            limit=TRACE_LIMIT_MAX, device=control_name,
-        )
-        evidence["control_trace"] = _packet_trace_dict(control_trace)
-        evidence["captured"] = bool(phone_trace.observed and control_trace.observed)
+        traces = {
+            "phone": runtime.read_trace(limit=TRACE_LIMIT_MAX, device=phone_name),
+            "switch": runtime.read_trace(limit=TRACE_LIMIT_MAX, device=switch_name),
+            "router": runtime.read_trace(
+                limit=TRACE_LIMIT_MAX, device=_VOICE_GATEWAY_NAME,
+            ),
+            "control": runtime.read_trace(limit=TRACE_LIMIT_MAX, device=control_name),
+        }
+        for scope, trace in traces.items():
+            evidence[f"{scope}_trace"] = _packet_trace_dict(trace)
+        evidence["captured"] = all(trace.observed for trace in traces.values())
         if not evidence["captured"]:
             evidence["failure_reason"] = (
                 "The bounded capture did not complete; what was observed is "

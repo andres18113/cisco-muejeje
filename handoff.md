@@ -6,7 +6,7 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = b989eb0efdcf1ff56070cccaeb1d138ffaea8f6f
+CURRENT_PUSHED_HEAD = 1d2c186add8dce6b70cecab8a75371dbabda40f2
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
 ROUTING_CORE = GOVERNED VERIFIED (fresh run at e09f606)
@@ -17,28 +17,29 @@ FLOOR1_ADDRESSING = 0/21 addressed
 FLOOR1 = NOT VERIFIED
 WORLD_A = REFUTED
 WORLD_B_FORWARDING = REFUTED; all five trunk endpoints VERIFIED
-WORLD_B_DHCP_BINDINGS = OBSERVED at 4b9fe11: DATA 23, VOICE 0, CCTV 0
+WORLD_B_DHCP_BINDINGS = latest fresh at 1d2c186: DATA 23, VOICE 0, CCTV 0
 DHCP_EXCHANGE_STATISTICS = checkpointed at 994e2ea; channel REFUTED at LIVE
 PT_SCOPED_STATISTICS_SUPPORT = REFUTED BY FRESH OBSERVATION
-POST_FAILURE_SIMULATION_DIAGNOSTIC = checkpointed at b989eb0; EXECUTED, calibrated
-VOICE_REALTIME_CONTINUITY = VERIFIED at b989eb0 (both edges Realtime)
+POST_FAILURE_SIMULATION_DIAGNOSTIC = prior 40-step capture at 1d2c186; window insufficient
+VOICE_REALTIME_CONTINUITY = VERIFIED at 1d2c186 (both edges Realtime)
 ACCESS_PORT_DATA_VLAN = VERIFIED by direct PT port getter
-ACCESS_PORT_VOICE_VLAN = was NOT_IMPLEMENTED; readback added, NOT COMMITTED
+ACCESS_PORT_VOICE_VLAN = VERIFIED 21/21 by fresh direct PT port getter
 SIMULATION_DHCP_REPRESENTATION = UNOBSERVABLE (no classifier exists)
-CP_SCALE = OPEN
+CP_SCALE_STATUS = OPEN / NOT VERIFIED
 E10 = FORBIDDEN
 ```
 
-Offline baseline at pushed HEAD `994e2ea`: **2733 passed / 0 failed** with the
-checkout-local `.venv` and a writable, gitignored pytest basetemp. The voice-VLAN
-readback and takeover audit below add 18 tests and run at **2787 passed / 0
-failed** in the same checkout. The governed run at `994e2ea` cleaned every owned
-device and independently re-observed the empty semantic workspace twice. Packet
-Tracer is open; its workspace is empty.
+Offline baseline at pushed HEAD `1d2c186`: **2787 passed / 0 failed / 4 warnings**
+with the checkout-local `.venv`. The simulation-time patch below adds 34 focused
+contracts and runs at **2821 passed / 0 failed / 4 warnings**; its selected
+affected regression is **414 passed / 0 failed**. The prior governed run cleaned
+every owned device and independently re-observed the empty semantic workspace
+twice. Packet Tracer is open; its workspace is empty.
 
-Everything through the post-failure simulation capture is checkpointed in this
-HEAD and has produced its LIVE reading. The access-port voice-VLAN readback
-described below is NOT checkpointed; commit and push it before the next LIVE.
+Everything through the phone-facing voice-VLAN readback is checkpointed in this
+HEAD and has produced its LIVE reading. The simulation-time bounded diagnostic
+described below is the current uncommitted pre-LIVE change; checkpoint it before
+the next governed run.
 
 ## Decisive powered-phone measurement -- World A refuted
 
@@ -407,10 +408,72 @@ What it captured, and its ceiling:
   control was established, so **no absence may be read from it**. Not "PHONE-02
   does not send DHCP", not "DHCP is filtered", not "Switch5 drops it".
 
-The budget behaved exactly as committed; it simply buys ~5 s. Raising it, or
-bounding by sim-time instead of step count, is a separate reviewed change.
+The budget behaved exactly as committed; it simply bought ~5 s. That observation
+is the reason the next reviewed change below bounds the new window by elapsed
+simulation time rather than treating a step count as elapsed time.
 
-## The last L2 boundary -- voice VLAN was never observed
+## Phone-facing last-mile LIVE at 1d2c186 -- access hypothesis closed
+
+Fresh direct evidence from the same attributable physical switch-port object
+closed the access edge. For PHONE-02 on Switch5 `FastEthernet0/2`,
+`getAccessVlan()` observed 10 against expected 10 and `getVoipVlanId()` observed
+20 against expected 20; both field verdicts were VERIFIED. Across all 21
+phone-facing ports, data VERIFIED = 21, voice VERIFIED = 21, voice contradicted
+= 0, and voice unobservable = 0. Do not reopen this configuration hypothesis
+without new contradictory evidence.
+
+In compact form: PHONE-02 data VLAN 10 VERIFIED; voice VLAN 20 VERIFIED.
+
+The authoritative Realtime window independently remained VERIFIED at both
+boundaries. All 21 phones exposed Vlan20 with a readable address channel and
+DHCP enabled, but 0/21 held an IPv4 address after 180 seconds. Router4 retained
+DATA = 23, VOICE = 0, CCTV = 0 bindings. The prior 40-step Simulation capture
+again spanned only about 5,000 sim-time units (159 global frames) and established
+no DHCP identity; it is operational but insufficient for a retry-lifecycle
+investigation.
+
+## Simulation-time bounded DHCP diagnostic -- implemented, LIVE pending
+
+The pre-edit positive-control audit found no safe existing post-failure control.
+Canonical endpoint DHCP application calls `configurePcIp(..., true, ...)`, and
+the capability probe additionally creates/links/deletes a disposable endpoint
+and configures a special router pool. Those are governed in their own contexts
+but mutate endpoint, topology or configuration state, so they are not a safe
+diagnostic control in the canonical failure window.
+
+```text
+POSITIVE_CONTROL_CAPABILITY = UNSAFE_OR_MUTATING
+POSITIVE_CONTROL_IMPLEMENTED = NO
+CONTROL_DHCP_VISIBILITY = UNOBSERVABLE
+TARGET_SIM_TIME_SPAN = 60000
+STEP_BATCH_SIZE = 10
+HARD_MAX_STEPS = 600
+HARD_WALL_CLOCK_SECONDS = 120
+GLOBAL_EVENT_LIST_CEILING = 2500
+SIM_TIME_STALL_BATCH_LIMIT = 3
+TRACE_LIMIT_PER_SCOPE = 200
+```
+
+After entering Simulation and resetting, one pure state read establishes the
+simulation-time origin. The runner advances in fixed 10-step batches and follows
+every successful batch with another pure state read. It retains every step and
+state observation, cumulative steps, sim-time span, global frame count, wall
+time and consecutive stalls. It terminates explicitly on target span, hard step
+count, wall clock, global event ceiling, unobservable state, non-monotonic time,
+three repeated stalled batches, or a refused step. Every exit remains
+non-negative evidence: positive observations survive; absence is never inferred.
+
+At the boundary it reads four independently device-filtered raw scopes at the
+runtime's hard maximum of 200 each: PHONE-02, Switch5, Router4 and passive PC-01.
+Each hop keeps raw traffic identity, source/destination, timing, ports, status and
+the ordered full PT decision list. `TRAFFIC_TYPES` remains exactly ICMP/ARP;
+type 11 is not named DHCP and there is still no DHCP classifier. No endpoint or
+topology mutator was added. Cheap post-restoration phone-address and Router4
+voice-binding reads are explicitly deferred because the Simulation runtime has
+no typed path for either and adding voice/IOS orchestration would broaden this
+diagnostic.
+
+## Historical last-L2 defect -- why direct voice-VLAN readback was required
 
 Before spending another Simulation run, the access edge was audited, and it had a
 real hole. `ConfigureAccessPort` carries `data_vlan_id` AND `voice_vlan_id` for a
@@ -455,23 +518,14 @@ admitted governed ceiling.
 
 ## NEXT_ACTIVE_STEP
 
-1. Commit/push the access-port voice-VLAN readback on a clean exact upstream
-   HEAD. Files: `configuration_compiler.py`,
-   `enterprise_configuration_runtime.py`, `tests/test_access_port_readback.py`,
-   and this handoff.
-2. Re-run governed routing-core -> router4-switch10 -> Floor 1 from that HEAD.
-3. Read the ACCESS_PORT verification for Switch5 `FastEthernet0/2` FIRST. Its
-   `voice_vlan_id` field is the fork:
-   * VERIFIED -> the access edge is closed and the voice VLAN reaches the phone
-     port. Only then move to the Simulation-budget work below.
-   * FAILED -> read the observed value in the message before concluding
-     anything: a real contradiction and a getter-semantics mismatch look the
-     same at the field level and are told apart by that number.
-   * UNOBSERVABLE -> the getter did not answer on this port; the edge stays open
-     and no absence may be read from it.
-4. Only with the access edge closed does the Simulation budget become the next
-   question: replace the fixed 40-step window with a bounded SIM-TIME window
-   carrying hard step, wall-clock and event-list ceilings.
+1. Complete focused, affected and full offline regressions, `git diff --check`
+   and `graphify update .`; then stop for the external checkpoint.
+2. After review, commit and push only to `personal/feature/runtime-ripv2`.
+3. Re-run governed routing-core -> router4-switch10 -> Floor 1 from that exact
+   committed HEAD. The diagnostic may run only after the authoritative Realtime
+   voice failure is established.
+4. Retain all four raw scopes and the named progression termination reason.
+   Treat every negative DHCP reading as UNOBSERVABLE. CP-SCALE remains open.
 
 Forbidden from that run's conclusions unless the evidence independently proves
 that exact claim: "PHONE-02 does not send DHCP", "DHCP is filtered out",
@@ -586,7 +640,8 @@ e09f606 fix(cp-scale): keep runtime checkpoints outside tracked tree
 4b9fe11 feat(cp-scale): observe DHCP server bindings
 994e2ea feat(cp-scale): observe scoped DHCP exchange statistics
 b989eb0 feat(cp-scale): capture post-failure simulation evidence
+1d2c186 feat(cp-scale): observe phone-facing voice VLAN
 ```
 
-The access-port voice-VLAN readback and this handoff update are the next fix
+The simulation-time bounded diagnostic and this handoff update are the next
 checkpoint; record their final pushed HEAD here on the following turn.
