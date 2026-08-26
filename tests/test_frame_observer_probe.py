@@ -1228,6 +1228,12 @@ verdict = {
         [PHONE_F, switch_frame(tag(vlan=20, tpid=33024))]),
     "no_bpdu": run([PHONE_DHCP], [SWITCH_DHCP],
                    [PHONE_F, switch_frame(FULL)]),
+    "negative_tpid": run(
+        [PHONE_DHCP], [SWITCH_DHCP],
+        [frame(100, PHONE, children=[
+            child("getInFrame", null=True),
+            child("getOutFrame", tag(vlan=20, tpid=-32512, cfi=0, up=0))]),
+         switch_frame(tag(vlan=20, tpid=-32512, cfi=0, up=0))]),
     "no_control": run([PHONE_DHCP], [SWITCH_DHCP],
                       [PHONE_F, switch_frame(FULL)], ports={}),
     "one_control": run(
@@ -1471,3 +1477,26 @@ def test_the_phase_three_slice_adds_no_mac_lifecycle_or_classifier():
         "TRAFFIC_TYPES", "type7 =", "show vlan",
     ):
         assert forbidden not in body, forbidden
+
+
+def test_a_negative_tpid_keeps_its_exact_value_and_withholds_the_hex(phase3):
+    """A hex rendering of a negative reading would imply an unmeasured width.
+
+    The LIVE at c1c74fa read tpid as -32512 on both sides. Rendering that as
+    -0x7f00 invites reading a header value nobody observed, so only the exact
+    decimal travels and the omission is named rather than silent.
+    """
+    link = phase3["negative_tpid"]["link_tag_comparison"]
+
+    assert link["phone_dhcp_out_tag"]["fields"]["tpid"]["numeric_value"] == -32512
+    assert link["switch_dhcp_in_tag"]["fields"]["tpid"]["numeric_value"] == -32512
+    assert link["tpid_match"] == "YES"
+    assert link["tpid_hex"] == ""
+    assert "field width" in link["tpid_hex_withheld_reason"]
+
+
+def test_a_positive_tpid_still_renders_and_withholds_nothing(phase3):
+    link = phase3["preserved"]["link_tag_comparison"]
+
+    assert link["tpid_hex"] == "0x8100"
+    assert link["tpid_hex_withheld_reason"] == ""

@@ -1841,6 +1841,7 @@ def _tag_link_comparison(phone_tag, switch_tag) -> dict[str, object]:
         "vlan_value_match": "UNOBSERVABLE",
         "tpid_match": "UNOBSERVABLE",
         "tpid_hex": "",
+        "tpid_hex_withheld_reason": "",
         "tag_fields_match": "UNOBSERVABLE",
         "same_observed_start_sim_time": "UNOBSERVABLE",
         "failure_reason": "",
@@ -1872,14 +1873,25 @@ def _tag_link_comparison(phone_tag, switch_tag) -> dict[str, object]:
     elif any(verdict == "YES" for verdict in matches.values()):
         comparison["tag_fields_match"] = "PARTIAL"
 
-    # Base 16 del mismo número leído. No es una interpretación: 33024 se
-    # reporta 0x8100 porque eso es lo que 33024 vale, y cualquier otro número
-    # se reporta como el suyo sin traerle semántica de 802.1Q prestada.
+    # Base 16 del MISMO número leído, y sólo cuando ese número no es negativo.
+    # 33024 se reporta 0x8100 porque eso es lo que 33024 vale. Un negativo, en
+    # cambio, necesita una anchura de campo para significar algo en hexadecimal,
+    # y este repositorio no ha medido con cuántos bits PT guarda `tpid`:
+    # renderizarlo igual invitaría a leer como cabecera un valor que nadie
+    # observó. Se dice que se retiene, en vez de desaparecer.
     for side in (phone_tag, switch_tag):
         tpid = _tag_value(side, "tpid")
-        if isinstance(tpid, int) and not isinstance(tpid, bool):
+        if not isinstance(tpid, int) or isinstance(tpid, bool):
+            continue
+        if tpid < 0:
+            comparison["tpid_hex_withheld_reason"] = (
+                f"The measured tpid {tpid} is negative. A hexadecimal rendering "
+                "would imply a field width this repository has not measured, so "
+                "only the exact decimal reading is reported."
+            )
+        else:
             comparison["tpid_hex"] = hex(tpid)
-            break
+        break
 
     near_time = phone_tag.get("observed_sim_time")
     far_time = switch_tag.get("observed_sim_time")
