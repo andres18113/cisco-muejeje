@@ -510,7 +510,7 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert "CURRENT_PUSHED_HEAD = 5e1014741c2a3b46d415f8d9f9dbdea5d12dfad9" in handoff
+    assert "CURRENT_PUSHED_HEAD = 506d5df2f71cdf463a749d21c2d29cdd0f13a90f" in handoff
     # The two heads are different facts. Collapsing them is how a pushed
     # checkpoint starts reading as a governed LIVE.
     assert (
@@ -556,6 +556,18 @@ def test_handoff_keeps_why_an_access_port_cannot_calibrate_the_vlan_field():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO" in handoff
+    # The three heads are three different facts and the handoff must keep them
+    # apart: which commit is checked out, which ran the last CP-SCALE LIVE, and
+    # which ran the last disposable calibration.
+    assert (
+        "LATEST_CALIBRATION_LIVE_HEAD = 5e1014741c2a3b46d415f8d9f9dbdea5d12dfad9"
+        in handoff
+    )
+    assert "PHONE_DHCP_VLAN_IDENTITY = NOT_YET_GLOBALLY_QUALIFIED" in handoff
+    # The next step is an AUDIT, not a calibration: a single allowed VLAN that
+    # is the native one travels untagged and would calibrate nothing.
+    assert "CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN" in handoff
+    assert "native VLAN ambiguity" in handoff
     assert "UNTAGGED" in handoff
     assert "frameType" in handoff and "srcMacAddress" in handoff
     assert (

@@ -6,12 +6,17 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 5e1014741c2a3b46d415f8d9f9dbdea5d12dfad9
+CURRENT_PUSHED_HEAD = 506d5df2f71cdf463a749d21c2d29cdd0f13a90f
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
 LATEST_CALIBRATION_LIVE_HEAD = 5e1014741c2a3b46d415f8d9f9dbdea5d12dfad9
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
+ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
+    measured plain-host access-ingress representation
 PHONE_DHCP_OUT_VLAN_ID = 20 (two governed LIVEs: c1c74fa, 2db4c9d)
 SWITCH5_DHCP_IN_VLAN_ID = 20 (same two runs, same instant each run)
+PHONE_DHCP_DIRECT_VLAN_VALUE = 20
+SWITCH5_DHCP_DIRECT_VLAN_VALUE = 20
+PHONE_DHCP_VLAN_IDENTITY = NOT_YET_GLOBALLY_QUALIFIED
 PHONE_TO_SWITCH_VLAN_VALUE_PRESERVED = YES
 DHCP_FRAME_TPID = -32512 (NOT 33024; field width unmeasured, no 802.1Q claim)
 FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED
@@ -883,34 +888,88 @@ assumption. It is NOT started here: the governing instruction excluded a
 trunk-sourced expectation, and whether a single-allowed-VLAN trunk escapes that
 exclusion is a decision, not an inference.
 
-## NEXT_ACTIVE_STEP
+## NEXT_ACTIVE_STEP -- for the next session, not started here
 
-1. Complete focused, affected and full offline regressions, `git diff --check`
-   and `graphify update .`; commit and push only to
-   `personal/feature/runtime-ripv2`.
-2. Re-run governed routing-core -> router4-switch10 -> Floor 1 from that exact
-   committed HEAD. The Simulation diagnostic still runs only after the
-   authoritative Realtime voice failure is established, and now only after both
-   Realtime STP boundary reads are already retained.
-3. Read the fork from the fresh Realtime evidence, not from the packet trace:
-   BLOCKING authorizes the two-leg staging/ordering autofix; FORWARDING refutes
-   the causal link for the observed window without excusing the defect;
-   truncated or unattributable output means the pager qualification comes first.
-4. Retain all four raw scopes and the named progression termination reason.
-   Treat every negative DHCP reading as UNOBSERVABLE. CP-SCALE remains open.
+**Offline capability audit for a non-circular SINGLE-ALLOWED-VLAN TRUNK ingress
+calibration.** Nothing about it may be run before the audit answers.
 
-Forbidden from that run's conclusions unless the evidence independently proves
+Access-port calibration is finished and it did not work: the port whose VLAN is
+independently known is the port whose frames carry no tag. Re-running it is not
+useful. The remaining non-circular candidate is a trunk ingress, because trunk
+ingress frames DO come back in the tagged shape -- Switch5 frame 58 measured
+`vlanId 30` on Gi0/1 -- so a port could in principle supply both a known VLAN and
+a readable one on the SAME side.
+
+First determine, offline and without any LIVE, whether this repository can
+directly read back each of:
+
+```text
+TRUNK_ALLOWED_READBACK
+TRUNK_ACTIVE_READBACK
+TRUNK_FORWARDING_READBACK
+TRUNK_NATIVE_VLAN_READBACK
+```
+
+and only then whether it can establish:
+
+```text
+CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN = YES | NO
+```
+
+If that cannot be proven, the trunk calibration does not start either.
+
+A trunk carrying one allowed VLAN does NOT automatically qualify `vlanId`. Any
+eventual control has to survive all four of these, and each has already burned a
+slice in this investigation:
+
+* **opposite-side forwarding assumptions** -- the expectation must come from the
+  ingress port's own configuration, never from where the frame is going;
+* **native VLAN ambiguity** -- a native VLAN travels untagged, so a single
+  allowed VLAN that IS the native one calibrates nothing;
+* **unverified allowed-VLAN intent** -- applied is not verified, exactly as with
+  `getAccessVlan()`;
+* **dropped or disallowed frames masquerading as controls** -- a frame the trunk
+  refused is not evidence of what the trunk carries.
+
+`tools/cp_scale_vlan_calibration_live.py` and
+`qualify_frame_vlan_calibration.py` are the shape to extend: disposable, owned,
+reverse cleanup, mode restored and verified, workspace compared to baseline.
+Their orchestration is covered against fakes, so the logic can be changed
+without paying for a run to find out.
+
+## Reading the heads
+
+Trust `git rev-parse HEAD`, never the handoff, for what is checked out. The
+handoff records which commit ran which LIVE, and those are three different
+facts:
+
+```text
+CURRENT_PUSHED_HEAD          the checkpoint pushed BEFORE this one. A commit
+                             cannot contain its own hash, so this line always
+                             names the previous one.
+LATEST_GOVERNED_LIVE_HEAD    the source the last CP-SCALE LIVE ran from. Moves
+                             only when another CP-SCALE LIVE supersedes it.
+LATEST_CALIBRATION_LIVE_HEAD the source the last disposable calibration ran
+                             from. Moves independently of the CP-SCALE one.
+```
+
+Forbidden from any future run's conclusions unless that run independently proves
 that exact claim: "PHONE-02 does not send DHCP", "DHCP is filtered out",
-"Switch5 drops DHCP", "Router4 never sees DISCOVER". If the capture reached its
-limit, every negative reading is `UNOBSERVABLE`. If the control endpoint emitted
-nothing, event-filter eligibility is `UNOBSERVABLE` -- an empty control is not
-proof of filtering, and the control says nothing about PHONE-02's Switch5 path.
+"Switch5 drops DHCP", "Router4 never sees DISCOVER". A capture that reached its
+limit makes every negative reading `UNOBSERVABLE`, and an empty control endpoint
+is not proof of filtering.
 
 Do not wire any new DHCP observation into `VerificationKind.DHCP_POOL`: the
 ceiling at `qualify_cp_scale_live.py:625` enforces status UNOBSERVABLE +
 `fresh_evidence` False + evidence_method `runtime_observability_limit` + every
 field UNOBSERVABLE. New observations must be additive or the governed gate
 rejects them.
+
+Do not apply the PortFast fix as part of the calibration work.
+`SOURCE_DEFECT_FOUND = YES`, `SOURCE_DEFECT =
+EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING`, and `VOICE_ROOT_CAUSE =
+NOT_YET_CONFIRMED` all stand; the causal decision that would justify the fix has
+not been taken. CP-SCALE remains `OPEN / NOT VERIFIED`.
 
 ## Bridge lifecycle -- PARTIAL PASS, still APPLIED NOT VERIFIED
 
@@ -1017,6 +1076,3 @@ b989eb0 feat(cp-scale): capture post-failure simulation evidence
 2f2055c feat(cp-scale): observe phone-edge STP in realtime
 540c746 feat(cp-scale): qualify the spanning-tree pager on measured evidence
 ```
-
-The bounded realtime STP retry and this handoff update are the next checkpoint;
-record their final pushed HEAD here on the following turn.
