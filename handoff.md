@@ -6,7 +6,13 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 540c746711e3076793902d1b42ca160aa5a1d6ed
+CURRENT_PUSHED_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
+PHONE_DHCP_OUT_VLAN_ID = 20 (two governed LIVEs: c1c74fa, 2db4c9d)
+SWITCH5_DHCP_IN_VLAN_ID = 20 (same two runs, same instant each run)
+PHONE_TO_SWITCH_VLAN_VALUE_PRESERVED = YES
+DHCP_FRAME_TPID = -32512 (NOT 33024; field width unmeasured, no 802.1Q claim)
+FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED
+VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
 ROUTING_CORE = GOVERNED VERIFIED (fresh run at e09f606)
@@ -684,6 +690,83 @@ the getter answers `undefined`, the field is UNOBSERVABLE, the aggregate is
 PARTIAL and no contradiction is fabricated. CP-SCALE still fails closed at its
 separate exact-evidence gate, because partial access-port readback is not an
 admitted governed ceiling.
+
+## Phase 3 -- the DHCP frame's VLAN tag, read as values
+
+`c1c74fa` reads exactly four measured properties -- `vlanId`, `tpid`, `cfi`,
+`userPriority` -- on the child that `getOutFrame`/`getInFrame` return, spelled
+literally, on two frames only: PHONE-02's DHCP egress copy and Switch5's
+correlated ingress copy. `2db4c9d` stops the derived hex rendering from
+overstating a negative `tpid`.
+
+Two governed LIVEs, `c1c74fa` and `2db4c9d`, agree on every field:
+
+```text
+                     PHONE-02 getOutFrame   Switch5 getInFrame
+vlanId                     20                     20
+tpid                   -32512                 -32512
+cfi                         0                      0
+userPriority                0                      0
+```
+
+Run 1 (`c1c74fa`): frames 411/415, both at getStartSimTime 20569405.
+Run 2 (`2db4c9d`): frames 26/27, both at getStartSimTime 537115.
+Each run's pair shares ONE observed instant; the two runs have their own clocks
+and those numbers are not comparable across runs.
+
+Both frames were identity-reconfirmed before any value was read -- device,
+sim_time, traffic type and, new in this phase, the ingress port. PT's own text
+identifies them: "The DHCP client constructs a Discover packet and sends it out."
+and "FastEthernet0/2 is blocked by STP. The device drops the frame."
+
+FACT: `PHONE_TO_SWITCH_VLAN_VALUE_PRESERVED = YES`. The phone tags this DHCP
+Discover 20 and Switch5 receives 20 on Fa0/2 at the same observed instant. This
+REFUTES "the phone used data VLAN 10 for this frame" and REFUTES "the voice tag
+is lost between phone and Switch5". The frame is dropped by STP with its tag
+intact. It says NOTHING about the Router4 path.
+
+`tpid` did NOT equal 33024. It read -32512 in both runs. `-32512 & 0xFFFF` is
+0x8100, which a signed 16-bit field would explain exactly, but PT's storage width
+for `tpid` is UNMEASURED here, so that stays a lead and no 802.1Q semantics are
+claimed from it. The hex rendering is withheld for a negative reading and the
+omission is named.
+
+`FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED` in
+both runs -- but see below: run 2 shows the window DID hold the calibration.
+
+## The calibration control read the wrong side of the right frame
+
+The control rule takes an already-captured frame on an access port the typed plan
+gives ONE VLAN (a phone port carries data AND voice, so either value would look
+right and it calibrates nothing). It prefers the ingress side and falls back to
+egress. In both runs the known port was the EGRESS port, so it read `getOutFrame`
+and got nothing.
+
+Run 2, frame 58 on Switch5, is the whole finding in one object. It enters on
+GigabitEthernet0/1 (trunk) and leaves on FastEthernet0/22, which the typed plan
+configures as a single-VLAN access port on VLAN 30:
+
+```text
+getInFrame  -> 11 members, vlanId 30, tpid -32512, cfi 0, userPriority 0
+getOutFrame ->  7 members: dstMacAddress, frameCheckSequence, lengthType,
+                payload, pduSize, pduType, srcMacAddress -- no tag fields at all
+```
+
+So PT returns TWO different object shapes, and the tag fields appear exactly
+where a tag would be and vanish exactly where one would not. The rule read the
+untagged egress copy, got four `undefined`s, and correctly recorded `vlan_match`
+as None rather than False -- an unread field is not a mismatch, which is why the
+run did not fabricate a contradiction.
+
+The ingress copy of that same frame carries vlanId 30 and is bound for a port the
+plan puts on VLAN 30. That is the independently-known control this phase was
+looking for, and 30 is a SECOND distinct VLAN from the DHCP frame's 20, so the
+multi-VLAN qualification is reachable from evidence already retained.
+
+It is NOT yet a qualification, because reading the egress port's VLAN onto the
+ingress copy assumes the switch preserves VLAN across that forward. That is
+ordinary L2 behaviour and it is NOT measured here. Any future slice that uses it
+must name the assumption instead of absorbing it.
 
 ## NEXT_ACTIVE_STEP
 

@@ -510,9 +510,31 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert "CURRENT_PUSHED_HEAD = 540c746711e3076793902d1b42ca160aa5a1d6ed" in handoff
+    assert "CURRENT_PUSHED_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda" in handoff
     assert "ACCESS_PORT_VOICE_VLAN = VERIFIED 21/21" in handoff
     assert "data VLAN 10" in handoff and "voice VLAN 20" in handoff
     assert "TARGET_SIM_TIME_SPAN = 60000" in handoff
     assert "POSITIVE_CONTROL_CAPABILITY = UNSAFE_OR_MUTATING" in handoff
     assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
+
+
+def test_handoff_keeps_the_measured_dhcp_tag_and_its_open_qualification():
+    """The values two governed LIVEs agreed on, and what they do NOT establish.
+
+    A handoff that keeps `vlanId = 20` but drops "not globally qualified" would
+    turn a direct property reading into a VLAN identity claim that no control
+    has supported yet.
+    """
+    handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
+
+    assert "PHONE_DHCP_OUT_VLAN_ID = 20" in handoff
+    assert "SWITCH5_DHCP_IN_VLAN_ID = 20" in handoff
+    assert "PHONE_TO_SWITCH_VLAN_VALUE_PRESERVED = YES" in handoff
+    # The tpid did NOT read 33024, and nothing may borrow 802.1Q meaning for it.
+    assert "DHCP_FRAME_TPID = -32512" in handoff
+    assert "33024" in handoff
+    assert (
+        "FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED"
+        in handoff
+    )
+    assert "VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE" in handoff
