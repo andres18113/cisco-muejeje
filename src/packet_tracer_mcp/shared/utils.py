@@ -128,6 +128,42 @@ def validate_ios_interface_name(value: str) -> str:
     return candidate
 
 
+#: Formas largas y su abreviatura IOS, de la más específica a la más corta: el
+#: orden es parte del contrato, porque `fastethernet` empieza por `fast` y
+#: `tengigabitethernet` por `tengig`.
+_INTERFACE_ALIASES = (
+    ("serial", "se"),
+    ("tengigabitethernet", "te"),
+    ("tengig", "te"),
+    ("gigabitethernet", "gi"),
+    ("gig", "gi"),
+    ("fastethernet", "fa"),
+    ("fast", "fa"),
+    ("ethernet", "et"),
+    ("eth", "et"),
+)
+
+
+def same_interface_name(observed: str, expected: str) -> bool:
+    """True si ambas cadenas nombran UN mismo puerto físico.
+
+    IOS abrevia la interfaz en casi toda salida tabular (`Fa0/1`) mientras el
+    plan tipado nunca lo hace (`FastEthernet0/1`).  Comparar en crudo convierte
+    una lectura correcta en una fila ausente, así que la reconciliación vive
+    acá una sola vez: dos tablas de alias serían dos juegos de errores.
+    """
+
+    def normalize(value: str) -> str:
+        result = (value or "").casefold().replace(" ", "")
+        for long_name, short_name in _INTERFACE_ALIASES:
+            if result.startswith(long_name):
+                return short_name + result[len(long_name):]
+        return result
+
+    normalized = normalize(observed)
+    return bool(normalized) and normalized == normalize(expected)
+
+
 def interpret_ping(stat_line: str) -> bool:
     """True si una línea de estadística de ping indica al menos un paquete recibido.
 

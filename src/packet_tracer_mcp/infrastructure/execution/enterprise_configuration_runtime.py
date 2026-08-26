@@ -48,6 +48,7 @@ from .ios_terminal import (
     parse_serial_controller,
 )
 from .runtime_inventory import normalize_runtime_inventory
+from ...shared.utils import same_interface_name
 
 
 # Acciones que se aplican por el canal IOS. Faltaban aqui las tres de
@@ -1094,26 +1095,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
 
     @staticmethod
     def _same_interface(observed: str, expected: str) -> bool:
-        aliases = (
-            ("serial", "se"),
-            ("tengigabitethernet", "te"),
-            ("tengig", "te"),
-            ("gigabitethernet", "gi"),
-            ("gig", "gi"),
-            ("fastethernet", "fa"),
-            ("fast", "fa"),
-            ("ethernet", "et"),
-            ("eth", "et"),
-        )
-
-        def normalize(value: str) -> str:
-            result = value.casefold().replace(" ", "")
-            for long_name, short_name in aliases:
-                if result.startswith(long_name):
-                    return short_name + result[len(long_name):]
-            return result
-
-        return normalize(observed) == normalize(expected)
+        return same_interface_name(observed, expected)
 
 
 def _field_status(value: object, read, matches) -> FieldVerificationStatus:

@@ -79,6 +79,7 @@ from packet_tracer_mcp.domain.enterprise.models.capabilities import (
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
+    ConfigureAccessPort,
     VerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
@@ -119,10 +120,12 @@ from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight impor
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     OperationalQueryId,
+    classify_show_spanning_tree,
     ios_rejection_reason,
     parse_show_ip_dhcp_binding,
     parse_show_ip_dhcp_server_statistics,
     parse_show_ip_interface_brief,
+    parse_show_spanning_tree,
 )
 from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
 from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
@@ -151,6 +154,7 @@ from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store impo
     CapabilitySnapshotStore,
 )
 from packet_tracer_mcp.shared.utils import (
+    same_interface_name,
     serialize_typed_ping_evidence,
 )
 
@@ -1359,6 +1363,228 @@ def _realtime_boundary_error(state: dict[str, object] | None, edge: str) -> str:
     return ""
 
 
+#: Los dos únicos estados que la decisión distingue, exactamente como IOS los
+#: imprime en la columna `Sts`. Cualquier otro estado REAL se conserva como
+#: OTHER_OBSERVED con su token intacto: leer un `LRN` como FORWARDING o como
+#: BLOCKING inventaría justo la mitad del experimento que falta medir.
+_STP_FORWARDING_STATE = "fwd"
+_STP_BLOCKING_STATE = "blk"
+
+
+def _phone_edge_port_derivation(projection):
+    """Los puertos con teléfono de esta etapa, y lo que quedó fuera de serlos.
+
+    E7 ata cada teléfono a la acción de acceso tipada que lo sostiene, así que
+    el conjunto SALE del plan: nombrar `Fa0/1-21` acá convertiría la evidencia
+    en su propia hipótesis. Una asignación cuya acción no es un puerto de
+    acceso tipado -- un trunk, o una acción que ya no existe -- no es un puerto
+    de borde, y se registra como excluida en vez de desaparecer en silencio.
+    """
+    plan = getattr(projection, "voice", None)
+    assignments = list(getattr(plan, "phone_assignments", []) or [])
+    if not assignments:
+        return [], []
+    configuration = getattr(projection, "configuration", None)
+    access_by_id = {
+        action.id: action
+        for action in getattr(configuration, "actions", []) or []
+        if isinstance(action, ConfigureAccessPort)
+    }
+    ports: list[dict[str, object]] = []
+    excluded: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for assignment in assignments:
+        action_id = getattr(assignment, "access_configuration_action_id", None)
+        if not isinstance(action_id, str):
+            # Recolectar evidencia NUNCA puede ser el motivo por el que una
+            # etapa gobernada se cae. Una asignación que no es del tipo del
+            # plan no aporta un puerto y se dice, no revienta.
+            excluded.append({
+                "access_configuration_action_id": "",
+                "reason": "NOT_A_TYPED_PHONE_ASSIGNMENT",
+            })
+            continue
+        access = access_by_id.get(action_id)
+        if access is None:
+            excluded.append({
+                "access_configuration_action_id": action_id,
+                "reason": "NOT_A_TYPED_ACCESS_PORT",
+            })
+            continue
+        key = (access.device_name, access.interface)
+        if key in seen:
+            continue
+        seen.add(key)
+        ports.append({
+            "device_name": access.device_name,
+            "interface": access.interface,
+            "vlan_id": assignment.voice_vlan_id,
+            "access_configuration_action_id": action_id,
+        })
+    ports.sort(key=lambda item: (item["device_name"], item["interface"]))
+    excluded.sort(key=lambda item: item["access_configuration_action_id"])
+    return ports, excluded
+
+
+def _phone_edge_ports(projection) -> list[dict[str, object]]:
+    """Cada puerto de acceso con teléfono que esta etapa realmente configuró."""
+    return _phone_edge_port_derivation(projection)[0]
+
+
+def _stp_source_error(show, rejection: str) -> str:
+    """Por qué esta lectura no puede sostener NINGUNA afirmación de estado.
+
+    El orden importa: una captura cortada por el pager también viene
+    incompleta, y decir sólo `OUTPUT_INCOMPLETE` perdería exactamente el hecho
+    que decide si esta consulta necesita cualificación.
+    """
+    if not show.executed:
+        return "QUERY_NOT_EXECUTED"
+    if not show.fresh_output_observed:
+        return "OUTPUT_NOT_FRESH"
+    if rejection:
+        return "IOS_REJECTED"
+    if show.truncated_by_pager:
+        return "PAGER_TRUNCATED"
+    if not show.output_complete:
+        return "OUTPUT_INCOMPLETE"
+    if (
+        show.observed_device_name != show.device_name
+        or show.device_identity_provenance != "confirmed_unique"
+    ):
+        return "DEVICE_IDENTITY_NOT_CONFIRMED"
+    return ""
+
+
+def _stp_port_observation(port, instances, source_error: str) -> dict[str, object]:
+    """Un puerto, su estado tal como PT lo imprimió, o por qué no se sabe."""
+    observation: dict[str, object] = {
+        "device_name": port["device_name"],
+        "interface": port["interface"],
+        "vlan_id": port["vlan_id"],
+        "protocol": "",
+        "role": "",
+        "state": "",
+        "cost": None,
+        "priority_number": "",
+        "link_type": "",
+        "classification": "UNOBSERVABLE",
+        "failure_reason": source_error,
+    }
+    if source_error:
+        return observation
+    instance = next(
+        (item for item in instances if item.vlan_id == port["vlan_id"]), None,
+    )
+    if instance is None:
+        # Una instancia ausente NO es un puerto bloqueado. Es una tabla que no
+        # dice nada sobre esta VLAN.
+        observation["failure_reason"] = "VLAN_INSTANCE_ABSENT"
+        return observation
+    observation["protocol"] = instance.protocol
+    row = next(
+        (
+            item for item in instance.interfaces
+            if same_interface_name(item.interface, str(port["interface"]))
+        ),
+        None,
+    )
+    if row is None:
+        observation["failure_reason"] = "INTERFACE_ROW_ABSENT"
+        return observation
+    state = (row.state or "").strip()
+    observation.update({
+        "role": row.role,
+        "state": state,
+        "cost": row.cost,
+        "priority_number": row.priority_number,
+        "link_type": row.link_type,
+    })
+    if not state:
+        observation["failure_reason"] = "MALFORMED_PORT_STATE"
+        return observation
+    folded = state.casefold()
+    observation["classification"] = (
+        "FORWARDING" if folded == _STP_FORWARDING_STATE
+        else "BLOCKING" if folded == _STP_BLOCKING_STATE
+        else "OTHER_OBSERVED"
+    )
+    observation["failure_reason"] = ""
+    return observation
+
+
+def _stp_realtime_evidence(ios, projection, *, edge: str) -> dict[str, object]:
+    """El estado de borde de los puertos con teléfono, medido en Realtime.
+
+    Es la única lectura que puede decir qué hacía el puerto DURANTE la ventana
+    autoritativa de voz. Es de sólo lectura y falla cerrada: FORWARDING y
+    BLOCKING se afirman sólo desde una fila fresca, completa y atribuida; todo
+    lo demás queda UNOBSERVABLE, que no es lo mismo que ausencia.
+    """
+    ports, excluded = _phone_edge_port_derivation(projection)
+    by_device: dict[str, list[dict[str, object]]] = collections.defaultdict(list)
+    for port in ports:
+        by_device[str(port["device_name"])].append(port)
+
+    devices: list[dict[str, object]] = []
+    observations: list[dict[str, object]] = []
+    for device_name, device_ports in sorted(by_device.items()):
+        show = ios.execute(device_name, OperationalQueryId.SHOW_SPANNING_TREE)
+        rejection = ios_rejection_reason(show.output) or ""
+        source_error = _stp_source_error(show, rejection)
+        instances = parse_show_spanning_tree(show.output) if show.executed else []
+        devices.append({
+            "device_name": device_name,
+            "query_id": OperationalQueryId.SHOW_SPANNING_TREE.value,
+            "executed": show.executed,
+            "fresh_output_observed": show.fresh_output_observed,
+            "output_complete": show.output_complete,
+            "truncated_by_pager": show.truncated_by_pager,
+            "pager_pages_captured": show.pager_pages_captured,
+            "pager_continuation": show.pager_continuation,
+            "observed_device_name": show.observed_device_name,
+            "device_identity_provenance": show.device_identity_provenance,
+            "device_identity_confirmed": bool(
+                show.observed_device_name == device_name
+                and show.device_identity_provenance == "confirmed_unique"
+            ),
+            "ios_rejection": rejection,
+            "failure_reason": show.failure_reason,
+            "classification": classify_show_spanning_tree(
+                show.output, executed=show.executed,
+            ).value,
+            "source_error": source_error,
+            "vlan_instances": sorted(item.vlan_id for item in instances),
+            "output": show.output,
+        })
+        for port in device_ports:
+            observations.append(
+                _stp_port_observation(port, instances, source_error),
+            )
+
+    counts = {
+        state: sum(
+            1 for item in observations if item["classification"] == state
+        )
+        for state in ("FORWARDING", "BLOCKING", "OTHER_OBSERVED", "UNOBSERVABLE")
+    }
+    return {
+        "edge": edge,
+        "window": "NORMAL_WINDOW",
+        "mode_required": "realtime",
+        "proves": (
+            "The phone-facing edge state PT printed at this boundary of the "
+            "authoritative window. It does NOT prove the state held for the "
+            "whole window, and it is never derived from DHCP behaviour."
+        ),
+        "phone_ports_total": len(ports),
+        "devices": devices,
+        "excluded": excluded,
+        "ports": observations,
+        "counts": counts,
+    }
+
+
 def _post_failure_simulation_diagnostic(
     transport,
     projection,
@@ -1895,6 +2121,15 @@ def _execute_stage(
                 f"Voice at {projection.stage.value!r} was not attempted: "
                 + before_error
             )
+    # Inside the window, never around it. Simulation showed these ports
+    # dropping every phone Discover on a blocked FastEthernet, but that trace
+    # is taken after `resetSimulation()`; only a read taken here, bracketed by
+    # the two boundary observations, can say what the port was doing while the
+    # acquisition it is blamed for was actually running. Read-only: it observes
+    # the condition, it does not relieve it.
+    evidence["stp_realtime_before_voice"] = _stp_realtime_evidence(
+        ios, projection, edge="before",
+    )
     voice_evidence = _stage_voice(
         projection,
         voice_runtime=voice_runtime,
@@ -1905,6 +2140,12 @@ def _execute_stage(
         manifest=manifest,
     )
     evidence["voice"] = voice_evidence
+    # The second edge, still Realtime: taken before the closing boundary read
+    # so the same two PURE observations that bracket the voice window bracket
+    # this measurement too, and long before Simulation is entered at all.
+    evidence["stp_realtime_after_voice"] = _stp_realtime_evidence(
+        ios, projection, edge="after",
+    )
     if continuity is not None:
         continuity["after"] = _voice_window_state(simulation)
         after_error = _realtime_boundary_error(continuity["after"], "after")

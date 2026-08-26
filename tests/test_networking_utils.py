@@ -59,3 +59,53 @@ def test_connectivity_tool_passes_the_validated_ip_as_json_data():
     assert 'command = "ping " + target' in executor
     assert "json.dumps(command)" in executor
     assert "json.loads(target)" not in registry
+
+
+@pytest.mark.parametrize(
+    ("observed", "expected"),
+    [
+        # `show spanning-tree` abbreviates every interface it prints, and the
+        # typed plan never does. Both spellings name one physical port.
+        ("Fa0/1", "FastEthernet0/1"),
+        ("FastEthernet0/1", "Fa0/1"),
+        ("Gi0/1", "GigabitEthernet0/1"),
+        ("Te1/1", "TenGigabitEthernet1/1"),
+        ("Se0/0/0", "Serial0/0/0"),
+        ("fa0/1", "FastEthernet0/1"),
+        ("Gi1/0/2", "GigabitEthernet1/0/2"),
+    ],
+)
+def test_same_interface_name_reconciles_both_ios_spellings(observed, expected):
+    from src.packet_tracer_mcp.shared.utils import same_interface_name
+
+    assert same_interface_name(observed, expected)
+
+
+@pytest.mark.parametrize(
+    ("observed", "expected"),
+    [
+        ("Fa0/1", "FastEthernet0/2"),
+        ("Fa0/1", "GigabitEthernet0/1"),
+        ("Gi0/1", "Gi0/10"),
+        ("Fa0/1", ""),
+        # Deliberate, and a change from the runtime-private predecessor: two
+        # ABSENT names are not one interface. A verification that "matched"
+        # nothing against nothing was passing on the absence of evidence.
+        ("", ""),
+    ],
+)
+def test_same_interface_name_never_conflates_distinct_ports(observed, expected):
+    from src.packet_tracer_mcp.shared.utils import same_interface_name
+
+    assert not same_interface_name(observed, expected)
+
+
+def test_the_configuration_runtime_reuses_the_shared_interface_reconciler():
+    """One alias table, not two. A second copy is a second set of bugs."""
+    runtime = Path(
+        "src/packet_tracer_mcp/infrastructure/execution/"
+        "enterprise_configuration_runtime.py"
+    ).read_text(encoding="utf-8")
+
+    assert "same_interface_name" in runtime
+    assert '("fastethernet", "fa")' not in runtime

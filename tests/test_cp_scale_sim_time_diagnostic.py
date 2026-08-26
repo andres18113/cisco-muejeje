@@ -509,8 +509,8 @@ def test_the_obsolete_fixed_step_budget_contract_is_gone():
 def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
-    assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE pending" in handoff
-    assert "CURRENT_PUSHED_HEAD = 1d2c186add8dce6b70cecab8a75371dbabda40f2" in handoff
+    assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
+    assert "CURRENT_PUSHED_HEAD = 8402d2834298018615449c38c4d2f4314dbebd21" in handoff
     assert "ACCESS_PORT_VOICE_VLAN = VERIFIED 21/21" in handoff
     assert "data VLAN 10" in handoff and "voice VLAN 20" in handoff
     assert "TARGET_SIM_TIME_SPAN = 60000" in handoff

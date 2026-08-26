@@ -6,7 +6,7 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 1d2c186add8dce6b70cecab8a75371dbabda40f2
+CURRENT_PUSHED_HEAD = 8402d2834298018615449c38c4d2f4314dbebd21
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
 ROUTING_CORE = GOVERNED VERIFIED (fresh run at e09f606)
@@ -24,7 +24,18 @@ POST_FAILURE_SIMULATION_DIAGNOSTIC = prior 40-step capture at 1d2c186; window in
 VOICE_REALTIME_CONTINUITY = VERIFIED at 1d2c186 (both edges Realtime)
 ACCESS_PORT_DATA_VLAN = VERIFIED by direct PT port getter
 ACCESS_PORT_VOICE_VLAN = VERIFIED 21/21 by fresh direct PT port getter
-SIMULATION_DHCP_REPRESENTATION = UNOBSERVABLE (no classifier exists)
+DHCP_FRAME_IDENTITY_THIS_RUN = OBSERVED_BY_PT (PT's own text named Discover)
+DHCP_EVENT_LIST_VISIBILITY = OBSERVED
+PERMANENT_TYPE7_MAPPING = NOT_IMPLEMENTED
+STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
+STP_BLOCKING_IN_REALTIME = NOT_YET_OBSERVED
+SOURCE_DEFECT_FOUND = YES
+SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
+VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
+PHONE_EDGE_PORTFAST_INTENT = YES
+PHONE_EDGE_PORTFAST_COMPILED = NO at FLOOR1 (YES at FLOOR3+)
+PHONE_EDGE_PORTFAST_APPLIED = NO
+SHOW_SPANNING_TREE_PAGER = NOT_QUALIFIED (no exact-build evidence yet)
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 E10 = FORBIDDEN
 ```
@@ -432,7 +443,7 @@ again spanned only about 5,000 sim-time units (159 global frames) and establishe
 no DHCP identity; it is operational but insufficient for a retry-lifecycle
 investigation.
 
-## Simulation-time bounded DHCP diagnostic -- implemented, LIVE pending
+## Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed
 
 The pre-edit positive-control audit found no safe existing post-failure control.
 Canonical endpoint DHCP application calls `configurePcIp(..., true, ...)`, and
@@ -472,6 +483,75 @@ topology mutator was added. Cheap post-restoration phone-address and Router4
 voice-binding reads are explicitly deferred because the Simulation runtime has
 no typed path for either and adding voice/IOS orchestration would broaden this
 diagnostic.
+
+## Phone-edge STP in Realtime -- observation implemented, LIVE pending
+
+The bounded Simulation diagnostic ran and changed the fork. Packet Tracer named
+PHONE-02's frames itself -- "DHCP client constructs a Discover packet" -- so DHCP
+is demonstrably visible in the event list and a separate PC positive control is
+no longer required to establish that. `TRAFFIC_TYPES` is still exactly ICMP/ARP:
+the frames were identified BY PT in one run, which is not the same thing as a
+permanent typed mapping, and none was added.
+
+The same capture showed every retained Switch5 entry reporting the ingress phone
+port blocked by STP. That capture is taken after `resetSimulation()`, so it
+cannot say what the port was doing during the authoritative Realtime window. Two
+readings remain open and the packet trace cannot choose between them: the same
+operational condition existed in Realtime, or entering Simulation produced it.
+
+```text
+SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
+LEG_1 = _completed_stp_sites() admits LARGE only at FLOOR3, so the FLOOR1
+        projection compiles stp_domains=[] and ZERO ConfigureStpEdgePort
+        actions -- while Switch5 already carries 21 voice-VLAN access ports.
+LEG_2 = _execute_stage applies the control plane AFTER _stage_voice, so edge
+        policy would not be effective before DHCP acquisition even where it
+        does compile.
+MEASURED = FLOOR1: SW5 access ports 25, edge actions 0, stage edge actions 0
+           FLOOR3: SW5 edge actions 25 (portfast/bpduguard True, phase 30)
+```
+
+The defect is confirmed at the compilation layer and is NOT being fixed in this
+patch. Fixing it first would change the condition before measuring it and
+destroy the causal experiment. This patch only measures.
+
+Two read-only observations now bracket the voice window from inside it:
+`stp_realtime_before_voice` after the proven Realtime BEFORE boundary and
+immediately before `_stage_voice`, and `stp_realtime_after_voice` immediately
+after it returns -- taken before the closing boundary read, so the same two PURE
+mode observations bracket the measurement, and long before Simulation is entered
+at all.
+
+The phone-facing set is DERIVED, never named: each `PhoneAssignment` resolves
+through `access_configuration_action_id` to its typed `ConfigureAccessPort`,
+yielding device, interface and voice VLAN from the plan. An assignment whose
+action is not a typed access port -- a trunk, or one that no longer exists -- is
+recorded as excluded rather than silently dropped. On the real canonical Floor 1
+this lands on exactly Switch5 `Fa0/1-21` / VLAN 20 without those names appearing
+anywhere in the implementation.
+
+`OperationalQueryId.SHOW_SPANNING_TREE` and `parse_show_spanning_tree` are reused
+unchanged; no new parser and no raw IOS. The query stays pagination-UNQUALIFIED,
+because the only retained exact-build capture is a one-VLAN/one-port lab output
+that proves nothing about a 3560 with three VLANs and 25 ports. This LIVE is what
+establishes whether it needs qualification.
+
+Per port the run retains device, interface, `vlan_id`, role, state, cost,
+`priority_number` and `link_type`, plus the read's own `executed`, freshness,
+completeness, pager marks and device attribution. Only `FWD` is FORWARDING and
+only `BLK` is BLOCKING; every other REAL state is kept as OTHER_OBSERVED with its
+token intact. Anything that weakens the evidence -- not executed, stale, IOS
+rejection, pager truncation, incomplete, unattributable device, missing VLAN 20
+instance, missing interface row, malformed state -- is UNOBSERVABLE. A missing row
+is never BLOCKING and a truncated table is never absence. Collecting this
+evidence can never itself fail a governed stage.
+
+Expected decision after the run: phone-facing VLAN 20 ports BLOCKING in Realtime
+connects the staging defect to the voice failure and authorizes the two-leg
+autofix; all FORWARDING refutes it for the observed window and makes the
+Simulation state a divergence to investigate separately -- the staging defect
+still exists either way, but PortFast must not then be claimed to fix DHCP;
+truncation or unattributable output closes the read surface first.
 
 ## Historical last-L2 defect -- why direct voice-VLAN readback was required
 
@@ -519,11 +599,16 @@ admitted governed ceiling.
 ## NEXT_ACTIVE_STEP
 
 1. Complete focused, affected and full offline regressions, `git diff --check`
-   and `graphify update .`; then stop for the external checkpoint.
-2. After review, commit and push only to `personal/feature/runtime-ripv2`.
-3. Re-run governed routing-core -> router4-switch10 -> Floor 1 from that exact
-   committed HEAD. The diagnostic may run only after the authoritative Realtime
-   voice failure is established.
+   and `graphify update .`; commit and push only to
+   `personal/feature/runtime-ripv2`.
+2. Re-run governed routing-core -> router4-switch10 -> Floor 1 from that exact
+   committed HEAD. The Simulation diagnostic still runs only after the
+   authoritative Realtime voice failure is established, and now only after both
+   Realtime STP boundary reads are already retained.
+3. Read the fork from the fresh Realtime evidence, not from the packet trace:
+   BLOCKING authorizes the two-leg staging/ordering autofix; FORWARDING refutes
+   the causal link for the observed window without excusing the defect;
+   truncated or unattributable output means the pager qualification comes first.
 4. Retain all four raw scopes and the named progression termination reason.
    Treat every negative DHCP reading as UNOBSERVABLE. CP-SCALE remains open.
 
@@ -641,7 +726,8 @@ e09f606 fix(cp-scale): keep runtime checkpoints outside tracked tree
 994e2ea feat(cp-scale): observe scoped DHCP exchange statistics
 b989eb0 feat(cp-scale): capture post-failure simulation evidence
 1d2c186 feat(cp-scale): observe phone-facing voice VLAN
+8402d28 feat(cp-scale): bound DHCP diagnostic by simulation time
 ```
 
-The simulation-time bounded diagnostic and this handoff update are the next
+The Realtime phone-edge STP observation and this handoff update are the next
 checkpoint; record their final pushed HEAD here on the following turn.
