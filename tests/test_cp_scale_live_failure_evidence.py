@@ -46,6 +46,8 @@ from tools.cp_scale_canonical_live import (
     _dhcp_server_statistics_delta,
     _dhcp_server_statistics_observation,
     _dhcp_server_statistics_point,
+    _post_failure_simulation_diagnostic,
+    _representative_phone_evidence,
     _trunk_vlan_traversal_evidence,
     _voice_dhcp_statistics_target,
     _write_checkpoint_summary,
@@ -372,6 +374,186 @@ verdict["dhcp_statistics_wrong_identity"] = (
     _dhcp_server_statistics_observation(wrong_statistics_ios, statistics_target)
 )
 
+PHONE_NAME = "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PHONE-02"
+PC_NAME = "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PC-01"
+PHONE_ID = "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/002"
+PC_ID = "endpoint/large-branch/campus/floor-1/zone-a/user_pc/001"
+
+def sim_topology():
+    phone = SimpleNamespace(id=PHONE_ID, name=PHONE_NAME, model="7960")
+    pc = SimpleNamespace(id=PC_ID, name=PC_NAME, model="PC-PT")
+    sw5 = SimpleNamespace(id="sw-acc-zone-a-02", name="Switch5", model="2960")
+    sw4 = SimpleNamespace(id="sw-acc-zone-a-01", name="Switch4", model="2960")
+    return SimpleNamespace(
+        topology=SimpleNamespace(
+            devices=[phone, pc, sw5, sw4],
+            links=[
+                SimpleNamespace(
+                    device_a_id=sw5.id, port_a="FastEthernet0/2",
+                    device_b_id=PHONE_ID, port_b="Switch",
+                ),
+                SimpleNamespace(
+                    device_a_id=sw4.id, port_a="FastEthernet0/1",
+                    device_b_id=PC_ID, port_b="FastEthernet0",
+                ),
+            ],
+        ),
+    )
+
+def sim_voice(**overrides):
+    row = {{
+        "phone_id": PHONE_ID, "extension": "3002", "status": "failed",
+        "evidence_method": "fresh_privileged_show_ephone", "fresh_evidence": True,
+        "endpoint_interface": "Vlan20", "endpoint_interface_present": True,
+        "endpoint_address_channel": True, "endpoint_dhcp_enabled": True,
+        "endpoint_ipv4": "",
+    }}
+    row.update(overrides)
+    return {{"staged": True, "error": "voice failed", "result": {{"registrations": [row]}}}}
+
+class SimBridge:
+    """Scripted PT bridge. Records every script the diagnostic dispatches."""
+
+    def __init__(self, *, mode=False, step=None, trace=None, restore_mode=None):
+        self.mode = mode
+        self.scripts = []
+        self._step = step
+        self._trace = trace
+        self._restore_mode = restore_mode
+
+    def __call__(self, script, timeout):
+        self.scripts.append(script)
+        if "getFrameInstanceAt" in script:
+            if self._trace is None:
+                return None
+            frames = self._trace.get(
+                PHONE_NAME if PHONE_NAME in script else PC_NAME, [],
+            )
+            return json.dumps({{
+                "total": 4096, "simulation_mode": True, "frames": frames,
+            }})
+        if "setSimulationMode" in script:
+            before = self.mode
+            want = "setSimulationMode(true)" in script
+            self.mode = want if self._restore_mode is None else self._restore_mode
+            return json.dumps({{
+                "before": before, "after": self.mode, "frames": 3, "sim_time": 1.0,
+            }})
+        if "resetSimulation" in script or "__s.forward();" in script:
+            if self._step is None:
+                return None
+            return json.dumps(self._step)
+        return json.dumps({{
+            "mode": self.mode, "frames": 7, "sim_time": 2.5, "current_index": 1,
+        }})
+
+def sim_frame(**overrides):
+    base = {{
+        "index": 0, "device": PHONE_NAME, "previous_device": None,
+        "in_port": None, "out_port": "Switch", "source": "0.0.0.0",
+        "destination": "255.255.255.255", "traffic_type_raw": 77,
+        "sim_time": 3.25, "transit_time": 0.0, "sent": True,
+        "decisions": [
+            {{"layer": 3, "inbound": False, "description": "The device sets it."}},
+            {{"layer": 2, "inbound": False, "description": "The device sends it."}},
+        ],
+    }}
+    base.update(overrides)
+    return base
+
+STEP_OK = {{
+    "simulation_mode": True, "frames_before": 0, "frames_after": 11,
+    "sim_time": 4.0, "current_index": 10,
+}}
+
+# -- 17: a run that started in Realtime is returned to Realtime -------------
+realtime_bridge = SimBridge(
+    mode=False, step=STEP_OK,
+    trace={{PHONE_NAME: [sim_frame()], PC_NAME: []}},
+)
+verdict["sim_realtime"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=realtime_bridge), sim_topology(), sim_voice(),
+)
+verdict["sim_realtime_final_mode"] = realtime_bridge.mode
+verdict["sim_realtime_scripts"] = len(realtime_bridge.scripts)
+verdict["sim_realtime_mutators"] = sorted({{
+    token for token in (
+        "setDhcpClientFlag", "renew", "release", "setIpAddress", "setDefaultGateway",
+        "setSubnetMask", "add(", "remove(", "delete", "savePkt", "setConfig",
+    )
+    for script in realtime_bridge.scripts if token in script
+}})
+
+# -- 18: a run that ALREADY was in Simulation is left in Simulation ---------
+sim_bridge = SimBridge(
+    mode=True, step=STEP_OK, trace={{PHONE_NAME: [], PC_NAME: []}},
+)
+verdict["sim_preexisting"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=sim_bridge), sim_topology(), sim_voice(),
+)
+verdict["sim_preexisting_final_mode"] = sim_bridge.mode
+verdict["sim_preexisting_set_calls"] = sum(
+    1 for script in sim_bridge.scripts if "setSimulationMode" in script
+)
+
+# -- 19: the trace times out; restoration still happens --------------------
+trace_timeout = SimBridge(mode=False, step=STEP_OK, trace=None)
+verdict["sim_trace_timeout"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=trace_timeout), sim_topology(), sim_voice(),
+)
+verdict["sim_trace_timeout_final_mode"] = trace_timeout.mode
+
+# -- 20: the step fails; restoration still happens -------------------------
+step_failure = SimBridge(mode=False, step=None, trace=None)
+verdict["sim_step_failure"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=step_failure), sim_topology(), sim_voice(),
+)
+verdict["sim_step_failure_final_mode"] = step_failure.mode
+
+# -- 21: restoration itself fails and is recorded on its own key -----------
+stuck = SimBridge(
+    mode=False, step=STEP_OK,
+    trace={{PHONE_NAME: [sim_frame()], PC_NAME: []}},
+    restore_mode=True,
+)
+verdict["sim_restore_failed"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=stuck), sim_topology(), sim_voice(),
+)
+
+# -- 16: prerequisites are re-checked from THIS run ------------------------
+verdict["sim_prereq_addressed"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=SimBridge(mode=False)),
+    sim_topology(), sim_voice(endpoint_ipv4="172.16.20.5"),
+)
+verdict["sim_prereq_dhcp_off"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=SimBridge(mode=False)),
+    sim_topology(), sim_voice(endpoint_dhcp_enabled=False),
+)
+verdict["sim_prereq_unreadable"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=SimBridge(mode=False)),
+    sim_topology(), sim_voice(endpoint_address_channel=False),
+)
+verdict["sim_prereq_missing_row"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=SimBridge(mode=False)),
+    sim_topology(), sim_voice(phone_id="endpoint/somebody/else"),
+)
+verdict["sim_prereq_ok"] = _representative_phone_evidence(
+    sim_topology(), sim_voice(), PHONE_NAME,
+)
+
+# -- the original state itself must be attributable before anything moves --
+blind = SimBridge(mode=False)
+blind_scripts = []
+def blind_bridge(script, timeout):
+    blind_scripts.append(script)
+    return None
+verdict["sim_blind"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=blind_bridge), sim_topology(), sim_voice(),
+)
+verdict["sim_blind_mutated"] = any(
+    "setSimulationMode" in script for script in blind_scripts
+)
+
 projection = SimpleNamespace(
     stage=SimpleNamespace(value="floor1"),
     topology=SimpleNamespace(
@@ -480,6 +662,9 @@ live._dhcp_server_statistics_point = lambda *args, **kwargs: {{
 live._dhcp_server_statistics_delta = lambda *args, **kwargs: {{
     "sentinel": "statistics delta retained",
 }}
+live._post_failure_simulation_diagnostic = lambda *args, **kwargs: {{
+    "sentinel": "post failure simulation retained",
+}}
 projection.voice = SimpleNamespace(actions=[], phone_assignments=[])
 try:
     _execute_stage(
@@ -507,9 +692,92 @@ except CanonicalLiveFailure as exc:
     verdict["statistics_before_voice_failure"] = voice_failure_evidence.get(
         "dhcp_voice_exchange"
     )
+    verdict["simulation_before_voice_failure"] = voice_failure_evidence.get(
+        "post_failure_simulation"
+    )
 else:
     verdict["bindings_before_voice_failure"] = None
     verdict["statistics_before_voice_failure"] = None
+    verdict["simulation_before_voice_failure"] = None
+
+# ---- VOICE_REALTIME_CONTINUITY -------------------------------------------
+# Simulation mode changes execution semantics, so a 180s convergence window
+# that ran while it was active is not the same experiment. Both boundaries of
+# the authoritative window have to be observed Realtime before its 0/21 result
+# may be read as a voice contradiction at all.
+REALTIME_STATE = {{"mode": False, "frames": 0, "sim_time": 0.0, "current_index": -1}}
+SIMULATING_STATE = {{"mode": True, "frames": 5, "sim_time": 2.0, "current_index": 1}}
+
+class ContinuityBridge:
+    def __init__(self, *states):
+        self.states = list(states)
+        self.scripts = []
+
+    def __call__(self, script, timeout):
+        self.scripts.append(script)
+        state = self.states.pop(0) if self.states else None
+        return None if state is None else json.dumps(state)
+
+voice_invocations = []
+live._stage_voice = lambda *args, **kwargs: (
+    voice_invocations.append(True) or {{"staged": True, "error": "voice mismatch"}}
+)
+projection.voice = SimpleNamespace(actions=[1], phone_assignments=[1])
+
+def run_continuity(*states):
+    del voice_invocations[:]
+    bridge = ContinuityBridge(*states)
+    stage_evidence = None
+    message = ""
+    try:
+        _execute_stage(
+            projection,
+            composition=SimpleNamespace(capabilities={{}}),
+            deployment=verified_deployment,
+            delta_deployment=None,
+            physical=None,
+            configuration_runtime=None,
+            control_runtime=None,
+            voice_runtime=None,
+            transport=SimpleNamespace(send_and_wait=bridge),
+            fingerprint=None,
+            packet_tracer_version="9.0.1.0858",
+            verified_serial_topology=SimpleNamespace(),
+            verified_serial_manifest=SimpleNamespace(),
+        )
+    except CanonicalLiveFailure as exc:
+        stage_evidence = exc.stage_evidence or {{}}
+        message = str(exc)
+    stage_evidence = stage_evidence or {{}}
+    return {{
+        "continuity": stage_evidence.get("voice_realtime_continuity"),
+        "voice_invoked": bool(voice_invocations),
+        "has_voice": "voice" in stage_evidence,
+        "has_bindings": "dhcp_server_bindings" in stage_evidence,
+        "has_diagnostic": "post_failure_simulation" in stage_evidence,
+        "message": message,
+        "mode_scripts": sum(
+            1 for script in bridge.scripts if "setSimulationMode" in script
+        ),
+        "state_reads": sum(
+            1 for script in bridge.scripts if "isSimulationMode" in script
+        ),
+    }}
+
+verdict["continuity_verified"] = run_continuity(REALTIME_STATE, REALTIME_STATE)
+verdict["continuity_before_simulating"] = run_continuity(SIMULATING_STATE)
+verdict["continuity_before_blind"] = run_continuity(None)
+verdict["continuity_after_simulating"] = run_continuity(
+    REALTIME_STATE, SIMULATING_STATE,
+)
+verdict["continuity_after_blind"] = run_continuity(REALTIME_STATE, None)
+
+gate_bridge = SimBridge(mode=False)
+verdict["diagnostic_gate"] = _post_failure_simulation_diagnostic(
+    SimpleNamespace(send_and_wait=gate_bridge), sim_topology(), sim_voice(),
+    realtime_failure_established=False,
+)
+verdict["diagnostic_gate_scripts"] = len(gate_bridge.scripts)
 
 print(json.dumps(verdict))
 '''
@@ -720,3 +988,206 @@ def test_voice_failure_keeps_the_statistics_delta_observation(verdict):
 def test_this_suite_never_loaded_the_production_namespace():
     """The isolation invariant this file must not be the one to break."""
     assert "packet_tracer_mcp" not in sys.modules
+
+
+def test_the_post_failure_diagnostic_owns_and_returns_the_simulation_mode(verdict):
+    """Reversible is not the same as reverted: the window has an owner."""
+    realtime = verdict["sim_realtime"]
+
+    assert realtime["diagnostic"] == "POST_FAILURE_SIMULATION_DIAGNOSTIC"
+    # The name and the prose must both refuse to be read as the original window.
+    assert "NOT the original" in realtime["observes"]
+    assert realtime["original_state"]["simulation_mode"] is False
+    assert realtime["original_state"]["observed"] is True
+    assert realtime["captured"] is True
+    assert realtime["restoration_verified"] is True
+    assert realtime["restoration"]["changed"] is True
+    assert verdict["sim_realtime_final_mode"] is False
+
+    # An operator who was already in Simulation is left exactly there, and the
+    # mode is never set when it does not need to change.
+    preexisting = verdict["sim_preexisting"]
+    assert preexisting["original_state"]["simulation_mode"] is True
+    assert preexisting["restoration"]["changed"] is False
+    assert preexisting["restoration_verified"] is True
+    assert verdict["sim_preexisting_final_mode"] is True
+    assert verdict["sim_preexisting_set_calls"] == 0
+
+
+def test_the_diagnostic_restores_the_mode_on_every_terminal_path(verdict):
+    for key in ("sim_trace_timeout", "sim_step_failure"):
+        evidence = verdict[key]
+        assert evidence["restoration_verified"] is True, key
+        assert evidence["captured"] is False, key
+        assert verdict[key + "_final_mode"] is False, key
+
+    # A restoration that cannot be verified is recorded on its OWN key and never
+    # rewritten as a success.
+    stuck = verdict["sim_restore_failed"]
+    assert stuck["restoration_verified"] is False
+    assert stuck["restoration"]["error"]
+    # ...and it does not overwrite what the diagnostic itself observed.
+    assert stuck["captured"] is True
+    assert stuck["failure_reason"] == ""
+
+
+def test_the_representative_phone_prerequisites_are_rechecked_this_run(verdict):
+    ok = verdict["sim_prereq_ok"]
+    assert ok["prerequisites_met"] is True
+    assert ok["registration"]["endpoint_interface"] == "Vlan20"
+    assert ok["attachment"]["peer_name"] == "Switch5"
+    assert ok["attachment"]["endpoint_port"] == "Switch"
+
+    # Each prerequisite is load-bearing, and failing one produces no trace at
+    # all rather than a quiet substitution of some other phone.
+    for key in (
+        "sim_prereq_addressed", "sim_prereq_dhcp_off",
+        "sim_prereq_unreadable", "sim_prereq_missing_row",
+    ):
+        evidence = verdict[key]
+        assert evidence["captured"] is False, key
+        assert evidence["phone"]["prerequisites_met"] is False, key
+        assert evidence["failure_reason"], key
+        assert "phone_trace" not in evidence, key
+        assert evidence["phone"]["device_name"] == (
+            "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PHONE-02"
+        ), key
+
+
+def test_an_unattributable_original_state_never_moves_the_mode(verdict):
+    blind = verdict["sim_blind"]
+
+    assert blind["captured"] is False
+    assert blind["original_state"]["observed"] is False
+    assert "not attributable" in blind["failure_reason"]
+    assert verdict["sim_blind_mutated"] is False
+
+
+def test_the_capture_retains_raw_evidence_and_classifies_nothing(verdict):
+    realtime = verdict["sim_realtime"]
+    trace = realtime["phone_trace"]
+
+    assert trace["limit_reached"] is False
+    assert trace["effective_limit"] == 200
+    # total_in_event_list is GLOBAL and cannot stand in for a filtered count.
+    assert trace["total_in_event_list"] == 4096
+    assert trace["hops_captured"] == 1
+
+    hop = trace["hops"][0]
+    for field in (
+        "index", "device", "previous_device", "in_port", "out_port", "source",
+        "destination", "traffic_type_raw", "traffic_type", "sim_time",
+        "transit_time", "status", "decisions",
+    ):
+        assert field in hop, field
+    # The raw integer survives beside its label, and the label stays unnamed.
+    assert hop["traffic_type_raw"] == 77
+    assert hop["traffic_type"] == "type77"
+    assert hop["sim_time"] == 3.25
+    assert len(hop["decisions"]) == 2
+    assert hop["decisions"][0]["layer"] == 3
+
+    # This slice discovers a representation; it does not judge one.
+    assert realtime["dhcp_trace_identity"] == "UNOBSERVABLE"
+    assert realtime["control_dhcp_visibility"] == "UNOBSERVABLE"
+    # An empty control is not proof that DHCP is filtered.
+    assert realtime["control_trace"]["hops_captured"] == 0
+    assert realtime["control_dhcp_visibility"] == "UNOBSERVABLE"
+
+    assert realtime["step"]["steps_requested"] >= 1
+    assert realtime["window_before"]["sim_time"] == 2.5
+    assert realtime["window_after"]["sim_time"] == 2.5
+
+
+def test_the_diagnostic_never_mutates_the_control_endpoint(verdict):
+    assert verdict["sim_realtime_mutators"] == []
+
+
+def test_the_runner_carries_no_dhcp_trace_classifier():
+    source = (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(encoding="utf-8")
+    start = source.index("def _post_failure_simulation_diagnostic")
+    body = source[start:source.index("\ndef ", start + 10)]
+
+    for forbidden in ("0.0.0.0", "255.255.255.255", "DHCPDISCOVER", "bootp", "type67"):
+        assert forbidden not in body
+    assert "setDhcpClientFlag" not in source
+
+
+def test_voice_failure_keeps_the_post_failure_simulation_diagnostic(verdict):
+    assert verdict["simulation_before_voice_failure"] == {
+        "sentinel": "post failure simulation retained",
+    }
+
+
+def test_the_authoritative_voice_window_is_proven_realtime_at_both_edges(verdict):
+    """Simulation mode would not slow the window down; it would replace it."""
+    outcome = verdict["continuity_verified"]
+    continuity = outcome["continuity"]
+
+    assert outcome["voice_invoked"] is True
+    assert continuity["verified"] is True
+    assert continuity["failure_reason"] == ""
+    for edge in ("before", "after"):
+        assert continuity[edge]["observed"] is True, edge
+        assert continuity[edge]["simulation_mode"] is False, edge
+        # The whole pure observation is retained, not just its verdict.
+        for field in ("frames", "sim_time", "current_index", "message"):
+            assert field in continuity[edge], (edge, field)
+    # Two edges are exactly what two reads prove.
+    assert "boundaries" in continuity["proves"]
+    assert outcome["has_voice"] and outcome["has_diagnostic"]
+
+
+def test_a_simulating_start_never_runs_the_authoritative_acquisition(verdict):
+    for key in ("continuity_before_simulating", "continuity_before_blind"):
+        outcome = verdict[key]
+        continuity = outcome["continuity"]
+
+        # The window is not entered at all: there is nothing to interpret later.
+        assert outcome["voice_invoked"] is False, key
+        assert outcome["has_voice"] is False, key
+        assert continuity["verified"] is False, key
+        assert continuity["failure_reason"], key
+        assert continuity["after"] is None, key
+        # And the mode is NEVER normalized behind the operator's back.
+        assert outcome["mode_scripts"] == 0, key
+        assert outcome["state_reads"] >= 1, key
+        assert "REALTIME" in outcome["message"].upper(), key
+
+
+def test_a_simulating_finish_leaves_the_voice_result_uninterpreted(verdict):
+    for key in ("continuity_after_simulating", "continuity_after_blind"):
+        outcome = verdict[key]
+        continuity = outcome["continuity"]
+
+        # The acquisition ran, so its evidence is kept...
+        assert outcome["voice_invoked"] is True, key
+        assert outcome["has_voice"] is True, key
+        # ...but nothing downstream may treat it as an authoritative failure.
+        assert continuity["verified"] is False, key
+        assert continuity["before"]["simulation_mode"] is False, key
+        assert continuity["failure_reason"], key
+        assert outcome["has_bindings"] is False, key
+        assert outcome["has_diagnostic"] is False, key
+        assert outcome["mode_scripts"] == 0, key
+
+
+def test_the_post_failure_diagnostic_refuses_an_unestablished_failure(verdict):
+    gate = verdict["diagnostic_gate"]
+
+    assert gate["status"] == "NOT_APPLICABLE"
+    assert gate["captured"] is False
+    assert "phone_trace" not in gate
+    # It never touches Packet Tracer: there is no valid normal failure to
+    # diagnose, so there is no window to open.
+    assert verdict["diagnostic_gate_scripts"] == 0
+
+
+def test_the_two_windows_stay_named_apart(verdict):
+    normal = verdict["continuity_verified"]["continuity"]
+    diagnostic = verdict["sim_realtime"]
+
+    assert normal["window"] == "NORMAL_WINDOW"
+    assert normal["mode_required"] == "realtime"
+    assert diagnostic["diagnostic"] == "POST_FAILURE_SIMULATION_DIAGNOSTIC"
+    assert "NOT the original" in diagnostic["observes"]

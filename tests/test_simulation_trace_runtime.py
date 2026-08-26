@@ -18,6 +18,7 @@ un ping genera el ARP broadcast y el ICMP que queda en buffer esperandolo.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
@@ -239,6 +240,7 @@ class TestItStaysDiagnostic:
 
         assert fields == {
             "observed", "simulation_mode", "total_in_event_list", "hops", "message",
+            "requested_limit", "effective_limit",
         }
         for forbidden in ("verified", "status", "access_port", "gateway"):
             assert forbidden not in fields
@@ -257,3 +259,276 @@ class TestItStaysDiagnostic:
             "RuntimeVerification", "ConfigurationApplicationStatus",
         ):
             assert forbidden not in source
+
+
+# ======================================================================
+# POST_FAILURE_SIMULATION_DIAGNOSTIC — capture hardening.
+#
+# CP-SCALE needs to discover how THIS build represents DHCP before anything
+# may classify it. That makes the raw capture the product: a label, a summary
+# or a dropped field is evidence that cannot be re-read later without paying
+# for another governed LIVE.
+# ======================================================================
+
+
+class TestPureSimulationStateRead:
+    """Leer el estado no puede ser un efecto secundario de cambiarlo."""
+
+    def test_the_pure_state_builder_carries_no_mutator(self):
+        from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+            simulation_state_js,
+        )
+
+        js = simulation_state_js()
+
+        assert "isSimulationMode" in js
+        assert "getFrameInstanceCount" in js
+        assert "getCurrentSimTime" in js
+        # Una lectura que puede mover el estado no sirve para verificar que el
+        # estado volvio: probaria lo que ella misma acaba de hacer.
+        for mutator in (
+            "setSimulationMode", "forward", "backward", "resetSimulation",
+        ):
+            assert mutator not in js
+
+    def test_the_pure_read_reports_the_observed_state(self):
+        from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+            SimulationTraceRuntime as _R,
+        )
+
+        send = _Recorder(json.dumps({
+            "mode": True, "frames": 12, "sim_time": 4.5, "current_index": 3,
+        }))
+
+        state = _R(send).read_simulation_state()
+
+        assert state.observed is True
+        assert state.simulation_mode is True
+        assert state.frames == 12
+        assert state.sim_time == 4.5
+        assert state.current_index == 3
+
+    def test_a_state_without_a_mode_is_not_a_reading(self):
+        from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+            SimulationTraceRuntime as _R,
+        )
+
+        state = _R(_Recorder(json.dumps({"frames": 3}))).read_simulation_state()
+
+        assert state.observed is False
+        assert state.simulation_mode is False
+
+    def test_a_silent_bridge_is_not_a_realtime_reading(self):
+        from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+            SimulationTraceRuntime as _R,
+        )
+
+        state = _R(_Recorder(None)).read_simulation_state()
+
+        assert state.observed is False
+        assert state.frames is None and state.sim_time is None
+
+
+class TestRawTrafficIdentitySurvives:
+    """La etiqueta es conveniencia; el entero es la evidencia."""
+
+    def test_the_raw_traffic_type_is_retained_beside_its_label(self):
+        send = _Recorder(_trace_payload(
+            _frame(traffic_type_raw=0), _frame(index=1, traffic_type_raw=5),
+            _frame(index=2, traffic_type_raw=77),
+        ))
+
+        hops = SimulationTraceRuntime(send).read_trace().hops
+
+        assert [hop.traffic_type_raw for hop in hops] == [0, 5, 77]
+        # El mapeo medido no cambia, y lo no medido sigue sin nombre.
+        assert [hop.traffic_type for hop in hops] == ["ICMP", "ARP", "type77"]
+
+    def test_an_absent_traffic_type_is_not_reported_as_icmp(self):
+        frame = _frame()
+        frame.pop("traffic_type_raw")
+        send = _Recorder(_trace_payload(frame))
+
+        hop = SimulationTraceRuntime(send).read_trace().hops[0]
+
+        assert hop.traffic_type_raw is None
+        assert hop.traffic_type == "typeNone"
+
+    def test_no_dhcp_label_exists_yet(self):
+        from src.packet_tracer_mcp.domain.services import packet_trace
+
+        assert packet_trace.TRAFFIC_TYPES == {0: "ICMP", 5: "ARP"}
+        assert "DHCP" not in set(packet_trace.TRAFFIC_TYPES.values())
+
+
+class TestFullDecisionEvidenceSurvives:
+    """La ultima decision explica el desenlace; las otras explican el camino."""
+
+    def test_every_decision_is_retained_in_order(self):
+        send = _Recorder(_trace_payload(_frame(dropped=True, decisions=[
+            {"layer": 3, "inbound": True, "description": "The device receives the frame."},
+            {"layer": 3, "inbound": False, "description": "The device sets the next-hop."},
+            {"layer": 2, "inbound": False, "description": "The device drops the frame."},
+        ])))
+
+        hop = SimulationTraceRuntime(send).read_trace().hops[0]
+
+        assert len(hop.decisions) == 3
+        assert [item.layer for item in hop.decisions] == [3, 3, 2]
+        assert [item.inbound for item in hop.decisions] == [True, False, False]
+        assert hop.decisions[0].description.startswith("The device receives")
+        # `reason` sigue siendo exactamente lo que era: la ultima descripcion.
+        assert hop.reason == "The device drops the frame."
+
+    def test_a_frame_without_decisions_retains_an_empty_tuple(self):
+        send = _Recorder(_trace_payload(_frame(dropped=True, decisions=[])))
+
+        hop = SimulationTraceRuntime(send).read_trace().hops[0]
+
+        assert hop.decisions == ()
+        assert hop.reason == ""
+
+
+class TestSimulationTimeIsParsedStrictly:
+    """Un cero fabricado y un cero medido no pueden ser el mismo valor."""
+
+    def test_an_integer_simulation_time_is_accepted(self):
+        send = _Recorder(_trace_payload(_frame(sim_time=7, transit_time=0)))
+
+        hop = SimulationTraceRuntime(send).read_trace().hops[0]
+
+        assert hop.sim_time == 7
+        # Cero medido sigue siendo cero, no ausencia.
+        assert hop.transit_time == 0
+
+    def test_a_float_simulation_time_is_accepted(self):
+        send = _Recorder(_trace_payload(_frame(sim_time=1.25, transit_time=0.5)))
+
+        hop = SimulationTraceRuntime(send).read_trace().hops[0]
+
+        assert hop.sim_time == 1.25 and hop.transit_time == 0.5
+
+    def test_a_boolean_is_not_a_simulation_time(self):
+        send = _Recorder(_trace_payload(_frame(sim_time=True, transit_time=False)))
+
+        hop = SimulationTraceRuntime(send).read_trace().hops[0]
+
+        assert hop.sim_time is None and hop.transit_time is None
+
+    @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+    def test_a_non_finite_simulation_time_is_not_evidence(self, literal):
+        body = (
+            '{"total": 1, "simulation_mode": true, "frames": [{"index": 0,'
+            ' "device": "PC", "sim_time": ' + literal + ', "decisions": []}]}'
+        )
+
+        hop = SimulationTraceRuntime(_Recorder(body)).read_trace().hops[0]
+
+        assert hop.sim_time is None
+
+    def test_a_missing_simulation_time_stays_absent_instead_of_zero(self):
+        frame = _frame()
+        frame.pop("sim_time", None)
+        frame.pop("transit_time", None)
+        send = _Recorder(_trace_payload(frame))
+
+        hop = SimulationTraceRuntime(send).read_trace().hops[0]
+
+        assert hop.sim_time is None and hop.transit_time is None
+
+    def test_the_step_observation_retains_time_and_index(self):
+        send = _Recorder(json.dumps({
+            "simulation_mode": True, "frames_before": 2, "frames_after": 9,
+            "sim_time": 3.5, "current_index": 8,
+        }))
+
+        step = SimulationTraceRuntime(send).step("forward", times=4)
+
+        assert step.frames_before == 2 and step.frames_after == 9
+        assert step.sim_time == 3.5 and step.current_index == 8
+
+
+class TestCaptureBoundSemantics:
+    """Alcanzar la cota no prueba saturacion; solo prohibe leer una ausencia."""
+
+    def test_the_effective_limit_is_retained_beside_the_requested_one(self):
+        send = _Recorder(_trace_payload(_frame()))
+
+        trace = SimulationTraceRuntime(send).read_trace(limit=9999)
+
+        assert trace.requested_limit == 9999
+        # La cota dura de 200 no se mueve.
+        assert trace.effective_limit == 200
+        assert trace.limit_reached is False
+
+    def test_reaching_the_effective_limit_is_reported_conservatively(self):
+        frames = [_frame(index=index) for index in range(3)]
+        send = _Recorder(_trace_payload(*frames))
+
+        trace = SimulationTraceRuntime(send).read_trace(limit=3)
+
+        assert trace.effective_limit == 3
+        assert len(trace.hops) == 3
+        assert trace.limit_reached is True
+
+    def test_the_global_event_count_is_not_a_filtered_match_count(self):
+        send = _Recorder(json.dumps({
+            "total": 4096, "simulation_mode": True, "frames": [_frame()],
+        }))
+
+        trace = SimulationTraceRuntime(send).read_trace(limit=20)
+
+        # `total_in_event_list` es global: no dice cuantos frames del device
+        # pedido existian, asi que no puede sostener una lectura de ausencia.
+        assert trace.total_in_event_list == 4096
+        assert len(trace.hops) == 1
+        assert trace.limit_reached is False
+
+
+class TestNoClassifierExistsYet:
+    """El primer LIVE es calibracion: descubrir la representacion, no juzgarla."""
+
+    def test_no_integer_is_mapped_to_a_dhcp_label(self):
+        """El mapeo es la superficie donde un nombre inventado entraria."""
+        from src.packet_tracer_mcp.domain.services.packet_trace import (
+            TRAFFIC_TYPES, traffic_type_label,
+        )
+
+        assert TRAFFIC_TYPES == {0: "ICMP", 5: "ARP"}
+        for raw in range(0, 256):
+            label = traffic_type_label(raw)
+            assert "DHCP" not in label.upper()
+            # O es uno de los dos medidos, o sigue sin nombre.
+            assert label in ("ICMP", "ARP") or label == f"type{raw}"
+
+    def test_a_dhcp_shaped_frame_is_still_reported_as_an_unnamed_type(self):
+        """La forma clasica de un DISCOVER no alcanza para nombrarlo."""
+        send = _Recorder(_trace_payload(_frame(
+            source="0.0.0.0", destination="255.255.255.255", traffic_type_raw=7,
+            decisions=[{"layer": 2, "inbound": False,
+                        "description": "The device sends the broadcast frame."}],
+        )))
+
+        hop = SimulationTraceRuntime(send).read_trace().hops[0]
+
+        assert hop.traffic_type_raw == 7 and hop.traffic_type == "type7"
+        # Nada en la observacion tipada convierte esa forma en un protocolo.
+        assert "DHCP" not in json.dumps(dataclasses.asdict(hop)).upper()
+
+    def test_no_speculative_protocol_rule_is_encoded(self):
+        from pathlib import Path
+
+        source = Path(
+            "src/packet_tracer_mcp/infrastructure/execution/simulation_trace_runtime.py",
+        ).read_text(encoding="utf-8")
+        domain = Path(
+            "src/packet_tracer_mcp/domain/services/packet_trace.py",
+        ).read_text(encoding="utf-8")
+
+        # Las literales que una regla especulativa necesitaria. La prosa puede
+        # nombrar DHCP; una REGLA que lo deduzca de una forma no medida, no.
+        for forbidden in (
+            "0.0.0.0", "255.255.255.255", "DHCPDISCOVER", "DHCPOFFER", "bootp",
+        ):
+            assert forbidden not in source
+            assert forbidden not in domain

@@ -124,6 +124,10 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_ip_interface_brief,
 )
 from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
+from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+    TRACE_LIMIT_MAX,
+    SimulationTraceRuntime,
+)
 from packet_tracer_mcp.infrastructure.execution.live_bridge import (
     PacketTracerHttpTransport,
 )
@@ -932,6 +936,373 @@ def _voice_binding_count(
     return matches[0] if len(matches) == 1 and type(matches[0]) is int else None
 
 
+# ----------------------------------------------------------------------
+# POST_FAILURE_SIMULATION_DIAGNOSTIC
+#
+# Simulation mode changes EXECUTION SEMANTICS: packets stop progressing on
+# their own and have to be stepped. That is why this runs only after the voice
+# stage has already failed and been read back -- entering Simulation during the
+# realtime acquisition window would not observe the tested condition, it would
+# replace it.
+#
+# This slice classifies NOTHING. CP-SCALE does not yet know how this build
+# represents DHCP, and a label invented here would be indistinguishable from an
+# observation later. The product is the raw capture.
+# ----------------------------------------------------------------------
+
+#: Explicit and small. It is not tuned to produce a result: whether stepping
+#: exposes a scheduled endpoint retry at all is UNVERIFIED until a live run.
+_SIMULATION_STEP_BUDGET = 40
+_REPRESENTATIVE_PHONE_NAME = "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PHONE-02"
+_CONTROL_ENDPOINT_NAME = "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PC-01"
+#: Re-checked against THIS run before any capture is attributed to the phone.
+_PHONE_PREREQUISITES = (
+    ("endpoint_interface", "Vlan20"),
+    ("endpoint_interface_present", True),
+    ("endpoint_address_channel", True),
+    ("endpoint_dhcp_enabled", True),
+    ("endpoint_ipv4", ""),
+)
+
+
+def _endpoint_attachment(projection, device_name: str) -> dict[str, str] | None:
+    """The one planned device with this name and the one link that attaches it."""
+    devices = [
+        item for item in projection.topology.devices if item.name == device_name
+    ]
+    if len(devices) != 1:
+        return None
+    device = devices[0]
+    links = [
+        item for item in projection.topology.links
+        if device.id in (item.device_a_id, item.device_b_id)
+    ]
+    if len(links) != 1:
+        return None
+    link = links[0]
+    near_is_a = link.device_a_id == device.id
+    peer_id = link.device_b_id if near_is_a else link.device_a_id
+    peers = [item for item in projection.topology.devices if item.id == peer_id]
+    return {
+        "device_name": device.name,
+        "device_id": device.id,
+        "model": getattr(device, "model", ""),
+        "endpoint_port": link.port_a if near_is_a else link.port_b,
+        "peer_id": peer_id,
+        "peer_name": peers[0].name if len(peers) == 1 else "",
+        "peer_port": link.port_b if near_is_a else link.port_a,
+    }
+
+
+def _representative_phone_evidence(
+    projection, voice_evidence, device_name: str,
+) -> dict[str, object]:
+    """Re-establish the representative's prerequisites from THIS run.
+
+    A phone that already holds an address, or whose channel could not be read,
+    cannot carry a solicitation this window would be about. Failing any of them
+    yields no trace at all -- never a quiet substitution of a different phone.
+    """
+    evidence: dict[str, object] = {
+        "device_name": device_name,
+        "attachment": None,
+        "registration": None,
+        "prerequisites_met": False,
+        "failure_reason": "",
+    }
+    attachment = _endpoint_attachment(projection, device_name)
+    evidence["attachment"] = attachment
+    if attachment is None:
+        evidence["failure_reason"] = (
+            f"The representative endpoint {device_name!r} was not uniquely "
+            "attributable to one planned device and one link."
+        )
+        return evidence
+    result = voice_evidence.get("result")
+    registrations = (
+        result.get("registrations") if isinstance(result, dict) else None
+    )
+    rows = [
+        item for item in (registrations if isinstance(registrations, list) else [])
+        if isinstance(item, dict) and item.get("phone_id") == attachment["device_id"]
+    ]
+    if len(rows) != 1:
+        evidence["failure_reason"] = (
+            f"This run carried {len(rows)} registration row(s) for "
+            f"{device_name!r}; exactly one is required to attribute a capture."
+        )
+        return evidence
+    row = rows[0]
+    evidence["registration"] = {
+        field: row.get(field) for field in (
+            "phone_id", "extension", "status", "evidence_method", "fresh_evidence",
+            "endpoint_interface", "endpoint_interface_present",
+            "endpoint_address_channel", "endpoint_dhcp_enabled", "endpoint_ipv4",
+        )
+    }
+    unmet = [
+        field for field, expected in _PHONE_PREREQUISITES
+        if row.get(field) != expected
+    ]
+    if unmet:
+        evidence["failure_reason"] = (
+            f"{device_name!r} did not hold the representative prerequisites in "
+            "this run: " + ", ".join(unmet)
+        )
+        return evidence
+    evidence["prerequisites_met"] = True
+    return evidence
+
+
+def _simulation_state_dict(state) -> dict[str, object]:
+    return {
+        "observed": state.observed,
+        "simulation_mode": state.simulation_mode,
+        "frames": state.frames,
+        "sim_time": state.sim_time,
+        "current_index": state.current_index,
+        "message": state.message,
+    }
+
+
+def _simulation_mode_dict(mode) -> dict[str, object]:
+    return {
+        "observed": mode.observed, "before": mode.before, "after": mode.after,
+        "frames": mode.frames, "message": mode.message,
+    }
+
+
+def _simulation_step_dict(step) -> dict[str, object]:
+    return {
+        "observed": step.observed,
+        "simulation_mode": step.simulation_mode,
+        "frames_before": step.frames_before,
+        "frames_after": step.frames_after,
+        "sim_time": step.sim_time,
+        "current_index": step.current_index,
+        "message": step.message,
+    }
+
+
+def _traced_hop_dict(hop) -> dict[str, object]:
+    """Every measured field. A summary here would be evidence nobody can re-read."""
+    return {
+        "index": hop.index,
+        "device": hop.device,
+        "previous_device": hop.previous_device,
+        "in_port": hop.in_port,
+        "out_port": hop.out_port,
+        "source": hop.source,
+        "destination": hop.destination,
+        "traffic_type_raw": hop.traffic_type_raw,
+        "traffic_type": hop.traffic_type,
+        "sim_time": hop.sim_time,
+        "transit_time": hop.transit_time,
+        "status": hop.status,
+        "decisions": [
+            {
+                "layer": item.layer,
+                "inbound": item.inbound,
+                "description": item.description,
+            }
+            for item in hop.decisions
+        ],
+    }
+
+
+def _packet_trace_dict(trace) -> dict[str, object]:
+    return {
+        "observed": trace.observed,
+        "simulation_mode": trace.simulation_mode,
+        # Global, never a filtered match count: it cannot support an absence.
+        "total_in_event_list": trace.total_in_event_list,
+        "requested_limit": trace.requested_limit,
+        "effective_limit": trace.effective_limit,
+        "limit_reached": trace.limit_reached,
+        "hops_captured": len(trace.hops),
+        "message": trace.message,
+        "hops": [_traced_hop_dict(hop) for hop in trace.hops],
+    }
+
+
+# ----------------------------------------------------------------------
+# VOICE_REALTIME_CONTINUITY
+#
+# The two windows are not interchangeable and must never be confused:
+#
+#   NORMAL_WINDOW  -- Realtime only. The authoritative voice acquisition and
+#                     its verification. This is what 0/21 is a statement about.
+#   POST_FAILURE_SIMULATION_DIAGNOSTIC -- Simulation, bounded stepping,
+#                     diagnostic only, never configuration verification.
+#
+# In Simulation mode packets do not progress autonomously, so a 180-second
+# convergence window that elapsed while it was active did not measure what the
+# same wall clock measures in Realtime. Proving both edges of the authoritative
+# window were Realtime is what makes its result attributable at all.
+# ----------------------------------------------------------------------
+
+
+def _voice_window_state(runtime) -> dict[str, object]:
+    """One PURE boundary observation of the authoritative window."""
+    return _simulation_state_dict(runtime.read_simulation_state())
+
+
+def _realtime_boundary_error(state: dict[str, object] | None, edge: str) -> str:
+    if not isinstance(state, dict) or not state.get("observed"):
+        return (
+            f"The simulation state {edge} the authoritative voice window was not "
+            "observable, so the window cannot be attributed to REALTIME."
+        )
+    if state.get("simulation_mode"):
+        return (
+            f"Packet Tracer was in Simulation mode {edge} the authoritative voice "
+            "window. Packets do not progress autonomously there, so the window "
+            "is not a REALTIME acquisition."
+        )
+    return ""
+
+
+def _post_failure_simulation_diagnostic(
+    transport,
+    projection,
+    voice_evidence,
+    *,
+    realtime_failure_established: bool = True,
+    phone_name: str = _REPRESENTATIVE_PHONE_NAME,
+    control_name: str = _CONTROL_ENDPOINT_NAME,
+    step_budget: int = _SIMULATION_STEP_BUDGET,
+) -> dict[str, object]:
+    """Bounded raw capture after the voice failure. Never raises, always restores.
+
+    Owns one explicit window: read the original mode purely, enter Simulation
+    only if it was not already there, reset, step a fixed budget, capture the
+    representative endpoint and the control, and give the mode back verifying
+    with ANOTHER pure read. A restoration that cannot be verified is recorded
+    on its own key -- it never becomes, hides or overwrites the Floor-1 failure
+    this stage is already carrying.
+    """
+    evidence: dict[str, object] = {
+        "diagnostic": "POST_FAILURE_SIMULATION_DIAGNOSTIC",
+        "observes": (
+            "Events generated or processed AFTER entering Simulation mode, "
+            "following the already-established Floor-1 voice failure. Simulation "
+            "mode changes execution semantics -- packets do not progress "
+            "autonomously and must be stepped -- so this is NOT the original "
+            "realtime voice acquisition window and may not be described as it."
+        ),
+        # This slice discovers a representation; it does not judge one. Both stay
+        # UNOBSERVABLE until a live capture shows how this build renders DHCP.
+        "dhcp_trace_identity": "UNOBSERVABLE",
+        "control_dhcp_visibility": "UNOBSERVABLE",
+        "control_semantics": (
+            "Same-window visibility control only. It is opportunistic: nothing "
+            "solicits it, and an empty control does not establish that the event "
+            "list filters anything. It says nothing about the representative "
+            "endpoint's own switching path."
+        ),
+        "phone": None,
+        "control_name": control_name,
+        "status": "ATTEMPTED",
+        "captured": False,
+        "restoration_verified": False,
+        "failure_reason": "",
+    }
+    if not realtime_failure_established:
+        # There is no valid normal failure to diagnose. Opening a Simulation
+        # window here would produce evidence about nothing, at the cost of a
+        # real application-state transition.
+        evidence["status"] = "NOT_APPLICABLE"
+        evidence["failure_reason"] = (
+            "No authoritative REALTIME voice failure was established, so there "
+            "is nothing for this diagnostic to be about."
+        )
+        return evidence
+    phone = _representative_phone_evidence(projection, voice_evidence, phone_name)
+    evidence["phone"] = phone
+    if not phone["prerequisites_met"]:
+        evidence["failure_reason"] = str(phone["failure_reason"])
+        return evidence
+
+    runtime = SimulationTraceRuntime(transport.send_and_wait)
+    original = runtime.read_simulation_state()
+    evidence["original_state"] = _simulation_state_dict(original)
+    if not original.observed:
+        # Nothing has been touched, and nothing may be: without an attributable
+        # original there is no state to give back.
+        evidence["failure_reason"] = (
+            "The original simulation state was not attributable, so the mode was "
+            "left untouched."
+        )
+        return evidence
+
+    changed = False
+    try:
+        if not original.simulation_mode:
+            evidence["mode_request"] = _simulation_mode_dict(
+                runtime.set_simulation_mode(True),
+            )
+            changed = True
+            entered = runtime.read_simulation_state()
+            evidence["entered_state"] = _simulation_state_dict(entered)
+            if not (entered.observed and entered.simulation_mode):
+                evidence["failure_reason"] = (
+                    "Simulation mode was requested and could not be verified."
+                )
+                return evidence
+        evidence["window_before"] = _simulation_state_dict(
+            runtime.read_simulation_state(),
+        )
+        evidence["reset"] = _simulation_step_dict(runtime.step("reset"))
+        evidence["step"] = {
+            "steps_requested": step_budget,
+            **_simulation_step_dict(runtime.step("forward", times=step_budget)),
+        }
+        evidence["window_after"] = _simulation_state_dict(
+            runtime.read_simulation_state(),
+        )
+        phone_trace = runtime.read_trace(
+            limit=TRACE_LIMIT_MAX, device=phone_name,
+        )
+        evidence["phone_trace"] = _packet_trace_dict(phone_trace)
+        control_trace = runtime.read_trace(
+            limit=TRACE_LIMIT_MAX, device=control_name,
+        )
+        evidence["control_trace"] = _packet_trace_dict(control_trace)
+        evidence["captured"] = bool(phone_trace.observed and control_trace.observed)
+        if not evidence["captured"]:
+            evidence["failure_reason"] = (
+                "The bounded capture did not complete; what was observed is "
+                "retained and no absence may be read from it."
+            )
+    except Exception as exc:
+        # The diagnostic may never be the reason a governed stage stops running
+        # its own failure and cleanup.
+        evidence["failure_reason"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        restoration: dict[str, object] = {"changed": changed}
+        try:
+            if changed:
+                restoration["request"] = _simulation_mode_dict(
+                    runtime.set_simulation_mode(original.simulation_mode),
+                )
+            verified = runtime.read_simulation_state()
+            restoration["verification"] = _simulation_state_dict(verified)
+            evidence["restoration_verified"] = bool(
+                verified.observed
+                and verified.simulation_mode == original.simulation_mode
+            )
+        except Exception as exc:
+            restoration["error"] = f"{type(exc).__name__}: {exc}"
+            evidence["restoration_verified"] = False
+        if not evidence["restoration_verified"] and "error" not in restoration:
+            restoration["error"] = (
+                "Packet Tracer simulation mode could not be verified back to the "
+                "observed original state."
+            )
+        evidence["restoration"] = restoration
+    return evidence
+
+
 def _stage_voice(
     projection,
     *,
@@ -1230,6 +1601,35 @@ def _execute_stage(
     # foundation just created, a call control to answer, an extension per phone
     # and the configuration files they fetch. Only then is there anything to
     # verify about a phone at all.
+    # The authoritative window opens here. Its first edge is observed with a
+    # PURE read: a call that could change the mode would be attesting to its own
+    # effect, and normalizing the mode silently would erase exactly the operator
+    # state this gate exists to detect.
+    voice_plan = getattr(projection, "voice", None)
+    continuity: dict[str, object] | None = None
+    if voice_plan is not None and voice_plan.actions:
+        simulation = SimulationTraceRuntime(transport.send_and_wait)
+        continuity = {
+            "window": "NORMAL_WINDOW",
+            "mode_required": "realtime",
+            "proves": (
+                "Both boundaries of the authoritative window were observed in "
+                "Realtime. It does NOT prove the mode was never toggled between "
+                "the two reads."
+            ),
+            "before": _voice_window_state(simulation),
+            "after": None,
+            "verified": False,
+            "failure_reason": "",
+        }
+        evidence["voice_realtime_continuity"] = continuity
+        before_error = _realtime_boundary_error(continuity["before"], "before")
+        if before_error:
+            continuity["failure_reason"] = before_error
+            raise _failed(
+                f"Voice at {projection.stage.value!r} was not attempted: "
+                + before_error
+            )
     voice_evidence = _stage_voice(
         projection,
         voice_runtime=voice_runtime,
@@ -1240,6 +1640,18 @@ def _execute_stage(
         manifest=manifest,
     )
     evidence["voice"] = voice_evidence
+    if continuity is not None:
+        continuity["after"] = _voice_window_state(simulation)
+        after_error = _realtime_boundary_error(continuity["after"], "after")
+        continuity["verified"] = not after_error
+        if after_error:
+            # The acquisition already ran and its evidence is kept, but nothing
+            # downstream may read 0/21 as an authoritative DHCP failure.
+            continuity["failure_reason"] = after_error
+            raise _failed(
+                f"Voice at {projection.stage.value!r} is not interpretable: "
+                + after_error
+            )
     binding_evidence = (
         _dhcp_server_binding_evidence(
             ios, projection.configuration, projection.voice,
@@ -1278,6 +1690,16 @@ def _execute_stage(
             ),
         }
     if voice_evidence.get("error"):
+        # POST-FAILURE ONLY. The tested condition has already been established
+        # and read back, so entering Simulation now cannot alter it -- and it is
+        # the last moment the devices still exist, because the raise below hands
+        # this journal out and the governed cleanup follows.
+        evidence["post_failure_simulation"] = _post_failure_simulation_diagnostic(
+            transport, projection, voice_evidence,
+            realtime_failure_established=bool(
+                continuity is not None and continuity.get("verified")
+            ),
+        )
         raise _failed(
             f"Voice at {projection.stage.value!r} did not close: "
             + str(voice_evidence["error"])

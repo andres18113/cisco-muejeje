@@ -49,6 +49,7 @@ de Packet Tracer); `frameDecision` -> `osiLayer`, `osiIn`, `description`.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -73,6 +74,26 @@ _STEP_CALLS = {
 # Constructores de JS. Viven aca, debajo de la fachada MCP, para que el
 # adaptador publico y el runtime gobernado compartan UNA sola definicion.
 # ----------------------------------------------------------------------
+
+def simulation_state_js() -> str:
+    """JS que LEE el estado de simulacion y no lo toca.
+
+    Existe separado de `simulation_mode_js` porque una lectura que puede mover
+    el estado no sirve para verificar que el estado volvio: probaria lo que
+    ella misma acaba de hacer. Solo primitivas ya medidas, y ningun mutador.
+    """
+    return (
+        "try {"
+        "  var __s = ipc.simulation();"
+        "  reportResult(JSON.stringify({"
+        "    mode: !!__s.isSimulationMode(),"
+        "    frames: __s.getFrameInstanceCount(),"
+        "    sim_time: __s.getCurrentSimTime(),"
+        "    current_index: __s.getCurrentFrameInstanceIndex()"
+        "  }));"
+        "} catch (__e) { reportResult('ERROR:' + __e); }"
+    )
+
 
 def simulation_mode_js(on: bool) -> str:
     """JS que conmuta Realtime/Simulacion y reporta el antes y el despues."""
@@ -116,9 +137,19 @@ def simulation_step_js(action: str, times: int) -> str:
     )
 
 
+#: Cota dura de UNA lectura del event list. No se mueve para "conseguir un
+#: resultado": alcanzarla no prueba saturacion, pero prohibe leer una ausencia.
+TRACE_LIMIT_MAX = 200
+
+
+def effective_trace_limit(limit: int) -> int:
+    """La cota que el JS va a aplicar de verdad. UNA sola definicion."""
+    return max(1, min(int(limit), TRACE_LIMIT_MAX))
+
+
 def packet_trace_js(limit: int, device: str, include_decisions: bool) -> str:
     """JS que lee el event list frame por frame con su log de decisiones."""
-    lim = max(1, min(int(limit), 200))
+    lim = effective_trace_limit(limit)
     want = json.dumps(device.strip())
     dec = "true" if include_decisions else "false"
     return (
@@ -190,6 +221,23 @@ def packet_trace_js(limit: int, device: str, include_decisions: bool) -> str:
 # ----------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class SimulationStateObservation:
+    """Estado de simulacion LEIDO, sin haberlo cambiado para leerlo.
+
+    Los numericos son `None` cuando no se observaron: un contador ausente no
+    es cero, y un tiempo ausente no es el instante cero. `simulation_mode`
+    solo significa algo cuando `observed` es True.
+    """
+
+    observed: bool
+    simulation_mode: bool = False
+    frames: int | None = None
+    sim_time: float | int | None = None
+    current_index: int | None = None
+    message: str = ""
+
+
+@dataclass(frozen=True)
 class SimulationModeObservation:
     """Estado del modo de simulacion, antes y despues de pedir el cambio."""
 
@@ -208,7 +256,23 @@ class SimulationStepObservation:
     simulation_mode: bool = False
     frames_before: int = 0
     frames_after: int = 0
+    sim_time: float | int | None = None
+    current_index: int | None = None
     message: str = ""
+
+
+@dataclass(frozen=True)
+class TraceDecision:
+    """Una decision publicada por PT para un frame, en su capa OSI.
+
+    Es el texto del panel "PDU Details". Se retiene entera y en orden: la
+    ultima explica el desenlace, las anteriores explican el camino, y ninguna
+    se puede releer despues sin pagar otro LIVE gobernado.
+    """
+
+    layer: int | None
+    inbound: bool
+    description: str
 
 
 @dataclass(frozen=True)
@@ -230,6 +294,13 @@ class TracedHop:
     traffic_type: str
     status: str
     reason: str
+    #: El entero crudo de `getUserTrafficType()`. La etiqueta es conveniencia;
+    #: ESTO es la evidencia, y es lo unico que permite descubrir despues como
+    #: este build representa un protocolo que todavia no fue observado.
+    traffic_type_raw: int | None = None
+    sim_time: float | int | None = None
+    transit_time: float | int | None = None
+    decisions: tuple[TraceDecision, ...] = ()
 
     @property
     def failed(self) -> bool:
@@ -245,6 +316,18 @@ class PacketTraceObservation:
     total_in_event_list: int = 0
     hops: tuple[TracedHop, ...] = ()
     message: str = ""
+    requested_limit: int = 0
+    effective_limit: int = 0
+
+    @property
+    def limit_reached(self) -> bool:
+        """La captura toco su cota. NO es prueba de saturacion.
+
+        Significa exactamente una cosa: mas alla de este punto no se miro, asi
+        que ninguna AUSENCIA puede leerse de esta captura. Los frames que si
+        entraron siguen siendo evidencia de su propia existencia.
+        """
+        return bool(self.effective_limit) and len(self.hops) >= self.effective_limit
 
     @property
     def failing_hops(self) -> tuple[TracedHop, ...]:
@@ -284,12 +367,21 @@ class PacketTraceObservation:
 
 
 class SimulationTraceRuntime:
-    """Adaptador tipado del modo Simulacion. Solo lee; el paso es reversible.
+    """Adaptador tipado del modo Simulacion. NO es de solo lectura.
 
-    `setSimulationMode` y `forward` cambian el estado de la aplicacion, no la
-    topologia: no crean, borran ni reconfiguran ningun dispositivo, y el modo
-    se devuelve a Realtime con la misma llamada. Por eso este runtime no
-    participa del contrato de restauracion del workspace.
+    `read_simulation_state` y `read_trace` observan. `set_simulation_mode` y
+    `step` CAMBIAN estado de la aplicacion, y ademas cambian su semantica de
+    ejecucion: en modo Simulacion los paquetes no progresan solos, hay que
+    avanzarlos. Eso no es una mutacion de configuracion -- no crea, borra ni
+    reconfigura ningun dispositivo, y la topologia queda intacta -- pero SI es
+    una transicion reversible visible para el operador.
+
+    Reversible no es lo mismo que revertida. Este runtime no restaura nada por
+    su cuenta: quien lo usa es el duenio de la ventana y debe leer el estado
+    original con `read_simulation_state`, cambiarlo solo si hace falta, y
+    devolverlo en su propio `finally` verificando con OTRA lectura pura. Por
+    eso no participa del contrato de restauracion del WORKSPACE, que es una
+    cosa distinta: alli lo que se restaura son dispositivos y enlaces.
     """
 
     def __init__(
@@ -304,6 +396,29 @@ class SimulationTraceRuntime:
         self._mode_timeout_seconds = mode_timeout_seconds
         self._step_timeout_seconds = step_timeout_seconds
         self._trace_timeout_seconds = trace_timeout_seconds
+
+    # -- estado --------------------------------------------------------
+    def read_simulation_state(self) -> SimulationStateObservation:
+        """Lee el modo sin tocarlo. Es la unica lectura valida para restaurar."""
+        payload, error = self._payload(
+            simulation_state_js(), self._mode_timeout_seconds,
+        )
+        if payload is None:
+            return SimulationStateObservation(observed=False, message=error)
+        mode = payload.get("mode")
+        if not isinstance(mode, bool):
+            return SimulationStateObservation(
+                observed=False,
+                message="the bridge did not report a simulation mode",
+            )
+        return SimulationStateObservation(
+            observed=True,
+            simulation_mode=mode,
+            frames=_count(payload.get("frames")),
+            sim_time=_numeric(payload.get("sim_time")),
+            current_index=_count(payload.get("current_index")),
+            message="simulation_state_readback",
+        )
 
     # -- modo ----------------------------------------------------------
     def set_simulation_mode(self, on: bool) -> SimulationModeObservation:
@@ -345,6 +460,8 @@ class SimulationTraceRuntime:
             simulation_mode=True,
             frames_before=_int(payload.get("frames_before")),
             frames_after=_int(payload.get("frames_after")),
+            sim_time=_numeric(payload.get("sim_time")),
+            current_index=_count(payload.get("current_index")),
             message="simulation_step_readback",
         )
 
@@ -364,7 +481,10 @@ class SimulationTraceRuntime:
             if isinstance(raw_frames, list) else []
         )
         for frame in frames:
-            frame["traffic_type"] = traffic_type_label(frame.pop("traffic_type_raw", None))
+            # NO se hace `pop`: la etiqueta se agrega al lado del crudo, nunca
+            # en su lugar. Reconstruir el entero parseando "type77" seria
+            # inventar una fuente donde ya habia una.
+            frame["traffic_type"] = traffic_type_label(frame.get("traffic_type_raw"))
         # `summarize_trace` escribe `status` en cada frame: es la MISMA
         # derivacion que usa la fachada publica, no una segunda copia.
         summarize_trace(frames)
@@ -374,6 +494,8 @@ class SimulationTraceRuntime:
             total_in_event_list=_int(payload.get("total")),
             hops=tuple(_hop(frame) for frame in frames),
             message="packet_trace_readback",
+            requested_limit=int(limit),
+            effective_limit=effective_trace_limit(limit),
         )
 
     # -- transporte ----------------------------------------------------
@@ -397,6 +519,41 @@ def _int(value) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+def _count(value) -> int | None:
+    """Un contador observado, o None. Ausente no es cero."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _numeric(value) -> float | int | None:
+    """Tiempo de simulacion medido, o None.
+
+    `bool` no es un numero aca: `True` entraria como 1 y fabricaria un instante
+    que nadie observo. `NaN`/`Infinity` tampoco: JSON los transporta y no
+    describen ningun punto de la linea de tiempo. El cero medido sigue siendo
+    cero, que es justamente lo que este parseo protege.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    return None
+
+
+def _decisions(value) -> tuple[TraceDecision, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(
+        TraceDecision(
+            layer=_count(item.get("layer")),
+            inbound=bool(item.get("inbound")),
+            description=_text(item.get("description")),
+        )
+        for item in value if isinstance(item, dict)
+    )
+
+
 def _text(value) -> str:
     return value if isinstance(value, str) else ""
 
@@ -415,4 +572,8 @@ def _hop(frame: dict) -> TracedHop:
         traffic_type=_text(frame.get("traffic_type")),
         status=_text(frame.get("status")) or frame_status(frame),
         reason=_text(last.get("description")) if isinstance(last, dict) else "",
+        traffic_type_raw=_count(frame.get("traffic_type_raw")),
+        sim_time=_numeric(frame.get("sim_time")),
+        transit_time=_numeric(frame.get("transit_time")),
+        decisions=_decisions(decisions),
     )

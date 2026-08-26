@@ -6,7 +6,7 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 4b9fe11c54001d6f1713831e52814deb94078918
+CURRENT_PUSHED_HEAD = 994e2eaf1a17c51f6ca7c6f32600cb87245f721a
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
 ROUTING_CORE = GOVERNED VERIFIED (fresh run at e09f606)
@@ -18,22 +18,25 @@ FLOOR1 = NOT VERIFIED
 WORLD_A = REFUTED
 WORLD_B_FORWARDING = REFUTED; all five trunk endpoints VERIFIED
 WORLD_B_DHCP_BINDINGS = OBSERVED at 4b9fe11: DATA 23, VOICE 0, CCTV 0
-DHCP_EXCHANGE_STATISTICS = implemented, NOT COMMITTED, LIVE pending
-PT_SCOPED_STATISTICS_SUPPORT = UNVERIFIED_UNTIL_LIVE
+DHCP_EXCHANGE_STATISTICS = checkpointed at 994e2ea; channel REFUTED at LIVE
+PT_SCOPED_STATISTICS_SUPPORT = REFUTED BY FRESH OBSERVATION
+POST_FAILURE_SIMULATION_DIAGNOSTIC = implemented, NOT COMMITTED, LIVE pending
+VOICE_REALTIME_CONTINUITY = gated at both edges of the authoritative window
+SIMULATION_DHCP_REPRESENTATION = UNOBSERVABLE (no classifier exists)
 CP_SCALE = OPEN
 E10 = FORBIDDEN
 ```
 
-Offline baseline at pushed HEAD `4b9fe11`: **2725 passed / 0 failed** with the
-checkout-local `.venv` and a writable, gitignored pytest basetemp. The scoped
-DHCP-exchange work below adds eight tests and runs at **2733 passed / 0 failed**
-in the same checkout. The latest failed Floor-1 run cleaned every owned device
-and independently re-observed the empty semantic workspace twice. Packet Tracer
-is open; its workspace is empty.
+Offline baseline at pushed HEAD `994e2ea`: **2733 passed / 0 failed** with the
+checkout-local `.venv` and a writable, gitignored pytest basetemp. The simulation
+capture work below adds 36 tests and runs at **2769 passed / 0 failed** in the
+same checkout. The governed run at `994e2ea` cleaned every owned device and
+independently re-observed the empty semantic workspace twice. Packet Tracer is
+open; its workspace is empty.
 
-The DHCP-binding observation is checkpointed in this HEAD and has since produced
-its LIVE reading. The scoped DHCP-exchange statistics described below are NOT
-checkpointed; commit and push them before the next LIVE mutation.
+Everything through the scoped DHCP-exchange statistics is checkpointed in this
+HEAD and has produced its LIVE reading. The post-failure simulation capture
+described below is NOT checkpointed; commit and push it before the next LIVE.
 
 ## Decisive powered-phone measurement -- World A refuted
 
@@ -274,22 +277,138 @@ claims a phone did not transmit, a switch dropped a broadcast, or a server
 rejected a client. Shrinking the fork is the whole objective; proving a cause is
 not.
 
+## Scoped DHCP server statistics -- channel REFUTED at LIVE
+
+The governed run from `994e2ea` asked the support question before interpreting
+anything, and Packet Tracer answered it. All four reads -- voice
+`FastEthernet0/0.20` and control `FastEthernet0/0.30`, at the router4-switch10
+baseline and the Floor-1 post point -- returned the same rejection:
+
+```text
+show ip dhcp server statistics FastEthernet0/0.20
+                     ^
+% Invalid input detected at '^' marker.
+```
+
+The caret sits at column 21, inside the `statistics` token, with
+`show ip dhcp server s` accepted before it. The interface argument was never the
+obstacle: this build does not implement the command in any form, scoped or
+global. Cisco documents the scoped variant on some IOS trains; that is now
+confirmed to say nothing about 9.0.1.0858.
+
+The fail-closed path held on first contact. Every read was `executed`, fresh,
+`output_complete`, one page, provenance `confirmed_unique` by session transcript
+continuity -- a healthy attributed capture OF A REJECTION -- and the typed layer
+still returned `usable=False`, `counters=None`. `% Invalid input` never became a
+server that saw zero DHCP. `fork` stayed `UNOBSERVABLE` and no DORA step was
+named. Do not re-attempt this channel; it is measured, not uncertain.
+
+The same run independently reproduced every prior fact at the new HEAD: routing
+core VERIFIED (3/3), router4-switch10 VERIFIED (4/4), five Floor-1 trunk
+endpoints VERIFIED, Router4 bindings fresh/complete/two-page with DATA 23,
+VOICE 0, CCTV 0, and 21 phones with Vlan20 present, channel readable, interface
+DHCP enabled, zero addressed, 19 FAILED / 2 UNOBSERVABLE.
+
+## Post-failure simulation capture -- implemented, LIVE pending
+
+The binding table localizes the failure before server-side voice allocation and
+cannot go further: an absent row is the same absence whether the DISCOVER never
+arrived or the ACK never left. With the server-counter channel refuted, the
+remaining observable is Packet Tracer's simulation event list.
+
+Three ceilings shape what it can ever answer, and all three are measured, not
+assumed:
+
+* **Simulation mode changes execution semantics.** Packets stop progressing on
+  their own and must be stepped. So this can never observe the original realtime
+  voice acquisition -- entering Simulation during that window would replace the
+  tested condition, not watch it. The capture is named
+  `POST_FAILURE_SIMULATION_DIAGNOSTIC` and runs only after the voice stage has
+  already failed and been read back, at the last moment the devices still exist.
+* **There is no event-filter surface.** PT's "Edit Filters" decides which PDU
+  types enter the event list and no IPC primitive for it exists in this repo.
+  An empty phone capture is therefore indistinguishable from DHCP being filtered
+  out, and no absence may be read from one.
+* **Floor 1 is noisy against a 200-frame bound.** Device filtering happens
+  server-side, but `total_in_event_list` is GLOBAL and can never stand in for a
+  filtered match count.
+
+So this first slice classifies NOTHING. `dhcp_trace_identity` and
+`control_dhcp_visibility` are both fixed at `UNOBSERVABLE`, and a regression
+forbids the strings that a classifier would need. The first LIVE after this
+checkpoint is calibration: its product is the raw capture -- every hop with its
+raw `getUserTrafficType()` integer beside the label, both simulation times, and
+the FULL per-layer decision log -- so the representation can be discovered from
+retained evidence instead of paid for with another governed run.
+
+The mode is owned explicitly: a pure `read_simulation_state()` establishes the
+original, Simulation is entered only if it was not already active, and the mode
+is given back in a `finally` verified by ANOTHER pure read. A restoration that
+cannot be verified is recorded on its own key and never overwrites, hides or
+becomes the Floor-1 failure the stage is already carrying.
+
+## Two windows, and the guard that keeps them apart
+
+The same pure read now also protects the window it must never touch.
+
+`NORMAL_WINDOW` is Realtime only: it is the authoritative voice acquisition and
+the only thing 0/21 is a statement about. `POST_FAILURE_SIMULATION_DIAGNOSTIC` is
+Simulation, bounded stepping, diagnostic, never configuration verification. A
+180-second convergence that elapsed while Simulation was active did not measure
+what the same wall clock measures in Realtime, so `voice_realtime_continuity`
+takes a pure observation immediately before `VoiceApplicator.apply` and again
+immediately after the convergence/readback window, and retains both whole.
+
+The policy is fail-closed in both directions, and in neither does the runner
+normalize the mode behind the operator:
+
+* Simulation, unobservable or malformed BEFORE -> the authoritative acquisition
+  is never attempted and the stage fails with the evidence it has.
+* Simulation or unobservable AFTER -> the acquisition already ran and its
+  evidence is kept, but `verified` stays false and nothing downstream reads
+  0/21 as an authoritative DHCP failure. Bindings, statistics and the
+  diagnostic are all skipped.
+* The post-failure diagnostic refuses outright when no authoritative Realtime
+  failure was established: `status = NOT_APPLICABLE`, and it does not open a
+  Simulation window to produce evidence about nothing.
+
+What two reads prove is exactly what the evidence claims: both BOUNDARIES were
+Realtime. They do not prove nobody toggled the mode between them, and the
+`proves` field says so in the journal.
+
 ## NEXT_ACTIVE_STEP
 
-1. Commit/push the scoped DHCP-exchange observation on a clean exact upstream
-   HEAD. Files: `ios_terminal.py`, `tools/cp_scale_canonical_live.py`, the two
-   test modules, and this handoff.
+1. Commit/push the post-failure simulation capture on a clean exact upstream
+   HEAD. Files: `simulation_trace_runtime.py`,
+   `tools/cp_scale_canonical_live.py`, the two test modules, and this handoff.
 2. Re-run governed routing-core -> router4-switch10 -> Floor 1 from that exact
-   committed HEAD, without stopping a stage mid-flight or creating progress
-   commits.
-3. Read `dhcp_voice_statistics_baseline` from the router4-switch10 stage and
-   `dhcp_voice_exchange` from the durable Floor-1 failed-stage journal. Answer
-   the support question FIRST: if `usable` is false at either point, PT does not
-   expose this observation and the fork stays where `4b9fe11` left it.
-4. If `scope_discriminated` is false, the reading was the server's, not the
-   interface's. Do not interpret its numbers.
-5. Only a readable, scope-discriminated delta names a fork, and it names exactly
-   one step of the exchange -- not a cause.
+   committed HEAD. The diagnostic fires only on the voice failure.
+3. Read `voice_realtime_continuity` FIRST. If `verified` is false the Floor-1
+   result is not an authoritative DHCP failure and nothing below it applies.
+4. Then read `post_failure_simulation`. Check `restoration_verified` before
+   anything else -- if it is false, Packet Tracer may have been left in
+   Simulation and that must be resolved first.
+5. Then read the raw hops. The question this run answers is only: how does this
+   build render a DHCP frame -- which `traffic_type_raw`, which source and
+   destination strings, which decision text. Nothing else.
+6. Only after that evidence exists may a classifier be proposed, and it must be
+   built from what was observed rather than from what DHCP usually looks like.
+
+Deferred on purpose, to be revisited at that evidence review: re-observing
+PHONE-02's held IPv4 and Router4's voice binding count AFTER the bounded
+stepping. There is no cheap typed point read for the first -- `observe_registration`
+needs a `VoiceVerificationExpectation` plus the applicator-built host map and
+runs a bounded `show ephone` episode -- and the second would drive a two-page IOS
+read while the network is frozen in Simulation, which is an unmeasured
+interaction this calibration run should not introduce alongside everything else
+it is measuring for the first time.
+
+Forbidden from that run's conclusions unless the evidence independently proves
+that exact claim: "PHONE-02 does not send DHCP", "DHCP is filtered out",
+"Switch5 drops DHCP", "Router4 never sees DISCOVER". If the capture reached its
+limit, every negative reading is `UNOBSERVABLE`. If the control endpoint emitted
+nothing, event-filter eligibility is `UNOBSERVABLE` -- an empty control is not
+proof of filtering, and the control says nothing about PHONE-02's Switch5 path.
 
 Do not wire any new DHCP observation into `VerificationKind.DHCP_POOL`: the
 ceiling at `qualify_cp_scale_live.py:625` enforces status UNOBSERVABLE +
@@ -395,7 +514,8 @@ d0db204 docs(cp-scale): checkpoint governed routing core
 8b4cdd4 fix(cp-scale): allow bounded trunk forwarding convergence
 e09f606 fix(cp-scale): keep runtime checkpoints outside tracked tree
 4b9fe11 feat(cp-scale): observe DHCP server bindings
+994e2ea feat(cp-scale): observe scoped DHCP exchange statistics
 ```
 
-The scoped DHCP-exchange observation and this handoff update are the next fix
+The post-failure simulation capture and this handoff update are the next fix
 checkpoint; record their final pushed HEAD here on the following turn.
