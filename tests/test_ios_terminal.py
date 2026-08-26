@@ -1216,3 +1216,123 @@ def test_unconfirmed_pager_cancellation_fails_closed_and_keeps_truncation():
     assert not result.executed
     assert result.truncated_by_pager
     assert "pager cancellation" in result.failure_reason.casefold()
+
+
+#: Exactly what PT 9.0.1.0858 printed for Switch5 at CP-SCALE Floor 1 on the
+#: governed run at 2f2055c: page one ends mid-VLAN0010 header, so the parser saw
+#: only VLAN0001 -- whose single row is the Gi0/1 uplink -- and VLAN0020 with
+#: every phone-facing access port lay entirely beyond the pager.
+_PT_9_0_1_0858_SWITCH5_STP_PAGE_1 = """VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0001.4392.0108
+             Cost        4
+             Port        25(GigabitEthernet0/1)
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0030.A3A1.89E8
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  20
+
+Interface        Role Sts Cost      Prio.Nbr Type
+---------------- ---- --- --------- -------- --------------------------------
+Gi0/1            Root FWD 4         128.25   P2p
+
+VLAN0010
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32778
+             Address     0001.4392.0108
+             Cost        4
+             Port        25(GigabitEthernet0/1)
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32778  (priority 32768 sys-id-ext 10)
+"""
+
+_PT_9_0_1_0858_SWITCH5_STP_PAGE_2 = """             Address     0030.A3A1.89E8
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  20
+
+Interface        Role Sts Cost      Prio.Nbr Type
+---------------- ---- --- --------- -------- --------------------------------
+Fa0/1            Desg FWD 19        128.1    P2p
+Gi0/1            Root FWD 4         128.25   P2p
+
+VLAN0020
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32788
+             Address     0001.4392.0108
+             Cost        4
+             Port        25(GigabitEthernet0/1)
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)
+             Address     0030.A3A1.89E8
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  20
+
+Interface        Role Sts Cost      Prio.Nbr Type
+---------------- ---- --- --------- -------- --------------------------------
+Fa0/1            Desg FWD 19        128.1    P2p
+Fa0/2            Altn BLK 19        128.2    P2p
+Gi0/1            Root FWD 4         128.25   P2p
+"""
+
+
+def test_global_spanning_tree_paginates_on_the_measured_floor1_switch():
+    """The first page cannot carry VLAN 20. Fresh evidence, not a derivation."""
+    instances = parse_show_spanning_tree(_PT_9_0_1_0858_SWITCH5_STP_PAGE_1)
+
+    assert [item.vlan_id for item in instances] == [1]
+    # VLAN0010's block is cut before its port table, so it is not even an
+    # instance yet -- and VLAN0020 is absent entirely.
+    assert 20 not in {item.vlan_id for item in instances}
+    assert [row.interface for row in instances[0].interfaces] == ["Gi0/1"]
+
+
+def test_spanning_tree_is_pagination_qualified_and_reaches_vlan_twenty():
+    """A phone-edge claim needs the VLAN 20 table, which is never on page one."""
+    query = OperationalQueryId._value2member_map_.get("show_spanning_tree")
+    assert query is not None, "show spanning-tree is not registered"
+    assert query in ios_module._PAGINATION_QUALIFIED_QUERIES
+
+    from tests.test_e95_serial_orientation_pager_capture import (
+        _PagedTerminal,
+        _executor,
+    )
+
+    terminal = _PagedTerminal(
+        [
+            _PT_9_0_1_0858_SWITCH5_STP_PAGE_1,
+            _PT_9_0_1_0858_SWITCH5_STP_PAGE_2,
+        ],
+        command="show spanning-tree",
+    )
+
+    result = _executor(terminal).execute("Switch5", query)
+
+    assert result.executed and result.fresh_output_observed
+    assert result.output_complete and not result.truncated_by_pager
+    assert result.pager_pages_captured == 2
+
+    instances = {item.vlan_id: item for item in parse_show_spanning_tree(result.output)}
+    assert sorted(instances) == [1, 10, 20]
+    voice = instances[20]
+    assert voice.protocol == "ieee"
+    rows = {row.interface: row for row in voice.interfaces}
+    assert rows["Fa0/1"].role == "Desg" and rows["Fa0/1"].state == "FWD"
+    assert rows["Fa0/2"].role == "Altn" and rows["Fa0/2"].state == "BLK"
+
+
+def test_spanning_tree_qualification_does_not_disturb_the_other_qualified_queries():
+    """Qualifying one query is a per-query act, never a blanket relaxation."""
+    for name in (
+        "show_controllers_serial", "show_ip_dhcp_binding",
+        "show_ip_dhcp_server_statistics_interface", "show_interfaces_trunk",
+        "show_ip_protocols", "show_ephone",
+    ):
+        query = OperationalQueryId._value2member_map_.get(name)
+        assert query is not None, name
+        assert query in ios_module._PAGINATION_QUALIFIED_QUERIES, name
+    assert len(ios_module._PAGINATION_QUALIFIED_QUERIES) == 7

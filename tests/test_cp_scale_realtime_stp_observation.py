@@ -520,9 +520,16 @@ def test_no_type7_classifier_is_introduced_anywhere_in_the_runner():
     assert "type7" not in source
 
 
-# 18 -- the existing pager qualification set is untouched by this patch.
+# 18 -- qualification is per-query, and every prior one keeps its own.
 
-def test_show_spanning_tree_remains_pagination_unqualified():
+def test_spanning_tree_qualification_did_not_relax_the_others():
+    """It was UNQUALIFIED until the Floor-1 run measured the truncation.
+
+    The first governed run of this observation read Switch5 and came back
+    `truncated_by_pager` with `vlan_instances == [1]`: page one ended mid
+    `VLAN0010` header and VLAN 20 was never in the capture. That measurement --
+    not a line-count derivation -- is what admits this one query.
+    """
     terminal = (
         ROOT / "src" / "packet_tracer_mcp" / "infrastructure" / "execution"
         / "ios_terminal.py"
@@ -530,7 +537,7 @@ def test_show_spanning_tree_remains_pagination_unqualified():
     start = terminal.index("_PAGINATION_QUALIFIED_QUERIES = frozenset({")
     block = terminal[start:terminal.index("})", start)]
 
-    assert "SHOW_SPANNING_TREE" not in block
+    assert "SHOW_SPANNING_TREE" in block
     for qualified in (
         "SHOW_CONTROLLERS_SERIAL", "SHOW_IP_DHCP_BINDING",
         "SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE", "SHOW_INTERFACES_TRUNK",
@@ -555,7 +562,14 @@ def test_handoff_states_the_confirmed_defect_without_claiming_the_cause():
     # The defect is proven at the compilation layer; the CAUSE is not.
     assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
     assert "STP_BLOCKING_IN_SIMULATION = OBSERVED" in handoff
-    assert "STP_BLOCKING_IN_REALTIME = NOT_YET_OBSERVED" in handoff
+    # Realtime STP remains unclaimed either way; its current value is pinned by
+    # test_handoff_records_the_run_that_measured_the_pager_without_claiming_state.
+    realtime = [
+        line for line in handoff.splitlines()
+        if line.startswith("STP_BLOCKING_IN_REALTIME = ")
+    ]
+    assert len(realtime) == 1
+    assert realtime[0].split(" = ", 1)[1].split()[0] != "OBSERVED"
     assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
 
 
@@ -570,6 +584,18 @@ def test_handoff_keeps_the_corrected_dhcp_identity_semantics():
 def test_handoff_names_the_realtime_observation_and_keeps_the_fix_out():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
-    assert "## Phone-edge STP in Realtime -- observation implemented, LIVE pending" in handoff
+    assert "## Phone-edge STP in Realtime -- observed, pager gap closed, rerun pending" in handoff
     assert "PHONE_EDGE_PORTFAST_COMPILED = NO at FLOOR1" in handoff
-    assert "SHOW_SPANNING_TREE_PAGER = NOT_QUALIFIED" in handoff
+    assert "SHOW_SPANNING_TREE_PAGER = QUALIFIED by fresh 2f2055c measurement" in handoff
+
+
+def test_handoff_records_the_run_that_measured_the_pager_without_claiming_state():
+    """CASE C: the read surface was the finding, not the port state."""
+    handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
+
+    assert "STP_REALTIME_BEFORE_VOICE = 21/21 UNOBSERVABLE (PAGER_TRUNCATED)" in handoff
+    assert "STP_REALTIME_AFTER_VOICE  = 21/21 UNOBSERVABLE (PAGER_TRUNCATED)" in handoff
+    assert "VLAN_INSTANCES_CAPTURED = [1]" in handoff
+    assert "STP_BLOCKING_IN_REALTIME = UNOBSERVABLE at 2f2055c (pager, 21/21)" in handoff
+    # The fork stays open; nothing about the port state was claimed.
+    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff

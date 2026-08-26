@@ -248,6 +248,19 @@ _PAGER_MARKER = "--More--"
 # form. DHCP counters are cumulative, and CP-SCALE already has 23 data clients;
 # only a complete voice-subinterface capture can make a before/after delta
 # attributable to the voice acquisition window.
+#
+# `SHOW_SPANNING_TREE` entra por CP-SCALE FLOOR 1 con evidencia fresca del build
+# exacto, medida en el run gobernado de `2f2055c`. Un 3560-24PS con VLAN 1/10/20
+# imprime un bloque por instancia, y la PRIMERA pagina corta a mitad de la
+# cabecera de `VLAN0010`: el parser solo alcanzo `VLAN0001`, cuya unica fila es
+# el uplink `Gi0/1`. `VLAN0020` -- la del telefono, con las 21 filas de acceso --
+# queda entera detras del pager. La consulta no se puede angostar: PT 9.0.1
+# rechaza `terminal length 0`, y `show spanning-tree vlan 20 interface ...` no
+# tiene soporte establecido en este build, asi que adivinarlo seria inventar la
+# forma del comando para esquivar el pager. Sin recorrerlo, el estado de borde
+# de un puerto con telefono es inobservable: no dice FORWARDING, no dice
+# BLOCKING, no dice nada. Las cotas duras siguen siendo las mismas y una captura
+# incompleta conserva su techo fail-closed.
 _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
     OperationalQueryId.SHOW_IP_DHCP_BINDING,
@@ -255,6 +268,7 @@ _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_INTERFACES_TRUNK,
     OperationalQueryId.SHOW_IP_PROTOCOLS,
     OperationalQueryId.SHOW_EPHONE,
+    OperationalQueryId.SHOW_SPANNING_TREE,
 })
 
 # Cotas duras de UNA captura logica. Existen para que no haya forma de que la

@@ -6,7 +6,7 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 8402d2834298018615449c38c4d2f4314dbebd21
+CURRENT_PUSHED_HEAD = 2f2055c99bb0cf33dae43601671b9dbb348e707b
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
 ROUTING_CORE = GOVERNED VERIFIED (fresh run at e09f606)
@@ -28,14 +28,14 @@ DHCP_FRAME_IDENTITY_THIS_RUN = OBSERVED_BY_PT (PT's own text named Discover)
 DHCP_EVENT_LIST_VISIBILITY = OBSERVED
 PERMANENT_TYPE7_MAPPING = NOT_IMPLEMENTED
 STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
-STP_BLOCKING_IN_REALTIME = NOT_YET_OBSERVED
+STP_BLOCKING_IN_REALTIME = UNOBSERVABLE at 2f2055c (pager, 21/21)
 SOURCE_DEFECT_FOUND = YES
 SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
 PHONE_EDGE_PORTFAST_INTENT = YES
 PHONE_EDGE_PORTFAST_COMPILED = NO at FLOOR1 (YES at FLOOR3+)
 PHONE_EDGE_PORTFAST_APPLIED = NO
-SHOW_SPANNING_TREE_PAGER = NOT_QUALIFIED (no exact-build evidence yet)
+SHOW_SPANNING_TREE_PAGER = QUALIFIED by fresh 2f2055c measurement
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 E10 = FORBIDDEN
 ```
@@ -484,7 +484,7 @@ voice-binding reads are explicitly deferred because the Simulation runtime has
 no typed path for either and adding voice/IOS orchestration would broaden this
 diagnostic.
 
-## Phone-edge STP in Realtime -- observation implemented, LIVE pending
+## Phone-edge STP in Realtime -- observed, pager gap closed, rerun pending
 
 The bounded Simulation diagnostic ran and changed the fork. Packet Tracer named
 PHONE-02's frames itself -- "DHCP client constructs a Discover packet" -- so DHCP
@@ -546,12 +546,42 @@ instance, missing interface row, malformed state -- is UNOBSERVABLE. A missing r
 is never BLOCKING and a truncated table is never absence. Collecting this
 evidence can never itself fail a governed stage.
 
-Expected decision after the run: phone-facing VLAN 20 ports BLOCKING in Realtime
-connects the staging defect to the voice failure and authorizes the two-leg
-autofix; all FORWARDING refutes it for the observed window and makes the
+### First governed run at 2f2055c -- CASE C, and the pager is now measured
+
+The run reached Floor 1, failed in voice as expected, and cleaned up: 74/74
+mutations applied, `cleanup.verified = true`, nothing retained. Both Realtime
+boundary reads were observed in Realtime (`verified: True`), so the placement
+worked and the two STP reads really were inside the authoritative window.
+
+```text
+STP_REALTIME_BEFORE_VOICE = 21/21 UNOBSERVABLE (PAGER_TRUNCATED)
+STP_REALTIME_AFTER_VOICE  = 21/21 UNOBSERVABLE (PAGER_TRUNCATED)
+DEVICE_ATTRIBUTION = Switch5 / confirmed_unique / confirmed
+QUERY = executed True, fresh True, complete False, pages 1, not_qualified
+VLAN_INSTANCES_CAPTURED = [1]
+VOICE = 21 phones staged; ephone rows UNREGISTERED before timeout
+DHCP_BINDINGS = Router4 readable; data 23, voice 0, cctv 0
+```
+
+The fail-closed contract held exactly: zero FORWARDING, zero BLOCKING, and a
+truncated table was never read as absence.
+
+That truncation is the evidence the read surface was missing. Page one of
+`show spanning-tree` on Switch5 ends mid-`VLAN0010` header, so the parser saw
+only `VLAN0001`, whose single row is the `Gi0/1` uplink; `VLAN0020` with all 21
+phone-facing rows lay entirely beyond the pager. The query cannot be narrowed --
+PT 9.0.1 rejects `terminal length 0`, and `show spanning-tree vlan 20 interface
+...` has no established support in this build, so reaching for it would be
+inventing a command shape to dodge a pager. `SHOW_SPANNING_TREE` is therefore
+pagination-qualified on that measurement, with the same hard bounds as every
+other qualified query and the same fail-closed ceiling on an incomplete capture.
+Both page fixtures are retained in `tests/test_ios_terminal.py`.
+
+Expected decision after the RERUN: phone-facing VLAN 20 ports BLOCKING in
+Realtime connects the staging defect to the voice failure and authorizes the
+two-leg autofix; all FORWARDING refutes it for the observed window and makes the
 Simulation state a divergence to investigate separately -- the staging defect
-still exists either way, but PortFast must not then be claimed to fix DHCP;
-truncation or unattributable output closes the read surface first.
+still exists either way, but PortFast must not then be claimed to fix DHCP.
 
 ## Historical last-L2 defect -- why direct voice-VLAN readback was required
 
@@ -727,7 +757,8 @@ e09f606 fix(cp-scale): keep runtime checkpoints outside tracked tree
 b989eb0 feat(cp-scale): capture post-failure simulation evidence
 1d2c186 feat(cp-scale): observe phone-facing voice VLAN
 8402d28 feat(cp-scale): bound DHCP diagnostic by simulation time
+2f2055c feat(cp-scale): observe phone-edge STP in realtime
 ```
 
-The Realtime phone-edge STP observation and this handoff update are the next
+The SHOW_SPANNING_TREE pager qualification and this handoff update are the next
 checkpoint; record their final pushed HEAD here on the following turn.
