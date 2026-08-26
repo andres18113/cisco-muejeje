@@ -39,6 +39,15 @@ MAX_FRAME_TARGETS = 4
 MAX_MEMBER_NAMES = 128
 MAX_MEMBER_NAME_LENGTH = 64
 
+#: Los DOS unicos nombres que esta fase puede invocar, medidos sobre
+#: `frameInstance` en el build exacto: ambos `function`, aridad declarada 0.
+#: Que sean invocables NO dice que devuelvan un PDU -- eso es justo lo que esta
+#: enumeracion va a observar. Se escriben literales en el script: elegir un
+#: nombre de una lista en tiempo de ejecucion seria el invocador generico que
+#: este modulo existe para no tener, y el objeto expone mutadores.
+CHILD_FRAME_GETTERS = ("getInFrame", "getOutFrame")
+MAX_CHILD_OBJECTS_PER_FRAME = 2
+
 #: Convención de lectura de PT, igual que en `access_port_probe`. Sólo se usa
 #: para CLASIFICAR lo descubierto; en esta fase no se invoca ninguno.
 _READ_ONLY_NAME = re.compile(r"^(get|is|has)[A-Z]")
@@ -62,6 +71,33 @@ class FrameMemberProbe:
 
 
 @dataclass(frozen=True)
+class FrameChildDiscovery:
+    """Lo que devolvio UNO de los dos getters medidos, y su forma."""
+
+    getter: str
+    invoked: bool = False
+    returned_null: bool = False
+    type_name: str = ""
+    error: str = ""
+    members: tuple[str, ...] = ()
+    observers: tuple[FrameMemberProbe, ...] = ()
+    truncated: bool = False
+
+    def candidates(self, needles: Iterable[str]) -> tuple[str, ...]:
+        """Nombres que MERECEN mirarse, no nombres que prueben algo.
+
+        Coincidir con `vlan` no hace que un getter devuelva una VLAN. Esto es
+        una ayuda de descubrimiento y su resultado no entra en ninguna
+        afirmacion sobre el trafico.
+        """
+        wanted = tuple(str(item).casefold() for item in needles)
+        return tuple(
+            item.name for item in self.observers
+            if any(needle in item.name.casefold() for needle in wanted)
+        )
+
+
+@dataclass(frozen=True)
 class FrameInstanceDiscovery:
     """Lo enumerado sobre UN frame, junto con la prueba de que es ese frame."""
 
@@ -81,6 +117,9 @@ class FrameInstanceDiscovery:
     #: La enumeración tocó una cota. Lo capturado sigue siendo evidencia; lo que
     #: no se puede es leer la lista como completa.
     truncated: bool = False
+    #: Lo devuelto por cada uno de los dos getters medidos. Ningun miembro
+    #: descubierto aca se invoca en esta pasada.
+    children: tuple[FrameChildDiscovery, ...] = ()
     failure_reason: str = ""
 
     def matches(
@@ -132,6 +171,47 @@ def _discovery_js(indices: tuple[int, ...]) -> str:
         f"    var __want = {targets};"
         f"    var __maxNames = {MAX_MEMBER_NAMES};"
         f"    var __maxLen = {MAX_MEMBER_NAME_LENGTH};"
+        # Enumera NOMBRES y forma. Lee propiedades; no invoca ninguna.
+        "    var __enum = function (__o) {"
+        "      var __names = []; var __cut = false;"
+        "      try {"
+        "        for (var __k in __o) {"
+        "          if (__names.length >= __maxNames) { __cut = true; break; }"
+        "          __names.push(String(__k).substring(0, __maxLen));"
+        "        }"
+        "      } catch (__ke) {}"
+        "      var __rows = [];"
+        "      for (var __m = 0; __m < __names.length; __m++) {"
+        "        var __name = __names[__m];"
+        "        var __row = {name:__name,type_name:'',is_callable:false,arity:null};"
+        "        try {"
+        "          var __v = __o[__name];"
+        "          __row.type_name = typeof __v;"
+        "          __row.is_callable = (typeof __v === 'function');"
+        "          if (__row.is_callable && typeof __v.length === 'number') {"
+        "            __row.arity = __v.length;"
+        "          }"
+        "        } catch (__ve) { __row.type_name = 'unreadable'; }"
+        "        __rows.push(__row);"
+        "      }"
+        "      return {members:__names,observers:__rows,truncated:__cut};"
+        "    };"
+        # Forma de lo devuelto por UN getter medido, sin volcar el objeto.
+        "    var __shape = function (__name, __c, __err) {"
+        "      var __row = {getter:__name,invoked:(__err===''),returned_null:false,"
+        "        type_name:'',error:__err,members:[],observers:[],truncated:false};"
+        "      if (__err !== '') { return __row; }"
+        "      __row.type_name = typeof __c;"
+        "      if (__c === null || __c === undefined) {"
+        "        __row.returned_null = true; return __row;"
+        "      }"
+        "      if (typeof __c === 'object' || typeof __c === 'function') {"
+        "        var __e = __enum(__c);"
+        "        __row.members = __e.members; __row.observers = __e.observers;"
+        "        __row.truncated = __e.truncated;"
+        "      }"
+        "      return __row;"
+        "    };"
         "    var __n = __s.getFrameInstanceCount();"
         "    var __frames = [];"
         "    for (var __t = 0; __t < __want.length; __t++) {"
@@ -158,35 +238,22 @@ def _discovery_js(indices: tuple[int, ...]) -> str:
         "      try { __time = __f.getStartSimTime(); } catch (__te) { __time = null; }"
         "      var __type = null;"
         "      try { __type = __f.getUserTrafficType(); } catch (__ye) { __type = null; }"
-        # Enumeracion: SOLO nombres, acotada en cantidad y en longitud.
-        "      var __names = [];"
-        "      var __cut = false;"
-        "      try {"
-        "        for (var __k in __f) {"
-        "          if (__names.length >= __maxNames) { __cut = true; break; }"
-        "          __names.push(String(__k).substring(0, __maxLen));"
-        "        }"
-        "      } catch (__ke) {}"
-        # Forma de cada miembro. `typeof` es una LECTURA de propiedad; no se
-        # invoca nada. `length` de una funcion es su aridad declarada.
-        "      var __rows = [];"
-        "      for (var __m = 0; __m < __names.length; __m++) {"
-        "        var __name = __names[__m];"
-        "        var __row = {name:__name,type_name:'',is_callable:false,arity:null};"
-        "        try {"
-        "          var __v = __f[__name];"
-        "          __row.type_name = typeof __v;"
-        "          __row.is_callable = (typeof __v === 'function');"
-        "          if (__row.is_callable && typeof __v.length === 'number') {"
-        "            __row.arity = __v.length;"
-        "          }"
-        "        } catch (__ve) { __row.type_name = 'unreadable'; }"
-        "        __rows.push(__row);"
-        "      }"
+        # Enumeracion del frame: SOLO nombres y forma, acotada.
+        "      var __own = __enum(__f);"
+        # Los DOS getters medidos, escritos literales, cada uno en su try. Es
+        # todo lo que esta fase invoca sobre el frame ademas de la atribucion.
+        "      var __kids = [];"
+        "      var __c1 = null; var __e1 = '';"
+        "      try { __c1 = __f.getInFrame(); } catch (__x1) { __e1 = String(__x1); }"
+        "      __kids.push(__shape('getInFrame', __c1, __e1));"
+        "      var __c2 = null; var __e2 = '';"
+        "      try { __c2 = __f.getOutFrame(); } catch (__x2) { __e2 = String(__x2); }"
+        "      __kids.push(__shape('getOutFrame', __c2, __e2));"
         "      __frames.push({index:__i,in_bounds:true,frame_found:true,"
         "        observed_device:__dev,observed_in_port:__port,"
         "        observed_sim_time:__time,observed_traffic_type:__type,"
-        "        members:__names,observers:__rows,truncated:__cut});"
+        "        members:__own.members,observers:__own.observers,"
+        "        truncated:__own.truncated,children:__kids});"
         "    }"
         "    reportResult(JSON.stringify({observed:true,simulation_mode:true,"
         "      frame_count:__n,frames:__frames}));"
@@ -209,6 +276,24 @@ def _member_rows(value: object) -> tuple[FrameMemberProbe, ...]:
             type_name=str(item.get("type_name") or ""),
             is_callable=bool(item.get("is_callable")),
             arity=int(arity) if isinstance(arity, (int, float)) else None,
+        ))
+    return tuple(rows)
+
+
+def _child_rows(value: object) -> tuple[FrameChildDiscovery, ...]:
+    rows: list[FrameChildDiscovery] = []
+    for item in value if isinstance(value, list) else ():
+        if not isinstance(item, dict):
+            continue
+        rows.append(FrameChildDiscovery(
+            getter=str(item.get("getter") or ""),
+            invoked=bool(item.get("invoked")),
+            returned_null=bool(item.get("returned_null")),
+            type_name=str(item.get("type_name") or ""),
+            error=str(item.get("error") or ""),
+            members=tuple(str(name) for name in item.get("members", []) or ()),
+            observers=_member_rows(item.get("observers")),
+            truncated=bool(item.get("truncated")),
         ))
     return tuple(rows)
 
@@ -237,6 +322,7 @@ def _frame_rows(value: object) -> tuple[FrameInstanceDiscovery, ...]:
             ),
             observers=_member_rows(item.get("observers")),
             truncated=bool(item.get("truncated")),
+            children=_child_rows(item.get("children")),
             failure_reason=str(item.get("failure_reason") or ""),
         ))
     return tuple(frames)

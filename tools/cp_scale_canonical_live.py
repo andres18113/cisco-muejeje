@@ -1701,6 +1701,7 @@ def _stp_realtime_evidence(ios, projection, *, edge: str) -> dict[str, object]:
 #: seguir tratandolos como sinonimos seria el clasificador que no existe.
 _DHCP_DISCOVER_DECISION = "dhcp client constructs a discover packet"
 _BPDU_DECISION = "stp process sends out a configuration bpdu"
+_STP_DROP_DECISION = "is blocked by stp"
 
 
 def _decision_match(hop: dict, needle: str) -> str:
@@ -1718,6 +1719,7 @@ def _frame_target(hop: dict, decision: str, role: str) -> dict[str, object]:
         "role": role,
         "index": hop.get("index"),
         "device": hop.get("device"),
+        "previous_device": hop.get("previous_device"),
         "in_port": hop.get("in_port"),
         "out_port": hop.get("out_port"),
         "sim_time": hop.get("sim_time"),
@@ -1758,34 +1760,68 @@ def _frame_observer_discovery(
     switch_hops = (switch_trace or {}).get("hops") or []
 
     targets: list[dict[str, object]] = []
-    for hop in phone_hops:
-        if hop.get("device") != phone_name:
-            continue
-        decision = _decision_match(hop, _DHCP_DISCOVER_DECISION)
-        if decision:
-            targets.append(_frame_target(hop, decision, "dhcp_discover"))
-            break
+    phone_hop = next(
+        (
+            hop for hop in phone_hops
+            if hop.get("device") == phone_name
+            and _decision_match(hop, _DHCP_DISCOVER_DECISION)
+        ),
+        None,
+    )
+    if phone_hop is not None:
+        targets.append(_frame_target(
+            phone_hop,
+            _decision_match(phone_hop, _DHCP_DISCOVER_DECISION),
+            "phone_dhcp",
+        ))
+        # El MISMO frame en el switch, probado por el camino y no por el reloj:
+        # `previous_device` dice que vino de ESTE telefono. La caida de OTRO
+        # telefono en el mismo instante no es este frame.
+        switch_hop = next(
+            (
+                hop for hop in switch_hops
+                if hop.get("device") == switch_name
+                and hop.get("previous_device") == phone_name
+                and hop.get("traffic_type_raw") == phone_hop.get("traffic_type_raw")
+                and hop.get("sim_time") == phone_hop.get("sim_time")
+            ),
+            None,
+        )
+        if switch_hop is not None:
+            drop_decision = _decision_match(switch_hop, _STP_DROP_DECISION)
+            targets.append(_frame_target(
+                switch_hop,
+                drop_decision or "",
+                "switch_dhcp",
+            ))
+            # La comparacion mas fuerte es en el MISMO device y el MISMO puerto
+            # fisico: la BPDU tiene que salir por donde entro el DHCP.
+            edge_port = switch_hop.get("in_port")
+            bpdu_hop = next(
+                (
+                    hop for hop in switch_hops
+                    if hop.get("device") == switch_name
+                    and hop.get("out_port") == edge_port
+                    and _decision_match(hop, _BPDU_DECISION)
+                ),
+                None,
+            )
+            if bpdu_hop is not None:
+                targets.append(_frame_target(
+                    bpdu_hop,
+                    _decision_match(bpdu_hop, _BPDU_DECISION),
+                    "switch_bpdu",
+                ))
 
-    dropped_ports = {
-        str(hop.get("in_port"))
-        for hop in switch_hops
-        if hop.get("device") == switch_name and hop.get("status") == "dropped"
-        and _decision_match(hop, _DHCP_DISCOVER_DECISION) == ""
-        and hop.get("traffic_type_raw") == 7
+    times = {
+        item.get("sim_time") for item in targets
+        if item.get("sim_time") is not None
     }
-    bpdu_candidates = [
-        (hop, decision)
-        for hop in switch_hops
-        if hop.get("device") == switch_name
-        and str(hop.get("out_port")) in dropped_ports
-        and (decision := _decision_match(hop, _BPDU_DECISION))
-    ]
-    if bpdu_candidates:
-        hop, decision = bpdu_candidates[0]
-        targets.append(_frame_target(hop, decision, "configuration_bpdu"))
-
+    # Misma captura NO es mismo instante. Sin igualdad exacta de `sim_time` no
+    # se afirma simultaneidad de ninguna forma.
+    observation["same_capture"] = bool(targets)
+    observation["same_instant"] = bool(targets) and len(times) == 1
     observation["targets"] = targets
-    observation["dropped_phone_ports"] = sorted(dropped_ports)
     indices = [
         int(item["index"]) for item in targets
         if isinstance(item.get("index"), int)
