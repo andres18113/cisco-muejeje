@@ -96,6 +96,12 @@ class VlanCalibrationControl:
     frame_previous_device: str = ""
     identity_reconfirmed: bool = False
     child_returned: bool = False
+    #: Los nombres que el hijo de entrada expuso, y cuáles de los cuatro campos
+    #: de tag estaban entre ellos. Un miembro AUSENTE dice que ese objeto no es
+    #: un frame etiquetado; uno presente que no se deja leer dice otra cosa muy
+    #: distinta, y confundirlos escondería cuál de las dos cosas pasó.
+    child_members: tuple[str, ...] = ()
+    tag_fields_present: tuple[str, ...] = ()
     observed_vlan: object = None
     failure_reason: str = ""
 
@@ -181,6 +187,10 @@ class CalibrationFrameProbe(Protocol):
 #: calibración acotada en un barrido.
 TRACE_LIMIT = 200
 MAX_ENUMERATED = 2
+
+#: Los cuatro campos que la fase 3 midió sobre el hijo. Se listan acá sólo para
+#: poder decir CUÁLES estaban presentes; leerlos sigue siendo cosa de la sonda.
+TAG_FIELD_NAMES = ("vlanId", "tpid", "cfi", "userPriority")
 
 
 class FrameVlanCalibrationQualifier:
@@ -524,6 +534,8 @@ class FrameVlanCalibrationQualifier:
         frame = row.get("frame")
         observed = None
         child_returned = False
+        members: tuple[str, ...] = ()
+        present: tuple[str, ...] = ()
         reason = ""
         if frame is not None and row.get("identity_reconfirmed"):
             child = next(
@@ -537,9 +549,25 @@ class FrameVlanCalibrationQualifier:
                 reason = "getInFrame returned no object, so there is no tag."
             else:
                 child_returned = True
-                field = child.tag_by_name.get("vlanId")
-                if field is None or not field.observed:
-                    reason = "The ingress child exposed no readable vlanId."
+                members = tuple(child.members)
+                by_name = child.tag_by_name
+                present = tuple(name for name in TAG_FIELD_NAMES if name in by_name)
+                field = by_name.get("vlanId")
+                if not present:
+                    # Un frame sin NINGUNO de los cuatro campos no es una
+                    # medición fallida: es otra forma de objeto, la que PT
+                    # devuelve cuando el frame no lleva etiqueta.
+                    reason = (
+                        "The ingress child carried none of the four measured "
+                        f"tag fields; it exposed {len(members)} member(s) "
+                        "instead, which is the shape Packet Tracer returns for "
+                        "a frame with no tag to read."
+                    )
+                elif field is None or not field.observed:
+                    reason = (
+                        "The ingress child exposed vlanId but it did not read "
+                        "as a finite number."
+                    )
                 else:
                     observed = field.numeric_value
         elif not row:
@@ -569,6 +597,8 @@ class FrameVlanCalibrationQualifier:
             frame_previous_device=str(row.get("previous_device") or ""),
             identity_reconfirmed=bool(row.get("identity_reconfirmed")),
             child_returned=child_returned,
+            child_members=members,
+            tag_fields_present=present,
             observed_vlan=observed,
             failure_reason=reason,
         )

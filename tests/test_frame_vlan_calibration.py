@@ -411,3 +411,46 @@ def test_a_switch_without_enough_access_ports_mutates_nothing_further():
 
 def test_the_enumeration_stays_bounded():
     assert MAX_ENUMERATED == len(VLANS)
+
+
+# An absent member and an unreadable one are different facts. The first says the
+# object is not a tagged frame at all; the second says it is and the field would
+# not read. Collapsing them would hide which one a window actually hit.
+
+def test_an_untagged_ingress_child_names_the_missing_members():
+    hops = [Hop(11, "FastEthernet0/1", PC0)]
+    SLOTS.clear()
+    SLOTS.update({11: "FastEthernet0/1"})
+
+    class UntaggedProbe(FakeProbe):
+        def discover_frame_observers(self, indices, *, timeout=10.0):
+            self.calls.append(list(indices))
+            return FrameObserverDiscovery(
+                observed=True, simulation_mode=True, frame_count=9,
+                frames=(FrameInstanceDiscovery(
+                    index=11, in_bounds=True, frame_found=True,
+                    observed_device="__MCP_VLANCAL_tok_SW",
+                    observed_in_port="FastEthernet0/1", observed_sim_time=10,
+                    observed_traffic_type=7,
+                    children=(FrameChildDiscovery(
+                        getter="getInFrame", invoked=True, returned_null=False,
+                        type_name="object",
+                        members=("dstMacAddress", "payload", "srcMacAddress"),
+                        tag=(),
+                    ),),
+                ),),
+            )
+
+    outcome = FrameVlanCalibrationQualifier(
+        FakePhysical(), FakeConfiguration(), FakeEndpoints(),
+        FakeSimulation(hops), UntaggedProbe({}), name_token="tok",
+    ).qualify("2960", "PC")
+
+    first = outcome.controls[0]
+    assert first.child_returned is True
+    assert first.match == "UNOBSERVABLE"
+    assert first.tag_fields_present == ()
+    assert "dstMacAddress" in first.child_members
+    # The reason must say the object carried no tag field, not that a field
+    # would not read: an untagged frame is a shape, not a failed measurement.
+    assert "carried none of the" in first.failure_reason

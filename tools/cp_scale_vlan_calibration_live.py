@@ -81,6 +81,8 @@ def _serialize(result) -> dict:
                 "frame_previous_device": item.frame_previous_device,
                 "identity_reconfirmed": item.identity_reconfirmed,
                 "child_returned": item.child_returned,
+                "child_members": list(item.child_members),
+                "tag_fields_present": list(item.tag_fields_present),
                 "observed_vlan": item.observed_vlan,
                 "match": item.match,
                 "failure_reason": item.failure_reason,
