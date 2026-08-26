@@ -277,12 +277,13 @@ class FakeProbe:
         frames = []
         for index in indices:
             value = self._tags.get(index)
-            tag = ()
+            tag, members = (), ()
             if value is not None:
                 tag = (FrameTagField(
                     name="vlanId", observed=True, type_name="number",
                     numeric_value=value,
                 ),)
+                members = ("vlanId", "tpid", "cfi", "userPriority")
             frames.append(FrameInstanceDiscovery(
                 index=index, in_bounds=True, frame_found=True,
                 observed_device="__MCP_VLANCAL_tok_SW",
@@ -290,7 +291,7 @@ class FakeProbe:
                 observed_traffic_type=7,
                 children=(FrameChildDiscovery(
                     getter="getInFrame", invoked=True, returned_null=value is None,
-                    type_name="object", tag=tag,
+                    type_name="object", members=members, tag=tag,
                 ),),
             ))
         return FrameObserverDiscovery(
@@ -436,7 +437,15 @@ def test_an_untagged_ingress_child_names_the_missing_members():
                         getter="getInFrame", invoked=True, returned_null=False,
                         type_name="object",
                         members=("dstMacAddress", "payload", "srcMacAddress"),
-                        tag=(),
+                        # The probe reads all four names on ANY non-null child,
+                        # so their rows exist even when the object never had
+                        # them. Presence must come from what was enumerated,
+                        # never from the fact that a read was attempted.
+                        tag=tuple(
+                            FrameTagField(name=name, observed=False,
+                                          type_name="undefined")
+                            for name in ("vlanId", "tpid", "cfi", "userPriority")
+                        ),
                     ),),
                 ),),
             )

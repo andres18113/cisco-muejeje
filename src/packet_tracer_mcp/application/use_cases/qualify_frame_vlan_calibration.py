@@ -551,9 +551,21 @@ class FrameVlanCalibrationQualifier:
                 child_returned = True
                 members = tuple(child.members)
                 by_name = child.tag_by_name
-                present = tuple(name for name in TAG_FIELD_NAMES if name in by_name)
+                # La sonda lee los cuatro nombres sobre CUALQUIER hijo no nulo,
+                # así que sus filas existen aunque el objeto nunca los tuviera:
+                # `undefined` es el resultado de haber preguntado, no una
+                # prueba de que el miembro esté. La presencia sale de lo
+                # ENUMERADO, que es lo único que dice qué tiene ese objeto.
+                present = tuple(
+                    name for name in TAG_FIELD_NAMES if name in child.members
+                )
                 field = by_name.get("vlanId")
-                if not present:
+                if field is not None and field.observed:
+                    # El VALOR manda: si vino un número finito, eso es la
+                    # lectura, y la enumeración sólo sirve para explicar una
+                    # ausencia.
+                    observed = field.numeric_value
+                elif not present:
                     # Un frame sin NINGUNO de los cuatro campos no es una
                     # medición fallida: es otra forma de objeto, la que PT
                     # devuelve cuando el frame no lleva etiqueta.
@@ -563,13 +575,11 @@ class FrameVlanCalibrationQualifier:
                         "instead, which is the shape Packet Tracer returns for "
                         "a frame with no tag to read."
                     )
-                elif field is None or not field.observed:
+                else:
                     reason = (
                         "The ingress child exposed vlanId but it did not read "
                         "as a finite number."
                     )
-                else:
-                    observed = field.numeric_value
         elif not row:
             reason = (
                 f"No frame entered {interface!r} from {name!r} in this window."
