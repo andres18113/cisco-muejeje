@@ -360,3 +360,241 @@ def test_a_truthy_port_found_that_is_not_true_cannot_verify():
     result, _ = _verify(_observation(port_found="no"))
 
     assert result.status is ActionExecutionStatus.UNOBSERVABLE
+
+
+# ======================================================================
+# VOICE VLAN — el último salto L2 antes de Router4.
+#
+# `ConfigureAccessPort` lleva `data_vlan_id` Y `voice_vlan_id` para un puerto
+# que mira a un teléfono, pero hasta acá la expectativa sólo cargaba el de
+# datos y la lectura sólo leía `getAccessVlan()`. La VLAN de voz quedaba
+# APLICADA y jamás observada: ni verificada ni contradicha, invisible.
+#
+# `getVoipVlanId` está CONFIRMADO como `function` sobre los puertos físicos de
+# un switch en PT 9.0.1.0858 -- evidencia retenida en
+# `data/cp-scale/ap-addressability/result.json`, donde la SVI `Vlan1` y los
+# puertos de un AP lo devuelven `undefined` y `FastEthernet0/x` no. Que el
+# getter exista no dice que su valor signifique lo que su nombre sugiere, así
+# que el lector COMPARA contra lo esperado y nunca confía.
+# ======================================================================
+
+VOICE_VLAN = 20
+
+
+def _voice_expectation(interface: str = INTERFACE, vlan_id: int = VLAN,
+                       voice_vlan_id: int = VOICE_VLAN):
+    return VerificationExpectation(
+        id="verify/access-port-voice",
+        action_id="cfg/access-port-voice",
+        kind=VerificationKind.ACCESS_PORT,
+        device_id="dev/1",
+        device_name=DEVICE,
+        expected={
+            "interface": interface, "vlan_id": vlan_id,
+            "voice_vlan_id": voice_vlan_id,
+        },
+    )
+
+
+def _voice_observation(**overrides):
+    payload = _observation(voice_vlan=VOICE_VLAN)
+    payload.update(overrides)
+    return payload
+
+
+class TestTheVoiceVlanIsReadOnlyWhenItIsClaimed:
+    """Un puerto sin teléfono no gana un campo nuevo ni una lectura nueva."""
+
+    def test_a_data_only_port_never_probes_the_voice_getter(self):
+        _, calls = _verify()
+
+        assert len(calls) == 1
+        assert "getVoipVlanId" not in calls[0]
+
+    def test_a_data_only_port_keeps_exactly_its_four_fields(self):
+        result, _ = _verify()
+
+        assert set(result.fields) == {
+            "device_identity", "interface", "switchport_mode", "vlan_id",
+        }
+        assert result.status is ActionExecutionStatus.VERIFIED
+
+    def test_a_phone_facing_port_probes_the_measured_getter(self):
+        _, calls = _verify(
+            _voice_observation(), expectation=_voice_expectation(),
+        )
+
+        assert "getVoipVlanId" in calls[0]
+        # Sigue siendo UNA sola lectura: el getter viaja en el mismo JS que ya
+        # leía la VLAN de datos, así que 21 teléfonos no cuestan 21 viajes más.
+        assert len(calls) == 1
+
+
+class TestTheVoiceVlanIsDecidedOnItsOwnEvidence:
+    """Ningún campo se marca desde otro campo."""
+
+    def test_a_matching_voice_vlan_verifies_the_field_and_the_action(self):
+        result, _ = _verify(
+            _voice_observation(), expectation=_voice_expectation(),
+        )
+
+        assert result.fields["voice_vlan_id"] is FieldVerificationStatus.VERIFIED
+        assert result.fields["vlan_id"] is FieldVerificationStatus.VERIFIED
+        assert result.status is ActionExecutionStatus.VERIFIED
+
+    def test_a_readable_different_voice_vlan_contradicts(self):
+        result, _ = _verify(
+            _voice_observation(voice_vlan=999), expectation=_voice_expectation(),
+        )
+
+        assert result.fields["voice_vlan_id"] is FieldVerificationStatus.FAILED
+        # La VLAN de datos sigue siendo verdadera por su cuenta.
+        assert result.fields["vlan_id"] is FieldVerificationStatus.VERIFIED
+        assert result.status is ActionExecutionStatus.FAILED
+        # El valor crudo queda en la evidencia: una contradicción falsa por
+        # semántica del getter tiene que ser diagnosticable sin otro LIVE.
+        assert "999" in result.message
+        assert "20" in result.message
+
+    def test_an_absent_voice_getter_is_unobservable_not_contradicted(self):
+        """`JSON.stringify` borra la clave de un getter `undefined`."""
+        observation = _voice_observation()
+        observation.pop("voice_vlan")
+
+        result, _ = _verify(observation, expectation=_voice_expectation())
+
+        assert result.fields["voice_vlan_id"] is FieldVerificationStatus.UNOBSERVABLE
+        # Exactamente la combinación que el contrato declara válida.
+        assert result.fields["vlan_id"] is FieldVerificationStatus.VERIFIED
+        assert result.status is ActionExecutionStatus.PARTIAL
+        assert result.status is not ActionExecutionStatus.FAILED
+
+    def test_a_failed_voice_getter_reports_unavailability_without_its_raw_error(self):
+        observation = _voice_observation()
+        observation.pop("voice_vlan")
+        observation["voice_vlan_error"] = "SENSITIVE PT OBJECT " * 100
+
+        result, _ = _verify(observation, expectation=_voice_expectation())
+
+        assert result.fields["voice_vlan_id"] is FieldVerificationStatus.UNOBSERVABLE
+        assert "getter unavailable" in result.message.casefold()
+        assert "SENSITIVE PT OBJECT" not in result.message
+
+    def test_an_unreadable_voice_object_is_bounded_typed_evidence_not_a_dump(self):
+        opaque = {"payload": "SENSITIVE PT OBJECT " * 100}
+
+        result, _ = _verify(
+            _voice_observation(voice_vlan=opaque), expectation=_voice_expectation(),
+        )
+
+        assert result.fields["voice_vlan_id"] is FieldVerificationStatus.UNOBSERVABLE
+        assert "dict" in result.message
+        assert "SENSITIVE PT OBJECT" not in result.message
+        assert len(result.message) < 256
+
+    def test_voice_can_verify_when_the_data_vlan_is_unobservable(self):
+        observation = _voice_observation()
+        observation.pop("access_vlan")
+
+        result, _ = _verify(observation, expectation=_voice_expectation())
+
+        assert result.fields["vlan_id"] is FieldVerificationStatus.UNOBSERVABLE
+        assert result.fields["voice_vlan_id"] is FieldVerificationStatus.VERIFIED
+        assert result.status is ActionExecutionStatus.PARTIAL
+
+    @pytest.mark.parametrize("value", ["20", True, {}, None])
+    def test_an_unreadable_voice_value_never_contradicts(self, value):
+        result, _ = _verify(
+            _voice_observation(voice_vlan=value), expectation=_voice_expectation(),
+        )
+
+        assert result.fields["voice_vlan_id"] is FieldVerificationStatus.UNOBSERVABLE
+        assert result.status is not ActionExecutionStatus.FAILED
+
+
+class TestTheCompilerClaimsTheVoiceVlan:
+    """Lo que nadie reclama, nadie puede verificar ni contradecir."""
+
+    def test_a_phone_facing_access_port_expectation_carries_the_voice_vlan(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+            ConfigurationPhase,
+            ConfigureAccessPort,
+        )
+        from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+            ConfigurationCompiler,
+        )
+
+        action = ConfigureAccessPort(
+            id="cfg/access/phone", device_id="dev/1", device_name=DEVICE,
+            site_id="site", phase=ConfigurationPhase.L2_INTERFACES,
+            interface=INTERFACE, data_vlan_id=VLAN,
+            voice_vlan_id=VOICE_VLAN,
+        )
+
+        expectation = ConfigurationCompiler._expectations([action])[0]
+
+        assert expectation.kind is VerificationKind.ACCESS_PORT
+        assert expectation.expected["vlan_id"] == VLAN
+        assert expectation.expected["voice_vlan_id"] == VOICE_VLAN
+
+    def test_a_data_only_access_port_expectation_gains_no_voice_key(self):
+        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+            ConfigurationPhase,
+            ConfigureAccessPort,
+        )
+        from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+            ConfigurationCompiler,
+        )
+
+        action = ConfigureAccessPort(
+            id="cfg/access/pc", device_id="dev/1", device_name=DEVICE,
+            site_id="site", phase=ConfigurationPhase.L2_INTERFACES,
+            interface=INTERFACE, data_vlan_id=VLAN,
+        )
+
+        expectation = ConfigurationCompiler._expectations([action])[0]
+
+        assert "voice_vlan_id" not in expectation.expected
+
+
+class TestTheExistingProductGateKeepsItsContradictionSemantics:
+    """PARTIAL no bloquea; una contradicción fresca sí, aunque el agregado sea PARTIAL."""
+
+    @staticmethod
+    def _application(verification_status: ActionExecutionStatus):
+        from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+            ConfigurationApplicationResult,
+            ConfigurationApplicationStatus,
+            VerificationResult,
+        )
+
+        return ConfigurationApplicationResult(
+            config_plan_id="cfg/plan",
+            config_semantic_hash="cfg-hash",
+            source_topology_hash="topology-hash",
+            status=ConfigurationApplicationStatus.PARTIAL,
+            verification_results=[VerificationResult(
+                expectation_id="verify/access-port-voice",
+                action_id="cfg/access-port-voice",
+                status=verification_status,
+            )],
+        )
+
+    def test_a_partial_voice_observation_does_not_fabricate_a_contradiction(self):
+        from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+            configuration_application_contradiction,
+        )
+
+        result = self._application(ActionExecutionStatus.PARTIAL)
+
+        assert configuration_application_contradiction(result) == ""
+
+    def test_a_readable_voice_mismatch_still_blocks_the_product_flow(self):
+        from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+            configuration_application_contradiction,
+        )
+
+        result = self._application(ActionExecutionStatus.FAILED)
+
+        contradiction = configuration_application_contradiction(result)
+        assert "verify/access-port-voice" in contradiction

@@ -1316,6 +1316,13 @@ class ConfigurationCompiler:
             elif isinstance(action, ConfigureAccessPort):
                 kind = VerificationKind.ACCESS_PORT
                 expected = {"interface": action.interface, "vlan_id": action.data_vlan_id}
+                # Un puerto que mira a un telefono reclama DOS VLANs. La que no
+                # entra en la expectativa no puede ser ni verificada ni
+                # contradicha: queda APLICADA e invisible, que es exactamente
+                # como vivio la VLAN de voz hasta aca. Solo se agrega cuando la
+                # accion la lleva; un puerto de datos no gana un campo nuevo.
+                if action.voice_vlan_id is not None:
+                    expected["voice_vlan_id"] = action.voice_vlan_id
             elif isinstance(action, ConfigureTrunk):
                 kind = VerificationKind.TRUNK
                 query = "show_interfaces_trunk"

@@ -17,6 +17,9 @@ from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_stage_configuration_error,
     canonical_stage_resume_error,
 )
+from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+    configuration_application_contradiction,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
@@ -302,6 +305,35 @@ def test_canonical_configuration_accepts_only_exact_known_observability_ceilings
     assert "unobservable" in canonical_stage_configuration_error(
         plan, non_ceiling,
     ).casefold()
+
+
+def test_an_unreadable_phone_voice_vlan_is_partial_but_cp_scale_fails_closed():
+    plan, result = _floor1_configuration_result()
+    expectations = {item.id: item for item in plan.verification_expectations}
+    phone = next(
+        item for item in plan.verification_expectations
+        if item.kind is VerificationKind.ACCESS_PORT
+        and "voice_vlan_id" in item.expected
+    )
+    observed = next(
+        item for item in result.verification_results
+        if item.expectation_id == phone.id
+    )
+    observed.status = ActionExecutionStatus.PARTIAL
+    observed.evidence_method = "switch_port_object_state"
+    observed.fresh_evidence = True
+    observed.fields = {
+        "device_identity": FieldVerificationStatus.VERIFIED,
+        "interface": FieldVerificationStatus.VERIFIED,
+        "switchport_mode": FieldVerificationStatus.VERIFIED,
+        "vlan_id": FieldVerificationStatus.VERIFIED,
+        "voice_vlan_id": FieldVerificationStatus.UNOBSERVABLE,
+    }
+
+    assert expectations[phone.id].expected["voice_vlan_id"] == 20
+    assert configuration_application_contradiction(result) == ""
+    error = canonical_stage_configuration_error(plan, result)
+    assert "only fresh VERIFIED evidence is allowed" in error
 
 
 def test_canonical_configuration_accepts_an_absent_address_channel_ceiling():

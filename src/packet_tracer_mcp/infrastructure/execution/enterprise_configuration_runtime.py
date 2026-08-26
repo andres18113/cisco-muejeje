@@ -720,9 +720,18 @@ class PacketTracerEnterpriseConfigurationRuntime:
 
         Cada campo se decide por separado. Una observación parcial no verifica
         el todo: modo sin VLAN es una afirmación más angosta y se reporta así.
+
+        La VLAN de voz sólo se lee cuando la expectativa la reclama, y con el
+        getter MEDIDO sobre este build: `getVoipVlanId` responde `function` en
+        los puertos físicos de un switch en PT 9.0.1.0858 y `undefined` en una
+        SVI o en un puerto de AP. Que el getter exista no dice que su valor
+        signifique lo que su nombre sugiere, así que el lector COMPARA contra lo
+        esperado; un valor ilegible o ausente queda UNOBSERVABLE y nunca
+        contradice.
         """
         expected_interface = str(expectation.expected["interface"])
         expected_vlan = int(expectation.expected["vlan_id"])
+        expected_voice = expectation.expected.get("voice_vlan_id")
         device = json.dumps(expectation.device_name)
         port = json.dumps(expected_interface)
         js = "".join((
@@ -735,6 +744,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
             "try{__r.interface=String(__p.getName());}catch(__ne){__r.complete=false;}",
             "try{__r.admin_op_mode=__p.getAdminOpMode();}catch(__me){__r.complete=false;}",
             "try{__r.access_vlan=__p.getAccessVlan();}catch(__ve){__r.complete=false;}",
+            # El error del getter de voz se retiene aparte y NO baja `complete`:
+            # un puerto sin ese getter no invalida lo que los otros cuatro sí
+            # establecieron.
+            (
+                "try{__r.voice_vlan=__p.getVoipVlanId();}"
+                "catch(__vve){__r.voice_vlan_error=String(__vve);}"
+                if expected_voice is not None else ""
+            ),
             "reportResult(JSON.stringify(__r));}}}",
             "catch(__e){reportResult(", json.dumps("ERROR:"), "+__e);}",
         ))
@@ -755,9 +772,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
         # devuelve `undefined` no dispara el `catch`, así que no baja el flag --
         # pero `JSON.stringify` le borra la clave, y esa ausencia es la única
         # señal que queda.
+        required_keys = [
+            "owner_device_name", "interface", "admin_op_mode", "access_vlan",
+        ]
+        if expected_voice is not None:
+            required_keys.append("voice_vlan")
         complete = observation.get("complete") is True and all(
-            key in observation
-            for key in ("owner_device_name", "interface", "admin_op_mode", "access_vlan")
+            key in observation for key in required_keys
         )
         fields = {
             "device_identity": _field_status(
@@ -776,6 +797,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 lambda value: value == expected_vlan,
             ),
         }
+        if expected_voice is not None:
+            # Decidido sobre SU propia evidencia. Ningún campo se marca desde
+            # otro: `vlan_id` VERIFIED con `voice_vlan_id` UNOBSERVABLE es un
+            # resultado válido y más angosto, no una verificación a medias que
+            # se pueda redondear hacia arriba.
+            fields["voice_vlan_id"] = _field_status(
+                observation.get("voice_vlan"), _as_vlan_id,
+                lambda value: value == int(expected_voice),
+            )
         statuses = set(fields.values())
         if FieldVerificationStatus.FAILED in statuses:
             status = ActionExecutionStatus.FAILED
@@ -792,6 +822,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
             message=(
                 "" if status is ActionExecutionStatus.VERIFIED
                 else "The access-port observation did not establish every field."
+                + (
+                    # Una contradicción conserva el número observado, pero un
+                    # payload ilegible sólo expone su tipo. El bridge no puede
+                    # convertir un objeto arbitrario en un volcado sin límite.
+                    _voice_vlan_evidence_message(observation, int(expected_voice))
+                    if expected_voice is not None else ""
+                )
             ),
         )
 
@@ -1098,6 +1135,29 @@ def _field_status(value: object, read, matches) -> FieldVerificationStatus:
         FieldVerificationStatus.VERIFIED if matches(readable)
         else FieldVerificationStatus.FAILED
     )
+
+
+def _voice_vlan_evidence_message(observation: dict, expected: int) -> str:
+    """Describe evidencia de voz con forma tipada y acotada.
+
+    Un número legible se conserva para diagnosticar una contradicción. Un error
+    del getter o un valor estructurado sólo aporta su clase de evidencia; nunca
+    se interpola el error ni el objeto entregado por Packet Tracer.
+    """
+    if "voice_vlan" not in observation:
+        observed = (
+            "getter unavailable"
+            if "voice_vlan_error" in observation else "unavailable"
+        )
+    else:
+        raw = observation["voice_vlan"]
+        readable = _as_vlan_id(raw)
+        observed = (
+            f"observed {readable}"
+            if readable is not None
+            else f"unreadable {type(raw).__name__[:32]}"
+        )
+    return f" Voice VLAN evidence: {observed} (expected {expected})."
 
 
 def _as_text(value: object) -> str | None:
