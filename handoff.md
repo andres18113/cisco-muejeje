@@ -6,7 +6,8 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
+CURRENT_PUSHED_HEAD = a0c81467cfa6ee89bbd92bf48bfe589bc85fcc4d
+LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
 PHONE_DHCP_OUT_VLAN_ID = 20 (two governed LIVEs: c1c74fa, 2db4c9d)
 SWITCH5_DHCP_IN_VLAN_ID = 20 (same two runs, same instant each run)
 PHONE_TO_SWITCH_VLAN_VALUE_PRESERVED = YES
@@ -734,6 +735,18 @@ omission is named.
 `FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED` in
 both runs -- but see below: run 2 shows the window DID hold the calibration.
 
+## Two heads, and why one of them is always one behind
+
+`CURRENT_PUSHED_HEAD` and `LATEST_GOVERNED_LIVE_HEAD` are different facts and
+collapsing them is how a docs-only commit starts looking like a LIVE.
+
+* `CURRENT_PUSHED_HEAD` is the head that was pushed BEFORE this checkpoint. A
+  commit cannot contain its own hash, so this line always names the previous
+  one; read the real one with `git rev-parse HEAD`.
+* `LATEST_GOVERNED_LIVE_HEAD` is the source head a governed LIVE actually ran
+  from. It moves ONLY when another governed LIVE supersedes it, never when a
+  checkpoint is pushed.
+
 ## The calibration control read the wrong side of the right frame
 
 The control rule takes an already-captured frame on an access port the typed plan
@@ -767,6 +780,53 @@ It is NOT yet a qualification, because reading the egress port's VLAN onto the
 ingress copy assumes the switch preserves VLAN across that forward. That is
 ordinary L2 behaviour and it is NOT measured here. Any future slice that uses it
 must name the assumption instead of absorbing it.
+
+## Phase A audit -- there is no valid ingress control in the retained windows
+
+A control qualifies `child.vlanId` only when the KNOWN port and the READ side
+are BOTH the ingress: the expected VLAN comes from the port the frame entered
+by, and the observed value from that same side's child. Anything else needs an
+assumption about what the switch does between one boca and the other.
+
+Both retained journals were audited offline, no LIVE:
+
+```text
+Switch5 single-VLAN access ports (typed plan, FLOOR1 projection): 4
+  ALL on VLAN 30: Fa0/22, Fa0/23, Fa0/24, Gi0/2
+Switch5 hops ENTERING one of them:      run1 0        run2 0
+Switch5 hops touching one, either side: run1 21       run2 18   (all egress)
+switch_trace capture:  run1 194 hops, limit_reached FALSE  -> COMPLETE
+                       run2 200 hops, limit_reached TRUE   -> TRUNCATED
+```
+
+Two consequences, and they are different in strength:
+
+* run1's Switch5 scope was captured COMPLETE, so "nothing entered a VLAN-30
+  access port" is a real absence FOR THAT WINDOW -- not a truncation artifact.
+  It is still a bounded window and says nothing about other windows.
+* run2's capture hit its limit, so its zero is the weaker kind of absence.
+
+`STRONGLY_SUPPORTED_BY_MULTIVLAN_CONTROL` is UNREACHABLE on Switch5 whatever the
+traffic does: all four single-VLAN ports carry VLAN 30, so two controls could
+never carry two DISTINCT known VLANs. The best Switch5 can yield is
+`SUPPORTED_BY_CONTROL`.
+
+The selector was NOT reading the wrong side by preference -- it already prefers
+the ingress. It fell back to the egress because no hop entered a known port. The
+fallback itself was the defect: an access-port egress copy is the 7-member
+untagged shape, so it can never qualify anything, and emitting it as a control
+with a null verdict dressed a structural impossibility as a failed measurement.
+The fallback is gone. `_CONTROL_TAG_GETTER` is a constant, not a branch, so no
+code path can pair a known port with the opposite side's tag.
+
+FRAME_VLAN_FIELD_SEMANTICS is unchanged by that fix -- it was, and remains,
+DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED. The measured DHCP values are
+untouched: the fix is subtractive and changes only what the journal calls a
+control and why it says none was found.
+
+NOT REQUIRED: a fresh governed LIVE for this fix. The audit already establishes
+from retained evidence that no ingress control existed in either window, so a
+re-run would re-render a reason string at the cost of a full CP-SCALE run.
 
 ## NEXT_ACTIVE_STEP
 

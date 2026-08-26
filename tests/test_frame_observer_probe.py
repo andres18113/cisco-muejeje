@@ -1150,6 +1150,12 @@ CCTV_IN = hop(index=70, device=SWITCH, in_port="FastEthernet0/24",
               sim_time=T - 40, traffic_type_raw=3, status="sent")
 IOT_IN = hop(index=71, device=SWITCH, in_port="FastEthernet0/23",
              sim_time=T - 60, traffic_type_raw=3, status="sent")
+# Enters on a trunk and LEAVES by the known access port. The tagged copy sits on
+# the ingress side, whose VLAN the plan does not state -- pairing the two is the
+# cross-side assumption this slice refuses to make.
+CCTV_OUT = hop(index=72, device=SWITCH, in_port="GigabitEthernet0/1",
+               out_port="FastEthernet0/24", sim_time=T - 80,
+               traffic_type_raw=11, status="sent")
 
 
 class Transport:
@@ -1228,6 +1234,13 @@ verdict = {
         [PHONE_F, switch_frame(tag(vlan=20, tpid=33024))]),
     "no_bpdu": run([PHONE_DHCP], [SWITCH_DHCP],
                    [PHONE_F, switch_frame(FULL)]),
+    "egress_only_control": run(
+        [PHONE_DHCP], [SWITCH_DHCP, CCTV_OUT],
+        [PHONE_F, switch_frame(FULL),
+         frame(72, SWITCH, in_port="GigabitEthernet0/1", sim_time=T - 80, ttype=11,
+               children=[child("getInFrame", tag(vlan=40)),
+                         child("getOutFrame", [])])],
+        ports={"FastEthernet0/24": 40}),
     "negative_tpid": run(
         [PHONE_DHCP], [SWITCH_DHCP],
         [frame(100, PHONE, children=[
@@ -1500,3 +1513,61 @@ def test_a_positive_tpid_still_renders_and_withholds_nothing(phase3):
 
     assert link["tpid_hex"] == "0x8100"
     assert link["tpid_hex_withheld_reason"] == ""
+
+
+# A control is valid only when the KNOWN port and the READ side are both the
+# ingress. Anything else needs an assumption about what the switch does between
+# the two sides, and that assumption is exactly what a calibration may not make.
+
+def test_an_egress_side_frame_is_never_a_control_even_when_it_would_match(phase3):
+    """The tempting case: the ingress copy reads 40 and the egress port is 40.
+
+    Pairing them would qualify vlanId by assuming the switch preserves VLAN
+    across that forward -- ordinary L2 behaviour that this repository has not
+    measured. A calibration built on an unmeasured assumption qualifies nothing,
+    so this frame is not a control at all.
+    """
+    case = phase3["egress_only_control"]
+
+    assert case["vlan_controls"] == []
+    assert case["frame_vlan_field_semantics"] == (
+        "DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED"
+    )
+    assert case["vlan_control_egress_only_hops"] == 1
+    assert "entered" in case["vlan_control_absent_reason"].casefold()
+
+
+def test_an_ingress_side_control_is_still_selected_and_read_on_getinframe(phase3):
+    control = phase3["one_control"]["vlan_controls"][0]
+
+    assert control["port_side"] == "in"
+    assert control["getter"] == "getInFrame"
+    assert control["in_port"] == control["port"]
+
+
+def test_the_control_getter_is_a_constant_and_never_chosen_by_side():
+    """No branch can pick the opposite side, because there is no branch.
+
+    Read as source, never imported: importing the runner pulls the production
+    namespace into this pytest process, which is exactly what the import
+    isolation preflight exists to refuse.
+    """
+    source = (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert '_CONTROL_TAG_GETTER = "getInFrame"' in source
+    start = source.index("def _vlan_control_candidates")
+    body = source[start:source.index("\ndef ", start + 10)]
+    assert "getOutFrame" not in body
+    assert '"out"' not in body
+
+
+def test_an_absent_control_says_which_absence_it_is(phase3):
+    """No such port in the plan is not the same as nothing entering one."""
+    no_ports = phase3["no_control"]["vlan_control_absent_reason"].casefold()
+    egress_only = phase3["egress_only_control"]["vlan_control_absent_reason"].casefold()
+
+    assert "no single-vlan access port" in no_ports
+    assert "entered" in egress_only
+    assert no_ports != egress_only

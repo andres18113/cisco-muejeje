@@ -1745,6 +1745,11 @@ _ROLE_TAG_GETTER = {"phone_dhcp": "getOutFrame", "switch_dhcp": "getInFrame"}
 #: De dónde sale la VLAN que un control da por conocida. No es una lectura de
 #: Packet Tracer: es lo que el plan tipado configuró en ese puerto.
 _CONTROL_VLAN_SOURCE = "TYPED_ACCESS_PORT_PLAN_SINGLE_VLAN"
+#: Un control se lee SIEMPRE en el lado de entrada, y por eso el getter es una
+#: constante y no una rama: si el codigo pudiera elegir el otro lado, podria
+#: emparejar la VLAN conocida de un puerto con el tag del lado contrario, que es
+#: justo la suposicion que una calibracion no puede permitirse.
+_CONTROL_TAG_GETTER = "getInFrame"
 
 
 def _tag_field_observation(target, frame, getter: str) -> dict[str, object]:
@@ -1930,15 +1935,28 @@ def _single_vlan_access_ports(projection, switch_name: str) -> dict[str, int]:
 
 
 def _vlan_control_candidates(switch_hops, switch_name: str, ports, taken):
-    """Frames YA capturados sobre un puerto de VLAN única conocida.
+    """Frames YA capturados que ENTRARON por un puerto de VLAN única conocida.
+
+    Sólo el lado de entrada califica. La VLAN esperada sale del puerto por el
+    que el frame entró y el valor observado se lee en el hijo de ESE mismo lado,
+    así que no hace falta ninguna suposición sobre lo que el switch hace entre
+    una boca y la otra.
+
+    Un frame que sólo SALE por un puerto conocido no es un control aunque su
+    copia de entrada traiga un tag que cuadre: emparejar la VLAN del puerto de
+    salida con el tag del lado de entrada asumiría que el switch preserva la
+    VLAN a través de ese reenvío -- comportamiento L2 corriente que este
+    repositorio no ha medido --, y una calibración que se apoya en una
+    suposición no medida no califica nada. Se cuentan y se nombran en vez de
+    colarse como controles con veredicto nulo.
 
     No se genera tráfico para tener un control ni se amplía la ventana: si esta
-    captura no trajo ninguno, no hay control y se dice. Un salto cuyos dos
-    extremos son puertos conocidos de VLAN distinta no calibra nada -- no habría
-    forma de decir cuál de las dos debía leerse --, así que se descarta.
+    captura no trajo ninguno, no hay control y se dice cuál de las dos ausencias
+    es.
     """
     candidates: list[dict[str, object]] = []
     seen_ports: set[str] = set()
+    egress_only = 0
     for hop in switch_hops:
         if hop.get("device") != switch_name:
             continue
@@ -1946,25 +1964,19 @@ def _vlan_control_candidates(switch_hops, switch_name: str, ports, taken):
         if not isinstance(index, int) or index in taken:
             continue
         in_name = str(hop.get("in_port") or "")
-        out_name = str(hop.get("out_port") or "")
-        known_in = ports.get(in_name)
-        known_out = ports.get(out_name)
-        if known_in is not None and known_out is not None and known_in != known_out:
+        expected = ports.get(in_name)
+        if expected is None:
+            if ports.get(str(hop.get("out_port") or "")) is not None:
+                egress_only += 1
             continue
-        if known_in is not None:
-            port, side, expected = in_name, "in", known_in
-        elif known_out is not None:
-            port, side, expected = out_name, "out", known_out
-        else:
+        if in_name in seen_ports:
             continue
-        if port in seen_ports:
-            continue
-        seen_ports.add(port)
+        seen_ports.add(in_name)
         candidates.append({
             "index": index,
             "device": hop.get("device"),
-            "port": port,
-            "port_side": side,
+            "port": in_name,
+            "port_side": "in",
             "in_port": hop.get("in_port"),
             "out_port": hop.get("out_port"),
             "sim_time": hop.get("sim_time"),
@@ -1973,8 +1985,7 @@ def _vlan_control_candidates(switch_hops, switch_name: str, ports, taken):
             "expected_vlan": expected,
             "expected_vlan_source": _CONTROL_VLAN_SOURCE,
         })
-    return candidates
-
+    return candidates, egress_only
 
 def _frame_vlan_field_semantics(controls) -> str:
     """Hasta dónde queda cualificado `vlanId`, y nunca más allá."""
@@ -2026,6 +2037,7 @@ def _frame_observer_discovery(
         "vlan_controls": [],
         "vlan_control_absent_reason": "",
         "vlan_control_dropped": 0,
+        "vlan_control_egress_only_hops": 0,
         "frame_vlan_field_semantics": "DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED",
         # Ningún BPDU de esta fase cualifica una lectura de STP por VLAN, y su
         # ausencia acotada tampoco la refuta.
@@ -2123,23 +2135,33 @@ def _frame_observer_discovery(
     # Meterlo entre los objetivos le daría su `sim_time` a la comparación DHCP
     # y haría que el par dejara de verse simultáneo por un frame que no es suyo.
     ports = dict(single_vlan_ports or {})
-    controls = _vlan_control_candidates(
+    controls, egress_only = _vlan_control_candidates(
         switch_hops, switch_name, ports, set(indices),
     )
+    observation["vlan_control_egress_only_hops"] = egress_only
     budget = max(0, min(MAX_VLAN_CONTROL_TARGETS, MAX_FRAME_TARGETS - len(indices)))
     observation["vlan_control_dropped"] = max(0, len(controls) - budget)
     controls = controls[:budget]
     for position, control in enumerate(controls, start=1):
         control["role"] = f"vlan_control_{position}"
-    if not controls:
+    if not controls and not ports:
         observation["vlan_control_absent_reason"] = (
-            f"The typed plan configures no single-VLAN access port on "
+            "The typed plan configures no single-VLAN access port on "
             f"{switch_name!r}, so nothing in this window has an independently "
             "known VLAN."
-            if not ports else
-            "This bounded capture held no frame on a single-VLAN access port "
-            f"of {switch_name!r}; absence here is a property of the window, "
-            "not of those ports."
+        )
+    elif not controls:
+        # Las dos ausencias no son la misma y confundirlas perdería justo el
+        # hecho que decide si otra ventana podría traer un control.
+        observation["vlan_control_absent_reason"] = (
+            "No frame ENTERED a single-VLAN access port of "
+            f"{switch_name!r} in this bounded capture"
+            + (
+                f"; {egress_only} frame(s) only LEFT one, and an access-port "
+                "egress copy carries no tag to read."
+                if egress_only else
+                "; absence here is a property of the window, not of those ports."
+            )
         )
     elif observation["vlan_control_dropped"]:
         observation["vlan_control_absent_reason"] = (
@@ -2253,8 +2275,6 @@ def _frame_observer_discovery(
 
     qualified: list[dict[str, object]] = []
     for control in controls:
-        side = str(control.get("port_side") or "")
-        getter = "getInFrame" if side == "in" else "getOutFrame"
         frame = by_index.get(control.get("index"))
         control["identity_reconfirmed"] = bool(
             frame is not None
@@ -2262,15 +2282,17 @@ def _frame_observer_discovery(
                 device=str(control.get("device") or ""),
                 sim_time=control.get("sim_time"),
                 traffic_type=control.get("traffic_type_raw"),
-                in_port=str(control.get("in_port") or "") if side == "in" else "",
+                # El puerto de ENTRADA es el que da la VLAN esperada, así que
+                # es parte de la identidad que hay que reconfirmar.
+                in_port=str(control.get("in_port") or ""),
             )
         )
-        row = _tag_field_observation(control, frame, getter)
+        row = _tag_field_observation(control, frame, _CONTROL_TAG_GETTER)
         row.update({
             # Un control se elige por su puerto, no por un texto de decisión.
             "identifying_decision": "",
             "port": control.get("port"),
-            "port_side": side,
+            "port_side": control.get("port_side"),
             "status": control.get("status"),
             "expected_vlan": control.get("expected_vlan"),
             "expected_vlan_source": control.get("expected_vlan_source"),

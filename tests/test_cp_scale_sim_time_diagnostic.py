@@ -510,7 +510,13 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert "CURRENT_PUSHED_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda" in handoff
+    assert "CURRENT_PUSHED_HEAD = a0c81467cfa6ee89bbd92bf48bfe589bc85fcc4d" in handoff
+    # The two heads are different facts. Collapsing them is how a pushed
+    # checkpoint starts reading as a governed LIVE.
+    assert (
+        "LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda"
+        in handoff
+    )
     assert "ACCESS_PORT_VOICE_VLAN = VERIFIED 21/21" in handoff
     assert "data VLAN 10" in handoff and "voice VLAN 20" in handoff
     assert "TARGET_SIM_TIME_SPAN = 60000" in handoff
