@@ -668,7 +668,17 @@ class Transport:
                 {"index": 100, "in_bounds": True, "frame_found": True,
                  "observed_device": PHONE, "observed_sim_time": 8406971,
                  "observed_traffic_type": 7, "members": [], "observers": [],
-                 "children": []},
+                 "children": [
+                     {"getter": "getInFrame", "invoked": True,
+                      "returned_null": True, "type_name": "object", "error": "",
+                      "members": [], "observers": [], "truncated": False},
+                     {"getter": "getOutFrame", "invoked": True,
+                      "returned_null": False, "type_name": "object", "error": "",
+                      "members": ["getSize"],
+                      "observers": [{"name": "getSize", "type_name": "function",
+                                     "is_callable": True, "arity": 0}],
+                      "truncated": False},
+                 ]},
                 {"index": 104, "in_bounds": True, "frame_found": True,
                  "observed_device": "Switch5", "observed_in_port": "FastEthernet0/2",
                  "observed_sim_time": 8406971, "observed_traffic_type": 7,
@@ -742,6 +752,7 @@ def run(phone_hops, switch_hops):
 verdict = {
     "three": run([PHONE_DHCP], [SWITCH_DHCP_OTHER, SWITCH_DHCP, BPDU_OTHER, BPDU]),
     "no_correlated_switch_dhcp": run([PHONE_DHCP], [BPDU]),
+    "no_bpdu_on_that_port": run([PHONE_DHCP], [SWITCH_DHCP, BPDU_OTHER]),
 }
 print(json.dumps(verdict))
 '''
@@ -803,3 +814,47 @@ def test_without_a_correlated_switch_frame_the_bpdu_has_no_port_to_match(phase2)
 
     assert "switch_dhcp" not in roles
     assert "switch_bpdu" not in roles
+
+
+def test_the_journal_retains_what_each_child_getter_returned(phase2):
+    """The whole point of the phase. Collecting it and dropping it is a defect.
+
+    The first Phase-2 run enumerated both children in Packet Tracer and then
+    wrote a journal with no `children` key at all, so the question the run
+    existed to answer came back unanswered. Shape is pinned here, not just
+    parsed.
+    """
+    frames = phase2["three"]["discovery"]["frames"]
+
+    assert frames, "the discovery must retain the frames it enumerated"
+    for frame in frames:
+        assert "children" in frame, frame.get("index")
+        for child in frame["children"]:
+            for key in (
+                "getter", "invoked", "returned_null", "type_name", "error",
+                "members", "observers", "truncated",
+            ):
+                assert key in child, key
+
+
+def test_a_missing_bpdu_target_is_named_rather_than_silently_absent(phase2):
+    """A bounded capture may hold no BPDU for that exact port.
+
+    The switch rotates its BPDUs across ports, so a 200-frame window can easily
+    miss the one port under test. That is a property of the window, and saying
+    so is not the same as saying the port sends none.
+    """
+    case = phase2["no_bpdu_on_that_port"]
+    roles = {item["role"] for item in case["targets"]}
+
+    assert roles == {"phone_dhcp", "switch_dhcp"}
+    assert "FastEthernet0/2" in case["switch_bpdu_absent_reason"]
+    assert "property of the window" in case["switch_bpdu_absent_reason"]
+
+
+def test_no_correlated_switch_frame_is_a_different_absence(phase2):
+    """Without the switch-side frame there is no port to compare on at all."""
+    case = phase2["no_correlated_switch_dhcp"]
+
+    assert {item["role"] for item in case["targets"]} == {"phone_dhcp"}
+    assert case["switch_bpdu_absent_reason"] == ""

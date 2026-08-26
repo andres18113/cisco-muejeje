@@ -1702,6 +1702,12 @@ def _stp_realtime_evidence(ios, projection, *, edge: str) -> dict[str, object]:
 _DHCP_DISCOVER_DECISION = "dhcp client constructs a discover packet"
 _BPDU_DECISION = "stp process sends out a configuration bpdu"
 _STP_DROP_DECISION = "is blocked by stp"
+#: Ayuda de descubrimiento, no una afirmacion. Que un nombre case con `vlan` no
+#: hace que su getter devuelva una VLAN; sirve para no tener que releer 47
+#: nombres a mano en el journal.
+_FRAME_VLAN_CANDIDATE_NEEDLES = (
+    "vlan", "tag", "dot1q", "802", "encapsulation", "header", "ethernet",
+)
 
 
 def _decision_match(hop: dict, needle: str) -> str:
@@ -1754,6 +1760,7 @@ def _frame_observer_discovery(
         ),
         "targets": [],
         "attempted": False,
+        "switch_bpdu_absent_reason": "",
         "failure_reason": "",
     }
     phone_hops = (phone_trace or {}).get("hops") or []
@@ -1812,6 +1819,15 @@ def _frame_observer_discovery(
                     _decision_match(bpdu_hop, _BPDU_DECISION),
                     "switch_bpdu",
                 ))
+            else:
+                # El switch rota sus BPDU entre puertos y la captura esta
+                # acotada: que esta ventana no traiga una para ESTE puerto no
+                # dice nada sobre el puerto. Se nombra en vez de faltar.
+                observation["switch_bpdu_absent_reason"] = (
+                    "This bounded capture held no configuration BPDU leaving "
+                    f"{edge_port!r}; absence here is a property of the window, "
+                    "not of the port."
+                )
 
     times = {
         item.get("sim_time") for item in targets
@@ -1862,6 +1878,34 @@ def _frame_observer_discovery(
                         "read_only_name": item.read_only_name,
                     }
                     for item in frame.observers
+                ],
+                # Lo que devolvio cada uno de los dos getters medidos. Es la
+                # pregunta entera de esta fase: recogerlo y no escribirlo
+                # devolveria un LIVE gobernado sin la respuesta que lo motivo.
+                "children": [
+                    {
+                        "getter": child.getter,
+                        "invoked": child.invoked,
+                        "returned_null": child.returned_null,
+                        "type_name": child.type_name,
+                        "error": child.error,
+                        "truncated": child.truncated,
+                        "members": list(child.members),
+                        "observers": [
+                            {
+                                "name": item.name,
+                                "type_name": item.type_name,
+                                "is_callable": item.is_callable,
+                                "arity": item.arity,
+                                "read_only_name": item.read_only_name,
+                            }
+                            for item in child.observers
+                        ],
+                        "candidates": list(child.candidates(
+                            _FRAME_VLAN_CANDIDATE_NEEDLES,
+                        )),
+                    }
+                    for child in frame.children
                 ],
             }
             for frame in discovery.frames
