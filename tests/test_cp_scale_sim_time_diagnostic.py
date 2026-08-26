@@ -510,7 +510,7 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert "CURRENT_PUSHED_HEAD = a0c81467cfa6ee89bbd92bf48bfe589bc85fcc4d" in handoff
+    assert "CURRENT_PUSHED_HEAD = 5e1014741c2a3b46d415f8d9f9dbdea5d12dfad9" in handoff
     # The two heads are different facts. Collapsing them is how a pushed
     # checkpoint starts reading as a governed LIVE.
     assert (
@@ -544,3 +544,21 @@ def test_handoff_keeps_the_measured_dhcp_tag_and_its_open_qualification():
         in handoff
     )
     assert "VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE" in handoff
+
+
+def test_handoff_keeps_why_an_access_port_cannot_calibrate_the_vlan_field():
+    """The measured wall, not the empty window that preceded it.
+
+    A handoff that forgets this would send the next session to re-run the same
+    calibration hoping for a different frame, when the port whose VLAN is known
+    is exactly the port whose frames carry no tag.
+    """
+    handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
+
+    assert "ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO" in handoff
+    assert "UNTAGGED" in handoff
+    assert "frameType" in handoff and "srcMacAddress" in handoff
+    assert (
+        "FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED"
+        in handoff
+    )

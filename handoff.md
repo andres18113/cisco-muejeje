@@ -6,8 +6,10 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = a0c81467cfa6ee89bbd92bf48bfe589bc85fcc4d
+CURRENT_PUSHED_HEAD = 5e1014741c2a3b46d415f8d9f9dbdea5d12dfad9
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
+LATEST_CALIBRATION_LIVE_HEAD = 5e1014741c2a3b46d415f8d9f9dbdea5d12dfad9
+ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 PHONE_DHCP_OUT_VLAN_ID = 20 (two governed LIVEs: c1c74fa, 2db4c9d)
 SWITCH5_DHCP_IN_VLAN_ID = 20 (same two runs, same instant each run)
 PHONE_TO_SWITCH_VLAN_VALUE_PRESERVED = YES
@@ -827,6 +829,59 @@ control and why it says none was found.
 NOT REQUIRED: a fresh governed LIVE for this fix. The audit already establishes
 from retained evidence that no ingress control existed in either window, so a
 re-run would re-render a reason string at the cost of a full CP-SCALE run.
+
+## The calibration ran, and it found the wall rather than the answer
+
+`tools/cp_scale_vlan_calibration_live.py` builds its own disposable switch and
+two PCs, puts each PC on an access port of its own known VLAN, arms the DHCP
+client in Realtime, steps Simulation, and reads `getInFrame().vlanId` on the
+frame that ENTERED by that port. Every step worked:
+
+```text
+control     access VLAN   direct readback   frame   identity   getInFrame
+VLAN 742    Fa0/1         VERIFIED          idx 23  reconfirmed  non-null
+VLAN 743    Fa0/10        VERIFIED          idx 1   reconfirmed  non-null
+```
+
+And the answer was still UNOBSERVABLE, for a reason that is itself the finding.
+Both ingress children exposed SEVEN members:
+
+```text
+dstMacAddress, frameCheckSequence, frameType, payload, pduSize, pduType,
+srcMacAddress
+```
+
+None of the four tag fields is among them. A frame arriving from a plain host on
+an access port is UNTAGGED, so there is no `vlanId` on it to compare.
+
+**An access port cannot calibrate `vlanId`, and not for want of trying: the port
+whose VLAN is independently known is precisely the port whose frames carry no
+tag.** That is structural on PT 9.0.1.0858, not a property of this window, and no
+amount of re-running changes it.
+
+Three measurements now agree on two distinct object shapes:
+
+```text
+11 members, tag fields present : PHONE-02 DHCP egress, Switch5 DHCP ingress,
+                                 Switch5 trunk ingress (frame 58, vlanId 30)
+ 7 members, no tag fields      : Switch5 access egress (Fa0/22),
+                                 disposable access ingress (Fa0/1, Fa0/10)
+```
+
+That also says something about the phone that was not obvious: PHONE-02's DHCP
+Discover comes back in the TAGGED shape, while a plain PC's does not. The phone
+is emitting a tagged frame. It still does not qualify what the 20 MEANS.
+
+FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED,
+unchanged and now for a measured structural reason rather than an empty window.
+
+The next non-circular candidate is a trunk whose allowed-VLAN list is a SINGLE
+VLAN, proven by direct readback: trunk ingress frames do carry the tagged shape
+(frame 58 measured `vlanId 30` on Gi0/1), and the expected VLAN would come from
+that same ingress port's own configuration rather than from a forwarding
+assumption. It is NOT started here: the governing instruction excluded a
+trunk-sourced expectation, and whether a single-allowed-VLAN trunk escapes that
+exclusion is a decision, not an inference.
 
 ## NEXT_ACTIVE_STEP
 
