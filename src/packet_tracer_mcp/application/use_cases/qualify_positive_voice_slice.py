@@ -69,6 +69,15 @@ CALL_CONTROL_ID = "voiceab/cme"
 PHONE_LINK_PORT = "Switch"
 PHONE_ADDRESSING_INTERFACE = f"Vlan{VOICE_VLAN_ID}"
 
+#: The uplink this slice builds, named ONCE.  Every foundation read below is
+#: about the objects these names create, so an observation cannot drift from the
+#: configuration that produced it by editing one string and not the other.
+SWITCH_UPLINK_INTERFACE = "GigabitEthernet0/1"
+ROUTER_UPLINK_INTERFACE = "FastEthernet0/0"
+ROUTER_VOICE_SUBINTERFACE = f"{ROUTER_UPLINK_INTERFACE}.{VOICE_VLAN_ID}"
+ROUTER_DATA_SUBINTERFACE = f"{ROUTER_UPLINK_INTERFACE}.{DATA_VLAN_ID}"
+TRUNK_NATIVE_VLAN_ID = 1
+
 VOICE_NETWORK = "10.93.0.0"
 VOICE_PREFIX = 24
 VOICE_NETMASK = "255.255.255.0"
@@ -92,6 +101,13 @@ APPLIED = "APPLIED"
 VERIFIED = "VERIFIED"
 CONTRADICTED = "CONTRADICTED"
 UNOBSERVABLE = "UNOBSERVABLE"
+
+#: A dimension no governed read on this build can reach at all.  It is a fact
+#: about the observer, never about the network, and it must never be shortened
+#: to "absent": `show telephony-service` does not exist on `9.0.1.0858`, no
+#: registered query exposes a DHCP pool DEFINITION or option 150, and
+#: `VerificationKind.DHCP_POOL` is pinned UNOBSERVABLE by its own ceiling.
+NOT_AVAILABLE = "NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS"
 YES = "YES"
 NO = "NO"
 REGISTERED = "REGISTERED"
@@ -154,6 +170,83 @@ class LifecycleMilestone:
             "evidence": self.evidence,
             "status": self.status,
             "detail": self.detail,
+        }
+
+
+#: The ordered common Voice foundation, from the phone port outwards.  The
+#: walk stops at the FIRST stage that is not VERIFIED and names it; skipping to
+#: the symptom furthest downstream is how a shared foundation stays unexamined.
+FOUNDATION_STAGES = (
+    "PHONE_ACCESS_AND_VOICE_VLAN",
+    "SWITCH_TRUNK",
+    "ROUTER_VOICE_SUBINTERFACE",
+    "DHCP_POOL_DEFINITION",
+    "CALL_CONTROL_FOUNDATION",
+    "ENDPOINT_DHCP",
+    "ENDPOINT_ADDRESS",
+    "VOICE_DHCP_BINDING",
+    "SCCP_REGISTRATION",
+)
+
+
+@dataclass(frozen=True)
+class PositiveVoiceFoundation:
+    """What the slice READ about the foundation both sides of the A/B share.
+
+    Every field is a fact about a read, never a substitute for one.  The three
+    trunk VLAN dimensions stay apart because IOS prints them as three separate
+    sections and they mean three different things: a VLAN may be permitted on a
+    trunk, active on it, and still not forwarding.  The router side stays apart
+    for the same reason -- a subinterface that exists, one that carries the
+    intended address, and one whose line is up are three answers.
+
+    `NOT_AVAILABLE` is not a fourth status: it says no governed read on this
+    build reaches that dimension at all, which is a property of the observer.
+    """
+
+    trunk_operational: str = UNOBSERVABLE
+    trunk_allowed_voice: str = UNOBSERVABLE
+    trunk_active_voice: str = UNOBSERVABLE
+    trunk_forwarding_voice: str = UNOBSERVABLE
+    trunk_native: str = UNOBSERVABLE
+    #: The native VLAN as read, kept beside its verdict.  Reported, never
+    #: gating: VLAN 930 crosses this trunk tagged, so the native VLAN cannot
+    #: explain a voice failure and must not be allowed to mask one.
+    trunk_native_vlan: int | None = None
+    router_subinterface_present: str = UNOBSERVABLE
+    router_subinterface_ipv4: str = UNOBSERVABLE
+    router_subinterface_state: str = UNOBSERVABLE
+    #: The raw `status/protocol` pair, so a CONTRADICTED line says which one.
+    router_subinterface_state_detail: str = ""
+    #: No registered query on `9.0.1.0858` exposes a pool DEFINITION or option
+    #: 150, and `VerificationKind.DHCP_POOL` is pinned UNOBSERVABLE by its own
+    #: ceiling.  Reading either as "absent" would invent the router-side
+    #: finding this investigation exists to look for honestly.
+    dhcp_pool_definition: str = NOT_AVAILABLE
+    option150: str = NOT_AVAILABLE
+    #: `show telephony-service` does not exist on this build, so the call
+    #: control foundation is observed through the one table PT does publish.
+    telephony_service: str = NOT_AVAILABLE
+    call_control_table: str = UNOBSERVABLE
+    call_control_ephone_rows: int | None = None
+
+    def as_evidence(self) -> dict:
+        return {
+            "trunk_operational": self.trunk_operational,
+            "trunk_allowed_voice": self.trunk_allowed_voice,
+            "trunk_active_voice": self.trunk_active_voice,
+            "trunk_forwarding_voice": self.trunk_forwarding_voice,
+            "trunk_native": self.trunk_native,
+            "trunk_native_vlan": self.trunk_native_vlan,
+            "router_subinterface_present": self.router_subinterface_present,
+            "router_subinterface_ipv4": self.router_subinterface_ipv4,
+            "router_subinterface_state": self.router_subinterface_state,
+            "router_subinterface_state_detail": self.router_subinterface_state_detail,
+            "dhcp_pool_definition": self.dhcp_pool_definition,
+            "option150": self.option150,
+            "telephony_service": self.telephony_service,
+            "call_control_table": self.call_control_table,
+            "call_control_ephone_rows": self.call_control_ephone_rows,
         }
 
 
@@ -239,6 +332,11 @@ class PositiveVoiceSliceResult:
     voice_vlan_id: int = VOICE_VLAN_ID
     phones: tuple[PositiveVoicePhoneOutcome, ...] = ()
     lifecycle: tuple[LifecycleMilestone, ...] = ()
+    #: Read-only foundation evidence.  It localises the outcome; it never
+    #: participates in computing it.
+    foundation: PositiveVoiceFoundation = field(
+        default_factory=PositiveVoiceFoundation,
+    )
     #: `show ip dhcp binding` rows whose address falls in the voice pool.  None
     #: means the table was never read, which is not the same as zero rows.
     voice_binding_count: int | None = None
@@ -254,6 +352,62 @@ class PositiveVoiceSliceResult:
     owned_links: tuple[str, ...] = ()
     removed: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+
+    @property
+    def foundation_ladder(self) -> tuple[tuple[str, str], ...]:
+        """Every stage from the phone port to registration, in path order.
+
+        The whole ladder is published, not just the boundary: a stage that was
+        never reached still has an answer, and hiding the downstream stages
+        behind the first gap would lose the symptoms already measured.
+        """
+        foundation = self.foundation
+        return tuple(zip(FOUNDATION_STAGES, (
+            _worst(
+                *(item.data_vlan_readback for item in self.phones),
+                *(item.voice_vlan_readback for item in self.phones),
+            ),
+            _worst(
+                foundation.trunk_operational,
+                foundation.trunk_allowed_voice,
+                foundation.trunk_active_voice,
+                foundation.trunk_forwarding_voice,
+            ),
+            _worst(
+                foundation.router_subinterface_present,
+                foundation.router_subinterface_ipv4,
+                foundation.router_subinterface_state,
+            ),
+            UNOBSERVABLE if foundation.dhcp_pool_definition == NOT_AVAILABLE
+            else foundation.dhcp_pool_definition,
+            foundation.call_control_table,
+            _worst(*(
+                _as_status(item.dhcp_enabled, YES, NO) for item in self.phones
+            )),
+            _worst(*(
+                _as_status(item.addressed, YES, NO) for item in self.phones
+            )),
+            _as_status(self.voice_bindings_observed, YES, NO),
+            _worst(*(
+                _as_status(item.registration, REGISTERED, NOT_REGISTERED)
+                for item in self.phones
+            )),
+        )))
+
+    @property
+    def first_boundary_stage(self) -> str:
+        """The first stage that is not VERIFIED, or empty when none is."""
+        for stage, status in self.foundation_ladder:
+            if status != VERIFIED:
+                return stage
+        return ""
+
+    @property
+    def first_boundary_status(self) -> str:
+        for _, status in self.foundation_ladder:
+            if status != VERIFIED:
+                return status
+        return VERIFIED
 
     @property
     def voice_bindings_observed(self) -> str:
@@ -325,9 +479,27 @@ class VoiceConfigurationRuntime(Protocol):
     def read_dhcp_bindings(self, device_name: str): ...
 
 
+class VoiceFoundationConfigurationRuntime(Protocol):
+    """OPTIONAL read-only extension of `VoiceConfigurationRuntime`.
+
+    Separate on purpose: a runtime that does not publish these has not failed,
+    it simply exposes no such surface, and every dimension behind it reads
+    UNOBSERVABLE without an error being invented for it.
+    """
+
+    def read_trunk(self, device_name: str, interface: str): ...
+    def read_interface_addresses(self, device_name: str) -> list | None: ...
+
+
 class VoiceCallControlRuntime(Protocol):
     def apply_actions(self, actions) -> list[RuntimeActionMutation]: ...
     def observe_registrations(self, expectations) -> list: ...
+
+
+class VoiceFoundationCallControlRuntime(Protocol):
+    """OPTIONAL read-only extension of `VoiceCallControlRuntime`."""
+
+    def inspect_call_control(self, device_name: str) -> dict: ...
 
 
 class VoiceEndpointRuntime(Protocol):
@@ -380,6 +552,156 @@ def _mutation_applied(result) -> bool:
     older flag has still not stated this one: only `applied` decides.
     """
     return bool(getattr(result, "applied", False))
+
+
+def _worst(*statuses: str) -> str:
+    """CONTRADICTED beats UNOBSERVABLE beats VERIFIED, and nothing is VERIFIED
+    by omission: an empty set of dimensions has established nothing."""
+    values = [item for item in statuses]
+    if CONTRADICTED in values:
+        return CONTRADICTED
+    if values and all(item == VERIFIED for item in values):
+        return VERIFIED
+    return UNOBSERVABLE
+
+
+def _as_status(value: str, positive: str, negative: str) -> str:
+    """Map one already-measured field onto the three-way ladder vocabulary."""
+    if value == positive:
+        return VERIFIED
+    if value == negative:
+        return CONTRADICTED
+    return UNOBSERVABLE
+
+
+def _vlan_section(section, vlan_id: int) -> str:
+    """`None` is the IOS section never printing; `()` is it printing nothing.
+
+    Only the second is a statement about the trunk.  Collapsing them would turn
+    a capture that stopped short into a VLAN that is not carried, which is the
+    exact shape of finding this A/B is trying to locate honestly.
+    """
+    if section is None:
+        return UNOBSERVABLE
+    return VERIFIED if vlan_id in tuple(section) else CONTRADICTED
+
+
+def _classify_trunk(observation) -> dict:
+    """Five independent answers from ONE fresh and complete trunk read."""
+    unread = {
+        "trunk_operational": UNOBSERVABLE,
+        "trunk_allowed_voice": UNOBSERVABLE,
+        "trunk_active_voice": UNOBSERVABLE,
+        "trunk_forwarding_voice": UNOBSERVABLE,
+        "trunk_native": UNOBSERVABLE,
+        "trunk_native_vlan": None,
+    }
+    if observation is None:
+        return unread
+    if not (
+        getattr(observation, "fresh_evidence", False)
+        and getattr(observation, "output_complete", False)
+    ):
+        return unread
+    native = getattr(observation, "native_vlan", None)
+    try:
+        native_status = (
+            UNOBSERVABLE if native is None
+            else (VERIFIED if int(native) == TRUNK_NATIVE_VLAN_ID else CONTRADICTED)
+        )
+    except (TypeError, ValueError):
+        native, native_status = None, UNOBSERVABLE
+    return {
+        # A fresh complete table that did not carry the uplink row states that
+        # the uplink is not trunking; the row's absence IS the answer here.
+        "trunk_operational": (
+            VERIFIED
+            if str(getattr(observation, "status", "") or "").casefold() == "trunking"
+            else CONTRADICTED
+        ),
+        "trunk_allowed_voice": _vlan_section(
+            getattr(observation, "allowed_vlans", None), VOICE_VLAN_ID,
+        ),
+        "trunk_active_voice": _vlan_section(
+            getattr(observation, "active_vlans", None), VOICE_VLAN_ID,
+        ),
+        "trunk_forwarding_voice": _vlan_section(
+            getattr(observation, "forwarding_vlans", None), VOICE_VLAN_ID,
+        ),
+        "trunk_native": native_status,
+        "trunk_native_vlan": native,
+    }
+
+
+def _classify_router_subinterface(rows) -> dict:
+    """`None` rows mean the table was never read -- never that it was empty."""
+    if rows is None:
+        return {
+            "router_subinterface_present": UNOBSERVABLE,
+            "router_subinterface_ipv4": UNOBSERVABLE,
+            "router_subinterface_state": UNOBSERVABLE,
+            "router_subinterface_state_detail": "",
+        }
+    row = next((
+        item for item in rows
+        if same_interface_name(
+            str(getattr(item, "interface", "") or ""), ROUTER_VOICE_SUBINTERFACE,
+        )
+    ), None)
+    if row is None:
+        # The table WAS read and the subinterface was not in it.  That is a
+        # finding about the router, and it is the only way to reach one here.
+        return {
+            "router_subinterface_present": CONTRADICTED,
+            "router_subinterface_ipv4": UNOBSERVABLE,
+            "router_subinterface_state": UNOBSERVABLE,
+            "router_subinterface_state_detail": "",
+        }
+    address = str(getattr(row, "ip_address", "") or "").strip()
+    status = str(getattr(row, "status", "") or "").strip()
+    protocol = str(getattr(row, "protocol", "") or "").strip()
+    detail = f"{status}/{protocol}" if status or protocol else ""
+    return {
+        "router_subinterface_present": VERIFIED,
+        # An empty address column is a column nobody read, not an interface
+        # without an address; `show ip interface brief` prints `unassigned`.
+        "router_subinterface_ipv4": (
+            UNOBSERVABLE if not address
+            else (VERIFIED if address == VOICE_GATEWAY else CONTRADICTED)
+        ),
+        "router_subinterface_state": (
+            UNOBSERVABLE if not detail
+            else (
+                VERIFIED
+                if status.casefold() == "up" and protocol.casefold() == "up"
+                else CONTRADICTED
+            )
+        ),
+        "router_subinterface_state_detail": detail,
+    }
+
+
+def _classify_call_control(table) -> tuple[str, int | None]:
+    """The one call-control surface PT 9.0.1 publishes, judged as a read.
+
+    VERIFIED here says the table exists and was read whole -- the foundation
+    answered.  It deliberately does NOT say a phone registered: that is a
+    per-phone fact with its own field.  An empty row list is reported as a
+    count, not promoted into "CME is absent": what an unregistered ephone block
+    looks like on this build has not been measured.
+    """
+    if not isinstance(table, dict):
+        return UNOBSERVABLE, None
+    if not (
+        table.get("executed")
+        and table.get("fresh_output_observed")
+        and table.get("output_complete")
+    ):
+        return UNOBSERVABLE, None
+    rows = table.get("ephones")
+    if not isinstance(rows, (list, tuple)):
+        return UNOBSERVABLE, None
+    return VERIFIED, len(rows)
 
 
 def _classify_stp_row(instances, vlan_id: int, interface: str) -> str:
@@ -473,10 +795,11 @@ class PositiveVoiceSliceQualifier:
         binding_count: int | None = None
         realtime_before = realtime_after = False
         original_simulation: bool | None = None
+        foundation = PositiveVoiceFoundation()
         try:
             (
                 original_simulation, phones, binding_count,
-                realtime_before, realtime_after, measured_errors,
+                realtime_before, realtime_after, foundation, measured_errors,
             ) = self._measure(
                 router_model, switch_model, phone_model,
                 created, owned_links, journal,
@@ -495,6 +818,7 @@ class PositiveVoiceSliceQualifier:
             phone_model=phone_model,
             router_name=self._name("R"), switch_name=self._name("SW"),
             phones=phones, lifecycle=journal.frozen(),
+            foundation=foundation,
             voice_binding_count=binding_count,
             realtime_before=realtime_before, realtime_after=realtime_after,
             baseline_inventory=baseline, final_inventory=final,
@@ -567,9 +891,9 @@ class PositiveVoiceSliceQualifier:
             ConfigureTrunk(
                 id="voiceab/trunk/uplink", phase=ConfigurationPhase.L2_INTERFACES,
                 device_id="voiceab/sw", device_name=switch, site_id=site,
-                interface="GigabitEthernet0/1",
+                interface=SWITCH_UPLINK_INTERFACE,
                 allowed_vlans=[DATA_VLAN_ID, VOICE_VLAN_ID],
-                native_vlan_id=1,
+                native_vlan_id=TRUNK_NATIVE_VLAN_ID,
             ),
         ]
         for index, interface in enumerate(phone_ports, start=1):
@@ -587,14 +911,14 @@ class PositiveVoiceSliceQualifier:
             ConfigureSubinterface(
                 id="voiceab/sub/data", phase=ConfigurationPhase.L3_INTERFACES,
                 device_id="voiceab/r", device_name=router, site_id=site,
-                parent_interface="FastEthernet0/0", vlan_id=DATA_VLAN_ID,
+                parent_interface=ROUTER_UPLINK_INTERFACE, vlan_id=DATA_VLAN_ID,
                 ipv4=DATA_GATEWAY, prefix=VOICE_PREFIX, netmask=VOICE_NETMASK,
                 segment_id="voiceab/seg/data",
             ),
             ConfigureSubinterface(
                 id="voiceab/sub/voice", phase=ConfigurationPhase.L3_INTERFACES,
                 device_id="voiceab/r", device_name=router, site_id=site,
-                parent_interface="FastEthernet0/0", vlan_id=VOICE_VLAN_ID,
+                parent_interface=ROUTER_UPLINK_INTERFACE, vlan_id=VOICE_VLAN_ID,
                 ipv4=VOICE_GATEWAY, prefix=VOICE_PREFIX, netmask=VOICE_NETMASK,
                 segment_id="voiceab/seg/voice",
             ),
@@ -718,11 +1042,17 @@ class PositiveVoiceSliceQualifier:
 
         for device in (router, switch):
             if not self._create(device, created, errors):
-                return original_simulation, empty, None, False, False, errors
+                return (
+                    original_simulation, empty, None, False, False,
+                    PositiveVoiceFoundation(), errors,
+                )
         journal.record("DEVICE_CREATE_ORDER", True, "router, switch, then phones")
         for device in phones:
             if not self._create(device, created, errors):
-                return original_simulation, empty, None, False, False, errors
+                return (
+                    original_simulation, empty, None, False, False,
+                    PositiveVoiceFoundation(), errors,
+                )
         journal.record("WHEN_PHONE_EXISTS", True, ", ".join(p.name for p in phones))
         # PT publishes no phone power or boot state on this build.  This one is
         # an OBSERVATION milestone with nothing to observe on, which is exactly
@@ -734,8 +1064,8 @@ class PositiveVoiceSliceQualifier:
         )
 
         uplink = LinkPlan(
-            device_a=router.name, port_a="FastEthernet0/0",
-            device_b=switch.name, port_b="GigabitEthernet0/1", cable="straight",
+            device_a=router.name, port_a=ROUTER_UPLINK_INTERFACE,
+            device_b=switch.name, port_b=SWITCH_UPLINK_INTERFACE, cable="straight",
         )
         phone_ports = tuple(
             self._switch_interface(index) for index in range(1, len(phones) + 1)
@@ -749,7 +1079,10 @@ class PositiveVoiceSliceQualifier:
         ]
         for link in links:
             if not self._link(link, owned_links, errors):
-                return original_simulation, empty, None, False, False, errors
+                return (
+                    original_simulation, empty, None, False, False,
+                    PositiveVoiceFoundation(), errors,
+                )
         journal.record("LINK_CREATE_ORDER", True, "uplink first, then phone links")
         journal.record("WHEN_PHONE_IS_LINKED", True, ", ".join(phone_ports))
 
@@ -810,6 +1143,7 @@ class PositiveVoiceSliceQualifier:
 
         stp_after = self._read_stp(switch.name, errors)
         binding_count = self._read_bindings(router.name, errors)
+        foundation = self._read_foundation(switch.name, router.name, journal, errors)
         realtime_after = self._realtime(errors, "after")
         journal.record(
             "REALTIME_VERIFIED_AFTER_WINDOW", realtime_after, evidence=OBSERVATION,
@@ -826,7 +1160,71 @@ class PositiveVoiceSliceQualifier:
         )
         return (
             original_simulation, outcomes, binding_count,
-            realtime_before, realtime_after, errors,
+            realtime_before, realtime_after, foundation, errors,
+        )
+
+    @staticmethod
+    def _optional_read(runtime, name: str, errors: list[str], label: str, *arguments):
+        """Call a read-only surface the runtime MAY publish.
+
+        A runtime without it has not failed -- there is nothing to record as an
+        error, and every dimension behind it simply stays unread.  A surface
+        that exists and raises IS an error, and still yields nothing.
+        """
+        reader = getattr(runtime, name, None)
+        if reader is None:
+            return None
+        try:
+            return reader(*arguments)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{label}_unreadable: {exc}")
+            return None
+
+    def _read_foundation(
+        self, switch_name: str, router_name: str, journal: _Journal,
+        errors: list[str],
+    ) -> PositiveVoiceFoundation:
+        """Read the foundation both sides of the A/B share.  Reads only.
+
+        This runs AFTER the acquisition window, beside the STP and binding
+        reads, for two reasons: the state it observes does not change during
+        the window, and starting the window later would make the next LIVE a
+        different experiment from the one it has to reproduce.
+        """
+        trunk = self._optional_read(
+            self._configuration, "read_trunk", errors, "switch_trunk",
+            switch_name, SWITCH_UPLINK_INTERFACE,
+        )
+        rows = self._optional_read(
+            self._configuration, "read_interface_addresses", errors,
+            "router_interfaces", router_name,
+        )
+        table = self._optional_read(
+            self._call_control, "inspect_call_control", errors,
+            "call_control_table", router_name,
+        )
+
+        trunk_fields = _classify_trunk(trunk)
+        router_fields = _classify_router_subinterface(rows)
+        call_control, ephone_rows = _classify_call_control(table)
+        journal.record(
+            "SWITCH_TRUNK_OBSERVED",
+            trunk_fields["trunk_operational"] != UNOBSERVABLE,
+            f"{switch_name} {SWITCH_UPLINK_INTERFACE}", OBSERVATION,
+        )
+        journal.record(
+            "ROUTER_VOICE_SUBINTERFACE_OBSERVED",
+            router_fields["router_subinterface_present"] != UNOBSERVABLE,
+            ROUTER_VOICE_SUBINTERFACE, OBSERVATION,
+        )
+        journal.record(
+            "CALL_CONTROL_TABLE_OBSERVED", call_control != UNOBSERVABLE,
+            router_name, OBSERVATION,
+        )
+        return PositiveVoiceFoundation(
+            call_control_table=call_control,
+            call_control_ephone_rows=ephone_rows,
+            **trunk_fields, **router_fields,
         )
 
     def _read_mode(self, errors: list[str]) -> bool | None:

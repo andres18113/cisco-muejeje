@@ -110,6 +110,18 @@ class Ios:
         return self._result
 
 
+class QueryIos:
+    """One answer per registered query, so a two-stage read can be observed."""
+
+    def __init__(self, answers):
+        self._answers = answers
+        self.calls = []
+
+    def execute(self, device_name, query_id, **kwargs):
+        self.calls.append((device_name, query_id.value, kwargs.get("interface", "")))
+        return self._answers[query_id]
+
+
 def result(query, output, **overrides):
     fields = {
         "executed": True,
@@ -151,6 +163,58 @@ def bindings(output=BINDING_TABLE, **overrides):
     }
 
 
+SUBINTERFACE = "FastEthernet0/0.%d" % VOICE_VLAN_ID
+
+
+def brief_table(*rows):
+    body = [
+        "show ip interface brief",
+        "Interface              IP-Address      OK? Method Status                Protocol",
+        "FastEthernet0/0        unassigned      YES manual up                    up",
+    ]
+    body.extend(rows)
+    return "\n".join(body)
+
+
+VOICE_BRIEF_ROW = (
+    "FastEthernet0/0.930    10.93.0.1       YES manual up                    up"
+)
+DOWN_BRIEF_ROW = (
+    "FastEthernet0/0.930    10.93.0.1       YES manual administratively down  down"
+)
+SCOPED_OUTPUT = "\n".join((
+    "show ip interface FastEthernet0/0.930",
+    "FastEthernet0/0.930 is up, line protocol is up",
+    "  Internet address is 10.93.0.1/24",
+))
+
+
+def router_interfaces(brief_output, *, brief=None, scoped=None, scoped_output=""):
+    """What the runner's registered router read publishes, end to end."""
+    answers = {
+        OperationalQueryId.SHOW_IP_INTERFACE_BRIEF: result(
+            OperationalQueryId.SHOW_IP_INTERFACE_BRIEF, brief_output,
+            **(brief or {}),
+        ),
+        OperationalQueryId.SHOW_IP_INTERFACE: result(
+            OperationalQueryId.SHOW_IP_INTERFACE, scoped_output, **(scoped or {}),
+        ),
+    }
+    ios = QueryIos(answers)
+    rows = _ConfigurationAdapter(None, ios).read_interface_addresses(ROUTER)
+    return {
+        "read": rows is not None,
+        "interfaces": None if rows is None else [item.interface for item in rows],
+        "voice": None if rows is None else [
+            [item.interface, item.ip_address, item.status, item.protocol]
+            for item in rows
+            if item.interface.casefold().endswith(".930")
+        ],
+        "queries": [item[1] for item in ios.calls],
+        "scoped_interface": [item[2] for item in ios.calls if item[2]],
+    }
+
+
 verdict = {}
 
 # A fresh, complete table is the only thing that may classify anything.
@@ -178,6 +242,37 @@ verdict["dhcp_pager_before_any_row"] = bindings(
     )),
     output_complete=False,
     truncated_by_pager=True,
+)
+
+# --- the router foundation read, which must never invent an absence --------
+
+verdict["router_brief_has_subinterface"] = router_interfaces(
+    brief_table(VOICE_BRIEF_ROW),
+)
+verdict["router_brief_shows_it_down"] = router_interfaces(
+    brief_table(DOWN_BRIEF_ROW),
+)
+verdict["router_brief_unreadable"] = router_interfaces(
+    brief_table(VOICE_BRIEF_ROW), brief={"output_complete": False},
+)
+verdict["router_brief_stale"] = router_interfaces(
+    brief_table(VOICE_BRIEF_ROW), brief={"fresh_output_observed": False},
+)
+# The brief table did not list it.  Before that may stand as an absence, the
+# bounded per-interface read has to answer -- and if IT is unreadable, nothing
+# is claimed at all.
+verdict["router_falls_back_and_finds_it"] = router_interfaces(
+    brief_table(), scoped_output=SCOPED_OUTPUT,
+)
+verdict["router_fallback_unreadable"] = router_interfaces(
+    brief_table(), scoped_output=SCOPED_OUTPUT,
+    scoped={"output_complete": False},
+)
+verdict["router_fallback_not_executed"] = router_interfaces(
+    brief_table(), scoped={"executed": False},
+)
+verdict["router_two_readable_reads_find_nothing"] = router_interfaces(
+    brief_table(), scoped_output="% Invalid input detected at '^' marker.",
 )
 
 print(json.dumps(verdict))
@@ -279,3 +374,77 @@ def test_a_binding_table_paged_before_any_row_never_reads_as_zero(verdict):
     assert verdict["dhcp_pager_before_any_row"] == {
         "read": False, "addresses": None,
     }
+
+
+# --- the router voice subinterface -----------------------------------------
+#
+# This read is the one that could most easily manufacture a root cause.  A
+# build that does not print subinterfaces in the brief table would look exactly
+# like a router that never got one, and "the voice subinterface is missing" is
+# precisely the conclusion this investigation would love to reach and must not
+# reach by accident.
+
+
+def test_a_readable_brief_table_answers_with_its_own_rows(verdict):
+    observed = verdict["router_brief_has_subinterface"]
+
+    assert observed["read"] is True
+    assert observed["voice"] == [
+        ["FastEthernet0/0.930", "10.93.0.1", "up", "up"]
+    ]
+    # One query.  The bounded fallback is for a table that did NOT list it.
+    assert observed["queries"] == ["show_ip_interface_brief"]
+
+
+def test_a_subinterface_that_is_down_is_still_a_subinterface_that_exists(verdict):
+    observed = verdict["router_brief_shows_it_down"]
+
+    assert observed["voice"] == [
+        ["FastEthernet0/0.930", "10.93.0.1", "administratively down", "down"]
+    ]
+
+
+def test_an_unreadable_brief_table_claims_nothing_about_the_router(verdict):
+    for key in ("router_brief_unreadable", "router_brief_stale"):
+        assert verdict[key]["read"] is False, key
+        assert verdict[key]["interfaces"] is None, key
+
+
+def test_a_brief_table_without_the_row_asks_the_bounded_read_before_concluding(verdict):
+    observed = verdict["router_falls_back_and_finds_it"]
+
+    assert observed["queries"] == ["show_ip_interface_brief", "show_ip_interface"]
+    assert observed["scoped_interface"] == ["FastEthernet0/0.930"]
+    assert observed["voice"] == [
+        ["FastEthernet0/0.930", "10.93.0.1", "up", "up"]
+    ]
+
+
+def test_an_unreadable_bounded_read_leaves_the_router_unobserved(verdict):
+    # Two ways for the second read to say nothing, and neither may be allowed
+    # to harden the first read's silence into an absent subinterface.
+    for key in ("router_fallback_unreadable", "router_fallback_not_executed"):
+        assert verdict[key]["read"] is False, key
+        assert verdict[key]["interfaces"] is None, key
+
+
+def test_two_readable_reads_that_find_nothing_are_a_finding(verdict):
+    # The distinction the previous test protects.  Both reads answered, whole
+    # and fresh, and neither carried the subinterface.
+    observed = verdict["router_two_readable_reads_find_nothing"]
+
+    assert observed["read"] is True
+    assert observed["voice"] == []
+    assert observed["queries"] == ["show_ip_interface_brief", "show_ip_interface"]
+
+
+def test_the_runner_reads_the_trunk_through_the_existing_typed_readback():
+    # No new IOS: the trunk dimensions come from the readback the enterprise
+    # runtime already owns, which is also what publishes their freshness.
+    source = (ROOT / "tools" / "cp_scale_positive_voice_ab_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "return self._enterprise.read_trunk(device_name, interface)" in source
+    assert "show interfaces trunk" not in source
+    assert "pt_send_raw" not in source

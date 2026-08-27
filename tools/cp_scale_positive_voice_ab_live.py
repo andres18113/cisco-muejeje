@@ -19,6 +19,7 @@ if str(GOVERNED_ROOT / "src") not in sys.path:
 
 from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (  # noqa: E402
     DATA_VLAN_ID,
+    ROUTER_VOICE_SUBINTERFACE,
     VOICE_VLAN_ID,
     PositiveVoiceSliceQualifier,
 )
@@ -39,6 +40,8 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (  # noqa: E
     ControlledIosExecutor,
     OperationalQueryId,
     parse_show_ip_dhcp_binding,
+    parse_show_ip_interface,
+    parse_show_ip_interface_brief,
     parse_show_spanning_tree,
 )
 from packet_tracer_mcp.infrastructure.execution.live_bridge import (  # noqa: E402
@@ -50,6 +53,7 @@ from packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime i
 from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (  # noqa: E402
     SimulationTraceRuntime,
 )
+from packet_tracer_mcp.shared.utils import same_interface_name  # noqa: E402
 
 EVIDENCE_PATH = GOVERNED_ROOT / "data" / "cp-scale" / "positive-voice-ab.json"
 ROUTER_MODEL = "2811"
@@ -151,6 +155,46 @@ class _ConfigurationAdapter:
             return None
         return parse_show_ip_dhcp_binding(show.output)
 
+    def read_trunk(self, device_name: str, interface: str):
+        """The existing typed trunk readback, unchanged.
+
+        It publishes the native VLAN and the allowed, active and forwarding
+        sections as four independent answers, plus the freshness and
+        completeness of the capture they came from.  Nothing is added here.
+        """
+        return self._enterprise.read_trunk(device_name, interface)
+
+    def read_interface_addresses(self, device_name: str):
+        """Router L3 state through two REGISTERED reads, or nothing at all.
+
+        `show ip interface brief` is the table; if it is unreadable this
+        returns None and every router dimension stays UNOBSERVABLE.  If it IS
+        readable but does not list the voice subinterface, the bounded
+        per-interface `show ip interface <sub>` is asked before the absence is
+        allowed to stand -- and if THAT read is unreadable, this still returns
+        None.  A build that simply does not print subinterfaces in the brief
+        table must never be published as a router that lacks one.
+        """
+        show = self._ios.execute(
+            device_name, OperationalQueryId.SHOW_IP_INTERFACE_BRIEF,
+        )
+        if not _table_readable(show):
+            return None
+        rows = parse_show_ip_interface_brief(show.output)
+        if any(
+            same_interface_name(item.interface, ROUTER_VOICE_SUBINTERFACE)
+            for item in rows
+        ):
+            return rows
+        scoped = self._ios.execute(
+            device_name, OperationalQueryId.SHOW_IP_INTERFACE,
+            interface=ROUTER_VOICE_SUBINTERFACE,
+        )
+        if not _table_readable(scoped):
+            return None
+        row = parse_show_ip_interface(scoped.output)
+        return rows + [row] if row is not None else rows
+
 
 class _CallControlAdapter:
     def __init__(self, voice):
@@ -161,6 +205,15 @@ class _CallControlAdapter:
 
     def observe_registrations(self, expectations):
         return self._voice.observe_registrations(expectations)
+
+    def inspect_call_control(self, device_name: str):
+        """The one call-control table PT 9.0.1 publishes, read as itself.
+
+        `show telephony-service` does not exist on this build, so this is the
+        whole governed CME foundation surface: whether the table answered, and
+        whether it answered completely.
+        """
+        return self._voice.inspect_call_control(device_name)
 
 
 class _EndpointAdapter:
@@ -194,6 +247,13 @@ def _serialize(result) -> dict:
         "voice_binding_count": result.voice_binding_count,
         "voice_bindings_observed": result.voice_bindings_observed,
         "stp_phone_row_after": result.stp_phone_row_after,
+        "foundation": result.foundation.as_evidence(),
+        "foundation_ladder": [
+            {"stage": stage, "status": status}
+            for stage, status in result.foundation_ladder
+        ],
+        "first_boundary_stage": result.first_boundary_stage,
+        "first_boundary_status": result.first_boundary_status,
         "realtime_before": result.realtime_before,
         "realtime_after": result.realtime_after,
         # The milestone publishes its own retained shape: APPLIED, VERIFIED and
@@ -296,6 +356,10 @@ def run(packet_tracer_version: str) -> int:
         "portfast": evidence["portfast"],
         "voice_bindings": evidence["voice_bindings_observed"],
         "stp_phone_row_after": evidence["stp_phone_row_after"],
+        "foundation": evidence["foundation"],
+        "foundation_ladder": evidence["foundation_ladder"],
+        "first_boundary_stage": evidence["first_boundary_stage"],
+        "first_boundary_status": evidence["first_boundary_status"],
         "phones": [
             {
                 key: item[key]

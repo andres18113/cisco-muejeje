@@ -10,10 +10,12 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     APPLICATION,
     APPLIED,
     BLOCKING,
+    CONTRADICTED,
     DATA_VLAN_ID,
     EXTENSIONS,
     FORWARDING,
     NO,
+    NOT_AVAILABLE,
     NOT_REGISTERED,
     OBSERVATION,
     PHONE_ADDRESSING_INTERFACE,
@@ -1078,3 +1080,355 @@ def test_the_live_serializer_publishes_the_evidence_kind_it_was_given():
     assert "item.as_evidence()" in source
     # Nothing may rebuild the milestone dict beside the one the model publishes.
     assert '"status": item.status' not in source
+
+
+# --- the shared Voice foundation, read back rather than assumed -------------
+#
+# The A/B reproduced the CP-SCALE endpoint signature at four devices, which
+# makes SAME_FAILURE a fact about the OUTCOME and nothing yet about the cause.
+# Both sides share a foundation -- the uplink trunk, the router's voice
+# subinterface, the DHCP pool, the call control -- and not one of those had ever
+# been read.  These reads add no configuration and turn no knob; they establish
+# where the first common boundary actually is.
+
+
+@dataclass
+class _Trunk:
+    """What the existing `read_trunk` readback publishes, shape for shape."""
+
+    status: str = "trunking"
+    native_vlan: int | None = 1
+    allowed_vlans: tuple | None = (DATA_VLAN_ID, VOICE_VLAN_ID)
+    active_vlans: tuple | None = (DATA_VLAN_ID, VOICE_VLAN_ID)
+    forwarding_vlans: tuple | None = (DATA_VLAN_ID, VOICE_VLAN_ID)
+    fresh_evidence: bool = True
+    output_complete: bool = True
+    interface: str = "GigabitEthernet0/1"
+
+
+@dataclass
+class _InterfaceRow:
+    interface: str
+    ip_address: str
+    status: str = "up"
+    protocol: str = "up"
+
+
+def _router_rows(ipv4: str = "10.93.0.1", status: str = "up", protocol: str = "up"):
+    return [
+        _InterfaceRow("FastEthernet0/0", "unassigned", status, protocol),
+        _InterfaceRow("FastEthernet0/0.931", "10.94.0.1", status, protocol),
+        _InterfaceRow(f"FastEthernet0/0.{VOICE_VLAN_ID}", ipv4, status, protocol),
+    ]
+
+
+_UNSET = object()
+
+
+class _FoundationConfiguration(_Configuration):
+    """The configuration runtime WITH the two read-only foundation surfaces."""
+
+    def __init__(self, *, trunk=_UNSET, interfaces=_UNSET, **kwargs):
+        super().__init__(**kwargs)
+        self.trunk = _Trunk() if trunk is _UNSET else trunk
+        self.interfaces = _router_rows() if interfaces is _UNSET else interfaces
+        self.trunk_reads: list[tuple[str, str]] = []
+        self.interface_reads: list[str] = []
+
+    def read_trunk(self, device_name, interface):
+        self.trunk_reads.append((device_name, interface))
+        return self.trunk
+
+    def read_interface_addresses(self, device_name):
+        self.interface_reads.append(device_name)
+        return self.interfaces
+
+
+class _FoundationCallControl(_CallControl):
+    def __init__(self, *, table=_UNSET, **kwargs):
+        super().__init__(**kwargs)
+        self.table = {
+            "executed": True, "fresh_output_observed": True,
+            "output_complete": True, "ephones": [{"index": 1}, {"index": 2}],
+        } if table is _UNSET else table
+        self.inspected: list[str] = []
+
+    def inspect_call_control(self, device_name):
+        self.inspected.append(device_name)
+        return self.table
+
+
+def _run_foundation(*, configuration=None, call_control=None, **kwargs):
+    return _run(
+        configuration=(
+            configuration if configuration is not None else _FoundationConfiguration()
+        ),
+        call_control=(
+            call_control if call_control is not None else _FoundationCallControl()
+        ),
+        **kwargs,
+    )
+
+
+def test_the_trunk_dimensions_stay_four_independent_answers():
+    # Allowed, active and forwarding are three separate IOS sections and the
+    # native VLAN comes from a fourth.  Collapsing them would let a permitted
+    # VLAN stand in for a forwarded one, which is the difference between a
+    # trunk that is configured and a trunk that carries voice.
+    configuration = _FoundationConfiguration(
+        trunk=_Trunk(
+            allowed_vlans=(DATA_VLAN_ID, VOICE_VLAN_ID),
+            active_vlans=(DATA_VLAN_ID, VOICE_VLAN_ID),
+            forwarding_vlans=(DATA_VLAN_ID,),
+            native_vlan=1,
+        ),
+    )
+    result, *_ = _run_foundation(configuration=configuration)
+    foundation = result.foundation
+
+    assert foundation.trunk_operational == VERIFIED
+    assert foundation.trunk_allowed_voice == VERIFIED
+    assert foundation.trunk_active_voice == VERIFIED
+    assert foundation.trunk_forwarding_voice == CONTRADICTED
+    assert foundation.trunk_native == VERIFIED
+    assert foundation.trunk_native_vlan == 1
+
+
+def test_a_trunk_section_that_never_printed_is_unread_and_never_pruned():
+    # `None` is the section being absent from the capture.  An empty tuple is
+    # IOS printing the section and listing no VLAN.  Only the second is a
+    # finding about the network.
+    unread = _FoundationConfiguration(
+        trunk=_Trunk(forwarding_vlans=None, active_vlans=None),
+    )
+    result, *_ = _run_foundation(configuration=unread)
+    assert result.foundation.trunk_forwarding_voice == UNOBSERVABLE
+    assert result.foundation.trunk_active_voice == UNOBSERVABLE
+
+    printed_empty = _FoundationConfiguration(
+        trunk=_Trunk(forwarding_vlans=(), active_vlans=()),
+    )
+    result, *_ = _run_foundation(configuration=printed_empty)
+    assert result.foundation.trunk_forwarding_voice == CONTRADICTED
+    assert result.foundation.trunk_active_voice == CONTRADICTED
+
+
+def test_a_trunk_read_that_was_stale_or_incomplete_claims_nothing():
+    for trunk in (
+        _Trunk(fresh_evidence=False),
+        _Trunk(output_complete=False),
+    ):
+        result, *_ = _run_foundation(
+            configuration=_FoundationConfiguration(trunk=trunk),
+        )
+        foundation = result.foundation
+        assert foundation.trunk_operational == UNOBSERVABLE
+        assert foundation.trunk_allowed_voice == UNOBSERVABLE
+        assert foundation.trunk_active_voice == UNOBSERVABLE
+        assert foundation.trunk_forwarding_voice == UNOBSERVABLE
+        assert foundation.trunk_native == UNOBSERVABLE
+
+
+def test_a_runtime_that_publishes_no_trunk_readback_is_unobservable():
+    # The plain configuration runtime has no `read_trunk`.  Nothing failed, so
+    # nothing is recorded as an error -- the surface simply is not published.
+    result, *_ = _run(configuration=_Configuration())
+
+    assert result.foundation.trunk_operational == UNOBSERVABLE
+    assert not any("trunk" in item for item in result.errors)
+
+
+def test_the_router_voice_subinterface_is_read_back_on_three_dimensions():
+    result, *_ = _run_foundation()
+    foundation = result.foundation
+
+    assert foundation.router_subinterface_present == VERIFIED
+    assert foundation.router_subinterface_ipv4 == VERIFIED
+    assert foundation.router_subinterface_state == VERIFIED
+    assert foundation.router_subinterface_state_detail == "up/up"
+
+
+def test_a_router_subinterface_that_is_down_is_not_a_missing_one():
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(
+            interfaces=_router_rows(status="administratively down", protocol="down"),
+        ),
+    )
+    foundation = result.foundation
+
+    assert foundation.router_subinterface_present == VERIFIED
+    assert foundation.router_subinterface_ipv4 == VERIFIED
+    assert foundation.router_subinterface_state == CONTRADICTED
+    assert "administratively down" in foundation.router_subinterface_state_detail
+
+
+def test_a_missing_router_foundation_readback_cannot_become_a_contradiction():
+    # An unread table is not an absent subinterface.  Reading it as one would
+    # manufacture the router-side finding this whole investigation is after.
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(interfaces=None),
+    )
+    foundation = result.foundation
+
+    assert foundation.router_subinterface_present == UNOBSERVABLE
+    assert foundation.router_subinterface_ipv4 == UNOBSERVABLE
+    assert foundation.router_subinterface_state == UNOBSERVABLE
+    assert CONTRADICTED not in {
+        foundation.router_subinterface_present,
+        foundation.router_subinterface_ipv4,
+        foundation.router_subinterface_state,
+    }
+
+
+def test_a_complete_router_table_without_the_subinterface_is_a_contradiction():
+    # The distinction the previous test protects: this table WAS read, and the
+    # subinterface was not in it.  That is a finding, not an absence of one.
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(
+            interfaces=[_InterfaceRow("FastEthernet0/0", "unassigned")],
+        ),
+    )
+
+    assert result.foundation.router_subinterface_present == CONTRADICTED
+    assert result.foundation.router_subinterface_ipv4 == UNOBSERVABLE
+
+
+def test_a_subinterface_carrying_another_address_contradicts_the_expected_one():
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(
+            interfaces=_router_rows(ipv4="unassigned"),
+        ),
+    )
+
+    assert result.foundation.router_subinterface_present == VERIFIED
+    assert result.foundation.router_subinterface_ipv4 == CONTRADICTED
+
+
+def test_the_dhcp_pool_definition_is_unavailable_and_never_absent():
+    # No registered read exposes a pool DEFINITION on this build, and
+    # `VerificationKind.DHCP_POOL` is pinned UNOBSERVABLE by its own ceiling.
+    # "Nobody can see it" must never be published as "it is not there".
+    result, *_ = _run_foundation()
+    foundation = result.foundation
+
+    assert foundation.dhcp_pool_definition == NOT_AVAILABLE
+    assert foundation.option150 == NOT_AVAILABLE
+    assert foundation.dhcp_pool_definition != CONTRADICTED
+    assert foundation.option150 != CONTRADICTED
+    ladder = dict(result.foundation_ladder)
+    assert ladder["DHCP_POOL_DEFINITION"] == UNOBSERVABLE
+
+
+def test_the_call_control_table_is_read_as_a_foundation_of_its_own():
+    result, _, _, call_control, *_ = _run_foundation()
+
+    assert result.foundation.call_control_table == VERIFIED
+    assert result.foundation.call_control_ephone_rows == 2
+    assert call_control.inspected == [result.router_name]
+
+
+def test_a_call_control_table_that_paged_claims_no_ephone_count():
+    result, *_ = _run_foundation(
+        call_control=_FoundationCallControl(table={
+            "executed": True, "fresh_output_observed": True,
+            "output_complete": False, "ephones": [],
+        }),
+    )
+
+    assert result.foundation.call_control_table == UNOBSERVABLE
+    assert result.foundation.call_control_ephone_rows is None
+
+
+def test_the_foundation_reads_add_no_configuration_and_turn_no_knob():
+    # The next LIVE has to run the SAME failing topology.  A read that changed
+    # what gets applied would make it a different experiment.
+    plain, _, plain_configuration, plain_call_control, *_ = _run()
+    observed, _, configuration, call_control, *_ = _run_foundation()
+
+    def emitted(runtime):
+        return [
+            (type(action).__name__, getattr(action, "id", ""))
+            for action in runtime.applied
+        ]
+
+    assert emitted(configuration) == emitted(plain_configuration)
+    assert emitted(call_control) == emitted(plain_call_control)
+    assert observed.portfast == plain.portfast == "NOT_APPLIED"
+    names = [
+        type(action).__name__
+        for action in configuration.applied + call_control.applied
+    ]
+    assert not any("Stp" in name or "PortFast" in name for name in names)
+
+
+def test_a_contradicted_foundation_does_not_move_the_endpoint_outcome():
+    # SAME_FAILURE is a statement about the endpoint and server surfaces.  New
+    # foundation evidence localises it; it does not reclassify it.
+    registration = _Registration(
+        status="ActionExecutionStatus.FAILED", direct_readback="",
+        endpoint_ipv4="", endpoint_dhcp_enabled=True,
+        endpoint_interface_present=True, endpoint_address_channel=True,
+    )
+    verified = _run_foundation(
+        configuration=_FoundationConfiguration(bindings=[]),
+        call_control=_FoundationCallControl(registration=registration),
+    )[0]
+    contradicted = _run_foundation(
+        configuration=_FoundationConfiguration(
+            bindings=[], trunk=_Trunk(forwarding_vlans=()),
+            interfaces=[_InterfaceRow("FastEthernet0/0", "unassigned")],
+        ),
+        call_control=_FoundationCallControl(registration=registration),
+    )[0]
+
+    assert verified.outcome == "SAME_FAILURE"
+    assert contradicted.outcome == "SAME_FAILURE"
+    assert verified.first_boundary_stage != contradicted.first_boundary_stage
+
+
+def test_the_first_common_boundary_is_reported_without_skipping_ahead():
+    registration = _Registration(
+        status="ActionExecutionStatus.FAILED", direct_readback="",
+        endpoint_ipv4="", endpoint_dhcp_enabled=True,
+        endpoint_interface_present=True, endpoint_address_channel=True,
+    )
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(
+            bindings=[], trunk=_Trunk(forwarding_vlans=(DATA_VLAN_ID,)),
+        ),
+        call_control=_FoundationCallControl(registration=registration),
+    )
+
+    ladder = result.foundation_ladder
+    assert [stage for stage, _ in ladder] == [
+        "PHONE_ACCESS_AND_VOICE_VLAN", "SWITCH_TRUNK",
+        "ROUTER_VOICE_SUBINTERFACE", "DHCP_POOL_DEFINITION",
+        "CALL_CONTROL_FOUNDATION", "ENDPOINT_DHCP", "ENDPOINT_ADDRESS",
+        "VOICE_DHCP_BINDING", "SCCP_REGISTRATION",
+    ]
+    # The trunk contradiction comes before every endpoint symptom, and the
+    # boundary names it rather than the symptom furthest downstream.
+    assert result.first_boundary_stage == "SWITCH_TRUNK"
+    assert result.first_boundary_status == CONTRADICTED
+
+
+def test_an_unread_foundation_stops_the_walk_before_the_stages_behind_it():
+    result, *_ = _run(configuration=_Configuration(), call_control=_CallControl())
+
+    assert result.first_boundary_stage == "SWITCH_TRUNK"
+    assert result.first_boundary_status == UNOBSERVABLE
+
+
+def test_the_foundation_observations_are_journalled_as_observations():
+    result, *_ = _run_foundation()
+
+    for name in (
+        "SWITCH_TRUNK_OBSERVED", "ROUTER_VOICE_SUBINTERFACE_OBSERVED",
+        "CALL_CONTROL_TABLE_OBSERVED",
+    ):
+        milestone = next(item for item in result.lifecycle if item.name == name)
+        assert milestone.evidence == OBSERVATION
+        assert milestone.status == VERIFIED
+    assert [item.sequence for item in result.lifecycle] == list(
+        range(1, len(result.lifecycle) + 1)
+    )
