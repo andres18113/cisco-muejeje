@@ -2,9 +2,10 @@
 
 The expected VLAN is never borrowed from the opposite side of a forwarded
 frame.  Each control uses one target-switch ingress trunk whose complete current
-``show interfaces trunk`` readback proves, independently, an exact singleton
-allowed set, the target active and forwarding/not-pruned, and a different
-native VLAN.  Only the tagged child entering that same port is compared.
+``show interfaces trunk`` readback proves an exact singleton allowed set, the
+target active and forwarding/not-pruned, and a different native VLAN.  The
+selected child is compared only after separately establishing its end-to-end
+identity; source-to-target hop identity alone is insufficient.
 """
 
 from __future__ import annotations
@@ -64,7 +65,8 @@ class TrunkVlanCalibrationControl:
     frame_index: int | None = None
     frame_observed_in_port: str = ""
     frame_previous_device: str = ""
-    identity_reconfirmed: bool = False
+    source_to_target_hop_identity_reconfirmed: bool = False
+    selected_frame_end_to_end_dhcp_identity_established: bool = False
     child_returned: bool = False
     child_members: tuple[str, ...] = ()
     tag_fields_present: tuple[str, ...] = ()
@@ -95,11 +97,15 @@ class TrunkVlanCalibrationControl:
         return expected
 
     @property
+    def single_allowed_non_native_trunk_policy_proven(self) -> bool:
+        return self.expected_vlan is not None
+
+    @property
     def frame_entered_policy_qualified_trunk(self) -> bool:
         return bool(
-            self.expected_vlan is not None
+            self.single_allowed_non_native_trunk_policy_proven
             and self.endpoint_armed
-            and self.identity_reconfirmed
+            and self.source_to_target_hop_identity_reconfirmed
         )
 
     @property
@@ -110,7 +116,12 @@ class TrunkVlanCalibrationControl:
     @property
     def match(self) -> str:
         expected = self.expected_vlan
-        if expected is None or not self.endpoint_armed or not self.identity_reconfirmed:
+        if (
+            expected is None
+            or not self.endpoint_armed
+            or not self.source_to_target_hop_identity_reconfirmed
+            or not self.selected_frame_end_to_end_dhcp_identity_established
+        ):
             return "UNOBSERVABLE"
         observed = _finite_vlan(self.observed_vlan)
         if observed is None:
@@ -131,6 +142,7 @@ class TrunkFrameVlanCalibrationResult:
     owned_links: tuple[str, ...] = ()
     removed: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+    parallel_trunk_control_independence_established: bool = False
 
     @property
     def semantics(self) -> str:
@@ -138,7 +150,11 @@ class TrunkFrameVlanCalibrationResult:
         if any(item.match == "NO" for item in judged):
             return "CONTRADICTED_BY_CONTROL"
         matched = [item for item in judged if item.match == "YES"]
-        if len(matched) >= 2 and len({item.expected_vlan for item in matched}) >= 2:
+        if (
+            self.parallel_trunk_control_independence_established
+            and len(matched) >= 2
+            and len({item.expected_vlan for item in matched}) >= 2
+        ):
             return "STRONGLY_SUPPORTED_BY_MULTIVLAN_CONTROL"
         if matched:
             return "SUPPORTED_BY_CONTROL"
@@ -577,7 +593,7 @@ class TrunkFrameVlanCalibrationQualifier:
         for row in targets.values():
             frame = by_index.get(row["index"])
             row["frame"] = frame
-            row["identity_reconfirmed"] = bool(
+            row["source_to_target_hop_identity_reconfirmed"] = bool(
                 frame is not None
                 and frame.matches(
                     device=target_switch,
@@ -630,7 +646,9 @@ class TrunkFrameVlanCalibrationQualifier:
         members: tuple[str, ...] = ()
         present: tuple[str, ...] = ()
         frame_reason = ""
-        if frame is not None and row.get("identity_reconfirmed"):
+        if frame is not None and row.get(
+            "source_to_target_hop_identity_reconfirmed"
+        ):
             child = next((
                 item for item in getattr(frame, "children", ())
                 if item.getter == "getInFrame"
@@ -669,7 +687,10 @@ class TrunkFrameVlanCalibrationQualifier:
             frame_index=row.get("index"),
             frame_observed_in_port=str(row.get("in_port") or ""),
             frame_previous_device=str(row.get("previous_device") or ""),
-            identity_reconfirmed=bool(row.get("identity_reconfirmed")),
+            source_to_target_hop_identity_reconfirmed=bool(row.get(
+                "source_to_target_hop_identity_reconfirmed"
+            )),
+            selected_frame_end_to_end_dhcp_identity_established=False,
             child_returned=child_returned,
             child_members=members,
             tag_fields_present=present,
@@ -678,6 +699,13 @@ class TrunkFrameVlanCalibrationQualifier:
         readback_reason = self._readback_reason(control)
         if not control.endpoint_armed:
             frame_reason = frame_reason or "The endpoint DHCP client could not be armed."
+        elif (
+            control.source_to_target_hop_identity_reconfirmed
+            and not control.selected_frame_end_to_end_dhcp_identity_established
+        ):
+            frame_reason = frame_reason or (
+                "Selected trunk frame end-to-end DHCP identity was not established."
+            )
         return replace(
             control,
             failure_reason=readback_reason or frame_reason,

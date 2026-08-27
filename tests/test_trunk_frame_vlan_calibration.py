@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
+
 from src.packet_tracer_mcp.application.use_cases.qualify_trunk_frame_vlan_calibration import (
     CONTROL_VLAN_IDS,
     TRUNK_CALIBRATION_PREFIX,
@@ -244,13 +247,25 @@ def run_pass(
     return outcome, physical, configuration, endpoints, simulation, probe
 
 
-def test_two_exact_non_native_trunk_ingress_controls_qualify_strongly():
+def test_parallel_trunks_do_not_become_independent_semantic_controls():
     outcome, physical, configuration, endpoints, simulation, probe = run_pass()
 
     assert outcome.errors == ()
-    assert outcome.semantics == "STRONGLY_SUPPORTED_BY_MULTIVLAN_CONTROL"
+    assert outcome.parallel_trunk_control_independence_established is False
+    assert outcome.semantics == "DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED"
     assert [item.expected_vlan for item in outcome.controls] == list(CONTROL_VLAN_IDS)
-    assert [item.match for item in outcome.controls] == ["YES", "YES"]
+    assert [
+        item.single_allowed_non_native_trunk_policy_proven
+        for item in outcome.controls
+    ] == [True, True]
+    assert [item.match for item in outcome.controls] == [
+        "UNOBSERVABLE",
+        "UNOBSERVABLE",
+    ]
+    assert [
+        item.selected_frame_end_to_end_dhcp_identity_established
+        for item in outcome.controls
+    ] == [False, False]
     assert [item.native_vlan for item in outcome.controls] == [1, 1]
     assert configuration.reads == [
         (RX, "FastEthernet0/1"),
@@ -269,6 +284,20 @@ def test_two_exact_non_native_trunk_ingress_controls_qualify_strongly():
     )
 
 
+def test_live_schema_keeps_policy_hop_and_end_to_end_identity_separate():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "cp_scale_trunk_vlan_calibration_live.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"parallel_trunk_control_independence_established"' in source
+    assert '"single_allowed_non_native_trunk_policy_proven"' in source
+    assert '"source_to_target_hop_identity_reconfirmed"' in source
+    assert '"selected_frame_end_to_end_dhcp_identity_established"' in source
+    assert '"identity_reconfirmed": item.identity_reconfirmed' not in source
+
+
 def test_a_native_target_vlan_cannot_be_a_control():
     outcome, *_ = run_pass(overrides={
         "FastEthernet0/1": {"native_vlan": CONTROL_VLAN_IDS[0]},
@@ -276,8 +305,10 @@ def test_a_native_target_vlan_cannot_be_a_control():
 
     assert outcome.controls[0].expected_vlan is None
     assert outcome.controls[0].match == "UNOBSERVABLE"
-    assert outcome.controls[1].match == "YES"
-    assert outcome.semantics == "SUPPORTED_BY_CONTROL"
+    assert outcome.controls[0].single_allowed_non_native_trunk_policy_proven is False
+    assert outcome.controls[1].single_allowed_non_native_trunk_policy_proven is True
+    assert outcome.controls[1].match == "UNOBSERVABLE"
+    assert outcome.semantics == "DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED"
 
 
 def test_an_allowed_superset_does_not_prove_a_single_allowed_vlan():
@@ -307,6 +338,15 @@ def test_a_tagged_contradiction_is_never_averaged_away():
         11: CONTROL_VLAN_IDS[0],
         12: CONTROL_VLAN_IDS[0],
     })
+    controls = tuple(replace(
+        item,
+        selected_frame_end_to_end_dhcp_identity_established=True,
+    ) for item in outcome.controls)
+    outcome = replace(
+        outcome,
+        controls=controls,
+        parallel_trunk_control_independence_established=True,
+    )
 
     assert outcome.controls[1].match == "NO"
     assert outcome.semantics == "CONTRADICTED_BY_CONTROL"
@@ -327,7 +367,9 @@ def test_physical_arrival_on_a_qualified_trunk_is_not_target_vlan_admission():
 
     first = outcome.controls[0]
     assert first.expected_vlan == CONTROL_VLAN_IDS[0]
-    assert first.identity_reconfirmed is True
+    assert first.single_allowed_non_native_trunk_policy_proven is True
+    assert first.source_to_target_hop_identity_reconfirmed is True
+    assert first.selected_frame_end_to_end_dhcp_identity_established is False
     assert first.frame_entered_policy_qualified_trunk is True
     assert first.match == "UNOBSERVABLE"
     assert first.frame_admitted_for_target_vlan is False
@@ -341,7 +383,10 @@ def test_the_frame_must_enter_the_exact_read_back_trunk_from_the_source_switch()
 
     assert outcome.controls[0].frame_index is None
     assert outcome.controls[0].match == "UNOBSERVABLE"
-    assert outcome.controls[1].match == "YES"
+    assert outcome.controls[0].source_to_target_hop_identity_reconfirmed is False
+    assert outcome.controls[1].source_to_target_hop_identity_reconfirmed is True
+    assert outcome.controls[1].selected_frame_end_to_end_dhcp_identity_established is False
+    assert outcome.controls[1].match == "UNOBSERVABLE"
 
 
 def test_cleanup_is_owned_reversed_and_the_original_mode_is_verified():

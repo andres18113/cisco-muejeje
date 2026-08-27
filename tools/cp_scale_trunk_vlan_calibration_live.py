@@ -60,6 +60,9 @@ def _serialize(result) -> dict:
         "target_switch_name": result.target_switch_name,
         "control_vlan_ids": list(CONTROL_VLAN_IDS),
         "frame_vlan_field_semantics": result.semantics,
+        "parallel_trunk_control_independence_established": (
+            result.parallel_trunk_control_independence_established
+        ),
         "controls": [
             {
                 "target_vlan_id": item.target_vlan_id,
@@ -87,13 +90,21 @@ def _serialize(result) -> dict:
                 "frame_entered_policy_qualified_trunk": (
                     item.frame_entered_policy_qualified_trunk
                 ),
+                "single_allowed_non_native_trunk_policy_proven": (
+                    item.single_allowed_non_native_trunk_policy_proven
+                ),
                 "frame_admitted_for_target_vlan": (
                     item.frame_admitted_for_target_vlan
                 ),
                 "frame_index": item.frame_index,
                 "frame_observed_in_port": item.frame_observed_in_port,
                 "frame_previous_device": item.frame_previous_device,
-                "identity_reconfirmed": item.identity_reconfirmed,
+                "source_to_target_hop_identity_reconfirmed": (
+                    item.source_to_target_hop_identity_reconfirmed
+                ),
+                "selected_frame_end_to_end_dhcp_identity_established": (
+                    item.selected_frame_end_to_end_dhcp_identity_established
+                ),
                 "child_returned": item.child_returned,
                 "child_members": list(item.child_members),
                 "tag_fields_present": list(item.tag_fields_present),

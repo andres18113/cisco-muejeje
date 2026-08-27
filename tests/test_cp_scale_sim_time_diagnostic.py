@@ -510,7 +510,7 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert "CURRENT_PUSHED_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d" in handoff
+    assert "CURRENT_PUSHED_HEAD = f53f296df070d85d4dfa63f3216bc9c0e027601a" in handoff
     # The two heads are different facts. Collapsing them is how a pushed
     # checkpoint starts reading as a governed LIVE.
     assert (
@@ -564,13 +564,46 @@ def test_handoff_keeps_why_an_access_port_cannot_calibrate_the_vlan_field():
         in handoff
     )
     assert "PHONE_DHCP_VLAN_IDENTITY = NOT_YET_GLOBALLY_QUALIFIED" in handoff
-    # The next step is an AUDIT, not a calibration: a single allowed VLAN that
-    # is the native one travels untagged and would calibrate nothing.
-    assert "CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN" in handoff
+    # The pre-LIVE capability statement remains historical, not the current
+    # result: a native singleton would still calibrate nothing.
+    assert "PRE_LIVE_CAN_ATTEMPT_SINGLE_ALLOWED_READBACK = YES" in handoff
     assert "native VLAN ambiguity" in handoff
     assert "UNTAGGED" in handoff
     assert "frameType" in handoff and "srcMacAddress" in handoff
     assert (
         "FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED"
+        in handoff
+    )
+
+
+def test_handoff_closes_trunk_calibration_at_the_exact_evidence_boundary():
+    handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
+
+    assert "CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN = NO" not in handoff
+    assert (
+        "CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_TRUNK_POLICY = YES" in handoff
+    )
+    assert (
+        "CAN_PROVE_SELECTED_FRAME_BELONGS_TO_SINGLE_ALLOWED_VLAN = NO"
+        in handoff
+    )
+    assert "CAN_COMPLETE_FRAME_VLAN_SEMANTIC_CONTROL = NO" in handoff
+    assert "CONTROL_742_POLICY = VERIFIED_SINGLE_ALLOWED_NON_NATIVE" in handoff
+    assert "CONTROL_742_SELECTED_FRAME_VLAN = UNOBSERVABLE" in handoff
+    assert "CONTROL_743_POLICY = NOT_FORWARDING" in handoff
+    assert "CONTROL_743_FRAME = UNOBSERVABLE" in handoff
+    assert "SELECTED_TRUNK_FRAME_END_TO_END_DHCP_IDENTITY = NOT_ESTABLISHED" in handoff
+    assert "PARALLEL_TRUNK_CONTROL_INDEPENDENCE = NOT_ESTABLISHED" in handoff
+    assert "CONTROL_743_CONFOUNDED_BY_PARALLEL_L2_TOPOLOGY = YES" in handoff
+    assert "DO_NOT_RERUN_SAME_PARALLEL_TRUNK_TOPOLOGY = YES" in handoff
+    assert "NEXT_EVIDENCE_SEAM = CROSS_HOP_FRAME_CORRELATION" in handoff
+    assert "CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_YET_AUDITED" in handoff
+    assert "NEXT_ACTIVE_STEP = OFFLINE CROSS-HOP FRAME CORRELATION AUDIT" in handoff
+    assert "FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB" in handoff
+    assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
+    # The trunk POLICY was proven; only the selected frame's VLAN identity was
+    # not.  The resume block must carry that as a greppable token, not prose.
+    assert (
+        "SINGLE_ALLOWED_NON_NATIVE_TRUNK_POLICY = PROVEN_ON_CONTROL_742"
         in handoff
     )

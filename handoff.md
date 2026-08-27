@@ -6,7 +6,7 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
+CURRENT_PUSHED_HEAD = f53f296df070d85d4dfa63f3216bc9c0e027601a
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
 LATEST_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
@@ -27,6 +27,16 @@ TRUNK_NATIVE_VLAN_READBACK = IMPLEMENTED_AND_MEASURED
 TRUNK_CONTROL_742 = POLICY_QUALIFIED / 7-MEMBER UNTAGGED SHAPE / UNOBSERVABLE
 TRUNK_CONTROL_743 = FORWARDING EMPTY / 7-MEMBER UNTAGGED SHAPE / UNOBSERVABLE
 TRUNK_CONTROL_END_TO_END = NOT_PROVEN
+TRUNK_POLICY_READBACK = MEASURED
+SINGLE_ALLOWED_NON_NATIVE_TRUNK_POLICY = PROVEN_ON_CONTROL_742
+SELECTED_TRUNK_FRAME_VLAN_IDENTITY = UNOBSERVABLE
+SELECTED_TRUNK_FRAME_END_TO_END_DHCP_IDENTITY = NOT_ESTABLISHED
+PARALLEL_TRUNK_CONTROL_INDEPENDENCE = NOT_ESTABLISHED
+DO_NOT_RERUN_SAME_PARALLEL_TRUNK_TOPOLOGY = YES
+NEXT_EVIDENCE_SEAM = CROSS_HOP_FRAME_CORRELATION
+CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_YET_AUDITED
+NEXT_ACTIVE_STEP = OFFLINE CROSS-HOP FRAME CORRELATION AUDIT
+FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB
 VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
@@ -52,6 +62,7 @@ STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
 STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)
 SOURCE_DEFECT_FOUND = YES
 SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
+PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
 PHONE_EDGE_PORTFAST_INTENT = YES
 PHONE_EDGE_PORTFAST_COMPILED = NO at FLOOR1 (YES at FLOOR3+)
@@ -895,10 +906,11 @@ assumption. It is NOT started here: the governing instruction excluded a
 trunk-sourced expectation, and whether a single-allowed-VLAN trunk escapes that
 exclusion is a decision, not an inference.
 
-## NEXT_ACTIVE_STEP -- for the next session, not started here
+## Historical pre-LIVE next step -- completed by the trunk calibration
 
-**Offline capability audit for a non-circular SINGLE-ALLOWED-VLAN TRUNK ingress
-calibration.** Nothing about it may be run before the audit answers.
+The prior checkpoint assigned an offline capability audit for a non-circular
+single-allowed-VLAN trunk ingress calibration.  This is historical context; the
+audit and the one governed disposable LIVE are now complete.
 
 Access-port calibration is finished and it did not work: the port whose VLAN is
 independently known is the port whose frames carry no tag. Re-running it is not
@@ -917,10 +929,10 @@ TRUNK_FORWARDING_READBACK
 TRUNK_NATIVE_VLAN_READBACK
 ```
 
-and only then whether it can establish:
+and only then whether it could attempt:
 
 ```text
-CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN = YES | NO
+PRE_LIVE_CAN_ATTEMPT_SINGLE_ALLOWED_NON_NATIVE_CONTROL = YES | NO
 ```
 
 If that cannot be proven, the trunk calibration does not start either.
@@ -1028,7 +1040,7 @@ links were recorded before mutation, all four owned devices were removed in
 reverse order, `workspace_restored=TRUE`, `realtime_restored=TRUE`, and the
 journal contains no orchestration errors.  No `.pkt` was saved.
 
-Control 742 independently established all policy dimensions on target ingress
+Control 742 established all policy dimensions on target ingress
 `FastEthernet0/1`:
 
 ```text
@@ -1039,7 +1051,7 @@ forwarding/not pruned VLANs = {742}
 native VLAN = 1
 endpoint DHCP armed = YES
 frame entered exact ingress from owned source switch = YES (index 2)
-frame identity reconfirmed = YES
+source-switch -> target-switch hop identity reconfirmed = YES
 getInFrame child = non-null
 child members = dstMacAddress, frameCheckSequence, lengthType, payload,
                 pduSize, pduType, srcMacAddress
@@ -1055,15 +1067,24 @@ LIVE journal's derived `frame_admitted_for_target_vlan=TRUE` label therefore
 overstated the raw facts.  A post-LIVE source correction, covered from this
 retained evidence without another run, now separates
 `frame_entered_policy_qualified_trunk` from target-VLAN admission; the latter is
-true only for a numeric matching control.
+true only for a numeric matching control whose end-to-end DHCP identity is
+separately established.
 
-Control 743 independently read target ingress `FastEthernet0/10` as operational
+Control 743 directly read target ingress `FastEthernet0/10` as operational
 trunking, allowed `{743}`, active `{743}`, native VLAN 1, but forwarding/not
 pruned was the explicit empty set.  Its convergence gate therefore remained
 false.  A frame still entered from the owned source switch (index 1), was
 identity-reconfirmed, and its non-null child exposed the same seven-member shape
 with no tag fields.  It is UNOBSERVABLE, not a negative VLAN match; a physically
 arriving frame does not override the explicit forwarding-policy observation.
+
+The two intended controls shared the same source and target switches over two
+parallel physical L2 links.  Control 743's forwarding/not-pruned readback was
+the explicit empty set, so the controls did not provide independent forwarding
+conditions.  The exact cause of that empty set was not directly proven; do not
+diagnose it as STP blocking.  A future calibration must not reuse this topology.
+Use either two independent switch pairs or one disposable trunk reconfigured
+sequentially, but do not implement either alternative during this closeout.
 
 The result is:
 
@@ -1073,14 +1094,20 @@ TRUNK_ACTIVE_READBACK = IMPLEMENTED_AND_MEASURED
 TRUNK_FORWARDING_READBACK = IMPLEMENTED_AND_MEASURED
 TRUNK_NATIVE_VLAN_READBACK = IMPLEMENTED_AND_MEASURED
 
-CAN_PROVE_SINGLE_ALLOWED_VLAN = YES
-CAN_PROVE_TARGET_NON_NATIVE = YES
-CAN_PROVE_FRAME_ADMITTED_FOR_TARGET_VLAN = NO
-CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN = NO (complete end-to-end control)
-SINGLE_ALLOWED_NON_NATIVE_POLICY = YES (control 742 port state only)
+CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_TRUNK_POLICY = YES
+CAN_PROVE_SELECTED_FRAME_BELONGS_TO_SINGLE_ALLOWED_VLAN = NO
+CAN_COMPLETE_FRAME_VLAN_SEMANTIC_CONTROL = NO
 
-CONTROL_1 = POLICY_QUALIFIED / VLAN742 / UNTAGGED SHAPE / UNOBSERVABLE
-CONTROL_2 = FORWARDING EMPTY / VLAN743 / UNTAGGED SHAPE / UNOBSERVABLE
+CONTROL_742_POLICY = VERIFIED_SINGLE_ALLOWED_NON_NATIVE
+CONTROL_742_SELECTED_FRAME_VLAN = UNOBSERVABLE
+CONTROL_743_POLICY = NOT_FORWARDING
+CONTROL_743_FRAME = UNOBSERVABLE
+FRAME_ENTERED_POLICY_QUALIFIED_TRUNK = OBSERVED
+SELECTED_TRUNK_FRAME_TAG_SHAPE = UNTAGGED / NO vlanId MEMBER
+SELECTED_TRUNK_FRAME_END_TO_END_DHCP_IDENTITY = NOT_ESTABLISHED
+PARALLEL_TRUNK_CONTROL_INDEPENDENCE = NOT_ESTABLISHED
+CONTROL_743_CONFOUNDED_BY_PARALLEL_L2_TOPOLOGY = YES
+DO_NOT_RERUN_SAME_PARALLEL_TRUNK_TOPOLOGY = YES
 FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED
 ```
 
@@ -1090,20 +1117,45 @@ so neither support level is justified.  The direct PHONE-02 and Switch5 values
 remain 20, but `PHONE_DHCP_VLAN_IDENTITY` remains
 `NOT_YET_GLOBALLY_QUALIFIED`.
 
-The exact remaining seam is not another trunk-policy getter: all four are now
-measured.  The target frames were attributed to the owned source switch, but
-not end-to-end to the endpoint DHCP retry across that switch.  Without a
-governed cross-hop identity, the seven-member object cannot yet be classified
-as either the forwarded DHCP frame losing its visible tag shape or an unrelated
-untagged switch-originated frame selected first on that ingress.  Do not invent
-a permanent type-7 mapping, inspect payload recursively, or rerun this same
-control hoping the ambiguity disappears.
+The next evidence seam is cross-hop frame correlation; whether existing
+measured surfaces can provide it is not yet audited.  The target frames were
+attributed to the owned source switch, but not end-to-end to the endpoint DHCP
+retry across that switch.  The seven-member object therefore cannot be called a
+forwarded DHCP frame or evidence that the source switch removed a tag.  The next
+session must first inspect existing `srcMacAddress`, `dstMacAddress`, source and
+destination strings, `previous_device`, ports, simulation time/start time,
+traffic type, Packet Tracer decisions, and child/frame identity offline.  Do
+not invent a permanent type-7 mapping, inspect payload recursively, or run
+another Packet Tracer LIVE for that audit.
+
+```text
+NEXT_EVIDENCE_SEAM = CROSS_HOP_FRAME_CORRELATION
+CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_YET_AUDITED
+NEXT_ACTIVE_STEP = OFFLINE CROSS-HOP FRAME CORRELATION AUDIT
+FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB
+```
+
+If existing surfaces cannot close correlation cheaply, stop the `frame.vlanId`
+qualification line.  The next causal experiment after that is a known-good
+disposable Voice A/B comparison against CP-SCALE, not an exact replay of
+historical E7.  Record that alternative only; do not execute it in this
+closeout.
 
 FAIL-FIRST for the retained-evidence correction: a frame with an unobservable
 VLAN still reported target-VLAN admission.  Focused: 13 passed.  Affected: 162
 passed.  The full gate then found two intentionally pinned handoff-head
 assertions, updated alongside this continuity record.  Final continuity gates:
 focused 84 passed, affected 118 passed, full 2998 passed / 0 failed.
+
+SESSION CLOSEOUT correction: five focused source assertions failed first on
+the absent policy, hop-identity, end-to-end-identity and parallel-independence
+contracts; two handoff assertions then failed first on the stale head and
+ambiguous current terminology.  Final closeout gates: focused 14 passed,
+affected 120 passed, full 3000 passed / 0 failed.  Graphify updated offline;
+`git diff --check` passed.  No Packet Tracer LIVE ran during the closeout.
+An intermediate full run failed four namespace-isolation contracts because a
+new serializer test imported the production package into pytest; the test was
+corrected to verify the source labels without loading that namespace.
 
 ## Reading the heads
 
