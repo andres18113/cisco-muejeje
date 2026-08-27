@@ -1799,3 +1799,53 @@ def test_handoff_keeps_the_two_calibration_lineages_apart():
         in handoff
     )
     assert "LATEST_CALIBRATION_LIVE_HEAD" not in handoff
+
+
+def test_the_disposable_names_render_through_the_trusted_control_plane_renderer():
+    """TD-RUNTIME-004, met from the other side.
+
+    The typed control-plane renderer's allowlist requires an alphanumeric first
+    character, and the resolution on record for that conflict is a COMPATIBLE
+    NAMESPACE, never a relaxed validator -- `test_the_discovery_prefix_is_still_
+    refused_by_the_trusted_renderer` exists to keep it that way.  This slice now
+    renders edge ports through that renderer, so it belongs in the compatible
+    namespace as well.  Cleanup never depended on the prefix; it tracks the
+    objects it created.
+
+    The first LIVE of the intervention is what taught this: both edge mutations
+    came back `Invalid compiled device name`, PortFast read NOT_APPLIED, and the
+    run was a baseline wearing an experiment's name.  This contract is the
+    offline version of that lesson.
+    """
+    from src.packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
+        PacketTracerControlPlaneRenderer,
+    )
+
+    assert POSITIVE_VOICE_PREFIX[:1].isalnum(), POSITIVE_VOICE_PREFIX
+
+    result, _, _, _, _, _, control_plane = _edge_run()
+    renderer = PacketTracerControlPlaneRenderer()
+    for action in _edge_actions(control_plane):
+        rendered = renderer.render_action(action)
+        assert rendered.device_name == result.switch_name
+        lines = rendered.ios_payload.splitlines()
+        assert " spanning-tree portfast" in lines
+        assert " no spanning-tree bpduguard enable" in lines
+        assert " spanning-tree bpduguard enable" not in lines
+
+
+def test_a_rendering_refusal_is_reported_and_never_silently_downgraded():
+    # What the first intervention LIVE actually did: the mutations were
+    # refused, `portfast` stayed NOT_APPLIED and the reason reached the
+    # evidence.  A run that had reported APPLIED anyway would have produced a
+    # baseline wearing an experiment's name.
+    control_plane = _ControlPlane(
+        mutations=lambda action_id: _mutation(
+            action_id=action_id, applied=False,
+            message="Typed E9 rendering failed: Invalid compiled device name",
+        ),
+    )
+    result, *_ = _edge_run(control_plane=control_plane)
+
+    assert result.portfast == "NOT_APPLIED"
+    assert any("Invalid compiled device name" in item for item in result.errors)

@@ -43,7 +43,18 @@ from ...shared.utils import same_interface_name
 
 #: Reserved prefix, same intent as the other disposables: every object this
 #: qualification creates is recognisable as its own and nothing else is touched.
-POSITIVE_VOICE_PREFIX = "__MCP_VOICEAB_"
+#:
+#: It lives in the TYPED namespace (`MCP-...`), not the discovery one
+#: (`__MCP_...`), and that is TD-RUNTIME-004 rather than taste.  The trusted
+#: control-plane renderer's allowlist requires an alphanumeric first character,
+#: and the resolution on record for that conflict is a compatible namespace and
+#: never a relaxed validator.  This slice renders edge-port actions through that
+#: renderer, so it has to be reachable by it.  The first intervention LIVE is
+#: what proved the point: both edge mutations came back `Invalid compiled device
+#: name`, PortFast read NOT_APPLIED, and the run was a baseline wearing an
+#: experiment's name.  Cleanup was never affected either way -- it tracks the
+#: objects it created, not a string.
+POSITIVE_VOICE_PREFIX = "MCP-VOICEAB-"
 
 #: The documented historical E7 shape.  930 is a non-default VLAN, so a row that
 #: appears for it was created by this slice and not inherited from VLAN 1.

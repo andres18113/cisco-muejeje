@@ -45,6 +45,7 @@ ROLES = {
     "AUTHORITATIVE_SAME_FAILURE_MEASUREMENT",
     "FOUNDATION_QUALIFICATION_MEASUREMENT",
     "PORTFAST_ONLY_CAUSAL_INTERVENTION",
+    "HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED",
 }
 
 
@@ -234,3 +235,15 @@ def test_the_causal_intervention_has_a_role_of_its_own(monkeypatch, tmp_path):
 
     assert entry["role"] == "PORTFAST_ONLY_CAUSAL_INTERVENTION"
     assert "PORTFAST_ONLY_CAUSAL_INTERVENTION" in tool.ROLES
+
+
+def test_a_run_whose_intervention_never_applied_is_filed_as_the_boundary_it_was():
+    # Run 5 asked for PortFast and got `Invalid compiled device name` twice.
+    # Filing it as an intervention would put a baseline in the ledger under an
+    # experiment's name, which is the same promotion the statuses refuse.
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    run5 = next(item for item in ledger["runs"] if item["run"] == "run5")
+
+    assert run5["role"] == "HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED"
+    assert run5["role"] != "PORTFAST_ONLY_CAUSAL_INTERVENTION"
+    assert "NOT_APPLIED" in run5["note"]

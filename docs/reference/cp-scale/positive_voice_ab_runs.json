@@ -49,6 +49,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "Same topology and configuration as run 3, read-only foundation evidence added.  Trunk Gi0/1 trunking with 930 allowed, active AND forwarding, native 1; FastEthernet0/0.930 present at 10.93.0.1 up/up; show ephone fresh and complete with 2 rows.  First non-VERIFIED stage is DHCP_POOL_DEFINITION at UNOBSERVABLE -- an observer ceiling, not a finding.  First CONTRADICTED stage is ENDPOINT_ADDRESS."
+    },
+    {
+      "run": "run5",
+      "filename": "positive-voice-ab-run5-edge-name-rejected.json",
+      "sha256": "bfc217f7051f8bda1a8baf4f33041b575cd6764545294eb2fe9ff2137ff20280",
+      "source_head": "819d8f873ddb61ec0a19108a6d872f7971a2040c",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "Asked for the PortFast intervention and did not get it: both ConfigureStpEdgePort mutations were refused with 'Invalid compiled device name' because the disposable lived in the discovery namespace, so PORTFAST = NOT_APPLIED and this run is run 4 repeated.  It is not worthless: it measured the phone-facing STP Type column reading 'P2p' with no edge marker, which is the before half of the PortFast readback.  Corrected by adopting the typed namespace (TD-RUNTIME-004), not by relaxing the renderer allowlist."
     }
   ]
 }
