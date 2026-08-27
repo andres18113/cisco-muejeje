@@ -948,7 +948,7 @@ def test_handoff_records_the_measured_positive_voice_ab_result():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "POSITIVE_VOICE_AB_IMPLEMENTED = YES" in handoff
-    assert "POSITIVE_VOICE_AB_LIVE = RUN at a2a3e27" in handoff
+    assert "POSITIVE_VOICE_AB_LIVE = RUN at c9d6ead" in handoff
     assert "POSITIVE_VOICE_AB_RESULT = SAME_FAILURE" in handoff
     # An unrun experiment is never a negative result, so the blocker that
     # stood while it was unrun must not survive the run that replaced it.
@@ -973,7 +973,7 @@ def test_handoff_records_the_measured_positive_voice_ab_result():
     assert (
         "SCALE_SPECIFIC_VOICE_FAILURE_LEVEL = WEAKENED_AT_SYMPTOM_LEVEL" in handoff
     )
-    assert "NEXT_ACTIVE_STEP = DHCP_POOL_DEFINITION_READBACK_DECISION" in handoff
+    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION" in handoff
     # The positive control carried no PortFast either, so it separates nothing
     # and the causal verdicts stay exactly where they were.
     assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
@@ -1513,7 +1513,7 @@ def test_handoff_records_the_applied_verified_lifecycle_separation():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "LIFECYCLE_APPLIED_VERIFIED_BOUNDARY = SEPARATED at 241e64b" in handoff
-    assert "RAW_VOICE_AB_RUNS_PINNED = 6" in handoff
+    assert "RAW_VOICE_AB_RUNS_PINNED = 7" in handoff
 
 
 # --- PortFast as ONE changed variable ---------------------------------------
@@ -1797,7 +1797,7 @@ def test_handoff_keeps_the_two_calibration_lineages_apart():
         "d15a5b71dff8b95b56404e550540ca0f3aef018d" in handoff
     )
     assert (
-        "LATEST_VOICE_AB_LIVE_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2"
+        "LATEST_VOICE_AB_LIVE_HEAD = c9d6eada2d354e9dcdbcfe468268f84c97bc0885"
         in handoff
     )
     assert "LATEST_CALIBRATION_LIVE_HEAD" not in handoff
@@ -1856,13 +1856,10 @@ def test_a_rendering_refusal_is_reported_and_never_silently_downgraded():
 def test_handoff_records_the_portfast_only_control_as_the_no_effect_it_was():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
-    assert (
-        "PORTFAST_INTERVENTION_RESULT = NO_OBSERVED_EFFECT_PENDING_PAIRED_BASELINE"
-        in handoff
-    )
-    assert (
-        "PORTFAST_AS_VOICE_ROOT_CAUSE = WEAKENED_PENDING_PAIRED_BASELINE" in handoff
-    )
+    assert "PORTFAST_INTERVENTION_RESULT = NO_EFFECT" in handoff
+    assert "PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED" in handoff
+    assert "PAIRED_BASELINE_MATCH = YES" in handoff
+    assert "FIRST_STAGE_CHANGED_BETWEEN_PAIRED_RUNS = NONE" in handoff
     assert "PORTFAST_EXPERIMENT_BPDU_GUARD = OFF" in handoff
     # APPLIED is the mutation being accepted.  Nothing saw the switch holding
     # it, and the conclusion is bounded by that rather than rounded up.
@@ -2011,6 +2008,9 @@ def test_handoff_does_not_claim_run6_was_a_strict_one_variable_comparison():
     assert "RUN4_VS_RUN6_SECOND_VARIABLE = DISPOSABLE_NAMESPACE_CHANGED" in handoff
     assert "RUN6 = VALID_ISOLATED_PORTFAST_INTERVENTION_ATTEMPT" in handoff
     assert "run 4 with exactly one variable moved" not in handoff
+    # Run 7 measured the second variable instead of assuming it away.
+    assert "RUN6_VS_RUN7_SINGLE_VARIABLE = ESTABLISHED" in handoff
+    assert "DISPOSABLE_NAMESPACE_EFFECT = NONE_OBSERVED" in handoff
 
 
 def test_handoff_separates_the_isolated_component_from_the_canonical_repair():
@@ -2025,3 +2025,19 @@ def test_handoff_separates_the_isolated_component_from_the_canonical_repair():
     assert "PORTFAST_RUNTIME_STATE = UNOBSERVABLE" in handoff
     # The claim that the repair IS this dispatch was the overclaim.
     assert "is exactly this dispatch" not in handoff
+
+
+def test_handoff_closes_the_portfast_branch_without_refuting_portfast():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW" in handoff
+    assert (
+        "GOVERNED_EDGE_PORTFAST_DISPATCH_EFFECT = NO_OBSERVED_EFFECT" in handoff
+    )
+    # The dispatch had no observable effect.  That is not the same as PortFast
+    # being refuted, and it is not the same as knowing the switch ran it.
+    assert "PORTFAST_RUNTIME_STATE = UNOBSERVABLE" in handoff
+    assert "PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED" in handoff
+    assert "PORTFAST_REFUTED" not in handoff
+    assert "PORTFAST_RUNTIME_STATE_VERIFIED" not in handoff
+    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION" in handoff

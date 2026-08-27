@@ -6,10 +6,10 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2
+CURRENT_PUSHED_HEAD = c9d6eada2d354e9dcdbcfe468268f84c97bc0885
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
 LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
-LATEST_VOICE_AB_LIVE_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2
+LATEST_VOICE_AB_LIVE_HEAD = c9d6eada2d354e9dcdbcfe468268f84c97bc0885
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
     measured plain-host access-ingress representation
@@ -46,10 +46,10 @@ RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
 CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
 FRAME_VLAN_QUALIFICATION_LINE = STOPPED
 POSITIVE_VOICE_AB_IMPLEMENTED = YES
-POSITIVE_VOICE_AB_LIVE = RUN at a2a3e27 (governed, Realtime, cleaned up)
+POSITIVE_VOICE_AB_LIVE = RUN at c9d6ead (governed, Realtime, cleaned up)
 PACKET_TRACER_PROCESS_PRESENT = YES
 POSITIVE_VOICE_AB_RESULT = SAME_FAILURE
-RAW_VOICE_AB_RUNS_PINNED = 6 (run1..run6, SHA-256 in
+RAW_VOICE_AB_RUNS_PINNED = 7 (run1..run7, SHA-256 in
     docs/reference/cp-scale/positive_voice_ab_runs.json)
 DISPOSABLE_VOICE_NAMESPACE = MCP-VOICEAB- (typed, not the `__MCP_` discovery
     one: the trusted control-plane renderer cannot reach that prefix)
@@ -58,13 +58,21 @@ POSITIVE_SLICE_PORTFAST = APPLIED (run 6; run 4 was NOT_APPLIED)
 PORTFAST_READBACK = UNOBSERVABLE (Type column reads P2p; no edge marker has
     ever been measured on this build, so its absence says nothing)
 PORTFAST_EXPERIMENT_BPDU_GUARD = OFF (one variable, deliberately)
-PORTFAST_INTERVENTION_RESULT = NO_OBSERVED_EFFECT_PENDING_PAIRED_BASELINE
+PORTFAST_INTERVENTION_RESULT = NO_EFFECT
 PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED
 GOVERNED_EDGE_PORTFAST_MUTATION = APPLIED_NO_OBSERVED_EFFECT
+GOVERNED_EDGE_PORTFAST_DISPATCH_EFFECT = NO_OBSERVED_EFFECT
 PORTFAST_RUNTIME_STATE = UNOBSERVABLE
-RUN6 = VALID_ISOLATED_PORTFAST_INTERVENTION_ATTEMPT
+PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW
+RUN6 = CURRENT_NAMESPACE_PORTFAST_INTERVENTION
+RUN7 = CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE
+PAIRED_BASELINE_MATCH = YES
+FIRST_STAGE_CHANGED_BETWEEN_PAIRED_RUNS = NONE
+RUN6_VS_RUN7_SINGLE_VARIABLE = ESTABLISHED
 RUN4_VS_RUN6_SINGLE_VARIABLE = NOT_STRICTLY_ESTABLISHED
 RUN4_VS_RUN6_SECOND_VARIABLE = DISPOSABLE_NAMESPACE_CHANGED
+DISPOSABLE_NAMESPACE_EFFECT = NONE_OBSERVED (run 7 matches run 4 on every
+    decisive field across the namespace change)
 ISOLATED_PORTFAST_COMPONENT_TESTED = YES
 EXACT_CANONICAL_STP_REPAIR_TESTED = NO
 POSITIVE_SLICE_VOICE_VLAN_READBACK = VERIFIED 2/2
@@ -92,7 +100,7 @@ COMMON_VOICE_FOUNDATION = VERIFIED as far as governed reads reach
 SAME_ROOT_CAUSE = NOT_ESTABLISHED
 SCALE_SPECIFIC_VOICE_FAILURE = NOT_ESTABLISHED / WEAKENED
 SCALE_SPECIFIC_VOICE_FAILURE_LEVEL = WEAKENED_AT_SYMPTOM_LEVEL (not REFUTED)
-NEXT_ACTIVE_STEP = DHCP_POOL_DEFINITION_READBACK_DECISION
+NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION
 FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB_WITH_PORTFAST
 VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
@@ -119,9 +127,8 @@ STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
 STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)
 SOURCE_DEFECT_FOUND = YES
 SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
-PORTFAST_AS_VOICE_ROOT_CAUSE = WEAKENED_PENDING_PAIRED_BASELINE (run 6
-    applied the edge policy on both phone ports and changed nothing, but its
-    baseline half ran in a different disposable namespace)
+PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED (run 6 vs run 7: same
+    code, same namespace, edge policy the only variable, nothing moved)
 VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE;
     co-occurs with the failure at four devices as well as at CP-SCALE size
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
@@ -1538,7 +1545,7 @@ Two things this run does NOT settle, unchanged from run 3:
 The earlier run 3 note that "the router's pool and subinterfaces were not read
 back" is superseded for the SUBINTERFACES and stands for the POOL.
 
-`NEXT_ACTIVE_STEP = DHCP_POOL_DEFINITION_READBACK_DECISION`. The next thing
+`NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION`. The next thing
 worth knowing needs a governed observer that does not exist: something that can
 state what the router's pool and option 150 actually hold. Every existing
 registered query has been audited and none reaches it. Building one is a new
@@ -1639,6 +1646,66 @@ across an intervention is still not causation, and
 the only things in the chain nobody can read, and reading them still needs an
 observer that does not exist.
 
+## The paired baseline, and the branch closes
+
+Run 7 at `c9d6ead` is run 6's other half: same code revision, same
+`MCP-VOICEAB-` namespace, same everything, `edge_portfast=False`. Normalised
+across every retained field -- the per-run disposable token is the only thing
+stripped -- the two runs differ in exactly two places:
+
+```text
+portfast:  APPLIED  ->  NOT_APPLIED
+lifecycle: run 6 carries WHEN_EDGE_PORTFAST_APPLIED; run 7 does not
+```
+
+That is the whole diff. Every foundation dimension, every phone field, both
+ladder markers, the binding count, the STP rows, the Type columns and the
+outcome are identical. This is the strict one-variable comparison run 4 and run
+6 could not be:
+
+```text
+PAIRED_BASELINE_MATCH = YES
+RUN6_VS_RUN7_SINGLE_VARIABLE = ESTABLISHED
+FIRST_STAGE_CHANGED_BETWEEN_PAIRED_RUNS = NONE
+GOVERNED_EDGE_PORTFAST_DISPATCH_EFFECT = NO_OBSERVED_EFFECT
+PORTFAST_INTERVENTION_RESULT = NO_EFFECT
+PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED
+```
+
+Run 7 settles the second variable as well. It matches run 4 -- the old
+`__MCP_VOICEAB_` namespace, also without PortFast -- on every decisive field,
+so `DISPOSABLE_NAMESPACE_EFFECT = NONE_OBSERVED` and the pairing objection
+against run 6 is answered by measurement rather than by assumption.
+
+What stays unresolved is stated as plainly as what closed. `PORTFAST_RUNTIME_
+STATE` is still UNOBSERVABLE: both runs print `P2p` in the phone-facing Type
+column and this build has never been measured printing an edge marker at all.
+So the finding is about the DISPATCH -- applying the governed edge policy
+changes nothing observable -- and not about a switch demonstrably running
+PortFast. `PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE` stays `NOT_ESTABLISHED`:
+neither a refutation of PortFast nor a verified runtime state has been earned,
+and writing either would be the promotion this pair was built to avoid.
+
+```text
+PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW
+```
+
+Closed, not answered. `EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING` is still a
+real architectural defect and `SOURCE_DEFECT_FOUND = YES` stands; what this pair
+removes is its standing as the explanation for THIS Voice DHCP failure. The
+eventual repair remains untested -- the canonical compiler couples the edge
+action to a global STP action and takes both policy flags, and run 6 emitted
+neither coupling on purpose.
+
+The absent voice-VLAN phone rows are ABSENT in both halves, which is one more
+size and one more intervention of co-occurrence and still not causation:
+`VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE`.
+
+`NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION`. The pool
+definition and option 150 are the only links in the chain nobody can read, and
+reading them needs an observer that does not exist. That is the next
+architectural checkpoint, and it was deliberately not started here.
+
 ## Run 5, the intervention that never happened
 
 Run 5 asked for PortFast at `819d8f8` and did not get it. Both edge mutations
@@ -1684,6 +1751,7 @@ run3  d0b3d885...  485ef13  AUTHORITATIVE_SAME_FAILURE_MEASUREMENT
 run4  ba6b1ad6...  824f936  FOUNDATION_QUALIFICATION_MEASUREMENT
 run5  bfc217f7...  819d8f8  HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED
 run6  ca36d99e...  a2a3e27  PORTFAST_ONLY_CAUSAL_INTERVENTION
+run7  aeaf13ed...  c9d6ead  CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE
 ```
 
 `tools/cp_scale_voice_ab_ledger.py --archive --run runN ...` archives the

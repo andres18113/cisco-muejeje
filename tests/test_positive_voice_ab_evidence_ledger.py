@@ -46,6 +46,7 @@ ROLES = {
     "FOUNDATION_QUALIFICATION_MEASUREMENT",
     "PORTFAST_ONLY_CAUSAL_INTERVENTION",
     "HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED",
+    "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE",
 }
 
 
@@ -247,3 +248,18 @@ def test_a_run_whose_intervention_never_applied_is_filed_as_the_boundary_it_was(
     assert run5["role"] == "HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED"
     assert run5["role"] != "PORTFAST_ONLY_CAUSAL_INTERVENTION"
     assert "NOT_APPLIED" in run5["note"]
+
+
+def test_the_paired_baseline_is_filed_as_the_control_it_is():
+    # Run 7 is not another qualification and not an intervention: it is the
+    # baseline half of run 6, on the same code and the same namespace.  A
+    # ledger that filed it as either would lose what makes the pair a pair.
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    run7 = next(item for item in ledger["runs"] if item["run"] == "run7")
+    run6 = next(item for item in ledger["runs"] if item["run"] == "run6")
+
+    assert run7["role"] == "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE"
+    assert run6["role"] == "PORTFAST_ONLY_CAUSAL_INTERVENTION"
+    # The pair only means anything if both halves ran from the same source.
+    assert run7["source_head"] != run6["source_head"]
+    assert "paired" in run7["note"].casefold()

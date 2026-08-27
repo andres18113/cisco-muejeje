@@ -73,6 +73,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "The PortFast-only causal control.  Run 4's experiment with exactly one variable changed: two typed ConfigureStpEdgePort actions on FastEthernet0/1 and FastEthernet0/2, portfast on, bpduguard off, applied with 0 errors.  Every foundation dimension reads exactly as run 4, and so does every endpoint: no address 2/2, 0 voice bindings, NOT_REGISTERED 2/2, voice-VLAN phone STP rows still ABSENT.  PORTFAST = APPLIED but PORTFAST_READBACK = UNOBSERVABLE: the Type column still reads 'P2p' and this build has never been measured printing an edge marker, so NO_EFFECT is established for the applied edge policy, not for a switch demonstrably running PortFast."
+    },
+    {
+      "run": "run7",
+      "filename": "positive-voice-ab-run7-current-namespace-baseline-same-failure.json",
+      "sha256": "aeaf13edf5045ccfa293aed073574d99e4bc59cb943411453c47203f674bc0b7",
+      "source_head": "c9d6eada2d354e9dcdbcfe468268f84c97bc0885",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "The paired baseline half of run 6: same code, same MCP-VOICEAB- namespace, edge_portfast=False.  Normalised against run 6 across every retained field, the ONLY differences are portfast APPLIED -> NOT_APPLIED and run 6's extra WHEN_EDGE_PORTFAST_APPLIED milestone; every foundation dimension, every phone field, both ladder markers and the outcome are identical.  It also matches run 4 on every decisive field, which retires the namespace as a second variable."
     }
   ]
 }
