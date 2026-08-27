@@ -278,13 +278,20 @@ class _CallControlAdapter:
 
 
 class _EndpointAdapter:
-    def __init__(self, configuration):
+    def __init__(self, configuration, voice=None):
         self._configuration = configuration
+        self._voice = voice
 
     def configure_endpoint_dhcp(self, device_name: str, interface: str):
         return self._configuration.configure_endpoint_dhcp(device_name, interface)
 
     def read_endpoint_address(self, device_name: str, interface: str):
+        # The production voice runtime's own per-phone SVI read, standalone --
+        # the same surface every registration episode already reads, callable
+        # here BEFORE arming so the OFF-to-ON transition is a measured fact
+        # rather than an assumption about a new phone's default.
+        if self._voice is not None:
+            return self._voice.observe_endpoint(device_name, interface)
         reader = getattr(self._configuration, "read_endpoint_address", None)
         if reader is None:
             # No separate endpoint reader on this runtime: the registration
@@ -304,6 +311,13 @@ def _serialize(result) -> dict:
         "switch_name": result.switch_name,
         "voice_vlan_id": result.voice_vlan_id,
         "outcome": result.outcome,
+        "experiment": result.experiment,
+        "causal_experiment_result": result.causal_experiment_result,
+        "acquisition_started": result.acquisition_started,
+        "acquisition_boundary": result.acquisition_boundary,
+        "stp_gate": (
+            result.stp_gate.as_evidence() if result.stp_gate is not None else None
+        ),
         "portfast": result.portfast,
         "voice_binding_count": result.voice_binding_count,
         "voice_bindings_observed": result.voice_bindings_observed,
@@ -331,6 +345,8 @@ def _serialize(result) -> dict:
                 "data_vlan_readback": item.data_vlan_readback,
                 "voice_vlan_readback": item.voice_vlan_readback,
                 "dhcp_enabled": item.dhcp_enabled,
+                "dhcp_enabled_pre_arm": item.dhcp_enabled_pre_arm,
+                "dhcp_enabled_post_arm": item.dhcp_enabled_post_arm,
                 "ipv4": item.ipv4,
                 "voice_svi_present": item.voice_svi_present,
                 "address_channel": item.address_channel,
@@ -377,6 +393,7 @@ def run(
     *,
     edge_portfast: bool = False,
     paired_access_vlan: bool = False,
+    paired_access_vlan_fwd_gated: bool = False,
 ) -> int:
     transport = PacketTracerHttpTransport()
     if not transport.start(timeout_seconds=20.0):
@@ -406,17 +423,17 @@ def run(
             )
         ) if edge_portfast else None
         configuration_adapter = _ConfigurationAdapter(enterprise, ios)
+        voice_runtime = PacketTracerEnterpriseVoiceRuntime(
+            lambda: _inventory(physical),
+            transport.send,
+            transport.send_and_wait,
+        )
+        paired = paired_access_vlan or paired_access_vlan_fwd_gated
         result = PositiveVoiceSliceQualifier(
             physical,
             configuration_adapter,
-            _CallControlAdapter(
-                PacketTracerEnterpriseVoiceRuntime(
-                    lambda: _inventory(physical),
-                    transport.send,
-                    transport.send_and_wait,
-                )
-            ),
-            _EndpointAdapter(configuration),
+            _CallControlAdapter(voice_runtime),
+            _EndpointAdapter(configuration, voice_runtime),
             SimulationTraceRuntime(transport.send_and_wait),
             control_plane=control_plane,
             edge_portfast=edge_portfast,
@@ -424,8 +441,14 @@ def run(
             # the intervention phone's port carries the voice VLAN as its
             # access VLAN.  Nothing else moves.
             phone_access_vlans=(
-                (DATA_VLAN_ID, VOICE_VLAN_ID) if paired_access_vlan else None
+                (DATA_VLAN_ID, VOICE_VLAN_ID) if paired else None
             ),
+            # Run 10: the acquisition trigger fires only AFTER a fresh+complete
+            # qualified STP read observes the intervention port FORWARDING, and
+            # only when the pre-arm readback proves the trigger is a real
+            # OFF-to-ON transition.  Anything less fails closed with a named
+            # boundary instead of another SAME_FAILURE.
+            fwd_gated_fresh_dhcp=paired_access_vlan_fwd_gated,
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
     finally:
         transport.stop()
@@ -446,6 +469,11 @@ def run(
     print(json.dumps({
         "event": "POSITIVE_VOICE_AB_COMPLETE",
         "outcome": evidence["outcome"],
+        "experiment": evidence["experiment"],
+        "causal_experiment_result": evidence["causal_experiment_result"],
+        "acquisition_started": evidence["acquisition_started"],
+        "acquisition_boundary": evidence["acquisition_boundary"],
+        "stp_gate": evidence["stp_gate"],
         "portfast": evidence["portfast"],
         "portfast_readback": evidence["portfast_readback"],
         "voice_bindings": evidence["voice_bindings_observed"],
@@ -495,16 +523,34 @@ def main() -> int:
             "variable this experiment changes."
         ),
     )
+    parser.add_argument(
+        "--paired-access-vlan-fwd-gated", action="store_true",
+        help=(
+            "run the paired access-VLAN control with the run-10 FWD gate: "
+            "DHCP is armed only after the intervention port is independently "
+            "observed FORWARDING in the voice VLAN, and only when the pre-arm "
+            "readback proves the arming call is a real OFF-to-ON transition.  "
+            "Unmet preconditions fail closed with a named boundary."
+        ),
+    )
     args = parser.parse_args()
-    if args.edge_portfast and args.paired_access_vlan:
+    modes = [
+        name for name, enabled in (
+            ("--edge-portfast", args.edge_portfast),
+            ("--paired-access-vlan", args.paired_access_vlan),
+            ("--paired-access-vlan-fwd-gated", args.paired_access_vlan_fwd_gated),
+        ) if enabled
+    ]
+    if len(modes) > 1:
         parser.error(
-            "one causal variable per run: --edge-portfast and "
-            "--paired-access-vlan cannot be combined"
+            "one causal variable per run: " + " and ".join(modes)
+            + " cannot be combined"
         )
     return run(
         args.packet_tracer_version,
         edge_portfast=args.edge_portfast,
         paired_access_vlan=args.paired_access_vlan,
+        paired_access_vlan_fwd_gated=args.paired_access_vlan_fwd_gated,
     )
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from ...application.ports.phone_control import PhoneControlPort
 from ...domain.enterprise.models.configuration_runtime import (
@@ -34,7 +35,6 @@ from .phone_control import (
 )
 from .runtime_inventory import normalize_runtime_inventory
 
-
 _MAC = re.compile(r"^[0-9A-Fa-f]{12}$")
 #: What an unaddressed interface reads as, on both channels. A call control
 #: printing `IP:0.0.0.0` for an unregistered ephone is telling us it has no
@@ -48,6 +48,23 @@ def _reported_address(value: object) -> str:
     """The address a channel actually reported, or "" when it reported none."""
     address = str(value or "").strip()
     return "" if address in _UNADDRESSED else address
+
+
+@dataclass(frozen=True)
+class EndpointSviObservation:
+    """One standalone read of a phone's addressing SVI, channels kept apart.
+
+    `dhcp_enabled` is three-valued on purpose: None is a port that exposes no
+    DHCP flag at all, which is not the same answer as the port saying the flag
+    is off.  The FWD-gated experiment turns on exactly that difference.
+    """
+
+    present: bool = False
+    address_channel: bool = False
+    ipv4: str = ""
+    dhcp_enabled: bool | None = None
+    device_ipv4: str = ""
+    device_dhcp_enabled: bool | None = None
 
 
 class PacketTracerEnterpriseVoiceRuntime:
@@ -411,8 +428,34 @@ class PacketTracerEnterpriseVoiceRuntime:
         acquired but not registered, and a call control that remembers a phone
         that is gone, are different failures and must not look alike.
         """
-        device = expectation.endpoint_device_name
-        interface = expectation.endpoint_interface
+        return self._observe_endpoint_svi(
+            expectation.endpoint_device_name, expectation.endpoint_interface,
+        )
+
+    def observe_endpoint(
+        self, device_name: str, interface: str,
+    ) -> "EndpointSviObservation":
+        """The registration pass's own per-phone SVI read, standalone.
+
+        This is NOT a new observer: it is the exact read every registration
+        episode already performs per phone, made callable at another moment.
+        The FWD-gated experiment needs it BEFORE arming, because whether the
+        arming call is an OFF-to-ON transition is decided by what this surface
+        says immediately before it.
+        """
+        observed = self._observe_endpoint_svi(device_name, interface)
+        return EndpointSviObservation(
+            present=bool(observed.get("present")),
+            address_channel=bool(observed.get("address_channel")),
+            ipv4=str(observed.get("ipv4") or ""),
+            dhcp_enabled=observed.get("dhcp"),
+            device_ipv4=str(observed.get("device_ipv4") or ""),
+            device_dhcp_enabled=observed.get("device_dhcp"),
+        )
+
+    def _observe_endpoint_svi(
+        self, device: str, interface: str,
+    ) -> dict[str, object]:
         if not device or not interface:
             return {"present": False, "ipv4": ""}
         script = "".join((
