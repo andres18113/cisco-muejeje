@@ -597,8 +597,11 @@ def test_handoff_closes_trunk_calibration_at_the_exact_evidence_boundary():
     assert "CONTROL_743_CONFOUNDED_BY_PARALLEL_L2_TOPOLOGY = YES" in handoff
     assert "DO_NOT_RERUN_SAME_PARALLEL_TRUNK_TOPOLOGY = YES" in handoff
     assert "NEXT_EVIDENCE_SEAM = CROSS_HOP_FRAME_CORRELATION" in handoff
-    assert "CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_YET_AUDITED" in handoff
-    assert "NEXT_ACTIVE_STEP = OFFLINE CROSS-HOP FRAME CORRELATION AUDIT" in handoff
+    assert (
+        "CROSS_HOP_FRAME_CORRELATION_CAPABILITY = "
+        "NOT_AVAILABLE_WITH_CURRENT_MEASURED_SURFACES" in handoff
+    )
+    assert "NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB" in handoff
     assert "FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB" in handoff
     assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
     # The trunk POLICY was proven; only the selected frame's VLAN identity was
@@ -607,3 +610,27 @@ def test_handoff_closes_trunk_calibration_at_the_exact_evidence_boundary():
         "SINGLE_ALLOWED_NON_NATIVE_TRUNK_POLICY = PROVEN_ON_CONTROL_742"
         in handoff
     )
+
+
+def test_handoff_records_why_cross_hop_correlation_is_not_available():
+    handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
+
+    assert "CROSS_HOP_FRAME_CORRELATION_WITH_EXISTING_SURFACES = NO" in handoff
+    assert "FRAME_VLAN_QUALIFICATION_LINE = STOPPED" in handoff
+    # Two independent reasons.  Recording only one would invite a future
+    # session to "fix" the other and think the seam had reopened.
+    assert "CROSS_HOP_CORRELATION_BLOCKER_IDENTITY_FIELD = NONE_MEASURED" in handoff
+    assert "CROSS_HOP_CORRELATION_BLOCKER_RETAINED_CHAIN = LEGS_3_AND_4_ABSENT" in handoff
+    # The MAC members were enumerated, never read.  Naming them as measured is
+    # how an unread member turns into imaginary evidence.
+    assert "FRAME_MAC_MEMBERS = DISCOVERED_NOT_MEASURED" in handoff
+    assert "FRAME_OBJECT_UUID = NOT_MEASURED_ON_FRAMES" in handoff
+    assert "RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS" in handoff
+    # previous_device + in_port stays exactly one hop.  It must not be
+    # promoted into the end-to-end identity it never proved.
+    assert "BEST_EXISTING_CORRELATION_KEY = PREVIOUS_DEVICE_PLUS_IN_PORT" in handoff
+    assert (
+        "SELECTED_TRUNK_FRAME_END_TO_END_DHCP_IDENTITY = NOT_ESTABLISHED"
+        in handoff
+    )
+    assert "CROSS_HOP_CORRELATOR_IMPLEMENTED = NO" in handoff

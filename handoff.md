@@ -34,8 +34,17 @@ SELECTED_TRUNK_FRAME_END_TO_END_DHCP_IDENTITY = NOT_ESTABLISHED
 PARALLEL_TRUNK_CONTROL_INDEPENDENCE = NOT_ESTABLISHED
 DO_NOT_RERUN_SAME_PARALLEL_TRUNK_TOPOLOGY = YES
 NEXT_EVIDENCE_SEAM = CROSS_HOP_FRAME_CORRELATION
-CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_YET_AUDITED
-NEXT_ACTIVE_STEP = OFFLINE CROSS-HOP FRAME CORRELATION AUDIT
+CROSS_HOP_FRAME_CORRELATION_WITH_EXISTING_SURFACES = NO
+CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_AVAILABLE_WITH_CURRENT_MEASURED_SURFACES
+CROSS_HOP_CORRELATION_BLOCKER_IDENTITY_FIELD = NONE_MEASURED
+CROSS_HOP_CORRELATION_BLOCKER_RETAINED_CHAIN = LEGS_3_AND_4_ABSENT
+BEST_EXISTING_CORRELATION_KEY = PREVIOUS_DEVICE_PLUS_IN_PORT
+FRAME_MAC_MEMBERS = DISCOVERED_NOT_MEASURED
+FRAME_OBJECT_UUID = NOT_MEASURED_ON_FRAMES
+RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
+CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
+FRAME_VLAN_QUALIFICATION_LINE = STOPPED
+NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB
 FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB
 VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
@@ -1130,8 +1139,8 @@ another Packet Tracer LIVE for that audit.
 
 ```text
 NEXT_EVIDENCE_SEAM = CROSS_HOP_FRAME_CORRELATION
-CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_YET_AUDITED
-NEXT_ACTIVE_STEP = OFFLINE CROSS-HOP FRAME CORRELATION AUDIT
+CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_AVAILABLE_WITH_CURRENT_MEASURED_SURFACES
+NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB
 FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB
 ```
 
@@ -1140,6 +1149,86 @@ qualification line.  The next causal experiment after that is a known-good
 disposable Voice A/B comparison against CP-SCALE, not an exact replay of
 historical E7.  Record that alternative only; do not execute it in this
 closeout.
+
+## Cross-hop frame correlation audit -- answered OFFLINE, seam closed
+
+The audit ran with no Packet Tracer LIVE, against already-measured surfaces and
+retained evidence only.  It answered NO, for two independent reasons.  Both are
+recorded because closing only one would let a later session believe the seam had
+reopened.
+
+**Reason 1 -- no measured packet-identity field.**  The event-list hop carries
+`index`, `device`, `previous_device`, `in_port`, `out_port`, `source`,
+`destination`, `traffic_type`/`traffic_type_raw`, `status`, `reason`, `sim_time`,
+`transit_time` and the flowchart `decisions`.  None of them identifies a packet.
+`getSourceString()` came back empty on 100% of the measured DHCP rows (0/84 at
+Switch5, 0/5 at the phone), and `getDestinationString()` is the broadcast
+255.255.255.255 that all 21 phones share.  The seven enumerated child members --
+`dstMacAddress`, `frameCheckSequence`, `lengthType`, `payload`, `pduSize`,
+`pduType`, `srcMacAddress` -- were DISCOVERED, never READ: the child probe reads
+values only for `vlanId`, `tpid`, `cfi` and `userPriority`.  Reading a MAC would
+mean invoking a newly discovered member, which is the new-getter boundary this
+line is not allowed to cross.  `getObjectUuid` is measured only on LINKS in
+topology observation; it identifies a topology object, and nothing measured shows
+it surviving a hop copy.
+
+**Reason 2 -- the retained chain does not have the legs.**  The governed LIVE at
+2db4c9d retains 392 hops in four device-filtered traces.  Of the DHCP frames:
+the phone emitted 5 (`sent`, out_port present), Switch5 received 84, and the
+router/control traces contain zero.  All 84 Switch5 DHCP rows are `dropped` with
+an empty `out_port` -- PT's own decision text reads "is blocked by STP. The
+device drops the frame."  So legs 3 and 4 of the chain never existed to be
+correlated:
+
+```text
+LEG 1 endpoint DHCP emission        PRESENT
+LEG 2 source switch ingress         PRESENT   (previous_device + in_port)
+LEG 3 source switch egress          ABSENT    (0/84 out_port; all dropped)
+LEG 4 target switch ingress         ABSENT    (0 DHCP rows in router trace)
+```
+
+Candidate keys, each judged separately:
+
+```text
+srcMacAddress + dstMacAddress          NOT_AVAILABLE (values never measured)
+                                       and AMBIGUOUS by design: retries share a
+                                       source MAC and a broadcast destination
+source/destination + sim_time          NOT_AVAILABLE (source empty 100%);
+                                       sim_time collides: 77 distinct / 84 rows
+MAC pair + getStartSimTime             NOT_AVAILABLE (MAC values never measured)
+PT decision lineage / flowchart        AMBIGUOUS: 21 distinct signatures / 84
+                                       rows -- it names the PORT, not the
+                                       packet, so a phone's retries are identical
+traffic source + MAC + adjacency       NOT_AVAILABLE (source empty, MAC unread)
+event-list index                       SEMANTICALLY_UNQUALIFIED: a live list
+                                       position, not an identity
+```
+
+The best key existing evidence supports is `previous_device` + `in_port`, and
+that is exactly ONE hop.  It is the same hop identity already recorded, and it
+must not be promoted into the end-to-end identity it never proved.
+
+No correlator was built.  Building an observer to keep this line alive is the
+thing the boundary exists to prevent.
+
+```text
+CROSS_HOP_FRAME_CORRELATION_WITH_EXISTING_SURFACES = NO
+CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_AVAILABLE_WITH_CURRENT_MEASURED_SURFACES
+CROSS_HOP_CORRELATION_BLOCKER_IDENTITY_FIELD = NONE_MEASURED
+CROSS_HOP_CORRELATION_BLOCKER_RETAINED_CHAIN = LEGS_3_AND_4_ABSENT
+BEST_EXISTING_CORRELATION_KEY = PREVIOUS_DEVICE_PLUS_IN_PORT
+FRAME_MAC_MEMBERS = DISCOVERED_NOT_MEASURED
+FRAME_OBJECT_UUID = NOT_MEASURED_ON_FRAMES
+RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
+CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
+FRAME_VLAN_QUALIFICATION_LINE = STOPPED
+NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB
+```
+
+The STP drop text above is consistent with the already-recorded
+`STP_BLOCKING_IN_SIMULATION = OBSERVED`; it is NOT a new root-cause proof.
+`resetSimulation` changes engine state, realtime never showed VLAN20 phone ports
+BLOCKING, and `PORTFAST_AS_VOICE_ROOT_CAUSE` stays `NOT_CONFIRMED`.
 
 FAIL-FIRST for the retained-evidence correction: a frame with an unobservable
 VLAN still reported target-VLAN admission.  Focused: 13 passed.  Affected: 162
