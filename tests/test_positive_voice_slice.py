@@ -7,12 +7,15 @@ from pathlib import Path
 
 from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     ABSENT,
+    APPLICATION,
+    APPLIED,
     BLOCKING,
     DATA_VLAN_ID,
     EXTENSIONS,
     FORWARDING,
     NO,
     NOT_REGISTERED,
+    OBSERVATION,
     PHONE_ADDRESSING_INTERFACE,
     PHONE_LINK_PORT,
     POSITIVE_VOICE_PREFIX,
@@ -21,6 +24,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     VERIFIED,
     VOICE_VLAN_ID,
     YES,
+    LifecycleMilestone,
     PositiveVoicePhoneOutcome,
     PositiveVoiceSliceQualifier,
     PositiveVoiceSliceResult,
@@ -967,3 +971,110 @@ def test_handoff_keeps_the_router_side_readback_boundary_explicit():
 
     assert "NOT established -- only \"the pool action applied" in handoff
     assert "`WHEN_PHONE_IS_POWERED` is UNOBSERVABLE" in handoff
+
+
+# --- APPLIED is not VERIFIED ------------------------------------------------
+#
+# A typed mutation coming back `applied=True` states that the runtime channel
+# accepted the dispatch.  It states nothing about what the backend now holds.
+# Collapsing the two turned eight router-side milestones -- the DHCP pool, the
+# subinterfaces, option 150, CME -- into VERIFIED in the run 3 evidence, and
+# that is the exact promotion this qualification exists to refuse.
+
+
+def test_a_milestone_derived_from_an_applied_mutation_never_reads_verified():
+    result, *_ = _run()
+
+    for name in (
+        "DEVICE_CREATE_ORDER", "WHEN_PHONE_EXISTS",
+        "LINK_CREATE_ORDER", "WHEN_PHONE_IS_LINKED",
+        "WHEN_ACCESS_VLAN_APPLIED", "WHEN_VOICE_VLAN_APPLIED",
+        "WHEN_DHCP_POOL_EXISTS", "CONFIGURATION_APPLY_ORDER",
+        "WHEN_OPTION150_APPLIED", "WHEN_CME_ENABLED",
+        "WHEN_PHONE_BINDING_EXISTS", "WHEN_CNF_FILES_GENERATED",
+        "WHEN_ENDPOINT_DHCP_ARMED",
+    ):
+        milestone = next(item for item in result.lifecycle if item.name == name)
+        assert milestone.observed is True, name
+        assert milestone.evidence == APPLICATION, name
+        assert milestone.status == APPLIED, name
+        assert milestone.status != VERIFIED, name
+
+
+def test_verified_requires_an_independent_observation():
+    result, *_ = _run()
+
+    verified = [item for item in result.lifecycle if item.status == VERIFIED]
+    assert verified, "an observed lifecycle has to be able to reach VERIFIED"
+    for milestone in verified:
+        assert milestone.evidence == OBSERVATION, milestone.name
+    names = {item.name for item in verified}
+    assert {"REALTIME_VERIFIED_BEFORE_WINDOW", "REALTIME_VERIFIED_AFTER_WINDOW"} <= names
+
+
+def test_a_milestone_that_does_not_state_its_evidence_can_only_claim_application():
+    # Fail closed: the weaker claim is the default, so a milestone added later
+    # without saying what it rests on cannot silently reach VERIFIED.
+    milestone = LifecycleMilestone(sequence=1, name="WHEN_SOMETHING", observed=True)
+
+    assert milestone.evidence == APPLICATION
+    assert milestone.status == APPLIED
+
+
+def test_unobservable_stays_distinct_from_applied_and_verified():
+    result, *_ = _run()
+
+    powered = next(
+        item for item in result.lifecycle if item.name == "WHEN_PHONE_IS_POWERED"
+    )
+    assert powered.observed is False
+    assert powered.status == UNOBSERVABLE
+    assert powered.status not in {APPLIED, VERIFIED}
+    # An observation surface that answered nothing is not an applied mutation.
+    assert powered.evidence == OBSERVATION
+    assert len({APPLIED, VERIFIED, UNOBSERVABLE}) == 3
+
+
+def test_a_mutation_that_was_refused_reaches_neither_applied_nor_verified():
+    configuration = _Configuration(
+        mutations=lambda action_id: _mutation(
+            action_id=action_id, applied=False, message="IOS never reached ready",
+        ),
+    )
+    result, *_ = _run(configuration=configuration)
+
+    milestone = next(
+        item for item in result.lifecycle if item.name == "WHEN_DHCP_POOL_EXISTS"
+    )
+    assert milestone.status == UNOBSERVABLE
+    assert milestone.status not in {APPLIED, VERIFIED}
+
+
+def test_serialized_evidence_keeps_application_and_verification_apart():
+    # The retained JSON is the artefact the investigation is read from months
+    # later.  If the distinction only lives in memory, the evidence file still
+    # publishes eight router-side milestones as VERIFIED.
+    result, *_ = _run()
+
+    serialized = [item.as_evidence() for item in result.lifecycle]
+    by_name = {item["name"]: item for item in serialized}
+
+    assert by_name["WHEN_DHCP_POOL_EXISTS"]["status"] == APPLIED
+    assert by_name["WHEN_DHCP_POOL_EXISTS"]["evidence"] == APPLICATION
+    assert by_name["REALTIME_VERIFIED_AFTER_WINDOW"]["status"] == VERIFIED
+    assert by_name["REALTIME_VERIFIED_AFTER_WINDOW"]["evidence"] == OBSERVATION
+    assert by_name["WHEN_PHONE_IS_POWERED"]["status"] == UNOBSERVABLE
+    assert VERIFIED not in {
+        item["status"] for item in serialized if item["evidence"] == APPLICATION
+    }
+
+
+def test_the_live_serializer_publishes_the_evidence_kind_it_was_given():
+    # Read as source, not imported: the LIVE runner resolves the production
+    # namespace and pytest resolves `src.`, and loading both gives every typed
+    # model two identities.
+    source = Path("tools/cp_scale_positive_voice_ab_live.py").read_text(encoding="utf-8")
+
+    assert "item.as_evidence()" in source
+    # Nothing may rebuild the milestone dict beside the one the model publishes.
+    assert '"status": item.status' not in source

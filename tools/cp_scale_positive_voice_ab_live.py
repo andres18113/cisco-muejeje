@@ -196,16 +196,10 @@ def _serialize(result) -> dict:
         "stp_phone_row_after": result.stp_phone_row_after,
         "realtime_before": result.realtime_before,
         "realtime_after": result.realtime_after,
-        "lifecycle": [
-            {
-                "sequence": item.sequence,
-                "name": item.name,
-                "observed": item.observed,
-                "status": item.status,
-                "detail": item.detail,
-            }
-            for item in result.lifecycle
-        ],
+        # The milestone publishes its own retained shape: APPLIED, VERIFIED and
+        # UNOBSERVABLE are three different claims, and a hand-built dict here is
+        # what dropped the distinction out of the run 3 artefact.
+        "lifecycle": [item.as_evidence() for item in result.lifecycle],
         "phones": [
             {
                 "phone_name": item.phone_name,

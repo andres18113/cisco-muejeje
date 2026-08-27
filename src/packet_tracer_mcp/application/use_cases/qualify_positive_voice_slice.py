@@ -76,7 +76,19 @@ VOICE_GATEWAY = "10.93.0.1"
 DATA_NETWORK = "10.94.0.0"
 DATA_GATEWAY = "10.94.0.1"
 
+#: What a milestone's claim RESTS on, which is what bounds the status it may
+#: reach.  A typed mutation answering `applied=True` states that the runtime
+#: channel accepted the dispatch; it states nothing about what the backend now
+#: holds.  Only a read of that backend can.
+APPLICATION = "APPLICATION"
+OBSERVATION = "OBSERVATION"
+
 #: Statuses.  Absence is never spelled as a negative result.
+#: APPLIED and VERIFIED are NOT the same claim and never collapse into one:
+#: the run 3 evidence published the router's DHCP pool, its subinterfaces,
+#: option 150 and CME as VERIFIED on nothing but their mutations having been
+#: accepted, and none of those four had been read back at all.
+APPLIED = "APPLIED"
 VERIFIED = "VERIFIED"
 CONTRADICTED = "CONTRADICTED"
 UNOBSERVABLE = "UNOBSERVABLE"
@@ -99,21 +111,50 @@ DIFFERENT_FAILURE = "DIFFERENT_FAILURE"
 
 @dataclass(frozen=True)
 class LifecycleMilestone:
-    """One ordered fact about WHEN something existed.
+    """One ordered fact about WHEN something happened, and on what evidence.
 
     `observed` is what separates this journal from a plan: a milestone the
     backend never published stays `observed=False` and reads UNOBSERVABLE, which
     is the honest answer for phone boot state on this build.
+
+    `evidence` is what separates the journal from a claim it has not earned.
+    An APPLICATION milestone rests on a typed mutation whose runtime answered
+    `applied=True`, and the strongest thing that supports is APPLIED: the
+    dispatch was accepted.  Whether the backend now holds the intended state is
+    a different question asked on a different surface, and only an OBSERVATION
+    milestone -- one that read something back -- may answer it VERIFIED.
+
+    The default is deliberately the weaker one.  A milestone added later that
+    forgets to say what it rests on claims APPLIED, never VERIFIED.
     """
 
     sequence: int
     name: str
     observed: bool = False
     detail: str = ""
+    evidence: str = APPLICATION
 
     @property
     def status(self) -> str:
-        return VERIFIED if self.observed else UNOBSERVABLE
+        if not self.observed:
+            return UNOBSERVABLE
+        return VERIFIED if self.evidence == OBSERVATION else APPLIED
+
+    def as_evidence(self) -> dict:
+        """The retained shape, published here so it cannot drift.
+
+        The runner used to rebuild this dict by hand, which is how a field that
+        exists in the model can go missing from the artefact the investigation
+        is actually read from.
+        """
+        return {
+            "sequence": self.sequence,
+            "name": self.name,
+            "observed": self.observed,
+            "evidence": self.evidence,
+            "status": self.status,
+            "detail": self.detail,
+        }
 
 
 @dataclass(frozen=True)
@@ -305,13 +346,20 @@ class _Journal:
 
     entries: list[LifecycleMilestone] = field(default_factory=list)
 
-    def record(self, name: str, observed: bool = False, detail: str = "") -> None:
+    def record(
+        self,
+        name: str,
+        observed: bool = False,
+        detail: str = "",
+        evidence: str = APPLICATION,
+    ) -> None:
         self.entries.append(
             LifecycleMilestone(
                 sequence=len(self.entries) + 1,
                 name=name,
                 observed=observed,
                 detail=detail,
+                evidence=evidence,
             )
         )
 
@@ -676,9 +724,14 @@ class PositiveVoiceSliceQualifier:
             if not self._create(device, created, errors):
                 return original_simulation, empty, None, False, False, errors
         journal.record("WHEN_PHONE_EXISTS", True, ", ".join(p.name for p in phones))
-        # PT publishes no phone power or boot state on this build.  Writing a
-        # guess here is what the UNOBSERVABLE status exists to prevent.
-        journal.record("WHEN_PHONE_IS_POWERED", False, "no measured boot surface")
+        # PT publishes no phone power or boot state on this build.  This one is
+        # an OBSERVATION milestone with nothing to observe on, which is exactly
+        # what the UNOBSERVABLE status exists to say; writing a guess here, or
+        # borrowing the create mutation's acceptance for it, is what it exists
+        # to prevent.
+        journal.record(
+            "WHEN_PHONE_IS_POWERED", False, "no measured boot surface", OBSERVATION,
+        )
 
         uplink = LinkPlan(
             device_a=router.name, port_a="FastEthernet0/0",
@@ -745,15 +798,22 @@ class PositiveVoiceSliceQualifier:
         # Realtime is the authoritative window for addressing and registration.
         realtime_before = self._realtime(errors, "before")
         stp_before = self._read_stp(switch.name, errors)
-        journal.record("REALTIME_VERIFIED_BEFORE_WINDOW", realtime_before)
+        journal.record(
+            "REALTIME_VERIFIED_BEFORE_WINDOW", realtime_before,
+            evidence=OBSERVATION,
+        )
 
         registrations = self._observe_registrations(phones, errors)
-        journal.record("ACQUISITION_WINDOW_RUN", True, "registration convergence")
+        journal.record(
+            "ACQUISITION_WINDOW_RUN", True, "registration convergence", OBSERVATION,
+        )
 
         stp_after = self._read_stp(switch.name, errors)
         binding_count = self._read_bindings(router.name, errors)
         realtime_after = self._realtime(errors, "after")
-        journal.record("REALTIME_VERIFIED_AFTER_WINDOW", realtime_after)
+        journal.record(
+            "REALTIME_VERIFIED_AFTER_WINDOW", realtime_after, evidence=OBSERVATION,
+        )
 
         outcomes = tuple(
             self._phone_outcome(
