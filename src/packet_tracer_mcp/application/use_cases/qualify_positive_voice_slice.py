@@ -78,6 +78,15 @@ ROUTER_VOICE_SUBINTERFACE = f"{ROUTER_UPLINK_INTERFACE}.{VOICE_VLAN_ID}"
 ROUTER_DATA_SUBINTERFACE = f"{ROUTER_UPLINK_INTERFACE}.{DATA_VLAN_ID}"
 TRUNK_NATIVE_VLAN_ID = 1
 
+#: Phone-facing edge PortFast: the ONE variable the causal A/B changes.
+#: `edge_portfast=False` is run 4's behaviour exactly and stays the default, so
+#: the baseline half of the comparison cannot drift away from the experiment it
+#: is the control for.  BPDU Guard is deliberately NOT turned on with it --
+#: `ConfigureStpEdgePort.bpduguard` defaults to True, and taking that default
+#: would change two things at once and answer neither question.
+PORTFAST_APPLIED = "APPLIED"
+PORTFAST_NOT_APPLIED = "NOT_APPLIED"
+
 VOICE_NETWORK = "10.93.0.0"
 VOICE_PREFIX = 24
 VOICE_NETMASK = "255.255.255.0"
@@ -275,6 +284,12 @@ class PositiveVoicePhoneOutcome:
     registration: str = UNOBSERVABLE
     stp_row_before: str = UNOBSERVABLE
     stp_row_after: str = UNOBSERVABLE
+    #: Whether the port announced itself as an edge port, and the raw Type
+    #: column it announced it in.  The text is retained because whether this
+    #: build prints an edge marker at all has never been measured, and the next
+    #: reader needs to see what the column actually said.
+    portfast_readback: str = UNOBSERVABLE
+    stp_link_type: str = ""
     failure_reason: str = ""
 
     @property
@@ -340,9 +355,14 @@ class PositiveVoiceSliceResult:
     #: `show ip dhcp binding` rows whose address falls in the voice pool.  None
     #: means the table was never read, which is not the same as zero rows.
     voice_binding_count: int | None = None
-    #: No edge STP action is part of this plan.  The value is a recorded fact,
-    #: never a knob this qualification turns to obtain a better outcome.
-    portfast: str = "NOT_APPLIED"
+    #: Whether the phone-facing edge policy was applied.  In the baseline this
+    #: is a recorded fact and never a knob turned to obtain a better outcome; in
+    #: the causal A/B it is the ONE declared variable, and it is derived from
+    #: the milestone rather than set beside it so the two cannot disagree.
+    portfast: str = PORTFAST_NOT_APPLIED
+    #: And whether anything independently SAW it.  APPLIED is the mutation
+    #: being accepted; this is the switch saying so on its own surface.
+    portfast_readback: str = UNOBSERVABLE
     realtime_before: bool = False
     realtime_after: bool = False
     baseline_inventory: PhysicalWorkspaceObservation | None = None
@@ -500,6 +520,18 @@ class VoiceFoundationCallControlRuntime(Protocol):
     """OPTIONAL read-only extension of `VoiceCallControlRuntime`."""
 
     def inspect_call_control(self, device_name: str) -> dict: ...
+
+
+class VoiceControlPlaneRuntime(Protocol):
+    """OPTIONAL typed control-plane runtime.  Only the intervention needs it.
+
+    The baseline half of the A/B never calls this, and asking for the
+    intervention without it is refused rather than silently downgraded: a run
+    that reported PortFast while quietly applying none would poison the only
+    comparison this experiment exists to make.
+    """
+
+    def apply_actions(self, actions) -> list[RuntimeActionMutation]: ...
 
 
 class VoiceEndpointRuntime(Protocol):
@@ -704,6 +736,30 @@ def _classify_call_control(table) -> tuple[str, int | None]:
     return VERIFIED, len(rows)
 
 
+def _classify_edge_marker(instances, interface: str) -> tuple[str, str]:
+    """Did the port announce itself as an edge port, in any STP instance?
+
+    Being an edge port is a property of the PORT, not of one VLAN, so every
+    instance in the capture is searched and the first row for the interface
+    answers.
+
+    VERIFIED needs the marker to be there.  Its ABSENCE is UNOBSERVABLE and
+    never CONTRADICTED: nobody has measured this build printing an edge marker
+    at all, so a Type column without one cannot separate "PortFast is off" from
+    "this IOS does not say".  The raw column text is returned beside the verdict
+    so the next reader can judge that for themselves.
+    """
+    if instances is None:
+        return "", UNOBSERVABLE
+    for instance in instances:
+        for row in getattr(instance, "interfaces", ()):
+            if not same_interface_name(getattr(row, "interface", ""), interface):
+                continue
+            text = str(getattr(row, "link_type", "") or "")
+            return text, (VERIFIED if "edge" in text.casefold() else UNOBSERVABLE)
+    return "", UNOBSERVABLE
+
+
 def _classify_stp_row(instances, vlan_id: int, interface: str) -> str:
     """FORWARDING / BLOCKING / ABSENT / UNOBSERVABLE for one phone port.
 
@@ -746,6 +802,8 @@ class PositiveVoiceSliceQualifier:
         *,
         token: str = "",
         phone_count: int = 2,
+        control_plane: VoiceControlPlaneRuntime | None = None,
+        edge_portfast: bool = False,
     ) -> None:
         self._physical = physical
         self._configuration = configuration
@@ -754,6 +812,8 @@ class PositiveVoiceSliceQualifier:
         self._mode = mode
         self._token = token or secrets.token_hex(3)
         self._phone_count = phone_count
+        self._control_plane = control_plane
+        self._edge_portfast = bool(edge_portfast)
 
     def _name(self, suffix: str) -> str:
         return f"{POSITIVE_VOICE_PREFIX}{self._token}_{suffix}"
@@ -813,12 +873,26 @@ class PositiveVoiceSliceQualifier:
             removed, cleanup_errors, final, restored = self._cleanup(created, baseline)
             errors.extend(cleanup_errors)
 
+        # Derived from the milestone, never set beside it: a `portfast` field
+        # and a journal that disagreed would be exactly the kind of two-sourced
+        # claim this qualification refuses everywhere else.
+        portfast = (
+            PORTFAST_APPLIED
+            if any(
+                item.name == "WHEN_EDGE_PORTFAST_APPLIED" and item.observed
+                for item in journal.entries
+            )
+            else PORTFAST_NOT_APPLIED
+        )
         return PositiveVoiceSliceResult(
             router_model=router_model, switch_model=switch_model,
             phone_model=phone_model,
             router_name=self._name("R"), switch_name=self._name("SW"),
             phones=phones, lifecycle=journal.frozen(),
-            foundation=foundation,
+            foundation=foundation, portfast=portfast,
+            portfast_readback=_worst(*(
+                item.portfast_readback for item in phones
+            )),
             voice_binding_count=binding_count,
             realtime_before=realtime_before, realtime_after=realtime_after,
             baseline_inventory=baseline, final_inventory=final,
@@ -1018,6 +1092,7 @@ class PositiveVoiceSliceQualifier:
         created, owned_links, journal: _Journal,
     ):
         self._router_model = router_model
+        self._switch_model = switch_model
         self._phone_model = phone_model
         errors: list[str] = []
 
@@ -1095,6 +1170,12 @@ class PositiveVoiceSliceQualifier:
         journal.record("WHEN_VOICE_VLAN_APPLIED", applied, f"voice vlan {VOICE_VLAN_ID}")
         journal.record("WHEN_DHCP_POOL_EXISTS", applied, "VOICEAB_VOICE")
         journal.record("CONFIGURATION_APPLY_ORDER", applied, "L2, L3, then services")
+
+        # Immediately after the L2 configuration and before anything else, which
+        # is where a repaired canonical pipeline would emit it: the control
+        # plane runs after the configuration stage, never before it.  Applying
+        # it earlier would answer a question about ordering that nobody asked.
+        self._apply_edge_portfast(phone_ports, journal, errors)
 
         voice_applied, voice_errors = self._apply(
             self._call_control.apply_actions, self._voice_actions(),
@@ -1226,6 +1307,65 @@ class PositiveVoiceSliceQualifier:
             call_control_ephone_rows=ephone_rows,
             **trunk_fields, **router_fields,
         )
+
+    def _apply_edge_portfast(
+        self, phone_ports: tuple[str, ...], journal: _Journal, errors: list[str],
+    ) -> None:
+        """The intervention.  Nothing happens here in the baseline."""
+        if not self._edge_portfast:
+            return
+        if self._control_plane is None:
+            errors.append(
+                "edge_portfast_requested_without_control_plane_runtime"
+            )
+            journal.record(
+                "WHEN_EDGE_PORTFAST_APPLIED", False,
+                "no typed control-plane runtime was supplied",
+            )
+            return
+        applied, edge_errors = self._apply(
+            self._control_plane.apply_actions,
+            self._edge_stp_actions(phone_ports),
+        )
+        errors.extend(edge_errors)
+        journal.record(
+            "WHEN_EDGE_PORTFAST_APPLIED", applied,
+            "portfast on, bpduguard off: " + ", ".join(phone_ports),
+        )
+
+    def _edge_stp_actions(self, phone_ports: tuple[str, ...]) -> list:
+        """One typed edge action per phone-facing port.  No new primitive.
+
+        No global `ConfigureSpanningTree` accompanies these.  The 3560 already
+        runs PVST+ by default, so one would change a second variable -- mode
+        and priority -- in an experiment whose whole value is that it changes
+        one.  `depends_on` stays empty for the same kind of reason: this slice
+        calls the typed runtime directly, exactly as it does for configuration
+        and voice, and nothing here reorders an applicator that is not running.
+        """
+        from ...domain.enterprise.models.control_plane import (
+            ConfigureStpEdgePort,
+            ControlPlaneCapabilityDimension,
+            ControlPlanePhase,
+        )
+
+        switch = self._name("SW")
+        return [
+            ConfigureStpEdgePort(
+                id=f"voiceab/stp/edge/{index}",
+                phase=ControlPlanePhase.L2_RESILIENCY,
+                device_id="voiceab/sw", device_name=switch,
+                model=self._switch_model, site_id="voiceab",
+                required_capability=(
+                    ControlPlaneCapabilityDimension.STP_PVST_CONFIG
+                ),
+                interface=interface,
+                portfast=True,
+                bpduguard=False,
+                source_access_action_id=f"voiceab/access/{index}",
+            )
+            for index, interface in enumerate(phone_ports, start=1)
+        ]
 
     def _read_mode(self, errors: list[str]) -> bool | None:
         try:
@@ -1440,9 +1580,11 @@ class PositiveVoiceSliceQualifier:
                     if flag is not None:
                         dhcp_enabled = YES if bool(flag) else NO
 
+        link_type, portfast_readback = _classify_edge_marker(stp_after, interface)
         return PositiveVoicePhoneOutcome(
             phone_name=phone.name, extension=extension,
             switch_interface=interface,
+            portfast_readback=portfast_readback, stp_link_type=link_type,
             data_vlan_readback=data_status, voice_vlan_readback=voice_status,
             dhcp_enabled=dhcp_enabled, ipv4=ipv4,
             voice_svi_present=svi_present, address_channel=address_channel,

@@ -33,6 +33,9 @@ from packet_tracer_mcp.infrastructure.execution.configuration_runtime import (  
 from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (  # noqa: E402
     PacketTracerEnterpriseConfigurationRuntime,
 )
+from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (  # noqa: E402
+    PacketTracerEnterpriseControlPlaneRuntime,
+)
 from packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (  # noqa: E402
     PacketTracerEnterpriseVoiceRuntime,
 )
@@ -196,6 +199,21 @@ class _ConfigurationAdapter:
         return rows + [row] if row is not None else rows
 
 
+class _ControlPlaneAdapter:
+    """The typed control-plane runtime, exposed as the one call the slice makes.
+
+    Deliberately narrow: the intervention applies edge ports and nothing else,
+    so nothing here can reach the failure-scenario or verification surfaces the
+    canonical run uses.
+    """
+
+    def __init__(self, control_plane):
+        self._control_plane = control_plane
+
+    def apply_actions(self, actions):
+        return self._control_plane.apply_actions(actions)
+
+
 class _CallControlAdapter:
     def __init__(self, voice):
         self._voice = voice
@@ -247,6 +265,7 @@ def _serialize(result) -> dict:
         "voice_binding_count": result.voice_binding_count,
         "voice_bindings_observed": result.voice_bindings_observed,
         "stp_phone_row_after": result.stp_phone_row_after,
+        "portfast_readback": result.portfast_readback,
         "foundation": result.foundation.as_evidence(),
         "foundation_ladder": [
             {"stage": stage, "status": status}
@@ -271,6 +290,8 @@ def _serialize(result) -> dict:
                 "ipv4": item.ipv4,
                 "voice_svi_present": item.voice_svi_present,
                 "address_channel": item.address_channel,
+                "portfast_readback": item.portfast_readback,
+                "stp_link_type": item.stp_link_type,
                 "device_ipv4": item.device_ipv4,
                 "addressed": item.addressed,
                 "registration": item.registration,
@@ -307,7 +328,7 @@ def _inventory(physical) -> list[dict]:
     ]
 
 
-def run(packet_tracer_version: str) -> int:
+def run(packet_tracer_version: str, *, edge_portfast: bool = False) -> int:
     transport = PacketTracerHttpTransport()
     if not transport.start(timeout_seconds=20.0):
         print(json.dumps({"hard_stop": "The Packet Tracer bridge did not connect."}))
@@ -326,6 +347,15 @@ def run(packet_tracer_version: str) -> int:
         )
         ios = ControlledIosExecutor(transport.send_and_wait)
         configuration = PacketTracerConfigurationRuntime(transport.send)
+        # Built only for the intervention.  The baseline half of the A/B never
+        # receives a control-plane runtime, so it cannot apply one by accident.
+        control_plane = _ControlPlaneAdapter(
+            PacketTracerEnterpriseControlPlaneRuntime(
+                lambda: _inventory(physical),
+                transport.send,
+                transport.send_and_wait,
+            )
+        ) if edge_portfast else None
         result = PositiveVoiceSliceQualifier(
             physical,
             _ConfigurationAdapter(enterprise, ios),
@@ -338,6 +368,8 @@ def run(packet_tracer_version: str) -> int:
             ),
             _EndpointAdapter(configuration),
             SimulationTraceRuntime(transport.send_and_wait),
+            control_plane=control_plane,
+            edge_portfast=edge_portfast,
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
     finally:
         transport.stop()
@@ -354,6 +386,7 @@ def run(packet_tracer_version: str) -> int:
         "event": "POSITIVE_VOICE_AB_COMPLETE",
         "outcome": evidence["outcome"],
         "portfast": evidence["portfast"],
+        "portfast_readback": evidence["portfast_readback"],
         "voice_bindings": evidence["voice_bindings_observed"],
         "stp_phone_row_after": evidence["stp_phone_row_after"],
         "foundation": evidence["foundation"],
@@ -366,6 +399,7 @@ def run(packet_tracer_version: str) -> int:
                 for key in (
                     "extension", "voice_vlan_readback", "dhcp_enabled",
                     "addressed", "registration", "stp_row_after",
+                    "portfast_readback", "stp_link_type",
                 )
             }
             for item in evidence["phones"]
@@ -380,8 +414,16 @@ def run(packet_tracer_version: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--packet-tracer-version", required=True)
+    parser.add_argument(
+        "--edge-portfast", action="store_true",
+        help=(
+            "apply phone-facing edge PortFast (BPDU Guard stays off).  This is "
+            "the ONE variable the causal A/B changes; without it the run is "
+            "byte-for-byte the same experiment as run 4."
+        ),
+    )
     args = parser.parse_args()
-    return run(args.packet_tracer_version)
+    return run(args.packet_tracer_version, edge_portfast=args.edge_portfast)
 
 
 if __name__ == "__main__":

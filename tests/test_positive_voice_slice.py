@@ -17,6 +17,9 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     NO,
     NOT_AVAILABLE,
     NOT_REGISTERED,
+    ROUTER_UPLINK_INTERFACE,
+    ROUTER_VOICE_SUBINTERFACE,
+    SWITCH_UPLINK_INTERFACE,
     OBSERVATION,
     PHONE_ADDRESSING_INTERFACE,
     PHONE_LINK_PORT,
@@ -109,6 +112,8 @@ class _StpRow:
     interface: str
     role: str = "Desg"
     state: str = "FWD"
+    #: The Type column, which is where an edge port announces itself.
+    link_type: str = "P2p"
 
 
 @dataclass
@@ -271,15 +276,20 @@ def _busy_workspace():
     )
 
 
-def _qualifier(physical, configuration, call_control, endpoints, mode):
+def _qualifier(
+    physical, configuration, call_control, endpoints, mode,
+    control_plane=None, edge_portfast=False,
+):
     return PositiveVoiceSliceQualifier(
         physical, configuration, call_control, endpoints, mode, token="test01",
+        control_plane=control_plane, edge_portfast=edge_portfast,
     )
 
 
 def _run(
     *, physical=None, configuration=None, call_control=None,
-    endpoints=None, mode=None, baseline=None,
+    endpoints=None, mode=None, baseline=None, control_plane=None,
+    edge_portfast=False,
 ):
     baseline = baseline if baseline is not None else _empty_workspace()
     physical = physical if physical is not None else _Physical(baseline)
@@ -287,9 +297,15 @@ def _run(
     call_control = call_control if call_control is not None else _CallControl()
     endpoints = endpoints if endpoints is not None else _Endpoints()
     mode = mode if mode is not None else _ModeRuntime()
-    qualifier = _qualifier(physical, configuration, call_control, endpoints, mode)
+    qualifier = _qualifier(
+        physical, configuration, call_control, endpoints, mode,
+        control_plane, edge_portfast,
+    )
     result = qualifier.qualify("2811", "3560-24PS", "7960")
-    return result, physical, configuration, call_control, endpoints, mode
+    return (
+        result, physical, configuration, call_control, endpoints, mode,
+        control_plane,
+    )
 
 
 def test_a_workspace_that_is_not_empty_is_never_mutated():
@@ -454,7 +470,7 @@ def test_every_created_device_is_removed_even_when_the_pass_fails():
 
 def test_realtime_is_restored_from_the_mode_observed_before_the_run():
     mode = _ModeRuntime(_Mode(simulation_mode=False))
-    result, _, _, _, _, mode = _run(mode=mode)
+    result, _, _, _, _, mode, _ = _run(mode=mode)
 
     assert mode.set_calls == [False]
     assert result.realtime_restored is True
@@ -801,7 +817,7 @@ def test_the_phone_addressing_interface_is_the_one_production_derives():
 
 
 def test_dhcp_is_armed_on_the_svi_the_phone_addresses_on():
-    result, _, _, _, endpoints, _ = _run()
+    result, _, _, _, endpoints, _, _ = _run()
 
     assert endpoints.armed_interfaces == [
         PHONE_ADDRESSING_INTERFACE, PHONE_ADDRESSING_INTERFACE,
@@ -823,7 +839,7 @@ def test_the_registration_expectation_reads_the_addressing_svi_not_the_cable():
 def test_the_independent_endpoint_read_asks_the_same_interface():
     # Reached only when the registration surface carried no address, which is
     # exactly when the fallback has to ask the right port.
-    result, _, _, _, endpoints, _ = _run(
+    result, _, _, _, endpoints, _, _ = _run(
         call_control=_CallControl(registration=_Registration(endpoint_ipv4="")),
     )
 
@@ -1451,16 +1467,22 @@ def test_handoff_records_the_foundation_the_slice_finally_read():
     assert "POSITIVE_SLICE_ROUTER_VOICE_SUBINTERFACE = VERIFIED" in handoff
     assert "POSITIVE_SLICE_ROUTER_VOICE_IPV4 = VERIFIED" in handoff
     assert "POSITIVE_SLICE_ROUTER_VOICE_STATE = VERIFIED" in handoff
-    assert "POSITIVE_SLICE_CME_TABLE = VERIFIED" in handoff
+    # The ephone table is what was read.  "CME foundation" is broader than the
+    # evidence: telephony-service and option 150 stay unobservable.
+    assert "CALL_CONTROL_EPHONE_TABLE = VERIFIED" in handoff
+    assert "CME_FOUNDATION_READBACK" not in handoff
 
 
 def test_handoff_keeps_the_observer_ceiling_apart_from_a_finding():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
+    # It is a boundary of the OBSERVER, and the label has to say so: calling
+    # it a failure boundary invites the next reader to hear a finding.
     assert (
-        "FIRST_COMMON_VOICE_FAILURE_BOUNDARY = DHCP_POOL_DEFINITION / UNOBSERVABLE"
-        in handoff
+        "FIRST_COMMON_VOICE_OBSERVABILITY_BOUNDARY = "
+        "DHCP_POOL_DEFINITION / UNOBSERVABLE" in handoff
     )
+    assert "FIRST_COMMON_VOICE_FAILURE_BOUNDARY" not in handoff
     assert "FIRST_CONTRADICTED_VOICE_STAGE = ENDPOINT_ADDRESS" in handoff
     assert (
         "DHCP_POOL_CONFIGURATION_READBACK = "
@@ -1492,3 +1514,288 @@ def test_handoff_records_the_applied_verified_lifecycle_separation():
 
     assert "LIFECYCLE_APPLIED_VERIFIED_BOUNDARY = SEPARATED at 241e64b" in handoff
     assert "RAW_VOICE_AB_RUNS_PINNED = 4" in handoff
+
+
+# --- PortFast as ONE changed variable ---------------------------------------
+#
+# Run 4 read every foundation dimension a governed query can reach and found
+# them all VERIFIED, so the remaining causal candidate on the switch side is
+# the edge policy the canonical pipeline never emits at Floor 1.  This
+# intervention changes exactly that and nothing else: same devices, same links,
+# same VLANs, same subinterfaces, same pool, same CME, same extensions, same
+# window.  BPDU Guard stays OFF on purpose -- two variables would answer
+# neither question.
+
+
+class _ControlPlane:
+    """The typed control-plane runtime, in the shape the slice consumes."""
+
+    def __init__(self, mutations=None):
+        self.applied: list = []
+        self.mutations = mutations
+
+    def apply_actions(self, actions):
+        self.applied.extend(actions)
+        if self.mutations is not None:
+            return [self.mutations(getattr(a, "id", "")) for a in actions]
+        return [_mutation(action_id=getattr(a, "id", "")) for a in actions]
+
+
+def _edge_run(**kwargs):
+    """Run the intervention with the foundation surfaces run 4 established."""
+    kwargs.setdefault("configuration", _FoundationConfiguration())
+    kwargs.setdefault("call_control", _FoundationCallControl())
+    kwargs.setdefault("control_plane", _ControlPlane())
+    kwargs.setdefault("edge_portfast", True)
+    return _run(**kwargs)
+
+
+def _edge_actions(control_plane):
+    return [
+        item for item in control_plane.applied
+        if type(item).__name__ == "ConfigureStpEdgePort"
+    ]
+
+
+def test_the_intervention_emits_one_edge_action_per_phone_facing_port():
+    result, _, _, _, _, _, control_plane = _edge_run()
+
+    actions = _edge_actions(control_plane)
+    assert len(actions) == 2
+    assert [item.interface for item in actions] == [
+        "FastEthernet0/1", "FastEthernet0/2",
+    ]
+    assert len(control_plane.applied) == 2
+    assert [item.device_name for item in actions] == [result.switch_name] * 2
+
+
+def test_portfast_is_on_and_bpdu_guard_is_deliberately_off():
+    # `ConfigureStpEdgePort.bpduguard` defaults to True.  Taking the default
+    # would change two variables in a one-variable experiment.
+    _, _, _, _, _, _, control_plane = _edge_run()
+
+    for action in _edge_actions(control_plane):
+        assert action.portfast is True
+        assert action.bpduguard is False
+
+
+def test_no_edge_policy_reaches_the_uplink_the_trunk_or_the_router():
+    _, _, _, _, _, _, control_plane = _edge_run()
+
+    interfaces = {item.interface for item in _edge_actions(control_plane)}
+    assert SWITCH_UPLINK_INTERFACE not in interfaces
+    assert ROUTER_UPLINK_INTERFACE not in interfaces
+    assert ROUTER_VOICE_SUBINTERFACE not in interfaces
+    assert not any(item.startswith("Vlan") for item in interfaces)
+
+
+def test_the_edge_actions_are_recognisably_this_disposable_slice_and_no_other():
+    # Nothing here may be mistaken for a canonical CP-SCALE action later: the
+    # device carries the disposable prefix and the site is this slice's own.
+    result, _, _, _, _, _, control_plane = _edge_run()
+
+    for action in _edge_actions(control_plane):
+        assert action.device_name.startswith(POSITIVE_VOICE_PREFIX)
+        assert action.site_id == "voiceab"
+        assert action.id.startswith("voiceab/")
+    assert result.switch_name.startswith(POSITIVE_VOICE_PREFIX)
+
+
+def test_the_baseline_still_emits_no_edge_policy_at_all():
+    # Run 4's behaviour is the control.  If the default moved, the comparison
+    # would be against an experiment nobody ran.
+    result, _, configuration, call_control, _, _, control_plane = _run(
+        configuration=_FoundationConfiguration(),
+        call_control=_FoundationCallControl(),
+        control_plane=_ControlPlane(),
+    )
+
+    assert control_plane.applied == []
+    assert result.portfast == "NOT_APPLIED"
+    emitted = [
+        type(item).__name__ for item in configuration.applied + call_control.applied
+    ]
+    assert not any("Stp" in name or "PortFast" in name for name in emitted)
+
+
+def test_the_intervention_differs_from_the_baseline_by_the_edge_actions_alone():
+    def shape(result, configuration, call_control):
+        return {
+            "configuration": [
+                (type(a).__name__, a.id, a.model_dump(mode="json"))
+                for a in configuration.applied
+            ],
+            "voice": [
+                (type(a).__name__, a.id, a.model_dump(mode="json"))
+                for a in call_control.applied
+            ],
+            "router": result.router_name,
+            "switch": result.switch_name,
+            "voice_vlan": result.voice_vlan_id,
+            "links": tuple(result.owned_links),
+            "phones": [
+                (p.phone_name, p.extension, p.switch_interface) for p in result.phones
+            ],
+        }
+
+    baseline = _run(
+        configuration=_FoundationConfiguration(),
+        call_control=_FoundationCallControl(),
+        control_plane=_ControlPlane(),
+    )
+    intervention = _edge_run()
+
+    assert shape(baseline[0], baseline[2], baseline[3]) == shape(
+        intervention[0], intervention[2], intervention[3],
+    )
+    assert baseline[6].applied == []
+    assert len(_edge_actions(intervention[6])) == 2
+
+
+def test_the_intervention_changes_no_device_link_or_addressing_intent():
+    baseline_physical = _Physical(_empty_workspace())
+    intervention_physical = _Physical(_empty_workspace())
+    baseline = _run(
+        physical=baseline_physical, configuration=_FoundationConfiguration(),
+        call_control=_FoundationCallControl(), control_plane=_ControlPlane(),
+    )
+    intervention = _edge_run(physical=intervention_physical)
+
+    assert baseline_physical.created == intervention_physical.created
+    assert baseline_physical.links == intervention_physical.links
+    assert baseline[0].owned_links == intervention[0].owned_links
+    # The phones are armed on the same interface, in the same order.
+    assert baseline[4].armed == intervention[4].armed
+    assert baseline[4].armed_interfaces == intervention[4].armed_interfaces
+
+
+def test_an_applied_edge_mutation_is_not_a_verified_one():
+    result, *_ = _edge_run()
+
+    milestone = next(
+        item for item in result.lifecycle if item.name == "WHEN_EDGE_PORTFAST_APPLIED"
+    )
+    assert milestone.evidence == APPLICATION
+    assert milestone.status == APPLIED
+    assert milestone.status != VERIFIED
+    assert result.portfast == "APPLIED"
+    assert result.portfast != VERIFIED
+
+
+def test_a_refused_edge_mutation_never_reads_as_applied():
+    control_plane = _ControlPlane(
+        mutations=lambda action_id: _mutation(
+            action_id=action_id, applied=False, message="the switch refused",
+        ),
+    )
+    result, *_ = _edge_run(control_plane=control_plane)
+
+    milestone = next(
+        item for item in result.lifecycle if item.name == "WHEN_EDGE_PORTFAST_APPLIED"
+    )
+    assert milestone.status == UNOBSERVABLE
+    assert result.portfast == "NOT_APPLIED"
+
+
+def test_asking_for_the_intervention_without_a_control_plane_runtime_is_refused():
+    # Silently running the baseline while the report says PortFast was on is
+    # the one failure mode that would poison the comparison.
+    result, *_ = _run(
+        configuration=_FoundationConfiguration(),
+        call_control=_FoundationCallControl(),
+        edge_portfast=True,
+    )
+
+    assert result.portfast == "NOT_APPLIED"
+    assert any("edge_portfast" in item for item in result.errors)
+
+
+# --- reading PortFast back --------------------------------------------------
+
+def test_an_edge_marker_in_the_stp_type_column_verifies_portfast():
+    stp = [
+        _StpInstance(VOICE_VLAN_ID, (
+            _StpRow("FastEthernet0/1", link_type="P2p Edge"),
+            _StpRow("FastEthernet0/2", link_type="P2p Edge"),
+        )),
+    ]
+    result, *_ = _edge_run(
+        configuration=_FoundationConfiguration(stp=stp),
+    )
+
+    assert [item.portfast_readback for item in result.phones] == [VERIFIED, VERIFIED]
+    assert [item.stp_link_type for item in result.phones] == ["P2p Edge", "P2p Edge"]
+    assert result.portfast_readback == VERIFIED
+
+
+def test_a_type_column_without_an_edge_marker_claims_nothing_either_way():
+    # This build has never been measured printing an edge marker at all, so a
+    # column without one cannot separate "PortFast is off" from "this IOS does
+    # not print it".  UNOBSERVABLE is the only honest answer.
+    stp = [
+        _StpInstance(VOICE_VLAN_ID, (
+            _StpRow("FastEthernet0/1", link_type="P2p"),
+            _StpRow("FastEthernet0/2", link_type="P2p"),
+        )),
+    ]
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=stp))
+
+    assert [item.portfast_readback for item in result.phones] == [
+        UNOBSERVABLE, UNOBSERVABLE,
+    ]
+    assert CONTRADICTED not in {item.portfast_readback for item in result.phones}
+    assert result.portfast_readback == UNOBSERVABLE
+
+
+def test_an_unread_stp_table_leaves_portfast_unobservable():
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=None))
+
+    assert result.portfast_readback == UNOBSERVABLE
+    assert [item.stp_link_type for item in result.phones] == ["", ""]
+
+
+def test_an_absent_row_is_not_a_port_without_portfast():
+    stp = [_StpInstance(VOICE_VLAN_ID, (_StpRow("GigabitEthernet0/1"),))]
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=stp))
+
+    assert result.portfast_readback == UNOBSERVABLE
+    assert [item.stp_row_after for item in result.phones] == [ABSENT, ABSENT]
+
+
+def test_applied_portfast_and_verified_portfast_are_different_answers():
+    # The mutation was accepted and the table says nothing.  Those are two
+    # facts and the artefact keeps both.
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=None))
+
+    assert result.portfast == "APPLIED"
+    assert result.portfast_readback == UNOBSERVABLE
+    assert result.portfast != result.portfast_readback
+
+
+def test_the_intervention_publishes_no_causal_verdict_of_its_own():
+    # The qualifier reports what it measured.  Whether PortFast explains
+    # CP-SCALE is a comparison against a topology this run does not touch.
+    result, *_ = _edge_run()
+
+    evidence = result.foundation.as_evidence()
+    for field in evidence:
+        assert "root_cause" not in field
+    assert not hasattr(result, "root_cause")
+    assert not hasattr(result, "portfast_sufficiency")
+
+
+def test_handoff_keeps_the_two_calibration_lineages_apart():
+    # One head calibrated the frame/trunk VLAN field; another ran the Voice
+    # A/B. They moved independently, and a single name for both let the second
+    # overwrite the first's record of the calibration lineage.
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert (
+        "LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = "
+        "d15a5b71dff8b95b56404e550540ca0f3aef018d" in handoff
+    )
+    assert (
+        "LATEST_VOICE_AB_LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e"
+        in handoff
+    )
+    assert "LATEST_CALIBRATION_LIVE_HEAD" not in handoff

@@ -556,11 +556,14 @@ def test_handoff_keeps_why_an_access_port_cannot_calibrate_the_vlan_field():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO" in handoff
-    # The three heads are three different facts and the handoff must keep them
-    # apart: which commit is checked out, which ran the last CP-SCALE LIVE, and
-    # which ran the last disposable calibration.
+    # These heads are four different facts and the handoff must keep them
+    # apart: which commit is checked out, which ran the last CP-SCALE LIVE,
+    # which ran the last frame/trunk VLAN calibration, and which ran the last
+    # disposable Voice A/B.  One name for the last two let a Voice run
+    # overwrite the calibration lineage it had nothing to do with.
     assert (
-        "LATEST_CALIBRATION_LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e"
+        "LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = "
+        "d15a5b71dff8b95b56404e550540ca0f3aef018d"
         in handoff
     )
     assert "PHONE_DHCP_VLAN_IDENTITY = NOT_YET_GLOBALLY_QUALIFIED" in handoff

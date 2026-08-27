@@ -44,6 +44,7 @@ ROLES = {
     "HARNESS_BOUNDARY_EMPTY_ADDRESS_SEMANTICS",
     "AUTHORITATIVE_SAME_FAILURE_MEASUREMENT",
     "FOUNDATION_QUALIFICATION_MEASUREMENT",
+    "PORTFAST_ONLY_CAUSAL_INTERVENTION",
 }
 
 
@@ -221,3 +222,15 @@ def test_an_unknown_role_or_a_short_head_is_refused(monkeypatch, tmp_path):
         _record(role="LOOKS_IMPORTANT")
     with pytest.raises(SystemExit):
         _record(source_head="485ef13")
+
+
+def test_the_causal_intervention_has_a_role_of_its_own(monkeypatch, tmp_path):
+    # A one-variable intervention is not another qualification measurement, and
+    # a ledger that filed it as one would lose what made run 5 different.
+    raw, _ = _isolate(monkeypatch, tmp_path)
+    (raw / "positive-voice-ab-run9-probe.json").write_bytes(b"{}")
+
+    entry = _record(role="PORTFAST_ONLY_CAUSAL_INTERVENTION")
+
+    assert entry["role"] == "PORTFAST_ONLY_CAUSAL_INTERVENTION"
+    assert "PORTFAST_ONLY_CAUSAL_INTERVENTION" in tool.ROLES

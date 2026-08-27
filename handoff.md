@@ -8,7 +8,8 @@ UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
 CURRENT_PUSHED_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
-LATEST_CALIBRATION_LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e
+LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
+LATEST_VOICE_AB_LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
     measured plain-host access-ingress representation
@@ -67,11 +68,11 @@ POSITIVE_SLICE_TRUNK_NATIVE = VERIFIED (1)
 POSITIVE_SLICE_ROUTER_VOICE_SUBINTERFACE = VERIFIED (FastEthernet0/0.930)
 POSITIVE_SLICE_ROUTER_VOICE_IPV4 = VERIFIED (10.93.0.1)
 POSITIVE_SLICE_ROUTER_VOICE_STATE = VERIFIED (up/up)
-POSITIVE_SLICE_CME_TABLE = VERIFIED (fresh + complete, 2 ephone rows)
+CALL_CONTROL_EPHONE_TABLE = VERIFIED (fresh + complete, 2 ephone rows)
 DHCP_POOL_CONFIGURATION_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 TELEPHONY_SERVICE_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
-FIRST_COMMON_VOICE_FAILURE_BOUNDARY = DHCP_POOL_DEFINITION / UNOBSERVABLE
+FIRST_COMMON_VOICE_OBSERVABILITY_BOUNDARY = DHCP_POOL_DEFINITION / UNOBSERVABLE
 FIRST_CONTRADICTED_VOICE_STAGE = ENDPOINT_ADDRESS
 COMMON_VOICE_FOUNDATION = VERIFIED as far as governed reads reach
 SAME_ROOT_CAUSE = NOT_ESTABLISHED
@@ -1445,7 +1446,7 @@ SWITCH_TRUNK_NATIVE = VERIFIED (1)
 ROUTER_VOICE_SUBINTERFACE_PRESENT = VERIFIED (FastEthernet0/0.930)
 ROUTER_VOICE_SUBINTERFACE_IPV4 = VERIFIED (10.93.0.1)
 ROUTER_VOICE_SUBINTERFACE_STATE = VERIFIED (up/up)
-CME_FOUNDATION_READBACK = VERIFIED (fresh + complete show ephone, 2 rows)
+CALL_CONTROL_EPHONE_TABLE = VERIFIED (fresh + complete show ephone, 2 rows)
 DHCP_POOL_CONFIGURATION_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 PHONE_VOICE_VLAN = VERIFIED 2/2
@@ -1475,8 +1476,10 @@ SCCP_REGISTRATION            CONTRADICTED
 
 Read it carefully, because the two markers mean different things.
 
-`FIRST_COMMON_VOICE_FAILURE_BOUNDARY = DHCP_POOL_DEFINITION / UNOBSERVABLE` is a
-statement about the OBSERVER. No registered query on `9.0.1.0858` exposes a pool
+`FIRST_COMMON_VOICE_OBSERVABILITY_BOUNDARY = DHCP_POOL_DEFINITION /
+UNOBSERVABLE` is a statement about the OBSERVER, and the label now says so:
+the earlier `..._FAILURE_BOUNDARY` name invited the next reader to hear a
+finding where there is only a ceiling. No registered query on `9.0.1.0858` exposes a pool
 definition, `VerificationKind.DHCP_POOL` is pinned UNOBSERVABLE by its own
 ceiling at `qualify_cp_scale_live.py:625`, and `show telephony-service` does not
 exist on this image. The pool may be perfect. It may be absent. Nothing in this
@@ -1568,8 +1571,13 @@ CURRENT_PUSHED_HEAD          the checkpoint pushed BEFORE this one. A commit
                              names the previous one.
 LATEST_GOVERNED_LIVE_HEAD    the source the last CP-SCALE LIVE ran from. Moves
                              only when another CP-SCALE LIVE supersedes it.
-LATEST_CALIBRATION_LIVE_HEAD the source the last disposable calibration ran
-                             from. Moves independently of the CP-SCALE one.
+LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD
+                             the source the last frame/trunk VLAN calibration
+                             ran from. Moves independently of both others.
+LATEST_VOICE_AB_LIVE_HEAD    the source the last disposable Voice A/B ran from.
+                             It is NOT the frame calibration head; one name for
+                             both let a Voice run overwrite the record of a
+                             calibration it had nothing to do with.
 ```
 
 Forbidden from any future run's conclusions unless that run independently proves
