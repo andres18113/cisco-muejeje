@@ -37,6 +37,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "Voice VLAN VERIFIED 2/2, DHCP enabled 2/2, no address, 0 voice bindings, NOT_REGISTERED 2/2, voice-VLAN phone STP rows ABSENT, no PortFast.  The lifecycle statuses in this artefact predate the APPLIED/VERIFIED separation and read VERIFIED for eight milestones that were only dispatched."
+    },
+    {
+      "run": "run4",
+      "filename": "positive-voice-ab-run4-foundation-verified.json",
+      "sha256": "ba6b1ad693de78a8917c1c7646f7a8c40c762af967476719cef896e4e03759fb",
+      "source_head": "824f93665a0957b979a82fa3d21e72761ad4808e",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "FOUNDATION_QUALIFICATION_MEASUREMENT",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "Same topology and configuration as run 3, read-only foundation evidence added.  Trunk Gi0/1 trunking with 930 allowed, active AND forwarding, native 1; FastEthernet0/0.930 present at 10.93.0.1 up/up; show ephone fresh and complete with 2 rows.  First non-VERIFIED stage is DHCP_POOL_DEFINITION at UNOBSERVABLE -- an observer ceiling, not a finding.  First CONTRADICTED stage is ENDPOINT_ADDRESS."
     }
   ]
 }

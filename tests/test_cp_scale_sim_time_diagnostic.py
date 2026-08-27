@@ -510,7 +510,7 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert "CURRENT_PUSHED_HEAD = f53f296df070d85d4dfa63f3216bc9c0e027601a" in handoff
+    assert "CURRENT_PUSHED_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e" in handoff
     # The two heads are different facts. Collapsing them is how a pushed
     # checkpoint starts reading as a governed LIVE.
     assert (
@@ -560,7 +560,7 @@ def test_handoff_keeps_why_an_access_port_cannot_calibrate_the_vlan_field():
     # apart: which commit is checked out, which ran the last CP-SCALE LIVE, and
     # which ran the last disposable calibration.
     assert (
-        "LATEST_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d"
+        "LATEST_CALIBRATION_LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e"
         in handoff
     )
     assert "PHONE_DHCP_VLAN_IDENTITY = NOT_YET_GLOBALLY_QUALIFIED" in handoff

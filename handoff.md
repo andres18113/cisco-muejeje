@@ -6,9 +6,9 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = f53f296df070d85d4dfa63f3216bc9c0e027601a
+CURRENT_PUSHED_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
-LATEST_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
+LATEST_CALIBRATION_LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
     measured plain-host access-ingress representation
@@ -45,9 +45,12 @@ RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
 CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
 FRAME_VLAN_QUALIFICATION_LINE = STOPPED
 POSITIVE_VOICE_AB_IMPLEMENTED = YES
-POSITIVE_VOICE_AB_LIVE = RUN at 485ef13 (governed, Realtime, cleaned up)
+POSITIVE_VOICE_AB_LIVE = RUN at 824f936 (governed, Realtime, cleaned up)
 PACKET_TRACER_PROCESS_PRESENT = YES
 POSITIVE_VOICE_AB_RESULT = SAME_FAILURE
+RAW_VOICE_AB_RUNS_PINNED = 4 (run1..run4, SHA-256 in
+    docs/reference/cp-scale/positive_voice_ab_runs.json)
+LIFECYCLE_APPLIED_VERIFIED_BOUNDARY = SEPARATED at 241e64b
 POSITIVE_SLICE_PORTFAST = NOT_APPLIED
 POSITIVE_SLICE_VOICE_VLAN_READBACK = VERIFIED 2/2
 POSITIVE_SLICE_PHONE_DHCP_ENABLED = YES 2/2 (read on Vlan930)
@@ -56,8 +59,25 @@ POSITIVE_SLICE_PHONE_IPV4 = NONE 2/2 (channel present and answered none)
 POSITIVE_SLICE_VOICE_DHCP_BINDINGS = 0 (fresh + complete table)
 POSITIVE_SLICE_SCCP_REGISTRATION = NOT_REGISTERED 2/2
 POSITIVE_SLICE_STP_VOICE_PHONE_ROW = ABSENT before and after
+POSITIVE_SLICE_TRUNK_OPERATIONAL = VERIFIED (Gi0/1 trunking)
+POSITIVE_SLICE_TRUNK_ALLOWED_930 = VERIFIED
+POSITIVE_SLICE_TRUNK_ACTIVE_930 = VERIFIED
+POSITIVE_SLICE_TRUNK_FORWARDING_930 = VERIFIED
+POSITIVE_SLICE_TRUNK_NATIVE = VERIFIED (1)
+POSITIVE_SLICE_ROUTER_VOICE_SUBINTERFACE = VERIFIED (FastEthernet0/0.930)
+POSITIVE_SLICE_ROUTER_VOICE_IPV4 = VERIFIED (10.93.0.1)
+POSITIVE_SLICE_ROUTER_VOICE_STATE = VERIFIED (up/up)
+POSITIVE_SLICE_CME_TABLE = VERIFIED (fresh + complete, 2 ephone rows)
+DHCP_POOL_CONFIGURATION_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+TELEPHONY_SERVICE_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+FIRST_COMMON_VOICE_FAILURE_BOUNDARY = DHCP_POOL_DEFINITION / UNOBSERVABLE
+FIRST_CONTRADICTED_VOICE_STAGE = ENDPOINT_ADDRESS
+COMMON_VOICE_FOUNDATION = VERIFIED as far as governed reads reach
+SAME_ROOT_CAUSE = NOT_ESTABLISHED
 SCALE_SPECIFIC_VOICE_FAILURE = NOT_ESTABLISHED / WEAKENED
-NEXT_ACTIVE_STEP = COMMON_VOICE_LIFECYCLE_INVESTIGATION
+SCALE_SPECIFIC_VOICE_FAILURE_LEVEL = WEAKENED_AT_SYMPTOM_LEVEL (not REFUTED)
+NEXT_ACTIVE_STEP = DHCP_POOL_DEFINITION_READBACK_DECISION
 FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB_WITH_PORTFAST
 VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
@@ -1380,6 +1400,161 @@ affected 120 passed, full 3000 passed / 0 failed.  Graphify updated offline;
 An intermediate full run failed four namespace-isolation contracts because a
 new serializer test imported the production package into pytest; the test was
 corrected to verify the source labels without loading that namespace.
+
+## Two claims the run 3 journal made and had not earned
+
+`RuntimeActionMutation.applied = True` says the runtime channel accepted a
+dispatch. The lifecycle journal read that as VERIFIED, so the run 3 artefact
+published the router's DHCP pool, both subinterfaces, option 150, CME, the
+ephone bindings and the cnf files as verified state when not one of them had
+been read back. Eight milestones, all promoted by a status expression one term
+long.
+
+`241e64b` gives a milestone the kind of evidence it rests on. APPLICATION rests
+on a mutation and stops at APPLIED; only OBSERVATION, a milestone that read
+something back, may reach VERIFIED; and the default is the weaker one, so a
+milestone added later that forgets to say what it rests on cannot silently
+claim verification. UNOBSERVABLE stays its own answer, which is still the
+honest reading of phone boot state on this build. The milestone publishes its
+own retained shape too -- the runner had been rebuilding that dict by hand,
+which is how a distinction that exists in the model goes missing from the
+artefact somebody reads months later.
+
+The run 4 journal below reads APPLIED fourteen times and VERIFIED six, and the
+six are the two Realtime reads, the acquisition window and the three new
+foundation observations. Nothing about run 3's measurements changed; what
+changed is that the file no longer says the router was verified.
+
+## The whole shared foundation, finally read -- and it is not the problem
+
+Run 4 at `824f936` is run 3's experiment with more eyes on it: same four
+devices, same VLANs, same configuration, same absence of PortFast, same
+everything. The only difference is that it reads the foundation both sides of
+the A/B share, through surfaces this repository already governs -- the
+enterprise runtime's typed trunk readback, `show ip interface brief` on the
+router with the bounded per-interface read behind it, and the one call-control
+table PT 9.0.1 publishes.
+
+```text
+LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e
+SWITCH_TRUNK_OPERATIONAL = VERIFIED (Gi0/1, trunking)
+SWITCH_TRUNK_ALLOWED_930 = VERIFIED
+SWITCH_TRUNK_ACTIVE_930 = VERIFIED
+SWITCH_TRUNK_FORWARDING_930 = VERIFIED
+SWITCH_TRUNK_NATIVE = VERIFIED (1)
+ROUTER_VOICE_SUBINTERFACE_PRESENT = VERIFIED (FastEthernet0/0.930)
+ROUTER_VOICE_SUBINTERFACE_IPV4 = VERIFIED (10.93.0.1)
+ROUTER_VOICE_SUBINTERFACE_STATE = VERIFIED (up/up)
+CME_FOUNDATION_READBACK = VERIFIED (fresh + complete show ephone, 2 rows)
+DHCP_POOL_CONFIGURATION_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+PHONE_VOICE_VLAN = VERIFIED 2/2
+PHONE_DHCP_ENABLED = YES 2/2
+PHONE_IPV4 = NONE 2/2 (channel present, answered none)
+VOICE_DHCP_BINDINGS = 0 (fresh + complete)
+SCCP_REGISTRATION = NOT_REGISTERED 2/2
+STP_VOICE_PHONE_ROW = ABSENT before and after
+OUTCOME = SAME_FAILURE
+CLEANUP = 4/4 removed, workspace restored, Realtime restored, 0 errors
+```
+
+The ordered walk, phone port outwards, stopping at the first stage that is not
+VERIFIED:
+
+```text
+PHONE_ACCESS_AND_VOICE_VLAN  VERIFIED
+SWITCH_TRUNK                 VERIFIED
+ROUTER_VOICE_SUBINTERFACE    VERIFIED
+DHCP_POOL_DEFINITION         UNOBSERVABLE   <- first boundary
+CALL_CONTROL_FOUNDATION      VERIFIED
+ENDPOINT_DHCP                VERIFIED
+ENDPOINT_ADDRESS             CONTRADICTED   <- first contradiction
+VOICE_DHCP_BINDING           CONTRADICTED
+SCCP_REGISTRATION            CONTRADICTED
+```
+
+Read it carefully, because the two markers mean different things.
+
+`FIRST_COMMON_VOICE_FAILURE_BOUNDARY = DHCP_POOL_DEFINITION / UNOBSERVABLE` is a
+statement about the OBSERVER. No registered query on `9.0.1.0858` exposes a pool
+definition, `VerificationKind.DHCP_POOL` is pinned UNOBSERVABLE by its own
+ceiling at `qualify_cp_scale_live.py:625`, and `show telephony-service` does not
+exist on this image. The pool may be perfect. It may be absent. Nothing in this
+repository can currently tell those apart, so shortening that readback to a
+pool that is not there is a sentence nobody has earned -- and a handoff that
+wrote it would hand the next session a root cause nobody measured.
+
+`FIRST_CONTRADICTED_VOICE_STAGE = ENDPOINT_ADDRESS` is a statement about the
+network: two phones with a voice SVI, DHCP enabled on it and a readable address
+channel answered no address, and the server's binding table -- fresh, complete
+-- held none.
+
+What that pair rules out is most of the search space. Between an armed phone and
+a server that hands out nothing, every hop that any governed read can reach is
+verified at four devices: the access port carries voice VLAN 930, the trunk
+carries 930 allowed AND active AND forwarding, the router holds
+`FastEthernet0/0.930` at `10.93.0.1` with the line up/up, and the call control
+answers a complete `show ephone` with a row per phone. The Voice foundation is
+not where this fails.
+
+So the two failures still are not shown to share a cause:
+
+```text
+SAME_ROOT_CAUSE = NOT_ESTABLISHED
+SCALE_SPECIFIC_VOICE_FAILURE_LEVEL = WEAKENED_AT_SYMPTOM_LEVEL (not REFUTED)
+```
+
+CP-SCALE's foundation has not been read this way. Four devices sharing an
+endpoint signature with 279 is a symptom-level match, and the comparison that
+would make it a cause-level one needs the same ladder run against the canonical
+topology. This run makes that comparison possible; it does not perform it.
+
+Two things this run does NOT settle, unchanged from run 3:
+
+* PortFast. Still absent on both sides, so it still separates nothing.
+  `PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED`.
+* The absent voice-VLAN STP rows. Now measured beside a trunk that IS forwarding
+  VLAN 930, which makes the co-occurrence stranger and no more causal:
+  `VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE`.
+
+The earlier run 3 note that "the router's pool and subinterfaces were not read
+back" is superseded for the SUBINTERFACES and stands for the POOL.
+
+`NEXT_ACTIVE_STEP = DHCP_POOL_DEFINITION_READBACK_DECISION`. The next thing
+worth knowing needs a governed observer that does not exist: something that can
+state what the router's pool and option 150 actually hold. Every existing
+registered query has been audited and none reaches it. Building one is a new
+observer surface and a checkpoint decision, not a continuation -- and reaching
+for `show running-config` or a raw send to get there is exactly the shortcut
+this whole line of work refuses.
+
+## Preserving the raw runs
+
+Four governed Voice A/B LIVEs have produced four raw journals, and they live
+under ignored `data/` because that is where this repository keeps generated
+runtime evidence. The cost is identity: `positive-voice-ab.json` is overwritten
+by every LIVE, so a measurement that is not archived under a unique name and
+pinned by digest stops existing the moment the next run starts.
+
+`docs/reference/cp-scale/positive_voice_ab_runs.json` is the tracked record, in
+the shape `live_canonical_checkpoint.json` already set. It names each ignored
+artefact, pins its SHA-256, and says HOW its source head is known -- run 3's and
+run 4's were written down live, while runs 1 and 2 were recovered afterwards by
+bracketing the artefact's mtime between two commit timestamps, which is a weaker
+kind of knowing and says so.
+
+```text
+run1  0d92e12f...  4ddf2d3  HARNESS_BOUNDARY_WRONG_PHONE_ADDRESSING_INTERFACE
+run2  85fd0a24...  c77ed96  HARNESS_BOUNDARY_EMPTY_ADDRESS_SEMANTICS
+run3  d0b3d885...  485ef13  AUTHORITATIVE_SAME_FAILURE_MEASUREMENT
+run4  ba6b1ad6...  824f936  FOUNDATION_QUALIFICATION_MEASUREMENT
+```
+
+`tools/cp_scale_voice_ab_ledger.py --archive --run runN ...` archives the
+canonical file to a unique name and records it; it computes every digest itself
+and refuses to archive over a run that already exists. `--verify` re-hashes
+whatever survives locally. Run it after every Voice A/B LIVE, before anything
+else touches `data/`. Never `git clean -fdx` during this investigation.
 
 ## Reading the heads
 

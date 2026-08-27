@@ -932,7 +932,7 @@ def test_handoff_records_the_measured_positive_voice_ab_result():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "POSITIVE_VOICE_AB_IMPLEMENTED = YES" in handoff
-    assert "POSITIVE_VOICE_AB_LIVE = RUN at 485ef13" in handoff
+    assert "POSITIVE_VOICE_AB_LIVE = RUN at 824f936" in handoff
     assert "POSITIVE_VOICE_AB_RESULT = SAME_FAILURE" in handoff
     # An unrun experiment is never a negative result, so the blocker that
     # stood while it was unrun must not survive the run that replaced it.
@@ -952,7 +952,12 @@ def test_handoff_records_the_measured_positive_voice_ab_result():
 
     # What the result does and does not license.
     assert "SCALE_SPECIFIC_VOICE_FAILURE = NOT_ESTABLISHED / WEAKENED" in handoff
-    assert "NEXT_ACTIVE_STEP = COMMON_VOICE_LIFECYCLE_INVESTIGATION" in handoff
+    # Weakened at the SYMPTOM level.  Four devices reproduce the endpoint
+    # signature; that is not the same as the two failures sharing a cause.
+    assert (
+        "SCALE_SPECIFIC_VOICE_FAILURE_LEVEL = WEAKENED_AT_SYMPTOM_LEVEL" in handoff
+    )
+    assert "NEXT_ACTIVE_STEP = DHCP_POOL_DEFINITION_READBACK_DECISION" in handoff
     # The positive control carried no PortFast either, so it separates nothing
     # and the causal verdicts stay exactly where they were.
     assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
@@ -1432,3 +1437,58 @@ def test_the_foundation_observations_are_journalled_as_observations():
     assert [item.sequence for item in result.lifecycle] == list(
         range(1, len(result.lifecycle) + 1)
     )
+
+
+def test_handoff_records_the_foundation_the_slice_finally_read():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    # Every shared foundation dimension a governed read can reach, measured at
+    # four devices, in the same failing topology as run 3.
+    assert "POSITIVE_SLICE_TRUNK_ALLOWED_930 = VERIFIED" in handoff
+    assert "POSITIVE_SLICE_TRUNK_ACTIVE_930 = VERIFIED" in handoff
+    assert "POSITIVE_SLICE_TRUNK_FORWARDING_930 = VERIFIED" in handoff
+    assert "POSITIVE_SLICE_TRUNK_NATIVE = VERIFIED" in handoff
+    assert "POSITIVE_SLICE_ROUTER_VOICE_SUBINTERFACE = VERIFIED" in handoff
+    assert "POSITIVE_SLICE_ROUTER_VOICE_IPV4 = VERIFIED" in handoff
+    assert "POSITIVE_SLICE_ROUTER_VOICE_STATE = VERIFIED" in handoff
+    assert "POSITIVE_SLICE_CME_TABLE = VERIFIED" in handoff
+
+
+def test_handoff_keeps_the_observer_ceiling_apart_from_a_finding():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert (
+        "FIRST_COMMON_VOICE_FAILURE_BOUNDARY = DHCP_POOL_DEFINITION / UNOBSERVABLE"
+        in handoff
+    )
+    assert "FIRST_CONTRADICTED_VOICE_STAGE = ENDPOINT_ADDRESS" in handoff
+    assert (
+        "DHCP_POOL_CONFIGURATION_READBACK = "
+        "NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS" in handoff
+    )
+    assert (
+        "OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS"
+        in handoff
+    )
+    # The ceiling is a property of the observer.  A handoff that shortened it
+    # to "the pool is absent" would hand the next session a root cause nobody
+    # measured, which is exactly what this run was built to avoid.
+    assert "DHCP_POOL_CONFIGURATION_READBACK = ABSENT" not in handoff
+    assert "DHCP_POOL_ABSENT" not in handoff
+
+
+def test_handoff_refuses_to_promote_the_same_failure_into_a_same_cause():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "SAME_ROOT_CAUSE = NOT_ESTABLISHED" in handoff
+    assert "SAME_ROOT_CAUSE = ESTABLISHED" not in handoff
+    assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
+    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
+    assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
+
+
+def test_handoff_records_the_applied_verified_lifecycle_separation():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "LIFECYCLE_APPLIED_VERIFIED_BOUNDARY = SEPARATED at 241e64b" in handoff
+    assert "RAW_VOICE_AB_RUNS_PINNED = 4" in handoff
