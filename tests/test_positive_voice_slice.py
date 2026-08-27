@@ -443,3 +443,21 @@ def test_an_apipa_address_is_not_a_dhcp_lease():
 
 def test_a_result_without_phones_is_unobservable_not_a_failure():
     assert PositiveVoiceSliceResult().outcome == UNOBSERVABLE
+
+
+def test_handoff_records_the_positive_voice_slice_and_its_live_boundary():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "POSITIVE_VOICE_AB_IMPLEMENTED = YES" in handoff
+    assert "POSITIVE_VOICE_AB_LIVE = NOT_RUN" in handoff
+    # The blocker is named exactly.  "Voice A/B failed" would be false: it was
+    # never run, and the reason is a bridge that would not connect.
+    assert "POSITIVE_VOICE_AB_LIVE_BLOCKER = BRIDGE_DID_NOT_CONNECT" in handoff
+    assert "PACKET_TRACER_PROCESS_PRESENT = YES" in handoff
+    assert "POSITIVE_VOICE_AB_RESULT = NOT_ESTABLISHED" in handoff
+    assert "POSITIVE_SLICE_PORTFAST = NOT_APPLIED" in handoff
+    assert "NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB_LIVE" in handoff
+    # Nothing about the failure side may drift while the A side is unrun.
+    assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
+    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
+    assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff

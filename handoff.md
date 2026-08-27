@@ -44,7 +44,13 @@ FRAME_OBJECT_UUID = NOT_MEASURED_ON_FRAMES
 RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
 CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
 FRAME_VLAN_QUALIFICATION_LINE = STOPPED
-NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB
+POSITIVE_VOICE_AB_IMPLEMENTED = YES
+POSITIVE_VOICE_AB_LIVE = NOT_RUN
+POSITIVE_VOICE_AB_LIVE_BLOCKER = BRIDGE_DID_NOT_CONNECT
+PACKET_TRACER_PROCESS_PRESENT = YES
+POSITIVE_VOICE_AB_RESULT = NOT_ESTABLISHED
+POSITIVE_SLICE_PORTFAST = NOT_APPLIED
+NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB_LIVE
 FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB
 VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
@@ -1140,7 +1146,7 @@ another Packet Tracer LIVE for that audit.
 ```text
 NEXT_EVIDENCE_SEAM = CROSS_HOP_FRAME_CORRELATION
 CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_AVAILABLE_WITH_CURRENT_MEASURED_SURFACES
-NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB
+NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB_LIVE
 FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB
 ```
 
@@ -1222,13 +1228,69 @@ FRAME_OBJECT_UUID = NOT_MEASURED_ON_FRAMES
 RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
 CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
 FRAME_VLAN_QUALIFICATION_LINE = STOPPED
-NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB
+NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB_LIVE
 ```
 
 The STP drop text above is consistent with the already-recorded
 `STP_BLOCKING_IN_SIMULATION = OBSERVED`; it is NOT a new root-cause proof.
 `resetSimulation` changes engine state, realtime never showed VLAN20 phone ports
 BLOCKING, and `PORTFAST_AS_VOICE_ROOT_CAUSE` stays `NOT_CONFIRMED`.
+
+## Positive disposable Voice A/B -- built offline, LIVE not run
+
+The A side exists: `qualify_positive_voice_slice.py` and the governed runner
+`tools/cp_scale_positive_voice_ab_live.py`.  One 2811, one 3560-24PS, two 7960s,
+voice VLAN 930, extensions 3101/3102, no PC passthrough and no redundant links.
+Every mutation is an existing typed action; the wrapper orders them and journals
+when each happened, and creates no primitive of its own.
+
+The offline audit that preceded it found every component already present:
+
+```text
+VOICE_DISPOSABLE_COMPONENTS = ALL_EXISTING
+NEW_MUTATION_PRIMITIVE_REQUIRED = NO
+2811_SUPPORTS_CME = SUPPORTED (measured controlled probe, 9 snapshots)
+2811_SUPPORTS_DHCP_SERVER = SUPPORTED (measured, 14 snapshots)
+7960_IN_CATALOG = YES (pt_type 7960; measured ports PC / Switch / Vlan1)
+REGISTRATION_OBSERVER = show ephone via observe_registrations
+```
+
+`show ephone` reading empty on a BARE 2811 is a property of an unconfigured
+router, not a capability verdict.  The measured `supports_cme` probe writes
+`telephony-service` and reads the ephone table back, and it resolves SUPPORTED.
+
+The slice applies NO edge STP policy.  PortFast is emitted by the control-plane
+stage, not by the configuration or voice paths, so a slice built from those
+paths carries none.  That is deliberate: adding one would engineer the success
+the experiment exists to test, and a slice that registers WITHOUT PortFast is
+exactly the evidence that would weaken PortFast as the explanation.
+
+The LIVE did not run.  The Packet Tracer bridge refused to connect on two
+bounded attempts (20s, then 25s) while `PacketTracer.exe` was running, so the
+runner never reached a mutation.  Nothing was created and nothing was removed.
+
+```text
+POSITIVE_VOICE_AB_IMPLEMENTED = YES
+POSITIVE_VOICE_AB_LIVE = NOT_RUN
+POSITIVE_VOICE_AB_LIVE_BLOCKER = BRIDGE_DID_NOT_CONNECT
+PACKET_TRACER_PROCESS_PRESENT = YES
+POSITIVE_VOICE_AB_RESULT = NOT_ESTABLISHED
+POSITIVE_SLICE_PORTFAST = NOT_APPLIED
+```
+
+This is NOT a Voice A/B failure.  The experiment was never run, and reporting an
+unrun experiment as a negative result is the exact substitution these evidence
+rules exist to prevent.  The next session runs the runner unchanged, from a
+clean pushed HEAD, once the bridge connects:
+
+```text
+python tools/cp_scale_positive_voice_ab_live.py --packet-tracer-version 9.0.1.0858
+```
+
+It requires an empty semantic workspace and refuses to mutate one it did not
+find empty.  Historical E7 stays a POSITIVE OUTCOME REFERENCE and never an exact
+reproducible fixture, so the reconstructed slice must not be called the same E7
+run.
 
 FAIL-FIRST for the retained-evidence correction: a frame with an unobservable
 VLAN still reported target-VLAN admission.  Focused: 13 passed.  Affected: 162
