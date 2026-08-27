@@ -1,0 +1,42 @@
+{
+  "schema": "cp-scale-voice-ab-evidence-v1",
+  "diagnostic": "POSITIVE_DISPOSABLE_VOICE_AB",
+  "runs": [
+    {
+      "run": "run1",
+      "filename": "positive-voice-ab-run1-unreadable-endpoint.json",
+      "sha256": "0d92e12faf96b23d9ba437a210252fa0f109a9926b2256276c652b86e5ddac96",
+      "source_head": "4ddf2d3389353abfdc179d5ee13aca89cd613095",
+      "source_head_provenance": "DERIVED_FROM_ARTEFACT_MTIME",
+      "role": "HARNESS_BOUNDARY_WRONG_PHONE_ADDRESSING_INTERFACE",
+      "outcome": "UNOBSERVABLE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": false,
+      "note": "Armed and read the phone on 'Switch', the RJ45 the cable lands on; both decisive dimensions came back UNOBSERVABLE.  Corrected at c77ed96."
+    },
+    {
+      "run": "run2",
+      "filename": "positive-voice-ab-run2-unread-address-channel.json",
+      "sha256": "85fd0a24a6a862615df8895b844794a521d1386123532751477255a8264433f2",
+      "source_head": "c77ed9693cca49cbeb098b53428008adac105855",
+      "source_head_provenance": "DERIVED_FROM_ARTEFACT_MTIME",
+      "role": "HARNESS_BOUNDARY_EMPTY_ADDRESS_SEMANTICS",
+      "outcome": "UNOBSERVABLE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": false,
+      "note": "Every empty address string read UNOBSERVABLE, so a phone that had plainly been asked could never reach NO.  Corrected at 485ef13."
+    },
+    {
+      "run": "run3",
+      "filename": "positive-voice-ab-run3-same-failure.json",
+      "sha256": "d0b3d885214fd8d90821a291e90d859be0a26046a33d230e2d56bdac618a20c3",
+      "source_head": "485ef137e3a1ce365022898925057872074602d9",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "AUTHORITATIVE_SAME_FAILURE_MEASUREMENT",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "Voice VLAN VERIFIED 2/2, DHCP enabled 2/2, no address, 0 voice bindings, NOT_REGISTERED 2/2, voice-VLAN phone STP rows ABSENT, no PortFast.  The lifecycle statuses in this artefact predate the APPLIED/VERIFIED separation and read VERIFIED for eight milestones that were only dispatched."
+    }
+  ]
+}
