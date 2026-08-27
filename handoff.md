@@ -23,8 +23,15 @@ POOL_EXHAUSTION_CAUSE = REFUTED_FOR_THIS_DISPOSABLE
 OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW
 PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED_FOR_GOVERNED_DISPATCH
+SERVER_RECEIVES_DISCOVER = UNOBSERVABLE
+VOICE_VLAN_REALTIME_DATA_PLANE_FORWARDING = NOT_ESTABLISHED
+PAIRED_ACCESS_VLAN_RESULT = PARTIAL_OR_DIVERGENT
+PAIRED_ACCESS_VLAN_DHCP_EFFECT = NOT_OBSERVED_WITHIN_WINDOW
+VOICE_VLAN_STP_MEMBERSHIP_DIFFERENCE = OBSERVED
+DISTINCT_ACCESS_PLUS_VOICE_SHAPE = CONTROLS_VOICE_VLAN_STP_MEMBERSHIP
+INTERVENTION_STP_AT_WINDOW_CLOSE = LEARNING_NOT_FORWARDING
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
-NEXT_ACTIVE_STEP = VOICE_DHCP_TRANSACTION_PATH_INVESTIGATION
+NEXT_ACTIVE_STEP = PAIRED_ACCESS_VLAN_POST_STP_CONVERGENCE_ACQUISITION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -34,10 +41,10 @@ CP_SCALE_STATUS = OPEN / NOT VERIFIED
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = c9d6eada2d354e9dcdbcfe468268f84c97bc0885
+CURRENT_PUSHED_HEAD = c7fefb06c381755c3cfab4f22cd1d651ec12b8eb
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
 LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
-LATEST_VOICE_AB_LIVE_HEAD = c9d6eada2d354e9dcdbcfe468268f84c97bc0885
+LATEST_VOICE_AB_LIVE_HEAD = c7fefb06c381755c3cfab4f22cd1d651ec12b8eb
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
     measured plain-host access-ingress representation
@@ -2036,6 +2043,85 @@ that way.
 Run 8 is archived as `positive-voice-ab-run8-measured-dhcp-pool-readback.json`,
 SHA-256 `7f508ad8e9e337237d721672beef9b180cb6cf1bee0f20d13b5dff62fd449889`, source
 head `91927d9`. Cleanup was clean: the workspace was restored, Realtime was
+restored, and the run reported no errors.
+
+## Run 9 -- the access-VLAN paired control, and what it split apart
+
+The strongest post-run-8 candidate was a property of the phone-facing access
+port SHAPE: with `access 931` + `voice 930` every fresh+complete realtime STP
+capture -- disposable runs 3 through 8 and the CP-SCALE CASE-D VLAN20 capture
+alike -- lists the port only under its data VLAN, and the one simulation
+window that ever saw a phone's Discover saw the switch drop it at that port.
+Run 9 tested that shape causally, as a SAME-RUN two-phone A/B so both halves
+shared one Packet Tracer session, one switch, one trunk, one pool, one CME and
+one acquisition window: the control phone kept `access 931 / voice 930`
+exactly as run 8, and the intervention phone's port carried
+`access 930 / voice 930`.  One variable, inside one run.
+
+The qualifier gained `phone_access_vlans` -- one access VLAN per phone,
+refused unless it names every phone exactly once and uses only the two VLANs
+the slice itself creates -- and each port's readback is now judged against ITS
+OWN intent, which travels into the adapter's `verify` expectation and comes
+back retained as `access_vlan_expected`.  Judging the intervention port
+against the shared data-VLAN constant would have manufactured a CONTRADICTED
+reading on a switch that did exactly what it was asked.  The default mapping
+is pinned byte-for-byte to the run-8 shape by the same tests that pin the
+paired one.
+
+The primary metric did not move, and the secondary one did:
+
+```text
+CONTROL      Fa0/1 access 931 / voice 930: access+voice readback VERIFIED,
+             Vlan930 SVI present, DHCP on, IPV4 NONE, NOT_REGISTERED,
+             VLAN0930 STP row ABSENT before AND after -- runs 3-8 exactly
+INTERVENTION Fa0/2 access 930 / voice 930: access+voice readback VERIFIED,
+             Vlan930 SVI present, DHCP on, IPV4 NONE, NOT_REGISTERED,
+             VLAN0930 STP row LIS before the window, LRN after it
+SHARED       trunk VERIFIED on all five dimensions, Fa0/0.930 up/up at
+             10.93.0.1, pool 254/0 leased/253 free, ephone table fresh and
+             complete with 2 rows, 0 errors, workspace and Realtime restored
+```
+
+So the run is PARTIAL_OR_DIVERGENT, and deliberately not forced into either
+clean case.  What it establishes: the access-VLAN shape CONTROLS voice-VLAN
+spanning-tree membership on this build.  The moment the access VLAN equals the
+voice VLAN the port enters the VLAN0930 instance -- something no distinct-VLAN
+run ever showed -- which is measured, mechanical support for the shape
+hypothesis at the representation layer.  What it does NOT establish: any DHCP
+effect.  Both phones ended the window without an address, so
+`PAIRED_ACCESS_VLAN_DHCP_EFFECT = NOT_OBSERVED_WITHIN_WINDOW`.
+
+The reason the DHCP question stayed open is itself the run's sharpest finding:
+the intervention port was read `LIS` immediately before the acquisition window
+and `LRN` immediately after it.  Classical STP convergence was still in flight
+for the ENTIRE window -- the port never reached forwarding while the phones
+were being judged -- so the intervention half never actually experienced the
+condition the hypothesis is about.  A port that is LEARNING drops data frames
+by design, on real IOS and in PT alike.  That also retroactively sharpens the
+control side's meaning: ABSENT and never-converging are different starting
+states, and only run 9 has ever shown a phone port converging INTO the voice
+VLAN at all.
+
+Two mandated corrections from the independent audit are recorded beside this,
+because run 9's evidence obeys both: zero bindings prove NO LEASE, never that
+no Discover reached the server, so `SERVER_RECEIVES_DISCOVER = UNOBSERVABLE`;
+and an STP table row -- present, absent, or converging -- is a representation,
+not a measured data plane, so
+`VOICE_VLAN_REALTIME_DATA_PLANE_FORWARDING = NOT_ESTABLISHED`.
+
+The next step names itself: give the intervention shape a CONVERGED port
+before judging acquisition.  `PAIRED_ACCESS_VLAN_POST_STP_CONVERGENCE_ACQUISITION`
+means rerunning the same paired control with the port demonstrably past
+LIS/LRN inside the window -- whether by an acquisition window that outlives
+convergence or by the already-typed edge PortFast on the paired shape, where
+skipping LIS/LRN is finally a measurable claim rather than an unobservable
+dispatch.  Whichever lever is chosen, it must move exactly one thing: the
+port's state at the moment the phones are judged.
+
+Run 9 is archived as
+`positive-voice-ab-run9-paired-access-vlan-stp-divergence.json`, SHA-256
+`44e9886286207ec5c1b92c13f10790d34fabfe6991e0ad5ae8a6cb476c8d5086`, source
+head `c7fefb0`.  Cleanup was clean: the workspace was restored, Realtime was
 restored, and the run reported no errors.
 
 ## Commits since the previous handoff

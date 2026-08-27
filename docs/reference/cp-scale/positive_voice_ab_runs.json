@@ -97,6 +97,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "Same disposable Voice slice and same NO-PortFast baseline as run 7, with one new READ-ONLY dimension: the measured show ip dhcp pool table.  Pool VOICEAB_VOICE exists, its range 10.93.0.1-10.93.0.254 covers the intended 10.93.0.10-10.93.0.254 lease window, and 253 of 254 addresses are free (0 leased, excluded COUNT 1).  Both phones still have DHCP armed and no address, bindings are 0 and neither registers, so the outcome is SAME_FAILURE and the first non-VERIFIED stage moved downstream from the pool to ENDPOINT_ADDRESS.  Pool absence and pool exhaustion are refuted for this disposable; the excluded COUNT is not the excluded configuration and option 150 remains unreadable."
+    },
+    {
+      "run": "run9",
+      "filename": "positive-voice-ab-run9-paired-access-vlan-stp-divergence.json",
+      "sha256": "44e9886286207ec5c1b92c13f10790d34fabfe6991e0ad5ae8a6cb476c8d5086",
+      "source_head": "c7fefb06c381755c3cfab4f22cd1d651ec12b8eb",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "The same-run two-phone access-VLAN control.  One disposable, one window: the control phone kept access 931 / voice 930 and the intervention phone's port carried access 930 / voice 930, with every other action identical.  Primary outcome did not move -- both phones DHCP-armed, no address, 0 bindings, NOT_REGISTERED -- but the voice-VLAN STP membership DID: the control port stays ABSENT from the VLAN0930 instance exactly as runs 3-8, while the intervention port appears in it, LIS before the window and LRN after, never reaching FWD inside it.  The access-VLAN shape controls voice-VLAN spanning-tree membership on this build; whether a port that reaches FORWARDING also leases is exactly what this run could not answer, because the window closed mid-convergence.  PortFast on the access==voice shape, where skipping LIS/LRN is finally measurable, is the follow-up."
     }
   ]
 }
