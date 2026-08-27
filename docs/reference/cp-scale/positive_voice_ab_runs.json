@@ -109,6 +109,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "The same-run two-phone access-VLAN control.  One disposable, one window: the control phone kept access 931 / voice 930 and the intervention phone's port carried access 930 / voice 930, with every other action identical.  Primary outcome did not move -- both phones DHCP-armed, no address, 0 bindings, NOT_REGISTERED -- but the voice-VLAN STP membership DID: the control port stays ABSENT from the VLAN0930 instance exactly as runs 3-8, while the intervention port appears in it, LIS before the window and LRN after it.  FWD was not observed at either snapshot; that the port never reached FWD at some unread moment inside the window is NOT established -- two snapshots do not prove every intermediate state.  The access-VLAN shape controls voice-VLAN spanning-tree membership on this build; whether a port OBSERVED forwarding also leases is exactly what this run could not answer.  The follow-up is the FWD-gated fresh-DHCP rerun under natural convergence: arm only after a qualified read observes FWD, and only when the pre-arm readback proves a real OFF-to-ON trigger."
+    },
+    {
+      "run": "run10",
+      "filename": "positive-voice-ab-run10-stp-precondition-unobservable.json",
+      "sha256": "6c128bae161cb41bf5c879ac7fde14aaad9750e1d5922aa256dfbcd0bd5c3297",
+      "source_head": "d7a43778b377dbf7f83e214d7cd390fb34309360",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
+      "outcome": "UNOBSERVABLE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "First RUN10 paired access-VLAN FWD-gated LIVE: control FastEthernet0/1 access 931 voice 930; intervention FastEthernet0/2 access 930 voice 930; no PortFast. The qualified intervention VLAN930 gate observed LIS, then LRN, then UNOBSERVABLE over 11 samples / 21844 ms before authoritative FWD was established. The terminal sample did not establish the full executed + fresh + complete + CONFIRMED_UNIQUE contract; the retained gate evidence does not distinguish which required read dimension failed. Per contract there were no PRE-arm reads, no DHCP arm calls, no POST-arm reads, no acquisition window, and no IPv4 causal interpretation. Result: STP_PRECONDITION_NOT_ESTABLISHED. Workspace and Realtime were restored, with zero errors; no automatic rerun occurred."
     }
   ]
 }

@@ -49,6 +49,7 @@ ROLES = {
     "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE",
     "MEASURED_DHCP_POOL_READBACK_BASELINE",
     "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL",
+    "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
 }
 
 
@@ -259,6 +260,22 @@ def test_an_unknown_role_or_a_short_head_is_refused(monkeypatch, tmp_path):
         _record(source_head="485ef13")
 
 
+def test_run_numbers_are_ordered_numerically_after_run_nine(monkeypatch, tmp_path):
+    raw, ledger = _isolate(monkeypatch, tmp_path)
+    filename = "positive-voice-ab-run10-probe.json"
+    (raw / filename).write_bytes(b"{}")
+    ledger.write_text(json.dumps({
+        "schema": "cp-scale-voice-ab-evidence-v1",
+        "diagnostic": "POSITIVE_DISPOSABLE_VOICE_AB",
+        "runs": [{"run": "run9"}],
+    }), encoding="utf-8")
+
+    _record(run="run10", filename=filename)
+
+    saved = json.loads(ledger.read_text(encoding="utf-8"))
+    assert [item["run"] for item in saved["runs"]] == ["run9", "run10"]
+
+
 def test_the_causal_intervention_has_a_role_of_its_own(monkeypatch, tmp_path):
     # A one-variable intervention is not another qualification measurement, and
     # a ledger that filed it as one would lose what made run 5 different.
@@ -309,3 +326,20 @@ def test_the_same_run_access_vlan_control_has_a_role_of_its_own():
     # port's access VLAN.  That is neither another PortFast intervention nor
     # a baseline, so it needs its own name in the closed role set.
     assert "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL" in tool.ROLES
+
+
+def test_run_ten_records_the_fail_closed_stp_boundary_without_dhcp_claims():
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    run10 = next(item for item in ledger["runs"] if item["run"] == "run10")
+
+    assert run10["role"] == "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION"
+    assert run10["source_head"] == (
+        "d7a43778b377dbf7f83e214d7cd390fb34309360"
+    )
+    assert run10["outcome"] == "UNOBSERVABLE"
+    assert run10["canonical_copy_at_write"] is True
+    note = run10["note"]
+    assert "STP_PRECONDITION_NOT_ESTABLISHED" in note
+    assert "no DHCP arm calls" in note
+    assert "no IPv4 causal interpretation" in note
+    assert "no automatic rerun" in note

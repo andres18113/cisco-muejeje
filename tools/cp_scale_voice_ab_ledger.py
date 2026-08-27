@@ -52,10 +52,18 @@ ROLES = (
     "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE",
     "MEASURED_DHCP_POOL_READBACK_BASELINE",
     "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL",
+    "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
 )
 HEAD_PROVENANCE = ("HANDOFF_RECORDED", "DERIVED_FROM_ARTEFACT_MTIME")
 
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
+_RUN = re.compile(r"^run([1-9][0-9]*)$")
+
+
+def _run_sort_key(entry: dict) -> tuple[int, int | str]:
+    name = str(entry.get("run") or "")
+    match = _RUN.fullmatch(name)
+    return (0, int(match.group(1))) if match else (1, name)
 
 
 def digest(path: Path) -> str:
@@ -133,7 +141,7 @@ def record(
     ledger = load()
     runs = [item for item in ledger.get("runs", []) if item.get("run") != run]
     runs.append(entry)
-    runs.sort(key=lambda item: item["run"])
+    runs.sort(key=_run_sort_key)
     ledger["schema"] = SCHEMA
     ledger["diagnostic"] = DIAGNOSTIC
     ledger["runs"] = runs

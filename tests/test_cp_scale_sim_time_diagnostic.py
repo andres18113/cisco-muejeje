@@ -517,7 +517,7 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     # The two heads are different facts. Collapsing them is how a pushed
     # checkpoint starts reading as a governed LIVE.
     assert (
-        "LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda"
+        "LATEST_GOVERNED_LIVE_HEAD = d7a43778b377dbf7f83e214d7cd390fb34309360"
         in handoff
     )
     assert "ACCESS_PORT_VOICE_VLAN = VERIFIED 21/21" in handoff

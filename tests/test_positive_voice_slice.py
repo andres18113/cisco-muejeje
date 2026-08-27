@@ -1987,7 +1987,7 @@ def test_handoff_keeps_the_two_calibration_lineages_apart():
         "d15a5b71dff8b95b56404e550540ca0f3aef018d" in handoff
     )
     assert (
-        "LATEST_VOICE_AB_LIVE_HEAD = c7fefb06c381755c3cfab4f22cd1d651ec12b8eb"
+        "LATEST_VOICE_AB_LIVE_HEAD = d7a43778b377dbf7f83e214d7cd390fb34309360"
         in handoff
     )
     assert "LATEST_CALIBRATION_LIVE_HEAD" not in handoff

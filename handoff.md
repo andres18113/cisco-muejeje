@@ -32,12 +32,21 @@ VOICE_ENDPOINT_OUTCOME_RUN9 = SAME_FAILURE
 CAUSAL_EXPERIMENT_RESULT_RUN9 = PARTIAL_OR_DIVERGENT
 INTERVENTION_FWD_OBSERVED_RUN9 = NO
 INTERVENTION_NEVER_FWD_DURING_RUN9 = NOT_ESTABLISHED
-FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_BEFORE_RUN10
+FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_RUN10_STP_PRECONDITION_FAILED
 FRESH_7960_DHCP_TRANSACTION = NOT_INDEPENDENTLY_ESTABLISHED
-RUN10_FWD_GATE = READY_FAIL_CLOSED
+RUN10_EXECUTED = YES
+RUN10_RESULT = STP_PRECONDITION_NOT_ESTABLISHED
+RUN10_FWD_GATE = UNOBSERVABLE
+RUN10_STP_GATE_OBSERVED_STATES = LIS -> LRN -> UNOBSERVABLE
+RUN10_STP_GATE_DURATION_MS = 21844
+RUN10_STP_GATE_SAMPLES = 11
+RUN10_STP_GATE_IDENTITY = NOT_ESTABLISHED
 RUN10_DHCP_FLAG_TRANSITION_CONTRACT = PRE_NO + ARM_ACCEPTED + POST_YES_REQUIRED
+RUN10_DHCP_FLAG_TRANSITION = UNOBSERVABLE
+RUN10_ACQUISITION_STARTED = NO
+RUN10_ACQUISITION_BOUNDARY = ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
 VOICE_ROOT_CAUSE = STRONG_CANDIDATE / NOT_CONFIRMED
-NEXT_ACTIVE_STEP = RUN10_PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION
+NEXT_ACTIVE_STEP = AUDIT_RUN10_STP_GATE_UNOBSERVABLE_BOUNDARY
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -49,9 +58,9 @@ UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
 LATEST_PREPARED_IMPLEMENTATION_HEAD = f7231fb4413002a2d8f954e063149bcf9f4f215f
 NEXT_LIVE_HEAD_SOURCE = git rev-parse HEAD (authoritative)
-LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
+LATEST_GOVERNED_LIVE_HEAD = d7a43778b377dbf7f83e214d7cd390fb34309360
 LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
-LATEST_VOICE_AB_LIVE_HEAD = c7fefb06c381755c3cfab4f22cd1d651ec12b8eb
+LATEST_VOICE_AB_LIVE_HEAD = d7a43778b377dbf7f83e214d7cd390fb34309360
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
     measured plain-host access-ingress representation
@@ -2228,6 +2237,41 @@ new mutation primitive -- and the default and run-9 paired behaviours are
 pinned unchanged by the same contracts that pin the new mode.  Packet Tracer
 was not run.  The pushed result of `git rev-parse HEAD`, not a self-referential
 documentation pin, is the source head for exactly one next LIVE.
+
+## Run 10 LIVE -- STP precondition not established
+
+Exactly one governed LIVE ran from clean pushed source head
+`d7a43778b377dbf7f83e214d7cd390fb34309360` on Packet Tracer `9.0.1.0858`.
+The mutating process proved the checkout-local interpreter, the package inside
+this worktree, and only the production import namespace before it connected.
+The read-only baseline was Realtime with zero semantic devices and zero links.
+The experiment remained the prepared pair: control `FastEthernet0/1` access
+931 / voice 930, intervention `FastEthernet0/2` access 930 / voice 930, natural
+convergence, no PortFast and no BPDU Guard.
+
+The intervention VLAN930 gate retained `LIS -> LRN -> UNOBSERVABLE` across 11
+samples and 21,844 ms.  It never established the full executed + fresh +
+complete + `CONFIRMED_UNIQUE` contract together with FWD.  The retained gate
+evidence does not distinguish which required read dimension failed in the
+terminal sample, so identity itself remains NOT ESTABLISHED rather than being
+guessed.  The governed result is `STP_PRECONDITION_NOT_ESTABLISHED`, with
+boundary `ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET`.
+
+The fail-closed consequence is the experiment result, not a harness retry:
+there were no PRE-arm flag reads, no arm calls, no POST-arm reads, no
+acquisition window and therefore no per-phone IPv4 or SCCP verdict.  The later
+read-only surfaces reported zero voice bindings, but that is not DHCP causal
+evidence when acquisition never started.  `FRESH_7960_DHCP_TRANSACTION` stays
+`NOT_INDEPENDENTLY_ESTABLISHED`; server Discover and transaction progress stay
+UNOBSERVABLE; `ACCESS_VLAN_SHAPE_CONTROLS_DHCP` stays NOT YET ESTABLISHED.
+
+Cleanup reported zero errors, restored Realtime, and restored the empty
+semantic workspace.  An independent post-read observed zero semantic devices,
+zero links and one allowed backend-managed PDD.  There was no automatic rerun.
+The unique archive is
+`positive-voice-ab-run10-stp-precondition-unobservable.json`, SHA-256
+`6c128bae161cb41bf5c879ac7fde14aaad9750e1d5922aa256dfbcd0bd5c3297`;
+the tracked ledger records provenance only.
 
 ## Commits since the previous handoff
 
