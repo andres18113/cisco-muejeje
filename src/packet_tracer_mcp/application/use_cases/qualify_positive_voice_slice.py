@@ -127,6 +127,17 @@ class PositiveVoicePhoneOutcome:
     voice_vlan_readback: str = UNOBSERVABLE
     dhcp_enabled: str = UNOBSERVABLE
     ipv4: str = ""
+    #: Did the phone create the SVI the plan addressed it on, and does that SVI
+    #: expose an address channel at all?  Both travel with the address, because
+    #: an SVI that never existed, one that exists and cannot be asked, and one
+    #: that answered "none" are three different findings and all three come
+    #: back as the same empty string.
+    voice_svi_present: bool = False
+    address_channel: bool = False
+    #: What the phone itself reports, beside the SVI the plan named.  Never
+    #: promoted into `ipv4`: an address the voice SVI does not report is a
+    #: finding about where to read, not a phone that acquired on the voice VLAN.
+    device_ipv4: str = ""
     registration: str = UNOBSERVABLE
     stp_row_before: str = UNOBSERVABLE
     stp_row_after: str = UNOBSERVABLE
@@ -142,9 +153,13 @@ class PositiveVoicePhoneOutcome:
 
     @property
     def addressed(self) -> str:
-        if not self.ipv4.strip():
-            return UNOBSERVABLE
-        return YES if self.ipv4_observed else NO
+        if self.ipv4.strip():
+            return YES if self.ipv4_observed else NO
+        # Nothing came back.  That is a finding about the phone only if
+        # something was actually asked: an SVI with no address getter and an
+        # SVI that answered "none" both produce the empty string, and only the
+        # second one is a phone that did not acquire.
+        return NO if self.address_channel else UNOBSERVABLE
 
     @property
     def succeeded(self) -> bool:
@@ -919,10 +934,20 @@ class PositiveVoiceSliceQualifier:
             )
 
         ipv4 = ""
+        device_ipv4 = ""
+        svi_present = False
+        address_channel = False
         dhcp_enabled = UNOBSERVABLE
         registered = UNOBSERVABLE
         if registration is not None:
             ipv4 = str(getattr(registration, "endpoint_ipv4", "") or "")
+            device_ipv4 = str(getattr(registration, "device_ipv4", "") or "")
+            svi_present = bool(
+                getattr(registration, "endpoint_interface_present", False)
+            )
+            address_channel = bool(
+                getattr(registration, "endpoint_address_channel", False)
+            )
             flag = getattr(registration, "endpoint_dhcp_enabled", None)
             if flag is not None:
                 dhcp_enabled = YES if bool(flag) else NO
@@ -945,6 +970,13 @@ class PositiveVoiceSliceQualifier:
                 observation = None
             if observation is not None:
                 ipv4 = str(getattr(observation, "ipv4", "") or "")
+                channel = getattr(observation, "address_channel", None)
+                if channel is not None:
+                    address_channel = bool(channel) or address_channel
+                elif ipv4:
+                    # An address proves there was a channel; an empty one
+                    # proves nothing either way, so absence is never inferred.
+                    address_channel = True
                 if dhcp_enabled == UNOBSERVABLE:
                     flag = getattr(observation, "dhcp_enabled", None)
                     if flag is not None:
@@ -954,7 +986,9 @@ class PositiveVoiceSliceQualifier:
             phone_name=phone.name, extension=extension,
             switch_interface=interface,
             data_vlan_readback=data_status, voice_vlan_readback=voice_status,
-            dhcp_enabled=dhcp_enabled, ipv4=ipv4, registration=registered,
+            dhcp_enabled=dhcp_enabled, ipv4=ipv4,
+            voice_svi_present=svi_present, address_channel=address_channel,
+            device_ipv4=device_ipv4, registration=registered,
             stp_row_before=_classify_stp_row(stp_before, VOICE_VLAN_ID, interface),
             stp_row_after=_classify_stp_row(stp_after, VOICE_VLAN_ID, interface),
         )

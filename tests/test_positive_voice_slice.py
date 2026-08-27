@@ -117,6 +117,12 @@ class _Registration:
     direct_readback: str = "FieldVerificationStatus.VERIFIED"
     endpoint_ipv4: str = "10.93.0.10"
     endpoint_dhcp_enabled: bool = True
+    # The three facts the production surface keeps apart behind one empty
+    # string: did the SVI exist, could it be asked, and what did the phone
+    # itself report beside it.
+    endpoint_interface_present: bool = True
+    endpoint_address_channel: bool = True
+    device_ipv4: str = ""
 
 
 class _Physical:
@@ -818,7 +824,9 @@ def test_the_independent_endpoint_read_asks_the_same_interface():
     assert endpoints.read_interfaces == [
         PHONE_ADDRESSING_INTERFACE, PHONE_ADDRESSING_INTERFACE,
     ]
-    assert [item.addressed for item in result.phones] == [UNOBSERVABLE, UNOBSERVABLE]
+    # The registration surface answered none on a channel that exists, so the
+    # fallback read changes where the question was asked, not the answer.
+    assert [item.addressed for item in result.phones] == [NO, NO]
 
 
 def test_the_phone_link_still_lands_on_the_physical_port():
@@ -827,6 +835,91 @@ def test_the_phone_link_still_lands_on_the_physical_port():
 
     assert PHONE_LINK_PORT == "Switch"
     assert len(physical.links) == 3
+
+
+# --- an empty address is three different findings ---------------------------
+
+def test_an_svi_that_answered_none_is_a_phone_that_did_not_acquire():
+    # The channel was there and it reported no address.  That IS the finding.
+    registration = _Registration(
+        status="ActionExecutionStatus.FAILED", direct_readback="",
+        endpoint_ipv4="", endpoint_dhcp_enabled=True,
+        endpoint_interface_present=True, endpoint_address_channel=True,
+    )
+    result, *_ = _run(
+        configuration=_Configuration(bindings=[]),
+        call_control=_CallControl(registration=registration),
+    )
+
+    assert [item.addressed for item in result.phones] == [NO, NO]
+    assert [item.dhcp_enabled for item in result.phones] == [YES, YES]
+    # Enabled, unaddressed, unregistered, zero bindings: the CP-SCALE shape.
+    assert result.outcome == "SAME_FAILURE"
+
+
+def test_an_svi_with_no_address_channel_is_not_a_phone_that_did_not_acquire():
+    # Same empty string, nothing asked.  Calling this NO would invent the
+    # finding the previous test earns.
+    registration = _Registration(
+        status="ActionExecutionStatus.FAILED", direct_readback="",
+        endpoint_ipv4="", endpoint_dhcp_enabled=True,
+        endpoint_interface_present=True, endpoint_address_channel=False,
+    )
+    result, *_ = _run(
+        configuration=_Configuration(bindings=[]),
+        call_control=_CallControl(registration=registration),
+    )
+
+    assert [item.addressed for item in result.phones] == [
+        UNOBSERVABLE, UNOBSERVABLE,
+    ]
+    assert [item.address_channel for item in result.phones] == [False, False]
+    assert result.outcome == UNOBSERVABLE
+
+
+def test_a_phone_that_never_created_the_voice_svi_is_retained_as_such():
+    registration = _Registration(
+        status="ActionExecutionStatus.FAILED", direct_readback="",
+        endpoint_ipv4="", endpoint_dhcp_enabled=None,
+        endpoint_interface_present=False, endpoint_address_channel=False,
+    )
+    result, *_ = _run(call_control=_CallControl(registration=registration))
+
+    assert [item.voice_svi_present for item in result.phones] == [False, False]
+    assert [item.addressed for item in result.phones] == [
+        UNOBSERVABLE, UNOBSERVABLE,
+    ]
+    assert [item.dhcp_enabled for item in result.phones] == [
+        UNOBSERVABLE, UNOBSERVABLE,
+    ]
+
+
+def test_an_address_the_voice_svi_does_not_report_is_never_promoted():
+    # PT does not put the same getters on a device and on its ports.  An
+    # address the phone reports elsewhere is a finding about WHERE to read, not
+    # a phone that acquired on the voice VLAN.
+    registration = _Registration(
+        status="ActionExecutionStatus.FAILED", direct_readback="",
+        endpoint_ipv4="", endpoint_dhcp_enabled=True,
+        endpoint_interface_present=True, endpoint_address_channel=True,
+        device_ipv4="10.93.0.10",
+    )
+    result, *_ = _run(call_control=_CallControl(registration=registration))
+
+    assert [item.ipv4 for item in result.phones] == ["", ""]
+    assert [item.device_ipv4 for item in result.phones] == [
+        "10.93.0.10", "10.93.0.10",
+    ]
+    assert [item.ipv4_observed for item in result.phones] == [False, False]
+    assert all(not item.succeeded for item in result.phones)
+
+
+def test_a_real_lease_on_the_voice_svi_still_reads_as_addressed():
+    result, *_ = _run()
+
+    assert [item.addressed for item in result.phones] == [YES, YES]
+    assert [item.address_channel for item in result.phones] == [True, True]
+    assert result.outcome == "SUCCESS"
 
 
 def test_handoff_records_the_positive_voice_slice_and_its_live_boundary():
