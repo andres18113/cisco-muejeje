@@ -57,6 +57,18 @@ EXTENSIONS = ("3101", "3102")
 #: like it.
 CALL_CONTROL_ID = "voiceab/cme"
 
+#: The physical port a phone link lands on, and the interface a phone actually
+#: holds an address on.  They are NOT the same port, and the first LIVE proved
+#: what happens when one is used for the other: `Switch` is the RJ45 the cable
+#: attaches to, while the address lives on the SVI the phone creates for its
+#: voice VLAN -- which is the interface the production compiler names for every
+#: phone it arms and reads back (`_phone_addressing_interface`).  Arming and
+#: reading the physical port answers nothing at all, and nothing at all is
+#: indistinguishable from "no address" exactly where this A/B cannot afford the
+#: confusion.
+PHONE_LINK_PORT = "Switch"
+PHONE_ADDRESSING_INTERFACE = f"Vlan{VOICE_VLAN_ID}"
+
 VOICE_NETWORK = "10.93.0.0"
 VOICE_PREFIX = 24
 VOICE_NETMASK = "255.255.255.0"
@@ -663,7 +675,7 @@ class PositiveVoiceSliceQualifier:
         links = [uplink] + [
             LinkPlan(
                 device_a=switch.name, port_a=port,
-                device_b=phone.name, port_b="Switch", cable="straight",
+                device_b=phone.name, port_b=PHONE_LINK_PORT, cable="straight",
             )
             for port, phone in zip(phone_ports, phones)
         ]
@@ -701,7 +713,7 @@ class PositiveVoiceSliceQualifier:
         for phone in phones:
             try:
                 accepted = self._endpoints.configure_endpoint_dhcp(
-                    phone.name, "Switch",
+                    phone.name, PHONE_ADDRESSING_INTERFACE,
                 )
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"endpoint_dhcp_failed:{phone.name}: {exc}")
@@ -876,7 +888,7 @@ class PositiveVoiceSliceQualifier:
                     call_control_id=CALL_CONTROL_ID,
                     action_id=_bind_action_id(extension),
                     endpoint_device_name=phone.name,
-                    endpoint_interface="Switch",
+                    endpoint_interface=PHONE_ADDRESSING_INTERFACE,
                 )
             )
         try:
@@ -926,7 +938,7 @@ class PositiveVoiceSliceQualifier:
             # from an unread one.
             try:
                 observation = self._endpoints.read_endpoint_address(
-                    phone.name, "Switch",
+                    phone.name, PHONE_ADDRESSING_INTERFACE,
                 )
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"endpoint_address_unreadable:{phone.name}: {exc}")

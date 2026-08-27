@@ -13,6 +13,8 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     FORWARDING,
     NO,
     NOT_REGISTERED,
+    PHONE_ADDRESSING_INTERFACE,
+    PHONE_LINK_PORT,
     POSITIVE_VOICE_PREFIX,
     REGISTERED,
     UNOBSERVABLE,
@@ -37,6 +39,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
 from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceVerificationExpectation,
     VoiceVerificationKind,
+)
+from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+    _phone_addressing_interface,
 )
 
 
@@ -212,13 +217,17 @@ class _CallControl:
 class _Endpoints:
     def __init__(self):
         self.armed: list[str] = []
+        self.armed_interfaces: list[str] = []
+        self.read_interfaces: list[str] = []
 
     def configure_endpoint_dhcp(self, device_name, interface):
         # The typed runtime answers with a bool, and that is what is judged.
         self.armed.append(device_name)
+        self.armed_interfaces.append(interface)
         return True
 
     def read_endpoint_address(self, device_name, interface):
+        self.read_interfaces.append(interface)
         return None
 
 
@@ -656,7 +665,7 @@ def test_registration_expectations_carry_the_production_voice_contract():
         assert expectation.endpoint_device_name == (
             f"{POSITIVE_VOICE_PREFIX}test01_P{index}"
         )
-        assert expectation.endpoint_interface == "Switch"
+        assert expectation.endpoint_interface == PHONE_ADDRESSING_INTERFACE
         assert expectation.phone_id == f"voiceab/p{index}"
         assert expectation.extension == EXTENSIONS[index - 1]
         assert expectation.call_control_id
@@ -761,6 +770,63 @@ def test_a_truncated_binding_table_can_never_become_the_same_failure():
     assert unread.voice_bindings_observed == UNOBSERVABLE
     assert unread.outcome == UNOBSERVABLE
     assert measured.outcome == "SAME_FAILURE"
+
+
+# --- where a phone holds an address -----------------------------------------
+# The first LIVE armed and read the physical port the cable lands on.  It is a
+# real port, so nothing failed; it simply has no DHCP client and no address to
+# give, and every phone came back UNOBSERVABLE on the two dimensions the A/B
+# turns on.
+
+def test_the_phone_addressing_interface_is_the_one_production_derives():
+    # Pinned to the compiler's own derivation: two copies of this rule would be
+    # two sets of mistakes, and the drift would be invisible until a LIVE.
+    assert PHONE_ADDRESSING_INTERFACE == _phone_addressing_interface(
+        str(VOICE_VLAN_ID)
+    )
+    assert PHONE_ADDRESSING_INTERFACE == "Vlan930"
+    assert PHONE_LINK_PORT != PHONE_ADDRESSING_INTERFACE
+
+
+def test_dhcp_is_armed_on_the_svi_the_phone_addresses_on():
+    result, _, _, _, endpoints, _ = _run()
+
+    assert endpoints.armed_interfaces == [
+        PHONE_ADDRESSING_INTERFACE, PHONE_ADDRESSING_INTERFACE,
+    ]
+    armed = next(
+        item for item in result.lifecycle if item.name == "WHEN_ENDPOINT_DHCP_ARMED"
+    )
+    assert armed.observed is True
+
+
+def test_the_registration_expectation_reads_the_addressing_svi_not_the_cable():
+    _, _, _, call_control, *_ = _run()
+
+    assert [item.endpoint_interface for item in call_control.expectations] == [
+        PHONE_ADDRESSING_INTERFACE, PHONE_ADDRESSING_INTERFACE,
+    ]
+
+
+def test_the_independent_endpoint_read_asks_the_same_interface():
+    # Reached only when the registration surface carried no address, which is
+    # exactly when the fallback has to ask the right port.
+    result, _, _, _, endpoints, _ = _run(
+        call_control=_CallControl(registration=_Registration(endpoint_ipv4="")),
+    )
+
+    assert endpoints.read_interfaces == [
+        PHONE_ADDRESSING_INTERFACE, PHONE_ADDRESSING_INTERFACE,
+    ]
+    assert [item.addressed for item in result.phones] == [UNOBSERVABLE, UNOBSERVABLE]
+
+
+def test_the_phone_link_still_lands_on_the_physical_port():
+    # The cable attaches to `Switch`; only the ADDRESS moved to the SVI.
+    _, physical, *_ = _run()
+
+    assert PHONE_LINK_PORT == "Switch"
+    assert len(physical.links) == 3
 
 
 def test_handoff_records_the_positive_voice_slice_and_its_live_boundary():
