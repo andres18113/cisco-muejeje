@@ -25,13 +25,15 @@ PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW
 PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED_FOR_GOVERNED_DISPATCH
 SERVER_RECEIVES_DISCOVER = UNOBSERVABLE
 VOICE_VLAN_REALTIME_DATA_PLANE_FORWARDING = NOT_ESTABLISHED
-PAIRED_ACCESS_VLAN_RESULT = PARTIAL_OR_DIVERGENT
-PAIRED_ACCESS_VLAN_DHCP_EFFECT = NOT_OBSERVED_WITHIN_WINDOW
-VOICE_VLAN_STP_MEMBERSHIP_DIFFERENCE = OBSERVED
-DISTINCT_ACCESS_PLUS_VOICE_SHAPE = CONTROLS_VOICE_VLAN_STP_MEMBERSHIP
-INTERVENTION_STP_AT_WINDOW_CLOSE = LEARNING_NOT_FORWARDING
+ACCESS_VLAN_SHAPE_CONTROLS_STP_MEMBERSHIP = ESTABLISHED
+ACCESS_VLAN_SHAPE_CONTROLS_DHCP = NOT_YET_ESTABLISHED
+VOICE_ENDPOINT_OUTCOME_RUN9 = SAME_FAILURE
+CAUSAL_EXPERIMENT_RESULT_RUN9 = PARTIAL_OR_DIVERGENT
+INTERVENTION_FWD_OBSERVED_RUN9 = NO
+INTERVENTION_NEVER_FWD_DURING_RUN9 = NOT_ESTABLISHED
+FRESH_DHCP_TRIGGER = NOT_ESTABLISHED
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
-NEXT_ACTIVE_STEP = PAIRED_ACCESS_VLAN_POST_STP_CONVERGENCE_ACQUISITION
+NEXT_ACTIVE_STEP = RUN10_PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -41,7 +43,7 @@ CP_SCALE_STATUS = OPEN / NOT VERIFIED
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = c7fefb06c381755c3cfab4f22cd1d651ec12b8eb
+CURRENT_PUSHED_HEAD = fde993769ac95ab3b2a3b072b7a8594d0de5cf67
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
 LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
 LATEST_VOICE_AB_LIVE_HEAD = c7fefb06c381755c3cfab4f22cd1d651ec12b8eb
@@ -2093,11 +2095,15 @@ effect.  Both phones ended the window without an address, so
 
 The reason the DHCP question stayed open is itself the run's sharpest finding:
 the intervention port was read `LIS` immediately before the acquisition window
-and `LRN` immediately after it.  Classical STP convergence was still in flight
-for the ENTIRE window -- the port never reached forwarding while the phones
-were being judged -- so the intervention half never actually experienced the
-condition the hypothesis is about.  A port that is LEARNING drops data frames
-by design, on real IOS and in PT alike.  That also retroactively sharpens the
+and `LRN` immediately after it.  Forwarding was never OBSERVED at either
+qualified read, so the intervention half was never SEEN past convergence while
+the phones were being judged.  Two snapshots do not prove every intermediate
+state: that the port never reached FWD at some unread moment inside the window
+is NOT established, and the corrected claims are exactly
+`INTERVENTION_FWD_OBSERVED_RUN9 = NO` and
+`INTERVENTION_NEVER_FWD_DURING_RUN9 = NOT_ESTABLISHED`.  A port that is
+LEARNING drops data frames by design, on real IOS and in PT alike -- at the
+two instants it was read.  That also retroactively sharpens the
 control side's meaning: ABSENT and never-converging are different starting
 states, and only run 9 has ever shown a phone port converging INTO the voice
 VLAN at all.
@@ -2109,20 +2115,94 @@ and an STP table row -- present, absent, or converging -- is a representation,
 not a measured data plane, so
 `VOICE_VLAN_REALTIME_DATA_PLANE_FORWARDING = NOT_ESTABLISHED`.
 
-The next step names itself: give the intervention shape a CONVERGED port
-before judging acquisition.  `PAIRED_ACCESS_VLAN_POST_STP_CONVERGENCE_ACQUISITION`
-means rerunning the same paired control with the port demonstrably past
-LIS/LRN inside the window -- whether by an acquisition window that outlives
-convergence or by the already-typed edge PortFast on the paired shape, where
-skipping LIS/LRN is finally a measurable claim rather than an unobservable
-dispatch.  Whichever lever is chosen, it must move exactly one thing: the
-port's state at the moment the phones are judged.
+The next step names itself: give the intervention shape an OBSERVED-forwarding
+port before judging acquisition.  That step is now built and named
+`RUN10_PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION`; its design is the next
+section's subject.  Natural convergence is the chosen lever -- PortFast would
+be a second variable riding on an already-changed membership -- and the
+criterion is a qualified read observing FWD, never elapsed time.
 
 Run 9 is archived as
 `positive-voice-ab-run9-paired-access-vlan-stp-divergence.json`, SHA-256
 `44e9886286207ec5c1b92c13f10790d34fabfe6991e0ad5ae8a6cb476c8d5086`, source
 head `c7fefb0`.  Cleanup was clean: the workspace was restored, Realtime was
 restored, and the run reported no errors.
+
+## Run 10 prepared -- the FWD-gated fresh-DHCP paired control, not yet run
+
+Before any reordering, the fresh-DHCP trigger semantics were audited across
+the qualifier, the endpoint protocol, `PacketTracerConfigurationRuntime`, the
+bridge helper, the voice runtime's observation path, the historical E7 tools
+and the debt ledger.  What that audit established, classification by
+classification:
+
+```text
+NEW_7960_DHCP_INITIAL_STATE = UNOBSERVED_TO_DATE -- no run and no probe has
+    ever read the flag BEFORE arming; every YES on record is post-arm
+PRE_ARM_READ_SURFACE = SOURCE_SUPPORTED_NOT_MEASURED -- the voice runtime's
+    per-phone SVI read (the registration pass's own) is now callable
+    standalone as observe_endpoint; the read itself is the measured surface
+    every run 3-9 used, invoked at a moment it was never invoked before
+OFF_TO_ON_TRANSITION = MEASURED_SUPPORTED on a PC-class endpoint (the DHCP
+    capability probe observes a fresh lease); SOURCE_SUPPORTED_NOT_MEASURED
+    on the 7960
+ON_TO_ON_RETRY = UNOBSERVABLE -- no measured evidence anywhere that repeating
+    setDhcpFlag(true) creates a fresh attempt; never assumed
+DISABLE/RENEW/RESTART/REBOOT/POWER/LINK_BOUNCE = NOT_AVAILABLE for this
+    experiment -- the typed disposable runtime has none of them, and adding a
+    power/reboot mutation is a checkpoint decision, not a workaround
+FRESH_DHCP_TRIGGER = NOT_ESTABLISHED statically; the run itself can establish
+    it by measurement, and refuses to interpret DHCP when it cannot
+```
+
+The run-10 mode encodes that audit as sequence.  After the network and Voice
+foundations are applied and Realtime is verified, a bounded gate polls the
+SAME qualified `show spanning-tree` read -- 60 s budget, 2 s interval,
+monotonic clock, no new observer -- until a fresh+complete capture shows the
+intervention port FORWARDING in VLAN0930.  LIS, LRN, BLK and ABSENT keep the
+poll alive and expire as TIMEOUT, which is never promoted to
+never-forwards; an unreadable capture ends the gate UNOBSERVABLE immediately,
+so no decision ever rides on a stale sample.  The observed classifications are
+retained with adjacent repeats collapsed -- run 9's `ABSENT/LIS/LRN` lesson,
+kept cheap.
+
+Only after the gate observes FWD is the trigger's freshness measured: every
+phone's DHCP flag is read on its own SVI immediately before the arming call.
+All-NO makes the existing arming call a real OFF-to-ON transition, and the
+window opens; the flags are read again immediately after arming, so the
+transition is retained per phone as `dhcp_enabled_pre_arm`/`_post_arm`.  A
+flag already ON, or unreadable, fails closed as
+`ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN`; a gate that never saw
+FWD fails closed as `ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET`.  In
+both boundaries nothing is armed, no window opens, and the endpoint outcome
+reads UNOBSERVABLE -- a window that never opened judged nobody, and neither
+boundary can ever read as another ambiguous SAME_FAILURE.
+
+Run 9's two result concepts are now two fields everywhere: the VOICE endpoint
+outcome keeps its meaning, and `causal_experiment_result` answers the gated
+experiment alone -- the two boundaries above, then per the decision matrix
+`ACCESS_VLAN_DHCP_CAUSAL_EFFECT_OBSERVED`, `NO_EFFECT_AFTER_FORWARDING`,
+`RUN9_FAILURE_NOT_REPRODUCED`, `OBSERVED_REVERSED`, or
+`PARTIAL_OR_DIVERGENT` when a half was unreadable.  Ungated runs answer
+NOT_FWD_GATED, because without the gate the premises the verdict rests on are
+exactly what run 9 could not prove.
+
+Two run-9 evidence defects are corrected beside this.  The paired lifecycle
+journal wrote `data vlan 931` for both ports -- false for the intervention
+port the moment the experiment existed -- and now records the actual per-port
+intent, `FastEthernet0/1:931, FastEthernet0/2:930`, with the uniform baseline
+keeping its own exact shape.  And the run-9 wording that promoted two
+snapshots into "never reached forwarding during the entire window" is
+corrected in place and in the ledger note: FWD_OBSERVED = NO is the
+measurement; NEVER_FWD is NOT_ESTABLISHED.
+
+The runner exposes the mode as `--paired-access-vlan-fwd-gated`, mutually
+exclusive with every other intervention flag.  The A/B itself is untouched --
+same ports, same VLANs, same pool, same CME, same extensions, no PortFast, no
+new mutation primitive -- and the default and run-9 paired behaviours are
+pinned unchanged by the same contracts that pin the new mode.  Packet Tracer
+was not run: this head is the clean, pushed implementation the next LIVE
+starts from.
 
 ## Commits since the previous handoff
 
