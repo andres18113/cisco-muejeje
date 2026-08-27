@@ -111,6 +111,8 @@ class _ConfigurationAdapter:
     def __init__(self, enterprise, ios):
         self._enterprise = enterprise
         self._ios = ios
+        #: Kept ONLY for the boundary case below, never for the happy path.
+        self.pool_boundary_captures: list = []
 
     def apply_actions(self, actions):
         return self._enterprise.apply_actions(actions)
@@ -157,6 +159,40 @@ class _ConfigurationAdapter:
         if not _table_readable(show):
             return None
         return parse_show_ip_dhcp_binding(show.output)
+
+    def read_dhcp_pool(
+        self, device_name: str, pool_name: str, lease_start: str, lease_end: str,
+    ):
+        """The measured pool table, judged by the production readback.
+
+        If it comes back with nothing established -- an unread, incomplete,
+        wrongly attributed or unparsable table -- the exact text that defeated
+        it is captured once and archived.  Absence is never inferred from that,
+        and keeping the boundary means the next parser fix does not cost
+        another LIVE.
+        """
+        observed = self._enterprise.read_dhcp_pool(
+            device_name, pool_name, lease_start, lease_end,
+        )
+        if getattr(observed, "pool_present", None) is None:
+            show = self._ios.execute(
+                device_name, OperationalQueryId.SHOW_IP_DHCP_POOL,
+            )
+            self.pool_boundary_captures.append({
+                "device_name": device_name,
+                "requested_pool_name": pool_name,
+                "failure_reason": getattr(observed, "failure_reason", ""),
+                "executed": getattr(show, "executed", False),
+                "fresh_output_observed": getattr(
+                    show, "fresh_output_observed", False,
+                ),
+                "output_complete": getattr(show, "output_complete", False),
+                "device_identity_provenance": getattr(
+                    show, "device_identity_provenance", "",
+                ),
+                "output": getattr(show, "output", ""),
+            })
+        return observed
 
     def read_trunk(self, device_name: str, interface: str):
         """The existing typed trunk readback, unchanged.
@@ -356,9 +392,10 @@ def run(packet_tracer_version: str, *, edge_portfast: bool = False) -> int:
                 transport.send_and_wait,
             )
         ) if edge_portfast else None
+        configuration_adapter = _ConfigurationAdapter(enterprise, ios)
         result = PositiveVoiceSliceQualifier(
             physical,
-            _ConfigurationAdapter(enterprise, ios),
+            configuration_adapter,
             _CallControlAdapter(
                 PacketTracerEnterpriseVoiceRuntime(
                     lambda: _inventory(physical),
@@ -376,6 +413,11 @@ def run(packet_tracer_version: str, *, edge_portfast: bool = False) -> int:
 
     evidence = _serialize(result)
     evidence["packet_tracer_version"] = packet_tracer_version
+    # Empty whenever the pool table was read and understood, which is the
+    # point: a non-empty list IS the unresolved observability boundary.
+    evidence["dhcp_pool_boundary_captures"] = (
+        configuration_adapter.pool_boundary_captures
+    )
     EVIDENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
     EVIDENCE_PATH.write_text(
         json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
@@ -391,6 +433,9 @@ def run(packet_tracer_version: str, *, edge_portfast: bool = False) -> int:
         "stp_phone_row_after": evidence["stp_phone_row_after"],
         "foundation": evidence["foundation"],
         "foundation_ladder": evidence["foundation_ladder"],
+        "dhcp_pool_boundary_captures": len(
+            evidence["dhcp_pool_boundary_captures"]
+        ),
         "first_boundary_stage": evidence["first_boundary_stage"],
         "first_boundary_status": evidence["first_boundary_status"],
         "phones": [

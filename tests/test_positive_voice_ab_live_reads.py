@@ -275,6 +275,54 @@ verdict["router_two_readable_reads_find_nothing"] = router_interfaces(
     brief_table(), scoped_output="% Invalid input detected at '^' marker.",
 )
 
+# --- the pool read: one production call, and the boundary kept if unread ----
+
+
+class _Enterprise:
+    """Stands in for the production readback the adapter delegates to."""
+
+    def __init__(self, observation):
+        self._observation = observation
+        self.calls = []
+
+    def read_dhcp_pool(self, device_name, pool_name, lease_start, lease_end):
+        self.calls.append([device_name, pool_name, lease_start, lease_end])
+        return self._observation
+
+
+class _Observed:
+    def __init__(self, pool_present, failure_reason=""):
+        self.pool_present = pool_present
+        self.failure_reason = failure_reason
+
+
+EMPTY_POOL_PROMPT = "\n".join(("show ip dhcp pool", "Router#"))
+
+
+def pool(pool_present, **overrides):
+    show = result(
+        OperationalQueryId.SHOW_IP_DHCP_POOL, EMPTY_POOL_PROMPT, **overrides,
+    )
+    enterprise = _Enterprise(_Observed(pool_present, "incomplete"))
+    ios = Ios(show)
+    adapter = _ConfigurationAdapter(enterprise, ios)
+    observed = adapter.read_dhcp_pool(ROUTER, "P", "10.93.0.10", "10.93.0.254")
+    return {
+        "pool_present": observed.pool_present,
+        "production_calls": enterprise.calls,
+        "extra_reads": [item[1] for item in ios.calls],
+        "captures": adapter.pool_boundary_captures,
+    }
+
+
+verdict["pool_readable"] = pool(True)
+# An absence measured in a fresh, complete, uniquely attributed table is a
+# FINDING.  Capturing it as a boundary would blur it into a failure to see.
+verdict["pool_absent"] = pool(False)
+# Nothing established: nothing may be inferred, and the text that defeated the
+# parser is kept, because re-measuring it costs another LIVE.
+verdict["pool_unreadable"] = pool(None, output_complete=False)
+
 print(json.dumps(verdict))
 '''
 
@@ -448,3 +496,36 @@ def test_the_runner_reads_the_trunk_through_the_existing_typed_readback():
     assert "return self._enterprise.read_trunk(device_name, interface)" in source
     assert "show interfaces trunk" not in source
     assert "pt_send_raw" not in source
+
+
+# --- the DHCP pool read -----------------------------------------------------
+
+def test_a_readable_pool_costs_exactly_one_production_read(verdict):
+    answer = verdict["pool_readable"]
+
+    assert answer["pool_present"] is True
+    assert answer["production_calls"] == [
+        ["__MCP_VOICEAB_probe_R", "P", "10.93.0.10", "10.93.0.254"],
+    ]
+    assert answer["extra_reads"] == []
+    assert answer["captures"] == []
+
+
+def test_a_measured_pool_absence_is_a_finding_and_not_a_boundary(verdict):
+    answer = verdict["pool_absent"]
+
+    assert answer["pool_present"] is False
+    assert answer["extra_reads"] == []
+    assert answer["captures"] == []
+
+
+def test_an_unreadable_pool_keeps_the_exact_text_that_defeated_it(verdict):
+    answer = verdict["pool_unreadable"]
+
+    assert answer["pool_present"] is None
+    assert answer["extra_reads"] == ["show_ip_dhcp_pool"]
+    captured, = answer["captures"]
+    assert captured["requested_pool_name"] == "P"
+    assert captured["failure_reason"] == "incomplete"
+    assert captured["output_complete"] is False
+    assert captured["output"].splitlines() == ["show ip dhcp pool", "Router#"]
