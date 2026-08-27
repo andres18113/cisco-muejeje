@@ -2481,6 +2481,39 @@ _PAIRED_GATED = dict(
 )
 
 
+class _ContractEndpoints(_Endpoints):
+    """Per-phone PRE/ARM/POST answers for the Run-10 causal contract."""
+
+    def __init__(
+        self, *, pre=(False, False), accepted=(True, True),
+        post=(True, True), timeline=None,
+    ):
+        super().__init__(timeline=timeline)
+        self._pre = pre
+        self._accepted = accepted
+        self._post = post
+
+    @staticmethod
+    def _phone_index(device_name):
+        return 0 if device_name.endswith("P1") else 1
+
+    def configure_endpoint_dhcp(self, device_name, interface):
+        if self.timeline is not None:
+            self.timeline.append(f"arm:{device_name}")
+        self.armed.append(device_name)
+        self.armed_interfaces.append(interface)
+        return self._accepted[self._phone_index(device_name)]
+
+    def read_endpoint_address(self, device_name, interface):
+        if self.timeline is not None:
+            self.timeline.append(f"endpoint_read:{device_name}")
+        self.read_interfaces.append(interface)
+        flags = self._post if self.armed else self._pre
+        return _EndpointObservation(
+            dhcp_enabled=flags[self._phone_index(device_name)],
+        )
+
+
 def _gate(sequence, *, timeout=60.0, interval=2.0):
     clock = _Clock()
     configuration = _Configuration(stp_sequence=sequence)
@@ -2640,6 +2673,13 @@ def test_dhcp_is_armed_only_after_forwarding_was_observed():
     ]
     assert [item.dhcp_enabled_pre_arm for item in result.phones] == [NO, NO]
     assert [item.dhcp_enabled_post_arm for item in result.phones] == [YES, YES]
+    assert [item.arm_call_accepted for item in result.phones] == [YES, YES]
+    assert result.all_endpoint_arms_accepted == YES
+    assert result.dhcp_flag_transition == "OBSERVED_OFF_TO_ON"
+    assert result.dhcp_flag_transition_valid_for_experiment == YES
+    assert result.fresh_7960_dhcp_transaction == (
+        "NOT_INDEPENDENTLY_ESTABLISHED"
+    )
     assert result.experiment == EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED
 
 
@@ -2695,6 +2735,113 @@ def test_an_unreadable_pre_arm_flag_also_fails_the_trigger_closed():
     ]
 
 
+def test_a_false_arm_aggregate_never_opens_the_acquisition_window():
+    endpoints = _ContractEndpoints(accepted=(False, False))
+    (result, _, _, call_control, endpoints, *_), _ = _gated_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD"), _stp("FWD")],
+        endpoints=endpoints,
+    )
+
+    assert endpoints.armed == [
+        "MCP-VOICEAB-test01_P1", "MCP-VOICEAB-test01_P2",
+    ]
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
+    )
+    assert result.causal_experiment_result == "FRESH_DHCP_TRIGGER_UNPROVEN"
+    assert result.all_endpoint_arms_accepted == NO
+
+
+def test_one_rejected_arm_is_enough_to_withhold_acquisition():
+    endpoints = _ContractEndpoints(accepted=(True, False))
+    (result, _, _, call_control, *_), _ = _gated_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD"), _stp("FWD")],
+        endpoints=endpoints,
+    )
+
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
+    )
+    assert [item.arm_call_accepted for item in result.phones] == [YES, NO]
+    assert result.all_endpoint_arms_accepted == NO
+
+
+def test_an_arm_exception_is_not_retried_and_never_opens_acquisition():
+    class _SecondArmRaises(_ContractEndpoints):
+        def configure_endpoint_dhcp(self, device_name, interface):
+            if device_name.endswith("P2"):
+                raise RuntimeError("typed endpoint channel unavailable")
+            return super().configure_endpoint_dhcp(device_name, interface)
+
+    endpoints = _SecondArmRaises()
+    (result, _, _, call_control, endpoints, *_), _ = _gated_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD"), _stp("FWD")],
+        endpoints=endpoints,
+    )
+
+    assert endpoints.armed == ["MCP-VOICEAB-test01_P1"]
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
+    )
+    assert [item.arm_call_accepted for item in result.phones] == [YES, NO]
+
+
+def test_post_arm_yes_no_is_not_a_valid_dhcp_flag_transition():
+    endpoints = _ContractEndpoints(post=(True, False))
+    (result, _, _, call_control, *_), _ = _gated_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD"), _stp("FWD")],
+        endpoints=endpoints,
+    )
+
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
+    )
+    assert [item.dhcp_enabled_post_arm for item in result.phones] == [YES, NO]
+    assert result.dhcp_flag_transition == "NOT_OBSERVED"
+
+
+def test_post_arm_yes_unobservable_is_not_a_valid_dhcp_flag_transition():
+    endpoints = _ContractEndpoints(post=(True, None))
+    (result, _, _, call_control, *_), _ = _gated_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD"), _stp("FWD")],
+        endpoints=endpoints,
+    )
+
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
+    )
+    assert [item.dhcp_enabled_post_arm for item in result.phones] == [
+        YES, UNOBSERVABLE,
+    ]
+    assert result.dhcp_flag_transition == UNOBSERVABLE
+
+
+def test_identity_invalid_gate_cannot_reuse_prior_fwd_or_arm_dhcp():
+    endpoints = _ContractEndpoints()
+    (result, _, _, call_control, endpoints, *_), _ = _gated_run(
+        # The LIVE adapter maps every non-authoritative identity to None.  The
+        # BEFORE snapshot is valid and FWD; the decision read is not.
+        stp_sequence=[_stp("FWD"), None, _stp("FWD")],
+        endpoints=endpoints,
+    )
+
+    assert result.stp_gate.status == UNOBSERVABLE
+    assert result.stp_gate.observed_states == (UNOBSERVABLE,)
+    assert result.acquisition_started is False
+    assert endpoints.armed == []
+    assert call_control.expectations == []
+
+
 def test_the_gated_mode_still_applies_no_edge_policy():
     (result, _, configuration, *_), _ = _gated_run(
         stp_sequence=[_stp("LIS"), _stp("FWD"), _stp("FWD")],
@@ -2728,11 +2875,17 @@ def test_ungated_runs_keep_their_shape_and_carry_no_gate():
 def _gated_result(control_addressed, intervention_addressed):
     def phone(vlan, ipv4):
         return PositiveVoicePhoneOutcome(
-            access_vlan_expected=vlan, ipv4=ipv4, address_channel=True,
+            access_vlan_expected=vlan,
+            dhcp_enabled_pre_arm=NO,
+            arm_call_accepted=YES,
+            dhcp_enabled_post_arm=YES,
+            ipv4=ipv4,
+            address_channel=True,
         )
 
     return PositiveVoiceSliceResult(
         experiment=EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED,
+        stp_gate=StpForwardingGate(status=FORWARDING),
         acquisition_started=True,
         phones=(
             phone(DATA_VLAN_ID, "10.93.0.10" if control_addressed else ""),
@@ -2741,31 +2894,84 @@ def _gated_result(control_addressed, intervention_addressed):
     )
 
 
-def test_the_causal_classification_keeps_the_four_started_cases_apart():
+def test_the_causal_matrix_requires_the_validated_run10_preconditions():
+    result = PositiveVoiceSliceResult(
+        experiment=EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED,
+        acquisition_started=True,
+        phones=_gated_result(False, True).phones,
+    )
+
+    assert result.causal_experiment_result == (
+        "STP_PRECONDITION_NOT_ESTABLISHED"
+    )
+
+
+def test_the_causal_matrix_requires_valid_arm_and_flag_evidence():
+    result = PositiveVoiceSliceResult(
+        experiment=EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED,
+        stp_gate=StpForwardingGate(status=FORWARDING),
+        acquisition_started=True,
+        phones=(
+            PositiveVoicePhoneOutcome(
+                access_vlan_expected=DATA_VLAN_ID,
+                ipv4="",
+                address_channel=True,
+            ),
+            PositiveVoicePhoneOutcome(
+                access_vlan_expected=VOICE_VLAN_ID,
+                ipv4="10.93.0.11",
+                address_channel=True,
+            ),
+        ),
+    )
+
+    assert result.causal_experiment_result == "FRESH_DHCP_TRIGGER_UNPROVEN"
+
+
+def test_an_intervention_address_retains_the_strong_causal_classification():
     assert _gated_result(False, True).causal_experiment_result == (
         "ACCESS_VLAN_DHCP_CAUSAL_EFFECT_OBSERVED"
     )
+
+
+def test_no_addresses_after_the_gate_does_not_claim_no_dhcp_effect():
     assert _gated_result(False, False).causal_experiment_result == (
-        "NO_EFFECT_AFTER_FORWARDING"
+        "NO_ADDRESS_AFTER_FWD_AND_DHCP_FLAG_TRANSITION"
     )
+
+
+def test_both_addresses_stop_on_run9_repeatability():
     assert _gated_result(True, True).causal_experiment_result == (
         "RUN9_FAILURE_NOT_REPRODUCED"
     )
+
+
+def test_the_reversed_half_keeps_the_transaction_observability_caveat():
     assert _gated_result(True, False).causal_experiment_result == (
-        "OBSERVED_REVERSED"
+        "OBSERVED_REVERSED_ADDRESS_OUTCOME"
     )
 
 
 def test_an_unreadable_half_is_divergent_not_a_case():
     unread = PositiveVoiceSliceResult(
         experiment=EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED,
+        stp_gate=StpForwardingGate(status=FORWARDING),
         acquisition_started=True,
         phones=(
             PositiveVoicePhoneOutcome(
-                access_vlan_expected=DATA_VLAN_ID, ipv4="", address_channel=True,
+                access_vlan_expected=DATA_VLAN_ID,
+                dhcp_enabled_pre_arm=NO,
+                arm_call_accepted=YES,
+                dhcp_enabled_post_arm=YES,
+                ipv4="",
+                address_channel=True,
             ),
             PositiveVoicePhoneOutcome(
-                access_vlan_expected=VOICE_VLAN_ID, ipv4="",
+                access_vlan_expected=VOICE_VLAN_ID,
+                dhcp_enabled_pre_arm=NO,
+                arm_call_accepted=YES,
+                dhcp_enabled_post_arm=YES,
+                ipv4="",
                 address_channel=False,
             ),
         ),
@@ -2817,6 +3023,11 @@ def test_the_live_serializer_publishes_the_gate_and_the_two_result_concepts():
     assert '"causal_experiment_result": result.causal_experiment_result' in source
     assert '"acquisition_started": result.acquisition_started' in source
     assert '"acquisition_boundary": result.acquisition_boundary' in source
+    assert '"all_endpoint_arms_accepted": result.all_endpoint_arms_accepted' in source
+    assert '"dhcp_flag_transition": result.dhcp_flag_transition' in source
+    assert 'result.dhcp_flag_transition_valid_for_experiment' in source
+    assert '"fresh_7960_dhcp_transaction": result.fresh_7960_dhcp_transaction' in source
     assert '"dhcp_enabled_pre_arm": item.dhcp_enabled_pre_arm' in source
+    assert '"arm_call_accepted": item.arm_call_accepted' in source
     assert '"dhcp_enabled_post_arm": item.dhcp_enabled_post_arm' in source
     assert "--paired-access-vlan-fwd-gated" in source

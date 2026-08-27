@@ -175,6 +175,11 @@ ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET = (
 ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN = (
     "ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN"
 )
+DHCP_FLAG_TRANSITION_OBSERVED_OFF_TO_ON = "OBSERVED_OFF_TO_ON"
+DHCP_FLAG_TRANSITION_NOT_OBSERVED = "NOT_OBSERVED"
+FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED = (
+    "NOT_INDEPENDENTLY_ESTABLISHED"
+)
 
 #: Natural STP convergence on this build is the classical listening+learning
 #: walk, so the bound must outlive it with margin; the interval is coarse
@@ -443,11 +448,13 @@ class PositiveVoicePhoneOutcome:
     data_vlan_readback: str = UNOBSERVABLE
     voice_vlan_readback: str = UNOBSERVABLE
     dhcp_enabled: str = UNOBSERVABLE
-    #: The FWD-gated experiment's OFF-to-ON evidence: what the phone's own SVI
-    #: reported about its DHCP flag immediately BEFORE the arming call, and
-    #: immediately after it.  A fresh trigger exists only when the pair reads
-    #: NO then YES; both stay UNOBSERVABLE on every run that never read them.
+    #: The FWD-gated experiment's three-part trigger evidence: what the phone's
+    #: own SVI reported immediately BEFORE the typed call, whether that call
+    #: was accepted, and what the SVI reported immediately AFTER.  All three
+    #: remain independent facts; an accepted call and a changed flag are not
+    #: an independently observed Cisco 7960 DHCP transaction.
     dhcp_enabled_pre_arm: str = UNOBSERVABLE
+    arm_call_accepted: str = UNOBSERVABLE
     dhcp_enabled_post_arm: str = UNOBSERVABLE
     ipv4: str = ""
     #: Did the phone create the SVI the plan addressed it on, and does that SVI
@@ -624,6 +631,52 @@ class PositiveVoiceSliceResult:
         return YES if self.voice_binding_count > 0 else NO
 
     @property
+    def all_endpoint_arms_accepted(self) -> str:
+        """Aggregate typed-call acceptance without hiding per-phone answers."""
+        if not self.phones:
+            return UNOBSERVABLE
+        answers = {item.arm_call_accepted for item in self.phones}
+        if answers == {YES}:
+            return YES
+        if NO in answers:
+            return NO
+        return UNOBSERVABLE
+
+    @property
+    def dhcp_flag_transition(self) -> str:
+        """Observed phone-flag transition, deliberately short of DORA proof."""
+        if not self.phones:
+            return UNOBSERVABLE
+        pairs = {
+            (item.dhcp_enabled_pre_arm, item.dhcp_enabled_post_arm)
+            for item in self.phones
+        }
+        if pairs == {(NO, YES)}:
+            return DHCP_FLAG_TRANSITION_OBSERVED_OFF_TO_ON
+        if any(UNOBSERVABLE in pair for pair in pairs):
+            return UNOBSERVABLE
+        return DHCP_FLAG_TRANSITION_NOT_OBSERVED
+
+    @property
+    def dhcp_flag_transition_valid_for_experiment(self) -> str:
+        """Whether every phone established PRE NO + accepted + POST YES."""
+        transition = self.dhcp_flag_transition
+        accepted = self.all_endpoint_arms_accepted
+        if (
+            transition == DHCP_FLAG_TRANSITION_OBSERVED_OFF_TO_ON
+            and accepted == YES
+        ):
+            return YES
+        if transition == DHCP_FLAG_TRANSITION_NOT_OBSERVED or accepted == NO:
+            return NO
+        return UNOBSERVABLE
+
+    @property
+    def fresh_7960_dhcp_transaction(self) -> str:
+        """The flag surface cannot independently establish a 7960 DORA run."""
+        return FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED
+
+    @property
     def outcome(self) -> str:
         """The decision matrix, computed from independent facts only.
 
@@ -698,6 +751,10 @@ class PositiveVoiceSliceResult:
             ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
         ):
             return "FRESH_DHCP_TRIGGER_UNPROVEN"
+        if self.stp_gate is None or not self.stp_gate.forwarding_observed:
+            return "STP_PRECONDITION_NOT_ESTABLISHED"
+        if self.dhcp_flag_transition_valid_for_experiment != YES:
+            return "FRESH_DHCP_TRIGGER_UNPROVEN"
         control = [
             item for item in self.phones
             if item.access_vlan_expected == DATA_VLAN_ID
@@ -724,10 +781,10 @@ class PositiveVoiceSliceResult:
         if control_addressed == NO and intervention_addressed == YES:
             return "ACCESS_VLAN_DHCP_CAUSAL_EFFECT_OBSERVED"
         if control_addressed == NO and intervention_addressed == NO:
-            return "NO_EFFECT_AFTER_FORWARDING"
+            return "NO_ADDRESS_AFTER_FWD_AND_DHCP_FLAG_TRANSITION"
         if control_addressed == YES and intervention_addressed == YES:
             return "RUN9_FAILURE_NOT_REPRODUCED"
-        return "OBSERVED_REVERSED"
+        return "OBSERVED_REVERSED_ADDRESS_OUTCOME"
 
 
 class VoicePhysicalRuntime(Protocol):
@@ -1608,6 +1665,7 @@ class PositiveVoiceSliceQualifier:
         gate: StpForwardingGate | None = None
         boundary = ""
         pre_arm: dict[str, str] = {}
+        arm_acceptance: dict[str, str] = {}
         post_arm: dict[str, str] = {}
         if self._fwd_gated:
             intervention = phone_ports[
@@ -1646,7 +1704,9 @@ class PositiveVoiceSliceQualifier:
                         ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
                     )
                 else:
-                    self._arm_endpoints(phones, journal, errors)
+                    armed = self._arm_endpoints(
+                        phones, journal, errors, arm_acceptance,
+                    )
                     for phone in phones:
                         post_arm[phone.name] = self._read_endpoint_dhcp_flag(
                             phone.name, errors,
@@ -1660,10 +1720,25 @@ class PositiveVoiceSliceQualifier:
                         ", ".join(f"{k}:{v}" for k, v in post_arm.items()),
                         OBSERVATION,
                     )
+                    transition_valid = (
+                        armed is True
+                        and all(value == YES for value in post_arm.values())
+                    )
+                    journal.record(
+                        "WHEN_ENDPOINT_DHCP_FLAG_TRANSITION_VALID",
+                        transition_valid,
+                        "PRE NO + ARM_ACCEPTED + POST YES for every phone",
+                        OBSERVATION,
+                    )
+                    if not transition_valid:
+                        boundary = (
+                            ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
+                        )
 
         if boundary:
-            # Fail closed: no phone was asked to acquire, so no window opens.
-            # Phones never asked must not read as phones that failed.
+            # Fail closed: the causal acquisition was not authorized, so no
+            # window opens.  A partially accepted batch must not read as
+            # phones that failed inside an experiment that never started.
             registrations: dict = {}
             journal.record("ACQUISITION_WINDOW_RUN", False, boundary, OBSERVATION)
         else:
@@ -1689,6 +1764,9 @@ class PositiveVoiceSliceQualifier:
                 switch.name, registrations.get(phone.name),
                 stp_before, stp_after, errors,
                 dhcp_pre_arm=pre_arm.get(phone.name, UNOBSERVABLE),
+                arm_call_accepted=arm_acceptance.get(
+                    phone.name, UNOBSERVABLE,
+                ),
                 dhcp_post_arm=post_arm.get(phone.name, UNOBSERVABLE),
             )
             for index, phone in enumerate(phones)
@@ -1698,7 +1776,10 @@ class PositiveVoiceSliceQualifier:
             realtime_before, realtime_after, foundation, gate, boundary, errors,
         )
 
-    def _arm_endpoints(self, phones, journal: _Journal, errors: list[str]) -> bool:
+    def _arm_endpoints(
+        self, phones, journal: _Journal, errors: list[str],
+        acceptance: dict[str, str] | None = None,
+    ) -> bool:
         """Ask every phone to acquire, through the typed endpoint runtime.
 
         The runtime answers with a bool, and only True is its acceptance.  An
@@ -1715,11 +1796,17 @@ class PositiveVoiceSliceQualifier:
                 )
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"endpoint_dhcp_failed:{phone.name}: {exc}")
+                if acceptance is not None:
+                    acceptance[phone.name] = NO
                 armed = False
                 continue
             if accepted is not True:
                 errors.append(f"endpoint_dhcp_not_accepted:{phone.name}")
+                if acceptance is not None:
+                    acceptance[phone.name] = NO
                 armed = False
+            elif acceptance is not None:
+                acceptance[phone.name] = YES
         journal.record(
             "WHEN_ENDPOINT_DHCP_ARMED", armed,
             "typed endpoint runtime accepted every phone",
@@ -2033,6 +2120,7 @@ class PositiveVoiceSliceQualifier:
         errors: list[str],
         *,
         dhcp_pre_arm: str = UNOBSERVABLE,
+        arm_call_accepted: str = UNOBSERVABLE,
         dhcp_post_arm: str = UNOBSERVABLE,
     ) -> PositiveVoicePhoneOutcome:
         data_status = voice_status = UNOBSERVABLE
@@ -2109,6 +2197,7 @@ class PositiveVoiceSliceQualifier:
             data_vlan_readback=data_status, voice_vlan_readback=voice_status,
             dhcp_enabled=dhcp_enabled,
             dhcp_enabled_pre_arm=dhcp_pre_arm,
+            arm_call_accepted=arm_call_accepted,
             dhcp_enabled_post_arm=dhcp_post_arm,
             ipv4=ipv4,
             voice_svi_present=svi_present, address_channel=address_channel,

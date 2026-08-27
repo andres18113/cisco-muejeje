@@ -6,10 +6,11 @@ shape; a binding table with no voice row says zero bindings, which is the exact
 CP-SCALE server shape.  Reaching either of those from a read that was stale or
 stopped at a pager would manufacture the evidence the A/B is meant to weigh.
 
-So the gate is three dimensions, not one: EXECUTED is the terminal answering,
-FRESH is this capture being of this moment, COMPLETE is it being the whole
-logical read.  Anything short of all three is UNOBSERVABLE, and UNOBSERVABLE is
-never ABSENT and never zero.
+The STP gate is four dimensions: EXECUTED is the terminal answering, FRESH is
+this capture being of this moment, COMPLETE is it being the whole logical read,
+and CONFIRMED_UNIQUE attributes that answer to the requested switch.  Anything
+short of all four is UNOBSERVABLE for the mutation-authorizing STP decision.
+UNOBSERVABLE is never ABSENT and never zero.
 
 The LIVE runner imports the production package namespace.  Keep it in a child
 process here for the same reason as the neighbouring CP-SCALE suites: importing
@@ -41,6 +42,7 @@ from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import
     _classify_stp_row,
 )
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    DeviceIdentityProvenance,
     IosCommandResult,
     OperationalQueryId,
 )
@@ -128,6 +130,9 @@ def result(query, output, **overrides):
         "executed": True,
         "fresh_output_observed": True,
         "output_complete": True,
+        "device_identity_provenance": (
+            DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+        ),
     }
     fields.update(overrides)
     return IosCommandResult(
@@ -227,6 +232,15 @@ verdict["stp_unfresh"] = stp_row(fresh_output_observed=False)
 verdict["stp_not_executed"] = stp_row(executed=False)
 verdict["stp_pager"] = stp_row(
     output_complete=False, truncated_by_pager=True, pager_continuation="failed",
+)
+verdict["stp_identity_not_observed"] = stp_row(
+    device_identity_provenance=DeviceIdentityProvenance.NOT_OBSERVED.value,
+)
+verdict["stp_identity_ambiguous"] = stp_row(
+    device_identity_provenance=DeviceIdentityProvenance.AMBIGUOUS.value,
+)
+verdict["stp_identity_mismatched"] = stp_row(
+    device_identity_provenance=DeviceIdentityProvenance.MISMATCHED.value,
 )
 
 verdict["dhcp_complete"] = bindings()
@@ -379,7 +393,7 @@ def verdict():
 
 # --- STP --------------------------------------------------------------------
 
-def test_a_fresh_complete_table_with_a_forwarding_row_reads_forwarding(verdict):
+def test_a_fresh_complete_uniquely_attributed_fwd_row_reads_forwarding(verdict):
     assert verdict["stp_forwarding"] == {
         "parsed": True, "classification": "FORWARDING",
     }
@@ -416,6 +430,20 @@ def test_an_unexecuted_stp_read_is_unobservable(verdict):
 def test_a_paged_stp_read_never_becomes_a_missing_row(verdict):
     # `executed` alone was the old gate, and this result satisfies it.
     assert verdict["stp_pager"] == {
+        "parsed": False, "classification": "UNOBSERVABLE",
+    }
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "stp_identity_not_observed",
+        "stp_identity_ambiguous",
+        "stp_identity_mismatched",
+    ],
+)
+def test_non_authoritative_stp_identity_is_unobservable(verdict, key):
+    assert verdict[key] == {
         "parsed": False, "classification": "UNOBSERVABLE",
     }
 

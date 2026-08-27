@@ -41,6 +41,7 @@ from packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import 
 )
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (  # noqa: E402
     ControlledIosExecutor,
+    DeviceIdentityProvenance,
     OperationalQueryId,
     parse_show_ip_dhcp_binding,
     parse_show_ip_interface,
@@ -91,6 +92,15 @@ def _table_readable(show) -> bool:
         getattr(show, "executed", False)
         and getattr(show, "fresh_output_observed", False)
         and getattr(show, "output_complete", False)
+    )
+
+
+def _authoritative_stp_readable(show) -> bool:
+    """The RUN10 mutation gate also requires unique source attribution."""
+    return bool(
+        _table_readable(show)
+        and getattr(show, "device_identity_provenance", "")
+        == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
     )
 
 
@@ -154,7 +164,7 @@ class _ConfigurationAdapter:
         question.  Only a read that was fresh and complete may produce either.
         """
         show = self._ios.execute(device_name, OperationalQueryId.SHOW_SPANNING_TREE)
-        if not _table_readable(show):
+        if not _authoritative_stp_readable(show):
             return None
         return parse_show_spanning_tree(show.output)
 
@@ -313,6 +323,14 @@ def _serialize(result) -> dict:
         "outcome": result.outcome,
         "experiment": result.experiment,
         "causal_experiment_result": result.causal_experiment_result,
+        "all_endpoint_arms_accepted": result.all_endpoint_arms_accepted,
+        "dhcp_flag_transition": result.dhcp_flag_transition,
+        "dhcp_flag_transition_valid_for_experiment": (
+            result.dhcp_flag_transition_valid_for_experiment
+        ),
+        "fresh_7960_dhcp_transaction": result.fresh_7960_dhcp_transaction,
+        "server_receives_discover": "UNOBSERVABLE",
+        "dhcp_transaction_progress": "UNOBSERVABLE",
         "acquisition_started": result.acquisition_started,
         "acquisition_boundary": result.acquisition_boundary,
         "stp_gate": (
@@ -346,6 +364,7 @@ def _serialize(result) -> dict:
                 "voice_vlan_readback": item.voice_vlan_readback,
                 "dhcp_enabled": item.dhcp_enabled,
                 "dhcp_enabled_pre_arm": item.dhcp_enabled_pre_arm,
+                "arm_call_accepted": item.arm_call_accepted,
                 "dhcp_enabled_post_arm": item.dhcp_enabled_post_arm,
                 "ipv4": item.ipv4,
                 "voice_svi_present": item.voice_svi_present,
