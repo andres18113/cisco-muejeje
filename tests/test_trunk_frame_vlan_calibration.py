@@ -322,6 +322,17 @@ def test_a_frame_without_the_governed_dhcp_trigger_never_matches():
     ]
 
 
+def test_physical_arrival_on_a_qualified_trunk_is_not_target_vlan_admission():
+    outcome, *_ = run_pass(values={11: None, 12: CONTROL_VLAN_IDS[1]})
+
+    first = outcome.controls[0]
+    assert first.expected_vlan == CONTROL_VLAN_IDS[0]
+    assert first.identity_reconfirmed is True
+    assert first.frame_entered_policy_qualified_trunk is True
+    assert first.match == "UNOBSERVABLE"
+    assert first.frame_admitted_for_target_vlan is False
+
+
 def test_the_frame_must_enter_the_exact_read_back_trunk_from_the_source_switch():
     outcome, *_ = run_pass(hops=[
         Hop(11, "FastEthernet0/1", "SOMEONE-ELSE"),

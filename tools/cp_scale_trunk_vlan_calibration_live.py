@@ -84,6 +84,9 @@ def _serialize(result) -> dict:
                 ),
                 "native_vlan": item.native_vlan,
                 "endpoint_armed": item.endpoint_armed,
+                "frame_entered_policy_qualified_trunk": (
+                    item.frame_entered_policy_qualified_trunk
+                ),
                 "frame_admitted_for_target_vlan": (
                     item.frame_admitted_for_target_vlan
                 ),

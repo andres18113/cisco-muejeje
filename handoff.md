@@ -6,9 +6,9 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 506d5df2f71cdf463a749d21c2d29cdd0f13a90f
+CURRENT_PUSHED_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
-LATEST_CALIBRATION_LIVE_HEAD = 5e1014741c2a3b46d415f8d9f9dbdea5d12dfad9
+LATEST_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
     measured plain-host access-ingress representation
@@ -20,6 +20,13 @@ PHONE_DHCP_VLAN_IDENTITY = NOT_YET_GLOBALLY_QUALIFIED
 PHONE_TO_SWITCH_VLAN_VALUE_PRESERVED = YES
 DHCP_FRAME_TPID = -32512 (NOT 33024; field width unmeasured, no 802.1Q claim)
 FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED
+TRUNK_ALLOWED_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_ACTIVE_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_FORWARDING_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_NATIVE_VLAN_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_CONTROL_742 = POLICY_QUALIFIED / 7-MEMBER UNTAGGED SHAPE / UNOBSERVABLE
+TRUNK_CONTROL_743 = FORWARDING EMPTY / 7-MEMBER UNTAGGED SHAPE / UNOBSERVABLE
+TRUNK_CONTROL_END_TO_END = NOT_PROVEN
 VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
@@ -957,14 +964,17 @@ already the fifth field of `TrunkStatusRow`, populated from the first table of
 that same registered query, but it remained an unchecked string and no
 governed result projected it.  No new IOS command or PT getter was necessary.
 
-Therefore:
+Therefore, before LIVE, the offline design audit judged that the disposable
+control could attempt all three proof obligations:
 
 ```text
-CAN_PROVE_SINGLE_ALLOWED_VLAN = YES
-CAN_PROVE_TARGET_NON_NATIVE = YES
-CAN_PROVE_FRAME_ADMITTED_FOR_TARGET_VLAN = YES
-CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN = YES
+PRE_LIVE_CAN_ATTEMPT_SINGLE_ALLOWED_READBACK = YES
+PRE_LIVE_CAN_ATTEMPT_TARGET_NON_NATIVE_READBACK = YES
+PRE_LIVE_CAN_ATTEMPT_FRAME_ADMISSION_CONTROL = YES
 ```
+
+Those were capability hypotheses, not measured conclusions.  The current
+post-LIVE conclusions are recorded in the next section.
 
 The minimum implementation is additive.  `TrunkStatusRow.native_vlan` is now a
 strict `int | None`; malformed or out-of-range text cannot become VLAN
@@ -1000,6 +1010,100 @@ LIVE has NOT run yet in this checkpoint.  It may run once, and only from the
 clean pushed commit containing this section and the implementation.  A valid
 control must still prove the native readback on the real PT build; an offline
 contract is capability, not measurement.
+
+## Singleton non-native trunk LIVE -- policy proved, tag still unobservable
+
+One governed disposable LIVE completed from exact clean pushed
+`d15a5b71dff8b95b56404e550540ca0f3aef018d` on PT 9.0.1.0858.  The first bridge
+attempt hard-stopped before inventory or mutation because the Packet Tracer
+webview was not polling.  Foregrounding the already-open MCP Control Center
+restored its own documented polling loop; no snippet was pasted or run.  The
+single actual LIVE then passed the checkout-local interpreter, production
+package path, single import namespace, clean HEAD/upstream, authenticated bridge
+and fresh empty semantic-workspace gates.
+
+The baseline and final inventory were identical: zero semantic devices, the
+same one backend-managed Power Distribution Device, and zero links.  Four owned
+links were recorded before mutation, all four owned devices were removed in
+reverse order, `workspace_restored=TRUE`, `realtime_restored=TRUE`, and the
+journal contains no orchestration errors.  No `.pkt` was saved.
+
+Control 742 independently established all policy dimensions on target ingress
+`FastEthernet0/1`:
+
+```text
+operational trunking = YES
+allowed VLANs = {742}
+active VLANs = {742}
+forwarding/not pruned VLANs = {742}
+native VLAN = 1
+endpoint DHCP armed = YES
+frame entered exact ingress from owned source switch = YES (index 2)
+frame identity reconfirmed = YES
+getInFrame child = non-null
+child members = dstMacAddress, frameCheckSequence, lengthType, payload,
+                pduSize, pduType, srcMacAddress
+tag fields present = none
+observed vlanId = UNOBSERVABLE
+```
+
+This control proves that the exact ingress was policy-qualified for VLAN 742
+without any opposite-side forwarding assumption.  It does NOT prove that the
+selected frame was admitted AS VLAN 742: the frame is not end-to-end attributed
+to the endpoint DHCP retry and its child exposes no VLAN value.  The retained
+LIVE journal's derived `frame_admitted_for_target_vlan=TRUE` label therefore
+overstated the raw facts.  A post-LIVE source correction, covered from this
+retained evidence without another run, now separates
+`frame_entered_policy_qualified_trunk` from target-VLAN admission; the latter is
+true only for a numeric matching control.
+
+Control 743 independently read target ingress `FastEthernet0/10` as operational
+trunking, allowed `{743}`, active `{743}`, native VLAN 1, but forwarding/not
+pruned was the explicit empty set.  Its convergence gate therefore remained
+false.  A frame still entered from the owned source switch (index 1), was
+identity-reconfirmed, and its non-null child exposed the same seven-member shape
+with no tag fields.  It is UNOBSERVABLE, not a negative VLAN match; a physically
+arriving frame does not override the explicit forwarding-policy observation.
+
+The result is:
+
+```text
+TRUNK_ALLOWED_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_ACTIVE_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_FORWARDING_READBACK = IMPLEMENTED_AND_MEASURED
+TRUNK_NATIVE_VLAN_READBACK = IMPLEMENTED_AND_MEASURED
+
+CAN_PROVE_SINGLE_ALLOWED_VLAN = YES
+CAN_PROVE_TARGET_NON_NATIVE = YES
+CAN_PROVE_FRAME_ADMITTED_FOR_TARGET_VLAN = NO
+CAN_PROVE_SINGLE_ALLOWED_NON_NATIVE_VLAN = NO (complete end-to-end control)
+SINGLE_ALLOWED_NON_NATIVE_POLICY = YES (control 742 port state only)
+
+CONTROL_1 = POLICY_QUALIFIED / VLAN742 / UNTAGGED SHAPE / UNOBSERVABLE
+CONTROL_2 = FORWARDING EMPTY / VLAN743 / UNTAGGED SHAPE / UNOBSERVABLE
+FRAME_VLAN_FIELD_SEMANTICS = DIRECT_PROPERTY_ONLY_NOT_GLOBALLY_QUALIFIED
+```
+
+There was no numeric contradiction, so
+`CONTRADICTED_BY_CONTROL` is not justified.  There was also no matching control,
+so neither support level is justified.  The direct PHONE-02 and Switch5 values
+remain 20, but `PHONE_DHCP_VLAN_IDENTITY` remains
+`NOT_YET_GLOBALLY_QUALIFIED`.
+
+The exact remaining seam is not another trunk-policy getter: all four are now
+measured.  The target frames were attributed to the owned source switch, but
+not end-to-end to the endpoint DHCP retry across that switch.  Without a
+governed cross-hop identity, the seven-member object cannot yet be classified
+as either the forwarded DHCP frame losing its visible tag shape or an unrelated
+untagged switch-originated frame selected first on that ingress.  Do not invent
+a permanent type-7 mapping, inspect payload recursively, or rerun this same
+control hoping the ambiguity disappears.
+
+FAIL-FIRST for the retained-evidence correction: a frame with an unobservable
+VLAN still reported target-VLAN admission.  Focused: 13 passed.  Affected: 162
+passed.  The full gate then found two intentionally pinned handoff-head
+assertions, updated alongside this continuity record.  Final continuity gates:
+focused 84 passed, affected 118 passed, full 2998 passed / 0 failed.
 
 ## Reading the heads
 

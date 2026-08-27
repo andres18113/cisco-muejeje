@@ -95,12 +95,17 @@ class TrunkVlanCalibrationControl:
         return expected
 
     @property
-    def frame_admitted_for_target_vlan(self) -> bool:
+    def frame_entered_policy_qualified_trunk(self) -> bool:
         return bool(
             self.expected_vlan is not None
             and self.endpoint_armed
             and self.identity_reconfirmed
         )
+
+    @property
+    def frame_admitted_for_target_vlan(self) -> bool:
+        """Physical arrival is insufficient until the VLAN value matches."""
+        return self.match == "YES"
 
     @property
     def match(self) -> str:
