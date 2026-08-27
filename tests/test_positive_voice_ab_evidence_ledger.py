@@ -48,6 +48,7 @@ ROLES = {
     "HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED",
     "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE",
     "MEASURED_DHCP_POOL_READBACK_BASELINE",
+    "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL",
 }
 
 
@@ -300,3 +301,11 @@ def test_the_paired_baseline_is_filed_as_the_control_it_is():
     assert "paired" in run7["note"].casefold()
     assert "edge-marker classifier" in run7["note"].casefold()
     assert "same code" not in run7["note"].casefold()
+
+
+def test_the_same_run_access_vlan_control_has_a_role_of_its_own():
+    # Run 9 is a SAME-RUN two-phone A/B: one disposable, one acquisition
+    # window, and the only network-policy difference is the intervention
+    # port's access VLAN.  That is neither another PortFast intervention nor
+    # a baseline, so it needs its own name in the closed role set.
+    assert "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL" in tool.ROLES

@@ -117,7 +117,9 @@ class _ConfigurationAdapter:
     def apply_actions(self, actions):
         return self._enterprise.apply_actions(actions)
 
-    def read_access_port(self, device_name: str, interface: str):
+    def read_access_port(
+        self, device_name: str, interface: str, expected_access_vlan: int,
+    ):
         expectation = VerificationExpectation(
             id=f"voiceab/verify/{interface}",
             action_id="voiceab/access",
@@ -126,7 +128,12 @@ class _ConfigurationAdapter:
             device_name=device_name,
             expected={
                 "interface": interface,
-                "vlan_id": DATA_VLAN_ID,
+                # The paired A/B judges each port against ITS OWN intent: the
+                # control port against the data VLAN, the intervention port
+                # against the voice VLAN.  Comparing both against the data
+                # VLAN would manufacture a contradiction on the intervention
+                # half of a mapping the switch applied exactly as asked.
+                "vlan_id": expected_access_vlan,
                 "voice_vlan_id": VOICE_VLAN_ID,
             },
         )
@@ -135,7 +142,7 @@ class _ConfigurationAdapter:
             return None
         fields = getattr(results[0], "fields", {}) or {}
         return _ReadPort(
-            _field_to_vlan(fields.get("vlan_id"), DATA_VLAN_ID),
+            _field_to_vlan(fields.get("vlan_id"), expected_access_vlan),
             _field_to_vlan(fields.get("voice_vlan_id"), VOICE_VLAN_ID),
         )
 
@@ -320,6 +327,7 @@ def _serialize(result) -> dict:
                 "phone_name": item.phone_name,
                 "extension": item.extension,
                 "switch_interface": item.switch_interface,
+                "access_vlan_expected": item.access_vlan_expected,
                 "data_vlan_readback": item.data_vlan_readback,
                 "voice_vlan_readback": item.voice_vlan_readback,
                 "dhcp_enabled": item.dhcp_enabled,
@@ -364,7 +372,12 @@ def _inventory(physical) -> list[dict]:
     ]
 
 
-def run(packet_tracer_version: str, *, edge_portfast: bool = False) -> int:
+def run(
+    packet_tracer_version: str,
+    *,
+    edge_portfast: bool = False,
+    paired_access_vlan: bool = False,
+) -> int:
     transport = PacketTracerHttpTransport()
     if not transport.start(timeout_seconds=20.0):
         print(json.dumps({"hard_stop": "The Packet Tracer bridge did not connect."}))
@@ -407,6 +420,12 @@ def run(packet_tracer_version: str, *, edge_portfast: bool = False) -> int:
             SimulationTraceRuntime(transport.send_and_wait),
             control_plane=control_plane,
             edge_portfast=edge_portfast,
+            # The same-run A/B: the control phone keeps the run-8 shape and
+            # the intervention phone's port carries the voice VLAN as its
+            # access VLAN.  Nothing else moves.
+            phone_access_vlans=(
+                (DATA_VLAN_ID, VOICE_VLAN_ID) if paired_access_vlan else None
+            ),
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
     finally:
         transport.stop()
@@ -442,9 +461,9 @@ def run(packet_tracer_version: str, *, edge_portfast: bool = False) -> int:
             {
                 key: item[key]
                 for key in (
-                    "extension", "voice_vlan_readback", "dhcp_enabled",
-                    "addressed", "registration", "stp_row_after",
-                    "portfast_readback", "stp_link_types",
+                    "extension", "access_vlan_expected", "voice_vlan_readback",
+                    "dhcp_enabled", "addressed", "registration",
+                    "stp_row_after", "portfast_readback", "stp_link_types",
                 )
             }
             for item in evidence["phones"]
@@ -467,8 +486,26 @@ def main() -> int:
             "byte-for-byte the same experiment as run 4."
         ),
     )
+    parser.add_argument(
+        "--paired-access-vlan", action="store_true",
+        help=(
+            "run the same-run two-phone access-VLAN causal control: the "
+            "control phone keeps access 931 / voice 930 and the intervention "
+            "phone's port carries access 930 / voice 930.  This is the ONE "
+            "variable this experiment changes."
+        ),
+    )
     args = parser.parse_args()
-    return run(args.packet_tracer_version, edge_portfast=args.edge_portfast)
+    if args.edge_portfast and args.paired_access_vlan:
+        parser.error(
+            "one causal variable per run: --edge-portfast and "
+            "--paired-access-vlan cannot be combined"
+        )
+    return run(
+        args.packet_tracer_version,
+        edge_portfast=args.edge_portfast,
+        paired_access_vlan=args.paired_access_vlan,
+    )
 
 
 if __name__ == "__main__":

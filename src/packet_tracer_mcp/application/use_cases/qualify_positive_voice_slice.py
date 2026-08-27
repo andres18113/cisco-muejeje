@@ -326,6 +326,11 @@ class PositiveVoicePhoneOutcome:
     phone_name: str = ""
     extension: str = ""
     switch_interface: str = ""
+    #: The access VLAN this port was ASKED to carry.  Uniform slices ask for
+    #: the data VLAN everywhere; the paired A/B asks the intervention port for
+    #: the voice VLAN, and every readback below is judged against this value,
+    #: so the evidence must carry which half of the experiment it belongs to.
+    access_vlan_expected: int = 0
     data_vlan_readback: str = UNOBSERVABLE
     voice_vlan_readback: str = UNOBSERVABLE
     dhcp_enabled: str = UNOBSERVABLE
@@ -554,7 +559,9 @@ class VoicePhysicalRuntime(Protocol):
 
 class VoiceConfigurationRuntime(Protocol):
     def apply_actions(self, actions) -> list[RuntimeActionMutation]: ...
-    def read_access_port(self, device_name: str, interface: str): ...
+    def read_access_port(
+        self, device_name: str, interface: str, expected_access_vlan: int,
+    ): ...
     def read_spanning_tree(self, device_name: str): ...
     def read_dhcp_bindings(self, device_name: str): ...
 
@@ -949,6 +956,7 @@ class PositiveVoiceSliceQualifier:
         phone_count: int = 2,
         control_plane: VoiceControlPlaneRuntime | None = None,
         edge_portfast: bool = False,
+        phone_access_vlans: tuple[int, ...] | None = None,
     ) -> None:
         self._physical = physical
         self._configuration = configuration
@@ -959,6 +967,26 @@ class PositiveVoiceSliceQualifier:
         self._phone_count = phone_count
         self._control_plane = control_plane
         self._edge_portfast = bool(edge_portfast)
+        # The paired access-VLAN causal control: one access VLAN per phone
+        # port, in port order.  The default keeps every port on the data VLAN,
+        # which is byte-for-byte the run-8 experiment.  A mapping may only use
+        # the two VLANs this slice creates -- anything else would ride on a
+        # VLAN that does not exist and turn the A/B into a different topology.
+        if phone_access_vlans is None:
+            self._phone_access_vlans = (DATA_VLAN_ID,) * phone_count
+        else:
+            if len(phone_access_vlans) != phone_count:
+                raise ValueError(
+                    "The paired experiment names one access VLAN per phone: "
+                    f"got {len(phone_access_vlans)} for {phone_count} phones."
+                )
+            for vlan_id in phone_access_vlans:
+                if vlan_id not in (DATA_VLAN_ID, VOICE_VLAN_ID):
+                    raise ValueError(
+                        f"Access VLAN {vlan_id} does not exist in this slice; "
+                        f"only {DATA_VLAN_ID} and {VOICE_VLAN_ID} are created."
+                    )
+            self._phone_access_vlans = tuple(phone_access_vlans)
 
     def _name(self, suffix: str) -> str:
         return f"{POSITIVE_VOICE_PREFIX}{self._token}_{suffix}"
@@ -1122,7 +1150,7 @@ class PositiveVoiceSliceQualifier:
                     phase=ConfigurationPhase.L2_INTERFACES,
                     device_id="voiceab/sw", device_name=switch, site_id=site,
                     interface=interface,
-                    data_vlan_id=DATA_VLAN_ID,
+                    data_vlan_id=self._phone_access_vlans[index - 1],
                     voice_vlan_id=VOICE_VLAN_ID,
                 )
             )
@@ -1378,6 +1406,7 @@ class PositiveVoiceSliceQualifier:
         outcomes = tuple(
             self._phone_outcome(
                 phone, phone_ports[index],
+                self._phone_access_vlans[index],
                 EXTENSIONS[index] if index < len(EXTENSIONS) else "",
                 switch.name, registrations.get(phone.name),
                 stp_before, stp_after, errors,
@@ -1670,18 +1699,22 @@ class PositiveVoiceSliceQualifier:
         return by_name
 
     def _phone_outcome(
-        self, phone: DevicePlan, interface: str, extension: str,
-        switch_name: str, registration, stp_before, stp_after,
+        self, phone: DevicePlan, interface: str, expected_access_vlan: int,
+        extension: str, switch_name: str, registration, stp_before, stp_after,
         errors: list[str],
     ) -> PositiveVoicePhoneOutcome:
         data_status = voice_status = UNOBSERVABLE
         try:
-            port = self._configuration.read_access_port(switch_name, interface)
+            port = self._configuration.read_access_port(
+                switch_name, interface, expected_access_vlan,
+            )
         except Exception as exc:  # noqa: BLE001
             errors.append(f"access_port_unreadable:{interface}: {exc}")
             port = None
         if port is not None:
-            data_status = _compare_vlan(getattr(port, "data_vlan_id", None), DATA_VLAN_ID)
+            data_status = _compare_vlan(
+                getattr(port, "data_vlan_id", None), expected_access_vlan,
+            )
             voice_status = _compare_vlan(
                 getattr(port, "voice_vlan_id", None), VOICE_VLAN_ID,
             )
@@ -1739,6 +1772,7 @@ class PositiveVoiceSliceQualifier:
         return PositiveVoicePhoneOutcome(
             phone_name=phone.name, extension=extension,
             switch_interface=interface,
+            access_vlan_expected=expected_access_vlan,
             portfast_readback=portfast_readback, stp_link_types=link_types,
             data_vlan_readback=data_status, voice_vlan_readback=voice_status,
             dhcp_enabled=dhcp_enabled, ipv4=ipv4,

@@ -36,6 +36,7 @@ sys.path.insert(0, __ROOT__)
 sys.path.insert(0, __SRC__)
 
 from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
+    DATA_VLAN_ID,
     VOICE_VLAN_ID,
     _classify_stp_row,
 )
@@ -323,6 +324,40 @@ verdict["pool_absent"] = pool(False)
 # parser is kept, because re-measuring it costs another LIVE.
 verdict["pool_unreadable"] = pool(None, output_complete=False)
 
+# --- the access-port readback: judged against each port's own intent --------
+
+
+class _VerifyEnterprise:
+    """Records the expectation the adapter builds and verifies it as asked."""
+
+    def __init__(self):
+        self.expectations = []
+
+    def verify(self, expectations):
+        self.expectations.extend(expectations)
+
+        class _Result:
+            fields = {"vlan_id": "VERIFIED", "voice_vlan_id": "VERIFIED"}
+
+        return [_Result()]
+
+
+def access_read(expected_access_vlan):
+    enterprise = _VerifyEnterprise()
+    adapter = _ConfigurationAdapter(enterprise, None)
+    port = adapter.read_access_port(SWITCH, PHONE_PORT, expected_access_vlan)
+    expectation = enterprise.expectations[0]
+    return {
+        "expected_vlan": expectation.expected.get("vlan_id"),
+        "expected_voice": expectation.expected.get("voice_vlan_id"),
+        "readback_data_vlan": port.data_vlan_id,
+        "readback_voice_vlan": port.voice_vlan_id,
+    }
+
+
+verdict["access_control_half"] = access_read(DATA_VLAN_ID)
+verdict["access_intervention_half"] = access_read(VOICE_VLAN_ID)
+
 print(json.dumps(verdict))
 '''
 
@@ -529,3 +564,24 @@ def test_an_unreadable_pool_keeps_the_exact_text_that_defeated_it(verdict):
     assert captured["failure_reason"] == "incomplete"
     assert captured["output_complete"] is False
     assert captured["output"].splitlines() == ["show ip dhcp pool", "Router#"]
+
+
+# --- the access-port readback ------------------------------------------------
+
+
+def test_each_access_port_expectation_carries_its_own_intent(verdict):
+    # The paired A/B turns on this: the control half is verified against the
+    # data VLAN and the intervention half against the voice VLAN.  One shared
+    # constant here would contradict a switch that did exactly what it was
+    # asked to do.
+    assert verdict["access_control_half"]["expected_vlan"] == 931
+    assert verdict["access_intervention_half"]["expected_vlan"] == 930
+    assert verdict["access_control_half"]["expected_voice"] == 930
+    assert verdict["access_intervention_half"]["expected_voice"] == 930
+
+
+def test_a_verified_access_readback_answers_with_the_intent_it_verified(verdict):
+    assert verdict["access_control_half"]["readback_data_vlan"] == 931
+    assert verdict["access_intervention_half"]["readback_data_vlan"] == 930
+    assert verdict["access_control_half"]["readback_voice_vlan"] == 930
+    assert verdict["access_intervention_half"]["readback_voice_vlan"] == 930

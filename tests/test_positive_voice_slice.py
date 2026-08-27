@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     ABSENT,
     APPLICATION,
@@ -176,6 +178,10 @@ class _Configuration:
         self.stp = stp
         self.bindings = bindings if bindings is not None else [_Binding("10.93.0.10")]
         self.mutations = mutations
+        #: Every access-port readback request, exactly as the qualifier asked
+        #: it: (interface, expected access VLAN).  The paired A/B turns on the
+        #: expectation each port is judged against, so the fake must retain it.
+        self.access_reads: list[tuple[str, int]] = []
 
     def apply_actions(self, actions):
         self.applied.extend(actions)
@@ -183,7 +189,12 @@ class _Configuration:
             return [self.mutations(getattr(a, "id", "")) for a in actions]
         return [_mutation(action_id=getattr(a, "id", "")) for a in actions]
 
-    def read_access_port(self, device_name, interface):
+    def read_access_port(self, device_name, interface, expected_access_vlan):
+        self.access_reads.append((interface, expected_access_vlan))
+        # A dict maps each interface to its own readback, so one fake can hand
+        # the two halves of the paired A/B different answers.
+        if isinstance(self.port, dict):
+            return self.port.get(interface)
         return self.port
 
     def read_spanning_tree(self, device_name):
@@ -281,18 +292,19 @@ def _busy_workspace():
 
 def _qualifier(
     physical, configuration, call_control, endpoints, mode,
-    control_plane=None, edge_portfast=False,
+    control_plane=None, edge_portfast=False, phone_access_vlans=None,
 ):
     return PositiveVoiceSliceQualifier(
         physical, configuration, call_control, endpoints, mode, token="test01",
         control_plane=control_plane, edge_portfast=edge_portfast,
+        phone_access_vlans=phone_access_vlans,
     )
 
 
 def _run(
     *, physical=None, configuration=None, call_control=None,
     endpoints=None, mode=None, baseline=None, control_plane=None,
-    edge_portfast=False,
+    edge_portfast=False, phone_access_vlans=None,
 ):
     baseline = baseline if baseline is not None else _empty_workspace()
     physical = physical if physical is not None else _Physical(baseline)
@@ -302,7 +314,7 @@ def _run(
     mode = mode if mode is not None else _ModeRuntime()
     qualifier = _qualifier(
         physical, configuration, call_control, endpoints, mode,
-        control_plane, edge_portfast,
+        control_plane, edge_portfast, phone_access_vlans,
     )
     result = qualifier.qualify("2811", "3560-24PS", "7960")
     return (
@@ -2184,3 +2196,195 @@ def test_handoff_closes_the_portfast_branch_without_refuting_portfast():
     assert "PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED" in handoff
     assert "PORTFAST_REFUTED" not in handoff
     assert "PORTFAST_RUNTIME_STATE_VERIFIED" not in handoff
+
+
+# --- the paired access-VLAN causal control (run 9) ---------------------------
+#
+# The strongest surviving root-cause candidate is a Packet Tracer behaviour of
+# the phone-facing ACCESS PORT SHAPE itself: with `access 931` + `voice 930`
+# the complete realtime STP table lists the port only under the data VLAN, and
+# the one simulation capture that ever saw a phone Discover saw the switch drop
+# it at that port.  The experiment that can move that hypothesis is a same-run
+# two-phone A/B whose ONLY network-policy difference is the intervention
+# phone's access VLAN being the voice VLAN.  These contracts pin that the
+# mapping changes exactly that one field, and nothing else.
+
+
+def _access_actions(configuration):
+    return sorted(
+        (
+            action for action in configuration.applied
+            if type(action).__name__ == "ConfigureAccessPort"
+        ),
+        key=lambda action: action.interface,
+    )
+
+
+_PAIRED = (DATA_VLAN_ID, VOICE_VLAN_ID)
+
+
+def test_the_default_slice_still_puts_every_phone_port_on_the_data_vlan():
+    _, _, configuration, *_ = _run()
+
+    access = _access_actions(configuration)
+    assert [action.interface for action in access] == [
+        "FastEthernet0/1", "FastEthernet0/2",
+    ]
+    assert [action.data_vlan_id for action in access] == [
+        DATA_VLAN_ID, DATA_VLAN_ID,
+    ]
+    assert [action.voice_vlan_id for action in access] == [
+        VOICE_VLAN_ID, VOICE_VLAN_ID,
+    ]
+
+
+def test_the_paired_mapping_moves_exactly_the_intervention_ports_access_vlan():
+    _, _, configuration, *_ = _run(phone_access_vlans=_PAIRED)
+
+    access = _access_actions(configuration)
+    assert [
+        (action.interface, action.data_vlan_id, action.voice_vlan_id)
+        for action in access
+    ] == [
+        ("FastEthernet0/1", DATA_VLAN_ID, VOICE_VLAN_ID),
+        ("FastEthernet0/2", VOICE_VLAN_ID, VOICE_VLAN_ID),
+    ]
+
+
+def test_the_paired_mapping_changes_no_other_intent_at_all():
+    def shape(result, configuration, call_control):
+        return {
+            "configuration": [
+                (type(a).__name__, a.id, a.model_dump(mode="json"))
+                for a in configuration.applied
+                if type(a).__name__ != "ConfigureAccessPort"
+            ],
+            "voice": [
+                (type(a).__name__, a.id, a.model_dump(mode="json"))
+                for a in call_control.applied
+            ],
+            "links": tuple(result.owned_links),
+            "phones": [
+                (p.phone_name, p.extension, p.switch_interface)
+                for p in result.phones
+            ],
+        }
+
+    baseline_physical = _Physical(_empty_workspace())
+    paired_physical = _Physical(_empty_workspace())
+    baseline = _run(physical=baseline_physical)
+    paired = _run(physical=paired_physical, phone_access_vlans=_PAIRED)
+
+    assert shape(baseline[0], baseline[2], baseline[3]) == shape(
+        paired[0], paired[2], paired[3],
+    )
+    assert baseline_physical.created == paired_physical.created
+    assert baseline_physical.links == paired_physical.links
+    # The phones are armed on the same SVI, in the same order, on both sides.
+    assert baseline[4].armed == paired[4].armed
+    assert baseline[4].armed_interfaces == paired[4].armed_interfaces
+    # And the two access-port actions differ in the one experimental field.
+    baseline_access = _access_actions(baseline[2])
+    paired_access = _access_actions(paired[2])
+    assert [
+        (b.model_dump(mode="json"), p.model_dump(mode="json"))
+        for b, p in zip(baseline_access, paired_access)
+    ][0][0] == [
+        (b.model_dump(mode="json"), p.model_dump(mode="json"))
+        for b, p in zip(baseline_access, paired_access)
+    ][0][1]
+    changed = [
+        (b.model_dump(mode="json"), p.model_dump(mode="json"))
+        for b, p in zip(baseline_access, paired_access)
+    ][1]
+    assert changed[0] != changed[1]
+    changed[0].pop("data_vlan_id"), changed[1].pop("data_vlan_id")
+    assert changed[0] == changed[1]
+
+
+def test_the_paired_mapping_applies_no_edge_policy():
+    result, _, configuration, *_ = _run(phone_access_vlans=_PAIRED)
+
+    assert [
+        action for action in configuration.applied
+        if type(action).__name__ == "ConfigureStpEdgePort"
+    ] == []
+    assert result.portfast == "NOT_APPLIED"
+
+
+def test_a_paired_mapping_must_name_every_phone_port_once():
+    with pytest.raises(ValueError, match="one access VLAN per phone"):
+        _qualifier(
+            _Physical(_empty_workspace()), _Configuration(), _CallControl(),
+            _Endpoints(), _ModeRuntime(),
+            phone_access_vlans=(DATA_VLAN_ID,),
+        )
+
+
+def test_a_paired_mapping_may_only_use_the_slices_own_vlans():
+    with pytest.raises(ValueError, match="does not exist in this slice"):
+        _qualifier(
+            _Physical(_empty_workspace()), _Configuration(), _CallControl(),
+            _Endpoints(), _ModeRuntime(),
+            phone_access_vlans=(DATA_VLAN_ID, 999),
+        )
+
+
+def test_each_access_port_readback_is_judged_against_its_own_expected_vlan():
+    configuration = _Configuration(port={
+        "FastEthernet0/1": _Port(DATA_VLAN_ID, VOICE_VLAN_ID),
+        "FastEthernet0/2": _Port(VOICE_VLAN_ID, VOICE_VLAN_ID),
+    })
+    result, _, configuration, *_ = _run(
+        configuration=configuration, phone_access_vlans=_PAIRED,
+    )
+
+    assert configuration.access_reads == [
+        ("FastEthernet0/1", DATA_VLAN_ID),
+        ("FastEthernet0/2", VOICE_VLAN_ID),
+    ]
+    assert [item.access_vlan_expected for item in result.phones] == [
+        DATA_VLAN_ID, VOICE_VLAN_ID,
+    ]
+    assert [item.data_vlan_readback for item in result.phones] == [
+        VERIFIED, VERIFIED,
+    ]
+    assert [item.voice_vlan_readback for item in result.phones] == [
+        VERIFIED, VERIFIED,
+    ]
+
+
+def test_an_intervention_port_left_on_the_data_vlan_reads_contradicted():
+    # The readback compares against the EXPERIMENT's intent, not the default:
+    # a switch that kept Fa0/2 on 931 after being asked for 930 is a
+    # contradiction of the paired mapping and must surface as one.
+    configuration = _Configuration(port=_Port(DATA_VLAN_ID, VOICE_VLAN_ID))
+    result, *_ = _run(
+        configuration=configuration, phone_access_vlans=_PAIRED,
+    )
+
+    assert [item.data_vlan_readback for item in result.phones] == [
+        VERIFIED, CONTRADICTED,
+    ]
+
+
+def test_the_default_readback_expectation_is_unchanged():
+    result, _, configuration, *_ = _run()
+
+    assert configuration.access_reads == [
+        ("FastEthernet0/1", DATA_VLAN_ID),
+        ("FastEthernet0/2", DATA_VLAN_ID),
+    ]
+    assert [item.access_vlan_expected for item in result.phones] == [
+        DATA_VLAN_ID, DATA_VLAN_ID,
+    ]
+
+
+def test_the_live_serializer_publishes_each_phones_access_vlan_half():
+    # Read as source for the same namespace reason as the serializer test
+    # above: importing the runner would load the production package beside
+    # `src.` and split every typed model into two identities.
+    source = Path("tools/cp_scale_positive_voice_ab_live.py").read_text(encoding="utf-8")
+
+    assert '"access_vlan_expected": item.access_vlan_expected' in source
+    assert "--paired-access-vlan" in source
