@@ -85,6 +85,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "The paired network baseline half of run 6: same MCP-VOICEAB- namespace, same governed network mutation path and Voice configuration, edge_portfast=False.  Run 7 used c9d6ead while run 6 used a2a3e27; the intervening execution-source change is the post-acquisition edge-marker classifier fix only and cannot alter DHCP.  Normalised network outcomes match: every foundation dimension, every phone field, both ladder markers and the outcome are identical, with only the intended PortFast dispatch absent from run 7.  It also matches run 4 on every decisive field, which retires the namespace as a second variable."
+    },
+    {
+      "run": "run8",
+      "filename": "positive-voice-ab-run8-measured-dhcp-pool-readback.json",
+      "sha256": "7f508ad8e9e337237d721672beef9b180cb6cf1bee0f20d13b5dff62fd449889",
+      "source_head": "91927d9bb235eb33957067dcd1baa9e46281ad8b",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "MEASURED_DHCP_POOL_READBACK_BASELINE",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "Same disposable Voice slice and same NO-PortFast baseline as run 7, with one new READ-ONLY dimension: the measured show ip dhcp pool table.  Pool VOICEAB_VOICE exists, its range 10.93.0.1-10.93.0.254 covers the intended 10.93.0.10-10.93.0.254 lease window, and 253 of 254 addresses are free (0 leased, excluded COUNT 1).  Both phones still have DHCP armed and no address, bindings are 0 and neither registers, so the outcome is SAME_FAILURE and the first non-VERIFIED stage moved downstream from the pool to ENDPOINT_ADDRESS.  Pool absence and pool exhaustion are refuted for this disposable; the excluded COUNT is not the excluded configuration and option 150 remains unreadable."
     }
   ]
 }

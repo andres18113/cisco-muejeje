@@ -11,12 +11,20 @@ DHCP_DORA_QUERY_STATUS = MEASURED_UNSUPPORTED
 DORA_EXISTING_SURFACE_USABLE = NO
 DORA_QUERY_READBACK = UNOBSERVABLE
 FIRST_DHCP_RUNTIME_BOUNDARY = NOT_ESTABLISHED
+FIRST_COMMON_VOICE_OBSERVABILITY_BOUNDARY = ENDPOINT_ADDRESS_CONTRADICTED
+DHCP_POOL_EXISTENCE_READBACK = VERIFIED
+DHCP_POOL_RANGE_READBACK = VERIFIED
+DHCP_POOL_AVAILABLE_SPACE_READBACK = VERIFIED
 DHCP_POOL_CONFIGURATION_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+DHCP_POOL_DEFAULT_ROUTER_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+DHCP_POOL_EXCLUSIONS_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+POOL_EXISTENCE_CAUSE = WEAKENED
+POOL_EXHAUSTION_CAUSE = REFUTED_FOR_THIS_DISPOSABLE
 OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW
 PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED_FOR_GOVERNED_DISPATCH
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
-NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION
+NEXT_ACTIVE_STEP = VOICE_DHCP_TRANSACTION_PATH_INVESTIGATION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -1948,6 +1956,87 @@ them up.
 A Floor-1 run now costs about seven minutes end to end. That is what makes
 iterating on this cheap, and it is why the registration table is read once per
 call control instead of once per phone.
+
+## The pool is there, it has room, and the phones still have no address
+
+`show ip dhcp pool` was qualified as supported on this build at `ce222ed`, then
+promoted to a registered operational query at `92e115c` and wired into the A/B
+adapter at `91927d9`. Run 8 is run 7's configuration exactly -- the
+`MCP-VOICEAB-` namespace, one 2811, one 3560, two 7960s, voice VLAN 930, data
+VLAN 931, `edge_portfast=False`, Realtime only -- with ONE new READ-ONLY
+dimension and no other causal variable moved.
+
+The table parsed on the first read. No boundary capture was written, which is
+the recorded way of saying the parser built from the qualification fixture also
+holds on the Voice router:
+
+```text
+DHCP_POOL_NAME = VOICEAB_VOICE
+DHCP_POOL_RANGE = 10.93.0.1 - 10.93.0.254
+DHCP_POOL_TOTAL = 254
+DHCP_POOL_LEASED = 0
+DHCP_POOL_EXCLUDED_COUNT = 1
+DHCP_POOL_AVAILABLE = 253
+DHCP_POOL_EXISTENCE_READBACK = VERIFIED
+DHCP_POOL_RANGE_READBACK = VERIFIED
+DHCP_POOL_AVAILABLE_SPACE_READBACK = VERIFIED
+DHCP_POOL_BOUNDARY_CAPTURES = 0
+```
+
+Three dimensions were kept apart on purpose, because presence does not prove the
+intended range and a matching range does not prove any address is left. All
+three answered, and they answered well. Meanwhile nothing downstream moved:
+
+```text
+PHONE_DHCP_ENABLED = YES
+PHONE_IPV4 = NONE
+VOICE_DHCP_BINDINGS = 0
+SCCP_REGISTRATION = NOT_REGISTERED
+OUTCOME = SAME_FAILURE
+```
+
+So this is CASE A. Two candidate causes go down at once:
+
+```text
+POOL_EXISTENCE_CAUSE = WEAKENED
+POOL_EXHAUSTION_CAUSE = REFUTED_FOR_THIS_DISPOSABLE
+```
+
+The boundary moved downstream. Before run 8 the pool stage was the first
+non-VERIFIED stage in the ladder and it was UNOBSERVABLE -- an observer ceiling,
+not a finding. Now every stage from the phone access port through the trunk, the
+router subinterface, the pool table, call control and endpoint DHCP arming reads
+VERIFIED, and the first stage that is not is `ENDPOINT_ADDRESS`, CONTRADICTED.
+That is a measurement, not a ceiling. The next question is the DHCP transaction
+and the path it takes, not the server-side pool.
+
+What this evidence does NOT establish is stated as plainly. The measured table
+prints an excluded COUNT and never the excluded ranges, so `1` against a
+configured `10.93.0.1-10.93.0.9` exclusion is an unresolved reading, not a
+finding about the configuration -- it is equally consistent with PT counting
+ranges and with only one address being excluded, and this run cannot separate
+them. Default-router and option 150 are not on this surface at all:
+
+```text
+DHCP_POOL_DEFAULT_ROUTER_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+DHCP_POOL_EXCLUSIONS_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
+```
+
+Option 150 stays secondary. While `PHONE_IPV4 = NONE` the phones never reach the
+stage where a TFTP option would matter, so promoting it now would be chasing the
+symptom furthest downstream -- the same mistake the ladder exists to prevent.
+
+The ladder stage is called `DHCP_POOL_TABLE_READBACK`, not
+`DHCP_POOL_DEFINITION`. VERIFIED there means the pool exists, its range covers
+the intended lease window and addresses remain. It does not mean the pool is
+configured correctly, and the rename is what stops a later session reading it
+that way.
+
+Run 8 is archived as `positive-voice-ab-run8-measured-dhcp-pool-readback.json`,
+SHA-256 `7f508ad8e9e337237d721672beef9b180cb6cf1bee0f20d13b5dff62fd449889`, source
+head `91927d9`. Cleanup was clean: the workspace was restored, Realtime was
+restored, and the run reported no errors.
 
 ## Commits since the previous handoff
 

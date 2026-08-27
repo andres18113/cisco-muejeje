@@ -47,6 +47,7 @@ ROLES = {
     "PORTFAST_ONLY_CAUSAL_INTERVENTION",
     "HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED",
     "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE",
+    "MEASURED_DHCP_POOL_READBACK_BASELINE",
 }
 
 
@@ -125,6 +126,37 @@ def test_run_three_records_that_the_canonical_file_was_its_own_copy(ledger):
     run3 = next(item for item in ledger["runs"] if item["run"] == "run3")
 
     assert run3["canonical_copy_at_write"] is True
+
+
+def test_run_eight_adds_only_a_read_and_is_filed_as_its_own_measurement():
+    # Run 8 repeats run 7's configuration exactly -- same namespace, same
+    # NO-PortFast baseline -- and adds ONE read-only dimension.  Filing it as
+    # another paired baseline would hide that a new surface was measured;
+    # filing it as an intervention would claim a causal variable moved.
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    run8 = next(item for item in ledger["runs"] if item["run"] == "run8")
+    run7 = next(item for item in ledger["runs"] if item["run"] == "run7")
+
+    assert run8["role"] == "MEASURED_DHCP_POOL_READBACK_BASELINE"
+    assert run8["outcome"] == run7["outcome"] == "SAME_FAILURE"
+    assert run8["source_head"] != run7["source_head"]
+    assert "read-only" in run8["note"].casefold()
+
+
+def test_run_eight_records_the_pool_it_measured_without_claiming_more():
+    # The numbers are the finding.  The excluded COUNT is not the excluded
+    # CONFIGURATION, and the note must not let a later reader promote it.
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    note = next(
+        item for item in ledger["runs"] if item["run"] == "run8"
+    )["note"]
+
+    assert "VOICEAB_VOICE" in note
+    assert "10.93.0.10-10.93.0.254" in note
+    assert "253 of 254" in note
+    assert "excluded COUNT" in note
+    assert "option 150 remains unreadable" in note
+
 
 
 # --- the tool that maintains it ---------------------------------------------
