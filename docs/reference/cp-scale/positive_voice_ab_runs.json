@@ -84,7 +84,7 @@
       "outcome": "SAME_FAILURE",
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
-      "note": "The paired baseline half of run 6: same code, same MCP-VOICEAB- namespace, edge_portfast=False.  Normalised against run 6 across every retained field, the ONLY differences are portfast APPLIED -> NOT_APPLIED and run 6's extra WHEN_EDGE_PORTFAST_APPLIED milestone; every foundation dimension, every phone field, both ladder markers and the outcome are identical.  It also matches run 4 on every decisive field, which retires the namespace as a second variable."
+      "note": "The paired network baseline half of run 6: same MCP-VOICEAB- namespace, same governed network mutation path and Voice configuration, edge_portfast=False.  Run 7 used c9d6ead while run 6 used a2a3e27; the intervening execution-source change is the post-acquisition edge-marker classifier fix only and cannot alter DHCP.  Normalised network outcomes match: every foundation dimension, every phone field, both ladder markers and the outcome are identical, with only the intended PortFast dispatch absent from run 7.  It also matches run 4 on every decisive field, which retires the namespace as a second variable."
     }
   ]
 }

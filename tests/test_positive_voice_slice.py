@@ -973,7 +973,7 @@ def test_handoff_records_the_measured_positive_voice_ab_result():
     assert (
         "SCALE_SPECIFIC_VOICE_FAILURE_LEVEL = WEAKENED_AT_SYMPTOM_LEVEL" in handoff
     )
-    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION" in handoff
+    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION" in handoff
     # The positive control carried no PortFast either, so it separates nothing
     # and the causal verdicts stay exactly where they were.
     assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
@@ -2008,8 +2008,19 @@ def test_handoff_does_not_claim_run6_was_a_strict_one_variable_comparison():
     assert "RUN4_VS_RUN6_SECOND_VARIABLE = DISPOSABLE_NAMESPACE_CHANGED" in handoff
     assert "RUN6 = VALID_ISOLATED_PORTFAST_INTERVENTION_ATTEMPT" in handoff
     assert "run 4 with exactly one variable moved" not in handoff
-    # Run 7 measured the second variable instead of assuming it away.
-    assert "RUN6_VS_RUN7_SINGLE_VARIABLE = ESTABLISHED" in handoff
+    # The governed network experiment stayed paired even though an observer-only
+    # correction means the two LIVE processes did not run the same revision.
+    assert "RUN6_VS_RUN7_SAME_CODE_REVISION = NO" in handoff
+    assert "RUN6_VS_RUN7_SAME_NETWORK_MUTATION_PATH = YES" in handoff
+    assert "RUN6_VS_RUN7_SAME_VOICE_CONFIGURATION = YES" in handoff
+    assert (
+        "RUN6_VS_RUN7_OBSERVER_DIFFERENCE = EDGE_MARKER_CLASSIFIER_FIX_ONLY"
+        in handoff
+    )
+    assert "PAIRED_NETWORK_OUTCOME_MATCH = YES" in handoff
+    assert "RUN6_VS_RUN7_SINGLE_VARIABLE = ESTABLISHED" not in handoff
+    assert "RUN6_VS_RUN7_SAME_CODE_REVISION = YES" not in handoff
+    assert "is run 6's other half: same code revision" not in handoff
     assert "DISPOSABLE_NAMESPACE_EFFECT = NONE_OBSERVED" in handoff
 
 
@@ -2040,4 +2051,24 @@ def test_handoff_closes_the_portfast_branch_without_refuting_portfast():
     assert "PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED" in handoff
     assert "PORTFAST_REFUTED" not in handoff
     assert "PORTFAST_RUNTIME_STATE_VERIFIED" not in handoff
-    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION" in handoff
+    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION" in handoff
+
+
+def test_handoff_stops_at_the_measured_unsupported_dora_checkpoint():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "DHCP_DORA_QUERY_STATUS = MEASURED_UNSUPPORTED" in handoff
+    assert "DORA_EXISTING_SURFACE_USABLE = NO" in handoff
+    assert (
+        "EXISTING_DORA_SURFACE = UNSUPPORTED_ON_PT_9_0_1_0858" in handoff
+    )
+    assert "DORA_QUERY_READBACK = UNOBSERVABLE" in handoff
+    assert (
+        "VOICE_DHCP_DORA_QUERY = SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE / "
+        "UNSUPPORTED_ON_PT_9_0_1_0858" in handoff
+    )
+    assert "VOICE_DHCP_DORA_DELTA = UNOBSERVABLE" in handoff
+    assert "FIRST_DHCP_RUNTIME_BOUNDARY = NOT_ESTABLISHED" in handoff
+    assert "DHCP_POOL_CONFIGURATION_READBACK = NOT_AVAILABLE" in handoff
+    assert "OPTION150_READBACK = NOT_AVAILABLE" in handoff
+    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION" in handoff

@@ -67,8 +67,12 @@ PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW
 RUN6 = CURRENT_NAMESPACE_PORTFAST_INTERVENTION
 RUN7 = CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE
 PAIRED_BASELINE_MATCH = YES
+PAIRED_NETWORK_OUTCOME_MATCH = YES
 FIRST_STAGE_CHANGED_BETWEEN_PAIRED_RUNS = NONE
-RUN6_VS_RUN7_SINGLE_VARIABLE = ESTABLISHED
+RUN6_VS_RUN7_SAME_CODE_REVISION = NO
+RUN6_VS_RUN7_SAME_NETWORK_MUTATION_PATH = YES
+RUN6_VS_RUN7_SAME_VOICE_CONFIGURATION = YES
+RUN6_VS_RUN7_OBSERVER_DIFFERENCE = EDGE_MARKER_CLASSIFIER_FIX_ONLY
 RUN4_VS_RUN6_SINGLE_VARIABLE = NOT_STRICTLY_ESTABLISHED
 RUN4_VS_RUN6_SECOND_VARIABLE = DISPOSABLE_NAMESPACE_CHANGED
 DISPOSABLE_NAMESPACE_EFFECT = NONE_OBSERVED (run 7 matches run 4 on every
@@ -91,6 +95,17 @@ POSITIVE_SLICE_ROUTER_VOICE_SUBINTERFACE = VERIFIED (FastEthernet0/0.930)
 POSITIVE_SLICE_ROUTER_VOICE_IPV4 = VERIFIED (10.93.0.1)
 POSITIVE_SLICE_ROUTER_VOICE_STATE = VERIFIED (up/up)
 CALL_CONTROL_EPHONE_TABLE = VERIFIED (fresh + complete, 2 ephone rows)
+DHCP_DORA_QUERY_STATUS = MEASURED_UNSUPPORTED
+DORA_EXISTING_SURFACE_USABLE = NO
+EXISTING_DORA_SURFACE = UNSUPPORTED_ON_PT_9_0_1_0858
+VOICE_DHCP_DORA_QUERY = SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE / UNSUPPORTED_ON_PT_9_0_1_0858
+DORA_BEFORE = NOT_CAPTURED / QUERY_MEASURED_UNSUPPORTED
+DORA_AFTER = NOT_CAPTURED / QUERY_MEASURED_UNSUPPORTED
+DORA_QUERY_READBACK = UNOBSERVABLE
+VOICE_DHCP_DORA_DELTA = UNOBSERVABLE
+DHCP_SERVER_OBSERVED_DISCOVER = UNOBSERVABLE
+DHCP_SERVER_SENT_OFFER = UNOBSERVABLE
+FIRST_DHCP_RUNTIME_BOUNDARY = NOT_ESTABLISHED
 DHCP_POOL_CONFIGURATION_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 TELEPHONY_SERVICE_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
@@ -100,7 +115,7 @@ COMMON_VOICE_FOUNDATION = VERIFIED as far as governed reads reach
 SAME_ROOT_CAUSE = NOT_ESTABLISHED
 SCALE_SPECIFIC_VOICE_FAILURE = NOT_ESTABLISHED / WEAKENED
 SCALE_SPECIFIC_VOICE_FAILURE_LEVEL = WEAKENED_AT_SYMPTOM_LEVEL (not REFUTED)
-NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION
+NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION
 FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB_WITH_PORTFAST
 VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
@@ -127,8 +142,7 @@ STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
 STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)
 SOURCE_DEFECT_FOUND = YES
 SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
-PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED (run 6 vs run 7: same
-    code, same namespace, edge policy the only variable, nothing moved)
+PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED_FOR_GOVERNED_DISPATCH
 VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE;
     co-occurs with the failure at four devices as well as at CP-SCALE size
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
@@ -419,6 +433,28 @@ continuity -- a healthy attributed capture OF A REJECTION -- and the typed layer
 still returned `usable=False`, `counters=None`. `% Invalid input` never became a
 server that saw zero DHCP. `fork` stayed `UNOBSERVABLE` and no DORA step was
 named. Do not re-attempt this channel; it is measured, not uncertain.
+
+That retained LIVE establishes the disposable Voice observer checkpoint too.
+Changing the target from `FastEthernet0/0.20` to `FastEthernet0/0.930` cannot
+restore a command rejected inside the `statistics` token, before IOS reaches the
+interface argument. No qualification rerun, before/after capture, counter reset,
+new query, or run8 is justified:
+
+```text
+DHCP_DORA_QUERY_STATUS = MEASURED_UNSUPPORTED
+DORA_EXISTING_SURFACE_USABLE = NO
+EXISTING_DORA_SURFACE = UNSUPPORTED_ON_PT_9_0_1_0858
+VOICE_DHCP_DORA_QUERY = SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE / UNSUPPORTED_ON_PT_9_0_1_0858
+DORA_QUERY_READBACK = UNOBSERVABLE
+VOICE_DHCP_DORA_DELTA = UNOBSERVABLE
+FIRST_DHCP_RUNTIME_BOUNDARY = NOT_ESTABLISHED
+NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION
+```
+
+This DORA result is separate from pool-definition observability.
+`FIRST_COMMON_VOICE_OBSERVABILITY_BOUNDARY = DHCP_POOL_DEFINITION /
+UNOBSERVABLE` remains unchanged, and option 150 remains downstream of address
+acquisition rather than the immediate blocker for `PHONE_IPV4 = NONE`.
 
 The same run independently reproduced every prior fact at the new HEAD: routing
 core VERIFIED (3/3), router4-switch10 VERIFIED (4/4), five Floor-1 trunk
@@ -1545,11 +1581,11 @@ Two things this run does NOT settle, unchanged from run 3:
 The earlier run 3 note that "the router's pool and subinterfaces were not read
 back" is superseded for the SUBINTERFACES and stands for the POOL.
 
-`NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION`. The next thing
-worth knowing needs a governed observer that does not exist: something that can
-state what the router's pool and option 150 actually hold. Every existing
-registered query has been audited and none reaches it. Building one is a new
-observer surface and a checkpoint decision, not a continuation -- and reaching
+`NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION`. The existing DORA
+surface is measured unsupported on this Packet Tracer build, so the next thing
+worth knowing needs a governed pool-definition observer that does not exist.
+Option 150 stays secondary while the phones have no lease. Building either
+observer is a new architectural decision, not a continuation -- and reaching
 for `show running-config` or a raw send to get there is exactly the shortcut
 this whole line of work refuses.
 
@@ -1648,28 +1684,34 @@ observer that does not exist.
 
 ## The paired baseline, and the branch closes
 
-Run 7 at `c9d6ead` is run 6's other half: same code revision, same
-`MCP-VOICEAB-` namespace, same everything, `edge_portfast=False`. Normalised
-across every retained field -- the per-run disposable token is the only thing
-stripped -- the two runs differ in exactly two places:
+Run 7 at `c9d6ead` is run 6's paired network baseline, but the two runs did not
+use the same code revision: run 6 used `a2a3e27`. The audited source diff between
+them changes only the post-acquisition edge-marker classifier and its evidence
+serialization. It does not change the topology, VLANs, trunk, router
+subinterfaces, DHCP-pool or option-150 intent, CME, endpoint DHCP arming,
+acquisition window, or PortFast mutation path.
+
+Both runs use the `MCP-VOICEAB-` namespace and the same Voice configuration.
+Run 7 sets `edge_portfast=False`; run 6 carries the intended PortFast dispatch.
+Their network outcomes match across every foundation dimension, every phone
+field, both ladder markers, the binding count, the STP rows and the final outcome:
 
 ```text
 portfast:  APPLIED  ->  NOT_APPLIED
 lifecycle: run 6 carries WHEN_EDGE_PORTFAST_APPLIED; run 7 does not
 ```
 
-That is the whole diff. Every foundation dimension, every phone field, both
-ladder markers, the binding count, the STP rows, the Type columns and the
-outcome are identical. This is the strict one-variable comparison run 4 and run
-6 could not be:
-
 ```text
 PAIRED_BASELINE_MATCH = YES
-RUN6_VS_RUN7_SINGLE_VARIABLE = ESTABLISHED
+PAIRED_NETWORK_OUTCOME_MATCH = YES
+RUN6_VS_RUN7_SAME_CODE_REVISION = NO
+RUN6_VS_RUN7_SAME_NETWORK_MUTATION_PATH = YES
+RUN6_VS_RUN7_SAME_VOICE_CONFIGURATION = YES
+RUN6_VS_RUN7_OBSERVER_DIFFERENCE = EDGE_MARKER_CLASSIFIER_FIX_ONLY
 FIRST_STAGE_CHANGED_BETWEEN_PAIRED_RUNS = NONE
 GOVERNED_EDGE_PORTFAST_DISPATCH_EFFECT = NO_OBSERVED_EFFECT
 PORTFAST_INTERVENTION_RESULT = NO_EFFECT
-PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED
+PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED_FOR_GOVERNED_DISPATCH
 ```
 
 Run 7 settles the second variable as well. It matches run 4 -- the old
@@ -1701,10 +1743,11 @@ The absent voice-VLAN phone rows are ABSENT in both halves, which is one more
 size and one more intervention of co-occurrence and still not causation:
 `VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE`.
 
-`NEXT_ACTIVE_STEP = DHCP_POOL_OPTION150_OBSERVABILITY_DECISION`. The pool
-definition and option 150 are the only links in the chain nobody can read, and
-reading them needs an observer that does not exist. That is the next
-architectural checkpoint, and it was deliberately not started here.
+`NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION`. The existing
+governed DORA query is already measured unsupported on this Packet Tracer build,
+so it must not be rerun. Pool-definition observation is the next architectural
+checkpoint; option 150 remains secondary while the phones have no lease. Neither
+observer was started here.
 
 ## Run 5, the intervention that never happened
 

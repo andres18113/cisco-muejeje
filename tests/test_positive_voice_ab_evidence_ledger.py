@@ -252,14 +252,19 @@ def test_a_run_whose_intervention_never_applied_is_filed_as_the_boundary_it_was(
 
 def test_the_paired_baseline_is_filed_as_the_control_it_is():
     # Run 7 is not another qualification and not an intervention: it is the
-    # baseline half of run 6, on the same code and the same namespace.  A
-    # ledger that filed it as either would lose what makes the pair a pair.
+    # baseline half of run 6, on the same governed network mutation path and
+    # the same namespace.  Its source revision differs only because the
+    # post-acquisition edge-marker observer was corrected between the runs.
+    # A ledger that filed it as either would lose what makes the pair a pair.
     ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
     run7 = next(item for item in ledger["runs"] if item["run"] == "run7")
     run6 = next(item for item in ledger["runs"] if item["run"] == "run6")
 
     assert run7["role"] == "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE"
     assert run6["role"] == "PORTFAST_ONLY_CAUSAL_INTERVENTION"
-    # The pair only means anything if both halves ran from the same source.
+    assert run6["source_head"] == "a2a3e279f663539d0ff0d88be501ae2a595642d2"
+    assert run7["source_head"] == "c9d6eada2d354e9dcdbcfe468268f84c97bc0885"
     assert run7["source_head"] != run6["source_head"]
     assert "paired" in run7["note"].casefold()
+    assert "edge-marker classifier" in run7["note"].casefold()
+    assert "same code" not in run7["note"].casefold()
