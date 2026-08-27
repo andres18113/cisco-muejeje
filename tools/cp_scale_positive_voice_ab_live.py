@@ -291,7 +291,7 @@ def _serialize(result) -> dict:
                 "voice_svi_present": item.voice_svi_present,
                 "address_channel": item.address_channel,
                 "portfast_readback": item.portfast_readback,
-                "stp_link_type": item.stp_link_type,
+                "stp_link_types": list(item.stp_link_types),
                 "device_ipv4": item.device_ipv4,
                 "addressed": item.addressed,
                 "registration": item.registration,
@@ -399,7 +399,7 @@ def run(packet_tracer_version: str, *, edge_portfast: bool = False) -> int:
                 for key in (
                     "extension", "voice_vlan_readback", "dhcp_enabled",
                     "addressed", "registration", "stp_row_after",
-                    "portfast_readback", "stp_link_type",
+                    "portfast_readback", "stp_link_types",
                 )
             }
             for item in evidence["phones"]

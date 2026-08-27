@@ -58,8 +58,15 @@ POSITIVE_SLICE_PORTFAST = APPLIED (run 6; run 4 was NOT_APPLIED)
 PORTFAST_READBACK = UNOBSERVABLE (Type column reads P2p; no edge marker has
     ever been measured on this build, so its absence says nothing)
 PORTFAST_EXPERIMENT_BPDU_GUARD = OFF (one variable, deliberately)
-PORTFAST_INTERVENTION_RESULT = NO_EFFECT
+PORTFAST_INTERVENTION_RESULT = NO_OBSERVED_EFFECT_PENDING_PAIRED_BASELINE
 PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED
+GOVERNED_EDGE_PORTFAST_MUTATION = APPLIED_NO_OBSERVED_EFFECT
+PORTFAST_RUNTIME_STATE = UNOBSERVABLE
+RUN6 = VALID_ISOLATED_PORTFAST_INTERVENTION_ATTEMPT
+RUN4_VS_RUN6_SINGLE_VARIABLE = NOT_STRICTLY_ESTABLISHED
+RUN4_VS_RUN6_SECOND_VARIABLE = DISPOSABLE_NAMESPACE_CHANGED
+ISOLATED_PORTFAST_COMPONENT_TESTED = YES
+EXACT_CANONICAL_STP_REPAIR_TESTED = NO
 POSITIVE_SLICE_VOICE_VLAN_READBACK = VERIFIED 2/2
 POSITIVE_SLICE_PHONE_DHCP_ENABLED = YES 2/2 (read on Vlan930)
 POSITIVE_SLICE_VOICE_SVI_PRESENT = YES 2/2
@@ -112,8 +119,9 @@ STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
 STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)
 SOURCE_DEFECT_FOUND = YES
 SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
-PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED (tested at run 6: the
-    edge policy applied on both phone ports and changed nothing)
+PORTFAST_AS_VOICE_ROOT_CAUSE = WEAKENED_PENDING_PAIRED_BASELINE (run 6
+    applied the edge policy on both phone ports and changed nothing, but its
+    baseline half ran in a different disposable namespace)
 VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE;
     co-occurs with the failure at four devices as well as at CP-SCALE size
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
@@ -1540,11 +1548,25 @@ this whole line of work refuses.
 
 ## PortFast, applied on purpose, and it changed nothing
 
-Run 6 at `a2a3e27` is run 4 with exactly one variable moved. Two typed
+Run 6 at `a2a3e27` moved the variable this branch is about. Two typed
 `ConfigureStpEdgePort` actions on the two phone-facing ports, PortFast on, BPDU
 Guard deliberately off, applied with zero errors. Same router, same switch, same
 phones, same links, same VLANs, same subinterfaces, same pool, same option 150,
 same CME, same extensions, same arming, same window.
+
+It is NOT a strict one-variable comparison against run 4, and saying so was the
+overclaim in the first draft of this section. TD-RUNTIME-004 forced the
+disposable namespace from `__MCP_VOICEAB_` to `MCP-VOICEAB-` between the two
+runs, so run 4 and run 6 differ by two things and only one of them was the
+experiment. There is no evidence that a device name changes Voice behaviour --
+and no measurement saying it does not, which is precisely the assumption a
+causal A/B may not make silently about its own second variable.
+
+```text
+RUN6 = VALID_ISOLATED_PORTFAST_INTERVENTION_ATTEMPT
+RUN4_VS_RUN6_SINGLE_VARIABLE = NOT_STRICTLY_ESTABLISHED
+RUN4_VS_RUN6_SECOND_VARIABLE = DISPOSABLE_NAMESPACE_CHANGED
+```
 
 ```text
 LIVE_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2
@@ -1570,26 +1592,42 @@ both markers. Nothing moved. Not one field of run 6 differs from run 4 except
 the two edge actions themselves.
 
 ```text
-PORTFAST_INTERVENTION_RESULT = NO_EFFECT
-PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED
+PORTFAST_INTERVENTION_RESULT = NO_OBSERVED_EFFECT_PENDING_PAIRED_BASELINE
+PORTFAST_AS_VOICE_ROOT_CAUSE = WEAKENED_PENDING_PAIRED_BASELINE
+GOVERNED_EDGE_PORTFAST_MUTATION = APPLIED_NO_OBSERVED_EFFECT
 FIRST_STAGE_CHANGED_FROM_RUN4 = NONE
 ```
 
-Read the bound on that conclusion, because it is real. `PORTFAST_APPLIED` is
-the typed mutation being accepted by the switch's configuration channel with no
-error. `PORTFAST_READBACK` is UNOBSERVABLE: the phone-facing Type column reads
-`P2p` in both runs, and nobody has ever measured this build printing an edge
-marker at all, so a column without one cannot separate "PortFast is off" from
-"this IOS does not say". What run 6 establishes is therefore that APPLYING the
-governed edge policy changes nothing -- not that a switch demonstrably running
-PortFast changes nothing. `PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE` stays
+Two bounds sit on that conclusion, and both are real.
+
+The first is the readback. `PORTFAST_APPLIED` is the typed mutation being
+accepted by the switch's configuration channel with no error;
+`PORTFAST_RUNTIME_STATE` is UNOBSERVABLE, because the phone-facing Type column
+reads `P2p` and nobody has ever measured this build printing an edge marker at
+all, so a column without one cannot separate "PortFast is off" from "this IOS
+does not say". What run 6 speaks to is therefore
+`GOVERNED_EDGE_PORTFAST_MUTATION = APPLIED_NO_OBSERVED_EFFECT`, never a switch
+demonstrably running PortFast. `PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE` stays
 `NOT_ESTABLISHED` in both directions.
 
-That is still decisive for the question that was actually open. The repair the
-source defect would produce is exactly this dispatch, in exactly this position,
-and it does not rescue the slice. `EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING`
-remains a real architectural defect and `SOURCE_DEFECT_FOUND = YES` stands; what
-weakened is its standing as the explanation for THIS Voice DHCP failure.
+The second is the pairing, above: the namespace moved too.
+
+What run 6 DID test is the isolated PortFast component of the known STP defect,
+and it is worth being exact about how that differs from the eventual repair. The
+canonical compiler emits `ConfigureSpanningTree` for the device, emits
+`ConfigureStpEdgePort` only where that device participates in the STP domain,
+makes the edge action depend on the global one, and takes both
+`portfast_access_ports` and `bpduguard_access_ports` from policy. Run 6 emitted
+no global STP action, no dependency and no BPDU Guard -- which is correct
+isolation, and which is also why it is not the repair.
+
+```text
+ISOLATED_PORTFAST_COMPONENT_TESTED = YES
+EXACT_CANONICAL_STP_REPAIR_TESTED = NO
+```
+
+`EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING` remains a real architectural defect
+and `SOURCE_DEFECT_FOUND = YES` stands.
 
 The absent voice-VLAN STP rows survive the intervention unchanged, which is
 worth stating precisely: the phone ports never joined VLAN 930's spanning tree

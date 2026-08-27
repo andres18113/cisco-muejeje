@@ -1724,7 +1724,9 @@ def test_an_edge_marker_in_the_stp_type_column_verifies_portfast():
     )
 
     assert [item.portfast_readback for item in result.phones] == [VERIFIED, VERIFIED]
-    assert [item.stp_link_type for item in result.phones] == ["P2p Edge", "P2p Edge"]
+    assert [item.stp_link_types for item in result.phones] == [
+        ("P2p Edge",), ("P2p Edge",),
+    ]
     assert result.portfast_readback == VERIFIED
 
 
@@ -1751,7 +1753,7 @@ def test_an_unread_stp_table_leaves_portfast_unobservable():
     result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=None))
 
     assert result.portfast_readback == UNOBSERVABLE
-    assert [item.stp_link_type for item in result.phones] == ["", ""]
+    assert [item.stp_link_types for item in result.phones] == [(), ()]
 
 
 def test_an_absent_row_is_not_a_port_without_portfast():
@@ -1854,8 +1856,13 @@ def test_a_rendering_refusal_is_reported_and_never_silently_downgraded():
 def test_handoff_records_the_portfast_only_control_as_the_no_effect_it_was():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
-    assert "PORTFAST_INTERVENTION_RESULT = NO_EFFECT" in handoff
-    assert "PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED" in handoff
+    assert (
+        "PORTFAST_INTERVENTION_RESULT = NO_OBSERVED_EFFECT_PENDING_PAIRED_BASELINE"
+        in handoff
+    )
+    assert (
+        "PORTFAST_AS_VOICE_ROOT_CAUSE = WEAKENED_PENDING_PAIRED_BASELINE" in handoff
+    )
     assert "PORTFAST_EXPERIMENT_BPDU_GUARD = OFF" in handoff
     # APPLIED is the mutation being accepted.  Nothing saw the switch holding
     # it, and the conclusion is bounded by that rather than rounded up.
@@ -1880,3 +1887,141 @@ def test_handoff_still_refuses_every_causal_promotion_after_the_control():
         "VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE"
         in handoff
     )
+
+
+# --- the edge marker lives in whichever instance prints it ------------------
+#
+# Being an edge port is a property of the PORT, and `show spanning-tree` prints
+# one row per VLAN instance.  The classifier's docstring said it searched every
+# instance while the code returned on the first matching row, so a capture whose
+# data-VLAN row printed `P2p` answered for a voice-VLAN row that said `P2p Edge`
+# and never got read.  Run 6 happened not to expose it -- its voice-VLAN rows
+# were ABSENT, leaving one row to find -- which is exactly the kind of luck a
+# causal experiment must not depend on.
+
+
+def _instances(*rows_by_vlan):
+    return [_StpInstance(vlan, rows) for vlan, rows in rows_by_vlan]
+
+
+def test_an_edge_marker_in_a_later_instance_still_verifies_the_port():
+    stp = _instances(
+        (DATA_VLAN_ID, (_StpRow("FastEthernet0/1", link_type="P2p"),
+                        _StpRow("FastEthernet0/2", link_type="P2p"))),
+        (VOICE_VLAN_ID, (_StpRow("FastEthernet0/1", link_type="P2p Edge"),
+                         _StpRow("FastEthernet0/2", link_type="P2p Edge"))),
+    )
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=stp))
+
+    assert [item.portfast_readback for item in result.phones] == [VERIFIED, VERIFIED]
+    assert result.portfast_readback == VERIFIED
+
+
+def test_every_instance_that_printed_the_port_keeps_its_type_value():
+    # The evidence is every column that named this port, not the first one.
+    stp = _instances(
+        (DATA_VLAN_ID, (_StpRow("FastEthernet0/1", link_type="P2p"),)),
+        (VOICE_VLAN_ID, (_StpRow("FastEthernet0/1", link_type="P2p Edge"),)),
+    )
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=stp))
+
+    assert result.phones[0].stp_link_types == ("P2p", "P2p Edge")
+    # The second phone was never printed at all, and says so with an empty tuple.
+    assert result.phones[1].stp_link_types == ()
+    assert result.phones[1].portfast_readback == UNOBSERVABLE
+
+
+def test_rows_that_all_lack_the_marker_claim_nothing_either_way():
+    stp = _instances(
+        (DATA_VLAN_ID, (_StpRow("FastEthernet0/1", link_type="P2p"),)),
+        (VOICE_VLAN_ID, (_StpRow("FastEthernet0/1", link_type="P2p"),)),
+    )
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=stp))
+
+    assert result.phones[0].stp_link_types == ("P2p", "P2p")
+    assert result.phones[0].portfast_readback == UNOBSERVABLE
+    assert result.phones[0].portfast_readback != CONTRADICTED
+
+
+def test_a_baseline_without_portfast_never_becomes_a_contradiction():
+    # The paired baseline reads exactly these columns.  If a missing `Edge`
+    # counted as a finding, the baseline would manufacture the difference the
+    # comparison exists to look for.
+    stp = _instances(
+        (DATA_VLAN_ID, (_StpRow("FastEthernet0/1", link_type="P2p"),
+                        _StpRow("FastEthernet0/2", link_type="P2p"))),
+    )
+    result, *_ = _run(
+        configuration=_FoundationConfiguration(stp=stp),
+        call_control=_FoundationCallControl(),
+    )
+
+    assert result.portfast == "NOT_APPLIED"
+    assert result.portfast_readback == UNOBSERVABLE
+    assert CONTRADICTED not in {item.portfast_readback for item in result.phones}
+
+
+def test_an_edge_marker_on_another_port_verifies_nothing_here():
+    stp = _instances(
+        (VOICE_VLAN_ID, (
+            _StpRow("GigabitEthernet0/1", link_type="P2p Edge"),
+            _StpRow("FastEthernet0/1", link_type="P2p"),
+        )),
+    )
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=stp))
+
+    assert result.phones[0].portfast_readback == UNOBSERVABLE
+    assert result.phones[0].stp_link_types == ("P2p",)
+    assert "Edge" not in " ".join(result.phones[0].stp_link_types)
+
+
+def test_a_port_no_instance_printed_has_no_types_and_no_verdict():
+    stp = _instances((VOICE_VLAN_ID, (_StpRow("GigabitEthernet0/1"),)))
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=stp))
+
+    assert [item.stp_link_types for item in result.phones] == [(), ()]
+    assert result.portfast_readback == UNOBSERVABLE
+
+
+def test_the_marker_is_a_word_and_not_any_substring():
+    # `edge` has to be the Type column saying edge, not a longer token that
+    # happens to contain those four letters.
+    stp = _instances(
+        (VOICE_VLAN_ID, (_StpRow("FastEthernet0/1", link_type="P2p Edgeless"),)),
+    )
+    result, *_ = _edge_run(configuration=_FoundationConfiguration(stp=stp))
+
+    assert result.phones[0].portfast_readback == UNOBSERVABLE
+    assert result.phones[0].stp_link_types == ("P2p Edgeless",)
+
+
+def test_handoff_does_not_claim_run6_was_a_strict_one_variable_comparison():
+    """Run 4 and run 6 differ by TWO things, and only one was the experiment.
+
+    TD-RUNTIME-004 forced the disposable namespace to move between them.  There
+    is no evidence a device name changes Voice behaviour, and there is also no
+    measurement saying it does not -- which is exactly the assumption a causal
+    A/B is not allowed to make silently about its own second variable.
+    """
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert (
+        "RUN4_VS_RUN6_SINGLE_VARIABLE = NOT_STRICTLY_ESTABLISHED" in handoff
+    )
+    assert "RUN4_VS_RUN6_SECOND_VARIABLE = DISPOSABLE_NAMESPACE_CHANGED" in handoff
+    assert "RUN6 = VALID_ISOLATED_PORTFAST_INTERVENTION_ATTEMPT" in handoff
+    assert "run 4 with exactly one variable moved" not in handoff
+
+
+def test_handoff_separates_the_isolated_component_from_the_canonical_repair():
+    # The canonical compiler couples an edge action to the global STP action
+    # and takes both policy flags.  Run 6 deliberately emitted neither of those
+    # couplings, which is correct isolation and NOT the eventual repair.
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "ISOLATED_PORTFAST_COMPONENT_TESTED = YES" in handoff
+    assert "EXACT_CANONICAL_STP_REPAIR_TESTED = NO" in handoff
+    assert "GOVERNED_EDGE_PORTFAST_MUTATION = APPLIED_NO_OBSERVED_EFFECT" in handoff
+    assert "PORTFAST_RUNTIME_STATE = UNOBSERVABLE" in handoff
+    # The claim that the repair IS this dispatch was the overclaim.
+    assert "is exactly this dispatch" not in handoff

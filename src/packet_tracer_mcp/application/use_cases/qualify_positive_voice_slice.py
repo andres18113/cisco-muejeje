@@ -28,6 +28,7 @@ milestone nobody could observe is written UNOBSERVABLE rather than assumed.
 
 from __future__ import annotations
 
+import re
 import secrets
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -295,12 +296,13 @@ class PositiveVoicePhoneOutcome:
     registration: str = UNOBSERVABLE
     stp_row_before: str = UNOBSERVABLE
     stp_row_after: str = UNOBSERVABLE
-    #: Whether the port announced itself as an edge port, and the raw Type
-    #: column it announced it in.  The text is retained because whether this
-    #: build prints an edge marker at all has never been measured, and the next
-    #: reader needs to see what the column actually said.
+    #: Whether the port announced itself as an edge port, and EVERY raw Type
+    #: column that named it -- one per STP instance that printed the port.  The
+    #: values are retained because whether this build prints an edge marker at
+    #: all has never been measured, and the next reader needs to see what each
+    #: column actually said rather than whichever one came first.
     portfast_readback: str = UNOBSERVABLE
-    stp_link_type: str = ""
+    stp_link_types: tuple[str, ...] = ()
     failure_reason: str = ""
 
     @property
@@ -747,28 +749,40 @@ def _classify_call_control(table) -> tuple[str, int | None]:
     return VERIFIED, len(rows)
 
 
-def _classify_edge_marker(instances, interface: str) -> tuple[str, str]:
-    """Did the port announce itself as an edge port, in any STP instance?
+#: The Type column saying edge, as a WORD.  A longer token that merely contains
+#: those four letters is not this build announcing an edge port.
+_EDGE_MARKER = re.compile(r"(?i)\bedge\b")
 
-    Being an edge port is a property of the PORT, not of one VLAN, so every
-    instance in the capture is searched and the first row for the interface
-    answers.
 
-    VERIFIED needs the marker to be there.  Its ABSENCE is UNOBSERVABLE and
-    never CONTRADICTED: nobody has measured this build printing an edge marker
-    at all, so a Type column without one cannot separate "PortFast is off" from
-    "this IOS does not say".  The raw column text is returned beside the verdict
-    so the next reader can judge that for themselves.
+def _classify_edge_marker(
+    instances, interface: str,
+) -> tuple[tuple[str, ...], str]:
+    """Did the port announce itself as an edge port, in ANY STP instance?
+
+    Being an edge port is a property of the PORT, and `show spanning-tree`
+    prints one row per VLAN instance.  So EVERY instance is searched and every
+    row that names this interface is kept -- not the first.  Answering from the
+    first row let a data-VLAN column reading `P2p` speak for a voice-VLAN column
+    reading `P2p Edge` that was never looked at.
+
+    VERIFIED needs the marker on at least one of those rows.  Its absence from
+    all of them is UNOBSERVABLE and never CONTRADICTED: nobody has measured this
+    build printing an edge marker at all, so a Type column without one cannot
+    separate "PortFast is off" from "this IOS does not say".  Every raw column
+    value is returned beside the verdict so the next reader can judge that.
     """
     if instances is None:
-        return "", UNOBSERVABLE
+        return (), UNOBSERVABLE
+    observed: list[str] = []
     for instance in instances:
         for row in getattr(instance, "interfaces", ()):
             if not same_interface_name(getattr(row, "interface", ""), interface):
                 continue
-            text = str(getattr(row, "link_type", "") or "")
-            return text, (VERIFIED if "edge" in text.casefold() else UNOBSERVABLE)
-    return "", UNOBSERVABLE
+            observed.append(str(getattr(row, "link_type", "") or ""))
+    if not observed:
+        return (), UNOBSERVABLE
+    verified = any(_EDGE_MARKER.search(item) for item in observed)
+    return tuple(observed), (VERIFIED if verified else UNOBSERVABLE)
 
 
 def _classify_stp_row(instances, vlan_id: int, interface: str) -> str:
@@ -1591,11 +1605,11 @@ class PositiveVoiceSliceQualifier:
                     if flag is not None:
                         dhcp_enabled = YES if bool(flag) else NO
 
-        link_type, portfast_readback = _classify_edge_marker(stp_after, interface)
+        link_types, portfast_readback = _classify_edge_marker(stp_after, interface)
         return PositiveVoicePhoneOutcome(
             phone_name=phone.name, extension=extension,
             switch_interface=interface,
-            portfast_readback=portfast_readback, stp_link_type=link_type,
+            portfast_readback=portfast_readback, stp_link_types=link_types,
             data_vlan_readback=data_status, voice_vlan_readback=voice_status,
             dhcp_enabled=dhcp_enabled, ipv4=ipv4,
             voice_svi_present=svi_present, address_channel=address_channel,
