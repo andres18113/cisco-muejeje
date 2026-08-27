@@ -24,6 +24,7 @@ OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS
 PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW
 PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED_FOR_GOVERNED_DISPATCH
 SERVER_RECEIVES_DISCOVER = UNOBSERVABLE
+DHCP_TRANSACTION_PROGRESS = UNOBSERVABLE
 VOICE_VLAN_REALTIME_DATA_PLANE_FORWARDING = NOT_ESTABLISHED
 ACCESS_VLAN_SHAPE_CONTROLS_STP_MEMBERSHIP = ESTABLISHED
 ACCESS_VLAN_SHAPE_CONTROLS_DHCP = NOT_YET_ESTABLISHED
@@ -31,8 +32,11 @@ VOICE_ENDPOINT_OUTCOME_RUN9 = SAME_FAILURE
 CAUSAL_EXPERIMENT_RESULT_RUN9 = PARTIAL_OR_DIVERGENT
 INTERVENTION_FWD_OBSERVED_RUN9 = NO
 INTERVENTION_NEVER_FWD_DURING_RUN9 = NOT_ESTABLISHED
-FRESH_DHCP_TRIGGER = NOT_ESTABLISHED
-VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
+FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_BEFORE_RUN10
+FRESH_7960_DHCP_TRANSACTION = NOT_INDEPENDENTLY_ESTABLISHED
+RUN10_FWD_GATE = READY_FAIL_CLOSED
+RUN10_DHCP_FLAG_TRANSITION_CONTRACT = PRE_NO + ARM_ACCEPTED + POST_YES_REQUIRED
+VOICE_ROOT_CAUSE = STRONG_CANDIDATE / NOT_CONFIRMED
 NEXT_ACTIVE_STEP = RUN10_PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
@@ -43,7 +47,8 @@ CP_SCALE_STATUS = OPEN / NOT VERIFIED
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = fde993769ac95ab3b2a3b072b7a8594d0de5cf67
+LATEST_PREPARED_IMPLEMENTATION_HEAD = f7231fb4413002a2d8f954e063149bcf9f4f215f
+NEXT_LIVE_HEAD_SOURCE = git rev-parse HEAD (authoritative)
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
 LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
 LATEST_VOICE_AB_LIVE_HEAD = c7fefb06c381755c3cfab4f22cd1d651ec12b8eb
@@ -2151,41 +2156,61 @@ ON_TO_ON_RETRY = UNOBSERVABLE -- no measured evidence anywhere that repeating
 DISABLE/RENEW/RESTART/REBOOT/POWER/LINK_BOUNCE = NOT_AVAILABLE for this
     experiment -- the typed disposable runtime has none of them, and adding a
     power/reboot mutation is a checkpoint decision, not a workaround
-FRESH_DHCP_TRIGGER = NOT_ESTABLISHED statically; the run itself can establish
-    it by measurement, and refuses to interpret DHCP when it cannot
+FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_BEFORE_RUN10; the run can establish the
+    phone's DHCP FLAG OFF-to-ON transition, and refuses to interpret DHCP when
+    it cannot
+FRESH_7960_DHCP_TRANSACTION = NOT_INDEPENDENTLY_ESTABLISHED -- neither the
+    typed call's acceptance nor the flag transition observes Discover, Offer,
+    Request or Ack
 ```
 
 The run-10 mode encodes that audit as sequence.  After the network and Voice
 foundations are applied and Realtime is verified, a bounded gate polls the
 SAME qualified `show spanning-tree` read -- 60 s budget, 2 s interval,
 monotonic clock, no new observer -- until a fresh+complete capture shows the
-intervention port FORWARDING in VLAN0930.  LIS, LRN, BLK and ABSENT keep the
-poll alive and expire as TIMEOUT, which is never promoted to
-never-forwards; an unreadable capture ends the gate UNOBSERVABLE immediately,
-so no decision ever rides on a stale sample.  The observed classifications are
-retained with adjacent repeats collapsed -- run 9's `ABSENT/LIS/LRN` lesson,
-kept cheap.
+intervention port FORWARDING in VLAN0930 and the existing IOS result attributes
+the source as `CONFIRMED_UNIQUE`.  LIS, LRN, BLK and ABSENT keep the poll alive
+and expire as TIMEOUT, which is never promoted to never-forwards; an unreadable,
+unattributed, ambiguous or mismatched capture ends the gate UNOBSERVABLE
+immediately, so no decision ever rides on a stale sample.  The observed
+classifications are retained with adjacent repeats collapsed -- run 9's
+`ABSENT/LIS/LRN` lesson, kept cheap.
 
-Only after the gate observes FWD is the trigger's freshness measured: every
-phone's DHCP flag is read on its own SVI immediately before the arming call.
-All-NO makes the existing arming call a real OFF-to-ON transition, and the
-window opens; the flags are read again immediately after arming, so the
-transition is retained per phone as `dhcp_enabled_pre_arm`/`_post_arm`.  A
-flag already ON, or unreadable, fails closed as
-`ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN`; a gate that never saw
-FWD fails closed as `ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET`.  In
-both boundaries nothing is armed, no window opens, and the endpoint outcome
-reads UNOBSERVABLE -- a window that never opened judged nobody, and neither
-boundary can ever read as another ambiguous SAME_FAILURE.
+Only after the gate observes FWD is the flag-transition precondition measured:
+every phone's DHCP flag is read on its own SVI immediately before the arming call.
+All-NO authorizes one existing typed arm batch.  Every call must return exactly
+True, and every post-arm flag must then read YES, before the window opens.  The
+three facts remain per phone as `dhcp_enabled_pre_arm`, `arm_call_accepted` and
+`dhcp_enabled_post_arm`; diagnostic post-arm reads are retained after a refused
+or partial batch, but can never reopen the window.  There is no retry and no
+second mutation.  A flag already ON, an unreadable flag, any rejected arm, or
+anything short of all post-arm YES fails closed as
+`ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN`; a gate that never saw an
+authoritative FWD fails closed as
+`ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET`.  No acquisition window means
+no endpoint failure verdict: the outcome reads UNOBSERVABLE rather than another
+ambiguous SAME_FAILURE.
+
+The successful PRE-NO / accepted / POST-YES contract is published as
+`dhcp_flag_transition = OBSERVED_OFF_TO_ON` and
+`dhcp_flag_transition_valid_for_experiment = YES`.  It is not promoted into a
+7960 transaction claim: `fresh_7960_dhcp_transaction` remains
+`NOT_INDEPENDENTLY_ESTABLISHED`, while `server_receives_discover` and
+`dhcp_transaction_progress` remain UNOBSERVABLE.
 
 Run 9's two result concepts are now two fields everywhere: the VOICE endpoint
 outcome keeps its meaning, and `causal_experiment_result` answers the gated
 experiment alone -- the two boundaries above, then per the decision matrix
-`ACCESS_VLAN_DHCP_CAUSAL_EFFECT_OBSERVED`, `NO_EFFECT_AFTER_FORWARDING`,
-`RUN9_FAILURE_NOT_REPRODUCED`, `OBSERVED_REVERSED`, or
-`PARTIAL_OR_DIVERGENT` when a half was unreadable.  Ungated runs answer
-NOT_FWD_GATED, because without the gate the premises the verdict rests on are
-exactly what run 9 could not prove.
+`ACCESS_VLAN_DHCP_CAUSAL_EFFECT_OBSERVED` for the strong control-NONE /
+intervention-OBSERVED positive, or the deliberately asymmetric
+`NO_ADDRESS_AFTER_FWD_AND_DHCP_FLAG_TRANSITION` when neither phone obtains an
+address.  That negative means causal effect NOT OBSERVED and the access-VLAN
+hypothesis NOT YET ESTABLISHED; it cannot prove a fresh 7960 transaction and
+therefore cannot refute or strongly weaken the hypothesis.  Both addresses
+remain `RUN9_FAILURE_NOT_REPRODUCED`, the reversed half is
+`OBSERVED_REVERSED_ADDRESS_OUTCOME`, and an unreadable half remains
+`PARTIAL_OR_DIVERGENT`.  Ungated runs answer NOT_FWD_GATED, because without the
+gate the premises the verdict rests on are exactly what run 9 could not prove.
 
 Two run-9 evidence defects are corrected beside this.  The paired lifecycle
 journal wrote `data vlan 931` for both ports -- false for the intervention
@@ -2201,8 +2226,8 @@ exclusive with every other intervention flag.  The A/B itself is untouched --
 same ports, same VLANs, same pool, same CME, same extensions, no PortFast, no
 new mutation primitive -- and the default and run-9 paired behaviours are
 pinned unchanged by the same contracts that pin the new mode.  Packet Tracer
-was not run: this head is the clean, pushed implementation the next LIVE
-starts from.
+was not run.  The pushed result of `git rev-parse HEAD`, not a self-referential
+documentation pin, is the source head for exactly one next LIVE.
 
 ## Commits since the previous handoff
 
