@@ -52,6 +52,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
 from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
     _phone_addressing_interface,
 )
+from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+    DhcpPoolReadbackObservation,
+)
 
 
 def _device_result(applied: bool = True, message: str = ""):
@@ -1146,12 +1149,33 @@ _UNSET = object()
 class _FoundationConfiguration(_Configuration):
     """The configuration runtime WITH the two read-only foundation surfaces."""
 
-    def __init__(self, *, trunk=_UNSET, interfaces=_UNSET, **kwargs):
+    def __init__(
+        self, *, trunk=_UNSET, interfaces=_UNSET, pool=_UNSET, **kwargs,
+    ):
         super().__init__(**kwargs)
         self.trunk = _Trunk() if trunk is _UNSET else trunk
         self.interfaces = _router_rows() if interfaces is _UNSET else interfaces
+        self.pool = DhcpPoolReadbackObservation(
+            device_name="R",
+            requested_pool_name="VOICEAB_VOICE",
+            requested_range_start="10.93.0.10",
+            requested_range_end="10.93.0.254",
+            pool_present=True,
+            requested_range_covered=True,
+            range_start="10.93.0.1",
+            range_end="10.93.0.254",
+            subnet_ranges=(("10.93.0.1", "10.93.0.254"),),
+            total_addresses=254,
+            leased_addresses=0,
+            excluded_addresses=9,
+            available_addresses=245,
+            fresh_evidence=True,
+            output_complete=True,
+            identity_confirmed=True,
+        ) if pool is _UNSET else pool
         self.trunk_reads: list[tuple[str, str]] = []
         self.interface_reads: list[str] = []
+        self.pool_reads: list[tuple[str, str, str, str]] = []
 
     def read_trunk(self, device_name, interface):
         self.trunk_reads.append((device_name, interface))
@@ -1160,6 +1184,10 @@ class _FoundationConfiguration(_Configuration):
     def read_interface_addresses(self, device_name):
         self.interface_reads.append(device_name)
         return self.interfaces
+
+    def read_dhcp_pool(self, device_name, pool_name, lease_start, lease_end):
+        self.pool_reads.append((device_name, pool_name, lease_start, lease_end))
+        return self.pool
 
 
 class _FoundationCallControl(_CallControl):
@@ -1322,19 +1350,141 @@ def test_a_subinterface_carrying_another_address_contradicts_the_expected_one():
     assert result.foundation.router_subinterface_ipv4 == CONTRADICTED
 
 
-def test_the_dhcp_pool_definition_is_unavailable_and_never_absent():
-    # No registered read exposes a pool DEFINITION on this build, and
-    # `VerificationKind.DHCP_POOL` is pinned UNOBSERVABLE by its own ceiling.
-    # "Nobody can see it" must never be published as "it is not there".
+def test_the_measured_pool_surface_verifies_only_the_dimensions_it_exposes():
     result, *_ = _run_foundation()
     foundation = result.foundation
 
-    assert foundation.dhcp_pool_definition == NOT_AVAILABLE
+    assert foundation.dhcp_pool_existence == VERIFIED
+    assert foundation.dhcp_pool_range == VERIFIED
+    assert foundation.dhcp_pool_available_space == VERIFIED
+    assert foundation.dhcp_pool_table_readback == VERIFIED
+    assert foundation.dhcp_pool_name == "VOICEAB_VOICE"
+    assert foundation.dhcp_pool_range_start == "10.93.0.1"
+    assert foundation.dhcp_pool_range_end == "10.93.0.254"
+    assert foundation.dhcp_pool_available_addresses == 245
+    assert foundation.dhcp_pool_default_router == NOT_AVAILABLE
+    assert foundation.dhcp_pool_exclusions == NOT_AVAILABLE
     assert foundation.option150 == NOT_AVAILABLE
-    assert foundation.dhcp_pool_definition != CONTRADICTED
     assert foundation.option150 != CONTRADICTED
     ladder = dict(result.foundation_ladder)
-    assert ladder["DHCP_POOL_DEFINITION"] == UNOBSERVABLE
+    assert ladder["DHCP_POOL_TABLE_READBACK"] == VERIFIED
+
+
+def test_pool_absence_is_a_contradiction_but_does_not_invent_other_fields():
+    absent = DhcpPoolReadbackObservation(
+        device_name="R",
+        requested_pool_name="VOICEAB_VOICE",
+        requested_range_start="10.93.0.10",
+        requested_range_end="10.93.0.254",
+        pool_present=False,
+        fresh_evidence=True,
+        output_complete=True,
+        identity_confirmed=True,
+    )
+
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(pool=absent),
+    )
+
+    assert result.foundation.dhcp_pool_existence == CONTRADICTED
+    assert result.foundation.dhcp_pool_range == UNOBSERVABLE
+    assert result.foundation.dhcp_pool_available_space == UNOBSERVABLE
+    assert result.foundation.dhcp_pool_table_readback == CONTRADICTED
+
+
+def test_pool_range_and_available_space_can_contradict_independently():
+    wrong = DhcpPoolReadbackObservation(
+        device_name="R",
+        requested_pool_name="VOICEAB_VOICE",
+        requested_range_start="10.93.0.10",
+        requested_range_end="10.93.0.254",
+        pool_present=True,
+        requested_range_covered=False,
+        range_start="10.93.0.1",
+        range_end="10.93.0.20",
+        total_addresses=20,
+        leased_addresses=11,
+        excluded_addresses=9,
+        available_addresses=0,
+        fresh_evidence=True,
+        output_complete=True,
+        identity_confirmed=True,
+    )
+
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(pool=wrong),
+    )
+
+    assert result.foundation.dhcp_pool_existence == VERIFIED
+    assert result.foundation.dhcp_pool_range == CONTRADICTED
+    assert result.foundation.dhcp_pool_available_space == CONTRADICTED
+    assert result.foundation.dhcp_pool_table_readback == CONTRADICTED
+
+
+def test_missing_pool_evidence_does_not_change_the_voice_outcome():
+    registration = _Registration(
+        status="ActionExecutionStatus.FAILED", direct_readback="",
+        endpoint_ipv4="0.0.0.0", endpoint_dhcp_enabled=True,
+    )
+    common = {
+        "bindings": [],
+    }
+    unread, *_ = _run(
+        configuration=_Configuration(**common),
+        call_control=_CallControl(registration=registration),
+    )
+    observed, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(**common),
+        call_control=_FoundationCallControl(registration=registration),
+    )
+
+    assert unread.outcome == "SAME_FAILURE"
+    assert observed.outcome == "SAME_FAILURE"
+    assert unread.foundation.dhcp_pool_table_readback == UNOBSERVABLE
+    assert observed.foundation.dhcp_pool_table_readback == VERIFIED
+
+
+def test_the_pool_ladder_stage_never_claims_the_whole_pool_configuration():
+    # `show ip dhcp pool` exposes existence, the range and the free count. It
+    # does NOT expose default-router, the excluded RANGES, or option 150, so a
+    # stage called DHCP_POOL_DEFINITION reading VERIFIED would tell the next
+    # session the pool is configured correctly -- a claim this evidence cannot
+    # support. The stage is named for the table it actually read.
+    from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (  # noqa: E501
+        FOUNDATION_STAGES,
+    )
+
+    assert "DHCP_POOL_TABLE_READBACK" in FOUNDATION_STAGES
+    assert "DHCP_POOL_DEFINITION" not in FOUNDATION_STAGES
+
+    result, *_ = _run_foundation()
+    ladder = dict(result.foundation_ladder)
+
+    assert ladder["DHCP_POOL_TABLE_READBACK"] == VERIFIED
+    assert result.foundation.dhcp_pool_default_router == NOT_AVAILABLE
+    assert result.foundation.dhcp_pool_exclusions == NOT_AVAILABLE
+    assert result.foundation.option150 == NOT_AVAILABLE
+
+
+def test_the_pool_read_asks_for_exactly_the_pool_the_slice_configures():
+    # The observation is only about the intent if it names the same pool and
+    # the same lease window. Two independent literals drift apart silently,
+    # and the failure that drift produces is `pool_present=False` -- a WRONG
+    # strong causal claim, not a visible error.
+    from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        ConfigureDhcpPool,
+    )
+
+    result, _physical, configuration, *_ = _run_foundation()
+
+    pool = next(
+        item for item in configuration.applied
+        if isinstance(item, ConfigureDhcpPool)
+    )
+    assert configuration.pool_reads == [(
+        pool.device_name, pool.pool_name, pool.lease_start, pool.lease_end,
+    )]
+    assert result.foundation.dhcp_pool_name == pool.pool_name
 
 
 def test_the_call_control_table_is_read_as_a_foundation_of_its_own():
@@ -1420,7 +1570,7 @@ def test_the_first_common_boundary_is_reported_without_skipping_ahead():
     ladder = result.foundation_ladder
     assert [stage for stage, _ in ladder] == [
         "PHONE_ACCESS_AND_VOICE_VLAN", "SWITCH_TRUNK",
-        "ROUTER_VOICE_SUBINTERFACE", "DHCP_POOL_DEFINITION",
+        "ROUTER_VOICE_SUBINTERFACE", "DHCP_POOL_TABLE_READBACK",
         "CALL_CONTROL_FOUNDATION", "ENDPOINT_DHCP", "ENDPOINT_ADDRESS",
         "VOICE_DHCP_BINDING", "SCCP_REGISTRATION",
     ]

@@ -37,6 +37,7 @@ class OperationalQueryId(str, Enum):
     SHOW_PORT_SECURITY_INTERFACE = "show_port_security_interface"
     SHOW_IP_DHCP_SNOOPING = "show_ip_dhcp_snooping"
     SHOW_IP_DHCP_BINDING = "show_ip_dhcp_binding"
+    SHOW_IP_DHCP_POOL = "show_ip_dhcp_pool"
     SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE = (
         "show_ip_dhcp_server_statistics_interface"
     )
@@ -169,6 +170,7 @@ _COMMANDS = {
     OperationalQueryId.SHOW_IP_NAT_STATISTICS: "show ip nat statistics",
     OperationalQueryId.SHOW_IP_DHCP_SNOOPING: "show ip dhcp snooping",
     OperationalQueryId.SHOW_IP_DHCP_BINDING: "show ip dhcp binding",
+    OperationalQueryId.SHOW_IP_DHCP_POOL: "show ip dhcp pool",
     OperationalQueryId.SHOW_IP_ARP_INSPECTION: "show ip arp inspection",
     OperationalQueryId.SHOW_SPANNING_TREE: "show spanning-tree",
     OperationalQueryId.SHOW_ETHERCHANNEL_SUMMARY: "show etherchannel summary",
@@ -211,6 +213,7 @@ _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE,
     OperationalQueryId.SHOW_IP_DHCP_SNOOPING,
     OperationalQueryId.SHOW_IP_DHCP_BINDING,
+    OperationalQueryId.SHOW_IP_DHCP_POOL,
     OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE,
     OperationalQueryId.SHOW_IP_ARP_INSPECTION,
     OperationalQueryId.SHOW_INTERFACES_SWITCHPORT,
@@ -373,6 +376,43 @@ class DhcpServerStatistics:
     request_received: int
     ack_sent: int
     nak_sent: int
+
+
+@dataclass(frozen=True)
+class DhcpPoolSubnetStatistics:
+    """One subnet/range row from the measured DHCP-pool table."""
+
+    current_index: str
+    range_start: str
+    range_end: str
+    leased_addresses: int
+    excluded_addresses: int
+    total_addresses: int
+
+
+@dataclass(frozen=True)
+class DhcpPoolStatistics:
+    """Fields actually exposed by PT 9.0.1.0858 ``show ip dhcp pool``."""
+
+    name: str
+    utilization_high: int
+    utilization_low: int
+    subnet_size_first: int
+    subnet_size_next: int
+    total_addresses: int
+    leased_addresses: int
+    excluded_addresses: int
+    pending_event: str
+    declared_subnet_count: int
+    subnets: tuple[DhcpPoolSubnetStatistics, ...]
+
+    @property
+    def available_addresses(self) -> int:
+        return (
+            self.total_addresses
+            - self.leased_addresses
+            - self.excluded_addresses
+        )
 
 
 @dataclass(frozen=True)
@@ -797,6 +837,150 @@ def parse_show_ip_dhcp_binding(value: str) -> list[DhcpBindingRow]:
         seen.add(address)
         rows.append(DhcpBindingRow(ip_address=address))
     return rows
+
+
+def parse_show_ip_dhcp_pool(value: str) -> list[DhcpPoolStatistics] | None:
+    """Parse only the exact pool table measured on PT 9.0.1.0858.
+
+    The parser is deliberately closed over the captured fields. Unknown lines,
+    duplicate pools, inconsistent counters, an empty response, or an IOS
+    rejection make the table unreadable. In particular, an empty prompt is not
+    an authoritative empty pool list.
+    """
+    normalized = normalize_terminal_output(value)
+    if ios_rejection_reason(normalized) is not None:
+        return None
+    lines = [line.strip() for line in normalized.splitlines() if line.strip()]
+    if lines and re.fullmatch(
+        r"(?:[A-Za-z0-9_.()-]+[>#]\s*)?show\s+ip\s+dhcp\s+pool",
+        lines[0],
+        re.IGNORECASE,
+    ):
+        lines.pop(0)
+    if lines and re.fullmatch(r"[A-Za-z0-9_.()-]+[>#]", lines[-1]):
+        lines.pop()
+    if not lines:
+        return None
+
+    pool_header = re.compile(
+        r"Pool\s+(?P<name>[A-Za-z0-9_.-]+)\s*:\s*",
+        re.IGNORECASE,
+    )
+    headers = [
+        (index, match)
+        for index, line in enumerate(lines)
+        if (match := pool_header.fullmatch(line)) is not None
+    ]
+    if not headers or headers[0][0] != 0:
+        return None
+
+    parsed: list[DhcpPoolStatistics] = []
+    seen: set[str] = set()
+    for position, (start, header) in enumerate(headers):
+        end = headers[position + 1][0] if position + 1 < len(headers) else len(lines)
+        body = lines[start + 1:end]
+        name = header.group("name")
+        identity = name.casefold()
+        if identity in seen:
+            return None
+        seen.add(identity)
+        pool = _parse_dhcp_pool_block(name, body)
+        if pool is None:
+            return None
+        parsed.append(pool)
+    return parsed
+
+
+def _parse_dhcp_pool_block(
+    name: str,
+    lines: list[str],
+) -> DhcpPoolStatistics | None:
+    patterns = (
+        re.compile(r"Utilization mark \(high/low\)\s*:\s*(\d+)\s*/\s*(\d+)", re.I),
+        re.compile(r"Subnet size \(first/next\)\s*:\s*(\d+)\s*/\s*(\d+)", re.I),
+        re.compile(r"Total addresses\s*:\s*(\d+)", re.I),
+        re.compile(r"Leased addresses\s*:\s*(\d+)", re.I),
+        re.compile(r"Excluded addresses\s*:\s*(\d+)", re.I),
+        re.compile(r"Pending event\s*:\s*(\S(?:.*\S)?)", re.I),
+        re.compile(
+            r"(\d+)\s+subnets?\s+(?:is|are)\s+currently\s+in\s+the\s+pool",
+            re.I,
+        ),
+        re.compile(
+            r"Current index\s+IP address range\s+Leased/Excluded/Total",
+            re.I,
+        ),
+    )
+    if len(lines) < len(patterns) + 1:
+        return None
+    matches = [pattern.fullmatch(line) for pattern, line in zip(patterns, lines)]
+    if any(match is None for match in matches):
+        return None
+    typed = [match for match in matches if match is not None]
+    declared = int(typed[6].group(1))
+    row_lines = lines[len(patterns):]
+    if declared <= 0 or len(row_lines) != declared:
+        return None
+
+    row_pattern = re.compile(
+        r"(?P<index>\d{1,3}(?:\.\d{1,3}){3})\s+"
+        r"(?P<start>\d{1,3}(?:\.\d{1,3}){3})\s+-\s+"
+        r"(?P<end>\d{1,3}(?:\.\d{1,3}){3})\s+"
+        r"(?P<leased>\d+)\s*/\s*(?P<excluded>\d+)\s*/\s*(?P<total>\d+)"
+    )
+    subnets: list[DhcpPoolSubnetStatistics] = []
+    for line in row_lines:
+        row = row_pattern.fullmatch(line)
+        if row is None:
+            return None
+        try:
+            current = ipaddress.IPv4Address(row.group("index"))
+            range_start = ipaddress.IPv4Address(row.group("start"))
+            range_end = ipaddress.IPv4Address(row.group("end"))
+        except ipaddress.AddressValueError:
+            return None
+        leased = int(row.group("leased"))
+        excluded = int(row.group("excluded"))
+        total = int(row.group("total"))
+        if (
+            range_start > range_end
+            or int(range_end) - int(range_start) + 1 != total
+            or leased + excluded > total
+            or not range_start <= current <= range_end
+        ):
+            return None
+        subnets.append(DhcpPoolSubnetStatistics(
+            current_index=str(current),
+            range_start=str(range_start),
+            range_end=str(range_end),
+            leased_addresses=leased,
+            excluded_addresses=excluded,
+            total_addresses=total,
+        ))
+
+    total = int(typed[2].group(1))
+    leased = int(typed[3].group(1))
+    excluded = int(typed[4].group(1))
+    if (
+        sum(item.total_addresses for item in subnets) != total
+        or sum(item.leased_addresses for item in subnets) != leased
+        or sum(item.excluded_addresses for item in subnets) != excluded
+        or leased + excluded > total
+    ):
+        return None
+    return DhcpPoolStatistics(
+        name=name,
+        utilization_high=int(typed[0].group(1)),
+        utilization_low=int(typed[0].group(2)),
+        subnet_size_first=int(typed[1].group(1)),
+        subnet_size_next=int(typed[1].group(2)),
+        total_addresses=total,
+        leased_addresses=leased,
+        excluded_addresses=excluded,
+        pending_event=typed[5].group(1),
+        declared_subnet_count=declared,
+        subnets=tuple(subnets),
+    )
 
 
 def parse_show_ip_dhcp_server_statistics(

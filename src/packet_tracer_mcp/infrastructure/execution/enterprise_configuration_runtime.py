@@ -42,9 +42,11 @@ from .configuration_runtime import PacketTracerConfigurationRuntime
 from .device_lifecycle import StateConvergenceWaiter
 from .ios_terminal import (
     ControlledIosExecutor,
+    DeviceIdentityProvenance,
     IosCommandResult,
     OperationalQueryId,
     parse_show_interfaces_trunk,
+    parse_show_ip_dhcp_pool,
     parse_show_ip_interface_brief,
     parse_serial_controller,
 )
@@ -98,6 +100,29 @@ class TrunkReadbackObservation:
     forwarding_vlans: tuple[int, ...] | None = None
     fresh_evidence: bool = False
     output_complete: bool = False
+    failure_reason: str = ""
+
+
+@dataclass(frozen=True)
+class DhcpPoolReadbackObservation:
+    """Independent fields from one fresh complete global pool table."""
+
+    device_name: str
+    requested_pool_name: str
+    requested_range_start: str
+    requested_range_end: str
+    pool_present: bool | None = None
+    requested_range_covered: bool | None = None
+    range_start: str = ""
+    range_end: str = ""
+    subnet_ranges: tuple[tuple[str, str], ...] = ()
+    total_addresses: int | None = None
+    leased_addresses: int | None = None
+    excluded_addresses: int | None = None
+    available_addresses: int | None = None
+    fresh_evidence: bool = False
+    output_complete: bool = False
+    identity_confirmed: bool = False
     failure_reason: str = ""
 
 
@@ -194,6 +219,112 @@ class PacketTracerEnterpriseConfigurationRuntime:
             fresh_evidence=fresh,
             output_complete=complete,
             failure_reason=reason,
+        )
+
+    def read_dhcp_pool(
+        self,
+        device_name: str,
+        pool_name: str,
+        lease_start: str,
+        lease_end: str,
+    ) -> DhcpPoolReadbackObservation:
+        """Read pool existence, range coverage and available space only."""
+        show = self._ios.execute(
+            device_name, OperationalQueryId.SHOW_IP_DHCP_POOL,
+        )
+        fresh = bool(show.executed and show.fresh_output_observed)
+        complete = bool(show.output_complete)
+        identity = (
+            show.device_identity_provenance
+            == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+        )
+        reason = show.failure_reason
+        if not reason and not fresh:
+            reason = "No fresh current show ip dhcp pool output was observed."
+        if not reason and not complete:
+            reason = "The show ip dhcp pool output was incomplete."
+        if not reason and not identity:
+            reason = "The DHCP pool table was not attributed to one device."
+        pools = (
+            parse_show_ip_dhcp_pool(show.output)
+            if fresh and complete and identity else None
+        )
+        if pools is None:
+            return DhcpPoolReadbackObservation(
+                device_name=device_name,
+                requested_pool_name=pool_name,
+                requested_range_start=lease_start,
+                requested_range_end=lease_end,
+                fresh_evidence=fresh,
+                output_complete=complete,
+                identity_confirmed=identity,
+                failure_reason=(reason or "The DHCP pool table did not parse."),
+            )
+
+        # `parse_show_ip_dhcp_pool` refuses a table holding two casefold-equal
+        # pool identities, so matching the requested name the same way stays
+        # unambiguous -- and letter case alone can never publish an absence,
+        # which the ladder would read as a finding about the router.
+        wanted = pool_name.casefold()
+        selected = next(
+            (item for item in pools if item.name.casefold() == wanted), None,
+        )
+        if selected is None:
+            return DhcpPoolReadbackObservation(
+                device_name=device_name,
+                requested_pool_name=pool_name,
+                requested_range_start=lease_start,
+                requested_range_end=lease_end,
+                pool_present=False,
+                fresh_evidence=True,
+                output_complete=True,
+                identity_confirmed=True,
+                failure_reason=f"Pool {pool_name!r} was absent from the table.",
+            )
+        try:
+            requested_start = ipaddress.IPv4Address(lease_start)
+            requested_end = ipaddress.IPv4Address(lease_end)
+        except ipaddress.AddressValueError:
+            return DhcpPoolReadbackObservation(
+                device_name=device_name,
+                requested_pool_name=pool_name,
+                requested_range_start=lease_start,
+                requested_range_end=lease_end,
+                pool_present=True,
+                fresh_evidence=True,
+                output_complete=True,
+                identity_confirmed=True,
+                failure_reason="The requested lease range was not valid IPv4.",
+            )
+        ranges = tuple(
+            (item.range_start, item.range_end) for item in selected.subnets
+        )
+        covering = next((
+            item for item in selected.subnets
+            if (
+                ipaddress.IPv4Address(item.range_start) <= requested_start
+                <= requested_end <= ipaddress.IPv4Address(item.range_end)
+            )
+        ), None)
+        only = selected.subnets[0] if len(selected.subnets) == 1 else None
+        displayed = covering or only
+        return DhcpPoolReadbackObservation(
+            device_name=device_name,
+            requested_pool_name=pool_name,
+            requested_range_start=lease_start,
+            requested_range_end=lease_end,
+            pool_present=True,
+            requested_range_covered=covering is not None,
+            range_start=displayed.range_start if displayed is not None else "",
+            range_end=displayed.range_end if displayed is not None else "",
+            subnet_ranges=ranges,
+            total_addresses=selected.total_addresses,
+            leased_addresses=selected.leased_addresses,
+            excluded_addresses=selected.excluded_addresses,
+            available_addresses=selected.available_addresses,
+            fresh_evidence=True,
+            output_complete=True,
+            identity_confirmed=True,
         )
 
     @staticmethod

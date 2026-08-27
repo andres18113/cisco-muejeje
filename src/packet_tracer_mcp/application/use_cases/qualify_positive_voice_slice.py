@@ -103,6 +103,13 @@ VOICE_NETWORK = "10.93.0.0"
 VOICE_PREFIX = 24
 VOICE_NETMASK = "255.255.255.0"
 VOICE_GATEWAY = "10.93.0.1"
+#: The pool identity and lease window are written ONCE: the readback is
+#: only about the intent if it names the same pool and the same window,
+#: and drift between two literals would surface as a WRONG absence rather
+#: than as an error.
+VOICE_POOL_NAME = "VOICEAB_VOICE"
+VOICE_LEASE_START = "10.93.0.10"
+VOICE_LEASE_END = "10.93.0.254"
 DATA_NETWORK = "10.94.0.0"
 DATA_GATEWAY = "10.94.0.1"
 
@@ -201,7 +208,7 @@ FOUNDATION_STAGES = (
     "PHONE_ACCESS_AND_VOICE_VLAN",
     "SWITCH_TRUNK",
     "ROUTER_VOICE_SUBINTERFACE",
-    "DHCP_POOL_DEFINITION",
+    "DHCP_POOL_TABLE_READBACK",
     "CALL_CONTROL_FOUNDATION",
     "ENDPOINT_DHCP",
     "ENDPOINT_ADDRESS",
@@ -239,17 +246,44 @@ class PositiveVoiceFoundation:
     router_subinterface_state: str = UNOBSERVABLE
     #: The raw `status/protocol` pair, so a CONTRADICTED line says which one.
     router_subinterface_state_detail: str = ""
-    #: No registered query on `9.0.1.0858` exposes a pool DEFINITION or option
-    #: 150, and `VerificationKind.DHCP_POOL` is pinned UNOBSERVABLE by its own
-    #: ceiling.  Reading either as "absent" would invent the router-side
-    #: finding this investigation exists to look for honestly.
-    dhcp_pool_definition: str = NOT_AVAILABLE
+    #: The measured global pool table exposes these three dimensions. They stay
+    #: independent because presence does not prove the intended range and a
+    #: matching range does not prove that any address remains available.
+    dhcp_pool_existence: str = UNOBSERVABLE
+    dhcp_pool_range: str = UNOBSERVABLE
+    dhcp_pool_available_space: str = UNOBSERVABLE
+    dhcp_pool_name: str = ""
+    dhcp_pool_range_start: str = ""
+    dhcp_pool_range_end: str = ""
+    dhcp_pool_total_addresses: int | None = None
+    dhcp_pool_leased_addresses: int | None = None
+    dhcp_pool_excluded_address_count: int | None = None
+    dhcp_pool_available_addresses: int | None = None
+    #: The table reports only an excluded COUNT. It does not reveal the
+    #: configured default-router or excluded ranges, so neither is verified.
+    dhcp_pool_default_router: str = NOT_AVAILABLE
+    dhcp_pool_exclusions: str = NOT_AVAILABLE
     option150: str = NOT_AVAILABLE
     #: `show telephony-service` does not exist on this build, so the call
     #: control foundation is observed through the one table PT does publish.
     telephony_service: str = NOT_AVAILABLE
     call_control_table: str = UNOBSERVABLE
     call_control_ephone_rows: int | None = None
+
+    @property
+    def dhcp_pool_table_readback(self) -> str:
+        """The worst of ONLY the three dimensions `show ip dhcp pool` prints.
+
+        This is not "the DHCP pool is configured correctly".  The measured
+        table carries no default-router, no excluded RANGES (only a count) and
+        no option 150, so VERIFIED here means the pool exists, its range covers
+        the intended lease window and addresses remain -- and nothing more.
+        """
+        return _worst(
+            self.dhcp_pool_existence,
+            self.dhcp_pool_range,
+            self.dhcp_pool_available_space,
+        )
 
     def as_evidence(self) -> dict:
         return {
@@ -263,7 +297,21 @@ class PositiveVoiceFoundation:
             "router_subinterface_ipv4": self.router_subinterface_ipv4,
             "router_subinterface_state": self.router_subinterface_state,
             "router_subinterface_state_detail": self.router_subinterface_state_detail,
-            "dhcp_pool_definition": self.dhcp_pool_definition,
+            "dhcp_pool_existence": self.dhcp_pool_existence,
+            "dhcp_pool_range": self.dhcp_pool_range,
+            "dhcp_pool_available_space": self.dhcp_pool_available_space,
+            "dhcp_pool_table_readback": self.dhcp_pool_table_readback,
+            "dhcp_pool_name": self.dhcp_pool_name,
+            "dhcp_pool_range_start": self.dhcp_pool_range_start,
+            "dhcp_pool_range_end": self.dhcp_pool_range_end,
+            "dhcp_pool_total_addresses": self.dhcp_pool_total_addresses,
+            "dhcp_pool_leased_addresses": self.dhcp_pool_leased_addresses,
+            "dhcp_pool_excluded_address_count": (
+                self.dhcp_pool_excluded_address_count
+            ),
+            "dhcp_pool_available_addresses": self.dhcp_pool_available_addresses,
+            "dhcp_pool_default_router": self.dhcp_pool_default_router,
+            "dhcp_pool_exclusions": self.dhcp_pool_exclusions,
             "option150": self.option150,
             "telephony_service": self.telephony_service,
             "call_control_table": self.call_control_table,
@@ -411,8 +459,7 @@ class PositiveVoiceSliceResult:
                 foundation.router_subinterface_ipv4,
                 foundation.router_subinterface_state,
             ),
-            UNOBSERVABLE if foundation.dhcp_pool_definition == NOT_AVAILABLE
-            else foundation.dhcp_pool_definition,
+            foundation.dhcp_pool_table_readback,
             foundation.call_control_table,
             _worst(*(
                 _as_status(item.dhcp_enabled, YES, NO) for item in self.phones
@@ -522,6 +569,9 @@ class VoiceFoundationConfigurationRuntime(Protocol):
 
     def read_trunk(self, device_name: str, interface: str): ...
     def read_interface_addresses(self, device_name: str) -> list | None: ...
+    def read_dhcp_pool(
+        self, device_name: str, pool_name: str, lease_start: str, lease_end: str,
+    ): ...
 
 
 class VoiceCallControlRuntime(Protocol):
@@ -723,6 +773,76 @@ def _classify_router_subinterface(rows) -> dict:
             )
         ),
         "router_subinterface_state_detail": detail,
+    }
+
+
+def _classify_dhcp_pool(observation) -> dict:
+    """Map only the three dimensions the measured pool table exposes."""
+    unread = {
+        "dhcp_pool_existence": UNOBSERVABLE,
+        "dhcp_pool_range": UNOBSERVABLE,
+        "dhcp_pool_available_space": UNOBSERVABLE,
+        "dhcp_pool_name": "",
+        "dhcp_pool_range_start": "",
+        "dhcp_pool_range_end": "",
+        "dhcp_pool_total_addresses": None,
+        "dhcp_pool_leased_addresses": None,
+        "dhcp_pool_excluded_address_count": None,
+        "dhcp_pool_available_addresses": None,
+    }
+    if observation is None or not (
+        getattr(observation, "fresh_evidence", False)
+        and getattr(observation, "output_complete", False)
+        and getattr(observation, "identity_confirmed", False)
+    ):
+        return unread
+    present = getattr(observation, "pool_present", None)
+    if present is False:
+        return {
+            **unread,
+            "dhcp_pool_existence": CONTRADICTED,
+            "dhcp_pool_name": str(
+                getattr(observation, "requested_pool_name", "") or ""
+            ),
+        }
+    if present is not True:
+        return unread
+
+    range_covered = getattr(observation, "requested_range_covered", None)
+    available = getattr(observation, "available_addresses", None)
+    if isinstance(available, bool):
+        available = None
+    return {
+        "dhcp_pool_existence": VERIFIED,
+        "dhcp_pool_range": (
+            VERIFIED if range_covered is True
+            else CONTRADICTED if range_covered is False
+            else UNOBSERVABLE
+        ),
+        "dhcp_pool_available_space": (
+            VERIFIED if isinstance(available, int) and available > 0
+            else CONTRADICTED if isinstance(available, int) and available == 0
+            else UNOBSERVABLE
+        ),
+        "dhcp_pool_name": str(
+            getattr(observation, "requested_pool_name", "") or ""
+        ),
+        "dhcp_pool_range_start": str(
+            getattr(observation, "range_start", "") or ""
+        ),
+        "dhcp_pool_range_end": str(
+            getattr(observation, "range_end", "") or ""
+        ),
+        "dhcp_pool_total_addresses": getattr(
+            observation, "total_addresses", None,
+        ),
+        "dhcp_pool_leased_addresses": getattr(
+            observation, "leased_addresses", None,
+        ),
+        "dhcp_pool_excluded_address_count": getattr(
+            observation, "excluded_addresses", None,
+        ),
+        "dhcp_pool_available_addresses": available,
     }
 
 
@@ -1024,11 +1144,11 @@ class PositiveVoiceSliceQualifier:
             ConfigureDhcpPool(
                 id="voiceab/pool/voice", phase=ConfigurationPhase.SERVICES,
                 device_id="voiceab/r", device_name=router, site_id=site,
-                pool_name="VOICEAB_VOICE", segment_id="voiceab/seg/voice",
+                pool_name=VOICE_POOL_NAME, segment_id="voiceab/seg/voice",
                 network=VOICE_NETWORK, prefix=VOICE_PREFIX,
                 netmask=VOICE_NETMASK, gateway=VOICE_GATEWAY,
                 excluded_ranges=[AddressRange(start=VOICE_GATEWAY, end="10.93.0.9")],
-                lease_start="10.93.0.10", lease_end="10.93.0.254",
+                lease_start=VOICE_LEASE_START, lease_end=VOICE_LEASE_END,
             ),
         ])
         return actions
@@ -1059,7 +1179,7 @@ class PositiveVoiceSliceQualifier:
             ConfigureVoiceDhcpOption(
                 id="voiceab/option150", phase=VoicePhase.CALL_CONTROL,
                 required_capability=VoiceCapabilityDimension.VOICE_DHCP_OPTIONS,
-                pool_name="VOICEAB_VOICE", tftp_address=VOICE_GATEWAY,
+                pool_name=VOICE_POOL_NAME, tftp_address=VOICE_GATEWAY,
                 source_configuration_action_id="voiceab/sub/voice", **common,
             ),
             ConfigureCallControlSource(
@@ -1193,7 +1313,7 @@ class PositiveVoiceSliceQualifier:
         errors.extend(config_errors)
         journal.record("WHEN_ACCESS_VLAN_APPLIED", applied, f"data vlan {DATA_VLAN_ID}")
         journal.record("WHEN_VOICE_VLAN_APPLIED", applied, f"voice vlan {VOICE_VLAN_ID}")
-        journal.record("WHEN_DHCP_POOL_EXISTS", applied, "VOICEAB_VOICE")
+        journal.record("WHEN_DHCP_POOL_EXISTS", applied, VOICE_POOL_NAME)
         journal.record("CONFIGURATION_APPLY_ORDER", applied, "L2, L3, then services")
 
         # Immediately after the L2 configuration and before anything else, which
@@ -1305,6 +1425,10 @@ class PositiveVoiceSliceQualifier:
             self._configuration, "read_interface_addresses", errors,
             "router_interfaces", router_name,
         )
+        pool = self._optional_read(
+            self._configuration, "read_dhcp_pool", errors, "dhcp_pool",
+            router_name, VOICE_POOL_NAME, VOICE_LEASE_START, VOICE_LEASE_END,
+        )
         table = self._optional_read(
             self._call_control, "inspect_call_control", errors,
             "call_control_table", router_name,
@@ -1312,6 +1436,7 @@ class PositiveVoiceSliceQualifier:
 
         trunk_fields = _classify_trunk(trunk)
         router_fields = _classify_router_subinterface(rows)
+        pool_fields = _classify_dhcp_pool(pool)
         call_control, ephone_rows = _classify_call_control(table)
         journal.record(
             "SWITCH_TRUNK_OBSERVED",
@@ -1324,13 +1449,18 @@ class PositiveVoiceSliceQualifier:
             ROUTER_VOICE_SUBINTERFACE, OBSERVATION,
         )
         journal.record(
+            "DHCP_POOL_OBSERVED",
+            pool_fields["dhcp_pool_existence"] != UNOBSERVABLE,
+            VOICE_POOL_NAME, OBSERVATION,
+        )
+        journal.record(
             "CALL_CONTROL_TABLE_OBSERVED", call_control != UNOBSERVABLE,
             router_name, OBSERVATION,
         )
         return PositiveVoiceFoundation(
             call_control_table=call_control,
             call_control_ephone_rows=ephone_rows,
-            **trunk_fields, **router_fields,
+            **trunk_fields, **router_fields, **pool_fields,
         )
 
     def _apply_edge_portfast(

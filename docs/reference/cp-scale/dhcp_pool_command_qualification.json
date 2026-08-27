@@ -1,0 +1,44 @@
+{
+  "schema": "cp-scale-command-qualification-v1",
+  "diagnostic": "GOVERNED_OPERATIONAL_QUERY_QUALIFICATION",
+  "command": "show ip dhcp pool",
+  "query_id": "SHOW_IP_DHCP_POOL",
+  "filename": "dhcp-pool-command-qualification.json",
+  "sha256": "ed2f1159cc6b5d7af53d33b9dcf18e17aa5c0f211aac867bfef666c07a2b7eec",
+  "source_head": "ce222edd72bc3779a6141382d22653e5555f4f7c",
+  "source_head_provenance": "RECORDED_IN_EVIDENCE",
+  "packet_tracer_version": "9.0.1.0858",
+  "device_model": "2811",
+  "outcome": "COMMAND_SUPPORTED",
+  "live_capture": {
+    "executed": true,
+    "fresh_output_observed": true,
+    "output_complete": true,
+    "device_identity_provenance": "confirmed_unique",
+    "dispatch_attempts": 1
+  },
+  "cleanup": {
+    "removed_devices": 1,
+    "workspace_restored": true,
+    "realtime_restored": true
+  },
+  "exposes": [
+    "POOL_NAME",
+    "UTILIZATION_MARK",
+    "SUBNET_SIZE",
+    "TOTAL_ADDRESSES",
+    "LEASED_ADDRESSES",
+    "EXCLUDED_ADDRESS_COUNT",
+    "PENDING_EVENT",
+    "SUBNET_COUNT",
+    "CURRENT_INDEX",
+    "IP_ADDRESS_RANGE",
+    "PER_SUBNET_LEASED_EXCLUDED_TOTAL"
+  ],
+  "does_not_expose": [
+    "DEFAULT_ROUTER",
+    "EXCLUDED_RANGES",
+    "OPTION150"
+  ],
+  "note": "One governed disposable qualification on a 2811 established that the command is supported and WHAT it prints.  The excluded figure is a COUNT, not the configured ranges, so this surface can never verify default-router, the exclusions themselves, or option 150."
+}
