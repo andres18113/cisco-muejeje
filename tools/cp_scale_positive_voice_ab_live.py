@@ -69,6 +69,24 @@ class _ReadPort:
         self.voice_vlan_id = voice_vlan_id
 
 
+def _table_readable(show) -> bool:
+    """The three dimensions a registered operational read has to establish.
+
+    EXECUTED is only the terminal answering.  FRESH is this capture being of
+    this moment, and COMPLETE is it being the whole logical read rather than
+    the first page of one.  Parsing a table that fails either of the last two
+    turns a property of the READ into a property of the network: an STP row
+    that never got printed reads ABSENT, and a binding table that stopped at a
+    pager reads as zero bindings.  Both are discriminants of this A/B, so both
+    have to come from a read that established all three.
+    """
+    return bool(
+        getattr(show, "executed", False)
+        and getattr(show, "fresh_output_observed", False)
+        and getattr(show, "output_complete", False)
+    )
+
+
 def _field_to_vlan(status_name: str, expected: int):
     """VERIFIED keeps the expected value; FAILED contradicts; anything else is
     unread.  The comparison itself already happened inside the runtime."""
@@ -113,16 +131,23 @@ class _ConfigurationAdapter:
         )
 
     def read_spanning_tree(self, device_name: str):
+        """None means the table was never read; it never means no rows.
+
+        The qualifier turns None into UNOBSERVABLE and a parsed table with no
+        phone row into ABSENT, and those are different answers to the causal
+        question.  Only a read that was fresh and complete may produce either.
+        """
         show = self._ios.execute(device_name, OperationalQueryId.SHOW_SPANNING_TREE)
-        if not getattr(show, "executed", False):
+        if not _table_readable(show):
             return None
         return parse_show_spanning_tree(show.output)
 
     def read_dhcp_bindings(self, device_name: str):
+        """Same gate: an incomplete binding table is not zero bindings."""
         show = self._ios.execute(
             device_name, OperationalQueryId.SHOW_IP_DHCP_BINDING,
         )
-        if not getattr(show, "executed", False):
+        if not _table_readable(show):
             return None
         return parse_show_ip_dhcp_binding(show.output)
 

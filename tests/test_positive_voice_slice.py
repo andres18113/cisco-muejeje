@@ -23,16 +23,56 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     PositiveVoiceSliceQualifier,
     PositiveVoiceSliceResult,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    RuntimeActionMutation,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+    PhysicalMutationResult,
+    PhysicalObjectKind,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+    VoiceVerificationExpectation,
+    VoiceVerificationKind,
+)
+
+
+def _device_result(applied: bool = True, message: str = ""):
+    """What a backend really answers for one typed ensure operation."""
+    return PhysicalMutationResult(
+        target_id="voiceab", target_kind=PhysicalObjectKind.DEVICE,
+        applied=applied, message=message,
+    )
+
+
+def _link_result(applied: bool = True, message: str = ""):
+    return PhysicalMutationResult(
+        target_id="voiceab", target_kind=PhysicalObjectKind.LINK,
+        applied=applied, message=message,
+    )
+
+
+def _mutation(action_id: str = "", applied: bool = True, message: str = ""):
+    return RuntimeActionMutation(
+        action_id=action_id, applied=applied, message=message,
+    )
 
 
 @dataclass
-class _Outcome:
+class _LegacySuccess:
+    """A result that still carries the OLD flag while the real one says no.
+
+    Nothing in production returns this shape.  It exists so that a fail-open
+    `.success` default cannot come back unnoticed: a qualifier that consults it
+    would read this object as a mutation that happened.
+    """
+
+    applied: bool = False
     success: bool = True
-    message: str = ""
+    message: str = "the backend refused"
     action_id: str = ""
 
 
@@ -87,34 +127,36 @@ class _Physical:
         return self.final if self.removed else self.baseline
 
     def ensure_device(self, device):
-        if self.fail_on and self.fail_on in device.name:
-            self.created.append(device.name)
-            return _Outcome(success=False, message="refused")
         self.created.append(device.name)
-        return _Outcome()
+        if self.fail_on and self.fail_on in device.name:
+            return _device_result(applied=False, message="refused")
+        return _device_result()
 
     def observe_device(self, device):
-        return _Outcome()
+        return _device_result()
 
     def remove_device(self, device):
         self.removed.append(device.name)
-        return _Outcome()
+        return _device_result()
 
     def ensure_link(self, link):
         self.links.append(f"{link.device_a}:{link.port_a}")
-        return _Outcome()
+        return _link_result()
 
 
 class _Configuration:
-    def __init__(self, port=None, stp=None, bindings=None):
+    def __init__(self, port=None, stp=None, bindings=None, mutations=None):
         self.applied: list = []
         self.port = port if port is not None else _Port(DATA_VLAN_ID, VOICE_VLAN_ID)
         self.stp = stp
         self.bindings = bindings if bindings is not None else [_Binding("10.93.0.10")]
+        self.mutations = mutations
 
     def apply_actions(self, actions):
         self.applied.extend(actions)
-        return [_Outcome(action_id=getattr(a, "id", "")) for a in actions]
+        if self.mutations is not None:
+            return [self.mutations(getattr(a, "id", "")) for a in actions]
+        return [_mutation(action_id=getattr(a, "id", "")) for a in actions]
 
     def read_access_port(self, device_name, interface):
         return self.port
@@ -130,20 +172,41 @@ _DEFAULT = object()
 
 
 class _CallControl:
-    def __init__(self, registration=_DEFAULT):
+    def __init__(self, registration=_DEFAULT, mutations=None):
         self.applied: list = []
         # A sentinel, not None: passing None must mean "observed nothing", which
         # is the case this fake exists to reproduce.
         self.registration = _Registration() if registration is _DEFAULT else registration
+        self.mutations = mutations
+        self.expectations: list = []
 
     def apply_actions(self, actions):
         self.applied.extend(actions)
-        return [_Outcome(action_id=getattr(a, "id", "")) for a in actions]
+        if self.mutations is not None:
+            return [self.mutations(getattr(a, "id", "")) for a in actions]
+        return [_mutation(action_id=getattr(a, "id", "")) for a in actions]
 
     def observe_registrations(self, expectations):
+        """Answer per phone the way the production runtime does.
+
+        `PacketTracerEnterpriseVoiceRuntime` reads the phone off
+        `endpoint_device_name` to interrogate that phone's own SVI.  This spy
+        reads the same field, so an expectation that does not carry it cannot
+        be answered here either -- which is the whole point: a private
+        stand-in silently produced "no address" for every phone.
+        """
+        self.expectations.extend(expectations)
         if self.registration is None:
             return []
-        return [self.registration for _ in expectations]
+        return [self._for(item.endpoint_device_name) for item in expectations]
+
+    def _for(self, endpoint_device_name: str):
+        if not endpoint_device_name:
+            raise AssertionError(
+                "a registration expectation reached the runtime without the "
+                "phone it is about"
+            )
+        return self.registration
 
 
 class _Endpoints:
@@ -151,8 +214,9 @@ class _Endpoints:
         self.armed: list[str] = []
 
     def configure_endpoint_dhcp(self, device_name, interface):
+        # The typed runtime answers with a bool, and that is what is judged.
         self.armed.append(device_name)
-        return _Outcome()
+        return True
 
     def read_endpoint_address(self, device_name, interface):
         return None
@@ -443,6 +507,260 @@ def test_an_apipa_address_is_not_a_dhcp_lease():
 
 def test_a_result_without_phones_is_unobservable_not_a_failure():
     assert PositiveVoiceSliceResult().outcome == UNOBSERVABLE
+
+
+# --- the production result contracts ----------------------------------------
+# `.applied` is the field the real objects publish.  Every one of these cases
+# used to read as a successful mutation through a fail-open `.success` default.
+
+def test_a_physical_result_that_was_not_applied_is_not_a_created_device():
+    physical = _Physical(_empty_workspace(), fail_on="_SW")
+    result, physical, *_ = _run(physical=physical)
+
+    assert any("device_not_created" in item for item in result.errors)
+    # Not created is not "created and then judged": nothing downstream ran.
+    assert physical.links == []
+    assert result.outcome == UNOBSERVABLE
+
+
+def test_a_link_result_that_was_not_applied_fails_closed():
+    class _RefusedLink(_Physical):
+        def ensure_link(self, link):
+            self.links.append(f"{link.device_a}:{link.port_a}")
+            return _link_result(applied=False, message="port occupied")
+
+    result, *_ = _run(physical=_RefusedLink(_empty_workspace()))
+
+    assert any("link_failed" in item for item in result.errors)
+    assert result.outcome == UNOBSERVABLE
+
+
+def test_a_configuration_mutation_that_was_not_applied_fails_its_milestones():
+    configuration = _Configuration(
+        mutations=lambda action_id: _mutation(
+            action_id=action_id, applied=False, message="IOS never reached ready",
+        ),
+    )
+    result, *_ = _run(configuration=configuration)
+
+    for name in (
+        "WHEN_ACCESS_VLAN_APPLIED", "WHEN_VOICE_VLAN_APPLIED",
+        "WHEN_DHCP_POOL_EXISTS", "CONFIGURATION_APPLY_ORDER",
+    ):
+        milestone = next(item for item in result.lifecycle if item.name == name)
+        assert milestone.observed is False
+        assert milestone.status == UNOBSERVABLE
+    assert any("action_failed" in item for item in result.errors)
+
+
+def test_a_voice_mutation_that_was_not_applied_fails_the_call_control_milestones():
+    call_control = _CallControl(
+        mutations=lambda action_id: _mutation(
+            action_id=action_id, applied=False, message="batch refused",
+        ),
+    )
+    result, *_ = _run(call_control=call_control)
+
+    for name in (
+        "WHEN_OPTION150_APPLIED", "WHEN_CME_ENABLED",
+        "WHEN_PHONE_BINDING_EXISTS", "WHEN_CNF_FILES_GENERATED",
+    ):
+        milestone = next(item for item in result.lifecycle if item.name == name)
+        assert milestone.observed is False
+
+
+def test_no_legacy_success_flag_can_rescue_a_result_that_was_not_applied():
+    class _LegacyPhysical(_Physical):
+        def ensure_device(self, device):
+            self.created.append(device.name)
+            return _LegacySuccess()
+
+    result, *_ = _run(physical=_LegacyPhysical(_empty_workspace()))
+    assert any("device_not_created" in item for item in result.errors)
+
+    result, *_ = _run(
+        configuration=_Configuration(
+            mutations=lambda action_id: _LegacySuccess(action_id=action_id),
+        ),
+    )
+    applied = next(
+        item for item in result.lifecycle if item.name == "WHEN_VOICE_VLAN_APPLIED"
+    )
+    assert applied.observed is False
+
+
+def test_a_batch_that_answers_for_fewer_actions_than_it_was_given_is_not_applied():
+    # An action with no mutation was never judged.  Reading the batch as
+    # applied would be judging it by omission.
+    class _Silent(_Configuration):
+        def apply_actions(self, actions):
+            self.applied.extend(actions)
+            return []
+
+    result, *_ = _run(configuration=_Silent())
+
+    applied = next(
+        item for item in result.lifecycle if item.name == "WHEN_DHCP_POOL_EXISTS"
+    )
+    assert applied.observed is False
+    assert any("apply_incomplete" in item for item in result.errors)
+
+
+# --- ownership before an ambiguous mutation ---------------------------------
+
+def test_device_ownership_survives_a_create_that_raises():
+    class _RaisingPhysical(_Physical):
+        def ensure_device(self, device):
+            if "_SW" in device.name:
+                # The call was made; whatever the backend did with it is now
+                # unknown, and that is exactly when ownership has to exist.
+                raise RuntimeError("the backend went away mid-create")
+            return super().ensure_device(device)
+
+    result, physical, *_ = _run(physical=_RaisingPhysical(_empty_workspace()))
+
+    assert f"{POSITIVE_VOICE_PREFIX}test01_SW" in result.removed
+    assert f"{POSITIVE_VOICE_PREFIX}test01_R" in result.removed
+    assert any("device_create_raised" in item for item in result.errors)
+
+
+def test_link_ownership_survives_a_link_that_raises():
+    class _RaisingLinks(_Physical):
+        def ensure_link(self, link):
+            raise RuntimeError("the backend went away mid-link")
+
+    result, *_ = _run(physical=_RaisingLinks(_empty_workspace()))
+
+    assert len(result.owned_links) == 1
+    assert result.owned_links[0].startswith(f"{POSITIVE_VOICE_PREFIX}test01_R:")
+    assert any("link_raised" in item for item in result.errors)
+
+
+def test_cleanup_removes_only_the_devices_this_slice_owns():
+    result, physical, *_ = _run()
+
+    assert set(result.removed) == set(physical.created)
+    assert all(item.startswith(POSITIVE_VOICE_PREFIX) for item in result.removed)
+
+
+# --- the production registration expectation --------------------------------
+
+def test_registration_expectations_carry_the_production_voice_contract():
+    result, _, _, call_control, *_ = _run()
+
+    assert len(call_control.expectations) == 2
+    for index, expectation in enumerate(call_control.expectations, start=1):
+        assert isinstance(expectation, VoiceVerificationExpectation)
+        assert expectation.kind is VoiceVerificationKind.PHONE_REGISTRATION
+        # The runtime reads the phone off THIS field to interrogate its SVI.
+        assert expectation.endpoint_device_name == (
+            f"{POSITIVE_VOICE_PREFIX}test01_P{index}"
+        )
+        assert expectation.endpoint_interface == "Switch"
+        assert expectation.phone_id == f"voiceab/p{index}"
+        assert expectation.extension == EXTENSIONS[index - 1]
+        assert expectation.call_control_id
+        # The action id names the binding that was actually applied.
+        assert expectation.action_id in {
+            getattr(action, "id", "") for action in call_control.applied
+        }
+    assert result.outcome == "SUCCESS"
+
+
+def test_a_registration_the_runtime_could_not_attribute_is_unobservable():
+    class _Unattributable(_CallControl):
+        def observe_registrations(self, expectations):
+            raise AssertionError("the expectation carried no phone")
+
+    result, *_ = _run(call_control=_Unattributable())
+
+    assert [item.registration for item in result.phones] == [
+        UNOBSERVABLE, UNOBSERVABLE,
+    ]
+    assert result.outcome == UNOBSERVABLE
+
+
+# --- endpoint DHCP arming ---------------------------------------------------
+
+def test_endpoint_dhcp_arming_that_was_refused_is_not_a_verified_milestone():
+    class _Refused(_Endpoints):
+        def configure_endpoint_dhcp(self, device_name, interface):
+            self.armed.append(device_name)
+            return False
+
+    result, *_ = _run(endpoints=_Refused())
+
+    armed = next(
+        item for item in result.lifecycle if item.name == "WHEN_ENDPOINT_DHCP_ARMED"
+    )
+    assert armed.observed is False
+    assert armed.status == UNOBSERVABLE
+    assert any("endpoint_dhcp_not_accepted" in item for item in result.errors)
+
+
+def test_one_unarmed_phone_is_enough_to_withhold_the_arming_milestone():
+    class _HalfArmed(_Endpoints):
+        def configure_endpoint_dhcp(self, device_name, interface):
+            self.armed.append(device_name)
+            return not device_name.endswith("P2")
+
+    result, *_ = _run(endpoints=_HalfArmed())
+
+    armed = next(
+        item for item in result.lifecycle if item.name == "WHEN_ENDPOINT_DHCP_ARMED"
+    )
+    assert armed.observed is False
+
+
+def test_endpoint_dhcp_arming_that_raises_is_not_a_verified_milestone():
+    class _Raising(_Endpoints):
+        def configure_endpoint_dhcp(self, device_name, interface):
+            raise RuntimeError("no channel to the phone")
+
+    result, *_ = _run(endpoints=_Raising())
+
+    armed = next(
+        item for item in result.lifecycle if item.name == "WHEN_ENDPOINT_DHCP_ARMED"
+    )
+    assert armed.observed is False
+
+
+# --- STP row identity -------------------------------------------------------
+
+def test_an_abbreviated_stp_row_is_the_same_port_as_the_typed_plan():
+    # IOS prints `Fa0/1`; the plan says `FastEthernet0/1`.  Comparing raw made
+    # every read row ABSENT, which is one of the two facts this A/B turns on.
+    stp = [
+        _StpInstance(
+            vlan_id=VOICE_VLAN_ID,
+            interfaces=(_StpRow("Fa0/1"), _StpRow("Fa0/2", state="BLK")),
+        )
+    ]
+    result, *_ = _run(configuration=_Configuration(stp=stp))
+
+    assert [item.stp_row_after for item in result.phones] == [FORWARDING, BLOCKING]
+    assert result.stp_phone_row_after == "MIXED"
+
+
+def test_a_truncated_binding_table_can_never_become_the_same_failure():
+    # The CP-SCALE signature on every phone, and a binding table nobody read.
+    # SAME_FAILURE needs a measured zero, not an unread one.
+    signature = PositiveVoicePhoneOutcome(
+        voice_vlan_readback=VERIFIED, dhcp_enabled=YES, ipv4="0.0.0.0",
+        registration=NOT_REGISTERED,
+    )
+    unread = PositiveVoiceSliceResult(
+        phones=(signature, signature), voice_binding_count=None,
+        realtime_before=True, realtime_after=True,
+    )
+    measured = PositiveVoiceSliceResult(
+        phones=(signature, signature), voice_binding_count=0,
+        realtime_before=True, realtime_after=True,
+    )
+
+    assert unread.voice_bindings_observed == UNOBSERVABLE
+    assert unread.outcome == UNOBSERVABLE
+    assert measured.outcome == "SAME_FAILURE"
 
 
 def test_handoff_records_the_positive_voice_slice_and_its_live_boundary():

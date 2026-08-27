@@ -32,11 +32,14 @@ import secrets
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from ...domain.enterprise.models.configuration_runtime import RuntimeActionMutation
 from ...domain.enterprise.models.physical_deployment import (
+    PhysicalMutationResult,
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
 )
 from ...domain.models.plans import DevicePlan, LinkPlan
+from ...shared.utils import same_interface_name
 
 #: Reserved prefix, same intent as the other disposables: every object this
 #: qualification creates is recognisable as its own and nothing else is touched.
@@ -47,6 +50,12 @@ POSITIVE_VOICE_PREFIX = "__MCP_VOICEAB_"
 VOICE_VLAN_ID = 930
 DATA_VLAN_ID = 931
 EXTENSIONS = ("3101", "3102")
+
+#: The call control this slice creates, and the id of the binding action that a
+#: registration expectation verifies.  Both live here so the expectation names
+#: the action that was actually applied instead of a string that merely looks
+#: like it.
+CALL_CONTROL_ID = "voiceab/cme"
 
 VOICE_NETWORK = "10.93.0.0"
 VOICE_PREFIX = 24
@@ -235,26 +244,26 @@ class PositiveVoiceSliceResult:
 
 class VoicePhysicalRuntime(Protocol):
     def observe_workspace(self) -> PhysicalWorkspaceObservation: ...
-    def ensure_device(self, device: DevicePlan): ...
+    def ensure_device(self, device: DevicePlan) -> PhysicalMutationResult: ...
     def observe_device(self, device: DevicePlan): ...
-    def remove_device(self, device: DevicePlan): ...
-    def ensure_link(self, link: LinkPlan): ...
+    def remove_device(self, device: DevicePlan) -> PhysicalMutationResult: ...
+    def ensure_link(self, link: LinkPlan) -> PhysicalMutationResult: ...
 
 
 class VoiceConfigurationRuntime(Protocol):
-    def apply_actions(self, actions) -> list: ...
+    def apply_actions(self, actions) -> list[RuntimeActionMutation]: ...
     def read_access_port(self, device_name: str, interface: str): ...
     def read_spanning_tree(self, device_name: str): ...
     def read_dhcp_bindings(self, device_name: str): ...
 
 
 class VoiceCallControlRuntime(Protocol):
-    def apply_actions(self, actions) -> list: ...
+    def apply_actions(self, actions) -> list[RuntimeActionMutation]: ...
     def observe_registrations(self, expectations) -> list: ...
 
 
 class VoiceEndpointRuntime(Protocol):
-    def configure_endpoint_dhcp(self, device_name: str, interface: str): ...
+    def configure_endpoint_dhcp(self, device_name: str, interface: str) -> bool: ...
     def read_endpoint_address(self, device_name: str, interface: str): ...
 
 
@@ -283,6 +292,21 @@ class _Journal:
         return tuple(self.entries)
 
 
+def _bind_action_id(extension: str) -> str:
+    return f"{CALL_CONTROL_ID}/bind/{extension}"
+
+
+def _mutation_applied(result) -> bool:
+    """Did the typed runtime state that this mutation was applied?
+
+    `applied` is the field `PhysicalMutationResult` and `RuntimeActionMutation`
+    both publish, and it is read with NO fail-open default.  A result that does
+    not carry it has stated nothing, and a result that carries some other,
+    older flag has still not stated this one: only `applied` decides.
+    """
+    return bool(getattr(result, "applied", False))
+
+
 def _classify_stp_row(instances, vlan_id: int, interface: str) -> str:
     """FORWARDING / BLOCKING / ABSENT / UNOBSERVABLE for one phone port.
 
@@ -297,7 +321,10 @@ def _classify_stp_row(instances, vlan_id: int, interface: str) -> str:
         if getattr(instance, "vlan_id", None) != vlan_id:
             continue
         for row in getattr(instance, "interfaces", ()):
-            if getattr(row, "interface", "") != interface:
+            # IOS prints `Fa0/1` where the plan says `FastEthernet0/1`.  A raw
+            # comparison turns every read row into ABSENT, and ABSENT is one of
+            # the two facts this A/B turns on.
+            if not same_interface_name(getattr(row, "interface", ""), interface):
                 continue
             state = str(getattr(row, "state", "")).upper()
             if state.startswith("FWD") or state.startswith("FORW"):
@@ -522,7 +549,7 @@ class PositiveVoiceSliceQualifier:
 
         router = self._name("R")
         common = {
-            "call_control_id": "voiceab/cme",
+            "call_control_id": CALL_CONTROL_ID,
             "host_device_id": "voiceab/r",
             "host_device_name": router,
             "host_model": self._router_model,
@@ -563,7 +590,7 @@ class PositiveVoiceSliceQualifier:
         for index, extension in enumerate(EXTENSIONS[: self._phone_count], start=1):
             actions.append(
                 BindPhoneToExtension(
-                    id=f"voiceab/cme/bind/{extension}",
+                    id=_bind_action_id(extension),
                     phase=VoicePhase.PHONE_BINDINGS,
                     required_capability=(
                         VoiceCapabilityDimension.PHONE_EXTENSION_CONFIG
@@ -665,12 +692,28 @@ class PositiveVoiceSliceQualifier:
         journal.record("WHEN_PHONE_BINDING_EXISTS", voice_applied, ", ".join(EXTENSIONS))
         journal.record("WHEN_CNF_FILES_GENERATED", voice_applied, "create cnf-files")
 
+        # The typed endpoint runtime answers with a bool, and only True is its
+        # acceptance.  An exception-only check would journal a milestone for a
+        # refusal it never looked at, and the milestone would then be evidence
+        # of nothing.  What it claims even so is acceptance, not that the phone
+        # is now soliciting: whether DHCP is on is read on its own surface.
+        armed = True
         for phone in phones:
             try:
-                self._endpoints.configure_endpoint_dhcp(phone.name, "Switch")
+                accepted = self._endpoints.configure_endpoint_dhcp(
+                    phone.name, "Switch",
+                )
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"endpoint_dhcp_failed:{phone.name}: {exc}")
-        journal.record("WHEN_ENDPOINT_DHCP_ARMED", True, "phones set to DHCP")
+                armed = False
+                continue
+            if accepted is not True:
+                errors.append(f"endpoint_dhcp_not_accepted:{phone.name}")
+                armed = False
+        journal.record(
+            "WHEN_ENDPOINT_DHCP_ARMED", armed,
+            "typed endpoint runtime accepted every phone",
+        )
 
         # Realtime is the authoritative window for addressing and registration.
         realtime_before = self._realtime(errors, "before")
@@ -720,43 +763,62 @@ class PositiveVoiceSliceQualifier:
         return not bool(getattr(state, "simulation_mode", False))
 
     def _create(self, device: DevicePlan, created, errors) -> bool:
+        # Ownership is recorded BEFORE the mutation is invoked, not after it
+        # returns.  The moment the call is in flight the backend effect is
+        # unknown, and a device created by a call that then raised still has to
+        # be cleaned up.  The reserved unique name and the verified empty
+        # semantic baseline are what make this target this slice's to own.
+        created.append(device)
         try:
             outcome = self._physical.ensure_device(device)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"device_create_raised:{device.name}: {exc}")
             return False
-        # Ownership is recorded BEFORE the result is judged: a device that was
-        # half-created still has to be cleaned up.
-        created.append(device)
-        if not bool(getattr(outcome, "success", True)):
+        if not _mutation_applied(outcome):
             message = getattr(outcome, "message", "")
             errors.append(f"device_not_created:{device.name}: {message}")
             return False
         return True
 
     def _link(self, link: LinkPlan, owned_links, errors) -> bool:
+        # Owned before invoked, for the same reason as the device: a link whose
+        # call raised may still exist on the backend, and an ownership journal
+        # that only records the calls that returned is a journal that loses
+        # exactly the objects nobody can account for.
+        owned_links.append(
+            f"{link.device_a}:{link.port_a}->{link.device_b}:{link.port_b}"
+        )
         try:
             outcome = self._physical.ensure_link(link)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"link_raised:{link.device_a}->{link.device_b}: {exc}")
             return False
-        owned_links.append(
-            f"{link.device_a}:{link.port_a}->{link.device_b}:{link.port_b}"
-        )
-        if not bool(getattr(outcome, "success", True)):
+        if not _mutation_applied(outcome):
             message = getattr(outcome, "message", "")
             errors.append(f"link_failed:{link.device_a}->{link.device_b}: {message}")
             return False
         return True
 
     def _apply(self, runner, actions) -> tuple[bool, list[str]]:
+        """Judge a typed batch by the field the runtime actually publishes.
+
+        A batch that comes back short of one mutation per action is the same
+        missing statement: the actions with no result were never judged, and
+        calling the batch applied would be judging them by their absence.
+        """
         try:
             results = runner(actions)
         except Exception as exc:  # noqa: BLE001
             return False, [f"apply_raised: {type(exc).__name__}: {exc}"]
+        mutations = list(results or ())
         errors = []
-        for item in results or ():
-            if bool(getattr(item, "success", True)):
+        if len(mutations) != len(actions):
+            errors.append(
+                f"apply_incomplete: {len(mutations)} mutations for "
+                f"{len(actions)} actions"
+            )
+        for item in mutations:
+            if _mutation_applied(item):
                 continue
             action_id = getattr(item, "action_id", "")
             message = getattr(item, "message", "")
@@ -786,16 +848,37 @@ class PositiveVoiceSliceQualifier:
         )
 
     def _observe_registrations(self, phones, errors: list[str]) -> dict:
-        expectations = [
-            _RegistrationExpectation(
-                id=f"voiceab/reg/{index}",
-                phone_id=f"voiceab/p{index}",
-                phone_name=phone.name,
-                extension=EXTENSIONS[index - 1] if index - 1 < len(EXTENSIONS) else "",
-                endpoint_interface="Switch",
+        """Ask the production registration runtime in its own contract.
+
+        `observe_registrations` reads a `VoiceVerificationExpectation`, and it
+        reads more of it than an id: `endpoint_device_name` is the phone whose
+        own SVI the runtime interrogates for the address, independently of what
+        the call control remembers.  An expectation that omits that field makes
+        every phone report no address -- which is precisely the CP-SCALE
+        signature this A/B exists to tell apart from a real one.
+        """
+        from ...domain.enterprise.models.voice_plan import (
+            VoiceVerificationExpectation,
+            VoiceVerificationKind,
+        )
+
+        expectations = []
+        for index, phone in enumerate(phones, start=1):
+            extension = (
+                EXTENSIONS[index - 1] if index - 1 < len(EXTENSIONS) else ""
             )
-            for index, phone in enumerate(phones, start=1)
-        ]
+            expectations.append(
+                VoiceVerificationExpectation(
+                    id=f"voiceab/reg/{index}",
+                    kind=VoiceVerificationKind.PHONE_REGISTRATION,
+                    phone_id=f"voiceab/p{index}",
+                    extension=extension,
+                    call_control_id=CALL_CONTROL_ID,
+                    action_id=_bind_action_id(extension),
+                    endpoint_device_name=phone.name,
+                    endpoint_interface="Switch",
+                )
+            )
         try:
             observed = self._call_control.observe_registrations(expectations)
         except Exception as exc:  # noqa: BLE001
@@ -803,7 +886,7 @@ class PositiveVoiceSliceQualifier:
             return {}
         by_name: dict = {}
         for expectation, item in zip(expectations, observed or ()):
-            by_name[expectation.phone_name] = item
+            by_name[expectation.endpoint_device_name] = item
         return by_name
 
     def _phone_outcome(
@@ -863,17 +946,6 @@ class PositiveVoiceSliceQualifier:
             stp_row_before=_classify_stp_row(stp_before, VOICE_VLAN_ID, interface),
             stp_row_after=_classify_stp_row(stp_after, VOICE_VLAN_ID, interface),
         )
-
-
-@dataclass(frozen=True)
-class _RegistrationExpectation:
-    """The minimum a registration observer needs, named as this slice uses it."""
-
-    id: str
-    phone_id: str
-    phone_name: str
-    extension: str
-    endpoint_interface: str
 
 
 def _compare_vlan(observed, expected: int) -> str:
