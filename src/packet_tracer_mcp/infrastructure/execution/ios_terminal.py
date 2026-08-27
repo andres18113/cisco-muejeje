@@ -53,6 +53,18 @@ class OperationalQueryId(str, Enum):
     SHOW_TELEPHONY_SERVICE = "show_telephony_service"
 
 
+class IosQualificationQueryId(str, Enum):
+    """Closed developer candidates that are not product read-backs yet.
+
+    A member may be exercised only by :meth:`ControlledIosExecutor.qualify`.
+    Callers cannot provide IOS text, and normal ``execute`` deliberately
+    rejects this enum. Promotion requires a fresh, complete, uniquely
+    attributed live capture first.
+    """
+
+    SHOW_IP_DHCP_POOL = "qualification_show_ip_dhcp_pool"
+
+
 class TrunkQueryClassification(str, Enum):
     SUPPORTED_WITH_ROWS = "supported_with_rows"
     SUPPORTED_EMPTY = "supported_empty"
@@ -186,6 +198,9 @@ _INTERFACE_COMMANDS = {
     OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE:
         "show ip dhcp server statistics {interface}",
 }
+_QUALIFICATION_COMMANDS = {
+    IosQualificationQueryId.SHOW_IP_DHCP_POOL: "show ip dhcp pool",
+}
 _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_EPHONE,
     OperationalQueryId.SHOW_ACCESS_LISTS,
@@ -200,6 +215,9 @@ _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_IP_ARP_INSPECTION,
     OperationalQueryId.SHOW_INTERFACES_SWITCHPORT,
     OperationalQueryId.SHOW_TELEPHONY_SERVICE,
+}
+_PRIVILEGED_QUALIFICATION_QUERIES = {
+    IosQualificationQueryId.SHOW_IP_DHCP_POOL,
 }
 _INTERFACE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9./:-]{0,79}$")
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"
@@ -288,7 +306,7 @@ _PAGER_CONTINUATION_KEY = "String.fromCharCode(32)"
 @dataclass(frozen=True)
 class IosCommandResult:
     device_name: str
-    query_id: OperationalQueryId
+    query_id: OperationalQueryId | IosQualificationQueryId
     executed: bool
     output: str = ""
     failure_reason: str = ""
@@ -1696,6 +1714,10 @@ class ControlledIosExecutor:
         interface: str = "",
     ) -> IosCommandResult:
         """Despacha una consulta registrada, reintentando sólo corrupción probada."""
+        if not isinstance(query_id, OperationalQueryId):
+            raise TypeError(
+                "Normal IOS execution accepts OperationalQueryId only."
+            )
         attempts = 1
         result = self._execute_once(device_name, query_id, interface=interface)
         while (
@@ -1705,6 +1727,35 @@ class ControlledIosExecutor:
             attempts += 1
             result = self._execute_once(device_name, query_id, interface=interface)
         return replace(result, dispatch_attempts=attempts)
+
+    def qualify(
+        self,
+        device_name: str,
+        query_id: IosQualificationQueryId,
+    ) -> IosCommandResult:
+        """Measure one closed read-only candidate outside the product registry."""
+        if not isinstance(query_id, IosQualificationQueryId):
+            raise TypeError(
+                "IOS qualification accepts IosQualificationQueryId only."
+            )
+        attempts = 1
+        result = self._execute_once(device_name, query_id)
+        while (
+            attempts < self._READ_ONLY_DISPATCH_ATTEMPTS
+            and self._is_retryable_corruption(result)
+        ):
+            attempts += 1
+            result = self._execute_once(device_name, query_id)
+        return replace(result, dispatch_attempts=attempts)
+
+    @staticmethod
+    def qualification_command(query_id: IosQualificationQueryId) -> str:
+        """Return a hard-coded candidate; never accepts caller-supplied IOS."""
+        if not isinstance(query_id, IosQualificationQueryId):
+            raise TypeError(
+                "IOS qualification accepts IosQualificationQueryId only."
+            )
+        return _QUALIFICATION_COMMANDS[query_id]
 
     @staticmethod
     def _is_retryable_corruption(result: IosCommandResult) -> bool:
@@ -1721,7 +1772,7 @@ class ControlledIosExecutor:
     def _execute_once(
         self,
         device_name: str,
-        query_id: OperationalQueryId,
+        query_id: OperationalQueryId | IosQualificationQueryId,
         *,
         interface: str = "",
     ) -> IosCommandResult:
@@ -1741,7 +1792,10 @@ class ControlledIosExecutor:
         if session is not IosSessionState.EXEC_PROMPT_READY:
             return IosCommandResult(device_name, query_id, False, failure_reason="IOS session state: " + session.value, duration_ms=int((monotonic() - started) * 1000), session_state=session)
         restore_user_mode = False
-        if query_id in _PRIVILEGED_QUERIES:
+        if (
+            query_id in _PRIVILEGED_QUERIES
+            or query_id in _PRIVILEGED_QUALIFICATION_QUERIES
+        ):
             current = self._terminal_state(name)
             if str(current.get("prompt") or "").strip().endswith(">"):
                 if not self._enter(name, "enable") or not self._wait_for(
@@ -1923,7 +1977,17 @@ class ControlledIosExecutor:
         return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(capture.output), failure_reason=capture.failure_reason, duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=capture.truncated, output_complete=capture.complete, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed, **identity))
 
     @staticmethod
-    def _registered_command(query_id: OperationalQueryId, *, interface: str) -> str:
+    def _registered_command(
+        query_id: OperationalQueryId | IosQualificationQueryId,
+        *,
+        interface: str,
+    ) -> str:
+        if isinstance(query_id, IosQualificationQueryId):
+            if interface:
+                raise ValueError(
+                    "This closed IOS qualification does not accept an interface."
+                )
+            return ControlledIosExecutor.qualification_command(query_id)
         if query_id in _INTERFACE_COMMANDS:
             if not _INTERFACE_NAME.fullmatch(interface):
                 raise ValueError("A registered interface query requires a valid interface name.")
