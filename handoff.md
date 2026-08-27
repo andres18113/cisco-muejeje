@@ -45,13 +45,20 @@ RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
 CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
 FRAME_VLAN_QUALIFICATION_LINE = STOPPED
 POSITIVE_VOICE_AB_IMPLEMENTED = YES
-POSITIVE_VOICE_AB_LIVE = NOT_RUN
-POSITIVE_VOICE_AB_LIVE_BLOCKER = BRIDGE_DID_NOT_CONNECT
+POSITIVE_VOICE_AB_LIVE = RUN at 485ef13 (governed, Realtime, cleaned up)
 PACKET_TRACER_PROCESS_PRESENT = YES
-POSITIVE_VOICE_AB_RESULT = NOT_ESTABLISHED
+POSITIVE_VOICE_AB_RESULT = SAME_FAILURE
 POSITIVE_SLICE_PORTFAST = NOT_APPLIED
-NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB_LIVE
-FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB
+POSITIVE_SLICE_VOICE_VLAN_READBACK = VERIFIED 2/2
+POSITIVE_SLICE_PHONE_DHCP_ENABLED = YES 2/2 (read on Vlan930)
+POSITIVE_SLICE_VOICE_SVI_PRESENT = YES 2/2
+POSITIVE_SLICE_PHONE_IPV4 = NONE 2/2 (channel present and answered none)
+POSITIVE_SLICE_VOICE_DHCP_BINDINGS = 0 (fresh + complete table)
+POSITIVE_SLICE_SCCP_REGISTRATION = NOT_REGISTERED 2/2
+POSITIVE_SLICE_STP_VOICE_PHONE_ROW = ABSENT before and after
+SCALE_SPECIFIC_VOICE_FAILURE = NOT_ESTABLISHED / WEAKENED
+NEXT_ACTIVE_STEP = COMMON_VOICE_LIFECYCLE_INVESTIGATION
+FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB_WITH_PORTFAST
 VLAN_SCOPED_STP_INTERPRETATION = STILL_INFERENCE
 READ_GETTER_FIX = 8d594994c244e08a52c7945b64a8c5b7ae3642fa (pushed)
 WORLD_B_OBSERVATION_FIX = 6eb0d8e4480a22353b8a9dc9cc47305ebdd0c039 (pushed)
@@ -77,7 +84,10 @@ STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
 STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)
 SOURCE_DEFECT_FOUND = YES
 SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
-PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED
+PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED (untested: the positive
+    control carried no PortFast either, so it separates nothing)
+VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE;
+    co-occurs with the failure at four devices as well as at CP-SCALE size
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
 PHONE_EDGE_PORTFAST_INTENT = YES
 PHONE_EDGE_PORTFAST_COMPILED = NO at FLOOR1 (YES at FLOOR3+)
@@ -1146,8 +1156,8 @@ another Packet Tracer LIVE for that audit.
 ```text
 NEXT_EVIDENCE_SEAM = CROSS_HOP_FRAME_CORRELATION
 CROSS_HOP_FRAME_CORRELATION_CAPABILITY = NOT_AVAILABLE_WITH_CURRENT_MEASURED_SURFACES
-NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB_LIVE
-FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB
+NEXT_ACTIVE_STEP = COMMON_VOICE_LIFECYCLE_INVESTIGATION
+FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB_WITH_PORTFAST
 ```
 
 If existing surfaces cannot close correlation cheaply, stop the `frame.vlanId`
@@ -1228,7 +1238,7 @@ FRAME_OBJECT_UUID = NOT_MEASURED_ON_FRAMES
 RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
 CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
 FRAME_VLAN_QUALIFICATION_LINE = STOPPED
-NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB_LIVE
+NEXT_ACTIVE_STEP = COMMON_VOICE_LIFECYCLE_INVESTIGATION
 ```
 
 The STP drop text above is consistent with the already-recorded
@@ -1265,32 +1275,95 @@ paths carries none.  That is deliberate: adding one would engineer the success
 the experiment exists to test, and a slice that registers WITHOUT PortFast is
 exactly the evidence that would weaken PortFast as the explanation.
 
-The LIVE did not run.  The Packet Tracer bridge refused to connect on two
-bounded attempts (20s, then 25s) while `PacketTracer.exe` was running, so the
-runner never reached a mutation.  Nothing was created and nothing was removed.
+The LIVE has since run.  It is recorded in full in the next section; the
+paragraph that used to stand here said the bridge would not connect, which was
+true of that session and is no longer true of the experiment.
+
+Historical E7 stays a POSITIVE OUTCOME REFERENCE and never an exact reproducible
+fixture, so the reconstructed slice must not be called the same E7 run.
+
+## Positive disposable Voice A/B -- RUN, and it fails the same way
+
+Three governed LIVEs, each from a clean pushed HEAD.  The first attempt of the
+session did not connect to the bridge at all; a second attempt minutes later
+connected with nothing else changed, so `BRIDGE_DID_NOT_CONNECT` is a transient
+on this machine and not a property of the runner.
+
+Runs 1 and 2 each exposed a defect in the harness -- not in the network -- and
+each was corrected fail-first before the next run.  Run 3 is the measurement:
 
 ```text
-POSITIVE_VOICE_AB_IMPLEMENTED = YES
-POSITIVE_VOICE_AB_LIVE = NOT_RUN
-POSITIVE_VOICE_AB_LIVE_BLOCKER = BRIDGE_DID_NOT_CONNECT
-PACKET_TRACER_PROCESS_PRESENT = YES
-POSITIVE_VOICE_AB_RESULT = NOT_ESTABLISHED
+LIVE_HEAD = 485ef137e3a1ce365022898925057872074602d9
+POSITIVE_TOPOLOGY = 1x2811 + 1x3560-24PS + 2x7960, voice VLAN 930, data 931
 POSITIVE_SLICE_PORTFAST = NOT_APPLIED
+DATA_VLAN_READBACK = VERIFIED 2/2
+VOICE_VLAN_READBACK = VERIFIED 2/2
+PHONE_DHCP_ENABLED = YES 2/2 (read on Vlan930, the SVI the plan addressed)
+VOICE_SVI_PRESENT = YES 2/2 (the phones DID learn the voice VLAN)
+PHONE_ADDRESS_CHANNEL = PRESENT 2/2
+PHONE_IPV4 = NONE 2/2 (a channel that exists answered none)
+PHONE_DEVICE_IPV4 = NONE 2/2 (no address elsewhere on the phone either)
+VOICE_DHCP_BINDINGS = 0 (fresh + complete `show ip dhcp binding`)
+SCCP_REGISTRATION = NOT_REGISTERED 2/2
+STP_BEFORE = voice-VLAN phone rows ABSENT (fresh + complete)
+STP_AFTER = voice-VLAN phone rows ABSENT (fresh + complete)
+POSITIVE_CONTROL_RESULT = SAME_FAILURE
+CLEANUP = 4/4 removed, workspace restored, Realtime restored, 0 errors
 ```
 
-This is NOT a Voice A/B failure.  The experiment was never run, and reporting an
-unrun experiment as a negative result is the exact substitution these evidence
-rules exist to prevent.  The next session runs the runner unchanged, from a
-clean pushed HEAD, once the bridge connects:
+The smallest Voice topology that could possibly work reproduces the CP-SCALE
+Floor-1 signature exactly: DHCP enabled, no address, no binding, unregistered.
+There is no scale here -- four devices, three links, one trunk, no redundant L2,
+no PC passthrough, no parallel path -- so:
 
 ```text
-python tools/cp_scale_positive_voice_ab_live.py --packet-tracer-version 9.0.1.0858
+SCALE_SPECIFIC_VOICE_FAILURE = NOT_ESTABLISHED / WEAKENED
 ```
 
-It requires an empty semantic workspace and refuses to mutate one it did not
-find empty.  Historical E7 stays a POSITIVE OUTCOME REFERENCE and never an exact
-reproducible fixture, so the reconstructed slice must not be called the same E7
-run.
+The failure is in the Voice lifecycle or runtime path that both runs share, and
+that is where the next investigation goes.  It is NOT in CP-SCALE's size.
+
+What this run does NOT settle, and must not be read as settling:
+
+* PortFast.  The positive control carried none either, so "no PortFast" is
+  present on both sides and separates nothing.  `PORTFAST_AS_VOICE_ROOT_CAUSE`
+  stays `NOT_CONFIRMED`, and the CASE-A branch that would have weakened it
+  needed a slice that REGISTERED without PortFast.  This one did not.
+* The absent voice-VLAN STP rows.  They are now measured at four devices as
+  well as at CP-SCALE size, from a fresh and complete capture with the
+  interface-name reconciliation the earlier code was missing.  Co-occurrence at
+  both sizes is not causation:
+  `VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE`.
+* The router side.  `WHEN_DHCP_POOL_EXISTS` and the subinterface milestones are
+  APPLIED, which on this architecture means DISPATCHED, not confirmed by a
+  readback.  The switch-side access port WAS read back; the router's pool and
+  subinterfaces were not.  "The pool existed and served nothing" is therefore
+  NOT established -- only "the pool action applied and the binding table showed
+  no voice binding".
+* Phone power.  `WHEN_PHONE_IS_POWERED` is UNOBSERVABLE; this build publishes
+  no boot surface.  The phones are not inert -- they created Vlan930 and report
+  a DHCP client on it -- but powered is not something this run measured.
+
+The two harness defects the LIVE exposed, both corrected fail-first:
+
+```text
+RUN_1_DEFECT = arming and reading the phone on `Switch`, the RJ45 the cable
+    lands on.  Real port, no DHCP client, no address; every phone came back
+    UNOBSERVABLE on both decisive dimensions.  A 7960 addresses on the SVI it
+    creates for its voice VLAN, which is what the production compiler names
+    (`_phone_addressing_interface`).  Fixed at c77ed96.
+RUN_2_DEFECT = every empty address string read as UNOBSERVABLE.  The runtime
+    already separates "the SVI never existed", "it exposes no address getter"
+    and "it answered none"; the qualifier read none of those fields, so it
+    could not reach NO even after the phone had plainly been asked.  Fixed at
+    485ef13.
+```
+
+Both were harness-only and neither touched the canonical configuration, the
+topology, the VLANs, PortFast, Router4 or any Packet Tracer backend semantics.
+The hardening committed before the first run is what made them visible instead
+of fatal: every one of these gaps read UNOBSERVABLE rather than silently
+becoming the CP-SCALE signature the comparison was looking for.
 
 FAIL-FIRST for the retained-evidence correction: a frame with an unobservable
 VLAN still reported target-VLAN admission.  Focused: 13 passed.  Affected: 162

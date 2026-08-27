@@ -601,7 +601,10 @@ def test_handoff_closes_trunk_calibration_at_the_exact_evidence_boundary():
         "CROSS_HOP_FRAME_CORRELATION_CAPABILITY = "
         "NOT_AVAILABLE_WITH_CURRENT_MEASURED_SURFACES" in handoff
     )
-    assert "NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB" in handoff
+    # The A/B that used to be the next step has since run and returned
+    # SAME_FAILURE, so the active step moved to the lifecycle path both sides
+    # share.  The fallback still names a disposable Voice A/B.
+    assert "NEXT_ACTIVE_STEP = COMMON_VOICE_LIFECYCLE_INVESTIGATION" in handoff
     assert "FALLBACK_NEXT_CAUSAL_EXPERIMENT = POSITIVE_DISPOSABLE_VOICE_AB" in handoff
     assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
     # The trunk POLICY was proven; only the selected frame's VLAN identity was

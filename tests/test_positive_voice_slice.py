@@ -922,19 +922,48 @@ def test_a_real_lease_on_the_voice_svi_still_reads_as_addressed():
     assert result.outcome == "SUCCESS"
 
 
-def test_handoff_records_the_positive_voice_slice_and_its_live_boundary():
+def test_handoff_records_the_measured_positive_voice_ab_result():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "POSITIVE_VOICE_AB_IMPLEMENTED = YES" in handoff
-    assert "POSITIVE_VOICE_AB_LIVE = NOT_RUN" in handoff
-    # The blocker is named exactly.  "Voice A/B failed" would be false: it was
-    # never run, and the reason is a bridge that would not connect.
-    assert "POSITIVE_VOICE_AB_LIVE_BLOCKER = BRIDGE_DID_NOT_CONNECT" in handoff
-    assert "PACKET_TRACER_PROCESS_PRESENT = YES" in handoff
-    assert "POSITIVE_VOICE_AB_RESULT = NOT_ESTABLISHED" in handoff
+    assert "POSITIVE_VOICE_AB_LIVE = RUN at 485ef13" in handoff
+    assert "POSITIVE_VOICE_AB_RESULT = SAME_FAILURE" in handoff
+    # An unrun experiment is never a negative result, so the blocker that
+    # stood while it was unrun must not survive the run that replaced it.
+    assert "POSITIVE_VOICE_AB_LIVE = NOT_RUN" not in handoff
+    assert "POSITIVE_VOICE_AB_LIVE_BLOCKER" not in handoff
+
+    # The five dimensions, each recorded as it was measured.
+    assert "POSITIVE_SLICE_VOICE_VLAN_READBACK = VERIFIED 2/2" in handoff
+    assert "POSITIVE_SLICE_PHONE_DHCP_ENABLED = YES 2/2" in handoff
+    assert "POSITIVE_SLICE_PHONE_IPV4 = NONE 2/2" in handoff
+    assert "POSITIVE_SLICE_VOICE_DHCP_BINDINGS = 0" in handoff
+    assert "POSITIVE_SLICE_SCCP_REGISTRATION = NOT_REGISTERED 2/2" in handoff
+    assert "POSITIVE_SLICE_STP_VOICE_PHONE_ROW = ABSENT" in handoff
+
+    # The slice engineered nothing to reach this result.
     assert "POSITIVE_SLICE_PORTFAST = NOT_APPLIED" in handoff
-    assert "NEXT_ACTIVE_STEP = POSITIVE_DISPOSABLE_VOICE_AB_LIVE" in handoff
-    # Nothing about the failure side may drift while the A side is unrun.
+
+    # What the result does and does not license.
+    assert "SCALE_SPECIFIC_VOICE_FAILURE = NOT_ESTABLISHED / WEAKENED" in handoff
+    assert "NEXT_ACTIVE_STEP = COMMON_VOICE_LIFECYCLE_INVESTIGATION" in handoff
+    # The positive control carried no PortFast either, so it separates nothing
+    # and the causal verdicts stay exactly where they were.
     assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
+    assert (
+        "VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE"
+        in handoff
+    )
     assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
+    assert "SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING" in handoff
     assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
+
+
+def test_handoff_keeps_the_router_side_readback_boundary_explicit():
+    # WHEN_DHCP_POOL_EXISTS is APPLIED, which on this architecture means
+    # DISPATCHED.  Reading it as "the pool existed and served nothing" would be
+    # the promotion the whole evidence discipline exists to stop.
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "NOT established -- only \"the pool action applied" in handoff
+    assert "`WHEN_PHONE_IS_POWERED` is UNOBSERVABLE" in handoff
