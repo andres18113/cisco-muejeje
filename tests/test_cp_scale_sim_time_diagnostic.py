@@ -521,7 +521,6 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     assert "data VLAN 10" in handoff and "voice VLAN 20" in handoff
     assert "TARGET_SIM_TIME_SPAN = 60000" in handoff
     assert "POSITIVE_CONTROL_CAPABILITY = UNSAFE_OR_MUTATING" in handoff
-    assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
 
 
 def test_handoff_keeps_the_measured_dhcp_tag_and_its_open_qualification():

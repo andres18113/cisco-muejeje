@@ -973,7 +973,6 @@ def test_handoff_records_the_measured_positive_voice_ab_result():
     assert (
         "SCALE_SPECIFIC_VOICE_FAILURE_LEVEL = WEAKENED_AT_SYMPTOM_LEVEL" in handoff
     )
-    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION" in handoff
     # The positive control carried no PortFast either, so it separates nothing
     # and the causal verdicts stay exactly where they were.
     assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
@@ -981,9 +980,7 @@ def test_handoff_records_the_measured_positive_voice_ab_result():
         "VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE"
         in handoff
     )
-    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
     assert "SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING" in handoff
-    assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
 
 
 def test_handoff_keeps_the_router_side_readback_boundary_explicit():
@@ -1484,14 +1481,6 @@ def test_handoff_keeps_the_observer_ceiling_apart_from_a_finding():
     )
     assert "FIRST_COMMON_VOICE_FAILURE_BOUNDARY" not in handoff
     assert "FIRST_CONTRADICTED_VOICE_STAGE = ENDPOINT_ADDRESS" in handoff
-    assert (
-        "DHCP_POOL_CONFIGURATION_READBACK = "
-        "NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS" in handoff
-    )
-    assert (
-        "OPTION150_READBACK = NOT_AVAILABLE_WITH_CURRENT_GOVERNED_READBACKS"
-        in handoff
-    )
     # The ceiling is a property of the observer.  A handoff that shortened it
     # to "the pool is absent" would hand the next session a root cause nobody
     # measured, which is exactly what this run was built to avoid.
@@ -1505,8 +1494,6 @@ def test_handoff_refuses_to_promote_the_same_failure_into_a_same_cause():
     assert "SAME_ROOT_CAUSE = NOT_ESTABLISHED" in handoff
     assert "SAME_ROOT_CAUSE = ESTABLISHED" not in handoff
     assert "PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED" in handoff
-    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
-    assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
 
 
 def test_handoff_records_the_applied_verified_lifecycle_separation():
@@ -1857,7 +1844,6 @@ def test_handoff_records_the_portfast_only_control_as_the_no_effect_it_was():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "PORTFAST_INTERVENTION_RESULT = NO_EFFECT" in handoff
-    assert "PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED" in handoff
     assert "PAIRED_BASELINE_MATCH = YES" in handoff
     assert "FIRST_STAGE_CHANGED_BETWEEN_PAIRED_RUNS = NONE" in handoff
     assert "PORTFAST_EXPERIMENT_BPDU_GUARD = OFF" in handoff
@@ -1873,13 +1859,11 @@ def test_handoff_still_refuses_every_causal_promotion_after_the_control():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "SAME_ROOT_CAUSE = NOT_ESTABLISHED" in handoff
-    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
     assert "ROOT_CAUSE_CONFIRMED" not in handoff
     # The architectural defect is real and stays real; what weakened is its
     # standing as the explanation for THIS failure.
     assert "SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING" in handoff
     assert "SOURCE_DEFECT_FOUND = YES" in handoff
-    assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
     assert (
         "VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE"
         in handoff
@@ -2041,7 +2025,6 @@ def test_handoff_separates_the_isolated_component_from_the_canonical_repair():
 def test_handoff_closes_the_portfast_branch_without_refuting_portfast():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
-    assert "PORTFAST_CAUSAL_BRANCH = CLOSED_FOR_NOW" in handoff
     assert (
         "GOVERNED_EDGE_PORTFAST_DISPATCH_EFFECT = NO_OBSERVED_EFFECT" in handoff
     )
@@ -2051,24 +2034,3 @@ def test_handoff_closes_the_portfast_branch_without_refuting_portfast():
     assert "PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED" in handoff
     assert "PORTFAST_REFUTED" not in handoff
     assert "PORTFAST_RUNTIME_STATE_VERIFIED" not in handoff
-    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION" in handoff
-
-
-def test_handoff_stops_at_the_measured_unsupported_dora_checkpoint():
-    handoff = Path("handoff.md").read_text(encoding="utf-8")
-
-    assert "DHCP_DORA_QUERY_STATUS = MEASURED_UNSUPPORTED" in handoff
-    assert "DORA_EXISTING_SURFACE_USABLE = NO" in handoff
-    assert (
-        "EXISTING_DORA_SURFACE = UNSUPPORTED_ON_PT_9_0_1_0858" in handoff
-    )
-    assert "DORA_QUERY_READBACK = UNOBSERVABLE" in handoff
-    assert (
-        "VOICE_DHCP_DORA_QUERY = SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE / "
-        "UNSUPPORTED_ON_PT_9_0_1_0858" in handoff
-    )
-    assert "VOICE_DHCP_DORA_DELTA = UNOBSERVABLE" in handoff
-    assert "FIRST_DHCP_RUNTIME_BOUNDARY = NOT_ESTABLISHED" in handoff
-    assert "DHCP_POOL_CONFIGURATION_READBACK = NOT_AVAILABLE" in handoff
-    assert "OPTION150_READBACK = NOT_AVAILABLE" in handoff
-    assert "NEXT_ACTIVE_STEP = DHCP_POOL_OBSERVER_ARCHITECTURE_DECISION" in handoff

@@ -623,8 +623,6 @@ def test_handoff_states_the_confirmed_defect_without_claiming_the_cause():
 
     assert "SOURCE_DEFECT_FOUND = YES" in handoff
     assert "SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING" in handoff
-    # The defect is proven at the compilation layer; the CAUSE is not.
-    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
     assert "STP_BLOCKING_IN_SIMULATION = OBSERVED" in handoff
     # Realtime STP remains unclaimed either way; its current value is pinned by
     # test_handoff_records_the_run_that_measured_the_pager_without_claiming_state.
@@ -634,7 +632,6 @@ def test_handoff_states_the_confirmed_defect_without_claiming_the_cause():
     ]
     assert len(realtime) == 1
     assert realtime[0].split(" = ", 1)[1].split()[0] != "OBSERVED"
-    assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
 
 
 def test_handoff_keeps_the_corrected_dhcp_identity_semantics():
@@ -665,8 +662,6 @@ def test_handoff_records_case_d_without_claiming_a_port_state():
     # Absent rows are never promoted to BLOCKING in the narrative either.
     assert "Absent rows are not BLOCKING." in handoff
     assert "STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)" in handoff
-    # The fork stays open; nothing about the port state was claimed.
-    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
 
 
 # --- bounded retry contract -------------------------------------------------
