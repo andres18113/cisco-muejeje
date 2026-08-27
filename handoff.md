@@ -6,10 +6,10 @@
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-CURRENT_PUSHED_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e
+CURRENT_PUSHED_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2
 LATEST_GOVERNED_LIVE_HEAD = 2db4c9d54d4f5b5694628f9353ebb523e46aebda
 LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
-LATEST_VOICE_AB_LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e
+LATEST_VOICE_AB_LIVE_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
     measured plain-host access-ingress representation
@@ -46,13 +46,20 @@ RETAINED_DHCP_CHAIN_LONGEST = 2_OF_4_LEGS
 CROSS_HOP_CORRELATOR_IMPLEMENTED = NO
 FRAME_VLAN_QUALIFICATION_LINE = STOPPED
 POSITIVE_VOICE_AB_IMPLEMENTED = YES
-POSITIVE_VOICE_AB_LIVE = RUN at 824f936 (governed, Realtime, cleaned up)
+POSITIVE_VOICE_AB_LIVE = RUN at a2a3e27 (governed, Realtime, cleaned up)
 PACKET_TRACER_PROCESS_PRESENT = YES
 POSITIVE_VOICE_AB_RESULT = SAME_FAILURE
-RAW_VOICE_AB_RUNS_PINNED = 4 (run1..run4, SHA-256 in
+RAW_VOICE_AB_RUNS_PINNED = 6 (run1..run6, SHA-256 in
     docs/reference/cp-scale/positive_voice_ab_runs.json)
+DISPOSABLE_VOICE_NAMESPACE = MCP-VOICEAB- (typed, not the `__MCP_` discovery
+    one: the trusted control-plane renderer cannot reach that prefix)
 LIFECYCLE_APPLIED_VERIFIED_BOUNDARY = SEPARATED at 241e64b
-POSITIVE_SLICE_PORTFAST = NOT_APPLIED
+POSITIVE_SLICE_PORTFAST = APPLIED (run 6; run 4 was NOT_APPLIED)
+PORTFAST_READBACK = UNOBSERVABLE (Type column reads P2p; no edge marker has
+    ever been measured on this build, so its absence says nothing)
+PORTFAST_EXPERIMENT_BPDU_GUARD = OFF (one variable, deliberately)
+PORTFAST_INTERVENTION_RESULT = NO_EFFECT
+PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED
 POSITIVE_SLICE_VOICE_VLAN_READBACK = VERIFIED 2/2
 POSITIVE_SLICE_PHONE_DHCP_ENABLED = YES 2/2 (read on Vlan930)
 POSITIVE_SLICE_VOICE_SVI_PRESENT = YES 2/2
@@ -105,8 +112,8 @@ STP_BLOCKING_IN_SIMULATION = OBSERVED (Switch5 phone ports, bounded capture)
 STP_BLOCKING_IN_REALTIME = UNOBSERVABLE (CASE D at 540c746)
 SOURCE_DEFECT_FOUND = YES
 SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING
-PORTFAST_AS_VOICE_ROOT_CAUSE = NOT_CONFIRMED (untested: the positive
-    control carried no PortFast either, so it separates nothing)
+PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED (tested at run 6: the
+    edge policy applied on both phone ports and changed nothing)
 VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE;
     co-occurs with the failure at four devices as well as at CP-SCALE size
 VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED
@@ -1531,6 +1538,92 @@ observer surface and a checkpoint decision, not a continuation -- and reaching
 for `show running-config` or a raw send to get there is exactly the shortcut
 this whole line of work refuses.
 
+## PortFast, applied on purpose, and it changed nothing
+
+Run 6 at `a2a3e27` is run 4 with exactly one variable moved. Two typed
+`ConfigureStpEdgePort` actions on the two phone-facing ports, PortFast on, BPDU
+Guard deliberately off, applied with zero errors. Same router, same switch, same
+phones, same links, same VLANs, same subinterfaces, same pool, same option 150,
+same CME, same extensions, same arming, same window.
+
+```text
+LIVE_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2
+PORTFAST_ACTIONS = 2 (FastEthernet0/1, FastEthernet0/2)
+PORTFAST_APPLIED = APPLIED (0 errors)
+PORTFAST_READBACK = UNOBSERVABLE (Type column: P2p)
+BPDU_GUARD = OFF
+SWITCH_TRUNK = VERIFIED on all four dimensions, native 1
+ROUTER_VOICE_SUBINTERFACE = VERIFIED present, 10.93.0.1, up/up
+CALL_CONTROL_EPHONE_TABLE = VERIFIED (fresh + complete, 2 rows)
+PHONE_DHCP_ENABLED = YES 2/2
+PHONE_IPV4 = NONE 2/2
+VOICE_DHCP_BINDINGS = 0
+SCCP_REGISTRATION = NOT_REGISTERED 2/2
+STP_BEFORE = voice-VLAN phone rows ABSENT
+STP_AFTER = voice-VLAN phone rows ABSENT
+OUTCOME = SAME_FAILURE
+CLEANUP = 4/4 removed, workspace restored, Realtime restored, 0 errors
+```
+
+Every stage of the ordered walk sits exactly where run 4 left it, including
+both markers. Nothing moved. Not one field of run 6 differs from run 4 except
+the two edge actions themselves.
+
+```text
+PORTFAST_INTERVENTION_RESULT = NO_EFFECT
+PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED
+FIRST_STAGE_CHANGED_FROM_RUN4 = NONE
+```
+
+Read the bound on that conclusion, because it is real. `PORTFAST_APPLIED` is
+the typed mutation being accepted by the switch's configuration channel with no
+error. `PORTFAST_READBACK` is UNOBSERVABLE: the phone-facing Type column reads
+`P2p` in both runs, and nobody has ever measured this build printing an edge
+marker at all, so a column without one cannot separate "PortFast is off" from
+"this IOS does not say". What run 6 establishes is therefore that APPLYING the
+governed edge policy changes nothing -- not that a switch demonstrably running
+PortFast changes nothing. `PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE` stays
+`NOT_ESTABLISHED` in both directions.
+
+That is still decisive for the question that was actually open. The repair the
+source defect would produce is exactly this dispatch, in exactly this position,
+and it does not rescue the slice. `EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING`
+remains a real architectural defect and `SOURCE_DEFECT_FOUND = YES` stands; what
+weakened is its standing as the explanation for THIS Voice DHCP failure.
+
+The absent voice-VLAN STP rows survive the intervention unchanged, which is
+worth stating precisely: the phone ports never joined VLAN 930's spanning tree
+before PortFast and they still do not after it. Co-occurrence at three sizes and
+across an intervention is still not causation, and
+`VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE`.
+
+`NEXT_ACTIVE_STEP` does not change: the pool definition and option 150 are still
+the only things in the chain nobody can read, and reading them still needs an
+observer that does not exist.
+
+## Run 5, the intervention that never happened
+
+Run 5 asked for PortFast at `819d8f8` and did not get it. Both edge mutations
+came back `Invalid compiled device name`, so `portfast` read NOT_APPLIED and the
+run was run 4 repeated -- a baseline wearing an experiment's name. The guard
+that made this visible rather than fatal is the same one everywhere else here:
+the refusal reached the evidence and nothing claimed an intervention that had
+not happened.
+
+The cause is TD-RUNTIME-004 met from the other side. Two disposable namespaces
+exist on purpose: `__MCP_*` for objects that never pass the typed control-plane
+renderer, and `MCP-*` for objects that must, because that renderer's allowlist
+requires an alphanumeric first character. The resolution on record is a
+compatible namespace and explicitly NOT a relaxed validator; the contract that
+keeps anyone from widening it is still green. The Voice slice moved to
+`MCP-VOICEAB-`. Cleanup was never involved: it tracks the objects it created,
+not a string.
+
+Run 5 is filed as the boundary it was rather than the intervention it asked to
+be, and it did measure one thing worth keeping: the phone-facing Type column
+reads `P2p` with no edge marker while PortFast is definitely absent, which is
+the before half of a readback whose after half looks identical.
+
 ## Preserving the raw runs
 
 Four governed Voice A/B LIVEs have produced four raw journals, and they live
@@ -1551,6 +1644,8 @@ run1  0d92e12f...  4ddf2d3  HARNESS_BOUNDARY_WRONG_PHONE_ADDRESSING_INTERFACE
 run2  85fd0a24...  c77ed96  HARNESS_BOUNDARY_EMPTY_ADDRESS_SEMANTICS
 run3  d0b3d885...  485ef13  AUTHORITATIVE_SAME_FAILURE_MEASUREMENT
 run4  ba6b1ad6...  824f936  FOUNDATION_QUALIFICATION_MEASUREMENT
+run5  bfc217f7...  819d8f8  HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED
+run6  ca36d99e...  a2a3e27  PORTFAST_ONLY_CAUSAL_INTERVENTION
 ```
 
 `tools/cp_scale_voice_ab_ledger.py --archive --run runN ...` archives the

@@ -61,6 +61,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "Asked for the PortFast intervention and did not get it: both ConfigureStpEdgePort mutations were refused with 'Invalid compiled device name' because the disposable lived in the discovery namespace, so PORTFAST = NOT_APPLIED and this run is run 4 repeated.  It is not worthless: it measured the phone-facing STP Type column reading 'P2p' with no edge marker, which is the before half of the PortFast readback.  Corrected by adopting the typed namespace (TD-RUNTIME-004), not by relaxing the renderer allowlist."
+    },
+    {
+      "run": "run6",
+      "filename": "positive-voice-ab-run6-portfast-only-no-effect.json",
+      "sha256": "ca36d99e48e7e6147e28615849f5e4b0dd7dec98f688b92fac15a1a99cfceada",
+      "source_head": "a2a3e279f663539d0ff0d88be501ae2a595642d2",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "PORTFAST_ONLY_CAUSAL_INTERVENTION",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "The PortFast-only causal control.  Run 4's experiment with exactly one variable changed: two typed ConfigureStpEdgePort actions on FastEthernet0/1 and FastEthernet0/2, portfast on, bpduguard off, applied with 0 errors.  Every foundation dimension reads exactly as run 4, and so does every endpoint: no address 2/2, 0 voice bindings, NOT_REGISTERED 2/2, voice-VLAN phone STP rows still ABSENT.  PORTFAST = APPLIED but PORTFAST_READBACK = UNOBSERVABLE: the Type column still reads 'P2p' and this build has never been measured printing an edge marker, so NO_EFFECT is established for the applied edge policy, not for a switch demonstrably running PortFast."
     }
   ]
 }

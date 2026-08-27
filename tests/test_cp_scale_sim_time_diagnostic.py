@@ -510,7 +510,7 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert "CURRENT_PUSHED_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e" in handoff
+    assert "CURRENT_PUSHED_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2" in handoff
     # The two heads are different facts. Collapsing them is how a pushed
     # checkpoint starts reading as a governed LIVE.
     assert (

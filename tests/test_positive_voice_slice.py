@@ -948,7 +948,7 @@ def test_handoff_records_the_measured_positive_voice_ab_result():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "POSITIVE_VOICE_AB_IMPLEMENTED = YES" in handoff
-    assert "POSITIVE_VOICE_AB_LIVE = RUN at 824f936" in handoff
+    assert "POSITIVE_VOICE_AB_LIVE = RUN at a2a3e27" in handoff
     assert "POSITIVE_VOICE_AB_RESULT = SAME_FAILURE" in handoff
     # An unrun experiment is never a negative result, so the blocker that
     # stood while it was unrun must not survive the run that replaced it.
@@ -1513,7 +1513,7 @@ def test_handoff_records_the_applied_verified_lifecycle_separation():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "LIFECYCLE_APPLIED_VERIFIED_BOUNDARY = SEPARATED at 241e64b" in handoff
-    assert "RAW_VOICE_AB_RUNS_PINNED = 4" in handoff
+    assert "RAW_VOICE_AB_RUNS_PINNED = 6" in handoff
 
 
 # --- PortFast as ONE changed variable ---------------------------------------
@@ -1795,7 +1795,7 @@ def test_handoff_keeps_the_two_calibration_lineages_apart():
         "d15a5b71dff8b95b56404e550540ca0f3aef018d" in handoff
     )
     assert (
-        "LATEST_VOICE_AB_LIVE_HEAD = 824f93665a0957b979a82fa3d21e72761ad4808e"
+        "LATEST_VOICE_AB_LIVE_HEAD = a2a3e279f663539d0ff0d88be501ae2a595642d2"
         in handoff
     )
     assert "LATEST_CALIBRATION_LIVE_HEAD" not in handoff
@@ -1849,3 +1849,34 @@ def test_a_rendering_refusal_is_reported_and_never_silently_downgraded():
 
     assert result.portfast == "NOT_APPLIED"
     assert any("Invalid compiled device name" in item for item in result.errors)
+
+
+def test_handoff_records_the_portfast_only_control_as_the_no_effect_it_was():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "PORTFAST_INTERVENTION_RESULT = NO_EFFECT" in handoff
+    assert "PORTFAST_AS_VOICE_ROOT_CAUSE = STRONGLY_WEAKENED" in handoff
+    assert "PORTFAST_EXPERIMENT_BPDU_GUARD = OFF" in handoff
+    # APPLIED is the mutation being accepted.  Nothing saw the switch holding
+    # it, and the conclusion is bounded by that rather than rounded up.
+    assert "POSITIVE_SLICE_PORTFAST = APPLIED" in handoff
+    assert "PORTFAST_READBACK = UNOBSERVABLE" in handoff
+    assert "PORTFAST_READBACK = VERIFIED" not in handoff
+    assert "PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED" in handoff
+
+
+def test_handoff_still_refuses_every_causal_promotion_after_the_control():
+    handoff = Path("handoff.md").read_text(encoding="utf-8")
+
+    assert "SAME_ROOT_CAUSE = NOT_ESTABLISHED" in handoff
+    assert "VOICE_ROOT_CAUSE = NOT_YET_CONFIRMED" in handoff
+    assert "ROOT_CAUSE_CONFIRMED" not in handoff
+    # The architectural defect is real and stays real; what weakened is its
+    # standing as the explanation for THIS failure.
+    assert "SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING" in handoff
+    assert "SOURCE_DEFECT_FOUND = YES" in handoff
+    assert "CP_SCALE_STATUS = OPEN / NOT VERIFIED" in handoff
+    assert (
+        "VOICE_VLAN_STP_ROW_ABSENCE_CAUSAL_STATUS = NOT_ESTABLISHED_AS_CAUSE"
+        in handoff
+    )
