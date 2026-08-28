@@ -155,6 +155,35 @@ def stp_row(rows=FORWARDING_ROW, **overrides):
     }
 
 
+def stp_observation(rows=FORWARDING_ROW, *, output=None, **overrides):
+    """The parsed state and authority metadata from one registered result."""
+    show = result(
+        OperationalQueryId.SHOW_SPANNING_TREE,
+        stp_table(rows) if output is None else output,
+        **overrides,
+    )
+    ios = Ios(show)
+    observation = _ConfigurationAdapter(None, ios).read_spanning_tree_observation(
+        SWITCH
+    )
+    state = (
+        _classify_stp_row(observation.instances, VOICE_VLAN_ID, PHONE_PORT)
+        if observation.authoritative else "UNOBSERVABLE"
+    )
+    return {
+        "state": state,
+        "authoritative": observation.authoritative,
+        "failure_dimensions": list(observation.failure_dimensions),
+        "executed": observation.executed,
+        "fresh": observation.fresh,
+        "complete": observation.complete,
+        "identity_provenance": observation.identity_provenance,
+        "failure_reason": observation.failure_reason,
+        "duration_ms": observation.duration_ms,
+        "queries": [item[1] for item in ios.calls],
+    }
+
+
 def bindings(output=BINDING_TABLE, **overrides):
     show = result(
         OperationalQueryId.SHOW_IP_DHCP_BINDING, output, **overrides,
@@ -241,6 +270,36 @@ verdict["stp_identity_ambiguous"] = stp_row(
 )
 verdict["stp_identity_mismatched"] = stp_row(
     device_identity_provenance=DeviceIdentityProvenance.MISMATCHED.value,
+)
+verdict["stp_observation_forwarding"] = stp_observation(duration_ms=23)
+verdict["stp_observation_execution"] = stp_observation(
+    executed=False, failure_reason="IOS command submission timed out.",
+)
+verdict["stp_observation_freshness"] = stp_observation(
+    fresh_output_observed=False,
+)
+verdict["stp_observation_completeness"] = stp_observation(
+    output_complete=False, truncated_by_pager=True,
+    pager_continuation="failed", pager_pages_captured=4,
+)
+for provenance in (
+    DeviceIdentityProvenance.NOT_OBSERVED,
+    DeviceIdentityProvenance.AMBIGUOUS,
+    DeviceIdentityProvenance.MISMATCHED,
+):
+    verdict["stp_observation_identity_" + provenance.value] = stp_observation(
+        device_identity_provenance=provenance.value,
+    )
+verdict["stp_observation_parse"] = stp_observation(
+    output="show spanning-tree\nSwitch#",
+)
+verdict["stp_observation_query"] = stp_observation(
+    output="show spanning-tree\n% Invalid input detected at '^' marker.\nSwitch#",
+)
+verdict["stp_observation_multiple"] = stp_observation(
+    fresh_output_observed=False,
+    output_complete=False,
+    device_identity_provenance=DeviceIdentityProvenance.AMBIGUOUS.value,
 )
 
 verdict["dhcp_complete"] = bindings()
@@ -456,6 +515,53 @@ def test_absent_and_unobservable_never_collapse_into_each_other(verdict):
     }
     assert absent == "ABSENT"
     assert unread == {"UNOBSERVABLE"}
+
+
+def test_the_same_authoritative_result_carries_forwarding_and_no_failures(verdict):
+    observed = verdict["stp_observation_forwarding"]
+
+    assert observed["state"] == "FORWARDING"
+    assert observed["authoritative"] is True
+    assert observed["failure_dimensions"] == []
+    assert observed["duration_ms"] == 23
+
+
+@pytest.mark.parametrize(
+    ("key", "dimension"),
+    [
+        ("stp_observation_execution", "EXECUTION"),
+        ("stp_observation_freshness", "FRESHNESS"),
+        ("stp_observation_completeness", "COMPLETENESS"),
+        ("stp_observation_identity_not_observed", "IDENTITY"),
+        ("stp_observation_identity_ambiguous", "IDENTITY"),
+        ("stp_observation_identity_mismatched", "IDENTITY"),
+        ("stp_observation_parse", "PARSING"),
+        ("stp_observation_query", "QUERY_SESSION"),
+    ],
+)
+def test_each_stp_authority_boundary_retains_its_exact_dimension(
+    verdict, key, dimension,
+):
+    observed = verdict[key]
+
+    assert observed["state"] == "UNOBSERVABLE"
+    assert observed["authoritative"] is False
+    assert dimension in observed["failure_dimensions"]
+
+
+def test_multiple_stp_authority_failures_are_retained_together(verdict):
+    observed = verdict["stp_observation_multiple"]
+
+    assert observed["failure_dimensions"] == [
+        "FRESHNESS", "COMPLETENESS", "IDENTITY",
+    ]
+
+
+def test_stp_diagnostics_do_not_dispatch_a_second_registered_query(verdict):
+    for key, observed in verdict.items():
+        if not key.startswith("stp_observation_"):
+            continue
+        assert observed["queries"] == ["show_spanning_tree"], key
 
 
 # --- DHCP bindings ----------------------------------------------------------

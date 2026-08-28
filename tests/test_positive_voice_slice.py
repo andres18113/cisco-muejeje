@@ -42,6 +42,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     PositiveVoiceSliceQualifier,
     PositiveVoiceSliceResult,
     StpForwardingGate,
+    StpReadObservation,
     await_stp_forwarding,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
@@ -226,6 +227,21 @@ class _Configuration:
                 return self.stp_sequence.pop(0)
             return self.stp_sequence[0] if self.stp_sequence else None
         return self.stp
+
+    def read_spanning_tree_observation(self, device_name):
+        instances = self.read_spanning_tree(device_name)
+        if instances is None:
+            return StpReadObservation(
+                failure_reason="scripted unreadable STP result",
+                failure_dimensions=("QUERY_SESSION",),
+            )
+        return StpReadObservation(
+            instances=instances,
+            executed=True,
+            fresh=True,
+            complete=True,
+            identity_provenance="confirmed_unique",
+        )
 
     def read_dhcp_bindings(self, device_name):
         return self.bindings
@@ -1175,8 +1191,11 @@ class _Trunk:
     allowed_vlans: tuple | None = (DATA_VLAN_ID, VOICE_VLAN_ID)
     active_vlans: tuple | None = (DATA_VLAN_ID, VOICE_VLAN_ID)
     forwarding_vlans: tuple | None = (DATA_VLAN_ID, VOICE_VLAN_ID)
+    executed: bool = True
+    fresh_output_observed: bool = True
     fresh_evidence: bool = True
     output_complete: bool = True
+    device_identity_provenance: str = "confirmed_unique"
     interface: str = "GigabitEthernet0/1"
 
 
@@ -1291,6 +1310,25 @@ def test_the_trunk_dimensions_stay_four_independent_answers():
     assert foundation.trunk_forwarding_voice == CONTRADICTED
     assert foundation.trunk_native == VERIFIED
     assert foundation.trunk_native_vlan == 1
+    assert foundation.trunk_status == "trunking"
+    assert foundation.trunk_allowed_vlans == (DATA_VLAN_ID, VOICE_VLAN_ID)
+    assert foundation.trunk_active_vlans == (DATA_VLAN_ID, VOICE_VLAN_ID)
+    assert foundation.trunk_forwarding_vlans == (DATA_VLAN_ID,)
+
+
+def test_voice_vlan_membership_in_the_exact_forwarding_set_verifies_that_dimension():
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(
+            trunk=_Trunk(
+                allowed_vlans=(DATA_VLAN_ID, VOICE_VLAN_ID),
+                active_vlans=(DATA_VLAN_ID, VOICE_VLAN_ID),
+                forwarding_vlans=(VOICE_VLAN_ID,),
+            ),
+        ),
+    )
+
+    assert result.foundation.trunk_forwarding_vlans == (VOICE_VLAN_ID,)
+    assert result.foundation.trunk_forwarding_voice == VERIFIED
 
 
 def test_a_trunk_section_that_never_printed_is_unread_and_never_pruned():
@@ -1314,7 +1352,7 @@ def test_a_trunk_section_that_never_printed_is_unread_and_never_pruned():
 
 def test_a_trunk_read_that_was_stale_or_incomplete_claims_nothing():
     for trunk in (
-        _Trunk(fresh_evidence=False),
+        _Trunk(fresh_output_observed=False, fresh_evidence=False),
         _Trunk(output_complete=False),
     ):
         result, *_ = _run_foundation(
@@ -1326,6 +1364,24 @@ def test_a_trunk_read_that_was_stale_or_incomplete_claims_nothing():
         assert foundation.trunk_active_voice == UNOBSERVABLE
         assert foundation.trunk_forwarding_voice == UNOBSERVABLE
         assert foundation.trunk_native == UNOBSERVABLE
+
+
+def test_an_unattributed_trunk_keeps_its_sets_but_authorizes_no_verdict():
+    result, *_ = _run_foundation(
+        configuration=_FoundationConfiguration(
+            trunk=_Trunk(device_identity_provenance="ambiguous"),
+        ),
+    )
+    foundation = result.foundation
+
+    assert foundation.trunk_read_authority == UNOBSERVABLE
+    assert foundation.trunk_identity_provenance == "ambiguous"
+    assert foundation.trunk_allowed_vlans == (DATA_VLAN_ID, VOICE_VLAN_ID)
+    assert foundation.trunk_active_vlans == (DATA_VLAN_ID, VOICE_VLAN_ID)
+    assert foundation.trunk_forwarding_vlans == (DATA_VLAN_ID, VOICE_VLAN_ID)
+    assert foundation.trunk_allowed_voice == UNOBSERVABLE
+    assert foundation.trunk_active_voice == UNOBSERVABLE
+    assert foundation.trunk_forwarding_voice == UNOBSERVABLE
 
 
 def test_a_runtime_that_publishes_no_trunk_readback_is_unobservable():
@@ -2525,6 +2581,53 @@ def _gate(sequence, *, timeout=60.0, interval=2.0):
     return result, clock
 
 
+class _DiagnosticConfiguration:
+    """Publishes one already-captured STP table with its same-read metadata."""
+
+    def __init__(self, observations):
+        self.observations = list(observations)
+        self.calls = 0
+
+    def read_spanning_tree_observation(self, device_name):
+        self.calls += 1
+        if len(self.observations) > 1:
+            return self.observations.pop(0)
+        return self.observations[0]
+
+
+def _stp_read(
+    instances,
+    *,
+    executed=True,
+    fresh=True,
+    complete=True,
+    identity="confirmed_unique",
+    failure_reason="",
+    failure_dimensions=(),
+):
+    return StpReadObservation(
+        instances=instances,
+        executed=executed,
+        fresh=fresh,
+        complete=complete,
+        identity_provenance=identity,
+        failure_reason=failure_reason,
+        duration_ms=17,
+        failure_dimensions=tuple(failure_dimensions),
+    )
+
+
+def _diagnostic_gate(observations, *, timeout=60.0, interval=2.0):
+    clock = _Clock()
+    configuration = _DiagnosticConfiguration(observations)
+    result = await_stp_forwarding(
+        configuration, "SW", VOICE_VLAN_ID, "FastEthernet0/2",
+        timeout_seconds=timeout, interval_seconds=interval,
+        clock=clock, sleeper=clock.sleep,
+    )
+    return result, configuration
+
+
 def test_a_forwarding_row_satisfies_the_gate_at_the_first_qualified_read():
     result, clock = _gate([_stp("FWD")])
 
@@ -2533,6 +2636,19 @@ def test_a_forwarding_row_satisfies_the_gate_at_the_first_qualified_read():
     assert result.observed_states == (FORWARDING,)
     assert result.samples == 1
     assert clock.sleeps == []
+
+
+def test_an_authoritative_forwarding_observation_has_no_failure_dimensions():
+    result, configuration = _diagnostic_gate([_stp_read(_stp("FWD"))])
+
+    assert result.status == FORWARDING
+    assert result.terminal_read_authority == "AUTHORITATIVE"
+    assert result.terminal_failure_dimensions == ()
+    assert result.terminal_executed == YES
+    assert result.terminal_fresh == YES
+    assert result.terminal_complete == YES
+    assert result.terminal_identity_provenance == "confirmed_unique"
+    assert configuration.calls == 1
 
 
 def test_listening_does_not_satisfy_the_gate():
@@ -2597,6 +2713,56 @@ def test_an_unreadable_table_after_a_valid_sample_is_not_a_stale_success():
     assert result.status == UNOBSERVABLE
     assert result.observed_states == ("LIS", UNOBSERVABLE)
     assert result.forwarding_observed is False
+
+
+def test_authority_transitions_retain_the_terminal_failure_without_every_sample():
+    result, configuration = _diagnostic_gate([
+        _stp_read(_stp("LIS")),
+        _stp_read(_stp("LIS")),
+        _stp_read(_stp("LRN")),
+        _stp_read(
+            None,
+            fresh=False,
+            failure_reason="No fresh current-command output window was observed.",
+            failure_dimensions=("FRESHNESS",),
+        ),
+    ])
+
+    assert result.status == UNOBSERVABLE
+    assert result.observed_states == ("LIS", "LRN", UNOBSERVABLE)
+    assert result.samples == 4
+    assert result.terminal_read_authority == UNOBSERVABLE
+    assert result.terminal_failure_dimensions == ("FRESHNESS",)
+    assert result.terminal_fresh == NO
+    assert result.as_evidence()["transitions"] == [
+        {
+            "state": "LIS",
+            "read_authority": "AUTHORITATIVE",
+            "failure_dimensions": [],
+        },
+        {
+            "state": "LRN",
+            "read_authority": "AUTHORITATIVE",
+            "failure_dimensions": [],
+        },
+        {
+            "state": UNOBSERVABLE,
+            "read_authority": UNOBSERVABLE,
+            "failure_dimensions": ["FRESHNESS"],
+        },
+    ]
+    assert configuration.calls == 4
+
+
+def test_a_terminal_invalid_read_cannot_reuse_an_earlier_forwarding_fact():
+    gate = StpForwardingGate(
+        status=UNOBSERVABLE,
+        observed_states=(FORWARDING, UNOBSERVABLE),
+        terminal_read_authority=UNOBSERVABLE,
+        terminal_failure_dimensions=("IDENTITY",),
+    )
+
+    assert gate.forwarding_observed is False
 
 
 def test_forwarding_is_observed_at_a_read_never_inferred_from_time():

@@ -98,8 +98,11 @@ class TrunkReadbackObservation:
     allowed_vlans: tuple[int, ...] | None = None
     active_vlans: tuple[int, ...] | None = None
     forwarding_vlans: tuple[int, ...] | None = None
+    executed: bool = False
+    fresh_output_observed: bool = False
     fresh_evidence: bool = False
     output_complete: bool = False
+    device_identity_provenance: str = DeviceIdentityProvenance.NOT_OBSERVED.value
     failure_reason: str = ""
 
 
@@ -203,6 +206,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
             reason = "No fresh current show interfaces trunk output was observed."
         if not reason and not complete:
             reason = "The show interfaces trunk output was incomplete."
+        if (
+            not reason
+            and show.device_identity_provenance
+            != DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+        ):
+            reason = "The trunk table was not attributed to one device."
         if not reason and row is None:
             reason = f"The fresh trunk table did not contain {interface!r}."
         return TrunkReadbackObservation(
@@ -216,8 +225,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
             forwarding_vlans=(
                 row.forwarding_vlans if row is not None else None
             ),
+            executed=bool(show.executed),
+            fresh_output_observed=bool(show.fresh_output_observed),
             fresh_evidence=fresh,
             output_complete=complete,
+            device_identity_provenance=show.device_identity_provenance,
             failure_reason=reason,
         )
 

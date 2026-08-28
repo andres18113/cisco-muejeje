@@ -41,14 +41,56 @@ RUN10_STP_GATE_OBSERVED_STATES = LIS -> LRN -> UNOBSERVABLE
 RUN10_STP_GATE_DURATION_MS = 21844
 RUN10_STP_GATE_SAMPLES = 11
 RUN10_STP_GATE_IDENTITY = NOT_ESTABLISHED
+RUN10_TERMINAL_STP_FAILURE_DIMENSION = NOT_RETAINED
+STP_GATE_DIAGNOSTIC_RETENTION = READY
+STP_GATE_SUCCESS_CONTRACT = EXECUTED + FRESH + COMPLETE + CONFIRMED_UNIQUE + FWD
+STP_GATE_FAILURE_DIMENSIONS = EXECUTION | FRESHNESS | COMPLETENESS | IDENTITY | PARSING | QUERY_SESSION
+STP_GATE_QUERY_COUNT_PER_SAMPLE = ONE
+SECOND_STP_QUERY_ADDED = NO
 RUN10_DHCP_FLAG_TRANSITION_CONTRACT = PRE_NO + ARM_ACCEPTED + POST_YES_REQUIRED
 RUN10_DHCP_FLAG_TRANSITION = UNOBSERVABLE
 RUN10_ACQUISITION_STARTED = NO
 RUN10_ACQUISITION_BOUNDARY = ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
+RUN10_TRUNK_VOICE_FORWARDING = CONTRADICTED
+RUN10_TRUNK_ALLOWED_VLANS = NOT_RETAINED
+RUN10_TRUNK_ACTIVE_VLANS = NOT_RETAINED
+RUN10_TRUNK_FORWARDING_VLANS = NOT_RETAINED
+RUN10_TRUNK_VLAN930_ALLOWED = YES
+RUN10_TRUNK_VLAN930_ACTIVE = YES
+RUN10_TRUNK_VLAN930_FORWARDING = NO
+TRUNK_FORWARDING_SEMANTIC_AUDIT = IOS_STP_FORWARDING_AND_NOT_PRUNED_SET_ON_SHARED_TRUNK
+TRUNK_READ_AUTHORITY_RETENTION = READY
+STP_VS_TRUNK_RELATION = NOT_ESTABLISHED
 VOICE_ROOT_CAUSE = STRONG_CANDIDATE / NOT_CONFIRMED
-NEXT_ACTIVE_STEP = AUDIT_RUN10_STP_GATE_UNOBSERVABLE_BOUNDARY
+NEXT_ACTIVE_STEP = PREPARED_STP_BOUNDARY_DIAGNOSTIC_LIVE
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
+
+## RUN10 STP boundary and trunk forensics
+
+The immutable RUN10 artifact
+`positive-voice-ab-run10-stp-precondition-unobservable.json` still hashes to
+`6c128bae161cb41bf5c879ac7fde14aaad9750e1d5922aa256dfbcd0bd5c3297`.
+Its STP gate retained only `LIS -> LRN -> UNOBSERVABLE`, 11 samples and
+21,844 ms. It did not retain the terminal `IosCommandResult`, so execution,
+freshness, completeness, identity, parser and query/session failure cannot be
+reconstructed honestly. The terminal failure dimension remains NOT_RETAINED.
+
+The same artifact retained the shared-trunk membership verdicts but not their
+source tuples. It proves only that VLAN 930 was in the IOS allowed set and the
+allowed-and-active set, but absent from the section IOS labels `Vlans in
+spanning tree forwarding state and not pruned`. That is the trunk uplink's
+forwarding/not-pruned membership, not the phone access port's STP state. The
+exact forwarding set, and therefore whether VLAN 931 was also affected, is
+NOT_RETAINED; the two surfaces do not establish a causal relation.
+
+The prepared harness now keeps parsed STP state and compact authority metadata
+from one registered `show spanning-tree` result. It records only meaningful
+state/authority transitions and terminal failure dimensions. The trunk
+foundation similarly keeps its exact operational status, native VLAN, allowed,
+active and forwarding tuples plus compact authority metadata. No second STP
+query, new observer, mutation, Packet Tracer LIVE, RUN10 rewrite or RUN11 was
+introduced.
 
 ## Resume identity and hard boundaries
 

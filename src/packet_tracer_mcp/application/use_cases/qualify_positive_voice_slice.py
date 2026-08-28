@@ -187,6 +187,70 @@ FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED = (
 STP_FWD_GATE_TIMEOUT_SECONDS = 60.0
 STP_FWD_GATE_INTERVAL_SECONDS = 2.0
 
+#: Authority is a property of the one registered IOS result, never of a later
+#: retry or a second observer.  Failure dimensions stay orthogonal so an
+#: incomplete capture cannot be mislabeled as an identity failure (or vice
+#: versa), and simultaneous failures remain visible.
+STP_READ_AUTHORITATIVE = "AUTHORITATIVE"
+STP_FAILURE_EXECUTION = "EXECUTION"
+STP_FAILURE_FRESHNESS = "FRESHNESS"
+STP_FAILURE_COMPLETENESS = "COMPLETENESS"
+STP_FAILURE_IDENTITY = "IDENTITY"
+STP_FAILURE_PARSING = "PARSING"
+STP_FAILURE_QUERY_SESSION = "QUERY_SESSION"
+
+
+@dataclass(frozen=True)
+class StpReadObservation:
+    """Parsed STP state and authority metadata from the SAME IOS result."""
+
+    instances: object | None = None
+    executed: bool | None = None
+    fresh: bool | None = None
+    complete: bool | None = None
+    identity_provenance: str = ""
+    failure_reason: str = ""
+    duration_ms: int = 0
+    failure_dimensions: tuple[str, ...] = ()
+
+    @property
+    def authoritative(self) -> bool:
+        return bool(
+            self.executed is True
+            and self.fresh is True
+            and self.complete is True
+            and self.instances is not None
+            and not self.failure_dimensions
+        )
+
+    @property
+    def read_authority(self) -> str:
+        return STP_READ_AUTHORITATIVE if self.authoritative else UNOBSERVABLE
+
+
+@dataclass(frozen=True)
+class StpGateTransition:
+    """One meaningful state/authority change, without retaining IOS output."""
+
+    state: str
+    read_authority: str
+    failure_dimensions: tuple[str, ...] = ()
+
+    def as_evidence(self) -> dict:
+        return {
+            "state": self.state,
+            "read_authority": self.read_authority,
+            "failure_dimensions": list(self.failure_dimensions),
+        }
+
+
+def _yes_no_unobservable(value: bool | None) -> str:
+    if value is True:
+        return YES
+    if value is False:
+        return NO
+    return UNOBSERVABLE
+
 
 @dataclass(frozen=True)
 class StpForwardingGate:
@@ -201,6 +265,15 @@ class StpForwardingGate:
     observed_states: tuple[str, ...] = ()
     duration_ms: int = 0
     samples: int = 0
+    terminal_read_authority: str = UNOBSERVABLE
+    terminal_failure_dimensions: tuple[str, ...] = ()
+    terminal_executed: str = UNOBSERVABLE
+    terminal_fresh: str = UNOBSERVABLE
+    terminal_complete: str = UNOBSERVABLE
+    terminal_identity_provenance: str = ""
+    terminal_failure_reason: str = ""
+    terminal_read_duration_ms: int = 0
+    transitions: tuple[StpGateTransition, ...] = ()
 
     @property
     def forwarding_observed(self) -> bool:
@@ -213,7 +286,68 @@ class StpForwardingGate:
             "duration_ms": self.duration_ms,
             "samples": self.samples,
             "forwarding_observed": self.forwarding_observed,
+            "terminal_read_authority": self.terminal_read_authority,
+            "terminal_failure_dimensions": list(
+                self.terminal_failure_dimensions
+            ),
+            "terminal_executed": self.terminal_executed,
+            "terminal_fresh": self.terminal_fresh,
+            "terminal_complete": self.terminal_complete,
+            "terminal_identity_provenance": (
+                self.terminal_identity_provenance
+            ),
+            "terminal_failure_reason": self.terminal_failure_reason,
+            "terminal_read_duration_ms": self.terminal_read_duration_ms,
+            "transitions": [item.as_evidence() for item in self.transitions],
         }
+
+
+def _legacy_stp_observation(configuration, switch_name: str) -> StpReadObservation:
+    """Compatibility for test/internal runtimes that only publish parsed rows.
+
+    The governed LIVE adapter implements ``read_spanning_tree_observation``;
+    this fallback preserves the existing parsed-table contract for older
+    internal callers while making a legacy ``None`` explicitly
+    non-authoritative.  It is not used by the governed LIVE.
+    """
+    instances = configuration.read_spanning_tree(switch_name)
+    if instances is None:
+        return StpReadObservation(
+            failure_reason="The legacy STP read retained no authority metadata.",
+            failure_dimensions=(STP_FAILURE_QUERY_SESSION,),
+        )
+    return StpReadObservation(
+        instances=instances,
+        executed=True,
+        fresh=True,
+        complete=True,
+        identity_provenance="legacy_parsed_read_contract",
+    )
+
+
+def _finish_stp_gate(
+    status: str,
+    observed: list[str],
+    duration_ms: int,
+    samples: int,
+    terminal: StpReadObservation,
+    transitions: list[StpGateTransition],
+) -> StpForwardingGate:
+    return StpForwardingGate(
+        status=status,
+        observed_states=tuple(observed),
+        duration_ms=duration_ms,
+        samples=samples,
+        terminal_read_authority=terminal.read_authority,
+        terminal_failure_dimensions=terminal.failure_dimensions,
+        terminal_executed=_yes_no_unobservable(terminal.executed),
+        terminal_fresh=_yes_no_unobservable(terminal.fresh),
+        terminal_complete=_yes_no_unobservable(terminal.complete),
+        terminal_identity_provenance=terminal.identity_provenance,
+        terminal_failure_reason=terminal.failure_reason[:240],
+        terminal_read_duration_ms=terminal.duration_ms,
+        transitions=tuple(transitions),
+    )
 
 
 def await_stp_forwarding(
@@ -236,33 +370,54 @@ def await_stp_forwarding(
     """
     started = clock()
     observed: list[str] = []
+    transitions: list[StpGateTransition] = []
     samples = 0
     while True:
         samples += 1
         try:
-            instances = configuration.read_spanning_tree(switch_name)
+            diagnostic_read = getattr(
+                configuration, "read_spanning_tree_observation", None,
+            )
+            observation = (
+                diagnostic_read(switch_name)
+                if callable(diagnostic_read)
+                else _legacy_stp_observation(configuration, switch_name)
+            )
         except Exception as exc:  # noqa: BLE001
             if errors is not None:
                 errors.append(f"stp_gate_read_raised: {exc}")
-            instances = None
+            observation = StpReadObservation(
+                failure_reason=f"{type(exc).__name__}: {exc}"[:240],
+                failure_dimensions=(STP_FAILURE_QUERY_SESSION,),
+            )
         classification = (
-            UNOBSERVABLE if instances is None
-            else _classify_stp_row(instances, vlan_id, interface)
+            _classify_stp_row(observation.instances, vlan_id, interface)
+            if observation.authoritative else UNOBSERVABLE
         )
         if not observed or observed[-1] != classification:
             observed.append(classification)
+        transition = StpGateTransition(
+            state=classification,
+            read_authority=observation.read_authority,
+            failure_dimensions=observation.failure_dimensions,
+        )
+        if not transitions or transitions[-1] != transition:
+            transitions.append(transition)
         duration_ms = int((clock() - started) * 1000)
         if classification == FORWARDING:
-            return StpForwardingGate(
-                FORWARDING, tuple(observed), duration_ms, samples,
+            return _finish_stp_gate(
+                FORWARDING, observed, duration_ms, samples,
+                observation, transitions,
             )
         if classification == UNOBSERVABLE:
-            return StpForwardingGate(
-                UNOBSERVABLE, tuple(observed), duration_ms, samples,
+            return _finish_stp_gate(
+                UNOBSERVABLE, observed, duration_ms, samples,
+                observation, transitions,
             )
         if clock() - started >= timeout_seconds:
-            return StpForwardingGate(
-                GATE_TIMEOUT, tuple(observed), duration_ms, samples,
+            return _finish_stp_gate(
+                GATE_TIMEOUT, observed, duration_ms, samples,
+                observation, transitions,
             )
         sleeper(interval_seconds)
 
@@ -351,10 +506,24 @@ class PositiveVoiceFoundation:
     trunk_active_voice: str = UNOBSERVABLE
     trunk_forwarding_voice: str = UNOBSERVABLE
     trunk_native: str = UNOBSERVABLE
+    #: Exact values from the same ``show interfaces trunk`` row and its three
+    #: IOS sections.  Verdicts answer membership of VLAN 930; these fields keep
+    #: the measured sets so VLAN 931 or an empty section does not disappear.
+    trunk_interface: str = ""
+    trunk_status: str = ""
     #: The native VLAN as read, kept beside its verdict.  Reported, never
     #: gating: VLAN 930 crosses this trunk tagged, so the native VLAN cannot
     #: explain a voice failure and must not be allowed to mask one.
     trunk_native_vlan: int | None = None
+    trunk_allowed_vlans: tuple[int, ...] | None = None
+    trunk_active_vlans: tuple[int, ...] | None = None
+    trunk_forwarding_vlans: tuple[int, ...] | None = None
+    trunk_read_authority: str = UNOBSERVABLE
+    trunk_executed: str = UNOBSERVABLE
+    trunk_fresh: str = UNOBSERVABLE
+    trunk_complete: str = UNOBSERVABLE
+    trunk_identity_provenance: str = ""
+    trunk_failure_reason: str = ""
     router_subinterface_present: str = UNOBSERVABLE
     router_subinterface_ipv4: str = UNOBSERVABLE
     router_subinterface_state: str = UNOBSERVABLE
@@ -406,7 +575,27 @@ class PositiveVoiceFoundation:
             "trunk_active_voice": self.trunk_active_voice,
             "trunk_forwarding_voice": self.trunk_forwarding_voice,
             "trunk_native": self.trunk_native,
+            "trunk_interface": self.trunk_interface,
+            "trunk_status": self.trunk_status,
             "trunk_native_vlan": self.trunk_native_vlan,
+            "trunk_allowed_vlans": (
+                list(self.trunk_allowed_vlans)
+                if self.trunk_allowed_vlans is not None else None
+            ),
+            "trunk_active_vlans": (
+                list(self.trunk_active_vlans)
+                if self.trunk_active_vlans is not None else None
+            ),
+            "trunk_forwarding_vlans": (
+                list(self.trunk_forwarding_vlans)
+                if self.trunk_forwarding_vlans is not None else None
+            ),
+            "trunk_read_authority": self.trunk_read_authority,
+            "trunk_executed": self.trunk_executed,
+            "trunk_fresh": self.trunk_fresh,
+            "trunk_complete": self.trunk_complete,
+            "trunk_identity_provenance": self.trunk_identity_provenance,
+            "trunk_failure_reason": self.trunk_failure_reason,
             "router_subinterface_present": self.router_subinterface_present,
             "router_subinterface_ipv4": self.router_subinterface_ipv4,
             "router_subinterface_state": self.router_subinterface_state,
@@ -801,6 +990,9 @@ class VoiceConfigurationRuntime(Protocol):
         self, device_name: str, interface: str, expected_access_vlan: int,
     ): ...
     def read_spanning_tree(self, device_name: str): ...
+    def read_spanning_tree_observation(
+        self, device_name: str,
+    ) -> StpReadObservation: ...
     def read_dhcp_bindings(self, device_name: str): ...
 
 
@@ -934,14 +1126,55 @@ def _classify_trunk(observation) -> dict:
         "trunk_active_voice": UNOBSERVABLE,
         "trunk_forwarding_voice": UNOBSERVABLE,
         "trunk_native": UNOBSERVABLE,
+        "trunk_interface": "",
+        "trunk_status": "",
         "trunk_native_vlan": None,
+        "trunk_allowed_vlans": None,
+        "trunk_active_vlans": None,
+        "trunk_forwarding_vlans": None,
+        "trunk_read_authority": UNOBSERVABLE,
+        "trunk_executed": UNOBSERVABLE,
+        "trunk_fresh": UNOBSERVABLE,
+        "trunk_complete": UNOBSERVABLE,
+        "trunk_identity_provenance": "",
+        "trunk_failure_reason": "",
     }
     if observation is None:
         return unread
-    if not (
-        getattr(observation, "fresh_evidence", False)
-        and getattr(observation, "output_complete", False)
-    ):
+
+    executed_value = getattr(observation, "executed", None)
+    fresh_value = getattr(observation, "fresh_output_observed", None)
+    if fresh_value is None and hasattr(observation, "fresh_evidence"):
+        fresh_value = bool(getattr(observation, "fresh_evidence"))
+    complete_value = getattr(observation, "output_complete", None)
+    identity = str(
+        getattr(observation, "device_identity_provenance", "") or ""
+    )
+    exact = {
+        "trunk_interface": str(getattr(observation, "interface", "") or ""),
+        "trunk_status": str(getattr(observation, "status", "") or ""),
+        "trunk_native_vlan": getattr(observation, "native_vlan", None),
+        "trunk_allowed_vlans": getattr(observation, "allowed_vlans", None),
+        "trunk_active_vlans": getattr(observation, "active_vlans", None),
+        "trunk_forwarding_vlans": getattr(
+            observation, "forwarding_vlans", None,
+        ),
+        "trunk_executed": _yes_no_unobservable(executed_value),
+        "trunk_fresh": _yes_no_unobservable(fresh_value),
+        "trunk_complete": _yes_no_unobservable(complete_value),
+        "trunk_identity_provenance": identity,
+        "trunk_failure_reason": str(
+            getattr(observation, "failure_reason", "") or ""
+        )[:240],
+    }
+    unread.update(exact)
+    authoritative = bool(
+        executed_value is True
+        and fresh_value is True
+        and complete_value is True
+        and identity == "confirmed_unique"
+    )
+    if not authoritative:
         return unread
     native = getattr(observation, "native_vlan", None)
     try:
@@ -969,7 +1202,9 @@ def _classify_trunk(observation) -> dict:
             getattr(observation, "forwarding_vlans", None), VOICE_VLAN_ID,
         ),
         "trunk_native": native_status,
+        **exact,
         "trunk_native_vlan": native,
+        "trunk_read_authority": STP_READ_AUTHORITATIVE,
     }
 
 

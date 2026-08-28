@@ -20,8 +20,15 @@ if str(GOVERNED_ROOT / "src") not in sys.path:
 from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (  # noqa: E402
     DATA_VLAN_ID,
     ROUTER_VOICE_SUBINTERFACE,
+    STP_FAILURE_COMPLETENESS,
+    STP_FAILURE_EXECUTION,
+    STP_FAILURE_FRESHNESS,
+    STP_FAILURE_IDENTITY,
+    STP_FAILURE_PARSING,
+    STP_FAILURE_QUERY_SESSION,
     VOICE_VLAN_ID,
     PositiveVoiceSliceQualifier,
+    StpReadObservation,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (  # noqa: E402
     VerificationExpectation,
@@ -43,6 +50,8 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (  # noqa: E
     ControlledIosExecutor,
     DeviceIdentityProvenance,
     OperationalQueryId,
+    StpQueryClassification,
+    classify_show_spanning_tree,
     parse_show_ip_dhcp_binding,
     parse_show_ip_interface,
     parse_show_ip_interface_brief,
@@ -104,6 +113,64 @@ def _authoritative_stp_readable(show) -> bool:
     )
 
 
+def _field_text(value) -> str:
+    return str(getattr(value, "value", value) or "")
+
+
+def _bounded_stp_failure_reason(
+    show, dimensions: tuple[str, ...], query_classification,
+) -> str:
+    """Keep only the metadata that explains why this one read was rejected."""
+    details: list[str] = []
+    supplied = " ".join(str(getattr(show, "failure_reason", "") or "").split())
+    if supplied:
+        details.append(supplied)
+    if STP_FAILURE_EXECUTION in dimensions:
+        details.append(
+            "session=" + _field_text(getattr(show, "session_state", ""))
+        )
+        details.append(
+            "dispatch=" + _field_text(
+                getattr(show, "dispatch_classification", "")
+            )
+        )
+        attempts = int(getattr(show, "dispatch_attempts", 0) or 0)
+        if attempts > 1:
+            details.append(f"dispatch_attempts={attempts}")
+    if STP_FAILURE_FRESHNESS in dimensions:
+        details.append(
+            "fresh_output_observed=false; window_strategy="
+            + str(getattr(show, "window_strategy", "") or "none")
+        )
+    if STP_FAILURE_COMPLETENESS in dimensions:
+        details.append(
+            "output_complete=false; pager="
+            + str(getattr(show, "pager_continuation", "") or "unknown")
+            + "; pages="
+            + str(getattr(show, "pager_pages_captured", 0) or 0)
+        )
+    if STP_FAILURE_IDENTITY in dimensions:
+        identity = str(
+            getattr(show, "device_identity_provenance", "") or "not_observed"
+        )
+        observed = str(getattr(show, "observed_device_name", "") or "")
+        evidence = str(getattr(show, "device_identity_evidence", "") or "")
+        detail = f"identity={identity}"
+        if observed:
+            detail += f"; observed_device={observed}"
+        if evidence:
+            detail += f"; evidence={evidence}"
+        details.append(detail)
+    if query_classification is not None and (
+        STP_FAILURE_PARSING in dimensions
+        or STP_FAILURE_QUERY_SESSION in dimensions
+    ):
+        details.append(
+            "query_classification=" + _field_text(query_classification)
+        )
+    return "; ".join(item for item in details if item)[:240]
+
+
 def _field_to_vlan(status_name: str, expected: int):
     """VERIFIED keeps the expected value; FAILED contradicts; anything else is
     unread.  The comparison itself already happened inside the runtime."""
@@ -163,10 +230,62 @@ class _ConfigurationAdapter:
         phone row into ABSENT, and those are different answers to the causal
         question.  Only a read that was fresh and complete may produce either.
         """
-        show = self._ios.execute(device_name, OperationalQueryId.SHOW_SPANNING_TREE)
-        if not _authoritative_stp_readable(show):
-            return None
-        return parse_show_spanning_tree(show.output)
+        observation = self.read_spanning_tree_observation(device_name)
+        return observation.instances if observation.authoritative else None
+
+    def read_spanning_tree_observation(
+        self, device_name: str,
+    ) -> StpReadObservation:
+        """Parse and retain authority from one SHOW_SPANNING_TREE result."""
+        show = self._ios.execute(
+            device_name, OperationalQueryId.SHOW_SPANNING_TREE,
+        )
+        executed = bool(getattr(show, "executed", False))
+        fresh = bool(getattr(show, "fresh_output_observed", False))
+        complete = bool(getattr(show, "output_complete", False))
+        identity = str(
+            getattr(show, "device_identity_provenance", "") or ""
+        )
+        dimensions: list[str] = []
+        if not executed:
+            dimensions.append(STP_FAILURE_EXECUTION)
+        if not fresh:
+            dimensions.append(STP_FAILURE_FRESHNESS)
+        if not complete:
+            dimensions.append(STP_FAILURE_COMPLETENESS)
+        if identity != DeviceIdentityProvenance.CONFIRMED_UNIQUE.value:
+            dimensions.append(STP_FAILURE_IDENTITY)
+
+        instances = None
+        query_classification = None
+        if not dimensions:
+            query_classification = classify_show_spanning_tree(
+                show.output, executed=executed,
+            )
+            if query_classification in {
+                StpQueryClassification.INVALID_COMMAND,
+                StpQueryClassification.UNIMPLEMENTED,
+                StpQueryClassification.QUERY_TIMEOUT,
+            }:
+                dimensions.append(STP_FAILURE_QUERY_SESSION)
+            elif query_classification is StpQueryClassification.PARSER_UNAVAILABLE:
+                dimensions.append(STP_FAILURE_PARSING)
+            else:
+                instances = parse_show_spanning_tree(show.output)
+
+        failure_dimensions = tuple(dimensions)
+        return StpReadObservation(
+            instances=instances,
+            executed=executed,
+            fresh=fresh,
+            complete=complete,
+            identity_provenance=identity,
+            failure_reason=_bounded_stp_failure_reason(
+                show, failure_dimensions, query_classification,
+            ),
+            duration_ms=int(getattr(show, "duration_ms", 0) or 0),
+            failure_dimensions=failure_dimensions,
+        )
 
     def read_dhcp_bindings(self, device_name: str):
         """Same gate: an incomplete binding table is not zero bindings."""
