@@ -450,6 +450,18 @@ def _serialize(result) -> dict:
         "fresh_7960_dhcp_transaction": result.fresh_7960_dhcp_transaction,
         "server_receives_discover": "UNOBSERVABLE",
         "dhcp_transaction_progress": "UNOBSERVABLE",
+        "phone_dhcp_lifecycle": [
+            item.as_evidence() for item in result.phone_dhcp_lifecycle
+        ],
+        "first_observed_dhcp_enabled_milestone": (
+            result.first_observed_dhcp_enabled_milestone
+        ),
+        "dhcp_enabled_before_fwd": result.dhcp_enabled_before_fwd,
+        "timing_intrusion_assessment": (
+            "ONE_BOUNDED_EXISTING_ENDPOINT_SVI_READ_PER_PHONE_AT_EACH_OF_"
+            "SEVEN_MILESTONES_NO_RETRY; READ_LATENCY_MAY_SHIFT_LATER_"
+            "OBSERVATION_TIMES"
+        ),
         "acquisition_started": result.acquisition_started,
         "acquisition_boundary": result.acquisition_boundary,
         "stp_gate": (
@@ -532,6 +544,7 @@ def run(
     edge_portfast: bool = False,
     paired_access_vlan: bool = False,
     paired_access_vlan_fwd_gated: bool = False,
+    phone_dhcp_lifecycle: bool = False,
 ) -> int:
     transport = PacketTracerHttpTransport()
     if not transport.start(timeout_seconds=20.0):
@@ -566,7 +579,11 @@ def run(
             transport.send,
             transport.send_and_wait,
         )
-        paired = paired_access_vlan or paired_access_vlan_fwd_gated
+        paired = (
+            paired_access_vlan
+            or paired_access_vlan_fwd_gated
+            or phone_dhcp_lifecycle
+        )
         result = PositiveVoiceSliceQualifier(
             physical,
             configuration_adapter,
@@ -587,6 +604,10 @@ def run(
             # OFF-to-ON transition.  Anything less fails closed with a named
             # boundary instead of another SAME_FAILURE.
             fwd_gated_fresh_dhcp=paired_access_vlan_fwd_gated,
+            # Lifecycle qualification reuses the same paired topology and FWD
+            # gate, but never calls the endpoint DHCP mutation.  Seven selected
+            # boundaries each perform one bounded existing SVI read per phone.
+            phone_dhcp_lifecycle=phone_dhcp_lifecycle,
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
     finally:
         transport.stop()
@@ -612,6 +633,10 @@ def run(
         "acquisition_started": evidence["acquisition_started"],
         "acquisition_boundary": evidence["acquisition_boundary"],
         "stp_gate": evidence["stp_gate"],
+        "first_observed_dhcp_enabled_milestone": evidence[
+            "first_observed_dhcp_enabled_milestone"
+        ],
+        "dhcp_enabled_before_fwd": evidence["dhcp_enabled_before_fwd"],
         "portfast": evidence["portfast"],
         "portfast_readback": evidence["portfast_readback"],
         "voice_bindings": evidence["voice_bindings_observed"],
@@ -671,12 +696,21 @@ def main() -> int:
             "Unmet preconditions fail closed with a named boundary."
         ),
     )
+    parser.add_argument(
+        "--phone-dhcp-lifecycle", action="store_true",
+        help=(
+            "run the read-only phone DHCP lifecycle diagnostic on the paired "
+            "topology and authoritative FWD gate.  It samples only the "
+            "existing endpoint/SVI surface and never arms DHCP."
+        ),
+    )
     args = parser.parse_args()
     modes = [
         name for name, enabled in (
             ("--edge-portfast", args.edge_portfast),
             ("--paired-access-vlan", args.paired_access_vlan),
             ("--paired-access-vlan-fwd-gated", args.paired_access_vlan_fwd_gated),
+            ("--phone-dhcp-lifecycle", args.phone_dhcp_lifecycle),
         ) if enabled
     ]
     if len(modes) > 1:
@@ -689,6 +723,7 @@ def main() -> int:
         edge_portfast=args.edge_portfast,
         paired_access_vlan=args.paired_access_vlan,
         paired_access_vlan_fwd_gated=args.paired_access_vlan_fwd_gated,
+        phone_dhcp_lifecycle=args.phone_dhcp_lifecycle,
     )
 
 

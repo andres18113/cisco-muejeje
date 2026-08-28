@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     DATA_VLAN_ID,
     EXPERIMENT_PAIRED_ACCESS_VLAN,
     EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED,
+    EXPERIMENT_PHONE_DHCP_LIFECYCLE,
     EXPERIMENT_UNIFORM_BASELINE,
     EXTENSIONS,
     FORWARDING,
@@ -30,6 +32,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     SWITCH_UPLINK_INTERFACE,
     OBSERVATION,
     PHONE_ADDRESSING_INTERFACE,
+    PHONE_DHCP_LIFECYCLE_MILESTONES,
     PHONE_LINK_PORT,
     POSITIVE_VOICE_PREFIX,
     REGISTERED,
@@ -38,6 +41,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     VOICE_VLAN_ID,
     YES,
     LifecycleMilestone,
+    PhoneDhcpLifecycleEvidence,
     PositiveVoicePhoneOutcome,
     PositiveVoiceSliceQualifier,
     PositiveVoiceSliceResult,
@@ -3335,3 +3339,263 @@ def test_the_live_serializer_publishes_the_gate_and_the_two_result_concepts():
     assert '"arm_call_accepted": item.arm_call_accepted' in source
     assert '"dhcp_enabled_post_arm": item.dhcp_enabled_post_arm' in source
     assert "--paired-access-vlan-fwd-gated" in source
+
+
+# --- phone DHCP lifecycle qualification preparation -------------------------
+
+
+class _LifecycleEndpoints(_Endpoints):
+    """One existing endpoint/SVI read per phone at each lifecycle milestone."""
+
+    def __init__(self, flags, addresses=None):
+        super().__init__()
+        self._flags = tuple(flags)
+        self._addresses = tuple(addresses or (None,) * len(self._flags))
+
+    def configure_endpoint_dhcp(self, device_name, interface):
+        raise AssertionError("the observational lifecycle must never arm DHCP")
+
+    def read_endpoint_address(self, device_name, interface):
+        self.read_interfaces.append(interface)
+        index = len(self.read_interfaces) - 1
+        flag = self._flags[index]
+        address = self._addresses[index]
+        if flag is None and address is None:
+            return None
+        return _EndpointObservation(
+            ipv4=address or "",
+            address_channel=address is not None,
+            dhcp_enabled=flag,
+        )
+
+
+def _milestone_flags(values):
+    """Expand one value per milestone into the two phone reads at that point."""
+    return tuple(value for value in values for _ in range(2))
+
+
+def _lifecycle_run(values, *, addresses=None):
+    endpoints = _LifecycleEndpoints(
+        _milestone_flags(values),
+        _milestone_flags(addresses) if addresses is not None else None,
+    )
+    outcome = _run(
+        configuration=_Configuration(
+            stp_sequence=[_stp("LIS"), _stp("FWD"), _stp("FWD")],
+        ),
+        endpoints=endpoints,
+        phone_access_vlans=_PAIRED,
+        phone_dhcp_lifecycle=True,
+    )
+    return outcome, endpoints
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    (
+        (
+            (True, True, True, True, True, True, True),
+            "AFTER_PHONE_CREATION",
+        ),
+        (
+            (False, True, True, True, True, True, True),
+            "AFTER_PHYSICAL_LINK_CREATION",
+        ),
+        (
+            (False, False, True, True, True, True, True),
+            "AFTER_ACCESS_VOICE_VLAN_CONFIGURATION",
+        ),
+        (
+            (False, False, False, True, True, True, True),
+            "AFTER_VOICE_CME_CONFIGURATION",
+        ),
+        (
+            (False, False, False, False, False, False, True),
+            "IMMEDIATELY_AFTER_AUTHORITATIVE_FWD",
+        ),
+        (
+            (False, False, False, False, False, False, False),
+            "NOT_ESTABLISHED",
+        ),
+    ),
+)
+def test_dhcp_lifecycle_derives_the_first_observed_yes(values, expected):
+    (result, *_), _ = _lifecycle_run(values)
+
+    assert result.first_observed_dhcp_enabled_milestone == expected
+
+
+def test_dhcp_lifecycle_ignores_unobservable_rows_before_a_later_yes():
+    (result, *_), _ = _lifecycle_run(
+        (None, None, None, True, True, True, True),
+    )
+
+    assert result.first_observed_dhcp_enabled_milestone == (
+        "AFTER_VOICE_CME_CONFIGURATION"
+    )
+    assert result.dhcp_enabled_before_fwd == YES
+    early = result.phone_dhcp_lifecycle[:6]
+    assert {item.dhcp_enabled for item in early} == {UNOBSERVABLE}
+    assert {item.address for item in early} == {UNOBSERVABLE}
+
+
+def test_first_enabled_derivation_uses_milestone_order_and_only_observed_yes():
+    result = PositiveVoiceSliceResult(phone_dhcp_lifecycle=(
+        PhoneDhcpLifecycleEvidence(
+            milestone="IMMEDIATELY_BEFORE_STP_FWD_GATE",
+            phone="P1", dhcp_enabled=YES,
+        ),
+        PhoneDhcpLifecycleEvidence(
+            milestone="AFTER_PHONE_CREATION",
+            phone="P1", dhcp_enabled=UNOBSERVABLE,
+        ),
+        PhoneDhcpLifecycleEvidence(
+            milestone="AFTER_PHYSICAL_LINK_CREATION",
+            phone="P1", dhcp_enabled=YES,
+        ),
+    ))
+
+    assert result.first_observed_dhcp_enabled_milestone == (
+        "AFTER_PHYSICAL_LINK_CREATION"
+    )
+
+
+def test_dhcp_enabled_before_fwd_is_yes_when_any_earlier_read_says_yes():
+    (result, *_), _ = _lifecycle_run(
+        (False, False, False, True, True, True, True),
+    )
+
+    assert result.dhcp_enabled_before_fwd == YES
+
+
+def test_dhcp_enabled_before_fwd_is_no_when_all_prior_reads_stay_no():
+    (result, *_), _ = _lifecycle_run(
+        (False, False, False, False, False, False, True),
+    )
+
+    assert result.dhcp_enabled_before_fwd == NO
+
+
+def test_dhcp_enabled_before_fwd_fails_closed_across_an_unobservable_gap():
+    (result, *_), _ = _lifecycle_run(
+        (None, False, False, False, False, False, True),
+    )
+
+    assert result.dhcp_enabled_before_fwd == UNOBSERVABLE
+
+
+def test_lifecycle_diagnostic_is_read_only_bounded_and_retains_address_shape():
+    addresses = (None, "", "0.0.0.0", "10.93.0.10", "", "", "")
+    (result, _, _, call_control, *_), endpoints = _lifecycle_run(
+        (None, False, False, True, True, True, True),
+        addresses=addresses,
+    )
+
+    assert result.experiment == EXPERIMENT_PHONE_DHCP_LIFECYCLE
+    assert result.causal_experiment_result == (
+        "NOT_APPLICABLE_OBSERVATIONAL_DIAGNOSTIC"
+    )
+    assert result.acquisition_started is False
+    assert call_control.expectations == []
+    assert endpoints.armed == []
+    assert endpoints.read_interfaces == [
+        PHONE_ADDRESSING_INTERFACE
+    ] * (len(PHONE_DHCP_LIFECYCLE_MILESTONES) * 2)
+    assert [
+        item.milestone for item in result.phone_dhcp_lifecycle[::2]
+    ] == list(PHONE_DHCP_LIFECYCLE_MILESTONES)
+    assert [
+        item.address for item in result.phone_dhcp_lifecycle[::2]
+    ] == [
+        UNOBSERVABLE, "NONE", "0.0.0.0", "10.93.0.10",
+        "NONE", "NONE", "NONE",
+    ]
+    assert {
+        item.evidence_authority for item in result.phone_dhcp_lifecycle
+    } == {UNOBSERVABLE}
+    assert result.fresh_7960_dhcp_transaction == (
+        "NOT_INDEPENDENTLY_ESTABLISHED"
+    )
+
+
+def test_lifecycle_retains_unobservable_post_fwd_rows_when_gate_is_not_met():
+    clock = _Clock()
+    endpoints = _LifecycleEndpoints(_milestone_flags((False,) * 7))
+    result, *_ = _run(
+        configuration=_Configuration(stp_sequence=[_stp("LIS")]),
+        endpoints=endpoints,
+        phone_access_vlans=_PAIRED,
+        phone_dhcp_lifecycle=True,
+        gate_clock=clock,
+        gate_sleeper=clock.sleep,
+        gate_timeout_seconds=0.0,
+    )
+
+    post_fwd = [
+        item for item in result.phone_dhcp_lifecycle
+        if item.milestone == "IMMEDIATELY_AFTER_AUTHORITATIVE_FWD"
+    ]
+    assert len(post_fwd) == 2
+    assert {item.dhcp_enabled for item in post_fwd} == {UNOBSERVABLE}
+    assert len(endpoints.read_interfaces) == 12
+    assert result.dhcp_enabled_before_fwd == UNOBSERVABLE
+
+
+def test_default_and_run11_modes_do_not_collect_lifecycle_or_change_arming():
+    default_endpoints = _Endpoints()
+    default, *_ = _run(endpoints=default_endpoints)
+    gated_endpoints = _Endpoints(
+        observation=_EndpointObservation(dhcp_enabled=True),
+    )
+    (gated, *_), _ = _gated_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD")],
+        endpoints=gated_endpoints,
+    )
+
+    assert default.phone_dhcp_lifecycle == ()
+    assert default_endpoints.armed == [
+        "MCP-VOICEAB-test01_P1", "MCP-VOICEAB-test01_P2",
+    ]
+    assert gated.phone_dhcp_lifecycle == ()
+    assert gated.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
+    )
+    assert gated_endpoints.armed == []
+
+
+def test_lifecycle_helper_adds_no_query_observer_or_mutation_surface():
+    source = Path(
+        "src/packet_tracer_mcp/application/use_cases/qualify_positive_voice_slice.py"
+    ).read_text(encoding="utf-8")
+    helper = source.split("def _retain_phone_dhcp_lifecycle", 1)[1].split(
+        "\n    def ", 1,
+    )[0]
+
+    assert "self._endpoints.read_endpoint_address" in helper
+    assert "configure_endpoint_dhcp" not in helper
+    assert "self._configuration." not in helper
+    assert "self._call_control." not in helper
+    live_source = Path("tools/cp_scale_positive_voice_ab_live.py").read_text(
+        encoding="utf-8",
+    )
+    assert set(re.findall(r"OperationalQueryId\.[A-Z0-9_]+", live_source)) == {
+        "OperationalQueryId.SHOW_IP_DHCP_BINDING",
+        "OperationalQueryId.SHOW_IP_DHCP_POOL",
+        "OperationalQueryId.SHOW_IP_INTERFACE",
+        "OperationalQueryId.SHOW_IP_INTERFACE_BRIEF",
+        "OperationalQueryId.SHOW_SPANNING_TREE",
+    }
+
+
+def test_live_entrypoint_publishes_the_lifecycle_without_changing_old_modes():
+    source = Path("tools/cp_scale_positive_voice_ab_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "--phone-dhcp-lifecycle" in source
+    assert '"phone_dhcp_lifecycle"' in source
+    assert '"first_observed_dhcp_enabled_milestone"' in source
+    assert '"dhcp_enabled_before_fwd"' in source
+    assert '"timing_intrusion_assessment"' in source
+    assert '"server_receives_discover": "UNOBSERVABLE"' in source
+    assert '"dhcp_transaction_progress": "UNOBSERVABLE"' in source

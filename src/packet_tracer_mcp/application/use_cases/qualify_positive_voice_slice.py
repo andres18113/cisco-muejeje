@@ -159,6 +159,7 @@ DIFFERENT_FAILURE = "DIFFERENT_FAILURE"
 EXPERIMENT_UNIFORM_BASELINE = "UNIFORM_BASELINE"
 EXPERIMENT_PAIRED_ACCESS_VLAN = "PAIRED_ACCESS_VLAN"
 EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED = "PAIRED_ACCESS_VLAN_FWD_GATED"
+EXPERIMENT_PHONE_DHCP_LIFECYCLE = "PHONE_DHCP_LIFECYCLE"
 
 #: The FWD gate's terminal statuses.  FORWARDING and UNOBSERVABLE reuse the
 #: row classifications above; TIMEOUT is the bounded wait expiring while the
@@ -175,11 +176,16 @@ ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET = (
 ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN = (
     "ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN"
 )
+ACQUISITION_NOT_STARTED_OBSERVATIONAL_DIAGNOSTIC = (
+    "ACQUISITION_NOT_STARTED_OBSERVATIONAL_DIAGNOSTIC"
+)
 DHCP_FLAG_TRANSITION_OBSERVED_OFF_TO_ON = "OBSERVED_OFF_TO_ON"
 DHCP_FLAG_TRANSITION_NOT_OBSERVED = "NOT_OBSERVED"
 FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED = (
     "NOT_INDEPENDENTLY_ESTABLISHED"
 )
+NOT_ESTABLISHED = "NOT_ESTABLISHED"
+NONE = "NONE"
 
 #: Natural STP convergence on this build is the classical listening+learning
 #: walk, so the bound must outlive it with margin; the interval is coarse
@@ -471,6 +477,46 @@ class LifecycleMilestone:
         }
 
 
+#: The selected reads are deliberately explicit.  Their order is the result's
+#: chronology, and every selected point gets at most one existing endpoint/SVI
+#: read per phone.  No inferred phone boot milestone is inserted between them.
+PHONE_DHCP_LIFECYCLE_MILESTONES = (
+    "AFTER_PHONE_CREATION",
+    "AFTER_PHYSICAL_LINK_CREATION",
+    "AFTER_ACCESS_VOICE_VLAN_CONFIGURATION",
+    "AFTER_VOICE_CME_CONFIGURATION",
+    "AFTER_REALTIME_VERIFICATION",
+    "IMMEDIATELY_BEFORE_STP_FWD_GATE",
+    "IMMEDIATELY_AFTER_AUTHORITATIVE_FWD",
+)
+
+
+@dataclass(frozen=True)
+class PhoneDhcpLifecycleEvidence:
+    """One phone's existing endpoint/SVI read at one lifecycle boundary.
+
+    The observer publishes no execution/freshness/identity authority metadata,
+    so production evidence keeps ``evidence_authority`` UNOBSERVABLE.  The
+    field exists to retain authority only if that same observer already exposes
+    it; this diagnostic does not manufacture one around the read.
+    """
+
+    milestone: str
+    phone: str
+    dhcp_enabled: str = UNOBSERVABLE
+    address: str = UNOBSERVABLE
+    evidence_authority: str = UNOBSERVABLE
+
+    def as_evidence(self) -> dict:
+        return {
+            "milestone": self.milestone,
+            "phone": self.phone,
+            "dhcp_enabled": self.dhcp_enabled,
+            "address": self.address,
+            "evidence_authority": self.evidence_authority,
+        }
+
+
 #: The ordered common Voice foundation, from the phone port outwards.  The
 #: walk stops at the FIRST stage that is not VERIFIED and names it; skipping to
 #: the symptom furthest downstream is how a shared foundation stays unexamined.
@@ -725,6 +771,7 @@ class PositiveVoiceSliceResult:
     voice_vlan_id: int = VOICE_VLAN_ID
     phones: tuple[PositiveVoicePhoneOutcome, ...] = ()
     lifecycle: tuple[LifecycleMilestone, ...] = ()
+    phone_dhcp_lifecycle: tuple[PhoneDhcpLifecycleEvidence, ...] = ()
     #: Read-only foundation evidence.  It localises the outcome; it never
     #: participates in computing it.
     foundation: PositiveVoiceFoundation = field(
@@ -867,6 +914,49 @@ class PositiveVoiceSliceResult:
         return FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED
 
     @property
+    def first_observed_dhcp_enabled_milestone(self) -> str:
+        """Earliest selected milestone where either phone actually said YES."""
+        for milestone in PHONE_DHCP_LIFECYCLE_MILESTONES:
+            if any(
+                item.milestone == milestone and item.dhcp_enabled == YES
+                for item in self.phone_dhcp_lifecycle
+            ):
+                return milestone
+        return NOT_ESTABLISHED
+
+    @property
+    def dhcp_enabled_before_fwd(self) -> str:
+        """Whether selected reads established DHCP enabled before the FWD read.
+
+        Positive evidence wins immediately.  A NO requires every selected
+        pre-FWD milestone for every retained phone to be observable and NO;
+        one unread gap keeps the negative answer UNOBSERVABLE.  The derivation
+        itself is unavailable unless the existing authoritative gate reached
+        FWD in this run.
+        """
+        if self.stp_gate is None or not self.stp_gate.forwarding_observed:
+            return UNOBSERVABLE
+        before_fwd = PHONE_DHCP_LIFECYCLE_MILESTONES[:-1]
+        rows = tuple(
+            item for item in self.phone_dhcp_lifecycle
+            if item.milestone in before_fwd
+        )
+        if any(item.dhcp_enabled == YES for item in rows):
+            return YES
+        phones = {item.phone for item in self.phone_dhcp_lifecycle}
+        expected = {
+            (milestone, phone)
+            for milestone in before_fwd
+            for phone in phones
+        }
+        retained = {(item.milestone, item.phone) for item in rows}
+        if not phones or not expected.issubset(retained):
+            return UNOBSERVABLE
+        if all(item.dhcp_enabled == NO for item in rows):
+            return NO
+        return UNOBSERVABLE
+
+    @property
     def outcome(self) -> str:
         """The decision matrix, computed from independent facts only.
 
@@ -927,10 +1017,13 @@ class PositiveVoiceSliceResult:
         Run 9 is why these are two fields: its VOICE endpoint outcome was
         SAME_FAILURE while its causal result was PARTIAL_OR_DIVERGENT, and one
         name for both is how a boundary gets read as a refutation.  Only the
-        FWD-gated experiment computes a verdict here; every other run answers
-        NOT_FWD_GATED, because without the gate the trigger's freshness and
-        the port's forwarding state are exactly the unproven premises.
+        FWD-gated causal experiment computes a verdict here.  The lifecycle
+        mode names itself non-applicable because it is observational only;
+        every other run answers NOT_FWD_GATED, because without the gate the
+        trigger's freshness and forwarding state are unproven premises.
         """
+        if self.experiment == EXPERIMENT_PHONE_DHCP_LIFECYCLE:
+            return "NOT_APPLICABLE_OBSERVATIONAL_DIAGNOSTIC"
         if self.experiment != EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED:
             return "NOT_FWD_GATED"
         if self.acquisition_boundary == (
@@ -1432,6 +1525,7 @@ class PositiveVoiceSliceQualifier:
         edge_portfast: bool = False,
         phone_access_vlans: tuple[int, ...] | None = None,
         fwd_gated_fresh_dhcp: bool = False,
+        phone_dhcp_lifecycle: bool = False,
         gate_timeout_seconds: float = STP_FWD_GATE_TIMEOUT_SECONDS,
         gate_interval_seconds: float = STP_FWD_GATE_INTERVAL_SECONDS,
         gate_clock=monotonic,
@@ -1471,10 +1565,18 @@ class PositiveVoiceSliceQualifier:
         # VLAN -- and it changes exactly one lifecycle fact: when the phones
         # are asked to acquire.  PortFast beside it would be a second variable.
         self._fwd_gated = bool(fwd_gated_fresh_dhcp)
-        if self._fwd_gated:
+        self._phone_dhcp_lifecycle = bool(phone_dhcp_lifecycle)
+        if self._fwd_gated and self._phone_dhcp_lifecycle:
+            raise ValueError(
+                "the RUN11 fresh-DHCP experiment and the observational phone "
+                "DHCP lifecycle diagnostic are separate modes"
+            )
+        self._gate_enabled = self._fwd_gated or self._phone_dhcp_lifecycle
+        if self._gate_enabled:
             if self._phone_access_vlans.count(VOICE_VLAN_ID) != 1:
                 raise ValueError(
-                    "The FWD-gated experiment needs the paired mapping: "
+                    "The gated experiment or diagnostic needs the paired "
+                    "mapping: "
                     "exactly one phone port carries the voice VLAN as its "
                     "access VLAN, and that port is what the gate watches."
                 )
@@ -1489,7 +1591,9 @@ class PositiveVoiceSliceQualifier:
         self._gate_sleeper = gate_sleeper
         # Derived once, next to the knobs that define it, so a result can name
         # its experiment without re-deriving it from the mapping later.
-        if self._fwd_gated:
+        if self._phone_dhcp_lifecycle:
+            self._experiment = EXPERIMENT_PHONE_DHCP_LIFECYCLE
+        elif self._fwd_gated:
             self._experiment = EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED
         elif VOICE_VLAN_ID in self._phone_access_vlans:
             self._experiment = EXPERIMENT_PAIRED_ACCESS_VLAN
@@ -1539,6 +1643,7 @@ class PositiveVoiceSliceQualifier:
         foundation = PositiveVoiceFoundation()
         stp_gate: StpForwardingGate | None = None
         acquisition_boundary = ""
+        phone_dhcp_lifecycle: list[PhoneDhcpLifecycleEvidence] = []
         try:
             (
                 original_simulation, phones, binding_count,
@@ -1546,7 +1651,7 @@ class PositiveVoiceSliceQualifier:
                 stp_gate, acquisition_boundary, measured_errors,
             ) = self._measure(
                 router_model, switch_model, phone_model,
-                created, owned_links, journal,
+                created, owned_links, journal, phone_dhcp_lifecycle,
             )
             errors.extend(measured_errors)
         except Exception as exc:  # noqa: BLE001
@@ -1573,6 +1678,7 @@ class PositiveVoiceSliceQualifier:
             phone_model=phone_model,
             router_name=self._name("R"), switch_name=self._name("SW"),
             phones=phones, lifecycle=journal.frozen(),
+            phone_dhcp_lifecycle=tuple(phone_dhcp_lifecycle),
             foundation=foundation, portfast=portfast,
             portfast_readback=_worst(*(
                 item.portfast_readback for item in phones
@@ -1778,6 +1884,7 @@ class PositiveVoiceSliceQualifier:
     def _measure(
         self, router_model: str, switch_model: str, phone_model: str,
         created, owned_links, journal: _Journal,
+        phone_dhcp_lifecycle: list[PhoneDhcpLifecycleEvidence],
     ):
         self._router_model = router_model
         self._switch_model = switch_model
@@ -1817,6 +1924,11 @@ class PositiveVoiceSliceQualifier:
                     PositiveVoiceFoundation(), None, "", errors,
                 )
         journal.record("WHEN_PHONE_EXISTS", True, ", ".join(p.name for p in phones))
+        lifecycle_observations: dict[str, object | None] = {}
+        if self._phone_dhcp_lifecycle:
+            lifecycle_observations = self._retain_phone_dhcp_lifecycle(
+                "AFTER_PHONE_CREATION", phones, phone_dhcp_lifecycle, errors,
+            )
         # PT publishes no phone power or boot state on this build.  This one is
         # an OBSERVATION milestone with nothing to observe on, which is exactly
         # what the UNOBSERVABLE status exists to say; writing a guess here, or
@@ -1848,6 +1960,11 @@ class PositiveVoiceSliceQualifier:
                 )
         journal.record("LINK_CREATE_ORDER", True, "uplink first, then phone links")
         journal.record("WHEN_PHONE_IS_LINKED", True, ", ".join(phone_ports))
+        if self._phone_dhcp_lifecycle:
+            lifecycle_observations = self._retain_phone_dhcp_lifecycle(
+                "AFTER_PHYSICAL_LINK_CREATION",
+                phones, phone_dhcp_lifecycle, errors,
+            )
 
         applied, config_errors = self._apply(
             self._configuration.apply_actions,
@@ -1867,6 +1984,11 @@ class PositiveVoiceSliceQualifier:
         journal.record("WHEN_VOICE_VLAN_APPLIED", applied, f"voice vlan {VOICE_VLAN_ID}")
         journal.record("WHEN_DHCP_POOL_EXISTS", applied, VOICE_POOL_NAME)
         journal.record("CONFIGURATION_APPLY_ORDER", applied, "L2, L3, then services")
+        if self._phone_dhcp_lifecycle:
+            lifecycle_observations = self._retain_phone_dhcp_lifecycle(
+                "AFTER_ACCESS_VOICE_VLAN_CONFIGURATION",
+                phones, phone_dhcp_lifecycle, errors,
+            )
 
         # Immediately after the L2 configuration and before anything else, which
         # is where a repaired canonical pipeline would emit it: the control
@@ -1882,16 +2004,27 @@ class PositiveVoiceSliceQualifier:
         journal.record("WHEN_CME_ENABLED", voice_applied, "telephony-service")
         journal.record("WHEN_PHONE_BINDING_EXISTS", voice_applied, ", ".join(EXTENSIONS))
         journal.record("WHEN_CNF_FILES_GENERATED", voice_applied, "create cnf-files")
+        if self._phone_dhcp_lifecycle:
+            lifecycle_observations = self._retain_phone_dhcp_lifecycle(
+                "AFTER_VOICE_CME_CONFIGURATION",
+                phones, phone_dhcp_lifecycle, errors,
+            )
 
         # The typed endpoint runtime answers with a bool, and only True is its
         # acceptance.  In the FWD-gated experiment the arming moves BEHIND the
         # gate: the trigger under judgement must not fire before the port it
         # is judged on was observed forwarding.
-        if not self._fwd_gated:
+        if not self._gate_enabled:
             self._arm_endpoints(phones, journal, errors)
 
         # Realtime is the authoritative window for addressing and registration.
         realtime_before = self._realtime(errors, "before")
+        if self._phone_dhcp_lifecycle:
+            lifecycle_observations = self._retain_phone_dhcp_lifecycle(
+                "AFTER_REALTIME_VERIFICATION",
+                phones, phone_dhcp_lifecycle, errors,
+                observable=realtime_before,
+            )
         stp_before = self._read_stp(switch.name, errors)
         journal.record(
             "REALTIME_VERIFIED_BEFORE_WINDOW", realtime_before,
@@ -1903,10 +2036,16 @@ class PositiveVoiceSliceQualifier:
         pre_arm: dict[str, str] = {}
         arm_acceptance: dict[str, str] = {}
         post_arm: dict[str, str] = {}
-        if self._fwd_gated:
+        if self._gate_enabled:
             intervention = phone_ports[
                 self._phone_access_vlans.index(VOICE_VLAN_ID)
             ]
+            if self._phone_dhcp_lifecycle:
+                lifecycle_observations = self._retain_phone_dhcp_lifecycle(
+                    "IMMEDIATELY_BEFORE_STP_FWD_GATE",
+                    phones, phone_dhcp_lifecycle, errors,
+                    observable=realtime_before,
+                )
             gate = await_stp_forwarding(
                 self._configuration, switch.name, VOICE_VLAN_ID, intervention,
                 timeout_seconds=self._gate_timeout_seconds,
@@ -1918,7 +2057,18 @@ class PositiveVoiceSliceQualifier:
                 "WHEN_INTERVENTION_STP_FWD_OBSERVED", gate.forwarding_observed,
                 " -> ".join(gate.observed_states), OBSERVATION,
             )
-            if not gate.forwarding_observed:
+            if self._phone_dhcp_lifecycle:
+                lifecycle_observations = self._retain_phone_dhcp_lifecycle(
+                    "IMMEDIATELY_AFTER_AUTHORITATIVE_FWD",
+                    phones, phone_dhcp_lifecycle, errors,
+                    observable=gate.forwarding_observed,
+                )
+                boundary = (
+                    ACQUISITION_NOT_STARTED_OBSERVATIONAL_DIAGNOSTIC
+                    if gate.forwarding_observed
+                    else ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
+                )
+            elif not gate.forwarding_observed:
                 boundary = ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
             else:
                 for phone in phones:
@@ -2004,6 +2154,8 @@ class PositiveVoiceSliceQualifier:
                     phone.name, UNOBSERVABLE,
                 ),
                 dhcp_post_arm=post_arm.get(phone.name, UNOBSERVABLE),
+                endpoint_observation=lifecycle_observations.get(phone.name),
+                endpoint_observation_supplied=self._phone_dhcp_lifecycle,
             )
             for index, phone in enumerate(phones)
         )
@@ -2011,6 +2163,73 @@ class PositiveVoiceSliceQualifier:
             original_simulation, outcomes, binding_count,
             realtime_before, realtime_after, foundation, gate, boundary, errors,
         )
+
+    def _retain_phone_dhcp_lifecycle(
+        self,
+        milestone: str,
+        phones,
+        retained: list[PhoneDhcpLifecycleEvidence],
+        errors: list[str],
+        *,
+        observable: bool = True,
+    ) -> dict[str, object | None]:
+        """Take one bounded existing endpoint/SVI read per phone, without retry.
+
+        A lifecycle point whose prerequisite was not established still retains
+        one UNOBSERVABLE row per phone, but performs no speculative read.  The
+        method intentionally has no configuration, IOS or call-control access:
+        it only reuses ``read_endpoint_address`` and never arms the endpoint.
+        """
+        if milestone not in PHONE_DHCP_LIFECYCLE_MILESTONES:
+            raise ValueError(f"Unknown phone DHCP lifecycle milestone: {milestone}")
+        observations: dict[str, object | None] = {}
+        for phone in phones:
+            observation = None
+            if observable:
+                try:
+                    observation = self._endpoints.read_endpoint_address(
+                        phone.name, PHONE_ADDRESSING_INTERFACE,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(
+                        "phone_dhcp_lifecycle_unreadable:"
+                        f"{milestone}:{phone.name}: {exc}"
+                    )
+            observations[phone.name] = observation
+
+            dhcp_enabled = UNOBSERVABLE
+            address = UNOBSERVABLE
+            authority = UNOBSERVABLE
+            if observation is not None:
+                flag = getattr(observation, "dhcp_enabled", None)
+                if flag is True:
+                    dhcp_enabled = YES
+                elif flag is False:
+                    dhcp_enabled = NO
+
+                ipv4 = str(getattr(observation, "ipv4", "") or "").strip()
+                channel = getattr(observation, "address_channel", None)
+                if channel is True:
+                    address = ipv4 or NONE
+                elif channel is None and ipv4:
+                    # As in the existing outcome read: a returned address proves
+                    # a channel existed, while an empty value proves nothing.
+                    address = ipv4
+
+                exposed_authority = getattr(
+                    observation, "evidence_authority", None,
+                )
+                if exposed_authority:
+                    authority = str(exposed_authority)
+
+            retained.append(PhoneDhcpLifecycleEvidence(
+                milestone=milestone,
+                phone=phone.name,
+                dhcp_enabled=dhcp_enabled,
+                address=address,
+                evidence_authority=authority,
+            ))
+        return observations
 
     def _arm_endpoints(
         self, phones, journal: _Journal, errors: list[str],
@@ -2358,6 +2577,8 @@ class PositiveVoiceSliceQualifier:
         dhcp_pre_arm: str = UNOBSERVABLE,
         arm_call_accepted: str = UNOBSERVABLE,
         dhcp_post_arm: str = UNOBSERVABLE,
+        endpoint_observation=None,
+        endpoint_observation_supplied: bool = False,
     ) -> PositiveVoicePhoneOutcome:
         data_status = voice_status = UNOBSERVABLE
         try:
@@ -2403,15 +2624,20 @@ class PositiveVoiceSliceQualifier:
             # The registration surface carries the endpoint address, but a
             # separate endpoint read is what makes an absent one distinguishable
             # from an unread one.
-            try:
-                observation = self._endpoints.read_endpoint_address(
-                    phone.name, PHONE_ADDRESSING_INTERFACE,
-                )
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"endpoint_address_unreadable:{phone.name}: {exc}")
-                observation = None
+            observation = endpoint_observation
+            if not endpoint_observation_supplied:
+                try:
+                    observation = self._endpoints.read_endpoint_address(
+                        phone.name, PHONE_ADDRESSING_INTERFACE,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"endpoint_address_unreadable:{phone.name}: {exc}")
+                    observation = None
             if observation is not None:
                 ipv4 = str(getattr(observation, "ipv4", "") or "")
+                present = getattr(observation, "present", None)
+                if present is not None:
+                    svi_present = bool(present)
                 channel = getattr(observation, "address_channel", None)
                 if channel is not None:
                     address_channel = bool(channel) or address_channel
@@ -2423,6 +2649,11 @@ class PositiveVoiceSliceQualifier:
                     flag = getattr(observation, "dhcp_enabled", None)
                     if flag is not None:
                         dhcp_enabled = YES if bool(flag) else NO
+                observed_device_ipv4 = str(
+                    getattr(observation, "device_ipv4", "") or ""
+                )
+                if observed_device_ipv4:
+                    device_ipv4 = observed_device_ipv4
 
         link_types, portfast_readback = _classify_edge_marker(stp_after, interface)
         return PositiveVoicePhoneOutcome(
