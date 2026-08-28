@@ -453,10 +453,28 @@ def _serialize(result) -> dict:
         "phone_dhcp_lifecycle": [
             item.as_evidence() for item in result.phone_dhcp_lifecycle
         ],
-        "first_observed_dhcp_enabled_milestone": (
-            result.first_observed_dhcp_enabled_milestone
+        "first_observed_svi_dhcp_enabled_milestone": (
+            result.first_observed_svi_dhcp_enabled_milestone
         ),
-        "dhcp_enabled_before_fwd": result.dhcp_enabled_before_fwd,
+        "first_observed_device_dhcp_enabled_milestone": (
+            result.first_observed_device_dhcp_enabled_milestone
+        ),
+        "svi_dhcp_enabled_before_fwd": result.svi_dhcp_enabled_before_fwd,
+        "device_dhcp_enabled_before_fwd": (
+            result.device_dhcp_enabled_before_fwd
+        ),
+        "first_observed_svi_dhcp_enabled_milestone_by_phone": (
+            result.first_observed_svi_dhcp_enabled_milestone_by_phone
+        ),
+        "first_observed_device_dhcp_enabled_milestone_by_phone": (
+            result.first_observed_device_dhcp_enabled_milestone_by_phone
+        ),
+        "svi_dhcp_enabled_before_fwd_by_phone": (
+            result.svi_dhcp_enabled_before_fwd_by_phone
+        ),
+        "device_dhcp_enabled_before_fwd_by_phone": (
+            result.device_dhcp_enabled_before_fwd_by_phone
+        ),
         "timing_intrusion_assessment": (
             "ONE_BOUNDED_EXISTING_ENDPOINT_SVI_READ_PER_PHONE_AT_EACH_OF_"
             "SEVEN_MILESTONES_NO_RETRY; READ_LATENCY_MAY_SHIFT_LATER_"
@@ -633,10 +651,30 @@ def run(
         "acquisition_started": evidence["acquisition_started"],
         "acquisition_boundary": evidence["acquisition_boundary"],
         "stp_gate": evidence["stp_gate"],
-        "first_observed_dhcp_enabled_milestone": evidence[
-            "first_observed_dhcp_enabled_milestone"
+        "first_observed_svi_dhcp_enabled_milestone": evidence[
+            "first_observed_svi_dhcp_enabled_milestone"
         ],
-        "dhcp_enabled_before_fwd": evidence["dhcp_enabled_before_fwd"],
+        "first_observed_device_dhcp_enabled_milestone": evidence[
+            "first_observed_device_dhcp_enabled_milestone"
+        ],
+        "svi_dhcp_enabled_before_fwd": evidence[
+            "svi_dhcp_enabled_before_fwd"
+        ],
+        "device_dhcp_enabled_before_fwd": evidence[
+            "device_dhcp_enabled_before_fwd"
+        ],
+        "first_observed_svi_dhcp_enabled_milestone_by_phone": evidence[
+            "first_observed_svi_dhcp_enabled_milestone_by_phone"
+        ],
+        "first_observed_device_dhcp_enabled_milestone_by_phone": evidence[
+            "first_observed_device_dhcp_enabled_milestone_by_phone"
+        ],
+        "svi_dhcp_enabled_before_fwd_by_phone": evidence[
+            "svi_dhcp_enabled_before_fwd_by_phone"
+        ],
+        "device_dhcp_enabled_before_fwd_by_phone": evidence[
+            "device_dhcp_enabled_before_fwd_by_phone"
+        ],
         "portfast": evidence["portfast"],
         "portfast_readback": evidence["portfast_readback"],
         "voice_bindings": evidence["voice_bindings_observed"],

@@ -50,6 +50,7 @@ ROLES = {
     "MEASURED_DHCP_POOL_READBACK_BASELINE",
     "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL",
     "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
+    "PHONE_DHCP_LIFECYCLE_QUALIFICATION",
 }
 
 
@@ -286,6 +287,30 @@ def test_the_causal_intervention_has_a_role_of_its_own(monkeypatch, tmp_path):
 
     assert entry["role"] == "PORTFAST_ONLY_CAUSAL_INTERVENTION"
     assert "PORTFAST_ONLY_CAUSAL_INTERVENTION" in tool.ROLES
+
+
+def test_the_observational_lifecycle_has_a_dedicated_ledger_role(
+    monkeypatch, tmp_path,
+):
+    raw, _ = _isolate(monkeypatch, tmp_path)
+    (raw / "positive-voice-ab-run9-probe.json").write_bytes(b"{}")
+
+    entry = _record(role="PHONE_DHCP_LIFECYCLE_QUALIFICATION")
+
+    assert entry["role"] == "PHONE_DHCP_LIFECYCLE_QUALIFICATION"
+    assert tool.ROLES == (
+        "HARNESS_BOUNDARY_WRONG_PHONE_ADDRESSING_INTERFACE",
+        "HARNESS_BOUNDARY_EMPTY_ADDRESS_SEMANTICS",
+        "AUTHORITATIVE_SAME_FAILURE_MEASUREMENT",
+        "FOUNDATION_QUALIFICATION_MEASUREMENT",
+        "PORTFAST_ONLY_CAUSAL_INTERVENTION",
+        "HARNESS_BOUNDARY_EDGE_ACTION_NAME_REJECTED",
+        "CURRENT_NAMESPACE_NO_PORTFAST_PAIRED_BASELINE",
+        "MEASURED_DHCP_POOL_READBACK_BASELINE",
+        "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL",
+        "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
+        "PHONE_DHCP_LIFECYCLE_QUALIFICATION",
+    )
 
 
 def test_a_run_whose_intervention_never_applied_is_filed_as_the_boundary_it_was():

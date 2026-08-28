@@ -483,7 +483,7 @@ class LifecycleMilestone:
 PHONE_DHCP_LIFECYCLE_MILESTONES = (
     "AFTER_PHONE_CREATION",
     "AFTER_PHYSICAL_LINK_CREATION",
-    "AFTER_ACCESS_VOICE_VLAN_CONFIGURATION",
+    "AFTER_NETWORK_CONFIGURATION_BATCH",
     "AFTER_VOICE_CME_CONFIGURATION",
     "AFTER_REALTIME_VERIFICATION",
     "IMMEDIATELY_BEFORE_STP_FWD_GATE",
@@ -503,16 +503,22 @@ class PhoneDhcpLifecycleEvidence:
 
     milestone: str
     phone: str
-    dhcp_enabled: str = UNOBSERVABLE
-    address: str = UNOBSERVABLE
+    svi_present: str = UNOBSERVABLE
+    svi_dhcp_enabled: str = UNOBSERVABLE
+    device_dhcp_enabled: str = UNOBSERVABLE
+    svi_ipv4: str = UNOBSERVABLE
+    device_ipv4: str = UNOBSERVABLE
     evidence_authority: str = UNOBSERVABLE
 
     def as_evidence(self) -> dict:
         return {
             "milestone": self.milestone,
             "phone": self.phone,
-            "dhcp_enabled": self.dhcp_enabled,
-            "address": self.address,
+            "svi_present": self.svi_present,
+            "svi_dhcp_enabled": self.svi_dhcp_enabled,
+            "device_dhcp_enabled": self.device_dhcp_enabled,
+            "svi_ipv4": self.svi_ipv4,
+            "device_ipv4": self.device_ipv4,
             "evidence_authority": self.evidence_authority,
         }
 
@@ -914,47 +920,111 @@ class PositiveVoiceSliceResult:
         return FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED
 
     @property
-    def first_observed_dhcp_enabled_milestone(self) -> str:
-        """Earliest selected milestone where either phone actually said YES."""
-        for milestone in PHONE_DHCP_LIFECYCLE_MILESTONES:
-            if any(
-                item.milestone == milestone and item.dhcp_enabled == YES
-                for item in self.phone_dhcp_lifecycle
-            ):
-                return milestone
-        return NOT_ESTABLISHED
+    def first_observed_svi_dhcp_enabled_milestone(self) -> str:
+        """Uniform per-phone SVI answer, or MIXED when the phones diverge."""
+        return self._uniform_phone_derivation(
+            self.first_observed_svi_dhcp_enabled_milestone_by_phone,
+            NOT_ESTABLISHED,
+        )
 
     @property
-    def dhcp_enabled_before_fwd(self) -> str:
-        """Whether selected reads established DHCP enabled before the FWD read.
-
-        Positive evidence wins immediately.  A NO requires every selected
-        pre-FWD milestone for every retained phone to be observable and NO;
-        one unread gap keeps the negative answer UNOBSERVABLE.  The derivation
-        itself is unavailable unless the existing authoritative gate reached
-        FWD in this run.
-        """
-        if self.stp_gate is None or not self.stp_gate.forwarding_observed:
-            return UNOBSERVABLE
-        before_fwd = PHONE_DHCP_LIFECYCLE_MILESTONES[:-1]
-        rows = tuple(
-            item for item in self.phone_dhcp_lifecycle
-            if item.milestone in before_fwd
+    def first_observed_device_dhcp_enabled_milestone(self) -> str:
+        """Uniform per-phone device answer, or MIXED on divergence."""
+        return self._uniform_phone_derivation(
+            self.first_observed_device_dhcp_enabled_milestone_by_phone,
+            NOT_ESTABLISHED,
         )
-        if any(item.dhcp_enabled == YES for item in rows):
-            return YES
-        phones = {item.phone for item in self.phone_dhcp_lifecycle}
-        expected = {
-            (milestone, phone)
-            for milestone in before_fwd
-            for phone in phones
-        }
-        retained = {(item.milestone, item.phone) for item in rows}
-        if not phones or not expected.issubset(retained):
-            return UNOBSERVABLE
-        if all(item.dhcp_enabled == NO for item in rows):
-            return NO
-        return UNOBSERVABLE
+
+    @property
+    def first_observed_svi_dhcp_enabled_milestone_by_phone(
+        self,
+    ) -> dict[str, str]:
+        return self._first_enabled_milestone_by_phone("svi_dhcp_enabled")
+
+    @property
+    def first_observed_device_dhcp_enabled_milestone_by_phone(
+        self,
+    ) -> dict[str, str]:
+        return self._first_enabled_milestone_by_phone("device_dhcp_enabled")
+
+    @property
+    def svi_dhcp_enabled_before_fwd(self) -> str:
+        """Uniform per-phone SVI answer, or MIXED when the phones diverge."""
+        return self._uniform_phone_derivation(
+            self.svi_dhcp_enabled_before_fwd_by_phone,
+            UNOBSERVABLE,
+        )
+
+    @property
+    def device_dhcp_enabled_before_fwd(self) -> str:
+        """Uniform per-phone device answer, or MIXED on divergence."""
+        return self._uniform_phone_derivation(
+            self.device_dhcp_enabled_before_fwd_by_phone,
+            UNOBSERVABLE,
+        )
+
+    @property
+    def svi_dhcp_enabled_before_fwd_by_phone(self) -> dict[str, str]:
+        return self._enabled_before_fwd_by_phone("svi_dhcp_enabled")
+
+    @property
+    def device_dhcp_enabled_before_fwd_by_phone(self) -> dict[str, str]:
+        return self._enabled_before_fwd_by_phone("device_dhcp_enabled")
+
+    def _lifecycle_phones(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(
+            item.phone for item in self.phone_dhcp_lifecycle
+        ))
+
+    def _first_enabled_milestone_by_phone(
+        self, channel: str,
+    ) -> dict[str, str]:
+        answers: dict[str, str] = {}
+        for phone in self._lifecycle_phones():
+            answers[phone] = NOT_ESTABLISHED
+            for milestone in PHONE_DHCP_LIFECYCLE_MILESTONES:
+                if any(
+                    item.phone == phone
+                    and item.milestone == milestone
+                    and getattr(item, channel) == YES
+                    for item in self.phone_dhcp_lifecycle
+                ):
+                    answers[phone] = milestone
+                    break
+        return answers
+
+    def _enabled_before_fwd_by_phone(self, channel: str) -> dict[str, str]:
+        """Derive each phone independently; one phone's gap taints only it."""
+        phones = self._lifecycle_phones()
+        answers = {phone: UNOBSERVABLE for phone in phones}
+        if self.stp_gate is None or not self.stp_gate.forwarding_observed:
+            return answers
+        before_fwd = PHONE_DHCP_LIFECYCLE_MILESTONES[:-1]
+        for phone in phones:
+            rows = tuple(
+                item for item in self.phone_dhcp_lifecycle
+                if item.phone == phone and item.milestone in before_fwd
+            )
+            if any(getattr(item, channel) == YES for item in rows):
+                answers[phone] = YES
+                continue
+            retained = {item.milestone for item in rows}
+            if not set(before_fwd).issubset(retained):
+                continue
+            if all(getattr(item, channel) == NO for item in rows):
+                answers[phone] = NO
+        return answers
+
+    @staticmethod
+    def _uniform_phone_derivation(
+        answers: dict[str, str], empty: str,
+    ) -> str:
+        values = set(answers.values())
+        if not values:
+            return empty
+        if len(values) == 1:
+            return values.pop()
+        return "MIXED"
 
     @property
     def outcome(self) -> str:
@@ -1986,7 +2056,7 @@ class PositiveVoiceSliceQualifier:
         journal.record("CONFIGURATION_APPLY_ORDER", applied, "L2, L3, then services")
         if self._phone_dhcp_lifecycle:
             lifecycle_observations = self._retain_phone_dhcp_lifecycle(
-                "AFTER_ACCESS_VOICE_VLAN_CONFIGURATION",
+                "AFTER_NETWORK_CONFIGURATION_BATCH",
                 phones, phone_dhcp_lifecycle, errors,
             )
 
@@ -2197,24 +2267,50 @@ class PositiveVoiceSliceQualifier:
                     )
             observations[phone.name] = observation
 
-            dhcp_enabled = UNOBSERVABLE
-            address = UNOBSERVABLE
+            svi_present = UNOBSERVABLE
+            svi_dhcp_enabled = UNOBSERVABLE
+            device_dhcp_enabled = UNOBSERVABLE
+            svi_ipv4 = UNOBSERVABLE
+            device_ipv4 = UNOBSERVABLE
             authority = UNOBSERVABLE
             if observation is not None:
-                flag = getattr(observation, "dhcp_enabled", None)
-                if flag is True:
-                    dhcp_enabled = YES
-                elif flag is False:
-                    dhcp_enabled = NO
+                present = getattr(observation, "present", None)
+                if present is True:
+                    svi_present = YES
+                elif present is False:
+                    svi_present = NO
+
+                svi_flag = getattr(observation, "dhcp_enabled", None)
+                if svi_flag is True:
+                    svi_dhcp_enabled = YES
+                elif svi_flag is False:
+                    svi_dhcp_enabled = NO
+
+                device_flag = getattr(
+                    observation, "device_dhcp_enabled", None,
+                )
+                if device_flag is True:
+                    device_dhcp_enabled = YES
+                elif device_flag is False:
+                    device_dhcp_enabled = NO
 
                 ipv4 = str(getattr(observation, "ipv4", "") or "").strip()
                 channel = getattr(observation, "address_channel", None)
                 if channel is True:
-                    address = ipv4 or NONE
+                    svi_ipv4 = ipv4 or NONE
                 elif channel is None and ipv4:
                     # As in the existing outcome read: a returned address proves
                     # a channel existed, while an empty value proves nothing.
-                    address = ipv4
+                    svi_ipv4 = ipv4
+
+                observed_device_ipv4 = str(
+                    getattr(observation, "device_ipv4", "") or ""
+                ).strip()
+                if observed_device_ipv4:
+                    # The existing observation does not retain whether the
+                    # device-level address getter answered an empty value, so
+                    # only a value can be retained; empty stays UNOBSERVABLE.
+                    device_ipv4 = observed_device_ipv4
 
                 exposed_authority = getattr(
                     observation, "evidence_authority", None,
@@ -2225,8 +2321,11 @@ class PositiveVoiceSliceQualifier:
             retained.append(PhoneDhcpLifecycleEvidence(
                 milestone=milestone,
                 phone=phone.name,
-                dhcp_enabled=dhcp_enabled,
-                address=address,
+                svi_present=svi_present,
+                svi_dhcp_enabled=svi_dhcp_enabled,
+                device_dhcp_enabled=device_dhcp_enabled,
+                svi_ipv4=svi_ipv4,
+                device_ipv4=device_ipv4,
                 evidence_authority=authority,
             ))
         return observations

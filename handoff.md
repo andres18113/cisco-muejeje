@@ -36,8 +36,13 @@ FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_RUN11_PRE_FLAGS_ALREADY_YES
 FRESH_7960_DHCP_TRANSACTION = NOT_INDEPENDENTLY_ESTABLISHED
 PHONE_DHCP_LIFECYCLE_DIAGNOSTIC = READY
 PHONE_DHCP_LIFECYCLE_LIVE_EXECUTED = NO
-FIRST_OBSERVED_DHCP_ENABLED_MILESTONE = NOT_ESTABLISHED
-DHCP_ENABLED_BEFORE_FWD = UNOBSERVABLE
+PHONE_DHCP_LIFECYCLE_CHANNELS = SVI_DHCP | DEVICE_DHCP
+PHONE_DHCP_LIFECYCLE_DERIVATIONS = PER_PHONE
+PHONE_DHCP_LIFECYCLE_LEDGER_ROLE = PHONE_DHCP_LIFECYCLE_QUALIFICATION
+FIRST_OBSERVED_SVI_DHCP_ENABLED_MILESTONE = NOT_ESTABLISHED
+FIRST_OBSERVED_DEVICE_DHCP_ENABLED_MILESTONE = NOT_ESTABLISHED
+SVI_DHCP_ENABLED_BEFORE_FWD = UNOBSERVABLE
+DEVICE_DHCP_ENABLED_BEFORE_FWD = UNOBSERVABLE
 RUN10_EXECUTED = YES
 RUN10_RESULT = STP_PRECONDITION_NOT_ESTABLISHED
 RUN10_FWD_GATE = UNOBSERVABLE
@@ -95,19 +100,23 @@ CP_SCALE_STATUS = OPEN / NOT VERIFIED
 
 ## Phone DHCP lifecycle qualification prepared -- not run LIVE
 
-The opt-in observational mode retains each phone's DHCP flag, SVI address and
-already-exposed evidence authority after creation, link creation, access/voice
-VLAN configuration, Voice/CME configuration, Realtime verification,
-immediately before the existing FWD gate and immediately after authoritative
-FWD.  Each selected point performs one bounded existing endpoint/SVI read per
-phone without retry; that sequential read latency may shift later observation
-times and is retained as the timing-intrusion assessment.
+The opt-in observational mode retains each phone's separate SVI and device DHCP
+flags, SVI presence, SVI IPv4, device IPv4 and already-exposed evidence
+authority from the same endpoint observation.  It reads after creation, link
+creation, the existing full network configuration batch (L2, L3, services and
+DHCP pool), Voice/CME configuration, Realtime verification, immediately before
+the existing FWD gate and immediately after authoritative FWD.  Each selected
+point performs one bounded existing endpoint/SVI read per phone without retry;
+that sequential read latency may shift later observation times and is retained
+as the timing-intrusion assessment.
 
 The mode never calls `configure_endpoint_dhcp()`, opens no acquisition window
 and adds no IOS query, PT observer or mutation primitive.  The default and
-RUN11 modes remain unchanged.  The earliest-observed-YES and enabled-before-FWD
-derivations are ready, but both lifecycle results remain unestablished until a
-governed LIVE; Packet Tracer was not run during preparation.
+RUN11 modes remain unchanged.  Per-phone earliest-observed-YES and
+enabled-before-FWD derivations are ready independently for the SVI and device
+channels, and the dedicated lifecycle ledger role is accepted.  All lifecycle
+results remain unestablished until a governed LIVE; Packet Tracer was not run
+during preparation.
 
 ## RUN10 STP boundary and trunk forensics
 
