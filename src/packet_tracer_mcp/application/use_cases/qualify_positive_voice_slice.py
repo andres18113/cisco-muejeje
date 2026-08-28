@@ -198,6 +198,7 @@ STP_FAILURE_COMPLETENESS = "COMPLETENESS"
 STP_FAILURE_IDENTITY = "IDENTITY"
 STP_FAILURE_PARSING = "PARSING"
 STP_FAILURE_QUERY_SESSION = "QUERY_SESSION"
+STP_IDENTITY_CONFIRMED_UNIQUE = "confirmed_unique"
 
 
 @dataclass(frozen=True)
@@ -220,6 +221,7 @@ class StpReadObservation:
             and self.fresh is True
             and self.complete is True
             and self.instances is not None
+            and self.identity_provenance == STP_IDENTITY_CONFIRMED_UNIQUE
             and not self.failure_dimensions
         )
 
@@ -322,6 +324,10 @@ def _legacy_stp_observation(configuration, switch_name: str) -> StpReadObservati
         fresh=True,
         complete=True,
         identity_provenance="legacy_parsed_read_contract",
+        failure_reason=(
+            "The legacy STP read did not retain confirmed-unique identity."
+        ),
+        failure_dimensions=(STP_FAILURE_IDENTITY,),
     )
 
 
@@ -361,12 +367,12 @@ def await_stp_forwarding(
 ) -> StpForwardingGate:
     """Poll the qualified STP read until this port forwards in this VLAN.
 
-    Success is one thing only: a fresh+complete capture whose row for this
-    interface in this VLAN's instance reads FORWARDING.  LIS, LRN, BLK and
-    ABSENT keep the poll alive until the bound; a read that established
-    nothing terminates the gate UNOBSERVABLE immediately, because continuing
-    would let the next decision ride on the last valid sample -- a stale FWD
-    is exactly the claim this gate exists to never make.
+    Success is one thing only: a fresh+complete+uniquely-attributed capture
+    whose row for this interface in this VLAN's instance reads FORWARDING.
+    LIS, LRN, BLK, ABSENT and UNOBSERVABLE all keep the poll alive until the
+    bound.  An unreadable sample contributes evidence but never state: only a
+    NEW authoritative FWD sample can return success, so neither the last valid
+    state nor a non-authoritative FWD can authorize the following mutation.
     """
     started = clock()
     observed: list[str] = []
@@ -407,11 +413,6 @@ def await_stp_forwarding(
         if classification == FORWARDING:
             return _finish_stp_gate(
                 FORWARDING, observed, duration_ms, samples,
-                observation, transitions,
-            )
-        if classification == UNOBSERVABLE:
-            return _finish_stp_gate(
-                UNOBSERVABLE, observed, duration_ms, samples,
                 observation, transitions,
             )
         if clock() - started >= timeout_seconds:

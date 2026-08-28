@@ -2595,6 +2595,18 @@ class _DiagnosticConfiguration:
         return self.observations[0]
 
 
+class _LegacyOnlyConfiguration:
+    """The pre-diagnostic parsed-table contract, with no authority metadata."""
+
+    def __init__(self, instances):
+        self.instances = instances
+        self.calls = 0
+
+    def read_spanning_tree(self, device_name):
+        self.calls += 1
+        return self.instances
+
+
 def _stp_read(
     instances,
     *,
@@ -2700,19 +2712,87 @@ def test_a_timeout_while_converging_reads_timeout_not_never():
     assert result.forwarding_observed is False
 
 
-def test_an_unreadable_table_fails_the_gate_closed_immediately():
-    result, _ = _gate([None], timeout=60.0)
+def test_an_unreadable_table_keeps_polling_but_fails_closed_at_the_bound():
+    result, _ = _gate([None], timeout=4.0, interval=2.0)
 
-    assert result.status == UNOBSERVABLE
+    assert result.status == GATE_TIMEOUT
     assert result.observed_states == (UNOBSERVABLE,)
-
-
-def test_an_unreadable_table_after_a_valid_sample_is_not_a_stale_success():
-    result, _ = _gate([_stp("LIS"), None, _stp("FWD")], timeout=60.0)
-
-    assert result.status == UNOBSERVABLE
-    assert result.observed_states == ("LIS", UNOBSERVABLE)
     assert result.forwarding_observed is False
+
+
+def test_a_transient_unobservable_gap_can_recover_to_new_authoritative_fwd():
+    result, configuration = _diagnostic_gate([
+        _stp_read(_stp("LIS")),
+        _stp_read(_stp("LRN")),
+        _stp_read(
+            None,
+            fresh=False,
+            failure_reason="No fresh current-command output window was observed.",
+            failure_dimensions=("FRESHNESS",),
+        ),
+        _stp_read(_stp("LRN")),
+        _stp_read(_stp("FWD")),
+    ])
+
+    assert result.status == FORWARDING
+    assert result.forwarding_observed is True
+    assert result.observed_states == (
+        "LIS", "LRN", UNOBSERVABLE, "LRN", FORWARDING,
+    )
+    assert result.samples == 5
+    assert result.terminal_read_authority == "AUTHORITATIVE"
+    assert result.terminal_failure_dimensions == ()
+    assert configuration.calls == 5
+
+
+def test_the_unobservable_gap_is_retained_in_transition_evidence_after_recovery():
+    result, _ = _diagnostic_gate([
+        _stp_read(_stp("LIS")),
+        _stp_read(
+            None,
+            complete=False,
+            failure_reason="The STP table was incomplete.",
+            failure_dimensions=("COMPLETENESS",),
+        ),
+        _stp_read(_stp("FWD")),
+    ])
+
+    assert result.as_evidence()["transitions"] == [
+        {
+            "state": "LIS",
+            "read_authority": "AUTHORITATIVE",
+            "failure_dimensions": [],
+        },
+        {
+            "state": UNOBSERVABLE,
+            "read_authority": UNOBSERVABLE,
+            "failure_dimensions": ["COMPLETENESS"],
+        },
+        {
+            "state": FORWARDING,
+            "read_authority": "AUTHORITATIVE",
+            "failure_dimensions": [],
+        },
+    ]
+
+
+def test_repeated_unobservable_samples_without_authoritative_fwd_time_out():
+    gap = _stp_read(
+        None,
+        identity="ambiguous",
+        failure_reason="The STP table was not uniquely attributed.",
+        failure_dimensions=("IDENTITY",),
+    )
+    result, configuration = _diagnostic_gate(
+        [gap], timeout=4.0, interval=2.0,
+    )
+
+    assert result.status == GATE_TIMEOUT
+    assert result.forwarding_observed is False
+    assert result.observed_states == (UNOBSERVABLE,)
+    assert result.samples == 3
+    assert result.terminal_failure_dimensions == ("IDENTITY",)
+    assert configuration.calls == 3
 
 
 def test_authority_transitions_retain_the_terminal_failure_without_every_sample():
@@ -2726,9 +2806,9 @@ def test_authority_transitions_retain_the_terminal_failure_without_every_sample(
             failure_reason="No fresh current-command output window was observed.",
             failure_dimensions=("FRESHNESS",),
         ),
-    ])
+    ], timeout=6.0, interval=2.0)
 
-    assert result.status == UNOBSERVABLE
+    assert result.status == GATE_TIMEOUT
     assert result.observed_states == ("LIS", "LRN", UNOBSERVABLE)
     assert result.samples == 4
     assert result.terminal_read_authority == UNOBSERVABLE
@@ -2763,6 +2843,61 @@ def test_a_terminal_invalid_read_cannot_reuse_an_earlier_forwarding_fact():
     )
 
     assert gate.forwarding_observed is False
+
+
+def test_identity_is_required_even_when_a_fwd_observation_claims_no_failures():
+    forged = _stp_read(
+        _stp("FWD"), identity="ambiguous", failure_dimensions=(),
+    )
+
+    assert forged.authoritative is False
+
+
+def test_a_non_authoritative_fwd_sample_never_authorizes_dhcp_mutation():
+    class _GapConfiguration(_Configuration):
+        def __init__(self):
+            super().__init__(stp=_stp("LIS"))
+            self.gate_calls = 0
+
+        def read_spanning_tree_observation(self, device_name):
+            self.gate_calls += 1
+            return _stp_read(
+                _stp("FWD"), identity="ambiguous", failure_dimensions=(),
+            )
+
+    clock = _Clock()
+    configuration = _GapConfiguration()
+    endpoints = _Endpoints()
+    result, *_ = _run(
+        configuration=configuration,
+        endpoints=endpoints,
+        gate_clock=clock,
+        gate_sleeper=clock.sleep,
+        gate_timeout_seconds=4.0,
+        gate_interval_seconds=2.0,
+        **_PAIRED_GATED,
+    )
+
+    assert result.stp_gate.status == GATE_TIMEOUT
+    assert result.stp_gate.forwarding_observed is False
+    assert configuration.gate_calls == 3
+    assert endpoints.armed == []
+
+
+def test_a_legacy_parsed_fwd_sample_has_no_authority_and_times_out():
+    clock = _Clock()
+    configuration = _LegacyOnlyConfiguration(_stp("FWD"))
+    result = await_stp_forwarding(
+        configuration, "SW", VOICE_VLAN_ID, "FastEthernet0/2",
+        timeout_seconds=4.0, interval_seconds=2.0,
+        clock=clock, sleeper=clock.sleep,
+    )
+
+    assert result.status == GATE_TIMEOUT
+    assert result.forwarding_observed is False
+    assert result.observed_states == (UNOBSERVABLE,)
+    assert result.terminal_failure_dimensions == ("IDENTITY",)
+    assert configuration.calls == 3
 
 
 def test_forwarding_is_observed_at_a_read_never_inferred_from_time():
@@ -2995,13 +3130,16 @@ def test_post_arm_yes_unobservable_is_not_a_valid_dhcp_flag_transition():
 def test_identity_invalid_gate_cannot_reuse_prior_fwd_or_arm_dhcp():
     endpoints = _ContractEndpoints()
     (result, _, _, call_control, endpoints, *_), _ = _gated_run(
-        # The LIVE adapter maps every non-authoritative identity to None.  The
-        # BEFORE snapshot is valid and FWD; the decision read is not.
-        stp_sequence=[_stp("FWD"), None, _stp("FWD")],
+        # The BEFORE snapshot is valid and FWD, but every decision read is
+        # non-authoritative through the bound.  The prior state cannot leak
+        # across the gate and authorize acquisition.
+        stp_sequence=[_stp("FWD"), None],
         endpoints=endpoints,
+        gate_timeout_seconds=4.0,
+        gate_interval_seconds=2.0,
     )
 
-    assert result.stp_gate.status == UNOBSERVABLE
+    assert result.stp_gate.status == GATE_TIMEOUT
     assert result.stp_gate.observed_states == (UNOBSERVABLE,)
     assert result.acquisition_started is False
     assert endpoints.armed == []

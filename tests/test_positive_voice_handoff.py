@@ -135,6 +135,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "RUN10_STP_GATE_IDENTITY": "NOT_ESTABLISHED",
         "RUN10_TERMINAL_STP_FAILURE_DIMENSION": "NOT_RETAINED",
         "STP_GATE_DIAGNOSTIC_RETENTION": "READY",
+        "STP_GATE_GAP_TOLERANCE": "READY",
         "STP_GATE_SUCCESS_CONTRACT": (
             "EXECUTED + FRESH + COMPLETE + CONFIRMED_UNIQUE + FWD"
         ),

@@ -43,6 +43,7 @@ RUN10_STP_GATE_SAMPLES = 11
 RUN10_STP_GATE_IDENTITY = NOT_ESTABLISHED
 RUN10_TERMINAL_STP_FAILURE_DIMENSION = NOT_RETAINED
 STP_GATE_DIAGNOSTIC_RETENTION = READY
+STP_GATE_GAP_TOLERANCE = READY
 STP_GATE_SUCCESS_CONTRACT = EXECUTED + FRESH + COMPLETE + CONFIRMED_UNIQUE + FWD
 STP_GATE_FAILURE_DIMENSIONS = EXECUTION | FRESHNESS | COMPLETENESS | IDENTITY | PARSING | QUERY_SESSION
 STP_GATE_QUERY_COUNT_PER_SAMPLE = ONE
@@ -85,8 +86,10 @@ exact forwarding set, and therefore whether VLAN 931 was also affected, is
 NOT_RETAINED; the two surfaces do not establish a causal relation.
 
 The prepared harness now keeps parsed STP state and compact authority metadata
-from one registered `show spanning-tree` result. It records only meaningful
-state/authority transitions and terminal failure dimensions. The trunk
+from one registered `show spanning-tree` result. Transient UNOBSERVABLE samples
+remain in its meaningful state/authority transitions while polling continues
+inside the existing 60-second bound; only a new CONFIRMED_UNIQUE FWD sample can
+authorize acquisition. The trunk
 foundation similarly keeps its exact operational status, native VLAN, allowed,
 active and forwarding tuples plus compact authority metadata. No second STP
 query, new observer, mutation, Packet Tracer LIVE, RUN10 rewrite or RUN11 was
