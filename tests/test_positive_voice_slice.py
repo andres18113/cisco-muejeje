@@ -1759,7 +1759,7 @@ def test_handoff_records_the_applied_verified_lifecycle_separation():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "LIFECYCLE_APPLIED_VERIFIED_BOUNDARY = SEPARATED at 241e64b" in handoff
-    assert "RAW_VOICE_AB_RUNS_PINNED = 7" in handoff
+    assert "RAW_VOICE_AB_RUNS_PINNED = 11" in handoff
 
 
 # --- PortFast as ONE changed variable ---------------------------------------
@@ -2043,7 +2043,7 @@ def test_handoff_keeps_the_two_calibration_lineages_apart():
         "d15a5b71dff8b95b56404e550540ca0f3aef018d" in handoff
     )
     assert (
-        "LATEST_VOICE_AB_LIVE_HEAD = d7a43778b377dbf7f83e214d7cd390fb34309360"
+        "LATEST_VOICE_AB_LIVE_HEAD = 8ecee845c0553ae25e4e82d965671e98cf135bf3"
         in handoff
     )
     assert "LATEST_CALIBRATION_LIVE_HEAD" not in handoff

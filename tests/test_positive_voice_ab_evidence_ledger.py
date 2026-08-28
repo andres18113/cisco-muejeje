@@ -343,3 +343,33 @@ def test_run_ten_records_the_fail_closed_stp_boundary_without_dhcp_claims():
     assert "no DHCP arm calls" in note
     assert "no IPv4 causal interpretation" in note
     assert "no automatic rerun" in note
+
+
+def test_run_eleven_records_fwd_then_the_fresh_trigger_boundary_exactly():
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    run11 = next(item for item in ledger["runs"] if item["run"] == "run11")
+
+    assert run11 == {
+        "run": "run11",
+        "filename": (
+            "positive-voice-ab-run11-fresh-dhcp-trigger-unproven.json"
+        ),
+        "sha256": (
+            "8619852a1b405a4191067abefc453d4ccfc14cd28f3702521dd87a981b349a82"
+        ),
+        "source_head": "8ecee845c0553ae25e4e82d965671e98cf135bf3",
+        "source_head_provenance": "HANDOFF_RECORDED",
+        "role": "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
+        "outcome": "UNOBSERVABLE",
+        "packet_tracer_version": "9.0.1.0858",
+        "canonical_copy_at_write": True,
+        "note": run11["note"],
+    }
+    note = run11["note"]
+    assert "new authoritative FWD" in note
+    assert "UNOBSERVABLE(COMPLETENESS)" in note
+    assert "Both PRE-arm DHCP flags were already YES" in note
+    assert "no arm call or POST read" in note
+    assert "FRESH_DHCP_TRIGGER_UNPROVEN" in note
+    assert "No IPv4 causal interpretation" in note
+    assert "no rerun occurred" in note

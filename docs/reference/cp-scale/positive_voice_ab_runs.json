@@ -121,6 +121,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "First RUN10 paired access-VLAN FWD-gated LIVE: control FastEthernet0/1 access 931 voice 930; intervention FastEthernet0/2 access 930 voice 930; no PortFast. The qualified intervention VLAN930 gate observed LIS, then LRN, then UNOBSERVABLE over 11 samples / 21844 ms before authoritative FWD was established. The terminal sample did not establish the full executed + fresh + complete + CONFIRMED_UNIQUE contract; the retained gate evidence does not distinguish which required read dimension failed. Per contract there were no PRE-arm reads, no DHCP arm calls, no POST-arm reads, no acquisition window, and no IPv4 causal interpretation. Result: STP_PRECONDITION_NOT_ESTABLISHED. Workspace and Realtime were restored, with zero errors; no automatic rerun occurred."
+    },
+    {
+      "run": "run11",
+      "filename": "positive-voice-ab-run11-fresh-dhcp-trigger-unproven.json",
+      "sha256": "8619852a1b405a4191067abefc453d4ccfc14cd28f3702521dd87a981b349a82",
+      "source_head": "8ecee845c0553ae25e4e82d965671e98cf135bf3",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
+      "outcome": "UNOBSERVABLE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "RUN11 paired access-VLAN FWD-gated LIVE with gap tolerance: intervention FastEthernet0/2 VLAN930 reached a new authoritative FWD after LIS -> LRN -> UNOBSERVABLE(COMPLETENESS) -> LRN -> UNOBSERVABLE(COMPLETENESS) -> FORWARDING, 15 samples / 30327 ms. The shared trunk read was authoritative with allowed, active and forwarding/not-pruned tuples all (930, 931). Both PRE-arm DHCP flags were already YES, so no arm call or POST read occurred; acquisition did not start and the causal result is FRESH_DHCP_TRIGGER_UNPROVEN. No IPv4 causal interpretation is permitted; the later read-only surface observed 0 bindings. Realtime and the empty semantic workspace were restored; no rerun occurred."
     }
   ]
 }

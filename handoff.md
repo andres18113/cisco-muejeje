@@ -32,7 +32,7 @@ VOICE_ENDPOINT_OUTCOME_RUN9 = SAME_FAILURE
 CAUSAL_EXPERIMENT_RESULT_RUN9 = PARTIAL_OR_DIVERGENT
 INTERVENTION_FWD_OBSERVED_RUN9 = NO
 INTERVENTION_NEVER_FWD_DURING_RUN9 = NOT_ESTABLISHED
-FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_RUN10_STP_PRECONDITION_FAILED
+FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_RUN11_PRE_FLAGS_ALREADY_YES
 FRESH_7960_DHCP_TRANSACTION = NOT_INDEPENDENTLY_ESTABLISHED
 RUN10_EXECUTED = YES
 RUN10_RESULT = STP_PRECONDITION_NOT_ESTABLISHED
@@ -59,11 +59,33 @@ RUN10_TRUNK_FORWARDING_VLANS = NOT_RETAINED
 RUN10_TRUNK_VLAN930_ALLOWED = YES
 RUN10_TRUNK_VLAN930_ACTIVE = YES
 RUN10_TRUNK_VLAN930_FORWARDING = NO
+RUN11_EXECUTED = YES
+RUN11_RESULT = FRESH_DHCP_TRIGGER_UNPROVEN
+RUN11_FWD_GATE = FORWARDING
+RUN11_STP_GATE_OBSERVED_STATES = LIS -> LRN -> UNOBSERVABLE -> LRN -> UNOBSERVABLE -> FORWARDING
+RUN11_STP_AUTHORITY_TRANSITIONS = LIS(AUTHORITATIVE) -> LRN(AUTHORITATIVE) -> UNOBSERVABLE(COMPLETENESS) -> LRN(AUTHORITATIVE) -> UNOBSERVABLE(COMPLETENESS) -> FORWARDING(AUTHORITATIVE)
+RUN11_STP_FAILURE_DIMENSIONS = COMPLETENESS
+RUN11_STP_GATE_DURATION_MS = 30327
+RUN11_STP_GATE_SAMPLES = 15
+RUN11_AUTHORITATIVE_FWD_OBSERVED = YES
+RUN11_TRUNK_ALLOWED_VLANS = (930, 931)
+RUN11_TRUNK_ACTIVE_VLANS = (930, 931)
+RUN11_TRUNK_FORWARDING_VLANS = (930, 931)
+RUN11_TRUNK_READ_AUTHORITY = AUTHORITATIVE
+RUN11_CONTROL_DHCP_PRE = YES
+RUN11_INTERVENTION_DHCP_PRE = YES
+RUN11_CONTROL_ARM_ACCEPTED = UNOBSERVABLE
+RUN11_INTERVENTION_ARM_ACCEPTED = UNOBSERVABLE
+RUN11_CONTROL_DHCP_POST = UNOBSERVABLE
+RUN11_INTERVENTION_DHCP_POST = UNOBSERVABLE
+RUN11_DHCP_FLAG_TRANSITION_VALID = UNOBSERVABLE
+RUN11_ACQUISITION_STARTED = NO
+RUN11_ACQUISITION_BOUNDARY = ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
 TRUNK_FORWARDING_SEMANTIC_AUDIT = IOS_STP_FORWARDING_AND_NOT_PRUNED_SET_ON_SHARED_TRUNK
 TRUNK_READ_AUTHORITY_RETENTION = READY
 STP_VS_TRUNK_RELATION = NOT_ESTABLISHED
 VOICE_ROOT_CAUSE = STRONG_CANDIDATE / NOT_CONFIRMED
-NEXT_ACTIVE_STEP = PREPARED_STP_BOUNDARY_DIAGNOSTIC_LIVE
+NEXT_ACTIVE_STEP = PHONE_DHCP_LIFECYCLE_TRIGGER_QUALIFICATION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -101,11 +123,11 @@ introduced.
 BRANCH = feature/runtime-ripv2
 UPSTREAM = personal/feature/runtime-ripv2
 PACKET_TRACER_BUILD = 9.0.1.0858
-LATEST_PREPARED_IMPLEMENTATION_HEAD = f7231fb4413002a2d8f954e063149bcf9f4f215f
+LATEST_PREPARED_IMPLEMENTATION_HEAD = 8ecee845c0553ae25e4e82d965671e98cf135bf3
 NEXT_LIVE_HEAD_SOURCE = git rev-parse HEAD (authoritative)
-LATEST_GOVERNED_LIVE_HEAD = d7a43778b377dbf7f83e214d7cd390fb34309360
+LATEST_GOVERNED_LIVE_HEAD = 8ecee845c0553ae25e4e82d965671e98cf135bf3
 LATEST_FRAME_VLAN_CALIBRATION_LIVE_HEAD = d15a5b71dff8b95b56404e550540ca0f3aef018d
-LATEST_VOICE_AB_LIVE_HEAD = d7a43778b377dbf7f83e214d7cd390fb34309360
+LATEST_VOICE_AB_LIVE_HEAD = 8ecee845c0553ae25e4e82d965671e98cf135bf3
 ACCESS_PORT_INGRESS_FRAME_IS_TAGGED = NO (measured, both control VLANs)
 ACCESS_PORT_CALIBRATION = EXHAUSTED / STRUCTURALLY UNOBSERVABLE for the
     measured plain-host access-ingress representation
@@ -145,7 +167,7 @@ POSITIVE_VOICE_AB_IMPLEMENTED = YES
 POSITIVE_VOICE_AB_LIVE = RUN at c9d6ead (governed, Realtime, cleaned up)
 PACKET_TRACER_PROCESS_PRESENT = YES
 POSITIVE_VOICE_AB_RESULT = SAME_FAILURE
-RAW_VOICE_AB_RUNS_PINNED = 7 (run1..run7, SHA-256 in
+RAW_VOICE_AB_RUNS_PINNED = 11 (run1..run11, SHA-256 in
     docs/reference/cp-scale/positive_voice_ab_runs.json)
 DISPOSABLE_VOICE_NAMESPACE = MCP-VOICEAB- (typed, not the `__MCP_` discovery
     one: the trusted control-plane renderer cannot reach that prefix)
@@ -2317,6 +2339,45 @@ The unique archive is
 `positive-voice-ab-run10-stp-precondition-unobservable.json`, SHA-256
 `6c128bae161cb41bf5c879ac7fde14aaad9750e1d5922aa256dfbcd0bd5c3297`;
 the tracked ledger records provenance only.
+
+## Run 11 LIVE -- authoritative FWD, fresh DHCP trigger unproven
+
+Exactly one governed LIVE ran from clean pushed source head
+`8ecee845c0553ae25e4e82d965671e98cf135bf3` on Packet Tracer
+`9.0.1.0858`.  The mutating process proved the checkout-local interpreter,
+the package inside this worktree and only the production import namespace.
+The read-only preflight observed Realtime, zero semantic devices and zero
+links.
+
+The intervention VLAN930 gate retained `LIS -> LRN -> UNOBSERVABLE -> LRN ->
+UNOBSERVABLE -> FORWARDING` across 15 samples and 30,327 ms.  Both unreadable
+transitions failed only the `COMPLETENESS` dimension; polling continued, and
+the terminal sample was executed, fresh, complete, uniquely attributed and
+FORWARDING.  This establishes the prepared network-forwarding precondition
+for the intervention in RUN11 without rewriting RUN10's earlier boundary.
+
+Independently, the authoritative shared-trunk read observed interface
+`Gig0/1`, status `trunking`, native VLAN 1, and allowed, active and IOS
+forwarding/not-pruned tuples all equal to `(930, 931)`.  This exact uplink
+membership remains a separate IOS surface from the phone-port STP state.
+
+After FWD, both phone DHCP PRE reads were `YES`, not the required `NO`.
+Therefore no DHCP arm call was issued, no POST read was taken and no
+acquisition window opened.  The result is `FRESH_DHCP_TRIGGER_UNPROVEN` with
+boundary `ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN`.  The later
+read-only endpoint surface observed no IPv4 on either phone, zero voice DHCP
+bindings and unobservable SCCP registration, but none is a DHCP causal outcome
+because acquisition never started.  `FRESH_7960_DHCP_TRANSACTION` remains
+`NOT_INDEPENDENTLY_ESTABLISHED`; server Discover and transaction progress
+remain UNOBSERVABLE; `ACCESS_VLAN_SHAPE_CONTROLS_DHCP` remains NOT YET
+ESTABLISHED.
+
+Cleanup reported zero errors and restored Realtime and the empty semantic
+workspace; an independent post-read confirmed zero semantic devices and zero
+links.  No rerun occurred.  The unique archive is
+`positive-voice-ab-run11-fresh-dhcp-trigger-unproven.json`, SHA-256
+`8619852a1b405a4191067abefc453d4ccfc14cd28f3702521dd87a981b349a82`;
+the tracked ledger records its source provenance.
 
 ## Commits since the previous handoff
 
