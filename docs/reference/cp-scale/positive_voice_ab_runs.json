@@ -133,6 +133,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "RUN11 paired access-VLAN FWD-gated LIVE with gap tolerance: intervention FastEthernet0/2 VLAN930 reached a new authoritative FWD after LIS -> LRN -> UNOBSERVABLE(COMPLETENESS) -> LRN -> UNOBSERVABLE(COMPLETENESS) -> FORWARDING, 15 samples / 30327 ms. The shared trunk read was authoritative with allowed, active and forwarding/not-pruned tuples all (930, 931). Both PRE-arm DHCP flags were already YES, so no arm call or POST read occurred; acquisition did not start and the causal result is FRESH_DHCP_TRIGGER_UNPROVEN. No IPv4 causal interpretation is permitted; the later read-only surface observed 0 bindings. Realtime and the empty semantic workspace were restored; no rerun occurred."
+    },
+    {
+      "run": "run12",
+      "filename": "positive-voice-ab-run12-phone-dhcp-lifecycle-qualification.json",
+      "sha256": "15fdf8f9ac95ab2e9ee6875f2b14d5c98e6de48e86373343a528c4e1016fbbbd",
+      "source_head": "c0cc3d9f6eef41e7b5f136c9c10104be8d9d89ea",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "PHONE_DHCP_LIFECYCLE_QUALIFICATION",
+      "outcome": "UNOBSERVABLE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "RUN12 observational phone DHCP lifecycle qualification. The intervention VLAN930 gate observed LIS -> LRN -> UNOBSERVABLE(COMPLETENESS) -> LRN -> UNOBSERVABLE(COMPLETENESS) -> FORWARDING across 15 samples / 31171 ms; the terminal sample was authoritative. For both P1 control and P2 intervention, SVI DHCP was first observed YES at IMMEDIATELY_BEFORE_STP_FWD_GATE and was already YES before authoritative FWD. Device-level DHCP was UNOBSERVABLE at every retained milestone, so its first YES was NOT_ESTABLISHED and enabled-before-FWD was UNOBSERVABLE. Neither SVI nor device IPv4 appeared at any milestone. The enabled flag does not establish Discover, DORA, retry, transaction progress, or milestone causation; sequential reads may shift later observation time slightly. Realtime and the empty semantic workspace were restored with zero errors; no rerun occurred."
     }
   ]
 }

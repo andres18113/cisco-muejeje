@@ -398,3 +398,32 @@ def test_run_eleven_records_fwd_then_the_fresh_trigger_boundary_exactly():
     assert "FRESH_DHCP_TRIGGER_UNPROVEN" in note
     assert "No IPv4 causal interpretation" in note
     assert "no rerun occurred" in note
+
+
+def test_run_twelve_records_the_observational_lifecycle_without_causal_promotion():
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    run12 = next(item for item in ledger["runs"] if item["run"] == "run12")
+
+    assert run12 == {
+        "run": "run12",
+        "filename": (
+            "positive-voice-ab-run12-phone-dhcp-lifecycle-qualification.json"
+        ),
+        "sha256": (
+            "15fdf8f9ac95ab2e9ee6875f2b14d5c98e6de48e86373343a528c4e1016fbbbd"
+        ),
+        "source_head": "c0cc3d9f6eef41e7b5f136c9c10104be8d9d89ea",
+        "source_head_provenance": "HANDOFF_RECORDED",
+        "role": "PHONE_DHCP_LIFECYCLE_QUALIFICATION",
+        "outcome": "UNOBSERVABLE",
+        "packet_tracer_version": "9.0.1.0858",
+        "canonical_copy_at_write": True,
+        "note": run12["note"],
+    }
+    note = run12["note"]
+    assert "first observed YES at IMMEDIATELY_BEFORE_STP_FWD_GATE" in note
+    assert "Device-level DHCP was UNOBSERVABLE at every retained milestone" in note
+    assert "Neither SVI nor device IPv4 appeared" in note
+    assert "does not establish Discover, DORA, retry, transaction progress" in note
+    assert "sequential reads may shift later observation time" in note
+    assert "no rerun occurred" in note

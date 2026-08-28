@@ -34,15 +34,35 @@ INTERVENTION_FWD_OBSERVED_RUN9 = NO
 INTERVENTION_NEVER_FWD_DURING_RUN9 = NOT_ESTABLISHED
 FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_RUN11_PRE_FLAGS_ALREADY_YES
 FRESH_7960_DHCP_TRANSACTION = NOT_INDEPENDENTLY_ESTABLISHED
-PHONE_DHCP_LIFECYCLE_DIAGNOSTIC = READY
-PHONE_DHCP_LIFECYCLE_LIVE_EXECUTED = NO
+PHONE_DHCP_LIFECYCLE_DIAGNOSTIC = MEASURED
+PHONE_DHCP_LIFECYCLE_LIVE_EXECUTED = YES
 PHONE_DHCP_LIFECYCLE_CHANNELS = SVI_DHCP | DEVICE_DHCP
 PHONE_DHCP_LIFECYCLE_DERIVATIONS = PER_PHONE
 PHONE_DHCP_LIFECYCLE_LEDGER_ROLE = PHONE_DHCP_LIFECYCLE_QUALIFICATION
-FIRST_OBSERVED_SVI_DHCP_ENABLED_MILESTONE = NOT_ESTABLISHED
+FIRST_OBSERVED_SVI_DHCP_ENABLED_MILESTONE = IMMEDIATELY_BEFORE_STP_FWD_GATE
 FIRST_OBSERVED_DEVICE_DHCP_ENABLED_MILESTONE = NOT_ESTABLISHED
-SVI_DHCP_ENABLED_BEFORE_FWD = UNOBSERVABLE
+SVI_DHCP_ENABLED_BEFORE_FWD = YES
 DEVICE_DHCP_ENABLED_BEFORE_FWD = UNOBSERVABLE
+RUN12_EXECUTED = YES
+RUN12_RESULT = OBSERVATIONAL_LIFECYCLE_QUALIFIED
+RUN12_FWD_GATE = FORWARDING
+RUN12_STP_GATE_OBSERVED_STATES = LIS -> LRN -> UNOBSERVABLE -> LRN -> UNOBSERVABLE -> FORWARDING
+RUN12_STP_AUTHORITY_TRANSITIONS = LIS(AUTHORITATIVE) -> LRN(AUTHORITATIVE) -> UNOBSERVABLE(COMPLETENESS) -> LRN(AUTHORITATIVE) -> UNOBSERVABLE(COMPLETENESS) -> FORWARDING(AUTHORITATIVE)
+RUN12_STP_FAILURE_DIMENSIONS = COMPLETENESS
+RUN12_STP_GATE_DURATION_MS = 31171
+RUN12_STP_GATE_SAMPLES = 15
+RUN12_AUTHORITATIVE_FWD_OBSERVED = YES
+RUN12_CONTROL_FIRST_SVI_DHCP_ENABLED = IMMEDIATELY_BEFORE_STP_FWD_GATE
+RUN12_INTERVENTION_FIRST_SVI_DHCP_ENABLED = IMMEDIATELY_BEFORE_STP_FWD_GATE
+RUN12_CONTROL_FIRST_DEVICE_DHCP_ENABLED = NOT_ESTABLISHED
+RUN12_INTERVENTION_FIRST_DEVICE_DHCP_ENABLED = NOT_ESTABLISHED
+RUN12_CONTROL_SVI_DHCP_BEFORE_FWD = YES
+RUN12_INTERVENTION_SVI_DHCP_BEFORE_FWD = YES
+RUN12_CONTROL_DEVICE_DHCP_BEFORE_FWD = UNOBSERVABLE
+RUN12_INTERVENTION_DEVICE_DHCP_BEFORE_FWD = UNOBSERVABLE
+RUN12_CONTROL_IPV4_OBSERVED = NO_VALUE_OBSERVED
+RUN12_INTERVENTION_IPV4_OBSERVED = NO_VALUE_OBSERVED
+RUN12_OBSERVABLE_DHCP_NO_TO_YES_TRANSITION = NOT_OBSERVED
 RUN10_EXECUTED = YES
 RUN10_RESULT = STP_PRECONDITION_NOT_ESTABLISHED
 RUN10_FWD_GATE = UNOBSERVABLE
@@ -94,29 +114,78 @@ TRUNK_FORWARDING_SEMANTIC_AUDIT = IOS_STP_FORWARDING_AND_NOT_PRUNED_SET_ON_SHARE
 TRUNK_READ_AUTHORITY_RETENTION = READY
 STP_VS_TRUNK_RELATION = NOT_ESTABLISHED
 VOICE_ROOT_CAUSE = STRONG_CANDIDATE / NOT_CONFIRMED
-NEXT_ACTIVE_STEP = PHONE_DHCP_LIFECYCLE_QUALIFICATION_LIVE
+NEXT_ACTIVE_STEP = OFFLINE_NEXT_HYPOTHESIS_SELECTION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
-## Phone DHCP lifecycle qualification prepared -- not run LIVE
+## Run 12 phone DHCP lifecycle qualification
 
-The opt-in observational mode retains each phone's separate SVI and device DHCP
-flags, SVI presence, SVI IPv4, device IPv4 and already-exposed evidence
-authority from the same endpoint observation.  It reads after creation, link
-creation, the existing full network configuration batch (L2, L3, services and
-DHCP pool), Voice/CME configuration, Realtime verification, immediately before
-the existing FWD gate and immediately after authoritative FWD.  Each selected
-point performs one bounded existing endpoint/SVI read per phone without retry;
-that sequential read latency may shift later observation times and is retained
-as the timing-intrusion assessment.
+Exactly one governed observational LIVE ran from clean pushed source head
+`c0cc3d9f6eef41e7b5f136c9c10104be8d9d89ea` on Packet Tracer `9.0.1.0858`.
+The checkout-local interpreter loaded the production package from this
+worktree with no test namespace.  The read-only preflight observed Realtime,
+zero semantic devices and zero links.  The diagnostic did not call
+`configure_endpoint_dhcp()`, change DHCP state, reboot or power-cycle a phone,
+bounce a link, apply PortFast/BPDU Guard, or open an acquisition window.
+`AFTER_NETWORK_CONFIGURATION_BATCH` remains the boundary after the existing
+full network configuration batch (L2, L3, services and DHCP pool), not merely
+the access/Voice VLAN substage.
 
-The mode never calls `configure_endpoint_dhcp()`, opens no acquisition window
-and adds no IOS query, PT observer or mutation primitive.  The default and
-RUN11 modes remain unchanged.  Per-phone earliest-observed-YES and
-enabled-before-FWD derivations are ready independently for the SVI and device
-channels, and the dedicated lifecycle ledger role is accepted.  All lifecycle
-results remain unestablished until a governed LIVE; Packet Tracer was not run
-during preparation.
+The intervention VLAN930 gate retained `LIS -> LRN -> UNOBSERVABLE -> LRN ->
+UNOBSERVABLE -> FORWARDING` across 15 samples and 31,171 ms.  Both transient
+gaps failed only the `COMPLETENESS` dimension.  The terminal sample was a new
+executed, fresh, complete, uniquely attributed and authoritative FWD read.
+
+Control `MCP-VOICEAB-c05f80_P1` retained:
+
+| milestone | svi_present | svi_dhcp_enabled | device_dhcp_enabled | svi_ipv4 | device_ipv4 | evidence_authority |
+| --- | --- | --- | --- | --- | --- | --- |
+| `AFTER_PHONE_CREATION` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `AFTER_PHYSICAL_LINK_CREATION` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `AFTER_NETWORK_CONFIGURATION_BATCH` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `AFTER_VOICE_CME_CONFIGURATION` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `AFTER_REALTIME_VERIFICATION` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `IMMEDIATELY_BEFORE_STP_FWD_GATE` | YES | YES | UNOBSERVABLE | NONE | UNOBSERVABLE | UNOBSERVABLE |
+| `IMMEDIATELY_AFTER_AUTHORITATIVE_FWD` | YES | YES | UNOBSERVABLE | NONE | UNOBSERVABLE | UNOBSERVABLE |
+
+Intervention `MCP-VOICEAB-c05f80_P2` retained the same seven field tuples:
+
+| milestone | svi_present | svi_dhcp_enabled | device_dhcp_enabled | svi_ipv4 | device_ipv4 | evidence_authority |
+| --- | --- | --- | --- | --- | --- | --- |
+| `AFTER_PHONE_CREATION` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `AFTER_PHYSICAL_LINK_CREATION` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `AFTER_NETWORK_CONFIGURATION_BATCH` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `AFTER_VOICE_CME_CONFIGURATION` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `AFTER_REALTIME_VERIFICATION` | NO | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE | UNOBSERVABLE |
+| `IMMEDIATELY_BEFORE_STP_FWD_GATE` | YES | YES | UNOBSERVABLE | NONE | UNOBSERVABLE | UNOBSERVABLE |
+| `IMMEDIATELY_AFTER_AUTHORITATIVE_FWD` | YES | YES | UNOBSERVABLE | NONE | UNOBSERVABLE | UNOBSERVABLE |
+
+For each phone, the first observed SVI DHCP `YES` is
+`IMMEDIATELY_BEFORE_STP_FWD_GATE`, and SVI DHCP was already `YES` before the
+authoritative FWD sample.  Device-level DHCP remained `UNOBSERVABLE` at every
+milestone, so its first `YES` is `NOT_ESTABLISHED` and its before-FWD value is
+`UNOBSERVABLE`.  The two phones do not diverge, so none of the four aggregates
+is `MIXED`.  No DHCP channel retained a `NO -> YES` transition: SVI DHCP moved
+from `UNOBSERVABLE` while the SVI was absent to `YES` once it was present, and
+device DHCP never became observable.  No IPv4 value appeared; the SVI field was
+explicitly `NONE` only at the final two milestones, while the earlier SVI and
+all device-level address fields were `UNOBSERVABLE`.
+
+These are enabled-state observations only.  They do not establish Discover,
+DORA, retry or any transaction activity, and the first later observation does
+not establish that its named milestone caused the state.  The bounded reads
+were sequential, so their latency may shift later observation time slightly.
+`FRESH_7960_DHCP_TRANSACTION` remains `NOT_INDEPENDENTLY_ESTABLISHED`; server
+Discover and transaction progress remain `UNOBSERVABLE`; the Voice root cause
+remains unconfirmed.
+
+Cleanup removed the four owned devices with zero errors and restored Realtime.
+The qualifier and an independent post-read both observed zero semantic devices
+and zero links; the post-read retained one allowed backend-managed power
+distribution object.  There was no rerun.  The unique archive is
+`positive-voice-ab-run12-phone-dhcp-lifecycle-qualification.json`, SHA-256
+`15fdf8f9ac95ab2e9ee6875f2b14d5c98e6de48e86373343a528c4e1016fbbbd`;
+the tracked ledger records the source provenance and dedicated lifecycle role.
 
 ## RUN10 STP boundary and trunk forensics
 
