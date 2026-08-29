@@ -175,12 +175,90 @@ HISTORICAL_E5_PHONE_ADDRESSING_WAS_A_NO_OP = ESTABLISHED_FROM_6ea254d_MEASUREMEN
 HISTORICAL_POSITIVE_SLICE_WAS_MANUAL = ESTABLISHED_FROM_2e7f0f5_DOC
 FIRST_SURVIVING_CAUSAL_DIVERGENCE = SINGLE_EARLY_PHONE_DISCOVER_VERSUS_ACCESS_PORT_STP_CONVERGENCE
 FRESH_DHCP_TRANSACTION_TRIGGER = STILL_NOT_AVAILABLE_IN_TYPED_RUNTIME
+RUN15_MODE_PREPARED = EDGE_BEFORE_VOICE_VLAN
+RUN15_LEDGER_ROLE = EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION
+RUN15_VARIABLE = TYPED_EDGE_POLICY_ON_INTERVENTION_PORT_BEFORE_VOICE_VLAN
+RUN15_NETWORK_SHAPE = P1_ACCESS931_VOICE930 | P2_ACCESS931_VOICE930
+RUN15_DHCP_MUTATIONS = NONE
+RUN15_FOUNDATION_GATE = SHARED_FOUNDATION_VERIFIED_BEFORE_VOICE_VLAN_REQUIRED
+RUN15_CLOCK_BOUNDARY = ONE_SHARED_VOICE_VLAN_BATCH_FOR_BOTH_PORTS
+RUN15_GATE_QUERY_COUNT_PER_SAMPLE = ONE_SHARED_BY_BOTH_PORTS
+RUN15_MILESTONES = IMMEDIATELY_AFTER_VOICE_VLAN | FIRST_AUTHORITATIVE_STP_SAMPLE | AUTHORITATIVE_FWD | END_OF_ACQUISITION_WINDOW
+RUN15_EXECUTED = NO
 VOICE_ROOT_CAUSE = NOT_CONFIRMED
 VOICE_ROOT_CAUSE_LEADING_CANDIDATE = EARLY_DISCOVER_LOST_NO_RETRY
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = INSTRUMENT_DISCOVER_OR_ADD_A_REAL_LIFECYCLE_RETRIGGER_BEFORE_ANY_FIX
+NEXT_ACTIVE_STEP = EXECUTE_RUN15_EDGE_BEFORE_VOICE_VLAN_LIVE_ONCE
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
+
+## Run 15 prepared: the edge-before-voice-VLAN causal experiment
+
+The leading candidate after run 14 is that the 7960 creates its voice SVI and
+makes its one DHCP attempt while the phone-facing VLAN930 STP instance is still
+non-forwarding, and that this build produces no useful later retry.  Run 15 is
+the smallest experiment that turns exactly that one variable.
+
+The mode is `edge_before_voice_vlan` on the existing disposable qualifier, and
+it changes the ORDER rather than adding a mechanism:
+
+* the access ports are configured with the data VLAN and NO voice VLAN, so no
+  phone has been signalled a voice VLAN while the foundation is coming up;
+* the shared upstream foundation is then READ and must be VERIFIED across the
+  trunk (operational, VLAN930 allowed, active and forwarding/not pruned), the
+  router voice subinterface (present, addressed, line state), the DHCP pool
+  (existence, range, available space) and the call-control table.  Anything
+  short of VERIFIED fails closed with
+  `ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY` and never signals a voice
+  VLAN at all;
+* one typed `ConfigureStpEdgePort` (portfast on, BPDU Guard deliberately off)
+  reaches the INTERVENTION port only;
+* then the SAME voice VLAN reaches BOTH phone ports in ONE batch carrying
+  nothing else.  That batch is the causal clock boundary.
+
+Both ports are then measured from that single origin by ONE qualified
+`show spanning-tree` read per sample, classified for both interfaces from the
+same observation.  Two sequential single-port gates could not answer this
+question: the second would start its clock after the first had finished, and
+the difference it reported would be the harness rather than the network.
+
+Each port retains its first AUTHORITATIVE state, its collapsed state sequence,
+the milliseconds from the boundary to that first authoritative sample, and the
+milliseconds from the boundary to FORWARDING.  `None` is retained for a time
+that was never observed, which is not zero.
+
+The phone SVI is read at four bounded milestones and no more:
+`IMMEDIATELY_AFTER_VOICE_VLAN`, `FIRST_AUTHORITATIVE_STP_SAMPLE`,
+`AUTHORITATIVE_FWD` and `END_OF_ACQUISITION_WINDOW`, each retaining
+`svi_present`, `address_channel`, `dhcp_enabled`, `ipv4` and `addressed`.
+
+What this mode does NOT do is the point.  It never calls
+`configure_endpoint_dhcp`, never calls `setDhcpClientFlag`, never bounces a
+link, never reboots or power-cycles a phone, never applies BPDU Guard as a
+second variable and never issues raw IOS or JavaScript.  Run 13 and run 14
+already showed that the DHCP flag is on before anything touches it and that
+toggling it changes nothing.
+
+`EDGE_POLICY_DISPATCH` and `EDGE_POLICY_RUNTIME_STATE` stay apart.  Dispatch is
+what the typed runtime accepted.  Runtime state is read only from the existing
+STP `Type` column, which is the one governed edge readback on this build; when
+that column does not announce an edge port the state stays UNOBSERVABLE rather
+than borrowing the dispatch's answer.
+
+Four verdicts are possible and they license different next steps.  Only
+`EDGE_BEFORE_VOICE_VLAN_CAUSAL_EFFECT_OBSERVED` credits the edge policy, and it
+requires the whole behavioural chain on the intervention half -- a behavioural
+STP difference, an IPv4, a matching server binding and SCCP registration --
+while the control half acquires none of it.  Both halves acquiring is
+`SHARED_PREPARED_FOUNDATION_ACQUISITION` and credits the preparation order, not
+PortFast.  An STP difference with neither half addressed is
+`EDGE_STP_EFFECT_OBSERVED_WITHOUT_DHCP_EFFECT` and weakens this hypothesis.  No
+behavioural STP difference is `EDGE_POLICY_EFFECT_NOT_ESTABLISHED`, under which
+the DHCP outcome is not a PortFast test at all.
+
+No verdict promotes a transaction claim.  `FRESH_7960_DHCP_TRANSACTION`,
+`SERVER_RECEIVES_DISCOVER` and `DHCP_TRANSACTION_PROGRESS` are unchanged by
+this mode and remain what they were.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 

@@ -514,6 +514,28 @@ def _serialize(result) -> dict:
         "fresh_7960_dhcp_transaction": result.fresh_7960_dhcp_transaction,
         "server_receives_discover": "UNOBSERVABLE",
         "dhcp_transaction_progress": "UNOBSERVABLE",
+        "stp_timing_controls_dhcp_acquisition": (
+            result.stp_timing_controls_dhcp_acquisition
+        ),
+        "shared_foundation_ready": result.shared_foundation_ready,
+        "edge_policy_dispatch": result.edge_policy_dispatch,
+        "edge_policy_runtime_state": result.edge_policy_runtime_state,
+        "edge_stp_effect_observed": result.edge_stp_effect_observed,
+        "control_stp_port_gate": (
+            result.control_stp_port_gate.as_evidence()
+            if result.control_stp_port_gate is not None else None
+        ),
+        "intervention_stp_port_gate": (
+            result.intervention_stp_port_gate.as_evidence()
+            if result.intervention_stp_port_gate is not None else None
+        ),
+        "edge_voice_svi_lifecycle": [
+            item.as_evidence() for item in result.edge_voice_svi_lifecycle
+        ],
+        "control_matching_binding": result.control_matching_binding,
+        "intervention_matching_binding": (
+            result.intervention_matching_binding
+        ),
         "phone_dhcp_lifecycle": [
             item.as_evidence() for item in result.phone_dhcp_lifecycle
         ],
@@ -659,6 +681,7 @@ def run(
     paired_access_vlan_fwd_gated: bool = False,
     phone_dhcp_lifecycle: bool = False,
     phone_svi_dhcp_retrigger: bool = False,
+    edge_before_voice_vlan: bool = False,
 ) -> int:
     preflight: dict[str, object] = {
         "python_executable": sys.executable,
@@ -782,7 +805,7 @@ def run(
                 transport.send,
                 transport.send_and_wait,
             )
-        ) if edge_portfast else None
+        ) if (edge_portfast or edge_before_voice_vlan) else None
         configuration_adapter = _ConfigurationAdapter(enterprise, ios)
         voice_runtime = PacketTracerEnterpriseVoiceRuntime(
             lambda: _inventory(physical),
@@ -826,6 +849,13 @@ def run(
             # on P2, only after the existing authoritative FWD gate.  P1 is a
             # no-mutation control and configurePcIp is not used by this mode.
             phone_svi_dhcp_retrigger=phone_svi_dhcp_retrigger,
+            # Run 15: the shared foundation is brought up and VERIFIED while
+            # neither phone has been told about a voice VLAN, one typed edge
+            # policy reaches the intervention port, and only then does the SAME
+            # voice VLAN reach both ports in one batch.  That batch is the
+            # causal clock boundary both ports are measured from, by one
+            # paired STP read per sample.  No DHCP flag is touched.
+            edge_before_voice_vlan=edge_before_voice_vlan,
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
         try:
             independent_final = physical.observe_workspace()
@@ -1033,6 +1063,17 @@ def main() -> int:
             "transition with readback before the acquisition window opens."
         ),
     )
+    parser.add_argument(
+        "--edge-before-voice-vlan", action="store_true",
+        help=(
+            "run 15: verify the shared foundation while no phone has been "
+            "signalled a voice VLAN, dispatch one typed edge policy to the "
+            "intervention port only, then apply the SAME voice VLAN to both "
+            "phone ports as a causal clock boundary and measure both ports "
+            "from it with one paired STP read per sample.  No DHCP flag is "
+            "armed, mutated, bounced or power-cycled by this mode."
+        ),
+    )
     args = parser.parse_args()
     modes = [
         name for name, enabled in (
@@ -1041,6 +1082,7 @@ def main() -> int:
             ("--paired-access-vlan-fwd-gated", args.paired_access_vlan_fwd_gated),
             ("--phone-dhcp-lifecycle", args.phone_dhcp_lifecycle),
             ("--phone-svi-dhcp-retrigger", args.phone_svi_dhcp_retrigger),
+            ("--edge-before-voice-vlan", args.edge_before_voice_vlan),
         ) if enabled
     ]
     if len(modes) > 1:
@@ -1055,6 +1097,7 @@ def main() -> int:
         paired_access_vlan_fwd_gated=args.paired_access_vlan_fwd_gated,
         phone_dhcp_lifecycle=args.phone_dhcp_lifecycle,
         phone_svi_dhcp_retrigger=args.phone_svi_dhcp_retrigger,
+        edge_before_voice_vlan=args.edge_before_voice_vlan,
     )
 
 

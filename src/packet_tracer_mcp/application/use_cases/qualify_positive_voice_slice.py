@@ -161,6 +161,10 @@ EXPERIMENT_PAIRED_ACCESS_VLAN = "PAIRED_ACCESS_VLAN"
 EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED = "PAIRED_ACCESS_VLAN_FWD_GATED"
 EXPERIMENT_PHONE_DHCP_LIFECYCLE = "PHONE_DHCP_LIFECYCLE"
 EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER = "PHONE_SVI_DHCP_RETRIGGER"
+#: Run 15.  The one variable is a typed edge policy dispatched BEFORE the
+#: voice VLAN reaches either phone-facing port, so the shared voice-VLAN
+#: batch becomes a causal clock boundary both ports are measured from.
+EXPERIMENT_EDGE_BEFORE_VOICE_VLAN = "EDGE_BEFORE_VOICE_VLAN"
 
 #: The FWD gate's terminal statuses.  FORWARDING and UNOBSERVABLE reuse the
 #: row classifications above; TIMEOUT is the bounded wait expiring while the
@@ -191,6 +195,34 @@ ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN = (
 )
 ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN = (
     "ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN"
+)
+#: Run 15 refuses to present the voice VLAN to a phone until the upstream
+#: foundation it will need is VERIFIED.  Presenting it first would test a
+#: network that was not ready instead of the hypothesis.
+ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY = (
+    "ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY"
+)
+
+#: The four verdicts run 15 can reach, kept apart because they license
+#: different next steps.  Only the first credits the edge policy.
+EDGE_BEFORE_VOICE_VLAN_CAUSAL_EFFECT_OBSERVED = (
+    "EDGE_BEFORE_VOICE_VLAN_CAUSAL_EFFECT_OBSERVED"
+)
+SHARED_PREPARED_FOUNDATION_ACQUISITION = (
+    "SHARED_PREPARED_FOUNDATION_ACQUISITION"
+)
+EDGE_STP_EFFECT_OBSERVED_WITHOUT_DHCP_EFFECT = (
+    "EDGE_STP_EFFECT_OBSERVED_WITHOUT_DHCP_EFFECT"
+)
+EDGE_POLICY_EFFECT_NOT_ESTABLISHED = "EDGE_POLICY_EFFECT_NOT_ESTABLISHED"
+
+#: The bounded milestones run 15 observes the phone SVI at.  Four, not a
+#: polling matrix: each one is a moment the causal question turns on.
+EDGE_BEFORE_VOICE_VLAN_MILESTONES = (
+    "IMMEDIATELY_AFTER_VOICE_VLAN",
+    "FIRST_AUTHORITATIVE_STP_SAMPLE",
+    "AUTHORITATIVE_FWD",
+    "END_OF_ACQUISITION_WINDOW",
 )
 DHCP_FLAG_TRANSITION_OBSERVED_OFF_TO_ON = "OBSERVED_OFF_TO_ON"
 DHCP_FLAG_TRANSITION_NOT_OBSERVED = "NOT_OBSERVED"
@@ -440,6 +472,249 @@ def await_stp_forwarding(
                 observation, transitions,
             )
         sleeper(interval_seconds)
+
+
+@dataclass(frozen=True)
+class PairedStpPortGate:
+    """One port's share of a gate that measured several ports together.
+
+    The paired gate exists because run 15's whole question is WHEN each port
+    forwards relative to one shared event.  Two sequential single-port gates
+    cannot answer it: the second would start its clock after the first already
+    finished, and the difference it reported would be the harness, not the
+    network.  So one `show spanning-tree` per sample answers every named port,
+    and every time here is measured from the SAME origin -- the moment the
+    voice VLAN was applied.
+    """
+
+    interface: str = ""
+    role: str = ""
+    status: str = UNOBSERVABLE
+    #: The first classification this port produced from an AUTHORITATIVE read.
+    #: An unreadable sample contributes evidence but never state, so this stays
+    #: UNOBSERVABLE until a read with authority answered for this port.
+    first_authoritative_state: str = UNOBSERVABLE
+    observed_states: tuple[str, ...] = ()
+    samples: int = 0
+    duration_ms: int = 0
+    #: Milliseconds from the shared origin.  `None` is "never observed", which
+    #: is a different fact from zero and must not collapse into it.
+    time_to_first_authoritative_ms: int | None = None
+    time_to_forwarding_ms: int | None = None
+    terminal_read_authority: str = UNOBSERVABLE
+    terminal_failure_dimensions: tuple[str, ...] = ()
+    terminal_executed: str = UNOBSERVABLE
+    terminal_fresh: str = UNOBSERVABLE
+    terminal_complete: str = UNOBSERVABLE
+    terminal_identity_provenance: str = ""
+    terminal_failure_reason: str = ""
+    transitions: tuple[StpGateTransition, ...] = ()
+
+    @property
+    def forwarding_observed(self) -> bool:
+        return self.status == FORWARDING
+
+    @property
+    def authoritative(self) -> bool:
+        """Whether this port was ever classified from a read with authority."""
+        return self.first_authoritative_state != UNOBSERVABLE
+
+    @property
+    def non_forwarding_states(self) -> tuple[str, ...]:
+        return tuple(
+            item for item in self.observed_states
+            if item not in {FORWARDING, UNOBSERVABLE}
+        )
+
+    def as_evidence(self) -> dict:
+        return {
+            "interface": self.interface,
+            "role": self.role,
+            "status": self.status,
+            "first_authoritative_state": self.first_authoritative_state,
+            "observed_states": list(self.observed_states),
+            "non_forwarding_states": list(self.non_forwarding_states),
+            "samples": self.samples,
+            "duration_ms": self.duration_ms,
+            "time_to_first_authoritative_ms": (
+                self.time_to_first_authoritative_ms
+            ),
+            "time_to_forwarding_ms": self.time_to_forwarding_ms,
+            "forwarding_observed": self.forwarding_observed,
+            "authoritative": self.authoritative,
+            "terminal_read_authority": self.terminal_read_authority,
+            "terminal_failure_dimensions": list(
+                self.terminal_failure_dimensions
+            ),
+            "terminal_executed": self.terminal_executed,
+            "terminal_fresh": self.terminal_fresh,
+            "terminal_complete": self.terminal_complete,
+            "terminal_identity_provenance": (
+                self.terminal_identity_provenance
+            ),
+            "terminal_failure_reason": self.terminal_failure_reason,
+            "transitions": [item.as_evidence() for item in self.transitions],
+        }
+
+
+def await_paired_stp_forwarding(
+    configuration,
+    switch_name: str,
+    vlan_id: int,
+    ports: tuple[tuple[str, str], ...],
+    *,
+    timeout_seconds: float,
+    interval_seconds: float,
+    clock,
+    sleeper,
+    errors: list[str] | None = None,
+    milestone_observer=None,
+) -> dict[str, PairedStpPortGate]:
+    """Poll ONE qualified STP read until every named port forwards, or time out.
+
+    `ports` is ((role, interface), ...).  Every sample classifies every port
+    from the same observation, so the sample count and the clock are shared and
+    the per-port times are comparable by construction.  `milestone_observer` is
+    called at most twice -- once at the first sample that produced authority
+    for any port, and once when the gate terminates -- so a caller can take a
+    bounded endpoint reading at those two moments without a polling matrix.
+    """
+    started = clock()
+    observed: dict[str, list[str]] = {role: [] for role, _ in ports}
+    transitions: dict[str, list[StpGateTransition]] = {
+        role: [] for role, _ in ports
+    }
+    first_authoritative: dict[str, str] = {}
+    first_authoritative_ms: dict[str, int] = {}
+    forwarding_ms: dict[str, int] = {}
+    samples = 0
+    observation = StpReadObservation()
+    announced_first = False
+
+    while True:
+        samples += 1
+        try:
+            diagnostic_read = getattr(
+                configuration, "read_spanning_tree_observation", None,
+            )
+            observation = (
+                diagnostic_read(switch_name)
+                if callable(diagnostic_read)
+                else _legacy_stp_observation(configuration, switch_name)
+            )
+        except Exception as exc:  # noqa: BLE001
+            if errors is not None:
+                errors.append(f"paired_stp_gate_read_raised: {exc}")
+            observation = StpReadObservation(
+                failure_reason=f"{type(exc).__name__}: {exc}"[:240],
+                failure_dimensions=(STP_FAILURE_QUERY_SESSION,),
+            )
+        elapsed_ms = int((clock() - started) * 1000)
+        authoritative_sample = False
+        for role, interface in ports:
+            classification = (
+                _classify_stp_row(observation.instances, vlan_id, interface)
+                if observation.authoritative else UNOBSERVABLE
+            )
+            if observation.authoritative:
+                authoritative_sample = True
+                if role not in first_authoritative:
+                    first_authoritative[role] = classification
+                    first_authoritative_ms[role] = elapsed_ms
+                if classification == FORWARDING and role not in forwarding_ms:
+                    forwarding_ms[role] = elapsed_ms
+            states = observed[role]
+            if not states or states[-1] != classification:
+                states.append(classification)
+            transition = StpGateTransition(
+                state=classification,
+                read_authority=observation.read_authority,
+                failure_dimensions=observation.failure_dimensions,
+            )
+            if not transitions[role] or transitions[role][-1] != transition:
+                transitions[role].append(transition)
+
+        if authoritative_sample and not announced_first:
+            announced_first = True
+            if milestone_observer is not None:
+                milestone_observer("FIRST_AUTHORITATIVE_STP_SAMPLE")
+
+        every_port_forwarding = len(forwarding_ms) == len(ports)
+        timed_out = clock() - started >= timeout_seconds
+        if every_port_forwarding or timed_out:
+            duration_ms = int((clock() - started) * 1000)
+            if milestone_observer is not None:
+                milestone_observer("AUTHORITATIVE_FWD")
+            return {
+                role: PairedStpPortGate(
+                    interface=interface,
+                    role=role,
+                    status=(
+                        FORWARDING if role in forwarding_ms
+                        else (GATE_TIMEOUT if timed_out else UNOBSERVABLE)
+                    ),
+                    first_authoritative_state=first_authoritative.get(
+                        role, UNOBSERVABLE,
+                    ),
+                    observed_states=tuple(observed[role]),
+                    samples=samples,
+                    duration_ms=duration_ms,
+                    time_to_first_authoritative_ms=(
+                        first_authoritative_ms.get(role)
+                    ),
+                    time_to_forwarding_ms=forwarding_ms.get(role),
+                    terminal_read_authority=observation.read_authority,
+                    terminal_failure_dimensions=(
+                        observation.failure_dimensions
+                    ),
+                    terminal_executed=_yes_no_unobservable(
+                        observation.executed
+                    ),
+                    terminal_fresh=_yes_no_unobservable(observation.fresh),
+                    terminal_complete=_yes_no_unobservable(
+                        observation.complete
+                    ),
+                    terminal_identity_provenance=(
+                        observation.identity_provenance
+                    ),
+                    terminal_failure_reason=observation.failure_reason,
+                    transitions=tuple(transitions[role]),
+                )
+                for role, interface in ports
+            }
+        sleeper(interval_seconds)
+
+
+@dataclass(frozen=True)
+class EdgeVoiceSviObservation:
+    """One bounded phone-SVI reading, at one named run-15 milestone.
+
+    The same five governed fields the pre-retrigger baseline retains, kept per
+    milestone so "the SVI appeared before its port forwarded" is a measured
+    ordering rather than an inference from a single late read.
+    """
+
+    milestone: str = ""
+    phone: str = ""
+    svi_present: str = UNOBSERVABLE
+    address_channel: str = UNOBSERVABLE
+    dhcp_enabled: str = UNOBSERVABLE
+    ipv4: str = ""
+
+    @property
+    def addressed(self) -> str:
+        return _addressed(self.ipv4, self.address_channel == YES)
+
+    def as_evidence(self) -> dict:
+        return {
+            "milestone": self.milestone,
+            "phone": self.phone,
+            "svi_present": self.svi_present,
+            "address_channel": self.address_channel,
+            "dhcp_enabled": self.dhcp_enabled,
+            "ipv4": self.ipv4,
+            "addressed": self.addressed,
+        }
 
 
 @dataclass(frozen=True)
@@ -917,6 +1192,15 @@ class PositiveVoiceSliceResult:
     stp_gate: StpForwardingGate | None = None
     control_stp_gate: StpForwardingGate | None = None
     intervention_stp_gate: StpForwardingGate | None = None
+    #: Run 15's two shares of ONE paired gate, and the bounded SVI readings
+    #: taken at its named milestones.
+    control_stp_port_gate: PairedStpPortGate | None = None
+    intervention_stp_port_gate: PairedStpPortGate | None = None
+    edge_voice_svi_lifecycle: tuple[EdgeVoiceSviObservation, ...] = ()
+    #: Dispatch and runtime state stay apart on purpose: APPLIED is what the
+    #: typed runtime accepted, never what the switch is doing.
+    edge_policy_dispatch: str = PORTFAST_NOT_APPLIED
+    shared_foundation_ready: str = UNOBSERVABLE
     acquisition_started: bool = True
     acquisition_boundary: str = ""
     baseline_inventory: PhysicalWorkspaceObservation | None = None
@@ -1010,6 +1294,129 @@ class PositiveVoiceSliceResult:
         if outcome.addressed == NO:
             return NO
         return YES if outcome.ipv4.strip() in self.voice_binding_ipv4s else NO
+
+    @property
+    def edge_policy_runtime_state(self) -> str:
+        """PortFast as an EXISTING read-only surface answered it, or nothing.
+
+        The STP Type column is the only governed edge readback on this build.
+        When it does not announce an edge port, this stays UNOBSERVABLE: a
+        dispatch that was accepted is not a switch that is behaving.
+        """
+        if self.experiment != EXPERIMENT_EDGE_BEFORE_VOICE_VLAN:
+            return UNOBSERVABLE
+        gate = self.intervention_stp_port_gate
+        if gate is None:
+            return UNOBSERVABLE
+        intervention = [
+            item for item in self.phones
+            if item.switch_interface == gate.interface
+        ]
+        if len(intervention) != 1:
+            return UNOBSERVABLE
+        return intervention[0].portfast_readback
+
+    @property
+    def edge_stp_effect_observed(self) -> str:
+        """Whether the edge port BEHAVED differently after the same event.
+
+        Two things count, and both are behavioural rather than configural: the
+        intervention's first authoritative state is FORWARDING while the
+        control's is not, or the control sat in a non-forwarding state the
+        intervention never showed.  Without authority on both ports there is
+        no comparison to make.
+        """
+        control = self.control_stp_port_gate
+        intervention = self.intervention_stp_port_gate
+        if control is None or intervention is None:
+            return UNOBSERVABLE
+        if not (control.authoritative and intervention.authoritative):
+            return UNOBSERVABLE
+        if (
+            intervention.first_authoritative_state == FORWARDING
+            and control.first_authoritative_state != FORWARDING
+        ):
+            return YES
+        control_only = set(control.non_forwarding_states) - set(
+            intervention.non_forwarding_states
+        )
+        return YES if control_only else NO
+
+    def _edge_role_outcome(self, gate: PairedStpPortGate | None):
+        if gate is None:
+            return None
+        matches = [
+            item for item in self.phones
+            if item.switch_interface == gate.interface
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    def _edge_acquired(self, gate: PairedStpPortGate | None) -> str:
+        """One role's full behavioural chain: address, binding and SCCP."""
+        outcome = self._edge_role_outcome(gate)
+        if outcome is None or self.voice_binding_ipv4s is None:
+            return UNOBSERVABLE
+        if outcome.addressed == UNOBSERVABLE:
+            return UNOBSERVABLE
+        if outcome.addressed == NO:
+            return NO
+        if outcome.registration != REGISTERED:
+            return NO
+        return YES if outcome.ipv4.strip() in self.voice_binding_ipv4s else NO
+
+    @property
+    def control_matching_binding(self) -> str:
+        return self._edge_matching_binding(self.control_stp_port_gate)
+
+    @property
+    def intervention_matching_binding(self) -> str:
+        return self._edge_matching_binding(self.intervention_stp_port_gate)
+
+    def _edge_matching_binding(self, gate: PairedStpPortGate | None) -> str:
+        outcome = self._edge_role_outcome(gate)
+        if outcome is None or self.voice_binding_ipv4s is None:
+            return UNOBSERVABLE
+        if outcome.addressed == UNOBSERVABLE:
+            return UNOBSERVABLE
+        if outcome.addressed == NO:
+            return NO
+        return YES if outcome.ipv4.strip() in self.voice_binding_ipv4s else NO
+
+    @property
+    def stp_timing_controls_dhcp_acquisition(self) -> str:
+        """Only the isolated positive says YES; only the isolated null says NO."""
+        verdict = self.causal_experiment_result
+        if verdict == EDGE_BEFORE_VOICE_VLAN_CAUSAL_EFFECT_OBSERVED:
+            return YES
+        if verdict == EDGE_STP_EFFECT_OBSERVED_WITHOUT_DHCP_EFFECT:
+            return NO
+        return NOT_ESTABLISHED
+
+    def _edge_before_voice_vlan_verdict(self) -> str:
+        control = self.control_stp_port_gate
+        intervention = self.intervention_stp_port_gate
+        if control is None or intervention is None or len(self.phones) != 2:
+            return UNOBSERVABLE
+        control_acquired = self._edge_acquired(control)
+        intervention_acquired = self._edge_acquired(intervention)
+        if control_acquired == YES and intervention_acquired == YES:
+            # Both halves acquired, so the edge policy was never isolated.
+            # Preparing the foundation first is what changed, and crediting
+            # PortFast for it would be crediting the variable that did not
+            # vary between the two phones.
+            return SHARED_PREPARED_FOUNDATION_ACQUISITION
+        effect = self.edge_stp_effect_observed
+        if effect == UNOBSERVABLE:
+            return UNOBSERVABLE
+        if effect == NO:
+            # No behavioural STP difference: whatever DHCP did here, it was
+            # not a test of the edge policy.
+            return EDGE_POLICY_EFFECT_NOT_ESTABLISHED
+        if intervention_acquired == YES and control_acquired == NO:
+            return EDGE_BEFORE_VOICE_VLAN_CAUSAL_EFFECT_OBSERVED
+        if control_acquired == NO and intervention_acquired == NO:
+            return EDGE_STP_EFFECT_OBSERVED_WITHOUT_DHCP_EFFECT
+        return UNOBSERVABLE
 
     @property
     def all_endpoint_arms_accepted(self) -> str:
@@ -1269,6 +1676,8 @@ class PositiveVoiceSliceResult:
         """
         if self.experiment == EXPERIMENT_PHONE_DHCP_LIFECYCLE:
             return "NOT_APPLICABLE_OBSERVATIONAL_DIAGNOSTIC"
+        if self.experiment == EXPERIMENT_EDGE_BEFORE_VOICE_VLAN:
+            return self._edge_before_voice_vlan_verdict()
         if self.experiment == EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER:
             if self.acquisition_boundary == (
                 ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
@@ -1510,6 +1919,30 @@ def _vlan_section(section, vlan_id: int) -> str:
     if section is None:
         return UNOBSERVABLE
     return VERIFIED if vlan_id in tuple(section) else CONTRADICTED
+
+
+def _shared_foundation_ready(foundation: "PositiveVoiceFoundation") -> str:
+    """The worst of only the upstream dimensions run 15 needs BEFORE VLAN930.
+
+    Every one of these belongs to the network the phone will need the moment
+    its access port signals a voice VLAN: the VLAN can cross the trunk and is
+    forwarding on it, the router answers on the voice subinterface, the pool
+    exists with space, and the call control answered.  Dimensions this build
+    cannot read at all -- option 150, the pool's default-router and its
+    excluded ranges -- are NOT_AVAILABLE and are deliberately not gated on:
+    failing closed on an observer's limit would stop every run forever.
+    """
+    return _worst(
+        foundation.trunk_operational,
+        foundation.trunk_allowed_voice,
+        foundation.trunk_active_voice,
+        foundation.trunk_forwarding_voice,
+        foundation.router_subinterface_present,
+        foundation.router_subinterface_ipv4,
+        foundation.router_subinterface_state,
+        foundation.dhcp_pool_table_readback,
+        foundation.call_control_table,
+    )
 
 
 def _classify_trunk(observation) -> dict:
@@ -1827,6 +2260,7 @@ class PositiveVoiceSliceQualifier:
         fwd_gated_fresh_dhcp: bool = False,
         phone_dhcp_lifecycle: bool = False,
         phone_svi_dhcp_retrigger: bool = False,
+        edge_before_voice_vlan: bool = False,
         gate_timeout_seconds: float = STP_FWD_GATE_TIMEOUT_SECONDS,
         gate_interval_seconds: float = STP_FWD_GATE_INTERVAL_SECONDS,
         gate_clock=monotonic,
@@ -1882,6 +2316,27 @@ class PositiveVoiceSliceQualifier:
             or self._phone_dhcp_lifecycle
             or self._phone_svi_dhcp_retrigger
         )
+        self._edge_before_voice_vlan = bool(edge_before_voice_vlan)
+        if self._edge_before_voice_vlan:
+            if self._gate_enabled or self._edge_portfast:
+                raise ValueError(
+                    "one causal variable per run: edge-before-voice-VLAN "
+                    "cannot be combined with another gated experiment or with "
+                    "the uniform edge PortFast intervention"
+                )
+            if self._control_plane is None:
+                raise ValueError(
+                    "edge-before-voice-VLAN needs a typed control-plane "
+                    "runtime to dispatch its one edge action"
+                )
+            if self._phone_count != 2 or VOICE_VLAN_ID in (
+                self._phone_access_vlans
+            ):
+                raise ValueError(
+                    "edge-before-voice-VLAN requires exactly two phones that "
+                    "share the data access VLAN: the access VLAN is not this "
+                    "experiment's variable"
+                )
         if self._gate_enabled:
             if self._phone_svi_dhcp_retrigger and (
                 self._phone_count != 2
@@ -1913,7 +2368,9 @@ class PositiveVoiceSliceQualifier:
         self._gate_sleeper = gate_sleeper
         # Derived once, next to the knobs that define it, so a result can name
         # its experiment without re-deriving it from the mapping later.
-        if self._phone_dhcp_lifecycle:
+        if self._edge_before_voice_vlan:
+            self._experiment = EXPERIMENT_EDGE_BEFORE_VOICE_VLAN
+        elif self._phone_dhcp_lifecycle:
             self._experiment = EXPERIMENT_PHONE_DHCP_LIFECYCLE
         elif self._phone_svi_dhcp_retrigger:
             self._experiment = EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER
@@ -1973,6 +2430,9 @@ class PositiveVoiceSliceQualifier:
         ] = []
         phone_svi_dhcp_transitions: list[PhoneSviDhcpTransitionEvidence] = []
         retrigger_stp_gates: dict[str, StpForwardingGate] = {}
+        edge_stp_port_gates: dict[str, PairedStpPortGate] = {}
+        edge_voice_svi: list[EdgeVoiceSviObservation] = []
+        edge_state: dict[str, str] = {}
         voice_binding_ipv4s: list[str] = []
         try:
             (
@@ -1985,6 +2445,7 @@ class PositiveVoiceSliceQualifier:
                 pre_retrigger_endpoint_states,
                 phone_svi_dhcp_transitions, retrigger_stp_gates,
                 voice_binding_ipv4s,
+                edge_stp_port_gates, edge_voice_svi, edge_state,
             )
             errors.extend(measured_errors)
         except Exception as exc:  # noqa: BLE001
@@ -2030,6 +2491,17 @@ class PositiveVoiceSliceQualifier:
             stp_gate=stp_gate,
             control_stp_gate=retrigger_stp_gates.get("control"),
             intervention_stp_gate=retrigger_stp_gates.get("intervention"),
+            control_stp_port_gate=edge_stp_port_gates.get("control"),
+            intervention_stp_port_gate=edge_stp_port_gates.get(
+                "intervention"
+            ),
+            edge_voice_svi_lifecycle=tuple(edge_voice_svi),
+            edge_policy_dispatch=edge_state.get(
+                "edge_policy_dispatch", PORTFAST_NOT_APPLIED,
+            ),
+            shared_foundation_ready=edge_state.get(
+                "shared_foundation_ready", UNOBSERVABLE,
+            ),
             acquisition_started=not acquisition_boundary,
             acquisition_boundary=acquisition_boundary,
             baseline_inventory=baseline, final_inventory=final,
@@ -2115,7 +2587,14 @@ class PositiveVoiceSliceQualifier:
                     device_id="voiceab/sw", device_name=switch, site_id=site,
                     interface=interface,
                     data_vlan_id=self._phone_access_vlans[index - 1],
-                    voice_vlan_id=VOICE_VLAN_ID,
+                    # Run 15 withholds the voice VLAN here.  A 7960 creates its
+                    # voice SVI when its access port SIGNALS one, so signalling
+                    # it in this batch would start the phone's one DHCP attempt
+                    # before the foundation it needs had been verified -- which
+                    # is the confound the experiment exists to remove.
+                    voice_vlan_id=(
+                        None if self._edge_before_voice_vlan else VOICE_VLAN_ID
+                    ),
                 )
             )
         actions.extend([
@@ -2144,6 +2623,33 @@ class PositiveVoiceSliceQualifier:
             ),
         ])
         return actions
+
+    def _voice_vlan_boundary_actions(
+        self, phone_ports: tuple[str, ...],
+    ) -> list:
+        """The causal clock boundary: the SAME voice VLAN, both ports, once.
+
+        Nothing else rides in this batch.  A pool or a subinterface here would
+        cross the boundary with it and the measurement would no longer be of
+        one event.
+        """
+        from ...domain.enterprise.models.configuration import (
+            ConfigureAccessPort,
+            ConfigurationPhase,
+        )
+
+        switch = self._name("SW")
+        return [
+            ConfigureAccessPort(
+                id=f"voiceab/access/voice/{index}",
+                phase=ConfigurationPhase.L2_INTERFACES,
+                device_id="voiceab/sw", device_name=switch, site_id="voiceab",
+                interface=interface,
+                data_vlan_id=self._phone_access_vlans[index - 1],
+                voice_vlan_id=VOICE_VLAN_ID,
+            )
+            for index, interface in enumerate(phone_ports, start=1)
+        ]
 
     def _voice_actions(self) -> list:
         from ...domain.enterprise.models.voice_plan import (
@@ -2234,7 +2740,15 @@ class PositiveVoiceSliceQualifier:
         phone_svi_dhcp_transitions: list[PhoneSviDhcpTransitionEvidence],
         retrigger_stp_gates: dict[str, StpForwardingGate],
         voice_binding_ipv4s: list[str],
+        edge_stp_port_gates: dict[str, PairedStpPortGate] | None = None,
+        edge_voice_svi: list[EdgeVoiceSviObservation] | None = None,
+        edge_state: dict[str, str] | None = None,
     ):
+        edge_stp_port_gates = (
+            {} if edge_stp_port_gates is None else edge_stp_port_gates
+        )
+        edge_voice_svi = [] if edge_voice_svi is None else edge_voice_svi
+        edge_state = {} if edge_state is None else edge_state
         self._router_model = router_model
         self._switch_model = switch_model
         self._phone_model = phone_model
@@ -2363,7 +2877,7 @@ class PositiveVoiceSliceQualifier:
         # acceptance.  In the FWD-gated experiment the arming moves BEHIND the
         # gate: the trigger under judgement must not fire before the port it
         # is judged on was observed forwarding.
-        if not self._gate_enabled:
+        if not self._gate_enabled and not self._edge_before_voice_vlan:
             self._arm_endpoints(phones, journal, errors)
 
         # Realtime is the authoritative window for addressing and registration.
@@ -2385,7 +2899,12 @@ class PositiveVoiceSliceQualifier:
         pre_arm: dict[str, str] = {}
         arm_acceptance: dict[str, str] = {}
         post_arm: dict[str, str] = {}
-        if self._gate_enabled:
+        if self._edge_before_voice_vlan:
+            boundary = self._edge_before_voice_vlan_window(
+                phones, phone_ports, switch.name, router.name, journal,
+                errors, edge_stp_port_gates, edge_voice_svi, edge_state,
+            )
+        elif self._gate_enabled:
             if self._phone_dhcp_lifecycle:
                 lifecycle_observations = self._retain_phone_dhcp_lifecycle(
                     "IMMEDIATELY_BEFORE_STP_FWD_GATE",
@@ -2588,6 +3107,13 @@ class PositiveVoiceSliceQualifier:
                 "ACQUISITION_WINDOW_RUN", True, "registration convergence",
                 OBSERVATION,
             )
+        if self._edge_before_voice_vlan and not boundary:
+            # The last of run 15's four milestones.  It is taken only when the
+            # window actually ran: a milestone named after a window that never
+            # opened would be evidence of nothing.
+            self._retain_edge_voice_svi(
+                "END_OF_ACQUISITION_WINDOW", phones, edge_voice_svi, errors,
+            )
 
         stp_after = self._read_stp(switch.name, errors)
         binding_count = self._read_bindings(
@@ -2620,6 +3146,92 @@ class PositiveVoiceSliceQualifier:
             original_simulation, outcomes, binding_count,
             realtime_before, realtime_after, foundation, gate, boundary, errors,
         )
+
+    def _edge_before_voice_vlan_window(
+        self,
+        phones,
+        phone_ports: tuple[str, ...],
+        switch_name: str,
+        router_name: str,
+        journal: _Journal,
+        errors: list[str],
+        edge_stp_port_gates: dict[str, PairedStpPortGate],
+        edge_voice_svi: list[EdgeVoiceSviObservation],
+        edge_state: dict[str, str],
+    ) -> str:
+        """Run 15, in the order the hypothesis requires.
+
+        The foundation is verified while no phone has been told about a voice
+        VLAN; the edge policy reaches ONE port; then the same voice VLAN
+        reaches both ports in one batch, and that instant is the origin every
+        later time is measured from.  Returns the fail-closed boundary, or the
+        empty string when the acquisition window is authorized.
+        """
+        # The upstream network the phone will need, read BEFORE it can matter.
+        pre_foundation = self._read_foundation(
+            switch_name, router_name, journal, errors, "PRE_VOICE_VLAN_",
+        )
+        ready = _shared_foundation_ready(pre_foundation)
+        edge_state["shared_foundation_ready"] = ready
+        journal.record(
+            "WHEN_SHARED_FOUNDATION_READY", ready == VERIFIED, ready,
+            OBSERVATION,
+        )
+        if ready != VERIFIED:
+            return ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY
+
+        control_port, intervention_port = phone_ports[0], phone_ports[1]
+        dispatched = self._dispatch_edge_policy(
+            (intervention_port,), journal, errors,
+        )
+        edge_state["edge_policy_dispatch"] = (
+            PORTFAST_APPLIED if dispatched else PORTFAST_NOT_APPLIED
+        )
+
+        # THE CAUSAL CLOCK BOUNDARY.
+        applied, boundary_errors = self._apply(
+            self._configuration.apply_actions,
+            self._voice_vlan_boundary_actions(phone_ports),
+        )
+        errors.extend(boundary_errors)
+        journal.record(
+            "WHEN_VOICE_VLAN_APPLICATION_BOUNDARY", applied,
+            f"voice vlan {VOICE_VLAN_ID}: {control_port}, {intervention_port}",
+        )
+        if not applied:
+            return ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY
+
+        self._retain_edge_voice_svi(
+            "IMMEDIATELY_AFTER_VOICE_VLAN", phones, edge_voice_svi, errors,
+        )
+        gates = await_paired_stp_forwarding(
+            self._configuration, switch_name, VOICE_VLAN_ID,
+            (("control", control_port), ("intervention", intervention_port)),
+            timeout_seconds=self._gate_timeout_seconds,
+            interval_seconds=self._gate_interval_seconds,
+            clock=self._gate_clock, sleeper=self._gate_sleeper,
+            errors=errors,
+            milestone_observer=lambda name: self._retain_edge_voice_svi(
+                name, phones, edge_voice_svi, errors,
+            ),
+        )
+        edge_stp_port_gates.update(gates)
+        for role in ("control", "intervention"):
+            item = gates[role]
+            journal.record(
+                f"WHEN_{role.upper()}_STP_STATE_AFTER_VOICE_VLAN",
+                item.forwarding_observed,
+                f"{item.interface}:"
+                f"first={item.first_authoritative_state},"
+                f"states={' -> '.join(item.observed_states)},"
+                f"fwd_ms={item.time_to_forwarding_ms}",
+                OBSERVATION,
+            )
+        if not all(item.forwarding_observed for item in gates.values()):
+            # Both halves must be comparable.  A control that never forwarded
+            # cannot be told apart from one whose port was never read.
+            return ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
+        return ""
 
     def _retain_pre_retrigger_endpoint_states(
         self,
@@ -2933,7 +3545,7 @@ class PositiveVoiceSliceQualifier:
 
     def _read_foundation(
         self, switch_name: str, router_name: str, journal: _Journal,
-        errors: list[str],
+        errors: list[str], prefix: str = "",
     ) -> PositiveVoiceFoundation:
         """Read the foundation both sides of the A/B share.  Reads only.
 
@@ -2964,22 +3576,23 @@ class PositiveVoiceSliceQualifier:
         pool_fields = _classify_dhcp_pool(pool)
         call_control, ephone_rows = _classify_call_control(table)
         journal.record(
-            "SWITCH_TRUNK_OBSERVED",
+            prefix + "SWITCH_TRUNK_OBSERVED",
             trunk_fields["trunk_operational"] != UNOBSERVABLE,
             f"{switch_name} {SWITCH_UPLINK_INTERFACE}", OBSERVATION,
         )
         journal.record(
-            "ROUTER_VOICE_SUBINTERFACE_OBSERVED",
+            prefix + "ROUTER_VOICE_SUBINTERFACE_OBSERVED",
             router_fields["router_subinterface_present"] != UNOBSERVABLE,
             ROUTER_VOICE_SUBINTERFACE, OBSERVATION,
         )
         journal.record(
-            "DHCP_POOL_OBSERVED",
+            prefix + "DHCP_POOL_OBSERVED",
             pool_fields["dhcp_pool_existence"] != UNOBSERVABLE,
             VOICE_POOL_NAME, OBSERVATION,
         )
         journal.record(
-            "CALL_CONTROL_TABLE_OBSERVED", call_control != UNOBSERVABLE,
+            prefix + "CALL_CONTROL_TABLE_OBSERVED",
+            call_control != UNOBSERVABLE,
             router_name, OBSERVATION,
         )
         return PositiveVoiceFoundation(
@@ -3012,6 +3625,67 @@ class PositiveVoiceSliceQualifier:
             "WHEN_EDGE_PORTFAST_APPLIED", applied,
             "portfast on, bpduguard off: " + ", ".join(phone_ports),
         )
+
+    def _dispatch_edge_policy(
+        self, ports: tuple[str, ...], journal: _Journal, errors: list[str],
+    ) -> bool:
+        """Dispatch the typed edge policy to exactly the named ports.
+
+        Returns what the typed runtime ACCEPTED, which is dispatch and never
+        runtime state.  Whether the switch is treating the port as an edge port
+        is read separately, off the STP Type column, or stays UNOBSERVABLE.
+        """
+        applied, edge_errors = self._apply(
+            self._control_plane.apply_actions,
+            self._edge_stp_actions(ports),
+        )
+        errors.extend(edge_errors)
+        journal.record(
+            "WHEN_EDGE_POLICY_DISPATCHED", applied,
+            "portfast on, bpduguard off: " + ", ".join(ports),
+        )
+        return applied
+
+    def _retain_edge_voice_svi(
+        self,
+        milestone: str,
+        phones,
+        retained: list[EdgeVoiceSviObservation],
+        errors: list[str],
+    ) -> None:
+        """One bounded existing SVI read per phone, at one named milestone."""
+        for phone in phones:
+            try:
+                observation = self._endpoints.read_endpoint_address(
+                    phone.name, PHONE_ADDRESSING_INTERFACE,
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(
+                    f"edge_voice_svi_unreadable:{milestone}:{phone.name}: {exc}"
+                )
+                observation = None
+
+            svi_present = address_channel = dhcp_enabled = UNOBSERVABLE
+            ipv4 = ""
+            if observation is not None:
+                svi_present = _yes_no_unobservable(
+                    getattr(observation, "present", None)
+                )
+                ipv4 = str(getattr(observation, "ipv4", "") or "").strip()
+                channel = getattr(observation, "address_channel", None)
+                if channel is not None:
+                    address_channel = _yes_no_unobservable(bool(channel))
+                elif ipv4:
+                    address_channel = YES
+                dhcp_enabled = _yes_no_unobservable(
+                    getattr(observation, "dhcp_enabled", None)
+                )
+
+            retained.append(EdgeVoiceSviObservation(
+                milestone=milestone, phone=phone.name,
+                svi_present=svi_present, address_channel=address_channel,
+                dhcp_enabled=dhcp_enabled, ipv4=ipv4,
+            ))
 
     def _edge_stp_actions(self, phone_ports: tuple[str, ...]) -> list:
         """One typed edge action per phone-facing port.  No new primitive.
