@@ -23,14 +23,6 @@ coordinate. Every interface in a configuration action comes from the source E4
 The backend-neutral plan supports VLAN creation, data/voice access ports,
 trunks, routed interfaces, SVIs, router subinterfaces, DHCP pools, static
 endpoint addressing, and DHCP endpoint activation. There is no raw CLI action.
-
-For a phone on a signalled voice VLAN, DHCP activation and address acquisition
-are separate claims. E5 invokes the measured device-level activation through
-`Vlan1`, which exists during preflight, then reads `isDhcpClientOn()` from the
-later `Vlan<voice>` interface. That read may verify the activation foundation;
-it does not claim a lease. E7 owns the eventual voice address and SCCP
-registration. Ordinary endpoints retain the single-interface address-readback
-contract.
 An infrastructure renderer converts this closed action set into validated IOS
 batches only at the Packet Tracer boundary.
 

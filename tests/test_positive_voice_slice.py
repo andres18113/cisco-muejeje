@@ -35,7 +35,6 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     SWITCH_UPLINK_INTERFACE,
     OBSERVATION,
     PHONE_ADDRESSING_INTERFACE,
-    PHONE_DHCP_ACTIVATION_INTERFACE,
     PHONE_DHCP_LIFECYCLE_MILESTONES,
     PHONE_LINK_PORT,
     POSITIVE_VOICE_PREFIX,
@@ -899,13 +898,12 @@ def test_the_phone_addressing_interface_is_the_one_production_derives():
     assert PHONE_LINK_PORT != PHONE_ADDRESSING_INTERFACE
 
 
-def test_dhcp_is_activated_through_vlan1_before_the_voice_svi_is_observed():
+def test_dhcp_is_armed_on_the_svi_the_phone_addresses_on():
     result, _, _, _, endpoints, _, _ = _run()
 
     assert endpoints.armed_interfaces == [
-        PHONE_DHCP_ACTIVATION_INTERFACE, PHONE_DHCP_ACTIVATION_INTERFACE,
+        PHONE_ADDRESSING_INTERFACE, PHONE_ADDRESSING_INTERFACE,
     ]
-    assert PHONE_DHCP_ACTIVATION_INTERFACE == "Vlan1"
     armed = next(
         item for item in result.lifecycle if item.name == "WHEN_ENDPOINT_DHCP_ARMED"
     )

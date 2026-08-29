@@ -22,7 +22,6 @@ from ...domain.enterprise.models.configuration import (
     ConfigureSvi,
     ConfigureTrunk,
     CreateVlan,
-    EndpointDhcpVerificationMode,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
     VerificationExpectation,
@@ -171,9 +170,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._query_inventory = query_inventory
         self._send = send
         self._send_and_wait = send_and_wait
-        self._configuration = PacketTracerConfigurationRuntime(
-            send, send_and_wait,
-        )
+        self._configuration = PacketTracerConfigurationRuntime(send)
         self._ios = ControlledIosExecutor(send_and_wait)
         self._renderer = PacketTracerIosRenderer()
         self._targets: dict[str, RuntimeConfigurationTarget] = {}
@@ -433,24 +430,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         batch_id=batch_id,
                     )
 
-        activation_endpoints = [
-            item for item in endpoints
-            if (
-                isinstance(item, SetEndpointDhcp)
-                and item.verification_mode
-                is EndpointDhcpVerificationMode.CLIENT_ENABLED
-            )
-        ]
-        address_endpoints = [
-            item for item in endpoints if item not in activation_endpoints
-        ]
-        if address_endpoints:
+        if endpoints:
             payload = "".join(self._endpoint_call(action) for action in sorted(
-                address_endpoints, key=lambda item: item.id,
+                endpoints, key=lambda item: item.id,
             ))
             applied = bool(payload) and self._send(payload)
-            batch_id = "endpoints:" + str(int(address_endpoints[0].phase))
-            for action in address_endpoints:
+            batch_id = "endpoints:" + str(int(endpoints[0].phase))
+            for action in endpoints:
                 results[action.id] = RuntimeActionMutation(
                     action_id=action.id,
                     applied=applied,
@@ -464,24 +450,6 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     ),
                     batch_id=batch_id,
                 )
-        for action in sorted(activation_endpoints, key=lambda item: item.id):
-            applied = self._configuration.configure_endpoint_dhcp(
-                action.device_name, action.interface,
-            )
-            results[action.id] = RuntimeActionMutation(
-                action_id=action.id,
-                applied=applied,
-                failure_code=(
-                    ConfigurationFailureCode.NONE
-                    if applied else ConfigurationFailureCode.APPLICATION_FAILED
-                ),
-                message=(
-                    "Endpoint DHCP activation was accepted by Packet Tracer."
-                    if applied else
-                    "Packet Tracer did not accept the endpoint DHCP activation."
-                ),
-                batch_id="endpoint-dhcp-activation:" + str(int(action.phase)),
-            )
         return [
             results.get(action.id, RuntimeActionMutation(
                 action_id=action.id,
@@ -1155,8 +1123,6 @@ class PacketTracerEnterpriseConfigurationRuntime:
         the same as having looked and seen the opposite.
         """
         expected = expectation.expected
-        if expected.get("mode") == "dhcp_client_enabled":
-            return self._verify_endpoint_dhcp_client(expectation)
         name = json.dumps(expectation.device_name)
         interface = str(expected.get("interface") or "")
         if not interface:
@@ -1262,91 +1228,6 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     str(observed.get("ipv4") or "no-ip")
                     if converged else "convergence_timeout"
                 ),
-            ),
-        )
-
-    def _verify_endpoint_dhcp_client(
-        self, expectation: VerificationExpectation,
-    ) -> RuntimeVerification:
-        """Read the measured 7960 SVI DHCP flag after device activation.
-
-        This does not claim an address or a DHCP exchange.  It proves only the
-        independently readable state that E5 may use as the lifecycle gate
-        before E7 starts call-control and phone-bootstrap configuration.
-        """
-        interface = str(expectation.expected.get("interface") or "")
-        if not interface:
-            return self._unobservable(
-                expectation,
-                message="The DHCP activation expectation names no interface.",
-            )
-        name = json.dumps(expectation.device_name)
-        wanted = json.dumps(interface)
-
-        def inspect() -> dict:
-            script = "".join((
-                "try{var d=ipc.network().getDevice(", name, ");",
-                "var want=", wanted, ";var p=null;",
-                "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
-                "if(c&&typeof c.getName==='function'&&String(c.getName())===want){",
-                "p=c;break;}}}",
-                "var able=!!p&&typeof p.isDhcpClientOn==='function';",
-                "var enabled=able?!!p.isDhcpClientOn():null;",
-                "reportResult(JSON.stringify({found:!!d,port_found:!!p,",
-                "configuration_channel:able&&enabled,dhcp_channel:able,",
-                "dhcp_enabled:enabled}));",
-                "}catch(e){reportResult('ERROR:'+e);}",
-            ))
-            return self._json_result(script, 3.0)
-
-        convergence = StateConvergenceWaiter(
-            inspect,
-            timeout_seconds=self._endpoint_timeout,
-            interval_seconds=self._convergence_interval,
-        ).wait()
-        observed = inspect()
-        if not observed.get("port_found"):
-            return self._unobservable(
-                expectation,
-                message=(
-                    f"{interface} was not exposed by {expectation.device_name}, "
-                    "so its DHCP-client state was never read."
-                ),
-            )
-        if not observed.get("dhcp_channel"):
-            return self._unobservable(
-                expectation,
-                evidence_method="structured_endpoint_dhcp_getter_absent",
-                message=(
-                    f"{interface} on {expectation.device_name} exposes no "
-                    "DHCP-client getter."
-                ),
-            )
-        enabled = observed.get("dhcp_enabled") is True
-        status = (
-            ActionExecutionStatus.VERIFIED
-            if enabled else ActionExecutionStatus.FAILED
-        )
-        return RuntimeVerification(
-            expectation_id=expectation.id,
-            status=status,
-            evidence_method="structured_endpoint_dhcp_client_getter",
-            fresh_evidence=True,
-            fields={
-                "dhcp_enabled": (
-                    FieldVerificationStatus.VERIFIED
-                    if enabled else FieldVerificationStatus.FAILED
-                ),
-            },
-            message=(
-                "" if enabled
-                else f"{interface} remained DHCP-disabled before timeout."
-            ),
-            convergence=ConvergenceReport(
-                attempts=convergence.attempts,
-                elapsed_ms=convergence.elapsed_ms,
-                final_status=status,
-                last_observable_state="enabled" if enabled else "disabled",
             ),
         )
 

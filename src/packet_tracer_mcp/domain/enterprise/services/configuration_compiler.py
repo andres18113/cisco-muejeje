@@ -34,7 +34,6 @@ from ..models.configuration import (
     ConfigureTrunk,
     CreateVlan,
     DeviceConfigurationPlan,
-    EndpointDhcpVerificationMode,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
     VerificationExpectation,
@@ -297,10 +296,7 @@ class ConfigurationCompiler:
             static_by_segment, gateway_action_by_segment, gateway_devices, policy, issues,
         )
         actions.extend(pool_actions)
-        for (
-            endpoint, segment, interface, access_dependency,
-            verification_interface, verification_mode,
-        ) in pending_dhcp:
+        for endpoint, segment, interface, access_dependency in pending_dhcp:
             pool = pool_by_segment.get(segment.name)
             if pool is None or not interface:
                 # An entry with no interface only kept its segment's pool alive;
@@ -317,8 +313,6 @@ class ConfigurationCompiler:
                 device_name=endpoint.name,
                 site_id=endpoint.site_id,
                 interface=interface,
-                verification_interface=verification_interface,
-                verification_mode=verification_mode,
                 segment_id=segment.name,
                 network=allocation.network,
                 prefix=allocation.prefix,
@@ -1039,17 +1033,11 @@ class ConfigurationCompiler:
         issues: list[ConfigurationIssue],
     ) -> tuple[
         list[SetEndpointStaticAddress], dict[str, list[str]],
-        list[tuple[
-            DevicePlan, NetworkSegment, str, str, str,
-            EndpointDhcpVerificationMode,
-        ]],
+        list[tuple[DevicePlan, NetworkSegment, str, str]],
     ]:
         actions: list[SetEndpointStaticAddress] = []
         static_by_segment: dict[str, list[str]] = defaultdict(list)
-        pending_dhcp: list[tuple[
-            DevicePlan, NetworkSegment, str, str, str,
-            EndpointDhcpVerificationMode,
-        ]] = []
+        pending_dhcp: list[tuple[DevicePlan, NetworkSegment, str, str]] = []
         endpoint_interfaces = self._endpoint_interfaces(links, devices)
         endpoints_by_segment: dict[str, list[DevicePlan]] = defaultdict(list)
         for endpoint_id, segment in endpoint_segments.items():
@@ -1088,18 +1076,26 @@ class ConfigurationCompiler:
                     # up, powered, and the interface that carries the address --
                     # and takes `Vlan1` down.
                     #
-                    # The two interfaces serve different contracts. `Vlan1`
-                    # already exists at E5 preflight and lets the measured
-                    # helper reach `device.setDhcpFlag(true)`. `Vlan<voice>` is
-                    # the later logical interface whose client state and lease
-                    # can be observed. Collapsing both roles into the latter
-                    # removed the activation event from the E5 -> E7 lifecycle.
+                    # Both candidates are therefore unaddressable from here.
+                    # `Vlan1` is the one interface guaranteed to hold nothing,
+                    # and `Vlan<voice>` does not exist yet when this plan is
+                    # preflighted, so naming it would fail target validation
+                    # against the live inventory.
+                    #
+                    # Nothing is lost: the phone leases by itself. What E5 owes
+                    # it is the network -- the VLAN, the voice access port, the
+                    # gateway and the pool -- and all of that is still compiled.
+                    # Option 150 and the call control are E7's, and so is the
+                    # claim that the phone acquired.
+                    issues.append(_warning(
+                        ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
+                        f"Phone {endpoint.name} acquires on the voice SVI it "
+                        f"creates itself, so E5 claims no addressing for it on "
+                        f"segment {segment_id}; E7 owns the acquisition.",
+                        endpoint_id,
+                    ))
                     if use_dhcp:
-                        pending_dhcp.append((
-                            endpoint, segment, "Vlan1", access_dependency,
-                            _phone_addressing_interface(signalled_voice_vlan),
-                            EndpointDhcpVerificationMode.CLIENT_ENABLED,
-                        ))
+                        pending_dhcp.append((endpoint, segment, "", access_dependency))
                     continue
                 if is_phone:
                     # No voice VLAN was signalled, so the phone stays on `Vlan1`
@@ -1127,16 +1123,10 @@ class ConfigurationCompiler:
                         # The segment still asked for DHCP. Withdrawing the pool
                         # too would quietly delete a designed router service
                         # because one client could not be configured.
-                        pending_dhcp.append((
-                            endpoint, segment, "", access_dependency, "",
-                            EndpointDhcpVerificationMode.ADDRESS_ACQUISITION,
-                        ))
+                        pending_dhcp.append((endpoint, segment, "", access_dependency))
                     continue
                 if use_dhcp:
-                    pending_dhcp.append((
-                        endpoint, segment, interface, access_dependency, "",
-                        EndpointDhcpVerificationMode.ADDRESS_ACQUISITION,
-                    ))
+                    pending_dhcp.append((endpoint, segment, interface, access_dependency))
                     continue
                 explicit = endpoint.metadata.get("requirement.ipv4", "")
                 if explicit:
@@ -1206,10 +1196,7 @@ class ConfigurationCompiler:
         devices: dict[str, DevicePlan],
         site_segments: dict[tuple[str, SegmentRole], NetworkSegment],
         allocations: dict[str, SubnetAllocation],
-        pending: list[tuple[
-            DevicePlan, NetworkSegment, str, str, str,
-            EndpointDhcpVerificationMode,
-        ]],
+        pending: list[tuple[DevicePlan, NetworkSegment, str, str]],
         static_by_segment: dict[str, list[str]],
         gateway_actions: dict[str, str],
         gateway_devices: dict[str, DevicePlan],
@@ -1218,7 +1205,7 @@ class ConfigurationCompiler:
     ) -> tuple[list[ConfigureDhcpPool], dict[str, ConfigureDhcpPool]]:
         actions: list[ConfigureDhcpPool] = []
         by_segment: dict[str, ConfigureDhcpPool] = {}
-        requested = {segment.name for _, segment, _, _, _, _ in pending}
+        requested = {segment.name for _, segment, _, _ in pending}
         for segment in sorted(site_segments.values(), key=lambda item: item.name):
             if segment.name not in requested or segment.name not in allocations:
                 continue
@@ -1369,30 +1356,11 @@ class ConfigurationCompiler:
                 # The interface travels with the expectation because the
                 # read-back has to look at the port the action addressed, not
                 # at whichever port the device happens to enumerate first.
-                if (
-                    isinstance(action, SetEndpointDhcp)
-                    and action.verification_mode
-                    is EndpointDhcpVerificationMode.CLIENT_ENABLED
-                ):
-                    expected = {
-                        "mode": "dhcp_client_enabled",
-                        "interface": (
-                            action.verification_interface or action.interface
-                        ),
-                    }
-                else:
-                    expected = {
-                        "mode": (
-                            "dhcp" if isinstance(action, SetEndpointDhcp)
-                            else "static"
-                        ),
-                        "interface": action.interface,
-                    }
-                if (
-                    isinstance(action, SetEndpointDhcp)
-                    and action.verification_mode
-                    is EndpointDhcpVerificationMode.ADDRESS_ACQUISITION
-                ):
+                expected = {
+                    "mode": "dhcp" if isinstance(action, SetEndpointDhcp) else "static",
+                    "interface": action.interface,
+                }
+                if isinstance(action, SetEndpointDhcp):
                     expected.update({
                         "network": action.network,
                         "prefix": action.prefix,

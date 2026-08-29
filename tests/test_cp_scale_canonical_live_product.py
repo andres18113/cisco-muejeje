@@ -13,8 +13,6 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
-    EndpointDhcpVerificationMode,
-    SetEndpointDhcp,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
@@ -40,32 +38,19 @@ def test_product_composes_the_exact_canonical_topology_and_plans():
     assert composition.control_plane is not None
     assert len(composition.topology.devices) == 314
     assert len(composition.topology.links) == 219
-    # 514, not the former 445. Wireless endpoints still expose no interface,
-    # while each of the 69 phones now retains one activation-only DHCP action:
+    # 445, not 609. Two classes of endpoint are no longer addressed here and
+    # both for the same reason -- E5 cannot name an interface that will hold
+    # the address:
     #
     #   -95  the wireless IoT endpoints expose no network port at all;
-    #   +69  Vlan1 lets the measured helper trigger device.setDhcpFlag before
-    #        E7; Vlan<voice> independently verifies only the client state.
+    #   -69  a 7960 on a voice VLAN brings up the SVI it acquires on only after
+    #        the VLAN is signalled, and takes `Vlan1` down doing it.
     #
     # Every VLAN, access port, gateway and DHCP pool that serves them still
-    # exists. E7 continues to own the eventual address/registration claim.
-    assert len(composition.configuration.actions) == 514
+    # exists. What stopped is the pretence, and for the phones the claim moved
+    # to E7, which owns option 150 and the call control that make it true.
+    assert len(composition.configuration.actions) == 445
     assert len(composition.control_plane.actions) == 217
-
-    activations = [
-        item for item in composition.configuration.actions
-        if isinstance(item, SetEndpointDhcp)
-        and item.verification_mode is EndpointDhcpVerificationMode.CLIENT_ENABLED
-    ]
-    assert len(activations) == 69
-    assert {item.interface for item in activations} == {"Vlan1"}
-    assert {
-        item.verification_interface for item in activations
-    } == {"Vlan20"}
-    assert len([
-        item for item in composition.voice.foundational_requirements
-        if item.kind == "phone_dhcp_activation"
-    ]) == 69
 
 
 def test_canonical_composition_uses_exact_build_2811_layer3_live_evidence():

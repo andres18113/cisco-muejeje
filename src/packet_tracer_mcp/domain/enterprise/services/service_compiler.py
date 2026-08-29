@@ -138,13 +138,7 @@ class ServiceCompiler:
         foundations = {
             item.device_id: item
             for item in configuration.actions
-            if (
-                isinstance(item, SetEndpointStaticAddress)
-                or (
-                    isinstance(item, SetEndpointDhcp)
-                    and item.claims_address_acquisition
-                )
-            )
+            if isinstance(item, (SetEndpointStaticAddress, SetEndpointDhcp))
         }
         l3_foundations: dict[str, list[object]] = defaultdict(list)
         for item in configuration.actions:

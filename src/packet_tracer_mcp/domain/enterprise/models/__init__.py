@@ -19,7 +19,6 @@ from .compilation import (
 from .configuration import (
     ConfigurationActionType, ConfigurationCompileResult, ConfigurationIssue,
     ConfigurationIssueCode, ConfigurationPhase, ConfigurationPlan, ConfigurationPolicy,
-    EndpointDhcpVerificationMode,
 )
 from .configuration_runtime import (
     ActionApplicationResult, ActionExecutionStatus, ConfigurationApplicationResult,
@@ -151,7 +150,6 @@ __all__ = [
     "CompilationIssue", "CompilationIssueCode", "CompilationIssueSeverity", "ConcreteLinkRole",
     "ConfigurationActionType", "ConfigurationCompileResult", "ConfigurationIssue",
     "ConfigurationIssueCode", "ConfigurationPhase", "ConfigurationPlan", "ConfigurationPolicy",
-    "EndpointDhcpVerificationMode",
     "ActionApplicationResult", "ActionExecutionStatus", "ConfigurationApplicationResult",
     "ConfigurationApplicationStatus", "ConfigurationFailureCode", "ConvergenceReport",
     "ConfigurationRuntimeContext", "FieldVerificationStatus", "RuntimeActionMutation", "RuntimeConfigurationTarget",
