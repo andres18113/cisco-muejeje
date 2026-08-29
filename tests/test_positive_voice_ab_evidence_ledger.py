@@ -445,3 +445,38 @@ def test_run_twelve_records_the_observational_lifecycle_without_causal_promotion
     assert "does not establish Discover, DORA, retry, transaction progress" in note
     assert "sequential reads may shift later observation time" in note
     assert "no rerun occurred" in note
+
+
+def test_run_thirteen_records_the_valid_negative_causal_result_without_protocol_promotion():
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    run13 = next(item for item in ledger["runs"] if item["run"] == "run13")
+
+    assert run13 == {
+        "run": "run13",
+        "filename": (
+            "positive-voice-ab-run13-phone-svi-dhcp-retrigger-no-address.json"
+        ),
+        "sha256": (
+            "8054b128b2a74cdc380e10b5eff03a80a08f1b75474ac10bfbbb9c5399df8c8a"
+        ),
+        "source_head": "718075318b18126dd672ec7dfda4fd1faf101f70",
+        "source_head_provenance": "HANDOFF_RECORDED",
+        "role": "PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION",
+        "outcome": "SAME_FAILURE",
+        "packet_tracer_version": "9.0.1.0858",
+        "canonical_copy_at_write": True,
+        "note": run13["note"],
+    }
+    note = run13["note"]
+    assert "Independent authoritative VLAN930 FWD gates" in note
+    assert "One PRE endpoint observation per phone" in note
+    assert "Only P2 received exact-SVI YES-to-NO-to-YES" in note
+    assert "P1 stayed DHCP YES without mutation" in note
+    assert "Acquisition was authorized" in note
+    assert "binding table contained zero rows" in note
+    assert "neither phone registered with SCCP" in note
+    assert "NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER" in note
+    assert "exact transition was insufficient here" in note
+    assert "Discover, DORA, server receipt and transaction progress remain unobservable" in note
+    assert "empty semantic workspace were independently restored" in note
+    assert "no rerun occurred" in note

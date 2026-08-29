@@ -36,11 +36,37 @@ FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_RUN11_PRE_FLAGS_ALREADY_YES
 FRESH_7960_DHCP_TRANSACTION = NOT_INDEPENDENTLY_ESTABLISHED
 CURRENT_TYPED_DHCP_FRESH_TRANSACTION = NOT_ESTABLISHED
 PHONE_SVI_DHCP_API = MEASURED_PRESENT_AND_CISCO_BOOL_SIGNATURE_CONFIRMED
-PHONE_SVI_DHCP_RETRIGGER_EXPERIMENT = PREPARED_SYMMETRIC_DUAL_FWD_GATED_NOT_RUN
+PHONE_SVI_DHCP_RETRIGGER_EXPERIMENT = RUN13_EXECUTED_NO_ADDRESS
 PHONE_SVI_DHCP_RETRIGGER_NETWORK_SHAPE = P1_ACCESS930_VOICE930 | P2_ACCESS930_VOICE930
 PHONE_SVI_DHCP_RETRIGGER_FWD_GATES = P1_AUTHORITATIVE_FWD + P2_AUTHORITATIVE_FWD_REQUIRED
 PHONE_SVI_DHCP_RETRIGGER_CONTROL_INVARIANT = P1_PRE_YES + P1_POST_YES + NEVER_MUTATED
 PHONE_SVI_DHCP_RETRIGGER_LEDGER_ROLE = PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION
+RUN13_EXECUTED = YES
+RUN13_SOURCE_HEAD = 718075318b18126dd672ec7dfda4fd1faf101f70
+RUN13_RESULT = NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER
+RUN13_CONTROL_FWD_GATE = FORWARDING_AUTHORITATIVE
+RUN13_INTERVENTION_FWD_GATE = FORWARDING_AUTHORITATIVE
+RUN13_BOTH_AUTHORITATIVE_FWD = YES
+RUN13_CONTROL_PRE_ENDPOINT = SVI_YES | CHANNEL_YES | DHCP_YES | IPV4_EMPTY | ADDRESSED_NO
+RUN13_INTERVENTION_PRE_ENDPOINT = SVI_YES | CHANNEL_YES | DHCP_YES | IPV4_EMPTY | ADDRESSED_NO
+RUN13_PRE_RETRIGGER_ADDRESS_BASELINE_VALID = YES
+RUN13_CONTROL_MUTATED = NO
+RUN13_CONTROL_DHCP_POST = YES
+RUN13_INTERVENTION_TRANSITION = YES -> NO -> YES | ACCEPTED_YES_YES | READBACK_NO_YES
+RUN13_INTERVENTION_TRANSITION_VALID = YES
+RUN13_ACQUISITION_WINDOW_AUTHORIZED = YES
+RUN13_CONTROL_FINAL_IPV4 = EMPTY
+RUN13_INTERVENTION_FINAL_IPV4 = EMPTY
+RUN13_CONTROL_ADDRESSED = NO
+RUN13_INTERVENTION_ADDRESSED = NO
+RUN13_VOICE_BINDING_COUNT = 0
+RUN13_MATCHING_INTERVENTION_BINDING = NO
+RUN13_CONTROL_SCCP = NOT_REGISTERED
+RUN13_INTERVENTION_SCCP = NOT_REGISTERED
+RUN13_SHA256 = 8054b128b2a74cdc380e10b5eff03a80a08f1b75474ac10bfbbb9c5399df8c8a
+RUN13_WORKSPACE_RESTORED = YES
+RUN13_REALTIME_RESTORED = YES
+RAW_VOICE_AB_RUNS_PINNED = 13
 NEW_MUTATION_SURFACE = TYPED_EXACT_PHONE_SVI_ONLY
 RAW_ESCAPE_HATCH_ADDED = NO
 PHONE_DHCP_LIFECYCLE_DIAGNOSTIC = MEASURED
@@ -123,80 +149,69 @@ TRUNK_FORWARDING_SEMANTIC_AUDIT = IOS_STP_FORWARDING_AND_NOT_PRUNED_SET_ON_SHARE
 TRUNK_READ_AUTHORITY_RETENTION = READY
 STP_VS_TRUNK_RELATION = NOT_ESTABLISHED
 VOICE_ROOT_CAUSE = NOT_CONFIRMED
-NEXT_ACTIVE_STEP = RUN_PHONE_SVI_DHCP_RETRIGGER_CAUSAL_LIVE
+PRODUCTION_FIX_JUSTIFIED = NOT_YET
+NEXT_ACTIVE_STEP = INDEPENDENTLY_AUDIT_RUN13_AND_E7_LIFECYCLE
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
-## Frontier Voice root-cause investigation -- one next experiment prepared
+## Run 13 phone-SVI DHCP retrigger causal intervention
 
-No Packet Tracer LIVE ran in this investigation.  Graphify was used first,
-then the RUN11/RUN12 evidence, the current implementation, the historical E7
-path and Cisco's installed Packet Tracer 9.0.1 IPC reference were audited.
-The evidence decision is:
+Exactly one governed LIVE ran from clean pushed source head
+`718075318b18126dd672ec7dfda4fd1faf101f70` on Packet Tracer `9.0.1.0858` in
+Realtime.  The mutating process proved that its executable was the
+checkout-local `.venv`, its production package resolved inside this worktree,
+and only the `packet_tracer_mcp` namespace was loaded.  Repository preflight
+proved clean `HEAD == upstream`.  Read-only inventory observed zero semantic
+devices and zero links before mutation.
 
-| hypothesis | classification | evidence and limit |
-| --- | --- | --- |
-| H1: DHCP is enabled before FWD, attempts too early, and produces no useful retry | `NEEDS_CAUSAL_TEST` | **Measured LIVE:** RUN12 saw both `Vlan930` DHCP flags `YES` before authoritative FWD and no IPv4 after it. **Inference only:** neither an early attempt nor retry behavior was observed. |
-| H2: `configure_endpoint_dhcp()` / `configurePcIp()` only confirms an enabled flag and does not create a fresh transaction when already `YES` | `NEEDS_CAUSAL_TEST` | **Source:** the typed call queues `configurePcIp(device,true,...,interface)`; its DHCP branch calls only `device.setDhcpFlag(true)`, does not read back the result, and the interface is used only to find a port before the branch. **Unobservable:** ON-to-ON transaction behavior remains unmeasured. |
-| H3: the 7960 has a distinct port/SVI DHCP lifecycle API and the current mutation targets a different semantic layer | `SUPPORTED` | **Historical measurement:** the 7960 VLAN port exposes `isDhcpClientOn` and `setDhcpClientFlag`. **Cisco source:** the installed IPC reference specifies `HostPort::isDhcpClientOn() -> bool` and `HostPort::setDhcpClientFlag(bool) -> void`, with the bool enabling/disabling the port DHCP client. **Source:** the current general DHCP path calls the device setter, not this SVI setter. This establishes the API/layer mismatch, not transaction causality. |
-| H4: another phone lifecycle event starts or restarts acquisition | `NEEDS_CAUSAL_TEST` | **Historical evidence:** fresh unpowered `Vlan1` read DHCP client `false`. **Measured LIVE:** later materialized `Vlan930` read `YES` without the RUN12 diagnostic mutating DHCP. These are different SVIs and no retained boundary observes the transition itself, so materialization, link, voice discovery and boot remain unresolved. |
-| H5: the current addressing observer/mutation target is semantically wrong | `WEAKENED` | **Source + LIVE:** the corrected observer resolves exact `Vlan930` and reads its `isDhcpClientOn`, so the observer half is defensible. The mutation half still targets `device.setDhcpFlag`; the hypothesis survives only for mutation. |
-| H6: typed-call acceptance can be mistaken for accepted/effective DHCP mutation | `SUPPORTED` | **Source:** `PacketTracerConfigurationRuntime` returns transport queue acceptance; `configurePcIp` returns true when a port exists even if `device.setDhcpFlag` is absent, and that helper result is not correlated back to the caller. |
-| H7: a 7960 is intrinsically unable to acquire on this voice design | `WEAKENED` | **Historical E7 evidence:** the local E7 slice obtained phone leases, SCCP registration and calls. E7 used the same general `configurePcIp` path, so it proves eventual acquisition is possible in some lifecycle but does not identify the causal event. |
+The disposable network was symmetric: P1 and P2 both used access VLAN930 and
+voice VLAN930.  The control VLAN930 FWD gate retained `LIS -> LRN ->
+UNOBSERVABLE -> LRN -> UNOBSERVABLE -> LRN -> FORWARDING` across 16 samples
+and 32,344 ms.  The intervention gate retained `UNOBSERVABLE -> FORWARDING`
+across 2 samples and 2,375 ms.  Every transient gap failed only the
+`COMPLETENESS` dimension; both terminal reads were newly executed, fresh,
+complete, confirmed-unique and `AUTHORITATIVE`.
 
-The exact current general call path is:
+Immediately after both gates and before any mutation, one complete
+`read_endpoint_address()` observation per phone supplied both DHCP and address
+evidence:
 
-```text
-SetEndpointDhcp / _EndpointAdapter.configure_endpoint_dhcp
-  -> PacketTracerConfigurationRuntime.configure_endpoint_dhcp
-  -> queued configurePcIp(device, true, null..., interface)
-  -> resolve interface only for existence/static addressing
-  -> device.setDhcpFlag(true), if that device method exists
-  -> no correlated helper result, no SVI readback, no transaction observation
-```
+| role | phone | svi_present | address_channel | dhcp_enabled | ipv4 | addressed |
+| --- | --- | --- | --- | --- | --- | --- |
+| control | `MCP-VOICEAB-3028e8_P1` | YES | YES | YES | empty | NO |
+| intervention | `MCP-VOICEAB-3028e8_P2` | YES | YES | YES | empty | NO |
 
-Therefore `CURRENT_TYPED_DHCP_CALL_PATH_CAUSES_FRESH_TRANSACTION` is
-`NOT_ESTABLISHED`.  It has no defensible evidence that ON-to-ON creates a fresh
-7960 transaction.  Historical E7 success prevents changing that answer to a
-categorical `NO`.
+The PRE-retrigger baseline was therefore valid.  P1 was never mutated.  P2
+alone received exact-SVI `YES -> NO -> YES`; both setter calls were accepted,
+and the same-SVI readbacks were exactly `NO` then `YES`.  A subsequent P1 read
+remained `YES`, so the acquisition window was authorized only after every
+causal precondition had been established.
 
-One causal experiment is prepared as `--phone-svi-dhcp-retrigger`.  It uses a
-symmetric disposable network: P1 and P2 both carry access VLAN930 / voice
-VLAN930.  The existing qualified STP gate is run independently for Fa0/1 and
-Fa0/2; each port needs its own new executed, fresh, complete,
-confirmed-unique VLAN930 FWD result.  A transient UNOBSERVABLE read may keep
-polling inside the existing bound, but never authorizes mutation, and failure
-of either gate stops the experiment before any DHCP mutation.
+Both final normalized IPv4 values remained empty.  The authoritative voice
+binding table contained zero rows, there was no matching P2 binding, and both
+SCCP states were `NOT_REGISTERED`.  The causal result is therefore
+`NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER`: this exact post-FWD transition was
+insufficient to produce successful acquisition in this disposable experiment.
+It does not refute the early-attempt/no-useful-retry hypothesis, and it does
+not establish that no DHCP packets occurred.  Fresh 7960 transaction remains
+`NOT_INDEPENDENTLY_ESTABLISHED`; server receipt of Discover and DHCP transaction
+progress remain `UNOBSERVABLE`.  No Discover, DORA or flag-to-transaction claim
+is promoted from configuration state.
 
-After both gates, both phones must independently read SVI DHCP `YES`.  P1
-remains an untouched control.  P2 alone receives the exact-interface sequence
-`setDhcpClientFlag(false)` -> same-SVI `isDhcpClientOn()==false` ->
-`setDhcpClientFlag(true)` -> same-SVI `isDhcpClientOn()==true`.  Any missing
-port, getter, setter, call, or matching readback stops fail-closed.  After that
-complete P2 transition, P1 is read again and must still report SVI DHCP `YES`;
-otherwise the acquisition window stays closed as
-`CONTROL_DHCP_INVARIANT_UNPROVEN`.  The retained transition evidence names both
-phones and keeps P1 PRE and POST independently.  The mode never mutates P1,
-never calls `configure_endpoint_dhcp`, exposes no raw JS/IOS entry point, and
-is mutually exclusive with every existing mode.  Default, RUN11 and RUN12
-behavior remains unchanged.  Its dedicated future archive role is
-`PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION`.
+The result weakens the exact SVI DHCP flag transition as a sufficient root
+cause/fix and relatively strengthens the hypothesis that another lifecycle
+event present in the historically successful E7 path matters.  No hypothesis
+is refuted, the Voice root cause remains unconfirmed, and a production fix is
+not yet justified.  The next active step is an independent RUN13-versus-E7
+lifecycle audit, not another automatic LIVE.
 
-This experiment has the highest information gain because the only causal
-variable is a confirmed DHCP-client state transition on P2 after identical
-network/FWD/DHCP preconditions; P1 simultaneously controls for spontaneous
-late acquisition.  P1 without IPv4 and P2 with IPv4 is
-`PHONE_SVI_DHCP_RETRIGGER_EFFECT_OBSERVED`, strong evidence that the post-FWD
-SVI transition caused useful acquisition.  Both addressed is
-`SHARED_LATE_ACQUISITION_NOT_ISOLATED`; P1-only is
-`CONTROL_ONLY_ADDRESS_OBSERVED`; neither addressed is
-`NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER`, meaning only that the exact
-YES-to-NO-to-YES transition was not sufficient for successful address
-acquisition in this experiment.  None of those results establishes absence of
-Discover, and the negative result does not refute H1 or disprove the
-early-DHCP/no-useful-retry hypothesis.  Fresh transaction, server Discover and
-DHCP progress remain `NOT_INDEPENDENTLY_ESTABLISHED`, `UNOBSERVABLE` and
-`UNOBSERVABLE` respectively.
+Cleanup removed only owned disposable topology.  Independent post-cleanup
+inventory observed zero semantic devices, zero links, and one allowed
+backend-managed `Power Distribution Device0`; Realtime was independently
+observed restored.  The unique archive is
+`positive-voice-ab-run13-phone-svi-dhcp-retrigger-no-address.json`, SHA256
+`8054b128b2a74cdc380e10b5eff03a80a08f1b75474ac10bfbbb9c5399df8c8a`, under
+ledger role `PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION`.  No rerun occurred.
 
 ## Run 12 phone DHCP lifecycle qualification
 

@@ -145,6 +145,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "RUN12 observational phone DHCP lifecycle qualification. The intervention VLAN930 gate observed LIS -> LRN -> UNOBSERVABLE(COMPLETENESS) -> LRN -> UNOBSERVABLE(COMPLETENESS) -> FORWARDING across 15 samples / 31171 ms; the terminal sample was authoritative. For both P1 control and P2 intervention, SVI DHCP was first observed YES at IMMEDIATELY_BEFORE_STP_FWD_GATE and was already YES before authoritative FWD. Device-level DHCP was UNOBSERVABLE at every retained milestone, so its first YES was NOT_ESTABLISHED and enabled-before-FWD was UNOBSERVABLE. Neither SVI nor device IPv4 appeared at any milestone. The enabled flag does not establish Discover, DORA, retry, transaction progress, or milestone causation; sequential reads may shift later observation time slightly. Realtime and the empty semantic workspace were restored with zero errors; no rerun occurred."
+    },
+    {
+      "run": "run13",
+      "filename": "positive-voice-ab-run13-phone-svi-dhcp-retrigger-no-address.json",
+      "sha256": "8054b128b2a74cdc380e10b5eff03a80a08f1b75474ac10bfbbb9c5399df8c8a",
+      "source_head": "718075318b18126dd672ec7dfda4fd1faf101f70",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "RUN13 symmetric access930/voice930 causal intervention. Independent authoritative VLAN930 FWD gates completed for P1 and P2. One PRE endpoint observation per phone proved SVI present YES, address channel YES, DHCP YES, and addressed NO before mutation. Only P2 received exact-SVI YES-to-NO-to-YES; all accepted/readback fields were exact and P1 stayed DHCP YES without mutation. Acquisition was authorized, but both phones remained unaddressed, the authoritative voice binding table contained zero rows, neither phone registered with SCCP, and the causal result was NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER. This establishes only that the exact transition was insufficient here; Discover, DORA, server receipt and transaction progress remain unobservable. Realtime and the empty semantic workspace were independently restored; one allowed backend-managed PDD remained and no rerun occurred."
     }
   ]
 }
