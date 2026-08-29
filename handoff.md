@@ -184,11 +184,32 @@ RUN15_FOUNDATION_GATE = SHARED_FOUNDATION_VERIFIED_BEFORE_VOICE_VLAN_REQUIRED
 RUN15_CLOCK_BOUNDARY = ONE_SHARED_VOICE_VLAN_BATCH_FOR_BOTH_PORTS
 RUN15_GATE_QUERY_COUNT_PER_SAMPLE = ONE_SHARED_BY_BOTH_PORTS
 RUN15_MILESTONES = IMMEDIATELY_AFTER_VOICE_VLAN | FIRST_AUTHORITATIVE_STP_SAMPLE | AUTHORITATIVE_FWD | END_OF_ACQUISITION_WINDOW
-RUN15_EXECUTED = NO
+RUN15_EXECUTED = YES
+RUN15_SOURCE_HEAD = 703d5cc989d7f30dc9586b1be9ea7c9c6b1b20e8
+RUN15_RESULT = FAILED_CLOSED_SHARED_FOUNDATION_UNREADY_BEFORE_ANY_VOICE_VLAN
+RUN15_ACQUISITION_STARTED = NO
+RUN15_ACQUISITION_BOUNDARY = ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY
+RUN15_SHARED_FOUNDATION_READY = CONTRADICTED
+RUN15_BLOCKING_DIMENSION = TRUNK_FORWARDING_VOICE
+RUN15_TRUNK_FORWARDING_VLANS = EMPTY_WHILE_ALLOWED_AND_ACTIVE_ARE_930_931
+RUN15_EDGE_POLICY_DISPATCH = NOT_APPLIED
+RUN15_VOICE_VLAN_SIGNALLED = NO
+RUN15_PAIRED_STP_GATES = NOT_REACHED
+RUN15_SVI_MILESTONES_RETAINED = 0
+RUN15_DHCP_MUTATIONS_OBSERVED = NONE
+RUN15_STP_TIMING_CONTROLS_DHCP_ACQUISITION = NOT_ESTABLISHED
+RUN15_WORKSPACE_RESTORED = YES
+RUN15_REALTIME_RESTORED = YES
+RUN15_CLEANUP_ERRORS = NONE
+RUN15_CONTRACT_VALID = YES_THE_GATE_REFUSED_TO_TEST_AN_UNCONVERGED_NETWORK
+RUN15_HYPOTHESIS_TESTED = NO
+RUN15_SHA256 = fbec0e7175b5516ca960e99ec543c6888882ab72732773b989bf8f0443e89f08
+RUN15_DEFECT_FOR_NEXT_RUN = FOUNDATION_READINESS_IS_ONE_INSTANT_SAMPLE_WITH_NO_BOUNDED_WAIT
+TRUNK_FORWARDING_IS_TIME_DEPENDENT = ESTABLISHED_FROM_RUN15_VERSUS_RUN11_TO_RUN14
 VOICE_ROOT_CAUSE = NOT_CONFIRMED
 VOICE_ROOT_CAUSE_LEADING_CANDIDATE = EARLY_DISCOVER_LOST_NO_RETRY
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_RUN15_EDGE_BEFORE_VOICE_VLAN_LIVE_ONCE
+NEXT_ACTIVE_STEP = BOUND_THE_SHARED_FOUNDATION_READINESS_WAIT_THEN_RERUN_RUN15_ONCE
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -259,6 +280,49 @@ the DHCP outcome is not a PortFast test at all.
 No verdict promotes a transaction claim.  `FRESH_7960_DHCP_TRANSACTION`,
 `SERVER_RECEIVES_DISCOVER` and `DHCP_TRANSACTION_PROGRESS` are unchanged by
 this mode and remain what they were.
+
+## Run 15 executed: the gate refused to test an unconverged network
+
+Run 15 ran once, from `703d5cc`, and never reached its own experiment.  The
+shared foundation was read while no phone had been signalled a voice VLAN, and
+it came back CONTRADICTED on one dimension: `trunk_forwarding_voice`.  The run
+failed closed at `ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY`, which
+means no edge policy was dispatched, no voice VLAN was signalled to either
+port, no paired STP gate opened and no SVI milestone was retained.  The
+hypothesis was NOT tested.
+
+That is the gate behaving correctly rather than a harness failure, and the
+distinction matters: presenting VLAN930 to a phone at that moment would have
+started the phone's one DHCP attempt against a trunk that was not carrying the
+VLAN, and the run would have measured an unready network while appearing to
+measure PortFast.
+
+The blocking read is worth keeping because it is new information.  The trunk
+was `trunk_operational`, `trunk_allowed_voice` and `trunk_active_voice`
+VERIFIED with `allowed = [930, 931]` and `active = [930, 931]`, but
+`trunk_forwarding_vlans` was EMPTY -- not "missing 930", empty.  Nothing was
+forwarding on the uplink at all, including the data VLAN 931 that runs 11
+through 14 each observed forwarding on this same trunk.  The only thing that
+changed is WHEN the read happens: runs 11 to 14 read the foundation after the
+voice VLAN had already reached the access ports and after further work, while
+run 15 reads it immediately after the foundation batch.  So trunk forwarding on
+this build is time-dependent, and the earlier runs were reading it after it had
+converged rather than establishing that it converges quickly.
+
+The defect this exposes is in the readiness gate, not in the experiment's
+design.  `_shared_foundation_ready` is evaluated from ONE instantaneous read
+with no bounded wait, so a dimension that is merely slow is indistinguishable
+from one that is broken, and the experiment can never start.  The fix for the
+next run is to bound that wait -- the same governed trunk read, re-read on the
+existing bounded interval, still failing closed when the timeout expires --
+rather than to weaken the gate by dropping `trunk_forwarding_voice` from it.
+Dropping it would restore the exact confound the gate exists to remove.
+
+No DHCP flag was armed or mutated, no link was bounced, no phone was power
+cycled, and no raw IOS or JavaScript was issued.  The disposable workspace and
+the realtime mode were both restored, confirmed by an independent post-run
+read, with no cleanup errors.  `FRESH_7960_DHCP_TRANSACTION`,
+`SERVER_RECEIVES_DISCOVER` and `DHCP_TRANSACTION_PROGRESS` are unchanged.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 
