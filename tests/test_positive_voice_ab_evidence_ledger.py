@@ -51,6 +51,7 @@ ROLES = {
     "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL",
     "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
     "PHONE_DHCP_LIFECYCLE_QUALIFICATION",
+    "PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION",
 }
 
 
@@ -310,7 +311,24 @@ def test_the_observational_lifecycle_has_a_dedicated_ledger_role(
         "SAME_RUN_ACCESS_VLAN_PAIRED_CAUSAL_CONTROL",
         "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
         "PHONE_DHCP_LIFECYCLE_QUALIFICATION",
+        "PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION",
     )
+
+
+def test_the_phone_svi_retrigger_has_a_dedicated_causal_role(
+    monkeypatch, tmp_path,
+):
+    raw, _ = _isolate(monkeypatch, tmp_path)
+    (raw / "positive-voice-ab-run9-probe.json").write_bytes(b"{}")
+
+    entry = _record(
+        role="PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION",
+    )
+
+    assert entry["role"] == (
+        "PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION"
+    )
+    assert entry["role"] in tool.ROLES
 
 
 def test_a_run_whose_intervention_never_applied_is_filed_as_the_boundary_it_was():

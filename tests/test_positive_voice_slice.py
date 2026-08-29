@@ -2541,6 +2541,13 @@ def _stp(state, interface="FastEthernet0/2"):
     ))]
 
 
+def _stp_both(control_state, intervention_state):
+    return [_StpInstance(vlan_id=VOICE_VLAN_ID, interfaces=(
+        _StpRow(interface="FastEthernet0/1", state=control_state),
+        _StpRow(interface="FastEthernet0/2", state=intervention_state),
+    ))]
+
+
 _NO_ROW = [_StpInstance(vlan_id=VOICE_VLAN_ID, interfaces=())]
 
 _PAIRED_GATED = dict(
@@ -3362,7 +3369,7 @@ class _SviDhcpMutation:
 class _SviTransitionEndpoints(_Endpoints):
     def __init__(
         self, *, initial=(True, True), disable_accepted=True,
-        enable_accepted=True, timeline=None,
+        enable_accepted=True, control_after_intervention=None, timeline=None,
     ):
         super().__init__(timeline=timeline)
         self.state = {
@@ -3371,6 +3378,7 @@ class _SviTransitionEndpoints(_Endpoints):
         }
         self.disable_accepted = disable_accepted
         self.enable_accepted = enable_accepted
+        self.control_after_intervention = control_after_intervention
         self.state_calls: list[tuple[str, str, bool]] = []
 
     def read_endpoint_address(self, device_name, interface):
@@ -3389,6 +3397,13 @@ class _SviTransitionEndpoints(_Endpoints):
         accepted = self.enable_accepted if enabled else self.disable_accepted
         if accepted:
             self.state[device_name] = enabled
+            if (
+                device_name.endswith("P2") and enabled
+                and self.control_after_intervention is not None
+            ):
+                self.state["MCP-VOICEAB-test01_P1"] = (
+                    self.control_after_intervention
+                )
         return _SviDhcpMutation(
             requested_enabled=enabled,
             accepted=accepted,
@@ -3398,7 +3413,15 @@ class _SviTransitionEndpoints(_Endpoints):
 
 
 _SVI_RETRIGGER = dict(
-    phone_access_vlans=_PAIRED, phone_svi_dhcp_retrigger=True,
+    phone_access_vlans=(VOICE_VLAN_ID, VOICE_VLAN_ID),
+    phone_svi_dhcp_retrigger=True,
+)
+
+_RETRIGGER_SUCCESS_STP = (
+    _stp_both("LIS", "LIS"),  # before snapshot
+    _stp_both("FWD", "FWD"),  # fresh control gate read
+    _stp_both("FWD", "FWD"),  # fresh intervention gate read
+    _stp_both("FWD", "FWD"),  # after snapshot
 )
 
 
@@ -3423,8 +3446,18 @@ def test_phone_svi_retrigger_is_an_exclusive_gated_mode():
         _qualifier(
             _Physical(_empty_workspace()), _Configuration(), _CallControl(),
             _SviTransitionEndpoints(), _ModeRuntime(),
-            phone_access_vlans=_PAIRED,
+            phone_access_vlans=(VOICE_VLAN_ID, VOICE_VLAN_ID),
             phone_dhcp_lifecycle=True,
+            phone_svi_dhcp_retrigger=True,
+        )
+
+
+def test_phone_svi_retrigger_refuses_the_historical_asymmetric_shape():
+    with pytest.raises(ValueError, match="symmetric"):
+        _qualifier(
+            _Physical(_empty_workspace()), _Configuration(), _CallControl(),
+            _SviTransitionEndpoints(), _ModeRuntime(),
+            phone_access_vlans=_PAIRED,
             phone_svi_dhcp_retrigger=True,
         )
 
@@ -3432,7 +3465,7 @@ def test_phone_svi_retrigger_is_an_exclusive_gated_mode():
 def test_phone_svi_retrigger_cannot_mutate_before_authoritative_fwd():
     endpoints = _SviTransitionEndpoints()
     (result, _, _, call_control, *_), _ = _svi_retrigger_run(
-        stp_sequence=[_stp("LIS")], endpoints=endpoints,
+        stp_sequence=[_stp_both("LIS", "FWD")], endpoints=endpoints,
         gate_timeout_seconds=4.0, gate_interval_seconds=2.0,
     )
 
@@ -3449,11 +3482,7 @@ def test_phone_svi_retrigger_changes_only_intervention_yes_no_yes_after_fwd():
     timeline: list[str] = []
     endpoints = _SviTransitionEndpoints(timeline=timeline)
     (result, _, _, call_control, *_), _ = _svi_retrigger_run(
-        stp_sequence=[
-            _stp("LIS"),  # before snapshot
-            _stp("LIS"), _stp("FWD"),  # gate
-            _stp("FWD"),  # after snapshot
-        ],
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP),
         endpoints=endpoints,
         timeline=timeline,
     )
@@ -3473,10 +3502,20 @@ def test_phone_svi_retrigger_changes_only_intervention_yes_no_yes_after_fwd():
     assert result.acquisition_started is True
     assert result.acquisition_boundary == ""
     assert result.experiment == EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER
+    assert result.control_stp_gate.forwarding_observed is True
+    assert result.intervention_stp_gate.forwarding_observed is True
+    for gate in (result.control_stp_gate, result.intervention_stp_gate):
+        assert gate.terminal_executed == YES
+        assert gate.terminal_fresh == YES
+        assert gate.terminal_complete == YES
+        assert gate.terminal_identity_provenance == "confirmed_unique"
     assert result.phone_svi_dhcp_transition_valid_for_experiment == YES
     assert result.phone_svi_dhcp_transitions == (
         PhoneSviDhcpTransitionEvidence(
             phone="MCP-VOICEAB-test01_P2",
+            control_phone="MCP-VOICEAB-test01_P1",
+            control_pre_enabled=YES,
+            control_post_enabled=YES,
             pre_enabled=YES,
             disable_before=YES,
             disable_accepted=YES,
@@ -3488,11 +3527,83 @@ def test_phone_svi_retrigger_changes_only_intervention_yes_no_yes_after_fwd():
     )
 
 
+def test_phone_svi_retrigger_uses_identical_access_and_voice_vlan_shape():
+    (result, _, configuration, *_), _ = _svi_retrigger_run(
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP),
+    )
+
+    access = [
+        item for item in configuration.applied
+        if type(item).__name__ == "ConfigureAccessPort"
+    ]
+    assert [
+        (item.interface, item.data_vlan_id, item.voice_vlan_id)
+        for item in access
+    ] == [
+        ("FastEthernet0/1", VOICE_VLAN_ID, VOICE_VLAN_ID),
+        ("FastEthernet0/2", VOICE_VLAN_ID, VOICE_VLAN_ID),
+    ]
+    assert [item.access_vlan_expected for item in result.phones] == [
+        VOICE_VLAN_ID, VOICE_VLAN_ID,
+    ]
+
+
+def test_run11_keeps_the_historical_asymmetric_network_shape():
+    (result, _, configuration, *_), _ = _gated_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD"), _stp("FWD")],
+    )
+
+    access = [
+        item for item in configuration.applied
+        if type(item).__name__ == "ConfigureAccessPort"
+    ]
+    assert [item.data_vlan_id for item in access] == [
+        DATA_VLAN_ID, VOICE_VLAN_ID,
+    ]
+    assert result.control_stp_gate is None
+    assert result.intervention_stp_gate is None
+
+
+def test_intervention_gate_failure_after_control_fwd_prevents_mutation():
+    endpoints = _SviTransitionEndpoints()
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=[
+            _stp_both("LIS", "LIS"),
+            _stp_both("FWD", "LIS"),
+            _stp_both("FWD", "LIS"),
+        ],
+        endpoints=endpoints,
+        gate_timeout_seconds=4.0,
+        gate_interval_seconds=2.0,
+    )
+
+    assert result.control_stp_gate.forwarding_observed is True
+    assert result.intervention_stp_gate.forwarding_observed is False
+    assert endpoints.state_calls == []
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+
+
+def test_control_gate_failure_never_reuses_intervention_fwd_or_mutates():
+    endpoints = _SviTransitionEndpoints()
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=[_stp_both("LIS", "FWD")],
+        endpoints=endpoints,
+        gate_timeout_seconds=4.0,
+        gate_interval_seconds=2.0,
+    )
+
+    assert result.control_stp_gate.forwarding_observed is False
+    assert result.intervention_stp_gate is None
+    assert endpoints.state_calls == []
+    assert call_control.expectations == []
+
+
 @pytest.mark.parametrize("initial", [(False, True), (True, False), (None, True)])
 def test_phone_svi_retrigger_requires_both_phones_already_enabled(initial):
     endpoints = _SviTransitionEndpoints(initial=initial)
     (result, _, _, call_control, *_), _ = _svi_retrigger_run(
-        stp_sequence=[_stp("LIS"), _stp("FWD")], endpoints=endpoints,
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP), endpoints=endpoints,
     )
 
     assert endpoints.state_calls == []
@@ -3506,7 +3617,7 @@ def test_phone_svi_retrigger_requires_both_phones_already_enabled(initial):
 def test_failed_disable_is_not_followed_by_enable_or_an_acquisition_window():
     endpoints = _SviTransitionEndpoints(disable_accepted=False)
     (result, _, _, call_control, *_), _ = _svi_retrigger_run(
-        stp_sequence=[_stp("LIS"), _stp("FWD")], endpoints=endpoints,
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP), endpoints=endpoints,
     )
 
     assert [call[2] for call in endpoints.state_calls] == [False]
@@ -3520,7 +3631,7 @@ def test_failed_disable_is_not_followed_by_enable_or_an_acquisition_window():
 def test_failed_reenable_never_opens_the_acquisition_window():
     endpoints = _SviTransitionEndpoints(enable_accepted=False)
     (result, _, _, call_control, *_), _ = _svi_retrigger_run(
-        stp_sequence=[_stp("LIS"), _stp("FWD")], endpoints=endpoints,
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP), endpoints=endpoints,
     )
 
     assert [call[2] for call in endpoints.state_calls] == [False, True]
@@ -3531,6 +3642,26 @@ def test_failed_reenable_never_opens_the_acquisition_window():
     assert result.phone_svi_dhcp_transition_valid_for_experiment == NO
 
 
+def test_unexpected_control_dhcp_change_blocks_isolated_interpretation():
+    endpoints = _SviTransitionEndpoints(control_after_intervention=False)
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP), endpoints=endpoints,
+    )
+
+    transition, = result.phone_svi_dhcp_transitions
+    assert transition.control_pre_enabled == YES
+    assert transition.control_post_enabled == NO
+    assert all(not call[0].endswith("P1") for call in endpoints.state_calls)
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        "ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN"
+    )
+    assert result.causal_experiment_result == (
+        "CONTROL_DHCP_INVARIANT_UNPROVEN"
+    )
+
+
 def test_default_and_run11_modes_have_no_phone_svi_transition_evidence():
     default, *_ = _run()
     (run11, *_), _ = _gated_run(
@@ -3539,11 +3670,14 @@ def test_default_and_run11_modes_have_no_phone_svi_transition_evidence():
 
     assert default.phone_svi_dhcp_transitions == ()
     assert run11.phone_svi_dhcp_transitions == ()
+    assert default.control_stp_gate is default.intervention_stp_gate is None
+    assert run11.control_stp_gate is run11.intervention_stp_gate is None
 
 
 def test_phone_svi_retrigger_causal_matrix_keeps_control_and_intervention_apart():
     transition = PhoneSviDhcpTransitionEvidence(
-        phone="P2", pre_enabled=YES, disable_before=YES,
+        phone="P2", control_phone="P1", control_pre_enabled=YES,
+        control_post_enabled=YES, pre_enabled=YES, disable_before=YES,
         disable_accepted=YES, disabled_readback=NO, enable_before=NO,
         enable_accepted=YES, reenabled_readback=YES,
     )
@@ -3552,15 +3686,19 @@ def test_phone_svi_retrigger_causal_matrix_keeps_control_and_intervention_apart(
         return PositiveVoiceSliceResult(
             experiment=EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER,
             stp_gate=StpForwardingGate(status=FORWARDING),
+            control_stp_gate=StpForwardingGate(status=FORWARDING),
+            intervention_stp_gate=StpForwardingGate(status=FORWARDING),
             acquisition_started=True,
             phone_svi_dhcp_transitions=(transition,),
             phones=(
                 PositiveVoicePhoneOutcome(
-                    access_vlan_expected=DATA_VLAN_ID,
+                    phone_name="P1",
+                    access_vlan_expected=VOICE_VLAN_ID,
                     ipv4="10.93.0.10" if control else "",
                     address_channel=True,
                 ),
                 PositiveVoicePhoneOutcome(
+                    phone_name="P2",
                     access_vlan_expected=VOICE_VLAN_ID,
                     ipv4="10.93.0.11" if intervention else "",
                     address_channel=True,
@@ -3590,6 +3728,8 @@ def test_runner_exposes_only_the_typed_svi_retrigger_mode():
     assert "--phone-svi-dhcp-retrigger" in source
     assert "set_endpoint_dhcp_client_state" in source
     assert '"phone_svi_dhcp_transitions"' in source
+    assert '"control_stp_gate"' in source
+    assert '"intervention_stp_gate"' in source
     assert "setDhcpClientFlag" not in source
 
 
@@ -3703,6 +3843,21 @@ def test_dhcp_lifecycle_derives_the_first_observed_yes(values, expected):
     (result, *_), _ = _lifecycle_run(values)
 
     assert result.first_observed_svi_dhcp_enabled_milestone == expected
+
+
+def test_run12_lifecycle_keeps_its_historical_shape_and_single_gate():
+    (result, _, configuration, *_), _ = _lifecycle_run((True,) * 7)
+
+    access = [
+        item for item in configuration.applied
+        if type(item).__name__ == "ConfigureAccessPort"
+    ]
+    assert [item.data_vlan_id for item in access] == [
+        DATA_VLAN_ID, VOICE_VLAN_ID,
+    ]
+    assert result.stp_gate.forwarding_observed is True
+    assert result.control_stp_gate is None
+    assert result.intervention_stp_gate is None
 
 
 def test_dhcp_lifecycle_ignores_unobservable_rows_before_a_later_yes():

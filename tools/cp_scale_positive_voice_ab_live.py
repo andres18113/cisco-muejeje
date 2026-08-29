@@ -500,6 +500,17 @@ def _serialize(result) -> dict:
         "stp_gate": (
             result.stp_gate.as_evidence() if result.stp_gate is not None else None
         ),
+        "control_stp_gate": (
+            result.control_stp_gate.as_evidence()
+            if result.control_stp_gate is not None else None
+        ),
+        "intervention_stp_gate": (
+            result.intervention_stp_gate.as_evidence()
+            if result.intervention_stp_gate is not None else None
+        ),
+        "both_phone_ports_authoritative_fwd": (
+            result.both_phone_ports_authoritative_fwd
+        ),
         "portfast": result.portfast,
         "voice_binding_count": result.voice_binding_count,
         "voice_bindings_observed": result.voice_bindings_observed,
@@ -627,11 +638,14 @@ def run(
             SimulationTraceRuntime(transport.send_and_wait),
             control_plane=control_plane,
             edge_portfast=edge_portfast,
-            # The same-run A/B: the control phone keeps the run-8 shape and
-            # the intervention phone's port carries the voice VLAN as its
-            # access VLAN.  Nothing else moves.
+            # Historical paired modes keep access 931/930.  The retrigger A/B
+            # removes that network-shape difference: both ports use access
+            # 930 / voice 930, and P2's later exact-SVI transition is the only
+            # causal difference after both independent FWD gates succeed.
             phone_access_vlans=(
-                (DATA_VLAN_ID, VOICE_VLAN_ID) if paired else None
+                (VOICE_VLAN_ID, VOICE_VLAN_ID)
+                if phone_svi_dhcp_retrigger
+                else ((DATA_VLAN_ID, VOICE_VLAN_ID) if paired else None)
             ),
             # Run 10: the acquisition trigger fires only AFTER a fresh+complete
             # qualified STP read observes the intervention port FORWARDING, and
@@ -678,6 +692,11 @@ def run(
             "phone_svi_dhcp_transition_valid_for_experiment"
         ],
         "stp_gate": evidence["stp_gate"],
+        "control_stp_gate": evidence["control_stp_gate"],
+        "intervention_stp_gate": evidence["intervention_stp_gate"],
+        "both_phone_ports_authoritative_fwd": evidence[
+            "both_phone_ports_authoritative_fwd"
+        ],
         "first_observed_svi_dhcp_enabled_milestone": evidence[
             "first_observed_svi_dhcp_enabled_milestone"
         ],

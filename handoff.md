@@ -36,7 +36,11 @@ FRESH_DHCP_TRIGGER = NOT_ESTABLISHED_RUN11_PRE_FLAGS_ALREADY_YES
 FRESH_7960_DHCP_TRANSACTION = NOT_INDEPENDENTLY_ESTABLISHED
 CURRENT_TYPED_DHCP_FRESH_TRANSACTION = NOT_ESTABLISHED
 PHONE_SVI_DHCP_API = MEASURED_PRESENT_AND_CISCO_BOOL_SIGNATURE_CONFIRMED
-PHONE_SVI_DHCP_RETRIGGER_EXPERIMENT = PREPARED_NOT_RUN
+PHONE_SVI_DHCP_RETRIGGER_EXPERIMENT = PREPARED_SYMMETRIC_DUAL_FWD_GATED_NOT_RUN
+PHONE_SVI_DHCP_RETRIGGER_NETWORK_SHAPE = P1_ACCESS930_VOICE930 | P2_ACCESS930_VOICE930
+PHONE_SVI_DHCP_RETRIGGER_FWD_GATES = P1_AUTHORITATIVE_FWD + P2_AUTHORITATIVE_FWD_REQUIRED
+PHONE_SVI_DHCP_RETRIGGER_CONTROL_INVARIANT = P1_PRE_YES + P1_POST_YES + NEVER_MUTATED
+PHONE_SVI_DHCP_RETRIGGER_LEDGER_ROLE = PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION
 NEW_MUTATION_SURFACE = TYPED_EXACT_PHONE_SVI_ONLY
 RAW_ESCAPE_HATCH_ADDED = NO
 PHONE_DHCP_LIFECYCLE_DIAGNOSTIC = MEASURED
@@ -156,28 +160,43 @@ Therefore `CURRENT_TYPED_DHCP_CALL_PATH_CAUSES_FRESH_TRANSACTION` is
 7960 transaction.  Historical E7 success prevents changing that answer to a
 categorical `NO`.
 
-One causal experiment is prepared as `--phone-svi-dhcp-retrigger`.  It reuses
-the paired disposable topology and the existing authoritative VLAN930 FWD gate.
-After FWD, both phones must independently read SVI DHCP `YES`.  P1 remains an
-untouched control.  P2 alone receives the exact-interface typed sequence
+One causal experiment is prepared as `--phone-svi-dhcp-retrigger`.  It uses a
+symmetric disposable network: P1 and P2 both carry access VLAN930 / voice
+VLAN930.  The existing qualified STP gate is run independently for Fa0/1 and
+Fa0/2; each port needs its own new executed, fresh, complete,
+confirmed-unique VLAN930 FWD result.  A transient UNOBSERVABLE read may keep
+polling inside the existing bound, but never authorizes mutation, and failure
+of either gate stops the experiment before any DHCP mutation.
+
+After both gates, both phones must independently read SVI DHCP `YES`.  P1
+remains an untouched control.  P2 alone receives the exact-interface sequence
 `setDhcpClientFlag(false)` -> same-SVI `isDhcpClientOn()==false` ->
 `setDhcpClientFlag(true)` -> same-SVI `isDhcpClientOn()==true`.  Any missing
-port, getter, setter, call, or matching readback stops fail-closed before the
-acquisition window.  The mode never calls `configure_endpoint_dhcp`, exposes
-no raw JS/IOS entry point, and is mutually exclusive with every existing mode.
-Default, RUN11 and RUN12 behavior remains unchanged.
+port, getter, setter, call, or matching readback stops fail-closed.  After that
+complete P2 transition, P1 is read again and must still report SVI DHCP `YES`;
+otherwise the acquisition window stays closed as
+`CONTROL_DHCP_INVARIANT_UNPROVEN`.  The retained transition evidence names both
+phones and keeps P1 PRE and POST independently.  The mode never mutates P1,
+never calls `configure_endpoint_dhcp`, exposes no raw JS/IOS entry point, and
+is mutually exclusive with every existing mode.  Default, RUN11 and RUN12
+behavior remains unchanged.  Its dedicated future archive role is
+`PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION`.
 
 This experiment has the highest information gain because the only causal
-variable is a confirmed DHCP-client state transition on P2 after forwarding;
-P1 simultaneously controls for spontaneous late acquisition.  P2-only IPv4
-plus a voice binding/SCCP progression would establish that the SVI transition
-caused useful acquisition in this topology and strongly support the
-too-early/no-useful-retry explanation.  No P2 IPv4/binding would show that the
-flag transition is not sufficient for successful acquisition and redirect the
-investigation toward another phone lifecycle trigger or a still-unobservable
-downstream transaction boundary; it would not prove that no Discover occurred.
-Both phones acquiring would be retained as shared late acquisition, not as a
-P2 transition effect.
+variable is a confirmed DHCP-client state transition on P2 after identical
+network/FWD/DHCP preconditions; P1 simultaneously controls for spontaneous
+late acquisition.  P1 without IPv4 and P2 with IPv4 is
+`PHONE_SVI_DHCP_RETRIGGER_EFFECT_OBSERVED`, strong evidence that the post-FWD
+SVI transition caused useful acquisition.  Both addressed is
+`SHARED_LATE_ACQUISITION_NOT_ISOLATED`; P1-only is
+`CONTROL_ONLY_ADDRESS_OBSERVED`; neither addressed is
+`NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER`, meaning only that the exact
+YES-to-NO-to-YES transition was not sufficient for successful address
+acquisition in this experiment.  None of those results establishes absence of
+Discover, and the negative result does not refute H1 or disprove the
+early-DHCP/no-useful-retry hypothesis.  Fresh transaction, server Discover and
+DHCP progress remain `NOT_INDEPENDENTLY_ESTABLISHED`, `UNOBSERVABLE` and
+`UNOBSERVABLE` respectively.
 
 ## Run 12 phone DHCP lifecycle qualification
 

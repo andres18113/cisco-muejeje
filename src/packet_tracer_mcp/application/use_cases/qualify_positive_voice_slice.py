@@ -186,6 +186,9 @@ ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET = (
 ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN = (
     "ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN"
 )
+ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN = (
+    "ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN"
+)
 DHCP_FLAG_TRANSITION_OBSERVED_OFF_TO_ON = "OBSERVED_OFF_TO_ON"
 DHCP_FLAG_TRANSITION_NOT_OBSERVED = "NOT_OBSERVED"
 FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED = (
@@ -535,6 +538,9 @@ class PhoneSviDhcpTransitionEvidence:
     """The explicit intervention-phone YES -> NO -> YES flag transition."""
 
     phone: str
+    control_phone: str = ""
+    control_pre_enabled: str = UNOBSERVABLE
+    control_post_enabled: str = UNOBSERVABLE
     pre_enabled: str = UNOBSERVABLE
     disable_before: str = UNOBSERVABLE
     disable_accepted: str = UNOBSERVABLE
@@ -544,7 +550,7 @@ class PhoneSviDhcpTransitionEvidence:
     reenabled_readback: str = UNOBSERVABLE
 
     @property
-    def valid(self) -> bool:
+    def p2_transition_valid(self) -> bool:
         return (
             self.pre_enabled == YES
             and self.disable_before == YES
@@ -555,9 +561,21 @@ class PhoneSviDhcpTransitionEvidence:
             and self.reenabled_readback == YES
         )
 
+    @property
+    def valid(self) -> bool:
+        return (
+            self.p2_transition_valid
+            and bool(self.control_phone)
+            and self.control_pre_enabled == YES
+            and self.control_post_enabled == YES
+        )
+
     def as_evidence(self) -> dict:
         return {
             "phone": self.phone,
+            "control_phone": self.control_phone,
+            "control_pre_enabled": self.control_pre_enabled,
+            "control_post_enabled": self.control_post_enabled,
             "pre_enabled": self.pre_enabled,
             "disable_before": self.disable_before,
             "disable_accepted": self.disable_accepted,
@@ -848,6 +866,8 @@ class PositiveVoiceSliceResult:
     #: never-asked phones masquerade as another SAME_FAILURE.
     experiment: str = EXPERIMENT_UNIFORM_BASELINE
     stp_gate: StpForwardingGate | None = None
+    control_stp_gate: StpForwardingGate | None = None
+    intervention_stp_gate: StpForwardingGate | None = None
     acquisition_started: bool = True
     acquisition_boundary: str = ""
     baseline_inventory: PhysicalWorkspaceObservation | None = None
@@ -973,6 +993,14 @@ class PositiveVoiceSliceResult:
         if len(self.phone_svi_dhcp_transitions) != 1:
             return NO
         return YES if self.phone_svi_dhcp_transitions[0].valid else NO
+
+    @property
+    def both_phone_ports_authoritative_fwd(self) -> str:
+        """Both retrigger-role ports need independent, current FWD gates."""
+        gates = (self.control_stp_gate, self.intervention_stp_gate)
+        if any(gate is None for gate in gates):
+            return UNOBSERVABLE
+        return YES if all(gate.forwarding_observed for gate in gates) else NO
 
     @property
     def first_observed_svi_dhcp_enabled_milestone(self) -> str:
@@ -1152,25 +1180,30 @@ class PositiveVoiceSliceResult:
         if self.experiment == EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER:
             if self.acquisition_boundary == (
                 ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
-            ) or self.stp_gate is None or not self.stp_gate.forwarding_observed:
+            ) or self.both_phone_ports_authoritative_fwd != YES:
                 return "STP_PRECONDITION_NOT_ESTABLISHED"
             if self.acquisition_boundary == (
                 ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET
             ):
                 return "PHONE_SVI_DHCP_PRECONDITION_UNMET"
+            if self.acquisition_boundary == (
+                ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN
+            ):
+                return "CONTROL_DHCP_INVARIANT_UNPROVEN"
             if (
                 self.acquisition_boundary
                 == ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN
                 or self.phone_svi_dhcp_transition_valid_for_experiment != YES
             ):
                 return "PHONE_SVI_DHCP_TRANSITION_UNPROVEN"
+            transition, = self.phone_svi_dhcp_transitions
             control = [
                 item for item in self.phones
-                if item.access_vlan_expected == DATA_VLAN_ID
+                if item.phone_name == transition.control_phone
             ]
             intervention = [
                 item for item in self.phones
-                if item.access_vlan_expected == VOICE_VLAN_ID
+                if item.phone_name == transition.phone
             ]
             if len(control) != 1 or len(intervention) != 1:
                 return UNOBSERVABLE
@@ -1747,7 +1780,19 @@ class PositiveVoiceSliceQualifier:
             or self._phone_svi_dhcp_retrigger
         )
         if self._gate_enabled:
-            if self._phone_access_vlans.count(VOICE_VLAN_ID) != 1:
+            if self._phone_svi_dhcp_retrigger and (
+                self._phone_count != 2
+                or self._phone_access_vlans
+                != (VOICE_VLAN_ID, VOICE_VLAN_ID)
+            ):
+                raise ValueError(
+                    "the phone-SVI DHCP retrigger requires exactly two phones "
+                    "with symmetric access 930 / voice 930 network shape"
+                )
+            if (
+                not self._phone_svi_dhcp_retrigger
+                and self._phone_access_vlans.count(VOICE_VLAN_ID) != 1
+            ):
                 raise ValueError(
                     "The gated experiment or diagnostic needs the paired "
                     "mapping: "
@@ -1821,6 +1866,7 @@ class PositiveVoiceSliceQualifier:
         acquisition_boundary = ""
         phone_dhcp_lifecycle: list[PhoneDhcpLifecycleEvidence] = []
         phone_svi_dhcp_transitions: list[PhoneSviDhcpTransitionEvidence] = []
+        retrigger_stp_gates: dict[str, StpForwardingGate] = {}
         try:
             (
                 original_simulation, phones, binding_count,
@@ -1829,7 +1875,7 @@ class PositiveVoiceSliceQualifier:
             ) = self._measure(
                 router_model, switch_model, phone_model,
                 created, owned_links, journal, phone_dhcp_lifecycle,
-                phone_svi_dhcp_transitions,
+                phone_svi_dhcp_transitions, retrigger_stp_gates,
             )
             errors.extend(measured_errors)
         except Exception as exc:  # noqa: BLE001
@@ -1866,6 +1912,8 @@ class PositiveVoiceSliceQualifier:
             realtime_before=realtime_before, realtime_after=realtime_after,
             experiment=self._experiment,
             stp_gate=stp_gate,
+            control_stp_gate=retrigger_stp_gates.get("control"),
+            intervention_stp_gate=retrigger_stp_gates.get("intervention"),
             acquisition_started=not acquisition_boundary,
             acquisition_boundary=acquisition_boundary,
             baseline_inventory=baseline, final_inventory=final,
@@ -2065,6 +2113,7 @@ class PositiveVoiceSliceQualifier:
         created, owned_links, journal: _Journal,
         phone_dhcp_lifecycle: list[PhoneDhcpLifecycleEvidence],
         phone_svi_dhcp_transitions: list[PhoneSviDhcpTransitionEvidence],
+        retrigger_stp_gates: dict[str, StpForwardingGate],
     ):
         self._router_model = router_model
         self._switch_model = switch_model
@@ -2217,25 +2266,69 @@ class PositiveVoiceSliceQualifier:
         arm_acceptance: dict[str, str] = {}
         post_arm: dict[str, str] = {}
         if self._gate_enabled:
-            intervention = phone_ports[
-                self._phone_access_vlans.index(VOICE_VLAN_ID)
-            ]
             if self._phone_dhcp_lifecycle:
                 lifecycle_observations = self._retain_phone_dhcp_lifecycle(
                     "IMMEDIATELY_BEFORE_STP_FWD_GATE",
                     phones, phone_dhcp_lifecycle, errors,
                     observable=realtime_before,
                 )
-            gate = await_stp_forwarding(
-                self._configuration, switch.name, VOICE_VLAN_ID, intervention,
-                timeout_seconds=self._gate_timeout_seconds,
-                interval_seconds=self._gate_interval_seconds,
-                clock=self._gate_clock, sleeper=self._gate_sleeper,
-                errors=errors,
-            )
-            journal.record(
-                "WHEN_INTERVENTION_STP_FWD_OBSERVED", gate.forwarding_observed,
-                " -> ".join(gate.observed_states), OBSERVATION,
+            if self._phone_svi_dhcp_retrigger:
+                control_gate = await_stp_forwarding(
+                    self._configuration, switch.name, VOICE_VLAN_ID,
+                    phone_ports[0],
+                    timeout_seconds=self._gate_timeout_seconds,
+                    interval_seconds=self._gate_interval_seconds,
+                    clock=self._gate_clock, sleeper=self._gate_sleeper,
+                    errors=errors,
+                )
+                retrigger_stp_gates["control"] = control_gate
+                gate = control_gate
+                journal.record(
+                    "WHEN_CONTROL_STP_FWD_OBSERVED",
+                    control_gate.forwarding_observed,
+                    " -> ".join(control_gate.observed_states), OBSERVATION,
+                )
+                if control_gate.forwarding_observed:
+                    intervention_gate = await_stp_forwarding(
+                        self._configuration, switch.name, VOICE_VLAN_ID,
+                        phone_ports[1],
+                        timeout_seconds=self._gate_timeout_seconds,
+                        interval_seconds=self._gate_interval_seconds,
+                        clock=self._gate_clock, sleeper=self._gate_sleeper,
+                        errors=errors,
+                    )
+                    retrigger_stp_gates["intervention"] = intervention_gate
+                    gate = intervention_gate
+                    journal.record(
+                        "WHEN_INTERVENTION_STP_FWD_OBSERVED",
+                        intervention_gate.forwarding_observed,
+                        " -> ".join(intervention_gate.observed_states),
+                        OBSERVATION,
+                    )
+            else:
+                intervention = phone_ports[
+                    self._phone_access_vlans.index(VOICE_VLAN_ID)
+                ]
+                gate = await_stp_forwarding(
+                    self._configuration, switch.name, VOICE_VLAN_ID,
+                    intervention,
+                    timeout_seconds=self._gate_timeout_seconds,
+                    interval_seconds=self._gate_interval_seconds,
+                    clock=self._gate_clock, sleeper=self._gate_sleeper,
+                    errors=errors,
+                )
+                journal.record(
+                    "WHEN_INTERVENTION_STP_FWD_OBSERVED",
+                    gate.forwarding_observed,
+                    " -> ".join(gate.observed_states), OBSERVATION,
+                )
+            both_retrigger_ports_forwarding = (
+                self._phone_svi_dhcp_retrigger
+                and len(retrigger_stp_gates) == 2
+                and all(
+                    item.forwarding_observed
+                    for item in retrigger_stp_gates.values()
+                )
             )
             if self._phone_dhcp_lifecycle:
                 lifecycle_observations = self._retain_phone_dhcp_lifecycle(
@@ -2248,6 +2341,10 @@ class PositiveVoiceSliceQualifier:
                     if gate.forwarding_observed
                     else ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
                 )
+            elif self._phone_svi_dhcp_retrigger and not (
+                both_retrigger_ports_forwarding
+            ):
+                boundary = ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
             elif not gate.forwarding_observed:
                 boundary = ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
             else:
@@ -2271,15 +2368,23 @@ class PositiveVoiceSliceQualifier:
                             ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET
                         )
                     else:
-                        intervention_index = self._phone_access_vlans.index(
-                            VOICE_VLAN_ID,
-                        )
-                        intervention_phone = phones[intervention_index]
+                        control_phone, intervention_phone = phones
                         transition = self._transition_phone_svi_dhcp_client(
-                            intervention_phone.name, errors, journal,
+                            intervention_phone.name,
+                            control_phone.name,
+                            pre_arm[control_phone.name],
+                            errors,
+                            journal,
                         )
                         phone_svi_dhcp_transitions.append(transition)
-                        if not transition.valid:
+                        if (
+                            transition.p2_transition_valid
+                            and transition.control_post_enabled != YES
+                        ):
+                            boundary = (
+                                ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN
+                            )
+                        elif not transition.valid:
                             boundary = (
                                 ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN
                             )
@@ -2499,7 +2604,12 @@ class PositiveVoiceSliceQualifier:
         return armed
 
     def _transition_phone_svi_dhcp_client(
-        self, device_name: str, errors: list[str], journal: _Journal,
+        self,
+        device_name: str,
+        control_device_name: str,
+        control_pre_enabled: str,
+        errors: list[str],
+        journal: _Journal,
     ) -> PhoneSviDhcpTransitionEvidence:
         """Perform one explicit YES -> NO -> YES intervention, fail closed."""
         disable_before = enable_before = UNOBSERVABLE
@@ -2554,8 +2664,30 @@ class PositiveVoiceSliceQualifier:
             f"{device_name}:accepted={enable_accepted},readback={reenabled}",
             OBSERVATION,
         )
+        p2_transition_valid = (
+            disable_before == YES
+            and disable_accepted == YES
+            and disabled == NO
+            and enable_before == NO
+            and enable_accepted == YES
+            and reenabled == YES
+        )
+        control_post_enabled = UNOBSERVABLE
+        if p2_transition_valid:
+            control_post_enabled = self._read_endpoint_dhcp_flag(
+                control_device_name, errors,
+            )
+        journal.record(
+            "WHEN_CONTROL_SVI_DHCP_POST_INTERVENTION_READ",
+            control_post_enabled == YES,
+            f"{control_device_name}:{control_post_enabled}",
+            OBSERVATION,
+        )
         return PhoneSviDhcpTransitionEvidence(
             phone=device_name,
+            control_phone=control_device_name,
+            control_pre_enabled=control_pre_enabled,
+            control_post_enabled=control_post_enabled,
             pre_enabled=YES,
             disable_before=disable_before,
             disable_accepted=disable_accepted,
