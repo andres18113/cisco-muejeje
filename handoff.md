@@ -66,7 +66,7 @@ RUN13_INTERVENTION_SCCP = NOT_REGISTERED
 RUN13_SHA256 = 8054b128b2a74cdc380e10b5eff03a80a08f1b75474ac10bfbbb9c5399df8c8a
 RUN13_WORKSPACE_RESTORED = YES
 RUN13_REALTIME_RESTORED = YES
-RAW_VOICE_AB_RUNS_PINNED = 13
+RAW_VOICE_AB_RUNS_PINNED = 14
 NEW_MUTATION_SURFACE = TYPED_EXACT_PHONE_SVI_ONLY
 RAW_ESCAPE_HATCH_ADDED = NO
 PHONE_DHCP_LIFECYCLE_DIAGNOSTIC = MEASURED
@@ -148,11 +148,201 @@ RUN11_ACQUISITION_BOUNDARY = ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
 TRUNK_FORWARDING_SEMANTIC_AUDIT = IOS_STP_FORWARDING_AND_NOT_PRUNED_SET_ON_SHARED_TRUNK
 TRUNK_READ_AUTHORITY_RETENTION = READY
 STP_VS_TRUNK_RELATION = NOT_ESTABLISHED
+RUN14_EXECUTED = YES
+RUN14_SOURCE_HEAD = 3592b73e28024ffe4f94decc829ffd05290bc57a
+RUN14_SOURCE_HEAD_STATUS = REVERTED_BY_4a5adc69c8f54d1f9807e0988b575cf7d7f1412b
+RUN14_RESULT = SAME_FAILURE_ACTIVATION_CALL_NOT_ACCEPTED
+RUN14_EXPERIMENT = UNIFORM_BASELINE
+RUN14_ARM_INTERFACE = Vlan1
+RUN14_ARM_ACCEPTED = NO_FOR_BOTH_PHONES
+RUN14_ARM_ERRORS = endpoint_dhcp_not_accepted:P1 | endpoint_dhcp_not_accepted:P2
+RUN14_ARM_REFUSAL_REASON_INSTRUMENTED = NO
+RUN14_NETWORK_SHAPE = P1_ACCESS931_VOICE930 | P2_ACCESS931_VOICE930
+RUN14_PRE_ARM_SVI_DHCP = YES_FOR_BOTH_PHONES
+RUN14_PHONE_STP_ROWS = ABSENT_BEFORE_AND_AFTER
+RUN14_FINAL_IPV4 = EMPTY_FOR_BOTH_PHONES
+RUN14_VOICE_BINDING_COUNT = 0
+RUN14_SCCP = NOT_REGISTERED_FOR_BOTH_PHONES
+RUN14_FIRST_BOUNDARY = ENDPOINT_ADDRESS_CONTRADICTED
+RUN14_WORKSPACE_RESTORED = YES
+RUN14_REALTIME_RESTORED = YES
+RUN14_CLEANUP_ERRORS = NONE
+RUN14_CONTRACT_VALID = YES_AS_A_BASELINE_ONLY_NOT_AS_AN_INTERVENTION
+RUN14_SHA256 = f44347d0ffb46f380259443ed3455791346d631cd0ec7c8e31ee7365c409089a
+E5_PHONE_DHCP_ACTIVATION_HYPOTHESIS = REFUTED
+E5_PHONE_DHCP_ACTIVATION_REFUTATION_BASIS = VLAN1_DOWN_ONCE_VOICE_VLAN_SIGNALLED + NO_OFF_STATE_TO_FLIP + RUN13_VALID_TRANSITION_NO_ADDRESS
+HISTORICAL_E5_PHONE_ADDRESSING_WAS_A_NO_OP = ESTABLISHED_FROM_6ea254d_MEASUREMENT
+HISTORICAL_POSITIVE_SLICE_WAS_MANUAL = ESTABLISHED_FROM_2e7f0f5_DOC
+FIRST_SURVIVING_CAUSAL_DIVERGENCE = SINGLE_EARLY_PHONE_DISCOVER_VERSUS_ACCESS_PORT_STP_CONVERGENCE
+FRESH_DHCP_TRANSACTION_TRIGGER = STILL_NOT_AVAILABLE_IN_TYPED_RUNTIME
 VOICE_ROOT_CAUSE = NOT_CONFIRMED
+VOICE_ROOT_CAUSE_LEADING_CANDIDATE = EARLY_DISCOVER_LOST_NO_RETRY
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = INDEPENDENTLY_AUDIT_RUN13_AND_E7_LIFECYCLE
+NEXT_ACTIVE_STEP = INSTRUMENT_DISCOVER_OR_ADD_A_REAL_LIFECYCLE_RETRIGGER_BEFORE_ANY_FIX
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
+
+## Run 14 recovered: the restored Vlan1 activation was never accepted
+
+This run was executed by an interrupted session whose quota ended before it
+could archive or clean up. The bytes were recovered intact from the working
+artifact and archived unchanged as
+`positive-voice-ab-run14-vlan1-activation-not-accepted.json`, SHA-256
+`f44347d0ffb46f380259443ed3455791346d631cd0ec7c8e31ee7365c409089a`. No LIVE was
+re-run to produce it and none was re-run to verify it.
+
+FACT: the artifact's own `live_source_head` is
+`3592b73e28024ffe4f94decc829ffd05290bc57a`, its `live_preflight` proves
+`repository_dirty=false` and `HEAD == upstream` at that head, the checkout-local
+`.venv` interpreter, the in-worktree production package and a
+`packet_tracer_mcp`-only namespace, on Packet Tracer `9.0.1.0858`.
+
+FACT: that head is the experimental correction that restored an activation-only
+`SetEndpointDhcp` for voice phones. It has since been reverted by
+`4a5adc69c8f54d1f9807e0988b575cf7d7f1412b`, whose tree is byte-identical to
+`00f4c2ed444aa252a4575bc0f60438fb404054db`.
+
+FACT: the restored activation was refused. `errors` retains exactly
+`endpoint_dhcp_not_accepted:MCP-VOICEAB-2ac334_P1` and
+`endpoint_dhcp_not_accepted:MCP-VOICEAB-2ac334_P2`. `_arm_endpoints` appends that
+string only when `configure_endpoint_dhcp()` returned something other than
+`True` without raising, so the helper answered and declined. The run recorded no
+further diagnostic, so WHY it declined is NOT instrumented and is not claimed
+here.
+
+FACT: the activation was addressed to `PHONE_DHCP_ACTIVATION_INTERFACE = "Vlan1"`
+while every address and DHCP readback used `PHONE_ADDRESSING_INTERFACE =
+"Vlan930"`. `6ea254d` records the measurement, on this same build, that a 7960
+enumerates exactly `PC`, `Switch` and `Vlan1`, and that once its access port
+signals a voice VLAN the phone brings up `Vlan<voice>` and TAKES `Vlan1` DOWN.
+The activation therefore named the one interface that measurement had already
+established holds nothing at that moment.
+
+FACT: because both arms were refused, `experiment` degenerated to
+`UNIFORM_BASELINE` and every intervention channel is `UNOBSERVABLE`:
+`dhcp_flag_transition`, `arm_call_accepted`, `dhcp_enabled_pre_arm` and
+`dhcp_enabled_post_arm`. `phone_svi_dhcp_transitions` and
+`pre_retrigger_endpoint_states` are both empty. The run is therefore VALID AS A
+BASELINE and INVALID AS AN INTERVENTION: it did not test its own hypothesis.
+
+FACT: the baseline it did produce is the standing CP-SCALE signature. Both
+phones: `voice_svi_present=true`, `address_channel=true`, `dhcp_enabled=YES`,
+`ipv4=""`, `device_ipv4=""`, `addressed=NO`, `registration=NOT_REGISTERED`,
+`matches_cp_scale_signature=true`. The foundation ladder verified
+`PHONE_ACCESS_AND_VOICE_VLAN`, `SWITCH_TRUNK`, `ROUTER_VOICE_SUBINTERFACE`,
+`DHCP_POOL_TABLE_READBACK`, `CALL_CONTROL_FOUNDATION` and `ENDPOINT_DHCP`, then
+contradicted `ENDPOINT_ADDRESS`, `VOICE_DHCP_BINDING` and `SCCP_REGISTRATION`.
+The voice binding table held zero rows.
+
+FACT: `dhcp_enabled` read `YES` for both phones BEFORE any accepted activation,
+because no activation was ever accepted. The flag the correction existed to set
+was already set.
+
+FACT: both phone access ports were `ABSENT` from the VLAN 930 spanning-tree
+table before and after the window (`stp_row_before`, `stp_row_after`,
+`stp_phone_row_after`), so `both_phone_ports_authoritative_fwd` is
+`UNOBSERVABLE`. This run used the split shape `access 931 / voice 930`, unlike
+run 13's symmetric `access 930 / voice 930`.
+
+FACT: cleanup was complete. All four owned devices and all three owned links
+were removed with no cleanup error, Realtime was observed restored before and
+after, and both the qualifier and an independent post-read observed zero
+semantic devices and zero links with one allowed backend-managed
+`Power Distribution Device0`.
+
+CONCLUSION: run 14 is evidence about the harness, not about DHCP. It neither
+supports nor weakens any acquisition hypothesis, and it did not justify the
+production change that produced it.
+
+## E4-E5-E7 differential audit: why the restored activation could not have worked
+
+The audit compared the historical positive `2e7f0f5`, the current verified
+failing baseline `00f4c2e`, and the failed correction `3592b73`.
+
+FACT: the historical positive is real and its topology is the one the A/B
+reproduces. `2e7f0f5:docs/architecture/enterprise-voice.md` records one 2811,
+one 3560-24PS, two 7960 phones, voice VLAN 930, DHCP addresses and extensions
+3101/3102, with both phones registered by SCCP and calls reaching ringing,
+connected and disconnected. The A/B uses the same models, the same voice VLAN
+and the same two extensions.
+
+FACT: that slice was driven by hand. The same document records that its devices
+used the reserved `__MCP_E7_TEST_*` prefix, and `__MCP_E7_TEST` appears nowhere
+in the tree at `2e7f0f5` except in that prose. No committed runner reproduces
+it, so the historical positive has no script whose ordering can be diffed --
+only a human-paced sequence whose wall-clock slack is unrecorded.
+
+FACT: historical E5 phone addressing was already a measured no-op before it was
+removed. `6ea254d` removed it because Floor 1 reported 21 x 7960 CONTRADICTING
+the plan on `Vlan1`, and because `Vlan<voice>` does not exist yet when E5 is
+preflighted against the live inventory, so naming it fails target validation
+instead of verifying. The removal deleted a claim that was failing, not a
+mechanism that was working. `3592b73` restored that same no-op, on that same
+interface, and the live runtime refused it exactly as the measurement predicts.
+
+FACT: there is no OFF state for an activation to flip. Run 12 measured, per
+phone and per milestone, that the voice SVI is ABSENT through
+`AFTER_PHONE_CREATION`, `AFTER_PHYSICAL_LINK_CREATION`,
+`AFTER_NETWORK_CONFIGURATION_BATCH`, `AFTER_VOICE_CME_CONFIGURATION` and
+`AFTER_REALTIME_VERIFICATION`, and that at `IMMEDIATELY_BEFORE_STP_FWD_GATE` it
+is present with `svi_dhcp_enabled=YES` already.
+`RUN12_OBSERVABLE_DHCP_NO_TO_YES_TRANSITION = NOT_OBSERVED`. The phone creates
+its voice SVI with the DHCP client already on, so no E5 action can be the thing
+that turns it on.
+
+FACT: setting the flag correctly does not produce an address either. Run 13
+performed a valid, accepted, readback-confirmed `YES -> NO -> YES` on the LIVE
+`Vlan930` SVI of one phone with the other as an unmutated control, after both
+ports were authoritatively FORWARDING, from a valid pre-retrigger baseline. Both
+final IPv4 values stayed empty, the binding table stayed at zero rows and both
+phones stayed `NOT_REGISTERED`. Run 13's intervention was strictly better
+targeted than run 14's, and it still produced nothing.
+
+FACT: the earlier decisive Floor-1 measurement already forbade this direction.
+On the 21 powered Cisco 7960 phones: voice interface present 21, DHCP readable
+21, DHCP TRUE 21, DHCP FALSE 0, address channel 21, ADDRESSED 0. The recorded
+conclusion was that `setDhcpClientFlag(true)` is forbidden on that evidence,
+that no phone acquisition action was added, and that World A is refuted and
+World B primary. `3592b73` re-entered World A.
+
+CONCLUSION: `WHY_3592_FIX_FAILED` has two independent answers, either of which
+alone is sufficient. Mechanically, it armed through `Vlan1`, which this build's
+own measurement says the phone takes down as soon as the voice VLAN is
+signalled, so the helper declined and the intervention never happened.
+Substantively, even a correctly targeted and accepted arm cannot help, because
+the flag is already on before any arm and toggling it on the live SVI was
+already shown to produce no address.
+
+FIRST_SURVIVING_CAUSAL_DIVERGENCE: the temporal relation between the phone's
+one DHCP attempt and its access port reaching STP FORWARDING. The qualifier
+creates the links first and only then applies access VLAN, voice VLAN, L3 and
+the DHCP pool in one batch, which moves each phone port into new per-VLAN STP
+instances and restarts convergence. Run 12 measured that gate at 31,171 ms and
+run 11 at 30,327 ms, and measured the voice SVI appearing -- DHCP already on --
+BEFORE the authoritative FORWARDING sample. A hand-driven slice cannot exhibit
+that ordering: minutes of human latency put the port in FORWARDING long before
+the voice VLAN is ever applied, so the phone's attempt lands on a forwarding
+port and a server that already exists.
+
+That divergence survives everything that has been run against it. Run 11
+measured the trunk AUTHORITATIVE with allowed, active and forwarding VLANs all
+`(930, 931)`, so the trunk is not the obstruction. Run 13 reached authoritative
+FORWARDING on both ports and still got nothing, which is what this hypothesis
+predicts: by the time the port forwards, the single attempt is already spent,
+and `setDhcpClientFlag` is a pure state setter with no transaction side effect.
+Run 6 found PortFast without effect, but PortFast was never verified applied --
+`portfast` reads `NOT_APPLIED` and `portfast_readback` `UNOBSERVABLE` -- so that
+control never tested the prediction it appears to test.
+
+It is a CANDIDATE and NOT CONFIRMED. What would confirm it is not another
+variation on the flag. `SERVER_RECEIVES_DISCOVER` and
+`DHCP_TRANSACTION_PROGRESS` remain `UNOBSERVABLE`,
+`FRESH_7960_DHCP_TRANSACTION` remains `NOT_INDEPENDENTLY_ESTABLISHED`, and the
+earlier source audit already recorded that
+`DISABLE/RENEW/RESTART/REBOOT/POWER/LINK_BOUNCE` are `NOT_AVAILABLE` in the
+typed runtime and that adding one is a checkpoint decision rather than a
+workaround. Until either a Discover is observed or a real lifecycle retrigger
+exists, no production correction is source-supported, and none was implemented.
 
 ## Run 13 phone-SVI DHCP retrigger causal intervention
 
