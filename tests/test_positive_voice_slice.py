@@ -11,7 +11,7 @@ import pytest
 from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     ABSENT,
     ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN,
-    ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET,
+    ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN,
     ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN,
     ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET,
     APPLICATION,
@@ -45,6 +45,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     YES,
     LifecycleMilestone,
     PhoneDhcpLifecycleEvidence,
+    PhonePreRetriggerEndpointState,
     PhoneSviDhcpTransitionEvidence,
     PositiveVoicePhoneOutcome,
     PositiveVoiceSliceQualifier,
@@ -419,6 +420,7 @@ def test_a_successful_slice_needs_every_dimension_and_a_server_binding():
     assert all(item.ipv4_observed for item in result.phones)
     assert [item.registration for item in result.phones] == [REGISTERED, REGISTERED]
     assert result.voice_binding_count == 1
+    assert result.voice_binding_ipv4s == ("10.93.0.10",)
     assert result.voice_bindings_observed == YES
 
 
@@ -3370,6 +3372,8 @@ class _SviTransitionEndpoints(_Endpoints):
     def __init__(
         self, *, initial=(True, True), disable_accepted=True,
         enable_accepted=True, control_after_intervention=None, timeline=None,
+        pre_addresses=("", ""), pre_svi_present=(True, True),
+        pre_address_channels=(True, True),
     ):
         super().__init__(timeline=timeline)
         self.state = {
@@ -3379,14 +3383,25 @@ class _SviTransitionEndpoints(_Endpoints):
         self.disable_accepted = disable_accepted
         self.enable_accepted = enable_accepted
         self.control_after_intervention = control_after_intervention
+        self.pre_addresses = pre_addresses
+        self.pre_svi_present = pre_svi_present
+        self.pre_address_channels = pre_address_channels
         self.state_calls: list[tuple[str, str, bool]] = []
+
+    @staticmethod
+    def _phone_index(device_name):
+        return 0 if device_name.endswith("P1") else 1
 
     def read_endpoint_address(self, device_name, interface):
         if self.timeline is not None:
             self.timeline.append(f"endpoint_read:{device_name}")
         self.read_interfaces.append(interface)
+        index = self._phone_index(device_name)
         return _EndpointObservation(
-            present=True, dhcp_enabled=self.state[device_name],
+            present=self.pre_svi_present[index],
+            ipv4=self.pre_addresses[index],
+            address_channel=self.pre_address_channels[index],
+            dhcp_enabled=self.state[device_name],
         )
 
     def set_endpoint_dhcp_client_state(self, device_name, interface, enabled):
@@ -3510,6 +3525,8 @@ def test_phone_svi_retrigger_changes_only_intervention_yes_no_yes_after_fwd():
         assert gate.terminal_complete == YES
         assert gate.terminal_identity_provenance == "confirmed_unique"
     assert result.phone_svi_dhcp_transition_valid_for_experiment == YES
+    assert result.voice_binding_ipv4s == ("10.93.0.10",)
+    assert result.matching_intervention_binding == YES
     assert result.phone_svi_dhcp_transitions == (
         PhoneSviDhcpTransitionEvidence(
             phone="MCP-VOICEAB-test01_P2",
@@ -3525,6 +3542,173 @@ def test_phone_svi_retrigger_changes_only_intervention_yes_no_yes_after_fwd():
             reenabled_readback=YES,
         ),
     )
+
+
+def test_phone_svi_retrigger_retains_one_complete_pre_observation_per_phone():
+    timeline: list[str] = []
+    endpoints = _SviTransitionEndpoints(
+        timeline=timeline,
+        pre_addresses=("unassigned", "0.0.0.0"),
+    )
+    (result, *_), _ = _svi_retrigger_run(
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP),
+        endpoints=endpoints,
+        timeline=timeline,
+    )
+
+    first_mutation = timeline.index(
+        "svi_dhcp:MCP-VOICEAB-test01_P2:False"
+    )
+    assert [
+        item for item in timeline[:first_mutation]
+        if item.startswith("endpoint_read:")
+    ] == [
+        "endpoint_read:MCP-VOICEAB-test01_P1",
+        "endpoint_read:MCP-VOICEAB-test01_P2",
+    ]
+    assert [item.as_evidence() for item in result.pre_retrigger_endpoint_states] == [
+        {
+            "phone": "MCP-VOICEAB-test01_P1",
+            "svi_present": YES,
+            "address_channel": YES,
+            "dhcp_enabled": YES,
+            "ipv4": "unassigned",
+            "addressed": NO,
+        },
+        {
+            "phone": "MCP-VOICEAB-test01_P2",
+            "svi_present": YES,
+            "address_channel": YES,
+            "dhcp_enabled": YES,
+            "ipv4": "0.0.0.0",
+            "addressed": NO,
+        },
+    ]
+    assert result.pre_retrigger_address_baseline_valid == YES
+
+
+@pytest.mark.parametrize(
+    "pre_addresses",
+    [
+        ("10.93.0.10", ""),
+        ("", "10.93.0.11"),
+    ],
+)
+def test_pre_retrigger_address_already_present_blocks_p2_mutation(pre_addresses):
+    endpoints = _SviTransitionEndpoints(pre_addresses=pre_addresses)
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP), endpoints=endpoints,
+    )
+
+    assert endpoints.state_calls == []
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        "ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN"
+    )
+    assert result.pre_retrigger_address_baseline_valid == NO
+    assert result.causal_experiment_result == (
+        "PRE_RETRIGGER_ACQUISITION_ALREADY_OCCURRED"
+    )
+
+
+@pytest.mark.parametrize(
+    "pre_address_channels",
+    [
+        (False, True),
+        (True, False),
+        (None, True),
+    ],
+)
+def test_unreadable_pre_retrigger_address_channel_blocks_p2_mutation(
+    pre_address_channels,
+):
+    endpoints = _SviTransitionEndpoints(
+        pre_address_channels=pre_address_channels,
+    )
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP), endpoints=endpoints,
+    )
+
+    assert endpoints.state_calls == []
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        "ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN"
+    )
+    assert result.pre_retrigger_address_baseline_valid != YES
+
+
+def test_unreadable_pre_retrigger_endpoint_observation_blocks_p2_mutation():
+    class _UnreadableP2(_SviTransitionEndpoints):
+        def read_endpoint_address(self, device_name, interface):
+            if device_name.endswith("P2"):
+                raise RuntimeError("endpoint channel unavailable")
+            return super().read_endpoint_address(device_name, interface)
+
+    endpoints = _UnreadableP2()
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP), endpoints=endpoints,
+    )
+
+    assert endpoints.state_calls == []
+    assert call_control.expectations == []
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN
+    )
+    p2, = (
+        item for item in result.pre_retrigger_endpoint_states
+        if item.phone.endswith("P2")
+    )
+    assert p2.address_channel == UNOBSERVABLE
+    assert p2.dhcp_enabled == UNOBSERVABLE
+    assert result.pre_retrigger_address_baseline_valid == UNOBSERVABLE
+
+
+@pytest.mark.parametrize(
+    "pre_svi_present",
+    [
+        (False, True),
+        (True, False),
+        (None, True),
+    ],
+)
+def test_unproven_pre_retrigger_svi_presence_blocks_p2_mutation(
+    pre_svi_present,
+):
+    endpoints = _SviTransitionEndpoints(pre_svi_present=pre_svi_present)
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP), endpoints=endpoints,
+    )
+
+    assert endpoints.state_calls == []
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN
+    )
+    assert result.pre_retrigger_address_baseline_valid != YES
+
+
+def test_dhcp_yes_and_observed_no_address_authorizes_only_p2_transition():
+    timeline: list[str] = []
+    endpoints = _SviTransitionEndpoints(timeline=timeline)
+    (result, *_), _ = _svi_retrigger_run(
+        stp_sequence=list(_RETRIGGER_SUCCESS_STP),
+        endpoints=endpoints,
+        timeline=timeline,
+    )
+
+    first_mutation = timeline.index(
+        "svi_dhcp:MCP-VOICEAB-test01_P2:False"
+    )
+    assert timeline[:first_mutation][-2:] == [
+        "endpoint_read:MCP-VOICEAB-test01_P1",
+        "endpoint_read:MCP-VOICEAB-test01_P2",
+    ]
+    assert result.pre_retrigger_address_baseline_valid == YES
+    assert result.acquisition_started is True
+    assert all(not call[0].endswith("P1") for call in endpoints.state_calls)
 
 
 def test_phone_svi_retrigger_uses_identical_access_and_voice_vlan_shape():
@@ -3610,7 +3794,7 @@ def test_phone_svi_retrigger_requires_both_phones_already_enabled(initial):
     assert call_control.expectations == []
     assert result.acquisition_started is False
     assert result.acquisition_boundary == (
-        ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET
+        ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN
     )
 
 
@@ -3670,6 +3854,8 @@ def test_default_and_run11_modes_have_no_phone_svi_transition_evidence():
 
     assert default.phone_svi_dhcp_transitions == ()
     assert run11.phone_svi_dhcp_transitions == ()
+    assert default.pre_retrigger_endpoint_states == ()
+    assert run11.pre_retrigger_endpoint_states == ()
     assert default.control_stp_gate is default.intervention_stp_gate is None
     assert run11.control_stp_gate is run11.intervention_stp_gate is None
 
@@ -3689,6 +3875,16 @@ def test_phone_svi_retrigger_causal_matrix_keeps_control_and_intervention_apart(
             control_stp_gate=StpForwardingGate(status=FORWARDING),
             intervention_stp_gate=StpForwardingGate(status=FORWARDING),
             acquisition_started=True,
+            pre_retrigger_endpoint_states=(
+                PhonePreRetriggerEndpointState(
+                    phone="P1", svi_present=YES, address_channel=YES,
+                    dhcp_enabled=YES,
+                ),
+                PhonePreRetriggerEndpointState(
+                    phone="P2", svi_present=YES, address_channel=YES,
+                    dhcp_enabled=YES,
+                ),
+            ),
             phone_svi_dhcp_transitions=(transition,),
             phones=(
                 PositiveVoicePhoneOutcome(
@@ -3728,6 +3924,10 @@ def test_runner_exposes_only_the_typed_svi_retrigger_mode():
     assert "--phone-svi-dhcp-retrigger" in source
     assert "set_endpoint_dhcp_client_state" in source
     assert '"phone_svi_dhcp_transitions"' in source
+    assert '"pre_retrigger_endpoint_states"' in source
+    assert '"pre_retrigger_address_baseline_valid"' in source
+    assert '"voice_binding_ipv4s"' in source
+    assert '"matching_intervention_binding"' in source
     assert '"control_stp_gate"' in source
     assert '"intervention_stp_gate"' in source
     assert "setDhcpClientFlag" not in source

@@ -462,6 +462,13 @@ def _serialize(result) -> dict:
         "phone_dhcp_lifecycle": [
             item.as_evidence() for item in result.phone_dhcp_lifecycle
         ],
+        "pre_retrigger_endpoint_states": [
+            item.as_evidence()
+            for item in result.pre_retrigger_endpoint_states
+        ],
+        "pre_retrigger_address_baseline_valid": (
+            result.pre_retrigger_address_baseline_valid
+        ),
         "phone_svi_dhcp_transitions": [
             item.as_evidence() for item in result.phone_svi_dhcp_transitions
         ],
@@ -513,7 +520,14 @@ def _serialize(result) -> dict:
         ),
         "portfast": result.portfast,
         "voice_binding_count": result.voice_binding_count,
+        "voice_binding_ipv4s": (
+            list(result.voice_binding_ipv4s)
+            if result.voice_binding_ipv4s is not None else None
+        ),
         "voice_bindings_observed": result.voice_bindings_observed,
+        "matching_intervention_binding": (
+            result.matching_intervention_binding
+        ),
         "stp_phone_row_after": result.stp_phone_row_after,
         "portfast_readback": result.portfast_readback,
         "foundation": result.foundation.as_evidence(),
@@ -685,6 +699,12 @@ def run(
         "causal_experiment_result": evidence["causal_experiment_result"],
         "acquisition_started": evidence["acquisition_started"],
         "acquisition_boundary": evidence["acquisition_boundary"],
+        "pre_retrigger_endpoint_states": evidence[
+            "pre_retrigger_endpoint_states"
+        ],
+        "pre_retrigger_address_baseline_valid": evidence[
+            "pre_retrigger_address_baseline_valid"
+        ],
         "phone_svi_dhcp_transitions": evidence[
             "phone_svi_dhcp_transitions"
         ],
@@ -724,6 +744,10 @@ def run(
         "portfast": evidence["portfast"],
         "portfast_readback": evidence["portfast_readback"],
         "voice_bindings": evidence["voice_bindings_observed"],
+        "voice_binding_ipv4s": evidence["voice_binding_ipv4s"],
+        "matching_intervention_binding": evidence[
+            "matching_intervention_binding"
+        ],
         "stp_phone_row_after": evidence["stp_phone_row_after"],
         "foundation": evidence["foundation"],
         "foundation_ladder": evidence["foundation_ladder"],

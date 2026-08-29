@@ -189,6 +189,9 @@ ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN = (
 ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN = (
     "ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN"
 )
+ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN = (
+    "ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN"
+)
 DHCP_FLAG_TRANSITION_OBSERVED_OFF_TO_ON = "OBSERVED_OFF_TO_ON"
 DHCP_FLAG_TRANSITION_NOT_OBSERVED = "NOT_OBSERVED"
 FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED = (
@@ -533,6 +536,55 @@ class PhoneDhcpLifecycleEvidence:
         }
 
 
+def _ipv4_observed(ipv4: str) -> bool:
+    """The established endpoint-address semantics, shared by PRE and POST."""
+    value = ipv4.strip()
+    if not value or value in {"0.0.0.0", "<not set>", "unassigned"}:
+        return False
+    return not value.startswith("169.254.")
+
+
+def _addressed(ipv4: str, address_channel: bool) -> str:
+    """Classify an endpoint answer without turning an unread into absence."""
+    if ipv4.strip():
+        return YES if _ipv4_observed(ipv4) else NO
+    return NO if address_channel else UNOBSERVABLE
+
+
+@dataclass(frozen=True)
+class PhonePreRetriggerEndpointState:
+    """One complete, single-read endpoint baseline before P2 is mutated."""
+
+    phone: str
+    svi_present: str = UNOBSERVABLE
+    address_channel: str = UNOBSERVABLE
+    dhcp_enabled: str = UNOBSERVABLE
+    ipv4: str = ""
+
+    @property
+    def addressed(self) -> str:
+        return _addressed(self.ipv4, self.address_channel == YES)
+
+    @property
+    def valid(self) -> bool:
+        return (
+            self.svi_present == YES
+            and self.address_channel == YES
+            and self.dhcp_enabled == YES
+            and self.addressed == NO
+        )
+
+    def as_evidence(self) -> dict:
+        return {
+            "phone": self.phone,
+            "svi_present": self.svi_present,
+            "address_channel": self.address_channel,
+            "dhcp_enabled": self.dhcp_enabled,
+            "ipv4": self.ipv4,
+            "addressed": self.addressed,
+        }
+
+
 @dataclass(frozen=True)
 class PhoneSviDhcpTransitionEvidence:
     """The explicit intervention-phone YES -> NO -> YES flag transition."""
@@ -788,20 +840,11 @@ class PositiveVoicePhoneOutcome:
     @property
     def ipv4_observed(self) -> bool:
         """An address only counts when it is a real lease, not a placeholder."""
-        value = self.ipv4.strip()
-        if not value or value in {"0.0.0.0", "<not set>", "unassigned"}:
-            return False
-        return not value.startswith("169.254.")
+        return _ipv4_observed(self.ipv4)
 
     @property
     def addressed(self) -> str:
-        if self.ipv4.strip():
-            return YES if self.ipv4_observed else NO
-        # Nothing came back.  That is a finding about the phone only if
-        # something was actually asked: an SVI with no address getter and an
-        # SVI that answered "none" both produce the empty string, and only the
-        # second one is a phone that did not acquire.
-        return NO if self.address_channel else UNOBSERVABLE
+        return _addressed(self.ipv4, self.address_channel)
 
     @property
     def succeeded(self) -> bool:
@@ -841,6 +884,9 @@ class PositiveVoiceSliceResult:
     phones: tuple[PositiveVoicePhoneOutcome, ...] = ()
     lifecycle: tuple[LifecycleMilestone, ...] = ()
     phone_dhcp_lifecycle: tuple[PhoneDhcpLifecycleEvidence, ...] = ()
+    pre_retrigger_endpoint_states: tuple[
+        PhonePreRetriggerEndpointState, ...
+    ] = ()
     phone_svi_dhcp_transitions: tuple[PhoneSviDhcpTransitionEvidence, ...] = ()
     #: Read-only foundation evidence.  It localises the outcome; it never
     #: participates in computing it.
@@ -850,6 +896,9 @@ class PositiveVoiceSliceResult:
     #: `show ip dhcp binding` rows whose address falls in the voice pool.  None
     #: means the table was never read, which is not the same as zero rows.
     voice_binding_count: int | None = None
+    #: The normalized voice-pool addresses from that SAME binding-table read.
+    #: Retaining them permits an endpoint/binding match without another query.
+    voice_binding_ipv4s: tuple[str, ...] | None = None
     #: Whether the phone-facing edge policy was applied.  In the baseline this
     #: is a recorded fact and never a knob turned to obtain a better outcome; in
     #: the causal A/B it is the ONE declared variable, and it is derived from
@@ -940,6 +989,29 @@ class PositiveVoiceSliceResult:
         return YES if self.voice_binding_count > 0 else NO
 
     @property
+    def matching_intervention_binding(self) -> str:
+        """Whether the retriggered phone's final IPv4 has a server row."""
+        if (
+            self.experiment != EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER
+            or self.voice_binding_ipv4s is None
+            or len(self.phone_svi_dhcp_transitions) != 1
+        ):
+            return UNOBSERVABLE
+        intervention_name = self.phone_svi_dhcp_transitions[0].phone
+        intervention = [
+            item for item in self.phones
+            if item.phone_name == intervention_name
+        ]
+        if len(intervention) != 1:
+            return UNOBSERVABLE
+        outcome = intervention[0]
+        if outcome.addressed == UNOBSERVABLE:
+            return UNOBSERVABLE
+        if outcome.addressed == NO:
+            return NO
+        return YES if outcome.ipv4.strip() in self.voice_binding_ipv4s else NO
+
+    @property
     def all_endpoint_arms_accepted(self) -> str:
         """Aggregate typed-call acceptance without hiding per-phone answers."""
         if not self.phones:
@@ -993,6 +1065,26 @@ class PositiveVoiceSliceResult:
         if len(self.phone_svi_dhcp_transitions) != 1:
             return NO
         return YES if self.phone_svi_dhcp_transitions[0].valid else NO
+
+    @property
+    def pre_retrigger_address_baseline_valid(self) -> str:
+        """Both PRE reads must prove present, readable, ON and unaddressed."""
+        states = self.pre_retrigger_endpoint_states
+        if len(states) != 2 or len({item.phone for item in states}) != 2:
+            return UNOBSERVABLE
+        if all(item.valid for item in states):
+            return YES
+        if any(
+            UNOBSERVABLE in (
+                item.svi_present,
+                item.address_channel,
+                item.dhcp_enabled,
+                item.addressed,
+            )
+            for item in states
+        ):
+            return UNOBSERVABLE
+        return NO
 
     @property
     def both_phone_ports_authoritative_fwd(self) -> str:
@@ -1190,6 +1282,17 @@ class PositiveVoiceSliceResult:
                 ACQUISITION_NOT_STARTED_CONTROL_DHCP_INVARIANT_UNPROVEN
             ):
                 return "CONTROL_DHCP_INVARIANT_UNPROVEN"
+            if (
+                self.acquisition_boundary
+                == ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN
+                or self.pre_retrigger_address_baseline_valid != YES
+            ):
+                if any(
+                    item.addressed == YES
+                    for item in self.pre_retrigger_endpoint_states
+                ):
+                    return "PRE_RETRIGGER_ACQUISITION_ALREADY_OCCURRED"
+                return "PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN"
             if (
                 self.acquisition_boundary
                 == ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN
@@ -1865,8 +1968,12 @@ class PositiveVoiceSliceQualifier:
         stp_gate: StpForwardingGate | None = None
         acquisition_boundary = ""
         phone_dhcp_lifecycle: list[PhoneDhcpLifecycleEvidence] = []
+        pre_retrigger_endpoint_states: list[
+            PhonePreRetriggerEndpointState
+        ] = []
         phone_svi_dhcp_transitions: list[PhoneSviDhcpTransitionEvidence] = []
         retrigger_stp_gates: dict[str, StpForwardingGate] = {}
+        voice_binding_ipv4s: list[str] = []
         try:
             (
                 original_simulation, phones, binding_count,
@@ -1875,7 +1982,9 @@ class PositiveVoiceSliceQualifier:
             ) = self._measure(
                 router_model, switch_model, phone_model,
                 created, owned_links, journal, phone_dhcp_lifecycle,
+                pre_retrigger_endpoint_states,
                 phone_svi_dhcp_transitions, retrigger_stp_gates,
+                voice_binding_ipv4s,
             )
             errors.extend(measured_errors)
         except Exception as exc:  # noqa: BLE001
@@ -1903,12 +2012,19 @@ class PositiveVoiceSliceQualifier:
             router_name=self._name("R"), switch_name=self._name("SW"),
             phones=phones, lifecycle=journal.frozen(),
             phone_dhcp_lifecycle=tuple(phone_dhcp_lifecycle),
+            pre_retrigger_endpoint_states=tuple(
+                pre_retrigger_endpoint_states
+            ),
             phone_svi_dhcp_transitions=tuple(phone_svi_dhcp_transitions),
             foundation=foundation, portfast=portfast,
             portfast_readback=_worst(*(
                 item.portfast_readback for item in phones
             )),
             voice_binding_count=binding_count,
+            voice_binding_ipv4s=(
+                tuple(voice_binding_ipv4s)
+                if binding_count is not None else None
+            ),
             realtime_before=realtime_before, realtime_after=realtime_after,
             experiment=self._experiment,
             stp_gate=stp_gate,
@@ -2112,8 +2228,12 @@ class PositiveVoiceSliceQualifier:
         self, router_model: str, switch_model: str, phone_model: str,
         created, owned_links, journal: _Journal,
         phone_dhcp_lifecycle: list[PhoneDhcpLifecycleEvidence],
+        pre_retrigger_endpoint_states: list[
+            PhonePreRetriggerEndpointState
+        ],
         phone_svi_dhcp_transitions: list[PhoneSviDhcpTransitionEvidence],
         retrigger_stp_gates: dict[str, StpForwardingGate],
+        voice_binding_ipv4s: list[str],
     ):
         self._router_model = router_model
         self._switch_model = switch_model
@@ -2348,24 +2468,37 @@ class PositiveVoiceSliceQualifier:
             elif not gate.forwarding_observed:
                 boundary = ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
             else:
-                for phone in phones:
-                    pre_arm[phone.name] = self._read_endpoint_dhcp_flag(
-                        phone.name, errors,
-                    )
-                journal.record(
-                    "WHEN_ENDPOINT_DHCP_PRE_ARM_READ",
-                    all(value != UNOBSERVABLE for value in pre_arm.values()),
-                    ", ".join(f"{k}:{v}" for k, v in pre_arm.items()),
-                    OBSERVATION,
-                )
                 if self._phone_svi_dhcp_retrigger:
-                    # RUN12 measured both SVIs already ON before FWD.  Preserve
-                    # that same starting state on both halves, then alter only
-                    # the intervention phone through the exact measured port
-                    # setter.  Any missing readback withholds the window.
-                    if any(value != YES for value in pre_arm.values()):
+                    # One existing endpoint observation per phone supplies
+                    # BOTH the DHCP and address baseline.  A second read here
+                    # would reintroduce the temporal confound this gate closes.
+                    self._retain_pre_retrigger_endpoint_states(
+                        phones, pre_retrigger_endpoint_states, errors,
+                    )
+                    pre_arm.update({
+                        item.phone: item.dhcp_enabled
+                        for item in pre_retrigger_endpoint_states
+                    })
+                    journal.record(
+                        "WHEN_PRE_RETRIGGER_ENDPOINT_BASELINE_OBSERVED",
+                        all(
+                            item.valid
+                            for item in pre_retrigger_endpoint_states
+                        ),
+                        ", ".join(
+                            f"{item.phone}:svi={item.svi_present},"
+                            f"channel={item.address_channel},"
+                            f"dhcp={item.dhcp_enabled},"
+                            f"ipv4={item.ipv4!r},addressed={item.addressed}"
+                            for item in pre_retrigger_endpoint_states
+                        ),
+                        OBSERVATION,
+                    )
+                    if not all(
+                        item.valid for item in pre_retrigger_endpoint_states
+                    ):
                         boundary = (
-                            ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET
+                            ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN
                         )
                     else:
                         control_phone, intervention_phone = phones
@@ -2373,6 +2506,7 @@ class PositiveVoiceSliceQualifier:
                             intervention_phone.name,
                             control_phone.name,
                             pre_arm[control_phone.name],
+                            pre_arm[intervention_phone.name],
                             errors,
                             journal,
                         )
@@ -2389,6 +2523,21 @@ class PositiveVoiceSliceQualifier:
                                 ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN
                             )
                 else:
+                    for phone in phones:
+                        pre_arm[phone.name] = self._read_endpoint_dhcp_flag(
+                            phone.name, errors,
+                        )
+                    journal.record(
+                        "WHEN_ENDPOINT_DHCP_PRE_ARM_READ",
+                        all(
+                            value != UNOBSERVABLE
+                            for value in pre_arm.values()
+                        ),
+                        ", ".join(
+                            f"{k}:{v}" for k, v in pre_arm.items()
+                        ),
+                        OBSERVATION,
+                    )
                     # The older gated experiment needs a PRE-NO state because
                     # its device-level configurePcIp path only asks for ON.
                     if any(value != NO for value in pre_arm.values()):
@@ -2441,7 +2590,9 @@ class PositiveVoiceSliceQualifier:
             )
 
         stp_after = self._read_stp(switch.name, errors)
-        binding_count = self._read_bindings(router.name, errors)
+        binding_count = self._read_bindings(
+            router.name, errors, voice_binding_ipv4s,
+        )
         foundation = self._read_foundation(switch.name, router.name, journal, errors)
         realtime_after = self._realtime(errors, "after")
         journal.record(
@@ -2469,6 +2620,50 @@ class PositiveVoiceSliceQualifier:
             original_simulation, outcomes, binding_count,
             realtime_before, realtime_after, foundation, gate, boundary, errors,
         )
+
+    def _retain_pre_retrigger_endpoint_states(
+        self,
+        phones,
+        retained: list[PhonePreRetriggerEndpointState],
+        errors: list[str],
+    ) -> None:
+        """Retain exactly one complete PRE endpoint observation per phone."""
+        for phone in phones:
+            try:
+                observation = self._endpoints.read_endpoint_address(
+                    phone.name, PHONE_ADDRESSING_INTERFACE,
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(
+                    f"pre_retrigger_endpoint_unreadable:{phone.name}: {exc}"
+                )
+                observation = None
+
+            svi_present = address_channel = dhcp_enabled = UNOBSERVABLE
+            ipv4 = ""
+            if observation is not None:
+                present = getattr(observation, "present", None)
+                svi_present = _yes_no_unobservable(present)
+
+                ipv4 = str(getattr(observation, "ipv4", "") or "").strip()
+                channel = getattr(observation, "address_channel", None)
+                if channel is not None:
+                    address_channel = _yes_no_unobservable(bool(channel))
+                elif ipv4:
+                    # Existing outcome semantics: a returned value proves the
+                    # address channel answered; an empty value proves nothing.
+                    address_channel = YES
+
+                flag = getattr(observation, "dhcp_enabled", None)
+                dhcp_enabled = _yes_no_unobservable(flag)
+
+            retained.append(PhonePreRetriggerEndpointState(
+                phone=phone.name,
+                svi_present=svi_present,
+                address_channel=address_channel,
+                dhcp_enabled=dhcp_enabled,
+                ipv4=ipv4,
+            ))
 
     def _retain_phone_dhcp_lifecycle(
         self,
@@ -2608,6 +2803,7 @@ class PositiveVoiceSliceQualifier:
         device_name: str,
         control_device_name: str,
         control_pre_enabled: str,
+        intervention_pre_enabled: str,
         errors: list[str],
         journal: _Journal,
     ) -> PhoneSviDhcpTransitionEvidence:
@@ -2688,7 +2884,7 @@ class PositiveVoiceSliceQualifier:
             control_phone=control_device_name,
             control_pre_enabled=control_pre_enabled,
             control_post_enabled=control_post_enabled,
-            pre_enabled=YES,
+            pre_enabled=intervention_pre_enabled,
             disable_before=disable_before,
             disable_accepted=disable_accepted,
             disabled_readback=disabled,
@@ -2942,7 +3138,9 @@ class PositiveVoiceSliceQualifier:
             errors.append(f"stp_unreadable: {exc}")
             return None
 
-    def _read_bindings(self, router_name: str, errors: list[str]) -> int | None:
+    def _read_bindings(
+        self, router_name: str, errors: list[str], retained: list[str],
+    ) -> int | None:
         try:
             rows = self._configuration.read_dhcp_bindings(router_name)
         except Exception as exc:  # noqa: BLE001
@@ -2951,10 +3149,15 @@ class PositiveVoiceSliceQualifier:
         if rows is None:
             return None
         prefix = VOICE_NETWORK.rsplit(".", 1)[0] + "."
-        return sum(
-            1 for row in rows
-            if str(getattr(row, "ip_address", "") or "").startswith(prefix)
+        retained.extend(
+            value for row in rows
+            if (
+                value := str(
+                    getattr(row, "ip_address", "") or ""
+                ).strip()
+            ).startswith(prefix)
         )
+        return len(retained)
 
     def _observe_registrations(self, phones, errors: list[str]) -> dict:
         """Ask the production registration runtime in its own contract.
