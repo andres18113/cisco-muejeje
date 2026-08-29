@@ -3933,6 +3933,24 @@ def test_runner_exposes_only_the_typed_svi_retrigger_mode():
     assert "setDhcpClientFlag" not in source
 
 
+def test_positive_voice_live_enforces_governed_preflight_in_mutating_process():
+    source = Path("tools/cp_scale_positive_voice_ab_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "ImportIsolationPreflight(GOVERNED_ROOT).ensure_isolated()" in source
+    assert "read_git_repository_state(GOVERNED_ROOT)" in source
+    assert '["git", "status", "--porcelain"]' in source
+    assert '_git_output("rev-parse", "@{upstream}")' in source
+    assert "packet_tracer_process_error(" in source
+    assert "baseline = physical.observe_workspace()" in source
+    assert "baseline.safe_for_disposable_mutation" in source
+    assert "preflight_mode = mode_runtime.read_simulation_state()" in source
+    assert "independent_final = physical.observe_workspace()" in source
+    assert "independent_mode = mode_runtime.read_simulation_state()" in source
+    assert "physical_workspace_restoration_matches(" in source
+
+
 # --- phone DHCP lifecycle qualification preparation -------------------------
 
 

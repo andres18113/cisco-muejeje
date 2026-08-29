@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +18,11 @@ GOVERNED_ROOT = Path(__file__).resolve().parents[1]
 if str(GOVERNED_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(GOVERNED_ROOT / "src"))
 
+import packet_tracer_mcp  # noqa: E402
+
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (  # noqa: E402
+    read_git_repository_state,
+)
 from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (  # noqa: E402
     DATA_VLAN_ID,
     ROUTER_VOICE_SUBINTERFACE,
@@ -33,6 +39,9 @@ from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import
 from packet_tracer_mcp.domain.enterprise.models.configuration import (  # noqa: E402
     VerificationExpectation,
     VerificationKind,
+)
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (  # noqa: E402
+    physical_workspace_restoration_matches,
 )
 from packet_tracer_mcp.infrastructure.execution.configuration_runtime import (  # noqa: E402
     PacketTracerConfigurationRuntime,
@@ -57,6 +66,12 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (  # noqa: E
     parse_show_ip_interface_brief,
     parse_show_spanning_tree,
 )
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (  # noqa: E402
+    ImportIsolationPreflight,
+)
+from packet_tracer_mcp.infrastructure.execution.live_environment_preflight import (  # noqa: E402
+    packet_tracer_process_error,
+)
 from packet_tracer_mcp.infrastructure.execution.live_bridge import (  # noqa: E402
     PacketTracerHttpTransport,
 )
@@ -72,10 +87,50 @@ EVIDENCE_PATH = GOVERNED_ROOT / "data" / "cp-scale" / "positive-voice-ab.json"
 ROUTER_MODEL = "2811"
 SWITCH_MODEL = "3560-24PS"
 PHONE_MODEL = "7960"
+EXPECTED_BRANCH = "feature/runtime-ripv2"
+EXPECTED_UPSTREAM = "personal/feature/runtime-ripv2"
 
 #: A value that can never equal a real VLAN id, so a FAILED field reads as
 #: CONTRADICTED without inventing the number that was actually observed.
 _CONTRADICTED_VLAN = -1
+
+
+def _git_output(*arguments: str) -> str:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=GOVERNED_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _packet_tracer_processes() -> list[dict[str, object]]:
+    command = (
+        "Get-Process | Where-Object { $_.ProcessName -like 'PacketTracer*' } | "
+        "ForEach-Object { [PSCustomObject]@{ "
+        "ProcessName=$_.ProcessName; Id=$_.Id; "
+        "MainWindowHandle=$_.MainWindowHandle; "
+        "ProductVersion=$_.MainModule.FileVersionInfo.ProductVersion; "
+        "FileVersion=$_.MainModule.FileVersionInfo.FileVersion; "
+        "Path=$_.MainModule.FileName } } | ConvertTo-Json -Compress"
+    )
+    completed = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", command],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    raw = completed.stdout.strip()
+    if not raw:
+        return []
+    parsed = json.loads(raw)
+    return parsed if isinstance(parsed, list) else [parsed]
+
+
+def _hard_stop(message: str, preflight: dict[str, object]) -> int:
+    print(json.dumps({"hard_stop": message, "preflight": preflight}))
+    return 2
 
 
 class _ReadPort:
@@ -605,16 +660,112 @@ def run(
     phone_dhcp_lifecycle: bool = False,
     phone_svi_dhcp_retrigger: bool = False,
 ) -> int:
+    preflight: dict[str, object] = {
+        "python_executable": sys.executable,
+        "package_file": packet_tracer_mcp.__file__,
+        "loaded_namespaces": [
+            name for name in ("packet_tracer_mcp", "src.packet_tracer_mcp")
+            if name in sys.modules
+        ],
+    }
+    isolation = ImportIsolationPreflight(GOVERNED_ROOT).ensure_isolated()
+    preflight["import_isolation"] = {
+        "state": isolation.state.value,
+        "detail": isolation.detail,
+    }
+    if not isolation.isolated:
+        return _hard_stop(isolation.render(), preflight)
+
+    repository = read_git_repository_state(GOVERNED_ROOT)
+    preflight["repository"] = repository.model_dump(mode="json")
+    try:
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=GOVERNED_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        upstream_head = _git_output("rev-parse", "@{upstream}")
+    except (OSError, subprocess.CalledProcessError) as exc:
+        return _hard_stop(f"Repository preflight failed: {exc}", preflight)
+    preflight["repository_dirty"] = bool(dirty)
+    preflight["upstream_head"] = upstream_head
+    repository_errors = []
+    if repository.branch != EXPECTED_BRANCH:
+        repository_errors.append(
+            f"Expected branch {EXPECTED_BRANCH!r}; observed {repository.branch!r}."
+        )
+    if repository.upstream != EXPECTED_UPSTREAM:
+        repository_errors.append(
+            "Expected upstream "
+            f"{EXPECTED_UPSTREAM!r}; observed {repository.upstream!r}."
+        )
+    if repository.error:
+        repository_errors.append(repository.error)
+    if dirty:
+        repository_errors.append("Live session requires a clean initial worktree.")
+    if not repository.head or repository.head != upstream_head:
+        repository_errors.append(
+            "Live session requires its exact initial HEAD pushed to upstream."
+        )
+    if repository_errors:
+        return _hard_stop(" ".join(repository_errors), preflight)
+
+    try:
+        processes = _packet_tracer_processes()
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        return _hard_stop(
+            f"Packet Tracer process preflight failed: {exc}", preflight,
+        )
+    preflight["packet_tracer_processes"] = processes
+    process_error = packet_tracer_process_error(
+        processes, packet_tracer_version,
+    )
+    if process_error:
+        return _hard_stop(process_error, preflight)
+
     transport = PacketTracerHttpTransport()
     if not transport.start(timeout_seconds=20.0):
-        print(json.dumps({"hard_stop": "The Packet Tracer bridge did not connect."}))
-        return 2
+        preflight["http_bridge"] = transport.status_dict()
+        transport.stop()
+        return _hard_stop(
+            "The authenticated Packet Tracer bridge did not connect.",
+            preflight,
+        )
+    preflight["http_bridge"] = transport.status_dict()
+    independent_final = None
+    independent_workspace_restored = False
+    independent_final_error = ""
+    independent_mode = None
+    independent_realtime_restored = False
+    independent_mode_error = ""
     try:
         physical = PacketTracerPhysicalTopologyRuntime(
             transport.send_and_wait,
             mutation_timeout_seconds=30.0,
             observation_timeout_seconds=12.0,
         )
+        baseline = physical.observe_workspace()
+        preflight["baseline"] = baseline.compact_summary()
+        if not baseline.safe_for_disposable_mutation:
+            return _hard_stop(
+                "The read-only baseline is not a complete empty semantic "
+                "workspace; refusing mutation.",
+                preflight,
+            )
+        mode_runtime = SimulationTraceRuntime(transport.send_and_wait)
+        preflight_mode = mode_runtime.read_simulation_state()
+        preflight["realtime"] = {
+            "observed": preflight_mode.observed,
+            "simulation_mode": preflight_mode.simulation_mode,
+            "message": preflight_mode.message,
+        }
+        if not preflight_mode.observed or preflight_mode.simulation_mode:
+            return _hard_stop(
+                "Realtime was not independently established before mutation.",
+                preflight,
+            )
         enterprise = PacketTracerEnterpriseConfigurationRuntime(
             lambda: _inventory(physical),
             transport.send,
@@ -649,7 +800,7 @@ def run(
             configuration_adapter,
             _CallControlAdapter(voice_runtime),
             _EndpointAdapter(configuration, voice_runtime),
-            SimulationTraceRuntime(transport.send_and_wait),
+            mode_runtime,
             control_plane=control_plane,
             edge_portfast=edge_portfast,
             # Historical paired modes keep access 931/930.  The retrigger A/B
@@ -676,11 +827,52 @@ def run(
             # no-mutation control and configurePcIp is not used by this mode.
             phone_svi_dhcp_retrigger=phone_svi_dhcp_retrigger,
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
+        try:
+            independent_final = physical.observe_workspace()
+            independent_workspace_restored = (
+                physical_workspace_restoration_matches(
+                    baseline, independent_final,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            independent_final_error = (
+                f"independent_final_inventory_failed: {exc}"
+            )
+        try:
+            independent_mode = mode_runtime.read_simulation_state()
+            independent_realtime_restored = bool(
+                independent_mode.observed
+                and not independent_mode.simulation_mode
+            )
+        except Exception as exc:  # noqa: BLE001
+            independent_mode_error = f"independent_mode_read_failed: {exc}"
     finally:
         transport.stop()
 
     evidence = _serialize(result)
     evidence["packet_tracer_version"] = packet_tracer_version
+    evidence["live_source_head"] = repository.head
+    evidence["live_preflight"] = preflight
+    evidence["independent_final"] = (
+        independent_final.compact_summary()
+        if independent_final is not None else None
+    )
+    evidence["independent_workspace_restored"] = (
+        independent_workspace_restored
+    )
+    evidence["independent_final_error"] = independent_final_error
+    evidence["independent_realtime"] = (
+        {
+            "observed": independent_mode.observed,
+            "simulation_mode": independent_mode.simulation_mode,
+            "message": independent_mode.message,
+        }
+        if independent_mode is not None else None
+    )
+    evidence["independent_realtime_restored"] = (
+        independent_realtime_restored
+    )
+    evidence["independent_mode_error"] = independent_mode_error
     # Empty whenever the pool table was read and understood, which is the
     # point: a non-empty list IS the unresolved observability boundary.
     evidence["dhcp_pool_boundary_captures"] = (
@@ -694,6 +886,8 @@ def run(
     )
     print(json.dumps({
         "event": "POSITIVE_VOICE_AB_COMPLETE",
+        "live_source_head": evidence["live_source_head"],
+        "live_preflight": evidence["live_preflight"],
         "outcome": evidence["outcome"],
         "experiment": evidence["experiment"],
         "causal_experiment_result": evidence["causal_experiment_result"],
@@ -768,10 +962,28 @@ def run(
             for item in evidence["phones"]
         ],
         "workspace_restored": evidence["workspace_restored"],
+        "independent_final": evidence["independent_final"],
+        "independent_workspace_restored": evidence[
+            "independent_workspace_restored"
+        ],
+        "independent_final_error": evidence["independent_final_error"],
+        "independent_realtime": evidence["independent_realtime"],
+        "independent_realtime_restored": evidence[
+            "independent_realtime_restored"
+        ],
+        "independent_mode_error": evidence["independent_mode_error"],
         "realtime_restored": evidence["realtime_restored"],
         "errors": evidence["errors"][:5],
     }))
-    return 0 if result.workspace_restored else 1
+    return (
+        0
+        if (
+            result.workspace_restored
+            and independent_workspace_restored
+            and independent_realtime_restored
+        )
+        else 1
+    )
 
 
 def main() -> int:
