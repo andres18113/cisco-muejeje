@@ -460,7 +460,13 @@ class SecurityCompiler:
         by_segment: dict[str, list[object]] = defaultdict(list)
         addresses: dict[str, object] = {}
         for action in configuration.actions:
-            if isinstance(action, (SetEndpointDhcp, SetEndpointStaticAddress)):
+            if (
+                isinstance(action, SetEndpointStaticAddress)
+                or (
+                    isinstance(action, SetEndpointDhcp)
+                    and action.claims_address_acquisition
+                )
+            ):
                 by_segment[action.segment_id].append(action)
                 addresses[action.device_id] = action
         return {

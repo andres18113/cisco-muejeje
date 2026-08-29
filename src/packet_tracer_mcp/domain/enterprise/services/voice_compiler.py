@@ -19,6 +19,7 @@ from ..models.configuration import (
     ConfigureSubinterface,
     ConfigureSvi,
     CreateVlan,
+    EndpointDhcpVerificationMode,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
@@ -67,6 +68,16 @@ from .extension_allocator import (
 
 _ADDRESSING_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 _L3_ACTIONS = (ConfigureRoutedInterface, ConfigureSvi, ConfigureSubinterface)
+
+
+def _is_dhcp_activation(action: object) -> bool:
+    if not isinstance(action, SetEndpointDhcp):
+        return False
+    mode = getattr(action, "verification_mode", "")
+    return (
+        getattr(mode, "value", mode)
+        == EndpointDhcpVerificationMode.CLIENT_ENABLED.value
+    )
 
 
 def _stable_id(kind: str, *parts: object) -> str:
@@ -132,6 +143,7 @@ class VoiceCompiler:
 
         access_by_phone: dict[str, list[ConfigureAccessPort]] = defaultdict(list)
         addressing_by_phone: dict[str, list[SetEndpointStaticAddress | SetEndpointDhcp]] = defaultdict(list)
+        activation_by_phone: dict[str, list[SetEndpointDhcp]] = defaultdict(list)
         l3_by_device_segment: dict[tuple[str, str], list[object]] = defaultdict(list)
         dhcp_by_segment: dict[str, list[ConfigureDhcpPool]] = defaultdict(list)
         vlan_by_segment: dict[str, int] = {}
@@ -147,6 +159,8 @@ class VoiceCompiler:
             elif isinstance(action, ConfigureAccessPort):
                 for endpoint_id in action.endpoint_ids:
                     access_by_phone[endpoint_id].append(action)
+            elif _is_dhcp_activation(action):
+                activation_by_phone[action.device_id].append(action)
             elif isinstance(action, _ADDRESSING_ACTIONS):
                 addressing_by_phone[action.device_id].append(action)
             elif isinstance(action, _L3_ACTIONS):
@@ -160,7 +174,11 @@ class VoiceCompiler:
             phone_id = phone.id or phone.name
             access = sorted(access_by_phone.get(phone_id, []), key=lambda item: item.id)
             addressing = sorted(addressing_by_phone.get(phone_id, []), key=lambda item: item.id)
+            activations = sorted(
+                activation_by_phone.get(phone_id, []), key=lambda item: item.id,
+            )
             selected_addressing = addressing[0] if addressing else None
+            selected_activation = activations[0] if activations else None
             if selected_addressing is not None:
                 expected_vlan = vlan_by_segment.get(selected_addressing.segment_id)
             else:
@@ -226,6 +244,17 @@ class VoiceCompiler:
                 kind="voice_vlan", source_id=selected_access.id,
                 device_id=selected_access.device_id, site_id=phone.site_id,
             ))
+            if selected_activation is not None:
+                foundations.append(VoiceFoundationRequirement(
+                    id=_stable_id(
+                        "foundation-dhcp-activation", phone_id,
+                        selected_activation.id,
+                    ),
+                    kind="phone_dhcp_activation",
+                    source_id=selected_activation.id,
+                    device_id=phone_id,
+                    site_id=phone.site_id,
+                ))
             if selected_addressing is not None:
                 # E5 really did address this phone -- it has no voice VLAN, so
                 # it stays on `Vlan1` and `Vlan1` stays up -- and E5's evidence
@@ -405,6 +434,13 @@ class VoiceCompiler:
                 voice_vlan_id=voice_vlan_id,
                 voice_segment_id=voice_segment_id,
                 access_configuration_action_id=access.id,
+                activation_configuration_action_id=(
+                    sorted(
+                        activation_by_phone.get(phone_id, []),
+                        key=lambda item: item.id,
+                    )[0].id
+                    if activation_by_phone.get(phone_id) else ""
+                ),
                 addressing_configuration_action_id=(
                     addressing.id if addressing is not None else ""
                 ),

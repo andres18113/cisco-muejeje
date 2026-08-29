@@ -773,7 +773,9 @@ def run(
             l3_timeout_seconds=20.0,
         )
         ios = ControlledIosExecutor(transport.send_and_wait)
-        configuration = PacketTracerConfigurationRuntime(transport.send)
+        configuration = PacketTracerConfigurationRuntime(
+            transport.send, transport.send_and_wait,
+        )
         # Built only for the intervention.  The baseline half of the A/B never
         # receives a control-plane runtime, so it cannot apply one by accident.
         control_plane = _ControlPlaneAdapter(

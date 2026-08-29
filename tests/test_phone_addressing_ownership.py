@@ -1,4 +1,4 @@
-"""One address, one claimant: E5 builds the network, E7 claims the phone.
+"""One address, one claimant; one earlier activation foundation.
 
 The CP-SCALE Floor-1 live run reported 21 x 7960 contradicting the plan on
 `Vlan1`. The number came from a single mistaken premise -- that a phone is an
@@ -12,11 +12,12 @@ is the one interface guaranteed to hold no address, and `Vlan<voice>` does not
 exist yet when E5 is preflighted against the live inventory. Neither is an
 interface E5 could honestly name.
 
-What the phone needs from E5 is the network: the VLAN, the voice access port,
-the gateway and the pool. What makes the lease complete is option 150 and a
-call control to answer, and both are E7's. So E7 owns the claim, and verifies
-it two ways -- what the call control says the phone registered from, and what
-the phone reports on the SVI it created.
+What the historical positive lifecycle also supplied was a device-level DHCP
+activation before E7.  E5 now retains that typed event through an interface
+that exists at preflight, and verifies only the resulting voice-SVI client
+state. E7 still owns the address claim and verifies it two ways -- what the
+call control says the phone registered from, and what the phone reports on the
+SVI it created.
 """
 
 from __future__ import annotations
@@ -108,7 +109,11 @@ def test_the_phone_still_gets_its_whole_network_from_configuration():
 
     assert access.voice_vlan_id == 20
     assert access.data_vlan_id == 10
-    assert _addressing_actions(plan, "phone-1") == []
+    activation = _addressing_actions(plan, "phone-1")
+    assert len(activation) == 1
+    assert activation[0].claims_address_acquisition is False
+    assert activation[0].interface == "Vlan1"
+    assert activation[0].verification_interface == "Vlan20"
     assert any(item.segment_id == "hq-voice" for item in pools)
 
 

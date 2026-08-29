@@ -70,16 +70,14 @@ EXTENSIONS = ("3101", "3102")
 #: like it.
 CALL_CONTROL_ID = "voiceab/cme"
 
-#: The physical port a phone link lands on, and the interface a phone actually
-#: holds an address on.  They are NOT the same port, and the first LIVE proved
-#: what happens when one is used for the other: `Switch` is the RJ45 the cable
-#: attaches to, while the address lives on the SVI the phone creates for its
-#: voice VLAN -- which is the interface the production compiler names for every
-#: phone it arms and reads back (`_phone_addressing_interface`).  Arming and
-#: reading the physical port answers nothing at all, and nothing at all is
-#: indistinguishable from "no address" exactly where this A/B cannot afford the
-#: confusion.
+#: Three distinct 7960 interfaces and two distinct contracts. `Switch` is the
+#: physical link. `Vlan1` exists before the signalled voice SVI and is the port
+#: through which the measured helper can invoke the device-level DHCP trigger.
+#: `Vlan<voice>` is where the eventual client state and address are read.  The
+#: historical successful E5 -> E7 lifecycle used that trigger-before-observe
+#: split; collapsing both roles onto the late SVI reordered the lifecycle.
 PHONE_LINK_PORT = "Switch"
+PHONE_DHCP_ACTIVATION_INTERFACE = "Vlan1"
 PHONE_ADDRESSING_INTERFACE = f"Vlan{VOICE_VLAN_ID}"
 
 #: The uplink this slice builds, named ONCE.  Every foundation read below is
@@ -2339,6 +2337,13 @@ class PositiveVoiceSliceQualifier:
                 phones, phone_dhcp_lifecycle, errors,
             )
 
+        # The ordinary positive path reproduces the historical E5 -> E7
+        # boundary: build the network, trigger each phone through the existing
+        # Vlan1 port, then begin Voice.  Gated diagnostic modes retain their
+        # explicitly controlled intervention behind their own evidence gate.
+        if not self._gate_enabled:
+            self._arm_endpoints(phones, journal, errors)
+
         # Immediately after the L2 configuration and before anything else, which
         # is where a repaired canonical pipeline would emit it: the control
         # plane runs after the configuration stage, never before it.  Applying
@@ -2358,13 +2363,6 @@ class PositiveVoiceSliceQualifier:
                 "AFTER_VOICE_CME_CONFIGURATION",
                 phones, phone_dhcp_lifecycle, errors,
             )
-
-        # The typed endpoint runtime answers with a bool, and only True is its
-        # acceptance.  In the FWD-gated experiment the arming moves BEHIND the
-        # gate: the trigger under judgement must not fire before the port it
-        # is judged on was observed forwarding.
-        if not self._gate_enabled:
-            self._arm_endpoints(phones, journal, errors)
 
         # Realtime is the authoritative window for addressing and registration.
         realtime_before = self._realtime(errors, "before")
@@ -2777,7 +2775,7 @@ class PositiveVoiceSliceQualifier:
         for phone in phones:
             try:
                 accepted = self._endpoints.configure_endpoint_dhcp(
-                    phone.name, PHONE_ADDRESSING_INTERFACE,
+                    phone.name, PHONE_DHCP_ACTIVATION_INTERFACE,
                 )
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"endpoint_dhcp_failed:{phone.name}: {exc}")

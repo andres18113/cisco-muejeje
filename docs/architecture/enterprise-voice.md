@@ -5,7 +5,7 @@ E7 consumes immutable artifacts from the three preceding enterprise layers:
 ```text
 Concrete TopologyPlan       E4: phones, call-control hosts, ports and links
            |
-ConfigurationPlan          E5: voice VLAN, addressing, L3 and DHCP pool
+ConfigurationPlan          E5: voice VLAN, DHCP activation, L3 and DHCP pool
            |
 ServicePlan (optional)     E6: only services explicitly consumed by voice
            |
@@ -44,9 +44,19 @@ stable natural device identity rather than input order.
 ## Dependencies and semantic identity
 
 Phone assignments reuse the concrete E4 phone ID/name/model and the E5 access
-port, explicit voice VLAN, voice segment, and addressing action. Call-control
-source addresses are reused from an E5 L3 action on that same voice segment.
-Implicitly treating a data VLAN as a voice VLAN is rejected.
+port, explicit voice VLAN, voice segment, and, where present, the independent
+DHCP-activation foundation. A phone activation is not an E5 address claim: E7
+still compares the eventual voice-SVI address with the address reported by
+call control. Call-control source addresses are reused from an E5 L3 action on
+that same voice segment. Implicitly treating a data VLAN as a voice VLAN is
+rejected.
+
+The activation foundation closes the E5 -> E7 ordering contract without a
+circular dependency. E5 first dispatches the typed `configurePcIp` path through
+the phone's existing `Vlan1`; Packet Tracer must acknowledge the helper call,
+and E5 must independently read the `Vlan<voice>` DHCP-client flag as enabled.
+Only then may E7 apply Option 150, CME bindings, and configuration files. A
+missing interface, getter, acknowledgment, or unknown state fails closed.
 
 When the call-control host owns the E5 DHCP pool for a voice segment, E7 emits
 typed option-150 configuration and makes configuration-file generation depend

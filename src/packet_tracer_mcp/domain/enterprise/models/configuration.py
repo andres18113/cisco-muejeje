@@ -39,6 +39,13 @@ class ConfigurationActionType(str, Enum):
     CONFIGURE_ETHERNET_LINK_MODE = "configure_ethernet_link_mode"
 
 
+class EndpointDhcpVerificationMode(str, Enum):
+    """What E5 may honestly verify after enabling an endpoint DHCP client."""
+
+    ADDRESS_ACQUISITION = "address_acquisition"
+    CLIENT_ENABLED = "client_enabled"
+
+
 class ConfigurationIssueSeverity(str, Enum):
     ERROR = "error"
     WARNING = "warning"
@@ -298,13 +305,29 @@ class SetEndpointDhcp(BaseConfigurationAction):
     action_type: Literal[
         ConfigurationActionType.SET_ENDPOINT_DHCP
     ] = ConfigurationActionType.SET_ENDPOINT_DHCP
+    #: Existing port used by the measured ``configurePcIp`` helper before it
+    #: invokes the device-level DHCP activation.  It need not be the logical
+    #: interface on which the eventual lease is exposed.
     interface: str
+    #: Exact interface used for independent read-back.  Empty preserves the
+    #: legacy one-interface contract for ordinary endpoints.
+    verification_interface: str = ""
+    verification_mode: EndpointDhcpVerificationMode = (
+        EndpointDhcpVerificationMode.ADDRESS_ACQUISITION
+    )
     segment_id: str
     network: str
     prefix: int
     netmask: str
     gateway: str
     dns_server: str | None = None
+
+    @property
+    def claims_address_acquisition(self) -> bool:
+        return (
+            self.verification_mode
+            is EndpointDhcpVerificationMode.ADDRESS_ACQUISITION
+        )
 
 
 class ConfigureSerialClock(BaseConfigurationAction):

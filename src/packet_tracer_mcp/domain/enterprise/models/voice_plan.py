@@ -235,6 +235,10 @@ class PhoneAssignment(BaseModel):
     voice_vlan_id: int
     voice_segment_id: str
     access_configuration_action_id: str
+    #: E5 action that triggered and independently read back the DHCP-client
+    #: state without claiming the eventual address.  E7 waits for it before
+    #: applying call-control/bootstrap actions.
+    activation_configuration_action_id: str = ""
     addressing_configuration_action_id: str
     binding_action_id: str
     #: Carried so E7 can verify the acquisition it owns without reaching back
@@ -303,8 +307,8 @@ class VoiceVerificationExpectation(BaseModel):
 class VoiceFoundationRequirement(BaseModel):
     id: str
     kind: Literal[
-        "voice_vlan", "phone_addressing", "call_control_addressing",
-        "voice_dhcp_pool", "service"
+        "voice_vlan", "phone_dhcp_activation", "phone_addressing",
+        "call_control_addressing", "voice_dhcp_pool", "service"
     ]
     source_id: str
     device_id: str = ""
