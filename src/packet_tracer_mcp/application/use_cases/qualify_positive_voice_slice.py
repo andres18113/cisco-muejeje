@@ -160,6 +160,7 @@ EXPERIMENT_UNIFORM_BASELINE = "UNIFORM_BASELINE"
 EXPERIMENT_PAIRED_ACCESS_VLAN = "PAIRED_ACCESS_VLAN"
 EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED = "PAIRED_ACCESS_VLAN_FWD_GATED"
 EXPERIMENT_PHONE_DHCP_LIFECYCLE = "PHONE_DHCP_LIFECYCLE"
+EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER = "PHONE_SVI_DHCP_RETRIGGER"
 
 #: The FWD gate's terminal statuses.  FORWARDING and UNOBSERVABLE reuse the
 #: row classifications above; TIMEOUT is the bounded wait expiring while the
@@ -178,6 +179,12 @@ ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN = (
 )
 ACQUISITION_NOT_STARTED_OBSERVATIONAL_DIAGNOSTIC = (
     "ACQUISITION_NOT_STARTED_OBSERVATIONAL_DIAGNOSTIC"
+)
+ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET = (
+    "ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET"
+)
+ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN = (
+    "ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN"
 )
 DHCP_FLAG_TRANSITION_OBSERVED_OFF_TO_ON = "OBSERVED_OFF_TO_ON"
 DHCP_FLAG_TRANSITION_NOT_OBSERVED = "NOT_OBSERVED"
@@ -523,6 +530,44 @@ class PhoneDhcpLifecycleEvidence:
         }
 
 
+@dataclass(frozen=True)
+class PhoneSviDhcpTransitionEvidence:
+    """The explicit intervention-phone YES -> NO -> YES flag transition."""
+
+    phone: str
+    pre_enabled: str = UNOBSERVABLE
+    disable_before: str = UNOBSERVABLE
+    disable_accepted: str = UNOBSERVABLE
+    disabled_readback: str = UNOBSERVABLE
+    enable_before: str = UNOBSERVABLE
+    enable_accepted: str = UNOBSERVABLE
+    reenabled_readback: str = UNOBSERVABLE
+
+    @property
+    def valid(self) -> bool:
+        return (
+            self.pre_enabled == YES
+            and self.disable_before == YES
+            and self.disable_accepted == YES
+            and self.disabled_readback == NO
+            and self.enable_before == NO
+            and self.enable_accepted == YES
+            and self.reenabled_readback == YES
+        )
+
+    def as_evidence(self) -> dict:
+        return {
+            "phone": self.phone,
+            "pre_enabled": self.pre_enabled,
+            "disable_before": self.disable_before,
+            "disable_accepted": self.disable_accepted,
+            "disabled_readback": self.disabled_readback,
+            "enable_before": self.enable_before,
+            "enable_accepted": self.enable_accepted,
+            "reenabled_readback": self.reenabled_readback,
+        }
+
+
 #: The ordered common Voice foundation, from the phone port outwards.  The
 #: walk stops at the FIRST stage that is not VERIFIED and names it; skipping to
 #: the symptom furthest downstream is how a shared foundation stays unexamined.
@@ -778,6 +823,7 @@ class PositiveVoiceSliceResult:
     phones: tuple[PositiveVoicePhoneOutcome, ...] = ()
     lifecycle: tuple[LifecycleMilestone, ...] = ()
     phone_dhcp_lifecycle: tuple[PhoneDhcpLifecycleEvidence, ...] = ()
+    phone_svi_dhcp_transitions: tuple[PhoneSviDhcpTransitionEvidence, ...] = ()
     #: Read-only foundation evidence.  It localises the outcome; it never
     #: participates in computing it.
     foundation: PositiveVoiceFoundation = field(
@@ -918,6 +964,15 @@ class PositiveVoiceSliceResult:
     def fresh_7960_dhcp_transaction(self) -> str:
         """The flag surface cannot independently establish a 7960 DORA run."""
         return FRESH_7960_DHCP_TRANSACTION_NOT_INDEPENDENTLY_ESTABLISHED
+
+    @property
+    def phone_svi_dhcp_transition_valid_for_experiment(self) -> str:
+        """Whether the one intervention established YES -> NO -> YES."""
+        if not self.phone_svi_dhcp_transitions:
+            return UNOBSERVABLE
+        if len(self.phone_svi_dhcp_transitions) != 1:
+            return NO
+        return YES if self.phone_svi_dhcp_transitions[0].valid else NO
 
     @property
     def first_observed_svi_dhcp_enabled_milestone(self) -> str:
@@ -1087,13 +1142,49 @@ class PositiveVoiceSliceResult:
         Run 9 is why these are two fields: its VOICE endpoint outcome was
         SAME_FAILURE while its causal result was PARTIAL_OR_DIVERGENT, and one
         name for both is how a boundary gets read as a refutation.  Only the
-        FWD-gated causal experiment computes a verdict here.  The lifecycle
+        FWD-gated causal experiments compute a verdict here.  The lifecycle
         mode names itself non-applicable because it is observational only;
         every other run answers NOT_FWD_GATED, because without the gate the
         trigger's freshness and forwarding state are unproven premises.
         """
         if self.experiment == EXPERIMENT_PHONE_DHCP_LIFECYCLE:
             return "NOT_APPLICABLE_OBSERVATIONAL_DIAGNOSTIC"
+        if self.experiment == EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER:
+            if self.acquisition_boundary == (
+                ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
+            ) or self.stp_gate is None or not self.stp_gate.forwarding_observed:
+                return "STP_PRECONDITION_NOT_ESTABLISHED"
+            if self.acquisition_boundary == (
+                ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET
+            ):
+                return "PHONE_SVI_DHCP_PRECONDITION_UNMET"
+            if (
+                self.acquisition_boundary
+                == ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN
+                or self.phone_svi_dhcp_transition_valid_for_experiment != YES
+            ):
+                return "PHONE_SVI_DHCP_TRANSITION_UNPROVEN"
+            control = [
+                item for item in self.phones
+                if item.access_vlan_expected == DATA_VLAN_ID
+            ]
+            intervention = [
+                item for item in self.phones
+                if item.access_vlan_expected == VOICE_VLAN_ID
+            ]
+            if len(control) != 1 or len(intervention) != 1:
+                return UNOBSERVABLE
+            control_addressed = control[0].addressed
+            intervention_addressed = intervention[0].addressed
+            if UNOBSERVABLE in (control_addressed, intervention_addressed):
+                return "PARTIAL_OR_DIVERGENT"
+            if control_addressed == NO and intervention_addressed == YES:
+                return "PHONE_SVI_DHCP_RETRIGGER_EFFECT_OBSERVED"
+            if control_addressed == NO and intervention_addressed == NO:
+                return "NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER"
+            if control_addressed == YES and intervention_addressed == YES:
+                return "SHARED_LATE_ACQUISITION_NOT_ISOLATED"
+            return "CONTROL_ONLY_ADDRESS_OBSERVED"
         if self.experiment != EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED:
             return "NOT_FWD_GATED"
         if self.acquisition_boundary == (
@@ -1201,6 +1292,9 @@ class VoiceControlPlaneRuntime(Protocol):
 class VoiceEndpointRuntime(Protocol):
     def configure_endpoint_dhcp(self, device_name: str, interface: str) -> bool: ...
     def read_endpoint_address(self, device_name: str, interface: str): ...
+    def set_endpoint_dhcp_client_state(
+        self, device_name: str, interface: str, enabled: bool,
+    ): ...
 
 
 class VoiceModeRuntime(Protocol):
@@ -1596,6 +1690,7 @@ class PositiveVoiceSliceQualifier:
         phone_access_vlans: tuple[int, ...] | None = None,
         fwd_gated_fresh_dhcp: bool = False,
         phone_dhcp_lifecycle: bool = False,
+        phone_svi_dhcp_retrigger: bool = False,
         gate_timeout_seconds: float = STP_FWD_GATE_TIMEOUT_SECONDS,
         gate_interval_seconds: float = STP_FWD_GATE_INTERVAL_SECONDS,
         gate_clock=monotonic,
@@ -1636,12 +1731,21 @@ class PositiveVoiceSliceQualifier:
         # are asked to acquire.  PortFast beside it would be a second variable.
         self._fwd_gated = bool(fwd_gated_fresh_dhcp)
         self._phone_dhcp_lifecycle = bool(phone_dhcp_lifecycle)
-        if self._fwd_gated and self._phone_dhcp_lifecycle:
+        self._phone_svi_dhcp_retrigger = bool(phone_svi_dhcp_retrigger)
+        if sum((
+            self._fwd_gated,
+            self._phone_dhcp_lifecycle,
+            self._phone_svi_dhcp_retrigger,
+        )) > 1:
             raise ValueError(
-                "the RUN11 fresh-DHCP experiment and the observational phone "
+                "the FWD-gated DHCP experiments and the observational phone "
                 "DHCP lifecycle diagnostic are separate modes"
             )
-        self._gate_enabled = self._fwd_gated or self._phone_dhcp_lifecycle
+        self._gate_enabled = (
+            self._fwd_gated
+            or self._phone_dhcp_lifecycle
+            or self._phone_svi_dhcp_retrigger
+        )
         if self._gate_enabled:
             if self._phone_access_vlans.count(VOICE_VLAN_ID) != 1:
                 raise ValueError(
@@ -1663,6 +1767,8 @@ class PositiveVoiceSliceQualifier:
         # its experiment without re-deriving it from the mapping later.
         if self._phone_dhcp_lifecycle:
             self._experiment = EXPERIMENT_PHONE_DHCP_LIFECYCLE
+        elif self._phone_svi_dhcp_retrigger:
+            self._experiment = EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER
         elif self._fwd_gated:
             self._experiment = EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED
         elif VOICE_VLAN_ID in self._phone_access_vlans:
@@ -1714,6 +1820,7 @@ class PositiveVoiceSliceQualifier:
         stp_gate: StpForwardingGate | None = None
         acquisition_boundary = ""
         phone_dhcp_lifecycle: list[PhoneDhcpLifecycleEvidence] = []
+        phone_svi_dhcp_transitions: list[PhoneSviDhcpTransitionEvidence] = []
         try:
             (
                 original_simulation, phones, binding_count,
@@ -1722,6 +1829,7 @@ class PositiveVoiceSliceQualifier:
             ) = self._measure(
                 router_model, switch_model, phone_model,
                 created, owned_links, journal, phone_dhcp_lifecycle,
+                phone_svi_dhcp_transitions,
             )
             errors.extend(measured_errors)
         except Exception as exc:  # noqa: BLE001
@@ -1749,6 +1857,7 @@ class PositiveVoiceSliceQualifier:
             router_name=self._name("R"), switch_name=self._name("SW"),
             phones=phones, lifecycle=journal.frozen(),
             phone_dhcp_lifecycle=tuple(phone_dhcp_lifecycle),
+            phone_svi_dhcp_transitions=tuple(phone_svi_dhcp_transitions),
             foundation=foundation, portfast=portfast,
             portfast_readback=_worst(*(
                 item.portfast_readback for item in phones
@@ -1955,6 +2064,7 @@ class PositiveVoiceSliceQualifier:
         self, router_model: str, switch_model: str, phone_model: str,
         created, owned_links, journal: _Journal,
         phone_dhcp_lifecycle: list[PhoneDhcpLifecycleEvidence],
+        phone_svi_dhcp_transitions: list[PhoneSviDhcpTransitionEvidence],
     ):
         self._router_model = router_model
         self._switch_model = switch_model
@@ -2151,45 +2261,66 @@ class PositiveVoiceSliceQualifier:
                     ", ".join(f"{k}:{v}" for k, v in pre_arm.items()),
                     OBSERVATION,
                 )
-                # A fresh trigger is an OFF-to-ON transition that this run
-                # itself performs.  A flag already ON -- or one that could not
-                # be read -- makes the arming call's effect unprovable, and an
-                # unprovable trigger is never judged.
-                if any(value != NO for value in pre_arm.values()):
-                    boundary = (
-                        ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
-                    )
-                else:
-                    armed = self._arm_endpoints(
-                        phones, journal, errors, arm_acceptance,
-                    )
-                    for phone in phones:
-                        post_arm[phone.name] = self._read_endpoint_dhcp_flag(
-                            phone.name, errors,
+                if self._phone_svi_dhcp_retrigger:
+                    # RUN12 measured both SVIs already ON before FWD.  Preserve
+                    # that same starting state on both halves, then alter only
+                    # the intervention phone through the exact measured port
+                    # setter.  Any missing readback withholds the window.
+                    if any(value != YES for value in pre_arm.values()):
+                        boundary = (
+                            ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET
                         )
-                    journal.record(
-                        "WHEN_ENDPOINT_DHCP_POST_ARM_READ",
-                        all(
-                            value != UNOBSERVABLE
-                            for value in post_arm.values()
-                        ),
-                        ", ".join(f"{k}:{v}" for k, v in post_arm.items()),
-                        OBSERVATION,
-                    )
-                    transition_valid = (
-                        armed is True
-                        and all(value == YES for value in post_arm.values())
-                    )
-                    journal.record(
-                        "WHEN_ENDPOINT_DHCP_FLAG_TRANSITION_VALID",
-                        transition_valid,
-                        "PRE NO + ARM_ACCEPTED + POST YES for every phone",
-                        OBSERVATION,
-                    )
-                    if not transition_valid:
+                    else:
+                        intervention_index = self._phone_access_vlans.index(
+                            VOICE_VLAN_ID,
+                        )
+                        intervention_phone = phones[intervention_index]
+                        transition = self._transition_phone_svi_dhcp_client(
+                            intervention_phone.name, errors, journal,
+                        )
+                        phone_svi_dhcp_transitions.append(transition)
+                        if not transition.valid:
+                            boundary = (
+                                ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN
+                            )
+                else:
+                    # The older gated experiment needs a PRE-NO state because
+                    # its device-level configurePcIp path only asks for ON.
+                    if any(value != NO for value in pre_arm.values()):
                         boundary = (
                             ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
                         )
+                    else:
+                        armed = self._arm_endpoints(
+                            phones, journal, errors, arm_acceptance,
+                        )
+                        for phone in phones:
+                            post_arm[phone.name] = self._read_endpoint_dhcp_flag(
+                                phone.name, errors,
+                            )
+                        journal.record(
+                            "WHEN_ENDPOINT_DHCP_POST_ARM_READ",
+                            all(
+                                value != UNOBSERVABLE
+                                for value in post_arm.values()
+                            ),
+                            ", ".join(f"{k}:{v}" for k, v in post_arm.items()),
+                            OBSERVATION,
+                        )
+                        transition_valid = (
+                            armed is True
+                            and all(value == YES for value in post_arm.values())
+                        )
+                        journal.record(
+                            "WHEN_ENDPOINT_DHCP_FLAG_TRANSITION_VALID",
+                            transition_valid,
+                            "PRE NO + ARM_ACCEPTED + POST YES for every phone",
+                            OBSERVATION,
+                        )
+                        if not transition_valid:
+                            boundary = (
+                                ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN
+                            )
 
         if boundary:
             # Fail closed: the causal acquisition was not authorized, so no
@@ -2366,6 +2497,73 @@ class PositiveVoiceSliceQualifier:
             "typed endpoint runtime accepted every phone",
         )
         return armed
+
+    def _transition_phone_svi_dhcp_client(
+        self, device_name: str, errors: list[str], journal: _Journal,
+    ) -> PhoneSviDhcpTransitionEvidence:
+        """Perform one explicit YES -> NO -> YES intervention, fail closed."""
+        disable_before = enable_before = UNOBSERVABLE
+        disable_accepted = disabled = UNOBSERVABLE
+        enable_accepted = reenabled = UNOBSERVABLE
+        try:
+            mutation = self._endpoints.set_endpoint_dhcp_client_state(
+                device_name, PHONE_ADDRESSING_INTERFACE, False,
+            )
+            before = getattr(mutation, "before_enabled", None)
+            disable_before = (
+                UNOBSERVABLE if before is None else (YES if before else NO)
+            )
+            disable_accepted = YES if mutation.accepted is True else NO
+            after = getattr(mutation, "after_enabled", None)
+            disabled = UNOBSERVABLE if after is None else (YES if after else NO)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"endpoint_svi_dhcp_disable_failed:{device_name}: {exc}")
+            disable_accepted = NO
+        journal.record(
+            "WHEN_INTERVENTION_SVI_DHCP_DISABLED",
+            disable_accepted == YES and disabled == NO,
+            f"{device_name}:accepted={disable_accepted},readback={disabled}",
+            OBSERVATION,
+        )
+        if (
+            disable_before == YES
+            and disable_accepted == YES
+            and disabled == NO
+        ):
+            try:
+                mutation = self._endpoints.set_endpoint_dhcp_client_state(
+                    device_name, PHONE_ADDRESSING_INTERFACE, True,
+                )
+                before = getattr(mutation, "before_enabled", None)
+                enable_before = (
+                    UNOBSERVABLE if before is None else (YES if before else NO)
+                )
+                enable_accepted = YES if mutation.accepted is True else NO
+                after = getattr(mutation, "after_enabled", None)
+                reenabled = (
+                    UNOBSERVABLE if after is None else (YES if after else NO)
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(
+                    f"endpoint_svi_dhcp_enable_failed:{device_name}: {exc}"
+                )
+                enable_accepted = NO
+        journal.record(
+            "WHEN_INTERVENTION_SVI_DHCP_REENABLED",
+            enable_accepted == YES and reenabled == YES,
+            f"{device_name}:accepted={enable_accepted},readback={reenabled}",
+            OBSERVATION,
+        )
+        return PhoneSviDhcpTransitionEvidence(
+            phone=device_name,
+            pre_enabled=YES,
+            disable_before=disable_before,
+            disable_accepted=disable_accepted,
+            disabled_readback=disabled,
+            enable_before=enable_before,
+            enable_accepted=enable_accepted,
+            reenabled_readback=reenabled,
+        )
 
     def _read_endpoint_dhcp_flag(self, device_name: str, errors: list[str]) -> str:
         """The phone's own DHCP flag, on the SVI this plan addresses it on.

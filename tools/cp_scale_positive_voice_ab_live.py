@@ -429,6 +429,15 @@ class _EndpointAdapter:
             return None
         return reader(device_name, interface)
 
+    def set_endpoint_dhcp_client_state(
+        self, device_name: str, interface: str, enabled: bool,
+    ):
+        if self._voice is None:
+            raise RuntimeError("the typed phone-SVI DHCP runtime is unavailable")
+        return self._voice.set_endpoint_dhcp_client_state(
+            device_name, interface, enabled,
+        )
+
 
 def _serialize(result) -> dict:
     return {
@@ -453,6 +462,12 @@ def _serialize(result) -> dict:
         "phone_dhcp_lifecycle": [
             item.as_evidence() for item in result.phone_dhcp_lifecycle
         ],
+        "phone_svi_dhcp_transitions": [
+            item.as_evidence() for item in result.phone_svi_dhcp_transitions
+        ],
+        "phone_svi_dhcp_transition_valid_for_experiment": (
+            result.phone_svi_dhcp_transition_valid_for_experiment
+        ),
         "first_observed_svi_dhcp_enabled_milestone": (
             result.first_observed_svi_dhcp_enabled_milestone
         ),
@@ -563,6 +578,7 @@ def run(
     paired_access_vlan: bool = False,
     paired_access_vlan_fwd_gated: bool = False,
     phone_dhcp_lifecycle: bool = False,
+    phone_svi_dhcp_retrigger: bool = False,
 ) -> int:
     transport = PacketTracerHttpTransport()
     if not transport.start(timeout_seconds=20.0):
@@ -601,6 +617,7 @@ def run(
             paired_access_vlan
             or paired_access_vlan_fwd_gated
             or phone_dhcp_lifecycle
+            or phone_svi_dhcp_retrigger
         )
         result = PositiveVoiceSliceQualifier(
             physical,
@@ -626,6 +643,10 @@ def run(
             # gate, but never calls the endpoint DHCP mutation.  Seven selected
             # boundaries each perform one bounded existing SVI read per phone.
             phone_dhcp_lifecycle=phone_dhcp_lifecycle,
+            # One exact-interface SVI DHCP-client YES -> NO -> YES transition
+            # on P2, only after the existing authoritative FWD gate.  P1 is a
+            # no-mutation control and configurePcIp is not used by this mode.
+            phone_svi_dhcp_retrigger=phone_svi_dhcp_retrigger,
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
     finally:
         transport.stop()
@@ -650,6 +671,12 @@ def run(
         "causal_experiment_result": evidence["causal_experiment_result"],
         "acquisition_started": evidence["acquisition_started"],
         "acquisition_boundary": evidence["acquisition_boundary"],
+        "phone_svi_dhcp_transitions": evidence[
+            "phone_svi_dhcp_transitions"
+        ],
+        "phone_svi_dhcp_transition_valid_for_experiment": evidence[
+            "phone_svi_dhcp_transition_valid_for_experiment"
+        ],
         "stp_gate": evidence["stp_gate"],
         "first_observed_svi_dhcp_enabled_milestone": evidence[
             "first_observed_svi_dhcp_enabled_milestone"
@@ -742,6 +769,15 @@ def main() -> int:
             "existing endpoint/SVI surface and never arms DHCP."
         ),
     )
+    parser.add_argument(
+        "--phone-svi-dhcp-retrigger", action="store_true",
+        help=(
+            "run the paired, authoritative-FWD-gated phone-SVI DHCP client "
+            "retrigger experiment.  Both phones must first read DHCP enabled; "
+            "only P2 then receives an exact-interface YES-to-NO-to-YES typed "
+            "transition with readback before the acquisition window opens."
+        ),
+    )
     args = parser.parse_args()
     modes = [
         name for name, enabled in (
@@ -749,6 +785,7 @@ def main() -> int:
             ("--paired-access-vlan", args.paired_access_vlan),
             ("--paired-access-vlan-fwd-gated", args.paired_access_vlan_fwd_gated),
             ("--phone-dhcp-lifecycle", args.phone_dhcp_lifecycle),
+            ("--phone-svi-dhcp-retrigger", args.phone_svi_dhcp_retrigger),
         ) if enabled
     ]
     if len(modes) > 1:
@@ -762,6 +799,7 @@ def main() -> int:
         paired_access_vlan=args.paired_access_vlan,
         paired_access_vlan_fwd_gated=args.paired_access_vlan_fwd_gated,
         phone_dhcp_lifecycle=args.phone_dhcp_lifecycle,
+        phone_svi_dhcp_retrigger=args.phone_svi_dhcp_retrigger,
     )
 
 

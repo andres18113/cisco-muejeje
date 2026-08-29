@@ -11,6 +11,8 @@ import pytest
 from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     ABSENT,
     ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN,
+    ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET,
+    ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN,
     ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET,
     APPLICATION,
     APPLIED,
@@ -20,6 +22,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     EXPERIMENT_PAIRED_ACCESS_VLAN,
     EXPERIMENT_PAIRED_ACCESS_VLAN_FWD_GATED,
     EXPERIMENT_PHONE_DHCP_LIFECYCLE,
+    EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER,
     EXPERIMENT_UNIFORM_BASELINE,
     EXTENSIONS,
     FORWARDING,
@@ -42,6 +45,7 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     YES,
     LifecycleMilestone,
     PhoneDhcpLifecycleEvidence,
+    PhoneSviDhcpTransitionEvidence,
     PositiveVoicePhoneOutcome,
     PositiveVoiceSliceQualifier,
     PositiveVoiceSliceResult,
@@ -3342,6 +3346,251 @@ def test_the_live_serializer_publishes_the_gate_and_the_two_result_concepts():
     assert '"arm_call_accepted": item.arm_call_accepted' in source
     assert '"dhcp_enabled_post_arm": item.dhcp_enabled_post_arm' in source
     assert "--paired-access-vlan-fwd-gated" in source
+
+
+# --- next causal experiment: exact phone-SVI DHCP client retrigger ----------
+
+
+@dataclass(frozen=True)
+class _SviDhcpMutation:
+    requested_enabled: bool
+    accepted: bool
+    before_enabled: bool | None
+    after_enabled: bool | None
+
+
+class _SviTransitionEndpoints(_Endpoints):
+    def __init__(
+        self, *, initial=(True, True), disable_accepted=True,
+        enable_accepted=True, timeline=None,
+    ):
+        super().__init__(timeline=timeline)
+        self.state = {
+            "MCP-VOICEAB-test01_P1": initial[0],
+            "MCP-VOICEAB-test01_P2": initial[1],
+        }
+        self.disable_accepted = disable_accepted
+        self.enable_accepted = enable_accepted
+        self.state_calls: list[tuple[str, str, bool]] = []
+
+    def read_endpoint_address(self, device_name, interface):
+        if self.timeline is not None:
+            self.timeline.append(f"endpoint_read:{device_name}")
+        self.read_interfaces.append(interface)
+        return _EndpointObservation(
+            present=True, dhcp_enabled=self.state[device_name],
+        )
+
+    def set_endpoint_dhcp_client_state(self, device_name, interface, enabled):
+        if self.timeline is not None:
+            self.timeline.append(f"svi_dhcp:{device_name}:{enabled}")
+        self.state_calls.append((device_name, interface, enabled))
+        before = self.state[device_name]
+        accepted = self.enable_accepted if enabled else self.disable_accepted
+        if accepted:
+            self.state[device_name] = enabled
+        return _SviDhcpMutation(
+            requested_enabled=enabled,
+            accepted=accepted,
+            before_enabled=before,
+            after_enabled=self.state[device_name],
+        )
+
+
+_SVI_RETRIGGER = dict(
+    phone_access_vlans=_PAIRED, phone_svi_dhcp_retrigger=True,
+)
+
+
+def _svi_retrigger_run(*, stp_sequence, endpoints=None, timeline=None, **kwargs):
+    clock = _Clock()
+    endpoints = endpoints or _SviTransitionEndpoints(timeline=timeline)
+    outcome = _run(
+        configuration=_Configuration(
+            stp_sequence=stp_sequence, timeline=timeline,
+        ),
+        endpoints=endpoints,
+        gate_clock=clock,
+        gate_sleeper=clock.sleep,
+        **_SVI_RETRIGGER,
+        **kwargs,
+    )
+    return outcome, clock
+
+
+def test_phone_svi_retrigger_is_an_exclusive_gated_mode():
+    with pytest.raises(ValueError, match="separate modes"):
+        _qualifier(
+            _Physical(_empty_workspace()), _Configuration(), _CallControl(),
+            _SviTransitionEndpoints(), _ModeRuntime(),
+            phone_access_vlans=_PAIRED,
+            phone_dhcp_lifecycle=True,
+            phone_svi_dhcp_retrigger=True,
+        )
+
+
+def test_phone_svi_retrigger_cannot_mutate_before_authoritative_fwd():
+    endpoints = _SviTransitionEndpoints()
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=[_stp("LIS")], endpoints=endpoints,
+        gate_timeout_seconds=4.0, gate_interval_seconds=2.0,
+    )
+
+    assert endpoints.state_calls == []
+    assert endpoints.armed == []
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
+    )
+
+
+def test_phone_svi_retrigger_changes_only_intervention_yes_no_yes_after_fwd():
+    timeline: list[str] = []
+    endpoints = _SviTransitionEndpoints(timeline=timeline)
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=[
+            _stp("LIS"),  # before snapshot
+            _stp("LIS"), _stp("FWD"),  # gate
+            _stp("FWD"),  # after snapshot
+        ],
+        endpoints=endpoints,
+        timeline=timeline,
+    )
+
+    assert endpoints.state_calls == [
+        ("MCP-VOICEAB-test01_P2", PHONE_ADDRESSING_INTERFACE, False),
+        ("MCP-VOICEAB-test01_P2", PHONE_ADDRESSING_INTERFACE, True),
+    ]
+    assert endpoints.armed == []
+    first_mutation = timeline.index(
+        "svi_dhcp:MCP-VOICEAB-test01_P2:False"
+    )
+    assert len([
+        item for item in timeline[:first_mutation] if item == "stp_read"
+    ]) == 3
+    assert call_control.expectations
+    assert result.acquisition_started is True
+    assert result.acquisition_boundary == ""
+    assert result.experiment == EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER
+    assert result.phone_svi_dhcp_transition_valid_for_experiment == YES
+    assert result.phone_svi_dhcp_transitions == (
+        PhoneSviDhcpTransitionEvidence(
+            phone="MCP-VOICEAB-test01_P2",
+            pre_enabled=YES,
+            disable_before=YES,
+            disable_accepted=YES,
+            disabled_readback=NO,
+            enable_before=NO,
+            enable_accepted=YES,
+            reenabled_readback=YES,
+        ),
+    )
+
+
+@pytest.mark.parametrize("initial", [(False, True), (True, False), (None, True)])
+def test_phone_svi_retrigger_requires_both_phones_already_enabled(initial):
+    endpoints = _SviTransitionEndpoints(initial=initial)
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD")], endpoints=endpoints,
+    )
+
+    assert endpoints.state_calls == []
+    assert call_control.expectations == []
+    assert result.acquisition_started is False
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_SVI_DHCP_PRECONDITION_UNMET
+    )
+
+
+def test_failed_disable_is_not_followed_by_enable_or_an_acquisition_window():
+    endpoints = _SviTransitionEndpoints(disable_accepted=False)
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD")], endpoints=endpoints,
+    )
+
+    assert [call[2] for call in endpoints.state_calls] == [False]
+    assert call_control.expectations == []
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN
+    )
+    assert result.phone_svi_dhcp_transition_valid_for_experiment == NO
+
+
+def test_failed_reenable_never_opens_the_acquisition_window():
+    endpoints = _SviTransitionEndpoints(enable_accepted=False)
+    (result, _, _, call_control, *_), _ = _svi_retrigger_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD")], endpoints=endpoints,
+    )
+
+    assert [call[2] for call in endpoints.state_calls] == [False, True]
+    assert call_control.expectations == []
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_SVI_DHCP_TRANSITION_UNPROVEN
+    )
+    assert result.phone_svi_dhcp_transition_valid_for_experiment == NO
+
+
+def test_default_and_run11_modes_have_no_phone_svi_transition_evidence():
+    default, *_ = _run()
+    (run11, *_), _ = _gated_run(
+        stp_sequence=[_stp("LIS"), _stp("FWD")],
+    )
+
+    assert default.phone_svi_dhcp_transitions == ()
+    assert run11.phone_svi_dhcp_transitions == ()
+
+
+def test_phone_svi_retrigger_causal_matrix_keeps_control_and_intervention_apart():
+    transition = PhoneSviDhcpTransitionEvidence(
+        phone="P2", pre_enabled=YES, disable_before=YES,
+        disable_accepted=YES, disabled_readback=NO, enable_before=NO,
+        enable_accepted=YES, reenabled_readback=YES,
+    )
+
+    def result(control, intervention):
+        return PositiveVoiceSliceResult(
+            experiment=EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER,
+            stp_gate=StpForwardingGate(status=FORWARDING),
+            acquisition_started=True,
+            phone_svi_dhcp_transitions=(transition,),
+            phones=(
+                PositiveVoicePhoneOutcome(
+                    access_vlan_expected=DATA_VLAN_ID,
+                    ipv4="10.93.0.10" if control else "",
+                    address_channel=True,
+                ),
+                PositiveVoicePhoneOutcome(
+                    access_vlan_expected=VOICE_VLAN_ID,
+                    ipv4="10.93.0.11" if intervention else "",
+                    address_channel=True,
+                ),
+            ),
+        )
+
+    assert result(False, True).causal_experiment_result == (
+        "PHONE_SVI_DHCP_RETRIGGER_EFFECT_OBSERVED"
+    )
+    assert result(False, False).causal_experiment_result == (
+        "NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER"
+    )
+    assert result(True, True).causal_experiment_result == (
+        "SHARED_LATE_ACQUISITION_NOT_ISOLATED"
+    )
+    assert result(True, False).causal_experiment_result == (
+        "CONTROL_ONLY_ADDRESS_OBSERVED"
+    )
+
+
+def test_runner_exposes_only_the_typed_svi_retrigger_mode():
+    source = Path("tools/cp_scale_positive_voice_ab_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "--phone-svi-dhcp-retrigger" in source
+    assert "set_endpoint_dhcp_client_state" in source
+    assert '"phone_svi_dhcp_transitions"' in source
+    assert "setDhcpClientFlag" not in source
 
 
 # --- phone DHCP lifecycle qualification preparation -------------------------

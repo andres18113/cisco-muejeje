@@ -20,6 +20,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     RuntimeCallObservation,
 )
 from src.packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
+    EndpointDhcpClientStateMutation,
     PacketTracerEnterpriseVoiceRuntime,
 )
 from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
@@ -167,6 +168,84 @@ def test_the_voice_svi_dhcp_state_is_read_under_the_name_this_build_exposes(
     # The retained census found no device-level DHCP member.  Fixing the SVI
     # getter must not invent that same method on the device object.
     assert "d.isDhcpClientOn" not in endpoint_reads[0]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_the_typed_voice_svi_dhcp_setter_requires_exact_port_and_readback(enabled):
+    captured = []
+
+    def send_and_wait(source, _timeout):
+        captured.append(source)
+        return json.dumps({
+            "found": True,
+            "port_found": True,
+            "getter_channel": True,
+            "setter_channel": True,
+            "before": not enabled,
+            "mutation_called": True,
+            "after": enabled,
+        })
+
+    runtime = PacketTracerEnterpriseVoiceRuntime(
+        lambda: [], lambda _source: True, send_and_wait,
+        ios_readiness=lambda _name: True,
+    )
+
+    mutation = runtime.set_endpoint_dhcp_client_state(
+        'PHONE";throw new Error(1);//', 'Vlan930";throw new Error(2);//', enabled,
+    )
+
+    assert mutation == EndpointDhcpClientStateMutation(
+        requested_enabled=enabled,
+        device_present=True,
+        interface_present=True,
+        getter_available=True,
+        setter_available=True,
+        before_enabled=not enabled,
+        mutation_called=True,
+        after_enabled=enabled,
+    )
+    assert mutation.accepted is True
+    source, = captured
+    assert "setDhcpClientFlag" in source
+    assert "setDhcpFlag" not in source
+    assert "configurePcIp" not in source
+    assert json.dumps('PHONE";throw new Error(1);//') in source
+    assert json.dumps('Vlan930";throw new Error(2);//') in source
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {},
+        {"found": True, "port_found": False},
+        {
+            "found": True, "port_found": True,
+            "getter_channel": False, "setter_channel": True,
+        },
+        {
+            "found": True, "port_found": True,
+            "getter_channel": True, "setter_channel": False,
+        },
+        {
+            "found": True, "port_found": True,
+            "getter_channel": True, "setter_channel": True,
+            "before": True, "mutation_called": True, "after": True,
+        },
+    ],
+)
+def test_the_voice_svi_dhcp_setter_fails_closed_without_matching_readback(answer):
+    runtime = PacketTracerEnterpriseVoiceRuntime(
+        lambda: [], lambda _source: True,
+        lambda _source, _timeout: json.dumps(answer),
+        ios_readiness=lambda _name: True,
+    )
+
+    mutation = runtime.set_endpoint_dhcp_client_state(
+        "PHONE", "Vlan930", False,
+    )
+
+    assert mutation.accepted is False
 
 
 def test_registration_uses_fresh_privileged_show_ephone_when_available():

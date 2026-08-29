@@ -67,6 +67,37 @@ class EndpointSviObservation:
     device_dhcp_enabled: bool | None = None
 
 
+@dataclass(frozen=True)
+class EndpointDhcpClientStateMutation:
+    """One exact phone-SVI DHCP-client state mutation and its readback.
+
+    Acceptance is deliberately stricter than command delivery.  The measured
+    7960 API is a port API, so the named port, getter and setter must all exist,
+    the setter must be called, and the same port must read the requested value
+    before this result can authorize a causal acquisition window.
+    """
+
+    requested_enabled: bool
+    device_present: bool = False
+    interface_present: bool = False
+    getter_available: bool = False
+    setter_available: bool = False
+    before_enabled: bool | None = None
+    mutation_called: bool = False
+    after_enabled: bool | None = None
+
+    @property
+    def accepted(self) -> bool:
+        return (
+            self.device_present
+            and self.interface_present
+            and self.getter_available
+            and self.setter_available
+            and self.mutation_called
+            and self.after_enabled is self.requested_enabled
+        )
+
+
 class PacketTracerEnterpriseVoiceRuntime:
     """Aplica acciones cerradas; no publica IOS ni acciones telefónicas arbitrarias."""
 
@@ -451,6 +482,52 @@ class PacketTracerEnterpriseVoiceRuntime:
             dhcp_enabled=observed.get("dhcp"),
             device_ipv4=str(observed.get("device_ipv4") or ""),
             device_dhcp_enabled=observed.get("device_dhcp"),
+        )
+
+    def set_endpoint_dhcp_client_state(
+        self, device_name: str, interface: str, enabled: bool,
+    ) -> EndpointDhcpClientStateMutation:
+        """Set the measured 7960 SVI flag and read that same flag back.
+
+        This is not a generic JavaScript surface and it does not claim DHCP
+        transaction activity.  It exposes only the exact port methods already
+        measured on Packet Tracer 9.0.1.0858 Cisco 7960 VLAN interfaces.
+        """
+        requested = bool(enabled)
+        if not device_name or not interface:
+            return EndpointDhcpClientStateMutation(
+                requested_enabled=requested,
+            )
+        script = "".join((
+            "try{var d=ipc.network().getDevice(", json.dumps(device_name), ");",
+            "var want=", json.dumps(interface), ";var p=null;",
+            "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
+            "if(c&&typeof c.getName==='function'&&String(c.getName())===want){",
+            "p=c;break;}}}",
+            "var getter=!!p&&typeof p.isDhcpClientOn==='function';",
+            "var setter=!!p&&typeof p.setDhcpClientFlag==='function';",
+            "var before=getter?!!p.isDhcpClientOn():null;var called=false;",
+            "if(getter&&setter){p.setDhcpClientFlag(",
+            "true" if requested else "false",
+            ");called=true;}",
+            "var after=getter?!!p.isDhcpClientOn():null;",
+            "reportResult(JSON.stringify({found:!!d,port_found:!!p,",
+            "getter_channel:getter,setter_channel:setter,before:before,",
+            "mutation_called:called,after:after}));",
+            "}catch(e){reportResult('ERROR:'+e);}",
+        ))
+        observed = self._json_result(script, 5.0)
+        before = observed.get("before")
+        after = observed.get("after")
+        return EndpointDhcpClientStateMutation(
+            requested_enabled=requested,
+            device_present=observed.get("found") is True,
+            interface_present=observed.get("port_found") is True,
+            getter_available=observed.get("getter_channel") is True,
+            setter_available=observed.get("setter_channel") is True,
+            before_enabled=before if isinstance(before, bool) else None,
+            mutation_called=observed.get("mutation_called") is True,
+            after_enabled=after if isinstance(after, bool) else None,
         )
 
     def _observe_endpoint_svi(
