@@ -48,6 +48,7 @@ from .ios_terminal import (
     parse_show_interfaces_trunk,
     parse_show_ip_dhcp_pool,
     parse_show_ip_interface_brief,
+    parse_show_spanning_tree,
     parse_serial_controller,
 )
 from .runtime_inventory import normalize_runtime_inventory
@@ -232,6 +233,176 @@ class PacketTracerEnterpriseConfigurationRuntime:
             device_identity_provenance=show.device_identity_provenance,
             failure_reason=reason,
         )
+
+    def wait_for_voice_access_forwarding(
+        self,
+        expectations: Sequence[VerificationExpectation],
+    ) -> list[RuntimeVerification]:
+        """Wait once per switch/VLAN until every signalled phone port is FWD."""
+        ordered = list(expectations)
+        grouped: dict[
+            tuple[str, int], list[VerificationExpectation]
+        ] = defaultdict(list)
+        invalid: dict[str, RuntimeVerification] = {}
+        for expectation in ordered:
+            voice_vlan = expectation.expected.get("voice_vlan_id")
+            if not isinstance(voice_vlan, int) or isinstance(
+                voice_vlan, bool,
+            ):
+                invalid[expectation.id] = RuntimeVerification(
+                    expectation_id=expectation.id,
+                    status=ActionExecutionStatus.UNOBSERVABLE,
+                    fields={
+                        "voice_forwarding": (
+                            FieldVerificationStatus.UNOBSERVABLE
+                        ),
+                    },
+                    message=(
+                        "Voice access forwarding requires a typed voice VLAN."
+                    ),
+                )
+                continue
+            grouped[(expectation.device_name, voice_vlan)].append(
+                expectation
+            )
+
+        observed = dict(invalid)
+        for (device_name, voice_vlan), group in grouped.items():
+            observed.update(self._wait_voice_access_group(
+                device_name,
+                voice_vlan,
+                group,
+            ))
+        return [
+            observed.get(expectation.id) or RuntimeVerification(
+                expectation_id=expectation.id,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                fields={
+                    "voice_forwarding": (
+                        FieldVerificationStatus.UNOBSERVABLE
+                    ),
+                },
+                message="Voice access forwarding was not observed.",
+            )
+            for expectation in ordered
+        ]
+
+    def _wait_voice_access_group(
+        self,
+        device_name: str,
+        voice_vlan: int,
+        expectations: Sequence[VerificationExpectation],
+    ) -> dict[str, RuntimeVerification]:
+        latest: dict[str, object] = {
+            "show": None,
+            "states": {},
+            "authoritative": False,
+        }
+
+        def inspect() -> dict[str, object]:
+            show = self._ios.execute(
+                device_name,
+                OperationalQueryId.SHOW_SPANNING_TREE,
+            )
+            authoritative = bool(
+                show.executed
+                and show.fresh_output_observed
+                and show.output_complete
+                and show.device_identity_provenance
+                == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+            )
+            states: dict[str, str] = {}
+            if authoritative:
+                instance = next((
+                    item for item in parse_show_spanning_tree(show.output)
+                    if item.vlan_id == voice_vlan
+                ), None)
+                if instance is not None:
+                    for expectation in expectations:
+                        interface = str(
+                            expectation.expected.get("interface") or ""
+                        )
+                        row = next((
+                            item for item in instance.interfaces
+                            if same_interface_name(
+                                item.interface, interface,
+                            )
+                        ), None)
+                        if row is not None:
+                            states[expectation.id] = str(row.state).upper()
+            latest.update({
+                "show": show,
+                "states": states,
+                "authoritative": authoritative,
+            })
+            all_forwarding = bool(
+                authoritative
+                and len(states) == len(expectations)
+                and all(
+                    state.startswith(("FWD", "FORW"))
+                    for state in states.values()
+                )
+            )
+            return {
+                "found": show.executed,
+                "configuration_channel": all_forwarding,
+                "failure_reason": show.failure_reason,
+            }
+
+        convergence = StateConvergenceWaiter(
+            inspect,
+            timeout_seconds=self._trunk_timeout,
+            interval_seconds=self._convergence_interval,
+        ).wait()
+        states = latest["states"]
+        states = states if isinstance(states, dict) else {}
+        authoritative = bool(latest["authoritative"])
+        report = ConvergenceReport(
+            attempts=convergence.attempts,
+            elapsed_ms=convergence.elapsed_ms,
+            final_status=(
+                ActionExecutionStatus.VERIFIED
+                if convergence.state
+                is DeviceInitializationState.CONFIGURATION_READY
+                else ActionExecutionStatus.UNOBSERVABLE
+            ),
+            last_observable_state=", ".join(
+                f"{key}:{value}" for key, value in sorted(states.items())
+            ) or "unobservable",
+        )
+        results: dict[str, RuntimeVerification] = {}
+        for expectation in expectations:
+            state = str(states.get(expectation.id) or "")
+            forwarding = bool(
+                authoritative
+                and state.startswith(("FWD", "FORW"))
+            )
+            results[expectation.id] = RuntimeVerification(
+                expectation_id=expectation.id,
+                status=(
+                    ActionExecutionStatus.VERIFIED
+                    if forwarding else ActionExecutionStatus.UNOBSERVABLE
+                ),
+                evidence_method="fresh_show_spanning_tree_voice_access",
+                fresh_evidence=authoritative,
+                fields={
+                    "voice_forwarding": (
+                        FieldVerificationStatus.VERIFIED
+                        if forwarding
+                        else FieldVerificationStatus.UNOBSERVABLE
+                    ),
+                },
+                message=(
+                    ""
+                    if forwarding
+                    else (
+                        "Voice access forwarding did not converge within the "
+                        f"bounded window; last state={state or 'unobservable'}."
+                    )
+                ),
+                convergence=report,
+            )
+        return results
 
     def read_dhcp_pool(
         self,

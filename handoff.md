@@ -310,11 +310,9 @@ RUN19_WORKSPACE_RESTORED = YES
 RUN19_REALTIME_RESTORED = YES
 DATA_ACCESS_PREPARATION_CAUSE = REFUTED
 VOICE_ROOT_CAUSE = CONFIRMED
-VOICE_ROOT_CAUSE_CONFIRMED = VOICE_SIGNAL_NOT_DEPENDENCY_ORDERED_AFTER_NETWORK_CONVERGENCE_AND_VOICE_BOOTSTRAP
 UNOBSERVED_INTERNAL_MECHANISM = PHONE_BOOT_DHCP_ATTEMPT_AND_RETRY_TIMING
 CORRECTION_IMPLEMENTED = YES
 CORRECTION_ARCHITECTURAL_LEVEL = DEPENDENCY_AND_CONVERGENCE
-CORRECTION_SUMMARY = DATA_ONLY_ACCESS_THEN_VERIFY_NETWORK_THEN_APPLY_VOICE_BOOTSTRAP_THEN_SIGNAL_VOICE
 RUN20_MODE = NO_FLAG_PRODUCTION_PIPELINE
 RUN20_EXPERIMENT_FLAGS = NONE
 RUN20_PRODUCTION_BARRIER_REQUIRED = YES
@@ -350,9 +348,25 @@ RUN21_PRODUCTION_QUESTION_TESTED = NO
 RUN22_MODE = NO_FLAG_PRODUCTION_CROSS_STAGE_NO_ENDPOINT_ARM
 RUN22_EXPERIMENT_FLAGS = NONE
 RUN22_ENDPOINT_DHCP_ARM = NOT_APPLICABLE
-RUN22_EXECUTED = NO
+RUN22_EXECUTED = YES
+RUN22_SOURCE_HEAD = b842dc1b7530aa9fceb45b4853bc28fdefa34786
+RUN22_RESULT = SAME_FAILURE_POST_SIGNAL_CONVERGENCE_MISSING
+RUN22_NETWORK_FOUNDATION_STATUS = VERIFIED
+RUN22_VOICE_SIGNAL_STATUS = VERIFIED
+RUN22_FINAL_IPV4 = EMPTY_FOR_BOTH
+RUN22_VOICE_BINDING_COUNT = 0
+RUN22_SCCP = NOT_REGISTERED_FOR_BOTH
+RUN22_SHA256 = fa6147a65c4645cb76da6ec3858539ce82b8ddc1aeef65ed273115b36399a26a
+RUN22_WORKSPACE_RESTORED = YES
+RUN22_REALTIME_RESTORED = YES
+POST_SIGNAL_ACCESS_CONVERGENCE_CAUSE = CONFIRMED
+VOICE_ROOT_CAUSE_CONFIRMED = REGISTRATION_STARTS_BEFORE_AUTHORITATIVE_PHONE_ACCESS_FORWARDING_AFTER_LATE_VOICE_SIGNAL
+CORRECTION_SUMMARY = DATA_ONLY_ACCESS -> NETWORK_VERIFIED -> VOICE_BOOTSTRAP_APPLIED -> VOICE_SIGNAL_VERIFIED -> PHONE_ACCESS_FWD -> REGISTRATION
+RUN23_MODE = NO_FLAG_PRODUCTION_COMPLETE_CONVERGENCE_PIPELINE
+RUN23_EXPERIMENT_FLAGS = NONE
+RUN23_EXECUTED = NO
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_RUN22_PRODUCTION_VERIFICATION
+NEXT_ACTIVE_STEP = EXECUTE_RUN23_FINAL_PRODUCTION_VERIFICATION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -760,11 +774,37 @@ SHA-256
 `357fda6e6eb5f0ede48f91d3960986fb1ff8a6acf00b3021ec096b22798f1e86`.
 Cleanup independently restored Realtime and zero semantic devices/links.
 
-Run 22 repeats the same no-flag cross-stage production path with the disposable
-arm marked NOT_APPLICABLE.  This is a harness correction, not another network
-change: no canonical production action is removed because none existed.  Run
-22 must produce two IPv4 values, two matching bindings and two SCCP
-registrations before the production fix is justified.
+Run 22 repeated the same no-flag cross-stage production path with the
+disposable arm marked NOT_APPLICABLE.  Network foundation and Voice signal
+both VERIFIED, but registration observation began immediately after the signal
+and both phones again ended DHCP YES / empty IPv4 / zero bindings /
+NOT_REGISTERED.
+
+This is decisive beside run 19.  Both have the same late signal after network
+convergence and Voice bootstrap.  Run 19 waits for both phone-facing ports to
+reach authoritative FWD before registration and succeeds; run 22 omits that
+gate and fails.  The root cause is therefore the registration episode starting
+before post-signal phone access convergence, not an upstream configuration
+value or DHCP activation.
+
+The run-22 archive is
+`positive-voice-ab-run22-production-post-signal-convergence-missing.json`,
+SHA-256
+`fa6147a65c4645cb76da6ec3858539ce82b8ddc1aeef65ed273115b36399a26a`.
+Cleanup independently restored Realtime and zero semantic devices/links.
+
+The production completion path now groups deferred phone access expectations
+by switch and voice VLAN and reuses the registered, pagination-qualified
+`SHOW_SPANNING_TREE` observer.  One bounded query per sample classifies every
+port; only a fresh, complete, uniquely attributed FWD row verifies
+`voice_forwarding`.  Missing rows, transient states, incomplete output and
+UNKNOWN remain non-authorizing.  `VoiceApplicator` starts registration only
+after both access configuration and this operational field verify.
+
+Run 23 is the final no-flag verification of the complete order:
+data-only access -> network VERIFIED -> Voice bootstrap APPLIED -> Voice signal
+VERIFIED -> phone access FWD -> registration.  It must produce two IPv4 values,
+two matching bindings and two SCCP registrations before the fix is justified.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 

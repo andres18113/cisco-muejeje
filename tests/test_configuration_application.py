@@ -61,6 +61,7 @@ class FakeConfigurationRuntime:
         self.verification_by_kind: dict[
             VerificationKind, ActionExecutionStatus
         ] = {}
+        self.voice_forwarding_status = ActionExecutionStatus.VERIFIED
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         return self.targets
@@ -98,6 +99,32 @@ class FakeConfigurationRuntime:
                 },
             )
             for expectation in expectations
+        ]
+
+    def wait_for_voice_access_forwarding(self, expectations):
+        self.events.append((
+            "voice_forwarding",
+            [item.id for item in expectations],
+        ))
+        return [
+            RuntimeVerification(
+                expectation_id=item.id,
+                status=self.voice_forwarding_status,
+                evidence_method="fake_voice_access_forwarding",
+                fresh_evidence=(
+                    self.voice_forwarding_status
+                    is ActionExecutionStatus.VERIFIED
+                ),
+                fields={
+                    "voice_forwarding": (
+                        FieldVerificationStatus.VERIFIED
+                        if self.voice_forwarding_status
+                        is ActionExecutionStatus.VERIFIED
+                        else FieldVerificationStatus.UNOBSERVABLE
+                    ),
+                },
+            )
+            for item in expectations
         ]
 
 
@@ -386,6 +413,48 @@ def test_voice_signal_can_be_held_pending_until_bootstrap_then_completed():
     assert (
         completed.voice_signal_barrier.signal_status
         is ActionExecutionStatus.VERIFIED
+    )
+    access = next(
+        item for item in completed.verification_results
+        if item.action_id == action.id
+    )
+    assert access.fields["voice_forwarding"] is (
+        FieldVerificationStatus.VERIFIED
+    )
+    signal_event = max(
+        index for index, (kind, ids) in enumerate(runtime.events)
+        if kind == "apply" and action.id in ids
+    )
+    forwarding_event = next(
+        index for index, (kind, _) in enumerate(runtime.events)
+        if kind == "voice_forwarding"
+    )
+    assert signal_event < forwarding_event
+
+
+def test_unobservable_phone_port_forwarding_keeps_registration_gate_closed():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    runtime.voice_forwarding_status = ActionExecutionStatus.UNOBSERVABLE
+    applicator = ConfigurationApplicator(runtime)
+
+    prepared = applicator.apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        defer_voice_signal_until_bootstrap=True,
+    )
+    completed = applicator.complete_deferred_voice_signals(plan, prepared)
+
+    assert (
+        completed.voice_signal_barrier.signal_status
+        is ActionExecutionStatus.UNOBSERVABLE
+    )
+    deferred = set(completed.voice_signal_barrier.deferred_action_ids)
+    assert all(
+        item.status is ActionExecutionStatus.PARTIAL
+        for item in completed.verification_results
+        if item.action_id in deferred
     )
 
 

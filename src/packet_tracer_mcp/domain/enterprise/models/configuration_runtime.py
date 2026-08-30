@@ -247,6 +247,9 @@ class VoiceSignalBarrierResult(BaseModel):
     signal_results: list[ActionApplicationResult] = Field(
         default_factory=list,
     )
+    post_signal_convergence_results: list[VerificationResult] = Field(
+        default_factory=list,
+    )
     foundation_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
     signal_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
     message: str = ""

@@ -755,6 +755,91 @@ def _configuration_runtime_with_ios(result: IosCommandResult):
     return runtime, ios
 
 
+def _voice_stp_output(state: str) -> str:
+    return "\n".join((
+        "SW#show spanning-tree",
+        "VLAN0020",
+        "  Spanning tree enabled protocol ieee",
+        "  Root ID    Priority    32788",
+        "             Address     0001.4392.0108",
+        "             Cost        4",
+        "             Port        25(GigabitEthernet0/1)",
+        "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+        "",
+        "  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)",
+        "             Address     0030.A3A1.89E8",
+        "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+        "             Aging Time  20",
+        "",
+        "Interface        Role Sts Cost      Prio.Nbr Type",
+        "---------------- ---- --- --------- -------- --------------------------------",
+        f"Fa0/1            Desg {state} 19        128.1    P2p",
+        "SW#",
+    ))
+
+
+class _SequenceIos:
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
+
+    def execute(self, device_name, query_id, **kwargs):
+        self.calls.append((device_name, query_id, kwargs))
+        if len(self.results) > 1:
+            return self.results.pop(0)
+        return self.results[0]
+
+
+def test_voice_access_forwarding_waits_on_one_registered_stp_query():
+    expectation = VerificationExpectation(
+        id="verify/voice-access",
+        action_id="access/voice",
+        kind=VerificationKind.ACCESS_PORT,
+        device_id="sw",
+        device_name="SW",
+        expected={
+            "interface": "FastEthernet0/1",
+            "vlan_id": 10,
+            "voice_vlan_id": 20,
+        },
+    )
+    ios = _SequenceIos([
+        IosCommandResult(
+            "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
+            output=_voice_stp_output("LIS"),
+            fresh_output_observed=True,
+            output_complete=True,
+            device_identity_provenance="confirmed_unique",
+        ),
+        IosCommandResult(
+            "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
+            output=_voice_stp_output("FWD"),
+            fresh_output_observed=True,
+            output_complete=True,
+            device_identity_provenance="confirmed_unique",
+        ),
+    ])
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=1.0,
+        convergence_interval_seconds=0.0,
+    )
+    runtime._ios = ios
+
+    result = runtime.wait_for_voice_access_forwarding([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.fields["voice_forwarding"] is (
+        FieldVerificationStatus.VERIFIED
+    )
+    assert len(ios.calls) == 2
+    assert {
+        query_id for _, query_id, _ in ios.calls
+    } == {OperationalQueryId.SHOW_SPANNING_TREE}
+
+
 def test_serial_clock_verifier_requires_fresh_exact_controller_state():
     output = (
         "R-A#show controllers Serial0/0/0\n"

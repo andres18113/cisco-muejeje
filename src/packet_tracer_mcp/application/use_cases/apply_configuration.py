@@ -28,6 +28,7 @@ from ...domain.enterprise.models.configuration_runtime import (
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
+    FieldVerificationStatus,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
     RuntimeVerification,
@@ -65,6 +66,10 @@ class ConfigurationRuntime(Protocol):
     ) -> list[RuntimeActionMutation]: ...
 
     def verify(
+        self, expectations: Sequence[VerificationExpectation],
+    ) -> list[RuntimeVerification]: ...
+
+    def wait_for_voice_access_forwarding(
         self, expectations: Sequence[VerificationExpectation],
     ) -> list[RuntimeVerification]: ...
 
@@ -495,10 +500,59 @@ class ConfigurationApplicator:
             })
             for item in expectations
         ]
-        verified_by_id = {
+        direct_by_id = {
             item.expectation_id: item
             for item in self._verify(plan, runtime_expectations)
         }
+        try:
+            wait_for_forwarding = getattr(
+                self._runtime, "wait_for_voice_access_forwarding",
+            )
+            forwarding_raw = {
+                item.expectation_id: item
+                for item in wait_for_forwarding(runtime_expectations)
+            }
+        except Exception as exc:
+            forwarding_raw = {
+                item.id: RuntimeVerification(
+                    expectation_id=item.id,
+                    status=ActionExecutionStatus.UNOBSERVABLE,
+                    message=(
+                        "Voice access forwarding could not be observed: "
+                        f"{exc}"
+                    ),
+                )
+                for item in runtime_expectations
+            }
+        forwarding_results: list[VerificationResult] = []
+        verified_by_id: dict[str, VerificationResult] = {}
+        for expectation in runtime_expectations:
+            observed = forwarding_raw.get(expectation.id)
+            if observed is None:
+                observed = RuntimeVerification(
+                    expectation_id=expectation.id,
+                    status=ActionExecutionStatus.UNOBSERVABLE,
+                    message=(
+                        "Runtime returned no Voice access forwarding result."
+                    ),
+                )
+            forwarding = VerificationResult(
+                expectation_id=expectation.id,
+                action_id=expectation.action_id,
+                status=observed.status,
+                evidence_method=observed.evidence_method,
+                fresh_evidence=observed.fresh_evidence,
+                fields=observed.fields,
+                message=observed.message,
+                convergence=observed.convergence,
+            )
+            forwarding_results.append(forwarding)
+            verified_by_id[expectation.id] = (
+                self._merge_voice_signal_verification(
+                    direct_by_id[expectation.id],
+                    forwarding,
+                )
+            )
         verification_by_id = {
             item.expectation_id: item
             for item in application.verification_results
@@ -515,6 +569,7 @@ class ConfigurationApplicator:
         )
         completed_barrier = barrier.model_copy(update={
             "signal_results": list(signal_by_id.values()),
+            "post_signal_convergence_results": forwarding_results,
             "signal_status": signal_status,
             "message": (
                 "Voice bootstrap completed; the original typed access actions "
@@ -599,6 +654,51 @@ class ConfigurationApplicator:
                 application.duration_ms
                 + int((monotonic() - started) * 1000)
             ),
+        })
+
+    @staticmethod
+    def _merge_voice_signal_verification(
+        direct: VerificationResult,
+        forwarding: VerificationResult,
+    ) -> VerificationResult:
+        forwarding_fields = dict(forwarding.fields)
+        forwarding_fields.setdefault(
+            "voice_forwarding",
+            (
+                FieldVerificationStatus.VERIFIED
+                if forwarding.status is ActionExecutionStatus.VERIFIED
+                else FieldVerificationStatus.FAILED
+                if forwarding.status is ActionExecutionStatus.FAILED
+                else FieldVerificationStatus.UNOBSERVABLE
+            ),
+        )
+        if (
+            direct.status is ActionExecutionStatus.FAILED
+            or forwarding.status is ActionExecutionStatus.FAILED
+        ):
+            status = ActionExecutionStatus.FAILED
+        elif (
+            direct.status is ActionExecutionStatus.VERIFIED
+            and forwarding.status is ActionExecutionStatus.VERIFIED
+        ):
+            status = ActionExecutionStatus.VERIFIED
+        else:
+            status = ActionExecutionStatus.PARTIAL
+        return direct.model_copy(update={
+            "status": status,
+            "evidence_method": "+".join(filter(None, (
+                direct.evidence_method,
+                forwarding.evidence_method,
+            ))),
+            "fresh_evidence": (
+                direct.fresh_evidence and forwarding.fresh_evidence
+            ),
+            "fields": {**direct.fields, **forwarding_fields},
+            "message": " ".join(filter(None, (
+                direct.message,
+                forwarding.message,
+            ))),
+            "convergence": forwarding.convergence,
         })
 
     def _verify_with_voice_signal_barrier(
