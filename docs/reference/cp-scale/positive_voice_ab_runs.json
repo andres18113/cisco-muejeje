@@ -169,6 +169,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "RUN16 edge-before-voice-VLAN governed LIVE. The bounded shared-foundation wait directly observed the authoritative uplink forwarding set transition from empty to [930,931] and reached VERIFIED at sample 13 / 31360 ms before any edge dispatch or voice signalling. P2 alone accepted typed PortFast=true, bpduguard=false, but runtime edge state was UNOBSERVABLE and both ports had the same LIS -> UNOBSERVABLE(COMPLETENESS) -> LIS -> LRN -> FORWARDING sequence with the same 30782 ms time to FWD. Both phones then acquired matching leases (P1 10.93.0.11, P2 10.93.0.10) and registered SCCP, so the result is SHARED_PREPARED_FOUNDATION_ACQUISITION and credits upstream preparation, not PortFast. Discover/DORA and transaction progress remain unobservable. Realtime and the empty semantic workspace were independently restored; one allowed backend-managed PDD remained and no rerun occurred."
+    },
+    {
+      "run": "run17",
+      "filename": "positive-voice-ab-run17-trunk-forwarding-no-effect.json",
+      "sha256": "c8c627e34739981545061bd97bdf429337e12593631a784a2176d54bc4a55e1f",
+      "source_head": "4fe86259d34f53e87c0b12599883c291ef294973",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "RUN17_TRUNK_FORWARDING_ORDER_CAUSAL_INTERVENTION",
+      "outcome": "SUCCESS",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "P1 received VLAN930 between two authoritative reads showing the same trunk allowed/active but forwarding empty; P2 received VLAN930 only after that trunk transitioned to forwarding. Both later reached authoritative phone-port FWD, acquired matching leases, and registered SCCP. Trunk-forwarding readiness at the signal boundary had NO EFFECT; no Discover/DORA claim is made. Cleanup independently restored Realtime and zero semantic devices/links."
     }
   ]
 }
