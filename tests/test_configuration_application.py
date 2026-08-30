@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 
 from src.packet_tracer_mcp.application.use_cases.apply_configuration import (
     ConfigurationApplicator,
@@ -13,6 +14,8 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
+    ConfigureAccessPort,
+    VerificationKind,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -51,14 +54,21 @@ class FakeConfigurationRuntime:
         ]
         self.apply_calls: list[list[str]] = []
         self.verify_calls: list[list[str]] = []
+        self.action_batches: list[list] = []
+        self.events: list[tuple[str, list[str]]] = []
         self.fail_action_types: set[ConfigurationActionType] = set()
         self.verification_status = ActionExecutionStatus.VERIFIED
+        self.verification_by_kind: dict[
+            VerificationKind, ActionExecutionStatus
+        ] = {}
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         return self.targets
 
     def apply_actions(self, actions):
+        self.action_batches.append(list(actions))
         self.apply_calls.append([action.id for action in actions])
+        self.events.append(("apply", self.apply_calls[-1]))
         return [
             RuntimeActionMutation(
                 action_id=action.id,
@@ -73,10 +83,13 @@ class FakeConfigurationRuntime:
 
     def verify(self, expectations):
         self.verify_calls.append([expectation.id for expectation in expectations])
+        self.events.append(("verify", self.verify_calls[-1]))
         return [
             RuntimeVerification(
                 expectation_id=expectation.id,
-                status=self.verification_status,
+                status=self.verification_by_kind.get(
+                    expectation.kind, self.verification_status,
+                ),
                 evidence_method="fake_readback",
                 fresh_evidence=True,
                 fields={
@@ -199,9 +212,169 @@ def test_actions_are_submitted_by_phase_and_not_one_bridge_call_per_line():
     )
 
     assert result.status is ConfigurationApplicationStatus.VERIFIED
-    assert len(runtime.apply_calls) == len({action.phase for action in plan.actions})
+    assert len(runtime.apply_calls) == (
+        len({action.phase for action in plan.actions}) + 1
+    )
     assert any(len(call) > 1 for call in runtime.apply_calls)
     assert all(item.status is ActionExecutionStatus.APPLIED for item in result.action_results)
+
+
+def _phone_voice_action(plan):
+    return next(
+        action for action in plan.actions
+        if isinstance(action, ConfigureAccessPort)
+        and action.voice_vlan_id is not None
+    )
+
+
+def test_voice_vlan_signal_waits_for_network_foundation_verification():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    action = _phone_voice_action(plan)
+
+    result = ConfigurationApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+    )
+
+    dispatched = [
+        item
+        for batch in runtime.action_batches
+        for item in batch
+        if item.id == action.id
+    ]
+    assert [item.voice_vlan_id for item in dispatched] == [
+        None, action.voice_vlan_id,
+    ]
+    preparation = next(
+        index for index, (kind, ids) in enumerate(runtime.events)
+        if kind == "apply" and action.id in ids
+    )
+    foundation = next(
+        index for index, (kind, ids) in enumerate(runtime.events)
+        if kind == "verify" and any(
+            expectation.id in ids
+            and expectation.kind in {
+                VerificationKind.VLAN,
+                VerificationKind.TRUNK,
+                VerificationKind.L3_INTERFACE,
+                VerificationKind.DHCP_POOL,
+            }
+            for expectation in plan.verification_expectations
+        )
+    )
+    signal = max(
+        index for index, (kind, ids) in enumerate(runtime.events)
+        if kind == "apply" and action.id in ids
+    )
+    assert preparation < foundation < signal
+    assert result.voice_signal_barrier is not None
+    assert (
+        result.voice_signal_barrier.foundation_status
+        is ActionExecutionStatus.VERIFIED
+    )
+    assert (
+        result.voice_signal_barrier.signal_status
+        is ActionExecutionStatus.VERIFIED
+    )
+
+
+def test_failed_trunk_foundation_blocks_voice_signal():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    runtime.verification_by_kind[VerificationKind.TRUNK] = (
+        ActionExecutionStatus.FAILED
+    )
+    action = _phone_voice_action(plan)
+
+    result = ConfigurationApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+    )
+
+    dispatched = [
+        item
+        for batch in runtime.action_batches
+        for item in batch
+        if item.id == action.id
+    ]
+    assert [item.voice_vlan_id for item in dispatched] == [None]
+    assert (
+        result.voice_signal_barrier.foundation_status
+        is ActionExecutionStatus.FAILED
+    )
+    assert (
+        result.voice_signal_barrier.signal_status
+        is ActionExecutionStatus.DEPENDENCY_BLOCKED
+    )
+    by_id = {item.action_id: item for item in result.action_results}
+    assert by_id[action.id].status is ActionExecutionStatus.PARTIAL
+    assert "data-only access preparation was applied" in by_id[action.id].message
+
+
+def test_unobservable_dhcp_pool_ceiling_does_not_make_signal_impossible():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    runtime.verification_by_kind[VerificationKind.DHCP_POOL] = (
+        ActionExecutionStatus.UNOBSERVABLE
+    )
+    action = _phone_voice_action(plan)
+
+    result = ConfigurationApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+    )
+
+    dispatched = [
+        item
+        for batch in runtime.action_batches
+        for item in batch
+        if item.id == action.id
+    ]
+    assert [item.voice_vlan_id for item in dispatched] == [
+        None, action.voice_vlan_id,
+    ]
+    assert (
+        result.voice_signal_barrier.foundation_status
+        is ActionExecutionStatus.VERIFIED
+    )
+
+
+def test_hard_foundation_failure_outranks_an_earlier_unobservable_read():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    runtime.verification_by_kind[VerificationKind.VLAN] = (
+        ActionExecutionStatus.UNOBSERVABLE
+    )
+    runtime.verification_by_kind[VerificationKind.TRUNK] = (
+        ActionExecutionStatus.FAILED
+    )
+
+    result = ConfigurationApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+    )
+
+    assert (
+        result.voice_signal_barrier.foundation_status
+        is ActionExecutionStatus.FAILED
+    )
+    assert result.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+
+
+def test_no_flag_disposable_live_uses_the_production_configuration_applicator():
+    source = Path("tools/cp_scale_positive_voice_ab_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "production_pipeline=not experiment_mode" in source
+    assert "actions = order_configuration_actions(actions)" in source
+    assert '"production_pipeline"' in source
+    assert '"production_configuration_application"' in source
 
 
 def test_application_result_records_generic_runtime_reproducibility_context():
@@ -316,8 +489,21 @@ def test_applied_is_not_promoted_to_verified_when_readback_is_partial():
     )
 
     assert result.status is ConfigurationApplicationStatus.PARTIAL
-    assert all(item.status is ActionExecutionStatus.APPLIED for item in result.action_results)
-    assert all(item.status is ActionExecutionStatus.PARTIAL for item in result.verification_results)
+    voice = _phone_voice_action(plan)
+    assert next(
+        item.status for item in result.action_results
+        if item.action_id == voice.id
+    ) is ActionExecutionStatus.PARTIAL
+    assert all(
+        item.status is ActionExecutionStatus.APPLIED
+        for item in result.action_results
+        if item.action_id != voice.id
+    )
+    assert result.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+    assert (
+        result.voice_signal_barrier.foundation_status
+        is ActionExecutionStatus.PARTIAL
+    )
 
 
 def test_fully_unobservable_readback_is_an_observability_limit_not_a_failure():
@@ -334,7 +520,10 @@ def test_fully_unobservable_readback_is_an_observability_limit_not_a_failure():
     assert result.status is ConfigurationApplicationStatus.PARTIAL
     assert result.failure_code is ConfigurationFailureCode.OBSERVABILITY_LIMITATION
     assert all(
-        item.status is ActionExecutionStatus.UNOBSERVABLE
+        item.status in {
+            ActionExecutionStatus.UNOBSERVABLE,
+            ActionExecutionStatus.DEPENDENCY_BLOCKED,
+        }
         for item in result.verification_results
     )
 

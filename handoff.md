@@ -295,11 +295,32 @@ RUN19_VOICE_SIGNAL_BOUNDARY = ONE_SHARED_DATA_AND_VOICE_BATCH
 RUN19_FOUNDATION_GATE = SHARED_FOUNDATION_VERIFIED
 RUN19_NONVARIABLES = PHONE_AGE_SIGNAL_TIME_TOPOLOGY_L2_L3_DHCP_BOOTSTRAP_TRUNK_PORTFAST
 RUN19_ROLE_SWAP_PREPARED = YES
-RUN19_EXECUTED = NO
-VOICE_ROOT_CAUSE = STRONG_CANDIDATE
-VOICE_ROOT_CAUSE_LEADING_CANDIDATE = EARLY_VOICE_SIGNAL_OR_DATA_ACCESS_PREPARATION
+RUN19_EXECUTED = YES
+RUN19_SOURCE_HEAD = 8fdc6ed038d87a8ee1b25408f5e62ec6af2ab63d
+RUN19_RESULT = DATA_ACCESS_PREPARATION_NO_EFFECT
+RUN19_FOUNDATION_WAIT_SAMPLES = 13
+RUN19_FOUNDATION_WAIT_MS = 31000
+RUN19_CONTROL_FINAL_IPV4 = 10.93.0.11
+RUN19_INTERVENTION_FINAL_IPV4 = 10.93.0.10
+RUN19_VOICE_BINDING_COUNT = 2
+RUN19_CONTROL_SCCP = REGISTERED
+RUN19_INTERVENTION_SCCP = REGISTERED
+RUN19_SHA256 = 49f828acd544b3e82adb4d938629e791feec024d6dd6f6fa239c24c4ac14fcba
+RUN19_WORKSPACE_RESTORED = YES
+RUN19_REALTIME_RESTORED = YES
+DATA_ACCESS_PREPARATION_CAUSE = REFUTED
+VOICE_ROOT_CAUSE = CONFIRMED
+VOICE_ROOT_CAUSE_CONFIRMED = VOICE_SIGNAL_AND_ACQUISITION_WINDOW_NOT_DEPENDENCY_ORDERED_AFTER_FOUNDATION_CONVERGENCE
+UNOBSERVED_INTERNAL_MECHANISM = PHONE_BOOT_DHCP_ATTEMPT_AND_RETRY_TIMING
+CORRECTION_IMPLEMENTED = YES
+CORRECTION_ARCHITECTURAL_LEVEL = DEPENDENCY_AND_CONVERGENCE
+CORRECTION_SUMMARY = DATA_ONLY_ACCESS_THEN_VERIFY_NETWORK_FOUNDATION_THEN_SIGNAL_VOICE
+RUN20_MODE = NO_FLAG_PRODUCTION_PIPELINE
+RUN20_EXPERIMENT_FLAGS = NONE
+RUN20_PRODUCTION_BARRIER_REQUIRED = YES
+RUN20_EXECUTED = NO
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_RUN19_ACCESS_PREPARATION_CAUSAL_CONTRAST
+NEXT_ACTIVE_STEP = EXECUTE_RUN20_PRODUCTION_PIPELINE_VERIFICATION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -626,7 +647,61 @@ Control failure plus intervention IPv4/matching binding/SCCP confirms the
 two-stage access lifecycle.  Both success refutes it and leaves the late
 signalling boundary itself as the differentiator.  Both failure means the
 prepared access port is not sufficient under one shared boundary.  Role
-reversal is prepared only for a positive split.  No run 19 LIVE has occurred.
+reversal is prepared only for a positive split.
+
+### Run 19: access preparation has no effect; the late boundary succeeds
+
+One governed LIVE ran from clean pushed `8fdc6ed` on PT 9.0.1.0858.  Before
+the signal, P1 independently contradicted data VLAN931 while P2 independently
+verified it.  The shared foundation wait directly observed trunk forwarding
+move from empty to `[930, 931]` and reached full VERIFIED after 13 samples /
+31,000 ms.  One identical data931+voice930 batch then reached both ports.
+
+Both arms succeeded.  The cold P1 port and prepared P2 port reached
+authoritative FWD, acquired `10.93.0.11` and `10.93.0.10`, matched the two
+authoritative bindings and registered SCCP.  Prior data-only access
+preparation therefore has no causal effect.  The role swap is unnecessary for
+a null result.
+
+The archive is
+`positive-voice-ab-run19-access-preparation-no-effect.json`, SHA-256
+`49f828acd544b3e82adb4d938629e791feec024d6dd6f6fa239c24c4ac14fcba`.
+Independent cleanup restored Realtime and observed zero semantic devices and
+zero links, with one allowed backend-managed Power Distribution Device.
+
+Taken together, the modern differential is now causal at the architectural
+boundary:
+
+* normal/default and run 18 signal Voice before a complete foundation
+  convergence boundary and reproduce DHCP YES / no IPv4 / zero binding /
+  NOT_REGISTERED;
+* run 16 and run 19 signal only after the complete typed foundation is
+  VERIFIED and produce IPv4 / matching bindings / REGISTERED;
+* run 17 refutes trunk-forwarding state AT signal as the single cause;
+* run 18 refutes bootstrap readiness AT signal as sufficient;
+* run 19 refutes prior data-only access preparation.
+
+The root cause is therefore the missing dependency/convergence contract:
+phone-facing Voice signalling and the acquisition observation window are not
+ordered after the network foundation has converged.  The exact internal phone
+boot, Discover and retry schedule remains unobserved and is not part of that
+claim.
+
+The generic correction lives in `ConfigurationApplicator`.  A phone-facing
+`ConfigureAccessPort` is first dispatched with `voice_vlan_id=None`; all
+non-Voice expectations are read; VLAN, trunk and L3 must be VERIFIED, while
+the measured DHCP-pool UNOBSERVABLE ceiling remains the only admitted
+exception.  Only then is the original typed access action dispatched and its
+Voice field independently verified.  The result retains a typed
+`VoiceSignalBarrierResult`; UNKNOWN or a failed foundation leaves the signal
+dependency-blocked.  There is no sleep, retry, toggle, raw IOS, raw JavaScript
+or CP-SCALE name in the correction.
+
+Run 20 is the independent verification.  The disposable runner's no-flag path
+uses the production `ConfigurationApplicator`; every experiment flag is
+absent.  It must show the barrier required and VERIFIED, then two phone IPv4
+values, two matching bindings and two SCCP registrations before the production
+fix is justified.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 

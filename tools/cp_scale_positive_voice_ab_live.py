@@ -20,6 +20,9 @@ if str(GOVERNED_ROOT / "src") not in sys.path:
 
 import packet_tracer_mcp  # noqa: E402
 
+from packet_tracer_mcp.application.use_cases.apply_configuration import (  # noqa: E402
+    ConfigurationApplicator,
+)
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (  # noqa: E402
     read_git_repository_state,
 )
@@ -37,8 +40,27 @@ from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import
     StpReadObservation,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (  # noqa: E402
+    ConfigurationPlan,
+    DeviceConfigurationPlan,
     VerificationExpectation,
     VerificationKind,
+)
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (  # noqa: E402
+    CapabilityStatus,
+    DeviceCapabilities,
+)
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (  # noqa: E402
+    RuntimeActionMutation,
+)
+from packet_tracer_mcp.domain.enterprise.models.execution import (  # noqa: E402
+    satisfies_apply_dependency,
+)
+from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (  # noqa: E402
+    ConfigurationCompiler,
+    configuration_plan_semantic_hash,
+)
+from packet_tracer_mcp.domain.enterprise.services.configuration_dependencies import (  # noqa: E402
+    order_configuration_actions,
 )
 from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (  # noqa: E402
     physical_workspace_restoration_matches,
@@ -240,14 +262,90 @@ def _field_to_vlan(status_name: str, expected: int):
 class _ConfigurationAdapter:
     """Applies typed configuration and reads back through production paths."""
 
-    def __init__(self, enterprise, ios):
+    def __init__(self, enterprise, ios, *, production_pipeline: bool = False):
         self._enterprise = enterprise
         self._ios = ios
+        self._production_pipeline = production_pipeline
+        self.production_application = None
         #: Kept ONLY for the boundary case below, never for the happy path.
         self.pool_boundary_captures: list = []
 
     def apply_actions(self, actions):
+        if self._production_pipeline:
+            if self.production_application is not None:
+                raise RuntimeError(
+                    "The production configuration plan is applied exactly once."
+                )
+            return self._apply_production_plan(list(actions))
         return self._enterprise.apply_actions(actions)
+
+    def _apply_production_plan(self, actions):
+        source_hash = "voiceab-production-pipeline-topology"
+        actions = order_configuration_actions(actions)
+        model_by_device = {
+            "voiceab/r": ROUTER_MODEL,
+            "voiceab/sw": SWITCH_MODEL,
+        }
+        names = {
+            action.device_id: action.device_name for action in actions
+        }
+        devices = [
+            DeviceConfigurationPlan(
+                device_id=device_id,
+                device_name=names[device_id],
+                model=model_by_device[device_id],
+                site_id="voiceab",
+                action_ids=[
+                    item.id for item in actions
+                    if item.device_id == device_id
+                ],
+            )
+            for device_id in sorted(names)
+        ]
+        plan = ConfigurationPlan(
+            id="voiceab/production/configuration",
+            source_topology_id="voiceab/production/topology",
+            source_topology_hash=source_hash,
+            actions=actions,
+            devices=devices,
+            verification_expectations=ConfigurationCompiler._expectations(
+                actions
+            ),
+        )
+        plan.semantic_hash = configuration_plan_semantic_hash(plan)
+        capabilities = {
+            ROUTER_MODEL: DeviceCapabilities(
+                model=ROUTER_MODEL,
+                category="router",
+                layer3=CapabilityStatus.SUPPORTED,
+                supports_dhcp_server=CapabilityStatus.SUPPORTED,
+            ),
+            SWITCH_MODEL: DeviceCapabilities(
+                model=SWITCH_MODEL,
+                category="switch",
+                supports_vlan=CapabilityStatus.SUPPORTED,
+                supports_trunk=CapabilityStatus.SUPPORTED,
+            ),
+        }
+        self.production_application = ConfigurationApplicator(
+            self._enterprise
+        ).apply(
+            plan,
+            actual_source_topology_hash=source_hash,
+            capabilities=capabilities,
+        )
+        return [
+            RuntimeActionMutation(
+                action_id=item.action_id,
+                applied=satisfies_apply_dependency(item.status),
+                failure_code=item.failure_code,
+                message=item.message,
+                batch_id=item.batch_id,
+                operation=item.operation,
+                disposition=item.disposition,
+            )
+            for item in self.production_application.action_results
+        ]
 
     def read_access_port(
         self, device_name: str, interface: str, expected_access_vlan: int,
@@ -905,7 +1003,22 @@ def run(
                 transport.send_and_wait,
             )
         ) if (edge_portfast or edge_before_voice_vlan) else None
-        configuration_adapter = _ConfigurationAdapter(enterprise, ios)
+        experiment_mode = any((
+            edge_portfast,
+            paired_access_vlan,
+            paired_access_vlan_fwd_gated,
+            phone_dhcp_lifecycle,
+            phone_svi_dhcp_retrigger,
+            edge_before_voice_vlan,
+            trunk_before_voice_vlan,
+            bootstrap_before_voice_vlan,
+            access_preparation_before_voice_vlan,
+        ))
+        configuration_adapter = _ConfigurationAdapter(
+            enterprise,
+            ios,
+            production_pipeline=not experiment_mode,
+        )
         voice_runtime = PacketTracerEnterpriseVoiceRuntime(
             lambda: _inventory(physical),
             transport.send,
@@ -996,6 +1109,11 @@ def run(
         transport.stop()
 
     evidence = _serialize(result)
+    evidence["production_pipeline"] = not experiment_mode
+    evidence["production_configuration_application"] = (
+        configuration_adapter.production_application.model_dump(mode="json")
+        if configuration_adapter.production_application is not None else None
+    )
     evidence["packet_tracer_version"] = packet_tracer_version
     evidence["live_source_head"] = repository.head
     evidence["live_preflight"] = preflight
@@ -1036,6 +1154,10 @@ def run(
         "live_preflight": evidence["live_preflight"],
         "outcome": evidence["outcome"],
         "experiment": evidence["experiment"],
+        "production_pipeline": evidence["production_pipeline"],
+        "production_configuration_application": (
+            evidence["production_configuration_application"]
+        ),
         "causal_experiment_result": evidence["causal_experiment_result"],
         "acquisition_started": evidence["acquisition_started"],
         "acquisition_boundary": evidence["acquisition_boundary"],

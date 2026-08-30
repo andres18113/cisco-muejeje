@@ -18,6 +18,7 @@ from ...domain.enterprise.models.configuration import (
     SetEndpointDhcp,
     SetEndpointStaticAddress,
     VerificationExpectation,
+    VerificationKind,
 )
 from ...domain.enterprise.models.configuration_runtime import (
     mutation_execution_status,
@@ -31,6 +32,7 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
     RuntimeVerification,
     VerificationResult,
+    VoiceSignalBarrierResult,
 )
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
@@ -72,6 +74,13 @@ class ConfigurationApplicator:
 
     def __init__(self, runtime: ConfigurationRuntime) -> None:
         self._runtime = runtime
+
+    _VOICE_FOUNDATION_KINDS = frozenset({
+        VerificationKind.VLAN,
+        VerificationKind.TRUNK,
+        VerificationKind.L3_INTERFACE,
+        VerificationKind.DHCP_POOL,
+    })
 
     def apply(
         self,
@@ -270,6 +279,15 @@ class ConfigurationApplicator:
                 started=started,
             )
 
+        deferred_voice_actions = {
+            action.id: action
+            for action in plan.actions
+            if (
+                isinstance(action, ConfigureAccessPort)
+                and action.voice_vlan_id is not None
+            )
+        }
+        deferred_voice_ids = frozenset(deferred_voice_actions)
         results: dict[str, ActionApplicationResult] = {}
         self._capability_refusal_results(refusals, results)
 
@@ -294,91 +312,34 @@ class ConfigurationApplicator:
                 ready.append(action)
             if not ready:
                 continue
-            try:
-                runtime_ready = [
-                    item.model_copy(update={
-                        "device_name": deployed_names.get(item.device_id, item.device_name),
-                    })
-                    for item in ready
-                ]
-                mutations = {
-                    item.action_id: item for item in self._runtime.apply_actions(runtime_ready)
-                }
-            except Exception as exc:
-                mutations = {
-                    action.id: RuntimeActionMutation(
-                        action_id=action.id, applied=False,
-                        failure_code=ConfigurationFailureCode.SESSION_FAILED,
-                        message=str(exc),
-                    )
-                    for action in ready
-                }
-            for action in ready:
-                mutation = mutations.get(action.id)
-                if mutation is None:
-                    results[action.id] = ActionApplicationResult(
-                        action_id=action.id,
-                        status=ActionExecutionStatus.FAILED,
-                        failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
-                        message="Runtime returned no mutation result.",
-                    )
-                else:
-                    disposition = mutation.disposition
-                    status = self._mutation_status(mutation)
-                    results[action.id] = ActionApplicationResult(
-                        action_id=action.id,
-                        status=status,
-                        failure_code=(
-                            ConfigurationFailureCode.NONE
-                            if mutation.applied else mutation.failure_code
-                            if mutation.failure_code is not ConfigurationFailureCode.NONE
-                            else ConfigurationFailureCode.APPLICATION_FAILED
-                        ),
-                        message=mutation.message,
-                        batch_id=mutation.batch_id,
-                        operation=action.operation,
-                        disposition=disposition,
-                    )
+            results.update(self._apply_ready_actions(
+                ready,
+                deployed_names,
+                data_only_action_ids=deferred_voice_ids,
+            ))
 
-        action_results = [results[action.id] for action in plan.actions]
-        action_statuses = {item.action_id: item.status for item in action_results}
-        ready_expectations: list[VerificationExpectation] = []
-        blocked_verification: dict[str, VerificationResult] = {}
-        for item in plan.verification_expectations:
-            prerequisites = (
-                item.verification_prerequisites
-                or legacy_action_prerequisites([item.action_id])
-            )
-            satisfied, blocked = prerequisites_satisfied(
-                prerequisites,
-                action_statuses=action_statuses,
-                verification_statuses={},
-                resource_statuses={},
-            )
-            if satisfied:
-                ready_expectations.append(item)
-            else:
-                blocked_verification[item.id] = VerificationResult(
-                    expectation_id=item.id,
-                    action_id=item.action_id,
-                    status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
-                    message="Blocked by: " + ", ".join(blocked),
-                )
-        runtime_expectations = [
-            item.model_copy(update={
-                "device_name": deployed_names.get(item.device_id, item.device_name),
-            })
-            for item in ready_expectations
-        ]
-        observed_verification = {
-            item.expectation_id: item
-            for item in self._verify(plan, runtime_expectations)
-        }
-        verification_results = [
-            blocked_verification.get(item.id) or observed_verification[item.id]
-            for item in plan.verification_expectations
-        ]
+        (
+            action_results,
+            verification_results,
+            voice_signal_barrier,
+        ) = self._verify_with_voice_signal_barrier(
+            plan,
+            results,
+            deferred_voice_actions,
+            deployed_names,
+        )
         status, failure_code = self._overall_status(action_results, verification_results)
+        if (
+            voice_signal_barrier is not None
+            and voice_signal_barrier.signal_status
+            is ActionExecutionStatus.DEPENDENCY_BLOCKED
+        ):
+            failure_code = (
+                ConfigurationFailureCode.OBSERVABILITY_LIMITATION
+                if voice_signal_barrier.foundation_status
+                is ActionExecutionStatus.UNOBSERVABLE
+                else ConfigurationFailureCode.VERIFICATION_FAILED
+            )
         deployment_id = deployment_manifest.deployment_id if deployment_manifest else ""
         journal = journal_from_action_results(
             plan_id=plan.id,
@@ -421,8 +382,322 @@ class ConfigurationApplicator:
             execution_journal=journal,
             dirty_state=journal.dirty_state,
             evidence_records=evidence_records,
+            voice_signal_barrier=voice_signal_barrier,
             duration_ms=int((monotonic() - started) * 1000),
         )
+
+    def _verify_with_voice_signal_barrier(
+        self,
+        plan: ConfigurationPlan,
+        results: dict[str, ActionApplicationResult],
+        deferred_voice_actions: dict[str, ConfigureAccessPort],
+        deployed_names: dict[str, str],
+    ) -> tuple[
+        list[ActionApplicationResult],
+        list[VerificationResult],
+        VoiceSignalBarrierResult | None,
+    ]:
+        deferred_ids = frozenset(deferred_voice_actions)
+
+        def verify_subset(
+            expectations: list[VerificationExpectation],
+            action_statuses: dict[str, ActionExecutionStatus],
+        ) -> dict[str, VerificationResult]:
+            ready: list[VerificationExpectation] = []
+            settled: dict[str, VerificationResult] = {}
+            for item in expectations:
+                prerequisites = (
+                    item.verification_prerequisites
+                    or legacy_action_prerequisites([item.action_id])
+                )
+                satisfied, blocked = prerequisites_satisfied(
+                    prerequisites,
+                    action_statuses=action_statuses,
+                    verification_statuses={},
+                    resource_statuses={},
+                )
+                if satisfied:
+                    ready.append(item)
+                    continue
+                settled[item.id] = VerificationResult(
+                    expectation_id=item.id,
+                    action_id=item.action_id,
+                    status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                    message="Blocked by: " + ", ".join(blocked),
+                )
+            runtime_expectations = [
+                item.model_copy(update={
+                    "device_name": deployed_names.get(
+                        item.device_id, item.device_name,
+                    ),
+                })
+                for item in ready
+            ]
+            settled.update({
+                item.expectation_id: item
+                for item in self._verify(plan, runtime_expectations)
+            })
+            return settled
+
+        initial_action_results = [
+            results[action.id] for action in plan.actions
+        ]
+        initial_statuses = {
+            item.action_id: item.status for item in initial_action_results
+        }
+        if not deferred_ids:
+            observed = verify_subset(
+                list(plan.verification_expectations),
+                initial_statuses,
+            )
+            return (
+                initial_action_results,
+                [observed[item.id] for item in plan.verification_expectations],
+                None,
+            )
+
+        preparation_results = [
+            results[action.id] for action in plan.actions
+            if action.id in deferred_ids
+        ]
+        pre_signal_expectations = [
+            item for item in plan.verification_expectations
+            if item.action_id not in deferred_ids
+        ]
+        pre_signal_results = verify_subset(
+            pre_signal_expectations,
+            initial_statuses,
+        )
+        foundation_expectations = [
+            item for item in pre_signal_expectations
+            if item.kind in self._VOICE_FOUNDATION_KINDS
+        ]
+        foundation_results = [
+            pre_signal_results[item.id] for item in foundation_expectations
+        ]
+        foundation_status = self._voice_signal_foundation_status(
+            preparation_results,
+            foundation_expectations,
+            foundation_results,
+            list(pre_signal_results.values()),
+        )
+
+        if foundation_status is ActionExecutionStatus.VERIFIED:
+            signal_results = self._apply_ready_actions(
+                list(deferred_voice_actions.values()),
+                deployed_names,
+            )
+        else:
+            preparation_by_id = {
+                item.action_id: item for item in preparation_results
+            }
+            signal_results = {
+                action_id: (
+                    ActionApplicationResult(
+                        action_id=action_id,
+                        status=ActionExecutionStatus.PARTIAL,
+                        failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                        message=(
+                            "The data-only access preparation was applied, but "
+                            "Voice VLAN signalling requires VERIFIED VLAN, trunk "
+                            "and L3 foundations; DHCP-pool UNOBSERVABLE is the "
+                            "only admitted measured ceiling."
+                        ),
+                    )
+                    if satisfies_apply_dependency(
+                        preparation_by_id[action_id].status
+                    )
+                    else preparation_by_id[action_id]
+                )
+                for action_id in deferred_voice_actions
+            }
+        results.update(signal_results)
+
+        final_action_results = [
+            results[action.id] for action in plan.actions
+        ]
+        final_statuses = {
+            item.action_id: item.status for item in final_action_results
+        }
+        post_signal_expectations = [
+            item for item in plan.verification_expectations
+            if item.action_id in deferred_ids
+        ]
+        post_signal_results = verify_subset(
+            post_signal_expectations,
+            final_statuses,
+        )
+        observed = {**pre_signal_results, **post_signal_results}
+        verification_results = [
+            observed[item.id] for item in plan.verification_expectations
+        ]
+        signal_status = self._voice_signal_status(
+            list(signal_results.values()),
+            list(post_signal_results.values()),
+            foundation_status,
+        )
+        barrier = VoiceSignalBarrierResult(
+            required=True,
+            deferred_action_ids=sorted(deferred_ids),
+            foundation_expectation_ids=[
+                item.id for item in foundation_expectations
+            ],
+            preparation_results=preparation_results,
+            foundation_verification_results=foundation_results,
+            signal_results=list(signal_results.values()),
+            foundation_status=foundation_status,
+            signal_status=signal_status,
+            message=(
+                "Phone access ports were prepared without a Voice VLAN; the "
+                "original typed actions were dispatched only after the "
+                "network foundation verification barrier."
+                if signal_status is ActionExecutionStatus.VERIFIED
+                else "Voice VLAN signalling did not cross its verification barrier."
+            ),
+        )
+        return final_action_results, verification_results, barrier
+
+    @classmethod
+    def _voice_signal_foundation_status(
+        cls,
+        preparation: list[ActionApplicationResult],
+        expectations: list[VerificationExpectation],
+        foundation: list[VerificationResult],
+        all_pre_signal: list[VerificationResult],
+    ) -> ActionExecutionStatus:
+        if not preparation or any(
+            not satisfies_apply_dependency(item.status)
+            for item in preparation
+        ):
+            return ActionExecutionStatus.FAILED
+        if not expectations or len(expectations) != len(foundation):
+            return ActionExecutionStatus.UNOBSERVABLE
+        by_id = {item.expectation_id: item for item in foundation}
+        unresolved: list[ActionExecutionStatus] = []
+        for expectation in expectations:
+            status = by_id[expectation.id].status
+            if (
+                expectation.kind is VerificationKind.DHCP_POOL
+                and status in {
+                    ActionExecutionStatus.VERIFIED,
+                    ActionExecutionStatus.UNOBSERVABLE,
+                }
+            ):
+                continue
+            if status is not ActionExecutionStatus.VERIFIED:
+                unresolved.append(status)
+        if any(
+            item.status in {
+                ActionExecutionStatus.FAILED,
+                ActionExecutionStatus.UNKNOWN,
+                ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                ActionExecutionStatus.SKIPPED,
+            }
+            for item in all_pre_signal
+        ):
+            return ActionExecutionStatus.FAILED
+        if ActionExecutionStatus.FAILED in unresolved:
+            return ActionExecutionStatus.FAILED
+        for status in (
+            ActionExecutionStatus.DEPENDENCY_BLOCKED,
+            ActionExecutionStatus.UNKNOWN,
+            ActionExecutionStatus.SKIPPED,
+            ActionExecutionStatus.UNOBSERVABLE,
+            ActionExecutionStatus.PARTIAL,
+        ):
+            if status in unresolved:
+                return status
+        if unresolved:
+            return ActionExecutionStatus.UNKNOWN
+        return ActionExecutionStatus.VERIFIED
+
+    @staticmethod
+    def _voice_signal_status(
+        signal_results: list[ActionApplicationResult],
+        verification_results: list[VerificationResult],
+        foundation_status: ActionExecutionStatus,
+    ) -> ActionExecutionStatus:
+        if foundation_status is not ActionExecutionStatus.VERIFIED:
+            return ActionExecutionStatus.DEPENDENCY_BLOCKED
+        if not signal_results or any(
+            not satisfies_apply_dependency(item.status)
+            for item in signal_results
+        ):
+            return ActionExecutionStatus.FAILED
+        if not verification_results:
+            return ActionExecutionStatus.UNOBSERVABLE
+        if all(
+            item.status is ActionExecutionStatus.VERIFIED
+            for item in verification_results
+        ):
+            return ActionExecutionStatus.VERIFIED
+        if any(
+            item.status is ActionExecutionStatus.FAILED
+            for item in verification_results
+        ):
+            return ActionExecutionStatus.FAILED
+        return ActionExecutionStatus.UNOBSERVABLE
+
+    def _apply_ready_actions(
+        self,
+        actions: Sequence[ConfigurationAction],
+        deployed_names: dict[str, str],
+        *,
+        data_only_action_ids: frozenset[str] = frozenset(),
+    ) -> dict[str, ActionApplicationResult]:
+        runtime_actions = []
+        for item in actions:
+            updates: dict[str, object] = {
+                "device_name": deployed_names.get(
+                    item.device_id, item.device_name,
+                ),
+            }
+            if item.id in data_only_action_ids:
+                updates["voice_vlan_id"] = None
+            runtime_actions.append(item.model_copy(update=updates))
+        try:
+            mutations = {
+                item.action_id: item
+                for item in self._runtime.apply_actions(runtime_actions)
+            }
+        except Exception as exc:
+            mutations = {
+                action.id: RuntimeActionMutation(
+                    action_id=action.id,
+                    applied=False,
+                    failure_code=ConfigurationFailureCode.SESSION_FAILED,
+                    message=str(exc),
+                )
+                for action in actions
+            }
+
+        results: dict[str, ActionApplicationResult] = {}
+        for action in actions:
+            mutation = mutations.get(action.id)
+            if mutation is None:
+                results[action.id] = ActionApplicationResult(
+                    action_id=action.id,
+                    status=ActionExecutionStatus.FAILED,
+                    failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
+                    message="Runtime returned no mutation result.",
+                )
+                continue
+            results[action.id] = ActionApplicationResult(
+                action_id=action.id,
+                status=self._mutation_status(mutation),
+                failure_code=(
+                    ConfigurationFailureCode.NONE
+                    if mutation.applied else mutation.failure_code
+                    if mutation.failure_code
+                    is not ConfigurationFailureCode.NONE
+                    else ConfigurationFailureCode.APPLICATION_FAILED
+                ),
+                message=mutation.message,
+                batch_id=mutation.batch_id,
+                operation=action.operation,
+                disposition=mutation.disposition,
+            )
+        return results
 
     @staticmethod
     def _mutation_status(mutation: RuntimeActionMutation) -> ActionExecutionStatus:

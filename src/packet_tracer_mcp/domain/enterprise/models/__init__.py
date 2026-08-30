@@ -24,7 +24,7 @@ from .configuration_runtime import (
     ActionApplicationResult, ActionExecutionStatus, ConfigurationApplicationResult,
     ConfigurationApplicationStatus, ConfigurationFailureCode, ConvergenceReport,
     ConfigurationRuntimeContext, FieldVerificationStatus, RuntimeActionMutation, RuntimeConfigurationTarget,
-    RuntimeVerification, VerificationResult,
+    RuntimeVerification, VerificationResult, VoiceSignalBarrierResult,
 )
 from .deployment import (
     DeploymentBinding, DeploymentIdentityError, DeploymentManifest,
@@ -153,7 +153,7 @@ __all__ = [
     "ActionApplicationResult", "ActionExecutionStatus", "ConfigurationApplicationResult",
     "ConfigurationApplicationStatus", "ConfigurationFailureCode", "ConvergenceReport",
     "ConfigurationRuntimeContext", "FieldVerificationStatus", "RuntimeActionMutation", "RuntimeConfigurationTarget",
-    "RuntimeVerification", "VerificationResult",
+    "RuntimeVerification", "VerificationResult", "VoiceSignalBarrierResult",
     "DeviceCandidateStatus", "DeviceCapabilities", "DeviceIdentity", "DeviceRequirement",
     "DeviceRole", "DeviceSelectionResult", "EndpointPortBinding", "EndpointRequirement", "ServiceRequirement", "WanLinkRequirement",
     "DiscoverySource", "E4ReadinessReport", "E4ReadinessState", "EndpointGroup", "EnterpriseIntent",

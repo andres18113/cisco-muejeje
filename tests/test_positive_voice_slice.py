@@ -2124,11 +2124,20 @@ def test_handoff_records_the_portfast_only_control_as_the_no_effect_it_was():
     assert "PORTFAST_SUFFICIENCY_IN_DISPOSABLE_VOICE = NOT_ESTABLISHED" in handoff
 
 
-def test_handoff_still_refuses_every_causal_promotion_after_the_control():
+def test_handoff_promotes_only_the_ordering_root_after_causal_controls():
     handoff = Path("handoff.md").read_text(encoding="utf-8")
 
     assert "SAME_ROOT_CAUSE = NOT_ESTABLISHED" in handoff
-    assert "ROOT_CAUSE_CONFIRMED" not in handoff
+    assert (
+        "VOICE_ROOT_CAUSE_CONFIRMED = "
+        "VOICE_SIGNAL_AND_ACQUISITION_WINDOW_NOT_DEPENDENCY_ORDERED_"
+        "AFTER_FOUNDATION_CONVERGENCE"
+    ) in handoff
+    assert (
+        "UNOBSERVED_INTERNAL_MECHANISM = "
+        "PHONE_BOOT_DHCP_ATTEMPT_AND_RETRY_TIMING"
+    ) in handoff
+    assert "SERVER_RECEIVES_DISCOVER = YES" not in handoff
     # The architectural defect is real and stays real; what weakened is its
     # standing as the explanation for THIS failure.
     assert "SOURCE_DEFECT = EDGE_STP_POLICY_STAGE_GATING_AND_ORDERING" in handoff

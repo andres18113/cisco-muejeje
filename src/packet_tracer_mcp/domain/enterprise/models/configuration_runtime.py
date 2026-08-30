@@ -232,6 +232,40 @@ class VerificationResult(BaseModel):
     convergence: ConvergenceReport | None = None
 
 
+class VoiceSignalBarrierResult(BaseModel):
+    """Typed evidence for data-only preparation and late Voice signalling."""
+
+    required: bool = False
+    deferred_action_ids: list[str] = Field(default_factory=list)
+    foundation_expectation_ids: list[str] = Field(default_factory=list)
+    preparation_results: list[ActionApplicationResult] = Field(
+        default_factory=list,
+    )
+    foundation_verification_results: list[VerificationResult] = Field(
+        default_factory=list,
+    )
+    signal_results: list[ActionApplicationResult] = Field(
+        default_factory=list,
+    )
+    foundation_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
+    signal_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
+    message: str = ""
+
+    def compact_summary(self) -> dict[str, object]:
+        return {
+            "required": self.required,
+            "deferred_action_ids": self.deferred_action_ids,
+            "foundation_expectation_ids": self.foundation_expectation_ids,
+            "preparation_statuses": {
+                item.action_id: item.status.value
+                for item in self.preparation_results
+            },
+            "foundation_status": self.foundation_status.value,
+            "signal_status": self.signal_status.value,
+            "message": self.message,
+        }
+
+
 class ConfigurationApplicationResult(BaseModel):
     config_plan_id: str
     config_semantic_hash: str
@@ -248,6 +282,7 @@ class ConfigurationApplicationResult(BaseModel):
     execution_journal: ApplicationExecutionJournal | None = None
     dirty_state: DirtyState = DirtyState.CLEAN
     evidence_records: list[EvidenceRecord] = Field(default_factory=list)
+    voice_signal_barrier: VoiceSignalBarrierResult | None = None
     duration_ms: int = 0
 
     def compact_summary(self) -> dict[str, object]:
@@ -274,5 +309,9 @@ class ConfigurationApplicationResult(BaseModel):
                 if self.execution_journal else None
             ),
             "evidence_records": [item.compact_summary() for item in self.evidence_records],
+            "voice_signal_barrier": (
+                self.voice_signal_barrier.compact_summary()
+                if self.voice_signal_barrier is not None else None
+            ),
             "duration_ms": self.duration_ms,
         }
