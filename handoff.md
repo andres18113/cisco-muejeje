@@ -334,9 +334,25 @@ NETWORK_CONVERGENCE_ONLY_FIX = REFUTED_AS_SUFFICIENT
 RUN21_MODE = NO_FLAG_PRODUCTION_CROSS_STAGE_PIPELINE
 RUN21_ORDER = DATA_ONLY_ACCESS -> NETWORK_VERIFIED -> VOICE_BOOTSTRAP_APPLIED -> VOICE_SIGNAL_VERIFIED -> REGISTRATION
 RUN21_EXPERIMENT_FLAGS = NONE
-RUN21_EXECUTED = NO
+RUN21_EXECUTED = YES
+RUN21_SOURCE_HEAD = a71632231070d4e869536592fa735af3959d79b6
+RUN21_RESULT = HARNESS_BOUNDARY_REDUNDANT_ENDPOINT_ARM
+RUN21_NETWORK_FOUNDATION_STATUS = VERIFIED
+RUN21_VOICE_SIGNAL_STATUS = VERIFIED
+RUN21_ENDPOINT_DHCP_ARM = APPLIED_FOR_BOTH
+RUN21_FINAL_IPV4 = EMPTY_FOR_BOTH
+RUN21_VOICE_BINDING_COUNT = 0
+RUN21_SCCP = NOT_REGISTERED_FOR_BOTH
+RUN21_SHA256 = 357fda6e6eb5f0ede48f91d3960986fb1ff8a6acf00b3021ec096b22798f1e86
+RUN21_WORKSPACE_RESTORED = YES
+RUN21_REALTIME_RESTORED = YES
+RUN21_PRODUCTION_QUESTION_TESTED = NO
+RUN22_MODE = NO_FLAG_PRODUCTION_CROSS_STAGE_NO_ENDPOINT_ARM
+RUN22_EXPERIMENT_FLAGS = NONE
+RUN22_ENDPOINT_DHCP_ARM = NOT_APPLICABLE
+RUN22_EXECUTED = NO
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_RUN21_PRODUCTION_CROSS_STAGE_VERIFICATION
+NEXT_ACTIVE_STEP = EXECUTE_RUN22_PRODUCTION_VERIFICATION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -729,11 +745,26 @@ Run 20 is archived as
 `0cc73ff59cc2724274a23886843b814e0ec4f8d9e82fd72c7bc0e234cee7148a`.
 Cleanup independently restored Realtime and zero semantic devices/links.
 
-Run 21 repeats the no-flag production-style disposable after the cross-stage
-correction.  It must retain the exact order data-only access -> network
-VERIFIED -> Voice bootstrap APPLIED -> Voice signal VERIFIED -> registration,
-then produce two IPv4 values, two matching bindings and two SCCP registrations
-before the production fix is justified.
+Run 21 reached the exact cross-stage order with no experiment flag: data-only
+access -> network VERIFIED -> Voice bootstrap APPLIED -> Voice signal VERIFIED.
+It then exposed a harness-only mutation before registration: the disposable
+qualifier called `configure_endpoint_dhcp` on both newly signalled SVIs and
+recorded `WHEN_ENDPOINT_DHCP_ARMED`.  The canonical production compiler
+deliberately emits no phone activation, the fresh phone creates its voice SVI
+with DHCP already enabled, and every successful run 16/17/19 forbids this call.
+Both run-21 phones failed, but this does not test the production question.
+
+The archive is
+`positive-voice-ab-run21-production-order-artificial-arm-failure.json`,
+SHA-256
+`357fda6e6eb5f0ede48f91d3960986fb1ff8a6acf00b3021ec096b22798f1e86`.
+Cleanup independently restored Realtime and zero semantic devices/links.
+
+Run 22 repeats the same no-flag cross-stage production path with the disposable
+arm marked NOT_APPLICABLE.  This is a harness correction, not another network
+change: no canonical production action is removed because none existed.  Run
+22 must produce two IPv4 values, two matching bindings and two SCCP
+registrations before the production fix is justified.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 

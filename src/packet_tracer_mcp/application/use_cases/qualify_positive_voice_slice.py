@@ -3570,8 +3570,23 @@ class PositiveVoiceSliceQualifier:
             and not self._trunk_before_voice_vlan
             and not self._bootstrap_before_voice_vlan
             and not self._access_preparation_before_voice_vlan
+            and not bool(getattr(
+                self._configuration, "production_pipeline", False,
+            ))
         ):
             self._arm_endpoints(phones, journal, errors)
+        elif bool(getattr(
+            self._configuration, "production_pipeline", False,
+        )):
+            journal.record(
+                "WHEN_ENDPOINT_DHCP_ACTIVATION_NOT_APPLICABLE",
+                True,
+                (
+                    "the production compiler emits no phone activation; the "
+                    "7960 creates its voice SVI with DHCP already enabled"
+                ),
+                OBSERVATION,
+            )
 
         # Realtime is the authoritative window for addressing and registration.
         realtime_before = self._realtime(errors, "before")

@@ -401,6 +401,10 @@ class _ConfigurationAdapter:
             and barrier.signal_status.value == "verified"
         )
 
+    @property
+    def production_pipeline(self) -> bool:
+        return self._production_pipeline
+
     def read_access_port(
         self, device_name: str, interface: str, expected_access_vlan: int,
     ):

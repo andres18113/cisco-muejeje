@@ -910,6 +910,20 @@ def test_dhcp_is_armed_on_the_svi_the_phone_addresses_on():
     assert armed.observed is True
 
 
+def test_production_pipeline_does_not_add_the_disposable_endpoint_arm():
+    class _ProductionConfiguration(_Configuration):
+        production_pipeline = True
+
+    result, _, _, _, endpoints, _, _ = _run(
+        configuration=_ProductionConfiguration(),
+    )
+
+    assert endpoints.armed == []
+    names = [item.name for item in result.lifecycle]
+    assert "WHEN_ENDPOINT_DHCP_ARMED" not in names
+    assert "WHEN_ENDPOINT_DHCP_ACTIVATION_NOT_APPLICABLE" in names
+
+
 def test_the_registration_expectation_reads_the_addressing_svi_not_the_cable():
     _, _, _, call_control, *_ = _run()
 
