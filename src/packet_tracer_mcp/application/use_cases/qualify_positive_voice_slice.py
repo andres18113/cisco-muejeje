@@ -165,6 +165,13 @@ EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER = "PHONE_SVI_DHCP_RETRIGGER"
 #: voice VLAN reaches either phone-facing port, so the shared voice-VLAN
 #: batch becomes a causal clock boundary both ports are measured from.
 EXPERIMENT_EDGE_BEFORE_VOICE_VLAN = "EDGE_BEFORE_VOICE_VLAN"
+#: The one-variable follow-up to run 16.  Both phones share a prepared router,
+#: pool and CME.  The control is signalled while the same authoritative trunk
+#: read says VLAN930 is not forwarding; the intervention is signalled only
+#: after that trunk transitions to forwarding.
+EXPERIMENT_TRUNK_FORWARDING_BEFORE_VOICE = (
+    "TRUNK_FORWARDING_BEFORE_VOICE"
+)
 
 #: The FWD gate's terminal statuses.  FORWARDING and UNOBSERVABLE reuse the
 #: row classifications above; TIMEOUT is the bounded wait expiring while the
@@ -205,6 +212,18 @@ ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY = (
 ACQUISITION_NOT_STARTED_EDGE_POLICY_DISPATCH_UNPROVEN = (
     "ACQUISITION_NOT_STARTED_EDGE_POLICY_DISPATCH_UNPROVEN"
 )
+ACQUISITION_NOT_STARTED_PRECONTROL_FOUNDATION_UNREADY = (
+    "ACQUISITION_NOT_STARTED_PRECONTROL_FOUNDATION_UNREADY"
+)
+ACQUISITION_NOT_STARTED_POSTCONTROL_TRUNK_STATE_UNPROVEN = (
+    "ACQUISITION_NOT_STARTED_POSTCONTROL_TRUNK_STATE_UNPROVEN"
+)
+ACQUISITION_NOT_STARTED_CONTROL_VOICE_SIGNAL_UNPROVEN = (
+    "ACQUISITION_NOT_STARTED_CONTROL_VOICE_SIGNAL_UNPROVEN"
+)
+ACQUISITION_NOT_STARTED_INTERVENTION_VOICE_SIGNAL_UNPROVEN = (
+    "ACQUISITION_NOT_STARTED_INTERVENTION_VOICE_SIGNAL_UNPROVEN"
+)
 
 #: The four verdicts run 15 can reach, kept apart because they license
 #: different next steps.  Only the first credits the edge policy.
@@ -218,6 +237,18 @@ EDGE_STP_EFFECT_OBSERVED_WITHOUT_DHCP_EFFECT = (
     "EDGE_STP_EFFECT_OBSERVED_WITHOUT_DHCP_EFFECT"
 )
 EDGE_POLICY_EFFECT_NOT_ESTABLISHED = "EDGE_POLICY_EFFECT_NOT_ESTABLISHED"
+TRUNK_FORWARDING_BEFORE_VOICE_CAUSAL_EFFECT_OBSERVED = (
+    "TRUNK_FORWARDING_BEFORE_VOICE_CAUSAL_EFFECT_OBSERVED"
+)
+TRUNK_FORWARDING_BEFORE_VOICE_NO_EFFECT = (
+    "TRUNK_FORWARDING_BEFORE_VOICE_NO_EFFECT"
+)
+TRUNK_FORWARDING_BEFORE_VOICE_INSUFFICIENT = (
+    "TRUNK_FORWARDING_BEFORE_VOICE_INSUFFICIENT"
+)
+TRUNK_FORWARDING_BEFORE_VOICE_REVERSED = (
+    "TRUNK_FORWARDING_BEFORE_VOICE_REVERSED"
+)
 
 #: The bounded milestones run 15 observes the phone SVI at.  Four, not a
 #: polling matrix: each one is a moment the causal question turns on.
@@ -1309,6 +1340,15 @@ class PositiveVoiceSliceResult:
     edge_policy_dispatch: str = PORTFAST_NOT_APPLIED
     shared_foundation_ready: str = UNOBSERVABLE
     shared_foundation_wait: SharedFoundationWait | None = None
+    #: The control is admissible only when every readable upstream dimension
+    #: except trunk forwarding is VERIFIED and the authoritative forwarding
+    #: set explicitly omits VLAN930.
+    pre_control_foundation: PositiveVoiceFoundation | None = None
+    pre_control_foundation_status: str = UNOBSERVABLE
+    post_control_signal_foundation: PositiveVoiceFoundation | None = None
+    post_control_signal_foundation_status: str = UNOBSERVABLE
+    pre_intervention_foundation: PositiveVoiceFoundation | None = None
+    trunk_roles_reversed: bool = False
     acquisition_started: bool = True
     acquisition_boundary: str = ""
     baseline_inventory: PhysicalWorkspaceObservation | None = None
@@ -1324,6 +1364,41 @@ class PositiveVoiceSliceResult:
         if self.shared_foundation_wait is None:
             return NOT_ESTABLISHED
         return self.shared_foundation_wait.trunk_forwarding_convergence
+
+    @property
+    def trunk_order_forwarding_transition(self) -> str:
+        """The exact before/after pair that separates control and intervention."""
+        before = self.post_control_signal_foundation
+        after = self.pre_intervention_foundation
+        if (
+            self.pre_control_foundation_status == VERIFIED
+            and self.post_control_signal_foundation_status == VERIFIED
+            and before is not None
+            and after is not None
+            and before.trunk_interface
+            and before.trunk_interface == after.trunk_interface
+            and before.trunk_forwarding_voice == CONTRADICTED
+            and after.trunk_forwarding_voice == VERIFIED
+        ):
+            return "NOT_FORWARDING -> FORWARDING"
+        return NOT_ESTABLISHED
+
+    @property
+    def paired_stp_timing_comparability(self) -> str:
+        if self.experiment == EXPERIMENT_TRUNK_FORWARDING_BEFORE_VOICE:
+            return "NOT_COMPARABLE_DIFFERENT_VOICE_SIGNAL_ORIGINS"
+        if self.experiment == EXPERIMENT_EDGE_BEFORE_VOICE_VLAN:
+            return "COMPARABLE_ONE_SHARED_VOICE_SIGNAL_ORIGIN"
+        return NOT_ESTABLISHED
+
+    @property
+    def trunk_forwarding_controls_voice_acquisition(self) -> str:
+        verdict = self.causal_experiment_result
+        if verdict == TRUNK_FORWARDING_BEFORE_VOICE_CAUSAL_EFFECT_OBSERVED:
+            return YES
+        if verdict == TRUNK_FORWARDING_BEFORE_VOICE_NO_EFFECT:
+            return NO
+        return NOT_ESTABLISHED
 
     @property
     def foundation_ladder(self) -> tuple[tuple[str, str], ...]:
@@ -1440,6 +1515,8 @@ class PositiveVoiceSliceResult:
         intervention never showed.  Without authority on both ports there is
         no comparison to make.
         """
+        if self.experiment != EXPERIMENT_EDGE_BEFORE_VOICE_VLAN:
+            return UNOBSERVABLE
         control = self.control_stp_port_gate
         intervention = self.intervention_stp_port_gate
         if control is None or intervention is None:
@@ -1530,6 +1607,36 @@ class PositiveVoiceSliceResult:
             return EDGE_BEFORE_VOICE_VLAN_CAUSAL_EFFECT_OBSERVED
         if control_acquired == NO and intervention_acquired == NO:
             return EDGE_STP_EFFECT_OBSERVED_WITHOUT_DHCP_EFFECT
+        return UNOBSERVABLE
+
+    def _trunk_before_voice_vlan_verdict(self) -> str:
+        """Judge only the paired before/after trunk-forwarding contrast."""
+        if (
+            self.pre_control_foundation_status != VERIFIED
+            or self.pre_control_foundation is None
+            or self.pre_control_foundation.trunk_forwarding_voice
+            != CONTRADICTED
+            or self.shared_foundation_ready != VERIFIED
+            or self.trunk_order_forwarding_transition
+            != "NOT_FORWARDING -> FORWARDING"
+            or self.control_stp_port_gate is None
+            or self.intervention_stp_port_gate is None
+            or not self.control_stp_port_gate.forwarding_observed
+            or not self.intervention_stp_port_gate.forwarding_observed
+        ):
+            return UNOBSERVABLE
+        control_acquired = self._edge_acquired(self.control_stp_port_gate)
+        intervention_acquired = self._edge_acquired(
+            self.intervention_stp_port_gate
+        )
+        if control_acquired == NO and intervention_acquired == YES:
+            return TRUNK_FORWARDING_BEFORE_VOICE_CAUSAL_EFFECT_OBSERVED
+        if control_acquired == YES and intervention_acquired == YES:
+            return TRUNK_FORWARDING_BEFORE_VOICE_NO_EFFECT
+        if control_acquired == NO and intervention_acquired == NO:
+            return TRUNK_FORWARDING_BEFORE_VOICE_INSUFFICIENT
+        if control_acquired == YES and intervention_acquired == NO:
+            return TRUNK_FORWARDING_BEFORE_VOICE_REVERSED
         return UNOBSERVABLE
 
     @property
@@ -1792,6 +1899,8 @@ class PositiveVoiceSliceResult:
             return "NOT_APPLICABLE_OBSERVATIONAL_DIAGNOSTIC"
         if self.experiment == EXPERIMENT_EDGE_BEFORE_VOICE_VLAN:
             return self._edge_before_voice_vlan_verdict()
+        if self.experiment == EXPERIMENT_TRUNK_FORWARDING_BEFORE_VOICE:
+            return self._trunk_before_voice_vlan_verdict()
         if self.experiment == EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER:
             if self.acquisition_boundary == (
                 ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
@@ -2080,6 +2189,24 @@ def _shared_foundation_ready(foundation: "PositiveVoiceFoundation") -> str:
     return _worst(*(
         status for _, status in _shared_foundation_statuses(foundation)
     ))
+
+
+def _pre_control_foundation_ready(
+    foundation: "PositiveVoiceFoundation",
+) -> str:
+    """Require one authoritative not-forwarding contrast and nothing else."""
+    other = _worst(*(
+        status
+        for name, status in _shared_foundation_statuses(foundation)
+        if name != "trunk_forwarding_voice"
+    ))
+    if other != VERIFIED:
+        return other
+    if foundation.trunk_forwarding_voice == CONTRADICTED:
+        return VERIFIED
+    if foundation.trunk_forwarding_voice == VERIFIED:
+        return CONTRADICTED
+    return UNOBSERVABLE
 
 
 def _classify_trunk(observation) -> dict:
@@ -2398,6 +2525,8 @@ class PositiveVoiceSliceQualifier:
         phone_dhcp_lifecycle: bool = False,
         phone_svi_dhcp_retrigger: bool = False,
         edge_before_voice_vlan: bool = False,
+        trunk_before_voice_vlan: bool = False,
+        trunk_roles_reversed: bool = False,
         gate_timeout_seconds: float = STP_FWD_GATE_TIMEOUT_SECONDS,
         gate_interval_seconds: float = STP_FWD_GATE_INTERVAL_SECONDS,
         gate_clock=monotonic,
@@ -2454,6 +2583,18 @@ class PositiveVoiceSliceQualifier:
             or self._phone_svi_dhcp_retrigger
         )
         self._edge_before_voice_vlan = bool(edge_before_voice_vlan)
+        self._trunk_before_voice_vlan = bool(trunk_before_voice_vlan)
+        self._trunk_roles_reversed = bool(trunk_roles_reversed)
+        if self._trunk_roles_reversed and not self._trunk_before_voice_vlan:
+            raise ValueError(
+                "reversed trunk roles require the trunk-before-voice-VLAN "
+                "experiment"
+            )
+        if self._edge_before_voice_vlan and self._trunk_before_voice_vlan:
+            raise ValueError(
+                "one causal variable per run: edge policy and trunk forwarding "
+                "ordering cannot share an experiment"
+            )
         if self._edge_before_voice_vlan:
             if self._gate_enabled or self._edge_portfast:
                 raise ValueError(
@@ -2473,6 +2614,21 @@ class PositiveVoiceSliceQualifier:
                     "edge-before-voice-VLAN requires exactly two phones that "
                     "share the data access VLAN: the access VLAN is not this "
                     "experiment's variable"
+                )
+        if self._trunk_before_voice_vlan:
+            if self._gate_enabled or self._edge_portfast:
+                raise ValueError(
+                    "one causal variable per run: trunk-before-voice-VLAN "
+                    "cannot be combined with another gated experiment or "
+                    "PortFast"
+                )
+            if (
+                self._phone_count != 2
+                or VOICE_VLAN_ID in self._phone_access_vlans
+            ):
+                raise ValueError(
+                    "trunk-before-voice-VLAN requires exactly two phones that "
+                    "share the data access VLAN"
                 )
         if self._gate_enabled:
             if self._phone_svi_dhcp_retrigger and (
@@ -2505,7 +2661,9 @@ class PositiveVoiceSliceQualifier:
         self._gate_sleeper = gate_sleeper
         # Derived once, next to the knobs that define it, so a result can name
         # its experiment without re-deriving it from the mapping later.
-        if self._edge_before_voice_vlan:
+        if self._trunk_before_voice_vlan:
+            self._experiment = EXPERIMENT_TRUNK_FORWARDING_BEFORE_VOICE
+        elif self._edge_before_voice_vlan:
             self._experiment = EXPERIMENT_EDGE_BEFORE_VOICE_VLAN
         elif self._phone_dhcp_lifecycle:
             self._experiment = EXPERIMENT_PHONE_DHCP_LIFECYCLE
@@ -2640,6 +2798,20 @@ class PositiveVoiceSliceQualifier:
                 "shared_foundation_ready", UNOBSERVABLE,
             ),
             shared_foundation_wait=edge_state.get("shared_foundation_wait"),
+            pre_control_foundation=edge_state.get("pre_control_foundation"),
+            pre_control_foundation_status=edge_state.get(
+                "pre_control_foundation_status", UNOBSERVABLE,
+            ),
+            post_control_signal_foundation=edge_state.get(
+                "post_control_signal_foundation"
+            ),
+            post_control_signal_foundation_status=edge_state.get(
+                "post_control_signal_foundation_status", UNOBSERVABLE,
+            ),
+            pre_intervention_foundation=edge_state.get(
+                "pre_intervention_foundation"
+            ),
+            trunk_roles_reversed=self._trunk_roles_reversed,
             acquisition_started=not acquisition_boundary,
             acquisition_boundary=acquisition_boundary,
             baseline_inventory=baseline, final_inventory=final,
@@ -2731,7 +2903,12 @@ class PositiveVoiceSliceQualifier:
                     # before the foundation it needs had been verified -- which
                     # is the confound the experiment exists to remove.
                     voice_vlan_id=(
-                        None if self._edge_before_voice_vlan else VOICE_VLAN_ID
+                        None
+                        if (
+                            self._edge_before_voice_vlan
+                            or self._trunk_before_voice_vlan
+                        )
+                        else VOICE_VLAN_ID
                     ),
                 )
             )
@@ -2777,6 +2954,7 @@ class PositiveVoiceSliceQualifier:
         )
 
         switch = self._name("SW")
+        requested = set(phone_ports)
         return [
             ConfigureAccessPort(
                 id=f"voiceab/access/voice/{index}",
@@ -2786,7 +2964,14 @@ class PositiveVoiceSliceQualifier:
                 data_vlan_id=self._phone_access_vlans[index - 1],
                 voice_vlan_id=VOICE_VLAN_ID,
             )
-            for index, interface in enumerate(phone_ports, start=1)
+            for index, interface in enumerate(
+                (
+                    self._switch_interface(position)
+                    for position in range(1, self._phone_count + 1)
+                ),
+                start=1,
+            )
+            if interface in requested
         ]
 
     def _voice_actions(self) -> list:
@@ -2982,7 +3167,7 @@ class PositiveVoiceSliceQualifier:
                 for port, vlan in zip(phone_ports, self._phone_access_vlans)
             ),
         )
-        if self._edge_before_voice_vlan:
+        if self._edge_before_voice_vlan or self._trunk_before_voice_vlan:
             journal.record(
                 "WHEN_VOICE_VLAN_WITHHELD", applied,
                 "initial access batch voice_vlan_id=None on both phone ports",
@@ -3024,7 +3209,11 @@ class PositiveVoiceSliceQualifier:
         # acceptance.  In the FWD-gated experiment the arming moves BEHIND the
         # gate: the trigger under judgement must not fire before the port it
         # is judged on was observed forwarding.
-        if not self._gate_enabled and not self._edge_before_voice_vlan:
+        if (
+            not self._gate_enabled
+            and not self._edge_before_voice_vlan
+            and not self._trunk_before_voice_vlan
+        ):
             self._arm_endpoints(phones, journal, errors)
 
         # Realtime is the authoritative window for addressing and registration.
@@ -3046,7 +3235,12 @@ class PositiveVoiceSliceQualifier:
         pre_arm: dict[str, str] = {}
         arm_acceptance: dict[str, str] = {}
         post_arm: dict[str, str] = {}
-        if self._edge_before_voice_vlan:
+        if self._trunk_before_voice_vlan:
+            boundary = self._trunk_before_voice_vlan_window(
+                phones, phone_ports, switch.name, router.name, journal,
+                errors, edge_stp_port_gates, edge_voice_svi, edge_state,
+            )
+        elif self._edge_before_voice_vlan:
             boundary = self._edge_before_voice_vlan_window(
                 phones, phone_ports, switch.name, router.name, journal,
                 errors, edge_stp_port_gates, edge_voice_svi, edge_state,
@@ -3254,7 +3448,10 @@ class PositiveVoiceSliceQualifier:
                 "ACQUISITION_WINDOW_RUN", True, "registration convergence",
                 OBSERVATION,
             )
-        if self._edge_before_voice_vlan and not boundary:
+        if (
+            (self._edge_before_voice_vlan or self._trunk_before_voice_vlan)
+            and not boundary
+        ):
             # The last of run 15's four milestones.  It is taken only when the
             # window actually ran: a milestone named after a window that never
             # opened would be evidence of nothing.
@@ -3293,6 +3490,149 @@ class PositiveVoiceSliceQualifier:
             original_simulation, outcomes, binding_count,
             realtime_before, realtime_after, foundation, gate, boundary, errors,
         )
+
+    def _trunk_before_voice_vlan_window(
+        self,
+        phones,
+        phone_ports: tuple[str, ...],
+        switch_name: str,
+        router_name: str,
+        journal: _Journal,
+        errors: list[str],
+        edge_stp_port_gates: dict[str, PairedStpPortGate],
+        edge_voice_svi: list[EdgeVoiceSviObservation],
+        edge_state: dict[str, object],
+    ) -> str:
+        """Signal one phone on each side of one observed trunk transition."""
+        pre_control = self._read_foundation(
+            switch_name,
+            router_name,
+            journal,
+            errors,
+            "PRE_CONTROL_VOICE_SIGNAL_",
+        )
+        pre_status = _pre_control_foundation_ready(pre_control)
+        edge_state["pre_control_foundation"] = pre_control
+        edge_state["pre_control_foundation_status"] = pre_status
+        journal.record(
+            "WHEN_PRECONTROL_FOUNDATION_READY",
+            pre_status == VERIFIED,
+            pre_status,
+            OBSERVATION,
+        )
+        if pre_status != VERIFIED:
+            return ACQUISITION_NOT_STARTED_PRECONTROL_FOUNDATION_UNREADY
+
+        if self._trunk_roles_reversed:
+            control_port, intervention_port = phone_ports[1], phone_ports[0]
+        else:
+            control_port, intervention_port = phone_ports
+        control_applied, control_errors = self._apply(
+            self._configuration.apply_actions,
+            self._voice_vlan_boundary_actions((control_port,)),
+        )
+        errors.extend(control_errors)
+        journal.record(
+            "WHEN_CONTROL_VOICE_VLAN_APPLIED",
+            control_applied,
+            f"voice vlan {VOICE_VLAN_ID}: {control_port}",
+        )
+        if not control_applied:
+            return ACQUISITION_NOT_STARTED_CONTROL_VOICE_SIGNAL_UNPROVEN
+
+        post_signal = self._read_foundation(
+            switch_name,
+            router_name,
+            journal,
+            errors,
+            "POST_CONTROL_VOICE_SIGNAL_",
+        )
+        post_signal_status = _pre_control_foundation_ready(post_signal)
+        edge_state["post_control_signal_foundation"] = post_signal
+        edge_state["post_control_signal_foundation_status"] = (
+            post_signal_status
+        )
+        journal.record(
+            "WHEN_POSTCONTROL_TRUNK_STILL_NOT_FORWARDING",
+            post_signal_status == VERIFIED,
+            post_signal_status,
+            OBSERVATION,
+        )
+        if post_signal_status != VERIFIED:
+            return ACQUISITION_NOT_STARTED_POSTCONTROL_TRUNK_STATE_UNPROVEN
+        self._retain_edge_voice_svi(
+            "CONTROL_IMMEDIATELY_AFTER_VOICE_VLAN",
+            phones,
+            edge_voice_svi,
+            errors,
+        )
+
+        post_control, foundation_wait = self._await_shared_foundation(
+            switch_name, router_name, journal, errors,
+        )
+        ready = _shared_foundation_ready(post_control)
+        edge_state["shared_foundation_ready"] = ready
+        edge_state["shared_foundation_wait"] = foundation_wait
+        edge_state["pre_intervention_foundation"] = post_control
+        journal.record(
+            "WHEN_SHARED_FOUNDATION_READY_AFTER_CONTROL",
+            ready == VERIFIED,
+            ready,
+            OBSERVATION,
+        )
+        if ready != VERIFIED:
+            return ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY
+
+        intervention_applied, intervention_errors = self._apply(
+            self._configuration.apply_actions,
+            self._voice_vlan_boundary_actions((intervention_port,)),
+        )
+        boundary_started = self._gate_clock()
+        errors.extend(intervention_errors)
+        journal.record(
+            "WHEN_INTERVENTION_VOICE_VLAN_APPLIED",
+            intervention_applied,
+            f"voice vlan {VOICE_VLAN_ID}: {intervention_port}",
+        )
+        if not intervention_applied:
+            return ACQUISITION_NOT_STARTED_INTERVENTION_VOICE_SIGNAL_UNPROVEN
+        self._retain_edge_voice_svi(
+            "INTERVENTION_IMMEDIATELY_AFTER_VOICE_VLAN",
+            phones,
+            edge_voice_svi,
+            errors,
+        )
+
+        gates = await_paired_stp_forwarding(
+            self._configuration,
+            switch_name,
+            VOICE_VLAN_ID,
+            (("control", control_port), ("intervention", intervention_port)),
+            timeout_seconds=self._gate_timeout_seconds,
+            interval_seconds=self._gate_interval_seconds,
+            clock=self._gate_clock,
+            sleeper=self._gate_sleeper,
+            started_at=boundary_started,
+            errors=errors,
+            milestone_observer=lambda name: self._retain_edge_voice_svi(
+                name, phones, edge_voice_svi, errors,
+            ),
+        )
+        edge_stp_port_gates.update(gates)
+        for role in ("control", "intervention"):
+            item = gates[role]
+            journal.record(
+                f"WHEN_{role.upper()}_STP_STATE_AFTER_VOICE_VLAN",
+                item.forwarding_observed,
+                f"{item.interface}:"
+                f"first={item.first_authoritative_state},"
+                f"states={' -> '.join(item.observed_states)},"
+                f"fwd_ms={item.time_to_forwarding_ms}",
+                OBSERVATION,
+            )
+        if not all(item.forwarding_observed for item in gates.values()):
+            return ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
+        return ""
 
     def _edge_before_voice_vlan_window(
         self,

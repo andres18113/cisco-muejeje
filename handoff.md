@@ -239,10 +239,20 @@ RUN16_CONTROL_SCCP = REGISTERED
 RUN16_INTERVENTION_SCCP = REGISTERED
 RUN16_STP_TIMING_CONTROLS_DHCP_ACQUISITION = NOT_ESTABLISHED
 RUN16_SHA256 = d65a6e79e3d97fea707a42b27139f65b9b8dff8eaf8f9c3e495591a6b34f4563
+MODERN_FAILURE_VOICE_SIGNAL_ORDER = VOICE_VLAN_BEFORE_TRUNK_FORWARDING_AND_BEFORE_L3_POOL_CME
+MODERN_SUCCESS_VOICE_SIGNAL_ORDER = L3_POOL_CME_AND_TRUNK_FORWARDING_BEFORE_VOICE_VLAN
+FIRST_CAUSAL_DIVERGENCE = TRUNK_FORWARDING_STATE_AT_VOICE_VLAN_SIGNAL
+RUN17_MODE_PREPARED = TRUNK_FORWARDING_BEFORE_VOICE
+RUN17_CONTROL_PRECONDITION = ALL_READABLE_NONFORWARDING_FOUNDATION_VERIFIED
+RUN17_CONTROL_SIGNAL_BRACKET = SAME_AUTHORITATIVE_TRUNK_NOT_FORWARDING_BEFORE_AND_AFTER
+RUN17_INTERVENTION_PRECONDITION = SAME_TRUNK_FORWARDING_VERIFIED
+RUN17_NONVARIABLES = TOPOLOGY_ACCESS_VLAN_L3_POOL_OPTION150_CME_PORTFAST_DHCP_FLAG
+RUN17_ROLE_SWAP_PREPARED = YES
+RUN17_EXECUTED = NO
 VOICE_ROOT_CAUSE = STRONG_CANDIDATE
-VOICE_ROOT_CAUSE_LEADING_CANDIDATE = EARLY_DISCOVER_LOST_NO_RETRY
+VOICE_ROOT_CAUSE_LEADING_CANDIDATE = VOICE_VLAN_SIGNALLED_BEFORE_SHARED_TRUNK_FORWARDING
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = DESIGN_TYPED_FOUNDATION_GATED_VOICE_SIGNALING_FIX_AND_VERIFY_DISPOSABLE_BEFORE_CANONICAL
+NEXT_ACTIVE_STEP = EXECUTE_RUN17_TRUNK_ORDER_CAUSAL_CONTRAST
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -426,6 +436,55 @@ the dedicated ledger role `RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION`.
 The archive matched the canonical artefact when recorded.  Cleanup independently
 observed zero semantic devices, zero links, one allowed backend-managed Power
 Distribution Device, and Realtime restored, with no errors.  No second LIVE ran.
+
+## Modern failure/success differential and the next causal contrast
+
+The current default disposable pipeline and run 16 share the same devices,
+links, VLANs, router subinterfaces, DHCP pool, option 150, CME, extensions and
+phone bindings.  Their earliest behaviorally relevant difference is not
+PortFast and not a DHCP setter.  The default configuration batch signals
+VLAN930 on both phone-facing ports during `L2_INTERFACES`, before that same
+batch reaches router L3 and services and before the trunk has converged.
+Run 16 withheld only the phone-facing voice VLAN, completed the same router and
+call-control work, then observed the trunk's forwarding set change from empty
+to `[930, 931]` before signalling either phone.
+
+Run 16 also closes the former access-port one-shot interpretation.  Both phones
+were signalled before their own ports spent about 30.8 seconds in the same
+non-forwarding STP sequence, yet both acquired after forwarding.  It therefore
+does not support "the phone emits one immediate Discover and never retries."
+Discover timing and DORA remain unobserved; the narrower internal mechanism is
+not claimed.
+
+| Candidate | Classification before run 17 | Evidence |
+| --- | --- | --- |
+| Shared trunk VLAN930 not forwarding when Voice is signalled | NEEDS_CAUSAL_TEST | Default failure signals early; run 16 signals only after the same trunk is VERIFIED and succeeds. |
+| Router voice L3 readiness at signal | NEEDS_CAUSAL_TEST | It moved with run 16's grouped preparation and has not been isolated. |
+| DHCP pool readiness at signal | NEEDS_CAUSAL_TEST | Pool presence/range/space are verified later in failures, but its state at the original signal boundary was not isolated. |
+| Option150/CME timing as the cause of no IPv4 | WEAKENED | They are downstream of lease acquisition; run 17 nevertheless holds both ready before either signal. |
+| PortFast | REFUTED as the differentiator | Run 16's ports had identical STP behavior and the no-edge control acquired. |
+| Access VLAN distinct from Voice VLAN | REFUTED as necessary | Run 16 acquired with access 931 / voice 930 on both ports. |
+| Exact phone-SVI DHCP YES->NO->YES retrigger | REFUTED as sufficient | Run 13 applied and read back the transition after FWD; no address or binding followed. |
+| Pool absence or exhaustion | REFUTED for the disposable | Run 8 verified the pool, intended range and available space. |
+| One immediate Discover lost on the phone-facing STP port, with no useful retry | REFUTED by run 16's endpoint-port sequence | Both phones acquired after the same approximately 30.8-second post-signal convergence. |
+
+The minimum next experiment is one same-run temporal pair.  Both ports begin
+with data VLAN931 and no voice VLAN.  Router L3, the pool, option150 and CME are
+applied first.  A complete authoritative foundation read must verify every
+readable dimension except trunk forwarding and must explicitly read VLAN930 as
+not forwarding.  P1 then receives VLAN930, and a second complete read must
+still show that same trunk not forwarding; this brackets the control signal
+rather than relying on a check-then-act assumption.  The existing bounded wait
+then observes that same interface forwarding before P2 receives VLAN930.  No
+DHCP flag, edge policy, topology or service setting changes.
+
+A causal positive requires P1 to remain without IPv4/binding/SCCP while P2
+obtains all three, after both phone-facing ports are authoritatively
+FORWARDING.  Per-port STP durations are retained but explicitly
+`NOT_COMPARABLE_DIFFERENT_VOICE_SIGNAL_ORIGINS`; they are gates, not the causal
+metric.  A second run with P1/P2 roles reversed is prepared to remove fixed
+phone/port identity if the first contrast is positive.  No LIVE has run from
+this implementation yet.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 

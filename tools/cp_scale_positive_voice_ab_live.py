@@ -499,6 +499,14 @@ def _serialize(result) -> dict:
         item for item in result.lifecycle
         if item.name == "WHEN_VOICE_VLAN_APPLICATION_BOUNDARY"
     ]
+    control_voice_vlan_boundaries = [
+        item for item in result.lifecycle
+        if item.name == "WHEN_CONTROL_VOICE_VLAN_APPLIED"
+    ]
+    intervention_voice_vlan_boundaries = [
+        item for item in result.lifecycle
+        if item.name == "WHEN_INTERVENTION_VOICE_VLAN_APPLIED"
+    ]
     return {
         "diagnostic": "POSITIVE_DISPOSABLE_VOICE_AB",
         "router_model": result.router_model,
@@ -526,6 +534,34 @@ def _serialize(result) -> dict:
             result.shared_foundation_wait.as_evidence()
             if result.shared_foundation_wait is not None else None
         ),
+        "pre_control_foundation": (
+            result.pre_control_foundation.as_evidence()
+            if result.pre_control_foundation is not None else None
+        ),
+        "pre_control_foundation_status": (
+            result.pre_control_foundation_status
+        ),
+        "post_control_signal_foundation": (
+            result.post_control_signal_foundation.as_evidence()
+            if result.post_control_signal_foundation is not None else None
+        ),
+        "post_control_signal_foundation_status": (
+            result.post_control_signal_foundation_status
+        ),
+        "pre_intervention_foundation": (
+            result.pre_intervention_foundation.as_evidence()
+            if result.pre_intervention_foundation is not None else None
+        ),
+        "trunk_order_forwarding_transition": (
+            result.trunk_order_forwarding_transition
+        ),
+        "trunk_forwarding_controls_voice_acquisition": (
+            result.trunk_forwarding_controls_voice_acquisition
+        ),
+        "trunk_roles_reversed": result.trunk_roles_reversed,
+        "paired_stp_timing_comparability": (
+            result.paired_stp_timing_comparability
+        ),
         "trunk_forwarding_convergence": (
             result.trunk_forwarding_convergence
         ),
@@ -537,6 +573,14 @@ def _serialize(result) -> dict:
         "voice_vlan_clock_boundary": (
             voice_vlan_boundaries[0].as_evidence()
             if len(voice_vlan_boundaries) == 1 else None
+        ),
+        "control_voice_vlan_boundary": (
+            control_voice_vlan_boundaries[0].as_evidence()
+            if len(control_voice_vlan_boundaries) == 1 else None
+        ),
+        "intervention_voice_vlan_boundary": (
+            intervention_voice_vlan_boundaries[0].as_evidence()
+            if len(intervention_voice_vlan_boundaries) == 1 else None
         ),
         "edge_policy_dispatch": result.edge_policy_dispatch,
         "edge_policy_runtime_state": result.edge_policy_runtime_state,
@@ -702,6 +746,8 @@ def run(
     phone_dhcp_lifecycle: bool = False,
     phone_svi_dhcp_retrigger: bool = False,
     edge_before_voice_vlan: bool = False,
+    trunk_before_voice_vlan: bool = False,
+    trunk_roles_reversed: bool = False,
 ) -> int:
     preflight: dict[str, object] = {
         "python_executable": sys.executable,
@@ -876,6 +922,11 @@ def run(
             # causal clock boundary both ports are measured from, by one
             # paired STP read per sample.  No DHCP flag is touched.
             edge_before_voice_vlan=edge_before_voice_vlan,
+            # Same-run causal contrast: P1 sees VLAN930 while every readable
+            # foundation dimension except trunk forwarding is ready; P2 sees
+            # it only after that same authoritative trunk transitions to FWD.
+            trunk_before_voice_vlan=trunk_before_voice_vlan,
+            trunk_roles_reversed=trunk_roles_reversed,
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
         try:
             independent_final = physical.observe_workspace()
@@ -945,6 +996,19 @@ def run(
         "acquisition_boundary": evidence["acquisition_boundary"],
         "shared_foundation_ready": evidence["shared_foundation_ready"],
         "shared_foundation_wait": evidence["shared_foundation_wait"],
+        "pre_control_foundation_status": evidence[
+            "pre_control_foundation_status"
+        ],
+        "post_control_signal_foundation_status": evidence[
+            "post_control_signal_foundation_status"
+        ],
+        "trunk_order_forwarding_transition": evidence[
+            "trunk_order_forwarding_transition"
+        ],
+        "trunk_forwarding_controls_voice_acquisition": evidence[
+            "trunk_forwarding_controls_voice_acquisition"
+        ],
+        "trunk_roles_reversed": evidence["trunk_roles_reversed"],
         "trunk_forwarding_convergence": evidence[
             "trunk_forwarding_convergence"
         ],
@@ -1099,6 +1163,24 @@ def main() -> int:
             "armed, mutated, bounced or power-cycled by this mode."
         ),
     )
+    parser.add_argument(
+        "--trunk-before-voice-vlan", action="store_true",
+        help=(
+            "signal the control phone while all readable shared foundation "
+            "dimensions except trunk forwarding are ready, wait for that same "
+            "trunk to transition to forwarding, then signal the intervention "
+            "phone. No DHCP flag, PortFast, topology, pool or CME variable is "
+            "changed."
+        ),
+    )
+    parser.add_argument(
+        "--reverse-trunk-roles", action="store_true",
+        help=(
+            "counterbalance the trunk-order experiment: P2 is signalled before "
+            "trunk forwarding and P1 after it. Requires "
+            "--trunk-before-voice-vlan."
+        ),
+    )
     args = parser.parse_args()
     modes = [
         name for name, enabled in (
@@ -1108,12 +1190,17 @@ def main() -> int:
             ("--phone-dhcp-lifecycle", args.phone_dhcp_lifecycle),
             ("--phone-svi-dhcp-retrigger", args.phone_svi_dhcp_retrigger),
             ("--edge-before-voice-vlan", args.edge_before_voice_vlan),
+            ("--trunk-before-voice-vlan", args.trunk_before_voice_vlan),
         ) if enabled
     ]
     if len(modes) > 1:
         parser.error(
             "one causal variable per run: " + " and ".join(modes)
             + " cannot be combined"
+        )
+    if args.reverse_trunk_roles and not args.trunk_before_voice_vlan:
+        parser.error(
+            "--reverse-trunk-roles requires --trunk-before-voice-vlan"
         )
     return run(
         args.packet_tracer_version,
@@ -1123,6 +1210,8 @@ def main() -> int:
         phone_dhcp_lifecycle=args.phone_dhcp_lifecycle,
         phone_svi_dhcp_retrigger=args.phone_svi_dhcp_retrigger,
         edge_before_voice_vlan=args.edge_before_voice_vlan,
+        trunk_before_voice_vlan=args.trunk_before_voice_vlan,
+        trunk_roles_reversed=args.reverse_trunk_roles,
     )
 
 
