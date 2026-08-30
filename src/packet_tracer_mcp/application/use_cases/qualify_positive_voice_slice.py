@@ -202,6 +202,9 @@ ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN = (
 ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY = (
     "ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY"
 )
+ACQUISITION_NOT_STARTED_EDGE_POLICY_DISPATCH_UNPROVEN = (
+    "ACQUISITION_NOT_STARTED_EDGE_POLICY_DISPATCH_UNPROVEN"
+)
 
 #: The four verdicts run 15 can reach, kept apart because they license
 #: different next steps.  Only the first credits the edge policy.
@@ -567,6 +570,7 @@ def await_paired_stp_forwarding(
     interval_seconds: float,
     clock,
     sleeper,
+    started_at: float | None = None,
     errors: list[str] | None = None,
     milestone_observer=None,
 ) -> dict[str, PairedStpPortGate]:
@@ -579,7 +583,9 @@ def await_paired_stp_forwarding(
     for any port, and once when the gate terminates -- so a caller can take a
     bounded endpoint reading at those two moments without a polling matrix.
     """
-    started = clock()
+    # The edge-before-voice experiment supplies the voice-VLAN batch boundary
+    # here.  Other callers retain the standalone gate's local origin.
+    started = clock() if started_at is None else started_at
     observed: dict[str, list[str]] = {role: [] for role, _ in ports}
     transitions: dict[str, list[StpGateTransition]] = {
         role: [] for role, _ in ports
@@ -1066,6 +1072,107 @@ class PositiveVoiceFoundation:
 
 
 @dataclass(frozen=True)
+class SharedFoundationTransition:
+    """One meaningful state change in the bounded pre-signal wait.
+
+    Repeated identical samples are collapsed, while ``sample`` and
+    ``elapsed_ms`` retain when each new state was first seen.  Exact trunk
+    forwarding sets travel with the classification because an empty IOS
+    section and an unread section are materially different evidence.
+    """
+
+    sample: int = 0
+    elapsed_ms: int = 0
+    status: str = UNOBSERVABLE
+    failure_dimensions: tuple[str, ...] = ()
+    trunk_forwarding_voice: str = UNOBSERVABLE
+    trunk_forwarding_vlans: tuple[int, ...] | None = None
+    trunk_read_authority: str = UNOBSERVABLE
+
+    @property
+    def state_signature(self) -> tuple:
+        return (
+            self.status,
+            self.failure_dimensions,
+            self.trunk_forwarding_voice,
+            self.trunk_forwarding_vlans,
+            self.trunk_read_authority,
+        )
+
+    def as_evidence(self) -> dict:
+        return {
+            "sample": self.sample,
+            "elapsed_ms": self.elapsed_ms,
+            "status": self.status,
+            "failure_dimensions": list(self.failure_dimensions),
+            "trunk_forwarding_voice": self.trunk_forwarding_voice,
+            "trunk_forwarding_vlans": (
+                list(self.trunk_forwarding_vlans)
+                if self.trunk_forwarding_vlans is not None else None
+            ),
+            "trunk_read_authority": self.trunk_read_authority,
+        }
+
+
+@dataclass(frozen=True)
+class SharedFoundationWait:
+    """Bounded authority for mutation before either phone sees VLAN930."""
+
+    status: str = UNOBSERVABLE
+    terminal_foundation_status: str = UNOBSERVABLE
+    samples: int = 0
+    duration_ms: int = 0
+    first_verified_ms: int | None = None
+    terminal_read_authority: str = UNOBSERVABLE
+    terminal_failure_dimensions: tuple[str, ...] = ()
+    terminal_failure_reason: str = ""
+    transitions: tuple[SharedFoundationTransition, ...] = ()
+
+    @property
+    def trunk_forwarding_transition(self) -> str:
+        observed_not_forwarding = False
+        for item in self.transitions:
+            if item.trunk_forwarding_voice == CONTRADICTED:
+                observed_not_forwarding = True
+            elif (
+                observed_not_forwarding
+                and item.trunk_forwarding_voice == VERIFIED
+            ):
+                return "NOT_FORWARDING -> FORWARDING"
+        return NOT_ESTABLISHED
+
+    @property
+    def trunk_forwarding_convergence(self) -> str:
+        return (
+            "DIRECTLY_OBSERVED"
+            if self.trunk_forwarding_transition
+            == "NOT_FORWARDING -> FORWARDING"
+            else NOT_ESTABLISHED
+        )
+
+    def as_evidence(self) -> dict:
+        return {
+            "status": self.status,
+            "terminal_foundation_status": self.terminal_foundation_status,
+            "samples": self.samples,
+            "duration_ms": self.duration_ms,
+            "first_verified_ms": self.first_verified_ms,
+            "terminal_read_authority": self.terminal_read_authority,
+            "terminal_failure_dimensions": list(
+                self.terminal_failure_dimensions
+            ),
+            "terminal_failure_reason": self.terminal_failure_reason,
+            "transitions": [item.as_evidence() for item in self.transitions],
+            "trunk_forwarding_transition": (
+                self.trunk_forwarding_transition
+            ),
+            "trunk_forwarding_convergence": (
+                self.trunk_forwarding_convergence
+            ),
+        }
+
+
+@dataclass(frozen=True)
 class PositiveVoicePhoneOutcome:
     """The five success dimensions for one phone, each read independently."""
 
@@ -1201,6 +1308,7 @@ class PositiveVoiceSliceResult:
     #: typed runtime accepted, never what the switch is doing.
     edge_policy_dispatch: str = PORTFAST_NOT_APPLIED
     shared_foundation_ready: str = UNOBSERVABLE
+    shared_foundation_wait: SharedFoundationWait | None = None
     acquisition_started: bool = True
     acquisition_boundary: str = ""
     baseline_inventory: PhysicalWorkspaceObservation | None = None
@@ -1210,6 +1318,12 @@ class PositiveVoiceSliceResult:
     owned_links: tuple[str, ...] = ()
     removed: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+
+    @property
+    def trunk_forwarding_convergence(self) -> str:
+        if self.shared_foundation_wait is None:
+            return NOT_ESTABLISHED
+        return self.shared_foundation_wait.trunk_forwarding_convergence
 
     @property
     def foundation_ladder(self) -> tuple[tuple[str, str], ...]:
@@ -1921,6 +2035,37 @@ def _vlan_section(section, vlan_id: int) -> str:
     return VERIFIED if vlan_id in tuple(section) else CONTRADICTED
 
 
+_SHARED_FOUNDATION_DIMENSIONS = (
+    "trunk_operational",
+    "trunk_allowed_voice",
+    "trunk_active_voice",
+    "trunk_forwarding_voice",
+    "router_subinterface_present",
+    "router_subinterface_ipv4",
+    "router_subinterface_state",
+    "dhcp_pool_table_readback",
+    "call_control_table",
+)
+
+
+def _shared_foundation_statuses(
+    foundation: "PositiveVoiceFoundation",
+) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (name, str(getattr(foundation, name)))
+        for name in _SHARED_FOUNDATION_DIMENSIONS
+    )
+
+
+def _shared_foundation_failure_dimensions(
+    foundation: "PositiveVoiceFoundation",
+) -> tuple[str, ...]:
+    return tuple(
+        name for name, status in _shared_foundation_statuses(foundation)
+        if status != VERIFIED
+    )
+
+
 def _shared_foundation_ready(foundation: "PositiveVoiceFoundation") -> str:
     """The worst of only the upstream dimensions run 15 needs BEFORE VLAN930.
 
@@ -1932,17 +2077,9 @@ def _shared_foundation_ready(foundation: "PositiveVoiceFoundation") -> str:
     excluded ranges -- are NOT_AVAILABLE and are deliberately not gated on:
     failing closed on an observer's limit would stop every run forever.
     """
-    return _worst(
-        foundation.trunk_operational,
-        foundation.trunk_allowed_voice,
-        foundation.trunk_active_voice,
-        foundation.trunk_forwarding_voice,
-        foundation.router_subinterface_present,
-        foundation.router_subinterface_ipv4,
-        foundation.router_subinterface_state,
-        foundation.dhcp_pool_table_readback,
-        foundation.call_control_table,
-    )
+    return _worst(*(
+        status for _, status in _shared_foundation_statuses(foundation)
+    ))
 
 
 def _classify_trunk(observation) -> dict:
@@ -2432,7 +2569,7 @@ class PositiveVoiceSliceQualifier:
         retrigger_stp_gates: dict[str, StpForwardingGate] = {}
         edge_stp_port_gates: dict[str, PairedStpPortGate] = {}
         edge_voice_svi: list[EdgeVoiceSviObservation] = []
-        edge_state: dict[str, str] = {}
+        edge_state: dict[str, object] = {}
         voice_binding_ipv4s: list[str] = []
         try:
             (
@@ -2502,6 +2639,7 @@ class PositiveVoiceSliceQualifier:
             shared_foundation_ready=edge_state.get(
                 "shared_foundation_ready", UNOBSERVABLE,
             ),
+            shared_foundation_wait=edge_state.get("shared_foundation_wait"),
             acquisition_started=not acquisition_boundary,
             acquisition_boundary=acquisition_boundary,
             baseline_inventory=baseline, final_inventory=final,
@@ -2742,7 +2880,7 @@ class PositiveVoiceSliceQualifier:
         voice_binding_ipv4s: list[str],
         edge_stp_port_gates: dict[str, PairedStpPortGate] | None = None,
         edge_voice_svi: list[EdgeVoiceSviObservation] | None = None,
-        edge_state: dict[str, str] | None = None,
+        edge_state: dict[str, object] | None = None,
     ):
         edge_stp_port_gates = (
             {} if edge_stp_port_gates is None else edge_stp_port_gates
@@ -2844,7 +2982,16 @@ class PositiveVoiceSliceQualifier:
                 for port, vlan in zip(phone_ports, self._phone_access_vlans)
             ),
         )
-        journal.record("WHEN_VOICE_VLAN_APPLIED", applied, f"voice vlan {VOICE_VLAN_ID}")
+        if self._edge_before_voice_vlan:
+            journal.record(
+                "WHEN_VOICE_VLAN_WITHHELD", applied,
+                "initial access batch voice_vlan_id=None on both phone ports",
+            )
+        else:
+            journal.record(
+                "WHEN_VOICE_VLAN_APPLIED", applied,
+                f"voice vlan {VOICE_VLAN_ID}",
+            )
         journal.record("WHEN_DHCP_POOL_EXISTS", applied, VOICE_POOL_NAME)
         journal.record("CONFIGURATION_APPLY_ORDER", applied, "L2, L3, then services")
         if self._phone_dhcp_lifecycle:
@@ -3157,7 +3304,7 @@ class PositiveVoiceSliceQualifier:
         errors: list[str],
         edge_stp_port_gates: dict[str, PairedStpPortGate],
         edge_voice_svi: list[EdgeVoiceSviObservation],
-        edge_state: dict[str, str],
+        edge_state: dict[str, object],
     ) -> str:
         """Run 15, in the order the hypothesis requires.
 
@@ -3167,12 +3314,15 @@ class PositiveVoiceSliceQualifier:
         later time is measured from.  Returns the fail-closed boundary, or the
         empty string when the acquisition window is authorized.
         """
-        # The upstream network the phone will need, read BEFORE it can matter.
-        pre_foundation = self._read_foundation(
-            switch_name, router_name, journal, errors, "PRE_VOICE_VLAN_",
+        # The upstream network the phone will need, repeatedly read BEFORE it
+        # can matter.  UNKNOWN and a real contradiction both keep the waiter
+        # closed; only one current VERIFIED sample can authorize mutation.
+        pre_foundation, foundation_wait = self._await_shared_foundation(
+            switch_name, router_name, journal, errors,
         )
         ready = _shared_foundation_ready(pre_foundation)
         edge_state["shared_foundation_ready"] = ready
+        edge_state["shared_foundation_wait"] = foundation_wait
         journal.record(
             "WHEN_SHARED_FOUNDATION_READY", ready == VERIFIED, ready,
             OBSERVATION,
@@ -3187,12 +3337,15 @@ class PositiveVoiceSliceQualifier:
         edge_state["edge_policy_dispatch"] = (
             PORTFAST_APPLIED if dispatched else PORTFAST_NOT_APPLIED
         )
+        if not dispatched:
+            return ACQUISITION_NOT_STARTED_EDGE_POLICY_DISPATCH_UNPROVEN
 
         # THE CAUSAL CLOCK BOUNDARY.
         applied, boundary_errors = self._apply(
             self._configuration.apply_actions,
             self._voice_vlan_boundary_actions(phone_ports),
         )
+        boundary_started = self._gate_clock()
         errors.extend(boundary_errors)
         journal.record(
             "WHEN_VOICE_VLAN_APPLICATION_BOUNDARY", applied,
@@ -3210,6 +3363,7 @@ class PositiveVoiceSliceQualifier:
             timeout_seconds=self._gate_timeout_seconds,
             interval_seconds=self._gate_interval_seconds,
             clock=self._gate_clock, sleeper=self._gate_sleeper,
+            started_at=boundary_started,
             errors=errors,
             milestone_observer=lambda name: self._retain_edge_voice_svi(
                 name, phones, edge_voice_svi, errors,
@@ -3232,6 +3386,99 @@ class PositiveVoiceSliceQualifier:
             # cannot be told apart from one whose port was never read.
             return ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
         return ""
+
+    def _await_shared_foundation(
+        self,
+        switch_name: str,
+        router_name: str,
+        journal: _Journal,
+        errors: list[str],
+    ) -> tuple[PositiveVoiceFoundation, SharedFoundationWait]:
+        """Wait boundedly for the whole governed pre-signal foundation.
+
+        There is no grace sleep and no remembered-good authorization.  Every
+        sample reuses the same four existing read surfaces, and the mutation
+        boundary opens only on the sample whose complete aggregate is
+        VERIFIED.  Timeout retains the terminal failure dimensions and never
+        signals VLAN930.
+        """
+        started = self._gate_clock()
+        deadline = started + self._gate_timeout_seconds
+        samples = 0
+        transitions: list[SharedFoundationTransition] = []
+        terminal = PositiveVoiceFoundation()
+        terminal_status = UNOBSERVABLE
+
+        while True:
+            samples += 1
+            terminal = self._read_foundation(
+                switch_name,
+                router_name,
+                journal,
+                errors,
+                f"PRE_VOICE_VLAN_SAMPLE_{samples}_",
+            )
+            terminal_status = _shared_foundation_ready(terminal)
+            elapsed_ms = max(
+                0, int((self._gate_clock() - started) * 1000),
+            )
+            failure_dimensions = _shared_foundation_failure_dimensions(
+                terminal,
+            )
+            transition = SharedFoundationTransition(
+                sample=samples,
+                elapsed_ms=elapsed_ms,
+                status=terminal_status,
+                failure_dimensions=failure_dimensions,
+                trunk_forwarding_voice=terminal.trunk_forwarding_voice,
+                trunk_forwarding_vlans=terminal.trunk_forwarding_vlans,
+                trunk_read_authority=terminal.trunk_read_authority,
+            )
+            if (
+                not transitions
+                or transitions[-1].state_signature
+                != transition.state_signature
+            ):
+                transitions.append(transition)
+
+            if terminal_status == VERIFIED:
+                return terminal, SharedFoundationWait(
+                    status=VERIFIED,
+                    terminal_foundation_status=terminal_status,
+                    samples=samples,
+                    duration_ms=elapsed_ms,
+                    first_verified_ms=elapsed_ms,
+                    terminal_read_authority=terminal.trunk_read_authority,
+                    transitions=tuple(transitions),
+                )
+
+            now = self._gate_clock()
+            if now >= deadline:
+                trunk_failure = any(
+                    item.startswith("trunk_") for item in failure_dimensions
+                )
+                return terminal, SharedFoundationWait(
+                    status=GATE_TIMEOUT,
+                    terminal_foundation_status=terminal_status,
+                    samples=samples,
+                    duration_ms=max(0, int((now - started) * 1000)),
+                    terminal_read_authority=(
+                        terminal.trunk_read_authority
+                        if trunk_failure else UNOBSERVABLE
+                    ),
+                    terminal_failure_dimensions=failure_dimensions,
+                    terminal_failure_reason=(
+                        terminal.trunk_failure_reason
+                        if trunk_failure and terminal.trunk_failure_reason
+                        else ",".join(failure_dimensions)
+                    )[:240],
+                    transitions=tuple(transitions),
+                )
+
+            self._gate_sleeper(min(
+                self._gate_interval_seconds,
+                max(0.0, deadline - now),
+            ))
 
     def _retain_pre_retrigger_endpoint_states(
         self,

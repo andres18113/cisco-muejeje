@@ -54,6 +54,7 @@ from tests.test_positive_voice_slice import (
     _Registration,
     _StpInstance,
     _StpRow,
+    _Trunk,
     _empty_workspace,
     _mutation,
     _qualifier,
@@ -136,9 +137,9 @@ def _edge_actions(control_plane):
 def _run_edge(
     *, stp_sequence=None, configuration=None, call_control=None,
     endpoints=None, control_plane=None, timeline=None, registration=None,
-    physical=None, **kwargs,
+    physical=None, clock=None, **kwargs,
 ):
-    clock = _Clock()
+    clock = clock if clock is not None else _Clock()
     if stp_sequence is None:
         stp_sequence = [_paired_stp("FWD", "FWD", edge=True)]
     configuration = configuration if configuration is not None else (
@@ -263,6 +264,15 @@ def test_the_journal_names_the_voice_vlan_application_boundary():
     assert "WHEN_VOICE_VLAN_APPLICATION_BOUNDARY" in names
 
 
+def test_the_initial_batch_journals_voice_vlan_as_withheld_not_applied():
+    result, *_ = _run_edge()
+
+    names = [item.name for item in result.lifecycle]
+    assert "WHEN_VOICE_VLAN_WITHHELD" in names
+    assert "WHEN_VOICE_VLAN_APPLIED" not in names
+    assert names.count("WHEN_VOICE_VLAN_APPLICATION_BOUNDARY") == 1
+
+
 # --- the edge policy is the one variable, and it lands first ----------------
 
 def test_only_the_intervention_port_receives_the_edge_policy():
@@ -321,6 +331,23 @@ def test_a_refused_edge_dispatch_is_reported_as_not_applied():
     assert result.edge_policy_dispatch == "NOT_APPLIED"
 
 
+def test_a_refused_edge_dispatch_fails_closed_before_voice_signalling():
+    control_plane = _EdgeControlPlane(
+        mutations=lambda action_id: _mutation(
+            action_id=action_id, applied=False, message="refused",
+        ),
+    )
+    result, configuration, *_ = _run_edge(control_plane=control_plane)
+
+    assert result.acquisition_boundary == (
+        "ACQUISITION_NOT_STARTED_EDGE_POLICY_DISPATCH_UNPROVEN"
+    )
+    assert result.acquisition_started is False
+    assert len(_access_batches(configuration)) == 1
+    names = [item.name for item in result.lifecycle]
+    assert "WHEN_VOICE_VLAN_APPLICATION_BOUNDARY" not in names
+
+
 # --- the shared foundation must be ready BEFORE the boundary ----------------
 
 def test_a_contradicted_shared_foundation_fails_closed_before_the_boundary():
@@ -348,6 +375,96 @@ def test_a_ready_shared_foundation_is_reported_and_lets_the_boundary_run():
 
     assert result.shared_foundation_ready == VERIFIED
     assert len(_access_batches(configuration)) == 2
+
+
+def test_the_shared_foundation_waits_until_forwarding_then_authorizes_boundary():
+    class _ConvergingTrunk(_EdgeConfiguration):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self._trunks = [
+                _Trunk(forwarding_vlans=()),
+                _Trunk(forwarding_vlans=(DATA_VLAN_ID, VOICE_VLAN_ID)),
+            ]
+
+        def read_trunk(self, device_name, interface):
+            self.trunk_reads.append((device_name, interface))
+            if len(self._trunks) > 1:
+                return self._trunks.pop(0)
+            return self._trunks[0]
+
+    result, configuration, *_ = _run_edge(
+        configuration=_ConvergingTrunk(
+            stp_sequence=[_paired_stp("FWD", "FWD", edge=True)],
+        ),
+        gate_timeout_seconds=10.0,
+        gate_interval_seconds=2.0,
+    )
+
+    wait = result.shared_foundation_wait
+    assert wait.status == VERIFIED
+    assert wait.samples == 2
+    assert wait.duration_ms == 2_000
+    assert wait.first_verified_ms == 2_000
+    assert [item.status for item in wait.transitions] == [
+        "CONTRADICTED", VERIFIED,
+    ]
+    assert wait.transitions[0].failure_dimensions == (
+        "trunk_forwarding_voice",
+    )
+    assert wait.trunk_forwarding_transition == (
+        "NOT_FORWARDING -> FORWARDING"
+    )
+    assert wait.trunk_forwarding_convergence == "DIRECTLY_OBSERVED"
+    assert len(_access_batches(configuration)) == 2
+
+
+def test_the_shared_foundation_timeout_retains_authority_and_fails_closed():
+    configuration = _EdgeConfiguration(
+        trunk=_Trunk(forwarding_vlans=()),
+        stp_sequence=[_paired_stp("FWD", "FWD", edge=True)],
+    )
+    result, configuration, control_plane, *_ = _run_edge(
+        configuration=configuration,
+        gate_timeout_seconds=4.0,
+        gate_interval_seconds=2.0,
+    )
+
+    wait = result.shared_foundation_wait
+    assert wait.status == "TIMEOUT"
+    assert wait.samples == 3
+    assert wait.duration_ms == 4_000
+    assert wait.first_verified_ms is None
+    assert wait.terminal_read_authority == "AUTHORITATIVE"
+    assert wait.terminal_failure_dimensions == ("trunk_forwarding_voice",)
+    assert result.shared_foundation_ready == "CONTRADICTED"
+    assert result.acquisition_boundary == (
+        ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY
+    )
+    assert _edge_actions(control_plane) == []
+    assert len(_access_batches(configuration)) == 1
+
+
+def test_an_unobservable_foundation_never_authorizes_mutation_after_timeout():
+    class _UnreadTrunk(_EdgeConfiguration):
+        def read_trunk(self, device_name, interface):
+            self.trunk_reads.append((device_name, interface))
+            return None
+
+    result, configuration, control_plane, *_ = _run_edge(
+        configuration=_UnreadTrunk(
+            stp_sequence=[_paired_stp("FWD", "FWD", edge=True)],
+        ),
+        gate_timeout_seconds=2.0,
+        gate_interval_seconds=1.0,
+    )
+
+    assert result.shared_foundation_wait.status == "TIMEOUT"
+    assert "trunk_operational" in (
+        result.shared_foundation_wait.terminal_failure_dimensions
+    )
+    assert result.shared_foundation_ready == UNOBSERVABLE
+    assert _edge_actions(control_plane) == []
+    assert len(_access_batches(configuration)) == 1
 
 
 def test_the_shared_foundation_is_read_before_the_boundary_batch():
@@ -423,6 +540,32 @@ def test_each_port_retains_its_time_from_the_boundary_to_forwarding():
     assert control.time_to_forwarding_ms > intervention.time_to_forwarding_ms
     assert control.time_to_first_authoritative_ms == 0
     assert intervention.time_to_first_authoritative_ms == 0
+
+
+def test_both_stp_times_use_the_voice_vlan_boundary_before_svi_reads():
+    clock = _Clock()
+
+    class _TimedEndpoints(_Endpoints):
+        def read_endpoint_address(self, device_name, interface):
+            clock.sleep(0.25)
+            return super().read_endpoint_address(device_name, interface)
+
+    result, *_ = _run_edge(
+        clock=clock,
+        endpoints=_TimedEndpoints(
+            observation=_EndpointObservation(
+                present=True, dhcp_enabled=True, address_channel=True,
+            ),
+        ),
+        stp_sequence=[_paired_stp("FWD", "FWD", edge=True)],
+    )
+
+    # The two immediate SVI reads take 500 ms.  Both port clocks include that
+    # delay because their one origin is the preceding voice-VLAN batch.
+    assert result.control_stp_port_gate.time_to_first_authoritative_ms == 500
+    assert result.intervention_stp_port_gate.time_to_first_authoritative_ms == 500
+    assert result.control_stp_port_gate.time_to_forwarding_ms == 500
+    assert result.intervention_stp_port_gate.time_to_forwarding_ms == 500
 
 
 def test_a_port_that_never_forwards_times_out_without_inventing_a_state():
@@ -698,6 +841,9 @@ def test_the_archived_artifact_carries_the_run15_evidence():
     # into the file that outlives the run.
     for key in (
         "shared_foundation_ready", "edge_policy_dispatch",
+        "shared_foundation_wait", "trunk_forwarding_convergence",
+        "control_edge_dispatch", "intervention_edge_dispatch",
+        "intervention_edge_runtime_state", "voice_vlan_clock_boundary",
         "edge_policy_runtime_state", "edge_stp_effect_observed",
         "control_stp_port_gate", "intervention_stp_port_gate",
         "edge_voice_svi_lifecycle", "control_matching_binding",

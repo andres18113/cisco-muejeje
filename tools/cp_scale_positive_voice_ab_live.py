@@ -495,6 +495,10 @@ class _EndpointAdapter:
 
 
 def _serialize(result) -> dict:
+    voice_vlan_boundaries = [
+        item for item in result.lifecycle
+        if item.name == "WHEN_VOICE_VLAN_APPLICATION_BOUNDARY"
+    ]
     return {
         "diagnostic": "POSITIVE_DISPOSABLE_VOICE_AB",
         "router_model": result.router_model,
@@ -518,6 +522,22 @@ def _serialize(result) -> dict:
             result.stp_timing_controls_dhcp_acquisition
         ),
         "shared_foundation_ready": result.shared_foundation_ready,
+        "shared_foundation_wait": (
+            result.shared_foundation_wait.as_evidence()
+            if result.shared_foundation_wait is not None else None
+        ),
+        "trunk_forwarding_convergence": (
+            result.trunk_forwarding_convergence
+        ),
+        "control_edge_dispatch": "NOT_APPLIED",
+        "intervention_edge_dispatch": result.edge_policy_dispatch,
+        "intervention_edge_runtime_state": (
+            result.edge_policy_runtime_state
+        ),
+        "voice_vlan_clock_boundary": (
+            voice_vlan_boundaries[0].as_evidence()
+            if len(voice_vlan_boundaries) == 1 else None
+        ),
         "edge_policy_dispatch": result.edge_policy_dispatch,
         "edge_policy_runtime_state": result.edge_policy_runtime_state,
         "edge_stp_effect_observed": result.edge_stp_effect_observed,
@@ -923,6 +943,11 @@ def run(
         "causal_experiment_result": evidence["causal_experiment_result"],
         "acquisition_started": evidence["acquisition_started"],
         "acquisition_boundary": evidence["acquisition_boundary"],
+        "shared_foundation_ready": evidence["shared_foundation_ready"],
+        "shared_foundation_wait": evidence["shared_foundation_wait"],
+        "trunk_forwarding_convergence": evidence[
+            "trunk_forwarding_convergence"
+        ],
         "pre_retrigger_endpoint_states": evidence[
             "pre_retrigger_endpoint_states"
         ],

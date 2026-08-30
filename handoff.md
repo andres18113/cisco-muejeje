@@ -205,11 +205,16 @@ RUN15_CONTRACT_VALID = YES_THE_GATE_REFUSED_TO_TEST_AN_UNCONVERGED_NETWORK
 RUN15_HYPOTHESIS_TESTED = NO
 RUN15_SHA256 = fbec0e7175b5516ca960e99ec543c6888882ab72732773b989bf8f0443e89f08
 RUN15_DEFECT_FOR_NEXT_RUN = FOUNDATION_READINESS_IS_ONE_INSTANT_SAMPLE_WITH_NO_BOUNDED_WAIT
-TRUNK_FORWARDING_IS_TIME_DEPENDENT = ESTABLISHED_FROM_RUN15_VERSUS_RUN11_TO_RUN14
+TRUNK_FORWARDING_IS_TIME_DEPENDENT = STRONGLY_SUGGESTED_BY_RUN15_VERSUS_RUN11_TO_RUN14
+RUN16_MODE_PREPARED = EDGE_BEFORE_VOICE_VLAN
+RUN16_FOUNDATION_WAIT = BOUNDED_VERIFIED_OR_TIMEOUT_BEFORE_EDGE_OR_VOICE_SIGNAL
+RUN16_JOURNAL_SEMANTICS = INITIAL_VOICE_VLAN_WITHHELD_SINGLE_LATER_APPLICATION_BOUNDARY
+RUN16_CLOCK_ORIGIN = ONE_SHARED_VOICE_VLAN_BATCH
+RUN16_LEDGER_ROLE = RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION
 VOICE_ROOT_CAUSE = NOT_CONFIRMED
 VOICE_ROOT_CAUSE_LEADING_CANDIDATE = EARLY_DISCOVER_LOST_NO_RETRY
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = BOUND_THE_SHARED_FOUNDATION_READINESS_WAIT_THEN_RERUN_RUN15_ONCE
+NEXT_ACTIVE_STEP = EXECUTE_ONE_GOVERNED_RUN16_LIVE
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -306,8 +311,10 @@ through 14 each observed forwarding on this same trunk.  The only thing that
 changed is WHEN the read happens: runs 11 to 14 read the foundation after the
 voice VLAN had already reached the access ports and after further work, while
 run 15 reads it immediately after the foundation batch.  So trunk forwarding on
-this build is time-dependent, and the earlier runs were reading it after it had
-converged rather than establishing that it converges quickly.
+this build is strongly suggested to be time-dependent, and the earlier runs
+were reading it after it may have converged rather than establishing that it
+converges quickly.  The comparison is across runs and therefore does not itself
+establish a transition.
 
 The defect this exposes is in the readiness gate, not in the experiment's
 design.  `_shared_foundation_ready` is evaluated from ONE instantaneous read
@@ -323,6 +330,25 @@ cycled, and no raw IOS or JavaScript was issued.  The disposable workspace and
 the realtime mode were both restored, confirmed by an independent post-run
 read, with no cleanup errors.  `FRESH_7960_DHCP_TRANSACTION`,
 `SERVER_RECEIVES_DISCOVER` and `DHCP_TRANSACTION_PROGRESS` are unchanged.
+
+## Run 16 prepared: bounded foundation convergence and one causal clock
+
+Run 16 retains run 15's network experiment and fixes only its pre-live harness
+defects.  The shared foundation now reuses the same governed trunk, router L3,
+DHCP-pool and call-control reads until one complete aggregate is VERIFIED or a
+bounded timeout expires.  It retains sample count, elapsed time, compact state
+transitions, the first VERIFIED time, exact forwarding sets, and terminal
+authority/failure dimensions.  UNKNOWN never authorizes the edge dispatch or
+the voice-VLAN batch.
+
+The initial access-port batch now journals VLAN930 as WITHHELD; it no longer
+records `WHEN_VOICE_VLAN_APPLIED` for actions whose `voice_vlan_id` is `None`.
+Only the later two-port voice-VLAN application boundary establishes signalling.
+Its one timestamp is passed into the paired STP observer, so the control and
+intervention timings include the immediately-after-boundary SVI reads and share
+one causal origin.  A within-run authoritative not-forwarding to forwarding
+transition promotes `TRUNK_FORWARDING_CONVERGENCE` to `DIRECTLY_OBSERVED`; the
+older inter-run comparison remains only strongly suggestive.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 

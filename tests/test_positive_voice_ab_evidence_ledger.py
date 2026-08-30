@@ -52,6 +52,7 @@ ROLES = {
     "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
     "PHONE_DHCP_LIFECYCLE_QUALIFICATION",
     "PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION",
+    "RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION",
 }
 
 
@@ -312,6 +313,7 @@ def test_the_observational_lifecycle_has_a_dedicated_ledger_role(
         "PAIRED_ACCESS_VLAN_FWD_GATED_ACQUISITION",
         "PHONE_DHCP_LIFECYCLE_QUALIFICATION",
         "PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION",
+        "RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION",
     )
 
 
@@ -327,6 +329,24 @@ def test_the_phone_svi_retrigger_has_a_dedicated_causal_role(
 
     assert entry["role"] == (
         "PHONE_SVI_DHCP_RETRIGGER_CAUSAL_INTERVENTION"
+    )
+    assert entry["role"] in tool.ROLES
+
+
+def test_run_sixteen_has_a_dedicated_edge_before_voice_ledger_role(
+    monkeypatch, tmp_path,
+):
+    raw, _ = _isolate(monkeypatch, tmp_path)
+    (raw / "positive-voice-ab-run16-probe.json").write_bytes(b"{}")
+
+    entry = _record(
+        run="run16",
+        filename="positive-voice-ab-run16-probe.json",
+        role="RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION",
+    )
+
+    assert entry["role"] == (
+        "RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION"
     )
     assert entry["role"] in tool.ROLES
 
