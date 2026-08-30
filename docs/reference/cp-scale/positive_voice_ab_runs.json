@@ -181,6 +181,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "P1 received VLAN930 between two authoritative reads showing the same trunk allowed/active but forwarding empty; P2 received VLAN930 only after that trunk transitioned to forwarding. Both later reached authoritative phone-port FWD, acquired matching leases, and registered SCCP. Trunk-forwarding readiness at the signal boundary had NO EFFECT; no Discover/DORA claim is made. Cleanup independently restored Realtime and zero semantic devices/links."
+    },
+    {
+      "run": "run18",
+      "filename": "positive-voice-ab-run18-bootstrap-before-signal-insufficient.json",
+      "sha256": "8528d3126f9b0233b5bbde582c82cbde13bccb5428e24b20a87d3309a1ff48e3",
+      "source_head": "0de600f5629cfc4bb698e0d4e53b1db7bcc8104d",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "RUN18_VOICE_BOOTSTRAP_ORDER_CAUSAL_INTERVENTION",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "P1 received VLAN930 before any Option150/CME/ephone/cnf dispatch; P2 received it after that typed batch and verified call-control readback. Both phone ports later reached authoritative FWD, but both SVIs were still absent at that milestone. At the end of the 30-second registration window both SVIs existed with DHCP YES but no IPv4; the authoritative binding table held zero rows and both SCCP states were NOT_REGISTERED. Bootstrap readiness at signal was insufficient; cleanup independently restored Realtime and zero semantic devices/links."
     }
   ]
 }
