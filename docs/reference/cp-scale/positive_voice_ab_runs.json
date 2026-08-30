@@ -193,6 +193,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "P1 received VLAN930 before any Option150/CME/ephone/cnf dispatch; P2 received it after that typed batch and verified call-control readback. Both phone ports later reached authoritative FWD, but both SVIs were still absent at that milestone. At the end of the 30-second registration window both SVIs existed with DHCP YES but no IPv4; the authoritative binding table held zero rows and both SCCP states were NOT_REGISTERED. Bootstrap readiness at signal was insufficient; cleanup independently restored Realtime and zero semantic devices/links."
+    },
+    {
+      "run": "run19",
+      "filename": "positive-voice-ab-run19-access-preparation-no-effect.json",
+      "sha256": "49f828acd544b3e82adb4d938629e791feec024d6dd6f6fa239c24c4ac14fcba",
+      "source_head": "8fdc6ed038d87a8ee1b25408f5e62ec6af2ab63d",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "RUN19_ACCESS_PREPARATION_CAUSAL_INTERVENTION",
+      "outcome": "SUCCESS",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "The intervention port independently read data VLAN931 before the boundary; the control independently contradicted VLAN931 and had no access preparation. After the full shared foundation converged, one identical data931+voice930 batch signalled both ports from one clock. Both later reached authoritative FWD, acquired matching leases (P1 10.93.0.11, P2 10.93.0.10), and registered SCCP. Prior data-only access preparation had NO EFFECT; the late foundation-gated signal boundary, not access history, explains the success. Cleanup independently restored Realtime and zero semantic devices/links."
     }
   ]
 }
