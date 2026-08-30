@@ -211,10 +211,38 @@ RUN16_FOUNDATION_WAIT = BOUNDED_VERIFIED_OR_TIMEOUT_BEFORE_EDGE_OR_VOICE_SIGNAL
 RUN16_JOURNAL_SEMANTICS = INITIAL_VOICE_VLAN_WITHHELD_SINGLE_LATER_APPLICATION_BOUNDARY
 RUN16_CLOCK_ORIGIN = ONE_SHARED_VOICE_VLAN_BATCH
 RUN16_LEDGER_ROLE = RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION
-VOICE_ROOT_CAUSE = NOT_CONFIRMED
+RUN16_EXECUTED = YES
+RUN16_SOURCE_HEAD = c388391ace419094a99d6ae989ac8bcb2c6c6dc3
+RUN16_RESULT = SHARED_PREPARED_FOUNDATION_ACQUISITION
+RUN16_FOUNDATION_CONVERGENCE = VERIFIED
+RUN16_FOUNDATION_SAMPLES = 13
+RUN16_FOUNDATION_DURATION_MS = 31360
+RUN16_FOUNDATION_FIRST_VERIFIED_MS = 31360
+TRUNK_FORWARDING_CONVERGENCE = DIRECTLY_OBSERVED
+RUN16_TRUNK_FORWARDING_TRANSITION = EMPTY -> (930, 931)
+RUN16_CONTROL_EDGE_DISPATCH = NOT_APPLIED
+RUN16_INTERVENTION_EDGE_DISPATCH = APPLIED
+RUN16_INTERVENTION_EDGE_RUNTIME_STATE = UNOBSERVABLE
+RUN16_VOICE_VLAN_CLOCK_BOUNDARY = ONE_SHARED_BATCH_APPLIED_SEQUENCE_69
+RUN16_CONTROL_FIRST_STP_STATE = LIS
+RUN16_CONTROL_STP_SEQUENCE = LIS -> UNOBSERVABLE(COMPLETENESS) -> LIS -> LRN -> FORWARDING
+RUN16_CONTROL_TIME_TO_FWD_MS = 30782
+RUN16_INTERVENTION_FIRST_STP_STATE = LIS
+RUN16_INTERVENTION_STP_SEQUENCE = LIS -> UNOBSERVABLE(COMPLETENESS) -> LIS -> LRN -> FORWARDING
+RUN16_INTERVENTION_TIME_TO_FWD_MS = 30782
+RUN16_CONTROL_FINAL_IPV4 = 10.93.0.11
+RUN16_INTERVENTION_FINAL_IPV4 = 10.93.0.10
+RUN16_VOICE_BINDING_COUNT = 2
+RUN16_CONTROL_MATCHING_BINDING = YES
+RUN16_INTERVENTION_MATCHING_BINDING = YES
+RUN16_CONTROL_SCCP = REGISTERED
+RUN16_INTERVENTION_SCCP = REGISTERED
+RUN16_STP_TIMING_CONTROLS_DHCP_ACQUISITION = NOT_ESTABLISHED
+RUN16_SHA256 = d65a6e79e3d97fea707a42b27139f65b9b8dff8eaf8f9c3e495591a6b34f4563
+VOICE_ROOT_CAUSE = STRONG_CANDIDATE
 VOICE_ROOT_CAUSE_LEADING_CANDIDATE = EARLY_DISCOVER_LOST_NO_RETRY
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_ONE_GOVERNED_RUN16_LIVE
+NEXT_ACTIVE_STEP = DESIGN_TYPED_FOUNDATION_GATED_VOICE_SIGNALING_FIX_AND_VERIFY_DISPOSABLE_BEFORE_CANONICAL
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -349,6 +377,55 @@ intervention timings include the immediately-after-boundary SVI reads and share
 one causal origin.  A within-run authoritative not-forwarding to forwarding
 transition promotes `TRUNK_FORWARDING_CONVERGENCE` to `DIRECTLY_OBSERVED`; the
 older inter-run comparison remains only strongly suggestive.
+
+## Run 16 executed: the prepared shared foundation acquired on both ports
+
+The one governed LIVE ran from `c388391ace419094a99d6ae989ac8bcb2c6c6dc3`.
+Its same-process preflight proved the checkout-local interpreter, the in-tree
+production package, only the `packet_tracer_mcp` namespace, clean HEAD equal to
+upstream, Packet Tracer `9.0.1.0858`, Realtime, and an empty semantic workspace
+with zero links.
+
+The bounded foundation wait directly observed the within-run transition run 15
+could only suggest.  Sample 1, at 750 ms, was AUTHORITATIVE and CONTRADICTED
+only on `trunk_forwarding_voice`, with `forwarding_vlans = []`.  Sample 13, at
+31,360 ms, was AUTHORITATIVE and fully VERIFIED with
+`forwarding_vlans = [930, 931]`; the router voice L3, DHCP pool and call-control
+dimensions were also VERIFIED.  This promotes
+`TRUNK_FORWARDING_CONVERGENCE = DIRECTLY_OBSERVED` without weakening the gate.
+
+Only P2 accepted the typed edge dispatch (`portfast=true`, `bpduguard=false`).
+Its runtime edge state remained UNOBSERVABLE, and the behavioural STP evidence
+showed no advantage: P1 and P2 both first read LIS at 203 ms and both followed
+`LIS -> UNOBSERVABLE(COMPLETENESS) -> LIS -> LRN -> FORWARDING`, reaching
+authoritative FWD at 30,782 ms from the one voice-VLAN boundary.  Therefore the
+run does not establish an edge-policy effect and does not credit PortFast.
+
+Both phones were absent on Vlan930 immediately after signalling and at the
+first authoritative STP sample.  At authoritative FWD both SVIs were present,
+DHCP was YES, the address channel answered, and neither held an IPv4.  By the
+end of the acquisition window P1 held `10.93.0.11` and P2 `10.93.0.10`; both
+addresses matched the two authoritative server bindings and both SCCP states
+were REGISTERED.  The governed causal result is therefore
+`SHARED_PREPARED_FOUNDATION_ACQUISITION`: the prepared/converged upstream
+ordering gets the credit, not PortFast.
+
+This strengthens the upstream-ordering root cause to STRONG_CANDIDATE but does
+not confirm the exact early-Discover/no-retry mechanism.  The run did not
+observe Discover or DORA, and it did not isolate different STP timing between
+the phones, so `STP_TIMING_CONTROLS_DHCP_ACQUISITION = NOT_ESTABLISHED`.
+PortFast being necessary for disposable acquisition is refuted by P1.  A
+production fix remains NOT_YET justified until a typed foundation-gated
+signalling change is designed and requalified without broadening into the
+canonical CP-SCALE topology.
+
+The unique archive is
+`positive-voice-ab-run16-shared-prepared-foundation-acquisition.json`, SHA-256
+`d65a6e79e3d97fea707a42b27139f65b9b8dff8eaf8f9c3e495591a6b34f4563`, under
+the dedicated ledger role `RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION`.
+The archive matched the canonical artefact when recorded.  Cleanup independently
+observed zero semantic devices, zero links, one allowed backend-managed Power
+Distribution Device, and Realtime restored, with no errors.  No second LIVE ran.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 

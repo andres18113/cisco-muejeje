@@ -157,6 +157,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "RUN13 symmetric access930/voice930 causal intervention. Independent authoritative VLAN930 FWD gates completed for P1 and P2. One PRE endpoint observation per phone proved SVI present YES, address channel YES, DHCP YES, and addressed NO before mutation. Only P2 received exact-SVI YES-to-NO-to-YES; all accepted/readback fields were exact and P1 stayed DHCP YES without mutation. Acquisition was authorized, but both phones remained unaddressed, the authoritative voice binding table contained zero rows, neither phone registered with SCCP, and the causal result was NO_ADDRESS_AFTER_PHONE_SVI_DHCP_RETRIGGER. This establishes only that the exact transition was insufficient here; Discover, DORA, server receipt and transaction progress remain unobservable. Realtime and the empty semantic workspace were independently restored; one allowed backend-managed PDD remained and no rerun occurred."
+    },
+    {
+      "run": "run16",
+      "filename": "positive-voice-ab-run16-shared-prepared-foundation-acquisition.json",
+      "sha256": "d65a6e79e3d97fea707a42b27139f65b9b8dff8eaf8f9c3e495591a6b34f4563",
+      "source_head": "c388391ace419094a99d6ae989ac8bcb2c6c6dc3",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION",
+      "outcome": "SUCCESS",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "RUN16 edge-before-voice-VLAN governed LIVE. The bounded shared-foundation wait directly observed the authoritative uplink forwarding set transition from empty to [930,931] and reached VERIFIED at sample 13 / 31360 ms before any edge dispatch or voice signalling. P2 alone accepted typed PortFast=true, bpduguard=false, but runtime edge state was UNOBSERVABLE and both ports had the same LIS -> UNOBSERVABLE(COMPLETENESS) -> LIS -> LRN -> FORWARDING sequence with the same 30782 ms time to FWD. Both phones then acquired matching leases (P1 10.93.0.11, P2 10.93.0.10) and registered SCCP, so the result is SHARED_PREPARED_FOUNDATION_ACQUISITION and credits upstream preparation, not PortFast. Discover/DORA and transaction progress remain unobservable. Realtime and the empty semantic workspace were independently restored; one allowed backend-managed PDD remained and no rerun occurred."
     }
   ]
 }

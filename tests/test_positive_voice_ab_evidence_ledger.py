@@ -500,3 +500,36 @@ def test_run_thirteen_records_the_valid_negative_causal_result_without_protocol_
     assert "Discover, DORA, server receipt and transaction progress remain unobservable" in note
     assert "empty semantic workspace were independently restored" in note
     assert "no rerun occurred" in note
+
+
+def test_run_sixteen_records_shared_preparation_without_crediting_portfast():
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    run16 = next(item for item in ledger["runs"] if item["run"] == "run16")
+
+    assert run16 == {
+        "run": "run16",
+        "filename": (
+            "positive-voice-ab-run16-shared-prepared-foundation-"
+            "acquisition.json"
+        ),
+        "sha256": (
+            "d65a6e79e3d97fea707a42b27139f65b9b8dff8eaf8f9c3e495591a6b34f4563"
+        ),
+        "source_head": "c388391ace419094a99d6ae989ac8bcb2c6c6dc3",
+        "source_head_provenance": "HANDOFF_RECORDED",
+        "role": "RUN16_EDGE_BEFORE_VOICE_VLAN_CAUSAL_INTERVENTION",
+        "outcome": "SUCCESS",
+        "packet_tracer_version": "9.0.1.0858",
+        "canonical_copy_at_write": True,
+        "note": run16["note"],
+    }
+    note = run16["note"]
+    assert "authoritative uplink forwarding set transition" in note
+    assert "empty to [930,931]" in note
+    assert "sample 13 / 31360 ms" in note
+    assert "same 30782 ms time to FWD" in note
+    assert "SHARED_PREPARED_FOUNDATION_ACQUISITION" in note
+    assert "credits upstream preparation, not PortFast" in note
+    assert "Discover/DORA and transaction progress remain unobservable" in note
+    assert "empty semantic workspace were independently restored" in note
+    assert "no rerun occurred" in note
