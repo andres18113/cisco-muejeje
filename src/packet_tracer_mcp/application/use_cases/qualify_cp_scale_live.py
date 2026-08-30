@@ -7,19 +7,24 @@ pipeline.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...domain.enterprise.models.capabilities import CapabilityStatus
-from ...domain.enterprise.models.configuration import ConfigurationPlan, VerificationKind
+from ...domain.enterprise.models.configuration import (
+    ConfigurationPlan,
+    ConfigureAccessPort,
+    VerificationKind,
+)
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
@@ -40,7 +45,12 @@ from ...domain.enterprise.models.physical_deployment import (
     physical_workspace_restoration_matches,
 )
 from ...domain.enterprise.models.intent import EnterpriseIntent
-from ...domain.enterprise.models.voice_plan import VoiceCapabilityProfile, VoiceIntent
+from ...domain.enterprise.models.voice_plan import (
+    VoiceCapabilityProfile,
+    VoiceIntent,
+    VoicePlan,
+)
+from ...domain.enterprise.models.voice_runtime import VoiceApplicationResult
 from ...domain.enterprise.models.control_plane import ControlPlaneIntent
 from ...domain.enterprise.scenarios.cp_scale import CPScalePoint, cp_scale_intent_for
 from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
@@ -202,6 +212,82 @@ class CPScalePointStatus(str, Enum):
     BLOCKED = "blocked"
     FAILED = "failed"
     NOT_RUN = "not_run"
+
+
+class CPScaleFinalDisposition(str, Enum):
+    """What a fully verified canonical workspace does at the final gate."""
+
+    CLEANUP = "cleanup"
+    RETAIN = "retain"
+
+
+class CPScaleVoiceAccessGroupEvidence(BaseModel):
+    switch: str
+    voice_vlan_id: int
+    expected_interfaces: list[str] = Field(default_factory=list)
+    verified_fwd_interfaces: list[str] = Field(default_factory=list)
+    missing_interfaces: list[str] = Field(default_factory=list)
+    non_fwd_interfaces: dict[str, str] = Field(default_factory=dict)
+    sample_count: int = 0
+    elapsed_ms: int = 0
+    terminal_authority: str = "UNOBSERVABLE"
+    terminal_failure_dimension: str = "GROUP_EVIDENCE_MISSING"
+    status: ActionExecutionStatus = ActionExecutionStatus.UNOBSERVABLE
+
+
+class CPScaleFailedPhoneIdentity(BaseModel):
+    phone_id: str
+    phone_name: str = ""
+    stage: str
+    site_id: str = ""
+    switch: str = ""
+    port: str = ""
+    voice_vlan_id: int = 0
+    ipv4: str = ""
+    binding_state: str = "UNOBSERVABLE"
+    sccp_state: str = "UNOBSERVABLE"
+    first_contradicted_boundary: str
+
+
+class CPScaleCanonicalVoiceEvidence(BaseModel):
+    stage: str
+    expected_phone_count: int = 0
+    network_foundation_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
+    voice_bootstrap_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
+    voice_signal_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
+    phone_access_group_count: int = 0
+    phone_access_fwd_expected: int = 0
+    phone_access_fwd_verified: int = 0
+    phone_access_fwd_failed: int = 0
+    phone_access_fwd_unobservable: int = 0
+    phone_access_fwd_groups: list[CPScaleVoiceAccessGroupEvidence] = Field(
+        default_factory=list,
+    )
+    phone_access_fwd_max_duration_ms: int = 0
+    lifecycle_events: list[str] = Field(default_factory=list)
+    registration_started_after_fwd_barrier: bool | None = None
+    voice_svi_present_count: int = 0
+    dhcp_enabled_count: int = 0
+    addressed_count: int = 0
+    registration_identity_errors: list[str] = Field(default_factory=list)
+    binding_evidence_complete: bool = False
+    voice_dhcp_binding_count: int = 0
+    matching_binding_count: int = 0
+    sccp_registered_count: int = 0
+    sccp_failed_count: int = 0
+    sccp_unobservable_count: int = 0
+    failed_phone_identities: list[CPScaleFailedPhoneIdentity] = Field(
+        default_factory=list,
+    )
+    first_contradicted_boundary: str = "NOT_ESTABLISHED"
+    complete: bool = False
+
+
+class CPScaleEvidenceArchive(BaseModel):
+    run_identity: str
+    phase: str
+    path: Path
+    sha256: str
 
 
 class CPScaleDimensionMetric(BaseModel):
@@ -916,6 +1002,524 @@ def canonical_stage_workspace_error(
             + ", ".join(missing_ports)
         )
     return ""
+
+
+def canonical_final_disposition(
+    command: str,
+    *,
+    retain_authorized: bool,
+) -> CPScaleFinalDisposition:
+    """Resolve the final checkpoint without turning cleanup into a failure."""
+
+    normalized = command.strip().casefold()
+    if normalized == "continue":
+        return CPScaleFinalDisposition.CLEANUP
+    if normalized == "retain":
+        if not retain_authorized:
+            raise ValueError("Final presentation retention was not authorized.")
+        return CPScaleFinalDisposition.RETAIN
+    raise ValueError(f"Unsupported final checkpoint command {command!r}.")
+
+
+def _canonical_voice_access_groups(
+    plan: ConfigurationPlan,
+    result: ConfigurationApplicationResult,
+) -> list[CPScaleVoiceAccessGroupEvidence]:
+    voice_actions = {
+        item.id: item
+        for item in plan.actions
+        if isinstance(item, ConfigureAccessPort)
+        and item.voice_vlan_id is not None
+    }
+    expectation_by_action = {
+        item.action_id: item
+        for item in plan.verification_expectations
+        if item.action_id in voice_actions
+    }
+    barrier = result.voice_signal_barrier
+    observed = {
+        item.expectation_id: item
+        for item in (
+            barrier.post_signal_convergence_results
+            if barrier is not None else []
+        )
+    }
+    grouped: dict[tuple[str, int], list[tuple[ConfigureAccessPort, object]]] = {}
+    for action in voice_actions.values():
+        expectation = expectation_by_action.get(action.id)
+        if expectation is None:
+            continue
+        grouped.setdefault(
+            (action.device_name, int(action.voice_vlan_id)), [],
+        ).append((action, expectation))
+
+    evidence: list[CPScaleVoiceAccessGroupEvidence] = []
+    for (switch, voice_vlan), members in sorted(grouped.items()):
+        expected_interfaces = sorted(action.interface for action, _ in members)
+        results = [
+            observed.get(expectation.id) for _, expectation in members
+        ]
+        structured = [
+            item.convergence.details
+            for item in results
+            if item is not None
+            and item.convergence is not None
+            and item.convergence.details.get("kind")
+            == "voice_access_forwarding_group"
+        ]
+        details = structured[0] if structured else {}
+        detailed_verified = sorted(details.get("verified_fwd_interfaces", []))
+        detailed_missing = sorted(details.get("missing_interfaces", []))
+        detailed_non_fwd = {
+            str(interface): str(state)
+            for interface, state in sorted(
+                dict(details.get("non_fwd_interfaces", {})).items()
+            )
+        }
+        detailed_classification = (
+            detailed_verified
+            + detailed_missing
+            + sorted(detailed_non_fwd)
+        )
+        structured_consistent = bool(
+            len(structured) == len(results)
+            and all(item == details for item in structured)
+            and all(
+                item is not None
+                and item.expectation_id == expectation.id
+                and item.fresh_evidence == (
+                    details.get("terminal_authority") == "AUTHORITATIVE"
+                )
+                and (
+                    action.interface in detailed_verified
+                ) == (
+                    item.status is ActionExecutionStatus.VERIFIED
+                    and item.fields.get("voice_forwarding")
+                    is FieldVerificationStatus.VERIFIED
+                )
+                for (action, expectation), item in zip(members, results)
+            )
+            and details.get("switch") == switch
+            and details.get("voice_vlan_id") == voice_vlan
+            and sorted(details.get("expected_interfaces", []))
+            == expected_interfaces
+            and sorted(detailed_classification) == expected_interfaces
+            and len(set(detailed_classification)) == len(expected_interfaces)
+        )
+        if structured_consistent:
+            verified = detailed_verified
+            missing = detailed_missing
+            non_fwd = detailed_non_fwd
+            terminal_authority = str(
+                details.get("terminal_authority") or "UNOBSERVABLE"
+            )
+            failure_dimension = str(
+                details.get("terminal_failure_dimension")
+                or "GROUP_EVIDENCE_MISSING"
+            )
+            sample_count = int(details.get("sample_count") or 0)
+            elapsed_ms = int(details.get("elapsed_ms") or 0)
+        else:
+            verified = []
+            missing = expected_interfaces
+            non_fwd = {}
+            terminal_authority = "UNOBSERVABLE"
+            failure_dimension = "GROUP_EVIDENCE_MISSING"
+            sample_count = max(
+                (
+                    item.convergence.attempts
+                    for item in results
+                    if item is not None and item.convergence is not None
+                ),
+                default=0,
+            )
+            elapsed_ms = max(
+                (
+                    item.convergence.elapsed_ms
+                    for item in results
+                    if item is not None and item.convergence is not None
+                ),
+                default=0,
+            )
+        if (
+            terminal_authority == "AUTHORITATIVE"
+            and verified == expected_interfaces
+            and not missing
+            and not non_fwd
+            and failure_dimension == "NONE"
+        ):
+            status = ActionExecutionStatus.VERIFIED
+        elif non_fwd:
+            status = ActionExecutionStatus.FAILED
+        else:
+            status = ActionExecutionStatus.UNOBSERVABLE
+        evidence.append(CPScaleVoiceAccessGroupEvidence(
+            switch=switch,
+            voice_vlan_id=voice_vlan,
+            expected_interfaces=expected_interfaces,
+            verified_fwd_interfaces=verified,
+            missing_interfaces=missing,
+            non_fwd_interfaces=non_fwd,
+            sample_count=sample_count,
+            elapsed_ms=elapsed_ms,
+            terminal_authority=terminal_authority,
+            terminal_failure_dimension=failure_dimension,
+            status=status,
+        ))
+    return evidence
+
+
+def _voice_binding_sets(
+    voice_plan: VoicePlan,
+    dhcp_server_bindings: Sequence[dict[str, object]],
+) -> tuple[dict[str, set[str]], bool, int]:
+    expected_segments = {
+        item.voice_segment_id for item in voice_plan.phone_assignments
+    }
+    candidates: dict[str, list[tuple[set[str], int | None]]] = {
+        segment: [] for segment in expected_segments
+    }
+    for device in dhcp_server_bindings:
+        table_readable = device.get("table_readable") is True
+        pools = device.get("pools")
+        for pool in pools if isinstance(pools, list) else []:
+            if not isinstance(pool, dict) or pool.get("voice") is not True:
+                continue
+            segment = str(pool.get("segment_id") or "")
+            if segment not in candidates:
+                continue
+            addresses = {
+                str(address) for address in (
+                    pool.get("bindings")
+                    if isinstance(pool.get("bindings"), list) else []
+                )
+            }
+            count = pool.get("binding_count")
+            candidates[segment].append((
+                addresses,
+                int(count) if type(count) is int and table_readable else None,
+            ))
+
+    complete = True
+    total = 0
+    binding_sets: dict[str, set[str]] = {}
+    for segment in sorted(expected_segments):
+        rows = candidates.get(segment, [])
+        if len(rows) != 1:
+            complete = False
+            binding_sets[segment] = set()
+            continue
+        addresses, count = rows[0]
+        binding_sets[segment] = addresses
+        if count is None or count != len(addresses):
+            complete = False
+            continue
+        total += count
+    return binding_sets, complete, total
+
+
+def canonical_cp_scale_voice_evidence(
+    *,
+    stage: str,
+    configuration_plan: ConfigurationPlan,
+    configuration_result: ConfigurationApplicationResult,
+    voice_plan: VoicePlan,
+    voice_result: VoiceApplicationResult,
+    dhcp_server_bindings: Sequence[dict[str, object]],
+    lifecycle_events: Sequence[str],
+) -> CPScaleCanonicalVoiceEvidence:
+    """Correlate the exact canonical phones across FWD, IP, lease, and SCCP."""
+
+    assignments = list(voice_plan.phone_assignments)
+    expected = len(assignments)
+    barrier = configuration_result.voice_signal_barrier
+    network_status = (
+        barrier.foundation_status
+        if barrier is not None else ActionExecutionStatus.UNKNOWN
+    )
+    signal_status = (
+        barrier.signal_status
+        if barrier is not None else ActionExecutionStatus.UNKNOWN
+    )
+    groups = _canonical_voice_access_groups(
+        configuration_plan, configuration_result,
+    )
+    fwd_verified = sum(
+        len(item.verified_fwd_interfaces) for item in groups
+    )
+    fwd_failed = sum(len(item.non_fwd_interfaces) for item in groups)
+    fwd_unobservable = max(0, expected - fwd_verified - fwd_failed)
+
+    event_names = list(lifecycle_events)
+    signal_event = (
+        event_names.index("VOICE_SIGNAL_VERIFIED")
+        if "VOICE_SIGNAL_VERIFIED" in event_names else None
+    )
+    fwd_event = (
+        event_names.index("PHONE_ACCESS_FWD_VERIFIED")
+        if "PHONE_ACCESS_FWD_VERIFIED" in event_names else None
+    )
+    registration_event = (
+        event_names.index("REGISTRATION_STARTED")
+        if "REGISTRATION_STARTED" in event_names else None
+    )
+    registration_after_fwd = (
+        None
+        if registration_event is None
+        else bool(
+            signal_event is not None
+            and fwd_event is not None
+            and signal_event < fwd_event < registration_event
+        )
+    )
+
+    registrations: dict[str, object] = {}
+    duplicated_registrations: set[str] = set()
+    expected_registration_ids = Counter(
+        item.phone_id for item in assignments
+    )
+    observed_registration_ids = Counter(
+        item.phone_id for item in voice_result.registrations
+    )
+    registration_identity_errors: list[str] = []
+    for phone_id in sorted(
+        set(expected_registration_ids) | set(observed_registration_ids)
+    ):
+        expected_count = expected_registration_ids[phone_id]
+        observed_count = observed_registration_ids[phone_id]
+        if expected_count == 0:
+            registration_identity_errors.append(f"unexpected:{phone_id}")
+        elif observed_count == 0:
+            registration_identity_errors.append(f"missing:{phone_id}")
+        elif expected_count != 1:
+            registration_identity_errors.append(
+                f"duplicate-plan:{phone_id}:{expected_count}",
+            )
+        elif observed_count != 1:
+            registration_identity_errors.append(
+                f"duplicate-observation:{phone_id}:{observed_count}",
+            )
+    for item in voice_result.registrations:
+        if item.phone_id in registrations:
+            duplicated_registrations.add(item.phone_id)
+        registrations[item.phone_id] = item
+    binding_sets, binding_complete, binding_count = _voice_binding_sets(
+        voice_plan, dhcp_server_bindings,
+    )
+    access_actions = {
+        item.id: item
+        for item in configuration_plan.actions
+        if isinstance(item, ConfigureAccessPort)
+    }
+
+    verified_ports = {
+        (item.switch, item.voice_vlan_id, interface)
+        for item in groups
+        for interface in item.verified_fwd_interfaces
+    }
+    failed_ports = {
+        (item.switch, item.voice_vlan_id, interface)
+        for item in groups
+        for interface in item.non_fwd_interfaces
+    }
+    unobservable_ports = {
+        (item.switch, item.voice_vlan_id, interface)
+        for item in groups
+        for interface in item.missing_interfaces
+    }
+
+    svi_present = 0
+    dhcp_enabled = 0
+    addressed = 0
+    matching_bindings = 0
+    sccp_registered = 0
+    sccp_failed = 0
+    failed_phones: list[CPScaleFailedPhoneIdentity] = []
+
+    early_boundary = ""
+    if network_status is not ActionExecutionStatus.VERIFIED:
+        early_boundary = "NETWORK_FOUNDATION"
+    elif voice_result.application_status is not ActionExecutionStatus.APPLIED:
+        early_boundary = "VOICE_BOOTSTRAP"
+    elif signal_status is not ActionExecutionStatus.VERIFIED:
+        early_boundary = "VOICE_SIGNAL"
+    elif fwd_verified != expected:
+        early_boundary = "PHONE_ACCESS_FORWARDING"
+    elif registration_after_fwd is not True:
+        early_boundary = "REGISTRATION_ORDER"
+
+    for assignment in assignments:
+        action = access_actions.get(assignment.access_configuration_action_id)
+        switch = action.device_name if action is not None else ""
+        port = action.interface if action is not None else ""
+        voice_vlan = (
+            int(action.voice_vlan_id)
+            if action is not None and action.voice_vlan_id is not None
+            else assignment.voice_vlan_id
+        )
+        port_key = (switch, voice_vlan, port)
+        registration = registrations.get(assignment.phone_id)
+        endpoint_ipv4 = (
+            registration.endpoint_ipv4 if registration is not None else ""
+        )
+        if registration is not None and registration.endpoint_interface_present:
+            svi_present += 1
+        if registration is not None and registration.endpoint_dhcp_enabled is True:
+            dhcp_enabled += 1
+        endpoint_verified = bool(
+            registration is not None
+            and registration.addressing_status is ActionExecutionStatus.VERIFIED
+            and registration.endpoint_interface_present
+            and registration.endpoint_address_channel
+            and registration.endpoint_dhcp_enabled is True
+            and endpoint_ipv4
+            and registration.call_control_ipv4 == endpoint_ipv4
+        )
+        if endpoint_verified:
+            addressed += 1
+
+        segment_bindings = binding_sets.get(assignment.voice_segment_id, set())
+        if not binding_complete:
+            binding_state = "UNOBSERVABLE"
+        elif not endpoint_ipv4:
+            binding_state = "NOT_CHECKED"
+        elif endpoint_ipv4 in segment_bindings:
+            binding_state = "MATCHED"
+            matching_bindings += 1
+        else:
+            binding_state = "MISSING"
+
+        if (
+            registration is not None
+            and registration.status is ActionExecutionStatus.VERIFIED
+        ):
+            sccp_state = "REGISTERED"
+            sccp_registered += 1
+        elif (
+            registration is not None
+            and registration.status is ActionExecutionStatus.FAILED
+        ):
+            sccp_state = "NOT_REGISTERED"
+            sccp_failed += 1
+        else:
+            sccp_state = "UNOBSERVABLE"
+
+        boundary = early_boundary
+        if not boundary and port_key in failed_ports | unobservable_ports:
+            boundary = "PHONE_ACCESS_FORWARDING"
+        if not boundary and port_key not in verified_ports:
+            boundary = "PHONE_ACCESS_FORWARDING"
+        if not boundary and (
+            registration is None
+            or assignment.phone_id in duplicated_registrations
+            or not endpoint_verified
+        ):
+            boundary = "ENDPOINT_ADDRESS"
+        if not boundary and binding_state != "MATCHED":
+            boundary = "DHCP_BINDING"
+        if not boundary and sccp_state != "REGISTERED":
+            boundary = "SCCP"
+        if boundary:
+            failed_phones.append(CPScaleFailedPhoneIdentity(
+                phone_id=assignment.phone_id,
+                phone_name=assignment.physical_device_name,
+                stage=stage,
+                site_id=assignment.site_id,
+                switch=switch,
+                port=port,
+                voice_vlan_id=voice_vlan,
+                ipv4=endpoint_ipv4,
+                binding_state=binding_state,
+                sccp_state=sccp_state,
+                first_contradicted_boundary=boundary,
+            ))
+
+    sccp_unobservable = max(0, expected - sccp_registered - sccp_failed)
+    if early_boundary:
+        first_boundary = early_boundary
+    elif registration_identity_errors:
+        first_boundary = "ENDPOINT_ADDRESS"
+    elif addressed != expected or svi_present != expected or dhcp_enabled != expected:
+        first_boundary = "ENDPOINT_ADDRESS"
+    elif (
+        not binding_complete
+        or binding_count != expected
+        or matching_bindings != expected
+    ):
+        first_boundary = "DHCP_BINDING"
+    elif sccp_registered != expected:
+        first_boundary = "SCCP"
+    else:
+        first_boundary = "NONE"
+    complete = bool(
+        first_boundary == "NONE"
+        and not failed_phones
+        and expected > 0
+    )
+    return CPScaleCanonicalVoiceEvidence(
+        stage=stage,
+        expected_phone_count=expected,
+        network_foundation_status=network_status,
+        voice_bootstrap_status=voice_result.application_status,
+        voice_signal_status=signal_status,
+        phone_access_group_count=len(groups),
+        phone_access_fwd_expected=expected,
+        phone_access_fwd_verified=fwd_verified,
+        phone_access_fwd_failed=fwd_failed,
+        phone_access_fwd_unobservable=fwd_unobservable,
+        phone_access_fwd_groups=groups,
+        phone_access_fwd_max_duration_ms=max(
+            (item.elapsed_ms for item in groups), default=0,
+        ),
+        lifecycle_events=event_names,
+        registration_started_after_fwd_barrier=registration_after_fwd,
+        voice_svi_present_count=svi_present,
+        dhcp_enabled_count=dhcp_enabled,
+        addressed_count=addressed,
+        registration_identity_errors=registration_identity_errors,
+        binding_evidence_complete=binding_complete,
+        voice_dhcp_binding_count=binding_count,
+        matching_binding_count=matching_bindings,
+        sccp_registered_count=sccp_registered,
+        sccp_failed_count=sccp_failed,
+        sccp_unobservable_count=sccp_unobservable,
+        failed_phone_identities=failed_phones,
+        first_contradicted_boundary=first_boundary,
+        complete=complete,
+    )
+
+
+def archive_cp_scale_canonical_evidence(
+    evidence: object,
+    *,
+    base_dir: Path,
+    run_identity: str,
+    phase: str,
+) -> CPScaleEvidenceArchive:
+    """Write one immutable, path-confined canonical evidence artifact."""
+
+    safe_run = safe_name_component(run_identity, "canonical-cp-scale")
+    safe_phase = safe_name_component(phase, "evidence")
+    target = resolve_within(base_dir, f"{safe_run}-{safe_phase}.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = (
+        json.dumps(
+            _jsonable(evidence),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    with target.open("xb") as stream:
+        stream.write(payload)
+        stream.flush()
+    return CPScaleEvidenceArchive(
+        run_identity=run_identity,
+        phase=phase,
+        path=target,
+        sha256=hashlib.sha256(payload).hexdigest(),
+    )
 
 
 def write_cp_scale_live_artifacts(

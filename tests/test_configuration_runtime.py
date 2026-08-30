@@ -778,6 +778,33 @@ def _voice_stp_output(state: str) -> str:
     ))
 
 
+def _voice_stp_group_output(states: dict[str, str]) -> str:
+    rows = [
+        f"{interface:<16} Desg {state:<3} 19        128.1    P2p"
+        for interface, state in states.items()
+    ]
+    return "\n".join((
+        "SW#show spanning-tree",
+        "VLAN0020",
+        "  Spanning tree enabled protocol ieee",
+        "  Root ID    Priority    32788",
+        "             Address     0001.4392.0108",
+        "             Cost        4",
+        "             Port        25(GigabitEthernet0/1)",
+        "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+        "",
+        "  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)",
+        "             Address     0030.A3A1.89E8",
+        "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+        "             Aging Time  20",
+        "",
+        "Interface        Role Sts Cost      Prio.Nbr Type",
+        "---------------- ---- --- --------- -------- --------------------------------",
+        *rows,
+        "SW#",
+    ))
+
+
 class _SequenceIos:
     def __init__(self, results):
         self.results = list(results)
@@ -838,6 +865,109 @@ def test_voice_access_forwarding_waits_on_one_registered_stp_query():
     assert {
         query_id for _, query_id, _ in ios.calls
     } == {OperationalQueryId.SHOW_SPANNING_TREE}
+
+
+def test_voice_access_forwarding_retains_one_structured_group_observation():
+    expectations = [
+        VerificationExpectation(
+            id=f"verify/voice-access/{index}",
+            action_id=f"access/voice/{index}",
+            kind=VerificationKind.ACCESS_PORT,
+            device_id="sw",
+            device_name="SW",
+            expected={
+                "interface": f"FastEthernet0/{index}",
+                "vlan_id": 10,
+                "voice_vlan_id": 20,
+            },
+        )
+        for index in (1, 2)
+    ]
+    ios = _SequenceIos([
+        IosCommandResult(
+            "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
+            output=_voice_stp_group_output({"Fa0/1": "LIS", "Fa0/2": "LRN"}),
+            fresh_output_observed=True,
+            output_complete=True,
+            device_identity_provenance="confirmed_unique",
+        ),
+        IosCommandResult(
+            "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
+            output=_voice_stp_group_output({"Fa0/1": "FWD", "Fa0/2": "FWD"}),
+            fresh_output_observed=True,
+            output_complete=True,
+            device_identity_provenance="confirmed_unique",
+        ),
+    ])
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=1.0,
+        convergence_interval_seconds=0.0,
+    )
+    runtime._ios = ios
+
+    results = runtime.wait_for_voice_access_forwarding(expectations)
+
+    assert len(ios.calls) == 2, "one STP sample must classify the whole group"
+    assert all(item.convergence is not None for item in results)
+    details = [item.convergence.details for item in results]
+    assert details[0] == details[1]
+    assert details[0] == {
+        "kind": "voice_access_forwarding_group",
+        "switch": "SW",
+        "voice_vlan_id": 20,
+        "expected_interfaces": ["FastEthernet0/1", "FastEthernet0/2"],
+        "verified_fwd_interfaces": ["FastEthernet0/1", "FastEthernet0/2"],
+        "missing_interfaces": [],
+        "non_fwd_interfaces": {},
+        "sample_count": 2,
+        "elapsed_ms": results[0].convergence.elapsed_ms,
+        "terminal_authority": "AUTHORITATIVE",
+        "terminal_failure_dimension": "NONE",
+    }
+
+
+def test_voice_access_forwarding_names_incomplete_terminal_evidence():
+    expectation = VerificationExpectation(
+        id="verify/voice-access/incomplete",
+        action_id="access/voice/incomplete",
+        kind=VerificationKind.ACCESS_PORT,
+        device_id="sw",
+        device_name="SW",
+        expected={
+            "interface": "FastEthernet0/1",
+            "vlan_id": 10,
+            "voice_vlan_id": 20,
+        },
+    )
+    ios = _SequenceIos([IosCommandResult(
+        "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
+        output=_voice_stp_output("FWD") + "\n--More--",
+        fresh_output_observed=True,
+        output_complete=False,
+        truncated_by_pager=True,
+        device_identity_provenance="confirmed_unique",
+    )])
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+    )
+    runtime._ios = ios
+
+    result = runtime.wait_for_voice_access_forwarding([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.convergence is not None
+    assert result.convergence.details["terminal_authority"] == "UNOBSERVABLE"
+    assert result.convergence.details["terminal_failure_dimension"] == "COMPLETENESS"
+    assert result.convergence.details["missing_interfaces"] == [
+        "FastEthernet0/1",
+    ]
 
 
 def test_serial_clock_verifier_requires_fresh_exact_controller_state():

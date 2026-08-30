@@ -110,7 +110,7 @@ class FakeVoiceRuntime:
 
 def _apply(
     runtime=None, *, capabilities=None, foundations=None,
-    complete_voice_signal=None,
+    complete_voice_signal=None, lifecycle_observer=None,
 ):
     plan = _compile().plan
     runtime = runtime or FakeVoiceRuntime()
@@ -130,6 +130,7 @@ def _apply(
             backend="fake", backend_version="9.0.1.0858",
         ),
         complete_voice_signal=complete_voice_signal,
+        lifecycle_observer=lifecycle_observer,
     )
     return plan, runtime, result
 
@@ -187,6 +188,40 @@ def test_deferred_voice_signal_runs_after_bootstrap_and_before_registration():
         "voice_signal"
     ) < runtime.timeline.index("registration")
     assert result.status is ActionExecutionStatus.VERIFIED
+
+
+def test_deferred_voice_lifecycle_is_retained_in_causal_order():
+    plan = _compile().plan
+    runtime = FakeVoiceRuntime()
+    statuses = {
+        item.source_id: (
+            ActionExecutionStatus.PARTIAL
+            if item.kind == "voice_vlan"
+            else ActionExecutionStatus.VERIFIED
+        )
+        for item in plan.foundational_requirements
+    }
+    events: list[str] = []
+
+    _, _, result = _apply(
+        runtime,
+        foundations=statuses,
+        complete_voice_signal=lambda: {
+            item.source_id: ActionExecutionStatus.VERIFIED
+            for item in plan.foundational_requirements
+        },
+        lifecycle_observer=events.append,
+    )
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert events == [
+        "VOICE_BOOTSTRAP_STARTED",
+        "VOICE_BOOTSTRAP_APPLIED",
+        "DEFERRED_VOICE_COMPLETION_STARTED",
+        "DEFERRED_VOICE_COMPLETION_VERIFIED",
+        "REGISTRATION_STARTED",
+        "REGISTRATION_COMPLETED",
+    ]
 
 
 def test_unverified_deferred_signal_blocks_registration_after_bootstrap():

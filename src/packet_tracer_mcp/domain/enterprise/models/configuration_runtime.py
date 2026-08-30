@@ -121,6 +121,11 @@ class ConvergenceReport(BaseModel):
     elapsed_ms: int = 0
     final_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
     last_observable_state: str = ""
+    #: Optional structured terminal evidence for convergence observers.  The
+    #: generic fields above remain the stable summary; observer-specific
+    #: details preserve the exact members and authority dimensions needed to
+    #: audit a grouped decision without parsing a human message.
+    details: dict[str, object] = Field(default_factory=dict)
 
 
 class RuntimeConfigurationTarget(BaseModel):

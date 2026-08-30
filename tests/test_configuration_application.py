@@ -399,7 +399,12 @@ def test_voice_signal_can_be_held_pending_until_bootstrap_then_completed():
         is ActionExecutionStatus.INTENDED
     )
 
-    completed = applicator.complete_deferred_voice_signals(plan, prepared)
+    lifecycle: list[str] = []
+    completed = applicator.complete_deferred_voice_signals(
+        plan,
+        prepared,
+        lifecycle_observer=lifecycle.append,
+    )
 
     dispatched = [
         item
@@ -430,6 +435,10 @@ def test_voice_signal_can_be_held_pending_until_bootstrap_then_completed():
         if kind == "voice_forwarding"
     )
     assert signal_event < forwarding_event
+    assert lifecycle == [
+        "VOICE_SIGNAL_VERIFIED",
+        "PHONE_ACCESS_FWD_VERIFIED",
+    ]
 
 
 def test_unobservable_phone_port_forwarding_keeps_registration_gate_closed():

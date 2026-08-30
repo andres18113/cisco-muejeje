@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from time import monotonic
 from typing import Protocol
 
@@ -401,6 +401,7 @@ class ConfigurationApplicator:
         application: ConfigurationApplicationResult,
         *,
         deployment_manifest: DeploymentManifest | None = None,
+        lifecycle_observer: Callable[[str], None] | None = None,
     ) -> ConfigurationApplicationResult:
         """Dispatch and verify Voice VLANs after bootstrap has been applied."""
         started = monotonic()
@@ -504,6 +505,20 @@ class ConfigurationApplicator:
             item.expectation_id: item
             for item in self._verify(plan, runtime_expectations)
         }
+        if (
+            lifecycle_observer is not None
+            and signal_by_id
+            and all(
+                satisfies_apply_dependency(item.status)
+                for item in signal_by_id.values()
+            )
+            and direct_by_id
+            and all(
+                item.status is ActionExecutionStatus.VERIFIED
+                for item in direct_by_id.values()
+            )
+        ):
+            lifecycle_observer("VOICE_SIGNAL_VERIFIED")
         try:
             wait_for_forwarding = getattr(
                 self._runtime, "wait_for_voice_access_forwarding",
@@ -553,6 +568,21 @@ class ConfigurationApplicator:
                     forwarding,
                 )
             )
+        if (
+            lifecycle_observer is not None
+            and forwarding_results
+            and len(forwarding_results) == len(runtime_expectations)
+            and len({
+                item.expectation_id for item in forwarding_results
+            }) == len(runtime_expectations)
+            and all(
+                item.status is ActionExecutionStatus.VERIFIED
+                and item.fields.get("voice_forwarding")
+                is FieldVerificationStatus.VERIFIED
+                for item in forwarding_results
+            )
+        ):
+            lifecycle_observer("PHONE_ACCESS_FWD_VERIFIED")
         verification_by_id = {
             item.expectation_id: item
             for item in application.verification_results

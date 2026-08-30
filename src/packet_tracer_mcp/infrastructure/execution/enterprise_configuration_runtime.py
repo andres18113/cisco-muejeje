@@ -293,10 +293,17 @@ class PacketTracerEnterpriseConfigurationRuntime:
         voice_vlan: int,
         expectations: Sequence[VerificationExpectation],
     ) -> dict[str, RuntimeVerification]:
+        expected_interfaces = {
+            expectation.id: str(
+                expectation.expected.get("interface") or ""
+            )
+            for expectation in expectations
+        }
         latest: dict[str, object] = {
             "show": None,
             "states": {},
             "authoritative": False,
+            "vlan_present": False,
         }
 
         def inspect() -> dict[str, object]:
@@ -312,16 +319,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
             )
             states: dict[str, str] = {}
+            vlan_present = False
             if authoritative:
                 instance = next((
                     item for item in parse_show_spanning_tree(show.output)
                     if item.vlan_id == voice_vlan
                 ), None)
+                vlan_present = instance is not None
                 if instance is not None:
                     for expectation in expectations:
-                        interface = str(
-                            expectation.expected.get("interface") or ""
-                        )
+                        interface = expected_interfaces[expectation.id]
                         row = next((
                             item for item in instance.interfaces
                             if same_interface_name(
@@ -334,6 +341,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "show": show,
                 "states": states,
                 "authoritative": authoritative,
+                "vlan_present": vlan_present,
             })
             all_forwarding = bool(
                 authoritative
@@ -357,6 +365,58 @@ class PacketTracerEnterpriseConfigurationRuntime:
         states = latest["states"]
         states = states if isinstance(states, dict) else {}
         authoritative = bool(latest["authoritative"])
+        vlan_present = bool(latest["vlan_present"])
+        show = latest["show"]
+        verified_interfaces = sorted(
+            expected_interfaces[identifier]
+            for identifier, state in states.items()
+            if state.startswith(("FWD", "FORW"))
+        )
+        missing_interfaces = sorted(
+            interface for identifier, interface in expected_interfaces.items()
+            if identifier not in states
+        )
+        non_forwarding_interfaces = {
+            expected_interfaces[identifier]: state
+            for identifier, state in sorted(states.items())
+            if not state.startswith(("FWD", "FORW"))
+        }
+        if not isinstance(show, IosCommandResult) or not show.executed:
+            failure_dimension = "EXECUTION"
+        elif not show.fresh_output_observed:
+            failure_dimension = "FRESHNESS"
+        elif not show.output_complete:
+            failure_dimension = "COMPLETENESS"
+        elif (
+            show.device_identity_provenance
+            != DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+        ):
+            failure_dimension = "IDENTITY"
+        elif not vlan_present:
+            failure_dimension = "VLAN_INSTANCE"
+        elif missing_interfaces:
+            failure_dimension = "MISSING_INTERFACE"
+        elif non_forwarding_interfaces:
+            failure_dimension = "NON_FORWARDING"
+        elif len(verified_interfaces) == len(expectations):
+            failure_dimension = "NONE"
+        else:
+            failure_dimension = "TIMEOUT"
+        details = {
+            "kind": "voice_access_forwarding_group",
+            "switch": device_name,
+            "voice_vlan_id": voice_vlan,
+            "expected_interfaces": sorted(expected_interfaces.values()),
+            "verified_fwd_interfaces": verified_interfaces,
+            "missing_interfaces": missing_interfaces,
+            "non_fwd_interfaces": non_forwarding_interfaces,
+            "sample_count": convergence.attempts,
+            "elapsed_ms": convergence.elapsed_ms,
+            "terminal_authority": (
+                "AUTHORITATIVE" if authoritative else "UNOBSERVABLE"
+            ),
+            "terminal_failure_dimension": failure_dimension,
+        }
         report = ConvergenceReport(
             attempts=convergence.attempts,
             elapsed_ms=convergence.elapsed_ms,
@@ -369,6 +429,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             last_observable_state=", ".join(
                 f"{key}:{value}" for key, value in sorted(states.items())
             ) or "unobservable",
+            details=details,
         )
         results: dict[str, RuntimeVerification] = {}
         for expectation in expectations:
@@ -397,7 +458,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     if forwarding
                     else (
                         "Voice access forwarding did not converge within the "
-                        f"bounded window; last state={state or 'unobservable'}."
+                        f"bounded window; last state={state or 'unobservable'}; "
+                        f"terminal failure dimension={failure_dimension}."
                     )
                 ),
                 convergence=report,

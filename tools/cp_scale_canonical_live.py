@@ -3,9 +3,10 @@
 The process deliberately stays alive across every checkpoint because physical
 cleanup ownership is runtime-instance-local.  It begins only from a completely
 observed empty workspace, advances through the exact cumulative product stages,
-and retains the presentation only after the full 314-device/219-link plans are
-independently VERIFIED.  Any failure or operator abort cleans every device this
-session attempted and requires two fresh empty-baseline observations.
+and archives the final evidence before verified cleanup. Explicitly authorized
+presentation retention remains available after the full 314-device/219-link
+plans are independently VERIFIED. Any failure or operator abort cleans every
+device this session attempted and requires two fresh empty-baseline observations.
 
 No raw IOS, JavaScript, or bridge command is accepted from the operator.
 """
@@ -59,11 +60,15 @@ from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
     inherit_verified_serial_orientation,
 )
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+    CPScaleFinalDisposition,
+    archive_cp_scale_canonical_evidence,
     canonical_capability_probe_error,
     canonical_bridge_polling_error,
+    canonical_cp_scale_voice_evidence,
     canonical_checkpoint_repository_error,
     canonical_cleanup_restoration_error,
     canonical_configuration_retryable_operational_unknown,
+    canonical_final_disposition,
     canonical_required_capability_probes,
     canonical_stage_configuration_error,
     canonical_stage_resume_error,
@@ -86,6 +91,9 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationRuntimeContext,
+)
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    VoiceApplicationResult,
 )
 from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
@@ -178,6 +186,10 @@ CHECKPOINT_PATH = EVIDENCE_PATH.parent / "live-canonical-checkpoint.json"
 FINAL_CHECKPOINT_PATH = (
     GOVERNED_ROOT / "docs" / "reference" / "cp-scale"
     / "live_canonical_checkpoint.json"
+)
+CANONICAL_EVIDENCE_DIR = (
+    GOVERNED_ROOT / "docs" / "reference" / "cp-scale"
+    / "canonical-live-evidence"
 )
 _GOVERNED_SOURCE_PATHS = (
     "src",
@@ -2542,6 +2554,7 @@ def _stage_voice(
     context: ConfigurationRuntimeContext,
     manifest,
     complete_voice_signal=None,
+    lifecycle_observer=None,
 ) -> dict[str, object]:
     """Apply and judge E7 for one stage. Never claims what it did not observe.
 
@@ -2569,6 +2582,7 @@ def _stage_voice(
         runtime_context=context,
         deployment_manifest=manifest,
         complete_voice_signal=complete_voice_signal,
+        lifecycle_observer=lifecycle_observer,
     )
     evidence: dict[str, object] = {
         "staged": True,
@@ -2720,6 +2734,17 @@ def _execute_stage(
             if delta_deployment is not None else None
         ),
     }
+    voice_lifecycle: list[dict[str, object]] = []
+    evidence["voice_lifecycle"] = voice_lifecycle
+
+    def record_voice_lifecycle(event: str) -> None:
+        voice_lifecycle.append({
+            "event": event,
+            "sequence": len(voice_lifecycle) + 1,
+            "monotonic_ns": time.monotonic_ns(),
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        })
+
     def _failed(message: str) -> CanonicalLiveFailure:
         """Fail with the journal this stage has so far, never without it."""
         return CanonicalLiveFailure(message, stage_evidence=evidence)
@@ -2847,6 +2872,16 @@ def _execute_stage(
         configuration_result=configuration,
         physical_result=deployment,
     )
+    barrier = getattr(configuration, "voice_signal_barrier", None)
+    if (
+        voice_plan is not None
+        and voice_plan.actions
+        and barrier is not None
+        and barrier.foundation_status is ActionExecutionStatus.VERIFIED
+        and barrier.signal_status is ActionExecutionStatus.INTENDED
+    ):
+        record_voice_lifecycle("DATA_ONLY_ACCESS_APPLIED")
+        record_voice_lifecycle("NETWORK_VERIFIED")
 
     # L2/VLAN/DHCP foundation is applied and verified above. Voice comes next,
     # before the control plane, because it is what turns a powered phone on a
@@ -2898,6 +2933,7 @@ def _execute_stage(
                 projection.configuration,
                 configuration,
                 deployment_manifest=manifest,
+                lifecycle_observer=record_voice_lifecycle,
             )
         )
         _record_configuration_attempt(
@@ -2916,7 +2952,6 @@ def _execute_stage(
         )
         return statuses
 
-    barrier = getattr(configuration, "voice_signal_barrier", None)
     voice_evidence = _stage_voice(
         projection,
         voice_runtime=voice_runtime,
@@ -2933,6 +2968,7 @@ def _execute_stage(
             )
             else None
         ),
+        lifecycle_observer=record_voice_lifecycle,
     )
     evidence["voice"] = voice_evidence
     # The second edge, still Realtime: taken before the closing boundary read
@@ -2990,6 +3026,47 @@ def _execute_stage(
                 "unavailable at this stage."
             ),
         }
+    canonical_voice_error = ""
+    voice_result_payload = voice_evidence.get("result")
+    if (
+        voice_evidence.get("staged")
+        and voice_plan is not None
+        and isinstance(voice_result_payload, dict)
+    ):
+        try:
+            canonical_voice = canonical_cp_scale_voice_evidence(
+                stage=projection.stage.value,
+                configuration_plan=projection.configuration,
+                configuration_result=configuration,
+                voice_plan=voice_plan,
+                voice_result=VoiceApplicationResult.model_validate(
+                    voice_result_payload,
+                ),
+                dhcp_server_bindings=binding_evidence,
+                lifecycle_events=[
+                    str(item.get("event") or "")
+                    for item in voice_lifecycle
+                ],
+            )
+        except Exception as exc:
+            evidence["canonical_voice_verification_error"] = (
+                f"{type(exc).__name__}: {exc}"
+            )
+            raise _failed(
+                "Canonical Voice evidence could not be correlated: "
+                + evidence["canonical_voice_verification_error"]
+            ) from exc
+        evidence["canonical_voice_verification"] = canonical_voice.model_dump(
+            mode="json",
+        )
+        if not canonical_voice.complete:
+            canonical_voice_error = (
+                "Canonical Voice evidence failed closed at "
+                f"{canonical_voice.first_contradicted_boundary}; "
+                f"{len(canonical_voice.failed_phone_identities)} of "
+                f"{canonical_voice.expected_phone_count} phone identities "
+                "did not satisfy the exact correlated contract."
+            )
     if voice_evidence.get("error"):
         # POST-FAILURE ONLY. The tested condition has already been established
         # and read back, so entering Simulation now cannot alter it -- and it is
@@ -3005,6 +3082,8 @@ def _execute_stage(
             f"Voice at {projection.stage.value!r} did not close: "
             + str(voice_evidence["error"])
         )
+    if canonical_voice_error:
+        raise _failed(canonical_voice_error)
 
     control = ControlPlaneApplicator(control_runtime).apply(
         projection.control_plane,
@@ -3078,7 +3157,17 @@ def run(
     expected_head: str,
     retain_on_full_verification: bool,
 ) -> int:
+    started_at = datetime.now(timezone.utc)
+    run_identity = (
+        "canonical-cp-scale-voice-"
+        + started_at.strftime("%Y%m%dT%H%M%S%fZ")
+        + "-"
+        + (expected_head[:12] or "unknown-head")
+    )
     evidence: dict[str, object] = {
+        "schema": "cp-scale-canonical-voice-live-v1",
+        "run_identity": run_identity,
+        "started_at": started_at.isoformat(),
         "packet_tracer_version": packet_tracer_version,
         "python_executable": sys.executable,
         "package_file": packet_tracer_mcp.__file__,
@@ -3153,7 +3242,39 @@ def run(
     baseline = None
     owned_device_ids: set[str] = set()
     retain_confirmed = False
+    cleanup_attempted = False
+    cleanup_attestation_archived = False
+    precleanup_archive: dict[str, object] | None = None
     composition = None
+
+    def archive(phase: str, payload: object) -> dict[str, object]:
+        archived = archive_cp_scale_canonical_evidence(
+            payload,
+            base_dir=CANONICAL_EVIDENCE_DIR,
+            run_identity=run_identity,
+            phase=phase,
+        ).model_dump(mode="json")
+        evidence.setdefault("archives", []).append(archived)
+        return archived
+
+    def observe_cleanup_realtime() -> dict[str, object]:
+        try:
+            state = _voice_window_state(
+                SimulationTraceRuntime(transport.send_and_wait),
+            )
+            error = _realtime_boundary_error(state, "after cleanup")
+            return {
+                "state": state,
+                "error": error,
+                "verified": not error,
+            }
+        except Exception as exc:
+            return {
+                "state": None,
+                "error": f"{type(exc).__name__}: {exc}",
+                "verified": False,
+            }
+
     try:
         if not transport.start(timeout_seconds=10.0):
             status = transport.status_dict()
@@ -3608,13 +3729,68 @@ def run(
             evidence,
             session_source_head=session_source_head,
         )
-        if command != "retain" or not retain_on_full_verification:
-            raise CanonicalLiveFailure(
-                "Final presentation retention requires both the CLI authorization "
-                "and the exact 'retain' checkpoint command."
+        disposition = canonical_final_disposition(
+            command,
+            retain_authorized=retain_on_full_verification,
+        )
+        evidence["final_disposition"] = disposition.value
+        evidence["closure"] = "CP_SCALE_GOVERNED_VOICE_VERIFIED_PRECLEANUP"
+        evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+        _write_evidence(evidence)
+        precleanup_archive = archive("precleanup", evidence)
+        evidence["canonical_evidence_precleanup"] = precleanup_archive
+
+        if disposition is CPScaleFinalDisposition.RETAIN:
+            evidence["presentation_retained"] = True
+            evidence["closure"] = "CP_SCALE_GOVERNED_VOICE_VERIFIED_RETAINED"
+            retain_confirmed = True
+            _write_evidence(evidence)
+            _write_checkpoint_summary(
+                "full-qualification",
+                evidence,
+                destination=FINAL_CHECKPOINT_PATH,
             )
-        evidence["presentation_retained"] = True
-        evidence["closure"] = "CP_SCALE_GOVERNED_VERIFIED"
+            print(json.dumps({
+                "event": "PRESENTATION_RETAINED",
+                "devices": evidence["live_devices"],
+                "links": evidence["live_links"],
+                "evidence_path": str(EVIDENCE_PATH),
+                "canonical_archive": precleanup_archive,
+            }), flush=True)
+            return 0
+
+        cleanup_result = _cleanup_owned(
+            physical, composition.topology, owned_device_ids, baseline,
+        )
+        cleanup_attempted = True
+        cleanup_realtime = observe_cleanup_realtime()
+        evidence["cleanup"] = cleanup_result
+        evidence["cleanup_realtime"] = cleanup_realtime
+        if not cleanup_result.get("verified") or not cleanup_realtime["verified"]:
+            raise CanonicalLiveFailure(
+                "Canonical verification completed, but cleanup/restoration did "
+                "not verify: "
+                + str(
+                    cleanup_result.get("restoration_error")
+                    or cleanup_realtime.get("error")
+                )
+            )
+        evidence["closure"] = "CP_SCALE_GOVERNED_VOICE_VERIFIED_AND_CLEANED"
+        evidence["cleanup_completed_at"] = datetime.now(timezone.utc).isoformat()
+        cleanup_attestation = {
+            "schema": "cp-scale-canonical-cleanup-attestation-v1",
+            "run_identity": run_identity,
+            "source_head": session_source_head,
+            "canonical_evidence_precleanup": precleanup_archive,
+            "cleanup": cleanup_result,
+            "cleanup_realtime": cleanup_realtime,
+            "closure": evidence["closure"],
+            "cleanup_completed_at": evidence["cleanup_completed_at"],
+        }
+        evidence["cleanup_attestation"] = archive(
+            "cleanup", cleanup_attestation,
+        )
+        cleanup_attestation_archived = True
         _write_evidence(evidence)
         # Only a terminal, fully verified run may update the tracked reference
         # summary. Intermediate progress remains durable under ignored data/
@@ -3624,12 +3800,13 @@ def run(
             evidence,
             destination=FINAL_CHECKPOINT_PATH,
         )
-        retain_confirmed = True
         print(json.dumps({
-            "event": "PRESENTATION_RETAINED",
+            "event": "CANONICAL_VERIFIED_AND_CLEANED",
             "devices": evidence["live_devices"],
             "links": evidence["live_links"],
             "evidence_path": str(EVIDENCE_PATH),
+            "canonical_archive": precleanup_archive,
+            "cleanup_attestation": evidence["cleanup_attestation"],
         }), flush=True)
         return 0
     except Exception as exc:
@@ -3648,9 +3825,56 @@ def run(
             and not retain_confirmed
             and composition is not None
         ):
-            evidence["cleanup"] = _cleanup_owned(
-                physical, composition.topology, owned_device_ids, baseline,
-            )
+            if precleanup_archive is None:
+                try:
+                    precleanup_archive = archive("failure-precleanup", evidence)
+                    evidence["canonical_evidence_precleanup"] = precleanup_archive
+                except Exception as exc:
+                    evidence["precleanup_archive_error"] = (
+                        f"{type(exc).__name__}: {exc}"
+                    )
+            if not cleanup_attempted:
+                try:
+                    evidence["cleanup"] = _cleanup_owned(
+                        physical, composition.topology, owned_device_ids, baseline,
+                    )
+                    cleanup_attempted = True
+                except Exception as exc:
+                    evidence["cleanup"] = {
+                        "verified": False,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+            evidence["cleanup_realtime"] = observe_cleanup_realtime()
+            if not cleanup_attestation_archived:
+                try:
+                    cleanup_attestation = {
+                        "schema": "cp-scale-canonical-cleanup-attestation-v1",
+                        "run_identity": run_identity,
+                        "source_head": session_source_head,
+                        "canonical_evidence_precleanup": precleanup_archive,
+                        "failure": evidence.get("failure", ""),
+                        "cleanup": evidence.get("cleanup"),
+                        "cleanup_realtime": evidence["cleanup_realtime"],
+                        "cleanup_completed_at": (
+                            datetime.now(timezone.utc).isoformat()
+                        ),
+                    }
+                    phase = (
+                        "cleanup"
+                        if (
+                            isinstance(evidence.get("cleanup"), dict)
+                            and evidence["cleanup"].get("verified")
+                            and evidence["cleanup_realtime"].get("verified")
+                        )
+                        else "cleanup-incomplete"
+                    )
+                    evidence["cleanup_attestation"] = archive(
+                        phase, cleanup_attestation,
+                    )
+                except Exception as exc:
+                    evidence["cleanup_archive_error"] = (
+                        f"{type(exc).__name__}: {exc}"
+                    )
         evidence["presentation_retained"] = retain_confirmed
         _write_evidence(evidence)
         transport.stop()

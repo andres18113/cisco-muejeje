@@ -203,6 +203,7 @@ class VoiceApplicator:
         complete_voice_signal: (
             Callable[[], dict[str, ActionExecutionStatus]] | None
         ) = None,
+        lifecycle_observer: Callable[[str], None] | None = None,
     ) -> VoiceApplicationResult:
         started = monotonic()
         context = runtime_context or ConfigurationRuntimeContext()
@@ -358,8 +359,15 @@ class VoiceApplicator:
             )
 
         capabilities = capabilities or {}
+        if lifecycle_observer is not None:
+            lifecycle_observer("VOICE_BOOTSTRAP_STARTED")
         action_results = self._apply_actions(plan, capabilities, deployed_names)
         application_status = self._application_status(action_results)
+        if (
+            lifecycle_observer is not None
+            and application_status is ActionExecutionStatus.APPLIED
+        ):
+            lifecycle_observer("VOICE_BOOTSTRAP_APPLIED")
         if complete_voice_signal is not None:
             if application_status is not ActionExecutionStatus.APPLIED:
                 return self._after_application_failure(
@@ -373,6 +381,8 @@ class VoiceApplicator:
                     deployment_id,
                 )
             try:
+                if lifecycle_observer is not None:
+                    lifecycle_observer("DEFERRED_VOICE_COMPLETION_STARTED")
                 foundational_statuses = complete_voice_signal()
             except Exception as exc:
                 return self._after_application_failure(
@@ -400,7 +410,13 @@ class VoiceApplicator:
                     started,
                     deployment_id,
                 )
+            if lifecycle_observer is not None:
+                lifecycle_observer("DEFERRED_VOICE_COMPLETION_VERIFIED")
+        if lifecycle_observer is not None:
+            lifecycle_observer("REGISTRATION_STARTED")
         registrations = self._registrations(plan, action_results, capabilities)
+        if lifecycle_observer is not None:
+            lifecycle_observer("REGISTRATION_COMPLETED")
         calls = self._calls(plan, registrations, capabilities)
         phones = self._phone_outcomes(plan, action_results, registrations, calls)
         status, failure_code = self._overall(application_status, phones, calls)
