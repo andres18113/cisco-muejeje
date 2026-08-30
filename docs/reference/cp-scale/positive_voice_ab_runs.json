@@ -229,6 +229,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "No experiment flags and the real cross-stage barrier: network VERIFIED, Voice bootstrap applied, Voice signal VERIFIED. The disposable qualifier then invoked its legacy configure_endpoint_dhcp arm on both phones immediately after signalling; canonical production intentionally emits no such phone activation. Both phones reproduced empty IPv4/zero bindings/NOT_REGISTERED. This is a valid harness-boundary result, not production verification. Cleanup independently restored Realtime and zero semantic devices/links."
+    },
+    {
+      "run": "run22",
+      "filename": "positive-voice-ab-run22-production-post-signal-convergence-missing.json",
+      "sha256": "fa6147a65c4645cb76da6ec3858539ce82b8ddc1aeef65ed273115b36399a26a",
+      "source_head": "b842dc1b7530aa9fceb45b4853bc28fdefa34786",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "RUN22_PRODUCTION_NO_ARM_VERIFICATION",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "No flags, real cross-stage production barrier, and no disposable endpoint DHCP arm. Network foundation VERIFIED, Voice bootstrap applied, Voice signal VERIFIED, then registration began immediately with no authoritative phone-port forwarding gate. Both phones ended DHCP YES/empty IPv4, zero bindings, and NOT_REGISTERED. This establishes the missing post-signal access convergence boundary. Cleanup independently restored Realtime and zero semantic devices/links."
     }
   ]
 }
