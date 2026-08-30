@@ -2916,7 +2916,7 @@ def _execute_stage(
         )
         return statuses
 
-    barrier = configuration.voice_signal_barrier
+    barrier = getattr(configuration, "voice_signal_barrier", None)
     voice_evidence = _stage_voice(
         projection,
         voice_runtime=voice_runtime,
