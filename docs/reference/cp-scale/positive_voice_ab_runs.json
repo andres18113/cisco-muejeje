@@ -205,6 +205,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "The intervention port independently read data VLAN931 before the boundary; the control independently contradicted VLAN931 and had no access preparation. After the full shared foundation converged, one identical data931+voice930 batch signalled both ports from one clock. Both later reached authoritative FWD, acquired matching leases (P1 10.93.0.11, P2 10.93.0.10), and registered SCCP. Prior data-only access preparation had NO EFFECT; the late foundation-gated signal boundary, not access history, explains the success. Cleanup independently restored Realtime and zero semantic devices/links."
+    },
+    {
+      "run": "run20",
+      "filename": "positive-voice-ab-run20-production-network-gate-insufficient.json",
+      "sha256": "0cc73ff59cc2724274a23886843b814e0ec4f8d9e82fd72c7bc0e234cee7148a",
+      "source_head": "d12e838215226cecfbdba60ea7b9eb4b347ee59c",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "RUN20_PRODUCTION_FOUNDATION_GATED_VERIFICATION",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "No experiment flags: the disposable runner used the real ConfigurationApplicator. Its typed barrier was required, network foundation VERIFIED, and Voice signal VERIFIED, but the applicator signalled before the later Option150/CME/ephone/cnf stage. Both phones ended DHCP YES with empty IPv4, zero voice bindings, and NOT_REGISTERED SCCP. Network convergence alone is insufficient; Voice bootstrap must also precede signalling. Cleanup independently restored Realtime and zero semantic devices/links."
     }
   ]
 }
