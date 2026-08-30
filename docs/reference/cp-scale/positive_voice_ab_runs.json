@@ -217,6 +217,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "No experiment flags: the disposable runner used the real ConfigurationApplicator. Its typed barrier was required, network foundation VERIFIED, and Voice signal VERIFIED, but the applicator signalled before the later Option150/CME/ephone/cnf stage. Both phones ended DHCP YES with empty IPv4, zero voice bindings, and NOT_REGISTERED SCCP. Network convergence alone is insufficient; Voice bootstrap must also precede signalling. Cleanup independently restored Realtime and zero semantic devices/links."
+    },
+    {
+      "run": "run21",
+      "filename": "positive-voice-ab-run21-production-order-artificial-arm-failure.json",
+      "sha256": "357fda6e6eb5f0ede48f91d3960986fb1ff8a6acf00b3021ec096b22798f1e86",
+      "source_head": "a71632231070d4e869536592fa735af3959d79b6",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "RUN21_PRODUCTION_CROSS_STAGE_VERIFICATION",
+      "outcome": "SAME_FAILURE",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "No experiment flags and the real cross-stage barrier: network VERIFIED, Voice bootstrap applied, Voice signal VERIFIED. The disposable qualifier then invoked its legacy configure_endpoint_dhcp arm on both phones immediately after signalling; canonical production intentionally emits no such phone activation. Both phones reproduced empty IPv4/zero bindings/NOT_REGISTERED. This is a valid harness-boundary result, not production verification. Cleanup independently restored Realtime and zero semantic devices/links."
     }
   ]
 }
