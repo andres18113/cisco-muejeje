@@ -241,18 +241,40 @@ RUN16_STP_TIMING_CONTROLS_DHCP_ACQUISITION = NOT_ESTABLISHED
 RUN16_SHA256 = d65a6e79e3d97fea707a42b27139f65b9b8dff8eaf8f9c3e495591a6b34f4563
 MODERN_FAILURE_VOICE_SIGNAL_ORDER = VOICE_VLAN_BEFORE_TRUNK_FORWARDING_AND_BEFORE_L3_POOL_CME
 MODERN_SUCCESS_VOICE_SIGNAL_ORDER = L3_POOL_CME_AND_TRUNK_FORWARDING_BEFORE_VOICE_VLAN
-FIRST_CAUSAL_DIVERGENCE = TRUNK_FORWARDING_STATE_AT_VOICE_VLAN_SIGNAL
+FIRST_BEHAVIORAL_DIVERGENCE = INITIAL_ACCESS_ACTION_SIGNALS_VOICE_VLAN_VS_WITHHOLDS_IT
+FIRST_CAUSAL_DIVERGENCE = NOT_YET_ESTABLISHED_AFTER_TRUNK_REFUTATION
 RUN17_MODE_PREPARED = TRUNK_FORWARDING_BEFORE_VOICE
 RUN17_CONTROL_PRECONDITION = ALL_READABLE_NONFORWARDING_FOUNDATION_VERIFIED
 RUN17_CONTROL_SIGNAL_BRACKET = SAME_AUTHORITATIVE_TRUNK_NOT_FORWARDING_BEFORE_AND_AFTER
 RUN17_INTERVENTION_PRECONDITION = SAME_TRUNK_FORWARDING_VERIFIED
 RUN17_NONVARIABLES = TOPOLOGY_ACCESS_VLAN_L3_POOL_OPTION150_CME_PORTFAST_DHCP_FLAG
 RUN17_ROLE_SWAP_PREPARED = YES
-RUN17_EXECUTED = NO
+RUN17_EXECUTED = YES
+RUN17_SOURCE_HEAD = 4fe86259d34f53e87c0b12599883c291ef294973
+RUN17_RESULT = TRUNK_FORWARDING_BEFORE_VOICE_NO_EFFECT
+RUN17_PRE_CONTROL_FOUNDATION = VERIFIED_EXCEPT_TRUNK_FORWARDING
+RUN17_TRUNK_FORWARDING_TRANSITION = EMPTY -> (930, 931)
+RUN17_FOUNDATION_WAIT_SAMPLES = 13
+RUN17_FOUNDATION_WAIT_MS = 30562
+RUN17_CONTROL_FINAL_IPV4 = 10.93.0.11
+RUN17_INTERVENTION_FINAL_IPV4 = 10.93.0.10
+RUN17_VOICE_BINDING_COUNT = 2
+RUN17_CONTROL_SCCP = REGISTERED
+RUN17_INTERVENTION_SCCP = REGISTERED
+RUN17_SHA256 = c8c627e34739981545061bd97bdf429337e12593631a784a2176d54bc4a55e1f
+RUN17_WORKSPACE_RESTORED = YES
+RUN17_REALTIME_RESTORED = YES
+TRUNK_FORWARDING_AT_SIGNAL_CAUSE = REFUTED
+RUN18_MODE_PREPARED = VOICE_BOOTSTRAP_BEFORE_SIGNAL
+RUN18_CONTROL_BOUNDARY = NETWORK_READY_BOOTSTRAP_NOT_DISPATCHED
+RUN18_INTERVENTION_BOUNDARY = SAME_NETWORK_BOOTSTRAP_DISPATCHED
+RUN18_NONVARIABLES = TOPOLOGY_ACCESS_VLAN_L2_L3_DHCP_TRUNK_PORTFAST_DHCP_FLAG
+RUN18_ROLE_SWAP_PREPARED = YES
+RUN18_EXECUTED = NO
 VOICE_ROOT_CAUSE = STRONG_CANDIDATE
-VOICE_ROOT_CAUSE_LEADING_CANDIDATE = VOICE_VLAN_SIGNALLED_BEFORE_SHARED_TRUNK_FORWARDING
+VOICE_ROOT_CAUSE_LEADING_CANDIDATE = VOICE_BOOTSTRAP_READINESS_BEFORE_VOICE_SIGNAL
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_RUN17_TRUNK_ORDER_CAUSAL_CONTRAST
+NEXT_ACTIVE_STEP = EXECUTE_RUN18_BOOTSTRAP_ORDER_CAUSAL_CONTRAST
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -483,8 +505,58 @@ obtains all three, after both phone-facing ports are authoritatively
 FORWARDING.  Per-port STP durations are retained but explicitly
 `NOT_COMPARABLE_DIFFERENT_VOICE_SIGNAL_ORIGINS`; they are gates, not the causal
 metric.  A second run with P1/P2 roles reversed is prepared to remove fixed
-phone/port identity if the first contrast is positive.  No LIVE has run from
-this implementation yet.
+phone/port identity if the first contrast is positive.
+
+### Run 17: trunk forwarding before signalling has no causal effect
+
+One governed LIVE ran from clean pushed `4fe8625` on PT 9.0.1.0858.  The
+control precondition was exact: router L3, the DHCP pool and call-control table
+were VERIFIED; the trunk was authoritative, allowed and active for 930/931,
+and its forwarding set was empty.  P1 received VLAN930, and the immediate
+post-signal foundation read still showed that same trunk forwarding set empty.
+The bounded wait then directly observed it become `[930, 931]` after 13
+samples / 30,562 ms, and only then did P2 receive VLAN930.
+
+This produced the null causal result, not the expected split.  At the
+intervention boundary the earlier control port was already forwarding; P2 then
+walked `LIS -> LRN -> UNOBSERVABLE -> LRN -> UNOBSERVABLE -> LRN ->
+FORWARDING` over 30,687 ms.  Both final phone SVIs had DHCP enabled and IPv4:
+P1 `10.93.0.11`, P2 `10.93.0.10`.  Both addresses matched the two
+authoritative server bindings and both SCCP states were REGISTERED.
+
+Therefore `TRUNK_FORWARDING_AT_SIGNAL_CAUSE = REFUTED`.  Run 16 did not
+succeed because the trunk was already forwarding when Voice was signalled.
+The reversed-role replication is unnecessary for a null effect: neither fixed
+phone/port identity can manufacture the fact that the supposedly disadvantaged
+control acquired.
+
+The archive is
+`positive-voice-ab-run17-trunk-forwarding-no-effect.json`, SHA-256
+`c8c627e34739981545061bd97bdf429337e12593631a784a2176d54bc4a55e1f`.
+Independent cleanup restored Realtime and observed zero semantic devices and
+zero links, with one allowed backend-managed Power Distribution Device.
+
+### Run 18 prepared: Voice bootstrap straddles the signal boundary
+
+Run 17 leaves a smaller grouped difference.  The successful run 16/run 17
+paths dispatch Option150, CME, ephones and cnf files before any phone sees
+VLAN930; the default failure signals VLAN930 first.  Run 18 holds the prepared
+L2/L3/DHCP network constant and turns only that ordering.
+
+Both phone ports start data-only.  One read must verify trunk
+operational/allowed/active, router voice L3 and the DHCP pool; trunk forwarding
+is deliberately excluded because run 17 refuted it.  P1 then receives VLAN930
+while the harness has dispatched no Voice bootstrap action.  The existing
+typed Option150/CME/ephone/cnf batch runs once, and the call-control table must
+then answer VERIFIED before P2 receives the same VLAN930.  Both phone-facing
+ports must later be observed forwarding.  No DHCP flag, PortFast, topology,
+L2, L3, pool or trunk policy changes between the two phones.
+
+The strong positive is P1 without IPv4/binding/SCCP and P2 with all three.
+Both acquiring refutes bootstrap readiness at signal as the differentiator;
+both failing says bootstrap preparation is insufficient and moves the boundary
+earlier.  Role reversal is implemented but will run only after a positive
+split.  No run 18 LIVE has occurred yet.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 

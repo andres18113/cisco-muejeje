@@ -562,6 +562,19 @@ def _serialize(result) -> dict:
         "paired_stp_timing_comparability": (
             result.paired_stp_timing_comparability
         ),
+        "voice_bootstrap_dispatch": result.voice_bootstrap_dispatch,
+        "control_voice_bootstrap_dispatch": (
+            result.control_voice_bootstrap_dispatch
+        ),
+        "bootstrap_foundation_ready": result.bootstrap_foundation_ready,
+        "bootstrap_foundation_wait": (
+            result.bootstrap_foundation_wait.as_evidence()
+            if result.bootstrap_foundation_wait is not None else None
+        ),
+        "bootstrap_roles_reversed": result.bootstrap_roles_reversed,
+        "voice_bootstrap_controls_acquisition": (
+            result.voice_bootstrap_controls_acquisition
+        ),
         "trunk_forwarding_convergence": (
             result.trunk_forwarding_convergence
         ),
@@ -748,6 +761,8 @@ def run(
     edge_before_voice_vlan: bool = False,
     trunk_before_voice_vlan: bool = False,
     trunk_roles_reversed: bool = False,
+    bootstrap_before_voice_vlan: bool = False,
+    bootstrap_roles_reversed: bool = False,
 ) -> int:
     preflight: dict[str, object] = {
         "python_executable": sys.executable,
@@ -927,6 +942,11 @@ def run(
             # it only after that same authoritative trunk transitions to FWD.
             trunk_before_voice_vlan=trunk_before_voice_vlan,
             trunk_roles_reversed=trunk_roles_reversed,
+            # Both phones share the same prepared network.  P1 is signalled
+            # before the existing typed Option150/CME/ephone/cnf batch, and P2
+            # after it; trunk forwarding is deliberately not a gate here.
+            bootstrap_before_voice_vlan=bootstrap_before_voice_vlan,
+            bootstrap_roles_reversed=bootstrap_roles_reversed,
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
         try:
             independent_final = physical.observe_workspace()
@@ -1009,6 +1029,18 @@ def run(
             "trunk_forwarding_controls_voice_acquisition"
         ],
         "trunk_roles_reversed": evidence["trunk_roles_reversed"],
+        "voice_bootstrap_dispatch": evidence["voice_bootstrap_dispatch"],
+        "control_voice_bootstrap_dispatch": evidence[
+            "control_voice_bootstrap_dispatch"
+        ],
+        "bootstrap_foundation_ready": evidence[
+            "bootstrap_foundation_ready"
+        ],
+        "bootstrap_foundation_wait": evidence["bootstrap_foundation_wait"],
+        "bootstrap_roles_reversed": evidence["bootstrap_roles_reversed"],
+        "voice_bootstrap_controls_acquisition": evidence[
+            "voice_bootstrap_controls_acquisition"
+        ],
         "trunk_forwarding_convergence": evidence[
             "trunk_forwarding_convergence"
         ],
@@ -1181,6 +1213,23 @@ def main() -> int:
             "--trunk-before-voice-vlan."
         ),
     )
+    parser.add_argument(
+        "--bootstrap-before-voice-vlan", action="store_true",
+        help=(
+            "signal the control phone after the L2/L3/DHCP network is ready "
+            "but before Option150/CME/ephone/cnf dispatch, apply that bootstrap "
+            "once, then signal the intervention phone. Trunk forwarding is not "
+            "a gate and no DHCP flag or PortFast mutation is used."
+        ),
+    )
+    parser.add_argument(
+        "--reverse-bootstrap-roles", action="store_true",
+        help=(
+            "counterbalance the bootstrap-order experiment: P2 is the "
+            "pre-bootstrap control and P1 the post-bootstrap intervention. "
+            "Requires --bootstrap-before-voice-vlan."
+        ),
+    )
     args = parser.parse_args()
     modes = [
         name for name, enabled in (
@@ -1191,6 +1240,10 @@ def main() -> int:
             ("--phone-svi-dhcp-retrigger", args.phone_svi_dhcp_retrigger),
             ("--edge-before-voice-vlan", args.edge_before_voice_vlan),
             ("--trunk-before-voice-vlan", args.trunk_before_voice_vlan),
+            (
+                "--bootstrap-before-voice-vlan",
+                args.bootstrap_before_voice_vlan,
+            ),
         ) if enabled
     ]
     if len(modes) > 1:
@@ -1202,6 +1255,14 @@ def main() -> int:
         parser.error(
             "--reverse-trunk-roles requires --trunk-before-voice-vlan"
         )
+    if (
+        args.reverse_bootstrap_roles
+        and not args.bootstrap_before_voice_vlan
+    ):
+        parser.error(
+            "--reverse-bootstrap-roles requires "
+            "--bootstrap-before-voice-vlan"
+        )
     return run(
         args.packet_tracer_version,
         edge_portfast=args.edge_portfast,
@@ -1212,6 +1273,8 @@ def main() -> int:
         edge_before_voice_vlan=args.edge_before_voice_vlan,
         trunk_before_voice_vlan=args.trunk_before_voice_vlan,
         trunk_roles_reversed=args.reverse_trunk_roles,
+        bootstrap_before_voice_vlan=args.bootstrap_before_voice_vlan,
+        bootstrap_roles_reversed=args.reverse_bootstrap_roles,
     )
 
 
