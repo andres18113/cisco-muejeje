@@ -179,6 +179,12 @@ EXPERIMENT_TRUNK_FORWARDING_BEFORE_VOICE = (
 EXPERIMENT_VOICE_BOOTSTRAP_BEFORE_SIGNAL = (
     "VOICE_BOOTSTRAP_BEFORE_SIGNAL"
 )
+#: Both phones are signalled in one late batch against one prepared foundation.
+#: Only the intervention port had received the same data-only access policy
+#: earlier; the control receives data and Voice together for the first time.
+EXPERIMENT_DATA_ACCESS_PREPARATION_BEFORE_VOICE = (
+    "DATA_ACCESS_PREPARATION_BEFORE_VOICE"
+)
 
 #: The FWD gate's terminal statuses.  FORWARDING and UNOBSERVABLE reuse the
 #: row classifications above; TIMEOUT is the bounded wait expiring while the
@@ -234,6 +240,9 @@ ACQUISITION_NOT_STARTED_INTERVENTION_VOICE_SIGNAL_UNPROVEN = (
 ACQUISITION_NOT_STARTED_VOICE_BOOTSTRAP_UNREADY = (
     "ACQUISITION_NOT_STARTED_VOICE_BOOTSTRAP_UNREADY"
 )
+ACQUISITION_NOT_STARTED_ACCESS_PREPARATION_UNPROVEN = (
+    "ACQUISITION_NOT_STARTED_ACCESS_PREPARATION_UNPROVEN"
+)
 
 #: The four verdicts run 15 can reach, kept apart because they license
 #: different next steps.  Only the first credits the edge policy.
@@ -271,6 +280,14 @@ VOICE_BOOTSTRAP_BEFORE_SIGNAL_INSUFFICIENT = (
 VOICE_BOOTSTRAP_BEFORE_SIGNAL_REVERSED = (
     "VOICE_BOOTSTRAP_BEFORE_SIGNAL_REVERSED"
 )
+DATA_ACCESS_PREPARATION_CAUSAL_EFFECT_OBSERVED = (
+    "DATA_ACCESS_PREPARATION_CAUSAL_EFFECT_OBSERVED"
+)
+DATA_ACCESS_PREPARATION_NO_EFFECT = "DATA_ACCESS_PREPARATION_NO_EFFECT"
+DATA_ACCESS_PREPARATION_INSUFFICIENT = (
+    "DATA_ACCESS_PREPARATION_INSUFFICIENT"
+)
+DATA_ACCESS_PREPARATION_REVERSED = "DATA_ACCESS_PREPARATION_REVERSED"
 
 #: The bounded milestones run 15 observes the phone SVI at.  Four, not a
 #: polling matrix: each one is a moment the causal question turns on.
@@ -1418,6 +1435,11 @@ class PositiveVoiceSliceResult:
     bootstrap_foundation_ready: str = UNOBSERVABLE
     bootstrap_foundation_wait: BootstrapFoundationWait | None = None
     bootstrap_roles_reversed: bool = False
+    control_access_preparation: str = UNOBSERVABLE
+    intervention_access_preparation: str = UNOBSERVABLE
+    control_access_preparation_readback: str = UNOBSERVABLE
+    intervention_access_preparation_readback: str = UNOBSERVABLE
+    access_preparation_roles_reversed: bool = False
     acquisition_started: bool = True
     acquisition_boundary: str = ""
     baseline_inventory: PhysicalWorkspaceObservation | None = None
@@ -1475,6 +1497,15 @@ class PositiveVoiceSliceResult:
         if verdict == VOICE_BOOTSTRAP_BEFORE_SIGNAL_CAUSAL_EFFECT_OBSERVED:
             return YES
         if verdict == VOICE_BOOTSTRAP_BEFORE_SIGNAL_NO_EFFECT:
+            return NO
+        return NOT_ESTABLISHED
+
+    @property
+    def data_access_preparation_controls_acquisition(self) -> str:
+        verdict = self.causal_experiment_result
+        if verdict == DATA_ACCESS_PREPARATION_CAUSAL_EFFECT_OBSERVED:
+            return YES
+        if verdict == DATA_ACCESS_PREPARATION_NO_EFFECT:
             return NO
         return NOT_ESTABLISHED
 
@@ -1743,6 +1774,33 @@ class PositiveVoiceSliceResult:
             return VOICE_BOOTSTRAP_BEFORE_SIGNAL_REVERSED
         return UNOBSERVABLE
 
+    def _access_preparation_before_voice_vlan_verdict(self) -> str:
+        if (
+            self.control_access_preparation != NOT_APPLIED
+            or self.intervention_access_preparation != APPLIED
+            or self.control_access_preparation_readback != CONTRADICTED
+            or self.intervention_access_preparation_readback != VERIFIED
+            or self.shared_foundation_ready != VERIFIED
+            or self.control_stp_port_gate is None
+            or self.intervention_stp_port_gate is None
+            or not self.control_stp_port_gate.forwarding_observed
+            or not self.intervention_stp_port_gate.forwarding_observed
+        ):
+            return UNOBSERVABLE
+        control_acquired = self._edge_acquired(self.control_stp_port_gate)
+        intervention_acquired = self._edge_acquired(
+            self.intervention_stp_port_gate
+        )
+        if control_acquired == NO and intervention_acquired == YES:
+            return DATA_ACCESS_PREPARATION_CAUSAL_EFFECT_OBSERVED
+        if control_acquired == YES and intervention_acquired == YES:
+            return DATA_ACCESS_PREPARATION_NO_EFFECT
+        if control_acquired == NO and intervention_acquired == NO:
+            return DATA_ACCESS_PREPARATION_INSUFFICIENT
+        if control_acquired == YES and intervention_acquired == NO:
+            return DATA_ACCESS_PREPARATION_REVERSED
+        return UNOBSERVABLE
+
     @property
     def all_endpoint_arms_accepted(self) -> str:
         """Aggregate typed-call acceptance without hiding per-phone answers."""
@@ -2007,6 +2065,11 @@ class PositiveVoiceSliceResult:
             return self._trunk_before_voice_vlan_verdict()
         if self.experiment == EXPERIMENT_VOICE_BOOTSTRAP_BEFORE_SIGNAL:
             return self._bootstrap_before_voice_vlan_verdict()
+        if (
+            self.experiment
+            == EXPERIMENT_DATA_ACCESS_PREPARATION_BEFORE_VOICE
+        ):
+            return self._access_preparation_before_voice_vlan_verdict()
         if self.experiment == EXPERIMENT_PHONE_SVI_DHCP_RETRIGGER:
             if self.acquisition_boundary == (
                 ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
@@ -2668,6 +2731,8 @@ class PositiveVoiceSliceQualifier:
         trunk_roles_reversed: bool = False,
         bootstrap_before_voice_vlan: bool = False,
         bootstrap_roles_reversed: bool = False,
+        access_preparation_before_voice_vlan: bool = False,
+        access_preparation_roles_reversed: bool = False,
         gate_timeout_seconds: float = STP_FWD_GATE_TIMEOUT_SECONDS,
         gate_interval_seconds: float = STP_FWD_GATE_INTERVAL_SECONDS,
         gate_clock=monotonic,
@@ -2730,6 +2795,12 @@ class PositiveVoiceSliceQualifier:
             bootstrap_before_voice_vlan
         )
         self._bootstrap_roles_reversed = bool(bootstrap_roles_reversed)
+        self._access_preparation_before_voice_vlan = bool(
+            access_preparation_before_voice_vlan
+        )
+        self._access_preparation_roles_reversed = bool(
+            access_preparation_roles_reversed
+        )
         if self._trunk_roles_reversed and not self._trunk_before_voice_vlan:
             raise ValueError(
                 "reversed trunk roles require the trunk-before-voice-VLAN "
@@ -2743,20 +2814,39 @@ class PositiveVoiceSliceQualifier:
                 "reversed bootstrap roles require the "
                 "bootstrap-before-voice-VLAN experiment"
             )
+        if (
+            self._access_preparation_roles_reversed
+            and not self._access_preparation_before_voice_vlan
+        ):
+            raise ValueError(
+                "reversed access-preparation roles require the "
+                "access-preparation-before-voice-VLAN experiment"
+            )
         if sum((
             self._edge_before_voice_vlan,
             self._trunk_before_voice_vlan,
             self._bootstrap_before_voice_vlan,
+            self._access_preparation_before_voice_vlan,
         )) > 1:
             raise ValueError(
-                "one causal variable per run: edge, trunk and bootstrap "
-                "ordering experiments cannot be combined"
+                "one causal variable per run: edge, trunk, bootstrap and "
+                "access-preparation experiments cannot be combined"
             )
-        if self._edge_before_voice_vlan and self._trunk_before_voice_vlan:
-            raise ValueError(
-                "one causal variable per run: edge policy and trunk forwarding "
-                "ordering cannot share an experiment"
-            )
+        if self._access_preparation_before_voice_vlan:
+            if self._gate_enabled or self._edge_portfast:
+                raise ValueError(
+                    "one causal variable per run: access preparation cannot "
+                    "be combined with another gated experiment or PortFast"
+                )
+            if (
+                self._phone_count != 2
+                or VOICE_VLAN_ID in self._phone_access_vlans
+                or len(set(self._phone_access_vlans)) != 1
+            ):
+                raise ValueError(
+                    "access preparation requires exactly two phones that "
+                    "share the data access VLAN"
+                )
         if self._edge_before_voice_vlan:
             if self._gate_enabled or self._edge_portfast:
                 raise ValueError(
@@ -2838,7 +2928,11 @@ class PositiveVoiceSliceQualifier:
         self._gate_sleeper = gate_sleeper
         # Derived once, next to the knobs that define it, so a result can name
         # its experiment without re-deriving it from the mapping later.
-        if self._bootstrap_before_voice_vlan:
+        if self._access_preparation_before_voice_vlan:
+            self._experiment = (
+                EXPERIMENT_DATA_ACCESS_PREPARATION_BEFORE_VOICE
+            )
+        elif self._bootstrap_before_voice_vlan:
             self._experiment = EXPERIMENT_VOICE_BOOTSTRAP_BEFORE_SIGNAL
         elif self._trunk_before_voice_vlan:
             self._experiment = EXPERIMENT_TRUNK_FORWARDING_BEFORE_VOICE
@@ -3004,6 +3098,21 @@ class PositiveVoiceSliceQualifier:
                 "bootstrap_foundation_wait"
             ),
             bootstrap_roles_reversed=self._bootstrap_roles_reversed,
+            control_access_preparation=edge_state.get(
+                "control_access_preparation", UNOBSERVABLE,
+            ),
+            intervention_access_preparation=edge_state.get(
+                "intervention_access_preparation", UNOBSERVABLE,
+            ),
+            control_access_preparation_readback=edge_state.get(
+                "control_access_preparation_readback", UNOBSERVABLE,
+            ),
+            intervention_access_preparation_readback=edge_state.get(
+                "intervention_access_preparation_readback", UNOBSERVABLE,
+            ),
+            access_preparation_roles_reversed=(
+                self._access_preparation_roles_reversed
+            ),
             acquisition_started=not acquisition_boundary,
             acquisition_boundary=acquisition_boundary,
             baseline_inventory=baseline, final_inventory=final,
@@ -3082,6 +3191,14 @@ class PositiveVoiceSliceQualifier:
             ),
         ]
         for index, interface in enumerate(phone_ports, start=1):
+            unprepared_index = (
+                2 if self._access_preparation_roles_reversed else 1
+            )
+            if (
+                self._access_preparation_before_voice_vlan
+                and index == unprepared_index
+            ):
+                continue
             actions.append(
                 ConfigureAccessPort(
                     id=f"voiceab/access/{index}",
@@ -3100,6 +3217,7 @@ class PositiveVoiceSliceQualifier:
                             self._edge_before_voice_vlan
                             or self._trunk_before_voice_vlan
                             or self._bootstrap_before_voice_vlan
+                            or self._access_preparation_before_voice_vlan
                         )
                         else VOICE_VLAN_ID
                     ),
@@ -3379,10 +3497,16 @@ class PositiveVoiceSliceQualifier:
             self._edge_before_voice_vlan
             or self._trunk_before_voice_vlan
             or self._bootstrap_before_voice_vlan
+            or self._access_preparation_before_voice_vlan
         ):
             journal.record(
                 "WHEN_VOICE_VLAN_WITHHELD", applied,
-                "initial access batch voice_vlan_id=None on both phone ports",
+                (
+                    "initial access batch keeps every configured phone port "
+                    "data-only; the access-preparation control is unconfigured"
+                    if self._access_preparation_before_voice_vlan
+                    else "initial access batch voice_vlan_id=None on both phone ports"
+                ),
             )
         else:
             journal.record(
@@ -3427,6 +3551,7 @@ class PositiveVoiceSliceQualifier:
             and not self._edge_before_voice_vlan
             and not self._trunk_before_voice_vlan
             and not self._bootstrap_before_voice_vlan
+            and not self._access_preparation_before_voice_vlan
         ):
             self._arm_endpoints(phones, journal, errors)
 
@@ -3449,7 +3574,12 @@ class PositiveVoiceSliceQualifier:
         pre_arm: dict[str, str] = {}
         arm_acceptance: dict[str, str] = {}
         post_arm: dict[str, str] = {}
-        if self._bootstrap_before_voice_vlan:
+        if self._access_preparation_before_voice_vlan:
+            boundary = self._access_preparation_before_voice_vlan_window(
+                phones, phone_ports, switch.name, router.name, journal,
+                errors, edge_stp_port_gates, edge_voice_svi, edge_state,
+            )
+        elif self._bootstrap_before_voice_vlan:
             boundary = self._bootstrap_before_voice_vlan_window(
                 phones, phone_ports, switch.name, router.name, journal,
                 errors, edge_stp_port_gates, edge_voice_svi, edge_state,
@@ -3672,6 +3802,7 @@ class PositiveVoiceSliceQualifier:
                 self._edge_before_voice_vlan
                 or self._trunk_before_voice_vlan
                 or self._bootstrap_before_voice_vlan
+                or self._access_preparation_before_voice_vlan
             )
             and not boundary
         ):
@@ -3780,6 +3911,146 @@ class PositiveVoiceSliceQualifier:
                 self._gate_interval_seconds,
                 max(0.0, deadline - now),
             ))
+
+    def _access_preparation_before_voice_vlan_window(
+        self,
+        phones,
+        phone_ports: tuple[str, ...],
+        switch_name: str,
+        router_name: str,
+        journal: _Journal,
+        errors: list[str],
+        edge_stp_port_gates: dict[str, PairedStpPortGate],
+        edge_voice_svi: list[EdgeVoiceSviObservation],
+        edge_state: dict[str, object],
+    ) -> str:
+        """Signal prepared and unprepared access ports in one late batch."""
+        foundation, foundation_wait = self._await_shared_foundation(
+            switch_name, router_name, journal, errors,
+        )
+        ready = _shared_foundation_ready(foundation)
+        edge_state["shared_foundation_ready"] = ready
+        edge_state["shared_foundation_wait"] = foundation_wait
+        journal.record(
+            "WHEN_SHARED_FOUNDATION_READY",
+            ready == VERIFIED,
+            ready,
+            OBSERVATION,
+        )
+        if ready != VERIFIED:
+            return ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY
+
+        if self._access_preparation_roles_reversed:
+            control_port, intervention_port = phone_ports[1], phone_ports[0]
+        else:
+            control_port, intervention_port = phone_ports
+        edge_state["control_access_preparation"] = NOT_APPLIED
+        edge_state["intervention_access_preparation"] = APPLIED
+        control_readback = self._read_access_preparation_status(
+            switch_name, control_port, errors,
+        )
+        intervention_readback = self._read_access_preparation_status(
+            switch_name, intervention_port, errors,
+        )
+        edge_state["control_access_preparation_readback"] = control_readback
+        edge_state["intervention_access_preparation_readback"] = (
+            intervention_readback
+        )
+        journal.record(
+            "WHEN_ACCESS_PREPARATION_ASYMMETRY_OBSERVED",
+            (
+                control_readback == CONTRADICTED
+                and intervention_readback == VERIFIED
+            ),
+            (
+                f"control {control_port}:{control_readback}; "
+                f"intervention {intervention_port}:{intervention_readback}"
+            ),
+            OBSERVATION,
+        )
+        if (
+            control_readback != CONTRADICTED
+            or intervention_readback != VERIFIED
+        ):
+            return ACQUISITION_NOT_STARTED_ACCESS_PREPARATION_UNPROVEN
+
+        applied, boundary_errors = self._apply(
+            self._configuration.apply_actions,
+            self._voice_vlan_boundary_actions(phone_ports),
+        )
+        boundary_started = self._gate_clock()
+        errors.extend(boundary_errors)
+        journal.record(
+            "WHEN_VOICE_VLAN_APPLICATION_BOUNDARY",
+            applied,
+            (
+                f"one batch: unprepared control {control_port}; "
+                f"data-prepared intervention {intervention_port}"
+            ),
+        )
+        if not applied:
+            return ACQUISITION_NOT_STARTED_INTERVENTION_VOICE_SIGNAL_UNPROVEN
+        self._retain_edge_voice_svi(
+            "IMMEDIATELY_AFTER_VOICE_VLAN",
+            phones,
+            edge_voice_svi,
+            errors,
+        )
+
+        gates = await_paired_stp_forwarding(
+            self._configuration,
+            switch_name,
+            VOICE_VLAN_ID,
+            (("control", control_port), ("intervention", intervention_port)),
+            timeout_seconds=self._gate_timeout_seconds,
+            interval_seconds=self._gate_interval_seconds,
+            clock=self._gate_clock,
+            sleeper=self._gate_sleeper,
+            started_at=boundary_started,
+            errors=errors,
+            milestone_observer=lambda name: self._retain_edge_voice_svi(
+                name, phones, edge_voice_svi, errors,
+            ),
+        )
+        edge_stp_port_gates.update(gates)
+        for role in ("control", "intervention"):
+            item = gates[role]
+            journal.record(
+                f"WHEN_{role.upper()}_STP_STATE_AFTER_VOICE_VLAN",
+                item.forwarding_observed,
+                f"{item.interface}:"
+                f"first={item.first_authoritative_state},"
+                f"states={' -> '.join(item.observed_states)},"
+                f"fwd_ms={item.time_to_forwarding_ms}",
+                OBSERVATION,
+            )
+        if not all(item.forwarding_observed for item in gates.values()):
+            return ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET
+        return ""
+
+    def _read_access_preparation_status(
+        self,
+        switch_name: str,
+        interface: str,
+        errors: list[str],
+    ) -> str:
+        try:
+            observed = self._configuration.read_access_port(
+                switch_name,
+                interface,
+                DATA_VLAN_ID,
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(
+                f"access_preparation_unreadable:{interface}: {exc}"
+            )
+            return UNOBSERVABLE
+        if observed is None:
+            return UNOBSERVABLE
+        return _compare_vlan(
+            getattr(observed, "data_vlan_id", None),
+            DATA_VLAN_ID,
+        )
 
     def _bootstrap_before_voice_vlan_window(
         self,

@@ -575,6 +575,22 @@ def _serialize(result) -> dict:
         "voice_bootstrap_controls_acquisition": (
             result.voice_bootstrap_controls_acquisition
         ),
+        "control_access_preparation": result.control_access_preparation,
+        "intervention_access_preparation": (
+            result.intervention_access_preparation
+        ),
+        "control_access_preparation_readback": (
+            result.control_access_preparation_readback
+        ),
+        "intervention_access_preparation_readback": (
+            result.intervention_access_preparation_readback
+        ),
+        "access_preparation_roles_reversed": (
+            result.access_preparation_roles_reversed
+        ),
+        "data_access_preparation_controls_acquisition": (
+            result.data_access_preparation_controls_acquisition
+        ),
         "trunk_forwarding_convergence": (
             result.trunk_forwarding_convergence
         ),
@@ -763,6 +779,8 @@ def run(
     trunk_roles_reversed: bool = False,
     bootstrap_before_voice_vlan: bool = False,
     bootstrap_roles_reversed: bool = False,
+    access_preparation_before_voice_vlan: bool = False,
+    access_preparation_roles_reversed: bool = False,
 ) -> int:
     preflight: dict[str, object] = {
         "python_executable": sys.executable,
@@ -947,6 +965,13 @@ def run(
             # after it; trunk forwarding is deliberately not a gate here.
             bootstrap_before_voice_vlan=bootstrap_before_voice_vlan,
             bootstrap_roles_reversed=bootstrap_roles_reversed,
+            # One late shared Voice boundary: P1 receives data+voice for the
+            # first time, while P2 receives the same batch after prior data-only
+            # access preparation.  No timing difference exists at the signal.
+            access_preparation_before_voice_vlan=access_preparation_before_voice_vlan,
+            access_preparation_roles_reversed=(
+                access_preparation_roles_reversed
+            ),
         ).qualify(ROUTER_MODEL, SWITCH_MODEL, PHONE_MODEL)
         try:
             independent_final = physical.observe_workspace()
@@ -1040,6 +1065,24 @@ def run(
         "bootstrap_roles_reversed": evidence["bootstrap_roles_reversed"],
         "voice_bootstrap_controls_acquisition": evidence[
             "voice_bootstrap_controls_acquisition"
+        ],
+        "control_access_preparation": evidence[
+            "control_access_preparation"
+        ],
+        "intervention_access_preparation": evidence[
+            "intervention_access_preparation"
+        ],
+        "control_access_preparation_readback": evidence[
+            "control_access_preparation_readback"
+        ],
+        "intervention_access_preparation_readback": evidence[
+            "intervention_access_preparation_readback"
+        ],
+        "access_preparation_roles_reversed": evidence[
+            "access_preparation_roles_reversed"
+        ],
+        "data_access_preparation_controls_acquisition": evidence[
+            "data_access_preparation_controls_acquisition"
         ],
         "trunk_forwarding_convergence": evidence[
             "trunk_forwarding_convergence"
@@ -1230,6 +1273,23 @@ def main() -> int:
             "Requires --bootstrap-before-voice-vlan."
         ),
     )
+    parser.add_argument(
+        "--access-preparation-before-voice-vlan", action="store_true",
+        help=(
+            "hold one phone port unconfigured while the other receives its "
+            "data-only access policy, verify the full shared foundation, then "
+            "apply one identical data+voice batch to both ports. This isolates "
+            "prior access preparation with one shared signal clock."
+        ),
+    )
+    parser.add_argument(
+        "--reverse-access-preparation-roles", action="store_true",
+        help=(
+            "counterbalance the access-preparation experiment: P2 is the "
+            "unprepared control and P1 the prepared intervention. Requires "
+            "--access-preparation-before-voice-vlan."
+        ),
+    )
     args = parser.parse_args()
     modes = [
         name for name, enabled in (
@@ -1243,6 +1303,10 @@ def main() -> int:
             (
                 "--bootstrap-before-voice-vlan",
                 args.bootstrap_before_voice_vlan,
+            ),
+            (
+                "--access-preparation-before-voice-vlan",
+                args.access_preparation_before_voice_vlan,
             ),
         ) if enabled
     ]
@@ -1263,6 +1327,14 @@ def main() -> int:
             "--reverse-bootstrap-roles requires "
             "--bootstrap-before-voice-vlan"
         )
+    if (
+        args.reverse_access_preparation_roles
+        and not args.access_preparation_before_voice_vlan
+    ):
+        parser.error(
+            "--reverse-access-preparation-roles requires "
+            "--access-preparation-before-voice-vlan"
+        )
     return run(
         args.packet_tracer_version,
         edge_portfast=args.edge_portfast,
@@ -1275,6 +1347,12 @@ def main() -> int:
         trunk_roles_reversed=args.reverse_trunk_roles,
         bootstrap_before_voice_vlan=args.bootstrap_before_voice_vlan,
         bootstrap_roles_reversed=args.reverse_bootstrap_roles,
+        access_preparation_before_voice_vlan=(
+            args.access_preparation_before_voice_vlan
+        ),
+        access_preparation_roles_reversed=(
+            args.reverse_access_preparation_roles
+        ),
     )
 
 

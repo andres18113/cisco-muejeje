@@ -270,11 +270,36 @@ RUN18_CONTROL_BOUNDARY = NETWORK_READY_BOOTSTRAP_NOT_DISPATCHED
 RUN18_INTERVENTION_BOUNDARY = SAME_NETWORK_BOOTSTRAP_DISPATCHED
 RUN18_NONVARIABLES = TOPOLOGY_ACCESS_VLAN_L2_L3_DHCP_TRUNK_PORTFAST_DHCP_FLAG
 RUN18_ROLE_SWAP_PREPARED = YES
-RUN18_EXECUTED = NO
+RUN18_EXECUTED = YES
+RUN18_SOURCE_HEAD = 0de600f5629cfc4bb698e0d4e53b1db7bcc8104d
+RUN18_RESULT = VOICE_BOOTSTRAP_BEFORE_SIGNAL_INSUFFICIENT
+RUN18_BOOTSTRAP_WAIT_SAMPLES = 1
+RUN18_BOOTSTRAP_WAIT_MS = 391
+RUN18_CONTROL_FINAL_IPV4 = EMPTY
+RUN18_INTERVENTION_FINAL_IPV4 = EMPTY
+RUN18_VOICE_BINDING_COUNT = 0
+RUN18_CONTROL_SCCP = NOT_REGISTERED
+RUN18_INTERVENTION_SCCP = NOT_REGISTERED
+RUN18_SVI_AT_AUTHORITATIVE_FWD = ABSENT_FOR_BOTH
+RUN18_SVI_AT_WINDOW_END = PRESENT_DHCP_YES_IPV4_EMPTY_FOR_BOTH
+RUN18_SHA256 = 8528d3126f9b0233b5bbde582c82cbde13bccb5428e24b20a87d3309a1ff48e3
+RUN18_WORKSPACE_RESTORED = YES
+RUN18_REALTIME_RESTORED = YES
+VOICE_BOOTSTRAP_AT_SIGNAL_CAUSE = REFUTED_AS_SUFFICIENT
+RUN19_MODE_PREPARED = DATA_ACCESS_PREPARATION_BEFORE_VOICE
+RUN19_CONTROL_ACCESS_PREPARATION = NOT_APPLIED
+RUN19_INTERVENTION_ACCESS_PREPARATION = APPLIED_DATA_ONLY
+RUN19_CONTROL_ACCESS_READBACK = DATA931_CONTRADICTED
+RUN19_INTERVENTION_ACCESS_READBACK = DATA931_VERIFIED
+RUN19_VOICE_SIGNAL_BOUNDARY = ONE_SHARED_DATA_AND_VOICE_BATCH
+RUN19_FOUNDATION_GATE = SHARED_FOUNDATION_VERIFIED
+RUN19_NONVARIABLES = PHONE_AGE_SIGNAL_TIME_TOPOLOGY_L2_L3_DHCP_BOOTSTRAP_TRUNK_PORTFAST
+RUN19_ROLE_SWAP_PREPARED = YES
+RUN19_EXECUTED = NO
 VOICE_ROOT_CAUSE = STRONG_CANDIDATE
-VOICE_ROOT_CAUSE_LEADING_CANDIDATE = VOICE_BOOTSTRAP_READINESS_BEFORE_VOICE_SIGNAL
+VOICE_ROOT_CAUSE_LEADING_CANDIDATE = EARLY_VOICE_SIGNAL_OR_DATA_ACCESS_PREPARATION
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_RUN18_BOOTSTRAP_ORDER_CAUSAL_CONTRAST
+NEXT_ACTIVE_STEP = EXECUTE_RUN19_ACCESS_PREPARATION_CAUSAL_CONTRAST
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -555,8 +580,53 @@ L2, L3, pool or trunk policy changes between the two phones.
 The strong positive is P1 without IPv4/binding/SCCP and P2 with all three.
 Both acquiring refutes bootstrap readiness at signal as the differentiator;
 both failing says bootstrap preparation is insufficient and moves the boundary
-earlier.  Role reversal is implemented but will run only after a positive
-split.  No run 18 LIVE has occurred yet.
+earlier.  Role reversal is implemented but runs only after a positive split.
+
+### Run 18: bootstrap readiness is insufficient
+
+One governed LIVE ran from clean pushed `0de600f` on PT 9.0.1.0858.  The
+network-only precondition was VERIFIED before P1 was signalled.  The bootstrap
+batch then applied, and its bounded read reached VERIFIED on the first sample
+at 391 ms before P2 was signalled.  Both ports later reached authoritative
+FORWARDING from the paired gate.
+
+The result was the same failure on both arms.  At authoritative FWD both voice
+SVIs were still absent.  At the end of the 30-second registration episode both
+SVIs existed with DHCP YES and empty IPv4.  The authoritative binding table
+contained zero voice rows and both SCCP states were NOT_REGISTERED.  Therefore
+bootstrap readiness before signal is not sufficient and cannot explain run 16
+by itself.  The role swap is not run for a both-failed result.
+
+The archive is
+`positive-voice-ab-run18-bootstrap-before-signal-insufficient.json`, SHA-256
+`8528d3126f9b0233b5bbde582c82cbde13bccb5428e24b20a87d3309a1ff48e3`.
+Independent cleanup restored Realtime and observed zero semantic devices and
+zero links, with one allowed backend-managed Power Distribution Device.
+
+### Run 19 prepared: prior data-only access policy versus one-shot access
+
+Run 16/run 17 share one more condition the normal failure and run 18 do not
+separate: both phones had already received a data-only access-port policy
+before the late Voice signal.  Run 19 isolates that history without moving the
+signal clock.
+
+Both phones are created and linked together.  The initial configuration omits
+the control access port entirely while applying data VLAN931 and no voice VLAN
+to the intervention port.  The same router L3, pool and Voice bootstrap are
+applied, and the complete shared foundation -- including authoritative trunk
+forwarding -- must become VERIFIED.  One later batch then configures BOTH ports
+identically with data VLAN931 and voice VLAN930.  For the control this is the
+first access policy; for the intervention it is a second-stage Voice update.
+Both phones therefore have the same age, upstream state, signal timestamp and
+post-signal observation window.  Only prior data-only access preparation
+is assigned as the treatment.  Its resulting pre-boundary port/STP readiness
+is a mediator of that treatment and cannot be decomposed by this run.
+
+Control failure plus intervention IPv4/matching binding/SCCP confirms the
+two-stage access lifecycle.  Both success refutes it and leaves the late
+signalling boundary itself as the differentiator.  Both failure means the
+prepared access port is not sufficient under one shared boundary.  Role
+reversal is prepared only for a positive split.  No run 19 LIVE has occurred.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 
