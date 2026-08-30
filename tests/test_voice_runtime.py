@@ -53,6 +53,7 @@ class FakeVoiceRuntime:
         self.registration = {}
         self.calls = {}
         self.call_requests = []
+        self.timeline: list[str] = []
 
     def inventory(self):
         return [
@@ -62,10 +63,12 @@ class FakeVoiceRuntime:
         ]
 
     def apply_actions(self, actions):
+        self.timeline.append("bootstrap")
         self.applied.extend(item.id for item in actions)
         return [RuntimeActionMutation(action_id=item.id, applied=True) for item in actions]
 
     def observe_registration(self, expectation):
+        self.timeline.append("registration")
         return self.registration.get(expectation.phone_id, RuntimePhoneRegistration(
             expectation_id=expectation.id,
             phone_id=expectation.phone_id,
@@ -105,7 +108,10 @@ class FakeVoiceRuntime:
         return observed
 
 
-def _apply(runtime=None, *, capabilities=None, foundations=None):
+def _apply(
+    runtime=None, *, capabilities=None, foundations=None,
+    complete_voice_signal=None,
+):
     plan = _compile().plan
     runtime = runtime or FakeVoiceRuntime()
     statuses = {
@@ -123,6 +129,7 @@ def _apply(runtime=None, *, capabilities=None, foundations=None):
         runtime_context=ConfigurationRuntimeContext(
             backend="fake", backend_version="9.0.1.0858",
         ),
+        complete_voice_signal=complete_voice_signal,
     )
     return plan, runtime, result
 
@@ -149,6 +156,62 @@ def test_hash_or_foundation_preflight_failure_performs_no_mutation():
     )
     assert mismatch.status is ActionExecutionStatus.FAILED
     assert runtime.applied == []
+
+
+def test_deferred_voice_signal_runs_after_bootstrap_and_before_registration():
+    plan = _compile().plan
+    runtime = FakeVoiceRuntime()
+    statuses = {
+        item.source_id: (
+            ActionExecutionStatus.PARTIAL
+            if item.kind == "voice_vlan"
+            else ActionExecutionStatus.VERIFIED
+        )
+        for item in plan.foundational_requirements
+    }
+
+    def complete_signal():
+        runtime.timeline.append("voice_signal")
+        return {
+            item.source_id: ActionExecutionStatus.VERIFIED
+            for item in plan.foundational_requirements
+        }
+
+    _, _, result = _apply(
+        runtime,
+        foundations=statuses,
+        complete_voice_signal=complete_signal,
+    )
+
+    assert runtime.timeline.index("bootstrap") < runtime.timeline.index(
+        "voice_signal"
+    ) < runtime.timeline.index("registration")
+    assert result.status is ActionExecutionStatus.VERIFIED
+
+
+def test_unverified_deferred_signal_blocks_registration_after_bootstrap():
+    plan = _compile().plan
+    runtime = FakeVoiceRuntime()
+    statuses = {
+        item.source_id: (
+            ActionExecutionStatus.PARTIAL
+            if item.kind == "voice_vlan"
+            else ActionExecutionStatus.VERIFIED
+        )
+        for item in plan.foundational_requirements
+    }
+
+    _, _, result = _apply(
+        runtime,
+        foundations=statuses,
+        complete_voice_signal=lambda: statuses,
+    )
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.failure_code is (
+        ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING
+    )
+    assert "registration" not in runtime.timeline
 
     _, runtime, missing = _apply(FakeVoiceRuntime(), foundations={})
     assert missing.status is ActionExecutionStatus.FAILED

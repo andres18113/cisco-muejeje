@@ -767,7 +767,10 @@ def _execute_mutating_stages(
         runtime_context = ConfigurationRuntimeContext(
             environment_fingerprint=oriented.environment_fingerprint,
         )
-        configuration_result = ConfigurationApplicator(runtimes.configuration).apply(
+        configuration_applicator = ConfigurationApplicator(
+            runtimes.configuration
+        )
+        configuration_result = configuration_applicator.apply(
             composed.configuration,
             actual_source_topology_hash=e4_identity,
             # Exactamente el mapa con el que se compilo, no una segunda
@@ -776,6 +779,9 @@ def _execute_mutating_stages(
             capabilities=composed.capabilities,
             runtime_context=runtime_context,
             deployment_manifest=oriented,
+            defer_voice_signal_until_bootstrap=bool(
+                voice_intent is not None and composed.voice is not None
+            ),
         )
         state.configuration_result = configuration_result
         state.record_stage(
@@ -836,6 +842,24 @@ def _execute_mutating_stages(
                     stage, runtimes, topology, e4_identity,
                     "Voice was requested but no voice runtime or plan is available.",
                 )
+            def complete_voice_signal() -> dict[str, ActionExecutionStatus]:
+                nonlocal configuration_result, foundational_statuses
+                configuration_result = (
+                    configuration_applicator.complete_deferred_voice_signals(
+                        composed.configuration,
+                        configuration_result,
+                        deployment_manifest=oriented,
+                    )
+                )
+                state.configuration_result = configuration_result
+                foundational_statuses = derive_foundational_statuses(
+                    configuration_result=configuration_result,
+                    physical_result=state.deployment,
+                )
+                state.foundational_statuses = foundational_statuses
+                return foundational_statuses
+
+            barrier = configuration_result.voice_signal_barrier
             voice_result = VoiceApplicator(runtimes.voice).apply(
                 composed.voice,
                 actual_source_topology_hash=e4_identity,
@@ -844,6 +868,15 @@ def _execute_mutating_stages(
                 capabilities=composed.voice_capabilities,
                 runtime_context=runtime_context,
                 deployment_manifest=oriented,
+                complete_voice_signal=(
+                    complete_voice_signal
+                    if (
+                        barrier is not None
+                        and barrier.signal_status
+                        is ActionExecutionStatus.INTENDED
+                    )
+                    else None
+                ),
             )
             state.voice_result = voice_result
             state.record_stage(

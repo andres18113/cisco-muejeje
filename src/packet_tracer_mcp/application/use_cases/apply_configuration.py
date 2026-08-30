@@ -90,6 +90,7 @@ class ConfigurationApplicator:
         capabilities: dict[str, DeviceCapabilities] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
+        defer_voice_signal_until_bootstrap: bool = False,
     ) -> ConfigurationApplicationResult:
         started = monotonic()
         runtime_context = runtime_context or ConfigurationRuntimeContext()
@@ -327,6 +328,9 @@ class ConfigurationApplicator:
             results,
             deferred_voice_actions,
             deployed_names,
+            defer_voice_signal_until_bootstrap=(
+                defer_voice_signal_until_bootstrap
+            ),
         )
         status, failure_code = self._overall_status(action_results, verification_results)
         if (
@@ -386,12 +390,225 @@ class ConfigurationApplicator:
             duration_ms=int((monotonic() - started) * 1000),
         )
 
+    def complete_deferred_voice_signals(
+        self,
+        plan: ConfigurationPlan,
+        application: ConfigurationApplicationResult,
+        *,
+        deployment_manifest: DeploymentManifest | None = None,
+    ) -> ConfigurationApplicationResult:
+        """Dispatch and verify Voice VLANs after bootstrap has been applied."""
+        started = monotonic()
+        barrier = application.voice_signal_barrier
+        if (
+            application.config_plan_id != plan.id
+            or application.config_semantic_hash != plan.semantic_hash
+            or barrier is None
+            or not barrier.required
+            or barrier.foundation_status is not ActionExecutionStatus.VERIFIED
+            or barrier.signal_status is not ActionExecutionStatus.INTENDED
+        ):
+            return self._voice_signal_completion_failure(
+                application,
+                "Configuration result is not a prepared deferred Voice signal.",
+                started,
+            )
+        deferred_ids = frozenset(barrier.deferred_action_ids)
+        deferred_actions = [
+            item for item in plan.actions if item.id in deferred_ids
+        ]
+        if (
+            len(deferred_actions) != len(deferred_ids)
+            or any(
+                not isinstance(item, ConfigureAccessPort)
+                or item.voice_vlan_id is None
+                for item in deferred_actions
+            )
+        ):
+            return self._voice_signal_completion_failure(
+                application,
+                "Deferred Voice action identities do not match the plan.",
+                started,
+            )
+
+        try:
+            inventory = self._runtime.inventory()
+            if deployment_manifest is not None:
+                validate_manifest_environment(
+                    deployment_manifest,
+                    application.runtime_context.environment_fingerprint,
+                )
+                semantic_targets = resolve_manifest_targets(
+                    deployment_manifest,
+                    physical_topology_hash=plan.source_topology_hash,
+                    semantic_device_ids=[
+                        item.device_id for item in plan.devices
+                    ],
+                    inventory=inventory,
+                )
+                deployed_names = {
+                    item.device_id: semantic_targets[item.device_id].device_name
+                    for item in plan.devices
+                }
+            else:
+                targets = {item.device_name: item for item in inventory}
+                missing = [
+                    item.device_name for item in plan.devices
+                    if item.device_name not in targets
+                ]
+                if missing:
+                    raise DeploymentIdentityError(
+                        "Deferred Voice targets not found: "
+                        + ", ".join(sorted(missing))
+                    )
+                deployed_names = {
+                    item.device_id: targets[item.device_name].device_name
+                    for item in plan.devices
+                }
+        except Exception as exc:
+            return self._voice_signal_completion_failure(
+                application,
+                f"Deferred Voice target resolution failed: {exc}",
+                started,
+            )
+
+        signal_by_id = self._apply_ready_actions(
+            deferred_actions,
+            deployed_names,
+        )
+        action_by_id = {
+            item.action_id: item for item in application.action_results
+        }
+        action_by_id.update(signal_by_id)
+        action_results = [
+            action_by_id[item.id] for item in plan.actions
+        ]
+        expectations = [
+            item for item in plan.verification_expectations
+            if item.action_id in deferred_ids
+        ]
+        runtime_expectations = [
+            item.model_copy(update={
+                "device_name": deployed_names.get(
+                    item.device_id, item.device_name,
+                ),
+            })
+            for item in expectations
+        ]
+        verified_by_id = {
+            item.expectation_id: item
+            for item in self._verify(plan, runtime_expectations)
+        }
+        verification_by_id = {
+            item.expectation_id: item
+            for item in application.verification_results
+        }
+        verification_by_id.update(verified_by_id)
+        verification_results = [
+            verification_by_id[item.id]
+            for item in plan.verification_expectations
+        ]
+        signal_status = self._voice_signal_status(
+            list(signal_by_id.values()),
+            list(verified_by_id.values()),
+            barrier.foundation_status,
+        )
+        completed_barrier = barrier.model_copy(update={
+            "signal_results": list(signal_by_id.values()),
+            "signal_status": signal_status,
+            "message": (
+                "Voice bootstrap completed; the original typed access actions "
+                "were dispatched and independently verified."
+                if signal_status is ActionExecutionStatus.VERIFIED
+                else "Deferred Voice signalling or verification failed."
+            ),
+        })
+        status, failure_code = self._overall_status(
+            action_results,
+            verification_results,
+        )
+        deployment_id = application.deployment_id
+        journal = journal_from_action_results(
+            plan_id=plan.id,
+            deployment_id=deployment_id,
+            actions=list(plan.actions),
+            results=action_results,
+        )
+        expectations_by_id = {
+            item.id: item for item in plan.verification_expectations
+        }
+        evidence_records = [
+            evidence_from_legacy_result(
+                identifier=f"evidence/{item.expectation_id}",
+                subject=expectations_by_id[item.expectation_id].device_id,
+                claim=expectations_by_id[item.expectation_id].kind.value,
+                status=item.status,
+                evidence_method=item.evidence_method,
+                fresh_evidence=item.fresh_evidence,
+                observed_value={
+                    name: value.value
+                    for name, value in sorted(item.fields.items())
+                },
+                backend=application.runtime_context.evidence_backend,
+                backend_version=(
+                    application.runtime_context.evidence_backend_version
+                ),
+                environment_fingerprint=(
+                    application.runtime_context.environment_semantic_hash
+                ),
+                capability_snapshot_hash=(
+                    application.runtime_context.capability_snapshot_hash
+                ),
+                limitations=[item.message] if item.message else [],
+            )
+            for item in verification_results
+        ]
+        return application.model_copy(update={
+            "status": status,
+            "failure_code": failure_code,
+            "action_results": action_results,
+            "verification_results": verification_results,
+            "execution_journal": journal,
+            "dirty_state": journal.dirty_state,
+            "evidence_records": evidence_records,
+            "voice_signal_barrier": completed_barrier,
+            "duration_ms": (
+                application.duration_ms
+                + int((monotonic() - started) * 1000)
+            ),
+        })
+
+    @staticmethod
+    def _voice_signal_completion_failure(
+        application: ConfigurationApplicationResult,
+        message: str,
+        started: float,
+    ) -> ConfigurationApplicationResult:
+        barrier = application.voice_signal_barrier
+        if barrier is not None:
+            barrier = barrier.model_copy(update={
+                "signal_status": ActionExecutionStatus.FAILED,
+                "message": message,
+            })
+        return application.model_copy(update={
+            "status": ConfigurationApplicationStatus.FAILED,
+            "failure_code": ConfigurationFailureCode.APPLICATION_FAILED,
+            "preflight_errors": [*application.preflight_errors, message],
+            "voice_signal_barrier": barrier,
+            "duration_ms": (
+                application.duration_ms
+                + int((monotonic() - started) * 1000)
+            ),
+        })
+
     def _verify_with_voice_signal_barrier(
         self,
         plan: ConfigurationPlan,
         results: dict[str, ActionApplicationResult],
         deferred_voice_actions: dict[str, ConfigureAccessPort],
         deployed_names: dict[str, str],
+        *,
+        defer_voice_signal_until_bootstrap: bool,
     ) -> tuple[
         list[ActionApplicationResult],
         list[VerificationResult],
@@ -482,7 +699,23 @@ class ConfigurationApplicator:
             list(pre_signal_results.values()),
         )
 
-        if foundation_status is ActionExecutionStatus.VERIFIED:
+        signal_deferred = bool(
+            defer_voice_signal_until_bootstrap
+            and foundation_status is ActionExecutionStatus.VERIFIED
+        )
+        if signal_deferred:
+            signal_results = {
+                action_id: ActionApplicationResult(
+                    action_id=action_id,
+                    status=ActionExecutionStatus.PARTIAL,
+                    message=(
+                        "Data-only access preparation is applied; Voice VLAN "
+                        "signalling is pending successful Voice bootstrap."
+                    ),
+                )
+                for action_id in deferred_voice_actions
+            }
+        elif foundation_status is ActionExecutionStatus.VERIFIED:
             signal_results = self._apply_ready_actions(
                 list(deferred_voice_actions.values()),
                 deployed_names,
@@ -523,18 +756,36 @@ class ConfigurationApplicator:
             item for item in plan.verification_expectations
             if item.action_id in deferred_ids
         ]
-        post_signal_results = verify_subset(
-            post_signal_expectations,
-            final_statuses,
-        )
+        if signal_deferred:
+            post_signal_results = {
+                item.id: VerificationResult(
+                    expectation_id=item.id,
+                    action_id=item.action_id,
+                    status=ActionExecutionStatus.PARTIAL,
+                    message=(
+                        "Voice VLAN verification is pending successful Voice "
+                        "bootstrap and deferred signal dispatch."
+                    ),
+                )
+                for item in post_signal_expectations
+            }
+        else:
+            post_signal_results = verify_subset(
+                post_signal_expectations,
+                final_statuses,
+            )
         observed = {**pre_signal_results, **post_signal_results}
         verification_results = [
             observed[item.id] for item in plan.verification_expectations
         ]
-        signal_status = self._voice_signal_status(
-            list(signal_results.values()),
-            list(post_signal_results.values()),
-            foundation_status,
+        signal_status = (
+            ActionExecutionStatus.INTENDED
+            if signal_deferred
+            else self._voice_signal_status(
+                list(signal_results.values()),
+                list(post_signal_results.values()),
+                foundation_status,
+            )
         )
         barrier = VoiceSignalBarrierResult(
             required=True,
@@ -548,8 +799,11 @@ class ConfigurationApplicator:
             foundation_status=foundation_status,
             signal_status=signal_status,
             message=(
-                "Phone access ports were prepared without a Voice VLAN; the "
-                "original typed actions were dispatched only after the "
+                "Phone access ports were prepared without a Voice VLAN; "
+                "signalling is pending Voice bootstrap."
+                if signal_deferred
+                else "Phone access ports were prepared without a Voice VLAN; "
+                "the original typed actions were dispatched only after the "
                 "network foundation verification barrier."
                 if signal_status is ActionExecutionStatus.VERIFIED
                 else "Voice VLAN signalling did not cross its verification barrier."

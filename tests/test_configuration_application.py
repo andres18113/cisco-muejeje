@@ -343,6 +343,52 @@ def test_unobservable_dhcp_pool_ceiling_does_not_make_signal_impossible():
     )
 
 
+def test_voice_signal_can_be_held_pending_until_bootstrap_then_completed():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    applicator = ConfigurationApplicator(runtime)
+    action = _phone_voice_action(plan)
+
+    prepared = applicator.apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        defer_voice_signal_until_bootstrap=True,
+    )
+
+    dispatched = [
+        item
+        for batch in runtime.action_batches
+        for item in batch
+        if item.id == action.id
+    ]
+    assert [item.voice_vlan_id for item in dispatched] == [None]
+    assert (
+        prepared.voice_signal_barrier.foundation_status
+        is ActionExecutionStatus.VERIFIED
+    )
+    assert (
+        prepared.voice_signal_barrier.signal_status
+        is ActionExecutionStatus.INTENDED
+    )
+
+    completed = applicator.complete_deferred_voice_signals(plan, prepared)
+
+    dispatched = [
+        item
+        for batch in runtime.action_batches
+        for item in batch
+        if item.id == action.id
+    ]
+    assert [item.voice_vlan_id for item in dispatched] == [
+        None, action.voice_vlan_id,
+    ]
+    assert (
+        completed.voice_signal_barrier.signal_status
+        is ActionExecutionStatus.VERIFIED
+    )
+
+
 def test_hard_foundation_failure_outranks_an_earlier_unobservable_read():
     topology, plan = _compiled()
     runtime = FakeConfigurationRuntime(topology)
@@ -373,6 +419,8 @@ def test_no_flag_disposable_live_uses_the_production_configuration_applicator():
 
     assert "production_pipeline=not experiment_mode" in source
     assert "actions = order_configuration_actions(actions)" in source
+    assert "defer_voice_signal_until_bootstrap=True" in source
+    assert "complete_production_voice_signal" in source
     assert '"production_pipeline"' in source
     assert '"production_configuration_application"' in source
 

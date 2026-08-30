@@ -2541,6 +2541,7 @@ def _stage_voice(
     statuses: dict,
     context: ConfigurationRuntimeContext,
     manifest,
+    complete_voice_signal=None,
 ) -> dict[str, object]:
     """Apply and judge E7 for one stage. Never claims what it did not observe.
 
@@ -2567,6 +2568,7 @@ def _stage_voice(
         capabilities=composition.voice_capabilities,
         runtime_context=context,
         deployment_manifest=manifest,
+        complete_voice_signal=complete_voice_signal,
     )
     evidence: dict[str, object] = {
         "staged": True,
@@ -2754,12 +2756,19 @@ def _execute_stage(
         )
     manifest = orientation.oriented_manifest
     context = ConfigurationRuntimeContext(environment_fingerprint=fingerprint)
-    configuration = ConfigurationApplicator(configuration_runtime).apply(
+    configuration_applicator = ConfigurationApplicator(
+        configuration_runtime
+    )
+    voice_plan = getattr(projection, "voice", None)
+    configuration = configuration_applicator.apply(
         projection.configuration,
         actual_source_topology_hash=projection.topology.physical_identity_hash,
         capabilities=composition.capabilities,
         runtime_context=context,
         deployment_manifest=manifest,
+        defer_voice_signal_until_bootstrap=bool(
+            voice_plan is not None and voice_plan.actions
+        ),
     )
     _record_configuration_attempt(
         evidence, projection.configuration, configuration,
@@ -2783,20 +2792,31 @@ def _execute_stage(
         )
 
     configuration_error = canonical_stage_configuration_error(
-        projection.configuration, configuration,
+        projection.configuration,
+        configuration,
+        allow_deferred_voice_signal=bool(
+            voice_plan is not None and voice_plan.actions
+        ),
     )
     if (
         configuration_error
         and canonical_configuration_retryable_operational_unknown(
-            projection.configuration, configuration,
+            projection.configuration,
+            configuration,
+            allow_deferred_voice_signal=bool(
+                voice_plan is not None and voice_plan.actions
+            ),
         )
     ):
-        configuration = ConfigurationApplicator(configuration_runtime).apply(
+        configuration = configuration_applicator.apply(
             projection.configuration,
             actual_source_topology_hash=projection.topology.physical_identity_hash,
             capabilities=composition.capabilities,
             runtime_context=context,
             deployment_manifest=manifest,
+            defer_voice_signal_until_bootstrap=bool(
+                voice_plan is not None and voice_plan.actions
+            ),
         )
         _record_configuration_attempt(
             evidence, projection.configuration, configuration,
@@ -2809,7 +2829,11 @@ def _execute_stage(
                 "contradicted the plan: " + contradiction
             )
         configuration_error = canonical_stage_configuration_error(
-            projection.configuration, configuration,
+            projection.configuration,
+            configuration,
+            allow_deferred_voice_signal=bool(
+                voice_plan is not None and voice_plan.actions
+            ),
         )
     evidence["configuration"] = configuration.model_dump(mode="json")
     evidence["configuration_acceptance_error"] = configuration_error
@@ -2834,7 +2858,6 @@ def _execute_stage(
     # PURE read: a call that could change the mode would be attesting to its own
     # effect, and normalizing the mode silently would erase exactly the operator
     # state this gate exists to detect.
-    voice_plan = getattr(projection, "voice", None)
     continuity: dict[str, object] | None = None
     if voice_plan is not None and voice_plan.actions:
         simulation = SimulationTraceRuntime(transport.send_and_wait)
@@ -2868,6 +2891,32 @@ def _execute_stage(
     evidence["stp_realtime_before_voice"] = _stp_realtime_evidence(
         ios, projection, edge="before",
     )
+    def complete_voice_signal():
+        nonlocal configuration, statuses
+        configuration = (
+            configuration_applicator.complete_deferred_voice_signals(
+                projection.configuration,
+                configuration,
+                deployment_manifest=manifest,
+            )
+        )
+        _record_configuration_attempt(
+            evidence, projection.configuration, configuration,
+        )
+        evidence["configuration"] = configuration.model_dump(mode="json")
+        completion_error = canonical_stage_configuration_error(
+            projection.configuration,
+            configuration,
+        )
+        if completion_error:
+            raise RuntimeError(completion_error)
+        statuses = derive_foundational_statuses(
+            configuration_result=configuration,
+            physical_result=deployment,
+        )
+        return statuses
+
+    barrier = configuration.voice_signal_barrier
     voice_evidence = _stage_voice(
         projection,
         voice_runtime=voice_runtime,
@@ -2876,6 +2925,14 @@ def _execute_stage(
         statuses=statuses,
         context=context,
         manifest=manifest,
+        complete_voice_signal=(
+            complete_voice_signal
+            if (
+                barrier is not None
+                and barrier.signal_status is ActionExecutionStatus.INTENDED
+            )
+            else None
+        ),
     )
     evidence["voice"] = voice_evidence
     # The second edge, still Realtime: taken before the closing boundary read

@@ -38,6 +38,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     ConfigurationApplicationStatus,
     FieldVerificationStatus,
     VerificationResult,
+    VoiceSignalBarrierResult,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentLinkBinding,
@@ -305,6 +306,60 @@ def test_canonical_configuration_accepts_only_exact_known_observability_ceilings
     assert "unobservable" in canonical_stage_configuration_error(
         plan, non_ceiling,
     ).casefold()
+
+
+def test_canonical_gate_admits_only_typed_voice_signal_pending_bootstrap():
+    plan, result = _floor1_configuration_result()
+    expectations = {
+        item.id: item for item in plan.verification_expectations
+    }
+    pending = result.model_copy(deep=True)
+    voice_expectations = [
+        item for item in plan.verification_expectations
+        if (
+            item.kind is VerificationKind.ACCESS_PORT
+            and "voice_vlan_id" in item.expected
+        )
+    ]
+    voice_action_ids = {item.action_id for item in voice_expectations}
+    for item in pending.action_results:
+        if item.action_id in voice_action_ids:
+            item.status = ActionExecutionStatus.PARTIAL
+    for item in pending.verification_results:
+        if item.action_id in voice_action_ids:
+            item.status = ActionExecutionStatus.PARTIAL
+            item.evidence_method = ""
+            item.fresh_evidence = False
+            item.fields = {}
+            item.message = "Voice VLAN verification is pending bootstrap."
+    pending.voice_signal_barrier = VoiceSignalBarrierResult(
+        required=True,
+        deferred_action_ids=sorted(voice_action_ids),
+        foundation_status=ActionExecutionStatus.VERIFIED,
+        signal_status=ActionExecutionStatus.INTENDED,
+    )
+
+    assert canonical_stage_configuration_error(plan, pending)
+    assert canonical_stage_configuration_error(
+        plan,
+        pending,
+        allow_deferred_voice_signal=True,
+    ) == ""
+    l3 = next(
+        item for item in pending.verification_results
+        if expectations[item.expectation_id].kind
+        is VerificationKind.L3_INTERFACE
+    )
+    l3.fields["status"] = FieldVerificationStatus.UNKNOWN
+    l3.fields["protocol"] = FieldVerificationStatus.UNKNOWN
+    assert not canonical_configuration_retryable_operational_unknown(
+        plan, pending,
+    )
+    assert canonical_configuration_retryable_operational_unknown(
+        plan,
+        pending,
+        allow_deferred_voice_signal=True,
+    )
 
 
 def test_an_unreadable_phone_voice_vlan_is_partial_but_cp_scale_fails_closed():

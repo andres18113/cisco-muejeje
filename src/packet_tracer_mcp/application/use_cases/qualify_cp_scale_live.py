@@ -564,6 +564,8 @@ def canonical_stage_resume_error(
 def canonical_stage_configuration_error(
     plan: ConfigurationPlan,
     result: ConfigurationApplicationResult,
+    *,
+    allow_deferred_voice_signal: bool = False,
 ) -> str:
     """Accept only the exact measured CP-SCALE E5 read-back ceilings."""
 
@@ -579,6 +581,20 @@ def canonical_stage_configuration_error(
     if result.preflight_errors:
         return "Configuration preflight reported: " + "; ".join(result.preflight_errors)
 
+    pending_voice_ids: set[str] = set()
+    if allow_deferred_voice_signal:
+        barrier = result.voice_signal_barrier
+        if (
+            barrier is None
+            or barrier.foundation_status is not ActionExecutionStatus.VERIFIED
+            or barrier.signal_status is not ActionExecutionStatus.INTENDED
+        ):
+            return (
+                "Configuration did not retain a VERIFIED network foundation "
+                "with Voice signalling pending bootstrap."
+            )
+        pending_voice_ids = set(barrier.deferred_action_ids)
+
     expected_action_ids = Counter(item.id for item in plan.actions)
     observed_action_ids = Counter(item.action_id for item in result.action_results)
     if expected_action_ids != observed_action_ids:
@@ -591,7 +607,13 @@ def canonical_stage_configuration_error(
     invalid_actions = sorted(
         f"{item.action_id}:{item.status.value}"
         for item in result.action_results
-        if item.status not in allowed_actions
+        if (
+            item.status not in allowed_actions
+            and not (
+                item.action_id in pending_voice_ids
+                and item.status is ActionExecutionStatus.PARTIAL
+            )
+        )
     )
     if invalid_actions:
         return "Configuration action status is fail-closed: " + ", ".join(invalid_actions)
@@ -607,6 +629,19 @@ def canonical_stage_configuration_error(
     ceiling_present = False
     for item in result.verification_results:
         expectation = expectations[item.expectation_id]
+        if expectation.action_id in pending_voice_ids:
+            ceiling_present = True
+            if (
+                item.status is not ActionExecutionStatus.PARTIAL
+                or item.fresh_evidence
+                or item.fields
+                or "pending" not in item.message.casefold()
+            ):
+                return (
+                    f"Deferred Voice verification {item.expectation_id!r} "
+                    "did not remain explicitly PARTIAL and pending bootstrap."
+                )
+            continue
         invalid_fields = sorted(
             f"{name}:{status.value}"
             for name, status in item.fields.items()
@@ -733,6 +768,8 @@ def canonical_stage_configuration_error(
 def canonical_configuration_retryable_operational_unknown(
     plan: ConfigurationPlan,
     result: ConfigurationApplicationResult,
+    *,
+    allow_deferred_voice_signal: bool = False,
 ) -> bool:
     """Whether one typed re-read can close only L3 carrier/protocol UNKNOWNs.
 
@@ -767,7 +804,11 @@ def canonical_configuration_retryable_operational_unknown(
         found = True
         for name in unknown_fields:
             item.fields[name] = FieldVerificationStatus.VERIFIED
-    return found and canonical_stage_configuration_error(plan, candidate) == ""
+    return found and canonical_stage_configuration_error(
+        plan,
+        candidate,
+        allow_deferred_voice_signal=allow_deferred_voice_signal,
+    ) == ""
 
 
 def canonical_stage_workspace_error(

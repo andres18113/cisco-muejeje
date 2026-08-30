@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from time import monotonic, time_ns
 from typing import Protocol
 from uuid import uuid4
@@ -200,6 +200,9 @@ class VoiceApplicator:
         capabilities: dict[str, VoiceCapabilityProfile] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
+        complete_voice_signal: (
+            Callable[[], dict[str, ActionExecutionStatus]] | None
+        ) = None,
     ) -> VoiceApplicationResult:
         started = monotonic()
         context = runtime_context or ConfigurationRuntimeContext()
@@ -265,12 +268,10 @@ class VoiceApplicator:
                 "VoicePlan actions are not in deterministic dependency order.", context, started,
                 deployment_id=deployment_id,
             )
-        missing = sorted(
-            item.source_id for item in plan.foundational_requirements
-            if foundational_statuses.get(item.source_id)
-            not in _ADMISSIBLE_FOUNDATION_STATUSES.get(
-                item.kind, _VERIFIED_ONLY,
-            )
+        missing = self._missing_foundations(
+            plan,
+            foundational_statuses,
+            allow_pending_voice_signal=complete_voice_signal is not None,
         )
         if missing:
             return self._failure(
@@ -359,6 +360,46 @@ class VoiceApplicator:
         capabilities = capabilities or {}
         action_results = self._apply_actions(plan, capabilities, deployed_names)
         application_status = self._application_status(action_results)
+        if complete_voice_signal is not None:
+            if application_status is not ActionExecutionStatus.APPLIED:
+                return self._after_application_failure(
+                    plan,
+                    action_results,
+                    ConfigurationFailureCode.CALL_CONTROL_APPLICATION_FAILED,
+                    "Voice bootstrap did not apply; deferred Voice signalling "
+                    "remains closed.",
+                    context,
+                    started,
+                    deployment_id,
+                )
+            try:
+                foundational_statuses = complete_voice_signal()
+            except Exception as exc:
+                return self._after_application_failure(
+                    plan,
+                    action_results,
+                    ConfigurationFailureCode.APPLICATION_FAILED,
+                    f"Deferred Voice signalling failed: {exc}",
+                    context,
+                    started,
+                    deployment_id,
+                )
+            missing = self._missing_foundations(
+                plan,
+                foundational_statuses,
+                allow_pending_voice_signal=False,
+            )
+            if missing:
+                return self._after_application_failure(
+                    plan,
+                    action_results,
+                    ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING,
+                    "Voice foundations remain unverified after signalling: "
+                    + ", ".join(missing),
+                    context,
+                    started,
+                    deployment_id,
+                )
         registrations = self._registrations(plan, action_results, capabilities)
         calls = self._calls(plan, registrations, capabilities)
         phones = self._phone_outcomes(plan, action_results, registrations, calls)
@@ -818,6 +859,65 @@ class VoiceApplicator:
                 ),
             ))
         return outcomes
+
+    @staticmethod
+    def _missing_foundations(
+        plan: VoicePlan,
+        statuses: dict[str, ActionExecutionStatus],
+        *,
+        allow_pending_voice_signal: bool,
+    ) -> list[str]:
+        return sorted(
+            item.source_id
+            for item in plan.foundational_requirements
+            if not (
+                statuses.get(item.source_id)
+                in _ADMISSIBLE_FOUNDATION_STATUSES.get(
+                    item.kind, _VERIFIED_ONLY,
+                )
+                or (
+                    allow_pending_voice_signal
+                    and item.kind == "voice_vlan"
+                    and statuses.get(item.source_id)
+                    is ActionExecutionStatus.PARTIAL
+                )
+            )
+        )
+
+    @classmethod
+    def _after_application_failure(
+        cls,
+        plan: VoicePlan,
+        action_results: list[ActionApplicationResult],
+        code: ConfigurationFailureCode,
+        message: str,
+        context: ConfigurationRuntimeContext,
+        started: float,
+        deployment_id: str,
+    ) -> VoiceApplicationResult:
+        journal = journal_from_action_results(
+            plan_id=plan.id,
+            deployment_id=deployment_id,
+            actions=list(plan.actions),
+            results=action_results,
+        )
+        return VoiceApplicationResult(
+            voice_plan_id=plan.id,
+            voice_semantic_hash=plan.semantic_hash,
+            source_topology_hash=plan.source_topology_hash,
+            source_configuration_hash=plan.source_configuration_hash,
+            source_service_hash=plan.source_service_hash,
+            runtime_context=context,
+            status=ActionExecutionStatus.FAILED,
+            application_status=cls._application_status(action_results),
+            failure_code=code,
+            action_results=action_results,
+            preflight_errors=[message],
+            deployment_id=deployment_id,
+            execution_journal=journal,
+            dirty_state=journal.dirty_state,
+            duration_ms=int((monotonic() - started) * 1000),
+        )
 
     @staticmethod
     def _application_status(results):

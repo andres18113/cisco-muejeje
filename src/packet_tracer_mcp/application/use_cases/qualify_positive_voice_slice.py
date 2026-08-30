@@ -3483,6 +3483,9 @@ class PositiveVoiceSliceQualifier:
             self._configuration_actions(phone_ports),
         )
         errors.extend(config_errors)
+        production_voice_deferred = bool(
+            getattr(self._configuration, "voice_signal_deferred", False)
+        )
         journal.record(
             "WHEN_ACCESS_VLAN_APPLIED", applied,
             # The actual per-port intent, not a shared constant: run 9's paired
@@ -3498,6 +3501,7 @@ class PositiveVoiceSliceQualifier:
             or self._trunk_before_voice_vlan
             or self._bootstrap_before_voice_vlan
             or self._access_preparation_before_voice_vlan
+            or production_voice_deferred
         ):
             journal.record(
                 "WHEN_VOICE_VLAN_WITHHELD", applied,
@@ -3505,7 +3509,12 @@ class PositiveVoiceSliceQualifier:
                     "initial access batch keeps every configured phone port "
                     "data-only; the access-preparation control is unconfigured"
                     if self._access_preparation_before_voice_vlan
-                    else "initial access batch voice_vlan_id=None on both phone ports"
+                    else (
+                        "production barrier prepared data-only access; Voice "
+                        "signalling is pending bootstrap"
+                        if production_voice_deferred
+                        else "initial access batch voice_vlan_id=None on both phone ports"
+                    )
                 ),
             )
         else:
@@ -3536,6 +3545,15 @@ class PositiveVoiceSliceQualifier:
             )
         else:
             self._apply_voice_foundation(journal, errors)
+            if bool(getattr(
+                self._configuration, "voice_signal_completed", False,
+            )):
+                journal.record(
+                    "WHEN_VOICE_VLAN_APPLIED_AFTER_BOOTSTRAP",
+                    True,
+                    f"voice vlan {VOICE_VLAN_ID}",
+                    OBSERVATION,
+                )
         if self._phone_dhcp_lifecycle:
             lifecycle_observations = self._retain_phone_dhcp_lifecycle(
                 "AFTER_VOICE_CME_CONFIGURATION",

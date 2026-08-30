@@ -267,6 +267,8 @@ class _ConfigurationAdapter:
         self._ios = ios
         self._production_pipeline = production_pipeline
         self.production_application = None
+        self.production_plan = None
+        self.production_applicator = None
         #: Kept ONLY for the boundary case below, never for the happy path.
         self.pool_boundary_captures: list = []
 
@@ -327,17 +329,28 @@ class _ConfigurationAdapter:
                 supports_trunk=CapabilityStatus.SUPPORTED,
             ),
         }
-        self.production_application = ConfigurationApplicator(
-            self._enterprise
-        ).apply(
+        self.production_plan = plan
+        self.production_applicator = ConfigurationApplicator(self._enterprise)
+        self.production_application = self.production_applicator.apply(
             plan,
             actual_source_topology_hash=source_hash,
             capabilities=capabilities,
+            defer_voice_signal_until_bootstrap=True,
         )
+        pending = set()
+        barrier = self.production_application.voice_signal_barrier
+        if (
+            barrier is not None
+            and barrier.signal_status.value == "intended"
+        ):
+            pending = set(barrier.deferred_action_ids)
         return [
             RuntimeActionMutation(
                 action_id=item.action_id,
-                applied=satisfies_apply_dependency(item.status),
+                applied=(
+                    satisfies_apply_dependency(item.status)
+                    or item.action_id in pending
+                ),
                 failure_code=item.failure_code,
                 message=item.message,
                 batch_id=item.batch_id,
@@ -346,6 +359,47 @@ class _ConfigurationAdapter:
             )
             for item in self.production_application.action_results
         ]
+
+    def complete_production_voice_signal(self) -> bool:
+        if (
+            self.production_applicator is None
+            or self.production_plan is None
+            or self.production_application is None
+        ):
+            return False
+        self.production_application = (
+            self.production_applicator.complete_deferred_voice_signals(
+                self.production_plan,
+                self.production_application,
+            )
+        )
+        barrier = self.production_application.voice_signal_barrier
+        return bool(
+            barrier is not None
+            and barrier.signal_status.value == "verified"
+        )
+
+    @property
+    def voice_signal_deferred(self) -> bool:
+        barrier = (
+            self.production_application.voice_signal_barrier
+            if self.production_application is not None else None
+        )
+        return bool(
+            barrier is not None
+            and barrier.signal_status.value == "intended"
+        )
+
+    @property
+    def voice_signal_completed(self) -> bool:
+        barrier = (
+            self.production_application.voice_signal_barrier
+            if self.production_application is not None else None
+        )
+        return bool(
+            barrier is not None
+            and barrier.signal_status.value == "verified"
+        )
 
     def read_access_port(
         self, device_name: str, interface: str, expected_access_vlan: int,
@@ -540,11 +594,28 @@ class _ControlPlaneAdapter:
 
 
 class _CallControlAdapter:
-    def __init__(self, voice):
+    def __init__(self, voice, configuration=None):
         self._voice = voice
+        self._configuration = configuration
 
     def apply_actions(self, actions):
-        return self._voice.apply_actions(actions)
+        mutations = self._voice.apply_actions(actions)
+        if self._configuration is None:
+            return mutations
+        if not all(item.applied for item in mutations):
+            return mutations
+        if self._configuration.complete_production_voice_signal():
+            return mutations
+        return [
+            item.model_copy(update={
+                "applied": False,
+                "message": (
+                    "Voice bootstrap applied, but deferred Voice signalling "
+                    "did not verify."
+                ),
+            })
+            for item in mutations
+        ]
 
     def observe_registrations(self, expectations):
         return self._voice.observe_registrations(expectations)
@@ -1033,7 +1104,10 @@ def run(
         result = PositiveVoiceSliceQualifier(
             physical,
             configuration_adapter,
-            _CallControlAdapter(voice_runtime),
+            _CallControlAdapter(
+                voice_runtime,
+                configuration_adapter if not experiment_mode else None,
+            ),
             _EndpointAdapter(configuration, voice_runtime),
             mode_runtime,
             control_plane=control_plane,

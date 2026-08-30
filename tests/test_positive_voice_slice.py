@@ -2130,8 +2130,8 @@ def test_handoff_promotes_only_the_ordering_root_after_causal_controls():
     assert "SAME_ROOT_CAUSE = NOT_ESTABLISHED" in handoff
     assert (
         "VOICE_ROOT_CAUSE_CONFIRMED = "
-        "VOICE_SIGNAL_AND_ACQUISITION_WINDOW_NOT_DEPENDENCY_ORDERED_"
-        "AFTER_FOUNDATION_CONVERGENCE"
+        "VOICE_SIGNAL_NOT_DEPENDENCY_ORDERED_AFTER_NETWORK_CONVERGENCE_"
+        "AND_VOICE_BOOTSTRAP"
     ) in handoff
     assert (
         "UNOBSERVED_INTERNAL_MECHANISM = "

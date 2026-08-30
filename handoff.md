@@ -310,17 +310,33 @@ RUN19_WORKSPACE_RESTORED = YES
 RUN19_REALTIME_RESTORED = YES
 DATA_ACCESS_PREPARATION_CAUSE = REFUTED
 VOICE_ROOT_CAUSE = CONFIRMED
-VOICE_ROOT_CAUSE_CONFIRMED = VOICE_SIGNAL_AND_ACQUISITION_WINDOW_NOT_DEPENDENCY_ORDERED_AFTER_FOUNDATION_CONVERGENCE
+VOICE_ROOT_CAUSE_CONFIRMED = VOICE_SIGNAL_NOT_DEPENDENCY_ORDERED_AFTER_NETWORK_CONVERGENCE_AND_VOICE_BOOTSTRAP
 UNOBSERVED_INTERNAL_MECHANISM = PHONE_BOOT_DHCP_ATTEMPT_AND_RETRY_TIMING
 CORRECTION_IMPLEMENTED = YES
 CORRECTION_ARCHITECTURAL_LEVEL = DEPENDENCY_AND_CONVERGENCE
-CORRECTION_SUMMARY = DATA_ONLY_ACCESS_THEN_VERIFY_NETWORK_FOUNDATION_THEN_SIGNAL_VOICE
+CORRECTION_SUMMARY = DATA_ONLY_ACCESS_THEN_VERIFY_NETWORK_THEN_APPLY_VOICE_BOOTSTRAP_THEN_SIGNAL_VOICE
 RUN20_MODE = NO_FLAG_PRODUCTION_PIPELINE
 RUN20_EXPERIMENT_FLAGS = NONE
 RUN20_PRODUCTION_BARRIER_REQUIRED = YES
-RUN20_EXECUTED = NO
+RUN20_EXECUTED = YES
+RUN20_SOURCE_HEAD = d12e838215226cecfbdba60ea7b9eb4b347ee59c
+RUN20_RESULT = SAME_FAILURE_NETWORK_GATE_INSUFFICIENT
+RUN20_NETWORK_FOUNDATION_STATUS = VERIFIED
+RUN20_VOICE_SIGNAL_STATUS = VERIFIED
+RUN20_CONFIGURATION_STATUS = PARTIAL_OBSERVABILITY_LIMITATION
+RUN20_FINAL_IPV4 = EMPTY_FOR_BOTH
+RUN20_VOICE_BINDING_COUNT = 0
+RUN20_SCCP = NOT_REGISTERED_FOR_BOTH
+RUN20_SHA256 = 0cc73ff59cc2724274a23886843b814e0ec4f8d9e82fd72c7bc0e234cee7148a
+RUN20_WORKSPACE_RESTORED = YES
+RUN20_REALTIME_RESTORED = YES
+NETWORK_CONVERGENCE_ONLY_FIX = REFUTED_AS_SUFFICIENT
+RUN21_MODE = NO_FLAG_PRODUCTION_CROSS_STAGE_PIPELINE
+RUN21_ORDER = DATA_ONLY_ACCESS -> NETWORK_VERIFIED -> VOICE_BOOTSTRAP_APPLIED -> VOICE_SIGNAL_VERIFIED -> REGISTRATION
+RUN21_EXPERIMENT_FLAGS = NONE
+RUN21_EXECUTED = NO
 PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_RUN20_PRODUCTION_PIPELINE_VERIFICATION
+NEXT_ACTIVE_STEP = EXECUTE_RUN21_PRODUCTION_CROSS_STAGE_VERIFICATION
 CP_SCALE_STATUS = OPEN / NOT VERIFIED
 <!-- CP_SCALE_STATE_END -->
 
@@ -681,27 +697,43 @@ boundary:
 * run 18 refutes bootstrap readiness AT signal as sufficient;
 * run 19 refutes prior data-only access preparation.
 
-The root cause is therefore the missing dependency/convergence contract:
-phone-facing Voice signalling and the acquisition observation window are not
-ordered after the network foundation has converged.  The exact internal phone
-boot, Discover and retry schedule remains unobserved and is not part of that
-claim.
+Run 20 then separated network convergence from Voice bootstrap in the real
+production path.  It used no experiment flag.  The production
+`ConfigurationApplicator` prepared both ports data-only, reached a VERIFIED
+network foundation and independently VERIFIED the late voice fields -- but it
+did so before the ordinary Voice stage applied Option150/CME/ephones/cnf.
+Both phones reproduced DHCP YES / empty IPv4 / zero bindings / NOT_REGISTERED.
+The network-only correction is therefore insufficient.
 
-The generic correction lives in `ConfigurationApplicator`.  A phone-facing
-`ConfigureAccessPort` is first dispatched with `voice_vlan_id=None`; all
-non-Voice expectations are read; VLAN, trunk and L3 must be VERIFIED, while
-the measured DHCP-pool UNOBSERVABLE ceiling remains the only admitted
-exception.  Only then is the original typed access action dispatched and its
-Voice field independently verified.  The result retains a typed
-`VoiceSignalBarrierResult`; UNKNOWN or a failed foundation leaves the signal
-dependency-blocked.  There is no sleep, retry, toggle, raw IOS, raw JavaScript
-or CP-SCALE name in the correction.
+The root cause is the missing cross-stage dependency: phone-facing Voice
+signalling occurs before BOTH the network foundation has converged and the
+Voice bootstrap it consumes has been applied.  Run 18 showed bootstrap without
+network convergence is insufficient; run 20 showed network convergence without
+bootstrap is insufficient; run 16 and run 19 put both before signalling and
+succeeded.  The exact internal phone boot, Discover and retry schedule remains
+unobserved and is not part of that claim.
 
-Run 20 is the independent verification.  The disposable runner's no-flag path
-uses the production `ConfigurationApplicator`; every experiment flag is
-absent.  It must show the barrier required and VERIFIED, then two phone IPv4
-values, two matching bindings and two SCCP registrations before the production
-fix is justified.
+The correction now preserves that dependency explicitly.  A phone-facing
+`ConfigureAccessPort` is first dispatched with `voice_vlan_id=None`; VLAN,
+trunk and L3 must verify (with only the measured DHCP-pool UNOBSERVABLE ceiling
+admitted).  The configuration result retains Voice signalling as typed
+`INTENDED`, not APPLIED.  `VoiceApplicator` applies Option150/CME/ephones/cnf,
+then invokes the configuration applicator's typed completion callback.  Only
+after the original access actions and their Voice fields independently verify
+does registration observation begin.  UNKNOWN or a failed foundation leaves
+the signal closed; a data-only preparation that did occur remains explicitly
+PARTIAL rather than being rewritten as not applied.
+
+Run 20 is archived as
+`positive-voice-ab-run20-production-network-gate-insufficient.json`, SHA-256
+`0cc73ff59cc2724274a23886843b814e0ec4f8d9e82fd72c7bc0e234cee7148a`.
+Cleanup independently restored Realtime and zero semantic devices/links.
+
+Run 21 repeats the no-flag production-style disposable after the cross-stage
+correction.  It must retain the exact order data-only access -> network
+VERIFIED -> Voice bootstrap APPLIED -> Voice signal VERIFIED -> registration,
+then produce two IPv4 values, two matching bindings and two SCCP registrations
+before the production fix is justified.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 
