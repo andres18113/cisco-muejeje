@@ -180,7 +180,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "RUN13_WORKSPACE_RESTORED": "YES",
         "RUN13_REALTIME_RESTORED": "YES",
-        "RAW_VOICE_AB_RUNS_PINNED": "14",
+        "RAW_VOICE_AB_RUNS_PINNED": "21",
         "NEW_MUTATION_SURFACE": "TYPED_EXACT_PHONE_SVI_ONLY",
         "RAW_ESCAPE_HATCH_ADDED": "NO",
         "PHONE_DHCP_LIFECYCLE_DIAGNOSTIC": "MEASURED",
@@ -464,7 +464,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "INITIAL_ACCESS_ACTION_SIGNALS_VOICE_VLAN_VS_WITHHOLDS_IT"
         ),
         "FIRST_CAUSAL_DIVERGENCE": (
-            "NOT_YET_ESTABLISHED_AFTER_TRUNK_REFUTATION"
+            "REGISTRATION_START_BEFORE_POST_SIGNAL_PHONE_ACCESS_FWD"
         ),
         "RUN17_MODE_PREPARED": "TRUNK_FORWARDING_BEFORE_VOICE",
         "RUN17_CONTROL_PRECONDITION": (
