@@ -184,10 +184,19 @@ def test_capability_authorization_never_fabricates_verification():
     )
 
     assert result.status is not ConfigurationApplicationStatus.VERIFIED
+    barrier = result.voice_signal_barrier
+    assert barrier is not None
+    deferred = set(barrier.deferred_action_ids)
     assert all(
-        item.status is ActionExecutionStatus.APPLIED
+        item.status is (
+            ActionExecutionStatus.PARTIAL
+            if item.action_id in deferred
+            else ActionExecutionStatus.APPLIED
+        )
         for item in result.action_results
     )
+    assert barrier.foundation_status is ActionExecutionStatus.UNOBSERVABLE
+    assert barrier.signal_status is ActionExecutionStatus.DEPENDENCY_BLOCKED
 
 
 # --------------------------------------------------------------------------
