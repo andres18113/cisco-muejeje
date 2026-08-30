@@ -241,6 +241,18 @@
       "packet_tracer_version": "9.0.1.0858",
       "canonical_copy_at_write": true,
       "note": "No flags, real cross-stage production barrier, and no disposable endpoint DHCP arm. Network foundation VERIFIED, Voice bootstrap applied, Voice signal VERIFIED, then registration began immediately with no authoritative phone-port forwarding gate. Both phones ended DHCP YES/empty IPv4, zero bindings, and NOT_REGISTERED. This establishes the missing post-signal access convergence boundary. Cleanup independently restored Realtime and zero semantic devices/links."
+    },
+    {
+      "run": "run23",
+      "filename": "positive-voice-ab-run23-production-complete-convergence-success.json",
+      "sha256": "dc74fab6758dcca2b0baef7ec9744c05de12f8e010902031e6e9d5b724224d43",
+      "source_head": "852d6abee4d5ae28894e5dfcb33f75400e18b49b",
+      "source_head_provenance": "HANDOFF_RECORDED",
+      "role": "RUN23_PRODUCTION_COMPLETE_CONVERGENCE_VERIFICATION",
+      "outcome": "SUCCESS",
+      "packet_tracer_version": "9.0.1.0858",
+      "canonical_copy_at_write": true,
+      "note": "No experiment flags, no endpoint DHCP arm, and the real production cross-stage path. Network foundation VERIFIED; Voice bootstrap applied; deferred Voice signal independently VERIFIED; one grouped authoritative SHOW_SPANNING_TREE observer held registration until both phone ports reached FWD after 73 samples / 31031 ms. P1 acquired 10.93.0.10 and P2 10.93.0.11; both matched the two authoritative bindings and both registered SCCP. Cleanup independently restored Realtime and zero semantic devices/links."
     }
   ]
 }
