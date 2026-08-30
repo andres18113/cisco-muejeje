@@ -364,10 +364,37 @@ VOICE_ROOT_CAUSE_CONFIRMED = REGISTRATION_STARTS_BEFORE_AUTHORITATIVE_PHONE_ACCE
 CORRECTION_SUMMARY = DATA_ONLY_ACCESS -> NETWORK_VERIFIED -> VOICE_BOOTSTRAP_APPLIED -> VOICE_SIGNAL_VERIFIED -> PHONE_ACCESS_FWD -> REGISTRATION
 RUN23_MODE = NO_FLAG_PRODUCTION_COMPLETE_CONVERGENCE_PIPELINE
 RUN23_EXPERIMENT_FLAGS = NONE
-RUN23_EXECUTED = NO
-PRODUCTION_FIX_JUSTIFIED = NOT_YET
-NEXT_ACTIVE_STEP = EXECUTE_RUN23_FINAL_PRODUCTION_VERIFICATION
-CP_SCALE_STATUS = OPEN / NOT VERIFIED
+RUN23_EXECUTED = YES
+RUN23_SOURCE_HEAD = 852d6abee4d5ae28894e5dfcb33f75400e18b49b
+RUN23_RESULT = SUCCESS
+RUN23_NETWORK_FOUNDATION_STATUS = VERIFIED
+RUN23_VOICE_SIGNAL_STATUS = VERIFIED
+RUN23_PHONE_ACCESS_FORWARDING = VERIFIED_2_OF_2
+RUN23_PHONE_ACCESS_FORWARDING_SAMPLES = 73
+RUN23_PHONE_ACCESS_FORWARDING_MS = 31031
+RUN23_CONTROL_FINAL_IPV4 = 10.93.0.10
+RUN23_INTERVENTION_FINAL_IPV4 = 10.93.0.11
+RUN23_VOICE_BINDING_COUNT = 2
+RUN23_CONTROL_MATCHING_BINDING = YES
+RUN23_INTERVENTION_MATCHING_BINDING = YES
+RUN23_CONTROL_SCCP = REGISTERED
+RUN23_INTERVENTION_SCCP = REGISTERED
+RUN23_ENDPOINT_DHCP_ARM = NOT_APPLICABLE
+RUN23_SHA256 = dc74fab6758dcca2b0baef7ec9744c05de12f8e010902031e6e9d5b724224d43
+RUN23_WORKSPACE_RESTORED = YES
+RUN23_REALTIME_RESTORED = YES
+DISPOSABLE_PRODUCTION_STYLE_VERIFICATION = PASS
+PRODUCTION_FIX_JUSTIFIED = YES
+DOES_CP_SCALE_HAVE_THE_SAME_DEFECT = YES
+CP_SCALE_AFFECTED_PHONES = 69
+CP_SCALE_AFFECTED_VOICE_ACCESS_ACTIONS = 69
+CP_SCALE_TOPOLOGY_REGEN_REQUIRED = NO
+CP_SCALE_CANONICAL_LIVE_RUN = NOT_RUN_BY_INSTRUCTION
+LIVE_RUNS_CONSUMED = 7
+CLEANUP = VERIFIED_AFTER_EVERY_LIVE
+WORKSPACE_RESTORED = YES
+NEXT_ACTIVE_STEP = CANONICAL_CP_SCALE_VERIFICATION_IF_SEPARATELY_AUTHORIZED
+CP_SCALE_STATUS = OPEN / FIX VERIFIED DISPOSABLE / CANONICAL NOT MUTATED
 <!-- CP_SCALE_STATE_END -->
 
 ## Run 15 prepared: the edge-before-voice-VLAN causal experiment
@@ -801,10 +828,38 @@ port; only a fresh, complete, uniquely attributed FWD row verifies
 UNKNOWN remain non-authorizing.  `VoiceApplicator` starts registration only
 after both access configuration and this operational field verify.
 
-Run 23 is the final no-flag verification of the complete order:
-data-only access -> network VERIFIED -> Voice bootstrap APPLIED -> Voice signal
-VERIFIED -> phone access FWD -> registration.  It must produce two IPv4 values,
-two matching bindings and two SCCP registrations before the fix is justified.
+### Run 23: corrected no-flag production pipeline succeeds
+
+One governed LIVE ran from clean pushed `852d6ab` on PT 9.0.1.0858 with no
+experiment flag and no endpoint DHCP arm.  The production barrier retained
+network foundation VERIFIED and Voice signal VERIFIED.  Its grouped
+post-signal observer used one authoritative STP sample stream for both ports;
+both reached FWD on sample 73 after 31,031 ms.  Only then did registration
+observation begin.
+
+P1 acquired `10.93.0.10`; P2 acquired `10.93.0.11`.  Both addresses matched
+the two authoritative DHCP binding rows and both SCCP states were REGISTERED.
+The result is `SUCCESS`, so `PRODUCTION_FIX_JUSTIFIED = YES`.
+
+The archive is
+`positive-voice-ab-run23-production-complete-convergence-success.json`,
+SHA-256
+`dc74fab6758dcca2b0baef7ec9744c05de12f8e010902031e6e9d5b724224d43`.
+Independent cleanup restored Realtime and observed zero semantic devices and
+zero links, with one allowed backend-managed Power Distribution Device.
+
+The canonical compiler audit remains offline, as instructed.  It compiles 69
+phones and exactly 69 phone-facing `ConfigureAccessPort` actions carrying a
+voice VLAN.  The stage projections introduce them cumulatively as 21 at
+Floor1, 35 at Floor2, 51 at Floor3, 62 at Router0 branch and all 69 at Router3
+branch.  Every one flows through the corrected generic applicator and Voice
+callback; no CP-SCALE name or topology case exists in the fix.
+
+No topology regeneration is required.  The correction changes runtime
+application and observation order only; it does not change the 314-device /
+219-link canonical topology or any phone/access assignment.  The canonical
+topology itself was not mutated during this investigation, so CP-SCALE remains
+open pending a separately authorized canonical verification.
 
 ## Run 14 recovered: the restored Vlan1 activation was never accepted
 
