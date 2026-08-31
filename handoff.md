@@ -389,13 +389,94 @@ DOES_CP_SCALE_HAVE_THE_SAME_DEFECT = YES
 CP_SCALE_AFFECTED_PHONES = 69
 CP_SCALE_AFFECTED_VOICE_ACCESS_ACTIONS = 69
 CP_SCALE_TOPOLOGY_REGEN_REQUIRED = NO
-CP_SCALE_CANONICAL_LIVE_RUN = NOT_RUN_BY_INSTRUCTION
+CP_SCALE_CANONICAL_LIVE_RUN = EXECUTED_ONCE
+CANONICAL_CP_SCALE_LIVE_RUN = EXECUTED_ONCE
+CANONICAL_CP_SCALE_LIVE_ATTEMPTS = 1
+CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS = 0
+CANONICAL_CP_SCALE_BASE_HEAD = 528564493b855ce332f45fdab7b5867a065b1992
+CANONICAL_CP_SCALE_PRELIVE_HEAD = f5e72f08a4e917410e917a8dc3fedac461c135e1
+CANONICAL_CP_SCALE_LIVE_SOURCE_HEAD = f5e72f08a4e917410e917a8dc3fedac461c135e1
+CANONICAL_CP_SCALE_PHONE_COUNT = 69
+CANONICAL_CP_SCALE_VOICE_ACCESS_ACTION_COUNT = 69
+CANONICAL_CP_SCALE_STAGE_VOICE_COUNTS = FLOOR1_21 | FLOOR2_35 | FLOOR3_51 | ROUTER0_62 | ROUTER3_69
+CANONICAL_CP_SCALE_PRODUCTION_PATH = CONFIRMED_OFFLINE_ALL_STAGES_AND_LIVE_THROUGH_FLOOR1
+CANONICAL_CP_SCALE_FLOOR1_VOICE = VERIFIED_21_OF_21
+CANONICAL_CP_SCALE_FLOOR1_PHONE_ACCESS_FWD = VERIFIED_21_OF_21 | 1_GROUP | 82_SAMPLES | 45500_MS
+CANONICAL_CP_SCALE_FLOOR1_ENDPOINTS = SVI_21 | DHCP_ENABLED_21 | ADDRESSED_21 | MATCHING_BINDINGS_21 | SCCP_REGISTERED_21
+CANONICAL_CP_SCALE_FLOOR2_NETWORK_FOUNDATION = FAILED_3_FRESH_TRUNK_CONTRADICTIONS
+CANONICAL_CP_SCALE_PHONE_ACCESS_GROUPS = 1_VERIFIED | 7_NOT_REACHED
+CANONICAL_CP_SCALE_PHONE_ACCESS_FWD = EXPECTED_69 | VERIFIED_21 | FAILED_0 | UNOBSERVABLE_0 | NOT_REACHED_48
+CANONICAL_CP_SCALE_REGISTRATION_AFTER_FWD_BARRIER = YES_FLOOR1 | NOT_ESTABLISHED_CANONICAL
+CANONICAL_CP_SCALE_NOT_REACHED_PHONES = 48
+CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY = NETWORK_FOUNDATION
+CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION = PRODUCT
+CANONICAL_CP_SCALE_VOICE_VERIFICATION = FAIL
+ROOT_CAUSE_STATUS = CONFIRMED
+PRODUCTION_FIX_STATUS = VERIFIED_RUN23_CANONICAL_NOT_VERIFIED
+CANONICAL_CP_SCALE_EVIDENCE_SHA256 = PRECLEANUP_d4b017332c1f0b7f12e5e6fef977a508c7b1fcdb72e1f605ad095143b54a60db | CLEANUP_a066f7efbedc23176871e2c0a75e3e2422426554dbb2aad3a9126e6e06e759db
+CANONICAL_CP_SCALE_WORKSPACE_RESTORED = YES
+CANONICAL_CP_SCALE_REALTIME_RESTORED = YES
 LIVE_RUNS_CONSUMED = 7
 CLEANUP = VERIFIED_AFTER_EVERY_LIVE
 WORKSPACE_RESTORED = YES
-NEXT_ACTIVE_STEP = CANONICAL_CP_SCALE_VERIFICATION_IF_SEPARATELY_AUTHORIZED
-CP_SCALE_STATUS = OPEN / FIX VERIFIED DISPOSABLE / CANONICAL NOT MUTATED
+NEXT_ACTIVE_STEP = OFFLINE_DIAGNOSE_FLOOR2_NETWORK_FOUNDATION_BEFORE_ANY_NEW_LIVE
+CP_SCALE_STATUS = VOICE_NOT_VERIFIED_CANONICAL_NETWORK_FOUNDATION_FAILED_FLOOR2
 <!-- CP_SCALE_STATE_END -->
+
+## Canonical CP-SCALE Voice LIVE terminal result
+
+The governed canonical run
+`canonical-cp-scale-voice-20260830T202000133616Z-f5e72f08a4e9` executed once
+from pushed source `f5e72f08a4e917410e917a8dc3fedac461c135e1` on Packet
+Tracer 9.0.1.0858. It used the normal production runner: no Voice experiment
+mode, disposable qualification flag, endpoint DHCP arm, manual corrective CLI,
+or topology regeneration.
+
+MEASURED FACT: Floor1 completed the required causal order. Its retained
+lifecycle places `VOICE_SIGNAL_VERIFIED`, then
+`PHONE_ACCESS_FWD_VERIFIED`, then `REGISTRATION_STARTED`. The single
+Switch5/VLAN20 group authoritatively verified all 21 expected interfaces after
+82 samples and 45,500 ms. All 21 phones exposed the Voice SVI and DHCP enabled,
+all 21 were addressed, all 21 actual IPv4 identities matched authoritative
+Voice DHCP bindings, and all 21 were SCCP `REGISTERED`.
+
+MEASURED FACT: Floor2 then failed closed at `NETWORK_FOUNDATION` before any
+Floor2 Voice lifecycle event. Three fresh `show interfaces trunk` expectations
+contradicted the plan after their bounded convergence windows:
+
+* Switch4 `GigabitEthernet0/2` toward Switch5 `GigabitEthernet0/1` timed out
+  without a matching trunk row (120 samples, 45,233 ms).
+* Switch6 `GigabitEthernet0/1` toward Switch10 `FastEthernet0/2` was trunking
+  with VLANs 10,20,30 allowed and active, but omitted all three from forwarding
+  (98 samples, 45,468 ms).
+* Switch7 `GigabitEthernet0/1` toward Switch6 `GigabitEthernet0/2` had the same
+  forwarding omission (81 samples, 45,047 ms).
+
+The corresponding Switch5, Switch10, and Switch6 peer-side expectations
+verified. The exact Floor2 physical delta was observed. This was fresh,
+complete, source-attributed product evidence, not an incomplete observer or
+harness result. The valid negative therefore does not authorize a second
+canonical LIVE.
+
+SOURCE FACT: canonical compilation still contains 69 phones, 69 Voice access
+actions, and eight `(switch, voice VLAN)` groups. Because Floor2 stopped before
+Voice, the 48 phones beyond Floor1 are retained as `NOT_REACHED`, not silently
+promoted to failed, unobservable, or successful. Their exact phone, stage,
+switch, port, VLAN, IPv4, binding state, SCCP state, and first boundary are in
+`docs/reference/cp-scale/canonical_voice_runs.json`.
+
+INFERENCE FROM MEASURED FACTS: the confirmed Voice dependency root cause remains
+`CONFIRMED`, and the production correction remains verified by RUN23 plus the
+21/21 Floor1 canonical result. The required 69/69 canonical standard was not
+reached, so `CANONICAL_CP_SCALE_VOICE_VERIFICATION = FAIL` and the correction
+must not be labelled `VERIFIED_CANONICAL`.
+
+The exact pre-cleanup journal is pinned by SHA-256
+`d4b017332c1f0b7f12e5e6fef977a508c7b1fcdb72e1f605ad095143b54a60db`;
+the cleanup attestation is pinned by
+`a066f7efbedc23176871e2c0a75e3e2422426554dbb2aad3a9126e6e06e759db`.
+Independent cleanup readback found zero semantic devices and zero links twice,
+and Realtime restoration verified with no cleanup error.
 
 ## Run 15 prepared: the edge-before-voice-VLAN causal experiment
 
