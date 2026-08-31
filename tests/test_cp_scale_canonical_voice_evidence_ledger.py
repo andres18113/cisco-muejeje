@@ -383,7 +383,7 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
     }
 
 
-def test_handoff_current_state_matches_the_terminal_ledger():
+def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
     assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_ONCE"
     assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "1"
@@ -401,6 +401,25 @@ def test_handoff_current_state_matches_the_terminal_ledger():
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
+    assert state["CANONICAL_CP_SCALE_FLOOR2_STAGE_SEMANTICS"] == (
+        "CUMULATIVE_REPLAY"
+    )
+    assert state["CANONICAL_CP_SCALE_FLOOR1_ACTIONS_REAPPLIED_AT_FLOOR2"] == (
+        "115_OF_115"
+    )
+    assert state["CANONICAL_CP_SCALE_FLOOR2_RETAINED_TEMPORAL_EVIDENCE"] == (
+        "INSUFFICIENT"
+    )
+    assert state["CANONICAL_CP_SCALE_FLOOR2_TIMEOUT_CLASSIFICATION"] == (
+        "NOT_ESTABLISHED"
+    )
+    assert state["CANONICAL_CP_SCALE_FLOOR2_NETWORK_ROOT_CAUSE"] == (
+        "STRONG_CANDIDATE"
+    )
+    assert state["CANONICAL_CP_SCALE_FLOOR2_PRODUCT_FIX"] == (
+        "NOT_IMPLEMENTED_CAUSAL_CREDIT_UNRESOLVED"
+    )
     assert state["CP_SCALE_STATUS"] == (
-        "VOICE_NOT_VERIFIED_CANONICAL_NETWORK_FOUNDATION_FAILED_FLOOR2"
+        "VOICE_CORRECTION_VALID_CANONICAL_BLOCKED_AT_FLOOR2_NETWORK_"
+        "FOUNDATION_ROOT_CAUSE_STRONG_CANDIDATE"
     )

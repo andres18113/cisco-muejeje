@@ -404,6 +404,19 @@ CANONICAL_CP_SCALE_FLOOR1_VOICE = VERIFIED_21_OF_21
 CANONICAL_CP_SCALE_FLOOR1_PHONE_ACCESS_FWD = VERIFIED_21_OF_21 | 1_GROUP | 82_SAMPLES | 45500_MS
 CANONICAL_CP_SCALE_FLOOR1_ENDPOINTS = SVI_21 | DHCP_ENABLED_21 | ADDRESSED_21 | MATCHING_BINDINGS_21 | SCCP_REGISTERED_21
 CANONICAL_CP_SCALE_FLOOR2_NETWORK_FOUNDATION = FAILED_3_FRESH_TRUNK_CONTRADICTIONS
+CANONICAL_CP_SCALE_FLOOR2_OFFLINE_DIAGNOSIS = COMPLETE
+CANONICAL_CP_SCALE_FLOOR2_STAGE_SEMANTICS = CUMULATIVE_REPLAY
+CANONICAL_CP_SCALE_FLOOR1_ACTIONS_REAPPLIED_AT_FLOOR2 = 115_OF_115
+CANONICAL_CP_SCALE_FLOOR2_NEW_CONFIGURATION_ACTIONS = 76
+CANONICAL_CP_SCALE_FLOOR2_FIRST_SOURCE_DIVERGENCE = CUMULATIVE_CONFIGURATION_VIEW_USED_AS_PERSISTENT_WORKSPACE_MUTATION_SET
+CANONICAL_CP_SCALE_FLOOR1_OBSERVED_STP_ROOT = SWITCH5_NATURAL_ROOT_VLANS_10_20_30_BASE_PRIORITY_32768
+CANONICAL_CP_SCALE_FLOOR2_LARGE_SITE_STP_POLICY = WITHHELD_UNTIL_FLOOR3
+CANONICAL_CP_SCALE_FLOOR2_RETAINED_TEMPORAL_EVIDENCE = INSUFFICIENT
+CANONICAL_CP_SCALE_FLOOR2_TIMEOUT_CLASSIFICATION = NOT_ESTABLISHED
+CANONICAL_CP_SCALE_FLOOR2_NETWORK_ROOT_CAUSE = STRONG_CANDIDATE
+CANONICAL_CP_SCALE_FLOOR2_ROOT_CAUSE_CANDIDATES = CUMULATIVE_L2_REPLAY + UNGUIDED_PVST_RECONVERGENCE
+CANONICAL_CP_SCALE_FLOOR2_PRODUCT_FIX = NOT_IMPLEMENTED_CAUSAL_CREDIT_UNRESOLVED
+CANONICAL_CP_SCALE_FLOOR2_DIAGNOSIS_DOC = docs/reference/cp-scale/floor2_network_foundation_root_cause.md
 CANONICAL_CP_SCALE_PHONE_ACCESS_GROUPS = 1_VERIFIED | 7_NOT_REACHED
 CANONICAL_CP_SCALE_PHONE_ACCESS_FWD = EXPECTED_69 | VERIFIED_21 | FAILED_0 | UNOBSERVABLE_0 | NOT_REACHED_48
 CANONICAL_CP_SCALE_REGISTRATION_AFTER_FWD_BARRIER = YES_FLOOR1 | NOT_ESTABLISHED_CANONICAL
@@ -419,8 +432,8 @@ CANONICAL_CP_SCALE_REALTIME_RESTORED = YES
 LIVE_RUNS_CONSUMED = 7
 CLEANUP = VERIFIED_AFTER_EVERY_LIVE
 WORKSPACE_RESTORED = YES
-NEXT_ACTIVE_STEP = OFFLINE_DIAGNOSE_FLOOR2_NETWORK_FOUNDATION_BEFORE_ANY_NEW_LIVE
-CP_SCALE_STATUS = VOICE_NOT_VERIFIED_CANONICAL_NETWORK_FOUNDATION_FAILED_FLOOR2
+NEXT_ACTIVE_STEP = REVIEW_OFFLINE_FLOOR2_DIAGNOSIS_THEN_SEPARATELY_AUTHORIZE_DELTA_ONLY_CAUSAL_LIVE_IF_ACCEPTED
+CP_SCALE_STATUS = VOICE_CORRECTION_VALID_CANONICAL_BLOCKED_AT_FLOOR2_NETWORK_FOUNDATION_ROOT_CAUSE_STRONG_CANDIDATE
 <!-- CP_SCALE_STATE_END -->
 
 ## Canonical CP-SCALE Voice LIVE terminal result
@@ -477,6 +490,55 @@ the cleanup attestation is pinned by
 `a066f7efbedc23176871e2c0a75e3e2422426554dbb2aad3a9126e6e06e759db`.
 Independent cleanup readback found zero semantic devices and zero links twice,
 and Realtime restoration verified with no cleanup error.
+
+## Floor2 NETWORK_FOUNDATION offline diagnosis
+
+No Packet Tracer LIVE was run for this phase. The complete bounded diagnosis is
+in
+`docs/reference/cp-scale/floor2_network_foundation_root_cause.md`.
+
+SOURCE FACT: Floor2 configuration is a cumulative replay, not an incremental
+configuration delta. Its 191 actions contain all 115 Floor1 action IDs
+unchanged plus 76 new actions. The replay includes five trunks, nine VLAN
+creates, and 49 access-port actions from Floor1. In contrast, physical staging
+has an explicit delta and does not recreate the Floor1 links.
+
+MEASURED FACT: the retained authoritative Floor1 post-Voice STP observation
+shows Switch5 as the natural root for VLANs 10, 20, and 30 at base priority
+32768. SOURCE FACT: the intended large-site PVST policy (Switch8 primary,
+Switch10 secondary) is withheld in both Floor1 and Floor2 by
+`_completed_stp_sites()`, and Floor2 fails before control-plane application.
+The new Floor2 bridges/trunks and cumulative L2 replay therefore occur in an
+unguided natural PVST domain.
+
+MEASURED FACT: every failed and peer trunk action was accepted, and every
+source link/action/expectation identity is stable and correctly correlated.
+The peer reads were sequential rather than co-temporal: Switch5 was observed
+after the Switch4 timeout, Switch6 `Gi0/2` needed another 17,141 ms after
+Switch6 `Gi0/1` timed out, and Switch10 was read later still. This explains why
+fresh peer-side success does not refute an evolving real control-plane state;
+it does not make the failure an observer defect.
+
+The artifact retained terminal trunk rows and aggregate convergence counts but
+not intermediate row transitions or Floor2 STP roots. Thus Switch4 terminates
+`NO_MATCHING_ROW`, Switch6/Switch7 terminate `NON_FORWARDING`, all three have
+`INSUFFICIENT_TEMPORAL_EVIDENCE`, and timeout sufficiency is
+`NOT_ESTABLISHED`. The approximately 45.5-second Floor1 phone-access result is
+a different predicate and supplies no timeout causation.
+
+INFERENCE: the strongest explanation is the coupled Floor2 stage contract:
+cumulative replay touches the already-converged Floor1 L2 state while new
+bridges and trunks enter a PVST domain whose intended priorities are absent.
+This explains the old and new trunk contradictions, but retained evidence
+cannot give causal credit to replay versus unguided election/reconvergence.
+`ROOT_CAUSE = STRONG_CANDIDATE`; the failure classification remains PRODUCT.
+
+No production fix is applied. A delta-only correction and an STP stage/order
+correction would be a speculative fix stack. The exact separately authorized
+next LIVE question is whether applying only Floor2's 76 new configuration
+actions, with round-robin trunk and STP transition retention and every other
+canonical condition unchanged, preserves the Floor1 trunk and brings the
+Floor2 chain to forwarding. Voice and topology remain unchanged.
 
 ## Run 15 prepared: the edge-before-voice-VLAN causal experiment
 
