@@ -94,6 +94,19 @@ TRUNK_INTERFACE = "GigabitEthernet0/1"
 EDGE_INTERFACE = "FastEthernet0/1"
 PRIMARY_MODEL = "3560-24PS"
 SECONDARY_MODEL = "2960-24TT"
+TERTIARY_MODEL = "3650-24PS"
+TERTIARY_TRUNK_INTERFACE = "GigabitEthernet1/0/1"
+TERTIARY_EDGE_INTERFACE = "GigabitEthernet1/0/2"
+QUALIFIED_MODELS = (PRIMARY_MODEL, SECONDARY_MODEL, TERTIARY_MODEL)
+_TRUNK_INTERFACES = {
+    PRIMARY_MODEL: ("GigabitEthernet0/1", "GigabitEthernet0/2"),
+    SECONDARY_MODEL: (TRUNK_INTERFACE,),
+    TERTIARY_MODEL: (TERTIARY_TRUNK_INTERFACE,),
+}
+_ROOT_PORTS = {
+    SECONDARY_MODEL: TRUNK_INTERFACE,
+    TERTIARY_MODEL: TERTIARY_TRUNK_INTERFACE,
+}
 
 
 def qualification_topology() -> TopologyPlan:
@@ -118,28 +131,51 @@ def qualification_topology() -> TopologyPlan:
             x=480,
             y=180,
         ),
+        DevicePlan(
+            id="pvst-tertiary",
+            name=f"{PROBE_PREFIX}-3650",
+            model=TERTIARY_MODEL,
+            category="switch",
+            site_id="pvst",
+            enterprise_role="distribution_switch",
+            x=480,
+            y=360,
+        ),
     ]
-    link = LinkPlan(
-        id="pvst-trunk",
-        device_a=devices[0].name,
-        device_a_id=devices[0].id,
-        port_a=TRUNK_INTERFACE,
-        device_b=devices[1].name,
-        device_b_id=devices[1].id,
-        port_b=TRUNK_INTERFACE,
-        cable="cross",
-        link_role="trunk",
-    )
+    links = [
+        LinkPlan(
+            id="pvst-trunk-secondary",
+            device_a=devices[0].name,
+            device_a_id=devices[0].id,
+            port_a=TRUNK_INTERFACE,
+            device_b=devices[1].name,
+            device_b_id=devices[1].id,
+            port_b=TRUNK_INTERFACE,
+            cable="cross",
+            link_role="trunk",
+        ),
+        LinkPlan(
+            id="pvst-trunk-tertiary",
+            device_a=devices[0].name,
+            device_a_id=devices[0].id,
+            port_a="GigabitEthernet0/2",
+            device_b=devices[2].name,
+            device_b_id=devices[2].id,
+            port_b=TERTIARY_TRUNK_INTERFACE,
+            cable="cross",
+            link_role="trunk",
+        ),
+    ]
     return TopologyPlan(
         id="pvst-exact-model-qualification",
-        semantic_hash="pvst-exact-model-qualification-v1",
+        semantic_hash="pvst-exact-model-qualification-v2",
         devices=devices,
-        links=[link],
+        links=links,
     )
 
 
 def foundation_actions(topology: TopologyPlan) -> list:
-    primary, secondary = topology.devices
+    primary, secondary, tertiary = topology.devices
     hostname_actions = [
         ConfigureHostname(
             id=f"pvst/hostname/{device.id}",
@@ -165,41 +201,65 @@ def foundation_actions(topology: TopologyPlan) -> list:
         )
         for device in topology.devices
     ]
+    trunk_specs = (
+        (
+            primary, TRUNK_INTERFACE, secondary, "secondary",
+            "pvst-trunk-secondary",
+        ),
+        (
+            secondary, TRUNK_INTERFACE, primary, "primary",
+            "pvst-trunk-secondary",
+        ),
+        (
+            primary, "GigabitEthernet0/2", tertiary, "tertiary",
+            "pvst-trunk-tertiary",
+        ),
+        (
+            tertiary, TERTIARY_TRUNK_INTERFACE, primary, "primary",
+            "pvst-trunk-tertiary",
+        ),
+    )
     trunk_actions = [
         ConfigureTrunk(
-            id=f"pvst/trunk/{device.id}",
+            id=f"pvst/trunk/{device.id}/to-{peer_role}",
             phase=ConfigurationPhase.L2_INTERFACES,
             device_id=device.id,
             device_name=device.name,
             site_id="pvst",
             depends_on=[f"pvst/vlan/{device.id}"],
             required_capability="supports_trunk",
-            interface=TRUNK_INTERFACE,
+            interface=interface,
             allowed_vlans=[VLAN_ID],
-            peer_device_id=(
-                secondary.id if device.id == primary.id else primary.id
-            ),
-            source_link_id="pvst-trunk",
+            peer_device_id=peer.id,
+            source_link_id=link_id,
         )
-        for device in topology.devices
+        for device, interface, peer, peer_role, link_id in trunk_specs
     ]
-    edge = ConfigureAccessPort(
-        id="pvst/access/pvst-primary",
-        phase=ConfigurationPhase.L2_INTERFACES,
-        device_id=primary.id,
-        device_name=primary.name,
-        site_id="pvst",
-        depends_on=[f"pvst/vlan/{primary.id}"],
-        required_capability="supports_vlan",
-        interface=EDGE_INTERFACE,
-        data_vlan_id=VLAN_ID,
-    )
-    return [*hostname_actions, *vlan_actions, *trunk_actions, edge]
+    edge_actions = [
+        ConfigureAccessPort(
+            id=f"pvst/access/{device.id}",
+            phase=ConfigurationPhase.L2_INTERFACES,
+            device_id=device.id,
+            device_name=device.name,
+            site_id="pvst",
+            depends_on=[f"pvst/vlan/{device.id}"],
+            required_capability="supports_vlan",
+            interface=interface,
+            data_vlan_id=VLAN_ID,
+        )
+        for device, interface in (
+            (primary, EDGE_INTERFACE),
+            (tertiary, TERTIARY_EDGE_INTERFACE),
+        )
+    ]
+    return [
+        *hostname_actions, *vlan_actions, *trunk_actions, *edge_actions,
+    ]
 
 
 def stp_actions(topology: TopologyPlan) -> list:
-    primary, secondary = topology.devices
-    return [
+    primary, secondary, tertiary = topology.devices
+    global_actions = [
         ConfigureSpanningTree(
             id="pvst/stp/primary",
             phase=ControlPlanePhase.L2_FOUNDATION,
@@ -226,54 +286,65 @@ def stp_actions(topology: TopologyPlan) -> list:
             root_secondary_vlans=[VLAN_ID],
             source_vlan_action_ids=[f"pvst/vlan/{secondary.id}"],
         ),
-        ConfigureStpEdgePort(
-            id="pvst/stp/edge",
-            phase=ControlPlanePhase.L2_RESILIENCY,
-            device_id=primary.id,
-            device_name=primary.name,
-            model=primary.model,
+        ConfigureSpanningTree(
+            id="pvst/stp/tertiary",
+            phase=ControlPlanePhase.L2_FOUNDATION,
+            device_id=tertiary.id,
+            device_name=tertiary.name,
+            model=tertiary.model,
             site_id="pvst",
-            depends_on=["pvst/stp/primary"],
             required_capability=ControlPlaneCapabilityDimension.STP_PVST_CONFIG,
-            interface=EDGE_INTERFACE,
-            portfast=True,
-            bpduguard=True,
-            source_access_action_id="pvst/access/pvst-primary",
+            mode=StpMode.PVST,
+            vlan_ids=[VLAN_ID],
+            root_secondary_vlans=[VLAN_ID],
+            source_vlan_action_ids=[f"pvst/vlan/{tertiary.id}"],
         ),
     ]
+    edge_actions = [
+        ConfigureStpEdgePort(
+            id=f"pvst/stp/edge-{role}",
+            phase=ControlPlanePhase.L2_RESILIENCY,
+            device_id=device.id,
+            device_name=device.name,
+            model=device.model,
+            site_id="pvst",
+            depends_on=[f"pvst/stp/{role}"],
+            required_capability=ControlPlaneCapabilityDimension.STP_PVST_CONFIG,
+            interface=interface,
+            portfast=True,
+            bpduguard=True,
+            source_access_action_id=f"pvst/access/{device.id}",
+        )
+        for role, device, interface in (
+            ("primary", primary, EDGE_INTERFACE),
+            ("tertiary", tertiary, TERTIARY_EDGE_INTERFACE),
+        )
+    ]
+    return [*global_actions, *edge_actions]
 
 
 def stp_expectations(topology: TopologyPlan) -> list:
-    primary, secondary = topology.devices
+    primary, secondary, tertiary = topology.devices
     state = [
         ControlPlaneVerificationExpectation(
-            id="pvst/verify/primary",
+            id=f"pvst/verify/{role}",
             kind=ControlPlaneVerificationKind.STP_STATE,
-            action_id="pvst/stp/primary",
-            device_id=primary.id,
+            action_id=f"pvst/stp/{role}",
+            device_id=device.id,
             required_capability=ControlPlaneCapabilityDimension.STP_STATE,
             expected={
-                "source_device_name": primary.name,
+                "source_device_name": device.name,
                 "mode": StpMode.PVST.value,
                 "vlan_ids": [VLAN_ID],
-                "root_primary_vlans": [VLAN_ID],
+                root_key: [VLAN_ID],
             },
-            depends_on=["pvst/stp/primary"],
-        ),
-        ControlPlaneVerificationExpectation(
-            id="pvst/verify/secondary",
-            kind=ControlPlaneVerificationKind.STP_STATE,
-            action_id="pvst/stp/secondary",
-            device_id=secondary.id,
-            required_capability=ControlPlaneCapabilityDimension.STP_STATE,
-            expected={
-                "source_device_name": secondary.name,
-                "mode": StpMode.PVST.value,
-                "vlan_ids": [VLAN_ID],
-                "root_secondary_vlans": [VLAN_ID],
-            },
-            depends_on=["pvst/stp/secondary"],
-        ),
+            depends_on=[f"pvst/stp/{role}"],
+        )
+        for role, device, root_key in (
+            ("primary", primary, "root_primary_vlans"),
+            ("secondary", secondary, "root_secondary_vlans"),
+            ("tertiary", tertiary, "root_secondary_vlans"),
+        )
     ]
     behavior = [
         ControlPlaneVerificationExpectation(
@@ -292,6 +363,7 @@ def stp_expectations(topology: TopologyPlan) -> list:
         for role, device in (
             ("primary", primary),
             ("secondary", secondary),
+            ("tertiary", tertiary),
         )
     ]
     return [*state, *behavior]
@@ -300,7 +372,7 @@ def stp_expectations(topology: TopologyPlan) -> list:
 def stp_convergence_errors(instances_by_model: dict[str, list]) -> list[str]:
     errors: list[str] = []
     selected = {}
-    for model in (PRIMARY_MODEL, SECONDARY_MODEL):
+    for model in QUALIFIED_MODELS:
         instance = next(
             (
                 item for item in instances_by_model.get(model, [])
@@ -316,7 +388,10 @@ def stp_convergence_errors(instances_by_model: dict[str, list]) -> list[str]:
             errors.append(f"{model}: protocol is {instance.protocol!r}, not ieee")
 
     primary = selected.get(PRIMARY_MODEL)
-    secondary = selected.get(SECONDARY_MODEL)
+    secondaries = {
+        model: selected.get(model)
+        for model in (SECONDARY_MODEL, TERTIARY_MODEL)
+    }
     if primary is not None:
         if primary.bridge_base_priority != 24576:
             errors.append(
@@ -325,25 +400,27 @@ def stp_convergence_errors(instances_by_model: dict[str, list]) -> list[str]:
             )
         if not primary.root_is_local:
             errors.append(f"{PRIMARY_MODEL}: the qualified primary is not root")
-    if secondary is not None:
+    for model, secondary in secondaries.items():
+        if secondary is None:
+            continue
         if secondary.bridge_base_priority != 28672:
             errors.append(
-                f"{SECONDARY_MODEL}: bridge base priority is "
+                f"{model}: bridge base priority is "
                 f"{secondary.bridge_base_priority!r}, not 28672"
             )
         if secondary.root_is_local:
-            errors.append(f"{SECONDARY_MODEL}: the qualified secondary is root")
-        if not same_interface_name(secondary.root_port, TRUNK_INTERFACE):
+            errors.append(f"{model}: the qualified secondary is root")
+        if not same_interface_name(secondary.root_port, _ROOT_PORTS[model]):
             errors.append(
-                f"{SECONDARY_MODEL}: root port is {secondary.root_port!r}, "
-                f"not {TRUNK_INTERFACE}"
+                f"{model}: root port is {secondary.root_port!r}, "
+                f"not {_ROOT_PORTS[model]}"
             )
-    if primary is not None and secondary is not None and (
-        primary.bridge_address.casefold() != secondary.root_address.casefold()
-    ):
-        errors.append(
-            f"{SECONDARY_MODEL}: root address does not match the primary bridge"
-        )
+        if primary is not None and (
+            primary.bridge_address.casefold() != secondary.root_address.casefold()
+        ):
+            errors.append(
+                f"{model}: root address does not match the primary bridge"
+            )
     return errors
 
 
@@ -449,27 +526,34 @@ def _trunks_ready(
                 device.name, OperationalQueryId.SHOW_INTERFACES_TRUNK,
             )
             rows = parse_show_interfaces_trunk(result.output)
-            row = next(
-                (
-                    item for item in rows
-                    if same_interface_name(item.interface, TRUNK_INTERFACE)
-                ),
-                None,
-            )
+            expected_interfaces = _TRUNK_INTERFACES[device.model]
+            selected_rows = [
+                next(
+                    (
+                        item for item in rows
+                        if same_interface_name(item.interface, interface)
+                    ),
+                    None,
+                )
+                for interface in expected_interfaces
+            ]
             matched = bool(
                 result.executed
                 and result.fresh_output_observed
                 and result.output_complete
                 and result.observed_device_name == device.name
                 and result.device_identity_provenance == "confirmed_unique"
-                and row is not None
-                and row.status.casefold() == "trunking"
-                and row.allowed_vlans is not None
-                and VLAN_ID in row.allowed_vlans
-                and row.active_vlans is not None
-                and VLAN_ID in row.active_vlans
-                and row.forwarding_vlans is not None
-                and VLAN_ID in row.forwarding_vlans
+                and all(
+                    row is not None
+                    and row.status.casefold() == "trunking"
+                    and row.allowed_vlans is not None
+                    and VLAN_ID in row.allowed_vlans
+                    and row.active_vlans is not None
+                    and VLAN_ID in row.active_vlans
+                    and row.forwarding_vlans is not None
+                    and VLAN_ID in row.forwarding_vlans
+                    for row in selected_rows
+                )
             )
             ready = ready and matched
             sample["devices"][device.model] = {
@@ -558,7 +642,7 @@ def run(
         f"{started_at.strftime('%Y%m%dT%H%M%S%fZ')}-{expected_head[:12]}"
     )
     evidence: dict[str, object] = {
-        "schema": "stp-pvst-exact-model-qualification-v1",
+        "schema": "stp-pvst-exact-model-qualification-v2",
         "run_identity": run_identity,
         "started_at": started_at.isoformat(),
         "packet_tracer_version": packet_tracer_version,
@@ -764,17 +848,30 @@ def run(
                 "stp_state": "supported",
                 "stp_behavior": "supported",
             }
-            for model in (PRIMARY_MODEL, SECONDARY_MODEL)
+            for model in QUALIFIED_MODELS
         }
         evidence["edge_policy_qualification"] = {
-            "model": PRIMARY_MODEL,
-            "interface": EDGE_INTERFACE,
-            "portfast": True,
-            "bpduguard": True,
-            "mutation_status": next(
-                item for item in mutations
-                if item.action_id == "pvst/stp/edge"
-            ).applied,
+            model: {
+                "interface": interface,
+                "portfast": True,
+                "bpduguard": True,
+                "mutation_status": next(
+                    item for item in mutations
+                    if item.action_id == action_id
+                ).applied,
+            }
+            for model, interface, action_id in (
+                (
+                    PRIMARY_MODEL,
+                    EDGE_INTERFACE,
+                    "pvst/stp/edge-primary",
+                ),
+                (
+                    TERTIARY_MODEL,
+                    TERTIARY_EDGE_INTERFACE,
+                    "pvst/stp/edge-tertiary",
+                ),
+            )
         }
         evidence["verified"] = not batch_errors and all(
             item.status is ActionExecutionStatus.VERIFIED

@@ -44,6 +44,9 @@ from tools.stp_pvst_runtime_qualification import (
     EDGE_INTERFACE,
     PRIMARY_MODEL,
     SECONDARY_MODEL,
+    TERTIARY_EDGE_INTERFACE,
+    TERTIARY_MODEL,
+    TERTIARY_TRUNK_INTERFACE,
     TRUNK_INTERFACE,
     VLAN_ID,
     foundation_actions,
@@ -95,13 +98,23 @@ secondary = instance(
     root_is_local=False,
     root_port="Gi0/1",
 )
+tertiary = instance(
+    base_priority=28672,
+    bridge_address="00bb.ccdd.eeff",
+    root_address=primary.bridge_address,
+    root_is_local=False,
+    root_port=TERTIARY_TRUNK_INTERFACE,
+)
 
 print(json.dumps({
     "constants": {
         "primary_model": PRIMARY_MODEL,
         "secondary_model": SECONDARY_MODEL,
+        "tertiary_model": TERTIARY_MODEL,
         "trunk_interface": TRUNK_INTERFACE,
         "edge_interface": EDGE_INTERFACE,
+        "tertiary_trunk_interface": TERTIARY_TRUNK_INTERFACE,
+        "tertiary_edge_interface": TERTIARY_EDGE_INTERFACE,
         "vlan_id": VLAN_ID,
     },
     "topology": {
@@ -152,22 +165,26 @@ print(json.dumps({
         "valid": stp_convergence_errors({
             PRIMARY_MODEL: [primary],
             SECONDARY_MODEL: [secondary],
+            TERTIARY_MODEL: [tertiary],
         }),
         "secondary_local": stp_convergence_errors({
             PRIMARY_MODEL: [primary],
             SECONDARY_MODEL: [replace(secondary, root_is_local=True)],
+            TERTIARY_MODEL: [tertiary],
         }),
         "wrong_port": stp_convergence_errors({
             PRIMARY_MODEL: [primary],
             SECONDARY_MODEL: [replace(
                 secondary, root_port="FastEthernet0/1",
             )],
+            TERTIARY_MODEL: [tertiary],
         }),
         "wrong_root": stp_convergence_errors({
             PRIMARY_MODEL: [primary],
             SECONDARY_MODEL: [replace(
                 secondary, root_address="00ff.ffff.ffff",
             )],
+            TERTIARY_MODEL: [tertiary],
         }),
         "missing_secondary": stp_convergence_errors({
             PRIMARY_MODEL: [primary],
@@ -199,40 +216,66 @@ def test_qualifier_uses_only_the_two_exact_blocking_models_and_one_trunk(
     assert verdict["topology"]["devices"] == [
         ["pvst-primary", constants["primary_model"]],
         ["pvst-secondary", constants["secondary_model"]],
+        ["pvst-tertiary", constants["tertiary_model"]],
     ]
-    assert verdict["topology"]["links"] == [{
-        "device_ids": ["pvst-primary", "pvst-secondary"],
-        "ports": [constants["trunk_interface"], constants["trunk_interface"]],
-    }]
+    assert verdict["topology"]["links"] == [
+        {
+            "device_ids": ["pvst-primary", "pvst-secondary"],
+            "ports": [
+                constants["trunk_interface"], constants["trunk_interface"],
+            ],
+        },
+        {
+            "device_ids": ["pvst-primary", "pvst-tertiary"],
+            "ports": [
+                "GigabitEthernet0/2",
+                constants["tertiary_trunk_interface"],
+            ],
+        },
+    ]
 
 
 def test_qualifier_foundation_is_typed_vlan_trunk_and_one_access_port(
     verdict: dict,
 ):
     foundation = verdict["foundation"]
-    assert sum(item["type"] == "ConfigureHostname" for item in foundation) == 2
-    assert sum(item["type"] == "CreateVlan" for item in foundation) == 2
-    assert sum(item["type"] == "ConfigureTrunk" for item in foundation) == 2
-    assert sum(item["type"] == "ConfigureAccessPort" for item in foundation) == 1
+    assert sum(item["type"] == "ConfigureHostname" for item in foundation) == 3
+    assert sum(item["type"] == "CreateVlan" for item in foundation) == 3
+    assert sum(item["type"] == "ConfigureTrunk" for item in foundation) == 4
+    assert sum(item["type"] == "ConfigureAccessPort" for item in foundation) == 2
     assert {
         item["hostname"]
         for item in foundation if item["type"] == "ConfigureHostname"
-    } == {"MCP-PROBE-PVST-3560", "MCP-PROBE-PVST-2960"}
+    } == {
+        "MCP-PROBE-PVST-3560",
+        "MCP-PROBE-PVST-2960",
+        "MCP-PROBE-PVST-3650",
+    }
     assert all(
         item["vlan_id"] == verdict["constants"]["vlan_id"]
         for item in foundation if item["type"] == "CreateVlan"
     )
     trunks = [item for item in foundation if item["type"] == "ConfigureTrunk"]
+    assert {item["interface"] for item in trunks} == {
+        verdict["constants"]["trunk_interface"],
+        "GigabitEthernet0/2",
+        verdict["constants"]["tertiary_trunk_interface"],
+    }
     assert all(
-        item["interface"] == verdict["constants"]["trunk_interface"]
-        and item["allowed_vlans"] == [verdict["constants"]["vlan_id"]]
+        item["allowed_vlans"] == [verdict["constants"]["vlan_id"]]
         for item in trunks
     )
-    edge = next(
+    edges = [
         item for item in foundation if item["type"] == "ConfigureAccessPort"
+    ]
+    assert {item["interface"] for item in edges} == {
+        verdict["constants"]["edge_interface"],
+        verdict["constants"]["tertiary_edge_interface"],
+    }
+    assert all(
+        item["data_vlan_id"] == verdict["constants"]["vlan_id"]
+        for item in edges
     )
-    assert edge["interface"] == verdict["constants"]["edge_interface"]
-    assert edge["data_vlan_id"] == verdict["constants"]["vlan_id"]
 
 
 def test_qualifier_exercises_global_pvst_on_both_models_and_edge_on_3560(
@@ -242,13 +285,14 @@ def test_qualifier_exercises_global_pvst_on_both_models_and_edge_on_3560(
     global_actions = [
         item for item in actions if item["type"] == "ConfigureSpanningTree"
     ]
-    edge = next(
+    edges = [
         item for item in actions if item["type"] == "ConfigureStpEdgePort"
-    )
-    assert len(global_actions) == 2
+    ]
+    assert len(global_actions) == 3
     assert {item["model"] for item in global_actions} == {
         verdict["constants"]["primary_model"],
         verdict["constants"]["secondary_model"],
+        verdict["constants"]["tertiary_model"],
     }
     assert all(item["mode"] == "pvst" for item in global_actions)
     assert all(item["capability"] == "stp_pvst_config" for item in actions)
@@ -260,10 +304,22 @@ def test_qualifier_exercises_global_pvst_on_both_models_and_edge_on_3560(
         item for item in global_actions
         if item["model"] == verdict["constants"]["secondary_model"]
     )["root_secondary_vlans"] == [verdict["constants"]["vlan_id"]]
-    assert edge["model"] == verdict["constants"]["primary_model"]
-    assert edge["interface"] == verdict["constants"]["edge_interface"]
-    assert edge["portfast"] is True
-    assert edge["bpduguard"] is True
+    assert next(
+        item for item in global_actions
+        if item["model"] == verdict["constants"]["tertiary_model"]
+    )["root_secondary_vlans"] == [verdict["constants"]["vlan_id"]]
+    assert {(item["model"], item["interface"]) for item in edges} == {
+        (
+            verdict["constants"]["primary_model"],
+            verdict["constants"]["edge_interface"],
+        ),
+        (
+            verdict["constants"]["tertiary_model"],
+            verdict["constants"]["tertiary_edge_interface"],
+        ),
+    }
+    assert all(item["portfast"] is True for item in edges)
+    assert all(item["bpduguard"] is True for item in edges)
 
 
 def test_qualifier_declares_fresh_state_expectations_for_both_global_actions(
@@ -271,13 +327,18 @@ def test_qualifier_declares_fresh_state_expectations_for_both_global_actions(
 ):
     expectations = verdict["expectations"]
     assert {item["action_id"] for item in expectations} == {
-        "pvst/stp/primary", "pvst/stp/secondary",
+        "pvst/stp/primary", "pvst/stp/secondary", "pvst/stp/tertiary",
     }
     assert [
         item["capability"] for item in expectations
-    ] == ["stp_state", "stp_state", "stp_behavior", "stp_behavior"]
+    ] == [
+        "stp_state", "stp_state", "stp_state",
+        "stp_behavior", "stp_behavior", "stp_behavior",
+    ]
     assert {item["source_device_name"] for item in expectations} == {
-        "MCP-PROBE-PVST-3560", "MCP-PROBE-PVST-2960",
+        "MCP-PROBE-PVST-3560",
+        "MCP-PROBE-PVST-2960",
+        "MCP-PROBE-PVST-3650",
     }
 
 
