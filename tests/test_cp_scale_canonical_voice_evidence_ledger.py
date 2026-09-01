@@ -41,6 +41,9 @@ LATEST_RUN_IDENTITY = (
 DIAGNOSTIC_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T013000402201Z-144ebaa65c5f"
 )
+BATCH_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T015150996119Z-4802eb6de95b"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -60,7 +63,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 3
+    assert len(ledger["runs"]) == 4
     return ledger["runs"][0]
 
 
@@ -70,8 +73,13 @@ def second_run(ledger: dict) -> dict:
 
 
 @pytest.fixture(scope="module")
+def diagnostic_run(ledger: dict) -> dict:
+    return ledger["runs"][2]
+
+
+@pytest.fixture(scope="module")
 def latest_run(ledger: dict) -> dict:
-    return ledger["runs"][-1]
+    return ledger["runs"][3]
 
 
 @pytest.fixture(scope="module")
@@ -245,13 +253,13 @@ def test_latest_run_cleanup_is_independently_verified(second_run: dict):
 
 
 def test_diagnostic_run_separates_parser_and_product_divergences(
-    latest_run: dict,
+    diagnostic_run: dict,
 ):
-    assert latest_run["run_identity"] == DIAGNOSTIC_RUN_IDENTITY
-    assert latest_run["heads"]["canonical_live_source_head"] == (
+    assert diagnostic_run["run_identity"] == DIAGNOSTIC_RUN_IDENTITY
+    assert diagnostic_run["heads"]["canonical_live_source_head"] == (
         "144ebaa65c5fbc7f6cf268ee97d8cf5f13ad10cc"
     )
-    observer = latest_run["measured"]["observer_divergence"]
+    observer = diagnostic_run["measured"]["observer_divergence"]
     assert observer == {
         "extension": "3007",
         "ephone_index": 7,
@@ -261,13 +269,33 @@ def test_diagnostic_run_separates_parser_and_product_divergences(
         "parser_row_present": False,
         "cause": "LEADING_WHITESPACE_BEFORE_IP_LINE",
     }
-    mutation = latest_run["measured"]["product_mutation_divergence"]
+    mutation = diagnostic_run["measured"]["product_mutation_divergence"]
     assert mutation["extension"] == "3001"
     assert mutation["phone_mac_unique_within_floor1"] is True
     assert mutation["rendered_ephone_block_present"] is True
     assert mutation["raw_table_present_in_any_sample"] is False
     assert mutation["raw_sample_count"] == 33
-    assert latest_run["conclusion"]["failure_classification"] == "PRODUCT"
+    assert diagnostic_run["conclusion"]["failure_classification"] == "PRODUCT"
+    assert diagnostic_run["conclusion"]["next_live_authorized"] is True
+
+
+def test_single_action_binding_batches_are_a_valid_negative(latest_run: dict):
+    assert latest_run["run_identity"] == BATCH_RUN_IDENTITY
+    assert latest_run["heads"]["canonical_live_source_head"] == (
+        "4802eb6de95b333390324f989eb4ee5acf4043af"
+    )
+    experiment = latest_run["measured"]["binding_batch_experiment"]
+    assert experiment["renderer_binding_batches"] == 21
+    assert experiment["actions_per_binding_batch"] == 1
+    assert experiment["ephone1_raw_table_present"] is False
+    assert experiment["raw_registration_samples"] == 35
+    assert experiment["result"] == "BATCH_SIZE_REFUTED_AS_SUFFICIENT"
+    assert latest_run["conclusion"]["ephone1_batch_size_cause"] == (
+        "REFUTED_AS_SUFFICIENT"
+    )
+    assert latest_run["conclusion"]["ephone1_mutation_completion_cause"] == (
+        "STRONG_CANDIDATE"
+    )
     assert latest_run["conclusion"]["next_live_authorized"] is True
 
 
@@ -485,8 +513,8 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_THREE_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "3"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_FOUR_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "4"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "1"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == "SCCP"
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "48"
@@ -499,7 +527,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "CAUSAL_BINDING_BATCH_CORRECTION_LIVE_PENDING"
+        "PER_BINDING_READBACK_GATE_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"

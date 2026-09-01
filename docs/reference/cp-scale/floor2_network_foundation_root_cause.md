@@ -393,3 +393,11 @@ parser lost it on an indented `IP:` line, while `ephone-1` was absent from all
 in the accepted phase-40 payload. Commit `dcb156753bce9c5b4559e5c1dc8db6ac323a8f72`
 fixes the parser and isolates every phone binding into one typed, single-dispatch
 batch for the next causal run. Floor2 again received no evidence.
+
+That single-action batch experiment was negative:
+`canonical-cp-scale-voice-20260901T015150996119Z-4802eb6de95b` emitted 21
+one-action binding batches, but `ephone-1` remained absent from all 35 raw
+samples while ephones 2-21 registered. Renderer batch size is therefore
+refuted as sufficient. Commit `a97e645e479ff72377b8775d3f634e291c507307`
+adds one exact registered ephone readback between bindings so state, not time,
+authorizes each subsequent mutation. This run also did not reach Floor2.

@@ -2116,6 +2116,146 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T015150996119Z-4802eb6de95b",
+      "started_at": "2026-08-31T20:51:50.996119-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "one_renderer_batch_per_phone_binding": true,
+        "raw_ephone_transitions_retained": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "4802eb6de95b333390324f989eb4ee5acf4043af",
+        "canonical_live_source_head": "4802eb6de95b333390324f989eb4ee5acf4043af",
+        "binding_readback_gate_head": "a97e645e479ff72377b8775d3f634e291c507307"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "configuration_mutation": "DELTA_ONLY_BY_STABLE_ACTION_ID",
+        "configuration_verification": "CUMULATIVE",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T015150996119Z-4802eb6de95b-failure-precleanup.json",
+          "sha256": "384188e7067a94495c4de5a99ff523909d2239567f453435b1c6e12fe4438218"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T015150996119Z-4802eb6de95b-cleanup.json",
+          "sha256": "76d1ec861384db9d01e53987092fc15a87cb001c0e3124deeeaea7fa492ec24a"
+        }
+      ],
+      "measured": {
+        "floor1_voice": {
+          "phone_access_fwd_verified": 21,
+          "endpoint_ipv4_count": 21,
+          "matching_binding_count": 21,
+          "sccp_registered_count": 20,
+          "sccp_failed_count": 0,
+          "sccp_unobservable_count": 1,
+          "first_unclosed_boundary": "SCCP"
+        },
+        "binding_batch_experiment": {
+          "renderer_binding_batches": 21,
+          "actions_per_binding_batch": 1,
+          "ephone1_measured_mac": "0002.1727.6514",
+          "ephone1_raw_table_present": false,
+          "raw_registration_samples": 35,
+          "raw_ephone_indices": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
+          ],
+          "result": "BATCH_SIZE_REFUTED_AS_SUFFICIENT"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_count": 21,
+          "status": "VERIFIED",
+          "verified_count": 21
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "phone_access_fwd_verified": 21,
+        "endpoint_ipv4_count": 21,
+        "matching_binding_count": 21,
+        "sccp_registered_count": 20,
+        "sccp_unobservable_count": 1,
+        "not_reached_phone_count": 48
+      },
+      "classification_rationale": "Twenty-one renderer batches with one typed phone binding each did not change the result: ephone-1 remained absent from all 35 raw samples while ephones 2-21 registered. The webview drains queued commands into one runCode batch, so renderer batch size alone does not establish mutation completion ordering. Batch size is refuted as sufficient. The next correction requires one exact ephone row readback to authorize the next binding and stops on absence without replay.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "FAIL",
+        "ephone1_batch_size_cause": "REFUTED_AS_SUFFICIENT",
+        "ephone1_mutation_completion_cause": "STRONG_CANDIDATE",
+        "production_fix_status": "PER_BINDING_READBACK_GATE_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_EPHONE1_READBACK_DIVERGENCE_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "SCCP",
+        "failure_classification": "PRODUCT",
+        "next_live_authorized": true
+      }
     }
   ]
 }
