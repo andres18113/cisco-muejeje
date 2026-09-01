@@ -4214,6 +4214,225 @@
         "failure_classification": "OBSERVER",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T120836292077Z-2bf6876f0fd2",
+      "started_at": "2026-09-01T12:08:36.292077+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "The pinned pager continuity strategy, staged deltas, and documented Router4 CME capacity.",
+        "inference": "Capacity mismatch classification from complete 35-row tables before and after all Floor3 reconciliations."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "floor1_positive_control": true,
+        "floor2_checkpoint_advanced": true,
+        "grouped_binding_frontier": true,
+        "pager_combined_rollover_strategy_exercised": true,
+        "floor3_capacity_boundary_reached": true,
+        "authoritative_absence_reconciled_once": true,
+        "valid_negative_changed_next_model_qualification": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "2bf6876f0fd2735e9f62ee7dccb58880ae817c0d",
+        "canonical_live_source_head": "2bf6876f0fd2735e9f62ee7dccb58880ae817c0d",
+        "pager_transcript_continuity_head": "3b4da405711ee6859da3f46b737a2003fbf92fb2"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "floor1_voice_count": 21,
+        "floor2_voice_count": 35,
+        "floor3_voice_count": 51,
+        "router4_documented_capacity": 42,
+        "topology_regeneration_required": true
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor1_checkpoint_advanced": true,
+        "floor2_checkpoint_advanced": true,
+        "floor3_network_foundation_verified": true,
+        "floor3_voice_reached": true,
+        "floor3_checkpoint_advanced": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T120836292077Z-2bf6876f0fd2-failure-precleanup.json",
+          "sha256": "e8f94de67cd621b820be5de7d19405d00304ca3456c85db1d3deebbd7f7e78ef"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T120836292077Z-2bf6876f0fd2-cleanup.json",
+          "sha256": "41a313b037c6d6c2083fabc3ee33d3fa4182473e193ce848df042266b20ac8fa"
+        }
+      ],
+      "measured": {
+        "floor1": {
+          "checkpoint_advanced": true,
+          "voice_complete": true,
+          "expected_phone_count": 21,
+          "sccp_registered_count": 21
+        },
+        "floor2": {
+          "checkpoint_advanced": true,
+          "network_foundation_status": "VERIFIED",
+          "voice_complete": true,
+          "expected_phone_count": 35,
+          "phone_access_fwd_verified": 35,
+          "addressed_count": 35,
+          "matching_binding_count": 35,
+          "sccp_registered_count": 35,
+          "grouped_binding_frontier_size": 14,
+          "grouped_read_pages": 8,
+          "grouped_read_continuation": "completed",
+          "grouped_read_authoritative": true,
+          "grouped_read_verified": true,
+          "grouped_read_reconciliations": 0
+        },
+        "floor3": {
+          "cumulative_devices": 241,
+          "cumulative_links": 169,
+          "configuration_mutation_actions": 146,
+          "configuration_retained_actions": 191,
+          "voice_mutation_actions": 33,
+          "voice_retained_actions": 74,
+          "control_plane_mutation_actions_not_reached": 166,
+          "network_foundation_status": "VERIFIED",
+          "voice_foundation_signal_status": "INTENDED"
+        },
+        "floor3_capacity_boundary": {
+          "call_control": "Router4",
+          "model": "2811",
+          "declared_max_ephones": 42,
+          "declared_max_dn": 42,
+          "cumulative_phone_count": 51,
+          "new_directory_indices": [
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51
+          ],
+          "initial_table_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35
+          ],
+          "initial_absent_new_bindings": 16,
+          "reconciliations_attempted": 16,
+          "reconciliations_accepted": 16,
+          "final_table_indices_equal_initial": true,
+          "final_absent_new_bindings": 16,
+          "initial_and_final_tables_authoritative": true,
+          "result": "DOCUMENTED_51_PHONE_TO_42_EPHONE_MISMATCH_CONFIRMED_AT_FLOOR3"
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_interfaces": 21,
+          "verified_fwd_interfaces": 21,
+          "status": "VERIFIED"
+        },
+        {
+          "switch": "Switch7",
+          "voice_vlan": 20,
+          "expected_interfaces": 14,
+          "verified_fwd_interfaces": 14,
+          "status": "VERIFIED"
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "floor1_status": "VERIFIED_21_OF_21",
+        "floor2_status": "VERIFIED_35_OF_35",
+        "pager_continuity_status": "VERIFIED_EIGHT_PAGE_GROUPED_READ",
+        "floor3_network_foundation_status": "VERIFIED",
+        "floor3_voice_bootstrap_status": "FAILED_CLOSED_CAPACITY_42",
+        "floor3_voice_signal_status": "NOT_REACHED"
+      },
+      "classification_rationale": "The pre-marker transcript anchor completed the Floor2 grouped show ephone in one authoritative eight-page read, and Floor2 verified all 35 phones through FWD, IPv4, matching DHCP binding, and SCCP before checkpointing. Floor3 then verified its physical/configuration network foundation and dispatched the exact 16-binding Voice delta. One complete table contained only prior indices 1-35; all 16 new rows remained absent after one accepted reconciliation each, and the final complete table was identical. This is the authoritative design's documented Router4 mismatch—51 physical phones against max-ephones/max-dn 42—now reached in production. The 69-phone contract cannot be met on that design without qualifying and selecting a CME-capable Packet Tracer platform above 51 while preserving the branch topology.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "floor2_network_foundation": "VERIFIED",
+        "floor2_voice": "VERIFIED_35_OF_35",
+        "pager_pre_marker_suffix_anchor": "VERIFIED_PRODUCTION",
+        "pager_combined_head_roll_tail_rewrite": "CONFIRMED",
+        "floor3_network_foundation": "VERIFIED",
+        "router4_capacity_mismatch": "CONFIRMED",
+        "capacity_correction": "CME_MODEL_QUALIFICATION_REQUIRED",
+        "cp_scale_status": "FLOOR2_VERIFIED_FLOOR3_CAPACITY_BLOCKED",
+        "first_unclosed_boundary": "FLOOR3_VOICE_BOOTSTRAP_CALL_CONTROL_CAPACITY",
+        "failure_classification": "AUTHORITATIVE_DESIGN_MISMATCH",
+        "next_live_authorized": true
+      }
     }
   ]
 }

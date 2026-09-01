@@ -606,3 +606,15 @@ or verification authority. Python and the atomic JavaScript dispatch guard use
 the same complete CSI rendering grammar. A marker followed only by recognized
 IOS syslogs remains active, but syslog-only, marker-erasure, ANSI-only, and
 partial-page changes do not count as continuation progress.
+
+Run `canonical-cp-scale-voice-20260901T120836292077Z-2bf6876f0fd2`
+verified the pager correction in production: Floor2's 14-binding frontier
+completed in one authoritative eight-page read, and Floor2 checkpointed with
+35/35 FWD, IPv4, matching DHCP bindings, and SCCP registrations.
+
+The next boundary is outside the Floor2 network diagnosis. Floor3 verified its
+network foundation, then all new Router4 bindings 36-51 were absent from
+complete tables before and after 16 accepted reconciliations under the
+documented `max-ephones 42 / max-dn 42`. This confirms `CME-OBS-001`; resolution
+requires a separately qualified CME platform above 51, not another Floor2
+network change or a weakened Voice contract.
