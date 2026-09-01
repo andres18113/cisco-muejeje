@@ -459,6 +459,7 @@ CANONICAL_CP_SCALE_CHECKPOINT_COMMAND_CHANNEL = EOF_BEFORE_OPERATOR_COMMAND
 CANONICAL_CP_SCALE_NEXT_CHECKPOINT_TRANSPORT = PERSISTENT_STDIN_WITH_NINE_TYPED_CONTINUE_COMMANDS
 CANONICAL_CP_SCALE_RIP_PAGER_RETRY_HEAD = 6bf0b8e3a5dbd6899226c1eaaf04ef2011c69b89
 CANONICAL_CP_SCALE_RIP_PAGER_RETRY_LATEST = NOT_ENGAGED_FIRST_READS_VERIFIED
+CANONICAL_CP_SCALE_FLOOR2_PVST_BOUNDARY_GATE_HEAD = e57d37d1e75890f08a208aaea9f8c1a36d8b0063
 CANONICAL_CP_SCALE_EVIDENCE_SHA256 = RUN1_PRECLEANUP_d4b017332c1f0b7f12e5e6fef977a508c7b1fcdb72e1f605ad095143b54a60db | RUN1_CLEANUP_a066f7efbedc23176871e2c0a75e3e2422426554dbb2aad3a9126e6e06e759db | RUN2_PRECLEANUP_6662ffa03e405645882d4d61bcbcec3af60957e4dac64d881bebd9fa15590c03 | RUN2_CLEANUP_968face019bad5adb4f5890d4a6f15b3164d143d3eff609df40622bb4ce4ec7a | RUN3_PRECLEANUP_28a9bbefb5e9a5c3c4dec0a5fbbaec3690b0e9ebfd06bd1b842814cb0fca7fea | RUN3_CLEANUP_a6899f944fec58f6ae187d67c8350ad82b1ec9a94aa84d0ba7dd13177b7b2670 | RUN4_PRECLEANUP_384188e7067a94495c4de5a99ff523909d2239567f453435b1c6e12fe4438218 | RUN4_CLEANUP_76d1ec861384db9d01e53987092fc15a87cb001c0e3124deeeaea7fa492ec24a | RUN5_PRECLEANUP_36648e37b859d11c77ceae95afef33b972048e65928a90cf7a8cdf76c04b96be | RUN5_CLEANUP_744639c0833702c55ad47fec6df13312f1adac2706f832e0a141a9978bab6fea | RUN6_PRECLEANUP_698f8f3e5358ab85286432262d7fda89f30da5cf87a3e619c471ab50cb4d055c | RUN6_CLEANUP_28f8f200a44251d45ebc89a4b1261c11615b66613526665ae626b241537e690d | RUN7_PRECLEANUP_21a306f9c1d4f2955f443c1192bb0e65093bdbee2bca37f1fd1dddeafe3bcd62 | RUN7_CLEANUP_65923bc0a708f1481087922eaea8e1baff9debddb0f845a9b02db7e2942eb261 | RUN8_PRECLEANUP_05bda710dad7e15b381013510d016a94f3f9071410250f341542b3ea36c5b06c | RUN8_CLEANUP_1cf0c9fb80e25780bbb64a91553c52dac63abcad853926bc8d450d61907e168f | RUN9_PRECLEANUP_a0d663dc00a9bb69437616717dfe702f08f260272b362a629dc1af32fd3f6572 | RUN9_CLEANUP_a221fdb51d18727f0c7635daddd1397e0c2f01390923996b78c8e2b3fd54aabc | RUN10_PRECLEANUP_d60b09f81f6eeebedc0651dd92cc2c0686c2fa29f0c764dfbc0ced15ecb1fc71 | RUN10_CLEANUP_ac8db8bf21f06837a1ad44a6edc3a4efd03e8c1d0ba27c93d439c96c95e72723 | RUN11_PRECLEANUP_1c38c536b0735788fa5108ce976b8385afae7d5086ba99ad9dcefdde20edbc78 | RUN11_CLEANUP_ce890a1e0364b232c9030a4731255f706559c1832f044637cc00db97ea6703aa | RUN12_PRECLEANUP_6d893e1fdd6b403f60d1741b0ce7d537712f1128cff1f03a11c7d74bb36e3d65 | RUN12_CLEANUP_d8eac70ef48373c30eb735764d9a16d7048ea0c1298b71473f481d274bff0aef | RUN13_PRECLEANUP_0410c1b7a43fa2290427c78255b8bfcce84d4a833da1f2cde476fcc865a91b18 | RUN13_CLEANUP_4a8b86945e237f9cd7190d22aa11205c25aed49639e13bc900d766320ade34df | RUN14_PRECLEANUP_e272e64c5afef82114b8f750017890ae9e07970de4e6922c9e9533549a4b82d1 | RUN14_CLEANUP_a36a2dda5f1ef1037385d176f971dabd8d257e37d1b8f1b3d6183cc1ae0dc1d2 | RUN15_PRECLEANUP_8a3976a64d36fa86e4030a52dae336936734840c691e2489e60db03205fb9d19 | RUN15_CLEANUP_dfd63b75ebcb7c5c8fa0d408c558bd98f10a8ef69db83684235c3d4636f065df | RUN16_PRECLEANUP_4e93efde1bef8053062390fb46914f455791f948c64cce7167c09502d63d3212 | RUN16_CLEANUP_75d2a740df86d3470aadd316606e915d648112f648a66e8f7fb7ebd3208b74f1
 CANONICAL_CP_SCALE_WORKSPACE_RESTORED = YES
 CANONICAL_CP_SCALE_REALTIME_RESTORED = YES
@@ -852,18 +853,19 @@ prior regression but was not sufficient to explain all of Floor2. Natural PVST
 convergence outliving the fixed observer boundary is now strongly supported,
 not confirmed until a fresh terminal-boundary PVST sample tests it.
 
-The correction does not add a blind sleep or globally inflate success. The
-existing 45-second round-robin gate remains. At that boundary, one fresh PVST
-snapshot is taken per still-pending device and retained, then the unchanged
-trunk predicate is refreshed once in case the snapshot elapsed through FWD.
-Only when the refreshed trunk still has authoritative
-interface/status/allowed/active fields, only forwarding is missing, and every
-expected VLAN's exact port is authoritatively `LRN` in the boundary snapshot,
-one 20-second continuation is authorized: the measured 15-second forward-delay
-phase plus one bounded observation margin. LISTENING, BLOCKING, missing,
-mismatched, incomplete, or unattributed state gets no extension and remains
-fail closed. Reported elapsed time spans the original gate, boundary snapshot,
-refresh, and any continuation.
+Commit `e57d37d1e75890f08a208aaea9f8c1a36d8b0063` does not add a blind
+sleep or globally inflate success. The existing 45-second round-robin gate
+remains. At that boundary, one fresh PVST snapshot is taken per still-pending
+device and retained, then the unchanged trunk predicate is refreshed once in
+case the snapshot elapsed through FWD. Only when the refreshed trunk still has
+authoritative interface/status/allowed/active fields, only forwarding is
+missing, and every expected VLAN's exact port is authoritatively `LRN` in the
+boundary snapshot, one 20-second continuation is authorized: the measured
+15-second forward-delay phase plus one bounded observation margin. LISTENING,
+BLOCKING, missing, mismatched, incomplete, or unattributed state gets no
+extension and remains fail closed. Every round commits atomically, refresh
+errors are retained, and reported elapsed time spans the original gate,
+boundary snapshot, refresh, and any continuation.
 
 The immutable artifacts are pinned by SHA-256:
 
