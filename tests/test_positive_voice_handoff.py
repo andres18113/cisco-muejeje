@@ -971,6 +971,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CME_CAPACITY_ELIGIBLE_MODELS_ABOVE_51": (
             "NONE_IN_2911_ISR4321_ISR4331"
         ),
+        "CME_CAPACITY_CORRECTION_HEAD": (
+            "1d90f013ed99a670a1f9f4ca0a605cb36e06576f"
+        ),
         "CME_CAPACITY_CORRECTION": (
             "IMPLEMENTED_REBALANCE_9_PHONES_ROUTER4_TO_ROUTER0 | "
             "CAPACITIES_42_20_7 | PRESERVE_314_DEVICES_219_LINKS_69_PHONES"
