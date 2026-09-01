@@ -471,3 +471,12 @@ theory is therefore refuted and the pager-boundary observer cause is confirmed.
 The parser correction changes no Floor2 variable. Floor2 again received no
 evidence, so the delta-only replay experiment and H1/H2 classifications remain
 unchanged.
+
+The next invocation
+`canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb` verified the
+routing-core checkpoint but received EOF before any checkpoint command because
+the non-interactive harness had closed stdin. Cleanup verified empty state and
+Realtime restoration. This is a harness result only: neither the Floor1 parser
+correction nor the Floor2 causal question was reached, so H1/H2 remain
+unchanged. The corrected invocation supplies the runner's bounded nine
+`continue` commands through persistent stdin.

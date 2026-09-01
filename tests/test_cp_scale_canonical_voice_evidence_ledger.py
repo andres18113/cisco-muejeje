@@ -71,6 +71,9 @@ GOVERNED_CAPACITY_RUN_IDENTITY = (
 TERMINAL_DIAGNOSTIC_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T043604861347Z-86603be911bf"
 )
+CHECKPOINT_EOF_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -90,7 +93,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 13
+    assert len(ledger["runs"]) == 14
     return ledger["runs"][0]
 
 
@@ -152,6 +155,11 @@ def latest_run(ledger: dict) -> dict:
 @pytest.fixture(scope="module")
 def terminal_diagnostic_run(ledger: dict) -> dict:
     return ledger["runs"][12]
+
+
+@pytest.fixture(scope="module")
+def checkpoint_eof_run(ledger: dict) -> dict:
+    return ledger["runs"][13]
 
 
 @pytest.fixture(scope="module")
@@ -543,6 +551,33 @@ def test_terminal_diagnostic_confirms_pager_header_parser_cause(
         assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
 
 
+def test_checkpoint_eof_is_classified_as_harness_and_cleaned(
+    checkpoint_eof_run: dict,
+):
+    assert checkpoint_eof_run["run_identity"] == CHECKPOINT_EOF_RUN_IDENTITY
+    checkpoint = checkpoint_eof_run["measured"]["routing_core_checkpoint"]
+    assert checkpoint == {
+        "physical_status": "verified",
+        "configuration_status": "verified",
+        "control_plane_status": "verified",
+        "core_forwarding_verified": True,
+        "workspace_verified_twice": True,
+        "semantic_devices": 3,
+        "links": 3,
+    }
+    channel = checkpoint_eof_run["measured"]["checkpoint_command_channel"]
+    assert channel["failure"] == "EOFError: EOF when reading a line"
+    assert channel["operator_command_received"] is False
+    assert channel["result"] == "HARNESS_STDIN_CLOSED"
+    assert checkpoint_eof_run["conclusion"]["failure_classification"] == "HARNESS"
+    assert checkpoint_eof_run["conclusion"]["next_live_authorized"] is True
+    assert checkpoint_eof_run["cleanup"]["verified"] is True
+    for artifact in checkpoint_eof_run["artifacts"]:
+        path = ROOT / artifact["path"]
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+
+
 def test_immutable_canonical_evidence_is_never_text_normalized():
     attributes = GITATTRIBUTES.read_text(encoding="utf-8").splitlines()
 
@@ -757,18 +792,18 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_THIRTEEN_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "13"
-    assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "1"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_FOURTEEN_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "14"
+    assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "2"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
-        "VOICE_BOOTSTRAP_BINDING_PARSER"
+        "NOT_REACHED_AFTER_ROUTING_CORE_CHECKPOINT_EOF"
     )
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "48"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
-        "VOICE_BOOTSTRAP_BINDING_PARSER"
+        "ROUTING_CORE_CHECKPOINT_COMMAND_CHANNEL"
     )
     assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == (
-        "OBSERVER"
+        "HARNESS"
     )
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
@@ -797,8 +832,8 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "CANDIDATE_IMPLEMENTED_CAUSAL_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_CAUSAL_LIVE"] == (
-        "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_VOICE_OBSERVER"
+        "ATTEMPTED_BUT_NOT_REACHED_LATEST_HARNESS_EOF"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR1_EPHONE_HEADER_OBSERVER_FIX_PENDING_LIVE"
+        "ROUTING_CORE_VERIFIED_HARNESS_EOF_CLEANED_RETRY_READY"
     )

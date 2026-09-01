@@ -677,18 +677,18 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CP_SCALE_AFFECTED_PHONES": "69",
         "CP_SCALE_AFFECTED_VOICE_ACCESS_ACTIONS": "69",
         "CP_SCALE_TOPOLOGY_REGEN_REQUIRED": "NO",
-        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_THIRTEEN_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_THIRTEEN_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "13",
-        "CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS": "1",
+        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_FOURTEEN_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_FOURTEEN_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "14",
+        "CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS": "2",
         "CANONICAL_CP_SCALE_BASE_HEAD": (
             "528564493b855ce332f45fdab7b5867a065b1992"
         ),
         "CANONICAL_CP_SCALE_PRELIVE_HEAD": (
-            "86603be911bf8da453bf2d7c93c924226ae5fd41"
+            "3c74547c50eba2dfdd0e1ac62a8da696b4ca6934"
         ),
         "CANONICAL_CP_SCALE_LIVE_SOURCE_HEAD": (
-            "86603be911bf8da453bf2d7c93c924226ae5fd41"
+            "3c74547c50eba2dfdd0e1ac62a8da696b4ca6934"
         ),
         "CANONICAL_CP_SCALE_PHONE_COUNT": "69",
         "CANONICAL_CP_SCALE_VOICE_ACCESS_ACTION_COUNT": "69",
@@ -699,7 +699,8 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "CONFIRMED_OFFLINE_ALL_STAGES_AND_LIVE_THROUGH_FLOOR1"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_VOICE": (
-            "NOT_REACHED_AFTER_RAW_BINDING_21_OF_21_WAS_PARSED_AS_20_OF_21"
+            "NOT_REACHED_LATEST_HARNESS_ATTEMPT | "
+            "HEADER_FIX_NOT_EXERCISED"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_LAST_COMPLETE_VOICE_WINDOW": (
             "ENDPOINT_AND_BINDING_VERIFIED_21_OF_21 | RAW_SCCP_REGISTERED_20 | "
@@ -736,7 +737,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_FLOOR1_LAST_COMPLETE_BOUNDARY": "SCCP",
         "CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY": (
-            "VOICE_BOOTSTRAP_BINDING_PARSER"
+            "NOT_REACHED_AFTER_ROUTING_CORE_CHECKPOINT_EOF"
         ),
         "CANONICAL_CP_SCALE_PRIOR_FLOOR2_NETWORK_FOUNDATION": (
             "FAILED_3_FRESH_TRUNK_CONTRADICTIONS"
@@ -786,7 +787,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "ROUND_ROBIN_TRUNK_TRANSITIONS_PLUS_CORRELATED_PVST_BOUNDARIES"
         ),
         "CANONICAL_CP_SCALE_FLOOR2_CAUSAL_LIVE": (
-            "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_VOICE_OBSERVER"
+            "ATTEMPTED_BUT_NOT_REACHED_LATEST_HARNESS_EOF"
         ),
         "CANONICAL_CP_SCALE_FLOOR2_DIAGNOSIS_DOC": (
             "docs/reference/cp-scale/floor2_network_foundation_root_cause.md"
@@ -803,10 +804,10 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_NOT_REACHED_PHONES": "48",
         "CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY": (
-            "VOICE_BOOTSTRAP_BINDING_PARSER"
+            "ROUTING_CORE_CHECKPOINT_COMMAND_CHANNEL"
         ),
         "CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION": (
-            "OBSERVER"
+            "HARNESS"
         ),
         "CANONICAL_CP_SCALE_VOICE_VERIFICATION": "FAIL",
         "ROOT_CAUSE_STATUS": "CONFIRMED",
@@ -848,6 +849,15 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_EPHONE_HEADER_PARSER_CORRECTION_HEAD": (
             "368931c517755766fe69cbda557b85aa25fda6a8"
+        ),
+        "CANONICAL_CP_SCALE_CHECKPOINT_EOF_SOURCE_HEAD": (
+            "3c74547c50eba2dfdd0e1ac62a8da696b4ca6934"
+        ),
+        "CANONICAL_CP_SCALE_CHECKPOINT_COMMAND_CHANNEL": (
+            "EOF_BEFORE_OPERATOR_COMMAND"
+        ),
+        "CANONICAL_CP_SCALE_NEXT_CHECKPOINT_TRANSPORT": (
+            "PERSISTENT_STDIN_WITH_NINE_TYPED_CONTINUE_COMMANDS"
         ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
@@ -902,17 +912,21 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "0410c1b7a43fa2290427c78255b8bfcce84d4a833da1f2cde476fcc865a91b18"
             " | RUN13_CLEANUP_"
             "4a8b86945e237f9cd7190d22aa11205c25aed49639e13bc900d766320ade34df"
+            " | RUN14_PRECLEANUP_"
+            "e272e64c5afef82114b8f750017890ae9e07970de4e6922c9e9533549a4b82d1"
+            " | RUN14_CLEANUP_"
+            "a36a2dda5f1ef1037385d176f971dabd8d257e37d1b8f1b3d6183cc1ae0dc1d2"
         ),
         "CANONICAL_CP_SCALE_WORKSPACE_RESTORED": "YES",
         "CANONICAL_CP_SCALE_REALTIME_RESTORED": "YES",
-        "LIVE_RUNS_CONSUMED": "19",
+        "LIVE_RUNS_CONSUMED": "20",
         "CLEANUP": "VERIFIED_AFTER_EVERY_LIVE",
         "WORKSPACE_RESTORED": "YES",
         "NEXT_ACTIVE_STEP": (
-            "RUN_CANONICAL_LIVE_WITH_EPHONE_HEADER_INDENTATION_CORRECTION"
+            "RUN_CANONICAL_LIVE_WITH_PERSISTENT_STDIN_CHECKPOINT_COMMANDS"
         ),
         "CP_SCALE_STATUS": (
-            "FLOOR1_EPHONE_HEADER_OBSERVER_FIX_PENDING_LIVE"
+            "ROUTING_CORE_VERIFIED_HARNESS_EOF_CLEANED_RETRY_READY"
         ),
     }
 

@@ -1,0 +1,174 @@
+{
+  "canonical_evidence_precleanup": {
+    "path": "C:\\Users\\Andres\\mpc-muejeje\\docs\\reference\\cp-scale\\canonical-live-evidence\\canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb-failure-precleanup.json",
+    "phase": "failure-precleanup",
+    "run_identity": "canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb",
+    "sha256": "e272e64c5afef82114b8f750017890ae9e07970de4e6922c9e9533549a4b82d1"
+  },
+  "cleanup": {
+    "first": {
+      "backend_managed_device_count": 8,
+      "devices": [
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device0",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device1",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device2",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device3",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device4",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device5",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device6",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device7",
+          "ports": []
+        }
+      ],
+      "link_count": 0,
+      "links": [],
+      "message": "fresh_complete_workspace_inventory",
+      "observed": true,
+      "semantic_device_count": 0
+    },
+    "mutations": [
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "r-edge-small-branch-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "r-edge-multilayer-branch-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "r-edge-large-branch-01",
+        "target_kind": "device"
+      }
+    ],
+    "restoration_error": "",
+    "second": {
+      "backend_managed_device_count": 8,
+      "devices": [
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device0",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device1",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device2",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device3",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device4",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device5",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device6",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device7",
+          "ports": []
+        }
+      ],
+      "link_count": 0,
+      "links": [],
+      "message": "fresh_complete_workspace_inventory",
+      "observed": true,
+      "semantic_device_count": 0
+    },
+    "verified": true
+  },
+  "cleanup_completed_at": "2026-09-01T05:13:53.042557+00:00",
+  "cleanup_realtime": {
+    "error": "",
+    "state": {
+      "current_index": 0,
+      "frames": 0,
+      "message": "simulation_state_readback",
+      "observed": true,
+      "sim_time": 93164968,
+      "simulation_mode": false
+    },
+    "verified": true
+  },
+  "failure": "EOFError: EOF when reading a line",
+  "run_identity": "canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb",
+  "schema": "cp-scale-canonical-cleanup-attestation-v1",
+  "source_head": "3c74547c50eba2dfdd0e1ac62a8da696b4ca6934"
+}

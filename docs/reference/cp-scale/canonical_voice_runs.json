@@ -3259,6 +3259,118 @@
         "failure_classification": "OBSERVER",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb",
+      "started_at": "2026-09-01T05:12:18.175698+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "The pinned runner and checkpoint command-channel contract.",
+        "inference": "Harness classification from EOF before any operator checkpoint command."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "parser_correction_present": true,
+        "routing_core_mutated_and_verified": true,
+        "checkpoint_command_received": false,
+        "product_result_claimed": false,
+        "valid_harness_failure_changed_next_invocation": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "3c74547c50eba2dfdd0e1ac62a8da696b4ca6934",
+        "canonical_live_source_head": "3c74547c50eba2dfdd0e1ac62a8da696b4ca6934",
+        "ephone_header_parser_correction_head": "368931c517755766fe69cbda557b85aa25fda6a8"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 1,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor1_parser_correction_reached": false,
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb-failure-precleanup.json",
+          "sha256": "e272e64c5afef82114b8f750017890ae9e07970de4e6922c9e9533549a4b82d1"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb-cleanup.json",
+          "sha256": "a36a2dda5f1ef1037385d176f971dabd8d257e37d1b8f1b3d6183cc1ae0dc1d2"
+        }
+      ],
+      "measured": {
+        "routing_core_checkpoint": {
+          "physical_status": "verified",
+          "configuration_status": "verified",
+          "control_plane_status": "verified",
+          "core_forwarding_verified": true,
+          "workspace_verified_twice": true,
+          "semantic_devices": 3,
+          "links": 3
+        },
+        "checkpoint_command_channel": {
+          "stage": "routing-core",
+          "failure": "EOFError: EOF when reading a line",
+          "operator_command_received": false,
+          "result": "HARNESS_STDIN_CLOSED"
+        },
+        "floor1": {
+          "status": "NOT_REACHED",
+          "parser_correction_answered": false
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "routing_core_status": "VERIFIED",
+        "floor1_status": "NOT_REACHED_HARNESS_EOF",
+        "voice_status": "NOT_REACHED",
+        "floor2_status": "NOT_REACHED"
+      },
+      "classification_rationale": "The normal production runner verified routing-core physical state, cumulative configuration, RIPv2 control plane, core forwarding, and two workspace observations. It then called input() at the routing-core checkpoint, but the non-interactive shell had already closed stdin, producing EOF before any continue or retain command. This is a checkpoint-command harness invocation failure; it contains no Floor1 parser or Floor2 product result. The next invocation supplies the bounded sequence of typed continue commands through persistent stdin.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED",
+        "ephone_header_parser_correction": "NOT_EXERCISED",
+        "floor2_causal_question": "NOT_REACHED",
+        "checkpoint_command_channel": "HARNESS_STDIN_CLOSED",
+        "production_fix_status": "EPHONE_HEADER_INDENTATION_FIX_LIVE_PENDING",
+        "cp_scale_status": "ROUTING_CORE_VERIFIED_HARNESS_EOF_CLEANED",
+        "first_unclosed_boundary": "ROUTING_CORE_CHECKPOINT_COMMAND_CHANNEL",
+        "failure_classification": "HARNESS",
+        "next_live_authorized": true
+      }
     }
   ]
 }
