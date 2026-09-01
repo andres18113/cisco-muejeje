@@ -1963,6 +1963,159 @@
         "failure_classification": "PRODUCT_OR_OBSERVER_UNRESOLVED",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T013000402201Z-144ebaa65c5f",
+      "started_at": "2026-08-31T20:30:00.402201-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "delta_only_configuration_mutation": true,
+        "cumulative_configuration_verification": true,
+        "raw_ephone_transitions_retained": true,
+        "measured_phone_macs_retained": true,
+        "rendered_ephone_batches_retained": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "causal_implementation_head": "ff1be60f0dad31a17fdb44d27834d251e2927732",
+        "diagnostic_implementation_head": "bd8e8b80bd170704e3f403263186f0469a4d0839",
+        "prelive_head": "144ebaa65c5fbc7f6cf268ee97d8cf5f13ad10cc",
+        "canonical_live_source_head": "144ebaa65c5fbc7f6cf268ee97d8cf5f13ad10cc",
+        "causal_correction_head": "dcb156753bce9c5b4559e5c1dc8db6ac323a8f72"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "stage_voice_counts": {
+          "floor1": 21,
+          "floor2": 35,
+          "floor3": 51,
+          "router0-branch": 62,
+          "router3-branch": 69,
+          "remaining": 69
+        },
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "configuration_mutation": "DELTA_ONLY_BY_STABLE_ACTION_ID",
+        "configuration_verification": "CUMULATIVE",
+        "voice_lifecycle": "DATA_ONLY_ACCESS -> NETWORK_VERIFIED -> VOICE_BOOTSTRAP_APPLIED -> VOICE_SIGNAL_VERIFIED -> PHONE_ACCESS_FWD_VERIFIED -> REGISTRATION",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "branch": "feature/runtime-ripv2",
+        "upstream": "personal/feature/runtime-ripv2",
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T013000402201Z-144ebaa65c5f-failure-precleanup.json",
+          "sha256": "28a9bbefb5e9a5c3c4dec0a5fbbaec3690b0e9ebfd06bd1b842814cb0fca7fea"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T013000402201Z-144ebaa65c5f-cleanup.json",
+          "sha256": "a6899f944fec58f6ae187d67c8350ad82b1ec9a94aa84d0ba7dd13177b7b2670"
+        }
+      ],
+      "measured": {
+        "floor1_voice": {
+          "network_foundation_status": "verified",
+          "phone_access_fwd_verified": 21,
+          "endpoint_ipv4_count": 21,
+          "voice_dhcp_binding_count": 21,
+          "matching_binding_count": 21,
+          "sccp_registered_count": 19,
+          "sccp_failed_count": 0,
+          "sccp_unobservable_count": 2,
+          "first_unclosed_boundary": "SCCP",
+          "registration_attempts": 33,
+          "raw_transition_count": 12
+        },
+        "observer_divergence": {
+          "extension": "3007",
+          "ephone_index": 7,
+          "raw_table_present": true,
+          "raw_sccp_registered": true,
+          "raw_ipv4": "172.16.20.2",
+          "parser_row_present": false,
+          "cause": "LEADING_WHITESPACE_BEFORE_IP_LINE"
+        },
+        "product_mutation_divergence": {
+          "extension": "3001",
+          "ephone_index": 1,
+          "measured_phone_mac": "000A.F3B3.58A3",
+          "phone_mac_unique_within_floor1": true,
+          "typed_binding_action_present": true,
+          "rendered_ephone_block_present": true,
+          "rendered_phase": 40,
+          "rendered_batch_lines": 109,
+          "raw_table_present_in_any_sample": false,
+          "raw_sample_count": 33,
+          "first_divergence": "TYPED_BINDING_BATCH_ACCEPTED_BUT_EPHONE1_ABSENT_FROM_RAW_READBACK"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_count": 21,
+          "status": "VERIFIED",
+          "verified_count": 21
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "phone_access_fwd_verified": 21,
+        "endpoint_ipv4_count": 21,
+        "matching_binding_count": 21,
+        "raw_sccp_registered_count": 20,
+        "parsed_sccp_registered_count": 19,
+        "unreadback_ephone_count": 1,
+        "not_reached_phone_count": 48
+      },
+      "classification_rationale": "The retained raw IOS table proves ephone-7 was registered and the parser alone dropped it because its IP line was indented. The exact trusted phase-40 payload contains ephone 1 with a unique measured phone MAC, but all 33 raw registration samples omit ephone-1. APPLIED therefore diverged from raw readback before SCCP observation. The next experiment splits only independent BindPhoneToExtension mutations into one typed batch per action; it adds no retry, sleep, DHCP mutation, or policy change.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "FAIL",
+        "voice_observer_root_cause": "CONFIRMED_EPHONE_IP_INDENTATION",
+        "ephone1_mutation_root_cause": "STRONG_CANDIDATE_OVERSIZED_MULTI_ACTION_BINDING_BATCH",
+        "production_fix_status": "CAUSAL_BINDING_BATCH_CORRECTION_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_EPHONE1_READBACK_DIVERGENCE_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "SCCP",
+        "failure_classification": "PRODUCT",
+        "next_live_authorized": true
+      }
     }
   ]
 }

@@ -384,3 +384,12 @@ It is not a negative result for delta-only mutation. Commit
 measured phone MACs, and exact ephone batch for the next run and corrects the
 observer's boundary label from endpoint address to SCCP while keeping SCCP
 mandatory. The Floor2 classification remains `STRONG_CANDIDATE`.
+
+The subsequent raw-diagnostic run
+`canonical-cp-scale-voice-20260901T013000402201Z-144ebaa65c5f` also stopped
+at Floor1. It confirmed that raw IOS contains registered `ephone-7` and the
+parser lost it on an indented `IP:` line, while `ephone-1` was absent from all
+33 raw samples despite a unique measured MAC and an exact typed binding block
+in the accepted phase-40 payload. Commit `dcb156753bce9c5b4559e5c1dc8db6ac323a8f72`
+fixes the parser and isolates every phone binding into one typed, single-dispatch
+batch for the next causal run. Floor2 again received no evidence.
