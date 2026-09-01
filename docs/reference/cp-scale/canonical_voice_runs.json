@@ -3371,6 +3371,149 @@
         "failure_classification": "HARNESS",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T051758574307Z-ac6012f6a759",
+      "started_at": "2026-09-01T05:17:58.574307+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "The pinned production runner, parser correction, and registered IOS query contracts.",
+        "inference": "Observer classification from truncated process reads with independently verified RIP routes."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "persistent_checkpoint_commands": true,
+        "ephone_header_parser_correction_exercised": true,
+        "floor1_voice_contract_unweakened": true,
+        "rip_mutations_not_retried": true,
+        "valid_negative_changed_next_observer": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "ac6012f6a759c05541727d70046ab497bdc655a2",
+        "canonical_live_source_head": "ac6012f6a759c05541727d70046ab497bdc655a2",
+        "ephone_header_parser_correction_head": "368931c517755766fe69cbda557b85aa25fda6a8"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "floor1_voice_count": 21,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "routing_core_checkpoint_advanced": true,
+        "router4_switch10_checkpoint_advanced": true,
+        "floor1_parser_correction_reached": true,
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T051758574307Z-ac6012f6a759-failure-precleanup.json",
+          "sha256": "8a3976a64d36fa86e4030a52dae336936734840c691e2489e60db03205fb9d19"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T051758574307Z-ac6012f6a759-cleanup.json",
+          "sha256": "dfd63b75ebcb7c5c8fa0d408c558bd98f10a8ef69db83684235c3d4636f065df"
+        }
+      ],
+      "measured": {
+        "floor1_voice": {
+          "complete": true,
+          "expected_phone_count": 21,
+          "voice_bootstrap_status": "applied",
+          "voice_signal_status": "verified",
+          "phone_access_fwd_verified": 21,
+          "phone_access_fwd_failed": 0,
+          "phone_access_fwd_unobservable": 0,
+          "voice_svi_present_count": 21,
+          "dhcp_enabled_count": 21,
+          "addressed_count": 21,
+          "voice_dhcp_binding_count": 21,
+          "matching_binding_count": 21,
+          "sccp_registered_count": 21,
+          "sccp_failed_count": 0,
+          "sccp_unobservable_count": 0,
+          "registration_started_after_fwd_barrier": true,
+          "first_contradicted_boundary": "NONE"
+        },
+        "rip_process_observer": {
+          "actions_applied": 3,
+          "process_expectations_verified": [
+            "Router4"
+          ],
+          "process_expectations_unobservable": [
+            "Router0",
+            "Router3"
+          ],
+          "unobservable_evidence_method": "rip_readback_truncated",
+          "route_expectations_verified": 9,
+          "route_expectations_failed": 0,
+          "control_plane_status": "partial",
+          "observed_status": "unobservable",
+          "exact_pager_failure_dimensions_retained": false,
+          "result": "RIP_PROCESS_PAGER_OBSERVER_BLOCKED_STAGE"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_interfaces": 21,
+          "verified_fwd_interfaces": 21,
+          "status": "VERIFIED"
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "APPLIED_21_OF_21",
+        "voice_signal_status": "VERIFIED",
+        "registration_status": "VERIFIED_21_OF_21",
+        "control_plane_status": "FAILED_CLOSED_RIP_PROCESS_OBSERVER",
+        "floor2_status": "NOT_REACHED"
+      },
+      "classification_rationale": "The ephone header correction closed the full canonical Floor1 Voice lifecycle: all 21 phones had authoritative access forwarding, IPv4, matching DHCP bindings, and SCCP registration. Floor1 then failed closed because Router0 and Router3 show ip protocols reads were pager-truncated and therefore unobservable; Router4 process state and all nine required RIP route expectations verified. This is an observer stop, not a RIP product contradiction. The next correction performs at most one additional read-only process query only when the first result proves executed, fresh, incomplete, pager-truncated, continuation-failed, and uniquely attributed; no control-plane mutation is retried.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_floor1_voice_verification": "VERIFIED_21_OF_21",
+        "ephone_header_parser_correction": "VERIFIED_CANONICAL_FLOOR1",
+        "rip_product_contradiction": "NOT_OBSERVED",
+        "rip_process_observer": "PAGER_TRUNCATED",
+        "qualified_pager_retry": "CONDITIONAL_FIX_READY_LIVE_PENDING",
+        "floor2_causal_question": "NOT_REACHED",
+        "cp_scale_status": "FLOOR1_VOICE_VERIFIED_CONTROL_PLANE_OBSERVER_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "FLOOR1_CONTROL_PLANE_RIP_PROCESS_OBSERVER",
+        "failure_classification": "OBSERVER",
+        "next_live_authorized": true
+      }
     }
   ]
 }

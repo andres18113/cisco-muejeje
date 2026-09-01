@@ -74,6 +74,9 @@ TERMINAL_DIAGNOSTIC_RUN_IDENTITY = (
 CHECKPOINT_EOF_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T051218175698Z-3c74547c50eb"
 )
+FLOOR1_CONTROL_OBSERVER_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T051758574307Z-ac6012f6a759"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -93,7 +96,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 14
+    assert len(ledger["runs"]) == 15
     return ledger["runs"][0]
 
 
@@ -160,6 +163,11 @@ def terminal_diagnostic_run(ledger: dict) -> dict:
 @pytest.fixture(scope="module")
 def checkpoint_eof_run(ledger: dict) -> dict:
     return ledger["runs"][13]
+
+
+@pytest.fixture(scope="module")
+def floor1_control_observer_run(ledger: dict) -> dict:
+    return ledger["runs"][14]
 
 
 @pytest.fixture(scope="module")
@@ -578,6 +586,45 @@ def test_checkpoint_eof_is_classified_as_harness_and_cleaned(
         assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
 
 
+def test_floor1_voice_closes_before_rip_process_observer_stop(
+    floor1_control_observer_run: dict,
+):
+    assert (
+        floor1_control_observer_run["run_identity"]
+        == FLOOR1_CONTROL_OBSERVER_RUN_IDENTITY
+    )
+    voice = floor1_control_observer_run["measured"]["floor1_voice"]
+    assert voice["complete"] is True
+    assert voice["expected_phone_count"] == 21
+    assert voice["voice_bootstrap_status"] == "applied"
+    assert voice["phone_access_fwd_verified"] == 21
+    assert voice["addressed_count"] == 21
+    assert voice["matching_binding_count"] == 21
+    assert voice["sccp_registered_count"] == 21
+    assert voice["registration_started_after_fwd_barrier"] is True
+    observer = floor1_control_observer_run["measured"][
+        "rip_process_observer"
+    ]
+    assert observer["process_expectations_verified"] == ["Router4"]
+    assert observer["process_expectations_unobservable"] == [
+        "Router0",
+        "Router3",
+    ]
+    assert observer["route_expectations_verified"] == 9
+    assert observer["route_expectations_failed"] == 0
+    assert observer["result"] == "RIP_PROCESS_PAGER_OBSERVER_BLOCKED_STAGE"
+    conclusion = floor1_control_observer_run["conclusion"]
+    assert conclusion["ephone_header_parser_correction"] == (
+        "VERIFIED_CANONICAL_FLOOR1"
+    )
+    assert conclusion["failure_classification"] == "OBSERVER"
+    assert conclusion["next_live_authorized"] is True
+    for artifact in floor1_control_observer_run["artifacts"]:
+        path = ROOT / artifact["path"]
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+
+
 def test_immutable_canonical_evidence_is_never_text_normalized():
     attributes = GITATTRIBUTES.read_text(encoding="utf-8").splitlines()
 
@@ -792,23 +839,23 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_FOURTEEN_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "14"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_FIFTEEN_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "15"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "2"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
-        "NOT_REACHED_AFTER_ROUTING_CORE_CHECKPOINT_EOF"
+        "CONTROL_PLANE_RIP_PROCESS_OBSERVER"
     )
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "48"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
-        "ROUTING_CORE_CHECKPOINT_COMMAND_CHANNEL"
+        "FLOOR1_CONTROL_PLANE_RIP_PROCESS_OBSERVER"
     )
     assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == (
-        "HARNESS"
+        "OBSERVER"
     )
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "EPHONE_HEADER_INDENTATION_FIX_READY_LIVE_PENDING"
+        "RIP_PROCESS_QUALIFIED_PAGER_RETRY_READY_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -832,8 +879,8 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "CANDIDATE_IMPLEMENTED_CAUSAL_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_CAUSAL_LIVE"] == (
-        "ATTEMPTED_BUT_NOT_REACHED_LATEST_HARNESS_EOF"
+        "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_CONTROL_OBSERVER"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "ROUTING_CORE_VERIFIED_HARNESS_EOF_CLEANED_RETRY_READY"
+        "FLOOR1_VOICE_VERIFIED_CONTROL_OBSERVER_FIX_PENDING_LIVE"
     )

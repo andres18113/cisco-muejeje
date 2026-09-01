@@ -480,3 +480,14 @@ Realtime restoration. This is a harness result only: neither the Floor1 parser
 correction nor the Floor2 causal question was reached, so H1/H2 remain
 unchanged. The corrected invocation supplies the runner's bounded nine
 `continue` commands through persistent stdin.
+
+The corrected checkpoint invocation
+`canonical-cp-scale-voice-20260901T051758574307Z-ac6012f6a759` verified
+canonical Floor1 Voice 21/21, including access FWD, IPv4, matching DHCP binding,
+and SCCP registration. It then failed closed at Floor1 control-plane
+observation: Router0 and Router3 process reads were pager-truncated while
+Router4 process state and all nine required RIP routes verified. This is a new
+observer boundary before the Floor1 checkpoint, not Floor2 evidence. The next
+implementation permits one additional read-only `show ip protocols` only for
+a fully qualified pager-continuation failure and never retries a mutation.
+H1/H2 remain unchanged.

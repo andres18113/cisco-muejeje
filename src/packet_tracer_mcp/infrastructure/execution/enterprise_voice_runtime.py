@@ -34,8 +34,8 @@ from .device_lifecycle import StateConvergenceWaiter
 from .ios_terminal import (
     ControlledIosExecutor,
     OperationalQueryId,
-    PagerContinuation,
     parse_show_ephone,
+    qualified_pager_retry_eligible,
 )
 from .phone_control import (
     UnavailablePhoneControl,
@@ -477,15 +477,9 @@ class PacketTracerEnterpriseVoiceRuntime:
                 show,
                 attempt,
             )
-            retry_eligible = bool(
-                show.executed
-                and show.fresh_output_observed
-                and not show.output_complete
-                and show.truncated_by_pager
-                and show.pager_continuation
-                == PagerContinuation.FAILED.value
-                and show.observed_device_name == host
-                and show.device_identity_provenance == "confirmed_unique"
+            retry_eligible = qualified_pager_retry_eligible(
+                show,
+                expected_device_name=host,
             )
             observed["retry_eligible"] = retry_eligible
             attempts.append(observed)

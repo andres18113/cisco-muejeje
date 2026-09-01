@@ -60,6 +60,7 @@ from .ios_terminal import (
     parse_show_ip_route_rip,
     parse_show_ip_route_ospf,
     parse_show_spanning_tree,
+    qualified_pager_retry_eligible,
 )
 from .runtime_inventory import normalize_runtime_inventory
 from .stable_convergence import StableConvergenceWaiter
@@ -1491,28 +1492,99 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 expectation, ControlPlaneExecutionStage.OBSERVED,
                 "No registered live-fixture-backed query observes this routing process.",
             )
+        query_key = (
+            action.device_name,
+            OperationalQueryId.SHOW_IP_PROTOCOLS,
+        )
         show = self._fresh_show(
             action.device_name, OperationalQueryId.SHOW_IP_PROTOCOLS,
             expectation, query_cache, permit_truncated=True,
         )
         if isinstance(show, RuntimeControlPlaneVerification):
             return show
+        first_show = show
+        attempts = 1
+        if qualified_pager_retry_eligible(
+            show,
+            expected_device_name=action.device_name,
+        ):
+            query_cache.pop(query_key, None)
+            show = self._fresh_show(
+                action.device_name,
+                OperationalQueryId.SHOW_IP_PROTOCOLS,
+                expectation,
+                query_cache,
+                permit_truncated=True,
+            )
+            attempts = 2
+
+        def retain_pager_retry(
+            result: RuntimeControlPlaneVerification,
+            last_observable_state: str,
+        ) -> RuntimeControlPlaneVerification:
+            if attempts == 1:
+                return result
+            cached_final = query_cache.get(query_key)
+            final_show = (
+                show
+                if isinstance(show, IosCommandResult)
+                else cached_final
+                if isinstance(cached_final, IosCommandResult)
+                else None
+            )
+            return result.model_copy(update={
+                "convergence": ConvergenceReport(
+                    attempts=attempts,
+                    final_status=result.status,
+                    last_observable_state=last_observable_state,
+                    details={
+                        "first_output_complete": first_show.output_complete,
+                        "first_truncated_by_pager": (
+                            first_show.truncated_by_pager
+                        ),
+                        "first_pager_continuation": (
+                            first_show.pager_continuation
+                        ),
+                        "first_pager_pages_captured": (
+                            first_show.pager_pages_captured
+                        ),
+                        "first_device_identity_provenance": (
+                            first_show.device_identity_provenance
+                        ),
+                        "final_output_complete": (
+                            final_show.output_complete
+                            if final_show is not None else None
+                        ),
+                        "final_truncated_by_pager": (
+                            final_show.truncated_by_pager
+                            if final_show is not None else None
+                        ),
+                        "final_pager_continuation": (
+                            final_show.pager_continuation
+                            if final_show is not None else None
+                        ),
+                    },
+                ),
+            })
+
+        if isinstance(show, RuntimeControlPlaneVerification):
+            return retain_pager_retry(show, "retry_unobservable")
         if show.truncated_by_pager:
             # Un `show ip protocols` cortado por el pager puede esconder
             # sentencias de red o interfaces pasivas: leerlo como ausencia
             # produciria un FAILED falso.
-            return self._unobservable(
+            return retain_pager_retry(self._unobservable(
                 expectation, ControlPlaneExecutionStage.OBSERVED,
                 "The RIP read-back was truncated by the IOS pager.",
                 evidence_method="rip_readback_truncated",
-            )
+            ), "pager_continuation_failed")
         observed = parse_show_ip_protocols_rip(show.output)
         fields = self._unobservable_fields(expectation)
         self._certify_source_device(fields, expectation, show)
         if observed is None:
             # La procedencia sobrevive: que el device no corra RIP no borra la
             # evidencia de QUE device contesto.
-            return self._direct_observation(
+            return retain_pager_retry(self._direct_observation(
                 expectation,
                 {
                     field: (
@@ -1523,7 +1595,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 },
                 "fresh_show_ip_protocols",
                 "Fresh output reports no RIP routing process on the device.",
-            )
+            ), "rip_process_absent")
         fields["protocol"] = FieldVerificationStatus.VERIFIED
         for field, value in (
             ("version_send", observed.version_send),
@@ -1548,10 +1620,10 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 {self._interface_key(item) for item in observed.passive_interfaces}
                 == {self._interface_key(item) for item in passive}
             )
-        return self._direct_observation(
+        return retain_pager_retry(self._direct_observation(
             expectation, fields, "fresh_show_ip_protocols",
             "Fresh RIP state was compared semantically against the typed intent.",
-        )
+        ), "rip_process_observed")
 
     def _observe_hsrp_role(self, expectation, action, query_cache):
         del query_cache

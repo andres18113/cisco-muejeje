@@ -40,9 +40,11 @@ from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_run
     PacketTracerEnterpriseControlPlaneRuntime,
 )
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    DeviceIdentityProvenance,
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,
+    PagerContinuation,
     parse_show_ip_protocols_rip,
     parse_show_ip_route_rip,
 )
@@ -866,11 +868,141 @@ def test_a_pager_truncated_readback_is_unobservable_not_failed():
         truncated_by_pager=True,
     )
 
-    result, _, _, _ = _verify(truncated)
+    result, _, _, ios = _verify(truncated)
 
     assert result.status is ActionExecutionStatus.UNOBSERVABLE
     assert result.evidence_method == "rip_readback_truncated"
     assert not result.fresh_evidence
+    assert ios.calls == [("UCE-R1", OperationalQueryId.SHOW_IP_PROTOCOLS)]
+
+
+def test_rip_process_retries_once_after_qualified_pager_failure():
+    plan = _compile_university().plan
+    action = next(
+        item for item in plan.actions_of_type(
+            ControlPlaneActionType.CONFIGURE_RIPV2,
+        ) if item.device_id == "r1"
+    )
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.action_id == action.id
+        and item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+    )
+    first = IosCommandResult(
+        device_name=action.device_name,
+        query_id=OperationalQueryId.SHOW_IP_PROTOCOLS,
+        executed=True,
+        output=_expected_rip_output(action).split("Routing for Networks:")[0],
+        session_state=IosSessionState.EXEC_PROMPT_READY,
+        fresh_output_observed=True,
+        output_complete=False,
+        truncated_by_pager=True,
+        pager_continuation=PagerContinuation.FAILED.value,
+        observed_device_name=action.device_name,
+        device_identity_provenance=(
+            DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+        ),
+    )
+    second = IosCommandResult(
+        device_name=action.device_name,
+        query_id=OperationalQueryId.SHOW_IP_PROTOCOLS,
+        executed=True,
+        output=_expected_rip_output(action),
+        session_state=IosSessionState.EXEC_PROMPT_READY,
+        fresh_output_observed=True,
+        output_complete=True,
+        observed_device_name=action.device_name,
+        device_identity_provenance=(
+            DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+        ),
+    )
+
+    class SequenceIos:
+        def __init__(self):
+            self.results = [first, second]
+            self.calls = 0
+
+        def execute(self, device_name, query_id, *, interface=""):
+            assert device_name == action.device_name
+            assert query_id is OperationalQueryId.SHOW_IP_PROTOCOLS
+            assert not interface
+            self.calls += 1
+            return self.results.pop(0)
+
+    ios = SequenceIos()
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [],
+        lambda _script: True,
+        lambda _script, _timeout: None,
+        ios_executor=ios,
+    )
+    runtime.apply_actions([action])
+
+    result = runtime.verify([expectation])[0]
+
+    assert ios.calls == 2
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.convergence is not None
+    assert result.convergence.attempts == 2
+
+
+def test_rip_pager_retry_retains_raw_final_failure_dimensions():
+    plan = _compile_university().plan
+    action = next(
+        item for item in plan.actions_of_type(
+            ControlPlaneActionType.CONFIGURE_RIPV2,
+        ) if item.device_id == "r1"
+    )
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.action_id == action.id
+        and item.kind is ControlPlaneVerificationKind.ROUTING_PROCESS
+    )
+
+    def failed_result(*, executed: bool) -> IosCommandResult:
+        return IosCommandResult(
+            device_name=action.device_name,
+            query_id=OperationalQueryId.SHOW_IP_PROTOCOLS,
+            executed=executed,
+            output="show ip protocols\n --More-- ",
+            session_state=IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=True,
+            output_complete=False,
+            truncated_by_pager=True,
+            pager_continuation=PagerContinuation.FAILED.value,
+            observed_device_name=action.device_name,
+            device_identity_provenance=(
+                DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+            ),
+        )
+
+    class SequenceIos:
+        def __init__(self):
+            self.results = [failed_result(executed=True), failed_result(executed=False)]
+
+        def execute(self, _device_name, _query_id, *, interface=""):
+            assert not interface
+            return self.results.pop(0)
+
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [],
+        lambda _script: True,
+        lambda _script, _timeout: None,
+        ios_executor=SequenceIos(),
+    )
+    runtime.apply_actions([action])
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.convergence is not None
+    assert result.convergence.attempts == 2
+    assert result.convergence.details["final_output_complete"] is False
+    assert result.convergence.details["final_truncated_by_pager"] is True
+    assert (
+        result.convergence.details["final_pager_continuation"]
+        == PagerContinuation.FAILED.value
+    )
 
 
 def test_applied_alone_never_satisfies_the_ripv2_claim():

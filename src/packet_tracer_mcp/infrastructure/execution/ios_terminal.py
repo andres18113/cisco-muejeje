@@ -342,6 +342,24 @@ class IosCommandResult:
     device_identity_evidence: str = DeviceIdentityEvidence.NONE.value
 
 
+def qualified_pager_retry_eligible(
+    result: IosCommandResult,
+    *,
+    expected_device_name: str,
+) -> bool:
+    """Permit one read-only retry only after a proven pager-capture failure."""
+    return bool(
+        result.executed
+        and result.fresh_output_observed
+        and not result.output_complete
+        and result.truncated_by_pager
+        and result.pager_continuation == PagerContinuation.FAILED.value
+        and result.observed_device_name == expected_device_name
+        and result.device_identity_provenance
+        == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+    )
+
+
 @dataclass(frozen=True)
 class InterfaceStatusRow:
     interface: str
