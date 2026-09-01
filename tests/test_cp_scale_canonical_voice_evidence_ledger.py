@@ -914,6 +914,32 @@ def test_2911_cme_probe_negative_and_cleanup_are_pinned():
     assert cleanup_payload["independent_post_cleanup"]["verified"] is True
 
 
+def test_isr_cme_probe_negatives_and_cleanup_are_pinned():
+    path = (
+        ROOT / "docs" / "reference" / "cp-scale"
+        / "canonical-live-evidence"
+        / "cme-isr-capability-20260901T125208981243Z-f885b743dce2.json"
+    )
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+        "b32099fc9e2dfc88b3bc295c1361b730a2b4ab87f1312f6943642594e9f6823b"
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload.get("failure", "") == ""
+    for model in ("ISR4321", "ISR4331"):
+        result = next(
+            item for item in payload["models"][model]["results"]
+            if item["capability"] == "supports_cme"
+        )
+        assert result["status"] == "unknown"
+        assert result["execution_status"] == "verify_failed"
+        assert result["verified"] is False
+        assert payload["models"][model]["inventory_restored"] is True
+        assert payload["models"][model]["cleanup_failed"] == []
+    assert payload["cleanup"]["verified"] is True
+    assert payload["cleanup"]["first"]["semantic_device_count"] == 0
+    assert payload["cleanup"]["second"]["semantic_device_count"] == 0
+
+
 def test_floor1_retains_the_measured_causal_order_and_exact_success(run: dict):
     floor1 = run["measured"]["floor1_voice"]
     assert floor1["complete"] is True
@@ -1135,7 +1161,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "ROUTER4_CME_MODEL_CAPACITY_QUALIFICATION_REQUIRED"
+        "EXISTING_2811_CME_PHONE_REBALANCE_IMPLEMENTATION_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -1163,5 +1189,5 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "REFRESH_FWD_9_OF_9 | EXTENSION_NOT_ENGAGED"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR2_VERIFIED_35_OF_35 | FLOOR3_CAPACITY_MISMATCH_CONFIRMED"
+        "FLOOR2_VERIFIED_35_OF_35 | FLOOR3_CAPACITY_REBALANCE_REQUIRED"
     )

@@ -1,0 +1,522 @@
+{
+  "baseline": {
+    "backend_managed_device_count": 0,
+    "devices": [],
+    "link_count": 0,
+    "links": [],
+    "message": "fresh_complete_workspace_inventory",
+    "observed": true,
+    "semantic_device_count": 0
+  },
+  "bridge_before_stop": {
+    "client_headers": {
+      "Origin": "pt-sm:",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "cross-site",
+      "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+    },
+    "connected": true,
+    "last_poll_ago": 0.0,
+    "token_id": "395ba83c275764b9",
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "unauth_recent": false
+  },
+  "cleanup": {
+    "first": {
+      "backend_managed_device_count": 1,
+      "devices": [
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device0",
+          "ports": []
+        }
+      ],
+      "link_count": 0,
+      "links": [],
+      "message": "fresh_complete_workspace_inventory",
+      "observed": true,
+      "semantic_device_count": 0
+    },
+    "second": {
+      "backend_managed_device_count": 1,
+      "devices": [
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device0",
+          "ports": []
+        }
+      ],
+      "link_count": 0,
+      "links": [],
+      "message": "fresh_complete_workspace_inventory",
+      "observed": true,
+      "semantic_device_count": 0
+    },
+    "verified": true
+  },
+  "completed_at": "2026-09-01T12:54:59.535122+00:00",
+  "head_equal_upstream": true,
+  "http_bridge": {
+    "client_headers": {
+      "Origin": "pt-sm:",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "cross-site",
+      "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+    },
+    "connected": true,
+    "last_poll_ago": 0.0,
+    "token_id": "395ba83c275764b9",
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "unauth_recent": false
+  },
+  "loaded_namespaces": [
+    "packet_tracer_mcp"
+  ],
+  "models": {
+    "ISR4321": {
+      "cached": false,
+      "cleanup_deleted": [
+        "__MCP_PROBE_811c19394c4f_01_layer3-probe",
+        "__MCP_PROBE_811c19394c4f_01_cme-call-control",
+        "__MCP_PROBE_811c19394c4f_01"
+      ],
+      "cleanup_failed": [],
+      "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+      "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+      "inventory_restored": true,
+      "results": [
+        {
+          "capability": "configuration_channel",
+          "configured": false,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4321",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verified",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+            "inventory_restored": true,
+            "isolation_level": "shared_device",
+            "mutations": [
+              "temporary-device-attempt:ISR4321",
+              "temporary-device:ISR4321"
+            ],
+            "probe_fingerprint": "fc24df49ac2022907563e5705e9d31c252693f3dfb0fc8c64e73a1cd035f5808",
+            "probe_id": "configuration-channel",
+            "probe_version": "1",
+            "result_status": "supported"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "packet_tracer_runtime",
+          "execution_status": "verified",
+          "failure_reason": "",
+          "model": "ISR4321",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "configuration-channel",
+          "raw_summary": "Official configureIosDevice channel available after 1 readiness check(s); independent terminal observation is deferred to IOS/PC probes.",
+          "status": "supported",
+          "verification_method": "direct_runtime_api",
+          "verified": true
+        },
+        {
+          "capability": "layer3",
+          "configured": true,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4321",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verified",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+            "inventory_restored": true,
+            "isolation_level": "fresh_device_required",
+            "mutations": [
+              "configure:ISR4321:layer3",
+              "fresh-device-attempt:ISR4321:layer3",
+              "fresh-device:ISR4321:layer3",
+              "temporary-device-attempt:ISR4321",
+              "temporary-device:ISR4321"
+            ],
+            "probe_fingerprint": "2a64210a937cd539ad7ead5cf6042672cd0267afaae0ac1e8df7e4138f365004",
+            "probe_id": "layer3-probe",
+            "probe_version": "1",
+            "result_status": "supported"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "controlled_probe",
+          "execution_status": "verified",
+          "failure_reason": "",
+          "model": "ISR4321",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "layer3-probe",
+          "raw_summary": "IPv4 interface configured through configureIosDevice, read back through registered IOS show, and cleared successfully.",
+          "status": "supported",
+          "verification_method": "cli_plus_readback",
+          "verified": true
+        },
+        {
+          "capability": "model_exists",
+          "configured": false,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4321",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verified",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+            "inventory_restored": true,
+            "isolation_level": "shared_device",
+            "mutations": [
+              "temporary-device-attempt:ISR4321",
+              "temporary-device:ISR4321"
+            ],
+            "probe_fingerprint": "eac1cd856a67c63b6e638941cc31aa048b77eeae78593e0f105de1f3378ff89d",
+            "probe_id": "model-exists",
+            "probe_version": "1",
+            "result_status": "supported"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "packet_tracer_runtime",
+          "execution_status": "verified",
+          "failure_reason": "",
+          "model": "ISR4321",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "model-exists",
+          "raw_summary": "Device created and read back.",
+          "status": "supported",
+          "verification_method": null,
+          "verified": true
+        },
+        {
+          "capability": "port_inventory",
+          "configured": false,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4321",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verified",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+            "inventory_restored": true,
+            "isolation_level": "shared_device",
+            "mutations": [
+              "temporary-device-attempt:ISR4321",
+              "temporary-device:ISR4321"
+            ],
+            "probe_fingerprint": "dada29956f8f29ba589eadc9c360e5a84c7da228be85281116a1f64a16a4f99d",
+            "probe_id": "port-inventory",
+            "probe_version": "1",
+            "result_status": "supported"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "packet_tracer_runtime",
+          "execution_status": "verified",
+          "failure_reason": "",
+          "model": "ISR4321",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "port-inventory",
+          "raw_summary": "2 port(s) observed.",
+          "status": "supported",
+          "verification_method": null,
+          "verified": true
+        },
+        {
+          "capability": "supports_cme",
+          "configured": true,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4321",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verify_failed",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+            "inventory_restored": true,
+            "isolation_level": "fresh_device_required",
+            "mutations": [
+              "configure:ISR4321:supports_cme",
+              "fresh-device-attempt:ISR4321:supports_cme",
+              "fresh-device:ISR4321:supports_cme",
+              "temporary-device-attempt:ISR4321",
+              "temporary-device:ISR4321"
+            ],
+            "probe_fingerprint": "6e93329a5b4d5f90908ee24c7cf8c47a976ff75c741c186736156d54ab70198e",
+            "probe_id": "cme-call-control",
+            "probe_version": "1",
+            "result_status": "unknown"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "controlled_probe",
+          "execution_status": "verify_failed",
+          "failure_reason": "`show ephone` produced no parseable row after the controlled CME configuration, so no registration read-back path exists.",
+          "model": "ISR4321",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "cme-call-control",
+          "raw_summary": "",
+          "status": "unknown",
+          "verification_method": null,
+          "verified": false
+        }
+      ],
+      "summary": {
+        "capabilities_checked": 5,
+        "cleanup_failed": [],
+        "cleanup_status": "clean",
+        "errors": 1,
+        "models": 1,
+        "packet_tracer_version": "9.0.1.0858",
+        "probe_session_id": "probe-811c19394c4f",
+        "snapshot_hash": "615a684881320a8e0f425ec879273ed016b60b5d4140b4b23514870500eec92e",
+        "supported": 4,
+        "unknown": 1,
+        "unsupported": 0
+      }
+    },
+    "ISR4331": {
+      "cached": false,
+      "cleanup_deleted": [
+        "__MCP_PROBE_5eb889a462f1_01_layer3-probe",
+        "__MCP_PROBE_5eb889a462f1_01_cme-call-control",
+        "__MCP_PROBE_5eb889a462f1_01"
+      ],
+      "cleanup_failed": [],
+      "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+      "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+      "inventory_restored": true,
+      "results": [
+        {
+          "capability": "configuration_channel",
+          "configured": false,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4331",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verified",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "inventory_restored": true,
+            "isolation_level": "shared_device",
+            "mutations": [
+              "temporary-device-attempt:ISR4331",
+              "temporary-device:ISR4331"
+            ],
+            "probe_fingerprint": "9e9d91f06f7b3b26e1fc40ff4171d47ed205a89b8dd942c666631a86a64bb7e9",
+            "probe_id": "configuration-channel",
+            "probe_version": "1",
+            "result_status": "supported"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "packet_tracer_runtime",
+          "execution_status": "verified",
+          "failure_reason": "",
+          "model": "ISR4331",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "configuration-channel",
+          "raw_summary": "Official configureIosDevice channel available after 1 readiness check(s); independent terminal observation is deferred to IOS/PC probes.",
+          "status": "supported",
+          "verification_method": "direct_runtime_api",
+          "verified": true
+        },
+        {
+          "capability": "layer3",
+          "configured": true,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4331",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verified",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "inventory_restored": true,
+            "isolation_level": "fresh_device_required",
+            "mutations": [
+              "configure:ISR4331:layer3",
+              "fresh-device-attempt:ISR4331:layer3",
+              "fresh-device:ISR4331:layer3",
+              "temporary-device-attempt:ISR4331",
+              "temporary-device:ISR4331"
+            ],
+            "probe_fingerprint": "f5da51f242025b5961661655487ba4cb145b7d6e65b2e21a090847805c90fc93",
+            "probe_id": "layer3-probe",
+            "probe_version": "1",
+            "result_status": "supported"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "controlled_probe",
+          "execution_status": "verified",
+          "failure_reason": "",
+          "model": "ISR4331",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "layer3-probe",
+          "raw_summary": "IPv4 interface configured through configureIosDevice, read back through registered IOS show, and cleared successfully.",
+          "status": "supported",
+          "verification_method": "cli_plus_readback",
+          "verified": true
+        },
+        {
+          "capability": "model_exists",
+          "configured": false,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4331",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verified",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "inventory_restored": true,
+            "isolation_level": "shared_device",
+            "mutations": [
+              "temporary-device-attempt:ISR4331",
+              "temporary-device:ISR4331"
+            ],
+            "probe_fingerprint": "bdb654d1f0b7c2e2782fe58f38e044497afc7ded23ce0aeb4cb3ff63275dd081",
+            "probe_id": "model-exists",
+            "probe_version": "1",
+            "result_status": "supported"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "packet_tracer_runtime",
+          "execution_status": "verified",
+          "failure_reason": "",
+          "model": "ISR4331",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "model-exists",
+          "raw_summary": "Device created and read back.",
+          "status": "supported",
+          "verification_method": null,
+          "verified": true
+        },
+        {
+          "capability": "port_inventory",
+          "configured": false,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4331",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verified",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "inventory_restored": true,
+            "isolation_level": "shared_device",
+            "mutations": [
+              "temporary-device-attempt:ISR4331",
+              "temporary-device:ISR4331"
+            ],
+            "probe_fingerprint": "ed9aeee072c297dbf0ffd93d5a3c0badebb787f76a3583ef93c4d79286440e19",
+            "probe_id": "port-inventory",
+            "probe_version": "1",
+            "result_status": "supported"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "packet_tracer_runtime",
+          "execution_status": "verified",
+          "failure_reason": "",
+          "model": "ISR4331",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "port-inventory",
+          "raw_summary": "3 port(s) observed.",
+          "status": "supported",
+          "verification_method": null,
+          "verified": true
+        },
+        {
+          "capability": "supports_cme",
+          "configured": true,
+          "context": {
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "cleanup_status": "clean",
+            "device_model": "ISR4331",
+            "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+            "execution_status": "verify_failed",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "inventory_restored": true,
+            "isolation_level": "fresh_device_required",
+            "mutations": [
+              "configure:ISR4331:supports_cme",
+              "fresh-device-attempt:ISR4331:supports_cme",
+              "fresh-device:ISR4331:supports_cme",
+              "temporary-device-attempt:ISR4331",
+              "temporary-device:ISR4331"
+            ],
+            "probe_fingerprint": "8c3522b910aa5cf7cd2e07c28714bf36e3a873fdfbd7f4b552ceadfc76662607",
+            "probe_id": "cme-call-control",
+            "probe_version": "1",
+            "result_status": "unknown"
+          },
+          "dimensions": {},
+          "duration_ms": 0,
+          "evidence_source": "controlled_probe",
+          "execution_status": "verify_failed",
+          "failure_reason": "`show ephone` produced no parseable row after the controlled CME configuration, so no registration read-back path exists.",
+          "model": "ISR4331",
+          "observed_value": null,
+          "packet_tracer_version": "9.0.1.0858",
+          "probe_id": "cme-call-control",
+          "raw_summary": "",
+          "status": "unknown",
+          "verification_method": null,
+          "verified": false
+        }
+      ],
+      "summary": {
+        "capabilities_checked": 5,
+        "cleanup_failed": [],
+        "cleanup_status": "clean",
+        "errors": 1,
+        "models": 1,
+        "packet_tracer_version": "9.0.1.0858",
+        "probe_session_id": "probe-5eb889a462f1",
+        "snapshot_hash": "0f905f76b5bca159a5f650fb81ce9a7e3987ab8a6f4176b6d1ec9acb989e1256",
+        "supported": 4,
+        "unknown": 1,
+        "unsupported": 0
+      }
+    }
+  },
+  "package_file": "C:\\Users\\Andres\\mpc-muejeje\\src\\packet_tracer_mcp\\__init__.py",
+  "python_executable": "C:\\Users\\Andres\\mpc-muejeje\\.venv\\Scripts\\python.exe",
+  "schema": "cp-scale-cme-model-capability-live-v1",
+  "source_head": "f885b743dce2584e06920b5f8ff819d862350c59",
+  "started_at": "2026-09-01T12:52:08.981243+00:00"
+}
