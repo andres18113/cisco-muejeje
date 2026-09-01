@@ -876,6 +876,23 @@ Router#"""
     assert not rows[1].registered and rows[1].line_state == "DOWN"
 
 
+def test_parse_show_ephone_accepts_indented_ip_at_a_pager_boundary():
+    output = """show ephone
+ephone-7 Mac:0002.17D1.2C96 TCP socket:[1] activeLine:0 REGISTERED in SCCP ver 12 and Server in ver 8
+mediaActive:0 offhook:0 ringing:0
+  IP:172.16.20.2 1025 7960 keepalive 43 max_line 2
+ button 1: dn 7 number 3007 CH1 IDLE
+Router#"""
+
+    rows = parse_show_ephone(output)
+
+    assert len(rows) == 1
+    assert rows[0].index == 7
+    assert rows[0].extension == "3007"
+    assert rows[0].ip_address == "172.16.20.2"
+    assert rows[0].registered
+
+
 def test_privileged_ephone_query_enters_enable_and_restores_user_exec():
     sent = []
     output = (

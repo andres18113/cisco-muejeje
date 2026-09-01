@@ -62,7 +62,10 @@ def test_adapter_applies_only_typed_voice_actions_and_escapes_device_names():
 
     assert all(item.applied for item in results)
     assert any("getMacAddress" in item for item in captured)
-    assert any("configureIosDevice" in item for item in captured)
+    configured = [
+        item for item in captured if "configureIosDevice" in item
+    ]
+    assert len(configured) == len(bindings)
     assert any('"HQ-R1"' in item for item in captured)
     assert any("mac-address 0011.2233.4455" in item for item in captured)
     diagnostics = runtime.drain_diagnostic_evidence()

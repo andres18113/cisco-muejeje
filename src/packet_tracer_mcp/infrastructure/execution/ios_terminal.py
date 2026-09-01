@@ -793,7 +793,7 @@ def parse_show_ephone(value: str) -> list[EphoneStatusRow]:
     for position, match in enumerate(starts):
         end = starts[position + 1].start() if position + 1 < len(starts) else len(normalized)
         block = normalized[match.start():end]
-        ip_match = re.search(r"(?m)^IP:(?P<ip>\S+)", block)
+        ip_match = re.search(r"(?m)^\s*IP:(?P<ip>\S+)", block)
         line_match = re.search(
             r"(?m)^\s*button\s+\d+:\s+dn\s+\d+\s+number\s+"
             r"(?P<extension>\d+)\s+CH\d+\s+(?P<state>\S+)",

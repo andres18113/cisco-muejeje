@@ -55,15 +55,26 @@ class PacketTracerVoiceRenderer:
         batches = []
         for phase in sorted(grouped):
             phase_actions = sorted(grouped[phase], key=lambda item: item.id)
-            body = self._render_body(phase_actions, phone_macs)
-            if not body:
-                continue
-            payload = "\n".join(["enable", "configure terminal", *body, "end", "write memory"])
-            batches.append(RenderedVoiceBatch(
-                device_name=device_name, phase=phase,
-                action_ids=[item.id for item in phase_actions], ios_payload=payload,
-                js_call=build_configure_ios_call(device_name, payload),
-            ))
+            action_groups = (
+                [[item] for item in phase_actions]
+                if phase is VoicePhase.PHONE_BINDINGS
+                else [phase_actions]
+            )
+            for action_group in action_groups:
+                body = self._render_body(action_group, phone_macs)
+                if not body:
+                    continue
+                payload = "\n".join([
+                    "enable", "configure terminal", *body,
+                    "end", "write memory",
+                ])
+                batches.append(RenderedVoiceBatch(
+                    device_name=device_name,
+                    phase=phase,
+                    action_ids=[item.id for item in action_group],
+                    ios_payload=payload,
+                    js_call=build_configure_ios_call(device_name, payload),
+                ))
         return batches
 
     def _render_body(self, actions, phone_macs):

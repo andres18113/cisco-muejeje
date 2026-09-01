@@ -499,6 +499,23 @@ def test_trusted_renderer_translates_only_typed_actions_and_runtime_mac():
     assert "option 150 ip 198.18.170.1" in payload
     assert "create cnf-files" in payload
     assert "configureIosDevice" in batches[0].js_call
+    bindings = [
+        item for item in plan.actions
+        if isinstance(item, BindPhoneToExtension)
+    ]
+    binding_batches = [
+        item for item in batches
+        if item.phase is VoicePhase.PHONE_BINDINGS
+    ]
+    assert len(binding_batches) == len(bindings)
+    assert all(len(item.action_ids) == 1 for item in binding_batches)
+    assert all(
+        sum(
+            line.startswith("ephone ")
+            for line in item.ios_payload.splitlines()
+        ) == 1
+        for item in binding_batches
+    )
 
 
 def test_renderer_preserves_qualified_site_capacity_above_historical_42():
