@@ -7,9 +7,15 @@ from collections import Counter
 from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
     compile_enterprise_topology,
 )
+from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    compose_cp_scale_canonical,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwarePlanStatus,
     PortClass,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+    EnableCallControl,
 )
 from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import cp_scale_intent
 from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
@@ -59,6 +65,51 @@ def _compile():
         physical.cable_for,
     )
     return designed.plan, hardware, compiled
+
+
+def test_cme_capacity_rebalance_preserves_final_topology_and_phone_total():
+    design = cp_scale_physical_design()
+    phone_bindings = {
+        site.site_id: [
+            item for item in site.endpoint_bindings
+            if "/ip_phone/" in item.endpoint_id
+        ]
+        for site in design.sites
+    }
+
+    assert {
+        site_id: len(bindings)
+        for site_id, bindings in phone_bindings.items()
+    } == {
+        "large-branch": 42,
+        "multilayer-branch": 20,
+        "small-branch": 7,
+    }
+    assert sum(
+        item.device_id == "sw-acc-large-branch-zone-d-02"
+        for item in phone_bindings["large-branch"]
+    ) == 4
+    assert sum(
+        item.device_id == "sw-acc-multilayer-branch-mls3-01"
+        for item in phone_bindings["multilayer-branch"]
+    ) == 11
+
+    composition = compose_cp_scale_canonical(
+        packet_tracer_version=MEASURED_BACKEND_VERSION,
+    )
+    assert composition.valid
+    assert len(composition.topology.devices) == 314
+    assert len(composition.topology.links) == 219
+    assert sum(item.model == "7960" for item in composition.topology.devices) == 69
+    assert {
+        item.host_device_name: item.max_phones
+        for item in composition.voice.actions
+        if isinstance(item, EnableCallControl)
+    } == {
+        "Router4": 42,
+        "Router0": 20,
+        "Router3": 7,
+    }
 
 
 def test_canonical_hardware_uses_the_exact_18_network_devices_and_modules():

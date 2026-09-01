@@ -13,16 +13,23 @@ Correcciones que deben considerarse definitivas dentro de esta documentación:
 
 ```text
 MLS3:
-  teléfonos físicos = 2
-  no 3
+  teléfonos físicos = 11
+  2 con PC passthrough + 9 directos reasignados
 
 TOTAL ENDPOINTS:
   279
   no 280
 
 RAMA ROUTER0:
-  41 endpoints
-  no 42
+  50 endpoints
+
+RAMA ROUTER4:
+  208 endpoints
+  42 teléfonos
+
+CME-OBS-001:
+  9 teléfonos reasignados de Switch1 a MLS3
+  total global preservado = 279 endpoints / 69 teléfonos
 ```
 
 También se preservan los modelos observados posteriormente por CDP:
@@ -67,8 +74,8 @@ La red tiene tres routers Cisco 2811 formando un triángulo WAN y tres ramas LAN
 Resumen por rama:
 
 ```text
-Router4 → Switch10 → 4 bloques de acceso → 217 endpoints
-Router0 → MLS7     → 4 switches secundarios → 41 endpoints
+Router4 → Switch10 → 4 bloques de acceso → 208 endpoints
+Router0 → MLS7     → 4 switches secundarios → 50 endpoints
 Router3 → Switch3  → acceso directo/APs → 21 endpoints
 
 TOTAL = 279 endpoints
@@ -406,7 +413,7 @@ AP8
 
 ---
 
-## 6.2 Bloque B — 51 endpoints
+## 6.2 Bloque B — 42 endpoints
 
 Infraestructura:
 
@@ -426,7 +433,7 @@ Diagrama:
                     |         |         |
                   20 PCs     AP12     Switch1
                               |       /   |    \
-                         4 Webcams 13 Phones AP13 AP14
+                         4 Webcams  4 Phones AP13 AP14
                                              |    |
                                          8 Smoke 4 Motion
 
@@ -438,12 +445,12 @@ Inventario:
 | Tipo | Cantidad |
 |---|---:|
 | PC-PT | 20 |
-| Cisco 7960 | 13 |
+| Cisco 7960 | 4 |
 | Printer-PT | 2 |
 | Webcam IoT | 4 |
 | Smoke Detector | 8 |
 | Motion Detector | 4 |
-| **Total** | **51** |
+| **Total** | **42** |
 
 Puertos:
 
@@ -459,7 +466,7 @@ Gi0/2         → Switch1
 Switch1:
 
 ```text
-Fa0/1-Fa0/13 → 13 teléfonos  (alimentados)
+Fa0/1-Fa0/4  → 4 teléfonos  (alimentados)
 Gi0/1        → Switch0
 ```
 
@@ -487,9 +494,9 @@ AP14
 ```text
 Piso 1  = 65
 Piso 2  = 53
-Piso 3  = 99
+Piso 3  = 90
 ----------------
-TOTAL   = 217 endpoints
+TOTAL   = 208 endpoints
 ```
 
 Por tipo:
@@ -497,17 +504,17 @@ Por tipo:
 | Tipo | Cantidad |
 |---|---:|
 | PCs | 86 |
-| Teléfonos | 51 |
+| Teléfonos | 42 |
 | Impresoras | 8 |
 | Webcams | 16 |
 | Smoke Detectors | 38 |
 | Motion Detectors | 16 |
 | Humiture Monitors | 2 |
-| **Total** | **217** |
+| **Total** | **208** |
 
 ---
 
-# 8. Rama física Router0 — 41 endpoints
+# 8. Rama física Router0 — 50 endpoints
 
 ## 8.1 Distribución
 
@@ -551,12 +558,12 @@ MLS6 → Cisco 3560
 
 ---
 
-# 9. MLS3 — 8 endpoints
+# 9. MLS3 — 17 endpoints
 
 Inventario físico corregido:
 
 ```text
-2 Cisco 7960
+11 Cisco 7960
 2 PC-PT
 AP9
   ├── 2 Motion Detector
@@ -567,7 +574,7 @@ AP9
 Total:
 
 ```text
-2 + 2 + 4 = 8 endpoints
+11 + 2 + 4 = 17 endpoints
 ```
 
 Diagrama:
@@ -577,6 +584,7 @@ Diagrama:
                     ┌────────┼────────┐
                     |        |        |
                 Phone+PC Phone+PC    AP9
+                    + 9 teléfonos directos
                                       |
                            ┌──────────┼──────────┐
                            |          |          |
@@ -591,6 +599,7 @@ Puertos confirmados:
 Gi1/0/2 → teléfono + PC
 Gi1/0/3 → teléfono + PC
 Gi1/0/4 → AP9
+Gi1/0/5-Gi1/0/13 → 9 teléfonos
 Gi1/0/1 → MLS7
 ```
 
@@ -783,8 +792,8 @@ cuál AP usa Gi0/2
 Por rama:
 
 ```text
-Router4 = 217
-Router0 = 41
+Router4 = 208
+Router0 = 50
 Router3 = 21
 ----------------
 TOTAL   = 279
@@ -908,7 +917,7 @@ TOTAL = 17 AccessPoint-PT
                       |      |       |      |     ├─ 6 PCs
                     MLS3   MLS6    MLS5   MLS4    ├─ 1 Laptop
                       |      |       |      |     ├─ 7 Phones
-                  8 ep.  15 ep.   8 ep. 10 ep.   ├─ AP0(1) → 3 Smoke
+                  17 ep. 15 ep.   8 ep. 10 ep.   ├─ AP0(1) → 3 Smoke
                                                  └─ AP2(1) → 3 Motion + 1 Temp
 
                                       Router4
@@ -922,7 +931,7 @@ TOTAL = 17 AccessPoint-PT
              |                           |                    |             |
           Switch5                     Switch7               Switch9       Switch1
              |                           |                    |             |
-         65 endpoints                 53 endpoints        48 endpoints   51 endpoints
+         65 endpoints                 53 endpoints        48 endpoints   42 endpoints
 ```
 
 ---
@@ -951,7 +960,8 @@ Router4, Router0, Router3:
   form WAN triangle
 ```
 
-No mover endpoints de una rama a otra al generar una configuración.
+No mover endpoints de una rama a otra fuera de la reasignación canónica de
+nueve teléfonos de Switch1 a MLS3 que resuelve `CME-OBS-001`.
 
 ---
 
@@ -1091,17 +1101,17 @@ BRANCH_ROUTER4:
       endpoints: 48
     Piso3B:
       switches: [Switch0, Switch1]
-      endpoints: 51
-  total_endpoints: 217
+      endpoints: 42
+  total_endpoints: 208
 
 BRANCH_ROUTER0:
   distribution: MLS7
   blocks:
-    MLS3: 8
+    MLS3: 17
     MLS4: 10
     MLS5: 8
     MLS6: 15
-  total_endpoints: 41
+  total_endpoints: 50
 
 BRANCH_ROUTER3:
   distribution: Switch3

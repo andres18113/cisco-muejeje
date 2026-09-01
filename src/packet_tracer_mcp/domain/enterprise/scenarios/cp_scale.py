@@ -43,7 +43,7 @@ CP_SCALE_WORKLOAD_COUNTS: dict[DeviceRole, int] = {
 CP_SCALE_SITE_WORKLOAD_COUNTS: dict[str, dict[DeviceRole, int]] = {
     "Large Branch": {
         DeviceRole.USER_PC: 86,
-        DeviceRole.IP_PHONE: 51,
+        DeviceRole.IP_PHONE: 42,
         DeviceRole.PRINTER: 8,
         DeviceRole.WEBCAM: 16,
         DeviceRole.SMOKE_DETECTOR: 38,
@@ -53,7 +53,7 @@ CP_SCALE_SITE_WORKLOAD_COUNTS: dict[str, dict[DeviceRole, int]] = {
     "Multilayer Branch": {
         DeviceRole.USER_PC: 12,
         DeviceRole.LAPTOP: 2,
-        DeviceRole.IP_PHONE: 11,
+        DeviceRole.IP_PHONE: 20,
         DeviceRole.WEBCAM: 10,
         DeviceRole.SMOKE_DETECTOR: 1,
         DeviceRole.MOTION_DETECTOR: 3,
@@ -235,7 +235,7 @@ def _large_branch(*, canonical: bool = True) -> SiteIntent:
                 _zone(
                     "Zone D",
                     [
-                        (DeviceRole.USER_PC, 20), (DeviceRole.IP_PHONE, 13),
+                        (DeviceRole.USER_PC, 20), (DeviceRole.IP_PHONE, 4),
                         (DeviceRole.PRINTER, 2), (DeviceRole.WEBCAM, 4),
                         (DeviceRole.SMOKE_DETECTOR, 8),
                         (DeviceRole.MOTION_DETECTOR, 4),
@@ -248,7 +248,7 @@ def _large_branch(*, canonical: bool = True) -> SiteIntent:
         address_block="172.16.0.0/16" if canonical else None,
         pair_pc_with_ip_phone=False if canonical else None,
         segments=(
-            _segments(16, data_hosts=86, voice_hosts=51, iot_hosts=92)
+            _segments(16, data_hosts=86, voice_hosts=42, iot_hosts=92)
             if canonical else []
         ),
         uplinks=[
@@ -280,7 +280,7 @@ def _multilayer_branch(*, canonical: bool = True) -> SiteIntent:
                 _zone(
                     "MLS3",
                     [
-                        (DeviceRole.USER_PC, 2), (DeviceRole.IP_PHONE, 2),
+                        (DeviceRole.USER_PC, 2), (DeviceRole.IP_PHONE, 11),
                         (DeviceRole.WEBCAM, 1), (DeviceRole.MOTION_DETECTOR, 2),
                         (DeviceRole.TEMPERATURE_MONITOR, 1),
                     ],
@@ -317,7 +317,7 @@ def _multilayer_branch(*, canonical: bool = True) -> SiteIntent:
         address_block="172.18.0.0/16" if canonical else None,
         pair_pc_with_ip_phone=True,
         segments=(
-            _segments(18, data_hosts=14, voice_hosts=11, iot_hosts=19)
+            _segments(18, data_hosts=14, voice_hosts=20, iot_hosts=19)
             if canonical else []
         ),
         uplinks=[
@@ -433,7 +433,7 @@ def cp_scale_intent_for(point: CPScalePoint) -> EnterpriseIntent:
         "workload_endpoints": {
             CPScalePoint.A: "65",
             CPScalePoint.B: "118",
-            CPScalePoint.C: "217",
+            CPScalePoint.C: "208",
         }[point],
         "access_points": {
             CPScalePoint.A: "3",

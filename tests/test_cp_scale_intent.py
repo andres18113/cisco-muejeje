@@ -83,7 +83,7 @@ def test_scale_points_are_monotonic_slices_of_the_one_canonical_intent():
     expected = {
         CPScalePoint.A: (65, 3, 1),
         CPScalePoint.B: (118, 6, 1),
-        CPScalePoint.C: (217, 12, 1),
+        CPScalePoint.C: (208, 12, 1),
         CPScalePoint.D: (279, 17, 3),
     }
 

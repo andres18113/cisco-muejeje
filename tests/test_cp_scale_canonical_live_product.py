@@ -143,7 +143,7 @@ def test_canonical_live_stages_are_exact_monotonic_physical_closures():
         CPScaleCanonicalStage.ROUTER4_SWITCH10: (4, 4),
         CPScaleCanonicalStage.FLOOR1: (74, 55),
         CPScaleCanonicalStage.FLOOR2: (132, 96),
-        CPScaleCanonicalStage.FLOOR3: (241, 169),
+        CPScaleCanonicalStage.FLOOR3: (232, 160),
         CPScaleCanonicalStage.ROUTER0_BRANCH: (290, 202),
         CPScaleCanonicalStage.ROUTER3_BRANCH: (314, 219),
         CPScaleCanonicalStage.REMAINING: (314, 219),
@@ -153,7 +153,7 @@ def test_canonical_live_stages_are_exact_monotonic_physical_closures():
         CPScaleCanonicalStage.ROUTER4_SWITCH10: (0, 0),
         CPScaleCanonicalStage.FLOOR1: (65, 3),
         CPScaleCanonicalStage.FLOOR2: (118, 6),
-        CPScaleCanonicalStage.FLOOR3: (217, 12),
+        CPScaleCanonicalStage.FLOOR3: (208, 12),
         CPScaleCanonicalStage.ROUTER0_BRANCH: (258, 15),
         CPScaleCanonicalStage.ROUTER3_BRANCH: (279, 17),
         CPScaleCanonicalStage.REMAINING: (279, 17),
@@ -181,12 +181,12 @@ def test_canonical_live_stages_are_exact_monotonic_physical_closures():
             "distribution_uplink": 1, "access_uplink": 1, "endpoint_access": 39,
         }),
         CPScaleCanonicalStage.FLOOR3: Counter({
-            "distribution_uplink": 2, "access_uplink": 2, "endpoint_access": 69,
+            "distribution_uplink": 2, "access_uplink": 2, "endpoint_access": 60,
         }),
         CPScaleCanonicalStage.ROUTER0_BRANCH: Counter({
             "edge_link": 1,
             "distribution_uplink": 4,
-            "endpoint_access": 26,
+            "endpoint_access": 35,
             "phone_passthrough": 2,
         }),
         CPScaleCanonicalStage.ROUTER3_BRANCH: Counter({
@@ -364,8 +364,8 @@ def test_every_post_core_delta_is_exact_closed_and_module_free():
         CPScaleCanonicalStage.ROUTER4_SWITCH10: (2, 1),
         CPScaleCanonicalStage.FLOOR1: (71, 51),
         CPScaleCanonicalStage.FLOOR2: (59, 41),
-        CPScaleCanonicalStage.FLOOR3: (110, 73),
-        CPScaleCanonicalStage.ROUTER0_BRANCH: (50, 33),
+        CPScaleCanonicalStage.FLOOR3: (101, 64),
+        CPScaleCanonicalStage.ROUTER0_BRANCH: (59, 42),
         CPScaleCanonicalStage.ROUTER3_BRANCH: (25, 17),
         CPScaleCanonicalStage.REMAINING: (0, 0),
     }
@@ -435,8 +435,8 @@ def test_every_control_plane_stage_mutates_only_new_actions():
         CPScaleCanonicalStage.ROUTER4_SWITCH10: (3, 0, 3),
         CPScaleCanonicalStage.FLOOR1: (3, 0, 3),
         CPScaleCanonicalStage.FLOOR2: (3, 0, 3),
-        CPScaleCanonicalStage.FLOOR3: (169, 166, 3),
-        CPScaleCanonicalStage.ROUTER0_BRANCH: (200, 31, 169),
+        CPScaleCanonicalStage.FLOOR3: (160, 157, 3),
+        CPScaleCanonicalStage.ROUTER0_BRANCH: (200, 40, 160),
         CPScaleCanonicalStage.ROUTER3_BRANCH: (217, 17, 200),
     }
     previous = project_cp_scale_canonical_stage(
@@ -524,8 +524,8 @@ def test_every_later_voice_stage_has_an_exact_bounded_mutation_delta():
     )
     expected = {
         CPScaleCanonicalStage.FLOOR2: (75, 29, 46),
-        CPScaleCanonicalStage.FLOOR3: (107, 33, 74),
-        CPScaleCanonicalStage.ROUTER0_BRANCH: (134, 27, 107),
+        CPScaleCanonicalStage.FLOOR3: (89, 15, 74),
+        CPScaleCanonicalStage.ROUTER0_BRANCH: (134, 45, 89),
         CPScaleCanonicalStage.ROUTER3_BRANCH: (153, 19, 134),
     }
     previous = project_cp_scale_canonical_stage(

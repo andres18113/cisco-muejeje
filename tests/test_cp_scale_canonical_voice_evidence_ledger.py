@@ -991,8 +991,14 @@ def test_all_eight_groups_exist_but_only_floor1_was_reached(
 
     assert len(keyed) == 8
     assert set(keyed) == set(expected_groups)
+    rebalanced = {("Switch1", 20), ("MLS3", 20)}
     for key, expected_interfaces in expected_groups.items():
-        assert keyed[key]["expected_interfaces"] == expected_interfaces
+        if key not in rebalanced:
+            assert keyed[key]["expected_interfaces"] == expected_interfaces
+    assert len(keyed[("Switch1", 20)]["expected_interfaces"]) == 13
+    assert len(expected_groups[("Switch1", 20)]) == 4
+    assert len(keyed[("MLS3", 20)]["expected_interfaces"]) == 2
+    assert len(expected_groups[("MLS3", 20)]) == 11
     verified = keyed[("Switch5", 20)]
     assert verified["status"] == "VERIFIED"
     assert verified["verified_fwd_interfaces"] == verified["expected_interfaces"]
@@ -1031,8 +1037,19 @@ def test_exact_48_phone_complement_is_not_promoted_to_unobservable(
     }
 
     assert len(expected) == len(retained) == 48
-    assert set(retained) == set(expected)
-    for phone_id, facts in expected.items():
+    historical_only = set(retained) - set(expected)
+    current_only = set(expected) - set(retained)
+    assert historical_only == {
+        f"endpoint/large-branch/campus/floor-3/zone-d/ip_phone/{index:03d}"
+        for index in range(5, 14)
+    }
+    assert current_only == {
+        f"endpoint/multilayer-branch/multilayer-campus/access/"
+        f"mls3/ip_phone/{index:03d}"
+        for index in range(3, 12)
+    }
+    for phone_id in set(expected) & set(retained):
+        facts = expected[phone_id]
         item = retained[phone_id]
         assert {key: item[key] for key in facts} == facts
         assert item["ipv4"] is None
@@ -1161,7 +1178,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "EXISTING_2811_CME_PHONE_REBALANCE_IMPLEMENTATION_PENDING"
+        "EXISTING_2811_CME_PHONE_REBALANCE_IMPLEMENTED_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -1189,5 +1206,5 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "REFRESH_FWD_9_OF_9 | EXTENSION_NOT_ENGAGED"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR2_VERIFIED_35_OF_35 | FLOOR3_CAPACITY_REBALANCE_REQUIRED"
+        "FLOOR2_VERIFIED_35_OF_35 | FLOOR3_CAPACITY_REBALANCE_LIVE_PENDING"
     )

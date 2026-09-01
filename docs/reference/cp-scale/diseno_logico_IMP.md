@@ -234,18 +234,18 @@ max-dn:      42
 Inventario físico de su rama:
 
 ```text
-51 teléfonos
+42 teléfonos
 ```
 
 Estado:
 
 ```text
-DEFECTO / OBSERVACIÓN:
-51 teléfonos físicos > 42 ephones configurables.
-Diferencia = 9.
+CORREGIDO:
+42 teléfonos físicos = 42 ephones configurables.
+9 teléfonos reasignados a la rama Router0.
 ```
 
-No asumir que los 51 pueden registrarse simultáneamente hasta resolver esta diferencia.
+La capacidad y el inventario de Router4 ahora coinciden.
 
 ## Router3
 
@@ -272,18 +272,19 @@ CONFIRMADO: capacidad e inventario coinciden.
 
 ```text
 CME address: 172.18.20.1:2000
-max-ephones: 12
-max-dn:      12
-extensiones: 901-912
+max-ephones: 20
+max-dn:      20
+extensiones: 901-920
 ```
 
 Inventario físico corregido:
 
 ```text
-11 teléfonos
+20 teléfonos
 ```
 
-La entrada adicional es capacidad/configuración disponible, no un teléfono físico faltante.
+Nueve teléfonos proceden de la reasignación canónica de capacidad desde
+Router4; todos permanecen dentro de la VLAN VOICE de su nueva rama.
 
 ---
 
@@ -707,8 +708,10 @@ R0-R4 tiene direccionamiento /30 incorrecto.
 ROUTING-OBS-001
 No hay routing inter-router confirmado entre 172.16/172.17/172.18.
 
-CME-OBS-001
-Router4: 51 teléfonos físicos frente a max-ephones 42.
+CME-OBS-001 — CORREGIDO
+Router4: 42 teléfonos / capacidad 42.
+Router0: 20 teléfonos / capacidad 20.
+Router3: 7 teléfonos / capacidad 7.
 
 TRUNK-OBS-001
 MLS5/MLS6 usan DTP auto y permiten localmente 1-1005;
@@ -730,7 +733,7 @@ La documentación no determina de forma inequívoca:
 - AP exacto en `Gi0/1` vs `Gi0/2` en Switch3;
 - puertos exactos individuales de ciertos grupos IoT;
 - routing L3 activo en multilayer switches;
-- un registro CME funcional para los 51 teléfonos de Router4;
+- un registro CME funcional fuera de las capacidades corregidas 42/20/7;
 - servicios de Data Center distintos de los endpoints ya inventariados;
 - QoS, ACL, Port Security o aislamiento IoT global, salvo donde exista evidencia específica fuera de este documento.
 
@@ -750,7 +753,7 @@ ROUTERS:
     GATEWAYS: .1
     DISTRIBUTION: Switch10
     STP_ROOT: Switch8
-    PHYSICAL_ENDPOINTS: 217
+    PHYSICAL_ENDPOINTS: 208
 
   Router3:
     LAN_PREFIX: 172.17
@@ -770,7 +773,7 @@ ROUTERS:
     GATEWAYS: .1
     DISTRIBUTION: MLS7
     STP_ROOT: MLS3
-    PHYSICAL_ENDPOINTS: 41
+    PHYSICAL_ENDPOINTS: 50
 
 VLAN:
   10: DATA

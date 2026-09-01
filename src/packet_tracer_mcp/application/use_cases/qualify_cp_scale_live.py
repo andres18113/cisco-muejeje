@@ -79,7 +79,7 @@ EXPECTED_UPSTREAM = "personal/feature/runtime-ripv2"
 _POINT_COUNTS = {
     CPScalePoint.A: (65, 3),
     CPScalePoint.B: (118, 6),
-    CPScalePoint.C: (217, 12),
+    CPScalePoint.C: (208, 12),
     CPScalePoint.D: (279, 17),
 }
 

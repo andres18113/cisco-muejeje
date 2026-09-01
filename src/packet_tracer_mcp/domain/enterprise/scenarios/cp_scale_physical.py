@@ -220,7 +220,7 @@ def _large_bindings() -> list[EndpointPortBinding]:
 
         *_range(SW0, "FastEthernet0/", 1, ZD, DeviceRole.USER_PC, 1, 20, "FastEthernet0"),
         _binding(SW0, "FastEthernet0/21", ZD, DeviceRole.ACCESS_POINT, 1, "Port 0"),
-        *_range(SW1, "FastEthernet0/", 1, ZD, DeviceRole.IP_PHONE, 1, 13, "Switch"),
+        *_range(SW1, "FastEthernet0/", 1, ZD, DeviceRole.IP_PHONE, 1, 4, "Switch"),
         _binding(SW1, "FastEthernet0/14", ZD, DeviceRole.ACCESS_POINT, 2, "Port 0", provenance="implementation_allocation"),
         _binding(SW1, "FastEthernet0/15", ZD, DeviceRole.ACCESS_POINT, 3, "Port 0", provenance="implementation_allocation"),
         _binding(SW1, "FastEthernet0/22", ZD, DeviceRole.PRINTER, 1, "FastEthernet0", provenance="implementation_allocation"),
@@ -233,6 +233,7 @@ def _multilayer_bindings() -> list[EndpointPortBinding]:
         _binding(MLS3, "GigabitEthernet1/0/2", M3, DeviceRole.IP_PHONE, 1, "Switch"),
         _binding(MLS3, "GigabitEthernet1/0/3", M3, DeviceRole.IP_PHONE, 2, "Switch"),
         _binding(MLS3, "GigabitEthernet1/0/4", M3, DeviceRole.ACCESS_POINT, 1, "Port 0"),
+        *_range(MLS3, "GigabitEthernet1/0/", 5, M3, DeviceRole.IP_PHONE, 3, 9, "Switch"),
         _binding(MLS4, "GigabitEthernet1/0/2", M4, DeviceRole.IP_PHONE, 1, "Switch"),
         _binding(MLS4, "GigabitEthernet1/0/3", M4, DeviceRole.ACCESS_POINT, 1, "Port 0"),
         *_range(MLS5, "FastEthernet0/", 1, M5, DeviceRole.IP_PHONE, 1, 8, "Switch"),
@@ -289,7 +290,7 @@ def cp_scale_physical_design() -> PhysicalDesignSpec:
             _block(LARGE, Z1, [SW4, SW5], 49, 24),
             _block(LARGE, Z2, [SW6, SW7], 39, 17),
             _block(LARGE, ZC, [SW8, SW9], 31, 6),
-            _block(LARGE, ZD, [SW0, SW1], 38, 16),
+            _block(LARGE, ZD, [SW0, SW1], 29, 7),
         ],
         endpoint_bindings=_large_bindings(),
         resiliency=ResiliencyLevel.BASIC,
@@ -317,7 +318,7 @@ def cp_scale_physical_design() -> PhysicalDesignSpec:
             _link(MLS7, "GigabitEthernet1/0/4", MLS4, "GigabitEthernet1/0/1", LinkRole.DISTRIBUTION_LINK),
         ],
         access_blocks=[
-            _block(MULTILAYER, M3, [MLS3], 3, 3),
+            _block(MULTILAYER, M3, [MLS3], 12, 12),
             _block(MULTILAYER, M4, [MLS4], 2, 2),
             _block(MULTILAYER, M5, [MLS5], 8, 8),
             _block(MULTILAYER, M6, [MLS6], 13, 1),
@@ -430,7 +431,7 @@ _CANONICAL_CALL_CONTROL = {
 #: service limits, not counts inferred from whichever stage is currently built.
 _CANONICAL_CALL_CONTROL_CAPACITY = {
     R4: 42,
-    R0: 12,
+    R0: 20,
     R3: 7,
 }
 #: Extension ranges are per branch and never overlap, so an extension alone

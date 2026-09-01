@@ -99,8 +99,8 @@ def test_offline_qualification_covers_existing_scope_without_protocol_expansion(
         for item in voice.actions_of_type(VoiceActionType.ENABLE_CALL_CONTROL)
     }
     assert capacity == {
-        "large-branch": 51,
-        "multilayer-branch": 11,
+        "large-branch": 42,
+        "multilayer-branch": 20,
         "small-branch": 7,
     }
     assert len(voice.actions_of_type(

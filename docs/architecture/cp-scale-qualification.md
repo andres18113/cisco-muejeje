@@ -13,10 +13,11 @@ EnterpriseIntent -> EnterpriseDesigner -> IPAM / Capacity
 
 ## Historical reference inputs
 
-The following documents are immutable workload inputs. They record a historical
-Packet Tracer topology and its observed logical design; they are not product
-authority and do not override typed models, catalog evidence, validation rules,
-or runtime observations.
+The following documents were admitted as immutable workload snapshots at the
+hashes below. Their tracked copies now also record explicitly governed
+corrections proven necessary by later runtime evidence; the corrected hashes
+are pinned in `handoff.md`. Neither form overrides typed models, catalog
+evidence, validation rules, or runtime observations.
 
 | Reference | SHA-256 at admission |
 | --- | --- |
@@ -79,7 +80,7 @@ The live progression is monotonic and derived from the same canonical intent:
 | --- | --- |
 | A | First large-branch zone: 65 endpoints plus derived infrastructure |
 | B | First two large-branch zones: 118 endpoints plus infrastructure |
-| C | Complete large branch: 217 endpoints plus infrastructure |
+| C | Complete large branch: 208 endpoints plus infrastructure |
 | D | Complete three-site enterprise: 279 endpoints plus infrastructure |
 
 Every live mutation requires the checkout-local interpreter/import isolation
