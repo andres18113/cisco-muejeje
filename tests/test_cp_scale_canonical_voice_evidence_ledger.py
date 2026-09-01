@@ -68,6 +68,9 @@ CAPACITY_RUN_IDENTITY = (
 GOVERNED_CAPACITY_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T041940173800Z-b777036b925b"
 )
+TERMINAL_DIAGNOSTIC_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T043604861347Z-86603be911bf"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -87,7 +90,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 12
+    assert len(ledger["runs"]) == 13
     return ledger["runs"][0]
 
 
@@ -144,6 +147,11 @@ def capacity_run(ledger: dict) -> dict:
 @pytest.fixture(scope="module")
 def latest_run(ledger: dict) -> dict:
     return ledger["runs"][11]
+
+
+@pytest.fixture(scope="module")
+def terminal_diagnostic_run(ledger: dict) -> dict:
+    return ledger["runs"][12]
 
 
 @pytest.fixture(scope="module")
@@ -503,6 +511,38 @@ def test_governed_capacity_is_refuted_for_ordinal_loss(latest_run: dict):
     )
 
 
+def test_terminal_diagnostic_confirms_pager_header_parser_cause(
+    terminal_diagnostic_run: dict,
+):
+    assert (
+        terminal_diagnostic_run["run_identity"]
+        == TERMINAL_DIAGNOSTIC_RUN_IDENTITY
+    )
+    experiment = terminal_diagnostic_run["measured"][
+        "pager_boundary_parser_divergence"
+    ]
+    assert experiment["binding_ordinal"] == 19
+    assert experiment["directory_index"] == 19
+    assert experiment["initial_readback_complete"] is True
+    assert experiment["raw_row_present"] is True
+    assert experiment["raw_header_leading_spaces"] == 1
+    assert experiment["parser_row_present"] is False
+    assert experiment["later_raw_table_indices"] == list(range(1, 22))
+    assert experiment["result"] == "EPHONE_HEADER_PARSER_CAUSE_CONFIRMED"
+    assert (
+        terminal_diagnostic_run["conclusion"]["failure_classification"]
+        == "OBSERVER"
+    )
+    assert (
+        terminal_diagnostic_run["conclusion"]["ordinal_19_product_loss"]
+        == "REFUTED"
+    )
+    for artifact in terminal_diagnostic_run["artifacts"]:
+        path = ROOT / artifact["path"]
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+
+
 def test_immutable_canonical_evidence_is_never_text_normalized():
     attributes = GITATTRIBUTES.read_text(encoding="utf-8").splitlines()
 
@@ -717,23 +757,23 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_TWELVE_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "12"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_THIRTEEN_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "13"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "1"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
-        "VOICE_BOOTSTRAP_BINDING_READBACK"
+        "VOICE_BOOTSTRAP_BINDING_PARSER"
     )
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "48"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
-        "VOICE_BOOTSTRAP_BINDING_READBACK"
+        "VOICE_BOOTSTRAP_BINDING_PARSER"
     )
     assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == (
-        "PRODUCT"
+        "OBSERVER"
     )
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "BINDING_TERMINAL_DIAGNOSTIC_LIVE_PENDING"
+        "EPHONE_HEADER_INDENTATION_FIX_READY_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -757,8 +797,8 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "CANDIDATE_IMPLEMENTED_CAUSAL_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_CAUSAL_LIVE"] == (
-        "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_SCCP"
+        "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_VOICE_OBSERVER"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR1_ORDINAL_BINDING_LOSS_BLOCKS_FLOOR2"
+        "FLOOR1_EPHONE_HEADER_OBSERVER_FIX_PENDING_LIVE"
     )

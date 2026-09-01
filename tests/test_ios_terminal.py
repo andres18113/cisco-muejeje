@@ -893,6 +893,23 @@ Router#"""
     assert rows[0].registered
 
 
+def test_parse_show_ephone_accepts_indented_header_at_a_pager_boundary():
+    output = """show ephone
+ ephone-19 Mac:0005.5E3E.3231 TCP socket:[1] activeLine:1 UNREGISTERED
+mediaActive:0 offhook:1 ringing:0
+IP:0.0.0.0 0 7960 keepalive 43 max_line 2
+ button 1: dn 19 number 3019 CH1 DOWN
+Router4#"""
+
+    rows = parse_show_ephone(output)
+
+    assert len(rows) == 1
+    assert rows[0].index == 19
+    assert rows[0].mac_address == "0005.5E3E.3231"
+    assert rows[0].extension == "3019"
+    assert not rows[0].registered
+
+
 def test_privileged_ephone_query_enters_enable_and_restores_user_exec():
     sent = []
     output = (

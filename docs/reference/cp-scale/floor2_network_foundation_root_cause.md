@@ -460,3 +460,14 @@ The governed-capacity run
 `71715ed2edcb4a306a0537a4e97c1991e503b38a` retains the binding mutation's
 read-only terminal response for the next diagnostic run. Floor2 again received
 no evidence.
+
+The terminal-diagnostic run
+`canonical-cp-scale-voice-20260901T043604861347Z-86603be911bf` proved that the
+complete five-page raw readback already contained ephone 19 with its exact MAC
+and extension, but one leading space before `ephone-19` caused the strict
+header parser to discard the block. A later raw table contained all indices
+1-21 while the old parser returned 1-18,20,21. The ordinal-19 mutation-loss
+theory is therefore refuted and the pager-boundary observer cause is confirmed.
+The parser correction changes no Floor2 variable. Floor2 again received no
+evidence, so the delta-only replay experiment and H1/H2 classifications remain
+unchanged.

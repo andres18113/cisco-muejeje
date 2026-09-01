@@ -785,7 +785,7 @@ def parse_show_ephone(value: str) -> list[EphoneStatusRow]:
     """Extrae el estado vigente de cada bloque de ``show ephone`` de PT."""
     normalized = normalize_terminal_output(value)
     starts = list(re.finditer(
-        r"(?m)^ephone-(?P<index>\d+)\s+Mac:(?P<mac>[0-9A-Fa-f.:-]+).*?"
+        r"(?m)^[ \t]*ephone-(?P<index>\d+)\s+Mac:(?P<mac>[0-9A-Fa-f.:-]+).*?"
         r"(?P<registration>UNREGISTERED|REGISTERED)(?:\s|$)",
         normalized,
     ))

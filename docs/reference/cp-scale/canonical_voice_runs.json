@@ -3130,6 +3130,135 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T043604861347Z-86603be911bf",
+      "started_at": "2026-09-01T04:36:04.861347+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source, design authority, and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "governed_router4_capacity_42": true,
+        "binding_terminal_snapshots_retained": true,
+        "raw_and_parsed_rows_compared": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "86603be911bf8da453bf2d7c93c924226ae5fd41",
+        "canonical_live_source_head": "86603be911bf8da453bf2d7c93c924226ae5fd41",
+        "binding_terminal_diagnostic_head": "71715ed2edcb4a306a0537a4e97c1991e503b38a"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "router4_documented_capacity": 42,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T043604861347Z-86603be911bf-failure-precleanup.json",
+          "sha256": "0410c1b7a43fa2290427c78255b8bfcce84d4a833da1f2cde476fcc865a91b18"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T043604861347Z-86603be911bf-cleanup.json",
+          "sha256": "4a8b86945e237f9cd7190d22aa11205c25aed49639e13bc900d766320ade34df"
+        }
+      ],
+      "measured": {
+        "pager_boundary_parser_divergence": {
+          "binding_ordinal": 19,
+          "directory_index": 19,
+          "extension": "3019",
+          "expected_mac": "0005.5E3E.3231",
+          "initial_readback_executed": true,
+          "initial_readback_fresh": true,
+          "initial_readback_complete": true,
+          "initial_readback_pages": 5,
+          "initial_readback_identity": "confirmed_unique",
+          "raw_row_present": true,
+          "raw_header_leading_spaces": 1,
+          "parser_row_present": false,
+          "later_raw_table_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
+          ],
+          "result": "EPHONE_HEADER_PARSER_CAUSE_CONFIRMED"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "FAILED_CLOSED_PARSER_DROPPED_RAW_EPHONE19",
+        "voice_signal_status": "NOT_REACHED",
+        "registration_status": "NOT_REACHED"
+      },
+      "classification_rationale": "The retained five-page Router4 readback already contained the exact ephone-19 MAC and extension, but the pager continuation prefixed its header with one space. The strict header parser dropped that raw row while accepting rows 1-18,20,21, fabricating the ordinal-19 absence and triggering an unnecessary reconciliation. Replaying the archived raw window with leading header whitespace accepted yields all 21 rows, so product mutation loss is refuted and the observer cause is confirmed.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED_AFTER_NETWORK",
+        "ordinal_19_product_loss": "REFUTED",
+        "ephone_header_parser_cause": "CONFIRMED",
+        "production_fix_status": "EPHONE_HEADER_INDENTATION_FIX_READY_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_EPHONE_HEADER_OBSERVER_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "VOICE_BOOTSTRAP_BINDING_PARSER",
+        "failure_classification": "OBSERVER",
+        "next_live_authorized": true
+      }
     }
   ]
 }
