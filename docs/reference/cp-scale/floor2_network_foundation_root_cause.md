@@ -433,3 +433,10 @@ nineteenth binding, refuting auto-registration as the cause. Commit
 `a9115cdd65fe467bf54968b1d86c5e6dbcec1aca` adds one state-authorized
 reconciliation only after complete row absence, with exact readback and no
 second replay. Floor2 still received no evidence.
+
+The immediate-reconciliation run
+`canonical-cp-scale-voice-20260901T032640436029Z-3e5b385cb8f2` still showed
+ephone 19 absent after the one accepted reconciliation, refuting immediate
+reapply. Commit `e0e4f8848404ea7d48feedb5d52fb0d0c1cfdf8c` completes all
+independent initial bindings before reconciling proven absences and keeps every
+downstream Voice action closed. Floor2 again received no evidence.

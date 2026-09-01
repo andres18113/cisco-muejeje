@@ -56,6 +56,9 @@ ORDER_RUN_IDENTITY = (
 MANAGED_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T031054739651Z-ba2b036561c7"
 )
+RECONCILE_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T032640436029Z-3e5b385cb8f2"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -75,7 +78,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 8
+    assert len(ledger["runs"]) == 9
     return ledger["runs"][0]
 
 
@@ -110,8 +113,13 @@ def order_run(ledger: dict) -> dict:
 
 
 @pytest.fixture(scope="module")
-def latest_run(ledger: dict) -> dict:
+def managed_run(ledger: dict) -> dict:
     return ledger["runs"][7]
+
+
+@pytest.fixture(scope="module")
+def latest_run(ledger: dict) -> dict:
+    return ledger["runs"][8]
 
 
 @pytest.fixture(scope="module")
@@ -385,9 +393,9 @@ def test_semantic_order_proves_failure_follows_ordinal_nineteen(
     assert order_run["conclusion"]["ordinal_19_failure"] == "CONFIRMED"
 
 
-def test_managed_cme_mode_refutes_auto_registration_cause(latest_run: dict):
-    assert latest_run["run_identity"] == MANAGED_RUN_IDENTITY
-    experiment = latest_run["measured"]["explicit_cme_mode_experiment"]
+def test_managed_cme_mode_refutes_auto_registration_cause(managed_run: dict):
+    assert managed_run["run_identity"] == MANAGED_RUN_IDENTITY
+    experiment = managed_run["measured"]["explicit_cme_mode_experiment"]
     assert experiment["call_control_mode"] == "NO_AUTO_REG_EPHONE"
     assert experiment["verified_bindings_before_stop"] == 18
     assert experiment["stopped_ordinal"] == 19
@@ -395,12 +403,29 @@ def test_managed_cme_mode_refutes_auto_registration_cause(latest_run: dict):
     assert experiment["result"] == (
         "AUTO_REGISTRATION_REFUTED_FAILURE_FOLLOWS_ORDINAL_19"
     )
-    assert latest_run["conclusion"]["auto_registration_interference_cause"] == (
+    assert managed_run["conclusion"]["auto_registration_interference_cause"] == (
         "REFUTED"
     )
-    assert latest_run["conclusion"]["absence_driven_reconciliation_cause"] == (
+    assert managed_run["conclusion"]["absence_driven_reconciliation_cause"] == (
         "AUTHORIZED_CAUSAL_EXPERIMENT"
     )
+
+
+def test_immediate_reconciliation_is_a_valid_negative(latest_run: dict):
+    assert latest_run["run_identity"] == RECONCILE_RUN_IDENTITY
+    experiment = latest_run["measured"][
+        "immediate_reconciliation_experiment"
+    ]
+    assert experiment["initial_absence_authoritative"] is True
+    assert experiment["reconciliation_attempted"] is True
+    assert experiment["reconciliation_accepted"] is True
+    assert experiment["final_readback_authoritative"] is True
+    assert experiment["final_row_present"] is False
+    assert experiment["second_reconciliation_attempted"] is False
+    assert experiment["result"] == "IMMEDIATE_RECONCILIATION_REFUTED"
+    assert latest_run["conclusion"][
+        "deferred_frontier_reconciliation_cause"
+    ] == "AUTHORIZED_CAUSAL_EXPERIMENT"
 
 
 def test_immutable_canonical_evidence_is_never_text_normalized():
@@ -617,8 +642,8 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_EIGHT_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "8"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_NINE_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "9"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "1"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
         "VOICE_BOOTSTRAP_BINDING_READBACK"
@@ -633,7 +658,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "ABSENCE_RECONCILIATION_LIVE_PENDING"
+        "DEFERRED_FRONTIER_RECONCILIATION_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"

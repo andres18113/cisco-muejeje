@@ -2697,6 +2697,108 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T032640436029Z-3e5b385cb8f2",
+      "started_at": "2026-08-31T22:26:40.436029-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "authoritative_absence_gate": true,
+        "one_immediate_reconciliation": true,
+        "second_absence_not_replayed": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "3e5b385cb8f287896128f68719df34d18211c388",
+        "canonical_live_source_head": "3e5b385cb8f287896128f68719df34d18211c388",
+        "deferred_frontier_reconciliation_head": "e0e4f8848404ea7d48feedb5d52fb0d0c1cfdf8c"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T032640436029Z-3e5b385cb8f2-failure-precleanup.json",
+          "sha256": "a0d663dc00a9bb69437616717dfe702f08f260272b362a629dc1af32fd3f6572"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T032640436029Z-3e5b385cb8f2-cleanup.json",
+          "sha256": "a221fdb51d18727f0c7635daddd1397e0c2f01390923996b78c8e2b3fd54aabc"
+        }
+      ],
+      "measured": {
+        "immediate_reconciliation_experiment": {
+          "verified_bindings_before_stop": 18,
+          "stopped_ordinal": 19,
+          "stopped_directory_index": 19,
+          "initial_absence_authoritative": true,
+          "reconciliation_attempted": true,
+          "reconciliation_accepted": true,
+          "final_readback_authoritative": true,
+          "final_row_present": false,
+          "second_reconciliation_attempted": false,
+          "result": "IMMEDIATE_RECONCILIATION_REFUTED"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "FAILED_CLOSED_AFTER_ONE_RECONCILIATION",
+        "voice_signal_status": "NOT_REACHED",
+        "registration_status": "NOT_REACHED"
+      },
+      "classification_rationale": "The authoritative absent nineteenth binding was re-dispatched exactly once and remained absent in a second fresh complete readback. Immediate reconciliation is refuted. Earlier ungated runs proved later sibling bindings can succeed after the lost ordinal, so the next dependency correction completes the independent initial binding frontier, keeps Voice signal closed, then reconciles proven absences once.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED_AFTER_NETWORK",
+        "immediate_absence_reconciliation_cause": "REFUTED",
+        "deferred_frontier_reconciliation_cause": "AUTHORIZED_CAUSAL_EXPERIMENT",
+        "production_fix_status": "DEFERRED_FRONTIER_RECONCILIATION_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_ORDINAL19_BINDING_ABSENCE_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "VOICE_BOOTSTRAP_BINDING_READBACK",
+        "failure_classification": "PRODUCT",
+        "next_live_authorized": true
+      }
     }
   ]
 }

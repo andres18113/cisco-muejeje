@@ -677,18 +677,18 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CP_SCALE_AFFECTED_PHONES": "69",
         "CP_SCALE_AFFECTED_VOICE_ACCESS_ACTIONS": "69",
         "CP_SCALE_TOPOLOGY_REGEN_REQUIRED": "NO",
-        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_EIGHT_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_EIGHT_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "8",
+        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_NINE_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_NINE_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "9",
         "CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS": "1",
         "CANONICAL_CP_SCALE_BASE_HEAD": (
             "528564493b855ce332f45fdab7b5867a065b1992"
         ),
         "CANONICAL_CP_SCALE_PRELIVE_HEAD": (
-            "ba2b036561c72f38ef394408038e1d7a5ccf56b4"
+            "3e5b385cb8f287896128f68719df34d18211c388"
         ),
         "CANONICAL_CP_SCALE_LIVE_SOURCE_HEAD": (
-            "ba2b036561c72f38ef394408038e1d7a5ccf56b4"
+            "3e5b385cb8f287896128f68719df34d18211c388"
         ),
         "CANONICAL_CP_SCALE_PHONE_COUNT": "69",
         "CANONICAL_CP_SCALE_VOICE_ACCESS_ACTION_COUNT": "69",
@@ -699,7 +699,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "CONFIRMED_OFFLINE_ALL_STAGES_AND_LIVE_THROUGH_FLOOR1"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_VOICE": (
-            "NOT_REACHED_AFTER_ORDINAL19_BINDING_ABSENCE"
+            "NOT_REACHED_AFTER_ORDINAL19_PERSISTENT_ABSENCE"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_LAST_COMPLETE_VOICE_WINDOW": (
             "ENDPOINT_AND_BINDING_VERIFIED_21_OF_21 | RAW_SCCP_REGISTERED_20 | "
@@ -709,7 +709,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "NOT_REACHED_LATEST_RUN"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_BINDING_READBACK": (
-            "VERIFIED_18 | EPHONE19_COMPLETE_ABSENCE_1 | "
+            "VERIFIED_18 | EPHONE19_ABSENT_AFTER_ONE_RECONCILIATION | "
             "LATER_BINDINGS_BLOCKED_2"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_BINDING_ORDER_RESULT": (
@@ -806,7 +806,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CANONICAL_CP_SCALE_VOICE_VERIFICATION": "FAIL",
         "ROOT_CAUSE_STATUS": "CONFIRMED",
         "PRODUCTION_FIX_STATUS": (
-            "ABSENCE_RECONCILIATION_LIVE_PENDING"
+            "DEFERRED_FRONTIER_RECONCILIATION_LIVE_PENDING"
         ),
         "CANONICAL_CP_SCALE_SCCP_DIAGNOSTIC_HEAD": (
             "bd8e8b80bd170704e3f403263186f0469a4d0839"
@@ -828,6 +828,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_ABSENCE_RECONCILIATION_HEAD": (
             "a9115cdd65fe467bf54968b1d86c5e6dbcec1aca"
+        ),
+        "CANONICAL_CP_SCALE_DEFERRED_FRONTIER_RECONCILIATION_HEAD": (
+            "e0e4f8848404ea7d48feedb5d52fb0d0c1cfdf8c"
         ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
@@ -862,15 +865,18 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "05bda710dad7e15b381013510d016a94f3f9071410250f341542b3ea36c5b06c"
             " | RUN8_CLEANUP_"
             "1cf0c9fb80e25780bbb64a91553c52dac63abcad853926bc8d450d61907e168f"
+            " | RUN9_PRECLEANUP_"
+            "a0d663dc00a9bb69437616717dfe702f08f260272b362a629dc1af32fd3f6572"
+            " | RUN9_CLEANUP_"
+            "a221fdb51d18727f0c7635daddd1397e0c2f01390923996b78c8e2b3fd54aabc"
         ),
         "CANONICAL_CP_SCALE_WORKSPACE_RESTORED": "YES",
         "CANONICAL_CP_SCALE_REALTIME_RESTORED": "YES",
-        "LIVE_RUNS_CONSUMED": "14",
+        "LIVE_RUNS_CONSUMED": "15",
         "CLEANUP": "VERIFIED_AFTER_EVERY_LIVE",
         "WORKSPACE_RESTORED": "YES",
         "NEXT_ACTIVE_STEP": (
-            "RUN_CANONICAL_LIVE_WITH_ONE_ABSENCE_DRIVEN_BINDING_"
-            "RECONCILIATION"
+            "RUN_CANONICAL_LIVE_WITH_DEFERRED_FRONTIER_RECONCILIATION"
         ),
         "CP_SCALE_STATUS": (
             "FLOOR1_ORDINAL19_BINDING_ABSENCE_BLOCKS_FLOOR2"
