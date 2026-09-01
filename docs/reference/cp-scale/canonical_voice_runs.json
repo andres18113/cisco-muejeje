@@ -3029,6 +3029,107 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T041940173800Z-b777036b925b",
+      "started_at": "2026-08-31T23:19:40.173800-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source, design authority, and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "governed_router4_capacity_42": true,
+        "deferred_absence_reconciliation": true,
+        "raw_and_parsed_rows_compared": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "b777036b925b857a71208e35288f2324e5602e74",
+        "canonical_live_source_head": "b777036b925b857a71208e35288f2324e5602e74",
+        "binding_terminal_diagnostic_head": "71715ed2edcb4a306a0537a4e97c1991e503b38a"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "router4_documented_capacity": 42,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T041940173800Z-b777036b925b-failure-precleanup.json",
+          "sha256": "6d893e1fdd6b403f60d1741b0ce7d537712f1128cff1f03a11c7d74bb36e3d65"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T041940173800Z-b777036b925b-cleanup.json",
+          "sha256": "d8eac70ef48373c30eb735764d9a16d7048ea0c1298b71473f481d274bff0aef"
+        }
+      ],
+      "measured": {
+        "capacity_42_experiment": {
+          "rendered_max_ephones": 42,
+          "rendered_max_dn": 42,
+          "initial_bindings_verified": 20,
+          "initial_absent_directory_index": 19,
+          "post_reconciliation_rows": 20,
+          "raw_indices_equal_parsed_indices": true,
+          "reconciled_row_present": false,
+          "result": "CAPACITY_REFUTED_FOR_ORDINAL_BINDING_LOSS"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "FAILED_CLOSED_FINAL_TABLE_20_OF_21",
+        "voice_signal_status": "NOT_REACHED",
+        "registration_status": "NOT_REACHED"
+      },
+      "classification_rationale": "The documented Router4 capacity 42 produced the same raw and parsed 20-of-21 table as capacity 21; capacity is refuted for the ordinal binding loss. The remaining missing evidence is the IOS terminal response to configureIosDevice, which was discarded before operational readback. The next implementation retains a bounded read-only terminal tail and full hash immediately after each binding mutation.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED_AFTER_NETWORK",
+        "stage_call_control_capacity_cause": "REFUTED_FOR_ORDINAL_LOSS",
+        "binding_terminal_response": "NOT_RETAINED",
+        "production_fix_status": "BINDING_TERMINAL_DIAGNOSTIC_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_ORDINAL_BINDING_LOSS_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "VOICE_BOOTSTRAP_BINDING_READBACK",
+        "failure_classification": "PRODUCT",
+        "next_live_authorized": true
+      }
     }
   ]
 }

@@ -453,3 +453,10 @@ The 51-capacity run
 empty ephone table, proving that inferred capacity invalid. Commit
 `e83ae0c431c18b5c6e24bcd424a08c5b45d0270d` models the documented capacities
 Router4=42, Router0=12, Router3=7 generically. Floor2 again received no evidence.
+
+The governed-capacity run
+`canonical-cp-scale-voice-20260901T041940173800Z-b777036b925b` still ended
+20/21, refuting capacity 42 for the ordinal loss. Commit
+`71715ed2edcb4a306a0537a4e97c1991e503b38a` retains the binding mutation's
+read-only terminal response for the next diagnostic run. Floor2 again received
+no evidence.
