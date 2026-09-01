@@ -24,6 +24,10 @@ SECOND_LIVE_EVIDENCE = (
     ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
     / "stp-pvst-capability-20260901T143608724809Z-71fae1c74878.json"
 )
+THIRD_LIVE_EVIDENCE = (
+    ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
+    / "stp-pvst-capability-20260901T150150452540Z-29afd03bdd21.json"
+)
 
 _PROBE = r'''
 import json
@@ -375,6 +379,57 @@ def test_second_live_verifies_exact_model_pvst_configuration_and_state():
     assert secondary["root_address"] == primary["bridge_address"]
     assert secondary["root_port"] == "GigabitEthernet0/1"
     assert evidence["edge_policy_qualification"]["mutation_status"] is True
+    assert evidence["cleanup"]["verified"] is True
+    assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["second"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["realtime"]["verified_realtime"] is True
+
+
+def test_third_live_verifies_floor3_model_state_and_behavior_observers():
+    assert hashlib.sha256(THIRD_LIVE_EVIDENCE.read_bytes()).hexdigest() == (
+        "1de1d5d8b3b3da2dfa7264689daf42af52b8b6b3493111165b5345136a19165b"
+    )
+    evidence = json.loads(THIRD_LIVE_EVIDENCE.read_text(encoding="utf-8"))
+
+    assert evidence["repository"]["head"] == (
+        "29afd03bdd215d16b5d2e7c9eef5ea53e4a521c1"
+    )
+    assert evidence["verified"] is True
+    assert evidence["qualification_errors"] == []
+    assert evidence["qualified_models"] == {
+        "3560-24PS": {
+            "stp_pvst_config": "supported",
+            "stp_state": "supported",
+            "stp_behavior": "supported",
+        },
+        "2960-24TT": {
+            "stp_pvst_config": "supported",
+            "stp_state": "supported",
+            "stp_behavior": "supported",
+        },
+    }
+    observations = {
+        item["expectation_id"]: item
+        for item in evidence["stp_verification"]
+    }
+    assert set(observations) == {
+        "pvst/verify/primary",
+        "pvst/verify/secondary",
+        "pvst/verify/primary-behavior",
+        "pvst/verify/secondary-behavior",
+    }
+    for item in observations.values():
+        assert item["status"] == "verified"
+        assert item["fresh_evidence"] is True
+        assert all(value == "verified" for value in item["fields"].values())
+    for identifier in (
+        "pvst/verify/primary-behavior",
+        "pvst/verify/secondary-behavior",
+    ):
+        assert observations[identifier]["stage"] == "behavior"
+        assert observations[identifier]["evidence_method"] == (
+            "fresh_show_spanning_tree_stable_roles"
+        )
     assert evidence["cleanup"]["verified"] is True
     assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
     assert evidence["cleanup"]["second"]["semantic_device_count"] == 0

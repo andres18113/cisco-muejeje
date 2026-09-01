@@ -1,0 +1,1444 @@
+{
+  "schema": "stp-pvst-exact-model-qualification-v1",
+  "run_identity": "stp-pvst-capability-20260901T150150452540Z-29afd03bdd21",
+  "started_at": "2026-09-01T15:01:50.452540+00:00",
+  "packet_tracer_version": "9.0.1.0858",
+  "python_executable": "C:\\Users\\Andres\\mpc-muejeje\\.venv\\Scripts\\python.exe",
+  "package_file": "C:\\Users\\Andres\\mpc-muejeje\\src\\packet_tracer_mcp\\__init__.py",
+  "loaded_namespaces": [
+    "packet_tracer_mcp"
+  ],
+  "import_isolation": {
+    "state": "ISOLATED",
+    "detail": "C:\\Users\\Andres\\mpc-muejeje\\src\\packet_tracer_mcp\\__init__.py"
+  },
+  "repository": {
+    "branch": "feature/runtime-ripv2",
+    "upstream": "personal/feature/runtime-ripv2",
+    "head": "29afd03bdd215d16b5d2e7c9eef5ea53e4a521c1",
+    "error": ""
+  },
+  "packet_tracer_processes": [
+    {
+      "ProcessName": "PacketTracer",
+      "Id": 38784,
+      "MainWindowHandle": 1574578,
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858",
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe"
+    },
+    {
+      "ProcessName": "PacketTracer",
+      "Id": 38968,
+      "MainWindowHandle": 0,
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858",
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe"
+    }
+  ],
+  "file_bridge_alive": true,
+  "baseline": {
+    "observed": true,
+    "semantic_device_count": 0,
+    "backend_managed_device_count": 4,
+    "link_count": 0,
+    "devices": [
+      {
+        "name": "Power Distribution Device0",
+        "model": "Power Distribution Device",
+        "ports": [],
+        "backend_managed": true
+      },
+      {
+        "name": "Power Distribution Device1",
+        "model": "Power Distribution Device",
+        "ports": [],
+        "backend_managed": true
+      },
+      {
+        "name": "Power Distribution Device2",
+        "model": "Power Distribution Device",
+        "ports": [],
+        "backend_managed": true
+      },
+      {
+        "name": "Power Distribution Device3",
+        "model": "Power Distribution Device",
+        "ports": [],
+        "backend_managed": true
+      }
+    ],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "realtime_before": {
+    "observed": true,
+    "simulation_mode": false,
+    "frames": 0,
+    "sim_time": 7770755,
+    "verified_realtime": true
+  },
+  "plan": {
+    "topology": {
+      "id": "pvst-exact-model-qualification",
+      "name": "topology",
+      "hash_schema_version": "1",
+      "physical_topology_hash": "",
+      "layout_hash": "",
+      "artifact_hash": "",
+      "semantic_hash": "pvst-exact-model-qualification-v1",
+      "metadata": {},
+      "devices": [
+        {
+          "id": "pvst-primary",
+          "name": "MCP-PROBE-PVST-3560",
+          "model": "3560-24PS",
+          "category": "switch",
+          "role": "end_host",
+          "enterprise_role": "access_switch",
+          "site_id": "pvst",
+          "building_id": "",
+          "floor_id": "",
+          "zone_id": "",
+          "network_layer": "",
+          "requires_poe": false,
+          "metadata": {},
+          "x": 160,
+          "y": 180,
+          "interfaces": {},
+          "gateway": "",
+          "interfaces_v6": {},
+          "gateway_v6": "",
+          "vlan": 0,
+          "wireless": false
+        },
+        {
+          "id": "pvst-secondary",
+          "name": "MCP-PROBE-PVST-2960",
+          "model": "2960-24TT",
+          "category": "switch",
+          "role": "end_host",
+          "enterprise_role": "access_switch",
+          "site_id": "pvst",
+          "building_id": "",
+          "floor_id": "",
+          "zone_id": "",
+          "network_layer": "",
+          "requires_poe": false,
+          "metadata": {},
+          "x": 480,
+          "y": 180,
+          "interfaces": {},
+          "gateway": "",
+          "interfaces_v6": {},
+          "gateway_v6": "",
+          "vlan": 0,
+          "wireless": false
+        }
+      ],
+      "modules": [],
+      "links": [
+        {
+          "id": "pvst-trunk",
+          "device_a": "MCP-PROBE-PVST-3560",
+          "port_a": "GigabitEthernet0/1",
+          "device_b": "MCP-PROBE-PVST-2960",
+          "port_b": "GigabitEthernet0/1",
+          "cable": "cross",
+          "device_a_id": "pvst-primary",
+          "device_b_id": "pvst-secondary",
+          "link_role": "trunk",
+          "network_layer": "",
+          "redundancy_group": "",
+          "metadata": {}
+        }
+      ],
+      "dhcp_pools": [],
+      "static_routes": [],
+      "ospf_configs": [],
+      "rip_configs": [],
+      "eigrp_configs": [],
+      "vlans": [],
+      "access_ports": [],
+      "trunks": [],
+      "subinterfaces": [],
+      "validations": [],
+      "dual_stack": false,
+      "errors": [],
+      "warnings": []
+    },
+    "foundation_actions": [
+      {
+        "id": "pvst/hostname/pvst-primary",
+        "action_type": "configure_hostname",
+        "phase": 10,
+        "device_id": "pvst-primary",
+        "device_name": "MCP-PROBE-PVST-3560",
+        "site_id": "pvst",
+        "depends_on": [],
+        "apply_dependencies": [],
+        "required_capability": "",
+        "critical": true,
+        "operation": "set_value",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "hostname": "MCP-PROBE-PVST-3560"
+      },
+      {
+        "id": "pvst/hostname/pvst-secondary",
+        "action_type": "configure_hostname",
+        "phase": 10,
+        "device_id": "pvst-secondary",
+        "device_name": "MCP-PROBE-PVST-2960",
+        "site_id": "pvst",
+        "depends_on": [],
+        "apply_dependencies": [],
+        "required_capability": "",
+        "critical": true,
+        "operation": "set_value",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "hostname": "MCP-PROBE-PVST-2960"
+      },
+      {
+        "id": "pvst/vlan/pvst-primary",
+        "action_type": "create_vlan",
+        "phase": 20,
+        "device_id": "pvst-primary",
+        "device_name": "MCP-PROBE-PVST-3560",
+        "site_id": "pvst",
+        "depends_on": [],
+        "apply_dependencies": [],
+        "required_capability": "supports_vlan",
+        "critical": true,
+        "operation": "ensure_present",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "vlan_id": 20,
+        "name": "PVST_QUALIFICATION",
+        "segment_id": "pvst-vlan20"
+      },
+      {
+        "id": "pvst/vlan/pvst-secondary",
+        "action_type": "create_vlan",
+        "phase": 20,
+        "device_id": "pvst-secondary",
+        "device_name": "MCP-PROBE-PVST-2960",
+        "site_id": "pvst",
+        "depends_on": [],
+        "apply_dependencies": [],
+        "required_capability": "supports_vlan",
+        "critical": true,
+        "operation": "ensure_present",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "vlan_id": 20,
+        "name": "PVST_QUALIFICATION",
+        "segment_id": "pvst-vlan20"
+      },
+      {
+        "id": "pvst/trunk/pvst-primary",
+        "action_type": "configure_trunk",
+        "phase": 30,
+        "device_id": "pvst-primary",
+        "device_name": "MCP-PROBE-PVST-3560",
+        "site_id": "pvst",
+        "depends_on": [
+          "pvst/vlan/pvst-primary"
+        ],
+        "apply_dependencies": [],
+        "required_capability": "supports_trunk",
+        "critical": true,
+        "operation": "set_value",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "interface": "GigabitEthernet0/1",
+        "allowed_vlans": [
+          20
+        ],
+        "native_vlan_id": null,
+        "peer_device_id": "pvst-secondary",
+        "source_link_id": "pvst-trunk"
+      },
+      {
+        "id": "pvst/trunk/pvst-secondary",
+        "action_type": "configure_trunk",
+        "phase": 30,
+        "device_id": "pvst-secondary",
+        "device_name": "MCP-PROBE-PVST-2960",
+        "site_id": "pvst",
+        "depends_on": [
+          "pvst/vlan/pvst-secondary"
+        ],
+        "apply_dependencies": [],
+        "required_capability": "supports_trunk",
+        "critical": true,
+        "operation": "set_value",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "interface": "GigabitEthernet0/1",
+        "allowed_vlans": [
+          20
+        ],
+        "native_vlan_id": null,
+        "peer_device_id": "pvst-primary",
+        "source_link_id": "pvst-trunk"
+      },
+      {
+        "id": "pvst/access/pvst-primary",
+        "action_type": "configure_access_port",
+        "phase": 30,
+        "device_id": "pvst-primary",
+        "device_name": "MCP-PROBE-PVST-3560",
+        "site_id": "pvst",
+        "depends_on": [
+          "pvst/vlan/pvst-primary"
+        ],
+        "apply_dependencies": [],
+        "required_capability": "supports_vlan",
+        "critical": true,
+        "operation": "set_value",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "interface": "FastEthernet0/1",
+        "data_vlan_id": 20,
+        "voice_vlan_id": null,
+        "endpoint_ids": []
+      }
+    ],
+    "stp_actions": [
+      {
+        "id": "pvst/stp/primary",
+        "action_type": "configure_stp",
+        "phase": 20,
+        "device_id": "pvst-primary",
+        "device_name": "MCP-PROBE-PVST-3560",
+        "model": "3560-24PS",
+        "site_id": "pvst",
+        "depends_on": [],
+        "apply_dependencies": [],
+        "required_capability": "stp_pvst_config",
+        "critical": true,
+        "operation": "set_value",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "mode": "pvst",
+        "vlan_ids": [
+          20
+        ],
+        "root_primary_vlans": [
+          20
+        ],
+        "root_secondary_vlans": [],
+        "priorities": {},
+        "mst_instances": {},
+        "source_vlan_action_ids": [
+          "pvst/vlan/pvst-primary"
+        ]
+      },
+      {
+        "id": "pvst/stp/secondary",
+        "action_type": "configure_stp",
+        "phase": 20,
+        "device_id": "pvst-secondary",
+        "device_name": "MCP-PROBE-PVST-2960",
+        "model": "2960-24TT",
+        "site_id": "pvst",
+        "depends_on": [],
+        "apply_dependencies": [],
+        "required_capability": "stp_pvst_config",
+        "critical": true,
+        "operation": "set_value",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "mode": "pvst",
+        "vlan_ids": [
+          20
+        ],
+        "root_primary_vlans": [],
+        "root_secondary_vlans": [
+          20
+        ],
+        "priorities": {},
+        "mst_instances": {},
+        "source_vlan_action_ids": [
+          "pvst/vlan/pvst-secondary"
+        ]
+      },
+      {
+        "id": "pvst/stp/edge",
+        "action_type": "configure_stp_edge_port",
+        "phase": 30,
+        "device_id": "pvst-primary",
+        "device_name": "MCP-PROBE-PVST-3560",
+        "model": "3560-24PS",
+        "site_id": "pvst",
+        "depends_on": [
+          "pvst/stp/primary"
+        ],
+        "apply_dependencies": [],
+        "required_capability": "stp_pvst_config",
+        "critical": true,
+        "operation": "set_value",
+        "compensation_available": false,
+        "inverse_action_id": "",
+        "interface": "FastEthernet0/1",
+        "portfast": true,
+        "bpduguard": true,
+        "source_access_action_id": "pvst/access/pvst-primary"
+      }
+    ],
+    "expectations": [
+      {
+        "id": "pvst/verify/primary",
+        "kind": "stp_state",
+        "action_id": "pvst/stp/primary",
+        "device_id": "pvst-primary",
+        "peer_device_id": "",
+        "source_link_id": "",
+        "source_traffic_flow_id": "",
+        "required_capability": "stp_state",
+        "expected": {
+          "source_device_name": "MCP-PROBE-PVST-3560",
+          "mode": "pvst",
+          "vlan_ids": [
+            20
+          ],
+          "root_primary_vlans": [
+            20
+          ]
+        },
+        "unclaimed_fields": [],
+        "depends_on": [
+          "pvst/stp/primary"
+        ],
+        "verification_prerequisites": []
+      },
+      {
+        "id": "pvst/verify/secondary",
+        "kind": "stp_state",
+        "action_id": "pvst/stp/secondary",
+        "device_id": "pvst-secondary",
+        "peer_device_id": "",
+        "source_link_id": "",
+        "source_traffic_flow_id": "",
+        "required_capability": "stp_state",
+        "expected": {
+          "source_device_name": "MCP-PROBE-PVST-2960",
+          "mode": "pvst",
+          "vlan_ids": [
+            20
+          ],
+          "root_secondary_vlans": [
+            20
+          ]
+        },
+        "unclaimed_fields": [],
+        "depends_on": [
+          "pvst/stp/secondary"
+        ],
+        "verification_prerequisites": []
+      },
+      {
+        "id": "pvst/verify/primary-behavior",
+        "kind": "end_to_end_reachability",
+        "action_id": "pvst/stp/primary",
+        "device_id": "pvst-primary",
+        "peer_device_id": "",
+        "source_link_id": "",
+        "source_traffic_flow_id": "",
+        "required_capability": "stp_behavior",
+        "expected": {
+          "source_device_name": "MCP-PROBE-PVST-3560",
+          "loop_free": true,
+          "forwarding_converged": true
+        },
+        "unclaimed_fields": [],
+        "depends_on": [
+          "pvst/stp/primary"
+        ],
+        "verification_prerequisites": []
+      },
+      {
+        "id": "pvst/verify/secondary-behavior",
+        "kind": "end_to_end_reachability",
+        "action_id": "pvst/stp/secondary",
+        "device_id": "pvst-secondary",
+        "peer_device_id": "",
+        "source_link_id": "",
+        "source_traffic_flow_id": "",
+        "required_capability": "stp_behavior",
+        "expected": {
+          "source_device_name": "MCP-PROBE-PVST-2960",
+          "loop_free": true,
+          "forwarding_converged": true
+        },
+        "unclaimed_fields": [],
+        "depends_on": [
+          "pvst/stp/secondary"
+        ],
+        "verification_prerequisites": []
+      }
+    ]
+  },
+  "physical_mutations": [
+    {
+      "target_id": "pvst-primary",
+      "target_kind": "device",
+      "disposition": "changed",
+      "applied": true,
+      "inverse_available": true,
+      "inverse_action_id": "remove-device:pvst-primary",
+      "message": "Device creation acknowledged; independent read-back required."
+    },
+    {
+      "target_id": "pvst-secondary",
+      "target_kind": "device",
+      "disposition": "changed",
+      "applied": true,
+      "inverse_available": true,
+      "inverse_action_id": "remove-device:pvst-secondary",
+      "message": "Device creation acknowledged; independent read-back required."
+    },
+    {
+      "target_id": "pvst-trunk",
+      "target_kind": "link",
+      "disposition": "changed",
+      "applied": true,
+      "inverse_available": false,
+      "inverse_action_id": "",
+      "message": "Link creation acknowledged; exact two-ended read-back required."
+    }
+  ],
+  "foundation_application": [
+    {
+      "action_id": "pvst/hostname/pvst-primary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Configuration batch accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-3560:10"
+    },
+    {
+      "action_id": "pvst/hostname/pvst-secondary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Configuration batch accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-2960:10"
+    },
+    {
+      "action_id": "pvst/vlan/pvst-primary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Configuration batch accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-3560:20"
+    },
+    {
+      "action_id": "pvst/vlan/pvst-secondary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Configuration batch accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-2960:20"
+    },
+    {
+      "action_id": "pvst/trunk/pvst-primary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Configuration batch accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-3560:30"
+    },
+    {
+      "action_id": "pvst/trunk/pvst-secondary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Configuration batch accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-2960:30"
+    },
+    {
+      "action_id": "pvst/access/pvst-primary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Configuration batch accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-3560:30"
+    }
+  ],
+  "foundation_trunk_convergence": {
+    "verified": true,
+    "attempts": [
+      {
+        "devices": {
+          "3560-24PS": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-3560",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-3560>"
+          },
+          "2960-24TT": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-2960",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-2960>"
+          }
+        }
+      },
+      {
+        "devices": {
+          "3560-24PS": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-3560",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-3560>"
+          },
+          "2960-24TT": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-2960",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-2960>"
+          }
+        }
+      },
+      {
+        "devices": {
+          "3560-24PS": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-3560",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-3560>"
+          },
+          "2960-24TT": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-2960",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-2960>"
+          }
+        }
+      },
+      {
+        "devices": {
+          "3560-24PS": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-3560",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-3560>"
+          },
+          "2960-24TT": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-2960",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-2960>"
+          }
+        }
+      },
+      {
+        "devices": {
+          "3560-24PS": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-3560",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-3560>"
+          },
+          "2960-24TT": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-2960",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-2960>"
+          }
+        }
+      },
+      {
+        "devices": {
+          "3560-24PS": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-3560",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-3560>"
+          },
+          "2960-24TT": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-2960",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": false,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": []
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      none\n\nMCP-PROBE-PVST-2960>"
+          }
+        }
+      },
+      {
+        "devices": {
+          "3560-24PS": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-3560",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": true,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": [
+                  20
+                ]
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      20\n\nMCP-PROBE-PVST-3560>"
+          },
+          "2960-24TT": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-2960",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "matched": true,
+            "rows": [
+              {
+                "interface": "Gig0/1",
+                "mode": "on",
+                "encapsulation": "802.1q",
+                "status": "trunking",
+                "native_vlan": 1,
+                "allowed_vlans": [
+                  20
+                ],
+                "active_vlans": [
+                  20
+                ],
+                "forwarding_vlans": [
+                  20
+                ]
+              }
+            ],
+            "output": "show interfaces trunk\nPort        Mode         Encapsulation  Status        Native vlan\nGig0/1      on           802.1q         trunking      1\n\nPort        Vlans allowed on trunk\nGig0/1      20\n\nPort        Vlans allowed and active in management domain\nGig0/1      20\n\nPort        Vlans in spanning tree forwarding state and not pruned\nGig0/1      20\n\nMCP-PROBE-PVST-2960>"
+          }
+        }
+      }
+    ]
+  },
+  "stp_before": {
+    "3560-24PS": {
+      "executed": true,
+      "fresh_output_observed": true,
+      "output_complete": true,
+      "observed_device_name": "MCP-PROBE-PVST-3560",
+      "device_identity_provenance": "confirmed_unique",
+      "instances": [
+        {
+          "vlan_id": 1,
+          "protocol": "ieee",
+          "root_priority": 32769,
+          "root_address": "0005.5EDD.1320",
+          "root_is_local": true,
+          "root_cost": null,
+          "root_port": "",
+          "bridge_priority": 32769,
+          "bridge_base_priority": 32768,
+          "bridge_address": "0005.5EDD.1320",
+          "interfaces": [
+            {
+              "interface": "Gi0/1",
+              "role": "Desg",
+              "state": "FWD",
+              "cost": 4,
+              "priority_number": "128.25",
+              "link_type": "P2p"
+            }
+          ]
+        },
+        {
+          "vlan_id": 20,
+          "protocol": "ieee",
+          "root_priority": 32788,
+          "root_address": "0005.5EDD.1320",
+          "root_is_local": true,
+          "root_cost": null,
+          "root_port": "",
+          "bridge_priority": 32788,
+          "bridge_base_priority": 32768,
+          "bridge_address": "0005.5EDD.1320",
+          "interfaces": [
+            {
+              "interface": "Gi0/1",
+              "role": "Desg",
+              "state": "FWD",
+              "cost": 4,
+              "priority_number": "128.25",
+              "link_type": "P2p"
+            }
+          ]
+        }
+      ],
+      "output": "show spanning-tree\nVLAN0001\n  Spanning tree enabled protocol ieee\n  Root ID    Priority    32769\n             Address     0005.5EDD.1320\n             This bridge is the root\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n\n  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)\n             Address     0005.5EDD.1320\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n             Aging Time  20\n\nInterface        Role Sts Cost      Prio.Nbr Type\n---------------- ---- --- --------- -------- --------------------------------\nGi0/1            Desg FWD 4         128.25   P2p\n\nVLAN0020\n  Spanning tree enabled protocol ieee\n  Root ID    Priority    32788\n             Address     0005.5EDD.1320\n             This bridge is the root\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n\n  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)\n             Address     0005.5EDD.1320\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n             Aging Time  20\n\nInterface        Role Sts Cost      Prio.Nbr Type\n---------------- ---- --- --------- -------- --------------------------------\nGi0/1            Desg FWD 4         128.25   P2p\n\nMCP-PROBE-PVST-3560>\nMCP-PROBE-PVST-3560>"
+    },
+    "2960-24TT": {
+      "executed": true,
+      "fresh_output_observed": true,
+      "output_complete": true,
+      "observed_device_name": "MCP-PROBE-PVST-2960",
+      "device_identity_provenance": "confirmed_unique",
+      "instances": [
+        {
+          "vlan_id": 1,
+          "protocol": "ieee",
+          "root_priority": 32769,
+          "root_address": "0005.5EDD.1320",
+          "root_is_local": false,
+          "root_cost": 4,
+          "root_port": "GigabitEthernet0/1",
+          "bridge_priority": 32769,
+          "bridge_base_priority": 32768,
+          "bridge_address": "000A.F3B9.911E",
+          "interfaces": [
+            {
+              "interface": "Gi0/1",
+              "role": "Root",
+              "state": "FWD",
+              "cost": 4,
+              "priority_number": "128.25",
+              "link_type": "P2p"
+            }
+          ]
+        },
+        {
+          "vlan_id": 20,
+          "protocol": "ieee",
+          "root_priority": 32788,
+          "root_address": "0005.5EDD.1320",
+          "root_is_local": false,
+          "root_cost": 4,
+          "root_port": "GigabitEthernet0/1",
+          "bridge_priority": 32788,
+          "bridge_base_priority": 32768,
+          "bridge_address": "000A.F3B9.911E",
+          "interfaces": [
+            {
+              "interface": "Gi0/1",
+              "role": "Root",
+              "state": "FWD",
+              "cost": 4,
+              "priority_number": "128.25",
+              "link_type": "P2p"
+            }
+          ]
+        }
+      ],
+      "output": "show spanning-tree\nVLAN0001\n  Spanning tree enabled protocol ieee\n  Root ID    Priority    32769\n             Address     0005.5EDD.1320\n             Cost        4\n             Port        25(GigabitEthernet0/1)\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n\n  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)\n             Address     000A.F3B9.911E\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n             Aging Time  20\n\nInterface        Role Sts Cost      Prio.Nbr Type\n---------------- ---- --- --------- -------- --------------------------------\nGi0/1            Root FWD 4         128.25   P2p\n\nVLAN0020\n  Spanning tree enabled protocol ieee\n  Root ID    Priority    32788\n             Address     0005.5EDD.1320\n             Cost        4\n             Port        25(GigabitEthernet0/1)\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n\n  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)\n             Address     000A.F3B9.911E\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n             Aging Time  20\n\nInterface        Role Sts Cost      Prio.Nbr Type\n---------------- ---- --- --------- -------- --------------------------------\nGi0/1            Root FWD 4         128.25   P2p\n\nMCP-PROBE-PVST-2960>\nMCP-PROBE-PVST-2960>"
+    }
+  },
+  "stp_application": [
+    {
+      "action_id": "pvst/stp/primary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Trusted typed control-plane mutation accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-3560:20"
+    },
+    {
+      "action_id": "pvst/stp/secondary",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Trusted typed control-plane mutation accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-2960:20"
+    },
+    {
+      "action_id": "pvst/stp/edge",
+      "applied": true,
+      "operation": "set_value",
+      "disposition": "unknown",
+      "message": "Trusted typed control-plane mutation accepted by Packet Tracer.",
+      "failure_code": "none",
+      "batch_id": "MCP-PROBE-PVST-3560:30"
+    }
+  ],
+  "stp_convergence": {
+    "verified": true,
+    "errors": [],
+    "attempts": [
+      {
+        "devices": {
+          "3560-24PS": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-3560",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "instances": [
+              {
+                "vlan_id": 1,
+                "protocol": "ieee",
+                "root_priority": 32769,
+                "root_address": "0005.5EDD.1320",
+                "root_is_local": true,
+                "root_cost": null,
+                "root_port": "",
+                "bridge_priority": 32769,
+                "bridge_base_priority": 32768,
+                "bridge_address": "0005.5EDD.1320",
+                "interfaces": [
+                  {
+                    "interface": "Gi0/1",
+                    "role": "Desg",
+                    "state": "FWD",
+                    "cost": 4,
+                    "priority_number": "128.25",
+                    "link_type": "P2p"
+                  }
+                ]
+              },
+              {
+                "vlan_id": 20,
+                "protocol": "ieee",
+                "root_priority": 24596,
+                "root_address": "0005.5EDD.1320",
+                "root_is_local": true,
+                "root_cost": null,
+                "root_port": "",
+                "bridge_priority": 24596,
+                "bridge_base_priority": 24576,
+                "bridge_address": "0005.5EDD.1320",
+                "interfaces": [
+                  {
+                    "interface": "Gi0/1",
+                    "role": "Desg",
+                    "state": "FWD",
+                    "cost": 4,
+                    "priority_number": "128.25",
+                    "link_type": "P2p"
+                  }
+                ]
+              }
+            ],
+            "output": "show spanning-tree\nVLAN0001\n  Spanning tree enabled protocol ieee\n  Root ID    Priority    32769\n             Address     0005.5EDD.1320\n             This bridge is the root\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n\n  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)\n             Address     0005.5EDD.1320\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n             Aging Time  20\n\nInterface        Role Sts Cost      Prio.Nbr Type\n---------------- ---- --- --------- -------- --------------------------------\nGi0/1            Desg FWD 4         128.25   P2p\n\nVLAN0020\n  Spanning tree enabled protocol ieee\n  Root ID    Priority    24596\n             Address     0005.5EDD.1320\n             This bridge is the root\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n\n  Bridge ID  Priority    24596  (priority 24576 sys-id-ext 20)\n             Address     0005.5EDD.1320\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n             Aging Time  20\n\nInterface        Role Sts Cost      Prio.Nbr Type\n---------------- ---- --- --------- -------- --------------------------------\nGi0/1            Desg FWD 4         128.25   P2p\n\nMCP-PROBE-PVST-3560>\nMCP-PROBE-PVST-3560>"
+          },
+          "2960-24TT": {
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "observed_device_name": "MCP-PROBE-PVST-2960",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "instances": [
+              {
+                "vlan_id": 1,
+                "protocol": "ieee",
+                "root_priority": 32769,
+                "root_address": "0005.5EDD.1320",
+                "root_is_local": false,
+                "root_cost": 4,
+                "root_port": "GigabitEthernet0/1",
+                "bridge_priority": 32769,
+                "bridge_base_priority": 32768,
+                "bridge_address": "000A.F3B9.911E",
+                "interfaces": [
+                  {
+                    "interface": "Gi0/1",
+                    "role": "Root",
+                    "state": "FWD",
+                    "cost": 4,
+                    "priority_number": "128.25",
+                    "link_type": "P2p"
+                  }
+                ]
+              },
+              {
+                "vlan_id": 20,
+                "protocol": "ieee",
+                "root_priority": 24596,
+                "root_address": "0005.5EDD.1320",
+                "root_is_local": false,
+                "root_cost": 4,
+                "root_port": "GigabitEthernet0/1",
+                "bridge_priority": 28692,
+                "bridge_base_priority": 28672,
+                "bridge_address": "000A.F3B9.911E",
+                "interfaces": [
+                  {
+                    "interface": "Gi0/1",
+                    "role": "Root",
+                    "state": "FWD",
+                    "cost": 4,
+                    "priority_number": "128.25",
+                    "link_type": "P2p"
+                  }
+                ]
+              }
+            ],
+            "output": "show spanning-tree\nVLAN0001\n  Spanning tree enabled protocol ieee\n  Root ID    Priority    32769\n             Address     0005.5EDD.1320\n             Cost        4\n             Port        25(GigabitEthernet0/1)\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n\n  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)\n             Address     000A.F3B9.911E\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n             Aging Time  20\n\nInterface        Role Sts Cost      Prio.Nbr Type\n---------------- ---- --- --------- -------- --------------------------------\nGi0/1            Root FWD 4         128.25   P2p\n\nVLAN0020\n  Spanning tree enabled protocol ieee\n  Root ID    Priority    24596\n             Address     0005.5EDD.1320\n             Cost        4\n             Port        25(GigabitEthernet0/1)\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n\n  Bridge ID  Priority    28692  (priority 28672 sys-id-ext 20)\n             Address     000A.F3B9.911E\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n             Aging Time  20\n\nInterface        Role Sts Cost      Prio.Nbr Type\n---------------- ---- --- --------- -------- --------------------------------\nGi0/1            Root FWD 4         128.25   P2p\n\nMCP-PROBE-PVST-2960>\nMCP-PROBE-PVST-2960>"
+          }
+        },
+        "errors": []
+      }
+    ]
+  },
+  "stp_verification": [
+    {
+      "expectation_id": "pvst/verify/primary",
+      "stage": "observed",
+      "status": "verified",
+      "evidence_method": "fresh_show_spanning_tree",
+      "fresh_evidence": true,
+      "fields": {
+        "source_device_name": "verified",
+        "mode": "verified",
+        "vlan_ids": "verified",
+        "root_primary_vlans": "verified"
+      },
+      "message": "Fresh parser-backed STP instances were compared by VLAN.",
+      "convergence": {
+        "attempts": 1,
+        "elapsed_ms": 0,
+        "final_status": "verified",
+        "last_observable_state": "parser_backed_instances",
+        "details": {}
+      }
+    },
+    {
+      "expectation_id": "pvst/verify/secondary",
+      "stage": "observed",
+      "status": "verified",
+      "evidence_method": "fresh_show_spanning_tree",
+      "fresh_evidence": true,
+      "fields": {
+        "source_device_name": "verified",
+        "mode": "verified",
+        "vlan_ids": "verified",
+        "root_secondary_vlans": "verified"
+      },
+      "message": "Fresh parser-backed STP instances were compared by VLAN.",
+      "convergence": {
+        "attempts": 1,
+        "elapsed_ms": 0,
+        "final_status": "verified",
+        "last_observable_state": "parser_backed_instances",
+        "details": {}
+      }
+    },
+    {
+      "expectation_id": "pvst/verify/primary-behavior",
+      "stage": "behavior",
+      "status": "verified",
+      "evidence_method": "fresh_show_spanning_tree_stable_roles",
+      "fresh_evidence": true,
+      "fields": {
+        "source_device_name": "verified",
+        "loop_free": "verified",
+        "forwarding_converged": "verified"
+      },
+      "message": "Fresh parser-backed STP roles and states were checked for stable forwarding/blocking consistency.",
+      "convergence": {
+        "attempts": 1,
+        "elapsed_ms": 0,
+        "final_status": "verified",
+        "last_observable_state": "stable_roles",
+        "details": {}
+      }
+    },
+    {
+      "expectation_id": "pvst/verify/secondary-behavior",
+      "stage": "behavior",
+      "status": "verified",
+      "evidence_method": "fresh_show_spanning_tree_stable_roles",
+      "fresh_evidence": true,
+      "fields": {
+        "source_device_name": "verified",
+        "loop_free": "verified",
+        "forwarding_converged": "verified"
+      },
+      "message": "Fresh parser-backed STP roles and states were checked for stable forwarding/blocking consistency.",
+      "convergence": {
+        "attempts": 1,
+        "elapsed_ms": 0,
+        "final_status": "verified",
+        "last_observable_state": "stable_roles",
+        "details": {}
+      }
+    }
+  ],
+  "qualification_errors": [],
+  "qualified_models": {
+    "3560-24PS": {
+      "stp_pvst_config": "supported",
+      "stp_state": "supported",
+      "stp_behavior": "supported"
+    },
+    "2960-24TT": {
+      "stp_pvst_config": "supported",
+      "stp_state": "supported",
+      "stp_behavior": "supported"
+    }
+  },
+  "edge_policy_qualification": {
+    "model": "3560-24PS",
+    "interface": "FastEthernet0/1",
+    "portfast": true,
+    "bpduguard": true,
+    "mutation_status": true
+  },
+  "verified": true,
+  "cleanup": {
+    "mutations": [
+      {
+        "target_id": "pvst-secondary",
+        "target_kind": "device",
+        "disposition": "changed",
+        "applied": true,
+        "inverse_available": false,
+        "inverse_action_id": "",
+        "message": "Exact disposable device cleanup was acknowledged."
+      },
+      {
+        "target_id": "pvst-primary",
+        "target_kind": "device",
+        "disposition": "changed",
+        "applied": true,
+        "inverse_available": false,
+        "inverse_action_id": "",
+        "message": "Exact disposable device cleanup was acknowledged."
+      }
+    ],
+    "first": {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 4,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        },
+        {
+          "name": "Power Distribution Device1",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        },
+        {
+          "name": "Power Distribution Device2",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        },
+        {
+          "name": "Power Distribution Device3",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    "second": {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 4,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        },
+        {
+          "name": "Power Distribution Device1",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        },
+        {
+          "name": "Power Distribution Device2",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        },
+        {
+          "name": "Power Distribution Device3",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    "workspace_verified": true,
+    "realtime": {
+      "observed": true,
+      "simulation_mode": false,
+      "frames": 0,
+      "sim_time": 7830902,
+      "verified_realtime": true
+    },
+    "verified": true
+  },
+  "completed_at": "2026-09-01T15:02:52.028039+00:00"
+}
