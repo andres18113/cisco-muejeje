@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
+from types import SimpleNamespace
 
 import pytest
 
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
+    ConfigurationFailureCode,
     FieldVerificationStatus,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
@@ -22,6 +25,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
 from src.packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
     EndpointDhcpClientStateMutation,
     PacketTracerEnterpriseVoiceRuntime,
+)
+from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    IosCommandResult,
+    OperationalQueryId,
 )
 from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
     PacketTracerNativeUiPhoneControlAdapter,
@@ -57,6 +64,29 @@ def test_adapter_applies_only_typed_voice_actions_and_escapes_device_names():
     runtime = _runtime(captured)
     plan = _compile().plan
     bindings = [item for item in plan.actions if isinstance(item, BindPhoneToExtension)]
+    output = "\n".join(
+        line
+        for binding in bindings
+        for line in (
+            f"ephone-{binding.directory_index} "
+            "Mac:0011.2233.4455 UNREGISTERED",
+            "IP:0.0.0.0 0 7960",
+            f" button 1: dn {binding.directory_index} "
+            f"number {binding.extension} CH1 IDLE",
+        )
+    )
+    runtime._ios = SimpleNamespace(execute=lambda device_name, query_id: (
+        IosCommandResult(
+            device_name,
+            query_id,
+            True,
+            output=output,
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name=device_name,
+            device_identity_provenance="confirmed_unique",
+        )
+    ))
 
     results = runtime.apply_actions(bindings)
 
@@ -81,6 +111,118 @@ def test_adapter_applies_only_typed_voice_actions_and_escapes_device_names():
         "mac-address 0011.2233.4455" in item["ios_payload"]
         for item in application["batches"]
     )
+
+
+def test_each_phone_binding_readback_authorizes_the_next_mutation():
+    runtime = _runtime([])
+    bindings = sorted(
+        (
+            item for item in _compile().plan.actions
+            if isinstance(item, BindPhoneToExtension)
+        ),
+        key=lambda item: item.id,
+    )
+    events = []
+    configured = []
+
+    def configure(_host, payload):
+        index = int(re.search(r"(?m)^ephone (\d+)$", payload).group(1))
+        configured.append(index)
+        events.append(("apply", index))
+        return True
+
+    class BindingIos:
+        def execute(self, device_name, query_id):
+            events.append(("verify", tuple(configured)))
+            rows = []
+            for binding in bindings:
+                if binding.directory_index not in configured:
+                    continue
+                rows.extend((
+                    f"ephone-{binding.directory_index} "
+                    "Mac:0011.2233.4455 UNREGISTERED",
+                    "IP:0.0.0.0 0 7960",
+                    f" button 1: dn {binding.directory_index} "
+                    f"number {binding.extension} CH1 IDLE",
+                ))
+            return IosCommandResult(
+                device_name,
+                query_id,
+                True,
+                output="\n".join(rows),
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name=device_name,
+                device_identity_provenance="confirmed_unique",
+            )
+
+    runtime._configuration = SimpleNamespace(configure_ios=configure)
+    runtime._ios = BindingIos()
+
+    results = runtime.apply_actions(bindings)
+
+    assert all(item.applied for item in results)
+    assert all(
+        item.failure_code is ConfigurationFailureCode.NONE
+        for item in results
+    )
+    assert events == [
+        ("apply", bindings[0].directory_index),
+        ("verify", (bindings[0].directory_index,)),
+        ("apply", bindings[1].directory_index),
+        (
+            "verify",
+            (
+                bindings[0].directory_index,
+                bindings[1].directory_index,
+            ),
+        ),
+    ]
+    diagnostics = runtime.drain_diagnostic_evidence()
+    application, = diagnostics["applications"]
+    assert len(application["binding_readbacks"]) == len(bindings)
+    assert all(
+        item["verified"] for item in application["binding_readbacks"]
+    )
+
+
+def test_missing_binding_readback_stops_without_replaying_or_dispatching_later():
+    captured = []
+    runtime = _runtime(captured)
+    bindings = sorted(
+        (
+            item for item in _compile().plan.actions
+            if isinstance(item, BindPhoneToExtension)
+        ),
+        key=lambda item: item.id,
+    )
+    runtime._ios = SimpleNamespace(execute=lambda device_name, query_id: (
+        IosCommandResult(
+            device_name,
+            OperationalQueryId.SHOW_EPHONE,
+            True,
+            output="HQ-R1#show ephone\nHQ-R1#",
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name=device_name,
+            device_identity_provenance="confirmed_unique",
+        )
+    ))
+
+    results = runtime.apply_actions(bindings)
+
+    first = next(
+        item for item in results
+        if item.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+    )
+    blocked = next(
+        item for item in results
+        if item.failure_code is ConfigurationFailureCode.DEPENDENCY_BLOCKED
+    )
+    assert first.applied
+    assert not blocked.applied
+    assert sum("configureIosDevice" in item for item in captured) == 1
+    assert "readback" in first.message.casefold()
 
 
 def test_local_dial_rule_is_implicit_and_intersite_rule_is_not_claimed_applied():

@@ -21,6 +21,7 @@ from ...domain.enterprise.models.voice_plan import (
     CallExpectation,
     ConfigureDialRule,
     VoiceAction,
+    VoicePhase,
     VoiceVerificationExpectation,
 )
 from ...domain.enterprise.models.voice_runtime import (
@@ -223,7 +224,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                 message=str(exc),
             ) for item in renderable})
             return [results[item.id] for item in actions]
-        self._application_diagnostics.append({
+        application_diagnostic = {
             "host": host,
             "phone_macs": phone_mac_evidence,
             "batches": [{
@@ -231,29 +232,72 @@ class PacketTracerEnterpriseVoiceRuntime:
                 "action_ids": list(batch.action_ids),
                 "ios_payload": batch.ios_payload,
             } for batch in batches],
+            "binding_readbacks": [],
             "error": "",
-        })
+        }
+        self._application_diagnostics.append(application_diagnostic)
+        binding_by_id = {
+            item.id: item for item in renderable
+            if isinstance(item, BindPhoneToExtension)
+        }
 
-        applied_ids: set[str] = set()
-        for batch in batches:
+        dispatch_stopped = ""
+        for batch_index, batch in enumerate(batches):
             accepted = self._configuration.configure_ios(host, batch.ios_payload)
+            failure_code = (
+                ConfigurationFailureCode.NONE
+                if accepted
+                else ConfigurationFailureCode.CALL_CONTROL_APPLICATION_FAILED
+            )
+            message = (
+                "Typed voice batch accepted by Packet Tracer."
+                if accepted else "Packet Tracer rejected the typed voice batch."
+            )
+            if (
+                accepted
+                and batch.phase is VoicePhase.PHONE_BINDINGS
+                and len(batch.action_ids) == 1
+            ):
+                action = binding_by_id[batch.action_ids[0]]
+                readback = self._phone_binding_readback(
+                    host,
+                    action,
+                    phone_macs[action.phone_id],
+                )
+                application_diagnostic["binding_readbacks"].append(readback)
+                if not readback["verified"]:
+                    failure_code = ConfigurationFailureCode.VERIFICATION_FAILED
+                    message = (
+                        "Typed phone binding was dispatched but its exact ephone "
+                        "row was absent or contradicted in fresh readback."
+                    )
             for action_id in batch.action_ids:
-                applied_ids.add(action_id)
                 results[action_id] = RuntimeActionMutation(
                     action_id=action_id,
                     applied=accepted,
-                    failure_code=(
-                        ConfigurationFailureCode.NONE
-                        if accepted else ConfigurationFailureCode.CALL_CONTROL_APPLICATION_FAILED
+                    failure_code=failure_code,
+                    message=message,
+                    batch_id=(
+                        f"{host}:{int(batch.phase)}:{batch_index + 1}"
                     ),
-                    message=(
-                        "Typed voice batch accepted by Packet Tracer."
-                        if accepted else "Packet Tracer rejected the typed voice batch."
-                    ),
-                    batch_id=f"{host}:{int(batch.phase)}",
                 )
+            if failure_code is not ConfigurationFailureCode.NONE:
+                dispatch_stopped = batch.action_ids[-1]
+                break
+        if dispatch_stopped:
+            for batch in batches[batch_index + 1:]:
+                for action_id in batch.action_ids:
+                    results[action_id] = RuntimeActionMutation(
+                        action_id=action_id,
+                        applied=False,
+                        failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                        message=(
+                            "Voice dispatch stopped after failed readback for "
+                            f"{dispatch_stopped}."
+                        ),
+                    )
         for item in renderable:
-            if item.id not in applied_ids:
+            if item.id not in results:
                 results[item.id] = RuntimeActionMutation(
                     action_id=item.id,
                     applied=False,
@@ -261,6 +305,59 @@ class PacketTracerEnterpriseVoiceRuntime:
                     message="The trusted voice renderer produced no mutation for this action.",
                 )
         return [results[item.id] for item in actions]
+
+    def _phone_binding_readback(
+        self,
+        host: str,
+        binding: BindPhoneToExtension,
+        expected_mac: str,
+    ) -> dict[str, object]:
+        show = self._ios.execute(host, OperationalQueryId.SHOW_EPHONE)
+        rows = parse_show_ephone(show.output) if show.executed else []
+        row = next(
+            (item for item in rows if item.index == binding.directory_index),
+            None,
+        )
+        authoritative = bool(
+            show.executed
+            and show.fresh_output_observed
+            and show.output_complete
+            and show.observed_device_name == host
+            and show.device_identity_provenance == "confirmed_unique"
+        )
+        expected_compact = re.sub(r"[.:-]", "", expected_mac).casefold()
+        observed_compact = (
+            re.sub(r"[.:-]", "", row.mac_address).casefold()
+            if row is not None else ""
+        )
+        verified = bool(
+            authoritative
+            and row is not None
+            and row.extension == binding.extension
+            and observed_compact == expected_compact
+        )
+        return {
+            "action_id": binding.id,
+            "phone_id": binding.phone_id,
+            "directory_index": binding.directory_index,
+            "extension": binding.extension,
+            "expected_mac": expected_mac,
+            "verified": verified,
+            "executed": show.executed,
+            "fresh_output_observed": show.fresh_output_observed,
+            "output_complete": show.output_complete,
+            "observed_device_name": show.observed_device_name,
+            "device_identity_provenance": (
+                show.device_identity_provenance
+            ),
+            "row": row.__dict__ if row is not None else None,
+            "observed_indices": [item.index for item in rows],
+            "failure_reason": show.failure_reason,
+            "output_sha256": hashlib.sha256(
+                show.output.encode("utf-8")
+            ).hexdigest(),
+            "output": "" if verified else show.output,
+        }
 
     def inspect_call_control(
         self, device_name: str, *, max_extensions: int = 144,

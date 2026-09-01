@@ -565,8 +565,12 @@ class VoiceApplicator:
                             if mutation else ActionExecutionStatus.FAILED
                         ),
                         failure_code=(
-                            ConfigurationFailureCode.NONE if applied
-                            else mutation.failure_code if mutation else
+                            mutation.failure_code
+                            if mutation
+                            and mutation.failure_code
+                            is not ConfigurationFailureCode.NONE
+                            else ConfigurationFailureCode.NONE if applied
+                            else
                             ConfigurationFailureCode.CALL_CONTROL_APPLICATION_FAILED
                         ),
                         message=mutation.message if mutation else "Runtime returned no mutation.",
@@ -937,7 +941,14 @@ class VoiceApplicator:
 
     @staticmethod
     def _application_status(results):
-        if any(item.status is ActionExecutionStatus.FAILED for item in results):
+        if any(
+            item.status is ActionExecutionStatus.FAILED
+            or (
+                satisfies_apply_dependency(item.status)
+                and item.failure_code is not ConfigurationFailureCode.NONE
+            )
+            for item in results
+        ):
             return ActionExecutionStatus.FAILED
         if any(not satisfies_apply_dependency(item.status) for item in results):
             return ActionExecutionStatus.PARTIAL

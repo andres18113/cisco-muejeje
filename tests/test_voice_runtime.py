@@ -6,6 +6,7 @@ from copy import deepcopy
 
 from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
@@ -515,6 +516,19 @@ def test_trusted_renderer_translates_only_typed_actions_and_runtime_mac():
             for line in item.ios_payload.splitlines()
         ) == 1
         for item in binding_batches
+    )
+
+
+def test_applied_binding_with_failed_readback_fails_voice_application():
+    result = ActionApplicationResult(
+        action_id="voice/binding/1",
+        status=ActionExecutionStatus.APPLIED,
+        failure_code=ConfigurationFailureCode.VERIFICATION_FAILED,
+        message="Binding was dispatched but absent from readback.",
+    )
+
+    assert VoiceApplicator._application_status([result]) is (
+        ActionExecutionStatus.FAILED
     )
 
 
