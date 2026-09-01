@@ -19,7 +19,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationPlan,
 )
 from ...domain.enterprise.models.roles import DeviceRole
-from ...domain.enterprise.models.voice_plan import VoicePlan
+from ...domain.enterprise.models.voice_plan import EnableCallControl, VoicePlan
 from ...domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityProfile,
     ControlPlanePlan,
@@ -38,6 +38,9 @@ from ...domain.enterprise.services.reference_hardware_planner import (
 from ...domain.enterprise.services.topology_identity import stamp_topology_hashes
 from ...domain.enterprise.services.traffic_attribution import (
     attribute_enterprise_traffic,
+)
+from ...domain.enterprise.services.voice_compiler import (
+    voice_plan_semantic_hash,
 )
 from ...domain.enterprise.scenarios.cp_scale import cp_scale_intent
 from ...domain.enterprise.scenarios.cp_scale_physical import (
@@ -408,7 +411,27 @@ def _compile_stage_voice(
                 if item.severity is ConfigurationIssueSeverity.ERROR
             )
         )
-    return compiled.plan
+    plan = compiled.plan
+    if composition.voice is not None:
+        final_capacity = {
+            item.call_control_id: (
+                item.max_phones,
+                item.max_extensions,
+            )
+            for item in composition.voice.actions
+            if isinstance(item, EnableCallControl)
+        }
+        plan.actions = [
+            item.model_copy(update={
+                "max_phones": final_capacity[item.call_control_id][0],
+                "max_extensions": final_capacity[item.call_control_id][1],
+            })
+            if isinstance(item, EnableCallControl)
+            else item
+            for item in plan.actions
+        ]
+        plan.semantic_hash = voice_plan_semantic_hash(plan)
+    return plan
 
 
 def project_cp_scale_canonical_delta(

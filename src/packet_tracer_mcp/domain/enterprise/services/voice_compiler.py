@@ -91,6 +91,20 @@ def _warning(code: ConfigurationIssueCode, message: str, subject: str = "") -> C
     return _issue(ConfigurationIssueSeverity.WARNING, code, message, subject)
 
 
+def voice_plan_semantic_hash(plan: VoicePlan) -> str:
+    """Return the canonical identity for a typed Voice plan."""
+
+    payload = plan.model_dump(mode="json")
+    payload["semantic_hash"] = ""
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 class VoiceCompiler:
     """Transforma intención de voz y fundamentos E4/E5/E6 en acciones cerradas."""
 
@@ -779,10 +793,7 @@ class VoiceCompiler:
 
     @staticmethod
     def _semantic_hash(plan: VoicePlan) -> str:
-        payload = plan.model_dump(mode="json")
-        payload["semantic_hash"] = ""
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return voice_plan_semantic_hash(plan)
 
     @staticmethod
     def _result(plan, topology, configuration, assignments, controls, actions, issues, service_plan):

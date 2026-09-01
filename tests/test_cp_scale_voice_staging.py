@@ -84,6 +84,34 @@ def test_floor1_stages_voice_for_exactly_the_phones_it_deployed(composition):
     } == deployed
 
 
+def test_each_active_call_control_uses_its_final_designed_site_capacity(
+    composition,
+):
+    full = {
+        item.call_control_id: (item.max_phones, item.max_extensions)
+        for item in composition.voice.actions_of_type(
+            VoiceActionType.ENABLE_CALL_CONTROL,
+        )
+    }
+    assert set(full.values()) == {(51, 51), (11, 11), (7, 7)}
+
+    for stage in (
+        CPScaleCanonicalStage.FLOOR1,
+        CPScaleCanonicalStage.FLOOR2,
+        CPScaleCanonicalStage.FLOOR3,
+        CPScaleCanonicalStage.ROUTER0_BRANCH,
+        CPScaleCanonicalStage.ROUTER3_BRANCH,
+    ):
+        projection = _stage(composition, stage)
+        assert projection.voice is not None
+        for action in projection.voice.actions_of_type(
+            VoiceActionType.ENABLE_CALL_CONTROL,
+        ):
+            assert (action.max_phones, action.max_extensions) == full[
+                action.call_control_id
+            ]
+
+
 def test_every_stage_voice_plan_binds_that_stage_and_not_the_full_scale(composition):
     """A plan carrying full-scale hashes is refused at apply, and rightly.
 
