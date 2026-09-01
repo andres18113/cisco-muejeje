@@ -492,6 +492,8 @@ def test_trusted_renderer_translates_only_typed_actions_and_runtime_mac():
     payload = "\n".join(item.ios_payload for item in batches)
 
     assert "telephony-service" in payload
+    assert "\n no auto-reg-ephone\n" in payload
+    assert "\n auto-reg-ephone\n" not in payload
     assert "ip source-address 198.18.170.1 port 2000" in payload
     assert "ephone-dn 1" in payload
     assert "number 3101" in payload

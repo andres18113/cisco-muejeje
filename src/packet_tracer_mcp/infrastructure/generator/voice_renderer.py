@@ -96,9 +96,8 @@ class PacketTracerVoiceRenderer:
                 lines.extend([
                     "telephony-service", f" max-ephones {action.max_phones}",
                     f" max-dn {action.max_extensions}",
+                    " no auto-reg-ephone",
                 ])
-                if action.registration_required:
-                    lines.append(" auto-reg-ephone")
                 lines.append(" exit")
             elif isinstance(action, ConfigureCallControlSource):
                 address = str(ipaddress.ip_address(action.source_address))
