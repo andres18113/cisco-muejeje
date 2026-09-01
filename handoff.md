@@ -510,6 +510,15 @@ STP_PVST_QUALIFICATION_RUN3_OBSERVATIONS = 3560_STATE_BEHAVIOR_VERIFIED | 2960_S
 STP_PVST_QUALIFICATION_RUN3_SHA256 = 1de1d5d8b3b3da2dfa7264689daf42af52b8b6b3493111165b5345136a19165b
 STP_PVST_QUALIFICATION_RUN3_CLEANUP = ZERO_SEMANTIC_DEVICES_LINKS_TWICE | REALTIME_VERIFIED
 STP_PVST_ROUTER0_3650_REQUIREMENT = MUTATIONS_17 | STATE_EXPECTATIONS_3 | BEHAVIOR_EXPECTATIONS_3 | CAPABILITY_UNKNOWN
+STP_PVST_QUALIFICATION_RUN4_HEAD = c61ee6626d6536be49b986bbd2fae72c78c29cf2
+STP_PVST_QUALIFICATION_RUN4_RESULT = PRIMARY_BEHAVIOR_BOUNDARY_EXPIRED_AFTER_ALL_MUTATIONS_AND_STATE_VERIFIED
+STP_PVST_QUALIFICATION_RUN4_MUTATIONS = FIVE_OF_FIVE_APPLIED
+STP_PVST_QUALIFICATION_RUN4_STATE = THREE_OF_THREE_VERIFIED
+STP_PVST_QUALIFICATION_RUN4_BEHAVIOR = LEAVES_TWO_VERIFIED | PRIMARY_FAILED_4_ATTEMPTS
+STP_PVST_QUALIFICATION_RUN4_CLASSIFICATION = OBSERVER_CONVERGENCE_BOUNDARY
+STP_PVST_QUALIFICATION_RUN4_CORRECTION = TWO_IDENTICAL_STABLE_SAMPLES | 45S_MEASURED_BOUND | TRANSITION_RETENTION
+STP_PVST_QUALIFICATION_RUN4_SHA256 = e1eac60ca0b304fa6b26a9fb233de4b9e540ab5f8371279a5b86d1db8ac5832c
+STP_PVST_QUALIFICATION_RUN4_CLEANUP = ZERO_SEMANTIC_DEVICES_LINKS_TWICE | REALTIME_VERIFIED
 CME_CAPACITY_MODEL_2911 = SUPPORTS_CME_UNKNOWN | VERIFY_FAILED_NO_EPHONE_ROW
 CME_CAPACITY_PROBE_2911_WRAPPER = HARNESS_SERIALIZATION_FAILURE_AFTER_VALID_MODEL_RESULT
 CME_CAPACITY_PROBE_2911_CLEANUP = SNAPSHOT_RESTORED | INDEPENDENT_ZERO_ZERO_TWICE
@@ -527,10 +536,10 @@ CANONICAL_CP_SCALE_EVIDENCE_SHA256 = RUN1_PRECLEANUP_d4b017332c1f0b7f12e5e6fef97
 CANONICAL_CP_SCALE_RUN21_EVIDENCE_SHA256 = PRECLEANUP_e5a8e0ddf05c905d468227a61adc17bf6c9f9c367a7ff15080aaf494011c6dc1 | CLEANUP_57c428a9ad5afe4d5f9d39e02b83498d274241c25b54fdd6efd3ac322237babe
 CANONICAL_CP_SCALE_WORKSPACE_RESTORED = YES
 CANONICAL_CP_SCALE_REALTIME_RESTORED = YES
-LIVE_RUNS_CONSUMED = 32
+LIVE_RUNS_CONSUMED = 33
 CLEANUP = VERIFIED_AFTER_EVERY_LIVE
 WORKSPACE_RESTORED = YES
-NEXT_ACTIVE_STEP = QUALIFY_3650_PVST_CONFIG_STATE_BEHAVIOR
+NEXT_ACTIVE_STEP = IMPLEMENT_STABLE_SAMPLE_PVST_BEHAVIOR_BOUNDARY
 CP_SCALE_STATUS = FLOOR3_VOICE_VERIFIED_42_OF_42 | FLOOR3_STP_CAPABILITY_QUALIFICATION_REQUIRED
 <!-- CP_SCALE_STATE_END -->
 
@@ -1072,6 +1081,35 @@ on `3650-24PS` (three global and 14 edge), with three state and three behavior
 expectations. That exact model remains UNKNOWN. The same bounded qualifier will
 add one 3650 branch and test those same three dimensions; no Floor3 capability
 is inferred onto it.
+
+The three-model run
+`stp-pvst-capability-20260901T151056013414Z-c61ee6626d65` used clean
+pushed source `c61ee6626d6536be49b986bbd2fae72c78c29cf2`. All 12 typed
+hostname/VLAN/trunk/access foundations applied and all four trunk endpoints
+reached VLAN 20 FWD with confirmed-unique identities. All five STP mutations
+then applied: three global actions and the 3560/3650 edge actions. All three
+state expectations verified the exact root priorities, ports, and addresses;
+both leaf behavior expectations verified.
+
+The 3560 primary behavior expectation alone failed after four observations.
+The immediately preceding harness snapshot had accepted `Gi0/1 Desg/FWD` plus
+`Gi0/2 Altn/BLK` as a stable, loop-free state, but the production observer then
+encountered later transition before its 12-second boundary expired. Thus neither
+the earlier blocking sample nor the terminal behavior failure is a stable
+3650-product contradiction. The first divergence is observer convergence:
+one stable-looking sample is insufficient, the old bound is below the measured
+34,125 ms CP-SCALE PVST transition, and the behavior result retained only its
+last classification rather than the transition sequence.
+
+The next correction requires two consecutive identical stable role/state
+signatures, resets that count on LIS/LRN or a changed signature, retains compact
+transitions in `ConvergenceReport.details`, and uses a 45-second bound already
+justified by the canonical Floor2 measurement. It never reapplies an STP
+action.
+
+Evidence SHA-256:
+`e1eac60ca0b304fa6b26a9fb233de4b9e540ab5f8371279a5b86d1db8ac5832c`.
+Cleanup restored zero semantic devices and links twice and verified Realtime.
 
 ## Grouped frontier isolates combined pager rollover
 

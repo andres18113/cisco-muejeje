@@ -28,6 +28,10 @@ THIRD_LIVE_EVIDENCE = (
     ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
     / "stp-pvst-capability-20260901T150150452540Z-29afd03bdd21.json"
 )
+FOURTH_LIVE_EVIDENCE = (
+    ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
+    / "stp-pvst-capability-20260901T151056013414Z-c61ee6626d65.json"
+)
 
 _PROBE = r'''
 import json
@@ -491,6 +495,44 @@ def test_third_live_verifies_floor3_model_state_and_behavior_observers():
         assert observations[identifier]["evidence_method"] == (
             "fresh_show_spanning_tree_stable_roles"
         )
+    assert evidence["cleanup"]["verified"] is True
+    assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["second"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["realtime"]["verified_realtime"] is True
+
+
+def test_fourth_live_reaches_3650_but_expires_at_primary_behavior_boundary():
+    assert hashlib.sha256(FOURTH_LIVE_EVIDENCE.read_bytes()).hexdigest() == (
+        "e1eac60ca0b304fa6b26a9fb233de4b9e540ab5f8371279a5b86d1db8ac5832c"
+    )
+    evidence = json.loads(FOURTH_LIVE_EVIDENCE.read_text(encoding="utf-8"))
+
+    assert evidence["repository"]["head"] == (
+        "c61ee6626d6536be49b986bbd2fae72c78c29cf2"
+    )
+    assert evidence["verified"] is False
+    assert all(item["applied"] for item in evidence["stp_application"])
+    assert len(evidence["stp_application"]) == 5
+    observations = {
+        item["expectation_id"]: item
+        for item in evidence["stp_verification"]
+    }
+    assert all(
+        observations[identifier]["status"] == "verified"
+        for identifier in (
+            "pvst/verify/primary",
+            "pvst/verify/secondary",
+            "pvst/verify/tertiary",
+            "pvst/verify/secondary-behavior",
+            "pvst/verify/tertiary-behavior",
+        )
+    )
+    primary_behavior = observations["pvst/verify/primary-behavior"]
+    assert primary_behavior["status"] == "failed"
+    assert primary_behavior["convergence"]["attempts"] == 4
+    assert evidence["qualification_errors"] == [
+        "pvst/verify/primary-behavior: status is failed",
+    ]
     assert evidence["cleanup"]["verified"] is True
     assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
     assert evidence["cleanup"]["second"]["semantic_device_count"] == 0
