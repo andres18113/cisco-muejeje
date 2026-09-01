@@ -868,6 +868,14 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         }.get(expectation.kind)
         if direct is not None:
             return direct(expectation, action, query_cache)
+        if (
+            expectation.kind
+            is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+            and isinstance(action, ConfigureSpanningTree)
+            and {"loop_free", "forwarding_converged"}
+            & set(expectation.expected)
+        ):
+            return self._observe_stp_behavior(expectation, action, query_cache)
         if expectation.kind is not ControlPlaneVerificationKind.END_TO_END_REACHABILITY:
             return self._unobservable(
                 expectation,
@@ -1000,25 +1008,11 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 "MST has no PT 9.0.1.0858 fresh-output fixture and typed parser.",
                 evidence_method="mst_readback_unavailable",
             )
-        show = self._fresh_show(
-            action.device_name, OperationalQueryId.SHOW_SPANNING_TREE,
-            expectation, query_cache,
-        )
-        if isinstance(show, RuntimeControlPlaneVerification):
-            return show
-        instances = parse_show_spanning_tree(show.output)
-        attempts = 1
         deadline = self._clock() + self._stp_timeout
         key = (action.device_name, OperationalQueryId.SHOW_SPANNING_TREE)
-        while (
-            not instances
-            and attempts < self._stp_attempts
-            and self._clock() + self._stp_interval < deadline
-        ):
-            self._sleep(self._stp_interval)
+        attempts = 0
+        while True:
             attempts += 1
-            # Re-observe only; never re-render or redispatch the typed action.
-            query_cache.pop(key, None)
             show = self._fresh_show(
                 action.device_name,
                 OperationalQueryId.SHOW_SPANNING_TREE,
@@ -1034,84 +1028,213 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                     ),
                 })
             instances = parse_show_spanning_tree(show.output)
-        if not instances:
-            result = self._unobservable(
-                expectation, ControlPlaneExecutionStage.OBSERVED,
-                "Fresh spanning-tree output had no parser-backed instance.",
-            )
-            return result.model_copy(update={
-                "convergence": ConvergenceReport(
-                    attempts=attempts,
-                    final_status=result.status,
-                    last_observable_state="no_parser_backed_instance",
-                ),
-            })
-        fields = self._unobservable_fields(expectation)
-        self._certify_source_device(fields, expectation, show)
-        vlan_ids = self._typed_int_list(expectation.expected.get("vlan_ids"))
-        root_vlans = self._typed_int_list(
-            expectation.expected.get("root_primary_vlans")
-        )
-        secondary_vlans = self._typed_int_list(
-            expectation.expected.get("root_secondary_vlans")
-        )
-        priorities = self._typed_int_mapping(
-            expectation.expected.get("priorities")
-        )
-        by_vlan = {item.vlan_id: item for item in instances}
-        selected = [by_vlan[item] for item in vlan_ids or [] if item in by_vlan]
-        all_vlans_present = (
-            vlan_ids is not None and len(selected) == len(vlan_ids)
-        )
-        if vlan_ids is not None:
-            fields["vlan_ids"] = self._field(all_vlans_present)
-        mode = expectation.expected.get("mode")
-        expected_protocol = {
-            StpMode.PVST.value: "ieee",
-            StpMode.RAPID_PVST.value: "rstp",
-        }.get(mode)
-        if expected_protocol is not None and all_vlans_present:
-            fields["mode"] = self._field(
-                bool(selected)
-                and all(
-                    item.protocol.casefold() == expected_protocol
-                    for item in selected
+            if not instances:
+                result = self._unobservable(
+                    expectation, ControlPlaneExecutionStage.OBSERVED,
+                    "Fresh spanning-tree output had no parser-backed instance.",
                 )
+                retryable = True
+                state = "no_parser_backed_instance"
+            else:
+                fields = self._unobservable_fields(expectation)
+                self._certify_source_device(fields, expectation, show)
+                vlan_ids = self._typed_int_list(
+                    expectation.expected.get("vlan_ids")
+                )
+                root_vlans = self._typed_int_list(
+                    expectation.expected.get("root_primary_vlans")
+                )
+                secondary_vlans = self._typed_int_list(
+                    expectation.expected.get("root_secondary_vlans")
+                )
+                priorities = self._typed_int_mapping(
+                    expectation.expected.get("priorities")
+                )
+                by_vlan = {item.vlan_id: item for item in instances}
+                selected = [
+                    by_vlan[item] for item in vlan_ids or [] if item in by_vlan
+                ]
+                all_vlans_present = (
+                    vlan_ids is not None and len(selected) == len(vlan_ids)
+                )
+                if vlan_ids is not None:
+                    fields["vlan_ids"] = self._field(all_vlans_present)
+                mode = expectation.expected.get("mode")
+                expected_protocol = {
+                    StpMode.PVST.value: "ieee",
+                    StpMode.RAPID_PVST.value: "rstp",
+                }.get(mode)
+                if expected_protocol is not None and all_vlans_present:
+                    fields["mode"] = self._field(
+                        bool(selected)
+                        and all(
+                            item.protocol.casefold() == expected_protocol
+                            for item in selected
+                        )
+                    )
+                if root_vlans is not None:
+                    fields["root_primary_vlans"] = self._field(all(
+                        vlan in by_vlan and by_vlan[vlan].root_is_local
+                        for vlan in root_vlans
+                    ))
+                if secondary_vlans is not None and all(
+                    vlan in by_vlan
+                    and by_vlan[vlan].bridge_base_priority is not None
+                    for vlan in secondary_vlans
+                ):
+                    fields["root_secondary_vlans"] = self._field(all(
+                        by_vlan[vlan].bridge_base_priority == 28672
+                        for vlan in secondary_vlans
+                    ))
+                if priorities is not None and all(
+                    vlan in by_vlan
+                    and by_vlan[vlan].bridge_base_priority is not None
+                    for vlan in priorities
+                ):
+                    fields["priorities"] = self._field(all(
+                        by_vlan[vlan].bridge_base_priority == priority
+                        for vlan, priority in priorities.items()
+                    ))
+                result = self._direct_observation(
+                    expectation, fields, "fresh_show_spanning_tree",
+                    "Fresh parser-backed STP instances were compared by VLAN.",
+                )
+                retryable = bool(
+                    not all_vlans_present
+                    or any(
+                        port.state.casefold() in {"lis", "lrn"}
+                        for item in selected
+                        for port in item.interfaces
+                    )
+                )
+                state = "parser_backed_instances"
+            if (
+                result.status is ActionExecutionStatus.VERIFIED
+                or not retryable
+                or attempts >= self._stp_attempts
+                or self._clock() + self._stp_interval >= deadline
+            ):
+                return result.model_copy(update={
+                    "convergence": ConvergenceReport(
+                        attempts=attempts,
+                        final_status=result.status,
+                        last_observable_state=state,
+                    ),
+                })
+            self._sleep(self._stp_interval)
+            # Re-observe only; never re-render or redispatch the typed action.
+            query_cache.pop(key, None)
+
+    def _observe_stp_behavior(self, expectation, action, query_cache):
+        if action.mode is StpMode.MST:
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.BEHAVIOR,
+                "MST behavior has no PT 9.0.1.0858 parser-backed qualification.",
+                evidence_method="mst_behavior_readback_unavailable",
             )
-        if root_vlans is not None:
-            fields["root_primary_vlans"] = self._field(all(
-                vlan in by_vlan and by_vlan[vlan].root_is_local
-                for vlan in root_vlans
-            ))
-        if secondary_vlans is not None and all(
-            vlan in by_vlan
-            and by_vlan[vlan].bridge_base_priority is not None
-            for vlan in secondary_vlans
-        ):
-            fields["root_secondary_vlans"] = self._field(all(
-                by_vlan[vlan].bridge_base_priority == 28672
-                for vlan in secondary_vlans
-            ))
-        if priorities is not None and all(
-            vlan in by_vlan
-            and by_vlan[vlan].bridge_base_priority is not None
-            for vlan in priorities
-        ):
-            fields["priorities"] = self._field(all(
-                by_vlan[vlan].bridge_base_priority == priority
-                for vlan, priority in priorities.items()
-            ))
-        result = self._direct_observation(
-            expectation, fields, "fresh_show_spanning_tree",
-            "Fresh parser-backed STP instances were compared by VLAN.",
-        )
-        return result.model_copy(update={
-            "convergence": ConvergenceReport(
-                attempts=attempts,
-                final_status=result.status,
-                last_observable_state="parser_backed_instances",
-            ),
-        })
+        deadline = self._clock() + self._stp_timeout
+        key = (action.device_name, OperationalQueryId.SHOW_SPANNING_TREE)
+        attempts = 0
+        while True:
+            attempts += 1
+            show = self._fresh_show(
+                action.device_name,
+                OperationalQueryId.SHOW_SPANNING_TREE,
+                expectation,
+                query_cache,
+            )
+            if isinstance(show, RuntimeControlPlaneVerification):
+                return show.model_copy(update={
+                    "convergence": ConvergenceReport(
+                        attempts=attempts,
+                        final_status=show.status,
+                        last_observable_state="unobservable",
+                    ),
+                })
+            instances = parse_show_spanning_tree(show.output)
+            if not instances:
+                result = self._unobservable(
+                    expectation,
+                    ControlPlaneExecutionStage.BEHAVIOR,
+                    "Fresh spanning-tree output had no parser-backed instance.",
+                    evidence_method="stp_readback_no_parser_backed_instance",
+                )
+                transitional = True
+                stable = False
+                state = "no_parser_backed_instance"
+            else:
+                by_vlan = {item.vlan_id: item for item in instances}
+                selected = [
+                    by_vlan[vlan]
+                    for vlan in action.vlan_ids
+                    if vlan in by_vlan
+                ]
+                all_vlans_present = len(selected) == len(action.vlan_ids)
+                ports = [port for item in selected for port in item.interfaces]
+                stable = bool(selected) and bool(ports) and all(
+                    port.state.casefold() in {"fwd", "blk"}
+                    for port in ports
+                )
+                role_state_consistent = stable and all(
+                    (
+                        port.role.casefold() in {"root", "desg"}
+                        and port.state.casefold() == "fwd"
+                    )
+                    or (
+                        port.role.casefold() in {"altn", "back"}
+                        and port.state.casefold() == "blk"
+                    )
+                    for port in ports
+                )
+                fields = self._unobservable_fields(expectation)
+                self._certify_source_device(fields, expectation, show)
+                loop_free = expectation.expected.get("loop_free")
+                if isinstance(loop_free, bool):
+                    fields["loop_free"] = self._field(
+                        all_vlans_present and role_state_consistent is loop_free
+                    )
+                forwarding = expectation.expected.get("forwarding_converged")
+                if isinstance(forwarding, bool):
+                    fields["forwarding_converged"] = self._field(
+                        all_vlans_present and stable is forwarding
+                    )
+                result = self._direct_observation(
+                    expectation,
+                    fields,
+                    "fresh_show_spanning_tree_stable_roles",
+                    (
+                        "Fresh parser-backed STP roles and states were checked "
+                        "for stable forwarding/blocking consistency."
+                    ),
+                    stage=ControlPlaneExecutionStage.BEHAVIOR,
+                )
+                transitional = bool(
+                    not all_vlans_present
+                    or any(
+                        port.state.casefold() in {"lis", "lrn"}
+                        for port in ports
+                    )
+                )
+                state = (
+                    "stable_roles"
+                    if stable else "transitional_or_absent_roles"
+                )
+            if (
+                result.status is ActionExecutionStatus.VERIFIED
+                or not transitional
+                or attempts >= self._stp_attempts
+                or self._clock() + self._stp_interval >= deadline
+            ):
+                return result.model_copy(update={
+                    "convergence": ConvergenceReport(
+                        attempts=attempts,
+                        final_status=result.status,
+                        last_observable_state=state,
+                    ),
+                })
+            self._sleep(self._stp_interval)
+            query_cache.pop(key, None)
 
     def _observe_etherchannel(self, expectation, action, query_cache):
         if not isinstance(action, ConfigureEtherChannel):
@@ -1948,7 +2071,14 @@ class PacketTracerEnterpriseControlPlaneRuntime:
 
     @classmethod
     def _direct_observation(
-        cls, expectation, fields, evidence_method, message, *, allow_partial=False,
+        cls,
+        expectation,
+        fields,
+        evidence_method,
+        message,
+        *,
+        allow_partial=False,
+        stage=ControlPlaneExecutionStage.OBSERVED,
     ):
         status = cls._aggregate_status(fields)
         if (
@@ -1962,7 +2092,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             status = ActionExecutionStatus.PARTIAL
         return RuntimeControlPlaneVerification(
             expectation_id=expectation.id,
-            stage=ControlPlaneExecutionStage.OBSERVED,
+            stage=stage,
             status=status,
             evidence_method=evidence_method,
             fresh_evidence=True,

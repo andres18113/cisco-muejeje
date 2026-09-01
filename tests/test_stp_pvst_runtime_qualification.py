@@ -269,7 +269,9 @@ def test_qualifier_declares_fresh_state_expectations_for_both_global_actions(
     assert {item["action_id"] for item in expectations} == {
         "pvst/stp/primary", "pvst/stp/secondary",
     }
-    assert all(item["capability"] == "stp_state" for item in expectations)
+    assert [
+        item["capability"] for item in expectations
+    ] == ["stp_state", "stp_state", "stp_behavior", "stp_behavior"]
     assert {item["source_device_name"] for item in expectations} == {
         "MCP-PROBE-PVST-3560", "MCP-PROBE-PVST-2960",
     }

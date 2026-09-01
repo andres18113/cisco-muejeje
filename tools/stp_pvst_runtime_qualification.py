@@ -245,7 +245,7 @@ def stp_actions(topology: TopologyPlan) -> list:
 
 def stp_expectations(topology: TopologyPlan) -> list:
     primary, secondary = topology.devices
-    return [
+    state = [
         ControlPlaneVerificationExpectation(
             id="pvst/verify/primary",
             kind=ControlPlaneVerificationKind.STP_STATE,
@@ -275,6 +275,26 @@ def stp_expectations(topology: TopologyPlan) -> list:
             depends_on=["pvst/stp/secondary"],
         ),
     ]
+    behavior = [
+        ControlPlaneVerificationExpectation(
+            id=f"pvst/verify/{role}-behavior",
+            kind=ControlPlaneVerificationKind.END_TO_END_REACHABILITY,
+            action_id=f"pvst/stp/{role}",
+            device_id=device.id,
+            required_capability=ControlPlaneCapabilityDimension.STP_BEHAVIOR,
+            expected={
+                "source_device_name": device.name,
+                "loop_free": True,
+                "forwarding_converged": True,
+            },
+            depends_on=[f"pvst/stp/{role}"],
+        )
+        for role, device in (
+            ("primary", primary),
+            ("secondary", secondary),
+        )
+    ]
+    return [*state, *behavior]
 
 
 def stp_convergence_errors(instances_by_model: dict[str, list]) -> list[str]:
@@ -742,6 +762,7 @@ def run(
             model: {
                 "stp_pvst_config": "supported",
                 "stp_state": "supported",
+                "stp_behavior": "supported",
             }
             for model in (PRIMARY_MODEL, SECONDARY_MODEL)
         }
