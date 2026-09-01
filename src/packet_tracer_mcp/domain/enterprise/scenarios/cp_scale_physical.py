@@ -426,6 +426,13 @@ _CANONICAL_CALL_CONTROL = {
     MULTILAYER: R0,
     SMALL: R3,
 }
+#: Configured CME capacities from `diseno_logico_IMP.md` section 5. They are
+#: service limits, not counts inferred from whichever stage is currently built.
+_CANONICAL_CALL_CONTROL_CAPACITY = {
+    R4: 42,
+    R0: 12,
+    R3: 7,
+}
 #: Extension ranges are per branch and never overlap, so an extension alone
 #: identifies the branch that owns it.
 _CANONICAL_EXTENSION_RANGES = {
@@ -455,6 +462,10 @@ def cp_scale_canonical_voice_intent(topology: TopologyPlan) -> VoiceIntent:
     return VoiceIntent(
         id="voice/cp-scale-canonical",
         call_control_device_ids=hosts,
+        call_control_capacities={
+            device_id: _CANONICAL_CALL_CONTROL_CAPACITY[device_id]
+            for device_id in hosts.values()
+        },
         extension_ranges={
             site_id: value
             for site_id, value in sorted(_CANONICAL_EXTENSION_RANGES.items())

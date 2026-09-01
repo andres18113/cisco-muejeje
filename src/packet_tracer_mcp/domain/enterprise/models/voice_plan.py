@@ -64,6 +64,7 @@ class VoicePolicy(BaseModel):
 class VoiceIntent(BaseModel):
     id: str
     call_control_device_ids: dict[str, str] = Field(default_factory=dict)
+    call_control_capacities: dict[str, int] = Field(default_factory=dict)
     central_call_control_device_id: str = ""
     phone_device_ids: list[str] = Field(default_factory=list)
     extension_ranges: dict[str, ExtensionRange] = Field(default_factory=dict)

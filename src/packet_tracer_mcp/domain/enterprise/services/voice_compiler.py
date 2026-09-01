@@ -348,6 +348,10 @@ class VoiceCompiler:
                 ),
                 key=natural_identity_key,
             )
+            call_control_capacity = intent.call_control_capacities.get(
+                host.id or host.name,
+                len(hosted_phone_ids),
+            )
             enable_id = _stable_id("enable", call_control_id)
             source_id = _stable_id("source", call_control_id, source.id)
             source_action_by_control[call_control_id] = source_id
@@ -358,7 +362,8 @@ class VoiceCompiler:
                     host_device_id=host.id or host.name, host_device_name=host.name,
                     host_model=host.model, site_id=site_ids[0],
                     required_capability=VoiceCapabilityDimension.CALL_CONTROL_CONFIG,
-                    max_phones=len(hosted_phone_ids), max_extensions=len(hosted_phone_ids),
+                    max_phones=call_control_capacity,
+                    max_extensions=call_control_capacity,
                     registration_required=intent.registration_required,
                 ),
                 ConfigureCallControlSource(

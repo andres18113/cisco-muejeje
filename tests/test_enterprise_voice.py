@@ -145,6 +145,25 @@ def _compile(phone_count: int = 2):
     )
 
 
+def test_declared_call_control_capacity_is_independent_of_current_phone_count():
+    enterprise, topology, configuration, intent, capabilities = _fixture(2)
+    intent.call_control_capacities = {"r1": 4}
+
+    result = compile_enterprise_voice(
+        intent,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
+    )
+
+    assert result.is_valid
+    enable, = result.plan.actions_of_type(
+        VoiceActionType.ENABLE_CALL_CONTROL,
+    )
+    assert (enable.max_phones, enable.max_extensions) == (4, 4)
+
+
 def test_unpaired_phone_on_direct_voice_access_vlan_is_a_valid_foundation():
     enterprise, topology, configuration, intent, capabilities = _fixture(1)
     phone = topology.devices[-1]

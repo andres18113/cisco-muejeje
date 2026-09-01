@@ -93,7 +93,7 @@ def test_each_active_call_control_uses_its_final_designed_site_capacity(
             VoiceActionType.ENABLE_CALL_CONTROL,
         )
     }
-    assert set(full.values()) == {(51, 51), (11, 11), (7, 7)}
+    assert set(full.values()) == {(42, 42), (12, 12), (7, 7)}
 
     for stage in (
         CPScaleCanonicalStage.FLOOR1,
