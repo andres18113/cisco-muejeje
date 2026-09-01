@@ -286,6 +286,118 @@ def test_authoritative_binding_absence_reconciles_once_then_verifies():
     assert readback["final"]["verified"] is True
 
 
+def test_absent_binding_reconciles_after_independent_binding_frontier():
+    captured = []
+    runtime = _runtime(captured)
+    bindings = sorted(
+        (
+            item for item in _compile().plan.actions
+            if isinstance(item, BindPhoneToExtension)
+        ),
+        key=lambda item: item.directory_index,
+    )
+
+    def rows(*items):
+        return "\n".join(
+            line
+            for binding in items
+            for line in (
+                f"ephone-{binding.directory_index} "
+                "Mac:0011.2233.4455 UNREGISTERED",
+                "IP:0.0.0.0 0 7960",
+                f" button 1: dn {binding.directory_index} "
+                f"number {binding.extension} CH1 IDLE",
+            )
+        )
+
+    responses = [
+        "",
+        rows(bindings[1]),
+        rows(*bindings),
+    ]
+    runtime._ios = SimpleNamespace(execute=lambda device_name, query_id: (
+        IosCommandResult(
+            device_name,
+            query_id,
+            True,
+            output=responses.pop(0),
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name=device_name,
+            device_identity_provenance="confirmed_unique",
+        )
+    ))
+
+    results = runtime.apply_actions(bindings)
+
+    assert all(item.applied for item in results)
+    assert all(
+        item.failure_code is ConfigurationFailureCode.NONE
+        for item in results
+    )
+    dispatched_indices = [
+        int(re.search(r"ephone (\d+)", item).group(1))
+        for item in captured
+        if "configureIosDevice" in item
+    ]
+    assert dispatched_indices == [
+        bindings[0].directory_index,
+        bindings[1].directory_index,
+        bindings[0].directory_index,
+    ]
+    diagnostics = runtime.drain_diagnostic_evidence()
+    first = diagnostics["applications"][0]["binding_readbacks"][0]
+    assert first["initial"]["row"] is None
+    assert first["reconciliation_attempted"] is True
+    assert first["reconciliation_phase"] == "after_initial_frontier"
+    assert first["final"]["verified"] is True
+
+
+def test_pending_absence_fails_if_later_sibling_stops_initial_frontier():
+    captured = []
+    runtime = _runtime(captured)
+    bindings = sorted(
+        (
+            item for item in _compile().plan.actions
+            if isinstance(item, BindPhoneToExtension)
+        ),
+        key=lambda item: item.directory_index,
+    )
+    mismatch = "\n".join((
+        f"ephone-{bindings[1].directory_index} "
+        "Mac:00AA.BBCC.DDEE UNREGISTERED",
+        "IP:0.0.0.0 0 7960",
+        f" button 1: dn {bindings[1].directory_index} "
+        f"number {bindings[1].extension} CH1 IDLE",
+    ))
+    responses = ["", mismatch]
+    runtime._ios = SimpleNamespace(execute=lambda device_name, query_id: (
+        IosCommandResult(
+            device_name,
+            query_id,
+            True,
+            output=responses.pop(0),
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name=device_name,
+            device_identity_provenance="confirmed_unique",
+        )
+    ))
+
+    results = runtime.apply_actions(bindings)
+
+    assert all(item.applied for item in results)
+    assert all(
+        item.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+        for item in results
+    )
+    assert sum("configureIosDevice" in item for item in captured) == 2
+    diagnostics = runtime.drain_diagnostic_evidence()
+    first = diagnostics["applications"][0]["binding_readbacks"][0]
+    assert first["reconciliation_pending"] is True
+    assert first["reconciliation_attempted"] is False
+
+
 def test_binding_reconciliation_stops_after_one_persistent_absence():
     captured = []
     runtime = _runtime(captured)
