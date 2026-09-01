@@ -898,6 +898,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "EXACT_INVENTORY | FAILED_CALL_CONTRADICTS | "
             "UNOBSERVABLE_REMAINS_BOUNDED"
         ),
+        "CANONICAL_CP_SCALE_STAGED_RUNTIME_DELTA_HEAD": (
+            "80bbf67ab80f51f01aa64479b49337e1160ee1f0"
+        ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
             "d4b017332c1f0b7f12e5e6fef977a508c7b1fcdb72e1f605ad095143b54a60db"
