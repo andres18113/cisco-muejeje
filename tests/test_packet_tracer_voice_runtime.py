@@ -431,6 +431,57 @@ def test_binding_reconciliation_stops_after_one_persistent_absence():
     assert readback["final"]["row"] is None
 
 
+def test_absent_binding_retains_its_exact_mutation_terminal_snapshot():
+    captured = []
+    runtime = _runtime(captured)
+    binding = next(
+        item for item in _compile().plan.actions
+        if isinstance(item, BindPhoneToExtension)
+    )
+
+    def send_and_wait(source, _timeout):
+        if "getMacAddress" in source:
+            return '{"found":true,"mac":"00:11:22:33:44:55"}'
+        if "getCommandLine" in source and "getOutput" in source:
+            return json.dumps({
+                "found": True,
+                "terminal": True,
+                "output": (
+                    "HQ-R1(config)#ephone 1\n"
+                    "% ephone configuration rejected\n"
+                    "HQ-R1(config)#"
+                ),
+            })
+        return "{}"
+
+    runtime._send_and_wait = send_and_wait
+    runtime._ios = SimpleNamespace(execute=lambda device_name, query_id: (
+        IosCommandResult(
+            device_name,
+            query_id,
+            True,
+            output="HQ-R1#show ephone\nHQ-R1#",
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name=device_name,
+            device_identity_provenance="confirmed_unique",
+        )
+    ))
+
+    result = runtime.apply_actions([binding])[0]
+
+    assert result.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+    diagnostics = runtime.drain_diagnostic_evidence()
+    readback, = diagnostics["applications"][0]["binding_readbacks"]
+    initial = readback["initial_terminal_snapshot"]
+    assert initial["observed"]
+    assert "% ephone configuration rejected" in initial["output"]
+    assert len(initial["output_sha256"]) == 64
+    final = readback["reconciliation_terminal_snapshot"]
+    assert final["observed"]
+    assert "% ephone configuration rejected" in final["output"]
+
+
 def test_binding_readback_retries_once_only_after_qualified_pager_failure():
     captured = []
     runtime = _runtime(captured)

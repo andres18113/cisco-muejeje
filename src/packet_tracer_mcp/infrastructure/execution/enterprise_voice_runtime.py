@@ -272,6 +272,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                 and len(batch.action_ids) == 1
             ):
                 action = binding_by_id[batch.action_ids[0]]
+                initial_terminal_snapshot = self._terminal_snapshot(host)
                 initial_readback = self._phone_binding_readback(
                     host,
                     action,
@@ -291,6 +292,8 @@ class PacketTracerEnterpriseVoiceRuntime:
                     "reconciliation_phase": (
                         "after_initial_frontier" if proven_absent else ""
                     ),
+                    "initial_terminal_snapshot": initial_terminal_snapshot,
+                    "reconciliation_terminal_snapshot": None,
                     "final": final_readback,
                 }
                 application_diagnostic["binding_readbacks"].append(readback)
@@ -333,6 +336,10 @@ class PacketTracerEnterpriseVoiceRuntime:
                     host,
                     batch.ios_payload,
                 )
+                reconciliation_terminal_snapshot = (
+                    self._terminal_snapshot(host)
+                    if reconciliation_accepted else None
+                )
                 final_readback = (
                     self._phone_binding_readback(
                         host,
@@ -350,6 +357,14 @@ class PacketTracerEnterpriseVoiceRuntime:
                     "reconciliation_attempted": True,
                     "reconciliation_accepted": reconciliation_accepted,
                     "reconciliation_phase": "after_initial_frontier",
+                    "initial_terminal_snapshot": (
+                        application_diagnostic["binding_readbacks"][
+                            diagnostic_index
+                        ]["initial_terminal_snapshot"]
+                    ),
+                    "reconciliation_terminal_snapshot": (
+                        reconciliation_terminal_snapshot
+                    ),
                     "final": final_readback,
                 }
                 verified = bool(
@@ -417,6 +432,34 @@ class PacketTracerEnterpriseVoiceRuntime:
                     message="The trusted voice renderer produced no mutation for this action.",
                 )
         return [results[item.id] for item in actions]
+
+    def _terminal_snapshot(self, device_name: str) -> dict[str, object]:
+        name = json.dumps(device_name)
+        script = "".join((
+            "try{var d=ipc.network().getDevice(", name, ");",
+            "var t=d&&typeof d.getCommandLine==='function'?",
+            "d.getCommandLine():null;",
+            "var o=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
+            "reportResult(JSON.stringify({found:!!d,terminal:!!t,output:o}));",
+            "}catch(e){reportResult('ERROR:'+e);}",
+        ))
+        observed = self._json_result(script, 5.0)
+        output = str(observed.get("output") or "")
+        tail_limit = 16_384
+        return {
+            "observed": bool(
+                observed.get("found")
+                and observed.get("terminal")
+                and isinstance(observed.get("output"), str)
+            ),
+            "output": output[-tail_limit:],
+            "output_total_length": len(output),
+            "output_tail_limit": tail_limit,
+            "output_truncated_to_tail": len(output) > tail_limit,
+            "output_sha256": hashlib.sha256(
+                output.encode("utf-8")
+            ).hexdigest(),
+        }
 
     def _phone_binding_readback(
         self,
