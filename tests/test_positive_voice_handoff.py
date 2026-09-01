@@ -860,6 +860,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CANONICAL_CP_SCALE_NEXT_CHECKPOINT_TRANSPORT": (
             "PERSISTENT_STDIN_WITH_NINE_TYPED_CONTINUE_COMMANDS"
         ),
+        "CANONICAL_CP_SCALE_RIP_PAGER_RETRY_HEAD": (
+            "6bf0b8e3a5dbd6899226c1eaaf04ef2011c69b89"
+        ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
             "d4b017332c1f0b7f12e5e6fef977a508c7b1fcdb72e1f605ad095143b54a60db"
