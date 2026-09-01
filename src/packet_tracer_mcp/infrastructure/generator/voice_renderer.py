@@ -54,7 +54,14 @@ class PacketTracerVoiceRenderer:
                 grouped[action.phase].append(action)
         batches = []
         for phase in sorted(grouped):
-            phase_actions = sorted(grouped[phase], key=lambda item: item.id)
+            phase_actions = sorted(
+                grouped[phase],
+                key=(
+                    lambda item: (item.directory_index, item.id)
+                    if isinstance(item, BindPhoneToExtension)
+                    else (0, item.id)
+                ),
+            )
             action_groups = (
                 [[item] for item in phase_actions]
                 if phase is VoicePhase.PHONE_BINDINGS

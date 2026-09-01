@@ -532,6 +532,44 @@ def test_applied_binding_with_failed_readback_fails_voice_application():
     )
 
 
+def test_phone_bindings_use_semantic_directory_order_not_hash_id_order():
+    plan = _compile().plan
+    bindings = sorted(
+        (
+            item for item in plan.actions
+            if isinstance(item, BindPhoneToExtension)
+        ),
+        key=lambda item: item.directory_index,
+    )
+    actions = [
+        bindings[0].model_copy(update={"id": "voice/binding/z-last"}),
+        bindings[1].model_copy(update={"id": "voice/binding/a-first"}),
+    ]
+
+    batches = PacketTracerVoiceRenderer().render_device_batches(
+        "HQ-R1",
+        "2911",
+        actions,
+        phone_macs={
+            bindings[0].phone_id: "0011.2233.4455",
+            bindings[1].phone_id: "0060.5c12.3456",
+        },
+    )
+    rendered_indices = [
+        int(next(
+            line.split()[1]
+            for line in batch.ios_payload.splitlines()
+            if line.startswith("ephone ")
+        ))
+        for batch in batches
+    ]
+
+    assert rendered_indices == [
+        bindings[0].directory_index,
+        bindings[1].directory_index,
+    ]
+
+
 def test_renderer_preserves_qualified_site_capacity_above_historical_42():
     action = EnableCallControl(
         id="voice/enable/large",
