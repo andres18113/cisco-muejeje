@@ -186,7 +186,7 @@ def test_each_phone_binding_readback_authorizes_the_next_mutation():
     )
 
 
-def test_missing_binding_readback_stops_without_replaying_or_dispatching_later():
+def test_mismatched_binding_readback_never_reconciles_or_dispatches_later():
     captured = []
     runtime = _runtime(captured)
     bindings = sorted(
@@ -196,12 +196,19 @@ def test_missing_binding_readback_stops_without_replaying_or_dispatching_later()
         ),
         key=lambda item: item.id,
     )
+    first_binding = bindings[0]
     runtime._ios = SimpleNamespace(execute=lambda device_name, query_id: (
         IosCommandResult(
             device_name,
             OperationalQueryId.SHOW_EPHONE,
             True,
-            output="HQ-R1#show ephone\nHQ-R1#",
+            output="\n".join((
+                f"ephone-{first_binding.directory_index} "
+                "Mac:00AA.BBCC.DDEE UNREGISTERED",
+                "IP:0.0.0.0 0 7960",
+                f" button 1: dn {first_binding.directory_index} "
+                f"number {first_binding.extension} CH1 IDLE",
+            )),
             fresh_output_observed=True,
             output_complete=True,
             observed_device_name=device_name,
@@ -223,6 +230,93 @@ def test_missing_binding_readback_stops_without_replaying_or_dispatching_later()
     assert not blocked.applied
     assert sum("configureIosDevice" in item for item in captured) == 1
     assert "readback" in first.message.casefold()
+
+
+def test_authoritative_binding_absence_reconciles_once_then_verifies():
+    captured = []
+    runtime = _runtime(captured)
+    binding = next(
+        item for item in _compile().plan.actions
+        if isinstance(item, BindPhoneToExtension)
+    )
+    complete = "\n".join((
+        f"ephone-{binding.directory_index} "
+        "Mac:0011.2233.4455 UNREGISTERED",
+        "IP:0.0.0.0 0 7960",
+        f" button 1: dn {binding.directory_index} "
+        f"number {binding.extension} CH1 IDLE",
+    ))
+    responses = [
+        IosCommandResult(
+            "HQ-R1",
+            OperationalQueryId.SHOW_EPHONE,
+            True,
+            output="HQ-R1#show ephone\nHQ-R1#",
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name="HQ-R1",
+            device_identity_provenance="confirmed_unique",
+        ),
+        IosCommandResult(
+            "HQ-R1",
+            OperationalQueryId.SHOW_EPHONE,
+            True,
+            output=complete,
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name="HQ-R1",
+            device_identity_provenance="confirmed_unique",
+        ),
+    ]
+    runtime._ios = SimpleNamespace(
+        execute=lambda _device_name, _query_id: responses.pop(0),
+    )
+
+    result = runtime.apply_actions([binding])[0]
+
+    assert result.applied
+    assert result.failure_code is ConfigurationFailureCode.NONE
+    assert sum("configureIosDevice" in item for item in captured) == 2
+    diagnostics = runtime.drain_diagnostic_evidence()
+    readback, = diagnostics["applications"][0]["binding_readbacks"]
+    assert readback["initial"]["authoritative"]
+    assert readback["initial"]["row"] is None
+    assert readback["reconciliation_attempted"] is True
+    assert readback["reconciliation_accepted"] is True
+    assert readback["final"]["verified"] is True
+
+
+def test_binding_reconciliation_stops_after_one_persistent_absence():
+    captured = []
+    runtime = _runtime(captured)
+    binding = next(
+        item for item in _compile().plan.actions
+        if isinstance(item, BindPhoneToExtension)
+    )
+    missing = IosCommandResult(
+        "HQ-R1",
+        OperationalQueryId.SHOW_EPHONE,
+        True,
+        output="HQ-R1#show ephone\nHQ-R1#",
+        fresh_output_observed=True,
+        output_complete=True,
+        observed_device_name="HQ-R1",
+        device_identity_provenance="confirmed_unique",
+    )
+    runtime._ios = SimpleNamespace(
+        execute=lambda _device_name, _query_id: missing,
+    )
+
+    result = runtime.apply_actions([binding])[0]
+
+    assert result.applied
+    assert result.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+    assert sum("configureIosDevice" in item for item in captured) == 2
+    diagnostics = runtime.drain_diagnostic_evidence()
+    readback, = diagnostics["applications"][0]["binding_readbacks"]
+    assert readback["reconciliation_attempted"] is True
+    assert readback["final"]["authoritative"]
+    assert readback["final"]["row"] is None
 
 
 def test_binding_readback_retries_once_only_after_qualified_pager_failure():

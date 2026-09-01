@@ -265,17 +265,48 @@ class PacketTracerEnterpriseVoiceRuntime:
                 and len(batch.action_ids) == 1
             ):
                 action = binding_by_id[batch.action_ids[0]]
-                readback = self._phone_binding_readback(
+                initial_readback = self._phone_binding_readback(
                     host,
                     action,
                     phone_macs[action.phone_id],
                 )
+                final_readback = initial_readback
+                reconciliation_attempted = bool(
+                    initial_readback["authoritative"]
+                    and initial_readback["row"] is None
+                )
+                reconciliation_accepted = False
+                if reconciliation_attempted:
+                    reconciliation_accepted = (
+                        self._configuration.configure_ios(
+                            host,
+                            batch.ios_payload,
+                        )
+                    )
+                    if reconciliation_accepted:
+                        final_readback = self._phone_binding_readback(
+                            host,
+                            action,
+                            phone_macs[action.phone_id],
+                        )
+                readback = {
+                    **final_readback,
+                    "initial": initial_readback,
+                    "reconciliation_attempted": reconciliation_attempted,
+                    "reconciliation_accepted": reconciliation_accepted,
+                    "final": final_readback,
+                }
                 application_diagnostic["binding_readbacks"].append(readback)
-                if not readback["verified"]:
+                if not final_readback["verified"]:
                     failure_code = ConfigurationFailureCode.VERIFICATION_FAILED
                     message = (
                         "Typed phone binding was dispatched but its exact ephone "
                         "row was absent or contradicted in fresh readback."
+                    )
+                elif reconciliation_attempted:
+                    message = (
+                        "Typed phone binding verified after one authoritative "
+                        "absence-driven reconciliation."
                     )
             for action_id in batch.action_ids:
                 results[action_id] = RuntimeActionMutation(
