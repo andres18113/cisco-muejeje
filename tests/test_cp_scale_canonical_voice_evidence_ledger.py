@@ -80,6 +80,9 @@ FLOOR1_CONTROL_OBSERVER_RUN_IDENTITY = (
 FLOOR2_DELTA_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T055647792755Z-0ec4bdade3bb"
 )
+FLOOR2_NETWORK_VERIFIED_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T071703181436Z-fe725ac177d2"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -99,7 +102,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 16
+    assert len(ledger["runs"]) == 17
     return ledger["runs"][0]
 
 
@@ -176,6 +179,11 @@ def floor1_control_observer_run(ledger: dict) -> dict:
 @pytest.fixture(scope="module")
 def floor2_delta_run(ledger: dict) -> dict:
     return ledger["runs"][15]
+
+
+@pytest.fixture(scope="module")
+def floor2_network_verified_run(ledger: dict) -> dict:
+    return ledger["runs"][16]
 
 
 @pytest.fixture(scope="module")
@@ -674,6 +682,52 @@ def test_floor2_delta_preserves_old_trunks_and_exposes_learning_boundary(
         assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
 
 
+def test_floor2_network_closes_before_cumulative_voice_replay_stop(
+    floor2_network_verified_run: dict,
+):
+    assert (
+        floor2_network_verified_run["run_identity"]
+        == FLOOR2_NETWORK_VERIFIED_RUN_IDENTITY
+    )
+    network = floor2_network_verified_run["measured"][
+        "floor2_network_foundation"
+    ]
+    assert network["trunk_expectations"] == 9
+    assert network["trunks_verified"] == 9
+    assert network["boundary_switch6_states"] == {
+        "GigabitEthernet0/1": "LRN",
+        "GigabitEthernet0/2": "LRN",
+    }
+    assert network["boundary_switch10_fastethernet_0_2_state"] == "LRN"
+    assert network["atomic_refresh_complete"] is True
+    assert network["learning_extension_engaged"] is False
+    assert network["result"] == (
+        "VERIFIED_BY_FRESH_BOUNDARY_THEN_ATOMIC_TRUNK_REFRESH"
+    )
+    voice = floor2_network_verified_run["measured"][
+        "floor2_voice_bootstrap"
+    ]
+    assert voice["cumulative_actions"] == 75
+    assert voice["mutation_actions"] == 75
+    assert voice["retained_actions"] == 0
+    assert voice["first_binding_directory_index"] == 1
+    assert voice["first_binding_belongs_to_floor1"] is True
+    assert voice["readback_attempts"] == 2
+    assert voice["attempts_complete"] == 0
+    assert voice["new_floor2_binding_dispatched"] is False
+    conclusion = floor2_network_verified_run["conclusion"]
+    assert conclusion["floor2_network_correction"] == (
+        "VERIFIED_BY_FRESH_BOUNDARY_ATOMIC_REFRESH"
+    )
+    assert conclusion["floor2_voice_delta"] == (
+        "IMPLEMENTATION_READY_LIVE_PENDING"
+    )
+    for artifact in floor2_network_verified_run["artifacts"]:
+        path = ROOT / artifact["path"]
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+
+
 def test_immutable_canonical_evidence_is_never_text_normalized():
     attributes = GITATTRIBUTES.read_text(encoding="utf-8").splitlines()
 
@@ -888,23 +942,23 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_SIXTEEN_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "16"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_SEVENTEEN_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "17"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "2"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
         "NONE_VERIFIED"
     )
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "48"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
-        "FLOOR2_NETWORK_FOUNDATION_TRUNK_FORWARDING"
+        "FLOOR2_VOICE_BOOTSTRAP_RETAINED_BINDING_READBACK"
     )
     assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == (
-        "PRODUCT_CONVERGENCE_GATE"
+        "PRODUCT_STAGE_REPLAY_PLUS_OBSERVER"
     )
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "FLOOR2_FRESH_BOUNDARY_LRN_EXTENSION_CAUSAL_LIVE_PENDING"
+        "FLOOR2_VOICE_DELTA_ONLY_IMPLEMENTED_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -916,24 +970,21 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         == "115_OF_115"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_FAILED_RUN_TEMPORAL_EVIDENCE"] == (
-        "SUFFICIENT_LIS_TO_LRN_LATEST_SAMPLES | "
-        "TERMINAL_BOUNDARY_NOT_SAMPLED"
+        "FRESH_BOUNDARY_LRN_THEN_ATOMIC_REFRESH_FWD"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_TIMEOUT_CLASSIFICATION"] == (
-        "STRONGLY_SUPPORTED_LATEST_LRN_BOUNDARY_NOT_SAMPLED"
+        "CONFIRMED_FIXED_BOUNDARY_EXPIRED_DURING_PVST_CONVERGENCE"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_NETWORK_ROOT_CAUSE"] == (
-        "STRONGLY_SUPPORTED"
+        "CONFIRMED"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_PRODUCT_FIX"] == (
-        "DELTA_ONLY_PRESERVED_OLD_TRUNKS | "
-        "FRESH_BOUNDARY_LRN_EXTENSION_EXPERIMENT_READY"
+        "VERIFIED_DELTA_ONLY_PLUS_FRESH_PVST_BOUNDARY_ATOMIC_REFRESH"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_CAUSAL_LIVE"] == (
-        "REACHED | OLD_TRUNKS_5_OF_5_VERIFIED | "
-        "NEW_TRUNKS_0_OF_4_FWD | LATEST_PVST_LIS_TO_LRN | "
-        "NO_TERMINAL_PVST_SAMPLE"
+        "VERIFIED_NETWORK_FOUNDATION | BOUNDARY_LRN | "
+        "REFRESH_FWD_9_OF_9 | EXTENSION_NOT_ENGAGED"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR2_LATEST_PVST_LRN_BOUNDARY_EXPERIMENT_PENDING"
+        "FLOOR2_NETWORK_VERIFIED_VOICE_DELTA_LIVE_PENDING"
     )

@@ -564,6 +564,103 @@ def test_incremental_application_mutates_only_delta_and_verifies_cumulative_voic
     }
 
 
+def test_zero_delta_qualification_reverifies_retained_voice_without_mutation():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    applicator = ConfigurationApplicator(runtime)
+    previous = applicator.apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        defer_voice_signal_until_bootstrap=True,
+    )
+    previous = applicator.complete_deferred_voice_signals(plan, previous)
+    voice_action = _phone_voice_action(plan)
+    voice_expectation = next(
+        item for item in plan.verification_expectations
+        if item.action_id == voice_action.id
+    )
+    runtime.apply_calls.clear()
+    runtime.action_batches.clear()
+    runtime.events.clear()
+
+    qualification = applicator.apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        mutation_action_ids=set(),
+        retained_action_results=previous.action_results,
+    )
+    assert qualification.voice_signal_barrier is None
+
+    completed = applicator.complete_deferred_voice_signals(
+        plan,
+        qualification,
+        retained_state_only=True,
+    )
+
+    assert runtime.apply_calls == []
+    assert runtime.action_batches == []
+    assert completed.mutation_action_ids == []
+    assert set(completed.retained_action_ids) == {
+        item.id for item in plan.actions
+    }
+    assert completed.voice_signal_barrier is not None
+    assert completed.voice_signal_barrier.required is False
+    assert (
+        completed.voice_signal_barrier.foundation_status
+        is ActionExecutionStatus.VERIFIED
+    )
+    assert (
+        completed.voice_signal_barrier.signal_status
+        is ActionExecutionStatus.VERIFIED
+    )
+    assert {
+        item.expectation_id
+        for item in completed.voice_signal_barrier.post_signal_convergence_results
+    } == {voice_expectation.id}
+    assert not any(kind == "apply" for kind, _identifiers in runtime.events)
+    assert any(
+        kind == "voice_forwarding"
+        for kind, _identifiers in runtime.events
+    )
+
+
+def test_zero_delta_voice_qualification_rejects_incomplete_result_inventory():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    applicator = ConfigurationApplicator(runtime)
+    previous = applicator.apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        defer_voice_signal_until_bootstrap=True,
+    )
+    previous = applicator.complete_deferred_voice_signals(plan, previous)
+    qualification = applicator.apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        mutation_action_ids=set(),
+        retained_action_results=previous.action_results,
+    )
+    broken = qualification.model_copy(update={
+        "action_results": qualification.action_results[1:],
+    })
+    runtime.apply_calls.clear()
+
+    result = applicator.complete_deferred_voice_signals(
+        plan,
+        broken,
+        retained_state_only=True,
+    )
+
+    assert result.status is ConfigurationApplicationStatus.FAILED
+    assert result.failure_code is ConfigurationFailureCode.APPLICATION_FAILED
+    assert "zero-mutation retained Voice qualification" in result.preflight_errors[-1]
+    assert runtime.apply_calls == []
+
+
 def test_unobservable_phone_port_forwarding_keeps_registration_gate_closed():
     topology, plan = _compiled()
     runtime = FakeConfigurationRuntime(topology)

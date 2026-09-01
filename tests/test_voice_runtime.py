@@ -147,6 +147,102 @@ def test_runtime_keeps_applied_registered_and_call_verified_separate():
     assert len(runtime.call_requests) == len(plan.call_expectations)
 
 
+def test_incremental_voice_mutates_delta_and_retains_cumulative_results():
+    plan, runtime, first = _apply()
+    retained_action = plan.actions[0]
+    retained_result = next(
+        item for item in first.action_results
+        if item.action_id == retained_action.id
+    )
+    mutation_ids = {
+        item.id for item in plan.actions
+        if item.id != retained_action.id
+    }
+    runtime.applied.clear()
+
+    result = VoiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses={
+            item.source_id: ActionExecutionStatus.VERIFIED
+            for item in plan.foundational_requirements
+        },
+        capabilities=_profile(),
+        mutation_action_ids=mutation_ids,
+        retained_action_results=[retained_result],
+    )
+
+    assert retained_action.id not in runtime.applied
+    assert set(runtime.applied) == mutation_ids
+    assert result.mutation_action_ids == [
+        item.id for item in plan.actions if item.id in mutation_ids
+    ]
+    assert result.retained_action_ids == [retained_action.id]
+    assert len(result.action_results) == len(plan.actions)
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.execution_journal is not None
+    assert {
+        item.action_id for item in result.execution_journal.entries
+    } == mutation_ids
+
+
+def test_incremental_voice_rejects_missing_retained_results_before_mutation():
+    plan = _compile().plan
+    runtime = FakeVoiceRuntime()
+    mutation_ids = {item.id for item in plan.actions[1:]}
+
+    result = VoiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses={
+            item.source_id: ActionExecutionStatus.VERIFIED
+            for item in plan.foundational_requirements
+        },
+        capabilities=_profile(),
+        mutation_action_ids=mutation_ids,
+    )
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.failure_code is ConfigurationFailureCode.DEPENDENCY_BLOCKED
+    assert "lacks retained application results" in result.preflight_errors[0]
+    assert runtime.applied == []
+
+
+def test_incremental_voice_rejects_failed_retained_fact_before_mutation():
+    plan, _, first = _apply()
+    retained_action = plan.actions[0]
+    retained_result = next(
+        item for item in first.action_results
+        if item.action_id == retained_action.id
+    ).model_copy(update={
+        "failure_code": ConfigurationFailureCode.VERIFICATION_FAILED,
+    })
+    runtime = FakeVoiceRuntime()
+
+    result = VoiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses={
+            item.source_id: ActionExecutionStatus.VERIFIED
+            for item in plan.foundational_requirements
+        },
+        capabilities=_profile(),
+        mutation_action_ids={
+            item.id for item in plan.actions
+            if item.id != retained_action.id
+        },
+        retained_action_results=[retained_result],
+    )
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.failure_code is ConfigurationFailureCode.DEPENDENCY_BLOCKED
+    assert "were not previously applied" in result.preflight_errors[0]
+    assert runtime.applied == []
+
+
 def test_hash_or_foundation_preflight_failure_performs_no_mutation():
     plan = _compile().plan
     runtime = FakeVoiceRuntime()

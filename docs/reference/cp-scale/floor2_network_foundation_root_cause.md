@@ -537,3 +537,39 @@ plus a bounded round-robin observation margin. Any LIS, BLK, missing,
 incomplete, unattributed, or mismatched terminal state gets no extension.
 Elapsed evidence spans both waiters, the boundary snapshot, and the refresh. No
 mutation, PortFast policy, topology, or verification criterion is changed.
+
+## Fresh-boundary LIVE closes Floor2 network foundation
+
+Run `canonical-cp-scale-voice-20260901T071703181436Z-fe725ac177d2`
+established the missing boundary. After 38 initial round-robin samples, the
+fresh PVST snapshot found Switch6 Gi0/1 and Gi0/2 plus Switch10 Fa0/2 in `LRN`;
+Switch7 Gi0/1 was already `FWD`. The immediately following atomic trunk refresh
+verified all nine trunk expectations at sample 39 and 49,937 ms. The optional
+20-second continuation was not used.
+
+The Floor2 network conclusion is now confirmed:
+
+```text
+CUMULATIVE_REPLAY = CONTRIBUTOR_TO_PRIOR_OLD_TRUNK_REGRESSION
+DELTA_ONLY_MUTATION = VERIFIED_PRESERVES_PRIOR_TRUNKS
+PVST_FIXED_BOUNDARY_CAUSE = CONFIRMED
+FRESH_BOUNDARY_ATOMIC_REFRESH = VERIFIED
+FLOOR2_NETWORK_FOUNDATION = VERIFIED
+```
+
+The run continued into a new boundary: cumulative Voice replay. Floor2 passed
+all 75 Voice actions to mutation, replayed already-verified Floor1 binding 1,
+and stopped after both bounded readbacks failed pager continuation attribution.
+No authoritative absence or new Floor2 binding mutation occurred. The next
+causal implementation makes Voice mutation delta-only while preserving
+cumulative verification: 29 mutations (14 new DNs, 14 new bindings, and the
+dependency-expanded phone-file action), 46 retained prior action facts, and all
+35 phones re-observed for access forwarding, addressing, DHCP binding, and
+SCCP.
+
+The same retained-result discipline now covers control-plane actions. RIPv2 is
+mutated only at routing core; Floor3/Router0/Router3 mutate only newly introduced
+STP actions; full qualification mutates zero control actions. Together with
+zero configuration and Voice action deltas, final qualification is read-only
+apart from registered call attempts and freshly re-establishes retained Voice
+signal/FWD/registration evidence.

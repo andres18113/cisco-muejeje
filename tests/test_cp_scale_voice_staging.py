@@ -223,6 +223,8 @@ def _plan(actions=1):
 class _Applied:
     def __init__(self, registrations, refused=()):
         self.registrations = registrations
+        self.mutation_action_ids = ["voice/a"]
+        self.retained_action_ids = []
         self.action_results = [
             SimpleNamespace(
                 action_id=item, status=ActionExecutionStatus.FAILED,

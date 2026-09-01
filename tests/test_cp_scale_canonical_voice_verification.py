@@ -25,12 +25,14 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
+    ConfigurationFailureCode,
     ConvergenceReport,
     FieldVerificationStatus,
     VerificationResult,
     VoiceSignalBarrierResult,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    CallVerificationResult,
     PhoneRegistrationResult,
     VoiceApplicationResult,
 )
@@ -137,9 +139,21 @@ def _complete_floor1_evidence():
         voice_semantic_hash=projection.voice.semantic_hash,
         source_topology_hash=projection.voice.source_topology_hash,
         source_configuration_hash=projection.voice.source_configuration_hash,
-        status=ActionExecutionStatus.VERIFIED,
+        status=ActionExecutionStatus.PARTIAL,
         application_status=ActionExecutionStatus.APPLIED,
         registrations=registrations,
+        calls=[
+            CallVerificationResult(
+                call_expectation_id=item.id,
+                call_attempt_id="",
+                source_phone_id=item.source_phone_id,
+                dialed_extension=item.dialed_extension,
+                status=ActionExecutionStatus.SKIPPED,
+                expected_result=item.expected_result,
+                expected_target_phone_id=item.expected_target_phone_id,
+            )
+            for item in projection.voice.call_expectations
+        ],
     )
     binding_evidence = [{
         "device_name": "Router4",
@@ -196,6 +210,11 @@ def test_complete_floor1_voice_evidence_requires_identities_not_just_counts():
     assert evidence.voice_dhcp_binding_count == 21
     assert evidence.matching_binding_count == 21
     assert evidence.sccp_registered_count == 21
+    assert evidence.expected_call_count == 3
+    assert evidence.call_verified_count == 0
+    assert evidence.call_failed_count == 0
+    assert evidence.call_unobservable_count == 3
+    assert evidence.call_identity_errors == []
     assert evidence.failed_phone_identities == []
     assert evidence.first_contradicted_boundary == "NONE"
 
@@ -259,6 +278,34 @@ def test_matching_endpoint_and_binding_localize_missing_ephone_row_to_sccp():
     assert evidence.failed_phone_identities[0].first_contradicted_boundary == (
         "SCCP"
     )
+
+
+def test_failed_call_contradicts_canonical_voice_after_phone_lifecycle():
+    projection, configuration, voice, bindings, lifecycle = (
+        _complete_floor1_evidence()
+    )
+    voice.calls[0] = voice.calls[0].model_copy(update={
+        "status": ActionExecutionStatus.FAILED,
+        "failure_code": (
+            ConfigurationFailureCode.BEHAVIORAL_VERIFICATION_FAILED
+        ),
+    })
+
+    evidence = canonical_cp_scale_voice_evidence(
+        stage="floor1",
+        configuration_plan=projection.configuration,
+        configuration_result=configuration,
+        voice_plan=projection.voice,
+        voice_result=voice,
+        dhcp_server_bindings=bindings,
+        lifecycle_events=lifecycle,
+    )
+
+    assert not evidence.complete
+    assert evidence.addressed_count == 21
+    assert evidence.sccp_registered_count == 21
+    assert evidence.call_failed_count == 1
+    assert evidence.first_contradicted_boundary == "CALL_BEHAVIOR"
 
 
 def test_missing_structured_group_evidence_never_promotes_per_port_flags():

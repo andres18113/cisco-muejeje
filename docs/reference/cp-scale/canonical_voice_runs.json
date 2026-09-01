@@ -3691,6 +3691,186 @@
         "failure_classification": "PRODUCT_CONVERGENCE_GATE",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T071703181436Z-fe725ac177d2",
+      "started_at": "2026-09-01T07:17:03.181436+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "The pinned fresh-boundary PVST gate and cumulative Voice applicator.",
+        "inference": "Causal classification from boundary PVST, atomic trunk refresh, and first Voice mutation/readback."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "floor1_positive_control": true,
+        "floor2_fresh_pvst_boundary_retained": true,
+        "floor2_atomic_trunk_refresh": true,
+        "floor2_learning_extension_available": true,
+        "floor2_learning_extension_engaged": false,
+        "first_voice_divergence_retained": true,
+        "valid_negative_changed_next_voice_mutation_scope": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "fe725ac177d2ea452cfd52da6d81994fbd2a894c",
+        "canonical_live_source_head": "fe725ac177d2ea452cfd52da6d81994fbd2a894c",
+        "pvst_boundary_gate_head": "e57d37d1e75890f08a208aaea9f8c1a36d8b0063"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "floor1_voice_count": 21,
+        "floor2_voice_count": 35,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "routing_core_checkpoint_advanced": true,
+        "router4_switch10_checkpoint_advanced": true,
+        "floor1_checkpoint_advanced": true,
+        "floor2_network_foundation_verified": true,
+        "floor2_voice_reached": true,
+        "floor2_checkpoint_advanced": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T071703181436Z-fe725ac177d2-failure-precleanup.json",
+          "sha256": "74646adf4be2c49a512291d37873219001e5ffa5720d33d77fa680b64b00c09d"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T071703181436Z-fe725ac177d2-cleanup.json",
+          "sha256": "940d900f6b37690e0d59b0a532d728001f1828b9e4446157d9f5ef53ca3647ea"
+        }
+      ],
+      "measured": {
+        "floor1": {
+          "checkpoint_advanced": true,
+          "voice_complete": true,
+          "phone_access_fwd_verified": 21,
+          "addressed_count": 21,
+          "matching_binding_count": 21,
+          "sccp_registered_count": 21,
+          "control_plane_status": "verified"
+        },
+        "floor2_network_foundation": {
+          "trunk_expectations": 9,
+          "trunks_verified": 9,
+          "initial_round_robin_samples": 38,
+          "total_round_robin_samples": 39,
+          "elapsed_ms": 49937,
+          "boundary_switch6_states": {
+            "GigabitEthernet0/1": "LRN",
+            "GigabitEthernet0/2": "LRN"
+          },
+          "boundary_switch7_gigabit_0_1_state": "FWD",
+          "boundary_switch10_fastethernet_0_2_state": "LRN",
+          "boundary_snapshot_authoritative": true,
+          "atomic_refresh_complete": true,
+          "learning_extension_engaged": false,
+          "result": "VERIFIED_BY_FRESH_BOUNDARY_THEN_ATOMIC_TRUNK_REFRESH"
+        },
+        "floor2_voice_bootstrap": {
+          "cumulative_actions": 75,
+          "mutation_actions": 75,
+          "retained_actions": 0,
+          "first_binding_action_id": "voice/binding/c1e611129b47729b",
+          "first_binding_directory_index": 1,
+          "first_binding_extension": "3001",
+          "first_binding_belongs_to_floor1": true,
+          "readback_attempts": 2,
+          "attempts_executed": 2,
+          "attempts_fresh": 2,
+          "attempts_complete": 0,
+          "attempts_pager_continuation": [
+            "failed",
+            "failed"
+          ],
+          "attempts_device_identity": [
+            "confirmed_unique",
+            "confirmed_unique"
+          ],
+          "last_observed_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18
+          ],
+          "reconciliation_attempted": false,
+          "new_floor2_binding_dispatched": false,
+          "result": "CUMULATIVE_VOICE_REPLAY_STOPPED_ON_RETAINED_BINDING_OBSERVER"
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_interfaces": 21,
+          "verified_fwd_interfaces": 21,
+          "status": "VERIFIED"
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "floor1_status": "VERIFIED",
+        "floor1_voice_status": "VERIFIED_21_OF_21",
+        "floor2_network_foundation_status": "VERIFIED",
+        "floor2_voice_bootstrap_status": "FAILED_CLOSED_RETAINED_BINDING_PAGER_OBSERVER",
+        "floor2_voice_signal_status": "NOT_REACHED",
+        "floor2_registration_status": "NOT_REACHED"
+      },
+      "classification_rationale": "The fresh Floor2 PVST boundary captured Switch6 and Switch10 pending ports in LRN and Switch7 already FWD; the immediately following atomic trunk refresh verified all nine trunks. The optional 20-second extension did not engage, confirming the former fixed-boundary defect and its state-based correction. Floor2 then passed all 75 cumulative Voice actions to mutation. It re-dispatched retained Floor1 binding 1 before any new Floor2 binding, and both permitted read-only readbacks failed pager continuation attribution while remaining executed, fresh, and uniquely attributed. No authoritative absence or product contradiction occurred. The next causal correction mutates only 28 new DN/binding actions plus the dependency-expanded phone-file action, retains 46 prior application facts, and still verifies all 35 phones cumulatively.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "floor2_network_root_cause": "CONFIRMED_FIXED_BOUNDARY_EXPIRED_DURING_PVST_CONVERGENCE",
+        "floor2_network_correction": "VERIFIED_BY_FRESH_BOUNDARY_ATOMIC_REFRESH",
+        "floor2_learning_extension": "NOT_ENGAGED",
+        "floor2_voice_replay": "CAUSED_UNNECESSARY_RETAINED_BINDING_MUTATION",
+        "floor2_voice_replay_sufficient_cause": "NEEDS_DELTA_ONLY_LIVE",
+        "floor2_voice_delta": "IMPLEMENTATION_READY_LIVE_PENDING",
+        "control_plane_delta": "IMPLEMENTATION_READY_LIVE_PENDING",
+        "full_qualification_action_mutations": "ZERO_READY_LIVE_PENDING",
+        "cp_scale_status": "FLOOR2_NETWORK_VERIFIED_VOICE_REPLAY_OBSERVER_BLOCKED",
+        "first_unclosed_boundary": "FLOOR2_VOICE_BOOTSTRAP_RETAINED_BINDING_READBACK",
+        "failure_classification": "PRODUCT_STAGE_REPLAY_PLUS_OBSERVER",
+        "next_live_authorized": true
+      }
     }
   ]
 }

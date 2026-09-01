@@ -276,6 +276,11 @@ class CPScaleCanonicalVoiceEvidence(BaseModel):
     sccp_registered_count: int = 0
     sccp_failed_count: int = 0
     sccp_unobservable_count: int = 0
+    expected_call_count: int = 0
+    call_verified_count: int = 0
+    call_failed_count: int = 0
+    call_unobservable_count: int = 0
+    call_identity_errors: list[str] = Field(default_factory=list)
     failed_phone_identities: list[CPScaleFailedPhoneIdentity] = Field(
         default_factory=list,
     )
@@ -1290,6 +1295,38 @@ def canonical_cp_scale_voice_evidence(
     expected_registration_ids = Counter(
         item.phone_id for item in assignments
     )
+    expected_call_ids = Counter(item.id for item in voice_plan.call_expectations)
+    observed_call_ids = Counter(
+        item.call_expectation_id for item in voice_result.calls
+    )
+    call_identity_errors: list[str] = []
+    for identifier in sorted(set(expected_call_ids) | set(observed_call_ids)):
+        expected_count = expected_call_ids[identifier]
+        observed_count = observed_call_ids[identifier]
+        if expected_count == 0:
+            call_identity_errors.append(f"unexpected:{identifier}")
+        elif observed_count == 0:
+            call_identity_errors.append(f"missing:{identifier}")
+        elif expected_count != 1:
+            call_identity_errors.append(
+                f"duplicate-plan:{identifier}:{expected_count}",
+            )
+        elif observed_count != 1:
+            call_identity_errors.append(
+                f"duplicate:{identifier}:{observed_count}",
+            )
+    call_verified = sum(
+        item.status is ActionExecutionStatus.VERIFIED
+        for item in voice_result.calls
+    )
+    call_failed = sum(
+        item.status is ActionExecutionStatus.FAILED
+        for item in voice_result.calls
+    )
+    call_unobservable = max(
+        0,
+        len(voice_plan.call_expectations) - call_verified - call_failed,
+    )
     observed_registration_ids = Counter(
         item.phone_id for item in voice_result.registrations
     )
@@ -1459,6 +1496,8 @@ def canonical_cp_scale_voice_evidence(
         first_boundary = "DHCP_BINDING"
     elif sccp_registered != expected:
         first_boundary = "SCCP"
+    elif call_identity_errors or call_failed:
+        first_boundary = "CALL_BEHAVIOR"
     else:
         first_boundary = "NONE"
     complete = bool(
@@ -1493,6 +1532,11 @@ def canonical_cp_scale_voice_evidence(
         sccp_registered_count=sccp_registered,
         sccp_failed_count=sccp_failed,
         sccp_unobservable_count=sccp_unobservable,
+        expected_call_count=len(voice_plan.call_expectations),
+        call_verified_count=call_verified,
+        call_failed_count=call_failed,
+        call_unobservable_count=call_unobservable,
+        call_identity_errors=call_identity_errors,
         failed_phone_identities=failed_phones,
         first_contradicted_boundary=first_boundary,
         complete=complete,

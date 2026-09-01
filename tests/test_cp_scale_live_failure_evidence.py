@@ -732,7 +732,10 @@ voice_invocations = []
 live._stage_voice = lambda *args, **kwargs: (
     voice_invocations.append(True) or {{"staged": True, "error": "voice mismatch"}}
 )
-projection.voice = SimpleNamespace(actions=[1], phone_assignments=[1])
+projection.voice = SimpleNamespace(
+    actions=[SimpleNamespace(id="voice/a")],
+    phone_assignments=[1],
+)
 
 def run_continuity(*states):
     del voice_invocations[:]

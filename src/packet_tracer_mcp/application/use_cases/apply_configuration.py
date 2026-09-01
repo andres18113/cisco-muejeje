@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Collection, Sequence
 from time import monotonic
 from typing import Protocol
@@ -449,24 +450,107 @@ class ConfigurationApplicator:
         *,
         deployment_manifest: DeploymentManifest | None = None,
         lifecycle_observer: Callable[[str], None] | None = None,
+        retained_state_only: bool = False,
     ) -> ConfigurationApplicationResult:
-        """Dispatch and verify Voice VLANs after bootstrap has been applied."""
+        """Verify Voice VLANs, dispatching only a prepared mutation barrier."""
         started = monotonic()
         barrier = application.voice_signal_barrier
-        if (
-            application.config_plan_id != plan.id
-            or application.config_semantic_hash != plan.semantic_hash
-            or barrier is None
-            or not barrier.required
-            or barrier.foundation_status is not ActionExecutionStatus.VERIFIED
-            or barrier.signal_status is not ActionExecutionStatus.INTENDED
-        ):
-            return self._voice_signal_completion_failure(
-                application,
-                "Configuration result is not a prepared deferred Voice signal.",
-                started,
+        voice_action_ids = {
+            item.id for item in plan.actions
+            if (
+                isinstance(item, ConfigureAccessPort)
+                and item.voice_vlan_id is not None
             )
-        deferred_ids = frozenset(barrier.deferred_action_ids)
+        }
+        if retained_state_only:
+            mutation_ids = set(application.mutation_action_ids)
+            retained_ids = set(application.retained_action_ids)
+            expected_action_ids = Counter(item.id for item in plan.actions)
+            observed_action_ids = Counter(
+                item.action_id for item in application.action_results
+            )
+            expected_expectation_ids = Counter(
+                item.id for item in plan.verification_expectations
+            )
+            observed_expectation_ids = Counter(
+                item.expectation_id
+                for item in application.verification_results
+            )
+            if (
+                application.config_plan_id != plan.id
+                or application.config_semantic_hash != plan.semantic_hash
+                or barrier is not None
+                or not voice_action_ids
+                or not voice_action_ids.issubset(retained_ids)
+                or bool(voice_action_ids & mutation_ids)
+                or observed_action_ids != expected_action_ids
+                or observed_expectation_ids != expected_expectation_ids
+            ):
+                return self._voice_signal_completion_failure(
+                    application,
+                    "Configuration result is not a zero-mutation retained "
+                    "Voice qualification.",
+                    started,
+                )
+            action_by_id = {
+                item.action_id: item for item in application.action_results
+            }
+            verification_by_id = {
+                item.expectation_id: item
+                for item in application.verification_results
+            }
+            preparation_results = [
+                action_by_id[item.id]
+                for item in plan.actions
+                if item.id in voice_action_ids
+            ]
+            foundation_expectations = [
+                item for item in plan.verification_expectations
+                if (
+                    item.action_id not in voice_action_ids
+                    and item.kind in self._VOICE_FOUNDATION_KINDS
+                )
+            ]
+            foundation_results = [
+                verification_by_id[item.id]
+                for item in foundation_expectations
+            ]
+            foundation_status = self._voice_signal_foundation_status(
+                preparation_results,
+                foundation_expectations,
+                foundation_results,
+                list(application.verification_results),
+            )
+            barrier = VoiceSignalBarrierResult(
+                required=False,
+                foundation_expectation_ids=[
+                    item.id for item in foundation_expectations
+                ],
+                preparation_results=preparation_results,
+                foundation_verification_results=foundation_results,
+                foundation_status=foundation_status,
+                signal_status=ActionExecutionStatus.INTENDED,
+                message=(
+                    "Retained Voice signal state requires fresh direct and "
+                    "forwarding verification; no access mutation is authorized."
+                ),
+            )
+            deferred_ids = frozenset()
+        else:
+            if (
+                application.config_plan_id != plan.id
+                or application.config_semantic_hash != plan.semantic_hash
+                or barrier is None
+                or not barrier.required
+                or barrier.foundation_status is not ActionExecutionStatus.VERIFIED
+                or barrier.signal_status is not ActionExecutionStatus.INTENDED
+            ):
+                return self._voice_signal_completion_failure(
+                    application,
+                    "Configuration result is not a prepared deferred Voice signal.",
+                    started,
+                )
+            deferred_ids = frozenset(barrier.deferred_action_ids)
         deferred_actions = [
             item for item in plan.actions if item.id in deferred_ids
         ]
@@ -525,24 +609,24 @@ class ConfigurationApplicator:
                 started,
             )
 
-        signal_by_id = self._apply_ready_actions(
-            deferred_actions,
-            deployed_names,
-        )
         action_by_id = {
             item.action_id: item for item in application.action_results
         }
+        signal_by_id = (
+            {
+                identifier: action_by_id[identifier]
+                for identifier in voice_action_ids
+            }
+            if retained_state_only else
+            self._apply_ready_actions(
+                deferred_actions,
+                deployed_names,
+            )
+        )
         action_by_id.update(signal_by_id)
         action_results = [
             action_by_id[item.id] for item in plan.actions
         ]
-        voice_action_ids = {
-            item.id for item in plan.actions
-            if (
-                isinstance(item, ConfigureAccessPort)
-                and item.voice_vlan_id is not None
-            )
-        }
         expectations = [
             item for item in plan.verification_expectations
             if item.action_id in voice_action_ids
@@ -656,6 +740,13 @@ class ConfigurationApplicator:
             "post_signal_convergence_results": forwarding_results,
             "signal_status": signal_status,
             "message": (
+                "Retained Voice signal state was independently verified; no "
+                "access action was dispatched."
+                if (
+                    retained_state_only
+                    and signal_status is ActionExecutionStatus.VERIFIED
+                )
+                else
                 "Voice bootstrap completed; the original typed access actions "
                 "were dispatched and independently verified."
                 if signal_status is ActionExecutionStatus.VERIFIED

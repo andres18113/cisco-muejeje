@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from time import monotonic, time_ns
 from typing import Protocol
 from uuid import uuid4
@@ -200,6 +200,8 @@ class VoiceApplicator:
         capabilities: dict[str, VoiceCapabilityProfile] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
+        mutation_action_ids: Collection[str] | None = None,
+        retained_action_results: Sequence[ActionApplicationResult] = (),
         complete_voice_signal: (
             Callable[[], dict[str, ActionExecutionStatus]] | None
         ) = None,
@@ -267,6 +269,24 @@ class VoiceApplicator:
             return self._failure(
                 plan, ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 "VoicePlan actions are not in deterministic dependency order.", context, started,
+                deployment_id=deployment_id,
+            )
+        (
+            mutation_ids,
+            retained_results,
+            mutation_scope_errors,
+        ) = self._mutation_scope(
+            plan,
+            mutation_action_ids=mutation_action_ids,
+            retained_action_results=retained_action_results,
+        )
+        if mutation_scope_errors:
+            return self._failure(
+                plan,
+                ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                " ".join(mutation_scope_errors),
+                context,
+                started,
                 deployment_id=deployment_id,
             )
         missing = self._missing_foundations(
@@ -359,15 +379,24 @@ class VoiceApplicator:
             )
 
         capabilities = capabilities or {}
-        if lifecycle_observer is not None:
+        if lifecycle_observer is not None and mutation_ids:
             lifecycle_observer("VOICE_BOOTSTRAP_STARTED")
-        action_results = self._apply_actions(plan, capabilities, deployed_names)
+        action_results = self._apply_actions(
+            plan,
+            capabilities,
+            deployed_names,
+            mutation_ids=mutation_ids,
+            retained_results=retained_results,
+        )
         application_status = self._application_status(action_results)
         if (
             lifecycle_observer is not None
             and application_status is ActionExecutionStatus.APPLIED
         ):
-            lifecycle_observer("VOICE_BOOTSTRAP_APPLIED")
+            lifecycle_observer(
+                "VOICE_BOOTSTRAP_APPLIED"
+                if mutation_ids else "VOICE_BOOTSTRAP_RETAINED"
+            )
         if complete_voice_signal is not None:
             if application_status is not ActionExecutionStatus.APPLIED:
                 return self._after_application_failure(
@@ -379,6 +408,7 @@ class VoiceApplicator:
                     context,
                     started,
                     deployment_id,
+                    mutation_ids,
                 )
             try:
                 if lifecycle_observer is not None:
@@ -393,6 +423,7 @@ class VoiceApplicator:
                     context,
                     started,
                     deployment_id,
+                    mutation_ids,
                 )
             missing = self._missing_foundations(
                 plan,
@@ -409,6 +440,7 @@ class VoiceApplicator:
                     context,
                     started,
                     deployment_id,
+                    mutation_ids,
                 )
             if lifecycle_observer is not None:
                 lifecycle_observer("DEFERRED_VOICE_COMPLETION_VERIFIED")
@@ -424,7 +456,10 @@ class VoiceApplicator:
             plan_id=plan.id,
             deployment_id=deployment_id,
             actions=list(plan.actions),
-            results=action_results,
+            results=[
+                item for item in action_results
+                if item.action_id in mutation_ids
+            ],
         )
         evidence_records = [
             evidence_from_legacy_result(
@@ -480,6 +515,12 @@ class VoiceApplicator:
             source_service_hash=plan.source_service_hash,
             runtime_context=context, status=status, application_status=application_status,
             failure_code=failure_code, action_results=action_results,
+            mutation_action_ids=[
+                item.id for item in plan.actions if item.id in mutation_ids
+            ],
+            retained_action_ids=[
+                item.id for item in plan.actions if item.id not in mutation_ids
+            ],
             registrations=registrations, calls=calls, phones=phones,
             deployment_id=deployment_id, execution_journal=journal,
             dirty_state=journal.dirty_state,
@@ -487,9 +528,19 @@ class VoiceApplicator:
             duration_ms=int((monotonic() - started) * 1000),
         )
 
-    def _apply_actions(self, plan, capabilities, deployed_names):
-        results: dict[str, ActionApplicationResult] = {}
+    def _apply_actions(
+        self,
+        plan,
+        capabilities,
+        deployed_names,
+        *,
+        mutation_ids: frozenset[str],
+        retained_results: dict[str, ActionApplicationResult],
+    ):
+        results = dict(retained_results)
         for action in plan.actions:
+            if action.id not in mutation_ids:
+                continue
             profile = capabilities.get(action.host_model)
             support = profile.status(action.required_capability) if profile else VoiceCapabilityStatus.UNKNOWN
             if support is VoiceCapabilityStatus.SUPPORTED:
@@ -904,6 +955,93 @@ class VoiceApplicator:
             )
         )
 
+    @staticmethod
+    def _mutation_scope(
+        plan: VoicePlan,
+        *,
+        mutation_action_ids: Collection[str] | None,
+        retained_action_results: Sequence[ActionApplicationResult],
+    ) -> tuple[
+        frozenset[str],
+        dict[str, ActionApplicationResult],
+        list[str],
+    ]:
+        """Validate an explicit Voice mutation delta and its retained facts."""
+
+        plan_ids = {item.id for item in plan.actions}
+        if mutation_action_ids is None:
+            if retained_action_results:
+                return (
+                    frozenset(),
+                    {},
+                    [
+                        "Retained action results require an explicit mutation "
+                        "action scope."
+                    ],
+                )
+            return frozenset(plan_ids), {}, []
+
+        mutation_ids = frozenset(mutation_action_ids)
+        retained_by_id = {
+            item.action_id: item.model_copy(deep=True)
+            for item in retained_action_results
+        }
+        errors: list[str] = []
+        unknown = sorted(mutation_ids - plan_ids)
+        if unknown:
+            errors.append(
+                "Mutation scope contains actions outside the typed Voice plan: "
+                + ", ".join(unknown)
+            )
+        if len(retained_by_id) != len(retained_action_results):
+            errors.append("Retained Voice action results contain duplicate identities.")
+        expected_retained = plan_ids - mutation_ids
+        missing = sorted(expected_retained - set(retained_by_id))
+        extra = sorted(set(retained_by_id) - expected_retained)
+        if missing:
+            errors.append(
+                "Mutation scope lacks retained application results for: "
+                + ", ".join(missing)
+            )
+        if extra:
+            errors.append(
+                "Retained Voice application results are outside the retained "
+                "scope: " + ", ".join(extra)
+            )
+        invalid = sorted(
+            f"{identifier}:{retained_by_id[identifier].status.value}/"
+            f"{retained_by_id[identifier].failure_code.value}"
+            for identifier in expected_retained & set(retained_by_id)
+            if not satisfies_apply_dependency(
+                retained_by_id[identifier].status,
+            )
+            or retained_by_id[identifier].failure_code
+            is not ConfigurationFailureCode.NONE
+        )
+        if invalid:
+            errors.append(
+                "Retained Voice actions were not previously applied: "
+                + ", ".join(invalid)
+            )
+        reverse_dependencies = sorted(
+            item.id
+            for item in plan.actions
+            if item.id in expected_retained
+            and any(
+                dependency in mutation_ids
+                for dependency in [
+                    *item.depends_on,
+                    *item.apply_dependencies,
+                ]
+            )
+        )
+        if reverse_dependencies:
+            errors.append(
+                "Retained Voice actions depend on newly mutated actions: "
+                + ", ".join(reverse_dependencies)
+            )
+        return mutation_ids, retained_by_id, errors
+
     @classmethod
     def _after_application_failure(
         cls,
@@ -914,12 +1052,16 @@ class VoiceApplicator:
         context: ConfigurationRuntimeContext,
         started: float,
         deployment_id: str,
+        mutation_ids: frozenset[str],
     ) -> VoiceApplicationResult:
         journal = journal_from_action_results(
             plan_id=plan.id,
             deployment_id=deployment_id,
             actions=list(plan.actions),
-            results=action_results,
+            results=[
+                item for item in action_results
+                if item.action_id in mutation_ids
+            ],
         )
         return VoiceApplicationResult(
             voice_plan_id=plan.id,
@@ -932,6 +1074,12 @@ class VoiceApplicator:
             application_status=cls._application_status(action_results),
             failure_code=code,
             action_results=action_results,
+            mutation_action_ids=[
+                item.id for item in plan.actions if item.id in mutation_ids
+            ],
+            retained_action_ids=[
+                item.id for item in plan.actions if item.id not in mutation_ids
+            ],
             preflight_errors=[message],
             deployment_id=deployment_id,
             execution_journal=journal,

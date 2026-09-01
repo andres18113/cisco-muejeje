@@ -19,7 +19,10 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationPlan,
 )
 from ...domain.enterprise.models.roles import DeviceRole
-from ...domain.enterprise.models.voice_plan import VoicePlan
+from ...domain.enterprise.models.voice_plan import (
+    GeneratePhoneConfigurationFiles,
+    VoicePlan,
+)
 from ...domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityProfile,
     ControlPlanePlan,
@@ -500,6 +503,110 @@ def canonical_stage_configuration_mutation_ids(
         )
     return tuple(
         item.id for item in current.actions if item.id not in previous_by_id
+    )
+
+
+def canonical_stage_control_plane_mutation_ids(
+    previous: ControlPlanePlan,
+    current: ControlPlanePlan,
+) -> tuple[str, ...]:
+    """Return only unchanged-ID-safe control actions introduced by a stage."""
+
+    previous_by_id = {item.id: item for item in previous.actions}
+    current_by_id = {item.id: item for item in current.actions}
+    if len(previous_by_id) != len(previous.actions):
+        raise ValueError(
+            "Previous canonical control-plane plan has duplicate action IDs."
+        )
+    if len(current_by_id) != len(current.actions):
+        raise ValueError(
+            "Current canonical control-plane plan has duplicate action IDs."
+        )
+    omitted = sorted(set(previous_by_id) - set(current_by_id))
+    if omitted:
+        raise ValueError(
+            "Canonical stage control-plane actions are not cumulative: "
+            + ", ".join(omitted)
+        )
+    changed = sorted(
+        identifier
+        for identifier, previous_action in previous_by_id.items()
+        if current_by_id[identifier] != previous_action
+    )
+    if changed:
+        raise ValueError(
+            "Canonical retained control-plane actions changed identity: "
+            + ", ".join(changed)
+        )
+    return tuple(
+        item.id for item in current.actions if item.id not in previous_by_id
+    )
+
+
+def canonical_stage_voice_mutation_ids(
+    previous: VoicePlan,
+    current: VoicePlan,
+) -> tuple[str, ...]:
+    """Return new Voice actions plus typed phone-file dependency expansions."""
+
+    previous_by_id = {item.id: item for item in previous.actions}
+    current_by_id = {item.id: item for item in current.actions}
+    if len(previous_by_id) != len(previous.actions):
+        raise ValueError("Previous canonical Voice plan has duplicate action IDs.")
+    if len(current_by_id) != len(current.actions):
+        raise ValueError("Current canonical Voice plan has duplicate action IDs.")
+    omitted = sorted(set(previous_by_id) - set(current_by_id))
+    if omitted:
+        raise ValueError(
+            "Canonical stage Voice actions are not cumulative: "
+            + ", ".join(omitted)
+        )
+    changed = {
+        identifier
+        for identifier, previous_action in previous_by_id.items()
+        if current_by_id[identifier] != previous_action
+    }
+    invalid_changed: list[str] = []
+    for identifier in changed:
+        previous_action = previous_by_id[identifier]
+        current_action = current_by_id[identifier]
+        previous_payload = previous_action.model_dump()
+        current_payload = current_action.model_dump()
+        previous_dependencies = set(previous_payload.pop("depends_on", []))
+        current_dependencies = set(current_payload.pop("depends_on", []))
+        previous_apply_dependencies = set(
+            previous_payload.pop("apply_dependencies", []),
+        )
+        current_apply_dependencies = set(
+            current_payload.pop("apply_dependencies", []),
+        )
+        if (
+            not isinstance(
+                previous_action,
+                GeneratePhoneConfigurationFiles,
+            )
+            or not isinstance(
+                current_action,
+                GeneratePhoneConfigurationFiles,
+            )
+            or previous_payload != current_payload
+            or not previous_dependencies.issubset(current_dependencies)
+            or not previous_apply_dependencies.issubset(
+                current_apply_dependencies,
+            )
+            or current_dependencies != current_apply_dependencies
+        ):
+            invalid_changed.append(identifier)
+    if invalid_changed:
+        raise ValueError(
+            "Canonical retained Voice actions changed outside a monotonic "
+            "phone-file dependency expansion: "
+            + ", ".join(sorted(invalid_changed))
+        )
+    return tuple(
+        item.id
+        for item in current.actions
+        if item.id not in previous_by_id or item.id in changed
     )
 
 

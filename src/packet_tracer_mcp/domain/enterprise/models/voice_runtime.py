@@ -131,6 +131,8 @@ class VoiceApplicationResult(BaseModel):
     application_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
     failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
     action_results: list[ActionApplicationResult] = Field(default_factory=list)
+    mutation_action_ids: list[str] = Field(default_factory=list)
+    retained_action_ids: list[str] = Field(default_factory=list)
     registrations: list[PhoneRegistrationResult] = Field(default_factory=list)
     calls: list[CallVerificationResult] = Field(default_factory=list)
     phones: list[PhoneVoiceOutcome] = Field(default_factory=list)
@@ -160,6 +162,8 @@ class VoiceApplicationResult(BaseModel):
             "application_status": self.application_status.value,
             "failure_code": self.failure_code.value,
             "actions": counts(self.action_results),
+            "mutation_action_ids": self.mutation_action_ids,
+            "retained_action_ids": self.retained_action_ids,
             "registrations": counts(self.registrations),
             "calls": counts(self.calls),
             "phones": [item.model_dump(mode="json") for item in self.phones],

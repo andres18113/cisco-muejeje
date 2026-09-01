@@ -119,6 +119,8 @@ class ControlPlaneApplicationResult(BaseModel):
     behavior_status: ActionExecutionStatus = ActionExecutionStatus.SKIPPED
     failover_status: ActionExecutionStatus = ActionExecutionStatus.SKIPPED
     action_results: list[ActionApplicationResult] = Field(default_factory=list)
+    mutation_action_ids: list[str] = Field(default_factory=list)
+    retained_action_ids: list[str] = Field(default_factory=list)
     observed_results: list[ControlPlaneVerificationResult] = Field(default_factory=list)
     behavior_results: list[ControlPlaneVerificationResult] = Field(default_factory=list)
     failover_results: list[ControlPlaneVerificationResult] = Field(default_factory=list)
@@ -148,6 +150,8 @@ class ControlPlaneApplicationResult(BaseModel):
                 "failover": self.failover_status.value,
             },
             "actions": len(self.action_results),
+            "mutation_action_ids": self.mutation_action_ids,
+            "retained_action_ids": self.retained_action_ids,
             "observations": len(self.observed_results),
             "behavior_checks": len(self.behavior_results),
             "unbound_failover_checks": len(self.failover_results),

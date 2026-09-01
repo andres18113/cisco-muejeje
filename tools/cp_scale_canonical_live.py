@@ -41,6 +41,8 @@ from packet_tracer_mcp.application.use_cases.capability_discovery import (
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     canonical_stage_configuration_mutation_ids,
+    canonical_stage_control_plane_mutation_ids,
+    canonical_stage_voice_mutation_ids,
     compose_cp_scale_canonical,
     project_cp_scale_canonical_delta,
     project_cp_scale_canonical_stage,
@@ -90,6 +92,7 @@ from packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationRuntimeContext,
@@ -2778,6 +2781,10 @@ def _stage_voice(
     statuses: dict,
     context: ConfigurationRuntimeContext,
     manifest,
+    voice_mutation_ids: tuple[str, ...] | None = None,
+    retained_voice_action_results: tuple[
+        ActionApplicationResult, ...
+    ] = (),
     complete_voice_signal=None,
     lifecycle_observer=None,
 ) -> dict[str, object]:
@@ -2806,6 +2813,8 @@ def _stage_voice(
         capabilities=composition.voice_capabilities,
         runtime_context=context,
         deployment_manifest=manifest,
+        mutation_action_ids=voice_mutation_ids,
+        retained_action_results=retained_voice_action_results,
         complete_voice_signal=complete_voice_signal,
         lifecycle_observer=lifecycle_observer,
     )
@@ -2819,6 +2828,8 @@ def _stage_voice(
         "result": result.model_dump(mode="json"),
         "phones": len(plan.phone_assignments),
         "actions": len(plan.actions),
+        "mutation_actions": len(result.mutation_action_ids),
+        "retained_actions": len(result.retained_action_ids),
         "runtime_diagnostics": (
             drain_diagnostics()
             if callable(drain_diagnostics) else {}
@@ -2842,8 +2853,33 @@ def _stage_voice(
     registration = collections.Counter(
         item.status.value for item in result.registrations
     )
+    expected_call_ids = collections.Counter(
+        item.id for item in getattr(plan, "call_expectations", [])
+    )
+    call_results = list(getattr(result, "calls", []))
+    observed_call_ids = collections.Counter(
+        item.call_expectation_id for item in call_results
+    )
+    calls = collections.Counter(item.status.value for item in call_results)
     evidence["addressing_by_status"] = dict(sorted(addressing.items()))
     evidence["registration_by_status"] = dict(sorted(registration.items()))
+    evidence["calls_by_status"] = dict(sorted(calls.items()))
+    if expected_call_ids != observed_call_ids:
+        evidence["error"] = (
+            "Voice call result inventory did not match the typed plan."
+        )
+        return evidence
+    failed_calls = [
+        item.call_expectation_id
+        for item in call_results
+        if item.status is ActionExecutionStatus.FAILED
+    ]
+    if failed_calls:
+        evidence["error"] = (
+            "Voice call behavior contradicted the plan for: "
+            + ", ".join(sorted(failed_calls))
+        )
+        return evidence
     # The voice path, one link at a time. A phone that never built its voice SVI
     # and one that built it and got no lease are different failures, and a
     # registration table that was truncated is not a statement about either.
@@ -2941,6 +2977,12 @@ def _execute_stage(
     verified_serial_manifest=None,
     previous_projection=None,
     previous_configuration=None,
+    previous_voice_action_results: tuple[
+        ActionApplicationResult, ...
+    ] = (),
+    previous_control_plane_action_results: tuple[
+        ActionApplicationResult, ...
+    ] = (),
     network_boundaries: list[dict[str, object]] | None = None,
 ) -> tuple[dict[str, object], object, object, object]:
     if (previous_projection is None) != (previous_configuration is None):
@@ -2961,6 +3003,55 @@ def _execute_stage(
             item.id for item in projection.configuration.actions
         } - set(configuration_mutation_ids)
     )
+    control_plane_mutation_ids = (
+        canonical_stage_control_plane_mutation_ids(
+            previous_projection.control_plane,
+            projection.control_plane,
+        )
+        if previous_projection is not None
+        else tuple(item.id for item in projection.control_plane.actions)
+    )
+    retained_control_plane_ids = {
+        item.id for item in projection.control_plane.actions
+    } - set(control_plane_mutation_ids)
+    retained_control_plane_action_results = tuple(
+        item for item in previous_control_plane_action_results
+        if item.action_id in retained_control_plane_ids
+    )
+    if (
+        len(retained_control_plane_action_results)
+        != len(retained_control_plane_ids)
+    ):
+        raise CanonicalLiveFailure(
+            "Canonical control-plane delta lacks retained application facts "
+            f"before {projection.stage.value!r}."
+        )
+    previous_voice = (
+        getattr(previous_projection, "voice", None)
+        if previous_projection is not None else None
+    )
+    voice_plan = getattr(projection, "voice", None)
+    voice_mutation_ids = (
+        ()
+        if voice_plan is None
+        else canonical_stage_voice_mutation_ids(previous_voice, voice_plan)
+        if previous_voice is not None and previous_voice.actions
+        else tuple(item.id for item in voice_plan.actions)
+    )
+    retained_voice_ids = (
+        set()
+        if voice_plan is None
+        else {item.id for item in voice_plan.actions} - set(voice_mutation_ids)
+    )
+    retained_voice_action_results = tuple(
+        item for item in previous_voice_action_results
+        if item.action_id in retained_voice_ids
+    )
+    if len(retained_voice_action_results) != len(retained_voice_ids):
+        raise CanonicalLiveFailure(
+            "Canonical Voice delta lacks retained application facts before "
+            f"{projection.stage.value!r}."
+        )
     evidence: dict[str, object] = {
         "stage": projection.stage.value,
         "plan": {
@@ -2984,11 +3075,27 @@ def _execute_stage(
             "voice_actions": (
                 len(projection.voice.actions) if projection.voice is not None else 0
             ),
+            "voice_mutation_actions": len(voice_mutation_ids),
+            "voice_retained_actions": len(retained_voice_ids),
+            "voice_mutation_action_ids": list(voice_mutation_ids),
+            "voice_retained_action_ids": sorted(retained_voice_ids),
             "voice_phones": (
                 len(projection.voice.phone_assignments)
                 if projection.voice is not None else 0
             ),
             "control_plane_actions": len(projection.control_plane.actions),
+            "control_plane_mutation_actions": len(
+                control_plane_mutation_ids
+            ),
+            "control_plane_retained_actions": len(
+                retained_control_plane_ids
+            ),
+            "control_plane_mutation_action_ids": list(
+                control_plane_mutation_ids
+            ),
+            "control_plane_retained_action_ids": sorted(
+                retained_control_plane_ids
+            ),
             "verification_expectations": len(
                 projection.control_plane.verification_expectations
             ),
@@ -3059,8 +3166,6 @@ def _execute_stage(
     configuration_applicator = ConfigurationApplicator(
         configuration_runtime
     )
-    voice_plan = getattr(projection, "voice", None)
-
     def configuration_phase_observer(
         phase: int,
         action_ids: tuple[str, ...],
@@ -3086,7 +3191,9 @@ def _execute_stage(
         runtime_context=context,
         deployment_manifest=manifest,
         defer_voice_signal_until_bootstrap=bool(
-            voice_plan is not None and voice_plan.actions
+            voice_plan is not None
+            and voice_plan.actions
+            and voice_mutation_ids
         ),
         mutation_action_ids=configuration_mutation_ids,
         retained_action_results=(
@@ -3119,7 +3226,9 @@ def _execute_stage(
         projection.configuration,
         configuration,
         allow_deferred_voice_signal=bool(
-            voice_plan is not None and voice_plan.actions
+            voice_plan is not None
+            and voice_plan.actions
+            and voice_mutation_ids
         ),
     )
     if (
@@ -3128,7 +3237,9 @@ def _execute_stage(
             projection.configuration,
             configuration,
             allow_deferred_voice_signal=bool(
-                voice_plan is not None and voice_plan.actions
+                voice_plan is not None
+                and voice_plan.actions
+                and voice_mutation_ids
             ),
         )
     ):
@@ -3139,7 +3250,9 @@ def _execute_stage(
             runtime_context=context,
             deployment_manifest=manifest,
             defer_voice_signal_until_bootstrap=bool(
-                voice_plan is not None and voice_plan.actions
+                voice_plan is not None
+                and voice_plan.actions
+                and voice_mutation_ids
             ),
             mutation_action_ids=configuration_mutation_ids,
             retained_action_results=(
@@ -3162,7 +3275,9 @@ def _execute_stage(
             projection.configuration,
             configuration,
             allow_deferred_voice_signal=bool(
-                voice_plan is not None and voice_plan.actions
+                voice_plan is not None
+                and voice_plan.actions
+                and voice_mutation_ids
             ),
         )
     evidence["configuration"] = configuration.model_dump(mode="json")
@@ -3186,6 +3301,12 @@ def _execute_stage(
         and barrier.signal_status is ActionExecutionStatus.INTENDED
     ):
         record_voice_lifecycle("DATA_ONLY_ACCESS_APPLIED")
+        record_voice_lifecycle("NETWORK_VERIFIED")
+    elif (
+        voice_plan is not None
+        and voice_plan.actions
+        and not voice_mutation_ids
+    ):
         record_voice_lifecycle("NETWORK_VERIFIED")
 
     # L2/VLAN/DHCP foundation is applied and verified above. Voice comes next,
@@ -3239,6 +3360,7 @@ def _execute_stage(
                 configuration,
                 deployment_manifest=manifest,
                 lifecycle_observer=record_voice_lifecycle,
+                retained_state_only=not voice_mutation_ids,
             )
         )
         _record_configuration_attempt(
@@ -3265,11 +3387,20 @@ def _execute_stage(
         statuses=statuses,
         context=context,
         manifest=manifest,
+        voice_mutation_ids=voice_mutation_ids,
+        retained_voice_action_results=retained_voice_action_results,
         complete_voice_signal=(
             complete_voice_signal
             if (
-                barrier is not None
-                and barrier.signal_status is ActionExecutionStatus.INTENDED
+                (
+                    barrier is not None
+                    and barrier.signal_status is ActionExecutionStatus.INTENDED
+                )
+                or (
+                    voice_plan is not None
+                    and voice_plan.actions
+                    and not voice_mutation_ids
+                )
             )
             else None
         ),
@@ -3399,6 +3530,8 @@ def _execute_stage(
         capabilities=packet_tracer_control_plane_capabilities(packet_tracer_version),
         runtime_context=context,
         deployment_manifest=manifest,
+        mutation_action_ids=control_plane_mutation_ids,
+        retained_action_results=retained_control_plane_action_results,
     )
     evidence["control_plane"] = control.model_dump(mode="json")
     if control.status is not ConfigurationApplicationStatus.VERIFIED:
@@ -3775,6 +3908,12 @@ def run(
 
         previous_projection = None
         previous_configuration = None
+        previous_voice_action_results: tuple[
+            ActionApplicationResult, ...
+        ] = ()
+        previous_control_plane_action_results: tuple[
+            ActionApplicationResult, ...
+        ] = ()
         verified_core_deployment = None
         verified_core_topology = None
         verified_serial_manifest = None
@@ -3924,6 +4063,10 @@ def run(
                 verified_serial_manifest=verified_serial_manifest,
                 previous_projection=previous_projection,
                 previous_configuration=previous_configuration,
+                previous_voice_action_results=previous_voice_action_results,
+                previous_control_plane_action_results=(
+                    previous_control_plane_action_results
+                ),
                 network_boundaries=stage_network_boundaries,
             )
             if stage is CPScaleCanonicalStage.ROUTER4_SWITCH10:
@@ -3951,6 +4094,33 @@ def run(
             evidence["live_devices"] = len(projection.topology.devices)
             evidence["live_links"] = len(projection.topology.links)
 
+            voice_payload = stage_evidence.get("voice")
+            voice_result_payload = (
+                voice_payload.get("result")
+                if isinstance(voice_payload, dict) else None
+            )
+            if isinstance(voice_result_payload, dict):
+                previous_voice_action_results = tuple(
+                    ActionApplicationResult.model_validate(item)
+                    for item in voice_result_payload.get(
+                        "action_results", []
+                    )
+                )
+            elif projection.voice is not None and projection.voice.actions:
+                raise CanonicalLiveFailure(
+                    f"Verified stage {stage.value!r} did not retain its Voice "
+                    "application results."
+                )
+            control_payload = stage_evidence.get("control_plane")
+            if not isinstance(control_payload, dict):
+                raise CanonicalLiveFailure(
+                    f"Verified stage {stage.value!r} did not retain its "
+                    "control-plane result."
+                )
+            previous_control_plane_action_results = tuple(
+                ActionApplicationResult.model_validate(item)
+                for item in control_payload.get("action_results", [])
+            )
             previous_projection = projection
             previous_configuration = configuration
             if stage is CPScaleCanonicalStage.ROUTING_CORE:
@@ -4071,6 +4241,12 @@ def run(
             packet_tracer_version=packet_tracer_version,
             verified_serial_topology=verified_serial_topology,
             verified_serial_manifest=verified_serial_manifest,
+            previous_projection=previous_projection,
+            previous_configuration=configuration,
+            previous_voice_action_results=previous_voice_action_results,
+            previous_control_plane_action_results=(
+                previous_control_plane_action_results
+            ),
         )
         full_evidence["stage"] = "full-qualification"
         evidence["full_qualification"] = full_evidence

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from time import monotonic
 from typing import Protocol
 
@@ -166,6 +166,8 @@ class ControlPlaneApplicator:
         capabilities: Mapping[str, ControlPlaneCapabilityProfile] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
+        mutation_action_ids: Collection[str] | None = None,
+        retained_action_results: Sequence[ActionApplicationResult] = (),
     ) -> ControlPlaneApplicationResult:
         started = monotonic()
         context = runtime_context or ConfigurationRuntimeContext()
@@ -236,6 +238,24 @@ class ControlPlaneApplicator:
                 plan,
                 ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 "ControlPlanePlan actions are not in deterministic dependency order.",
+                context=context,
+                started=started,
+                deployment_id=deployment_id,
+            )
+        (
+            mutation_ids,
+            retained_results,
+            mutation_scope_errors,
+        ) = self._mutation_scope(
+            plan,
+            mutation_action_ids=mutation_action_ids,
+            retained_action_results=retained_action_results,
+        )
+        if mutation_scope_errors:
+            return self._failure(
+                plan,
+                ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                *mutation_scope_errors,
                 context=context,
                 started=started,
                 deployment_id=deployment_id,
@@ -321,7 +341,12 @@ class ControlPlaneApplicator:
             capabilities if capabilities is not None else self._capability_provider(),
             context.evidence_backend_version,
         )
-        action_results = self._apply_actions(runtime_plan, profiles)
+        action_results = self._apply_actions(
+            runtime_plan,
+            profiles,
+            mutation_ids=mutation_ids,
+            retained_results=retained_results,
+        )
         by_action = {item.action_id: item for item in action_results}
         verification_statuses: dict[str, ActionExecutionStatus] = {}
         observed_results = self._verify_stage(
@@ -398,7 +423,10 @@ class ControlPlaneApplicator:
             plan_id=plan.id,
             deployment_id=deployment_id,
             actions=list(plan.actions),
-            results=action_results,
+            results=[
+                item for item in action_results
+                if item.action_id in mutation_ids
+            ],
         )
         self._record_scenario_restore(journal, scenario_results)
         evidence_records = self._evidence_records(
@@ -422,6 +450,12 @@ class ControlPlaneApplicator:
             behavior_status=behavior_status,
             failover_status=failover_status,
             action_results=action_results,
+            mutation_action_ids=[
+                item.id for item in plan.actions if item.id in mutation_ids
+            ],
+            retained_action_ids=[
+                item.id for item in plan.actions if item.id not in mutation_ids
+            ],
             observed_results=observed_results,
             behavior_results=behavior_results,
             failover_results=failover_results,
@@ -645,13 +679,110 @@ class ControlPlaneApplicator:
             return list(action.member_interfaces)
         return []
 
+    @staticmethod
+    def _mutation_scope(
+        plan: ControlPlanePlan,
+        *,
+        mutation_action_ids: Collection[str] | None,
+        retained_action_results: Sequence[ActionApplicationResult],
+    ) -> tuple[
+        frozenset[str],
+        dict[str, ActionApplicationResult],
+        list[str],
+    ]:
+        """Validate an explicit control-plane mutation delta and retained facts."""
+
+        plan_ids = {item.id for item in plan.actions}
+        if mutation_action_ids is None:
+            if retained_action_results:
+                return (
+                    frozenset(),
+                    {},
+                    [
+                        "Retained action results require an explicit mutation "
+                        "action scope."
+                    ],
+                )
+            return frozenset(plan_ids), {}, []
+
+        mutation_ids = frozenset(mutation_action_ids)
+        retained_by_id = {
+            item.action_id: item.model_copy(deep=True)
+            for item in retained_action_results
+        }
+        errors: list[str] = []
+        unknown = sorted(mutation_ids - plan_ids)
+        if unknown:
+            errors.append(
+                "Mutation scope contains actions outside the typed control-plane "
+                "plan: " + ", ".join(unknown)
+            )
+        if len(retained_by_id) != len(retained_action_results):
+            errors.append(
+                "Retained control-plane action results contain duplicate "
+                "identities."
+            )
+        expected_retained = plan_ids - mutation_ids
+        missing = sorted(expected_retained - set(retained_by_id))
+        extra = sorted(set(retained_by_id) - expected_retained)
+        if missing:
+            errors.append(
+                "Mutation scope lacks retained control-plane results for: "
+                + ", ".join(missing)
+            )
+        if extra:
+            errors.append(
+                "Retained control-plane results are outside the retained scope: "
+                + ", ".join(extra)
+            )
+        invalid = sorted(
+            f"{identifier}:{retained_by_id[identifier].status.value}/"
+            f"{retained_by_id[identifier].failure_code.value}"
+            for identifier in expected_retained & set(retained_by_id)
+            if (
+                not satisfies_apply_dependency(
+                    retained_by_id[identifier].status,
+                )
+                or retained_by_id[identifier].failure_code
+                is not ConfigurationFailureCode.NONE
+            )
+        )
+        if invalid:
+            errors.append(
+                "Retained control-plane actions were not previously applied: "
+                + ", ".join(invalid)
+            )
+        reverse_dependencies = sorted(
+            item.id
+            for item in plan.actions
+            if item.id in expected_retained
+            and any(
+                dependency in mutation_ids
+                for dependency in [
+                    *item.depends_on,
+                    *item.apply_dependencies,
+                ]
+            )
+        )
+        if reverse_dependencies:
+            errors.append(
+                "Retained control-plane actions depend on newly mutated actions: "
+                + ", ".join(reverse_dependencies)
+            )
+        return mutation_ids, retained_by_id, errors
+
     def _apply_actions(
         self,
         plan: ControlPlanePlan,
         profiles: Mapping[str, ControlPlaneCapabilityProfile],
+        *,
+        mutation_ids: frozenset[str],
+        retained_results: dict[str, ActionApplicationResult],
     ) -> list[ActionApplicationResult]:
-        results: dict[str, ActionApplicationResult] = {}
+        results = dict(retained_results)
         for action in plan.actions:
+            if action.id not in mutation_ids:
+                continue
             support = self._capability_status(
                 profiles, action.model, action.required_capability,
             )

@@ -5,9 +5,13 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
+import pytest
+
 from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     canonical_stage_configuration_mutation_ids,
+    canonical_stage_control_plane_mutation_ids,
+    canonical_stage_voice_mutation_ids,
     compose_cp_scale_canonical,
     project_cp_scale_canonical_stage,
     project_cp_scale_canonical_delta,
@@ -23,6 +27,11 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
 from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureRipv2,
     ControlPlaneVerificationKind,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+    BindPhoneToExtension,
+    CreateExtension,
+    GeneratePhoneConfigurationFiles,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
@@ -418,6 +427,44 @@ def test_floor2_configuration_mutation_is_delta_while_verification_stays_cumulat
     }
 
 
+def test_every_control_plane_stage_mutates_only_new_actions():
+    composition = compose_cp_scale_canonical(
+        packet_tracer_version=MEASURED_BACKEND_VERSION,
+    )
+    expected = {
+        CPScaleCanonicalStage.ROUTER4_SWITCH10: (3, 0, 3),
+        CPScaleCanonicalStage.FLOOR1: (3, 0, 3),
+        CPScaleCanonicalStage.FLOOR2: (3, 0, 3),
+        CPScaleCanonicalStage.FLOOR3: (169, 166, 3),
+        CPScaleCanonicalStage.ROUTER0_BRANCH: (200, 31, 169),
+        CPScaleCanonicalStage.ROUTER3_BRANCH: (217, 17, 200),
+    }
+    previous = project_cp_scale_canonical_stage(
+        composition,
+        CPScaleCanonicalStage.ROUTING_CORE,
+    ).control_plane
+    for stage, counts in expected.items():
+        current = project_cp_scale_canonical_stage(
+            composition,
+            stage,
+        ).control_plane
+        mutation_ids = canonical_stage_control_plane_mutation_ids(
+            previous,
+            current,
+        )
+        assert (
+            len(current.actions),
+            len(mutation_ids),
+            len(current.actions) - len(mutation_ids),
+        ) == counts
+        previous = current
+
+    assert canonical_stage_control_plane_mutation_ids(
+        previous,
+        composition.control_plane,
+    ) == ()
+
+
 def test_canonical_live_runner_uses_delta_mutation_with_cumulative_plan():
     source = Path("tools/cp_scale_canonical_live.py").read_text(
         encoding="utf-8",
@@ -428,6 +475,126 @@ def test_canonical_live_runner_uses_delta_mutation_with_cumulative_plan():
     assert "retained_action_results=(" in source
     assert "previous_configuration.action_results" in source
     assert "previous_configuration = configuration" in source
+    assert "canonical_stage_control_plane_mutation_ids(" in source
+    assert "mutation_action_ids=control_plane_mutation_ids" in source
+    assert "retained_action_results=retained_control_plane_action_results" in source
+    assert "previous_control_plane_action_results = tuple(" in source
+
+
+def test_floor2_voice_mutation_is_delta_with_phone_files_regenerated():
+    composition = compose_cp_scale_canonical(
+        packet_tracer_version=MEASURED_BACKEND_VERSION,
+    )
+    floor1 = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.FLOOR1,
+    )
+    floor2 = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.FLOOR2,
+    )
+    assert floor1.voice is not None
+    assert floor2.voice is not None
+
+    mutation_ids = set(canonical_stage_voice_mutation_ids(
+        floor1.voice,
+        floor2.voice,
+    ))
+    actions = {
+        item.id: item for item in floor2.voice.actions
+        if item.id in mutation_ids
+    }
+
+    assert len(floor1.voice.actions) == 47
+    assert len(floor2.voice.actions) == 75
+    assert len(mutation_ids) == 29
+    assert Counter(type(item) for item in actions.values()) == {
+        CreateExtension: 14,
+        BindPhoneToExtension: 14,
+        GeneratePhoneConfigurationFiles: 1,
+    }
+    phone_files = next(
+        item for item in floor2.voice.actions
+        if isinstance(item, GeneratePhoneConfigurationFiles)
+    )
+    assert phone_files.id in mutation_ids
+
+
+def test_every_later_voice_stage_has_an_exact_bounded_mutation_delta():
+    composition = compose_cp_scale_canonical(
+        packet_tracer_version=MEASURED_BACKEND_VERSION,
+    )
+    expected = {
+        CPScaleCanonicalStage.FLOOR2: (75, 29, 46),
+        CPScaleCanonicalStage.FLOOR3: (107, 33, 74),
+        CPScaleCanonicalStage.ROUTER0_BRANCH: (134, 27, 107),
+        CPScaleCanonicalStage.ROUTER3_BRANCH: (153, 19, 134),
+    }
+    previous = project_cp_scale_canonical_stage(
+        composition,
+        CPScaleCanonicalStage.FLOOR1,
+    ).voice
+    assert previous is not None
+    for stage, counts in expected.items():
+        current = project_cp_scale_canonical_stage(
+            composition,
+            stage,
+        ).voice
+        assert current is not None
+        mutation_ids = canonical_stage_voice_mutation_ids(
+            previous,
+            current,
+        )
+        assert (
+            len(current.actions),
+            len(mutation_ids),
+            len(current.actions) - len(mutation_ids),
+        ) == counts
+        previous = current
+
+    assert composition.voice is not None
+    assert canonical_stage_voice_mutation_ids(
+        previous,
+        composition.voice,
+    ) == ()
+
+
+def test_voice_delta_rejects_changed_stable_action_outside_phone_files():
+    composition = compose_cp_scale_canonical(
+        packet_tracer_version=MEASURED_BACKEND_VERSION,
+    )
+    floor1 = project_cp_scale_canonical_stage(
+        composition,
+        CPScaleCanonicalStage.FLOOR1,
+    ).voice
+    floor2 = project_cp_scale_canonical_stage(
+        composition,
+        CPScaleCanonicalStage.FLOOR2,
+    ).voice
+    assert floor1 is not None
+    assert floor2 is not None
+    changed = floor2.model_copy(deep=True)
+    changed.actions[0] = changed.actions[0].model_copy(update={
+        "max_phones": changed.actions[0].max_phones + 1,
+    })
+
+    with pytest.raises(
+        ValueError,
+        match="changed outside a monotonic phone-file dependency expansion",
+    ):
+        canonical_stage_voice_mutation_ids(floor1, changed)
+
+
+def test_canonical_live_runner_uses_voice_delta_and_retained_results():
+    source = Path("tools/cp_scale_canonical_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "canonical_stage_voice_mutation_ids(" in source
+    assert "mutation_action_ids=voice_mutation_ids" in source
+    assert "retained_voice_action_results=retained_voice_action_results" in source
+    assert "retained_action_results=retained_voice_action_results" in source
+    assert "previous_voice_action_results = tuple(" in source
+    assert "previous_projection=previous_projection" in source
+    assert "retained_state_only=not voice_mutation_ids" in source
 
 
 def test_canonical_live_retains_network_state_at_each_causal_boundary():

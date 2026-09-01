@@ -300,6 +300,37 @@ def test_applies_dag_and_keeps_observed_behavior_and_failover_separate():
     ] == [0, 10, 20, 30, 40]
 
 
+def test_incremental_control_plane_mutates_delta_and_verifies_cumulative_plan():
+    plan = _plan()
+    first_runtime = FakeControlPlaneRuntime()
+    first = _apply(first_runtime, plan=plan)
+    retained = next(
+        item for item in first.action_results if item.action_id == "cp/a"
+    )
+    runtime = FakeControlPlaneRuntime()
+
+    result = _apply(
+        runtime,
+        plan=plan,
+        mutation_action_ids={"cp/b"},
+        retained_action_results=[retained],
+    )
+
+    assert runtime.applied_batches == [["cp/b"]]
+    assert result.mutation_action_ids == ["cp/b"]
+    assert result.retained_action_ids == ["cp/a"]
+    assert {item.action_id for item in result.action_results} == {
+        "cp/a",
+        "cp/b",
+    }
+    assert result.status is ConfigurationApplicationStatus.VERIFIED
+    assert result.execution_journal is not None
+    assert [
+        item.action_id for item in result.execution_journal.entries
+        if item.action_id in {"cp/a", "cp/b"}
+    ] == ["cp/b"]
+
+
 def test_non_monotonic_failure_transitions_are_rejected_as_runtime_evidence():
     runtime = FakeControlPlaneRuntime()
     plan = _plan()
