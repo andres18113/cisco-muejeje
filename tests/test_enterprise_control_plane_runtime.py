@@ -447,9 +447,21 @@ def test_stp_behavior_uses_fresh_stable_roles_without_dispatching_ping():
         "forwarding_converged": FieldVerificationStatus.VERIFIED,
     }
     assert observed.convergence is not None
-    assert observed.convergence.attempts == 1
+    assert observed.convergence.attempts == 2
+    assert observed.convergence.details["stable_samples_required"] == 2
+    assert observed.convergence.details["stable_samples_observed"] == 2
+    assert observed.convergence.details["transitions"] == [
+        {
+            "state": "stable_roles",
+            "ports": [
+                "10:Fa0/1:Desg/FWD:cost=19:prio=128.1:type=P2p",
+                "20:Fa0/1:Root/FWD:cost=19:prio=128.1:type=P2p",
+            ],
+        },
+    ]
     assert ping.calls == []
     assert ios.calls == [
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE),
         ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE),
     ]
 
@@ -481,6 +493,7 @@ def test_stp_behavior_reobserves_learning_without_redispatch():
     ios = SequenceControlPlaneIos((
         result(_stp_output(root_vlans={10}).replace("Desg FWD", "Desg LRN")),
         result(_stp_output(root_vlans={10})),
+        result(_stp_output(root_vlans={10})),
     ))
     dispatched: list[str] = []
     runtime = PacketTracerEnterpriseControlPlaneRuntime(
@@ -491,7 +504,7 @@ def test_stp_behavior_reobserves_learning_without_redispatch():
         ios_executor=ios,
         stp_convergence_timeout_seconds=1.0,
         stp_convergence_interval_seconds=0.0,
-        stp_convergence_attempts=2,
+        stp_convergence_attempts=3,
     )
     runtime.apply_actions([action])
     mutation_count = len(dispatched)
@@ -500,9 +513,64 @@ def test_stp_behavior_reobserves_learning_without_redispatch():
 
     assert observed.status is ActionExecutionStatus.VERIFIED
     assert observed.convergence is not None
-    assert observed.convergence.attempts == 2
+    assert observed.convergence.attempts == 3
+    assert observed.convergence.details["stable_samples_observed"] == 2
+    assert [item["state"] for item in observed.convergence.details["transitions"]] == [
+        "transitional_roles",
+        "stable_roles",
+    ]
     assert len(dispatched) == mutation_count
-    assert len(ios.calls) == 2
+    assert len(ios.calls) == 3
+
+
+def test_stp_behavior_changed_stable_signature_restarts_confirmation():
+    plan = _compile().plan
+    action = next(
+        item for item in plan.actions
+        if item.device_id == "sw1" and item.action_type.value == "configure_stp"
+    )
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+        and item.action_id == action.id
+    )
+
+    def result(output: str) -> IosCommandResult:
+        return IosCommandResult(
+            device_name="HQ-SW1",
+            query_id=OperationalQueryId.SHOW_SPANNING_TREE,
+            executed=True,
+            output=output,
+            session_state=IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=True,
+            output_complete=True,
+            window_strategy="prefix_delta",
+        )
+
+    first = _stp_output(root_vlans={10})
+    changed = first.replace("FWD 19", "FWD 4")
+    ios = SequenceControlPlaneIos((
+        result(first),
+        result(changed),
+        result(changed),
+    ))
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]),
+        ios_executor=ios,
+        stp_convergence_timeout_seconds=1.0,
+        stp_convergence_interval_seconds=0.0,
+        stp_convergence_attempts=3,
+    )
+    runtime.apply_actions([action])
+
+    observed = runtime.verify([expectation])[0]
+
+    assert observed.status is ActionExecutionStatus.VERIFIED
+    assert observed.convergence is not None
+    assert observed.convergence.attempts == 3
+    assert observed.convergence.details["stable_samples_observed"] == 2
+    assert len(observed.convergence.details["transitions"]) == 2
 
 
 def test_stp_behavior_fails_a_stable_forwarding_alternate_role():
@@ -525,6 +593,41 @@ def test_stp_behavior_fails_a_stable_forwarding_alternate_role():
         ping_executor=SequencePing([]), ios_executor=ios,
         stp_convergence_attempts=2,
         stp_convergence_interval_seconds=0.0,
+    )
+    runtime.apply_actions([action])
+
+    observed = runtime.verify([expectation])[0]
+
+    assert observed.status is ActionExecutionStatus.FAILED
+    assert observed.fields["loop_free"] is FieldVerificationStatus.FAILED
+    assert observed.fields[
+        "forwarding_converged"
+    ] is FieldVerificationStatus.VERIFIED
+    assert len(ios.calls) == 1
+
+
+def test_stp_behavior_fails_multiple_forwarding_root_ports():
+    plan = _compile().plan
+    action = next(
+        item for item in plan.actions
+        if item.device_id == "sw1" and item.action_type.value == "configure_stp"
+    )
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+        and item.action_id == action.id
+    )
+    output = _stp_output(root_vlans={10}).replace(
+        "Fa0/1            Root FWD 19        128.1    P2p\n\nSwitch>",
+        "Fa0/1            Root FWD 19        128.1    P2p\n"
+        "Fa0/2            Root FWD 19        128.2    P2p\n\nSwitch>",
+    )
+    ios = FakeControlPlaneIos({
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE): output,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]), ios_executor=ios,
     )
     runtime.apply_actions([action])
 
@@ -586,6 +689,80 @@ def test_stp_behavior_exhausted_without_instances_stays_unobservable():
     assert observed.convergence.last_observable_state == (
         "no_parser_backed_instance"
     )
+
+
+def test_stp_behavior_one_stable_sample_does_not_verify_convergence():
+    plan = _compile().plan
+    action = next(
+        item for item in plan.actions
+        if item.device_id == "sw1" and item.action_type.value == "configure_stp"
+    )
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+        and item.action_id == action.id
+    )
+    ios = FakeControlPlaneIos({
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE):
+            _stp_output(root_vlans={10}),
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]),
+        ios_executor=ios,
+        stp_convergence_attempts=1,
+    )
+    runtime.apply_actions([action])
+
+    observed = runtime.verify([expectation])[0]
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.fresh_evidence is True
+    assert all(
+        value is FieldVerificationStatus.UNOBSERVABLE
+        for value in observed.fields.values()
+    )
+    assert observed.convergence is not None
+    assert observed.convergence.details["stable_samples_required"] == 2
+    assert observed.convergence.details["stable_samples_observed"] == 1
+
+
+def test_stp_behavior_instances_without_ports_stay_unobservable():
+    plan = _compile().plan
+    action = next(
+        item for item in plan.actions
+        if item.device_id == "sw1" and item.action_type.value == "configure_stp"
+    )
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+        and item.action_id == action.id
+    )
+    output = "\n".join(
+        line
+        for line in _stp_output(root_vlans={10}).splitlines()
+        if not line.strip().startswith("Fa0/")
+    )
+    ios = FakeControlPlaneIos({
+        ("HQ-SW1", OperationalQueryId.SHOW_SPANNING_TREE): output,
+    })
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [], lambda _script: True, lambda _script, _timeout: None,
+        ping_executor=SequencePing([]),
+        ios_executor=ios,
+        stp_convergence_interval_seconds=0.0,
+        stp_convergence_attempts=2,
+    )
+    runtime.apply_actions([action])
+
+    observed = runtime.verify([expectation])[0]
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.fresh_evidence is False
+    assert observed.evidence_method == "stp_readback_no_parser_backed_ports"
+    assert observed.convergence is not None
+    assert observed.convergence.attempts == 2
+    assert observed.convergence.last_observable_state == "no_parser_backed_ports"
 
 
 def test_pvst_state_verifies_ieee_mode_and_compiled_numeric_priorities():

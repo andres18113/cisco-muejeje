@@ -668,9 +668,12 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         convergence_interval_seconds: float = 0.25,
         stable_samples: int = 2,
         max_probe_attempts: int = 6,
-        stp_convergence_timeout_seconds: float = 12.0,
+        # Floor2 CP-SCALE measured one valid PVST transition at 34,125 ms.
+        # Keep one bounded read-only envelope above that observation.
+        stp_convergence_timeout_seconds: float = 45.0,
         stp_convergence_interval_seconds: float = 2.0,
-        stp_convergence_attempts: int = 7,
+        stp_convergence_attempts: int = 24,
+        stp_behavior_stable_samples: int = 2,
         # RIP anuncia cada 30 s. Medido en R2-B fase 4: tras esperar 35 s las
         # rutas ya estaban, con edades 00:00:26 y 00:00:00. El presupuesto
         # cubre un ciclo completo de actualizacion con margen, y se agota
@@ -703,6 +706,14 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             or stp_convergence_attempts < 1
         ):
             raise ValueError("stp_convergence_attempts must be a positive integer.")
+        if (
+            isinstance(stp_behavior_stable_samples, bool)
+            or not isinstance(stp_behavior_stable_samples, int)
+            or stp_behavior_stable_samples < 1
+        ):
+            raise ValueError(
+                "stp_behavior_stable_samples must be a positive integer."
+            )
         if route_convergence_timeout_seconds < 0:
             raise ValueError("route_convergence_timeout_seconds must be non-negative.")
         if route_convergence_interval_seconds < 0:
@@ -765,6 +776,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         self._stp_timeout = stp_convergence_timeout_seconds
         self._stp_interval = stp_convergence_interval_seconds
         self._stp_attempts = stp_convergence_attempts
+        self._stp_stable_samples = stp_behavior_stable_samples
         self._clock = clock
         self._sleep = sleeper
         self._device_names_by_id: dict[str, str] = {}
@@ -1133,9 +1145,13 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 "MST behavior has no PT 9.0.1.0858 parser-backed qualification.",
                 evidence_method="mst_behavior_readback_unavailable",
             )
-        deadline = self._clock() + self._stp_timeout
+        started = self._clock()
+        deadline = started + self._stp_timeout
         key = (action.device_name, OperationalQueryId.SHOW_SPANNING_TREE)
         attempts = 0
+        transitions: list[dict[str, object]] = []
+        last_stable_signature: tuple | None = None
+        stable_samples = 0
         while True:
             attempts += 1
             show = self._fresh_show(
@@ -1163,6 +1179,9 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 transitional = True
                 stable = False
                 state = "no_parser_backed_instance"
+                ports_evidence: list[str] = []
+                last_stable_signature = None
+                stable_samples = 0
             else:
                 by_vlan = {item.vlan_id: item for item in instances}
                 selected = [
@@ -1172,6 +1191,28 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 ]
                 all_vlans_present = len(selected) == len(action.vlan_ids)
                 ports = [port for item in selected for port in item.interfaces]
+                ports_evidence = sorted(
+                    f"{item.vlan_id}:{port.interface}:{port.role}/{port.state}:"
+                    f"cost={port.cost}:prio={port.priority_number}:"
+                    f"type={port.link_type}"
+                    for item in selected
+                    for port in item.interfaces
+                )
+                signature = tuple(sorted(
+                    (
+                        item.vlan_id,
+                        item.root_address.casefold(),
+                        item.bridge_address.casefold(),
+                        port.interface.casefold(),
+                        port.role.casefold(),
+                        port.state.casefold(),
+                        port.cost,
+                        port.priority_number.casefold(),
+                        port.link_type.casefold(),
+                    )
+                    for item in selected
+                    for port in item.interfaces
+                ))
                 stable = bool(selected) and bool(ports) and all(
                     port.state.casefold() in {"fwd", "blk"}
                     for port in ports
@@ -1186,51 +1227,136 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                         and port.state.casefold() == "blk"
                     )
                     for port in ports
+                ) and all(
+                    sum(
+                        port.role.casefold() == "root"
+                        and port.state.casefold() == "fwd"
+                        for port in item.interfaces
+                    ) == (0 if item.root_is_local else 1)
+                    for item in selected
                 )
-                fields = self._unobservable_fields(expectation)
-                self._certify_source_device(fields, expectation, show)
-                loop_free = expectation.expected.get("loop_free")
-                if isinstance(loop_free, bool):
-                    fields["loop_free"] = self._field(
-                        all_vlans_present and role_state_consistent is loop_free
+                if all_vlans_present and not ports:
+                    result = self._unobservable(
+                        expectation,
+                        ControlPlaneExecutionStage.BEHAVIOR,
+                        (
+                            "Fresh spanning-tree instances had no parser-backed "
+                            "ports for the selected VLANs."
+                        ),
+                        evidence_method="stp_readback_no_parser_backed_ports",
                     )
-                forwarding = expectation.expected.get("forwarding_converged")
-                if isinstance(forwarding, bool):
-                    fields["forwarding_converged"] = self._field(
-                        all_vlans_present and stable is forwarding
+                    transitional = True
+                    state = "no_parser_backed_ports"
+                    last_stable_signature = None
+                    stable_samples = 0
+                else:
+                    fields = self._unobservable_fields(expectation)
+                    self._certify_source_device(fields, expectation, show)
+                    loop_free = expectation.expected.get("loop_free")
+                    if isinstance(loop_free, bool):
+                        fields["loop_free"] = self._field(
+                            all_vlans_present
+                            and role_state_consistent is loop_free
+                        )
+                    forwarding = expectation.expected.get(
+                        "forwarding_converged"
                     )
-                result = self._direct_observation(
-                    expectation,
-                    fields,
-                    "fresh_show_spanning_tree_stable_roles",
-                    (
-                        "Fresh parser-backed STP roles and states were checked "
-                        "for stable forwarding/blocking consistency."
-                    ),
-                    stage=ControlPlaneExecutionStage.BEHAVIOR,
-                )
-                transitional = bool(
-                    not all_vlans_present
-                    or any(
-                        port.state.casefold() in {"lis", "lrn"}
-                        for port in ports
+                    if isinstance(forwarding, bool):
+                        fields["forwarding_converged"] = self._field(
+                            all_vlans_present and stable is forwarding
+                        )
+                    result = self._direct_observation(
+                        expectation,
+                        fields,
+                        "fresh_show_spanning_tree_stable_roles",
+                        (
+                            "Fresh parser-backed STP roles and states were "
+                            "checked for stable forwarding/blocking consistency."
+                        ),
+                        stage=ControlPlaneExecutionStage.BEHAVIOR,
                     )
-                )
-                state = (
-                    "stable_roles"
-                    if stable else "transitional_or_absent_roles"
-                )
-            if (
+                    if (
+                        result.status is ActionExecutionStatus.VERIFIED
+                        and stable
+                        and role_state_consistent
+                    ):
+                        if signature == last_stable_signature:
+                            stable_samples += 1
+                        else:
+                            last_stable_signature = signature
+                            stable_samples = 1
+                        state = "stable_roles"
+                        transitional = (
+                            stable_samples < self._stp_stable_samples
+                        )
+                    else:
+                        last_stable_signature = None
+                        stable_samples = 0
+                        has_transition = any(
+                            port.state.casefold() in {"lis", "lrn"}
+                            for port in ports
+                        )
+                        transitional = bool(
+                            not all_vlans_present or has_transition
+                        )
+                        state = (
+                            "transitional_roles"
+                            if has_transition
+                            else "absent_vlan"
+                            if not all_vlans_present
+                            else "stable_role_contradiction"
+                        )
+            transition = {"state": state, "ports": ports_evidence}
+            if not transitions or transitions[-1] != transition:
+                transitions.append(transition)
+            confirmed = bool(
                 result.status is ActionExecutionStatus.VERIFIED
-                or not transitional
-                or attempts >= self._stp_attempts
+                and stable_samples >= self._stp_stable_samples
+            )
+            exhausted = bool(
+                attempts >= self._stp_attempts
                 or self._clock() + self._stp_interval >= deadline
+            )
+            if (
+                confirmed
+                or not transitional
+                or exhausted
             ):
+                if (
+                    exhausted
+                    and result.status is ActionExecutionStatus.VERIFIED
+                    and not confirmed
+                ):
+                    result = RuntimeControlPlaneVerification(
+                        expectation_id=expectation.id,
+                        stage=ControlPlaneExecutionStage.BEHAVIOR,
+                        status=ActionExecutionStatus.UNOBSERVABLE,
+                        evidence_method=(
+                            "fresh_show_spanning_tree_stable_roles"
+                        ),
+                        fresh_evidence=True,
+                        fields={
+                            key: FieldVerificationStatus.UNOBSERVABLE
+                            for key in fields
+                        },
+                        message=(
+                            "A fresh stable STP role/state snapshot did not "
+                            "repeat enough times inside the bounded window."
+                        ),
+                    )
                 return result.model_copy(update={
                     "convergence": ConvergenceReport(
                         attempts=attempts,
+                        elapsed_ms=int(
+                            max(0.0, self._clock() - started) * 1000
+                        ),
                         final_status=result.status,
                         last_observable_state=state,
+                        details={
+                            "stable_samples_required": self._stp_stable_samples,
+                            "stable_samples_observed": stable_samples,
+                            "transitions": transitions,
+                        },
                     ),
                 })
             self._sleep(self._stp_interval)
