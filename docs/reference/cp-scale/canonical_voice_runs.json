@@ -2256,6 +2256,114 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T021410113093Z-6b7a9d37d81b",
+      "started_at": "2026-08-31T21:14:10.113093-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "per_binding_exact_readback": true,
+        "no_binding_replay": true,
+        "fail_closed_before_voice_signal": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "6b7a9d37d81bb1a5c6dd7819b71f22756820b71f",
+        "canonical_live_source_head": "6b7a9d37d81bb1a5c6dd7819b71f22756820b71f",
+        "qualified_pager_observer_head": "7d694309ac75df2d3605ce35f5f892279d794aa1"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "configuration_mutation": "DELTA_ONLY_BY_STABLE_ACTION_ID",
+        "configuration_verification": "CUMULATIVE",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T021410113093Z-6b7a9d37d81b-failure-precleanup.json",
+          "sha256": "36648e37b859d11c77ceae95afef33b972048e65928a90cf7a8cdf76c04b96be"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T021410113093Z-6b7a9d37d81b-cleanup.json",
+          "sha256": "744639c0833702c55ad47fec6df13312f1adac2706f832e0a141a9978bab6fea"
+        }
+      ],
+      "measured": {
+        "binding_readback_gate": {
+          "verified_bindings_before_stop": 11,
+          "stopped_binding_action": "voice/binding/aa37f578c8e90045",
+          "stopped_directory_index": 6,
+          "stopped_extension": "3006",
+          "mutation_dispatched": true,
+          "readback_executed": true,
+          "readback_fresh": true,
+          "readback_complete": false,
+          "readback_identity": "confirmed_unique",
+          "readback_pager_failure": "rolled_unattributable",
+          "later_bindings_dispatched": false,
+          "voice_signal_dispatched": false,
+          "registration_started": false
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "FAILED_CLOSED_BINDING_READBACK_UNOBSERVABLE",
+        "voice_signal_status": "NOT_REACHED",
+        "registration_status": "NOT_REACHED",
+        "binding_readbacks_verified": 11,
+        "binding_readbacks_unobservable": 1
+      },
+      "classification_rationale": "The state gate verified exact index, extension, and MAC for the first 11 binding mutations. The 12th mutation was dispatched, but its registered show-ephone read was pager-incomplete with confirmed source identity; the gate stopped later bindings before Voice signaling. This is an observer boundary, not evidence that the binding row was absent. The next implementation permits exactly one additional read-only query only after this qualified pager shape and never replays a binding.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED_AFTER_NETWORK",
+        "binding_gate_product_result": "NOT_TESTED_PAGER_OBSERVER_BLOCKED",
+        "production_fix_status": "QUALIFIED_READ_ONLY_PAGER_RETRY_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_BINDING_OBSERVER_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "VOICE_BOOTSTRAP_BINDING_READBACK",
+        "failure_classification": "OBSERVER",
+        "next_live_authorized": true
+      }
     }
   ]
 }

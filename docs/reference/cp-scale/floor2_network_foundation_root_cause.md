@@ -401,3 +401,11 @@ samples while ephones 2-21 registered. Renderer batch size is therefore
 refuted as sufficient. Commit `a97e645e479ff72377b8775d3f634e291c507307`
 adds one exact registered ephone readback between bindings so state, not time,
 authorizes each subsequent mutation. This run also did not reach Floor2.
+
+The first readback-gated run
+`canonical-cp-scale-voice-20260901T021410113093Z-6b7a9d37d81b` verified 11
+bindings, then failed closed on a pager-incomplete read of the 12th before Voice
+signalling. This was an observer stop, not an absent-row result. Commit
+`7d694309ac75df2d3605ce35f5f892279d794aa1` permits one additional read-only
+query only for the exact qualified pager-failure shape and never replays a
+binding. Floor2 again received no evidence.
