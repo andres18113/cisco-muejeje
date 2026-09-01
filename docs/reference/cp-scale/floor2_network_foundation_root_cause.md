@@ -409,3 +409,12 @@ signalling. This was an observer stop, not an absent-row result. Commit
 `7d694309ac75df2d3605ce35f5f892279d794aa1` permits one additional read-only
 query only for the exact qualified pager-failure shape and never replays a
 binding. Floor2 again received no evidence.
+
+The qualified observer run
+`canonical-cp-scale-voice-20260901T023109308451Z-f1cf32ad7391` then verified
+18 bindings and proved ephone 1 absent from a fresh complete five-page table
+immediately after its single dispatch. Because hash-ID ordering placed
+directory index 1 nineteenth, commit
+`6a81a6f47a9b10b5d16de4c89bc87418aad5b7f6` moves only phone-binding order to
+semantic directory index for the next causal run. Floor2 still received no
+evidence.

@@ -677,18 +677,18 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CP_SCALE_AFFECTED_PHONES": "69",
         "CP_SCALE_AFFECTED_VOICE_ACCESS_ACTIONS": "69",
         "CP_SCALE_TOPOLOGY_REGEN_REQUIRED": "NO",
-        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_FIVE_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_FIVE_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "5",
+        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_SIX_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_SIX_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "6",
         "CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS": "1",
         "CANONICAL_CP_SCALE_BASE_HEAD": (
             "528564493b855ce332f45fdab7b5867a065b1992"
         ),
         "CANONICAL_CP_SCALE_PRELIVE_HEAD": (
-            "6b7a9d37d81bb1a5c6dd7819b71f22756820b71f"
+            "f1cf32ad7391a560f13d0a57cc870ca158d1c7ce"
         ),
         "CANONICAL_CP_SCALE_LIVE_SOURCE_HEAD": (
-            "6b7a9d37d81bb1a5c6dd7819b71f22756820b71f"
+            "f1cf32ad7391a560f13d0a57cc870ca158d1c7ce"
         ),
         "CANONICAL_CP_SCALE_PHONE_COUNT": "69",
         "CANONICAL_CP_SCALE_VOICE_ACCESS_ACTION_COUNT": "69",
@@ -699,7 +699,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "CONFIRMED_OFFLINE_ALL_STAGES_AND_LIVE_THROUGH_FLOOR1"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_VOICE": (
-            "NOT_REACHED_AFTER_BINDING_READBACK_OBSERVER_STOP"
+            "NOT_REACHED_AFTER_EPHONE1_COMPLETE_ABSENCE"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_LAST_COMPLETE_VOICE_WINDOW": (
             "ENDPOINT_AND_BINDING_VERIFIED_21_OF_21 | RAW_SCCP_REGISTERED_20 | "
@@ -709,7 +709,8 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "NOT_REACHED_LATEST_RUN"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_BINDING_READBACK": (
-            "VERIFIED_11 | PAGER_UNOBSERVABLE_1 | LATER_BINDINGS_BLOCKED_9"
+            "VERIFIED_18 | EPHONE1_COMPLETE_ABSENCE_1 | "
+            "LATER_BINDINGS_BLOCKED_2"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_LAST_COMPLETE_ENDPOINTS": (
             "SVI_21 | DHCP_ENABLED_21 | ADDRESSED_21 | "
@@ -794,12 +795,12 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "VOICE_BOOTSTRAP_BINDING_READBACK"
         ),
         "CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION": (
-            "OBSERVER"
+            "PRODUCT"
         ),
         "CANONICAL_CP_SCALE_VOICE_VERIFICATION": "FAIL",
         "ROOT_CAUSE_STATUS": "CONFIRMED",
         "PRODUCTION_FIX_STATUS": (
-            "QUALIFIED_READ_ONLY_PAGER_RETRY_LIVE_PENDING"
+            "SEMANTIC_DIRECTORY_ORDER_LIVE_PENDING"
         ),
         "CANONICAL_CP_SCALE_SCCP_DIAGNOSTIC_HEAD": (
             "bd8e8b80bd170704e3f403263186f0469a4d0839"
@@ -812,6 +813,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_BINDING_PAGER_OBSERVER_HEAD": (
             "7d694309ac75df2d3605ce35f5f892279d794aa1"
+        ),
+        "CANONICAL_CP_SCALE_SEMANTIC_BINDING_ORDER_HEAD": (
+            "6a81a6f47a9b10b5d16de4c89bc87418aad5b7f6"
         ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
@@ -834,17 +838,21 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "36648e37b859d11c77ceae95afef33b972048e65928a90cf7a8cdf76c04b96be"
             " | RUN5_CLEANUP_"
             "744639c0833702c55ad47fec6df13312f1adac2706f832e0a141a9978bab6fea"
+            " | RUN6_PRECLEANUP_"
+            "698f8f3e5358ab85286432262d7fda89f30da5cf87a3e619c471ab50cb4d055c"
+            " | RUN6_CLEANUP_"
+            "28f8f200a44251d45ebc89a4b1261c11615b66613526665ae626b241537e690d"
         ),
         "CANONICAL_CP_SCALE_WORKSPACE_RESTORED": "YES",
         "CANONICAL_CP_SCALE_REALTIME_RESTORED": "YES",
-        "LIVE_RUNS_CONSUMED": "11",
+        "LIVE_RUNS_CONSUMED": "12",
         "CLEANUP": "VERIFIED_AFTER_EVERY_LIVE",
         "WORKSPACE_RESTORED": "YES",
         "NEXT_ACTIVE_STEP": (
-            "RUN_CANONICAL_LIVE_WITH_QUALIFIED_BINDING_PAGER_OBSERVER"
+            "RUN_CANONICAL_LIVE_WITH_BINDINGS_IN_DIRECTORY_INDEX_ORDER"
         ),
         "CP_SCALE_STATUS": (
-            "FLOOR1_BINDING_OBSERVER_BLOCKS_EPHONE1_AND_FLOOR2"
+            "FLOOR1_EPHONE1_COMPLETE_ABSENCE_BLOCKS_FLOOR2"
         ),
     }
 
