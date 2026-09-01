@@ -59,6 +59,9 @@ MANAGED_RUN_IDENTITY = (
 RECONCILE_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T032640436029Z-3e5b385cb8f2"
 )
+FRONTIER_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T034510704353Z-ab0a890a6229"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -78,7 +81,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 9
+    assert len(ledger["runs"]) == 10
     return ledger["runs"][0]
 
 
@@ -118,8 +121,13 @@ def managed_run(ledger: dict) -> dict:
 
 
 @pytest.fixture(scope="module")
-def latest_run(ledger: dict) -> dict:
+def reconcile_run(ledger: dict) -> dict:
     return ledger["runs"][8]
+
+
+@pytest.fixture(scope="module")
+def latest_run(ledger: dict) -> dict:
+    return ledger["runs"][9]
 
 
 @pytest.fixture(scope="module")
@@ -411,9 +419,9 @@ def test_managed_cme_mode_refutes_auto_registration_cause(managed_run: dict):
     )
 
 
-def test_immediate_reconciliation_is_a_valid_negative(latest_run: dict):
-    assert latest_run["run_identity"] == RECONCILE_RUN_IDENTITY
-    experiment = latest_run["measured"][
+def test_immediate_reconciliation_is_a_valid_negative(reconcile_run: dict):
+    assert reconcile_run["run_identity"] == RECONCILE_RUN_IDENTITY
+    experiment = reconcile_run["measured"][
         "immediate_reconciliation_experiment"
     ]
     assert experiment["initial_absence_authoritative"] is True
@@ -423,9 +431,29 @@ def test_immediate_reconciliation_is_a_valid_negative(latest_run: dict):
     assert experiment["final_row_present"] is False
     assert experiment["second_reconciliation_attempted"] is False
     assert experiment["result"] == "IMMEDIATE_RECONCILIATION_REFUTED"
-    assert latest_run["conclusion"][
+    assert reconcile_run["conclusion"][
         "deferred_frontier_reconciliation_cause"
     ] == "AUTHORIZED_CAUSAL_EXPERIMENT"
+
+
+def test_deferred_frontier_reconciliation_is_a_valid_negative(
+    latest_run: dict,
+):
+    assert latest_run["run_identity"] == FRONTIER_RUN_IDENTITY
+    experiment = latest_run["measured"]["deferred_frontier_experiment"]
+    assert experiment["initial_bindings_dispatched"] == 21
+    assert experiment["initial_bindings_verified"] == 20
+    assert experiment["later_siblings_20_and_21_verified"] is True
+    assert experiment["deferred_reconciliation_attempted"] is True
+    assert experiment["final_readback_complete"] is True
+    assert len(experiment["final_readback_indices"]) == 20
+    assert experiment["reconciled_row_present"] is False
+    assert experiment["result"] == (
+        "DEFERRED_FRONTIER_RECONCILIATION_REFUTED"
+    )
+    assert latest_run["conclusion"]["stage_call_control_capacity_cause"] == (
+        "STRONG_CANDIDATE"
+    )
 
 
 def test_immutable_canonical_evidence_is_never_text_normalized():
@@ -642,8 +670,8 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_NINE_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "9"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_TEN_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "10"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "1"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
         "VOICE_BOOTSTRAP_BINDING_READBACK"
@@ -658,7 +686,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "DEFERRED_FRONTIER_RECONCILIATION_LIVE_PENDING"
+        "FINAL_SITE_CAPACITY_PROJECTION_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -685,5 +713,5 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_SCCP"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR1_ORDINAL19_BINDING_ABSENCE_BLOCKS_FLOOR2"
+        "FLOOR1_FINAL_BINDING_TABLE_20_OF_21_BLOCKS_FLOOR2"
     )

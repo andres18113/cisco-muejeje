@@ -440,3 +440,10 @@ ephone 19 absent after the one accepted reconciliation, refuting immediate
 reapply. Commit `e0e4f8848404ea7d48feedb5d52fb0d0c1cfdf8c` completes all
 independent initial bindings before reconciling proven absences and keeps every
 downstream Voice action closed. Floor2 again received no evidence.
+
+The deferred-frontier run
+`canonical-cp-scale-voice-20260901T034510704353Z-ab0a890a6229` still ended
+with exactly 20 of 21 binding rows after reconciliation. Commit
+`942f35716d04d89e7f59fbb57bf654dd04bc5e58` projects Router4's authoritative
+final 51-phone capacity from Floor1 instead of replay-resizing it 21→35→51.
+Floor2 again received no evidence.

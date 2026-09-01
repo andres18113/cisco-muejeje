@@ -2799,6 +2799,133 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T034510704353Z-ab0a890a6229",
+      "started_at": "2026-08-31T22:45:10.704353-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "complete_independent_binding_frontier": true,
+        "deferred_absence_reconciliation": true,
+        "one_reconciliation_per_absence": true,
+        "downstream_voice_closed": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "ab0a890a6229d0ae14f19ceb02b0c96be3e3817b",
+        "canonical_live_source_head": "ab0a890a6229d0ae14f19ceb02b0c96be3e3817b",
+        "final_site_capacity_head": "942f35716d04d89e7f59fbb57bf654dd04bc5e58"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "router4_final_phone_capacity": 51,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T034510704353Z-ab0a890a6229-failure-precleanup.json",
+          "sha256": "d60b09f81f6eeebedc0651dd92cc2c0686c2fa29f0c764dfbc0ced15ecb1fc71"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T034510704353Z-ab0a890a6229-cleanup.json",
+          "sha256": "ac8db8bf21f06837a1ad44a6edc3a4efd03e8c1d0ba27c93d439c96c95e72723"
+        }
+      ],
+      "measured": {
+        "deferred_frontier_experiment": {
+          "initial_bindings_dispatched": 21,
+          "initial_bindings_verified": 20,
+          "initial_absent_directory_index": 19,
+          "later_siblings_20_and_21_verified": true,
+          "deferred_reconciliation_attempted": true,
+          "deferred_reconciliation_accepted": true,
+          "final_readback_complete": true,
+          "final_readback_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            20,
+            21
+          ],
+          "reconciled_row_present": false,
+          "result": "DEFERRED_FRONTIER_RECONCILIATION_REFUTED"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "FAILED_CLOSED_FINAL_TABLE_20_OF_21",
+        "voice_signal_status": "NOT_REACHED",
+        "registration_status": "NOT_REACHED",
+        "binding_readbacks_verified": 20,
+        "binding_readbacks_failed": 1
+      },
+      "classification_rationale": "All 21 independent initial binding mutations were dispatched. Rows 1-18,20,21 verified; row 19 remained absent after its one post-frontier reconciliation. Reconciliation timing is refuted and the authoritative table is exactly 20 of the requested 21. The stage configures max-ephones/max-dn 21 even though the canonical Router4 site owns 51 phones. The next experiment projects that exact final design capacity from the first active stage rather than inventing a margin.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED_AFTER_NETWORK",
+        "deferred_frontier_reconciliation_cause": "REFUTED",
+        "stage_call_control_capacity_cause": "STRONG_CANDIDATE",
+        "production_fix_status": "FINAL_SITE_CAPACITY_PROJECTION_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_FINAL_TABLE_20_OF_21_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "VOICE_BOOTSTRAP_BINDING_READBACK",
+        "failure_classification": "PRODUCT",
+        "next_live_authorized": true
+      }
     }
   ]
 }
