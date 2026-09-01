@@ -225,6 +225,67 @@ def test_missing_binding_readback_stops_without_replaying_or_dispatching_later()
     assert "readback" in first.message.casefold()
 
 
+def test_binding_readback_retries_once_only_after_qualified_pager_failure():
+    captured = []
+    runtime = _runtime(captured)
+    binding = next(
+        item for item in _compile().plan.actions
+        if isinstance(item, BindPhoneToExtension)
+    )
+    complete = "\n".join((
+        f"ephone-{binding.directory_index} "
+        "Mac:0011.2233.4455 UNREGISTERED",
+        "IP:0.0.0.0 0 7960",
+        f" button 1: dn {binding.directory_index} "
+        f"number {binding.extension} CH1 IDLE",
+    ))
+    responses = [
+        IosCommandResult(
+            "HQ-R1",
+            OperationalQueryId.SHOW_EPHONE,
+            True,
+            output="ephone table page 1",
+            failure_reason="rolled_unattributable",
+            fresh_output_observed=True,
+            output_complete=False,
+            truncated_by_pager=True,
+            pager_continuation="failed",
+            observed_device_name="HQ-R1",
+            device_identity_provenance="confirmed_unique",
+        ),
+        IosCommandResult(
+            "HQ-R1",
+            OperationalQueryId.SHOW_EPHONE,
+            True,
+            output=complete,
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name="HQ-R1",
+            device_identity_provenance="confirmed_unique",
+        ),
+    ]
+    calls = []
+
+    def execute(_device_name, _query_id):
+        calls.append(True)
+        return responses.pop(0)
+
+    runtime._ios = SimpleNamespace(execute=execute)
+
+    result = runtime.apply_actions([binding])[0]
+
+    assert result.applied
+    assert result.failure_code is ConfigurationFailureCode.NONE
+    assert len(calls) == 2
+    assert sum("configureIosDevice" in item for item in captured) == 1
+    diagnostics = runtime.drain_diagnostic_evidence()
+    readback, = diagnostics["applications"][0]["binding_readbacks"]
+    assert readback["verified"]
+    assert len(readback["attempts"]) == 2
+    assert readback["attempts"][0]["retry_eligible"] is True
+    assert readback["attempts"][1]["verified"] is True
+
+
 def test_local_dial_rule_is_implicit_and_intersite_rule_is_not_claimed_applied():
     captured = []
     runtime = _runtime(captured)

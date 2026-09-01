@@ -31,13 +31,19 @@ from ...domain.enterprise.models.voice_runtime import (
 from ..generator.voice_renderer import PacketTracerVoiceRenderer
 from .configuration_runtime import PacketTracerConfigurationRuntime
 from .device_lifecycle import StateConvergenceWaiter
-from .ios_terminal import ControlledIosExecutor, OperationalQueryId, parse_show_ephone
+from .ios_terminal import (
+    ControlledIosExecutor,
+    OperationalQueryId,
+    PagerContinuation,
+    parse_show_ephone,
+)
 from .phone_control import (
     UnavailablePhoneControl,
 )
 from .runtime_inventory import normalize_runtime_inventory
 
 _MAC = re.compile(r"^[0-9A-Fa-f]{12}$")
+_BINDING_READBACK_MAX_ATTEMPTS = 2
 #: What an unaddressed interface reads as, on both channels. A call control
 #: printing `IP:0.0.0.0` for an unregistered ephone is telling us it has no
 #: address for that phone; carrying it forward as an address turned an absence
@@ -312,7 +318,49 @@ class PacketTracerEnterpriseVoiceRuntime:
         binding: BindPhoneToExtension,
         expected_mac: str,
     ) -> dict[str, object]:
-        show = self._ios.execute(host, OperationalQueryId.SHOW_EPHONE)
+        attempts: list[dict[str, object]] = []
+        for attempt in range(1, _BINDING_READBACK_MAX_ATTEMPTS + 1):
+            show = self._ios.execute(host, OperationalQueryId.SHOW_EPHONE)
+            observed = self._phone_binding_readback_attempt(
+                host,
+                binding,
+                expected_mac,
+                show,
+                attempt,
+            )
+            retry_eligible = bool(
+                show.executed
+                and show.fresh_output_observed
+                and not show.output_complete
+                and show.truncated_by_pager
+                and show.pager_continuation
+                == PagerContinuation.FAILED.value
+                and show.observed_device_name == host
+                and show.device_identity_provenance == "confirmed_unique"
+            )
+            observed["retry_eligible"] = retry_eligible
+            attempts.append(observed)
+            if observed["verified"] or observed["authoritative"]:
+                break
+            if (
+                attempt == _BINDING_READBACK_MAX_ATTEMPTS
+                or not retry_eligible
+            ):
+                break
+        return {
+            **attempts[-1],
+            "max_attempts": _BINDING_READBACK_MAX_ATTEMPTS,
+            "attempts": attempts,
+        }
+
+    @staticmethod
+    def _phone_binding_readback_attempt(
+        host: str,
+        binding: BindPhoneToExtension,
+        expected_mac: str,
+        show,
+        attempt: int,
+    ) -> dict[str, object]:
         rows = parse_show_ephone(show.output) if show.executed else []
         row = next(
             (item for item in rows if item.index == binding.directory_index),
@@ -337,15 +385,20 @@ class PacketTracerEnterpriseVoiceRuntime:
             and observed_compact == expected_compact
         )
         return {
+            "attempt": attempt,
             "action_id": binding.id,
             "phone_id": binding.phone_id,
             "directory_index": binding.directory_index,
             "extension": binding.extension,
             "expected_mac": expected_mac,
             "verified": verified,
+            "authoritative": authoritative,
             "executed": show.executed,
             "fresh_output_observed": show.fresh_output_observed,
             "output_complete": show.output_complete,
+            "truncated_by_pager": show.truncated_by_pager,
+            "pager_pages_captured": show.pager_pages_captured,
+            "pager_continuation": show.pager_continuation,
             "observed_device_name": show.observed_device_name,
             "device_identity_provenance": (
                 show.device_identity_provenance
