@@ -20,6 +20,10 @@ FIRST_LIVE_EVIDENCE = (
     ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
     / "stp-pvst-capability-20260901T143133904065Z-7aead990dccc.json"
 )
+SECOND_LIVE_EVIDENCE = (
+    ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
+    / "stp-pvst-capability-20260901T143608724809Z-71fae1c74878.json"
+)
 
 _PROBE = r'''
 import json
@@ -316,6 +320,59 @@ def test_first_live_negative_proves_trunk_convergence_but_not_unique_identity():
         for item in attempts
     )
     assert "stp_application" not in evidence
+    assert evidence["cleanup"]["verified"] is True
+    assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["second"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["realtime"]["verified_realtime"] is True
+
+
+def test_second_live_verifies_exact_model_pvst_configuration_and_state():
+    assert hashlib.sha256(SECOND_LIVE_EVIDENCE.read_bytes()).hexdigest() == (
+        "b7096988c199092e3ff187a0b047e6fb5e285e9607aa9999f8d57c47366df5ee"
+    )
+    evidence = json.loads(SECOND_LIVE_EVIDENCE.read_text(encoding="utf-8"))
+
+    assert evidence["repository"]["head"] == (
+        "71fae1c74878eee2d9fd8ac9330c11c781e0f155"
+    )
+    assert evidence["verified"] is True
+    assert evidence["qualification_errors"] == []
+    assert {
+        item["action_id"]: item["applied"]
+        for item in evidence["stp_application"]
+    } == {
+        "pvst/stp/primary": True,
+        "pvst/stp/secondary": True,
+        "pvst/stp/edge": True,
+    }
+    assert {
+        item["expectation_id"]: item["status"]
+        for item in evidence["stp_verification"]
+    } == {
+        "pvst/verify/primary": "verified",
+        "pvst/verify/secondary": "verified",
+    }
+    assert all(
+        item["fresh_evidence"]
+        and all(value == "verified" for value in item["fields"].values())
+        for item in evidence["stp_verification"]
+    )
+    terminal = evidence["stp_convergence"]["attempts"][-1]["devices"]
+    primary = next(
+        item for item in terminal["3560-24PS"]["instances"]
+        if item["vlan_id"] == 20
+    )
+    secondary = next(
+        item for item in terminal["2960-24TT"]["instances"]
+        if item["vlan_id"] == 20
+    )
+    assert primary["root_is_local"] is True
+    assert primary["bridge_base_priority"] == 24576
+    assert secondary["root_is_local"] is False
+    assert secondary["bridge_base_priority"] == 28672
+    assert secondary["root_address"] == primary["bridge_address"]
+    assert secondary["root_port"] == "GigabitEthernet0/1"
+    assert evidence["edge_policy_qualification"]["mutation_status"] is True
     assert evidence["cleanup"]["verified"] is True
     assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
     assert evidence["cleanup"]["second"]["semantic_device_count"] == 0

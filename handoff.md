@@ -497,6 +497,13 @@ STP_PVST_QUALIFICATION_RUN1_ROOT_CAUSE = DUPLICATE_DEFAULT_SWITCH_PROMPTS
 STP_PVST_QUALIFICATION_RUN1_CORRECTION = UNIQUE_TYPED_HOSTNAMES
 STP_PVST_QUALIFICATION_RUN1_SHA256 = 5da968302f54bd03e5c8a961182d10dd74d40fa251356b07dcc5b3ddb2f44a51
 STP_PVST_QUALIFICATION_RUN1_CLEANUP = ZERO_SEMANTIC_DEVICES_LINKS_TWICE | REALTIME_VERIFIED
+STP_PVST_QUALIFICATION_RUN2_HEAD = 71fae1c74878eee2d9fd8ac9330c11c781e0f155
+STP_PVST_QUALIFICATION_RUN2_RESULT = PVST_CONFIG_AND_STATE_VERIFIED_EXACT_MODELS
+STP_PVST_QUALIFICATION_RUN2_MUTATIONS = 3560_PRIMARY_PLUS_EDGE_APPLIED | 2960_SECONDARY_APPLIED
+STP_PVST_QUALIFICATION_RUN2_STATE = 3560_ROOT_PRIMARY_VERIFIED | 2960_ROOT_SECONDARY_VERIFIED
+STP_PVST_QUALIFICATION_RUN2_BEHAVIOR = NOT_YET_QUALIFIED
+STP_PVST_QUALIFICATION_RUN2_SHA256 = b7096988c199092e3ff187a0b047e6fb5e285e9607aa9999f8d57c47366df5ee
+STP_PVST_QUALIFICATION_RUN2_CLEANUP = ZERO_SEMANTIC_DEVICES_LINKS_TWICE | REALTIME_VERIFIED
 CME_CAPACITY_MODEL_2911 = SUPPORTS_CME_UNKNOWN | VERIFY_FAILED_NO_EPHONE_ROW
 CME_CAPACITY_PROBE_2911_WRAPPER = HARNESS_SERIALIZATION_FAILURE_AFTER_VALID_MODEL_RESULT
 CME_CAPACITY_PROBE_2911_CLEANUP = SNAPSHOT_RESTORED | INDEPENDENT_ZERO_ZERO_TWICE
@@ -514,10 +521,10 @@ CANONICAL_CP_SCALE_EVIDENCE_SHA256 = RUN1_PRECLEANUP_d4b017332c1f0b7f12e5e6fef97
 CANONICAL_CP_SCALE_RUN21_EVIDENCE_SHA256 = PRECLEANUP_e5a8e0ddf05c905d468227a61adc17bf6c9f9c367a7ff15080aaf494011c6dc1 | CLEANUP_57c428a9ad5afe4d5f9d39e02b83498d274241c25b54fdd6efd3ac322237babe
 CANONICAL_CP_SCALE_WORKSPACE_RESTORED = YES
 CANONICAL_CP_SCALE_REALTIME_RESTORED = YES
-LIVE_RUNS_CONSUMED = 30
+LIVE_RUNS_CONSUMED = 31
 CLEANUP = VERIFIED_AFTER_EVERY_LIVE
 WORKSPACE_RESTORED = YES
-NEXT_ACTIVE_STEP = RERUN_TYPED_STP_PVST_WITH_UNIQUE_HOSTNAMES
+NEXT_ACTIVE_STEP = IMPLEMENT_AND_QUALIFY_STP_BEHAVIOR_OBSERVER
 CP_SCALE_STATUS = FLOOR3_VOICE_VERIFIED_42_OF_42 | FLOOR3_STP_CAPABILITY_QUALIFICATION_REQUIRED
 <!-- CP_SCALE_STATE_END -->
 
@@ -1013,6 +1020,30 @@ Evidence SHA-256:
 `5da968302f54bd03e5c8a961182d10dd74d40fa251356b07dcc5b3ddb2f44a51`.
 Cleanup restored the four pre-existing backend-managed power devices, zero
 semantic devices, zero links, and Realtime in two fresh inventories.
+
+The corrected run
+`stp-pvst-capability-20260901T143608724809Z-71fae1c74878` used clean
+pushed source `71fae1c74878eee2d9fd8ac9330c11c781e0f155`. Both exact
+trunks reached VLAN 20 FWD with confirmed-unique identities. The typed runtime
+then accepted the 3560 primary-root action, its PortFast/BPDU Guard edge action,
+and the 2960 secondary-root action. Fresh complete `show spanning-tree`
+observations verified PVST/IEEE, base priorities 24576 and 28672, the 3560 as
+local root, and the 2960 root port/address pointing to that 3560. Both typed
+`STP_STATE` expectations were VERIFIED.
+
+This establishes exact-build `STP_PVST_CONFIG` and `STP_STATE` support for the
+two models, but not `STP_BEHAVIOR`. Canonical behavior expectations separately
+claim `loop_free` and `forwarding_converged`; the current runtime routes their
+generic expectation kind toward typed ping even though they carry no source or
+destination. Promoting behavior from state alone would bypass that missing
+observer. The next correction gives those STP expectations their own
+fresh-parser-backed stable-role observer and qualifies it in the same disposable
+slice before any catalog promotion.
+
+Evidence SHA-256:
+`b7096988c199092e3ff187a0b047e6fb5e285e9607aa9999f8d57c47366df5ee`.
+Cleanup again restored zero semantic devices and links twice and verified
+Realtime.
 
 ## Grouped frontier isolates combined pager rollover
 
