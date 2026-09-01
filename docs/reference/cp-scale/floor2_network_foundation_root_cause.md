@@ -418,3 +418,11 @@ directory index 1 nineteenth, commit
 `6a81a6f47a9b10b5d16de4c89bc87418aad5b7f6` moves only phone-binding order to
 semantic directory index for the next causal run. Floor2 still received no
 evidence.
+
+The semantic-order run
+`canonical-cp-scale-voice-20260901T025406307135Z-ea9b93f0da73` verified
+ephones 1-18 and then lost ephone 19, still the nineteenth binding. Index and
+hash order are refuted; the failure follows ordinal 19. Commit
+`6fd0a0a69fdd5f9a5054f073ed6534e4a4fc7ee8` disables unmanaged CME
+auto-registration while preserving every explicit MAC binding for the next
+causal run. Floor2 again received no evidence.

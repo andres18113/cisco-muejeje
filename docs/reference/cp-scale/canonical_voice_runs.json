@@ -2477,6 +2477,118 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T025406307135Z-ea9b93f0da73",
+      "started_at": "2026-08-31T21:54:06.307135-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "semantic_directory_binding_order": true,
+        "per_binding_exact_readback": true,
+        "qualified_pager_retry": true,
+        "no_binding_replay": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "ea9b93f0da73a7c777edf5fc539d2c8d455af60c",
+        "canonical_live_source_head": "ea9b93f0da73a7c777edf5fc539d2c8d455af60c",
+        "explicit_cme_registration_mode_head": "6fd0a0a69fdd5f9a5054f073ed6534e4a4fc7ee8"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "configuration_mutation": "DELTA_ONLY_BY_STABLE_ACTION_ID",
+        "configuration_verification": "CUMULATIVE",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T025406307135Z-ea9b93f0da73-failure-precleanup.json",
+          "sha256": "21a306f9c1d4f2955f443c1192bb0e65093bdbee2bca37f1fd1dddeafe3bcd62"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T025406307135Z-ea9b93f0da73-cleanup.json",
+          "sha256": "65923bc0a708f1481087922eaea8e1baff9debddb0f845a9b02db7e2942eb261"
+        }
+      ],
+      "measured": {
+        "semantic_order_experiment": {
+          "binding_order": "DIRECTORY_INDEX_ASCENDING",
+          "first_binding_index": 1,
+          "first_binding_verified": true,
+          "verified_bindings_before_stop": 18,
+          "stopped_ordinal": 19,
+          "stopped_directory_index": 19,
+          "stopped_extension": "3019",
+          "mutation_dispatched": true,
+          "readback_complete": true,
+          "readback_identity": "confirmed_unique",
+          "row_present": false,
+          "later_bindings_dispatched": false,
+          "result": "INDEX_ONE_CAUSE_REFUTED_FAILURE_FOLLOWS_ORDINAL_19"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "FAILED_CLOSED_ORDINAL_19_BINDING_ABSENT",
+        "voice_signal_status": "NOT_REACHED",
+        "registration_status": "NOT_REACHED",
+        "binding_readbacks_verified": 18,
+        "binding_readbacks_failed": 1
+      },
+      "classification_rationale": "Changing only binding order made ephone 1 verify immediately and moved the complete-absence failure to ephone 19, still the nineteenth dispatched binding. Index-one behavior and opaque hash ordering are refuted as causes; the failure follows ordinal 19. The plan explicitly provisions every phone by measured MAC while CME auto-registration remains enabled for unknown phones. The next isolated correction disables unmanaged auto-registration and preserves explicit bindings plus mandatory SCCP verification.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED_AFTER_NETWORK",
+        "ephone_index_one_cause": "REFUTED",
+        "opaque_binding_order_cause": "REFUTED",
+        "ordinal_19_failure": "CONFIRMED",
+        "auto_registration_interference_cause": "STRONG_CANDIDATE",
+        "production_fix_status": "EXPLICIT_CME_REGISTRATION_MODE_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_ORDINAL19_BINDING_ABSENCE_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "VOICE_BOOTSTRAP_BINDING_READBACK",
+        "failure_classification": "PRODUCT",
+        "next_live_authorized": true
+      }
     }
   ]
 }
