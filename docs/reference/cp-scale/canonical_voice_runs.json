@@ -4433,6 +4433,186 @@
         "failure_classification": "AUTHORITATIVE_DESIGN_MISMATCH",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T133350798961Z-5373539f0b1f",
+      "started_at": "2026-09-01T13:33:50.798961+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "The pinned 42/20/7 capacity correction and fail-closed control-plane capability gate.",
+        "inference": "Capability-evidence-gap classification from all new STP actions skipped before dispatch."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "capacity_rebalance_exercised": true,
+        "floor1_positive_control": true,
+        "floor2_checkpoint_advanced": true,
+        "floor3_voice_verified": true,
+        "stp_unknown_not_promoted": true,
+        "valid_negative_changed_next_model_qualification": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "5373539f0b1fe428e77c2549a00f477717f13af6",
+        "canonical_live_source_head": "5373539f0b1fe428e77c2549a00f477717f13af6",
+        "capacity_correction_head": "1d90f013ed99a670a1f9f4ca0a605cb36e06576f"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "floor1_voice_count": 21,
+        "floor2_voice_count": 35,
+        "floor3_voice_count": 42,
+        "router0_voice_count": 62,
+        "router3_voice_count": 69,
+        "site_capacities": {
+          "Router4": 42,
+          "Router0": 20,
+          "Router3": 7
+        },
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "routing_core_checkpoint_advanced": true,
+        "router4_switch10_checkpoint_advanced": true,
+        "floor1_checkpoint_advanced": true,
+        "floor2_checkpoint_advanced": true,
+        "floor3_network_foundation_verified": true,
+        "floor3_voice_verified": true,
+        "floor3_checkpoint_advanced": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T133350798961Z-5373539f0b1f-failure-precleanup.json",
+          "sha256": "e5a8e0ddf05c905d468227a61adc17bf6c9f9c367a7ff15080aaf494011c6dc1"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T133350798961Z-5373539f0b1f-cleanup.json",
+          "sha256": "57c428a9ad5afe4d5f9d39e02b83498d274241c25b54fdd6efd3ac322237babe"
+        }
+      ],
+      "measured": {
+        "floor1": {
+          "checkpoint_advanced": true,
+          "voice_complete": true,
+          "expected_phone_count": 21,
+          "sccp_registered_count": 21
+        },
+        "floor2": {
+          "checkpoint_advanced": true,
+          "voice_complete": true,
+          "expected_phone_count": 35,
+          "phone_access_fwd_verified": 35,
+          "addressed_count": 35,
+          "matching_binding_count": 35,
+          "sccp_registered_count": 35
+        },
+        "floor3": {
+          "cumulative_devices": 232,
+          "cumulative_links": 160,
+          "configuration_mutation_actions": 137,
+          "configuration_retained_actions": 191,
+          "voice_mutation_actions": 15,
+          "voice_retained_actions": 74,
+          "network_foundation_status": "VERIFIED",
+          "voice_complete": true,
+          "expected_phone_count": 42,
+          "phone_access_fwd_verified": 42,
+          "addressed_count": 42,
+          "matching_binding_count": 42,
+          "sccp_registered_count": 42
+        },
+        "floor3_control_plane": {
+          "control_plane_mutation_actions": 157,
+          "control_plane_retained_actions": 3,
+          "retained_rip_actions_applied": 3,
+          "retained_rip_observations_verified": 12,
+          "stp_actions_skipped_3560_24ps": 156,
+          "stp_actions_skipped_2960_24tt": 1,
+          "stp_state_dependency_blocked": 9,
+          "stp_behavior_dependency_blocked": 9,
+          "status": "PARTIAL",
+          "result": "STP_PVST_CONFIG_UNKNOWN_FOR_EXACT_SWITCH_MODELS"
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_interfaces": 21,
+          "verified_fwd_interfaces": 21,
+          "status": "VERIFIED"
+        },
+        {
+          "switch": "Switch7",
+          "voice_vlan": 20,
+          "expected_interfaces": 14,
+          "verified_fwd_interfaces": 14,
+          "status": "VERIFIED"
+        },
+        {
+          "switch": "Switch9",
+          "voice_vlan": 20,
+          "expected_interfaces": 3,
+          "verified_fwd_interfaces": 3,
+          "status": "VERIFIED"
+        },
+        {
+          "switch": "Switch1",
+          "voice_vlan": 20,
+          "expected_interfaces": 4,
+          "verified_fwd_interfaces": 4,
+          "status": "VERIFIED"
+        }
+      ],
+      "not_reached_phone_count": 27,
+      "canonical_summary": {
+        "floor1_status": "VERIFIED_21_OF_21",
+        "floor2_status": "VERIFIED_35_OF_35",
+        "floor3_network_foundation_status": "VERIFIED",
+        "floor3_voice_status": "VERIFIED_42_OF_42",
+        "floor3_control_plane_status": "PARTIAL_STP_CAPABILITY_UNKNOWN",
+        "router0_status": "NOT_REACHED",
+        "router3_status": "NOT_REACHED"
+      },
+      "classification_rationale": "The corrected normal production plan reached Floor3 with 232 devices and 160 links. All 42 Router4 phones then verified FWD, IPv4, matching DHCP binding, and SCCP registration, confirming the 42/20/7 rebalance. The retained three RIPv2 actions and all 12 RIPv2 observations remained verified. Before any new STP mutation, the fail-closed capability gate skipped 156 actions on 3560-24PS and one on 2960-24TT because stp_pvst_config has no exact-model live evidence. This is neither an STP product rejection nor an observer failure; the next bounded experiment qualifies that exact typed mutation and fresh STP readback on both models.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "capacity_rebalance": "VERIFIED_CANONICAL_FLOOR3_42_OF_42",
+        "floor3_network_foundation": "VERIFIED",
+        "floor3_voice": "VERIFIED_42_OF_42",
+        "stp_product_result": "NOT_DISPATCHED",
+        "stp_capability_evidence": "MISSING_EXACT_MODEL_QUALIFICATION",
+        "cp_scale_status": "FLOOR3_VOICE_VERIFIED_STP_CAPABILITY_BLOCKED",
+        "first_unclosed_boundary": "FLOOR3_CONTROL_PLANE_STP_CAPABILITY",
+        "failure_classification": "CAPABILITY_EVIDENCE_GAP",
+        "next_live_authorized": false,
+        "next_experiment_authorized": true
+      }
     }
   ]
 }

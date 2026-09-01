@@ -92,6 +92,9 @@ FLOOR2_GROUPED_PAGER_RUN_IDENTITY = (
 FLOOR2_SUCCESS_FLOOR3_CAPACITY_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T120836292077Z-2bf6876f0fd2"
 )
+FLOOR3_VOICE_STP_CAPABILITY_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T133350798961Z-5373539f0b1f"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -111,7 +114,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 20
+    assert len(ledger["runs"]) == 21
     return ledger["runs"][0]
 
 
@@ -208,6 +211,11 @@ def floor2_grouped_pager_run(ledger: dict) -> dict:
 @pytest.fixture(scope="module")
 def floor2_success_floor3_capacity_run(ledger: dict) -> dict:
     return ledger["runs"][19]
+
+
+@pytest.fixture(scope="module")
+def floor3_voice_stp_capability_run(ledger: dict) -> dict:
+    return ledger["runs"][20]
 
 
 @pytest.fixture(scope="module")
@@ -865,6 +873,49 @@ def test_pager_fix_closes_floor2_and_exposes_floor3_capacity_mismatch(
         assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
 
 
+def test_capacity_rebalance_verifies_floor3_voice_before_stp_capability_gate(
+    floor3_voice_stp_capability_run: dict,
+):
+    run = floor3_voice_stp_capability_run
+    assert run["run_identity"] == FLOOR3_VOICE_STP_CAPABILITY_RUN_IDENTITY
+    assert run["heads"]["canonical_live_source_head"] == (
+        "5373539f0b1fe428e77c2549a00f477717f13af6"
+    )
+    floor3 = run["measured"]["floor3"]
+    assert (floor3["cumulative_devices"], floor3["cumulative_links"]) == (232, 160)
+    assert floor3["network_foundation_status"] == "VERIFIED"
+    assert floor3["voice_complete"] is True
+    assert floor3["expected_phone_count"] == 42
+    assert floor3["phone_access_fwd_verified"] == 42
+    assert floor3["addressed_count"] == 42
+    assert floor3["matching_binding_count"] == 42
+    assert floor3["sccp_registered_count"] == 42
+    control = run["measured"]["floor3_control_plane"]
+    assert control["control_plane_mutation_actions"] == 157
+    assert control["control_plane_retained_actions"] == 3
+    assert control["retained_rip_observations_verified"] == 12
+    assert control["stp_actions_skipped_3560_24ps"] == 156
+    assert control["stp_actions_skipped_2960_24tt"] == 1
+    assert control["result"] == (
+        "STP_PVST_CONFIG_UNKNOWN_FOR_EXACT_SWITCH_MODELS"
+    )
+    conclusion = run["conclusion"]
+    assert conclusion["capacity_rebalance"] == (
+        "VERIFIED_CANONICAL_FLOOR3_42_OF_42"
+    )
+    assert conclusion["stp_product_result"] == "NOT_DISPATCHED"
+    assert conclusion["first_unclosed_boundary"] == (
+        "FLOOR3_CONTROL_PLANE_STP_CAPABILITY"
+    )
+    assert conclusion["failure_classification"] == "CAPABILITY_EVIDENCE_GAP"
+    assert conclusion["next_live_authorized"] is False
+    assert conclusion["next_experiment_authorized"] is True
+    for artifact in run["artifacts"]:
+        path = ROOT / artifact["path"]
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+
+
 def test_immutable_canonical_evidence_is_never_text_normalized():
     attributes = GITATTRIBUTES.read_text(encoding="utf-8").splitlines()
 
@@ -1162,23 +1213,25 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_TWENTY_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "20"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_TWENTY_ONE_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "21"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "2"
-    assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
-        "NONE_VERIFIED"
+    assert state["CANONICAL_CP_SCALE_CURRENT_BOUNDARY"] == (
+        "FLOOR3_VOICE_VERIFIED_CONTROL_PLANE_STP_CAPABILITY_BLOCKED"
     )
-    assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "34"
+    assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "27"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
-        "FLOOR3_VOICE_BOOTSTRAP_CALL_CONTROL_CAPACITY"
+        "FLOOR3_CONTROL_PLANE_STP_CAPABILITY"
     )
     assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == (
-        "AUTHORITATIVE_DESIGN_MISMATCH"
+        "CAPABILITY_EVIDENCE_GAP"
     )
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
-    assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
+    assert state["ROOT_CAUSE_STATUS"] == (
+        "CAPACITY_MISMATCH_CONFIRMED_AND_CORRECTED"
+    )
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "EXISTING_2811_CME_PHONE_REBALANCE_IMPLEMENTED_LIVE_PENDING"
+        "CAPACITY_REBALANCE_VERIFIED_CANONICAL_FLOOR3_42_OF_42"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -1206,5 +1259,6 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "REFRESH_FWD_9_OF_9 | EXTENSION_NOT_ENGAGED"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR2_VERIFIED_35_OF_35 | FLOOR3_CAPACITY_REBALANCE_LIVE_PENDING"
+        "FLOOR3_VOICE_VERIFIED_42_OF_42 | "
+        "FLOOR3_STP_CAPABILITY_QUALIFICATION_REQUIRED"
     )
