@@ -8,6 +8,7 @@ import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from time import monotonic
 
 from ...domain.enterprise.models.configuration import (
     ConfigurationAction,
@@ -80,6 +81,10 @@ _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 # budget expired after 25 complete reads.  Keep the wait bounded while giving
 # the independent forwarding read-back its own lifecycle-sized budget.
 TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS = 45.0
+# A governed Floor2 LIVE's latest pre-terminal PVST snapshots had every pending
+# port in authoritative LRN. PT reports the default 15 s Forward Delay; five
+# seconds cover the next round-robin observation without changing the predicate.
+PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS = 20.0
 
 
 @dataclass(frozen=True)
@@ -760,6 +765,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ordered = list(expectations)
         if not ordered:
             return []
+        started = monotonic()
         grouped: dict[str, list[VerificationExpectation]] = defaultdict(list)
         for expectation in ordered:
             grouped[expectation.device_name].append(expectation)
@@ -767,74 +773,104 @@ class PacketTracerEnterpriseConfigurationRuntime:
         latest: dict[str, dict[str, object]] = {}
         transitions: dict[str, list[dict[str, object]]] = defaultdict(list)
         signatures: dict[str, tuple[object, ...]] = {}
+        round_failures: list[dict[str, object]] = []
         sample_round = 0
 
         def inspect() -> dict[str, object]:
             nonlocal sample_round
             sample_round += 1
-            for device_name in sorted(grouped):
-                show = self._ios.execute(
-                    device_name,
-                    OperationalQueryId.SHOW_INTERFACES_TRUNK,
-                )
-                authoritative = bool(
-                    show.executed
-                    and show.fresh_output_observed
-                    and show.output_complete
-                    and show.observed_device_name == device_name
-                    and show.device_identity_provenance
-                    == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
-                )
-                rows = (
-                    parse_show_interfaces_trunk(show.output)
-                    if authoritative else []
-                )
-                changed: list[str] = []
-                for expectation in grouped[device_name]:
-                    expected_interface = str(
-                        expectation.expected.get("interface") or ""
+            round_latest: dict[str, dict[str, object]] = {}
+            round_signatures: dict[str, tuple[object, ...]] = {}
+            round_correlated: dict[str, dict[str, object]] = {}
+            try:
+                for device_name in sorted(grouped):
+                    show = self._ios.execute(
+                        device_name,
+                        OperationalQueryId.SHOW_INTERFACES_TRUNK,
                     )
-                    row = next((
-                        item for item in rows
-                        if self._same_interface(
-                            item.interface,
-                            expected_interface,
-                        )
-                    ), None)
-                    observed = self._trunk_observation(
-                        expectation,
-                        show,
-                        row,
-                        authoritative=authoritative,
+                    authoritative = bool(
+                        show.executed
+                        and show.fresh_output_observed
+                        and show.output_complete
+                        and show.observed_device_name == device_name
+                        and show.device_identity_provenance
+                        == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
                     )
-                    latest[expectation.id] = observed
-                    signature = self._trunk_observation_signature(observed)
-                    if signatures.get(expectation.id) != signature:
-                        signatures[expectation.id] = signature
-                        changed.append(expectation.id)
-                if not changed:
-                    continue
-                correlated: dict[str, object] = {}
-                if self._trunk_transition_observer is not None:
-                    try:
-                        correlated = self._trunk_transition_observer(
-                            device_name,
+                    rows = (
+                        parse_show_interfaces_trunk(show.output)
+                        if authoritative else []
+                    )
+                    changed: list[str] = []
+                    for expectation in grouped[device_name]:
+                        expected_interface = str(
+                            expectation.expected.get("interface") or ""
                         )
-                    except Exception as exc:
-                        correlated = {
-                            "authoritative": False,
-                            "failure_reason": (
-                                f"{type(exc).__name__}: {exc}"
-                            ),
-                        }
-                for identifier in changed:
-                    transition = {
-                        "sample_round": sample_round,
-                        **self._trunk_transition_payload(latest[identifier]),
-                    }
+                        row = next((
+                            item for item in rows
+                            if self._same_interface(
+                                item.interface,
+                                expected_interface,
+                            )
+                        ), None)
+                        observed = self._trunk_observation(
+                            expectation,
+                            show,
+                            row,
+                            authoritative=authoritative,
+                        )
+                        round_latest[expectation.id] = observed
+                        signature = self._trunk_observation_signature(
+                            observed,
+                        )
+                        round_signatures[expectation.id] = signature
+                        if signatures.get(expectation.id) != signature:
+                            changed.append(expectation.id)
+                    if not changed:
+                        continue
+                    correlated: dict[str, object] = {}
                     if self._trunk_transition_observer is not None:
-                        transition["correlated_stp"] = correlated
-                    transitions[identifier].append(transition)
+                        try:
+                            correlated = self._trunk_transition_observer(
+                                device_name,
+                            )
+                        except Exception as exc:
+                            correlated = {
+                                "authoritative": False,
+                                "failure_reason": (
+                                    f"{type(exc).__name__}: {exc}"
+                                ),
+                            }
+                    for identifier in changed:
+                        round_correlated[identifier] = correlated
+            except Exception as exc:
+                failure_reason = f"{type(exc).__name__}: {exc}"
+                round_failures.append({
+                    "sample_round": sample_round,
+                    "failure_reason": failure_reason,
+                })
+                return {
+                    "found": bool(latest),
+                    "configuration_channel": False,
+                    "failure_reason": failure_reason,
+                }
+
+            latest.update(round_latest)
+            for identifier, signature in round_signatures.items():
+                if signatures.get(identifier) == signature:
+                    continue
+                signatures[identifier] = signature
+                transition = {
+                    "sample_round": sample_round,
+                    **self._trunk_transition_payload(
+                        round_latest[identifier],
+                    ),
+                }
+                if self._trunk_transition_observer is not None:
+                    transition["correlated_stp"] = round_correlated.get(
+                        identifier,
+                        {},
+                    )
+                transitions[identifier].append(transition)
 
             complete = bool(latest) and all(
                 self._trunk_observation_verified(latest[item.id])
@@ -846,11 +882,148 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "failure_reason": "",
             }
 
-        convergence = StateConvergenceWaiter(
+        learning_boundary_stp: dict[str, dict[str, object]] = {}
+
+        def capture_learning_boundary() -> None:
+            if self._trunk_transition_observer is None:
+                return
+            pending_devices = sorted({
+                expectation.device_name
+                for expectation in ordered
+                if not self._trunk_observation_verified(
+                    latest.get(expectation.id, {}),
+                )
+            })
+            for device_name in pending_devices:
+                try:
+                    observed = self._trunk_transition_observer(device_name)
+                    learning_boundary_stp[device_name] = (
+                        observed
+                        if isinstance(observed, dict)
+                        else {
+                            "authoritative": False,
+                            "failure_reason": (
+                                "The PVST boundary observer returned a "
+                                "non-object result."
+                            ),
+                        }
+                    )
+                except Exception as exc:
+                    learning_boundary_stp[device_name] = {
+                        "authoritative": False,
+                        "failure_reason": f"{type(exc).__name__}: {exc}",
+                    }
+
+        def learning_extension_is_authorized() -> bool:
+            pending = False
+            for expectation in ordered:
+                observed = latest.get(expectation.id, {})
+                if self._trunk_observation_verified(observed):
+                    continue
+                pending = True
+                fields = observed.get("fields")
+                if not isinstance(fields, dict):
+                    return False
+                if any(
+                    fields.get(name) is not FieldVerificationStatus.VERIFIED
+                    for name in (
+                        "interface",
+                        "status",
+                        "allowed_vlans",
+                        "active_vlans",
+                    )
+                ):
+                    return False
+                if (
+                    fields.get("forwarding_vlans")
+                    is not FieldVerificationStatus.FAILED
+                ):
+                    return False
+                correlated = learning_boundary_stp.get(
+                    expectation.device_name,
+                )
+                if (
+                    not isinstance(correlated, dict)
+                    or correlated.get("authoritative") is not True
+                    or correlated.get("device_name")
+                    != expectation.device_name
+                ):
+                    return False
+                instances = {
+                    item.get("vlan_id"): item
+                    for item in correlated.get("instances", [])
+                    if isinstance(item, dict)
+                }
+                expected_interface = str(
+                    expectation.expected.get("interface") or ""
+                )
+                for vlan_id in {
+                    int(item)
+                    for item in expectation.expected.get(
+                        "allowed_vlans", []
+                    )
+                }:
+                    instance = instances.get(vlan_id)
+                    if (
+                        not isinstance(instance, dict)
+                        or instance.get("authoritative") is not True
+                    ):
+                        return False
+                    port = next((
+                        item for item in instance.get("ports", [])
+                        if isinstance(item, dict)
+                        and self._same_interface(
+                            str(item.get("interface") or ""),
+                            expected_interface,
+                        )
+                    ), None)
+                    if (
+                        port is None
+                        or port.get("row_present") is not True
+                        or str(port.get("state") or "").upper() != "LRN"
+                    ):
+                        return False
+            return pending
+
+        initial_convergence = StateConvergenceWaiter(
             inspect,
             timeout_seconds=self._trunk_timeout,
             interval_seconds=self._convergence_interval,
         ).wait()
+        learning_boundary_refresh_performed = False
+        learning_boundary_refresh_complete = False
+        learning_boundary_refresh_error = ""
+        if not initial_convergence.configuration_channel:
+            capture_learning_boundary()
+            if learning_boundary_stp:
+                learning_boundary_refresh_performed = True
+                try:
+                    refresh = inspect()
+                    learning_boundary_refresh_error = str(
+                        refresh.get("failure_reason") or "",
+                    )
+                    learning_boundary_refresh_complete = bool(
+                        refresh["configuration_channel"]
+                        and not learning_boundary_refresh_error,
+                    )
+                except Exception as exc:
+                    learning_boundary_refresh_error = (
+                        f"{type(exc).__name__}: {exc}"
+                    )
+        learning_extension_authorized = bool(
+            not initial_convergence.configuration_channel
+            and not learning_boundary_refresh_complete
+            and not learning_boundary_refresh_error
+            and learning_extension_is_authorized()
+        )
+        extension_convergence = None
+        if learning_extension_authorized:
+            extension_convergence = StateConvergenceWaiter(
+                inspect,
+                timeout_seconds=PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS,
+                interval_seconds=self._convergence_interval,
+            ).wait()
+        elapsed_ms = int((monotonic() - started) * 1000)
         results: list[RuntimeVerification] = []
         for expectation in ordered:
             observed = latest.get(expectation.id, {})
@@ -869,8 +1042,29 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         "allowed_vlans", []
                     )
                 }),
-                "sample_rounds": convergence.attempts,
+                "sample_rounds": sample_round,
+                "initial_sample_rounds": initial_convergence.attempts,
+                "learning_extension_authorized": (
+                    learning_extension_authorized
+                ),
+                "learning_extension_seconds": (
+                    PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS
+                    if learning_extension_authorized else 0.0
+                ),
+                "learning_boundary_refresh_performed": (
+                    learning_boundary_refresh_performed
+                ),
+                "learning_boundary_refresh_complete": (
+                    learning_boundary_refresh_complete
+                ),
+                "learning_boundary_refresh_error": (
+                    learning_boundary_refresh_error
+                ),
+                "learning_boundary_stp": learning_boundary_stp.get(
+                    expectation.device_name,
+                ),
                 "transitions": transitions.get(expectation.id, []),
+                "round_failures": round_failures,
                 "terminal_authority": (
                     "AUTHORITATIVE"
                     if authoritative else "UNOBSERVABLE"
@@ -898,8 +1092,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     status,
                 ),
                 convergence=ConvergenceReport(
-                    attempts=convergence.attempts,
-                    elapsed_ms=convergence.elapsed_ms,
+                    attempts=sample_round,
+                    elapsed_ms=elapsed_ms,
                     final_status=status,
                     last_observable_state=json.dumps(
                         self._trunk_transition_payload(observed),

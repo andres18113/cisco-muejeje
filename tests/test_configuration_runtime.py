@@ -599,6 +599,386 @@ def test_trunk_verifier_round_robins_devices_and_retains_each_transition():
         )
 
 
+def test_trunk_learning_state_authorizes_one_forward_delay_window():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expected_vlans = expectation.expected["allowed_vlans"]
+    vlans = ",".join(str(item) for item in expected_vlans)
+
+    def trunk_output(forwarding: str) -> str:
+        return "\n".join((
+            "SW#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            f"Gig0/1 {forwarding}",
+            "SW#",
+        ))
+
+    stp_states = iter(("LIS", "LRN", "FWD"))
+    observed_stp_states = []
+
+    def learning_stp(_device_name):
+        state = next(stp_states)
+        observed_stp_states.append(state)
+        return {
+            "authoritative": True,
+            "device_name": expectation.device_name,
+            "instances": [
+                {
+                    "authoritative": True,
+                    "failure_reason": "",
+                    "vlan_id": vlan,
+                    "root": {"address": "0011.2233.4455"},
+                    "ports": [{
+                        "interface": expectation.expected["interface"],
+                        "row_present": True,
+                        "role": "Root",
+                        "state": state,
+                    }],
+                }
+                for vlan in expected_vlans
+            ],
+        }
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=learning_stp,
+    )
+    runtime._ios = _SequenceIos([
+        _authoritative_trunk_result(expectation, trunk_output("none")),
+        _authoritative_trunk_result(expectation, trunk_output("none")),
+        _authoritative_trunk_result(expectation, trunk_output(vlans)),
+    ])
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.convergence is not None
+    assert result.convergence.attempts == 3
+    assert result.convergence.details["learning_extension_authorized"] is True
+    assert result.convergence.details["learning_extension_seconds"] == 20.0
+    assert observed_stp_states == ["LIS", "LRN", "FWD"]
+    assert result.convergence.details["learning_boundary_stp"][
+        "authoritative"
+    ] is True
+
+
+def test_trunk_is_refreshed_after_boundary_pvst_reaches_forwarding():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expected_vlans = expectation.expected["allowed_vlans"]
+    vlans = ",".join(str(item) for item in expected_vlans)
+
+    def trunk_output(forwarding: str) -> str:
+        return "\n".join((
+            "SW#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            f"Gig0/1 {forwarding}",
+            "SW#",
+        ))
+
+    states = iter(("LIS", "FWD", "FWD"))
+
+    def stp(_device_name):
+        state = next(states)
+        return {
+            "authoritative": True,
+            "device_name": expectation.device_name,
+            "instances": [
+                {
+                    "authoritative": True,
+                    "vlan_id": vlan,
+                    "ports": [{
+                        "interface": expectation.expected["interface"],
+                        "row_present": True,
+                        "state": state,
+                    }],
+                }
+                for vlan in expected_vlans
+            ],
+        }
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=stp,
+    )
+    ios = _SequenceIos([
+        _authoritative_trunk_result(expectation, trunk_output("none")),
+        _authoritative_trunk_result(expectation, trunk_output(vlans)),
+    ])
+    runtime._ios = ios
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert len(ios.calls) == 2
+    assert result.convergence is not None
+    assert result.convergence.details["learning_extension_authorized"] is False
+    assert result.convergence.details["learning_boundary_stp"][
+        "instances"
+    ][0]["ports"][0]["state"] == "FWD"
+
+
+def test_trunk_boundary_refresh_error_fails_closed_with_evidence():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expected_vlans = expectation.expected["allowed_vlans"]
+    vlans = ",".join(str(item) for item in expected_vlans)
+    output = "\n".join((
+        "SW#show interfaces trunk",
+        "Port Mode Encapsulation Status Native vlan",
+        "Gig0/1 on 802.1q trunking 1",
+        "Port Vlans allowed on trunk",
+        f"Gig0/1 {vlans}",
+        "Port Vlans allowed and active in management domain",
+        f"Gig0/1 {vlans}",
+        "Port Vlans in spanning tree forwarding state and not pruned",
+        "Gig0/1 none",
+        "SW#",
+    ))
+
+    class FailingRefreshIos:
+        def __init__(self):
+            self.calls = 0
+
+        def execute(self, _device_name, _query_id, *, interface=""):
+            assert not interface
+            self.calls += 1
+            if self.calls == 1:
+                return _authoritative_trunk_result(expectation, output)
+            raise RuntimeError("refresh transport failed")
+
+    states = iter(("LIS", "LRN"))
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=lambda _device_name: {
+            "authoritative": True,
+            "device_name": expectation.device_name,
+            "instances": [
+                {
+                    "authoritative": True,
+                    "vlan_id": vlan,
+                    "ports": [{
+                        "interface": expectation.expected["interface"],
+                        "row_present": True,
+                        "state": next_state,
+                    }],
+                }
+                for next_state in [next(states)]
+                for vlan in expected_vlans
+            ],
+        },
+    )
+    ios = FailingRefreshIos()
+    runtime._ios = ios
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert ios.calls == 2
+    assert result.convergence is not None
+    assert result.convergence.details["learning_extension_authorized"] is False
+    assert result.convergence.details["learning_boundary_refresh_error"] == (
+        "RuntimeError: refresh transport failed"
+    )
+
+
+def test_trunk_round_does_not_commit_partial_success_before_late_failure():
+    _, plan = _plan()
+    template = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expectations = [
+        template.model_copy(update={
+            "id": f"{template.id}/{device}",
+            "action_id": f"{template.action_id}/{device}",
+            "device_id": device.casefold(),
+            "device_name": device,
+        })
+        for device in ("SW-A", "SW-B")
+    ]
+    expected_vlans = template.expected["allowed_vlans"]
+    vlans = ",".join(str(item) for item in expected_vlans)
+
+    def trunk_output(device: str, forwarding: str) -> str:
+        return "\n".join((
+            f"{device}#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            f"Gig0/1 {forwarding}",
+            f"{device}#",
+        ))
+
+    class LateFailureIos:
+        def __init__(self):
+            self.calls = 0
+
+        def execute(self, device_name, _query_id, *, interface=""):
+            assert not interface
+            self.calls += 1
+            if self.calls == 4:
+                raise RuntimeError("late device refresh failed")
+            expectation = next(
+                item for item in expectations
+                if item.device_name == device_name
+            )
+            forwarding = (
+                "none"
+                if self.calls == 1
+                else vlans
+            )
+            return _authoritative_trunk_result(
+                expectation,
+                trunk_output(device_name, forwarding),
+            )
+
+    device_observations = {"SW-A": 0, "SW-B": 0}
+
+    def stp(device_name):
+        device_observations[device_name] += 1
+        state = (
+            ("LIS", "LRN", "FWD")[device_observations[device_name] - 1]
+            if device_name == "SW-A"
+            else "FWD"
+        )
+        return {
+            "authoritative": True,
+            "device_name": device_name,
+            "instances": [
+                {
+                    "authoritative": True,
+                    "vlan_id": vlan,
+                    "ports": [{
+                        "interface": template.expected["interface"],
+                        "row_present": True,
+                        "state": state,
+                    }],
+                }
+                for vlan in expected_vlans
+            ],
+        }
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=stp,
+    )
+    runtime._ios = LateFailureIos()
+
+    results = runtime.verify(expectations)
+
+    assert any(
+        result.status is not ActionExecutionStatus.VERIFIED
+        for result in results
+    )
+    assert all(
+        result.convergence is not None
+        and result.convergence.details[
+            "learning_boundary_refresh_error"
+        ] == "RuntimeError: late device refresh failed"
+        for result in results
+    )
+
+
+def test_trunk_listening_state_does_not_authorize_learning_extension():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expected_vlans = expectation.expected["allowed_vlans"]
+    vlans = ",".join(str(item) for item in expected_vlans)
+    output = "\n".join((
+        "SW#show interfaces trunk",
+        "Port Mode Encapsulation Status Native vlan",
+        "Gig0/1 on 802.1q trunking 1",
+        "Port Vlans allowed on trunk",
+        f"Gig0/1 {vlans}",
+        "Port Vlans allowed and active in management domain",
+        f"Gig0/1 {vlans}",
+        "Port Vlans in spanning tree forwarding state and not pruned",
+        "Gig0/1 none",
+        "SW#",
+    ))
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=lambda _device_name: {
+            "authoritative": True,
+            "device_name": expectation.device_name,
+            "instances": [
+                {
+                    "authoritative": True,
+                    "vlan_id": vlan,
+                    "ports": [{
+                        "interface": expectation.expected["interface"],
+                        "row_present": True,
+                        "state": "LIS",
+                    }],
+                }
+                for vlan in expected_vlans
+            ],
+        },
+    )
+    ios = _SequenceIos([
+        _authoritative_trunk_result(expectation, output),
+        _authoritative_trunk_result(expectation, output),
+    ])
+    runtime._ios = ios
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert len(ios.calls) == 2
+    assert result.convergence is not None
+    assert result.convergence.details["learning_extension_authorized"] is False
+    assert result.convergence.details["learning_extension_seconds"] == 0.0
+
+
 def test_trunk_verifier_never_authorizes_an_ambiguous_device_source():
     _, plan = _plan()
     expectation = next(

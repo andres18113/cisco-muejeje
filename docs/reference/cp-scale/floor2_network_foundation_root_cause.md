@@ -354,7 +354,7 @@ verification standard:
 
 - Floor2 mutates only the 76 action IDs absent from the VERIFIED Floor1 plan.
 - The 115 retained Floor1 application results continue to close typed
-  dependencies, while all 191 Floor2 expectations are freshly verified.
+  dependencies, while all 191 Floor2 expectations are freshly evaluated.
 - Previously signalled Floor1 phone ports are never returned to the data-only
   preparation path; cumulative phone forwarding is still re-observed.
 - Trunk verification is bounded and round-robin across devices. Every
@@ -491,3 +491,49 @@ observer boundary before the Floor1 checkpoint, not Floor2 evidence. The next
 implementation permits one additional read-only `show ip protocols` only for
 a fully qualified pager-continuation failure and never retries a mutation.
 H1/H2 remain unchanged.
+
+## Delta-only causal LIVE result -- first divergence retained
+
+Run `canonical-cp-scale-voice-20260901T055647792755Z-0ec4bdade3bb` finally
+reached Floor2 after Floor1, including Voice 21/21 and RIPv2, verified.
+
+The causal isolation was exact:
+
+- Floor2 mutated 76 new configuration actions and replayed none of the 115
+  retained Floor1 actions.
+- All 191 cumulative expectations remained in verification scope; the nine
+  trunk expectations used for this verdict were authoritative.
+- All five previously established Floor1 trunk expectations stayed FWD.
+- Four new Floor2 path interfaces were fresh, complete, uniquely attributed,
+  trunking, allowed, and active for VLANs 10,20,30, but not yet forwarding:
+  Switch10 Fa0/2, Switch6 Gi0/1 and Gi0/2, and Switch7 Gi0/1.
+
+The round-robin observer retained 35 trunk samples over 45,766 ms. Sparse
+correlated PVST transitions showed the new ports first as `LIS`; the latest
+retained snapshots at rounds 23,31,33 showed all four as `LRN` for every
+expected VLAN, with none blocking. A transient Switch6-local VLAN20 root
+immediately after L2 activation had settled to the authoritative Switch4 root
+`0002.162A.078A` in those retained snapshots. There was no fresh PVST sample at
+the terminal trunk round 35, so the exact boundary state remains unmeasured.
+Exact IOS output reported `Forward Delay 15 sec`.
+
+The hypotheses therefore resolve as follows:
+
+| Hypothesis | Result |
+| --- | --- |
+| H1 cumulative replay | **SUPPORTED AS A CONTRIBUTOR** to the prior old-trunk regression because delta-only preserved every old trunk; **REFUTED AS SUFFICIENT** because the new path still had not forwarded |
+| H2 unguided PVST convergence | **STRONGLY SUPPORTED** by authoritative `LIS -> LRN` progress under a coherent retained root; terminal-boundary PVST remains to be sampled |
+| H3 fixed observer bound too short | **STRONGLY SUPPORTED** because the latest retained states were LRN shortly before the terminal trunk round; not confirmed without the exact boundary sample |
+
+The next causal experiment remains state-based. The ordinary 45-second gate is
+unchanged. At that boundary, one fresh PVST snapshot is retained per pending
+device, then the unchanged trunk predicate is refreshed once in case snapshot
+capture elapsed through FWD. One additional 20-second observation window is
+authorized only when all still-pending trunks have authoritative
+interface/status/allowed/active fields, forwarding is the only failed field,
+and every exact expected-VLAN port is authoritatively `LRN` in that fresh
+snapshot. The 20 seconds consist of the measured 15-second forward-delay phase
+plus a bounded round-robin observation margin. Any LIS, BLK, missing,
+incomplete, unattributed, or mismatched terminal state gets no extension.
+Elapsed evidence spans both waiters, the boundary snapshot, and the refresh. No
+mutation, PortFast policy, topology, or verification criterion is changed.

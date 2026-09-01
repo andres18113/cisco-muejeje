@@ -3514,6 +3514,183 @@
         "failure_classification": "OBSERVER",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T055647792755Z-0ec4bdade3bb",
+      "started_at": "2026-09-01T05:56:47.792755+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "The pinned delta-only stage projection, round-robin trunk observer, and PVST parser.",
+        "inference": "Causal classification from retained mutation partitions and authoritative STP transitions."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "persistent_checkpoint_commands": true,
+        "floor1_voice_verified_before_floor2": true,
+        "floor2_configuration_mutation_delta_only": true,
+        "floor2_configuration_verification_cumulative": true,
+        "trunk_verification_round_robin": true,
+        "pvst_transitions_correlated": true,
+        "valid_negative_changed_next_convergence_gate": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "0ec4bdade3bb1e2dd1e9b022a95dd0459da9cc50",
+        "canonical_live_source_head": "0ec4bdade3bb1e2dd1e9b022a95dd0459da9cc50",
+        "configuration_delta_head": "ff1be60f0dad31a17fdb44d27834d251e2927732",
+        "rip_pager_retry_head": "6bf0b8e3a5dbd6899226c1eaaf04ef2011c69b89"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "floor1_voice_count": 21,
+        "floor2_voice_count": 35,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "routing_core_checkpoint_advanced": true,
+        "router4_switch10_checkpoint_advanced": true,
+        "floor1_checkpoint_advanced": true,
+        "floor2_causal_question_reached": true,
+        "floor2_checkpoint_advanced": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T055647792755Z-0ec4bdade3bb-failure-precleanup.json",
+          "sha256": "4e93efde1bef8053062390fb46914f455791f948c64cce7167c09502d63d3212"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T055647792755Z-0ec4bdade3bb-cleanup.json",
+          "sha256": "75d2a740df86d3470aadd316606e915d648112f648a66e8f7fb7ebd3208b74f1"
+        }
+      ],
+      "measured": {
+        "floor1": {
+          "checkpoint_advanced": true,
+          "voice_complete": true,
+          "phone_access_fwd_verified": 21,
+          "addressed_count": 21,
+          "matching_binding_count": 21,
+          "sccp_registered_count": 21,
+          "control_plane_status": "verified",
+          "rip_process_pager_retry_engaged": false
+        },
+        "floor2_delta": {
+          "cumulative_devices": 132,
+          "cumulative_links": 96,
+          "physical_delta_manifest_devices": 59,
+          "physical_delta_new_devices": 58,
+          "physical_delta_links": 41,
+          "physical_delta_status": "verified",
+          "configuration_mutation_actions": 76,
+          "configuration_retained_actions": 115,
+          "cumulative_verification_expectations": 191,
+          "configuration_status": "partial",
+          "configuration_failure_code": "verification_failed"
+        },
+        "floor2_trunk_convergence": {
+          "expectations": 9,
+          "verified": 5,
+          "failed": 4,
+          "round_robin_samples": 35,
+          "elapsed_ms": 45766,
+          "preserved_floor1_interfaces": [
+            "Switch4:GigabitEthernet0/1",
+            "Switch4:GigabitEthernet0/2",
+            "Switch5:GigabitEthernet0/1",
+            "Switch10:FastEthernet0/1",
+            "Switch10:GigabitEthernet0/1"
+          ],
+          "new_non_forwarding_interfaces": [
+            "Switch6:GigabitEthernet0/1",
+            "Switch6:GigabitEthernet0/2",
+            "Switch7:GigabitEthernet0/1",
+            "Switch10:FastEthernet0/2"
+          ],
+          "terminal_authority": "AUTHORITATIVE",
+          "terminal_failure_dimension": "NON_FORWARDING",
+          "expected_vlans": [
+            10,
+            20,
+            30
+          ],
+          "initial_new_port_state": "LIS",
+          "latest_retained_new_port_state": "LRN",
+          "latest_retained_new_port_state_vlans": [
+            10,
+            20,
+            30
+          ],
+          "latest_retained_pvst_rounds": [
+            23,
+            31,
+            33
+          ],
+          "terminal_trunk_sample_round": 35,
+          "pvst_sample_at_terminal_boundary": false,
+          "latest_retained_root_address": "0002.162A.078A",
+          "latest_retained_root_device": "Switch4",
+          "observed_forward_delay_seconds": 15,
+          "result": "DELTA_PRESERVED_PRIOR_TRUNKS_LATEST_PVST_SAMPLES_LEARNING_BEFORE_TIMEOUT"
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_interfaces": 21,
+          "verified_fwd_interfaces": 21,
+          "status": "VERIFIED"
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "floor1_status": "VERIFIED",
+        "floor1_voice_status": "VERIFIED_21_OF_21",
+        "floor2_physical_status": "VERIFIED",
+        "floor2_configuration_mutation_status": "APPLIED_DELTA_ONLY_76",
+        "floor2_configuration_verification_status": "FAILED_CLOSED_4_TRUNKS_NON_FORWARDING",
+        "floor2_voice_status": "NOT_REACHED"
+      },
+      "classification_rationale": "Delta-only mutation preserved every previously verified Floor1 trunk, so cumulative replay receives causal credit for the prior old-trunk regression but was not the complete Floor2 cause. All four new non-forwarding interfaces were fresh, complete, uniquely attributed, trunking, and allowed/active for VLANs 10,20,30 at terminal trunk round 35. Sparse correlated PVST transitions moved every pending port from LIS to LRN under one retained root; none of those samples was blocked, and exact IOS output reported Forward Delay 15 seconds. The latest retained PVST samples occurred at rounds 23,31,33 rather than the terminal round, so convergence outliving the fixed boundary is strongly supported but not yet confirmed. The next gate retains one fresh PVST snapshot per pending device, refreshes the unchanged trunk predicate after that capture, and adds one 20-second continuation only when every pending field is authoritative and every expected VLAN port is LRN in that boundary snapshot.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_floor1_verification": "VERIFIED",
+        "canonical_floor1_voice_verification": "VERIFIED_21_OF_21",
+        "cumulative_replay_causal_effect": "SUPPORTED_FOR_PRIOR_TRUNK_REGRESSION",
+        "cumulative_replay_sufficient_cause": "REFUTED",
+        "floor2_remaining_root_cause": "PVST_CONVERGENCE_OUTLIVED_FIXED_OBSERVER_BOUNDARY",
+        "floor2_root_cause_status": "STRONGLY_SUPPORTED_BOUNDARY_SAMPLE_PENDING",
+        "state_authorized_learning_extension": "CAUSAL_EXPERIMENT_READY_LIVE_PENDING",
+        "cp_scale_status": "FLOOR2_LATEST_PVST_LRN_BOUNDARY_SAMPLE_PENDING",
+        "first_unclosed_boundary": "FLOOR2_NETWORK_FOUNDATION_TRUNK_FORWARDING",
+        "failure_classification": "PRODUCT_CONVERGENCE_GATE",
+        "next_live_authorized": true
+      }
     }
   ]
 }

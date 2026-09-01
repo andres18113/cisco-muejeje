@@ -77,6 +77,9 @@ CHECKPOINT_EOF_RUN_IDENTITY = (
 FLOOR1_CONTROL_OBSERVER_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T051758574307Z-ac6012f6a759"
 )
+FLOOR2_DELTA_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T055647792755Z-0ec4bdade3bb"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -96,7 +99,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 15
+    assert len(ledger["runs"]) == 16
     return ledger["runs"][0]
 
 
@@ -168,6 +171,11 @@ def checkpoint_eof_run(ledger: dict) -> dict:
 @pytest.fixture(scope="module")
 def floor1_control_observer_run(ledger: dict) -> dict:
     return ledger["runs"][14]
+
+
+@pytest.fixture(scope="module")
+def floor2_delta_run(ledger: dict) -> dict:
+    return ledger["runs"][15]
 
 
 @pytest.fixture(scope="module")
@@ -625,6 +633,47 @@ def test_floor1_voice_closes_before_rip_process_observer_stop(
         assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
 
 
+def test_floor2_delta_preserves_old_trunks_and_exposes_learning_boundary(
+    floor2_delta_run: dict,
+):
+    assert floor2_delta_run["run_identity"] == FLOOR2_DELTA_RUN_IDENTITY
+    assert floor2_delta_run["measured"]["floor1"][
+        "checkpoint_advanced"
+    ] is True
+    delta = floor2_delta_run["measured"]["floor2_delta"]
+    assert delta["configuration_mutation_actions"] == 76
+    assert delta["configuration_retained_actions"] == 115
+    assert delta["cumulative_verification_expectations"] == 191
+    assert delta["physical_delta_new_devices"] == 58
+    assert delta["physical_delta_links"] == 41
+    convergence = floor2_delta_run["measured"]["floor2_trunk_convergence"]
+    assert convergence["expectations"] == 9
+    assert convergence["verified"] == 5
+    assert convergence["failed"] == 4
+    assert convergence["round_robin_samples"] == 35
+    assert convergence["elapsed_ms"] == 45766
+    assert len(convergence["preserved_floor1_interfaces"]) == 5
+    assert len(convergence["new_non_forwarding_interfaces"]) == 4
+    assert convergence["initial_new_port_state"] == "LIS"
+    assert convergence["latest_retained_new_port_state"] == "LRN"
+    assert convergence["latest_retained_pvst_rounds"] == [23, 31, 33]
+    assert convergence["terminal_trunk_sample_round"] == 35
+    assert convergence["pvst_sample_at_terminal_boundary"] is False
+    assert convergence["observed_forward_delay_seconds"] == 15
+    conclusion = floor2_delta_run["conclusion"]
+    assert conclusion["cumulative_replay_sufficient_cause"] == "REFUTED"
+    assert conclusion["floor2_root_cause_status"] == (
+        "STRONGLY_SUPPORTED_BOUNDARY_SAMPLE_PENDING"
+    )
+    assert conclusion["state_authorized_learning_extension"] == (
+        "CAUSAL_EXPERIMENT_READY_LIVE_PENDING"
+    )
+    for artifact in floor2_delta_run["artifacts"]:
+        path = ROOT / artifact["path"]
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+
+
 def test_immutable_canonical_evidence_is_never_text_normalized():
     attributes = GITATTRIBUTES.read_text(encoding="utf-8").splitlines()
 
@@ -839,23 +888,23 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_FIFTEEN_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "15"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_SIXTEEN_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "16"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "2"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
-        "CONTROL_PLANE_RIP_PROCESS_OBSERVER"
+        "NONE_VERIFIED"
     )
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "48"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
-        "FLOOR1_CONTROL_PLANE_RIP_PROCESS_OBSERVER"
+        "FLOOR2_NETWORK_FOUNDATION_TRUNK_FORWARDING"
     )
     assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == (
-        "OBSERVER"
+        "PRODUCT_CONVERGENCE_GATE"
     )
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "RIP_PROCESS_QUALIFIED_PAGER_RETRY_READY_LIVE_PENDING"
+        "FLOOR2_FRESH_BOUNDARY_LRN_EXTENSION_CAUSAL_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -867,20 +916,24 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         == "115_OF_115"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_FAILED_RUN_TEMPORAL_EVIDENCE"] == (
-        "INSUFFICIENT"
+        "SUFFICIENT_LIS_TO_LRN_LATEST_SAMPLES | "
+        "TERMINAL_BOUNDARY_NOT_SAMPLED"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_TIMEOUT_CLASSIFICATION"] == (
-        "NOT_ESTABLISHED"
+        "STRONGLY_SUPPORTED_LATEST_LRN_BOUNDARY_NOT_SAMPLED"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_NETWORK_ROOT_CAUSE"] == (
-        "STRONG_CANDIDATE"
+        "STRONGLY_SUPPORTED"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_PRODUCT_FIX"] == (
-        "CANDIDATE_IMPLEMENTED_CAUSAL_LIVE_PENDING"
+        "DELTA_ONLY_PRESERVED_OLD_TRUNKS | "
+        "FRESH_BOUNDARY_LRN_EXTENSION_EXPERIMENT_READY"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_CAUSAL_LIVE"] == (
-        "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_CONTROL_OBSERVER"
+        "REACHED | OLD_TRUNKS_5_OF_5_VERIFIED | "
+        "NEW_TRUNKS_0_OF_4_FWD | LATEST_PVST_LIS_TO_LRN | "
+        "NO_TERMINAL_PVST_SAMPLE"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR1_VOICE_VERIFIED_CONTROL_OBSERVER_FIX_PENDING_LIVE"
+        "FLOOR2_LATEST_PVST_LRN_BOUNDARY_EXPERIMENT_PENDING"
     )
