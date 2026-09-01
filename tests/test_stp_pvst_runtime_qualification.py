@@ -6,6 +6,7 @@ child process so pytest itself keeps only the governed ``src.`` namespace.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -15,6 +16,10 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FIRST_LIVE_EVIDENCE = (
+    ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
+    / "stp-pvst-capability-20260901T143133904065Z-7aead990dccc.json"
+)
 
 _PROBE = r'''
 import json
@@ -104,6 +109,7 @@ print(json.dumps({
     "foundation": [
         {
             "type": type(item).__name__,
+            "hostname": getattr(item, "hostname", None),
             "vlan_id": getattr(item, "vlan_id", None),
             "interface": getattr(item, "interface", None),
             "allowed_vlans": getattr(item, "allowed_vlans", None),
@@ -196,9 +202,14 @@ def test_qualifier_foundation_is_typed_vlan_trunk_and_one_access_port(
     verdict: dict,
 ):
     foundation = verdict["foundation"]
+    assert sum(item["type"] == "ConfigureHostname" for item in foundation) == 2
     assert sum(item["type"] == "CreateVlan" for item in foundation) == 2
     assert sum(item["type"] == "ConfigureTrunk" for item in foundation) == 2
     assert sum(item["type"] == "ConfigureAccessPort" for item in foundation) == 1
+    assert {
+        item["hostname"]
+        for item in foundation if item["type"] == "ConfigureHostname"
+    } == {"MCP-PROBE-PVST-3560", "MCP-PROBE-PVST-2960"}
     assert all(
         item["vlan_id"] == verdict["constants"]["vlan_id"]
         for item in foundation if item["type"] == "CreateVlan"
@@ -269,3 +280,43 @@ def test_convergence_requires_primary_root_secondary_priority_and_exact_root_pat
     assert convergence["wrong_port"]
     assert convergence["wrong_root"]
     assert convergence["missing_secondary"]
+
+
+def test_first_live_negative_proves_trunk_convergence_but_not_unique_identity():
+    assert hashlib.sha256(FIRST_LIVE_EVIDENCE.read_bytes()).hexdigest() == (
+        "5da968302f54bd03e5c8a961182d10dd74d40fa251356b07dcc5b3ddb2f44a51"
+    )
+    evidence = json.loads(FIRST_LIVE_EVIDENCE.read_text(encoding="utf-8"))
+
+    assert evidence["repository"]["head"] == (
+        "7aead990dcccb104e35278223507df9ec1a63211"
+    )
+    assert evidence["foundation_trunk_convergence"]["verified"] is False
+    attempts = evidence["foundation_trunk_convergence"]["attempts"]
+    assert any(
+        20 in (
+            item["devices"]["3560-24PS"]["rows"][0]["forwarding_vlans"] or []
+        )
+        and item["devices"]["3560-24PS"]["device_identity_provenance"]
+        == "confirmed_unique"
+        for item in attempts
+    )
+    assert any(
+        20 in (
+            item["devices"]["2960-24TT"]["rows"][0]["forwarding_vlans"] or []
+        )
+        for item in attempts
+    )
+    assert not any(
+        20 in (
+            item["devices"]["2960-24TT"]["rows"][0]["forwarding_vlans"] or []
+        )
+        and item["devices"]["2960-24TT"]["device_identity_provenance"]
+        == "confirmed_unique"
+        for item in attempts
+    )
+    assert "stp_application" not in evidence
+    assert evidence["cleanup"]["verified"] is True
+    assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["second"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["realtime"]["verified_realtime"] is True

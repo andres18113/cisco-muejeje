@@ -489,6 +489,14 @@ CANONICAL_CP_SCALE_ROUTER4_CAPACITY_MISMATCH = CONFIRMED_51_PHONES_GT_42
 CANONICAL_CP_SCALE_FLOOR3_CONTROL_PLANE = PARTIAL_STP_CAPABILITY_UNKNOWN
 CANONICAL_CP_SCALE_FLOOR3_STP_CAPABILITY = 3560-24PS_UNKNOWN_156 | 2960-24TT_UNKNOWN_1
 CANONICAL_CP_SCALE_FLOOR3_RETAINED_RIP_OBSERVATIONS = VERIFIED_12_OF_12
+STP_PVST_QUALIFICATION_RUN1_HEAD = 7aead990dcccb104e35278223507df9ec1a63211
+STP_PVST_QUALIFICATION_RUN1_RESULT = HARNESS_IDENTITY_AMBIGUOUS_AFTER_TRUNK_FWD
+STP_PVST_QUALIFICATION_RUN1_TRUNK = 3560_CONFIRMED_FWD | 2960_FWD_IDENTITY_AMBIGUOUS
+STP_PVST_QUALIFICATION_RUN1_STP_MUTATION = NOT_DISPATCHED
+STP_PVST_QUALIFICATION_RUN1_ROOT_CAUSE = DUPLICATE_DEFAULT_SWITCH_PROMPTS
+STP_PVST_QUALIFICATION_RUN1_CORRECTION = UNIQUE_TYPED_HOSTNAMES
+STP_PVST_QUALIFICATION_RUN1_SHA256 = 5da968302f54bd03e5c8a961182d10dd74d40fa251356b07dcc5b3ddb2f44a51
+STP_PVST_QUALIFICATION_RUN1_CLEANUP = ZERO_SEMANTIC_DEVICES_LINKS_TWICE | REALTIME_VERIFIED
 CME_CAPACITY_MODEL_2911 = SUPPORTS_CME_UNKNOWN | VERIFY_FAILED_NO_EPHONE_ROW
 CME_CAPACITY_PROBE_2911_WRAPPER = HARNESS_SERIALIZATION_FAILURE_AFTER_VALID_MODEL_RESULT
 CME_CAPACITY_PROBE_2911_CLEANUP = SNAPSHOT_RESTORED | INDEPENDENT_ZERO_ZERO_TWICE
@@ -506,10 +514,10 @@ CANONICAL_CP_SCALE_EVIDENCE_SHA256 = RUN1_PRECLEANUP_d4b017332c1f0b7f12e5e6fef97
 CANONICAL_CP_SCALE_RUN21_EVIDENCE_SHA256 = PRECLEANUP_e5a8e0ddf05c905d468227a61adc17bf6c9f9c367a7ff15080aaf494011c6dc1 | CLEANUP_57c428a9ad5afe4d5f9d39e02b83498d274241c25b54fdd6efd3ac322237babe
 CANONICAL_CP_SCALE_WORKSPACE_RESTORED = YES
 CANONICAL_CP_SCALE_REALTIME_RESTORED = YES
-LIVE_RUNS_CONSUMED = 29
+LIVE_RUNS_CONSUMED = 30
 CLEANUP = VERIFIED_AFTER_EVERY_LIVE
 WORKSPACE_RESTORED = YES
-NEXT_ACTIVE_STEP = RUN_TYPED_STP_PVST_MODEL_QUALIFICATION
+NEXT_ACTIVE_STEP = RERUN_TYPED_STP_PVST_WITH_UNIQUE_HOSTNAMES
 CP_SCALE_STATUS = FLOOR3_VOICE_VERIFIED_42_OF_42 | FLOOR3_STP_CAPABILITY_QUALIFICATION_REQUIRED
 <!-- CP_SCALE_STATE_END -->
 
@@ -978,6 +986,33 @@ Immutable SHA-256:
 
 Cleanup independently restored zero semantic devices and links twice and
 verified Realtime.
+
+## First exact-model PVST probe exposes a harness identity defect
+
+The bounded disposable run
+`stp-pvst-capability-20260901T143133904065Z-7aead990dccc` used clean pushed
+source `7aead990dcccb104e35278223507df9ec1a63211`. Packet Tracer created
+the exact `3560-24PS` and `2960-24TT`, their cross-connected Gigabit trunk,
+VLAN 20, and the 3560 access port. All five typed foundation actions were
+accepted.
+
+The first samples were fresh, complete, uniquely attributed, and showed both
+trunks active but not yet forwarding. Both later exposed VLAN 20 in the
+forwarding set. The 3560 produced one confirmed-unique FWD sample; every
+post-convergence 2960 sample was identity-ambiguous, so the foundation gate
+correctly refused to advance and no STP action was dispatched. Both devices
+still had the default IOS prompt `Switch>`, which removes the terminal session
+anchor exactly when alternating between them.
+
+This is a harness observer defect, not an STP result. The causal correction adds
+one existing typed `ConfigureHostname` action per switch before VLAN/trunk
+mutation. It neither changes the STP variable nor weakens identity: it supplies
+the same unique hostname foundation the canonical product always has.
+
+Evidence SHA-256:
+`5da968302f54bd03e5c8a961182d10dd74d40fa251356b07dcc5b3ddb2f44a51`.
+Cleanup restored the four pre-existing backend-managed power devices, zero
+semantic devices, zero links, and Realtime in two fresh inventories.
 
 ## Grouped frontier isolates combined pager rollover
 

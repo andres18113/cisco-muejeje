@@ -30,6 +30,7 @@ from packet_tracer_mcp.application.use_cases.qualify_typed_runtime import (
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigureAccessPort,
+    ConfigureHostname,
     ConfigureTrunk,
     CreateVlan,
 )
@@ -139,6 +140,17 @@ def qualification_topology() -> TopologyPlan:
 
 def foundation_actions(topology: TopologyPlan) -> list:
     primary, secondary = topology.devices
+    hostname_actions = [
+        ConfigureHostname(
+            id=f"pvst/hostname/{device.id}",
+            phase=ConfigurationPhase.IDENTITY,
+            device_id=device.id,
+            device_name=device.name,
+            site_id="pvst",
+            hostname=device.name,
+        )
+        for device in topology.devices
+    ]
     vlan_actions = [
         CreateVlan(
             id=f"pvst/vlan/{device.id}",
@@ -182,7 +194,7 @@ def foundation_actions(topology: TopologyPlan) -> list:
         interface=EDGE_INTERFACE,
         data_vlan_id=VLAN_ID,
     )
-    return [*vlan_actions, *trunk_actions, edge]
+    return [*hostname_actions, *vlan_actions, *trunk_actions, edge]
 
 
 def stp_actions(topology: TopologyPlan) -> list:
