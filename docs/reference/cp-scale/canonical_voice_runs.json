@@ -2589,6 +2589,114 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T031054739651Z-ba2b036561c7",
+      "started_at": "2026-08-31T22:10:54.739651-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "explicit_cme_registration_mode": true,
+        "semantic_directory_binding_order": true,
+        "per_binding_exact_readback": true,
+        "no_binding_replay": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "ba2b036561c72f38ef394408038e1d7a5ccf56b4",
+        "canonical_live_source_head": "ba2b036561c72f38ef394408038e1d7a5ccf56b4",
+        "absence_reconciliation_head": "a9115cdd65fe467bf54968b1d86c5e6dbcec1aca"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "configuration_mutation": "DELTA_ONLY_BY_STABLE_ACTION_ID",
+        "configuration_verification": "CUMULATIVE",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T031054739651Z-ba2b036561c7-failure-precleanup.json",
+          "sha256": "05bda710dad7e15b381013510d016a94f3f9071410250f341542b3ea36c5b06c"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T031054739651Z-ba2b036561c7-cleanup.json",
+          "sha256": "1cf0c9fb80e25780bbb64a91553c52dac63abcad853926bc8d450d61907e168f"
+        }
+      ],
+      "measured": {
+        "explicit_cme_mode_experiment": {
+          "call_control_mode": "NO_AUTO_REG_EPHONE",
+          "verified_bindings_before_stop": 18,
+          "stopped_ordinal": 19,
+          "stopped_directory_index": 19,
+          "stopped_extension": "3019",
+          "mutation_dispatched": true,
+          "readback_complete": true,
+          "readback_identity": "confirmed_unique",
+          "row_present": false,
+          "result": "AUTO_REGISTRATION_REFUTED_FAILURE_FOLLOWS_ORDINAL_19"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "FAILED_CLOSED_ORDINAL_19_BINDING_ABSENT",
+        "voice_signal_status": "NOT_REACHED",
+        "registration_status": "NOT_REACHED",
+        "binding_readbacks_verified": 18,
+        "binding_readbacks_failed": 1
+      },
+      "classification_rationale": "Explicit no-auto-reg-ephone mode produced the same authoritative absence at the nineteenth binding. Auto-registration interference is refuted. Because the first dispatch is now proven absent rather than ambiguous, exactly one reconciliation of that same SET_VALUE action is safe to test. Mismatched rows remain non-overwritable and a second absence must stop.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED_AFTER_NETWORK",
+        "auto_registration_interference_cause": "REFUTED",
+        "ordinal_19_failure": "CONFIRMED",
+        "absence_driven_reconciliation_cause": "AUTHORIZED_CAUSAL_EXPERIMENT",
+        "production_fix_status": "ABSENCE_RECONCILIATION_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_ORDINAL19_BINDING_ABSENCE_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "VOICE_BOOTSTRAP_BINDING_READBACK",
+        "failure_classification": "PRODUCT",
+        "next_live_authorized": true
+      }
     }
   ]
 }

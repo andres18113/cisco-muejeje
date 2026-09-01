@@ -677,18 +677,18 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CP_SCALE_AFFECTED_PHONES": "69",
         "CP_SCALE_AFFECTED_VOICE_ACCESS_ACTIONS": "69",
         "CP_SCALE_TOPOLOGY_REGEN_REQUIRED": "NO",
-        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_SEVEN_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_SEVEN_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "7",
+        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_EIGHT_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_EIGHT_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "8",
         "CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS": "1",
         "CANONICAL_CP_SCALE_BASE_HEAD": (
             "528564493b855ce332f45fdab7b5867a065b1992"
         ),
         "CANONICAL_CP_SCALE_PRELIVE_HEAD": (
-            "ea9b93f0da73a7c777edf5fc539d2c8d455af60c"
+            "ba2b036561c72f38ef394408038e1d7a5ccf56b4"
         ),
         "CANONICAL_CP_SCALE_LIVE_SOURCE_HEAD": (
-            "ea9b93f0da73a7c777edf5fc539d2c8d455af60c"
+            "ba2b036561c72f38ef394408038e1d7a5ccf56b4"
         ),
         "CANONICAL_CP_SCALE_PHONE_COUNT": "69",
         "CANONICAL_CP_SCALE_VOICE_ACCESS_ACTION_COUNT": "69",
@@ -714,6 +714,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_FLOOR1_BINDING_ORDER_RESULT": (
             "INDEX1_REFUTED | FAILURE_FOLLOWS_ORDINAL19"
+        ),
+        "CANONICAL_CP_SCALE_FLOOR1_CME_MODE_RESULT": (
+            "AUTO_REGISTRATION_REFUTED"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_LAST_COMPLETE_ENDPOINTS": (
             "SVI_21 | DHCP_ENABLED_21 | ADDRESSED_21 | "
@@ -803,7 +806,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CANONICAL_CP_SCALE_VOICE_VERIFICATION": "FAIL",
         "ROOT_CAUSE_STATUS": "CONFIRMED",
         "PRODUCTION_FIX_STATUS": (
-            "EXPLICIT_CME_REGISTRATION_MODE_LIVE_PENDING"
+            "ABSENCE_RECONCILIATION_LIVE_PENDING"
         ),
         "CANONICAL_CP_SCALE_SCCP_DIAGNOSTIC_HEAD": (
             "bd8e8b80bd170704e3f403263186f0469a4d0839"
@@ -822,6 +825,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_EXPLICIT_CME_MODE_HEAD": (
             "6fd0a0a69fdd5f9a5054f073ed6534e4a4fc7ee8"
+        ),
+        "CANONICAL_CP_SCALE_ABSENCE_RECONCILIATION_HEAD": (
+            "a9115cdd65fe467bf54968b1d86c5e6dbcec1aca"
         ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
@@ -852,14 +858,19 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "21a306f9c1d4f2955f443c1192bb0e65093bdbee2bca37f1fd1dddeafe3bcd62"
             " | RUN7_CLEANUP_"
             "65923bc0a708f1481087922eaea8e1baff9debddb0f845a9b02db7e2942eb261"
+            " | RUN8_PRECLEANUP_"
+            "05bda710dad7e15b381013510d016a94f3f9071410250f341542b3ea36c5b06c"
+            " | RUN8_CLEANUP_"
+            "1cf0c9fb80e25780bbb64a91553c52dac63abcad853926bc8d450d61907e168f"
         ),
         "CANONICAL_CP_SCALE_WORKSPACE_RESTORED": "YES",
         "CANONICAL_CP_SCALE_REALTIME_RESTORED": "YES",
-        "LIVE_RUNS_CONSUMED": "13",
+        "LIVE_RUNS_CONSUMED": "14",
         "CLEANUP": "VERIFIED_AFTER_EVERY_LIVE",
         "WORKSPACE_RESTORED": "YES",
         "NEXT_ACTIVE_STEP": (
-            "RUN_CANONICAL_LIVE_WITH_NO_AUTO_REG_EPHONE"
+            "RUN_CANONICAL_LIVE_WITH_ONE_ABSENCE_DRIVEN_BINDING_"
+            "RECONCILIATION"
         ),
         "CP_SCALE_STATUS": (
             "FLOOR1_ORDINAL19_BINDING_ABSENCE_BLOCKS_FLOOR2"

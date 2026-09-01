@@ -426,3 +426,10 @@ hash order are refuted; the failure follows ordinal 19. Commit
 `6fd0a0a69fdd5f9a5054f073ed6534e4a4fc7ee8` disables unmanaged CME
 auto-registration while preserving every explicit MAC binding for the next
 causal run. Floor2 again received no evidence.
+
+The managed-CME run
+`canonical-cp-scale-voice-20260901T031054739651Z-ba2b036561c7` again lost the
+nineteenth binding, refuting auto-registration as the cause. Commit
+`a9115cdd65fe467bf54968b1d86c5e6dbcec1aca` adds one state-authorized
+reconciliation only after complete row absence, with exact readback and no
+second replay. Floor2 still received no evidence.

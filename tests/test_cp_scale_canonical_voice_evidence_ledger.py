@@ -53,6 +53,9 @@ ABSENCE_RUN_IDENTITY = (
 ORDER_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T025406307135Z-ea9b93f0da73"
 )
+MANAGED_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T031054739651Z-ba2b036561c7"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -72,7 +75,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 7
+    assert len(ledger["runs"]) == 8
     return ledger["runs"][0]
 
 
@@ -102,8 +105,13 @@ def absence_run(ledger: dict) -> dict:
 
 
 @pytest.fixture(scope="module")
-def latest_run(ledger: dict) -> dict:
+def order_run(ledger: dict) -> dict:
     return ledger["runs"][6]
+
+
+@pytest.fixture(scope="module")
+def latest_run(ledger: dict) -> dict:
+    return ledger["runs"][7]
 
 
 @pytest.fixture(scope="module")
@@ -359,10 +367,10 @@ def test_complete_ephone1_absence_is_not_retried(absence_run: dict):
 
 
 def test_semantic_order_proves_failure_follows_ordinal_nineteen(
-    latest_run: dict,
+    order_run: dict,
 ):
-    assert latest_run["run_identity"] == ORDER_RUN_IDENTITY
-    experiment = latest_run["measured"]["semantic_order_experiment"]
+    assert order_run["run_identity"] == ORDER_RUN_IDENTITY
+    experiment = order_run["measured"]["semantic_order_experiment"]
     assert experiment["binding_order"] == "DIRECTORY_INDEX_ASCENDING"
     assert experiment["first_binding_index"] == 1
     assert experiment["first_binding_verified"] is True
@@ -373,8 +381,26 @@ def test_semantic_order_proves_failure_follows_ordinal_nineteen(
     assert experiment["result"] == (
         "INDEX_ONE_CAUSE_REFUTED_FAILURE_FOLLOWS_ORDINAL_19"
     )
-    assert latest_run["conclusion"]["ephone_index_one_cause"] == "REFUTED"
-    assert latest_run["conclusion"]["ordinal_19_failure"] == "CONFIRMED"
+    assert order_run["conclusion"]["ephone_index_one_cause"] == "REFUTED"
+    assert order_run["conclusion"]["ordinal_19_failure"] == "CONFIRMED"
+
+
+def test_managed_cme_mode_refutes_auto_registration_cause(latest_run: dict):
+    assert latest_run["run_identity"] == MANAGED_RUN_IDENTITY
+    experiment = latest_run["measured"]["explicit_cme_mode_experiment"]
+    assert experiment["call_control_mode"] == "NO_AUTO_REG_EPHONE"
+    assert experiment["verified_bindings_before_stop"] == 18
+    assert experiment["stopped_ordinal"] == 19
+    assert experiment["row_present"] is False
+    assert experiment["result"] == (
+        "AUTO_REGISTRATION_REFUTED_FAILURE_FOLLOWS_ORDINAL_19"
+    )
+    assert latest_run["conclusion"]["auto_registration_interference_cause"] == (
+        "REFUTED"
+    )
+    assert latest_run["conclusion"]["absence_driven_reconciliation_cause"] == (
+        "AUTHORIZED_CAUSAL_EXPERIMENT"
+    )
 
 
 def test_immutable_canonical_evidence_is_never_text_normalized():
@@ -591,8 +617,8 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_SEVEN_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "7"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_EIGHT_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "8"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "1"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
         "VOICE_BOOTSTRAP_BINDING_READBACK"
@@ -607,7 +633,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "EXPLICIT_CME_REGISTRATION_MODE_LIVE_PENDING"
+        "ABSENCE_RECONCILIATION_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
