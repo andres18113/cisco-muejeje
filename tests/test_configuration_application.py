@@ -33,6 +33,12 @@ from test_enterprise_configuration import _fixture
 from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
+from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+    configuration_plan_semantic_hash,
+)
+from src.packet_tracer_mcp.domain.enterprise.services.configuration_dependencies import (
+    order_configuration_actions,
+)
 
 
 class FakeConfigurationRuntime:
@@ -439,6 +445,123 @@ def test_voice_signal_can_be_held_pending_until_bootstrap_then_completed():
         "VOICE_SIGNAL_VERIFIED",
         "PHONE_ACCESS_FWD_VERIFIED",
     ]
+
+
+def test_incremental_application_mutates_only_delta_and_verifies_cumulative_voice():
+    topology, previous_plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    applicator = ConfigurationApplicator(runtime)
+    previous_voice = _phone_voice_action(previous_plan)
+    previous_expectation = next(
+        item for item in previous_plan.verification_expectations
+        if item.action_id == previous_voice.id
+    )
+    previous = applicator.apply(
+        previous_plan,
+        actual_source_topology_hash=previous_plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        defer_voice_signal_until_bootstrap=True,
+    )
+    previous = applicator.complete_deferred_voice_signals(
+        previous_plan,
+        previous,
+    )
+
+    current_plan = previous_plan.model_copy(deep=True)
+    delta_voice = previous_voice.model_copy(update={
+        "id": f"{previous_voice.id}/next-stage",
+    })
+    delta_expectation = previous_expectation.model_copy(update={
+        "id": f"{previous_expectation.id}/next-stage",
+        "action_id": delta_voice.id,
+    })
+    assert not any(
+        delta_voice.id in item.depends_on
+        for item in previous_plan.actions
+    )
+    current_plan.actions = order_configuration_actions([
+        *current_plan.actions,
+        delta_voice,
+    ])
+    current_plan.verification_expectations.append(delta_expectation)
+    device = next(
+        item for item in current_plan.devices
+        if item.device_id == delta_voice.device_id
+    )
+    device.action_ids.append(delta_voice.id)
+    current_plan.semantic_hash = configuration_plan_semantic_hash(current_plan)
+
+    runtime.apply_calls.clear()
+    runtime.verify_calls.clear()
+    runtime.action_batches.clear()
+    runtime.events.clear()
+    observed_phases = []
+    prepared = applicator.apply(
+        current_plan,
+        actual_source_topology_hash=current_plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        defer_voice_signal_until_bootstrap=True,
+        mutation_action_ids={delta_voice.id},
+        retained_action_results=previous.action_results,
+        phase_observer=lambda phase, action_ids: observed_phases.append(
+            (phase, action_ids),
+        ),
+    )
+
+    assert {
+        identifier
+        for call in runtime.apply_calls
+        for identifier in call
+    } == {delta_voice.id}
+    assert prepared.mutation_action_ids == [delta_voice.id]
+    assert set(prepared.retained_action_ids) == {
+        item.id for item in previous_plan.actions
+    }
+    assert [
+        item.action_id for item in prepared.execution_journal.entries
+    ] == [delta_voice.id]
+    assert prepared.voice_signal_barrier is not None
+    assert prepared.voice_signal_barrier.deferred_action_ids == [delta_voice.id]
+    assert observed_phases == [(int(delta_voice.phase), (delta_voice.id,))]
+    assert {
+        identifier
+        for call in runtime.verify_calls
+        for identifier in call
+    } == {
+        item.id for item in previous_plan.verification_expectations
+    }
+
+    completed = applicator.complete_deferred_voice_signals(
+        current_plan,
+        prepared,
+    )
+
+    assert {
+        item.id
+        for batch in runtime.action_batches
+        for item in batch
+    } == {delta_voice.id}
+    forwarding_events = [
+        identifiers
+        for kind, identifiers in runtime.events
+        if kind == "voice_forwarding"
+    ]
+    assert forwarding_events == [[
+        previous_expectation.id,
+        delta_expectation.id,
+    ]]
+    assert {
+        item.expectation_id
+        for item in completed.voice_signal_barrier.post_signal_convergence_results
+    } == {
+        previous_expectation.id,
+        delta_expectation.id,
+    }
+    assert {
+        item.expectation_id for item in completed.verification_results
+    } == {
+        item.id for item in current_plan.verification_expectations
+    }
 
 
 def test_unobservable_phone_port_forwarding_keeps_registration_gate_closed():

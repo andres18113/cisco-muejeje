@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from time import monotonic
 from typing import Protocol
 
@@ -96,6 +96,11 @@ class ConfigurationApplicator:
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
         defer_voice_signal_until_bootstrap: bool = False,
+        mutation_action_ids: Collection[str] | None = None,
+        retained_action_results: Sequence[ActionApplicationResult] = (),
+        phase_observer: (
+            Callable[[int, tuple[str, ...]], None] | None
+        ) = None,
     ) -> ConfigurationApplicationResult:
         started = monotonic()
         runtime_context = runtime_context or ConfigurationRuntimeContext()
@@ -166,6 +171,28 @@ class ConfigurationApplicator:
                 "ConfigurationPlan actions are not in deterministic dependency order.",
                 runtime_context=runtime_context,
                 deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                started=started,
+            )
+
+        (
+            mutation_ids,
+            retained_results,
+            mutation_scope_errors,
+        ) = self._mutation_scope(
+            plan,
+            mutation_action_ids=mutation_action_ids,
+            retained_action_results=retained_action_results,
+        )
+        if mutation_scope_errors:
+            return self._preflight_failure(
+                plan,
+                ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                *mutation_scope_errors,
+                runtime_context=runtime_context,
+                deployment_id=(
+                    deployment_manifest.deployment_id
+                    if deployment_manifest else ""
+                ),
                 started=started,
             )
 
@@ -249,7 +276,12 @@ class ConfigurationApplicator:
         # serial llego al router mientras doce acciones requeridas ya estaban
         # resueltas UNKNOWN. `critical` es la distincion tipada que el modelo
         # declara; una accion NO critica sigue pudiendo saltarse.
-        refusals = self._capability_refusals(plan, targets, capabilities)
+        refusals = self._capability_refusals(
+            plan,
+            targets,
+            capabilities,
+            action_ids=mutation_ids,
+        )
         blocked = self._unexecutable_closure(plan, refusals)
         required_blocked = sorted(
             (action for action in plan.actions if action.critical and action.id in blocked),
@@ -289,12 +321,13 @@ class ConfigurationApplicator:
             action.id: action
             for action in plan.actions
             if (
-                isinstance(action, ConfigureAccessPort)
+                action.id in mutation_ids
+                and isinstance(action, ConfigureAccessPort)
                 and action.voice_vlan_id is not None
             )
         }
         deferred_voice_ids = frozenset(deferred_voice_actions)
-        results: dict[str, ActionApplicationResult] = {}
+        results = dict(retained_results)
         self._capability_refusal_results(refusals, results)
 
         for phase in sorted({action.phase for action in plan.actions}):
@@ -323,6 +356,11 @@ class ConfigurationApplicator:
                 deployed_names,
                 data_only_action_ids=deferred_voice_ids,
             ))
+            if phase_observer is not None:
+                phase_observer(
+                    int(phase),
+                    tuple(item.id for item in ready),
+                )
 
         (
             action_results,
@@ -354,7 +392,10 @@ class ConfigurationApplicator:
             plan_id=plan.id,
             deployment_id=deployment_id,
             actions=list(plan.actions),
-            results=action_results,
+            results=[
+                item for item in action_results
+                if item.action_id in mutation_ids
+            ],
         )
         expectations_by_id = {
             item.id: item for item in plan.verification_expectations
@@ -386,6 +427,12 @@ class ConfigurationApplicator:
             status=status,
             failure_code=failure_code,
             action_results=action_results,
+            mutation_action_ids=[
+                item.id for item in plan.actions if item.id in mutation_ids
+            ],
+            retained_action_ids=[
+                item.id for item in plan.actions if item.id not in mutation_ids
+            ],
             verification_results=verification_results,
             deployment_id=deployment_id,
             execution_journal=journal,
@@ -489,9 +536,16 @@ class ConfigurationApplicator:
         action_results = [
             action_by_id[item.id] for item in plan.actions
         ]
+        voice_action_ids = {
+            item.id for item in plan.actions
+            if (
+                isinstance(item, ConfigureAccessPort)
+                and item.voice_vlan_id is not None
+            )
+        }
         expectations = [
             item for item in plan.verification_expectations
-            if item.action_id in deferred_ids
+            if item.action_id in voice_action_ids
         ]
         runtime_expectations = [
             item.model_copy(update={
@@ -617,7 +671,10 @@ class ConfigurationApplicator:
             plan_id=plan.id,
             deployment_id=deployment_id,
             actions=list(plan.actions),
-            results=action_results,
+            results=[
+                item for item in action_results
+                if item.action_id in set(application.mutation_action_ids)
+            ],
         )
         expectations_by_id = {
             item.id: item for item in plan.verification_expectations
@@ -1118,6 +1175,85 @@ class ConfigurationApplicator:
         return sorted(set(errors))
 
     @staticmethod
+    def _mutation_scope(
+        plan: ConfigurationPlan,
+        *,
+        mutation_action_ids: Collection[str] | None,
+        retained_action_results: Sequence[ActionApplicationResult],
+    ) -> tuple[
+        frozenset[str],
+        dict[str, ActionApplicationResult],
+        list[str],
+    ]:
+        """Validate one explicit mutation delta without weakening verification."""
+
+        plan_ids = {item.id for item in plan.actions}
+        if mutation_action_ids is None:
+            if retained_action_results:
+                return (
+                    frozenset(),
+                    {},
+                    [
+                        "Retained action results require an explicit mutation "
+                        "action scope."
+                    ],
+                )
+            return frozenset(plan_ids), {}, []
+
+        mutation_ids = frozenset(mutation_action_ids)
+        unknown = sorted(mutation_ids - plan_ids)
+        retained_by_id = {
+            item.action_id: item.model_copy(deep=True)
+            for item in retained_action_results
+        }
+        errors: list[str] = []
+        if unknown:
+            errors.append(
+                "Mutation scope contains actions outside the typed plan: "
+                + ", ".join(unknown)
+            )
+        if len(retained_by_id) != len(retained_action_results):
+            errors.append("Retained action results contain duplicate identities.")
+        expected_retained = plan_ids - mutation_ids
+        missing = sorted(expected_retained - set(retained_by_id))
+        extra = sorted(set(retained_by_id) - expected_retained)
+        if missing:
+            errors.append(
+                "Mutation scope lacks retained application results for: "
+                + ", ".join(missing)
+            )
+        if extra:
+            errors.append(
+                "Retained application results are outside the retained scope: "
+                + ", ".join(extra)
+            )
+        invalid = sorted(
+            f"{identifier}:{retained_by_id[identifier].status.value}"
+            for identifier in expected_retained & set(retained_by_id)
+            if not satisfies_apply_dependency(retained_by_id[identifier].status)
+        )
+        if invalid:
+            errors.append(
+                "Retained actions were not previously applied: "
+                + ", ".join(invalid)
+            )
+        reverse_dependencies = sorted(
+            item.id
+            for item in plan.actions
+            if item.id in expected_retained
+            and any(
+                dependency in mutation_ids
+                for dependency in [*item.depends_on, *item.apply_dependencies]
+            )
+        )
+        if reverse_dependencies:
+            errors.append(
+                "Retained actions depend on newly mutated actions: "
+                + ", ".join(reverse_dependencies)
+            )
+        return mutation_ids, retained_by_id, errors
+
+    @staticmethod
     def _physical_interface(action: ConfigurationAction) -> str:
         if isinstance(action, (ConfigureAccessPort, ConfigureTrunk, ConfigureRoutedInterface,
                                SetEndpointStaticAddress, SetEndpointDhcp)):
@@ -1131,6 +1267,8 @@ class ConfigurationApplicator:
         plan: ConfigurationPlan,
         targets: dict[str, RuntimeConfigurationTarget],
         capabilities: dict[str, DeviceCapabilities] | None,
+        *,
+        action_ids: Collection[str] | None = None,
     ) -> list[tuple[ConfigurationAction, CapabilityStatus, str]]:
         """Resuelve TODA capacidad requerida antes de que exista una mutacion.
 
@@ -1142,8 +1280,11 @@ class ConfigurationApplicator:
         DCE observado y ligado al manifiesto.
         """
         capabilities = capabilities or {}
+        selected = set(action_ids) if action_ids is not None else None
         refusals: list[tuple[ConfigurationAction, CapabilityStatus, str]] = []
         for action in plan.actions:
+            if selected is not None and action.id not in selected:
+                continue
             if not action.required_capability or action.required_capability.startswith("endpoint_"):
                 continue
             target = targets[action.device_name]

@@ -40,6 +40,7 @@ from packet_tracer_mcp.application.use_cases.capability_discovery import (
 )
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
+    canonical_stage_configuration_mutation_ids,
     compose_cp_scale_canonical,
     project_cp_scale_canonical_delta,
     project_cp_scale_canonical_stage,
@@ -84,6 +85,7 @@ from packet_tracer_mcp.domain.enterprise.models.capabilities import (
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
+    ConfigurationPhase,
     ConfigureAccessPort,
     VerificationKind,
 )
@@ -138,6 +140,7 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_ip_dhcp_binding,
     parse_show_ip_dhcp_server_statistics,
     parse_show_ip_interface_brief,
+    parse_show_interfaces_trunk,
     parse_show_spanning_tree,
 )
 from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
@@ -1710,6 +1713,228 @@ def _stp_realtime_evidence(ios, projection, *, edge: str) -> dict[str, object]:
     }
 
 
+def _network_trunk_expectations(projection, device_name: str = "") -> list:
+    expectations = [
+        item for item in projection.configuration.verification_expectations
+        if item.kind is VerificationKind.TRUNK
+        and (not device_name or item.device_name == device_name)
+    ]
+    return sorted(
+        expectations,
+        key=lambda item: (
+            item.device_name,
+            str(item.expected.get("interface") or ""),
+            item.id,
+        ),
+    )
+
+
+def _stp_network_device_evidence(
+    ios,
+    projection,
+    device_name: str,
+) -> dict[str, object]:
+    """Correlate one trunk transition with fresh roots and port states."""
+
+    expectations = _network_trunk_expectations(projection, device_name)
+    device, instances = _stp_logical_observation(ios, device_name)
+    source_error = str(device["source_error"])
+    vlan_ids = sorted({
+        int(vlan)
+        for item in expectations
+        for vlan in item.expected.get("allowed_vlans", [])
+    })
+    interfaces = sorted({
+        str(item.expected.get("interface") or "")
+        for item in expectations
+    })
+    by_vlan = {item.vlan_id: item for item in instances}
+    observed_instances: list[dict[str, object]] = []
+    for vlan_id in vlan_ids:
+        instance = by_vlan.get(vlan_id)
+        if source_error or instance is None:
+            observed_instances.append({
+                "vlan_id": vlan_id,
+                "authoritative": False,
+                "failure_reason": (
+                    source_error or "VLAN_INSTANCE_ABSENT"
+                ),
+                "root": None,
+                "ports": [],
+            })
+            continue
+        ports = []
+        for interface in interfaces:
+            row = next((
+                item for item in instance.interfaces
+                if same_interface_name(item.interface, interface)
+            ), None)
+            ports.append({
+                "interface": interface,
+                "row_present": row is not None,
+                "observed_interface": row.interface if row is not None else "",
+                "role": row.role if row is not None else "",
+                "state": row.state if row is not None else "",
+                "cost": row.cost if row is not None else None,
+                "priority_number": (
+                    row.priority_number if row is not None else ""
+                ),
+                "link_type": row.link_type if row is not None else "",
+                "failure_reason": (
+                    "" if row is not None else "INTERFACE_ROW_ABSENT"
+                ),
+            })
+        observed_instances.append({
+            "vlan_id": vlan_id,
+            "authoritative": True,
+            "failure_reason": "",
+            "root": {
+                "protocol": instance.protocol,
+                "priority": instance.root_priority,
+                "address": instance.root_address,
+                "is_local": instance.root_is_local,
+                "cost": instance.root_cost,
+                "port": instance.root_port,
+                "bridge_priority": instance.bridge_priority,
+                "bridge_base_priority": instance.bridge_base_priority,
+                "bridge_address": instance.bridge_address,
+            },
+            "ports": ports,
+        })
+    return {
+        "device_name": device_name,
+        "authoritative": not source_error,
+        "failure_reason": source_error,
+        "query": device,
+        "instances": observed_instances,
+    }
+
+
+def _network_state_observation(
+    ios,
+    projection,
+    *,
+    boundary: str,
+) -> dict[str, object]:
+    """Read cumulative trunk and PVST state at one causal boundary."""
+
+    expectations = _network_trunk_expectations(projection)
+    grouped: dict[str, list] = collections.defaultdict(list)
+    for expectation in expectations:
+        grouped[expectation.device_name].append(expectation)
+
+    devices: list[dict[str, object]] = []
+    for device_name, device_expectations in sorted(grouped.items()):
+        try:
+            show = ios.execute(
+                device_name,
+                OperationalQueryId.SHOW_INTERFACES_TRUNK,
+            )
+            rejection = ios_rejection_reason(show.output) or ""
+            authoritative = bool(
+                show.executed
+                and show.fresh_output_observed
+                and show.output_complete
+                and show.observed_device_name == device_name
+                and show.device_identity_provenance == "confirmed_unique"
+                and not rejection
+            )
+            rows = (
+                parse_show_interfaces_trunk(show.output)
+                if show.executed else []
+            )
+            trunks = []
+            for expectation in device_expectations:
+                interface = str(
+                    expectation.expected.get("interface") or ""
+                )
+                row = next((
+                    item for item in rows
+                    if same_interface_name(item.interface, interface)
+                ), None)
+                trunks.append({
+                    "expectation_id": expectation.id,
+                    "interface": interface,
+                    "expected_vlans": sorted({
+                        int(vlan)
+                        for vlan in expectation.expected.get(
+                            "allowed_vlans", []
+                        )
+                    }),
+                    "authoritative": authoritative,
+                    "row_present": row is not None,
+                    "observed_interface": (
+                        row.interface if row is not None else ""
+                    ),
+                    "status": row.status if row is not None else "",
+                    "native_vlan": (
+                        row.native_vlan if row is not None else None
+                    ),
+                    "allowed_vlans": (
+                        list(row.allowed_vlans)
+                        if row is not None
+                        and row.allowed_vlans is not None else None
+                    ),
+                    "active_vlans": (
+                        list(row.active_vlans)
+                        if row is not None
+                        and row.active_vlans is not None else None
+                    ),
+                    "forwarding_vlans": (
+                        list(row.forwarding_vlans)
+                        if row is not None
+                        and row.forwarding_vlans is not None else None
+                    ),
+                    "failure_reason": (
+                        rejection
+                        or show.failure_reason
+                        or (
+                            "" if row is not None
+                            else "NO_MATCHING_ROW"
+                        )
+                    ),
+                })
+            stp = _stp_network_device_evidence(
+                ios,
+                projection,
+                device_name,
+            )
+            devices.append({
+                "device_name": device_name,
+                "trunk_query": {
+                    "executed": show.executed,
+                    "fresh_output_observed": (
+                        show.fresh_output_observed
+                    ),
+                    "output_complete": show.output_complete,
+                    "observed_device_name": show.observed_device_name,
+                    "device_identity_provenance": (
+                        show.device_identity_provenance
+                    ),
+                    "ios_rejection": rejection,
+                    "failure_reason": show.failure_reason,
+                    "output": show.output,
+                },
+                "trunks": trunks,
+                "stp": stp,
+            })
+        except Exception as exc:
+            devices.append({
+                "device_name": device_name,
+                "trunks": [],
+                "stp": None,
+                "failure_reason": f"{type(exc).__name__}: {exc}",
+            })
+    return {
+        "boundary": boundary,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "monotonic_ns": time.monotonic_ns(),
+        "trunk_expectation_count": len(expectations),
+        "device_count": len(grouped),
+        "devices": devices,
+    }
+
+
 #: El texto EXACTO con el que PT identifica cada frame que hay que comparar. Un
 #: frame se elige por lo que Packet Tracer dijo de el, jamas por su clase cruda
 #: de trafico: ningun numero de clase nombra un protocolo en este repositorio, y
@@ -2705,7 +2930,28 @@ def _execute_stage(
     dhcp_statistics_baseline: dict[str, object] | None = None,
     verified_serial_topology=None,
     verified_serial_manifest=None,
-) -> tuple[dict[str, object], object, object]:
+    previous_projection=None,
+    previous_configuration=None,
+    network_boundaries: list[dict[str, object]] | None = None,
+) -> tuple[dict[str, object], object, object, object]:
+    if (previous_projection is None) != (previous_configuration is None):
+        raise CanonicalLiveFailure(
+            "Previous canonical projection and configuration must be retained "
+            "together."
+        )
+    configuration_mutation_ids = (
+        canonical_stage_configuration_mutation_ids(
+            previous_projection.configuration,
+            projection.configuration,
+        )
+        if previous_projection is not None
+        else tuple(item.id for item in projection.configuration.actions)
+    )
+    retained_configuration_ids = (
+        {
+            item.id for item in projection.configuration.actions
+        } - set(configuration_mutation_ids)
+    )
     evidence: dict[str, object] = {
         "stage": projection.stage.value,
         "plan": {
@@ -2716,6 +2962,16 @@ def _execute_stage(
             "modules": len(projection.topology.modules),
             "links": len(projection.topology.links),
             "configuration_actions": len(projection.configuration.actions),
+            "configuration_mutation_actions": len(
+                configuration_mutation_ids
+            ),
+            "configuration_retained_actions": len(retained_configuration_ids),
+            "configuration_mutation_action_ids": list(
+                configuration_mutation_ids
+            ),
+            "configuration_retained_action_ids": sorted(
+                retained_configuration_ids
+            ),
             "voice_actions": (
                 len(projection.voice.actions) if projection.voice is not None else 0
             ),
@@ -2733,6 +2989,7 @@ def _execute_stage(
             delta_deployment.model_dump(mode="json")
             if delta_deployment is not None else None
         ),
+        "network_state_timeline": list(network_boundaries or []),
     }
     voice_lifecycle: list[dict[str, object]] = []
     evidence["voice_lifecycle"] = voice_lifecycle
@@ -2757,6 +3014,15 @@ def _execute_stage(
             f"Physical stage {projection.stage.value!r} was not VERIFIED: "
             + "; ".join(deployment.errors)
         )
+
+    ios = ControlledIosExecutor(transport.send_and_wait)
+    network_state_timeline = evidence["network_state_timeline"]
+    assert isinstance(network_state_timeline, list)
+    network_state_timeline.append(_network_state_observation(
+        ios,
+        projection,
+        boundary="after_physical_delta",
+    ))
 
     if (verified_serial_topology is None) != (verified_serial_manifest is None):
         raise _failed(
@@ -2785,6 +3051,25 @@ def _execute_stage(
         configuration_runtime
     )
     voice_plan = getattr(projection, "voice", None)
+
+    def configuration_phase_observer(
+        phase: int,
+        action_ids: tuple[str, ...],
+    ) -> None:
+        boundary = {
+            int(ConfigurationPhase.L2_DEFINITIONS): "after_l2_definitions",
+            int(ConfigurationPhase.L2_INTERFACES): "after_l2_interfaces",
+        }.get(phase)
+        if boundary is None:
+            return
+        observation = _network_state_observation(
+            ios,
+            projection,
+            boundary=boundary,
+        )
+        observation["mutation_action_ids"] = list(action_ids)
+        network_state_timeline.append(observation)
+
     configuration = configuration_applicator.apply(
         projection.configuration,
         actual_source_topology_hash=projection.topology.physical_identity_hash,
@@ -2794,6 +3079,12 @@ def _execute_stage(
         defer_voice_signal_until_bootstrap=bool(
             voice_plan is not None and voice_plan.actions
         ),
+        mutation_action_ids=configuration_mutation_ids,
+        retained_action_results=(
+            previous_configuration.action_results
+            if previous_configuration is not None else ()
+        ),
+        phase_observer=configuration_phase_observer,
     )
     _record_configuration_attempt(
         evidence, projection.configuration, configuration,
@@ -2806,7 +3097,6 @@ def _execute_stage(
             + contradiction
         )
 
-    ios = ControlledIosExecutor(transport.send_and_wait)
     serial_ready, serial_evidence = _wait_for_serial_interfaces(
         ios, _core_serial_addresses(projection),
     )
@@ -2842,6 +3132,12 @@ def _execute_stage(
             defer_voice_signal_until_bootstrap=bool(
                 voice_plan is not None and voice_plan.actions
             ),
+            mutation_action_ids=configuration_mutation_ids,
+            retained_action_results=(
+                previous_configuration.action_results
+                if previous_configuration is not None else ()
+            ),
+            phase_observer=configuration_phase_observer,
         )
         _record_configuration_attempt(
             evidence, projection.configuration, configuration,
@@ -3131,7 +3427,7 @@ def _execute_stage(
         )
     evidence["verified"] = True
     evidence["verification_scope"] = "VERIFIED_BOUNDED_RETAINED"
-    return evidence, manifest, second
+    return evidence, manifest, second, configuration
 
 
 def _full_qualification_projection(composition):
@@ -3424,11 +3720,33 @@ def run(
             runtime_mode="live",
         )
         deployer = EnterprisePhysicalTopologyDeployer(physical)
+        active_network_projection: dict[str, object] = {
+            "projection": None,
+        }
+        transition_ios = ControlledIosExecutor(transport.send_and_wait)
+
+        def observe_trunk_transition(
+            device_name: str,
+        ) -> dict[str, object]:
+            active = active_network_projection["projection"]
+            if active is None:
+                return {
+                    "device_name": device_name,
+                    "authoritative": False,
+                    "failure_reason": "NO_ACTIVE_CANONICAL_PROJECTION",
+                }
+            return _stp_network_device_evidence(
+                transition_ios,
+                active,
+                device_name,
+            )
+
         configuration_runtime = PacketTracerEnterpriseConfigurationRuntime(
             lambda: _inventory(physical),
             transport.send,
             transport.send_and_wait,
             l3_timeout_seconds=20.0,
+            trunk_transition_observer=observe_trunk_transition,
         )
         control_runtime = PacketTracerEnterpriseControlPlaneRuntime(
             lambda: _inventory(physical),
@@ -3447,6 +3765,7 @@ def run(
         )
 
         previous_projection = None
+        previous_configuration = None
         verified_core_deployment = None
         verified_core_topology = None
         verified_serial_manifest = None
@@ -3461,6 +3780,8 @@ def run(
                     packet_tracer_control_plane_capabilities(packet_tracer_version)
                 ),
             )
+            active_network_projection["projection"] = projection
+            stage_network_boundaries: list[dict[str, object]] = []
             if index == 0:
                 delta_deployment = deployer.deploy(
                     projection.topology,
@@ -3509,6 +3830,18 @@ def run(
                         f"Retained workspace drifted before {stage.value!r}: "
                         + next(item for item in resume_errors if item)
                     )
+                before_physical_delta = _network_state_observation(
+                    ControlledIosExecutor(transport.send_and_wait),
+                    previous_projection,
+                    boundary="before_physical_delta",
+                )
+                stage_network_boundaries.append(before_physical_delta)
+                evidence.setdefault(
+                    "network_state_boundaries", [],
+                ).append({
+                    "before_stage": stage.value,
+                    **before_physical_delta,
+                })
                 delta_topology = project_cp_scale_canonical_delta(
                     previous_projection.topology, projection.topology,
                 )
@@ -3553,7 +3886,12 @@ def run(
                     f"Cumulative physical stage {stage.value!r} was not VERIFIED: "
                     + "; ".join(deployment.errors)
                 )
-            stage_evidence, stage_manifest, stage_snapshot = _execute_stage(
+            (
+                stage_evidence,
+                stage_manifest,
+                stage_snapshot,
+                configuration,
+            ) = _execute_stage(
                 projection,
                 composition=composition,
                 deployment=deployment,
@@ -3575,6 +3913,9 @@ def run(
                 ),
                 verified_serial_topology=verified_serial_topology,
                 verified_serial_manifest=verified_serial_manifest,
+                previous_projection=previous_projection,
+                previous_configuration=previous_configuration,
+                network_boundaries=stage_network_boundaries,
             )
             if stage is CPScaleCanonicalStage.ROUTER4_SWITCH10:
                 if dhcp_statistics_target is None:
@@ -3602,6 +3943,7 @@ def run(
             evidence["live_links"] = len(projection.topology.links)
 
             previous_projection = projection
+            previous_configuration = configuration
             if stage is CPScaleCanonicalStage.ROUTING_CORE:
                 print(json.dumps({
                     "event": "CORE_REMATERIALIZED",
@@ -3697,6 +4039,7 @@ def run(
             )
 
         full_projection = _full_qualification_projection(composition)
+        active_network_projection["projection"] = full_projection
         full_deployment = reconcile_canonical_stage_deployment(
             full_projection.topology,
             physical,
@@ -3705,7 +4048,7 @@ def run(
             verified_core_deployment=verified_core_deployment,
             deployment_id="cp-scale-canonical/full-qualification",
         )
-        full_evidence, _, stage_snapshot = _execute_stage(
+        full_evidence, _, stage_snapshot, _ = _execute_stage(
             full_projection,
             composition=composition,
             deployment=full_deployment,

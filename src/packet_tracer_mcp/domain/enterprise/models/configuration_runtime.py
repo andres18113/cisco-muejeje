@@ -284,6 +284,8 @@ class ConfigurationApplicationResult(BaseModel):
     status: ConfigurationApplicationStatus
     failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
     action_results: list[ActionApplicationResult] = Field(default_factory=list)
+    mutation_action_ids: list[str] = Field(default_factory=list)
+    retained_action_ids: list[str] = Field(default_factory=list)
     verification_results: list[VerificationResult] = Field(default_factory=list)
     preflight_errors: list[str] = Field(default_factory=list)
     deployment_id: str = ""
@@ -308,6 +310,8 @@ class ConfigurationApplicationResult(BaseModel):
             "status": self.status.value,
             "failure_code": self.failure_code.value,
             "actions": dict(sorted(action_counts.items())),
+            "mutation_action_ids": self.mutation_action_ids,
+            "retained_action_ids": self.retained_action_ids,
             "verification": dict(sorted(verification_counts.items())),
             "preflight_errors": self.preflight_errors,
             "deployment_id": self.deployment_id,

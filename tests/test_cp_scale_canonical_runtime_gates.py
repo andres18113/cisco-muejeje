@@ -267,6 +267,7 @@ def _floor1_configuration_result():
             )
             for item in plan.actions
         ],
+        mutation_action_ids=[item.id for item in plan.actions],
         verification_results=verification_results,
     )
     assert expectations
@@ -277,6 +278,20 @@ def test_canonical_configuration_accepts_only_exact_known_observability_ceilings
     plan, result = _floor1_configuration_result()
 
     assert canonical_stage_configuration_error(plan, result) == ""
+
+    missing_mutation = result.model_copy(deep=True)
+    missing_mutation.mutation_action_ids.pop()
+    assert "mutation" in canonical_stage_configuration_error(
+        plan, missing_mutation,
+    ).casefold()
+
+    overlapping_scope = result.model_copy(deep=True)
+    overlapping_scope.retained_action_ids.append(
+        overlapping_scope.mutation_action_ids[0],
+    )
+    assert "mutation" in canonical_stage_configuration_error(
+        plan, overlapping_scope,
+    ).casefold()
 
     unknown_action = result.model_copy(deep=True)
     unknown_action.action_results[0].status = ActionExecutionStatus.UNKNOWN

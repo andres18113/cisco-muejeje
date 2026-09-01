@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections import Counter
+from pathlib import Path
 
 from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
+    canonical_stage_configuration_mutation_ids,
     compose_cp_scale_canonical,
     project_cp_scale_canonical_stage,
     project_cp_scale_canonical_delta,
@@ -373,3 +375,74 @@ def test_every_post_core_delta_is_exact_closed_and_module_free():
             for item in delta.links
         )
         previous = current
+
+
+def test_floor2_configuration_mutation_is_delta_while_verification_stays_cumulative():
+    composition = compose_cp_scale_canonical(
+        packet_tracer_version=MEASURED_BACKEND_VERSION,
+    )
+    floor1 = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.FLOOR1,
+    )
+    floor2 = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.FLOOR2,
+    )
+
+    mutation_ids = set(canonical_stage_configuration_mutation_ids(
+        floor1.configuration,
+        floor2.configuration,
+    ))
+    floor1_ids = {item.id for item in floor1.configuration.actions}
+    floor2_ids = {item.id for item in floor2.configuration.actions}
+
+    assert len(floor1_ids) == 115
+    assert len(floor2_ids) == 191
+    assert len(mutation_ids) == 76
+    assert mutation_ids == floor2_ids - floor1_ids
+    assert not mutation_ids & floor1_ids
+    assert {
+        (item.device_name, item.interface)
+        for item in floor2.configuration.actions
+        if item.id in mutation_ids
+        and item.action_type is ConfigurationActionType.CONFIGURE_TRUNK
+    } == {
+        ("Switch10", "FastEthernet0/2"),
+        ("Switch6", "GigabitEthernet0/1"),
+        ("Switch6", "GigabitEthernet0/2"),
+        ("Switch7", "GigabitEthernet0/1"),
+    }
+    assert {
+        item.id for item in floor2.configuration.verification_expectations
+    } > {
+        item.id for item in floor1.configuration.verification_expectations
+    }
+
+
+def test_canonical_live_runner_uses_delta_mutation_with_cumulative_plan():
+    source = Path("tools/cp_scale_canonical_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "canonical_stage_configuration_mutation_ids(" in source
+    assert "mutation_action_ids=configuration_mutation_ids" in source
+    assert "retained_action_results=(" in source
+    assert "previous_configuration.action_results" in source
+    assert "previous_configuration = configuration" in source
+
+
+def test_canonical_live_retains_network_state_at_each_causal_boundary():
+    source = Path("tools/cp_scale_canonical_live.py").read_text(
+        encoding="utf-8",
+    )
+
+    for boundary in (
+        "before_physical_delta",
+        "after_physical_delta",
+        "after_l2_definitions",
+        "after_l2_interfaces",
+    ):
+        assert boundary in source
+    assert "phase_observer=configuration_phase_observer" in source
+    assert "trunk_transition_observer=" in source
+    assert "parse_show_interfaces_trunk" in source
+    assert "parse_show_spanning_tree" in source

@@ -167,6 +167,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         l3_timeout_seconds: float = 8.0,
         convergence_interval_seconds: float = 0.25,
         ios_readiness: Callable[[str], bool] | None = None,
+        trunk_transition_observer: (
+            Callable[[str], dict[str, object]] | None
+        ) = None,
     ) -> None:
         self._query_inventory = query_inventory
         self._send = send
@@ -182,6 +185,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._l3_timeout = l3_timeout_seconds
         self._convergence_interval = convergence_interval_seconds
         self._ios_readiness = ios_readiness or self._wait_for_ios
+        self._trunk_transition_observer = trunk_transition_observer
         self._ready_ios_devices: set[str] = set()
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
@@ -720,6 +724,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self, expectations: Sequence[VerificationExpectation],
     ) -> list[RuntimeVerification]:
         ios_cache: dict[tuple[str, OperationalQueryId], object] = {}
+        trunk_results = {
+            item.expectation_id: item
+            for item in self._verify_trunks([
+                expectation for expectation in expectations
+                if expectation.kind is VerificationKind.TRUNK
+            ])
+        }
         results: list[RuntimeVerification] = []
         for expectation in expectations:
             if expectation.kind is VerificationKind.HOSTNAME:
@@ -727,7 +738,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             elif expectation.kind is VerificationKind.VLAN:
                 results.append(self._verify_vlan(expectation))
             elif expectation.kind is VerificationKind.TRUNK:
-                results.append(self._verify_trunk(expectation, ios_cache))
+                results.append(trunk_results[expectation.id])
             elif expectation.kind is VerificationKind.L3_INTERFACE:
                 results.append(self._verify_l3(expectation, ios_cache))
             elif expectation.kind is VerificationKind.SERIAL_CONTROLLER:
@@ -739,6 +750,382 @@ class PacketTracerEnterpriseConfigurationRuntime:
             elif expectation.kind is VerificationKind.DHCP_POOL:
                 results.append(self._unobservable(expectation))
         return results
+
+    def _verify_trunks(
+        self,
+        expectations: Sequence[VerificationExpectation],
+    ) -> list[RuntimeVerification]:
+        """Observe all trunks round-robin and retain every state transition."""
+
+        ordered = list(expectations)
+        if not ordered:
+            return []
+        grouped: dict[str, list[VerificationExpectation]] = defaultdict(list)
+        for expectation in ordered:
+            grouped[expectation.device_name].append(expectation)
+
+        latest: dict[str, dict[str, object]] = {}
+        transitions: dict[str, list[dict[str, object]]] = defaultdict(list)
+        signatures: dict[str, tuple[object, ...]] = {}
+        sample_round = 0
+
+        def inspect() -> dict[str, object]:
+            nonlocal sample_round
+            sample_round += 1
+            for device_name in sorted(grouped):
+                show = self._ios.execute(
+                    device_name,
+                    OperationalQueryId.SHOW_INTERFACES_TRUNK,
+                )
+                authoritative = bool(
+                    show.executed
+                    and show.fresh_output_observed
+                    and show.output_complete
+                    and show.observed_device_name == device_name
+                    and show.device_identity_provenance
+                    == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+                )
+                rows = (
+                    parse_show_interfaces_trunk(show.output)
+                    if authoritative else []
+                )
+                changed: list[str] = []
+                for expectation in grouped[device_name]:
+                    expected_interface = str(
+                        expectation.expected.get("interface") or ""
+                    )
+                    row = next((
+                        item for item in rows
+                        if self._same_interface(
+                            item.interface,
+                            expected_interface,
+                        )
+                    ), None)
+                    observed = self._trunk_observation(
+                        expectation,
+                        show,
+                        row,
+                        authoritative=authoritative,
+                    )
+                    latest[expectation.id] = observed
+                    signature = self._trunk_observation_signature(observed)
+                    if signatures.get(expectation.id) != signature:
+                        signatures[expectation.id] = signature
+                        changed.append(expectation.id)
+                if not changed:
+                    continue
+                correlated: dict[str, object] = {}
+                if self._trunk_transition_observer is not None:
+                    try:
+                        correlated = self._trunk_transition_observer(
+                            device_name,
+                        )
+                    except Exception as exc:
+                        correlated = {
+                            "authoritative": False,
+                            "failure_reason": (
+                                f"{type(exc).__name__}: {exc}"
+                            ),
+                        }
+                for identifier in changed:
+                    transition = {
+                        "sample_round": sample_round,
+                        **self._trunk_transition_payload(latest[identifier]),
+                    }
+                    if self._trunk_transition_observer is not None:
+                        transition["correlated_stp"] = correlated
+                    transitions[identifier].append(transition)
+
+            complete = bool(latest) and all(
+                self._trunk_observation_verified(latest[item.id])
+                for item in ordered
+            )
+            return {
+                "found": bool(latest),
+                "configuration_channel": complete,
+                "failure_reason": "",
+            }
+
+        convergence = StateConvergenceWaiter(
+            inspect,
+            timeout_seconds=self._trunk_timeout,
+            interval_seconds=self._convergence_interval,
+        ).wait()
+        results: list[RuntimeVerification] = []
+        for expectation in ordered:
+            observed = latest.get(expectation.id, {})
+            fields = dict(observed.get("fields") or {})
+            status = self._trunk_observation_status(fields)
+            authoritative = bool(observed.get("authoritative"))
+            details = {
+                "kind": "trunk_round_robin",
+                "device_name": expectation.device_name,
+                "interface": str(
+                    expectation.expected.get("interface") or ""
+                ),
+                "expected_vlans": sorted({
+                    int(item)
+                    for item in expectation.expected.get(
+                        "allowed_vlans", []
+                    )
+                }),
+                "sample_rounds": convergence.attempts,
+                "transitions": transitions.get(expectation.id, []),
+                "terminal_authority": (
+                    "AUTHORITATIVE"
+                    if authoritative else "UNOBSERVABLE"
+                ),
+                "terminal_identity_confirmed": bool(
+                    observed.get("observed_device_name")
+                    == expectation.device_name
+                    and observed.get("device_identity_provenance")
+                    == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+                ),
+                "terminal_failure_dimension": (
+                    self._trunk_failure_dimension(observed, fields)
+                ),
+            }
+            results.append(RuntimeVerification(
+                expectation_id=expectation.id,
+                status=status,
+                evidence_method="fresh_show_interfaces_trunk",
+                fresh_evidence=authoritative,
+                fields=fields,
+                message=self._trunk_observation_message(
+                    expectation,
+                    observed,
+                    fields,
+                    status,
+                ),
+                convergence=ConvergenceReport(
+                    attempts=convergence.attempts,
+                    elapsed_ms=convergence.elapsed_ms,
+                    final_status=status,
+                    last_observable_state=json.dumps(
+                        self._trunk_transition_payload(observed),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    details=details,
+                ),
+            ))
+        return results
+
+    @staticmethod
+    def _trunk_observation(
+        expectation: VerificationExpectation,
+        show: IosCommandResult,
+        row,
+        *,
+        authoritative: bool,
+    ) -> dict[str, object]:
+        expected_vlans = {
+            int(item)
+            for item in expectation.expected.get("allowed_vlans", [])
+        }
+
+        def vlan_field(attribute: str) -> FieldVerificationStatus:
+            if not authoritative:
+                return FieldVerificationStatus.UNOBSERVABLE
+            if row is None:
+                return FieldVerificationStatus.FAILED
+            value = getattr(row, attribute)
+            if value is None:
+                return FieldVerificationStatus.UNOBSERVABLE
+            return (
+                FieldVerificationStatus.VERIFIED
+                if expected_vlans.issubset(value)
+                else FieldVerificationStatus.FAILED
+            )
+
+        if not authoritative:
+            interface_status = FieldVerificationStatus.UNOBSERVABLE
+            operational_status = FieldVerificationStatus.UNOBSERVABLE
+        else:
+            interface_status = (
+                FieldVerificationStatus.VERIFIED
+                if row is not None else FieldVerificationStatus.FAILED
+            )
+            operational_status = (
+                FieldVerificationStatus.VERIFIED
+                if row is not None and row.status.casefold() == "trunking"
+                else FieldVerificationStatus.FAILED
+            )
+        return {
+            "authoritative": authoritative,
+            "executed": bool(show.executed),
+            "fresh_output_observed": bool(show.fresh_output_observed),
+            "output_complete": bool(show.output_complete),
+            "observed_device_name": show.observed_device_name,
+            "device_identity_provenance": (
+                show.device_identity_provenance
+            ),
+            "failure_reason": show.failure_reason,
+            "row_present": row is not None,
+            "row_interface": row.interface if row is not None else "",
+            "status": row.status if row is not None else "",
+            "native_vlan": row.native_vlan if row is not None else None,
+            "allowed_vlans": (
+                list(row.allowed_vlans)
+                if row is not None and row.allowed_vlans is not None
+                else None
+            ),
+            "active_vlans": (
+                list(row.active_vlans)
+                if row is not None and row.active_vlans is not None
+                else None
+            ),
+            "forwarding_vlans": (
+                list(row.forwarding_vlans)
+                if row is not None and row.forwarding_vlans is not None
+                else None
+            ),
+            "fields": {
+                "interface": interface_status,
+                "status": operational_status,
+                "allowed_vlans": vlan_field("allowed_vlans"),
+                "active_vlans": vlan_field("active_vlans"),
+                "forwarding_vlans": vlan_field("forwarding_vlans"),
+            },
+        }
+
+    @staticmethod
+    def _trunk_observation_signature(
+        observed: dict[str, object],
+    ) -> tuple[object, ...]:
+        def vlan_set(name: str) -> tuple[object, ...] | None:
+            value = observed.get(name)
+            return None if value is None else tuple(value)
+
+        return (
+            observed.get("authoritative"),
+            observed.get("row_present"),
+            observed.get("row_interface"),
+            observed.get("status"),
+            observed.get("native_vlan"),
+            vlan_set("allowed_vlans"),
+            vlan_set("active_vlans"),
+            vlan_set("forwarding_vlans"),
+            observed.get("failure_reason"),
+        )
+
+    @staticmethod
+    def _trunk_transition_payload(
+        observed: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            key: observed.get(key)
+            for key in (
+                "authoritative",
+                "executed",
+                "fresh_output_observed",
+                "output_complete",
+                "observed_device_name",
+                "device_identity_provenance",
+                "failure_reason",
+                "row_present",
+                "row_interface",
+                "status",
+                "native_vlan",
+                "allowed_vlans",
+                "active_vlans",
+                "forwarding_vlans",
+            )
+        }
+
+    @staticmethod
+    def _trunk_observation_status(
+        fields: dict[str, FieldVerificationStatus],
+    ) -> ActionExecutionStatus:
+        if FieldVerificationStatus.FAILED in fields.values():
+            return ActionExecutionStatus.FAILED
+        if fields and all(
+            item is FieldVerificationStatus.VERIFIED
+            for item in fields.values()
+        ):
+            return ActionExecutionStatus.VERIFIED
+        return ActionExecutionStatus.UNOBSERVABLE
+
+    @classmethod
+    def _trunk_observation_verified(
+        cls,
+        observed: dict[str, object],
+    ) -> bool:
+        return (
+            cls._trunk_observation_status(
+                dict(observed.get("fields") or {})
+            )
+            is ActionExecutionStatus.VERIFIED
+        )
+
+    @staticmethod
+    def _trunk_failure_dimension(
+        observed: dict[str, object],
+        fields: dict[str, FieldVerificationStatus],
+    ) -> str:
+        if not observed.get("executed"):
+            return "EXECUTION"
+        if not observed.get("fresh_output_observed"):
+            return "FRESHNESS"
+        if not observed.get("output_complete"):
+            return "COMPLETENESS"
+        if (
+            observed.get("device_identity_provenance")
+            != DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+            or not observed.get("observed_device_name")
+        ):
+            return "IDENTITY"
+        if not observed.get("row_present"):
+            return "NO_MATCHING_ROW"
+        if fields.get("status") is FieldVerificationStatus.FAILED:
+            return "NOT_TRUNKING"
+        if fields.get("allowed_vlans") is FieldVerificationStatus.FAILED:
+            return "ALLOWED_VLAN_OMISSION"
+        if fields.get("active_vlans") is FieldVerificationStatus.FAILED:
+            return "ACTIVE_VLAN_OMISSION"
+        if fields.get("forwarding_vlans") is FieldVerificationStatus.FAILED:
+            return "NON_FORWARDING"
+        if FieldVerificationStatus.UNOBSERVABLE in fields.values():
+            return "PARSING"
+        return "NONE"
+
+    @staticmethod
+    def _trunk_observation_message(
+        expectation: VerificationExpectation,
+        observed: dict[str, object],
+        fields: dict[str, FieldVerificationStatus],
+        status: ActionExecutionStatus,
+    ) -> str:
+        if status is ActionExecutionStatus.VERIFIED:
+            return ""
+        if not observed.get("authoritative"):
+            return str(
+                observed.get("failure_reason")
+                or "Trunk evidence was not fresh, complete, and uniquely attributed."
+            )
+        if not observed.get("row_present"):
+            return "Trunk convergence timed out."
+        expected_vlans = {
+            int(item)
+            for item in expectation.expected.get("allowed_vlans", [])
+        }
+        omissions = []
+        for field_name, label in (
+            ("allowed_vlans", "allowed"),
+            ("active_vlans", "active"),
+            ("forwarding_vlans", "forwarding"),
+        ):
+            if fields.get(field_name) is not FieldVerificationStatus.FAILED:
+                continue
+            value = observed.get(field_name)
+            if isinstance(value, list):
+                missing = sorted(expected_vlans - set(value))
+                if missing:
+                    omissions.append(
+                        f"{label} omitted "
+                        + ",".join(str(item) for item in missing)
+                    )
+        return "; ".join(omissions) or "Trunk convergence timed out."
 
     def _verify_hostname(
         self, expectation: VerificationExpectation,

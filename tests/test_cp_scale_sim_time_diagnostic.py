@@ -9,6 +9,7 @@ runner's import-isolation preflight.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -510,16 +511,20 @@ def test_handoff_names_the_new_bounded_window_and_keeps_live_open():
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "Simulation-time bounded DHCP diagnostic -- implemented, LIVE observed" in handoff
-    assert (
-        "LATEST_PREPARED_IMPLEMENTATION_HEAD = "
-        "f7231fb4413002a2d8f954e063149bcf9f4f215f"
-    ) in handoff
-    # The two heads are different facts. Collapsing them is how a pushed
-    # checkpoint starts reading as a governed LIVE.
-    assert (
-        "LATEST_GOVERNED_LIVE_HEAD = d7a43778b377dbf7f83e214d7cd390fb34309360"
-        in handoff
+    prepared = re.findall(
+        r"^LATEST_PREPARED_IMPLEMENTATION_HEAD = ([0-9a-f]{40})$",
+        handoff,
+        flags=re.MULTILINE,
     )
+    governed = re.findall(
+        r"^LATEST_GOVERNED_LIVE_HEAD = ([0-9a-f]{40})$",
+        handoff,
+        flags=re.MULTILINE,
+    )
+    # These remain separately named facts. Their values may legitimately match
+    # when the latest prepared checkpoint is also the latest governed LIVE.
+    assert len(prepared) == 1
+    assert len(governed) == 1
     assert "ACCESS_PORT_VOICE_VLAN = VERIFIED 21/21" in handoff
     assert "data VLAN 10" in handoff and "voice VLAN 20" in handoff
     assert "TARGET_SIM_TIME_SPAN = 60000" in handoff

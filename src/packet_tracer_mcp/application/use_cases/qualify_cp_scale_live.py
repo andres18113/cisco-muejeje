@@ -685,6 +685,18 @@ def canonical_stage_configuration_error(
     observed_action_ids = Counter(item.action_id for item in result.action_results)
     if expected_action_ids != observed_action_ids:
         return "Configuration action result inventory did not match the typed plan."
+    mutation_action_ids = Counter(result.mutation_action_ids)
+    retained_action_ids = Counter(result.retained_action_ids)
+    if (
+        any(count != 1 for count in mutation_action_ids.values())
+        or any(count != 1 for count in retained_action_ids.values())
+        or mutation_action_ids & retained_action_ids
+        or mutation_action_ids + retained_action_ids != expected_action_ids
+    ):
+        return (
+            "Configuration mutation and retained action inventories did not "
+            "partition the typed plan."
+        )
     allowed_actions = {
         ActionExecutionStatus.APPLIED,
         ActionExecutionStatus.NO_OP,

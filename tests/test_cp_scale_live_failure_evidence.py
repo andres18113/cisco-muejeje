@@ -559,7 +559,10 @@ projection = SimpleNamespace(
     topology=SimpleNamespace(
         physical_identity_hash="topology-hash", devices=[1, 2, 3], modules=[], links=[1, 2],
     ),
-    configuration=SimpleNamespace(semantic_hash="config-hash", actions=[1]),
+    configuration=SimpleNamespace(
+        semantic_hash="config-hash",
+        actions=[SimpleNamespace(id="cfg-1")],
+    ),
     control_plane=SimpleNamespace(
         semantic_hash="control-hash", actions=[], verification_expectations=[],
     ),
@@ -582,7 +585,9 @@ try:
         configuration_runtime=None,
         control_runtime=None,
         voice_runtime=None,
-        transport=None,
+        transport=SimpleNamespace(
+            send_and_wait=lambda *args, **kwargs: None,
+        ),
         fingerprint=None,
         packet_tracer_version="9.0.1.0858",
     )
@@ -629,7 +634,9 @@ try:
         configuration_runtime=None,
         control_runtime=None,
         voice_runtime=None,
-        transport=None,
+        transport=SimpleNamespace(
+            send_and_wait=lambda *args, **kwargs: None,
+        ),
         fingerprint=None,
         packet_tracer_version="9.0.1.0858",
         verified_serial_topology=SimpleNamespace(),
@@ -649,6 +656,9 @@ else:
 live.configuration_application_contradiction = lambda _result: ""
 live.canonical_stage_configuration_error = lambda *args, **kwargs: ""
 live._wait_for_serial_interfaces = lambda *args, **kwargs: (True, [])
+live._network_state_observation = lambda *args, **kwargs: {{
+    "boundary": kwargs.get("boundary", ""),
+}}
 live.derive_foundational_statuses = lambda *args, **kwargs: {{}}
 live._stage_voice = lambda *args, **kwargs: {{
     "staged": True, "error": "voice mismatch",

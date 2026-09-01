@@ -362,22 +362,15 @@ Gig0/1 10,20
 Port Vlans in spanning tree forwarding state and not pruned
 Gig0/1 10,20
 SW#"""
-    current = json.dumps({
-        "found": True,
-        "configuration_channel": True,
-        "output": output,
-    })
-    responses = iter((
-        '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
-        '{"ok":true,"before":"SW#"}',
-        current,
-        current,
-    ))
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
-        send_and_wait=lambda _payload, _timeout: next(responses),
+        send_and_wait=lambda _payload, _timeout: None,
     )
+    runtime._ios = _SequenceIos([_authoritative_trunk_result(
+        expectation,
+        output,
+    )])
 
     result = runtime.verify([expectation])[0]
 
@@ -453,24 +446,17 @@ Gig0/1 10,20
 Port Vlans in spanning tree forwarding state and not pruned
 Gig0/1 10
 SW#"""
-    current = json.dumps({
-        "found": True,
-        "configuration_channel": True,
-        "output": output,
-    })
-    responses = iter((
-        '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
-        '{"ok":true,"before":"SW#"}',
-        current,
-        current,
-    ))
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
-        send_and_wait=lambda _payload, _timeout: next(responses),
+        send_and_wait=lambda _payload, _timeout: None,
         trunk_timeout_seconds=0,
         convergence_interval_seconds=0,
     )
+    runtime._ios = _SequenceIos([_authoritative_trunk_result(
+        expectation,
+        output,
+    )])
 
     result = runtime.verify([expectation])[0]
 
@@ -492,19 +478,6 @@ def test_trunk_verifier_polls_until_operational_state_converges():
     )
     interface = expectation.expected["interface"]
 
-    def query_responses(output: str):
-        current = json.dumps({
-            "found": True,
-            "configuration_channel": True,
-            "output": output,
-        })
-        return (
-            '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
-            '{"ok":true,"before":"SW#"}',
-            current,
-            current,
-        )
-
     empty = "SW#show interfaces trunk\nPort Mode Encapsulation Status Native vlan\nSW#"
     ready = """SW#show interfaces trunk
 Port Mode Encapsulation Status Native vlan
@@ -519,13 +492,16 @@ Gig0/1 10,20
 Port Vlans in spanning tree forwarding state and not pruned
 Gig0/1 10,20
 SW#"""
-    responses = iter((*query_responses(empty), *query_responses(ready)))
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
-        send_and_wait=lambda _payload, _timeout: next(responses),
+        send_and_wait=lambda _payload, _timeout: None,
         convergence_interval_seconds=0,
     )
+    runtime._ios = _SequenceIos([
+        _authoritative_trunk_result(expectation, empty),
+        _authoritative_trunk_result(expectation, ready),
+    ])
 
     result = runtime.verify([expectation])[0]
 
@@ -533,6 +509,171 @@ SW#"""
     assert result.convergence is not None
     assert result.convergence.attempts == 2
     assert result.fresh_evidence
+
+
+def test_trunk_verifier_round_robins_devices_and_retains_each_transition():
+    _, plan = _plan()
+    template = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expectations = [
+        template.model_copy(update={
+            "id": f"{template.id}/{device}",
+            "action_id": f"{template.action_id}/{device}",
+            "device_id": device.casefold(),
+            "device_name": device,
+        })
+        for device in ("SW-A", "SW-B")
+    ]
+    expected_vlans = expectations[0].expected["allowed_vlans"]
+
+    def trunk_output(device: str, forwarding: list[int]) -> str:
+        vlans = ",".join(str(item) for item in expected_vlans)
+        forwarding_text = (
+            ",".join(str(item) for item in forwarding) or "none"
+        )
+        return "\n".join((
+            f"{device}#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            f"Gig0/1 {forwarding_text}",
+            f"{device}#",
+        ))
+
+    ios = _SequenceIos([
+        IosCommandResult(
+            device,
+            OperationalQueryId.SHOW_INTERFACES_TRUNK,
+            True,
+            output=trunk_output(device, forwarding),
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name=device,
+            device_identity_provenance="confirmed_unique",
+        )
+        for forwarding in ([], list(expected_vlans))
+        for device in ("SW-A", "SW-B")
+    ])
+    correlated = []
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=1.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=lambda device: (
+            correlated.append(device)
+            or {"device_name": device, "authoritative": True}
+        ),
+    )
+    runtime._ios = ios
+
+    results = runtime.verify(expectations)
+
+    assert [device for device, _, _ in ios.calls] == [
+        "SW-A", "SW-B", "SW-A", "SW-B",
+    ]
+    assert correlated == ["SW-A", "SW-B", "SW-A", "SW-B"]
+    assert all(item.status is ActionExecutionStatus.VERIFIED for item in results)
+    for result in results:
+        assert result.convergence is not None
+        details = result.convergence.details
+        assert details["kind"] == "trunk_round_robin"
+        assert details["sample_rounds"] == 2
+        assert [
+            transition["forwarding_vlans"]
+            for transition in details["transitions"]
+        ] == [[], list(expected_vlans)]
+        assert all(
+            transition["correlated_stp"]["authoritative"]
+            for transition in details["transitions"]
+        )
+
+
+def test_trunk_verifier_never_authorizes_an_ambiguous_device_source():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    vlans = ",".join(
+        str(item) for item in expectation.expected["allowed_vlans"]
+    )
+    output = "\n".join((
+        "SW#show interfaces trunk",
+        "Port Mode Encapsulation Status Native vlan",
+        "Gig0/1 on 802.1q trunking 1",
+        "Port Vlans allowed on trunk",
+        f"Gig0/1 {vlans}",
+        "Port Vlans allowed and active in management domain",
+        f"Gig0/1 {vlans}",
+        "Port Vlans in spanning tree forwarding state and not pruned",
+        f"Gig0/1 {vlans}",
+        "SW#",
+    ))
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+    )
+    runtime._ios = _SequenceIos([IosCommandResult(
+        expectation.device_name,
+        OperationalQueryId.SHOW_INTERFACES_TRUNK,
+        True,
+        output=output,
+        fresh_output_observed=True,
+        output_complete=True,
+        observed_device_name="",
+        device_identity_provenance="ambiguous",
+    )])
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert not result.fresh_evidence
+    assert result.convergence is not None
+    assert (
+        result.convergence.details["terminal_failure_dimension"]
+        == "IDENTITY"
+    )
+
+
+def test_trunk_transition_signature_distinguishes_unreadable_from_empty():
+    unreadable = {
+        "authoritative": True,
+        "row_present": True,
+        "row_interface": "Gig0/1",
+        "status": "trunking",
+        "native_vlan": 1,
+        "allowed_vlans": None,
+        "active_vlans": None,
+        "forwarding_vlans": None,
+        "failure_reason": "",
+    }
+    empty = {
+        **unreadable,
+        "allowed_vlans": [],
+        "active_vlans": [],
+        "forwarding_vlans": [],
+    }
+
+    assert (
+        PacketTracerEnterpriseConfigurationRuntime
+        ._trunk_observation_signature(unreadable)
+        != PacketTracerEnterpriseConfigurationRuntime
+        ._trunk_observation_signature(empty)
+    )
 
 
 def test_trunk_default_budget_covers_forwarding_state_convergence(monkeypatch):
@@ -555,17 +696,6 @@ Gig0/1 10,20
 Port Vlans in spanning tree forwarding state and not pruned
 Gig0/1 10,20
 SW#"""
-    current = json.dumps({
-        "found": True,
-        "configuration_channel": True,
-        "output": output,
-    })
-    responses = iter((
-        '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
-        '{"ok":true,"before":"SW#"}',
-        current,
-        current,
-    ))
     observed_timeouts: list[float] = []
     real_waiter = configuration_runtime_module.StateConvergenceWaiter
 
@@ -589,9 +719,13 @@ SW#"""
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
-        send_and_wait=lambda _payload, _timeout: next(responses),
+        send_and_wait=lambda _payload, _timeout: None,
         convergence_interval_seconds=0,
     )
+    runtime._ios = _SequenceIos([_authoritative_trunk_result(
+        expectation,
+        output,
+    )])
 
     result = runtime.verify([expectation])[0]
 
@@ -815,6 +949,19 @@ class _SequenceIos:
         if len(self.results) > 1:
             return self.results.pop(0)
         return self.results[0]
+
+
+def _authoritative_trunk_result(expectation, output):
+    return IosCommandResult(
+        expectation.device_name,
+        OperationalQueryId.SHOW_INTERFACES_TRUNK,
+        True,
+        output=output,
+        fresh_output_observed=True,
+        output_complete=True,
+        observed_device_name=expectation.device_name,
+        device_identity_provenance="confirmed_unique",
+    )
 
 
 def test_voice_access_forwarding_waits_on_one_registered_stp_query():

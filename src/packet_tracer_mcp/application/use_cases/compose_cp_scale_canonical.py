@@ -463,6 +463,46 @@ def project_cp_scale_canonical_delta(
     return delta
 
 
+def canonical_stage_configuration_mutation_ids(
+    previous: ConfigurationPlan,
+    current: ConfigurationPlan,
+) -> tuple[str, ...]:
+    """Return only actions introduced by a monotonic canonical stage.
+
+    Stage projections remain cumulative because their full verification contract
+    must be re-read after every physical expansion. Runtime mutation is a
+    different concern: an action already applied by the preceding VERIFIED
+    stage is retained, not replayed. Stable IDs are sufficient only after proving
+    that every retained action is byte-for-byte the same typed action.
+    """
+
+    previous_by_id = {item.id: item for item in previous.actions}
+    current_by_id = {item.id: item for item in current.actions}
+    if len(previous_by_id) != len(previous.actions):
+        raise ValueError("Previous canonical configuration has duplicate action IDs.")
+    if len(current_by_id) != len(current.actions):
+        raise ValueError("Current canonical configuration has duplicate action IDs.")
+    omitted = sorted(set(previous_by_id) - set(current_by_id))
+    if omitted:
+        raise ValueError(
+            "Canonical stage configuration actions are not cumulative: "
+            + ", ".join(omitted)
+        )
+    changed = sorted(
+        identifier
+        for identifier, previous_action in previous_by_id.items()
+        if current_by_id[identifier] != previous_action
+    )
+    if changed:
+        raise ValueError(
+            "Canonical stage retained configuration actions changed identity: "
+            + ", ".join(changed)
+        )
+    return tuple(
+        item.id for item in current.actions if item.id not in previous_by_id
+    )
+
+
 def _stage_includes_device(
     stage: CPScaleCanonicalStage,
     device_id: str,
