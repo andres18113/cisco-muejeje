@@ -919,6 +919,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CANONICAL_CP_SCALE_GROUPED_BINDING_FRONTIER_HEAD": (
             "fc401b4d8ee288a8ff5dbd7960ec3bf73021f292"
         ),
+        "CANONICAL_CP_SCALE_PAGER_TRANSCRIPT_CONTINUITY_HEAD": (
+            "3b4da405711ee6859da3f46b737a2003fbf92fb2"
+        ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
             "d4b017332c1f0b7f12e5e6fef977a508c7b1fcdb72e1f605ad095143b54a60db"
