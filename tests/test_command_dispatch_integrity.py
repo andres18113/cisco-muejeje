@@ -8,6 +8,8 @@ aunque el backend no falle durante la corrida.
 import json
 import re
 
+import pytest
+
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     OperationalQueryId,
@@ -16,9 +18,11 @@ from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingE
 from src.packet_tracer_mcp.infrastructure.execution.command_dispatch import (
     DispatchClassification,
     FreshWindowStrategy,
+    PAGER_GUARD_JS,
     PromptReadiness,
     assess_prompt_readiness,
     classify_echo,
+    drop_pager_prompt,
     first_echo_line,
     fresh_command_window,
     has_active_pager,
@@ -179,6 +183,153 @@ def test_buffer_rolled_past_every_anchor_is_explicitly_unattributable():
     assert not window.fresh and window.rolled
     assert window.strategy is FreshWindowStrategy.ROLLED_UNATTRIBUTABLE
     assert window.output == ""
+
+
+def test_pager_tail_rewrite_can_resynchronize_after_head_roll():
+    retained = (
+        "ephone-12 row\n"
+        + ("X" * 520)
+        + "\n"
+        + "ephone-13 row\n"
+    )
+    before = (
+        "discarded history\n"
+        + retained
+        + "--More--"
+    )
+    after = (
+        retained
+        + "ephone-14 row\n"
+        + "--More--"
+    )
+
+    window = fresh_command_window(before, after)
+
+    assert window.fresh
+    assert window.rolled
+    assert window.strategy is FreshWindowStrategy.PAGER_ROLLED_SUFFIX_ANCHOR
+    assert window.output == "ephone-14 row\n--More--"
+
+
+def test_pager_rollover_rejects_a_one_character_foreign_overlap():
+    window = fresh_command_window(
+        "Router#S--More--",
+        "Switch#show vlan brief\nVLAN Name Status\nSwitch#",
+    )
+
+    assert not window.fresh
+    assert window.rolled
+    assert window.strategy is FreshWindowStrategy.ROLLED_UNATTRIBUTABLE
+    assert window.output == ""
+
+
+@pytest.mark.parametrize(
+    "foreign",
+    (
+        "--More--foreign command output\nSwitch#",
+        "DCE V.35, clock rate 2000000\nforeign command output\nSwitch#",
+    ),
+)
+def test_pager_rollover_rejects_foreign_marker_or_shared_line(foreign):
+    before = (
+        "Router#show controllers Serial0/0/0\n"
+        "DCE V.35, clock rate 2000000\n"
+        "--More--"
+    )
+
+    window = fresh_command_window(before, foreign)
+
+    assert not window.fresh
+    assert window.rolled
+    assert window.strategy is FreshWindowStrategy.ROLLED_UNATTRIBUTABLE
+    assert window.output == ""
+
+
+def test_ansi_pager_marker_cannot_bypass_guard_into_generic_rollover():
+    window = fresh_command_window(
+        "Router#m\x1b[31m--More--\x1b[0m",
+        "mSwitch#show vlan brief\nVLAN Name Status\nSwitch#",
+    )
+
+    assert not window.fresh
+    assert window.rolled
+    assert window.strategy is FreshWindowStrategy.ROLLED_UNATTRIBUTABLE
+
+
+def test_ansi_formatting_change_alone_is_not_fresh_pager_output():
+    window = fresh_command_window(
+        "Router#show ephone\n\x1b[31m--More--\x1b[0m",
+        "Router#show ephone\n--More--",
+    )
+
+    assert not window.fresh
+    assert window.strategy is FreshWindowStrategy.NONE
+
+
+def test_atomic_javascript_pager_guard_strips_ansi_like_python():
+    assert "before.replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g,'')" in PAGER_GUARD_JS
+
+
+def test_private_parameter_csi_after_marker_is_rendered_away():
+    assert has_active_pager("Router#\n--More--\x1b[?25h")
+
+
+def test_async_syslogs_after_marker_preserve_active_pager_state():
+    output = (
+        "page data\n--More-- %SPANTREE-2-LOOPGUARD_BLOCK: event\n"
+        "%LINK-3-UPDOWN: interface changed\n"
+    )
+
+    assert has_active_pager(output)
+    assert drop_pager_prompt(output) == "page data\n"
+
+
+@pytest.mark.parametrize("before", ("--More--", " --More--"))
+def test_empty_pager_base_cannot_anchor_foreign_output(before):
+    window = fresh_command_window(
+        before,
+        "Switch#show vlan brief\nVLAN Name Status\nSwitch#",
+    )
+
+    assert not window.fresh
+    assert window.strategy is FreshWindowStrategy.ROLLED_UNATTRIBUTABLE
+
+
+def test_exact_pager_roll_anchor_wins_before_space_stripped_alternate():
+    retained = "\n-X " * 128
+    assert len(retained) == 512
+
+    window = fresh_command_window(
+        "discarded" + retained + "--More--",
+        retained + "\n-Xfresh page\n--More--",
+    )
+
+    assert window.fresh
+    assert window.strategy is FreshWindowStrategy.PAGER_ROLLED_SUFFIX_ANCHOR
+    assert window.output == "\n-Xfresh page\n--More--"
+
+
+def test_appended_ansi_only_is_not_raw_prefix_freshness():
+    before = "Router#show ephone\n--More--"
+
+    window = fresh_command_window(before, before + "\x1b[0m")
+
+    assert not window.fresh
+    assert window.strategy is FreshWindowStrategy.NONE
+
+
+def test_pager_roll_anchor_preserves_space_immediately_before_marker():
+    retained = "line\n" + ("X" * 506) + " "
+    assert len(retained) == 512
+
+    window = fresh_command_window(
+        "discarded\n" + retained + "--More--",
+        retained + "next page\n--More--",
+    )
+
+    assert window.fresh
+    assert window.strategy is FreshWindowStrategy.PAGER_ROLLED_SUFFIX_ANCHOR
+    assert window.output == "next page\n--More--"
 
 
 def test_a_repeated_command_in_a_long_session_is_not_attributed_to_the_old_run():

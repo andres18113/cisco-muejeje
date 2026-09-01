@@ -588,3 +588,21 @@ simultaneously. It retains the existing single retry only for a qualified
 read-only pager failure and the single reconciliation only for complete
 authoritative absence. All 35 phones still receive cumulative FWD, endpoint,
 DHCP-binding, and SCCP verification.
+
+Run `canonical-cp-scale-voice-20260901T095242336005Z-7ea42ee7d5db`
+dispatched all 14 new bindings once before one grouped read, but both logical
+attempts failed at page three as `rolled_unattributable`. This refutes grouped
+granularity as sufficient and isolates the pager window: the terminal rolls its
+head at the same transition where it erases its own trailing `--More--`.
+
+The window algebra previously handled either rewrite alone. The next correction
+removes only the recognized pager marker from the prior suffix candidate, then
+requires an exact line-bearing retained overlap of at least 512 bytes, matching
+the existing execution-attribution anchor size. A recognized pager tail whose
+guarded match fails cannot fall through to the generic rollover path. Foreign
+marker text, shared IOS lines, and short collisions remain unattributable. This
+`PAGER_ROLLED_SUFFIX_ANCHOR` path does not change query count, mutation count,
+or verification authority. Python and the atomic JavaScript dispatch guard use
+the same complete CSI rendering grammar. A marker followed only by recognized
+IOS syslogs remains active, but syslog-only, marker-erasure, ANSI-only, and
+partial-page changes do not count as continuation progress.

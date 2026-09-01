@@ -19,6 +19,7 @@ from .command_dispatch import (
     fresh_command_window,
     has_active_pager,
     is_command_corrupted,
+    terminal_has_command_content,
     terminal_is_idle,
 )
 from .device_lifecycle import IosBootWaiter, StateConvergenceWaiter
@@ -2104,7 +2105,7 @@ class ControlledIosExecutor:
         window = extract_terminal_command_window(baseline, output, command)
         classification, echoed = classify_echo(command, window.output)
         capture = _PagerCapture.not_encountered(window.output, output)
-        if _PAGER_MARKER in window.output:
+        if has_active_pager(window.output):
             # PT 9.0.1 rejects ``terminal length 0``, so the pager is a real and
             # frequent state. Una consulta CUALIFICADA lo recorre hasta cerrar
             # una lectura logica; cualquier otra conserva el comportamiento de
@@ -2287,6 +2288,30 @@ class ControlledIosExecutor:
                     f"this capture ({page.strategy.value}).",
                 )
             captured = drop_pager_prompt(page.output)
+            if not state.get("pager_progress_ready"):
+                if not terminal_has_command_content(captured):
+                    reason = (
+                        "IOS pager produced no command continuation page "
+                        "within the bounded wait."
+                    )
+                elif not (
+                    has_active_pager(after)
+                    or terminal_is_idle(after)
+                ):
+                    reason = (
+                        "IOS pager continuation ended without a command prompt."
+                    )
+                else:
+                    reason = (
+                        "IOS pager continuation did not establish semantic "
+                        "page progress within the bounded wait."
+                    )
+                return _PagerCapture.failed(
+                    assembled,
+                    pages,
+                    after,
+                    reason,
+                )
             if not captured.strip():
                 return _PagerCapture.failed(
                     assembled, pages, after,
@@ -2332,8 +2357,16 @@ class ControlledIosExecutor:
         def inspect() -> dict:
             nonlocal last
             state = self._terminal_state(name)
-            state["configuration_channel"] = (
-                str(state.get("output") or "") != previous
+            after = str(state.get("output") or "")
+            state["pager_progress_observed"] = after != previous
+            page = fresh_command_window(previous, after)
+            captured = drop_pager_prompt(page.output) if page.fresh else ""
+            state["configuration_channel"] = bool(
+                terminal_has_command_content(captured)
+                and (
+                    has_active_pager(after)
+                    or terminal_is_idle(after)
+                )
             )
             last = state
             return state
@@ -2344,7 +2377,17 @@ class ControlledIosExecutor:
             clock=self._clock,
             sleeper=self._sleeper,
         ).wait()
-        return last if converged.configuration_channel else None
+        last["pager_progress_ready"] = bool(
+            converged.configuration_channel,
+        )
+        return (
+            last
+            if (
+                converged.configuration_channel
+                or last.get("pager_progress_observed")
+            )
+            else None
+        )
 
     def _advance_pager(self, name: str) -> bool:
         """Entrega al `--More--` la única tecla que consume, y nada más.

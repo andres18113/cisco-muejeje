@@ -4044,6 +4044,176 @@
         "failure_classification": "OBSERVER",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T095242336005Z-7ea42ee7d5db",
+      "started_at": "2026-09-01T09:52:42.336005+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "The pinned grouped binding frontier and pager window algebra.",
+        "inference": "Combined pager head-roll/tail-rewrite hypothesis from deterministic page-three attribution loss."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "floor1_positive_control": true,
+        "floor2_network_foundation_verified": true,
+        "floor2_voice_mutation_delta_only": true,
+        "binding_delta_dispatched_before_one_grouped_read": true,
+        "later_voice_phases_blocked_on_frontier_failure": true,
+        "valid_negative_changed_next_pager_window_algebra": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "7ea42ee7d5db1a633639b2280eec24f2f041493d",
+        "canonical_live_source_head": "7ea42ee7d5db1a633639b2280eec24f2f041493d",
+        "grouped_binding_frontier_head": "fc401b4d8ee288a8ff5dbd7960ec3bf73021f292"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "floor1_voice_count": 21,
+        "floor2_voice_count": 35,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor1_checkpoint_advanced": true,
+        "floor2_network_foundation_verified": true,
+        "floor2_voice_reached": true,
+        "floor2_checkpoint_advanced": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T095242336005Z-7ea42ee7d5db-failure-precleanup.json",
+          "sha256": "b7a71e20e77e83f658b0d1b062fe5c78b149b34f2ac26eb62aba3f9a91d31ccb"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T095242336005Z-7ea42ee7d5db-cleanup.json",
+          "sha256": "cbfba0ad0135c6d79b2feafe7fd12e3dbc318d44ad77b18c9ef037d907bfd88d"
+        }
+      ],
+      "measured": {
+        "floor1": {
+          "checkpoint_advanced": true,
+          "voice_complete": true,
+          "sccp_registered_count": 21
+        },
+        "floor2_network_foundation": {
+          "status": "VERIFIED",
+          "trunks_verified": 9
+        },
+        "floor2_grouped_binding_frontier": {
+          "voice_mutation_actions": 29,
+          "voice_retained_actions": 46,
+          "new_bindings_dispatched": 14,
+          "binding_indices": [
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35
+          ],
+          "grouped_logical_reads": 1,
+          "grouped_read_attempts": 2,
+          "attempt_pages_captured": [
+            3,
+            3
+          ],
+          "attempts_complete": 0,
+          "attempts_pager_continuation": [
+            "failed",
+            "failed"
+          ],
+          "attempts_failure_strategy": [
+            "rolled_unattributable",
+            "rolled_unattributable"
+          ],
+          "last_partial_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14
+          ],
+          "frontier_authoritative": false,
+          "frontier_verified": false,
+          "reconciliation_action_ids": [],
+          "later_voice_phases_dispatched": false,
+          "result": "GROUPED_READ_FAILED_AT_COMBINED_PAGER_ROLLOVER"
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_interfaces": 21,
+          "verified_fwd_interfaces": 21,
+          "status": "VERIFIED"
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "floor1_status": "VERIFIED",
+        "floor1_voice_status": "VERIFIED_21_OF_21",
+        "floor2_network_foundation_status": "VERIFIED",
+        "floor2_binding_mutation_status": "APPLIED_14_ONCE",
+        "floor2_grouped_binding_frontier_status": "FAILED_CLOSED_PAGER_ROLLOVER",
+        "floor2_voice_signal_status": "NOT_REACHED"
+      },
+      "classification_rationale": "Grouping refuted per-binding query multiplicity as sufficient: all 14 new bindings were dispatched once before one shared logical table read, and later Voice phases remained blocked. Both permitted attempts failed at page three with rolled_unattributable while executed, fresh, and uniquely attributed; neither was complete and no row contradiction was claimed. Source algebra handles pager-tail rewrite when the transcript head is stable and head roll when the pager tail is stable, but not both in one transition: the erased --More-- remains inside the suffix candidate and destroys the retained overlap. The next correction anchors a rolled transcript against an exact line-bearing 512-byte-or-longer pre-marker suffix, forbids generic fallback after a recognized pager-tail mismatch, gives Python and the atomic JavaScript guard full CSI/syslog parity, and never counts syslog-only or transitional output as page progress.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "floor2_network_foundation": "VERIFIED",
+        "grouped_binding_frontier_sufficient_cause": "REFUTED",
+        "pager_combined_head_roll_tail_rewrite": "STRONGLY_SUPPORTED",
+        "binding_product_result": "UNOBSERVABLE",
+        "pager_pre_marker_suffix_anchor": "IMPLEMENTATION_READY_LIVE_PENDING",
+        "cp_scale_status": "FLOOR2_NETWORK_VERIFIED_GROUPED_PAGER_ROLLOVER_BLOCKED",
+        "first_unclosed_boundary": "FLOOR2_VOICE_BOOTSTRAP_PAGER_WINDOW_ATTRIBUTION",
+        "failure_classification": "OBSERVER",
+        "next_live_authorized": true
+      }
     }
   ]
 }

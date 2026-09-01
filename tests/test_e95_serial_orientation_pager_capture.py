@@ -223,6 +223,100 @@ class _ForeignTranscriptTerminal(_PagedTerminal):
         self.output = "Switch#show vlan brief\nVLAN Name Status\nSwitch#"
 
 
+class _RollingPagedTerminal(_PagedTerminal):
+    """The terminal drops its head while erasing the active pager marker."""
+
+    def __init__(self, *args, max_chars: int, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.max_chars = max_chars
+
+    def _advance(self) -> None:
+        super()._advance()
+        if len(self.output) > self.max_chars:
+            self.output = self.output[-self.max_chars:]
+
+
+class _AnsiPagedTerminal(_PagedTerminal):
+    marker = "\x1b[31m--More--\x1b[0m"
+
+    def _tail(self) -> str:
+        return self.marker if self.index < len(self.pages) - 1 else self.final_tail
+
+    def _advance(self) -> None:
+        if self.index >= len(self.pages) - 1:
+            return
+        self.output = self.output[:-len(self.marker)]
+        self.index += 1
+        self.output += self.pages[self.index] + self._tail()
+
+
+class _SyslogPagedTerminal(_PagedTerminal):
+    marker = (
+        "--More-- %SPANTREE-2-LOOPGUARD_BLOCK: event\n"
+        "%LINK-3-UPDOWN: interface changed\n"
+    )
+
+    def _tail(self) -> str:
+        return self.marker if self.index < len(self.pages) - 1 else self.final_tail
+
+    def _advance(self) -> None:
+        if self.index >= len(self.pages) - 1:
+            return
+        self.output = self.output[:-len(self.marker)]
+        self.index += 1
+        self.output += self.pages[self.index] + self._tail()
+
+
+class _TransitionalPagedTerminal(_PagedTerminal):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.pending = ""
+
+    def _advance(self) -> None:
+        if self.index >= len(self.pages) - 1:
+            return
+        self.output = self.output[:-len(_MORE)]
+        self.index += 1
+        self.pending = self.pages[self.index] + self._tail()
+
+    def __call__(self, js: str, timeout: float) -> str:
+        if "terminal_kind:'ios_command_line'" in js and self.pending:
+            state = self._state()
+            self.output += self.pending
+            self.pending = ""
+            self.sent.append(js)
+            return state
+        return super().__call__(js, timeout)
+
+
+class _SyslogBeforePageTerminal(_PagedTerminal):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.pending = ""
+
+    def _advance(self) -> None:
+        if self.index >= len(self.pages) - 1:
+            return
+        self.index += 1
+        self.output += " %LINK-3-UPDOWN: transient event\n"
+        self.pending = self.pages[self.index] + self._tail()
+
+    def __call__(self, js: str, timeout: float) -> str:
+        if "terminal_kind:'ios_command_line'" in js and self.pending:
+            state = self._state()
+            marker = self.output.rfind(_MORE)
+            self.output = self.output[:marker] + self.pending
+            self.pending = ""
+            self.sent.append(js)
+            return state
+        return super().__call__(js, timeout)
+
+
+class _SyslogOnlyPagedTerminal(_PagedTerminal):
+    def _advance(self) -> None:
+        self.output += " %LINK-3-UPDOWN: transient event\n"
+
+
 class _SwitchedSessionTerminal(_PagedTerminal):
     """El transcript sigue creciendo pero el prompt ya es de otro equipo."""
 
@@ -281,6 +375,95 @@ def test_one_pager_boundary_is_continued_into_one_complete_logical_result():
     assert "clock rate 2000000" in result.output
     assert "SCC Registers:" in result.output
     assert result.output.rstrip().endswith("Router#")
+
+
+def test_next_page_leading_dash_is_not_consumed_with_pager_marker():
+    terminal = _PagedTerminal(["first page\n", "-second page\n"])
+
+    result = _execute(terminal)
+
+    assert result.executed
+    assert result.output_complete
+    assert "-second page" in result.output
+
+
+def test_ansi_decorated_pager_marker_enters_registered_capture():
+    terminal = _AnsiPagedTerminal(["first page\n", "second page\n"])
+
+    result = _execute(terminal)
+
+    assert result.executed
+    assert result.output_complete
+    assert result.pager_pages_captured == 2
+    assert terminal.advances == 1
+    assert "first page" in result.output
+    assert "second page" in result.output
+
+
+def test_syslogs_after_pager_marker_still_enter_registered_capture():
+    terminal = _SyslogPagedTerminal(["first page\n", "second page\n"])
+
+    result = _execute(terminal)
+
+    assert result.executed
+    assert result.output_complete
+    assert result.pager_pages_captured == 2
+    assert terminal.advances == 1
+    assert "second page" in result.output
+
+
+def test_pager_progress_waits_past_marker_erasure_for_complete_page():
+    terminal = _TransitionalPagedTerminal(["first page\n", "second page\n"])
+
+    result = _execute(terminal)
+
+    assert result.executed
+    assert result.output_complete
+    assert result.pager_pages_captured == 2
+    assert terminal.advances == 1
+    assert "second page" in result.output
+
+
+def test_pager_progress_ignores_syslog_before_next_page():
+    terminal = _SyslogBeforePageTerminal(["first page\n", "second page\n"])
+
+    result = _execute(terminal)
+
+    assert result.executed
+    assert result.output_complete
+    assert result.pager_pages_captured == 2
+    assert terminal.advances == 1
+    assert "second page" in result.output
+    assert "transient event" not in result.output
+
+
+def test_timed_out_syslog_only_growth_is_never_ingested_as_a_page():
+    terminal = _SyslogOnlyPagedTerminal(["first page\n", "second page\n"])
+
+    result = _execute(terminal)
+
+    assert result.executed
+    assert not result.output_complete
+    assert result.pager_pages_captured == 1
+    assert terminal.advances == 1
+    assert "no command continuation page" in result.failure_reason.casefold()
+    assert "transient event" not in result.output
+
+
+def test_pager_capture_survives_combined_head_roll_and_marker_rewrite():
+    pages = [
+        f"PAGE-{index}\n" + chr(64 + index) * 500 + "\n"
+        for index in range(1, 5)
+    ]
+    terminal = _RollingPagedTerminal(pages, max_chars=1_200)
+
+    result = _execute(terminal)
+
+    assert result.executed
+    assert result.output_complete
+    assert result.pager_pages_captured == 4
+    assert result.pager_continuation == PagerContinuation.COMPLETED.value
+    assert all(f"PAGE-{index}" in result.output for index in range(1, 5))
 
 
 def test_multiple_pages_reconstruct_deterministically():

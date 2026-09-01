@@ -30,6 +30,7 @@ from enum import Enum
 # proposito: el algoritmo es lineal sobre esta ventana, nunca sobre el
 # transcript completo, que en sesiones largas crece sin limite util.
 _ROLL_ANCHOR_LIMIT = 65536
+_PAGER_ROLL_MIN_ANCHOR = 512
 
 _PAGER_MARKER = "--More--"
 
@@ -68,6 +69,9 @@ class FreshWindowStrategy(str, Enum):
     # El terminal reescribio su propia cola -- medido: al salir del pager, IOS
     # borra el `--More--` que el mismo habia impreso. El buffer NO rodo.
     PAGER_TAIL_REWRITE = "pager_tail_rewrite"
+    # El buffer rodo por la cabeza y, en la misma transición, IOS borró su
+    # marcador de pager de la cola. El ancla excluye sólo ese marcador.
+    PAGER_ROLLED_SUFFIX_ANCHOR = "pager_rolled_suffix_anchor"
     # El buffer rodo y se re-sincronizo por el mayor sufijo retenido.
     ROLLED_SUFFIX_ANCHOR = "rolled_suffix_anchor"
     # El buffer rodo y no quedo anclaje: condicion explicita, no string vacio.
@@ -76,7 +80,8 @@ class FreshWindowStrategy(str, Enum):
 
 
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"
-_ANSI_CSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_ANSI_CSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_IOS_SYSLOG = re.compile(r"^\s*%[A-Z][A-Z0-9_]*-\d+-[A-Z0-9_]+\s*:")
 
 # Guarda de pager evaluada DENTRO del mismo script que despacha.
 #
@@ -89,11 +94,18 @@ _ANSI_CSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # Espera una variable `before` ya definida y define `__pager`. Resuelve los
 # backspaces con los que IOS redibuja su propio `--More--`.
 PAGER_GUARD_JS = (
-    "var __o=[];for(var __i=0;__i<before.length;__i++){var __c=before.charAt(__i);"
+    "var __clean=before.replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g,'');"
+    "var __o=[];for(var __i=0;__i<__clean.length;__i++){"
+    "var __c=__clean.charAt(__i);"
     "if(__c==='\\b'){if(__o.length&&__o[__o.length-1]!=='\\n'){__o.pop();}}"
     "else{__o.push(__c);}}"
     "var __r=__o.join('').replace(/[ \\t\\r\\n]+$/,'');"
-    "var __pager=__r.length>=8&&__r.substring(__r.length-8)==='--More--';"
+    "var __pm=__r.lastIndexOf('--More--');var __pager=__pm>=0;"
+    "if(__pager){var __pt=__r.substring(__pm+8).split(/\\n/);"
+    "var __ps=/^%[A-Z][A-Z0-9_]*-\\d+-[A-Z0-9_]+\\s*:/;"
+    "for(var __pi=0;__pi<__pt.length;__pi++){"
+    "var __pl=__pt[__pi].replace(/^\\s+|\\s+$/g,'');"
+    "if(__pl!==''&&!__ps.test(__pl)){__pager=false;break;}}}"
 )
 
 # Segunda condicion de readiness, tambien dentro del script de despacho: el
@@ -148,6 +160,20 @@ def rendered_terminal_text(value: str) -> str:
     )
 
 
+def _active_pager_boundary(value: str) -> tuple[str, int] | None:
+    """Return rendered text and its active marker index, ignoring only syslogs."""
+
+    rendered = rendered_terminal_text(value)
+    marker = rendered.rfind(_PAGER_MARKER)
+    if marker < 0:
+        return None
+    for line in rendered[marker + len(_PAGER_MARKER):].splitlines():
+        stripped = line.strip()
+        if stripped and _IOS_SYSLOG.match(stripped) is None:
+            return None
+    return rendered, marker
+
+
 def has_active_pager(value: str) -> bool:
     """True si la linea quedo detenida en `--More--`.
 
@@ -155,7 +181,22 @@ def has_active_pager(value: str) -> bool:
     esta disponible, asi que el pager es un estado real y frecuente, y es el
     unico estado del CLI que consume exactamente una tecla para continuar.
     """
-    return rendered_terminal_text(value).rstrip().endswith(_PAGER_MARKER)
+    return _active_pager_boundary(value) is not None
+
+
+def terminal_has_command_content(value: str) -> bool:
+    """Reject whitespace, pager redraw, and asynchronous syslog-only deltas."""
+
+    for line in rendered_terminal_text(value).splitlines():
+        stripped = line.strip()
+        if (
+            not stripped
+            or stripped == _PAGER_MARKER
+            or _IOS_SYSLOG.match(stripped) is not None
+        ):
+            continue
+        return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -166,25 +207,6 @@ class FreshWindow:
     fresh: bool
     strategy: FreshWindowStrategy
     rolled: bool = False
-
-
-# Lo unico que se acepta como cola reescrita por el terminal: el propio marcador
-# del pager y el espacio/backspace con que lo borra. Cualquier otra divergencia
-# significa que se perdio salida real y no puede tratarse como continuidad.
-_PAGER_TAIL_NOISE = re.compile(r"[\s\x08]*(?:-*\s*More\s*-*)?[\s\x08]*")
-
-
-def _common_prefix_length(before: str, after: str) -> int:
-    limit = min(len(before), len(after))
-    index = 0
-    while index < limit and before[index] == after[index]:
-        index += 1
-    return index
-
-
-def _is_pager_tail(residue: str) -> bool:
-    """True si lo que `before` tenia de mas era solo el `--More--` y su borrado."""
-    return bool(_PAGER_TAIL_NOISE.fullmatch(residue))
 
 
 def _longest_retained_suffix(before: str, after: str) -> int:
@@ -223,20 +245,76 @@ def fresh_command_window(before: str, after: str) -> FreshWindow:
     """
     if not after:
         return FreshWindow("", False, FreshWindowStrategy.NONE)
-    if after.startswith(before):
-        if len(after) == len(before):
-            return FreshWindow("", False, FreshWindowStrategy.NONE)
-        return FreshWindow(after[len(before):], True, FreshWindowStrategy.PREFIX_DELTA)
-    if not before:
-        return FreshWindow(after, True, FreshWindowStrategy.PREFIX_DELTA)
+    rendered_before = rendered_terminal_text(before)
+    rendered_after = rendered_terminal_text(after)
+    if rendered_before == rendered_after:
+        return FreshWindow("", False, FreshWindowStrategy.NONE)
     # Medido en PT 9.0.1.0858: al salir del pager, IOS borra el `--More--` que
     # habia impreso, asi que `after` deja de empezar con `before` aunque no se
     # haya perdido ni una linea. Tratar eso como buffer rodado descartaba la
     # ventana entera -- y era justamente la ventana que contenia la evidencia
     # del comando corrompido.
-    common = _common_prefix_length(before, after)
-    if common and _is_pager_tail(before[common:]):
-        return FreshWindow(after[common:], True, FreshWindowStrategy.PAGER_TAIL_REWRITE)
+    if rendered_before.rstrip() == rendered_after.rstrip():
+        return FreshWindow("", False, FreshWindowStrategy.NONE)
+    pager_boundary = _active_pager_boundary(before)
+    if pager_boundary is not None:
+        rendered_before, marker_index = pager_boundary
+        before_marker = rendered_before[:marker_index]
+        if not before_marker.strip():
+            return FreshWindow(
+                "",
+                False,
+                FreshWindowStrategy.ROLLED_UNATTRIBUTABLE,
+                rolled=True,
+            )
+        pager_bases = [before_marker]
+        # Measured PT form: one display-space prefixes `--More--` and is erased
+        # with it. Exact continuity wins; this alternate is considered only
+        # when preserving that byte cannot anchor the rendered transcript.
+        if before_marker.endswith(" "):
+            pager_bases.append(before_marker[:-1])
+        for pager_base in pager_bases:
+            if pager_base and rendered_after.startswith(pager_base):
+                output = rendered_after[len(pager_base):]
+                if not output:
+                    return FreshWindow("", False, FreshWindowStrategy.NONE)
+                return FreshWindow(
+                    output,
+                    True,
+                    FreshWindowStrategy.PAGER_TAIL_REWRITE,
+                )
+        for pager_base in pager_bases:
+            retained = _longest_retained_suffix(
+                pager_base,
+                rendered_after,
+            )
+            retained_fragment = pager_base[-retained:]
+            if (
+                retained >= _PAGER_ROLL_MIN_ANCHOR
+                and "\n" in retained_fragment
+            ):
+                return FreshWindow(
+                    rendered_after[retained:],
+                    True,
+                    FreshWindowStrategy.PAGER_ROLLED_SUFFIX_ANCHOR,
+                    rolled=True,
+                )
+        return FreshWindow(
+            "",
+            False,
+            FreshWindowStrategy.ROLLED_UNATTRIBUTABLE,
+            rolled=True,
+        )
+    if after.startswith(before):
+        if len(after) == len(before):
+            return FreshWindow("", False, FreshWindowStrategy.NONE)
+        return FreshWindow(
+            after[len(before):],
+            True,
+            FreshWindowStrategy.PREFIX_DELTA,
+        )
+    if not before:
+        return FreshWindow(after, True, FreshWindowStrategy.PREFIX_DELTA)
     retained = _longest_retained_suffix(before, after)
     if retained <= 0:
         # El buffer rodo mas alla de todo lo conocido. Es una condicion de
@@ -246,12 +324,6 @@ def fresh_command_window(before: str, after: str) -> FreshWindow:
     return FreshWindow(
         after[retained:], True, FreshWindowStrategy.ROLLED_SUFFIX_ANCHOR, rolled=True,
     )
-
-
-# Syslog de IOS: `%FACILITY-severidad-MNEMONICO:`. Es asincrono -- lo emite el
-# equipo por su cuenta, no como respuesta a nada -- asi que puede aterrizar
-# entre el prompt y el eco del comando.
-_IOS_SYSLOG = re.compile(r"^\s*%[A-Z][A-Z0-9_]*-\d+-[A-Z0-9_]+\s*:")
 
 
 def first_echo_line(window: str) -> str:
@@ -416,8 +488,8 @@ def drop_pager_prompt(value: str) -> str:
     resultado -- cuantas paginas se capturaron y como termino la continuacion --
     precisamente para que el texto pueda quedar limpio sin perder el hecho.
     """
-    rendered = rendered_terminal_text(value)
-    trimmed = rendered.rstrip()
-    if not trimmed.endswith(_PAGER_MARKER):
-        return rendered
-    return trimmed[: -len(_PAGER_MARKER)]
+    boundary = _active_pager_boundary(value)
+    if boundary is None:
+        return rendered_terminal_text(value)
+    rendered, marker = boundary
+    return rendered[:marker]
