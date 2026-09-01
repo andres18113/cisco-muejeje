@@ -18,6 +18,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     BindPhoneToExtension,
     CallExpectationResult,
     EnableCallControl,
+    GeneratePhoneConfigurationFiles,
     VoiceCapabilityDimension,
     VoiceCapabilityProfile,
     VoiceCapabilityStatus,
@@ -391,6 +392,50 @@ def test_call_control_application_failure_blocks_registration_and_calls():
                for item in result.registrations)
     assert all(item.status is ActionExecutionStatus.DEPENDENCY_BLOCKED
                for item in result.calls)
+
+
+def test_verified_binding_failure_blocks_every_later_voice_phase():
+    class BindingVerificationFailureRuntime(FakeVoiceRuntime):
+        def apply_actions(self, actions):
+            self.applied.extend(item.id for item in actions)
+            failed = next(
+                (
+                    item.id for item in actions
+                    if isinstance(item, BindPhoneToExtension)
+                ),
+                "",
+            )
+            return [
+                RuntimeActionMutation(
+                    action_id=item.id,
+                    applied=True,
+                    failure_code=(
+                        ConfigurationFailureCode.VERIFICATION_FAILED
+                        if item.id == failed else ConfigurationFailureCode.NONE
+                    ),
+                )
+                for item in actions
+            ]
+
+    runtime = BindingVerificationFailureRuntime()
+    plan, _, result = _apply(runtime)
+    phone_files = next(
+        item for item in plan.actions
+        if isinstance(item, GeneratePhoneConfigurationFiles)
+    )
+    failed = next(
+        item for item in result.action_results
+        if item.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+    )
+    blocked = next(
+        item for item in result.action_results
+        if item.action_id == phone_files.id
+    )
+
+    assert failed.status is ActionExecutionStatus.APPLIED
+    assert phone_files.id not in runtime.applied
+    assert blocked.status is ActionExecutionStatus.DEPENDENCY_BLOCKED
+    assert blocked.failure_code is ConfigurationFailureCode.DEPENDENCY_BLOCKED
 
 
 def test_dependency_cycle_stops_voice_runtime_before_mutation():

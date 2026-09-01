@@ -573,3 +573,18 @@ STP actions; full qualification mutates zero control actions. Together with
 zero configuration and Voice action deltas, final qualification is read-only
 apart from registered call attempts and freshly re-establishes retained Voice
 signal/FWD/registration evidence.
+
+Run `canonical-cp-scale-voice-20260901T085436828856Z-b9da148c8b37`
+verified the staged mutation partitions and refuted Voice replay as sufficient:
+29 Voice mutations and 46 retained facts applied all 14 new DNs and reached
+new binding 22 without replaying Floor1 bindings. The first new binding was
+dispatched once, but both per-binding global `show ephone` reads lost pager
+continuation attribution and remained incomplete. No authoritative absence,
+reconciliation, or product mutation failure was claimed.
+
+The next observer correction dispatches the complete 14-binding delta once and
+uses one grouped table frontier to require every new index/extension/MAC
+simultaneously. It retains the existing single retry only for a qualified
+read-only pager failure and the single reconciliation only for complete
+authoritative absence. All 35 phones still receive cumulative FWD, endpoint,
+DHCP-binding, and SCCP verification.

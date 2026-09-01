@@ -3871,6 +3871,179 @@
         "failure_classification": "PRODUCT_STAGE_REPLAY_PLUS_OBSERVER",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T085436828856Z-b9da148c8b37",
+      "started_at": "2026-09-01T08:54:36.828856+00:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "The pinned staged Voice/control mutation partitions and binding observer.",
+        "inference": "Observer classification from the first genuinely new binding and two incomplete paged reads."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "floor1_positive_control": true,
+        "floor2_network_foundation_verified": true,
+        "floor2_voice_mutation_delta_only": true,
+        "floor2_voice_verification_cumulative": true,
+        "control_plane_mutation_delta_only": true,
+        "new_binding_boundary_reached": true,
+        "valid_negative_changed_next_observer_granularity": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "b9da148c8b37303261533553d00666708fb99bb0",
+        "canonical_live_source_head": "b9da148c8b37303261533553d00666708fb99bb0",
+        "staged_runtime_delta_head": "80bbf67ab80f51f01aa64479b49337e1160ee1f0"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "floor1_voice_count": 21,
+        "floor2_voice_count": 35,
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor1_checkpoint_advanced": true,
+        "floor2_network_foundation_verified": true,
+        "floor2_voice_reached": true,
+        "floor2_checkpoint_advanced": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T085436828856Z-b9da148c8b37-failure-precleanup.json",
+          "sha256": "aeb2ffaa65ffe9b5ab8187f5086be1f86271eafbb7d471a1ddfa19d09fa9d94e"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T085436828856Z-b9da148c8b37-cleanup.json",
+          "sha256": "17b74aa4fcbaaa7a9526d736859d4af3799fd571d1cae5d4d31a01c7fa23abef"
+        }
+      ],
+      "measured": {
+        "floor1": {
+          "checkpoint_advanced": true,
+          "voice_complete": true,
+          "phone_access_fwd_verified": 21,
+          "addressed_count": 21,
+          "matching_binding_count": 21,
+          "sccp_registered_count": 21
+        },
+        "floor2_network_foundation": {
+          "status": "VERIFIED",
+          "trunks_verified": 9
+        },
+        "floor2_mutation_partitions": {
+          "configuration_mutation_actions": 76,
+          "configuration_retained_actions": 115,
+          "voice_mutation_actions": 29,
+          "voice_retained_actions": 46,
+          "control_plane_mutation_actions": 0,
+          "control_plane_retained_actions": 3
+        },
+        "floor2_voice_binding_observer": {
+          "new_extensions_applied": 14,
+          "first_binding_action_id": "voice/binding/8065ed5a9c7b720b",
+          "first_binding_directory_index": 22,
+          "first_binding_extension": "3022",
+          "first_binding_belongs_to_floor2": true,
+          "first_binding_dispatched": true,
+          "later_new_bindings_dispatched": false,
+          "readback_attempts": 2,
+          "attempt_pages_captured": [
+            3,
+            4
+          ],
+          "attempts_executed": 2,
+          "attempts_fresh": 2,
+          "attempts_complete": 0,
+          "attempts_pager_continuation": [
+            "failed",
+            "failed"
+          ],
+          "attempts_device_identity": [
+            "confirmed_unique",
+            "confirmed_unique"
+          ],
+          "last_observed_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18
+          ],
+          "authoritative_absence": false,
+          "reconciliation_attempted": false,
+          "result": "FIRST_NEW_BINDING_BLOCKED_BY_PER_BINDING_GLOBAL_PAGED_READBACK"
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_interfaces": 21,
+          "verified_fwd_interfaces": 21,
+          "status": "VERIFIED"
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "floor1_status": "VERIFIED",
+        "floor1_voice_status": "VERIFIED_21_OF_21",
+        "floor2_network_foundation_status": "VERIFIED",
+        "floor2_voice_mutation_status": "DELTA_REACHED_FIRST_NEW_BINDING",
+        "floor2_voice_bootstrap_status": "FAILED_CLOSED_PAGED_READBACK_UNOBSERVABLE",
+        "floor2_voice_signal_status": "NOT_REACHED"
+      },
+      "classification_rationale": "Voice delta-only mutation refuted cumulative Voice replay as sufficient: the run applied all 14 new DNs and reached new binding 22 without replaying any prior binding. The binding was dispatched once, but each binding still demanded its own global paged show ephone table. Both permitted reads were executed, fresh, and uniquely attributed, yet pager continuation lost transcript attribution after three and four pages. Neither read was complete, so no binding absence or mutation failure is established. The next correction dispatches the complete typed binding delta once and performs one grouped post-mutation table read that must simultaneously match every new index, extension, and MAC; cumulative registration still re-observes all 35 phones.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "floor2_network_foundation": "VERIFIED",
+        "floor2_voice_replay_sufficient_cause": "REFUTED",
+        "per_binding_global_paged_readback": "CONFIRMED_OBSERVER_BOUNDARY",
+        "first_new_binding_product_result": "UNOBSERVABLE",
+        "grouped_binding_frontier": "IMPLEMENTATION_READY_LIVE_PENDING",
+        "cp_scale_status": "FLOOR2_NETWORK_VERIFIED_NEW_BINDING_OBSERVER_BLOCKED",
+        "first_unclosed_boundary": "FLOOR2_VOICE_BOOTSTRAP_GROUPED_BINDING_READBACK",
+        "failure_classification": "OBSERVER",
+        "next_live_authorized": true
+      }
     }
   ]
 }

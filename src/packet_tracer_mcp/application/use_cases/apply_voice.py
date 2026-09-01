@@ -606,10 +606,11 @@ class VoiceApplicator:
                             message=str(exc),
                         ) for item in batch
                     }
+                batch_failures: list[str] = []
                 for item in batch:
                     mutation = mutations.get(item.id)
                     applied = bool(mutation and mutation.applied)
-                    results[item.id] = ActionApplicationResult(
+                    result = ActionApplicationResult(
                         action_id=item.id,
                         status=(
                             self._mutation_status(mutation)
@@ -632,8 +633,30 @@ class VoiceApplicator:
                             else MutationDisposition.FAILED
                         ),
                     )
+                    results[item.id] = result
+                    if (
+                        result.failure_code
+                        is not ConfigurationFailureCode.NONE
+                        or not satisfies_apply_dependency(result.status)
+                    ):
+                        batch_failures.append(item.id)
                     pending.remove(item)
                 progress = True
+                if batch_failures:
+                    blocker = sorted(batch_failures)[0]
+                    for item in pending:
+                        results[item.id] = ActionApplicationResult(
+                            action_id=item.id,
+                            status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                            failure_code=(
+                                ConfigurationFailureCode.DEPENDENCY_BLOCKED
+                            ),
+                            message=(
+                                "Voice dispatch stopped after runtime failure "
+                                f"for {blocker}."
+                            ),
+                        )
+                    pending.clear()
             if not progress:
                 for item in pending:
                     results[item.id] = ActionApplicationResult(

@@ -83,6 +83,9 @@ FLOOR2_DELTA_RUN_IDENTITY = (
 FLOOR2_NETWORK_VERIFIED_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T071703181436Z-fe725ac177d2"
 )
+FLOOR2_VOICE_DELTA_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T085436828856Z-b9da148c8b37"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -102,7 +105,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 17
+    assert len(ledger["runs"]) == 18
     return ledger["runs"][0]
 
 
@@ -184,6 +187,11 @@ def floor2_delta_run(ledger: dict) -> dict:
 @pytest.fixture(scope="module")
 def floor2_network_verified_run(ledger: dict) -> dict:
     return ledger["runs"][16]
+
+
+@pytest.fixture(scope="module")
+def floor2_voice_delta_run(ledger: dict) -> dict:
+    return ledger["runs"][17]
 
 
 @pytest.fixture(scope="module")
@@ -728,6 +736,48 @@ def test_floor2_network_closes_before_cumulative_voice_replay_stop(
         assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
 
 
+def test_floor2_voice_delta_reaches_first_new_binding_observer(
+    floor2_voice_delta_run: dict,
+):
+    assert floor2_voice_delta_run["run_identity"] == (
+        FLOOR2_VOICE_DELTA_RUN_IDENTITY
+    )
+    partitions = floor2_voice_delta_run["measured"][
+        "floor2_mutation_partitions"
+    ]
+    assert partitions == {
+        "configuration_mutation_actions": 76,
+        "configuration_retained_actions": 115,
+        "voice_mutation_actions": 29,
+        "voice_retained_actions": 46,
+        "control_plane_mutation_actions": 0,
+        "control_plane_retained_actions": 3,
+    }
+    observer = floor2_voice_delta_run["measured"][
+        "floor2_voice_binding_observer"
+    ]
+    assert observer["new_extensions_applied"] == 14
+    assert observer["first_binding_directory_index"] == 22
+    assert observer["first_binding_belongs_to_floor2"] is True
+    assert observer["readback_attempts"] == 2
+    assert observer["attempt_pages_captured"] == [3, 4]
+    assert observer["attempts_complete"] == 0
+    assert observer["authoritative_absence"] is False
+    assert observer["reconciliation_attempted"] is False
+    conclusion = floor2_voice_delta_run["conclusion"]
+    assert conclusion["floor2_voice_replay_sufficient_cause"] == "REFUTED"
+    assert conclusion["per_binding_global_paged_readback"] == (
+        "CONFIRMED_OBSERVER_BOUNDARY"
+    )
+    assert conclusion["grouped_binding_frontier"] == (
+        "IMPLEMENTATION_READY_LIVE_PENDING"
+    )
+    for artifact in floor2_voice_delta_run["artifacts"]:
+        path = ROOT / artifact["path"]
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+
+
 def test_immutable_canonical_evidence_is_never_text_normalized():
     attributes = GITATTRIBUTES.read_text(encoding="utf-8").splitlines()
 
@@ -942,23 +992,23 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_SEVENTEEN_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "17"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_EIGHTEEN_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "18"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "2"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
         "NONE_VERIFIED"
     )
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "48"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
-        "FLOOR2_VOICE_BOOTSTRAP_RETAINED_BINDING_READBACK"
+        "FLOOR2_VOICE_BOOTSTRAP_GROUPED_BINDING_READBACK"
     )
     assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == (
-        "PRODUCT_STAGE_REPLAY_PLUS_OBSERVER"
+        "OBSERVER"
     )
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "FLOOR2_VOICE_DELTA_ONLY_IMPLEMENTED_LIVE_PENDING"
+        "FLOOR2_GROUPED_BINDING_FRONTIER_IMPLEMENTED_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -986,5 +1036,5 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "REFRESH_FWD_9_OF_9 | EXTENSION_NOT_ENGAGED"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR2_NETWORK_VERIFIED_VOICE_DELTA_LIVE_PENDING"
+        "FLOOR2_NETWORK_VERIFIED_GROUPED_BINDING_LIVE_PENDING"
     )

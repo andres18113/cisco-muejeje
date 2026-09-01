@@ -16,6 +16,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     BindPhoneToExtension,
     ConfigureDialRule,
+    GeneratePhoneConfigurationFiles,
     VoiceActionType,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
@@ -113,7 +114,7 @@ def test_adapter_applies_only_typed_voice_actions_and_escapes_device_names():
     )
 
 
-def test_each_phone_binding_readback_authorizes_the_next_mutation():
+def test_grouped_phone_binding_readback_runs_after_frontier_mutation():
     runtime = _runtime([])
     bindings = sorted(
         (
@@ -168,7 +169,6 @@ def test_each_phone_binding_readback_authorizes_the_next_mutation():
     )
     assert events == [
         ("apply", bindings[0].directory_index),
-        ("verify", (bindings[0].directory_index,)),
         ("apply", bindings[1].directory_index),
         (
             "verify",
@@ -184,9 +184,20 @@ def test_each_phone_binding_readback_authorizes_the_next_mutation():
     assert all(
         item["verified"] for item in application["binding_readbacks"]
     )
+    assert application["binding_frontier"] == {
+        "action_ids": [item.id for item in bindings],
+        "size": 2,
+        "initial_authoritative": True,
+        "initial_verified": True,
+        "initial_logical_read_attempts": 1,
+        "reconciliation_action_ids": [],
+        "final_authoritative": True,
+        "final_verified": True,
+        "final_logical_read_attempts": 1,
+    }
 
 
-def test_mismatched_binding_readback_never_reconciles_or_dispatches_later():
+def test_grouped_mismatched_binding_readback_never_reconciles():
     captured = []
     runtime = _runtime(captured)
     bindings = sorted(
@@ -218,18 +229,64 @@ def test_mismatched_binding_readback_never_reconciles_or_dispatches_later():
 
     results = runtime.apply_actions(bindings)
 
-    first = next(
-        item for item in results
-        if item.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+    assert all(item.applied for item in results)
+    assert all(
+        item.failure_code is ConfigurationFailureCode.VERIFICATION_FAILED
+        for item in results
     )
-    blocked = next(
-        item for item in results
-        if item.failure_code is ConfigurationFailureCode.DEPENDENCY_BLOCKED
+    assert sum("configureIosDevice" in item for item in captured) == 2
+    diagnostics = runtime.drain_diagnostic_evidence()
+    assert all(
+        not item["reconciliation_attempted"]
+        for item in diagnostics["applications"][0]["binding_readbacks"]
     )
-    assert first.applied
-    assert not blocked.applied
-    assert sum("configureIosDevice" in item for item in captured) == 1
-    assert "readback" in first.message.casefold()
+
+
+def test_grouped_binding_failure_blocks_later_voice_phases():
+    captured = []
+    runtime = _runtime(captured)
+    plan = _compile().plan
+    bindings = sorted(
+        (
+            item for item in plan.actions
+            if isinstance(item, BindPhoneToExtension)
+        ),
+        key=lambda item: item.directory_index,
+    )
+    phone_files = next(
+        item for item in plan.actions
+        if isinstance(item, GeneratePhoneConfigurationFiles)
+    )
+    incomplete = IosCommandResult(
+        "HQ-R1",
+        OperationalQueryId.SHOW_EPHONE,
+        True,
+        output="show ephone\n --More-- ",
+        fresh_output_observed=True,
+        output_complete=False,
+        truncated_by_pager=True,
+        pager_continuation="failed",
+        observed_device_name="HQ-R1",
+        device_identity_provenance="confirmed_unique",
+    )
+    runtime._ios = SimpleNamespace(
+        execute=lambda _device_name, _query_id: incomplete,
+    )
+
+    results = runtime.apply_actions([*bindings, phone_files])
+    by_id = {item.action_id: item for item in results}
+
+    assert all(
+        by_id[item.id].failure_code
+        is ConfigurationFailureCode.VERIFICATION_FAILED
+        for item in bindings
+    )
+    assert not by_id[phone_files.id].applied
+    assert (
+        by_id[phone_files.id].failure_code
+        is ConfigurationFailureCode.DEPENDENCY_BLOCKED
+    )
+    assert sum("configureIosDevice" in item for item in captured) == len(bindings)
 
 
 def test_authoritative_binding_absence_reconciles_once_then_verifies():
@@ -311,7 +368,6 @@ def test_absent_binding_reconciles_after_independent_binding_frontier():
         )
 
     responses = [
-        "",
         rows(bindings[1]),
         rows(*bindings),
     ]
@@ -353,7 +409,60 @@ def test_absent_binding_reconciles_after_independent_binding_frontier():
     assert first["final"]["verified"] is True
 
 
-def test_pending_absence_fails_if_later_sibling_stops_initial_frontier():
+def test_reconciliation_requires_one_final_table_for_the_entire_frontier():
+    captured = []
+    runtime = _runtime(captured)
+    bindings = sorted(
+        (
+            item for item in _compile().plan.actions
+            if isinstance(item, BindPhoneToExtension)
+        ),
+        key=lambda item: item.directory_index,
+    )
+
+    def rows(*items):
+        return "\n".join(
+            line
+            for binding in items
+            for line in (
+                f"ephone-{binding.directory_index} "
+                "Mac:0011.2233.4455 UNREGISTERED",
+                "IP:0.0.0.0 0 7960",
+                f" button 1: dn {binding.directory_index} "
+                f"number {binding.extension} CH1 IDLE",
+            )
+        )
+
+    responses = [rows(bindings[1]), rows(bindings[0])]
+    runtime._ios = SimpleNamespace(execute=lambda device_name, query_id: (
+        IosCommandResult(
+            device_name,
+            query_id,
+            True,
+            output=responses.pop(0),
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name=device_name,
+            device_identity_provenance="confirmed_unique",
+        )
+    ))
+
+    results = runtime.apply_actions(bindings)
+
+    assert results[0].failure_code is ConfigurationFailureCode.NONE
+    assert (
+        results[1].failure_code
+        is ConfigurationFailureCode.VERIFICATION_FAILED
+    )
+    diagnostics = runtime.drain_diagnostic_evidence()
+    application = diagnostics["applications"][0]
+    assert application["binding_frontier"]["final_authoritative"] is True
+    assert application["binding_frontier"]["final_verified"] is False
+    assert application["binding_readbacks"][0]["final"]["verified"] is True
+    assert application["binding_readbacks"][1]["final"]["row"] is None
+
+
+def test_grouped_mismatch_blocks_reconciliation_for_absent_sibling():
     captured = []
     runtime = _runtime(captured)
     bindings = sorted(
@@ -370,7 +479,7 @@ def test_pending_absence_fails_if_later_sibling_stops_initial_frontier():
         f" button 1: dn {bindings[1].directory_index} "
         f"number {bindings[1].extension} CH1 IDLE",
     ))
-    responses = ["", mismatch]
+    responses = [mismatch]
     runtime._ios = SimpleNamespace(execute=lambda device_name, query_id: (
         IosCommandResult(
             device_name,
@@ -394,8 +503,9 @@ def test_pending_absence_fails_if_later_sibling_stops_initial_frontier():
     assert sum("configureIosDevice" in item for item in captured) == 2
     diagnostics = runtime.drain_diagnostic_evidence()
     first = diagnostics["applications"][0]["binding_readbacks"][0]
-    assert first["reconciliation_pending"] is True
+    assert first["reconciliation_pending"] is False
     assert first["reconciliation_attempted"] is False
+    assert first["reconciliation_blocked_by"] == bindings[1].id
 
 
 def test_binding_reconciliation_stops_after_one_persistent_absence():

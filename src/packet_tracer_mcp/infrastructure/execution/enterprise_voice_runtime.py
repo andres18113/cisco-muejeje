@@ -239,6 +239,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                 "ios_payload": batch.ios_payload,
             } for batch in batches],
             "binding_readbacks": [],
+            "binding_frontier": None,
             "error": "",
         }
         self._application_diagnostics.append(application_diagnostic)
@@ -248,13 +249,19 @@ class PacketTracerEnterpriseVoiceRuntime:
         }
 
         dispatch_stopped = ""
-        pending_absences: list[tuple[
+        stop_batch_index = -1
+        binding_frontier: list[tuple[
             int,
             object,
             BindPhoneToExtension,
-            dict[str, object],
-            int,
         ]] = []
+        last_binding_batch_index = max(
+            (
+                index for index, batch in enumerate(batches)
+                if batch.phase is VoicePhase.PHONE_BINDINGS
+            ),
+            default=-1,
+        )
         for batch_index, batch in enumerate(batches):
             accepted = self._configuration.configure_ios(host, batch.ios_payload)
             failure_code = (
@@ -272,45 +279,7 @@ class PacketTracerEnterpriseVoiceRuntime:
                 and len(batch.action_ids) == 1
             ):
                 action = binding_by_id[batch.action_ids[0]]
-                initial_terminal_snapshot = self._terminal_snapshot(host)
-                initial_readback = self._phone_binding_readback(
-                    host,
-                    action,
-                    phone_macs[action.phone_id],
-                )
-                final_readback = initial_readback
-                proven_absent = bool(
-                    initial_readback["authoritative"]
-                    and initial_readback["row"] is None
-                )
-                readback = {
-                    **final_readback,
-                    "initial": initial_readback,
-                    "reconciliation_pending": proven_absent,
-                    "reconciliation_attempted": False,
-                    "reconciliation_accepted": False,
-                    "reconciliation_phase": (
-                        "after_initial_frontier" if proven_absent else ""
-                    ),
-                    "initial_terminal_snapshot": initial_terminal_snapshot,
-                    "reconciliation_terminal_snapshot": None,
-                    "final": final_readback,
-                }
-                application_diagnostic["binding_readbacks"].append(readback)
-                if proven_absent:
-                    pending_absences.append((
-                        batch_index,
-                        batch,
-                        action,
-                        initial_readback,
-                        len(application_diagnostic["binding_readbacks"]) - 1,
-                    ))
-                elif not final_readback["verified"]:
-                    failure_code = ConfigurationFailureCode.VERIFICATION_FAILED
-                    message = (
-                        "Typed phone binding was dispatched but its exact ephone "
-                        "row was absent or contradicted in fresh readback."
-                    )
+                binding_frontier.append((batch_index, batch, action))
             for action_id in batch.action_ids:
                 results[action_id] = RuntimeActionMutation(
                     action_id=action_id,
@@ -323,96 +292,28 @@ class PacketTracerEnterpriseVoiceRuntime:
                 )
             if failure_code is not ConfigurationFailureCode.NONE:
                 dispatch_stopped = batch.action_ids[-1]
+                stop_batch_index = batch_index
                 break
-        if not dispatch_stopped:
-            for (
-                original_batch_index,
-                batch,
-                action,
-                initial_readback,
-                diagnostic_index,
-            ) in pending_absences:
-                reconciliation_accepted = self._configuration.configure_ios(
-                    host,
-                    batch.ios_payload,
-                )
-                reconciliation_terminal_snapshot = (
-                    self._terminal_snapshot(host)
-                    if reconciliation_accepted else None
-                )
-                final_readback = (
-                    self._phone_binding_readback(
+            if (
+                accepted
+                and batch_index == last_binding_batch_index
+                and binding_frontier
+            ):
+                frontier_results, frontier_failure = (
+                    self._verify_dispatched_binding_frontier(
                         host,
-                        action,
-                        phone_macs[action.phone_id],
+                        binding_frontier,
+                        phone_macs,
+                        application_diagnostic,
                     )
-                    if reconciliation_accepted else initial_readback
                 )
-                application_diagnostic["binding_readbacks"][
-                    diagnostic_index
-                ] = {
-                    **final_readback,
-                    "initial": initial_readback,
-                    "reconciliation_pending": False,
-                    "reconciliation_attempted": True,
-                    "reconciliation_accepted": reconciliation_accepted,
-                    "reconciliation_phase": "after_initial_frontier",
-                    "initial_terminal_snapshot": (
-                        application_diagnostic["binding_readbacks"][
-                            diagnostic_index
-                        ]["initial_terminal_snapshot"]
-                    ),
-                    "reconciliation_terminal_snapshot": (
-                        reconciliation_terminal_snapshot
-                    ),
-                    "final": final_readback,
-                }
-                verified = bool(
-                    reconciliation_accepted
-                    and final_readback["verified"]
-                )
-                results[action.id] = RuntimeActionMutation(
-                    action_id=action.id,
-                    applied=True,
-                    failure_code=(
-                        ConfigurationFailureCode.NONE
-                        if verified
-                        else ConfigurationFailureCode.VERIFICATION_FAILED
-                    ),
-                    message=(
-                        "Typed phone binding verified after one authoritative "
-                        "absence-driven reconciliation."
-                        if verified else
-                        "Typed phone binding remained absent after one "
-                        "authoritative reconciliation."
-                    ),
-                    batch_id=(
-                        f"{host}:{int(batch.phase)}:"
-                        f"{original_batch_index + 1}:reconcile"
-                    ),
-                )
+                results.update(frontier_results)
+                if frontier_failure:
+                    dispatch_stopped = frontier_failure
+                    stop_batch_index = batch_index
+                    break
         if dispatch_stopped:
-            for (
-                _original_batch_index,
-                _batch,
-                action,
-                _initial_readback,
-                diagnostic_index,
-            ) in pending_absences:
-                results[action.id] = RuntimeActionMutation(
-                    action_id=action.id,
-                    applied=True,
-                    failure_code=ConfigurationFailureCode.VERIFICATION_FAILED,
-                    message=(
-                        "Binding was authoritatively absent and its deferred "
-                        "reconciliation was blocked by "
-                        f"{dispatch_stopped}."
-                    ),
-                )
-                application_diagnostic["binding_readbacks"][
-                    diagnostic_index
-                ]["reconciliation_blocked_by"] = dispatch_stopped
-            for batch in batches[batch_index + 1:]:
+            for batch in batches[stop_batch_index + 1:]:
                 for action_id in batch.action_ids:
                     results[action_id] = RuntimeActionMutation(
                         action_id=action_id,
@@ -432,6 +333,154 @@ class PacketTracerEnterpriseVoiceRuntime:
                     message="The trusted voice renderer produced no mutation for this action.",
                 )
         return [results[item.id] for item in actions]
+
+    def _verify_dispatched_binding_frontier(
+        self,
+        host: str,
+        frontier: list[tuple[int, object, BindPhoneToExtension]],
+        phone_macs: dict[str, str],
+        application_diagnostic: dict[str, object],
+    ) -> tuple[dict[str, RuntimeActionMutation], str]:
+        actions = [item[2] for item in frontier]
+        initial_terminal_snapshot = self._terminal_snapshot(host)
+        initial = self._phone_bindings_readback(host, actions, phone_macs)
+        blocked = [
+            action for action in actions
+            if (
+                not initial[action.id]["verified"]
+                and not (
+                    initial[action.id]["authoritative"]
+                    and initial[action.id]["row"] is None
+                )
+            )
+        ]
+        absent = [
+            item for item in frontier
+            if (
+                initial[item[2].id]["authoritative"]
+                and initial[item[2].id]["row"] is None
+            )
+        ]
+        absent_ids = {item[2].id for item in absent}
+        reconciliation: dict[str, dict[str, object]] = {}
+        if not blocked:
+            for _batch_index, batch, action in absent:
+                accepted = self._configuration.configure_ios(
+                    host,
+                    batch.ios_payload,
+                )
+                reconciliation[action.id] = {
+                    "attempted": True,
+                    "accepted": accepted,
+                    "terminal_snapshot": (
+                        self._terminal_snapshot(host) if accepted else None
+                    ),
+                }
+                if not accepted:
+                    break
+        final = (
+            self._phone_bindings_readback(host, actions, phone_macs)
+            if absent
+            and not blocked
+            and len(reconciliation) == len(absent)
+            and all(item["accepted"] for item in reconciliation.values())
+            else initial
+        )
+        application_diagnostic["binding_frontier"] = {
+            "action_ids": [item.id for item in actions],
+            "size": len(actions),
+            "initial_authoritative": all(
+                item["authoritative"] for item in initial.values()
+            ),
+            "initial_verified": all(
+                item["verified"] for item in initial.values()
+            ),
+            "initial_logical_read_attempts": max(
+                (len(item["attempts"]) for item in initial.values()),
+                default=0,
+            ),
+            "reconciliation_action_ids": [
+                item[2].id for item in absent
+            ],
+            "final_authoritative": all(
+                item["authoritative"] for item in final.values()
+            ),
+            "final_verified": all(
+                item["verified"] for item in final.values()
+            ),
+            "final_logical_read_attempts": max(
+                (len(item["attempts"]) for item in final.values()),
+                default=0,
+            ),
+        }
+        results: dict[str, RuntimeActionMutation] = {}
+        failure = ""
+        for batch_index, batch, action in frontier:
+            initial_readback = initial[action.id]
+            final_readback = final[action.id]
+            reconciliation_result = reconciliation.get(action.id, {})
+            reconciliation_attempted = bool(
+                reconciliation_result.get("attempted")
+            )
+            reconciliation_accepted = bool(
+                reconciliation_result.get("accepted")
+            )
+            verified = bool(
+                final_readback["verified"]
+                and (
+                    not reconciliation_attempted
+                    or reconciliation_accepted
+                )
+            )
+            readback = {
+                **final_readback,
+                "initial": initial_readback,
+                "reconciliation_pending": False,
+                "reconciliation_attempted": reconciliation_attempted,
+                "reconciliation_accepted": reconciliation_accepted,
+                "reconciliation_phase": (
+                    "after_initial_frontier"
+                    if action.id in absent_ids else ""
+                ),
+                "initial_terminal_snapshot": initial_terminal_snapshot,
+                "reconciliation_terminal_snapshot": (
+                    reconciliation_result.get("terminal_snapshot")
+                ),
+                "final": final_readback,
+            }
+            if action.id in absent_ids and not reconciliation_attempted:
+                readback["reconciliation_blocked_by"] = (
+                    blocked[0].id
+                    if blocked else "reconciliation_dispatch_failure"
+                )
+            application_diagnostic["binding_readbacks"].append(readback)
+            results[action.id] = RuntimeActionMutation(
+                action_id=action.id,
+                applied=True,
+                failure_code=(
+                    ConfigurationFailureCode.NONE
+                    if verified
+                    else ConfigurationFailureCode.VERIFICATION_FAILED
+                ),
+                message=(
+                    "Typed phone binding verified in one grouped cumulative "
+                    "ephone frontier."
+                    if verified and not reconciliation_attempted
+                    else "Typed phone binding verified after one authoritative "
+                    "absence-driven reconciliation and one grouped final frontier."
+                    if verified
+                    else "Typed phone binding was dispatched but the grouped "
+                    "cumulative ephone frontier was unobservable, incomplete, "
+                    "or contradicted its exact row."
+                ),
+                batch_id=(
+                    f"{host}:{int(batch.phase)}:{batch_index + 1}"
+                    + (":reconcile" if reconciliation_attempted else "")
+                ),
+            )
+            if not verified and not failure:
+                failure = action.id
+        return results, failure
 
     def _terminal_snapshot(self, device_name: str) -> dict[str, object]:
         name = json.dumps(device_name)
@@ -494,6 +543,51 @@ class PacketTracerEnterpriseVoiceRuntime:
             **attempts[-1],
             "max_attempts": _BINDING_READBACK_MAX_ATTEMPTS,
             "attempts": attempts,
+        }
+
+    def _phone_bindings_readback(
+        self,
+        host: str,
+        bindings: list[BindPhoneToExtension],
+        phone_macs: dict[str, str],
+    ) -> dict[str, dict[str, object]]:
+        attempts: dict[str, list[dict[str, object]]] = {
+            item.id: [] for item in bindings
+        }
+        for attempt in range(1, _BINDING_READBACK_MAX_ATTEMPTS + 1):
+            show = self._ios.execute(host, OperationalQueryId.SHOW_EPHONE)
+            retry_eligible = qualified_pager_retry_eligible(
+                show,
+                expected_device_name=host,
+            )
+            for binding in bindings:
+                observed = self._phone_binding_readback_attempt(
+                    host,
+                    binding,
+                    phone_macs[binding.phone_id],
+                    show,
+                    attempt,
+                )
+                observed["retry_eligible"] = retry_eligible
+                attempts[binding.id].append(observed)
+            if all(
+                attempts[binding.id][-1]["authoritative"]
+                for binding in bindings
+            ):
+                break
+            if (
+                attempt == _BINDING_READBACK_MAX_ATTEMPTS
+                or not retry_eligible
+            ):
+                break
+        return {
+            binding.id: {
+                **attempts[binding.id][-1],
+                "max_attempts": _BINDING_READBACK_MAX_ATTEMPTS,
+                "attempts": attempts[binding.id],
+                "frontier_size": len(bindings),
+            }
+            for binding in bindings
         }
 
     @staticmethod
