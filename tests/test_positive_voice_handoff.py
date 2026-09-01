@@ -677,18 +677,18 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CP_SCALE_AFFECTED_PHONES": "69",
         "CP_SCALE_AFFECTED_VOICE_ACCESS_ACTIONS": "69",
         "CP_SCALE_TOPOLOGY_REGEN_REQUIRED": "NO",
-        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_TEN_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_TEN_TIMES",
-        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "10",
+        "CP_SCALE_CANONICAL_LIVE_RUN": "EXECUTED_ELEVEN_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_RUN": "EXECUTED_ELEVEN_TIMES",
+        "CANONICAL_CP_SCALE_LIVE_ATTEMPTS": "11",
         "CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS": "1",
         "CANONICAL_CP_SCALE_BASE_HEAD": (
             "528564493b855ce332f45fdab7b5867a065b1992"
         ),
         "CANONICAL_CP_SCALE_PRELIVE_HEAD": (
-            "ab0a890a6229d0ae14f19ceb02b0c96be3e3817b"
+            "0b0f2def9748aef487dd8091d3912ef2f328b397"
         ),
         "CANONICAL_CP_SCALE_LIVE_SOURCE_HEAD": (
-            "ab0a890a6229d0ae14f19ceb02b0c96be3e3817b"
+            "0b0f2def9748aef487dd8091d3912ef2f328b397"
         ),
         "CANONICAL_CP_SCALE_PHONE_COUNT": "69",
         "CANONICAL_CP_SCALE_VOICE_ACCESS_ACTION_COUNT": "69",
@@ -699,7 +699,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "CONFIRMED_OFFLINE_ALL_STAGES_AND_LIVE_THROUGH_FLOOR1"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_VOICE": (
-            "NOT_REACHED_AFTER_FINAL_BINDING_TABLE_20_OF_21"
+            "NOT_REACHED_AFTER_INVALID_CAPACITY_EMPTY_BINDING_TABLE"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_LAST_COMPLETE_VOICE_WINDOW": (
             "ENDPOINT_AND_BINDING_VERIFIED_21_OF_21 | RAW_SCCP_REGISTERED_20 | "
@@ -709,8 +709,10 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "NOT_REACHED_LATEST_RUN"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_BINDING_READBACK": (
-            "INITIAL_VERIFIED_20 | "
-            "EPHONE19_ABSENT_AFTER_POST_FRONTIER_RECONCILIATION"
+            "VERIFIED_0_OF_21_AT_MAX_EPHONES_51"
+        ),
+        "CANONICAL_CP_SCALE_FLOOR1_CAPACITY_RESULT": (
+            "MAX_EPHONES_51_INVALID | GOVERNED_MAX_EPHONES_42"
         ),
         "CANONICAL_CP_SCALE_FLOOR1_BINDING_ORDER_RESULT": (
             "INDEX1_REFUTED | FAILURE_FOLLOWS_ORDINAL19"
@@ -806,7 +808,7 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CANONICAL_CP_SCALE_VOICE_VERIFICATION": "FAIL",
         "ROOT_CAUSE_STATUS": "CONFIRMED",
         "PRODUCTION_FIX_STATUS": (
-            "FINAL_SITE_CAPACITY_PROJECTION_LIVE_PENDING"
+            "GOVERNED_CAPACITY_MODEL_LIVE_PENDING"
         ),
         "CANONICAL_CP_SCALE_SCCP_DIAGNOSTIC_HEAD": (
             "bd8e8b80bd170704e3f403263186f0469a4d0839"
@@ -834,6 +836,9 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_FINAL_SITE_CAPACITY_HEAD": (
             "942f35716d04d89e7f59fbb57bf654dd04bc5e58"
+        ),
+        "CANONICAL_CP_SCALE_GOVERNED_CAPACITY_MODEL_HEAD": (
+            "e83ae0c431c18b5c6e24bcd424a08c5b45d0270d"
         ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
@@ -876,17 +881,21 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "d60b09f81f6eeebedc0651dd92cc2c0686c2fa29f0c764dfbc0ced15ecb1fc71"
             " | RUN10_CLEANUP_"
             "ac8db8bf21f06837a1ad44a6edc3a4efd03e8c1d0ba27c93d439c96c95e72723"
+            " | RUN11_PRECLEANUP_"
+            "1c38c536b0735788fa5108ce976b8385afae7d5086ba99ad9dcefdde20edbc78"
+            " | RUN11_CLEANUP_"
+            "ce890a1e0364b232c9030a4731255f706559c1832f044637cc00db97ea6703aa"
         ),
         "CANONICAL_CP_SCALE_WORKSPACE_RESTORED": "YES",
         "CANONICAL_CP_SCALE_REALTIME_RESTORED": "YES",
-        "LIVE_RUNS_CONSUMED": "16",
+        "LIVE_RUNS_CONSUMED": "17",
         "CLEANUP": "VERIFIED_AFTER_EVERY_LIVE",
         "WORKSPACE_RESTORED": "YES",
         "NEXT_ACTIVE_STEP": (
-            "RUN_CANONICAL_LIVE_WITH_FINAL_SITE_CALL_CONTROL_CAPACITY"
+            "RUN_CANONICAL_LIVE_WITH_GOVERNED_ROUTER4_CAPACITY_42"
         ),
         "CP_SCALE_STATUS": (
-            "FLOOR1_FINAL_BINDING_TABLE_20_OF_21_BLOCKS_FLOOR2"
+            "FLOOR1_INVALID_CAPACITY_51_BLOCKS_FLOOR2"
         ),
     }
 

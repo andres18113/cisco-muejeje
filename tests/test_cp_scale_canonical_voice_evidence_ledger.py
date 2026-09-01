@@ -62,6 +62,9 @@ RECONCILE_RUN_IDENTITY = (
 FRONTIER_RUN_IDENTITY = (
     "canonical-cp-scale-voice-20260901T034510704353Z-ab0a890a6229"
 )
+CAPACITY_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T040356110829Z-0b0f2def9748"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -81,7 +84,7 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 10
+    assert len(ledger["runs"]) == 11
     return ledger["runs"][0]
 
 
@@ -126,8 +129,13 @@ def reconcile_run(ledger: dict) -> dict:
 
 
 @pytest.fixture(scope="module")
-def latest_run(ledger: dict) -> dict:
+def frontier_run(ledger: dict) -> dict:
     return ledger["runs"][9]
+
+
+@pytest.fixture(scope="module")
+def latest_run(ledger: dict) -> dict:
+    return ledger["runs"][10]
 
 
 @pytest.fixture(scope="module")
@@ -437,10 +445,10 @@ def test_immediate_reconciliation_is_a_valid_negative(reconcile_run: dict):
 
 
 def test_deferred_frontier_reconciliation_is_a_valid_negative(
-    latest_run: dict,
+    frontier_run: dict,
 ):
-    assert latest_run["run_identity"] == FRONTIER_RUN_IDENTITY
-    experiment = latest_run["measured"]["deferred_frontier_experiment"]
+    assert frontier_run["run_identity"] == FRONTIER_RUN_IDENTITY
+    experiment = frontier_run["measured"]["deferred_frontier_experiment"]
     assert experiment["initial_bindings_dispatched"] == 21
     assert experiment["initial_bindings_verified"] == 20
     assert experiment["later_siblings_20_and_21_verified"] is True
@@ -451,8 +459,23 @@ def test_deferred_frontier_reconciliation_is_a_valid_negative(
     assert experiment["result"] == (
         "DEFERRED_FRONTIER_RECONCILIATION_REFUTED"
     )
-    assert latest_run["conclusion"]["stage_call_control_capacity_cause"] == (
+    assert frontier_run["conclusion"]["stage_call_control_capacity_cause"] == (
         "STRONG_CANDIDATE"
+    )
+
+
+def test_capacity_51_is_refuted_against_governed_design(latest_run: dict):
+    assert latest_run["run_identity"] == CAPACITY_RUN_IDENTITY
+    experiment = latest_run["measured"]["capacity_51_experiment"]
+    assert experiment["rendered_max_ephones"] == 51
+    assert experiment["binding_actions"] == 21
+    assert experiment["initial_binding_rows_verified"] == 0
+    assert experiment["final_table_rows"] == 0
+    assert experiment["readback_complete"] is True
+    assert experiment["result"] == "CAPACITY_51_INVALID_ON_PACKET_TRACER_2811"
+    assert latest_run["conclusion"]["capacity_51_cause"] == "REFUTED_INVALID"
+    assert latest_run["conclusion"]["declared_capacity_model"] == (
+        "ROUTER4_42_ROUTER0_12_ROUTER3_7"
     )
 
 
@@ -670,8 +693,8 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_TEN_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "10"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_ELEVEN_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "11"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "1"
     assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == (
         "VOICE_BOOTSTRAP_BINDING_READBACK"
@@ -686,7 +709,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "FINAL_SITE_CAPACITY_PROJECTION_LIVE_PENDING"
+        "GOVERNED_CAPACITY_MODEL_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -713,5 +736,5 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_SCCP"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR1_FINAL_BINDING_TABLE_20_OF_21_BLOCKS_FLOOR2"
+        "FLOOR1_INVALID_CAPACITY_51_BLOCKS_FLOOR2"
     )

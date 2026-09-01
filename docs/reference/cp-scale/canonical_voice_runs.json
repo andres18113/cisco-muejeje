@@ -2926,6 +2926,109 @@
         "failure_classification": "PRODUCT",
         "next_live_authorized": true
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T040356110829Z-0b0f2def9748",
+      "started_at": "2026-08-31T23:03:56.110829-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source, design authority, and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "normal_production_path_only": true,
+        "final_phone_count_as_capacity": true,
+        "per_binding_exact_readback": true,
+        "valid_negative_changed_next_experiment": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "prelive_head": "0b0f2def9748aef487dd8091d3912ef2f328b397",
+        "canonical_live_source_head": "0b0f2def9748aef487dd8091d3912ef2f328b397",
+        "governed_capacity_model_head": "e83ae0c431c18b5c6e24bcd424a08c5b45d0270d"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 0,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "documented_call_control_capacities": {
+          "Router4": 42,
+          "Router0": 12,
+          "Router3": 7
+        },
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "repository_clean": true,
+        "head_equal_upstream": true,
+        "checkout_local_interpreter": true,
+        "single_production_namespace": true,
+        "packet_tracer_version": "9.0.1.0858",
+        "authenticated_http_polling": true,
+        "initial_semantic_devices": 0,
+        "initial_links": 0
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T040356110829Z-0b0f2def9748-failure-precleanup.json",
+          "sha256": "1c38c536b0735788fa5108ce976b8385afae7d5086ba99ad9dcefdde20edbc78"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T040356110829Z-0b0f2def9748-cleanup.json",
+          "sha256": "ce890a1e0364b232c9030a4731255f706559c1832f044637cc00db97ea6703aa"
+        }
+      ],
+      "measured": {
+        "capacity_51_experiment": {
+          "rendered_max_ephones": 51,
+          "rendered_max_dn": 51,
+          "binding_actions": 21,
+          "initial_binding_rows_verified": 0,
+          "final_table_rows": 0,
+          "readback_complete": true,
+          "result": "CAPACITY_51_INVALID_ON_PACKET_TRACER_2811"
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_FLOOR1",
+        "voice_bootstrap_status": "FAILED_CLOSED_EMPTY_EPHONE_TABLE",
+        "voice_signal_status": "NOT_REACHED",
+        "registration_status": "NOT_REACHED"
+      },
+      "classification_rationale": "Sizing Router4 to the physical 51-phone count caused every ephone binding row to remain absent; 51 is invalid on this Packet Tracer 2811 path. The design authority explicitly declares Router4 max-ephones/max-dn 42, Router0 12, Router3 7 and records 51 physical phones >42 as a defect. The next implementation models those capacities as generic Voice intent rather than inferring them from current phone count.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "NOT_REACHED_AFTER_NETWORK",
+        "capacity_51_cause": "REFUTED_INVALID",
+        "declared_capacity_model": "ROUTER4_42_ROUTER0_12_ROUTER3_7",
+        "production_fix_status": "GOVERNED_CAPACITY_LIVE_PENDING",
+        "cp_scale_status": "FLOOR1_INVALID_CALL_CONTROL_CAPACITY_BLOCKED_FLOOR2",
+        "first_unclosed_boundary": "VOICE_BOOTSTRAP_BINDING_READBACK",
+        "failure_classification": "PRODUCT",
+        "next_live_authorized": true
+      }
     }
   ]
 }

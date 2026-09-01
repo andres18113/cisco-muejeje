@@ -447,3 +447,9 @@ with exactly 20 of 21 binding rows after reconciliation. Commit
 `942f35716d04d89e7f59fbb57bf654dd04bc5e58` projects Router4's authoritative
 final 51-phone capacity from Floor1 instead of replay-resizing it 21→35→51.
 Floor2 again received no evidence.
+
+The 51-capacity run
+`canonical-cp-scale-voice-20260901T040356110829Z-0b0f2def9748` produced an
+empty ephone table, proving that inferred capacity invalid. Commit
+`e83ae0c431c18b5c6e24bcd424a08c5b45d0270d` models the documented capacities
+Router4=42, Router0=12, Router3=7 generically. Floor2 again received no evidence.
