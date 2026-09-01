@@ -367,3 +367,20 @@ The implementation passed the complete offline gate (`3457 passed, 2
 skipped`). No LIVE had run when this addendum was written. Therefore this is
 still a causal candidate and `ROOT_CAUSE = STRONG_CANDIDATE` remains in force
 until the governed runtime result answers the question above.
+
+## First authorized attempt did not reach Floor2
+
+The governed run
+`canonical-cp-scale-voice-20260901T010136612890Z-2976329769f9` started from
+pushed source `2976329769f9747fa819935f851742b300f81333`, but stopped at the
+preceding Floor1 SCCP boundary. Floor1 network forwarding, endpoint addressing,
+and all 21 matching Voice DHCP bindings verified. A fresh complete five-page
+`show ephone` table exposed 19 registered extensions and omitted `3001` and
+`3007` after the full registration window.
+
+Because Floor2 was not reached, this run neither supports nor weakens H1 or H2.
+It is not a negative result for delta-only mutation. Commit
+`bd8e8b80bd170704e3f403263186f0469a4d0839` retains the raw registration table,
+measured phone MACs, and exact ephone batch for the next run and corrects the
+observer's boundary label from endpoint address to SCCP while keeping SCCP
+mandatory. The Floor2 classification remains `STRONG_CANDIDATE`.

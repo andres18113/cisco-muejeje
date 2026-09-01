@@ -1781,6 +1781,188 @@
         "failure_classification": "PRODUCT",
         "second_live_authorized": false
       }
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260901T010136612890Z-2976329769f9",
+      "started_at": "2026-08-31T20:01:36.612890-05:00",
+      "packet_tracer_version": "9.0.1.0858",
+      "fact_classes": {
+        "measured": "Immutable values read from the two archived artifacts.",
+        "source": "Behavior established by source and tests at the pinned LIVE source HEAD.",
+        "inference": "The narrow classification supported by measured and source facts."
+      },
+      "methodology": {
+        "retrospective_read": true,
+        "normal_production_path_only": true,
+        "voice_experiment_mode": false,
+        "disposable_qualification_flag": false,
+        "endpoint_dhcp_arm": false,
+        "manual_corrective_cli": false,
+        "delta_only_configuration_mutation": true,
+        "cumulative_configuration_verification": true,
+        "valid_negative_not_repeated": true
+      },
+      "heads": {
+        "base_head": "de81c61a4ae3081826c86ae98c0adabc15e6f156",
+        "causal_implementation_head": "ff1be60f0dad31a17fdb44d27834d251e2927732",
+        "prelive_head": "2976329769f9747fa819935f851742b300f81333",
+        "canonical_live_source_head": "2976329769f9747fa819935f851742b300f81333",
+        "diagnostic_correction_head": "bd8e8b80bd170704e3f403263186f0469a4d0839"
+      },
+      "live_attempts": 1,
+      "invalid_live_attempts": 1,
+      "canonical_contract": {
+        "phone_count": 69,
+        "voice_access_action_count": 69,
+        "stage_voice_counts": {
+          "floor1": 21,
+          "floor2": 35,
+          "floor3": 51,
+          "router0-branch": 62,
+          "router3-branch": 69,
+          "remaining": 69
+        },
+        "topology_regeneration_required": false
+      },
+      "production_path": {
+        "runner": "tools/cp_scale_canonical_live.py",
+        "configuration_mutation": "DELTA_ONLY_BY_STABLE_ACTION_ID",
+        "configuration_verification": "CUMULATIVE",
+        "voice_lifecycle": "DATA_ONLY_ACCESS -> NETWORK_VERIFIED -> VOICE_BOOTSTRAP_APPLIED -> VOICE_SIGNAL_VERIFIED -> PHONE_ACCESS_FWD_VERIFIED -> REGISTRATION",
+        "floor2_causal_question_reached": false
+      },
+      "preflight": {
+        "invalid_attempt": {
+          "run_identity": "canonical-cp-scale-voice-20260901T005916053748Z-2976329769f9",
+          "classification": "HARNESS_HARD_STOP_PRE_MUTATION",
+          "reason": "MCP BUILDER webview sent no authenticated HTTP polls; the window was reopened and fresh pt-sm polling was verified before the valid run.",
+          "topology_mutated": false
+        },
+        "valid_attempt": {
+          "repository_clean": true,
+          "branch": "feature/runtime-ripv2",
+          "upstream": "personal/feature/runtime-ripv2",
+          "head_equal_upstream": true,
+          "checkout_local_interpreter": true,
+          "single_production_namespace": true,
+          "packet_tracer_version": "9.0.1.0858",
+          "authenticated_http_polling": true,
+          "initial_semantic_devices": 0,
+          "initial_links": 0
+        }
+      },
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T010136612890Z-2976329769f9-failure-precleanup.json",
+          "sha256": "6662ffa03e405645882d4d61bcbcec3af60957e4dac64d881bebd9fa15590c03"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T010136612890Z-2976329769f9-cleanup.json",
+          "sha256": "968face019bad5adb4f5890d4a6f15b3164d143d3eff609df40622bb4ce4ec7a"
+        }
+      ],
+      "measured": {
+        "floor1_voice": {
+          "network_foundation_status": "verified",
+          "voice_bootstrap_status": "applied",
+          "voice_signal_status": "verified",
+          "phone_access_fwd_verified": 21,
+          "phone_access_fwd_failed": 0,
+          "phone_access_fwd_unobservable": 0,
+          "phone_access_fwd_samples": 35,
+          "phone_access_fwd_elapsed_ms": 43016,
+          "registration_started_after_fwd_barrier": true,
+          "voice_svi_present_count": 21,
+          "dhcp_enabled_count": 21,
+          "endpoint_ipv4_count": 21,
+          "voice_dhcp_binding_count": 21,
+          "matching_binding_count": 21,
+          "sccp_registered_count": 19,
+          "sccp_failed_count": 0,
+          "sccp_unobservable_count": 2,
+          "raw_reported_first_boundary": "ENDPOINT_ADDRESS",
+          "corrected_first_boundary": "SCCP",
+          "missing_ephone_extensions": [
+            "3001",
+            "3007"
+          ],
+          "failed_phone_identities": [
+            {
+              "phone_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/001",
+              "phone_name": "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PHONE-01",
+              "switch": "Switch5",
+              "port": "FastEthernet0/1",
+              "voice_vlan_id": 20,
+              "ipv4": "172.16.20.18",
+              "binding_state": "MATCHED",
+              "sccp_state": "UNOBSERVABLE"
+            },
+            {
+              "phone_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/007",
+              "phone_name": "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PHONE-07",
+              "switch": "Switch5",
+              "port": "FastEthernet0/7",
+              "voice_vlan_id": 20,
+              "ipv4": "172.16.20.2",
+              "binding_state": "MATCHED",
+              "sccp_state": "UNOBSERVABLE"
+            }
+          ]
+        },
+        "floor2": {
+          "status": "NOT_REACHED",
+          "causal_question_answered": false
+        }
+      },
+      "phone_access_groups": [
+        {
+          "switch": "Switch5",
+          "voice_vlan": 20,
+          "expected_count": 21,
+          "status": "VERIFIED",
+          "verified_count": 21,
+          "sample_count": 35,
+          "elapsed_ms": 43016,
+          "terminal_authority": "AUTHORITATIVE",
+          "terminal_failure_dimension": "NONE"
+        }
+      ],
+      "not_reached_phone_identities": [],
+      "canonical_summary": {
+        "network_foundation_status": "VERIFIED_THROUGH_FLOOR1_FLOOR2_NOT_REACHED",
+        "phone_access_fwd_expected": 69,
+        "phone_access_fwd_verified": 21,
+        "phone_access_fwd_not_reached": 48,
+        "voice_svi_present_count": 21,
+        "dhcp_enabled_count": 21,
+        "endpoint_ipv4_count": 21,
+        "voice_dhcp_binding_count": 21,
+        "matching_binding_count": 21,
+        "sccp_registered_count": 19,
+        "sccp_unobservable_count": 2,
+        "not_reached_phone_count": 48
+      },
+      "classification_rationale": "The Floor1 network and corrected Voice dependency order verified. All 21 phones reached FWD, held endpoint IPv4 addresses, and matched 21 authoritative DHCP bindings. A fresh complete five-page show ephone table exposed only 19 extensions and omitted 3001/3007 after the full 180-second observation. The immutable artifact lacked the raw table and resolved MAC/config batch, so product registration failure versus observer/pagination loss remained unresolved. Floor2 was not reached and its replay/PVST causal question received no evidence.",
+      "cleanup": {
+        "verified": true,
+        "workspace_restored": true,
+        "realtime_restored": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": ""
+      },
+      "conclusion": {
+        "canonical_cp_scale_voice_verification": "FAIL",
+        "root_cause_status": "CONFIRMED",
+        "production_fix_status": "VERIFIED_RUN23_CANONICAL_PARTIAL_19_OF_21_SCCP",
+        "cp_scale_status": "FLOOR1_SCCP_DIVERGENCE_BLOCKED_FLOOR2_CAUSAL_QUESTION",
+        "first_unclosed_boundary": "SCCP",
+        "failure_classification": "PRODUCT_OR_OBSERVER_UNRESOLVED",
+        "next_live_authorized": true
+      }
     }
   ]
 }

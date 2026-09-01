@@ -35,6 +35,9 @@ HANDOFF = ROOT / "handoff.md"
 SOURCE_HEAD = "f5e72f08a4e917410e917a8dc3fedac461c135e1"
 BASE_HEAD = "528564493b855ce332f45fdab7b5867a065b1992"
 RUN_IDENTITY = "canonical-cp-scale-voice-20260830T202000133616Z-f5e72f08a4e9"
+LATEST_RUN_IDENTITY = (
+    "canonical-cp-scale-voice-20260901T010136612890Z-2976329769f9"
+)
 STAGES = (
     CPScaleCanonicalStage.FLOOR1,
     CPScaleCanonicalStage.FLOOR2,
@@ -54,8 +57,13 @@ def ledger() -> dict:
 def run(ledger: dict) -> dict:
     assert ledger["schema"] == "cp-scale-canonical-voice-evidence-v1"
     assert ledger["verification"] == "CANONICAL_CP_SCALE_VOICE"
-    assert len(ledger["runs"]) == 1
+    assert len(ledger["runs"]) == 2
     return ledger["runs"][0]
+
+
+@pytest.fixture(scope="module")
+def latest_run(ledger: dict) -> dict:
+    return ledger["runs"][-1]
 
 
 @pytest.fixture(scope="module")
@@ -169,6 +177,63 @@ def test_both_immutable_artifacts_still_hash_to_the_ledger(run: dict):
         path = ROOT / item["path"]
         assert path.is_file()
         assert hashlib.sha256(path.read_bytes()).hexdigest() == item["sha256"]
+
+
+def test_latest_floor1_divergence_is_tied_to_both_immutable_artifacts(
+    latest_run: dict,
+):
+    assert latest_run["run_identity"] == LATEST_RUN_IDENTITY
+    assert latest_run["heads"]["canonical_live_source_head"] == (
+        "2976329769f9747fa819935f851742b300f81333"
+    )
+    assert latest_run["live_attempts"] == 1
+    assert latest_run["invalid_live_attempts"] == 1
+    artifacts = {
+        item["phase"]: item for item in latest_run["artifacts"]
+    }
+    assert artifacts["failure-precleanup"]["sha256"] == (
+        "6662ffa03e405645882d4d61bcbcec3af60957e4dac64d881bebd9fa15590c03"
+    )
+    assert artifacts["cleanup"]["sha256"] == (
+        "968face019bad5adb4f5890d4a6f15b3164d143d3eff609df40622bb4ce4ec7a"
+    )
+    for item in artifacts.values():
+        path = ROOT / item["path"]
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == item["sha256"]
+
+
+def test_latest_run_localizes_proven_addressing_from_unresolved_sccp(
+    latest_run: dict,
+):
+    floor1 = latest_run["measured"]["floor1_voice"]
+    assert floor1["phone_access_fwd_verified"] == 21
+    assert floor1["endpoint_ipv4_count"] == 21
+    assert floor1["matching_binding_count"] == 21
+    assert floor1["sccp_registered_count"] == 19
+    assert floor1["sccp_unobservable_count"] == 2
+    assert floor1["raw_reported_first_boundary"] == "ENDPOINT_ADDRESS"
+    assert floor1["corrected_first_boundary"] == "SCCP"
+    assert floor1["missing_ephone_extensions"] == ["3001", "3007"]
+    assert latest_run["measured"]["floor2"] == {
+        "status": "NOT_REACHED",
+        "causal_question_answered": False,
+    }
+    assert latest_run["conclusion"]["failure_classification"] == (
+        "PRODUCT_OR_OBSERVER_UNRESOLVED"
+    )
+    assert latest_run["conclusion"]["next_live_authorized"] is True
+
+
+def test_latest_run_cleanup_is_independently_verified(latest_run: dict):
+    assert latest_run["cleanup"] == {
+        "verified": True,
+        "workspace_restored": True,
+        "realtime_restored": True,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "restoration_error": "",
+        "realtime_error": "",
+    }
 
 
 def test_immutable_canonical_evidence_is_never_text_normalized():
@@ -385,19 +450,21 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_ONCE"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "1"
-    assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "0"
-    assert state["CANONICAL_CP_SCALE_FLOOR1_VOICE"] == "VERIFIED_21_OF_21"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_TWICE"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "2"
+    assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "1"
+    assert state["CANONICAL_CP_SCALE_FLOOR1_CURRENT_BOUNDARY"] == "SCCP"
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "48"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
-        "NETWORK_FOUNDATION"
+        "SCCP"
     )
-    assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == "PRODUCT"
+    assert state["CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION"] == (
+        "PRODUCT_OR_OBSERVER_UNRESOLVED"
+    )
     assert state["CANONICAL_CP_SCALE_VOICE_VERIFICATION"] == "FAIL"
     assert state["ROOT_CAUSE_STATUS"] == "CONFIRMED"
     assert state["PRODUCTION_FIX_STATUS"] == (
-        "VERIFIED_RUN23_CANONICAL_NOT_VERIFIED"
+        "VERIFIED_RUN23_CANONICAL_PARTIAL_19_OF_21_SCCP"
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
@@ -421,9 +488,8 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "CANDIDATE_IMPLEMENTED_CAUSAL_LIVE_PENDING"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_CAUSAL_LIVE"] == (
-        "AUTHORIZED_NOT_YET_EXECUTED"
+        "ATTEMPTED_BUT_NOT_REACHED_DUE_FLOOR1_SCCP"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "VOICE_CORRECTION_VALID_FLOOR2_DELTA_ONLY_CAUSAL_LIVE_PREPARED_"
-        "ROOT_CAUSE_STRONG_CANDIDATE"
+        "FLOOR1_SCCP_DIVERGENCE_BLOCKS_FLOOR2_CAUSAL_QUESTION"
     )
