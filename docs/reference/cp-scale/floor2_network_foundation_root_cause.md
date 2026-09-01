@@ -344,3 +344,26 @@ The causal question is:
 Until that result exists, `ROOT_CAUSE = STRONG_CANDIDATE`,
 `TIMEOUT_CLASSIFICATION = NOT_ESTABLISHED`, and no product correction is
 authorized by this offline phase.
+
+## Authorized causal implementation
+
+Authorization was subsequently granted for the exact experiment above.
+Commit `ff1be60f0dad31a17fdb44d27834d251e2927732` implements the candidate
+without changing the topology, Voice correction, PVST policy, timeout, or
+verification standard:
+
+- Floor2 mutates only the 76 action IDs absent from the VERIFIED Floor1 plan.
+- The 115 retained Floor1 application results continue to close typed
+  dependencies, while all 191 Floor2 expectations are freshly verified.
+- Previously signalled Floor1 phone ports are never returned to the data-only
+  preparation path; cumulative phone forwarding is still re-observed.
+- Trunk verification is bounded and round-robin across devices. Every
+  allowed/active/forwarding transition retains a correlated, registered PVST
+  root and relevant port-state observation.
+- Read-only trunk/PVST snapshots are also retained before and after the
+  physical delta and after phases 20 and 30.
+
+The implementation passed the complete offline gate (`3457 passed, 2
+skipped`). No LIVE had run when this addendum was written. Therefore this is
+still a causal candidate and `ROOT_CAUSE = STRONG_CANDIDATE` remains in force
+until the governed runtime result answers the question above.

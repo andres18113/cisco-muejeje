@@ -401,13 +401,14 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
-    assert state["CANONICAL_CP_SCALE_FLOOR2_STAGE_SEMANTICS"] == (
+    assert state["CANONICAL_CP_SCALE_FLOOR2_PRIOR_STAGE_SEMANTICS"] == (
         "CUMULATIVE_REPLAY"
     )
-    assert state["CANONICAL_CP_SCALE_FLOOR1_ACTIONS_REAPPLIED_AT_FLOOR2"] == (
-        "115_OF_115"
+    assert (
+        state["CANONICAL_CP_SCALE_FLOOR1_ACTIONS_REAPPLIED_AT_FAILED_FLOOR2"]
+        == "115_OF_115"
     )
-    assert state["CANONICAL_CP_SCALE_FLOOR2_RETAINED_TEMPORAL_EVIDENCE"] == (
+    assert state["CANONICAL_CP_SCALE_FLOOR2_FAILED_RUN_TEMPORAL_EVIDENCE"] == (
         "INSUFFICIENT"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_TIMEOUT_CLASSIFICATION"] == (
@@ -417,9 +418,12 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "STRONG_CANDIDATE"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_PRODUCT_FIX"] == (
-        "NOT_IMPLEMENTED_CAUSAL_CREDIT_UNRESOLVED"
+        "CANDIDATE_IMPLEMENTED_CAUSAL_LIVE_PENDING"
+    )
+    assert state["CANONICAL_CP_SCALE_FLOOR2_CAUSAL_LIVE"] == (
+        "AUTHORIZED_NOT_YET_EXECUTED"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "VOICE_CORRECTION_VALID_CANONICAL_BLOCKED_AT_FLOOR2_NETWORK_"
-        "FOUNDATION_ROOT_CAUSE_STRONG_CANDIDATE"
+        "VOICE_CORRECTION_VALID_FLOOR2_DELTA_ONLY_CAUSAL_LIVE_PREPARED_"
+        "ROOT_CAUSE_STRONG_CANDIDATE"
     )
