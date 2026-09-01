@@ -226,6 +226,41 @@ def test_missing_matching_binding_fails_the_exact_phone_closed():
     assert evidence.failed_phone_identities[0].ipv4 == missing_address
 
 
+def test_matching_endpoint_and_binding_localize_missing_ephone_row_to_sccp():
+    projection, configuration, voice, bindings, lifecycle = (
+        _complete_floor1_evidence()
+    )
+    registration = voice.registrations[0]
+    registration.status = ActionExecutionStatus.UNOBSERVABLE
+    registration.direct_readback = FieldVerificationStatus.UNOBSERVABLE
+    registration.call_control_ipv4 = ""
+    registration.addressing_status = ActionExecutionStatus.PARTIAL
+    registration.addressing_message = (
+        f"{registration.endpoint_ipv4} was observed on one channel only."
+    )
+    registration.evidence_method = "show_ephone_complete_without_this_row"
+
+    evidence = canonical_cp_scale_voice_evidence(
+        stage="floor1",
+        configuration_plan=projection.configuration,
+        configuration_result=configuration,
+        voice_plan=projection.voice,
+        voice_result=voice,
+        dhcp_server_bindings=bindings,
+        lifecycle_events=lifecycle,
+    )
+
+    assert not evidence.complete
+    assert evidence.addressed_count == 21
+    assert evidence.matching_binding_count == 21
+    assert evidence.sccp_registered_count == 20
+    assert evidence.sccp_unobservable_count == 1
+    assert evidence.first_contradicted_boundary == "SCCP"
+    assert evidence.failed_phone_identities[0].first_contradicted_boundary == (
+        "SCCP"
+    )
+
+
 def test_missing_structured_group_evidence_never_promotes_per_port_flags():
     projection, configuration, voice, bindings, lifecycle = (
         _complete_floor1_evidence()

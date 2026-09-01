@@ -2809,11 +2809,20 @@ def _stage_voice(
         complete_voice_signal=complete_voice_signal,
         lifecycle_observer=lifecycle_observer,
     )
+    drain_diagnostics = getattr(
+        voice_runtime,
+        "drain_diagnostic_evidence",
+        None,
+    )
     evidence: dict[str, object] = {
         "staged": True,
         "result": result.model_dump(mode="json"),
         "phones": len(plan.phone_assignments),
         "actions": len(plan.actions),
+        "runtime_diagnostics": (
+            drain_diagnostics()
+            if callable(drain_diagnostics) else {}
+        ),
     }
 
     refused = sorted(

@@ -446,3 +446,5 @@ def test_canonical_live_retains_network_state_at_each_causal_boundary():
     assert "trunk_transition_observer=" in source
     assert "parse_show_interfaces_trunk" in source
     assert "parse_show_spanning_tree" in source
+    assert '"runtime_diagnostics"' in source
+    assert "drain_diagnostic_evidence" in source

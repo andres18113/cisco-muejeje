@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable, Sequence
@@ -124,6 +125,8 @@ class PacketTracerEnterpriseVoiceRuntime:
         self._targets: dict[str, RuntimeConfigurationTarget] = {}
         self._ready_ios_devices: set[str] = set()
         self._registration_hosts: dict[str, str] = {}
+        self._application_diagnostics: list[dict[str, object]] = []
+        self._registration_diagnostics: list[dict[str, object]] = []
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         targets = normalize_runtime_inventory(self._query_inventory())
@@ -185,19 +188,34 @@ class PacketTracerEnterpriseVoiceRuntime:
             self._ready_ios_devices.add(host)
 
         phone_macs: dict[str, str] = {}
+        phone_mac_evidence: list[dict[str, object]] = []
         try:
             for binding in (
                 item for item in renderable if isinstance(item, BindPhoneToExtension)
             ):
                 self._registration_hosts[binding.phone_id] = binding.host_device_name
-                phone_macs[binding.phone_id] = self._phone_mac(
+                mac = self._phone_mac(
                     binding.physical_device_name,
                 )
+                phone_macs[binding.phone_id] = mac
+                phone_mac_evidence.append({
+                    "phone_id": binding.phone_id,
+                    "physical_device_name": binding.physical_device_name,
+                    "extension": binding.extension,
+                    "directory_index": binding.directory_index,
+                    "mac": mac,
+                })
             batches = self._renderer.render_device_batches(
                 host, self._targets[host].model, list(renderable),
                 phone_macs=phone_macs,
             )
         except ValueError as exc:
+            self._application_diagnostics.append({
+                "host": host,
+                "phone_macs": phone_mac_evidence,
+                "batches": [],
+                "error": str(exc),
+            })
             results.update({item.id: RuntimeActionMutation(
                 action_id=item.id,
                 applied=False,
@@ -205,6 +223,16 @@ class PacketTracerEnterpriseVoiceRuntime:
                 message=str(exc),
             ) for item in renderable})
             return [results[item.id] for item in actions]
+        self._application_diagnostics.append({
+            "host": host,
+            "phone_macs": phone_mac_evidence,
+            "batches": [{
+                "phase": int(batch.phase),
+                "action_ids": list(batch.action_ids),
+                "ios_payload": batch.ios_payload,
+            } for batch in batches],
+            "error": "",
+        })
 
         applied_ids: set[str] = set()
         for batch in batches:
@@ -250,6 +278,9 @@ class PacketTracerEnterpriseVoiceRuntime:
             "fresh_output_observed": result.fresh_output_observed,
             "window_strategy": result.window_strategy,
             "failure_reason": result.failure_reason,
+            "observed_device_name": result.observed_device_name,
+            "device_identity_provenance": result.device_identity_provenance,
+            "device_identity_evidence": result.device_identity_evidence,
             # COMPLETA is a dimension of its own, and dropping it made a window
             # that stopped early indistinguishable from an ephone that is not
             # there. With 21 ephones the output pages, and that is exactly the
@@ -259,6 +290,7 @@ class PacketTracerEnterpriseVoiceRuntime:
             "truncated_by_pager": result.truncated_by_pager,
             "pager_pages_captured": result.pager_pages_captured,
             "ephones": [item.__dict__ for item in rows],
+            "output": result.output,
         }
 
     def observe_registration(
@@ -307,9 +339,11 @@ class PacketTracerEnterpriseVoiceRuntime:
         decided: dict[int, tuple[dict[str, object], dict, int]] = {}
         last: dict[str, object] = {}
         attempts = 0
+        transitions: list[dict[str, object]] = []
+        last_signature = ""
 
         def inspect() -> dict[str, object]:
-            nonlocal last, attempts
+            nonlocal last, attempts, last_signature
             attempts += 1
             last = self.inspect_call_control(host)
             rows = last.get("ephones", [])
@@ -319,6 +353,27 @@ class PacketTracerEnterpriseVoiceRuntime:
                 if isinstance(item, dict)
             }
             last["by_extension"] = by_extension
+            capture = self._registration_capture(last, attempts)
+            signature = str(capture["output_sha256"]) + json.dumps(
+                {
+                    key: capture.get(key)
+                    for key in (
+                        "executed",
+                        "fresh_output_observed",
+                        "output_complete",
+                        "truncated_by_pager",
+                        "pager_pages_captured",
+                        "observed_device_name",
+                        "device_identity_provenance",
+                        "ephones",
+                    )
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            if signature != last_signature:
+                transitions.append(capture)
+                last_signature = signature
             for index, expectation in group:
                 if index in decided:
                     continue
@@ -337,6 +392,18 @@ class PacketTracerEnterpriseVoiceRuntime:
             timeout_seconds=self._registration_timeout,
             interval_seconds=self._convergence_interval,
         ).wait()
+        self._registration_diagnostics.append({
+            "host": host,
+            "expected_phone_ids": [
+                expectation.phone_id for _, expectation in group
+            ],
+            "expected_extensions": [
+                expectation.extension for _, expectation in group
+            ],
+            "attempts": attempts,
+            "transitions": transitions,
+            "final_capture": self._registration_capture(last, attempts),
+        })
 
         final_rows = last.get("by_extension")
         final_rows = final_rows if isinstance(final_rows, dict) else {}
@@ -449,6 +516,34 @@ class PacketTracerEnterpriseVoiceRuntime:
                 device_dhcp_enabled=device_dhcp,
             )
         return observed
+
+    @staticmethod
+    def _registration_capture(
+        observed: dict[str, object],
+        attempt: int,
+    ) -> dict[str, object]:
+        output = str(observed.get("output") or "")
+        return {
+            "attempt": attempt,
+            **{
+                key: value for key, value in observed.items()
+                if key != "by_extension"
+            },
+            "output_sha256": hashlib.sha256(
+                output.encode("utf-8")
+            ).hexdigest(),
+        }
+
+    def drain_diagnostic_evidence(self) -> dict[str, object]:
+        """Return and clear exact mutation and registration diagnostics."""
+
+        evidence = {
+            "applications": self._application_diagnostics,
+            "registration_episodes": self._registration_diagnostics,
+        }
+        self._application_diagnostics = []
+        self._registration_diagnostics = []
+        return evidence
 
     def _endpoint_observation(
         self, expectation: VoiceVerificationExpectation,

@@ -65,6 +65,19 @@ def test_adapter_applies_only_typed_voice_actions_and_escapes_device_names():
     assert any("configureIosDevice" in item for item in captured)
     assert any('"HQ-R1"' in item for item in captured)
     assert any("mac-address 0011.2233.4455" in item for item in captured)
+    diagnostics = runtime.drain_diagnostic_evidence()
+    application, = diagnostics["applications"]
+    assert {
+        item["phone_id"]: item["mac"]
+        for item in application["phone_macs"]
+    } == {
+        item.phone_id: "00:11:22:33:44:55"
+        for item in bindings
+    }
+    assert any(
+        "mac-address 0011.2233.4455" in item["ios_payload"]
+        for item in application["batches"]
+    )
 
 
 def test_local_dial_rule_is_implicit_and_intersite_rule_is_not_claimed_applied():

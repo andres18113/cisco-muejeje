@@ -232,6 +232,17 @@ def test_twenty_one_phones_are_read_from_one_bounded_observation_episode():
     assert control.executions < len(expectations)
     # The phone's own SVI stays a per-phone read: it is a different fact.
     assert len(control.endpoint_reads) == len(expectations)
+    diagnostics = control.runtime.drain_diagnostic_evidence()
+    episode, = diagnostics["registration_episodes"]
+    assert episode["host"] == "F1-R4"
+    assert episode["expected_extensions"] == _FLOOR1_EXTENSIONS
+    assert episode["attempts"] >= 1
+    assert episode["transitions"]
+    final = episode["final_capture"]
+    assert final["output_complete"]
+    assert final["pager_pages_captured"] == len(_floor1_pages())
+    assert "ephone-1" in final["output"]
+    assert len(final["output_sha256"]) == 64
 
 
 def test_a_shared_capture_still_judges_every_phone_on_its_own_row():

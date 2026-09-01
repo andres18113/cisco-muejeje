@@ -1380,12 +1380,10 @@ def canonical_cp_scale_voice_evidence(
             dhcp_enabled += 1
         endpoint_verified = bool(
             registration is not None
-            and registration.addressing_status is ActionExecutionStatus.VERIFIED
             and registration.endpoint_interface_present
             and registration.endpoint_address_channel
             and registration.endpoint_dhcp_enabled is True
             and endpoint_ipv4
-            and registration.call_control_ipv4 == endpoint_ipv4
         )
         if endpoint_verified:
             addressed += 1
