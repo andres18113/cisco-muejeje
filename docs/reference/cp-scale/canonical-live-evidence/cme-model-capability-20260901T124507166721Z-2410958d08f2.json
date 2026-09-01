@@ -1,0 +1,166 @@
+{
+  "baseline": {
+    "backend_managed_device_count": 19,
+    "devices": [
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device0",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device1",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device10",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device11",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device12",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device13",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device14",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device15",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device19",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device2",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device20",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device21",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device3",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device4",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device5",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device6",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device7",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device8",
+        "ports": []
+      },
+      {
+        "backend_managed": true,
+        "model": "Power Distribution Device",
+        "name": "Power Distribution Device9",
+        "ports": []
+      }
+    ],
+    "link_count": 0,
+    "links": [],
+    "message": "fresh_complete_workspace_inventory",
+    "observed": true,
+    "semantic_device_count": 0
+  },
+  "bridge_before_stop": {
+    "client_headers": {
+      "Origin": "pt-sm:",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "cross-site",
+      "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+    },
+    "connected": true,
+    "last_poll_ago": 0.0,
+    "token_id": "395ba83c275764b9",
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "unauth_recent": false
+  },
+  "completed_at": "2026-09-01T12:46:01.979227+00:00",
+  "failure": "AttributeError: 'ProbeSessionResult' object has no attribute 'cleanup'",
+  "head_equal_upstream": true,
+  "http_bridge": {
+    "client_headers": {
+      "Origin": "pt-sm:",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "cross-site",
+      "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+    },
+    "connected": true,
+    "last_poll_ago": 0.1,
+    "token_id": "395ba83c275764b9",
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "unauth_recent": false
+  },
+  "loaded_namespaces": [
+    "packet_tracer_mcp"
+  ],
+  "models": {},
+  "package_file": "C:\\Users\\Andres\\mpc-muejeje\\src\\packet_tracer_mcp\\__init__.py",
+  "python_executable": "C:\\Users\\Andres\\mpc-muejeje\\.venv\\Scripts\\python.exe",
+  "schema": "cp-scale-cme-model-capability-live-v1",
+  "source_head": "2410958d08f28f0a4a226bf6807e3282678f090e",
+  "started_at": "2026-09-01T12:45:07.166721+00:00"
+}

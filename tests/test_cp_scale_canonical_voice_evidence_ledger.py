@@ -874,6 +874,46 @@ def test_immutable_canonical_evidence_is_never_text_normalized():
     )
 
 
+def test_2911_cme_probe_negative_and_cleanup_are_pinned():
+    evidence_dir = (
+        ROOT / "docs" / "reference" / "cp-scale"
+        / "canonical-live-evidence"
+    )
+    wrapper = evidence_dir / (
+        "cme-model-capability-20260901T124507166721Z-2410958d08f2.json"
+    )
+    snapshot = evidence_dir / (
+        "cme-model-capability-20260901T124507166721Z-"
+        "2410958d08f2-2911-snapshot.json"
+    )
+    cleanup = evidence_dir / (
+        "cme-model-capability-20260901T124507166721Z-"
+        "2410958d08f2-cleanup.json"
+    )
+    assert hashlib.sha256(wrapper.read_bytes()).hexdigest() == (
+        "12a6efb47f7ac12bb98b15a6fd93ff7eb7f46acbfd529eb4bc14f57d3f71ffe1"
+    )
+    assert hashlib.sha256(snapshot.read_bytes()).hexdigest() == (
+        "7b2e1aa81552bead16678b95ce1c882b2e315cf4116e39edfddb976ba0793f83"
+    )
+    assert hashlib.sha256(cleanup.read_bytes()).hexdigest() == (
+        "3dfb438e18aeb1cb77aad0ac7112ddc6f9a4e1989cb24064907ec131bd29689c"
+    )
+    snapshot_payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    result = next(
+        item for item in snapshot_payload["session"]["results"]
+        if item["capability"] == "supports_cme"
+    )
+    assert result["model"] == "2911"
+    assert result["status"] == "unknown"
+    assert result["execution_status"] == "verify_failed"
+    assert result["verified"] is False
+    assert snapshot_payload["inventory_restored"] is True
+    assert snapshot_payload["session"]["cleanup_failed"] == []
+    cleanup_payload = json.loads(cleanup.read_text(encoding="utf-8"))
+    assert cleanup_payload["independent_post_cleanup"]["verified"] is True
+
+
 def test_floor1_retains_the_measured_causal_order_and_exact_success(run: dict):
     floor1 = run["measured"]["floor1_voice"]
     assert floor1["complete"] is True

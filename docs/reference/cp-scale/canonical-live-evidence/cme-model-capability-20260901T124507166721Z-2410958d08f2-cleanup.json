@@ -1,0 +1,43 @@
+{
+  "schema": "cp-scale-cme-model-capability-cleanup-v1",
+  "source_head": "2410958d08f28f0a4a226bf6807e3282678f090e",
+  "wrapper_artifact": {
+    "path": "cme-model-capability-20260901T124507166721Z-2410958d08f2.json",
+    "sha256": "12a6efb47f7ac12bb98b15a6fd93ff7eb7f46acbfd529eb4bc14f57d3f71ffe1"
+  },
+  "probe_snapshot": {
+    "path": "cme-model-capability-20260901T124507166721Z-2410958d08f2-2911-snapshot.json",
+    "sha256": "7b2e1aa81552bead16678b95ce1c882b2e315cf4116e39edfddb976ba0793f83",
+    "inventory_restored": true,
+    "cleanup_deleted": [
+      "__MCP_PROBE_58b8b4490637_01_layer3-probe",
+      "__MCP_PROBE_58b8b4490637_01_cme-call-control",
+      "__MCP_PROBE_58b8b4490637_01"
+    ],
+    "cleanup_failed": []
+  },
+  "independent_post_cleanup": {
+    "first": {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 19,
+      "link_count": 0
+    },
+    "second": {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 19,
+      "link_count": 0
+    },
+    "verified": true
+  },
+  "result": {
+    "model": "2911",
+    "capability": "supports_cme",
+    "status": "unknown",
+    "execution_status": "verify_failed",
+    "verified": false,
+    "failure_reason": "`show ephone` produced no parseable row after the controlled CME configuration, so no registration read-back path exists."
+  },
+  "wrapper_failure": "AttributeError: 'ProbeSessionResult' object has no attribute 'cleanup'"
+}

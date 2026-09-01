@@ -1,0 +1,342 @@
+{
+  "schema_version": 2,
+  "probe_schema_version": 2,
+  "packet_tracer_version": "9.0.1.0858",
+  "backend_version_provenance": "declared_environment",
+  "backend": "packet_tracer",
+  "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+  "probe_fingerprints": {
+    "2911:model_exists": "a293991a7636dbebd88e79e59e011ac21a28584e88db8228da0198d0e124927b",
+    "2911:port_inventory": "30cb8a9d29372ef4f87cc60da6a6107aa9a715bb01e4f08913f972e2bd963839",
+    "2911:configuration_channel": "57f5ae11e54b2e15886f4e1944544873e09b3dd2079741adc7f2c20f53c3ec4d",
+    "2911:layer3": "9d8feb39eb2f3e9afcb6813bdbbf9986039be8f6925cdab05f682ebb0b568cee",
+    "2911:supports_cme": "5940c86236fc0dee9f17194266510606dbb69a69462d5e67adfce22f9cee4b2e"
+  },
+  "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+  "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+  "inventory_restored": true,
+  "session": {
+    "session": {
+      "session_id": "probe-58b8b4490637",
+      "started_at": "2026-09-01T12:45:08.984995Z",
+      "packet_tracer_version": "9.0.1.0858",
+      "created_devices": [
+        "__MCP_PROBE_58b8b4490637_01",
+        "__MCP_PROBE_58b8b4490637_01_layer3-probe",
+        "__MCP_PROBE_58b8b4490637_01_cme-call-control"
+      ],
+      "mutations": [
+        "temporary-device-attempt:2911",
+        "temporary-device:2911",
+        "fresh-device-attempt:2911:layer3",
+        "fresh-device:2911:layer3",
+        "configure:2911:layer3",
+        "fresh-device-attempt:2911:supports_cme",
+        "fresh-device:2911:supports_cme",
+        "configure:2911:supports_cme"
+      ],
+      "cleanup_status": "clean",
+      "warnings": []
+    },
+    "devices": [
+      {
+        "identity": {
+          "canonical_id": "2911",
+          "runtime_id": "2911",
+          "display_name": "Cisco 2911",
+          "aliases": [
+            "2911",
+            "router"
+          ],
+          "category": "router",
+          "packet_tracer_version": "9.0.1.0858",
+          "status": "catalog_matched"
+        },
+        "discovery_source": "controlled_create_probe",
+        "ports": [
+          {
+            "name": "Vlan1",
+            "interface_type": "Vlan",
+            "speed": "100000kbps",
+            "slot": "",
+            "module": null,
+            "physical": false,
+            "logical": true,
+            "power_admin_enabled": false,
+            "power_runtime_on": false,
+            "power_delivery_active": null,
+            "power_observation_complete": true,
+            "poe_status": "unsupported",
+            "access_capable": "unknown",
+            "uplink_capable": "unknown",
+            "evidence_source": "packet_tracer_runtime"
+          },
+          {
+            "name": "GigabitEthernet0/0",
+            "interface_type": "GigabitEthernet",
+            "speed": "1000000kbps",
+            "slot": "",
+            "module": null,
+            "physical": true,
+            "logical": false,
+            "power_admin_enabled": false,
+            "power_runtime_on": false,
+            "power_delivery_active": null,
+            "power_observation_complete": true,
+            "poe_status": "unsupported",
+            "access_capable": "unknown",
+            "uplink_capable": "unknown",
+            "evidence_source": "packet_tracer_runtime"
+          },
+          {
+            "name": "GigabitEthernet0/1",
+            "interface_type": "GigabitEthernet",
+            "speed": "1000000kbps",
+            "slot": "",
+            "module": null,
+            "physical": true,
+            "logical": false,
+            "power_admin_enabled": false,
+            "power_runtime_on": false,
+            "power_delivery_active": null,
+            "power_observation_complete": true,
+            "poe_status": "unsupported",
+            "access_capable": "unknown",
+            "uplink_capable": "unknown",
+            "evidence_source": "packet_tracer_runtime"
+          },
+          {
+            "name": "GigabitEthernet0/2",
+            "interface_type": "GigabitEthernet",
+            "speed": "1000000kbps",
+            "slot": "",
+            "module": null,
+            "physical": true,
+            "logical": false,
+            "power_admin_enabled": false,
+            "power_runtime_on": false,
+            "power_delivery_active": null,
+            "power_observation_complete": true,
+            "poe_status": "unsupported",
+            "access_capable": "unknown",
+            "uplink_capable": "unknown",
+            "evidence_source": "packet_tracer_runtime"
+          }
+        ],
+        "modules": [
+          {
+            "name": "",
+            "slot": "0",
+            "installed": true,
+            "resulting_ports": [],
+            "evidence_source": "packet_tracer_runtime",
+            "slot_type_code": "18",
+            "port_count": 3,
+            "identity_observable": false
+          }
+        ],
+        "observed": true,
+        "warnings": []
+      }
+    ],
+    "results": [
+      {
+        "probe_id": "configuration-channel",
+        "model": "2911",
+        "capability": "configuration_channel",
+        "status": "supported",
+        "execution_status": "verified",
+        "evidence_source": "packet_tracer_runtime",
+        "configured": false,
+        "verified": true,
+        "observed_value": null,
+        "raw_summary": "Official configureIosDevice channel available after 1 readiness check(s); independent terminal observation is deferred to IOS/PC probes.",
+        "failure_reason": "",
+        "duration_ms": 0,
+        "packet_tracer_version": "9.0.1.0858",
+        "verification_method": "direct_runtime_api",
+        "context": {
+          "probe_id": "configuration-channel",
+          "probe_version": "1",
+          "backend": "packet_tracer",
+          "backend_version": "9.0.1.0858",
+          "device_model": "2911",
+          "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+          "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "inventory_restored": true,
+          "isolation_level": "shared_device",
+          "mutations": [
+            "temporary-device-attempt:2911",
+            "temporary-device:2911"
+          ],
+          "cleanup_status": "clean",
+          "result_status": "supported",
+          "execution_status": "verified",
+          "probe_fingerprint": "57f5ae11e54b2e15886f4e1944544873e09b3dd2079741adc7f2c20f53c3ec4d"
+        },
+        "dimensions": {}
+      },
+      {
+        "probe_id": "layer3-probe",
+        "model": "2911",
+        "capability": "layer3",
+        "status": "supported",
+        "execution_status": "verified",
+        "evidence_source": "controlled_probe",
+        "configured": true,
+        "verified": true,
+        "observed_value": null,
+        "raw_summary": "IPv4 interface configured through configureIosDevice, read back through registered IOS show, and cleared successfully.",
+        "failure_reason": "",
+        "duration_ms": 0,
+        "packet_tracer_version": "9.0.1.0858",
+        "verification_method": "cli_plus_readback",
+        "context": {
+          "probe_id": "layer3-probe",
+          "probe_version": "1",
+          "backend": "packet_tracer",
+          "backend_version": "9.0.1.0858",
+          "device_model": "2911",
+          "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+          "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "inventory_restored": true,
+          "isolation_level": "fresh_device_required",
+          "mutations": [
+            "configure:2911:layer3",
+            "fresh-device-attempt:2911:layer3",
+            "fresh-device:2911:layer3",
+            "temporary-device-attempt:2911",
+            "temporary-device:2911"
+          ],
+          "cleanup_status": "clean",
+          "result_status": "supported",
+          "execution_status": "verified",
+          "probe_fingerprint": "9d8feb39eb2f3e9afcb6813bdbbf9986039be8f6925cdab05f682ebb0b568cee"
+        },
+        "dimensions": {}
+      },
+      {
+        "probe_id": "model-exists",
+        "model": "2911",
+        "capability": "model_exists",
+        "status": "supported",
+        "execution_status": "verified",
+        "evidence_source": "packet_tracer_runtime",
+        "configured": false,
+        "verified": true,
+        "observed_value": null,
+        "raw_summary": "Device created and read back.",
+        "failure_reason": "",
+        "duration_ms": 0,
+        "packet_tracer_version": "9.0.1.0858",
+        "verification_method": null,
+        "context": {
+          "probe_id": "model-exists",
+          "probe_version": "1",
+          "backend": "packet_tracer",
+          "backend_version": "9.0.1.0858",
+          "device_model": "2911",
+          "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+          "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "inventory_restored": true,
+          "isolation_level": "shared_device",
+          "mutations": [
+            "temporary-device-attempt:2911",
+            "temporary-device:2911"
+          ],
+          "cleanup_status": "clean",
+          "result_status": "supported",
+          "execution_status": "verified",
+          "probe_fingerprint": "a293991a7636dbebd88e79e59e011ac21a28584e88db8228da0198d0e124927b"
+        },
+        "dimensions": {}
+      },
+      {
+        "probe_id": "port-inventory",
+        "model": "2911",
+        "capability": "port_inventory",
+        "status": "supported",
+        "execution_status": "verified",
+        "evidence_source": "packet_tracer_runtime",
+        "configured": false,
+        "verified": true,
+        "observed_value": null,
+        "raw_summary": "4 port(s) observed.",
+        "failure_reason": "",
+        "duration_ms": 0,
+        "packet_tracer_version": "9.0.1.0858",
+        "verification_method": null,
+        "context": {
+          "probe_id": "port-inventory",
+          "probe_version": "1",
+          "backend": "packet_tracer",
+          "backend_version": "9.0.1.0858",
+          "device_model": "2911",
+          "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+          "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "inventory_restored": true,
+          "isolation_level": "shared_device",
+          "mutations": [
+            "temporary-device-attempt:2911",
+            "temporary-device:2911"
+          ],
+          "cleanup_status": "clean",
+          "result_status": "supported",
+          "execution_status": "verified",
+          "probe_fingerprint": "30cb8a9d29372ef4f87cc60da6a6107aa9a715bb01e4f08913f972e2bd963839"
+        },
+        "dimensions": {}
+      },
+      {
+        "probe_id": "cme-call-control",
+        "model": "2911",
+        "capability": "supports_cme",
+        "status": "unknown",
+        "execution_status": "verify_failed",
+        "evidence_source": "controlled_probe",
+        "configured": true,
+        "verified": false,
+        "observed_value": null,
+        "raw_summary": "",
+        "failure_reason": "`show ephone` produced no parseable row after the controlled CME configuration, so no registration read-back path exists.",
+        "duration_ms": 0,
+        "packet_tracer_version": "9.0.1.0858",
+        "verification_method": null,
+        "context": {
+          "probe_id": "cme-call-control",
+          "probe_version": "1",
+          "backend": "packet_tracer",
+          "backend_version": "9.0.1.0858",
+          "device_model": "2911",
+          "environment_fingerprint": "12bf519db51d00473d16848afa17bab824ef0a233d63ced6d31e64c12041a43a",
+          "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1;Power Distribution Device/Power Distribution Device10;Power Distribution Device/Power Distribution Device11;Power Distribution Device/Power Distribution Device12;Power Distribution Device/Power Distribution Device13;Power Distribution Device/Power Distribution Device14;Power Distribution Device/Power Distribution Device15;Power Distribution Device/Power Distribution Device19;Power Distribution Device/Power Distribution Device2;Power Distribution Device/Power Distribution Device20;Power Distribution Device/Power Distribution Device21;Power Distribution Device/Power Distribution Device3;Power Distribution Device/Power Distribution Device4;Power Distribution Device/Power Distribution Device5;Power Distribution Device/Power Distribution Device6;Power Distribution Device/Power Distribution Device7;Power Distribution Device/Power Distribution Device8;Power Distribution Device/Power Distribution Device9",
+          "inventory_restored": true,
+          "isolation_level": "fresh_device_required",
+          "mutations": [
+            "configure:2911:supports_cme",
+            "fresh-device-attempt:2911:supports_cme",
+            "fresh-device:2911:supports_cme",
+            "temporary-device-attempt:2911",
+            "temporary-device:2911"
+          ],
+          "cleanup_status": "clean",
+          "result_status": "unknown",
+          "execution_status": "verify_failed",
+          "probe_fingerprint": "5940c86236fc0dee9f17194266510606dbb69a69462d5e67adfce22f9cee4b2e"
+        },
+        "dimensions": {}
+      }
+    ],
+    "cleanup_deleted": [
+      "__MCP_PROBE_58b8b4490637_01_layer3-probe",
+      "__MCP_PROBE_58b8b4490637_01_cme-call-control",
+      "__MCP_PROBE_58b8b4490637_01"
+    ],
+    "cleanup_failed": []
+  }
+}

@@ -934,6 +934,20 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CANONICAL_CP_SCALE_ROUTER4_CAPACITY_MISMATCH": (
             "CONFIRMED_51_PHONES_GT_42"
         ),
+        "CME_CAPACITY_MODEL_2911": (
+            "SUPPORTS_CME_UNKNOWN | VERIFY_FAILED_NO_EPHONE_ROW"
+        ),
+        "CME_CAPACITY_PROBE_2911_WRAPPER": (
+            "HARNESS_SERIALIZATION_FAILURE_AFTER_VALID_MODEL_RESULT"
+        ),
+        "CME_CAPACITY_PROBE_2911_CLEANUP": (
+            "SNAPSHOT_RESTORED | INDEPENDENT_ZERO_ZERO_TWICE"
+        ),
+        "CME_CAPACITY_PROBE_2911_SHA256": (
+            "WRAPPER_12a6efb47f7ac12bb98b15a6fd93ff7eb7f46acbfd529eb4bc14f57d3f71ffe1"
+            " | SNAPSHOT_7b2e1aa81552bead16678b95ce1c882b2e315cf4116e39edfddb976ba0793f83"
+            " | CLEANUP_3dfb438e18aeb1cb77aad0ac7112ddc6f9a4e1989cb24064907ec131bd29689c"
+        ),
         "CANONICAL_CP_SCALE_EVIDENCE_SHA256": (
             "RUN1_PRECLEANUP_"
             "d4b017332c1f0b7f12e5e6fef977a508c7b1fcdb72e1f605ad095143b54a60db"
@@ -1018,11 +1032,11 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         ),
         "CANONICAL_CP_SCALE_WORKSPACE_RESTORED": "YES",
         "CANONICAL_CP_SCALE_REALTIME_RESTORED": "YES",
-        "LIVE_RUNS_CONSUMED": "26",
+        "LIVE_RUNS_CONSUMED": "27",
         "CLEANUP": "VERIFIED_AFTER_EVERY_LIVE",
         "WORKSPACE_RESTORED": "YES",
         "NEXT_ACTIVE_STEP": (
-            "QUALIFY_CME_MODEL_WITH_CAPACITY_AT_LEAST_51"
+            "QUALIFY_ISR4321_AND_ISR4331_CME_SUPPORT_WITH_CORRECTED_WRAPPER"
         ),
         "CP_SCALE_STATUS": (
             "FLOOR2_VERIFIED_35_OF_35 | FLOOR3_CAPACITY_MISMATCH_CONFIRMED"
