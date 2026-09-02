@@ -25,9 +25,13 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     assert datetime.fromisoformat(state["updated_at"].replace("Z", "+00:00"))
     assert re.fullmatch(r"[0-9a-f]{40}", state["source_head"])
     assert state["active_stage"] == "router0-branch"
-    assert state["status"] == "READY_FOR_ROUTER0_LIVE"
-    assert state["first_contradicted_boundary"] == "NONE"
-    assert state["next_active_step"] == "RUN_ROUTER0_CANONICAL_LIVE"
+    assert state["status"] == (
+        "ROUTER0_LIVE_BLOCKER_FIXED_OFFLINE_PENDING_RERUN"
+    )
+    assert state["first_contradicted_boundary"] == (
+        "FLOOR2_VOICE_SIGNAL_PVST_LEARNING_WINDOW"
+    )
+    assert state["next_active_step"] == "RERUN_ROUTER0_CANONICAL_LIVE"
     assert set(state["stages"]) == {"floor3", "router0-branch"}
 
     floor3 = state["stages"]["floor3"]
@@ -37,7 +41,7 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
         "control_plane": "CAPABILITY_GAP_CLOSED_AFTER_PRIOR_PARTIAL_LIVE",
     }
     router0 = state["stages"]["router0-branch"]
-    assert router0["result"] == "NOT_RUN"
+    assert router0["result"] == "NOT_REACHED_AFTER_FLOOR2_NEGATIVE_LIVE"
     assert router0["expected_scope"] == {
         "cumulative_devices": 290,
         "cumulative_links": 202,
@@ -47,6 +51,31 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
         "configuration_mutations": 84,
         "control_plane_mutations": 40,
         "voice_mutations": 45,
+    }
+    assert state["latest_live_run"] == {
+        "run_identity": (
+            "canonical-cp-scale-voice-20260902T215118136599Z-"
+            "aa94ce992c6b"
+        ),
+        "source_head": "aa94ce992c6bbcd45e44f4aca097f446b28e2ca4",
+        "highest_verified_stage": "floor1",
+        "failed_stage": "floor2",
+        "failure_boundary": "VOICE_SIGNAL",
+        "terminal_stp": {
+            "switch": "Switch7",
+            "voice_vlan_id": 20,
+            "ports": 14,
+            "state": "LRN",
+            "wall_clock_elapsed_ms": 45563,
+            "packet_tracer_simulation_elapsed_ms": 24361,
+        },
+        "fix": "ONE_PROTOCOL_BOUNDED_LRN_EXTENSION_OFFLINE_VERIFIED",
+        "cleanup": {
+            "workspace_restored_twice": True,
+            "semantic_devices": 0,
+            "links": 0,
+            "realtime_restored": True,
+        },
     }
 
     handoff = parse_handoff_state(HANDOFF_PATH.read_text(encoding="utf-8"))

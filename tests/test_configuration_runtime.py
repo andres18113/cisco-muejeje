@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 
 from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
@@ -18,6 +19,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 )
 from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
+    voice_access_learning_extension_is_authorized,
 )
 from src.packet_tracer_mcp.infrastructure.execution import (
     enterprise_configuration_runtime as configuration_runtime_module,
@@ -1331,6 +1333,20 @@ class _SequenceIos:
         return self.results[0]
 
 
+class _FirstThenFailingIos:
+    """One authoritative sample, then a channel that stops answering."""
+
+    def __init__(self, first):
+        self.first = first
+        self.calls = []
+
+    def execute(self, device_name, query_id, **kwargs):
+        self.calls.append((device_name, query_id, kwargs))
+        if len(self.calls) == 1:
+            return self.first
+        raise RuntimeError("the IOS channel dropped")
+
+
 def _authoritative_trunk_result(expectation, output):
     return IosCommandResult(
         expectation.device_name,
@@ -1394,6 +1410,232 @@ def test_voice_access_forwarding_waits_on_one_registered_stp_query():
     } == {OperationalQueryId.SHOW_SPANNING_TREE}
 
 
+def _voice_expectation():
+    return VerificationExpectation(
+        id="verify/voice-access/learning",
+        action_id="access/voice/learning",
+        kind=VerificationKind.ACCESS_PORT,
+        device_id="sw",
+        device_name="SW",
+        expected={
+            "interface": "FastEthernet0/1",
+            "vlan_id": 10,
+            "voice_vlan_id": 20,
+        },
+    )
+
+
+def _voice_stp_result(state, *, observed_device_name="SW"):
+    return IosCommandResult(
+        "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
+        output=_voice_stp_output(state),
+        fresh_output_observed=True,
+        output_complete=True,
+        observed_device_name=observed_device_name,
+        device_identity_provenance="confirmed_unique",
+    )
+
+
+def _voice_runtime(ios, *, trunk_timeout_seconds=0.0):
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=trunk_timeout_seconds,
+        convergence_interval_seconds=0.0,
+    )
+    runtime._ios = ios
+    return runtime
+
+
+def test_voice_access_forwarding_extends_once_from_learning_to_forwarding():
+    ios = _SequenceIos([
+        _voice_stp_result("LRN"),
+        _voice_stp_result("FWD"),
+    ])
+    runtime = _voice_runtime(ios)
+
+    result = runtime.wait_for_voice_access_forwarding([_voice_expectation()])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    assert len(ios.calls) == 2
+    assert result.convergence is not None
+    assert result.convergence.details["initial_sample_count"] == 1
+    assert result.convergence.details["learning_extension_authorized"] is True
+    assert result.convergence.details["learning_extension_seconds"] == 20.0
+    assert result.convergence.details["learning_extension_sample_count"] == 1
+    assert result.convergence.details["sample_count"] == 2
+    assert result.convergence.details["terminal_failure_dimension"] == "NONE"
+
+
+def test_voice_access_forwarding_buys_exactly_one_protocol_sized_window(
+    monkeypatch,
+):
+    """LRN that never forwards buys the 20 s budget once, then fails closed."""
+    observed_timeouts: list[float] = []
+    real_waiter = configuration_runtime_module.StateConvergenceWaiter
+
+    class CapturingWaiter:
+        def __init__(
+            self, inspect, *, timeout_seconds: float, interval_seconds: float,
+        ) -> None:
+            observed_timeouts.append(timeout_seconds)
+            # Only the requested protocol-sized budget is under test here, so
+            # no window burns wall-clock time.
+            self._waiter = real_waiter(
+                inspect, timeout_seconds=0, interval_seconds=interval_seconds,
+            )
+
+        def wait(self):
+            return self._waiter.wait()
+
+    monkeypatch.setattr(
+        configuration_runtime_module, "StateConvergenceWaiter", CapturingWaiter,
+    )
+    ios = _SequenceIos([_voice_stp_result("LRN")])
+    runtime = _voice_runtime(ios)
+
+    result = runtime.wait_for_voice_access_forwarding([_voice_expectation()])[0]
+
+    assert observed_timeouts == [0.0, 20.0], "one extension, one Forward Delay"
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.convergence is not None
+    assert result.convergence.details["learning_extension_authorized"] is True
+    assert result.convergence.details["learning_extension_sample_count"] == 1
+    assert result.convergence.details["terminal_failure_dimension"] == (
+        "NON_FORWARDING"
+    )
+
+
+def test_voice_access_forwarding_refuses_to_extend_a_failed_terminal_round(
+    monkeypatch,
+):
+    """A surviving earlier LRN snapshot is not terminal evidence."""
+    real_waiter = configuration_runtime_module.StateConvergenceWaiter
+    # Exactly two initial rounds: the first observes LRN, the second loses the
+    # channel. A scripted clock keeps that split off wall-clock timing.
+    scripted = [0.0, 0.0, 5.0, 5.0]
+    later = itertools.count(1000.0, 1000.0)
+
+    def clock() -> float:
+        # Strictly increasing once the script runs out, so a waiter this test
+        # does not expect at all still terminates instead of spinning.
+        return scripted.pop(0) if scripted else next(later)
+
+    class TwoRoundWaiter:
+        def __init__(
+            self, inspect, *, timeout_seconds: float, interval_seconds: float,
+        ) -> None:
+            self._waiter = real_waiter(
+                inspect,
+                timeout_seconds=1.0,
+                interval_seconds=0,
+                clock=clock,
+            )
+
+        def wait(self):
+            return self._waiter.wait()
+
+    monkeypatch.setattr(
+        configuration_runtime_module, "StateConvergenceWaiter", TwoRoundWaiter,
+    )
+    ios = _FirstThenFailingIos(_voice_stp_result("LRN"))
+    runtime = _voice_runtime(ios)
+
+    result = runtime.wait_for_voice_access_forwarding([_voice_expectation()])[0]
+
+    assert len(ios.calls) == 2, "the terminal round is the one that failed"
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.convergence is not None
+    assert result.convergence.details["initial_sample_count"] == 2
+    assert result.convergence.details["learning_extension_authorized"] is False
+    assert result.convergence.details["learning_extension_sample_count"] == 0
+
+
+def test_voice_access_forwarding_refuses_to_extend_unattributed_evidence():
+    ios = _SequenceIos([_voice_stp_result("LRN", observed_device_name="")])
+    runtime = _voice_runtime(ios)
+
+    result = runtime.wait_for_voice_access_forwarding([_voice_expectation()])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert len(ios.calls) == 1, "an unattributed sample must not buy a window"
+    assert result.convergence is not None
+    assert result.convergence.details["learning_extension_authorized"] is False
+
+
+def _voice_learning_observation(states, **overrides):
+    observation = {
+        "authoritative": True,
+        "vlan_present": True,
+        "observed_device_name": "SW",
+        "sample_round": 7,
+        "states": states,
+    }
+    observation.update(overrides)
+    return observation
+
+
+def _authorizes(observation, *, expected_count=1, device_name="SW"):
+    return voice_access_learning_extension_is_authorized(
+        observation,
+        device_name=device_name,
+        expected_count=expected_count,
+        terminal_sample_round=7,
+    )
+
+
+def test_voice_learning_extension_authorizes_only_terminal_pending_lrn():
+    assert _authorizes(_voice_learning_observation({"a": "LRN"}))
+    assert _authorizes(
+        _voice_learning_observation({"a": "LRN", "b": "FWD"}),
+        expected_count=2,
+    )
+
+
+def test_voice_learning_extension_fails_closed_outside_that_evidence():
+    refused = {
+        "listening": _voice_learning_observation({"a": "LIS"}),
+        "blocking": _voice_learning_observation({"a": "BLK"}),
+        "ambiguous_state": _voice_learning_observation({"a": ""}),
+        "mixed_non_learning": (
+            _voice_learning_observation({"a": "LRN", "b": "LIS"})
+        ),
+        "stale_round": _voice_learning_observation(
+            {"a": "LRN"}, sample_round=6,
+        ),
+        "unobservable": _voice_learning_observation(
+            {"a": "LRN"}, authoritative=False,
+        ),
+        "vlan_instance_absent": _voice_learning_observation(
+            {"a": "LRN"}, vlan_present=False,
+        ),
+        "other_device": _voice_learning_observation(
+            {"a": "LRN"}, observed_device_name="OTHER",
+        ),
+        "unattributed": _voice_learning_observation(
+            {"a": "LRN"}, observed_device_name="",
+        ),
+        "untyped_states": _voice_learning_observation("LRN"),
+        "nothing_pending": _voice_learning_observation({"a": "FWD"}),
+    }
+    assert {
+        name: _authorizes(observation)
+        for name, observation in refused.items()
+    } == {name: False for name in refused}
+
+    # A missing row is never covered by a shorter observation.
+    assert not _authorizes(
+        _voice_learning_observation({"a": "LRN"}), expected_count=2,
+    )
+    assert not _authorizes(
+        _voice_learning_observation({"a": "LRN"}), expected_count=0,
+    )
+    assert not _authorizes(
+        _voice_learning_observation({"a": "LRN"}), device_name="",
+    )
+
+
 def test_voice_access_forwarding_retains_one_structured_group_observation():
     expectations = [
         VerificationExpectation(
@@ -1449,6 +1691,10 @@ def test_voice_access_forwarding_retains_one_structured_group_observation():
         "verified_fwd_interfaces": ["FastEthernet0/1", "FastEthernet0/2"],
         "missing_interfaces": [],
         "non_fwd_interfaces": {},
+        "initial_sample_count": 2,
+        "learning_extension_authorized": False,
+        "learning_extension_seconds": 0.0,
+        "learning_extension_sample_count": 0,
         "sample_count": 2,
         "elapsed_ms": results[0].convergence.elapsed_ms,
         "terminal_authority": "AUTHORITATIVE",

@@ -4399,6 +4399,111 @@ Does not block Stage 3A4. Stage 3A4 must not use this tool: its rule is that a
 missing production seam is named and implemented, never bypassed with raw JS or
 raw IOS.
 
+## TD-PVST-WINDOW-001 — The PVST learning extension is budgeted in wall-clock, not in Packet Tracer simulation time
+
+Status:
+OPEN
+
+Severity:
+P2
+
+Discovered:
+Offline review of the Floor2/Router0 voice convergence correction, 2026-09-02,
+against the retained negative
+`canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b`.
+
+Description:
+
+`PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS` is sized from the Forward Delay
+Packet Tracer itself reports, 15 s, plus margin. That delay elapses in
+**simulation** time. The budget is spent in **wall-clock** time, and the two
+are not the same clock.
+
+The retained Floor2 window measures the gap directly. Its voice boundary
+observations advanced simulation time by 24.361 s
+(`voice_realtime_continuity.after.sim_time` 660254 minus `before.sim_time`
+635893) while the voice-access group's own `elapsed_ms` was 45563 — a ratio of
+roughly 0.53 simulated seconds per wall second under a 74-device, 55-link load.
+At that ratio a 20 s wall-clock extension buys about 10.7 s of simulation time,
+which is less than one full Forward Delay.
+
+The extension is therefore correctly sized for the case it was derived from — a
+transition already most of the way through LRN, needing about 5.6 s more
+simulation time — but it does not cover a port that entered LRN just before the
+initial window closed. It cannot produce a false VERIFIED: an incomplete
+transition still fails closed as `NON_FORWARDING`. The exposure is a valid
+negative that is an artifact of the harness clock rather than of the network.
+
+Blocks now:
+**No.** Fail-closed authority is intact and the measured Floor2 case fits
+inside the budget. It is recorded because the sizing rationale in the source
+comment reads as a protocol guarantee that the wall-clock budget does not
+actually provide under load.
+
+RESOLVE_BEFORE:
+any change to the closed PVST capability contract, or the first governed run
+whose voice access ports fail closed at LRN with the extension already spent.
+
+Closure criterion:
+
+The learning budget is derived from the observer's own measured simulation
+clock rather than from wall-clock alone — the same `sim_time` boundaries the
+run already retains — so that one extension covers one Forward Delay of
+**simulated** time under load, still bounded, still spent at most once, and
+still refusing LIS, BLK, missing rows and stale or unattributed evidence.
+
+---
+
+## TD-CP-SCALE-LEDGER-001 — The indexed Voice run ledger is one governed run behind the retained archives
+
+Status:
+OPEN
+
+Severity:
+P2
+
+Discovered:
+Offline review of the Floor2/Router0 voice convergence correction, 2026-09-02.
+
+Description:
+
+`docs/reference/cp-scale/canonical_voice_runs.json` holds 21 curated run
+entries, and the `handoff.md` counters are derived sums over them:
+`CANONICAL_CP_SCALE_LIVE_ATTEMPTS = 21` is `sum(live_attempts)` and
+`CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS = 2` is
+`sum(invalid_live_attempts)`. `LIVE_RUNS_CONSUMED = 34` moves with them.
+
+The governed run `canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b`
+was executed and both of its immutable archives are retained under
+`canonical-live-evidence/`, hash-pinned in `current_state.json` as the evidence
+for the current decision, with its measured terminal facts in
+`latest_live_run`. It has no entry in the indexed ledger, so the ledger and the
+counters agree with each other at 21 while the archive directory now holds 22
+canonical cleanup attestations.
+
+A faithful entry carries 19 keys, including `fact_classes`,
+`methodology`, `classification_rationale` and `conclusion`. Those are governed
+judgements about what the run established, not values that can be recovered
+mechanically from the archive afterwards, so synthesising them inside an
+offline code correction would manufacture provenance rather than record it.
+
+Blocks now:
+**No.** The current decision's evidence and hashes are complete in
+`current_state.json`, which the CP-SCALE README designates as their home, and
+no counter currently misstates the ledger it is derived from.
+
+RESOLVE_BEFORE:
+the next canonical CP-SCALE Voice LIVE that produces a retained archive.
+
+Closure criterion:
+
+The run is indexed with the same 19-key shape as its predecessors, its
+`live_attempts` and `invalid_live_attempts` are counted into the derived
+`handoff.md` values, `LIVE_RUNS_CONSUMED` advances with it, and the ledger
+suite pins the new entry the way it pins every earlier one — or the counters
+are redefined against `current_state.json` and the ledger's role is narrowed
+explicitly in the CP-SCALE README.
+
 ---
 
 # Planned Work That Is Not Technical Debt

@@ -1,12 +1,12 @@
 {
   "schema": "cp-scale-current-state-v1",
-  "updated_at": "2026-09-02T21:31:31.8937157Z",
-  "source_head": "4495be6024fd0168f79ec4e28c279add05f227b7",
-  "source_head_role": "latest_committed_pvst_qualification",
+  "updated_at": "2026-09-02T22:50:12.163891Z",
+  "source_head": "aa94ce992c6bbcd45e44f4aca097f446b28e2ca4",
+  "source_head_role": "latest_router0_live_source",
   "active_stage": "router0-branch",
-  "status": "READY_FOR_ROUTER0_LIVE",
-  "first_contradicted_boundary": "NONE",
-  "next_active_step": "RUN_ROUTER0_CANONICAL_LIVE",
+  "status": "ROUTER0_LIVE_BLOCKER_FIXED_OFFLINE_PENDING_RERUN",
+  "first_contradicted_boundary": "FLOOR2_VOICE_SIGNAL_PVST_LEARNING_WINDOW",
+  "next_active_step": "RERUN_ROUTER0_CANONICAL_LIVE",
   "stages": {
     "floor3": {
       "network": "VERIFIED",
@@ -14,7 +14,7 @@
       "control_plane": "CAPABILITY_GAP_CLOSED_AFTER_PRIOR_PARTIAL_LIVE"
     },
     "router0-branch": {
-      "result": "NOT_RUN",
+      "result": "NOT_REACHED_AFTER_FLOOR2_NEGATIVE_LIVE",
       "expected_scope": {
         "cumulative_devices": 290,
         "cumulative_links": 202,
@@ -25,6 +25,28 @@
         "control_plane_mutations": 40,
         "voice_mutations": 45
       }
+    }
+  },
+  "latest_live_run": {
+    "run_identity": "canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b",
+    "source_head": "aa94ce992c6bbcd45e44f4aca097f446b28e2ca4",
+    "highest_verified_stage": "floor1",
+    "failed_stage": "floor2",
+    "failure_boundary": "VOICE_SIGNAL",
+    "terminal_stp": {
+      "switch": "Switch7",
+      "voice_vlan_id": 20,
+      "ports": 14,
+      "state": "LRN",
+      "wall_clock_elapsed_ms": 45563,
+      "packet_tracer_simulation_elapsed_ms": 24361
+    },
+    "fix": "ONE_PROTOCOL_BOUNDED_LRN_EXTENSION_OFFLINE_VERIFIED",
+    "cleanup": {
+      "workspace_restored_twice": true,
+      "semantic_devices": 0,
+      "links": 0,
+      "realtime_restored": true
     }
   },
   "capabilities": {
@@ -64,17 +86,27 @@
       "role": "pvst_exact_model_qualification",
       "path": "docs/reference/cp-scale/canonical-live-evidence/stp-pvst-capability-20260902T002049264918Z-ed386bcd37f5.json",
       "sha256": "3e1b9e4fc2a4eab5e26622250eec4a724a3e5dd029406f510730d485a1550edd"
+    },
+    {
+      "role": "router0_attempt1_floor2_failure_precleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b-failure-precleanup.json",
+      "sha256": "8cf8f3346a5ec058875839c22c4ea0647f965be9fe0a9b918742812e382a966c"
+    },
+    {
+      "role": "router0_attempt1_cleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b-cleanup.json",
+      "sha256": "12ada64f65f8e49503b93e0a2772f7611f2ad26a3a8ddd0d6556c16bf5ba6191"
     }
   ],
   "handoff_compatibility": {
-    "CANONICAL_CP_SCALE_CURRENT_BOUNDARY": "FLOOR3_VOICE_VERIFIED_PVST_CAPABILITY_CLOSED_ROUTER0_READY",
+    "CANONICAL_CP_SCALE_CURRENT_BOUNDARY": "FLOOR2_VOICE_SIGNAL_PVST_LRN_WINDOW_FIXED_OFFLINE_ROUTER0_RERUN_REQUIRED",
     "CANONICAL_CP_SCALE_FLOOR3_VOICE": "VERIFIED_42_OF_42",
     "STP_PVST_QUALIFICATION_RUN5_RESULT": "CONFIG_EDGE_STATE_BEHAVIOR_VERIFIED_EXACT_THREE_MODELS",
     "STP_PVST_CONFIG_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
     "STP_EDGE_CONFIG_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_UNKNOWN | 3650-24PS_SUPPORTED",
     "STP_STATE_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
     "STP_BEHAVIOR_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
-    "NEXT_ACTIVE_STEP": "RUN_ROUTER0_CANONICAL_LIVE",
-    "CP_SCALE_STATUS": "FLOOR3_VOICE_VERIFIED_42_OF_42 | PVST_CAPABILITY_QUALIFICATION_CLOSED_EXACT_BOUNDARY | ROUTER0_READY"
+    "NEXT_ACTIVE_STEP": "RERUN_ROUTER0_CANONICAL_LIVE",
+    "CP_SCALE_STATUS": "FLOOR3_VOICE_VERIFIED_42_OF_42 | FLOOR2_PVST_LRN_WINDOW_BLOCKER_FIXED_OFFLINE | ROUTER0_RERUN_REQUIRED"
   }
 }

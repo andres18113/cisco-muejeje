@@ -82,9 +82,56 @@ _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 # the independent forwarding read-back its own lifecycle-sized budget.
 TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS = 45.0
 # A governed Floor2 LIVE's latest pre-terminal PVST snapshots had every pending
-# port in authoritative LRN. PT reports the default 15 s Forward Delay; five
-# seconds cover the next round-robin observation without changing the predicate.
+# port in authoritative LRN. PT reports the default 15 s Forward Delay; this
+# one extension lets trunk and voice-access observers finish that
+# already-proven transition without accepting LIS, BLK or missing rows.
+# The budget is wall-clock while the Forward Delay elapses in PT simulation
+# time -- under the measured Floor2 load those differ by about half -- so it
+# covers a transition already under way, not an arbitrary one. See
+# TD-PVST-WINDOW-001.
 PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS = 20.0
+
+
+def voice_access_learning_extension_is_authorized(
+    observation: dict[str, object],
+    *,
+    device_name: str,
+    expected_count: int,
+    terminal_sample_round: int,
+) -> bool:
+    """Decide whether ONE protocol-sized PVST extension may be granted.
+
+    The bounded window already closed without forwarding, so extending it is
+    an authority decision and not a retry.  It is granted only when the run's
+    own TERMINAL round -- never an earlier snapshot that merely survived a
+    failed one -- is fresh, complete, uniquely attributed to this switch,
+    carries the voice VLAN instance, resolves every expected port and leaves
+    every still-pending port in exactly LRN.  A failed terminal round, LIS,
+    BLK, a missing row or an identity this observer cannot attribute all fail
+    closed, because none of them is the already-proven learning transition.
+    """
+    if expected_count <= 0 or not device_name:
+        return False
+    if observation.get("sample_round") != terminal_sample_round:
+        return False
+    if observation.get("authoritative") is not True:
+        return False
+    if observation.get("vlan_present") is not True:
+        return False
+    if observation.get("observed_device_name") != device_name:
+        return False
+    states = observation.get("states")
+    if not isinstance(states, dict) or len(states) != expected_count:
+        return False
+    pending = False
+    for state in states.values():
+        text = str(state).upper()
+        if text == "LRN":
+            pending = True
+            continue
+        if not text.startswith(("FWD", "FORW")):
+            return False
+    return pending
 
 
 @dataclass(frozen=True)
@@ -313,9 +360,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
             "states": {},
             "authoritative": False,
             "vlan_present": False,
+            "observed_device_name": "",
+            "sample_round": 0,
         }
+        sample_round = 0
 
         def inspect() -> dict[str, object]:
+            nonlocal sample_round
+            sample_round += 1
             show = self._ios.execute(
                 device_name,
                 OperationalQueryId.SHOW_SPANNING_TREE,
@@ -351,6 +403,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "states": states,
                 "authoritative": authoritative,
                 "vlan_present": vlan_present,
+                "observed_device_name": show.observed_device_name,
+                "sample_round": sample_round,
             })
             all_forwarding = bool(
                 authoritative
@@ -366,11 +420,40 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "failure_reason": show.failure_reason,
             }
 
-        convergence = StateConvergenceWaiter(
+        initial_convergence = StateConvergenceWaiter(
             inspect,
             timeout_seconds=self._trunk_timeout,
             interval_seconds=self._convergence_interval,
         ).wait()
+
+        learning_extension_authorized = (
+            not initial_convergence.configuration_channel
+            and voice_access_learning_extension_is_authorized(
+                latest,
+                device_name=device_name,
+                expected_count=len(expectations),
+                terminal_sample_round=initial_convergence.attempts,
+            )
+        )
+        extension_convergence = None
+        if learning_extension_authorized:
+            extension_convergence = StateConvergenceWaiter(
+                inspect,
+                timeout_seconds=PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS,
+                interval_seconds=self._convergence_interval,
+            ).wait()
+        convergence = (
+            initial_convergence
+            if extension_convergence is None else extension_convergence
+        )
+        total_attempts = initial_convergence.attempts + (
+            extension_convergence.attempts
+            if extension_convergence is not None else 0
+        )
+        total_elapsed_ms = initial_convergence.elapsed_ms + (
+            extension_convergence.elapsed_ms
+            if extension_convergence is not None else 0
+        )
         states = latest["states"]
         states = states if isinstance(states, dict) else {}
         authoritative = bool(latest["authoritative"])
@@ -419,16 +502,26 @@ class PacketTracerEnterpriseConfigurationRuntime:
             "verified_fwd_interfaces": verified_interfaces,
             "missing_interfaces": missing_interfaces,
             "non_fwd_interfaces": non_forwarding_interfaces,
-            "sample_count": convergence.attempts,
-            "elapsed_ms": convergence.elapsed_ms,
+            "initial_sample_count": initial_convergence.attempts,
+            "learning_extension_authorized": learning_extension_authorized,
+            "learning_extension_seconds": (
+                PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS
+                if learning_extension_authorized else 0.0
+            ),
+            "learning_extension_sample_count": (
+                extension_convergence.attempts
+                if extension_convergence is not None else 0
+            ),
+            "sample_count": total_attempts,
+            "elapsed_ms": total_elapsed_ms,
             "terminal_authority": (
                 "AUTHORITATIVE" if authoritative else "UNOBSERVABLE"
             ),
             "terminal_failure_dimension": failure_dimension,
         }
         report = ConvergenceReport(
-            attempts=convergence.attempts,
-            elapsed_ms=convergence.elapsed_ms,
+            attempts=total_attempts,
+            elapsed_ms=total_elapsed_ms,
             final_status=(
                 ActionExecutionStatus.VERIFIED
                 if convergence.state
