@@ -152,6 +152,32 @@ def test_qualifying_live_evidence_makes_ripv2_supported():
     assert profile.packet_tracer_version == "9.0.1.0858"
 
 
+@pytest.mark.parametrize(
+    ("model", "edge_status"),
+    [
+        ("3560-24PS", "supported"),
+        ("2960-24TT", "unknown"),
+        ("3650-24PS", "supported"),
+    ],
+)
+def test_pvst_capabilities_match_exact_model_live_evidence(
+    model: str, edge_status: str,
+):
+    profile = packet_tracer_control_plane_capabilities()[model]
+    observed = {
+        dimension.value: profile.status(dimension).value
+        for dimension in Dimension
+    }
+
+    assert observed["stp_pvst_config"] == "supported"
+    assert observed.get("stp_edge_config") == edge_status
+    assert observed["stp_state"] == "supported"
+    assert observed["stp_behavior"] == "supported"
+    assert observed["stp_rapid_pvst_config"] == "unknown"
+    assert observed["stp_mst_config"] == "unknown"
+    assert observed["stp_failover"] == "unknown"
+
+
 def test_explicit_unsupported_evidence_is_preserved_as_unsupported():
     profile = ControlPlaneCapabilityProfile(
         model="2911",
@@ -191,19 +217,22 @@ def test_ripv2_evidence_never_qualifies_another_dimension(dimension):
     assert profile.status(dimension) is Status.UNKNOWN
 
 
-def test_a_model_without_attributed_evidence_claims_nothing():
+def test_unmeasured_dimensions_on_a_pvst_qualified_model_stay_unknown():
     profile = packet_tracer_control_plane_capabilities()["2960-24TT"]
 
-    assert set(profile.dimensions.values()) == {Status.UNKNOWN}
-    assert "no per-model attribution" in profile.evidence_source
+    assert profile.status(Dimension.STP_EDGE_CONFIG) is Status.UNKNOWN
+    assert profile.status(Dimension.STP_RAPID_PVST_CONFIG) is Status.UNKNOWN
+    assert profile.status(Dimension.STP_MST_CONFIG) is Status.UNKNOWN
+    assert profile.status(Dimension.STP_FAILOVER) is Status.UNKNOWN
+    assert "exact-model PVST" in profile.evidence_source
 
 
 def test_an_unlisted_model_gets_no_profile_at_all():
     profiles = packet_tracer_control_plane_capabilities()
 
-    assert "3560-24PS" not in profiles
+    assert "unmeasured-switch" not in profiles
     assert ControlPlaneApplicator._capability_status(
-        profiles, "3560-24PS", Dimension.RIPV2_CONFIG,
+        profiles, "unmeasured-switch", Dimension.RIPV2_CONFIG,
     ) is Status.UNKNOWN
 
 

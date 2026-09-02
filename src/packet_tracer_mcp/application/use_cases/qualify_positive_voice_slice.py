@@ -5026,7 +5026,7 @@ class PositiveVoiceSliceQualifier:
                 device_id="voiceab/sw", device_name=switch,
                 model=self._switch_model, site_id="voiceab",
                 required_capability=(
-                    ControlPlaneCapabilityDimension.STP_PVST_CONFIG
+                    ControlPlaneCapabilityDimension.STP_EDGE_CONFIG
                 ),
                 interface=interface,
                 portfast=True,

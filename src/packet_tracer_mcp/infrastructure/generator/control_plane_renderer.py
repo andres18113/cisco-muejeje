@@ -202,9 +202,7 @@ class PacketTracerControlPlaneRenderer:
         elif isinstance(action, ConfigureStpEdgePort):
             _require_capability(
                 action,
-                ControlPlaneCapabilityDimension.STP_PVST_CONFIG,
-                ControlPlaneCapabilityDimension.STP_RAPID_PVST_CONFIG,
-                ControlPlaneCapabilityDimension.STP_MST_CONFIG,
+                ControlPlaneCapabilityDimension.STP_EDGE_CONFIG,
             )
             payload, cleanup = self._stp_edge(action)
         elif isinstance(action, ConfigureEtherChannel):

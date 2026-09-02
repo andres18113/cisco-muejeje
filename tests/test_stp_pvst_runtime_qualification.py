@@ -213,7 +213,7 @@ def verdict() -> dict:
     return json.loads(completed.stdout)
 
 
-def test_qualifier_uses_only_the_two_exact_blocking_models_and_one_trunk(
+def test_qualifier_uses_the_three_exact_models_and_two_trunks(
     verdict: dict,
 ):
     constants = verdict["constants"]
@@ -239,7 +239,7 @@ def test_qualifier_uses_only_the_two_exact_blocking_models_and_one_trunk(
     ]
 
 
-def test_qualifier_foundation_is_typed_vlan_trunk_and_one_access_port(
+def test_qualifier_foundation_is_typed_vlan_trunks_and_two_access_ports(
     verdict: dict,
 ):
     foundation = verdict["foundation"]
@@ -282,7 +282,7 @@ def test_qualifier_foundation_is_typed_vlan_trunk_and_one_access_port(
     )
 
 
-def test_qualifier_exercises_global_pvst_on_both_models_and_edge_on_3560(
+def test_qualifier_exercises_global_pvst_and_only_measured_edge_models(
     verdict: dict,
 ):
     actions = verdict["actions"]
@@ -299,7 +299,12 @@ def test_qualifier_exercises_global_pvst_on_both_models_and_edge_on_3560(
         verdict["constants"]["tertiary_model"],
     }
     assert all(item["mode"] == "pvst" for item in global_actions)
-    assert all(item["capability"] == "stp_pvst_config" for item in actions)
+    assert {
+        item["capability"] for item in global_actions
+    } == {"stp_pvst_config"}
+    assert {
+        item["capability"] for item in edges
+    } == {"stp_edge_config"}
     assert next(
         item for item in global_actions
         if item["model"] == verdict["constants"]["primary_model"]
@@ -326,7 +331,7 @@ def test_qualifier_exercises_global_pvst_on_both_models_and_edge_on_3560(
     assert all(item["bpduguard"] is True for item in edges)
 
 
-def test_qualifier_declares_fresh_state_expectations_for_both_global_actions(
+def test_qualifier_declares_fresh_expectations_for_all_global_actions(
     verdict: dict,
 ):
     expectations = verdict["expectations"]

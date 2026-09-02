@@ -1,6 +1,6 @@
 """Bounded exact-model PVST qualification for Packet Tracer.
 
-The harness creates one disposable 3560-24PS and one disposable 2960-24TT,
+The harness creates disposable 3560-24PS, 2960-24TT, and 3650-24PS switches,
 builds a typed VLAN/trunk foundation, and exercises the same typed PVST
 renderer, mutation runtime, and fresh observer used by the enterprise product.
 It refuses a non-empty semantic workspace and restores both topology and
@@ -168,7 +168,7 @@ def qualification_topology() -> TopologyPlan:
     ]
     return TopologyPlan(
         id="pvst-exact-model-qualification",
-        semantic_hash="pvst-exact-model-qualification-v2",
+        semantic_hash="pvst-exact-model-qualification-v3",
         devices=devices,
         links=links,
     )
@@ -309,7 +309,7 @@ def stp_actions(topology: TopologyPlan) -> list:
             model=device.model,
             site_id="pvst",
             depends_on=[f"pvst/stp/{role}"],
-            required_capability=ControlPlaneCapabilityDimension.STP_PVST_CONFIG,
+            required_capability=ControlPlaneCapabilityDimension.STP_EDGE_CONFIG,
             interface=interface,
             portfast=True,
             bpduguard=True,
@@ -642,7 +642,7 @@ def run(
         f"{started_at.strftime('%Y%m%dT%H%M%S%fZ')}-{expected_head[:12]}"
     )
     evidence: dict[str, object] = {
-        "schema": "stp-pvst-exact-model-qualification-v2",
+        "schema": "stp-pvst-exact-model-qualification-v3",
         "run_identity": run_identity,
         "started_at": started_at.isoformat(),
         "packet_tracer_version": packet_tracer_version,
@@ -843,12 +843,24 @@ def run(
         )
         evidence["qualification_errors"] = list(batch_errors)
         evidence["qualified_models"] = {
-            model: {
+            PRIMARY_MODEL: {
                 "stp_pvst_config": "supported",
+                "stp_edge_config": "supported",
                 "stp_state": "supported",
                 "stp_behavior": "supported",
-            }
-            for model in QUALIFIED_MODELS
+            },
+            SECONDARY_MODEL: {
+                "stp_pvst_config": "supported",
+                "stp_edge_config": "unknown",
+                "stp_state": "supported",
+                "stp_behavior": "supported",
+            },
+            TERTIARY_MODEL: {
+                "stp_pvst_config": "supported",
+                "stp_edge_config": "supported",
+                "stp_state": "supported",
+                "stp_behavior": "supported",
+            },
         }
         evidence["edge_policy_qualification"] = {
             model: {

@@ -754,7 +754,9 @@ class ControlPlaneCompiler:
                 model=device.model,
                 site_id=device.site_id,
                 depends_on=[global_by_device[access.device_id]],
-                required_capability=capability,
+                required_capability=(
+                    ControlPlaneCapabilityDimension.STP_EDGE_CONFIG
+                ),
                 interface=access.interface,
                 portfast=policy.portfast_access_ports,
                 bpduguard=policy.bpduguard_access_ports,

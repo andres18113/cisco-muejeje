@@ -359,6 +359,7 @@ def test_exact_e4_e5_foundations_portfast_safety_and_stable_allocations():
     assert channel.member_interfaces == ["GigabitEthernet0/1", "GigabitEthernet0/2"]
     assert channel.source_link_ids == ["sw-member-a", "sw-member-b"]
     assert edge.interface == "FastEthernet0/1" and edge.portfast and edge.bpduguard
+    assert edge.required_capability.value == "stp_edge_config"
     assert all(item.group_number == 0 for item in hsrp)
     assert {item.virtual_ipv4 for item in hsrp} == {"10.0.10.1"}
     assert {item.physical_ipv4 for item in hsrp} == {"10.0.10.2", "10.0.10.3"}

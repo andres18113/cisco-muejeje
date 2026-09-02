@@ -129,11 +129,7 @@ def test_a_supported_profile_is_never_built_from_an_absent_model():
     profiles = packet_tracer_control_plane_capabilities("9.0.1.0858")
 
     assert "2901" not in profiles
-    profile = profiles["2960-24TT"]
-    assert all(
-        profile.status(dimension) is SecurityCapabilityStatus.UNKNOWN
-        for dimension in ControlPlaneCapabilityDimension
-    )
+    assert profiles.get("2901") is None
 
 
 # ==========================================================================

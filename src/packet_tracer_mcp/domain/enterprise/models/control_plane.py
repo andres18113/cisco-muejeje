@@ -42,6 +42,7 @@ class ControlPlaneCapabilityDimension(str, Enum):
     STP_PVST_CONFIG = "stp_pvst_config"
     STP_RAPID_PVST_CONFIG = "stp_rapid_pvst_config"
     STP_MST_CONFIG = "stp_mst_config"
+    STP_EDGE_CONFIG = "stp_edge_config"
     ETHERCHANNEL_LACP_CONFIG = "etherchannel_lacp_config"
     ETHERCHANNEL_PAGP_CONFIG = "etherchannel_pagp_config"
     ETHERCHANNEL_STATIC_CONFIG = "etherchannel_static_config"

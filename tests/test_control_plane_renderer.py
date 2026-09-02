@@ -182,7 +182,7 @@ def test_stp_edge_port_has_an_exact_inverse():
     action = ConfigureStpEdgePort(
         **_common(
             phase=ControlPlanePhase.L2_FOUNDATION,
-            required_capability=ControlPlaneCapabilityDimension.STP_RAPID_PVST_CONFIG,
+            required_capability=ControlPlaneCapabilityDimension.STP_EDGE_CONFIG,
         ),
         interface="FastEthernet0/1",
         source_access_action_id="access-fa0-1",
@@ -194,6 +194,20 @@ def test_stp_edge_port_has_an_exact_inverse():
     assert " spanning-tree bpduguard enable" in rendered.ios_payload
     assert " no spanning-tree portfast" in rendered.cleanup_payload
     assert " no spanning-tree bpduguard enable" in rendered.cleanup_payload
+
+
+def test_stp_edge_port_rejects_the_global_pvst_capability():
+    action = ConfigureStpEdgePort(
+        **_common(
+            phase=ControlPlanePhase.L2_FOUNDATION,
+            required_capability=ControlPlaneCapabilityDimension.STP_PVST_CONFIG,
+        ),
+        interface="FastEthernet0/1",
+        source_access_action_id="access-fa0-1",
+    )
+
+    with pytest.raises(ValueError, match="stp_edge_config"):
+        PacketTracerControlPlaneRenderer().render_action(action)
 
 
 @pytest.mark.parametrize(
@@ -343,7 +357,11 @@ def test_ospf_and_eigrp_reuse_existing_network_command_semantics():
             member_interfaces=["FastEthernet0/1\nshutdown", "FastEthernet0/2"],
         ),
         ConfigureStpEdgePort(
-            **_common(device_name="SW1 ", phase=ControlPlanePhase.L2_FOUNDATION),
+            **_common(
+                device_name="SW1 ",
+                phase=ControlPlanePhase.L2_FOUNDATION,
+                required_capability=ControlPlaneCapabilityDimension.STP_EDGE_CONFIG,
+            ),
             interface="FastEthernet0/1",
             source_access_action_id="access-fa0-1",
         ),
@@ -364,7 +382,10 @@ def test_renderer_rejects_hostile_or_inconsistent_compiled_actions(action):
 
 def test_all_regular_mutations_are_ios_only_and_have_persistent_cleanup():
     action = ConfigureStpEdgePort(
-        **_common(phase=ControlPlanePhase.L2_FOUNDATION),
+        **_common(
+            phase=ControlPlanePhase.L2_FOUNDATION,
+            required_capability=ControlPlaneCapabilityDimension.STP_EDGE_CONFIG,
+        ),
         interface="FastEthernet0/1",
         source_access_action_id="access-fa0-1",
     )

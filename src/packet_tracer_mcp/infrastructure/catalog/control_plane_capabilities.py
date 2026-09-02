@@ -56,6 +56,27 @@ _EIGRP_1941_QUALIFICATION = (
     "docs/architecture/eigrp-runtime-qualification.md"
 )
 
+_PVST_3560_2960_QUALIFICATION = (
+    "Controlled exact-model PVST qualifications on disposable 3560-24PS and "
+    "2960-24TT switches in Packet Tracer 9.0.1.0858: run "
+    "stp-pvst-capability-20260901T143608724809Z-71fae1c74878 verified global "
+    "PVST configuration and fresh state on both models and applied the 3560 "
+    "PortFast/BPDU Guard edge action; run "
+    "stp-pvst-capability-20260901T150150452540Z-29afd03bdd21 verified fresh "
+    "STP behavior on both. The 2960 edge action was not exercised and remains "
+    "UNKNOWN; see docs/reference/cp-scale/canonical-live-evidence"
+)
+
+_PVST_3650_QUALIFICATION = (
+    "Controlled exact-model three-switch PVST qualification "
+    "stp-pvst-capability-20260901T151056013414Z-c61ee6626d65 on Packet Tracer "
+    "9.0.1.0858 applied the 3650-24PS global PVST and PortFast/BPDU Guard edge "
+    "actions and verified its fresh STP state and behavior. The overall run "
+    "failed only at the separate 3560 primary behavior convergence boundary; "
+    "cleanup and Realtime restoration verified; see "
+    "docs/reference/cp-scale/canonical-live-evidence"
+)
+
 _NO_MODEL_ATTRIBUTED_EVIDENCE = (
     "The E9 live baseline in docs/architecture/enterprise-control-plane.md "
     "records no per-model attribution, so no dimension is claimed for this model"
@@ -140,7 +161,32 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
             Dimension.ROUTING_BEHAVIOR: Status.SUPPORTED,
         },
     ),
-    "2960-24TT": (_NO_MODEL_ATTRIBUTED_EVIDENCE, {}),
+    "2960-24TT": (
+        _PVST_3560_2960_QUALIFICATION,
+        {
+            Dimension.STP_PVST_CONFIG: Status.SUPPORTED,
+            Dimension.STP_STATE: Status.SUPPORTED,
+            Dimension.STP_BEHAVIOR: Status.SUPPORTED,
+        },
+    ),
+    "3560-24PS": (
+        _PVST_3560_2960_QUALIFICATION,
+        {
+            Dimension.STP_PVST_CONFIG: Status.SUPPORTED,
+            Dimension.STP_EDGE_CONFIG: Status.SUPPORTED,
+            Dimension.STP_STATE: Status.SUPPORTED,
+            Dimension.STP_BEHAVIOR: Status.SUPPORTED,
+        },
+    ),
+    "3650-24PS": (
+        _PVST_3650_QUALIFICATION,
+        {
+            Dimension.STP_PVST_CONFIG: Status.SUPPORTED,
+            Dimension.STP_EDGE_CONFIG: Status.SUPPORTED,
+            Dimension.STP_STATE: Status.SUPPORTED,
+            Dimension.STP_BEHAVIOR: Status.SUPPORTED,
+        },
+    ),
 }
 
 
