@@ -1260,5 +1260,6 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     )
     assert state["CP_SCALE_STATUS"] == (
         "FLOOR3_VOICE_VERIFIED_42_OF_42 | "
-        "FLOOR3_STP_CAPABILITY_QUALIFICATION_REQUIRED"
+        "PVST_CAPABILITY_QUALIFICATION_CLOSED_EXACT_BOUNDARY | "
+        "STOPPED_FOR_REVIEW"
     )

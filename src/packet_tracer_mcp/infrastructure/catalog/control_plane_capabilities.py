@@ -56,25 +56,17 @@ _EIGRP_1941_QUALIFICATION = (
     "docs/architecture/eigrp-runtime-qualification.md"
 )
 
-_PVST_3560_2960_QUALIFICATION = (
-    "Controlled exact-model PVST qualifications on disposable 3560-24PS and "
-    "2960-24TT switches in Packet Tracer 9.0.1.0858: run "
-    "stp-pvst-capability-20260901T143608724809Z-71fae1c74878 verified global "
-    "PVST configuration and fresh state on both models and applied the 3560 "
-    "PortFast/BPDU Guard edge action; run "
-    "stp-pvst-capability-20260901T150150452540Z-29afd03bdd21 verified fresh "
-    "STP behavior on both. The 2960 edge action was not exercised and remains "
-    "UNKNOWN; see docs/reference/cp-scale/canonical-live-evidence"
-)
-
-_PVST_3650_QUALIFICATION = (
-    "Controlled exact-model three-switch PVST qualification "
-    "stp-pvst-capability-20260901T151056013414Z-c61ee6626d65 on Packet Tracer "
-    "9.0.1.0858 applied the 3650-24PS global PVST and PortFast/BPDU Guard edge "
-    "actions and verified its fresh STP state and behavior. The overall run "
-    "failed only at the separate 3560 primary behavior convergence boundary; "
-    "cleanup and Realtime restoration verified; see "
-    "docs/reference/cp-scale/canonical-live-evidence"
+_PVST_THREE_MODEL_QUALIFICATION = (
+    "Controlled exact-model PVST qualification "
+    "stp-pvst-capability-20260902T002049264918Z-ed386bcd37f5 from clean pushed "
+    "source ed386bcd37f52854e0b966cb1a1da248337fbb00 on Packet Tracer "
+    "9.0.1.0858 applied global PVST actions on 3560-24PS, 2960-24TT, and "
+    "3650-24PS; applied separately typed PortFast/BPDU Guard edge actions on "
+    "3560-24PS and 3650-24PS; and verified fresh STP state plus two identical "
+    "stable behavior samples on all three models. The 2960-24TT edge action "
+    "was intentionally not exercised and remains UNKNOWN. Evidence SHA-256 "
+    "3e1b9e4fc2a4eab5e26622250eec4a724a3e5dd029406f510730d485a1550edd; "
+    "see docs/reference/cp-scale/canonical-live-evidence"
 )
 
 _NO_MODEL_ATTRIBUTED_EVIDENCE = (
@@ -162,7 +154,7 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
         },
     ),
     "2960-24TT": (
-        _PVST_3560_2960_QUALIFICATION,
+        _PVST_THREE_MODEL_QUALIFICATION,
         {
             Dimension.STP_PVST_CONFIG: Status.SUPPORTED,
             Dimension.STP_STATE: Status.SUPPORTED,
@@ -170,7 +162,7 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
         },
     ),
     "3560-24PS": (
-        _PVST_3560_2960_QUALIFICATION,
+        _PVST_THREE_MODEL_QUALIFICATION,
         {
             Dimension.STP_PVST_CONFIG: Status.SUPPORTED,
             Dimension.STP_EDGE_CONFIG: Status.SUPPORTED,
@@ -179,7 +171,7 @@ _PROVEN_BY_MODEL: dict[str, tuple[str, dict[Dimension, Status]]] = {
         },
     ),
     "3650-24PS": (
-        _PVST_3650_QUALIFICATION,
+        _PVST_THREE_MODEL_QUALIFICATION,
         {
             Dimension.STP_PVST_CONFIG: Status.SUPPORTED,
             Dimension.STP_EDGE_CONFIG: Status.SUPPORTED,

@@ -32,6 +32,10 @@ FOURTH_LIVE_EVIDENCE = (
     ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
     / "stp-pvst-capability-20260901T151056013414Z-c61ee6626d65.json"
 )
+FIFTH_LIVE_EVIDENCE = (
+    ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
+    / "stp-pvst-capability-20260902T002049264918Z-ed386bcd37f5.json"
+)
 
 _PROBE = r'''
 import json
@@ -541,4 +545,98 @@ def test_fourth_live_reaches_3650_but_expires_at_primary_behavior_boundary():
     assert evidence["cleanup"]["verified"] is True
     assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
     assert evidence["cleanup"]["second"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["realtime"]["verified_realtime"] is True
+
+
+def test_fifth_live_verifies_the_exact_three_model_typed_boundary():
+    assert hashlib.sha256(FIFTH_LIVE_EVIDENCE.read_bytes()).hexdigest() == (
+        "3e1b9e4fc2a4eab5e26622250eec4a724a3e5dd029406f510730d485a1550edd"
+    )
+    evidence = json.loads(FIFTH_LIVE_EVIDENCE.read_text(encoding="utf-8"))
+
+    assert evidence["schema"] == "stp-pvst-exact-model-qualification-v3"
+    assert evidence["repository"] == {
+        "branch": "feature/runtime-ripv2",
+        "upstream": "personal/feature/runtime-ripv2",
+        "head": "ed386bcd37f52854e0b966cb1a1da248337fbb00",
+        "error": "",
+    }
+    assert evidence["loaded_namespaces"] == ["packet_tracer_mcp"]
+    assert evidence["import_isolation"]["state"] == "ISOLATED"
+    assert evidence["verified"] is True
+    assert evidence["qualification_errors"] == []
+
+    actions = evidence["plan"]["stp_actions"]
+    global_actions = [
+        item for item in actions if item["action_type"] == "configure_stp"
+    ]
+    edge_actions = [
+        item for item in actions
+        if item["action_type"] == "configure_stp_edge_port"
+    ]
+    assert {
+        (item["model"], item["required_capability"])
+        for item in global_actions
+    } == {
+        ("3560-24PS", "stp_pvst_config"),
+        ("2960-24TT", "stp_pvst_config"),
+        ("3650-24PS", "stp_pvst_config"),
+    }
+    assert {
+        (item["model"], item["required_capability"])
+        for item in edge_actions
+    } == {
+        ("3560-24PS", "stp_edge_config"),
+        ("3650-24PS", "stp_edge_config"),
+    }
+    assert len(evidence["stp_application"]) == 5
+    assert all(item["applied"] for item in evidence["stp_application"])
+
+    assert evidence["qualified_models"] == {
+        "3560-24PS": {
+            "stp_pvst_config": "supported",
+            "stp_edge_config": "supported",
+            "stp_state": "supported",
+            "stp_behavior": "supported",
+        },
+        "2960-24TT": {
+            "stp_pvst_config": "supported",
+            "stp_edge_config": "unknown",
+            "stp_state": "supported",
+            "stp_behavior": "supported",
+        },
+        "3650-24PS": {
+            "stp_pvst_config": "supported",
+            "stp_edge_config": "supported",
+            "stp_state": "supported",
+            "stp_behavior": "supported",
+        },
+    }
+    observations = {
+        item["expectation_id"]: item
+        for item in evidence["stp_verification"]
+    }
+    assert len(observations) == 6
+    assert all(
+        item["status"] == "verified"
+        and item["fresh_evidence"] is True
+        and all(value == "verified" for value in item["fields"].values())
+        for item in observations.values()
+    )
+    for identifier in (
+        "pvst/verify/primary-behavior",
+        "pvst/verify/secondary-behavior",
+        "pvst/verify/tertiary-behavior",
+    ):
+        convergence = observations[identifier]["convergence"]
+        assert convergence["attempts"] == 2
+        assert convergence["details"]["stable_samples_required"] == 2
+        assert convergence["details"]["stable_samples_observed"] == 2
+        assert convergence["details"]["transitions"]
+
+    assert evidence["cleanup"]["verified"] is True
+    assert evidence["cleanup"]["first"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["first"]["link_count"] == 0
+    assert evidence["cleanup"]["second"]["semantic_device_count"] == 0
+    assert evidence["cleanup"]["second"]["link_count"] == 0
     assert evidence["cleanup"]["realtime"]["verified_realtime"] is True
