@@ -55,7 +55,7 @@ _FINGERPRINT = EnvironmentFingerprint(
 )
 _REPOSITORY = CPScaleRepositoryState(
     branch="feature/runtime-ripv2",
-    upstream="personal/feature/runtime-ripv2",
+    upstream="cisco/feature/runtime-ripv2",
     head="0123456789abcdef",
 )
 
@@ -213,7 +213,7 @@ def test_repository_reader_observes_current_exact_branch_upstream_and_head():
 
     assert state.error == ""
     assert state.branch == "feature/runtime-ripv2"
-    assert state.upstream == "personal/feature/runtime-ripv2"
+    assert state.upstream == "cisco/feature/runtime-ripv2"
     assert len(state.head) == 40
 
 

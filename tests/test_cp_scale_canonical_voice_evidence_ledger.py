@@ -1217,7 +1217,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "21"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "2"
     assert state["CANONICAL_CP_SCALE_CURRENT_BOUNDARY"] == (
-        "FLOOR3_VOICE_VERIFIED_CONTROL_PLANE_STP_CAPABILITY_BLOCKED"
+        "FLOOR3_VOICE_VERIFIED_PVST_CAPABILITY_CLOSED_ROUTER0_READY"
     )
     assert state["CANONICAL_CP_SCALE_NOT_REACHED_PHONES"] == "27"
     assert state["CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY"] == (
@@ -1261,5 +1261,5 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CP_SCALE_STATUS"] == (
         "FLOOR3_VOICE_VERIFIED_42_OF_42 | "
         "PVST_CAPABILITY_QUALIFICATION_CLOSED_EXACT_BOUNDARY | "
-        "STOPPED_FOR_REVIEW"
+        "ROUTER0_READY"
     )

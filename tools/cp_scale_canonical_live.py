@@ -64,6 +64,8 @@ from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
 )
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScaleFinalDisposition,
+    EXPECTED_BRANCH,
+    EXPECTED_UPSTREAM,
     archive_cp_scale_canonical_evidence,
     canonical_capability_probe_error,
     canonical_bridge_polling_error,
@@ -185,8 +187,6 @@ from packet_tracer_mcp.shared.utils import (
 
 
 GOVERNED_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_BRANCH = "feature/runtime-ripv2"
-EXPECTED_UPSTREAM = "personal/feature/runtime-ripv2"
 EVIDENCE_PATH = GOVERNED_ROOT / "data" / "cp-scale" / "live-canonical-progress.json"
 CHECKPOINT_PATH = EVIDENCE_PATH.parent / "live-canonical-checkpoint.json"
 FINAL_CHECKPOINT_PATH = (

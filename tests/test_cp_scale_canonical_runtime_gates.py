@@ -844,15 +844,23 @@ def test_cleanup_and_resume_compare_exact_snapshots_not_generic_emptiness():
 def test_checkpoint_resume_requires_clean_pushed_unchanged_governed_source():
     assert canonical_checkpoint_repository_error(
         branch="feature/runtime-ripv2",
-        upstream="personal/feature/runtime-ripv2",
+        upstream="cisco/feature/runtime-ripv2",
         head="a" * 40,
         upstream_head="a" * 40,
         dirty=False,
         governed_source_changed=False,
     ) == ""
-    assert "pushed" in canonical_checkpoint_repository_error(
+    assert "upstream" in canonical_checkpoint_repository_error(
         branch="feature/runtime-ripv2",
         upstream="personal/feature/runtime-ripv2",
+        head="a" * 40,
+        upstream_head="a" * 40,
+        dirty=False,
+        governed_source_changed=False,
+    ).casefold()
+    assert "pushed" in canonical_checkpoint_repository_error(
+        branch="feature/runtime-ripv2",
+        upstream="cisco/feature/runtime-ripv2",
         head="a" * 40,
         upstream_head="b" * 40,
         dirty=False,
@@ -860,7 +868,7 @@ def test_checkpoint_resume_requires_clean_pushed_unchanged_governed_source():
     ).casefold()
     assert "source" in canonical_checkpoint_repository_error(
         branch="feature/runtime-ripv2",
-        upstream="personal/feature/runtime-ripv2",
+        upstream="cisco/feature/runtime-ripv2",
         head="a" * 40,
         upstream_head="a" * 40,
         dirty=False,

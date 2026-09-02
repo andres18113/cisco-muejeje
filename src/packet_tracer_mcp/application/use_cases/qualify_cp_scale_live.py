@@ -75,7 +75,7 @@ from .qualify_cp_scale_offline import (
 
 
 EXPECTED_BRANCH = "feature/runtime-ripv2"
-EXPECTED_UPSTREAM = "personal/feature/runtime-ripv2"
+EXPECTED_UPSTREAM = "cisco/feature/runtime-ripv2"
 _POINT_COUNTS = {
     CPScalePoint.A: (65, 3),
     CPScalePoint.B: (118, 6),

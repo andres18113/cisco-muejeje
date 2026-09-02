@@ -1,0 +1,80 @@
+{
+  "schema": "cp-scale-current-state-v1",
+  "updated_at": "2026-09-02T21:31:31.8937157Z",
+  "source_head": "4495be6024fd0168f79ec4e28c279add05f227b7",
+  "source_head_role": "latest_committed_pvst_qualification",
+  "active_stage": "router0-branch",
+  "status": "READY_FOR_ROUTER0_LIVE",
+  "first_contradicted_boundary": "NONE",
+  "next_active_step": "RUN_ROUTER0_CANONICAL_LIVE",
+  "stages": {
+    "floor3": {
+      "network": "VERIFIED",
+      "voice": "VERIFIED_42_OF_42",
+      "control_plane": "CAPABILITY_GAP_CLOSED_AFTER_PRIOR_PARTIAL_LIVE"
+    },
+    "router0-branch": {
+      "result": "NOT_RUN",
+      "expected_scope": {
+        "cumulative_devices": 290,
+        "cumulative_links": 202,
+        "cumulative_phones": 62,
+        "new_devices": 58,
+        "new_links": 42,
+        "configuration_mutations": 84,
+        "control_plane_mutations": 40,
+        "voice_mutations": 45
+      }
+    }
+  },
+  "capabilities": {
+    "stp_pvst": {
+      "3560-24PS": "SUPPORTED",
+      "2960-24TT": "SUPPORTED",
+      "3650-24PS": "SUPPORTED"
+    },
+    "stp_edge": {
+      "3560-24PS": "SUPPORTED",
+      "2960-24TT": "UNKNOWN",
+      "3650-24PS": "SUPPORTED"
+    },
+    "stp_state": {
+      "3560-24PS": "SUPPORTED",
+      "2960-24TT": "SUPPORTED",
+      "3650-24PS": "SUPPORTED"
+    },
+    "stp_behavior": {
+      "3560-24PS": "SUPPORTED",
+      "2960-24TT": "SUPPORTED",
+      "3650-24PS": "SUPPORTED"
+    }
+  },
+  "evidence": [
+    {
+      "role": "floor3_failure_precleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T133350798961Z-5373539f0b1f-failure-precleanup.json",
+      "sha256": "e5a8e0ddf05c905d468227a61adc17bf6c9f9c367a7ff15080aaf494011c6dc1"
+    },
+    {
+      "role": "floor3_cleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260901T133350798961Z-5373539f0b1f-cleanup.json",
+      "sha256": "57c428a9ad5afe4d5f9d39e02b83498d274241c25b54fdd6efd3ac322237babe"
+    },
+    {
+      "role": "pvst_exact_model_qualification",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/stp-pvst-capability-20260902T002049264918Z-ed386bcd37f5.json",
+      "sha256": "3e1b9e4fc2a4eab5e26622250eec4a724a3e5dd029406f510730d485a1550edd"
+    }
+  ],
+  "handoff_compatibility": {
+    "CANONICAL_CP_SCALE_CURRENT_BOUNDARY": "FLOOR3_VOICE_VERIFIED_PVST_CAPABILITY_CLOSED_ROUTER0_READY",
+    "CANONICAL_CP_SCALE_FLOOR3_VOICE": "VERIFIED_42_OF_42",
+    "STP_PVST_QUALIFICATION_RUN5_RESULT": "CONFIG_EDGE_STATE_BEHAVIOR_VERIFIED_EXACT_THREE_MODELS",
+    "STP_PVST_CONFIG_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
+    "STP_EDGE_CONFIG_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_UNKNOWN | 3650-24PS_SUPPORTED",
+    "STP_STATE_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
+    "STP_BEHAVIOR_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
+    "NEXT_ACTIVE_STEP": "RUN_ROUTER0_CANONICAL_LIVE",
+    "CP_SCALE_STATUS": "FLOOR3_VOICE_VERIFIED_42_OF_42 | PVST_CAPABILITY_QUALIFICATION_CLOSED_EXACT_BOUNDARY | ROUTER0_READY"
+  }
+}
