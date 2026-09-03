@@ -118,6 +118,17 @@ def run(ledger: dict) -> dict:
     return ledger["runs"][0]
 
 
+def test_curated_ledger_names_its_non_exhaustive_scope(ledger: dict):
+    assert ledger["scope"] == {
+        "role": "CURATED_GOVERNED_JUDGMENTS_NOT_EXHAUSTIVE",
+        "entry_count": 21,
+        "exhaustive_through": FLOOR3_VOICE_STP_CAPABILITY_RUN_IDENTITY,
+        "post_cutoff_accounting_authority": (
+            "docs/reference/cp-scale/current_state.json#run_accounting"
+        ),
+    }
+
+
 @pytest.fixture(scope="module")
 def second_run(ledger: dict) -> dict:
     return ledger["runs"][1]
@@ -1213,8 +1224,8 @@ def test_terminal_conclusion_and_cleanup_fail_closed(run: dict):
 
 def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     state = _state_block()
-    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_TWENTY_ONE_TIMES"
-    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "21"
+    assert state["CANONICAL_CP_SCALE_LIVE_RUN"] == "EXECUTED_TWENTY_THREE_TIMES"
+    assert state["CANONICAL_CP_SCALE_LIVE_ATTEMPTS"] == "23"
     assert state["CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS"] == "2"
     assert state["CANONICAL_CP_SCALE_CURRENT_BOUNDARY"] == (
         "FLOOR3_VOICE_SIGNAL_SWITCH9_VLAN20_LRN_AFTER_SINGLE_"
@@ -1236,6 +1247,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
+    assert state["LIVE_RUNS_CONSUMED"] == "36"
     assert state["CANONICAL_CP_SCALE_FLOOR2_PRIOR_STAGE_SEMANTICS"] == (
         "CUMULATIVE_REPLAY"
     )

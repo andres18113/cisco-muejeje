@@ -4465,7 +4465,7 @@ still refusing LIS, BLK, missing rows and stale or unattributed evidence.
 ## TD-CP-SCALE-LEDGER-001 — The indexed Voice run ledger is two governed runs behind the retained archives
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P2
@@ -4497,10 +4497,8 @@ mechanically from the archive afterwards, so synthesising them inside an
 offline code correction would manufacture provenance rather than record it.
 
 Blocks now:
-**Yes, before another LIVE.** The current decision's evidence and hashes are
-complete in `current_state.json`, but the prior `RESOLVE_BEFORE` boundary has
-now been crossed and the compatibility counters must not fall a third run
-behind.
+**No.** Attempt accounting and curated judgments now have separate, explicit
+authorities; the compatibility counters include both later retained runs.
 
 RESOLVE_BEFORE:
 any further canonical CP-SCALE Voice LIVE.
@@ -4513,6 +4511,19 @@ The run is indexed with the same 19-key shape as its predecessors, its
 suite pins the new entry the way it pins every earlier one — or the counters
 are redefined against `current_state.json` and the ledger's role is narrowed
 explicitly in the CP-SCALE README.
+
+Resolution (2026-09-03):
+
+The non-fabricating alternate closure was selected. The 21-entry
+`canonical_voice_runs.json` now declares itself a curated governed-judgment
+ledger with an explicit `exhaustive_through` cutoff. It remains immutable in
+substance: no missing 19-field methodology or conclusion was synthesized.
+`current_state.json#run_accounting` is now the authority for attempt totals and
+indexes the two post-cutoff runs by run identity, hash-pinned cleanup evidence
+role, explicit valid-attempt classification, and provenance. The compatibility
+projection is therefore 23 canonical attempts, 2 invalid attempts, and 36
+total LIVE runs consumed. The CP-SCALE README names this boundary, and tests pin
+the cutoff, later run identities, provenance, totals, and handoff projection.
 
 ---
 
@@ -4544,6 +4555,10 @@ Do not delete historical debt entries.
   cannot be mistaken for a normal enterprise operation. Focused registration,
   capability-resource, instruction and fail-closed policy tests pin the
   boundary; no live Packet Tracer evidence is required.
+
+- **TD-CP-SCALE-LEDGER-001** — resolved 2026-09-03. The curated judgment ledger
+  has an explicit cutoff; compact current state owns post-cutoff run accounting
+  from hash-pinned evidence without invented retrospective judgments.
 
 - **TD-RUNTIME-003** — resolved 2026-08-11. Both remaining read-back shapes now
   have live evidence on PT 9.0.1.0858. A paginated `show ip protocols` is

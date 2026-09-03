@@ -109,14 +109,44 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "realtime_restored": True,
         },
     }
+    assert state["run_accounting"] == {
+        "authority": "CURRENT_STATE_PLUS_HASH_PINNED_CLEANUP_ARCHIVES",
+        "canonical_live_attempts": 23,
+        "invalid_live_attempts": 2,
+        "live_runs_consumed": 36,
+        "curated_ledger": {
+            "path": "docs/reference/cp-scale/canonical_voice_runs.json",
+            "entry_count": 21,
+            "role": "CURATED_GOVERNED_JUDGMENTS_NOT_EXHAUSTIVE",
+            "exhaustive_through": (
+                "canonical-cp-scale-voice-20260901T133350798961Z-"
+                "5373539f0b1f"
+            ),
+        },
+        "post_ledger_retained_runs": [
+            {
+                "run_identity": (
+                    "canonical-cp-scale-voice-20260902T215118136599Z-"
+                    "aa94ce992c6b"
+                ),
+                "cleanup_evidence_role": "router0_attempt1_cleanup",
+                "invalid_live_attempt": False,
+                "provenance": "HASH_PINNED_ARCHIVE_AND_GOVERNED_STATE",
+            },
+            {
+                "run_identity": (
+                    "canonical-cp-scale-voice-20260903T002846400677Z-"
+                    "6c6db5556689"
+                ),
+                "cleanup_evidence_role": "router0_attempt2_cleanup",
+                "invalid_live_attempt": False,
+                "provenance": "HASH_PINNED_ARCHIVE_AND_GOVERNED_STATE",
+            },
+        ],
+    }
     assert state["unresolved_debt"] == [
         {
             "id": "TD-PVST-WINDOW-001",
-            "status": "BLOCKING",
-            "resolve_before": "ANY_FURTHER_CANONICAL_CP_SCALE_LIVE",
-        },
-        {
-            "id": "TD-CP-SCALE-LEDGER-001",
             "status": "BLOCKING",
             "resolve_before": "ANY_FURTHER_CANONICAL_CP_SCALE_LIVE",
         },

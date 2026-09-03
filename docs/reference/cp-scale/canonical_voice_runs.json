@@ -1,6 +1,12 @@
 {
   "schema": "cp-scale-canonical-voice-evidence-v1",
   "verification": "CANONICAL_CP_SCALE_VOICE",
+  "scope": {
+    "role": "CURATED_GOVERNED_JUDGMENTS_NOT_EXHAUSTIVE",
+    "entry_count": 21,
+    "exhaustive_through": "canonical-cp-scale-voice-20260901T133350798961Z-5373539f0b1f",
+    "post_cutoff_accounting_authority": "docs/reference/cp-scale/current_state.json#run_accounting"
+  },
   "runs": [
     {
       "run_identity": "canonical-cp-scale-voice-20260830T202000133616Z-f5e72f08a4e9",
