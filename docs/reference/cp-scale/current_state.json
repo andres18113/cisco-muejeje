@@ -1,20 +1,26 @@
 {
   "schema": "cp-scale-current-state-v1",
-  "updated_at": "2026-09-02T22:50:12.163891Z",
-  "source_head": "aa94ce992c6bbcd45e44f4aca097f446b28e2ca4",
-  "source_head_role": "latest_router0_live_source",
-  "active_stage": "router0-branch",
-  "status": "ROUTER0_LIVE_BLOCKER_FIXED_OFFLINE_PENDING_RERUN",
-  "first_contradicted_boundary": "FLOOR2_VOICE_SIGNAL_PVST_LEARNING_WINDOW",
-  "next_active_step": "RERUN_ROUTER0_CANONICAL_LIVE",
+  "updated_at": "2026-09-03T01:02:14.203677Z",
+  "source_head": "6c6db55566890f1d9ca9cc06bfc13ae24505e793",
+  "source_head_role": "latest_canonical_live_source",
+  "active_stage": "floor3",
+  "status": "ROUTER0_NOT_REACHED_FLOOR3_VOICE_SIGNAL_CONVERGENCE_BLOCKED",
+  "first_contradicted_boundary": "FLOOR3_VOICE_SIGNAL_SWITCH9_VLAN20_PVST_LRN_AFTER_SINGLE_EXTENSION",
+  "next_active_step": "FIX_PVST_SIMULATION_TIME_BUDGET_BEFORE_ANY_LIVE",
   "stages": {
-    "floor3": {
+    "floor2": {
       "network": "VERIFIED",
-      "voice": "VERIFIED_42_OF_42",
-      "control_plane": "CAPABILITY_GAP_CLOSED_AFTER_PRIOR_PARTIAL_LIVE"
+      "voice": "VERIFIED_35_OF_35",
+      "switch7_voice_vlan20": "14_OF_14_FWD_AFTER_ONE_20S_EXTENSION"
+    },
+    "floor3": {
+      "network": "FOUNDATION_VERIFIED",
+      "voice": "BLOCKED_AT_SIGNAL_SWITCH9_3_LRN",
+      "control_plane": "NOT_REACHED_IN_LATEST_LIVE",
+      "prior_voice_authority": "VERIFIED_42_OF_42_RUN21"
     },
     "router0-branch": {
-      "result": "NOT_REACHED_AFTER_FLOOR2_NEGATIVE_LIVE",
+      "result": "NOT_REACHED_AFTER_FLOOR3_NEGATIVE_LIVE",
       "expected_scope": {
         "cumulative_devices": 290,
         "cumulative_links": 202,
@@ -28,20 +34,40 @@
     }
   },
   "latest_live_run": {
-    "run_identity": "canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b",
-    "source_head": "aa94ce992c6bbcd45e44f4aca097f446b28e2ca4",
-    "highest_verified_stage": "floor1",
-    "failed_stage": "floor2",
+    "run_identity": "canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689",
+    "source_head": "6c6db55566890f1d9ca9cc06bfc13ae24505e793",
+    "highest_verified_stage": "floor2",
+    "failed_stage": "floor3",
     "failure_boundary": "VOICE_SIGNAL",
-    "terminal_stp": {
+    "floor2_correction_result": {
       "switch": "Switch7",
       "voice_vlan_id": 20,
       "ports": 14,
-      "state": "LRN",
-      "wall_clock_elapsed_ms": 45563,
-      "packet_tracer_simulation_elapsed_ms": 24361
+      "initial_state": "LRN",
+      "final_state": "FWD",
+      "learning_extension_seconds": 20.0,
+      "wall_clock_elapsed_ms": 45454,
+      "terminal_authority": "AUTHORITATIVE"
     },
-    "fix": "ONE_PROTOCOL_BOUNDED_LRN_EXTENSION_OFFLINE_VERIFIED",
+    "terminal_stp": {
+      "switch": "Switch9",
+      "voice_vlan_id": 20,
+      "ports": 3,
+      "state": "LRN",
+      "wall_clock_elapsed_ms": 66404,
+      "packet_tracer_simulation_elapsed_ms": 39355,
+      "learning_extension_seconds": 20.0,
+      "terminal_authority": "AUTHORITATIVE",
+      "terminal_failure_dimension": "NON_FORWARDING"
+    },
+    "classification": {
+      "product": "NOT_CONTRADICTED",
+      "observer_harness": "FAILED_WALL_CLOCK_BUDGET_FOR_SIMULATION_TIME_PROTOCOL",
+      "capability": "VERIFIED_NOT_FAILURE",
+      "convergence": "FAILED_NON_FORWARDING",
+      "evidence": "AUTHORITATIVE_COMPLETE_FRESH_IDENTITY_BOUND"
+    },
+    "fix": "NONE_THIS_SESSION",
     "cleanup": {
       "workspace_restored_twice": true,
       "semantic_devices": 0,
@@ -71,6 +97,18 @@
       "3650-24PS": "SUPPORTED"
     }
   },
+  "unresolved_debt": [
+    {
+      "id": "TD-PVST-WINDOW-001",
+      "status": "BLOCKING",
+      "resolve_before": "ANY_FURTHER_CANONICAL_CP_SCALE_LIVE"
+    },
+    {
+      "id": "TD-CP-SCALE-LEDGER-001",
+      "status": "BLOCKING",
+      "resolve_before": "ANY_FURTHER_CANONICAL_CP_SCALE_LIVE"
+    }
+  ],
   "evidence": [
     {
       "role": "floor3_failure_precleanup",
@@ -96,17 +134,29 @@
       "role": "router0_attempt1_cleanup",
       "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b-cleanup.json",
       "sha256": "12ada64f65f8e49503b93e0a2772f7611f2ad26a3a8ddd0d6556c16bf5ba6191"
+    },
+    {
+      "role": "router0_attempt2_floor3_failure_precleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689-failure-precleanup.json",
+      "sha256": "a5b06fea51243887153cbcd48038036c5b3b3b2ca040b20210c8d592717c100a"
+    },
+    {
+      "role": "router0_attempt2_cleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689-cleanup.json",
+      "sha256": "f8c0fff1bcee2d6b2418074ae11e16e578e8fa313f9c9d10028d57e235150219"
     }
   ],
   "handoff_compatibility": {
-    "CANONICAL_CP_SCALE_CURRENT_BOUNDARY": "FLOOR2_VOICE_SIGNAL_PVST_LRN_WINDOW_FIXED_OFFLINE_ROUTER0_RERUN_REQUIRED",
-    "CANONICAL_CP_SCALE_FLOOR3_VOICE": "VERIFIED_42_OF_42",
+    "CANONICAL_CP_SCALE_CURRENT_BOUNDARY": "FLOOR3_VOICE_SIGNAL_SWITCH9_VLAN20_LRN_AFTER_SINGLE_EXTENSION_ROUTER0_NOT_REACHED",
+    "CANONICAL_CP_SCALE_FLOOR3_VOICE": "PRIOR_VERIFIED_42_OF_42 | LATEST_ATTEMPT_BLOCKED_AT_SIGNAL_SWITCH9_3_LRN",
+    "CANONICAL_CP_SCALE_FIRST_CONTRADICTED_BOUNDARY": "FLOOR3_VOICE_SIGNAL_SWITCH9_VLAN20_PVST_LRN_AFTER_SINGLE_EXTENSION",
+    "CANONICAL_CP_SCALE_FAILURE_CLASSIFICATION": "OBSERVER_HARNESS_CONVERGENCE_BUDGET",
     "STP_PVST_QUALIFICATION_RUN5_RESULT": "CONFIG_EDGE_STATE_BEHAVIOR_VERIFIED_EXACT_THREE_MODELS",
     "STP_PVST_CONFIG_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
     "STP_EDGE_CONFIG_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_UNKNOWN | 3650-24PS_SUPPORTED",
     "STP_STATE_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
     "STP_BEHAVIOR_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
-    "NEXT_ACTIVE_STEP": "RERUN_ROUTER0_CANONICAL_LIVE",
-    "CP_SCALE_STATUS": "FLOOR3_VOICE_VERIFIED_42_OF_42 | FLOOR2_PVST_LRN_WINDOW_BLOCKER_FIXED_OFFLINE | ROUTER0_RERUN_REQUIRED"
+    "NEXT_ACTIVE_STEP": "FIX_PVST_SIMULATION_TIME_BUDGET_BEFORE_ANY_LIVE",
+    "CP_SCALE_STATUS": "FLOOR2_VOICE_VERIFIED_35_OF_35 | FLOOR3_SWITCH9_VLAN20_LRN_AFTER_SINGLE_EXTENSION | ROUTER0_NOT_REACHED"
   }
 }

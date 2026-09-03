@@ -24,24 +24,34 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     assert len(raw) < 16_384
     assert datetime.fromisoformat(state["updated_at"].replace("Z", "+00:00"))
     assert re.fullmatch(r"[0-9a-f]{40}", state["source_head"])
-    assert state["active_stage"] == "router0-branch"
+    assert state["active_stage"] == "floor3"
     assert state["status"] == (
-        "ROUTER0_LIVE_BLOCKER_FIXED_OFFLINE_PENDING_RERUN"
+        "ROUTER0_NOT_REACHED_FLOOR3_VOICE_SIGNAL_CONVERGENCE_BLOCKED"
     )
     assert state["first_contradicted_boundary"] == (
-        "FLOOR2_VOICE_SIGNAL_PVST_LEARNING_WINDOW"
+        "FLOOR3_VOICE_SIGNAL_SWITCH9_VLAN20_PVST_LRN_AFTER_SINGLE_EXTENSION"
     )
-    assert state["next_active_step"] == "RERUN_ROUTER0_CANONICAL_LIVE"
-    assert set(state["stages"]) == {"floor3", "router0-branch"}
+    assert state["next_active_step"] == (
+        "FIX_PVST_SIMULATION_TIME_BUDGET_BEFORE_ANY_LIVE"
+    )
+    assert set(state["stages"]) == {"floor2", "floor3", "router0-branch"}
+
+    floor2 = state["stages"]["floor2"]
+    assert floor2 == {
+        "network": "VERIFIED",
+        "voice": "VERIFIED_35_OF_35",
+        "switch7_voice_vlan20": "14_OF_14_FWD_AFTER_ONE_20S_EXTENSION",
+    }
 
     floor3 = state["stages"]["floor3"]
     assert floor3 == {
-        "network": "VERIFIED",
-        "voice": "VERIFIED_42_OF_42",
-        "control_plane": "CAPABILITY_GAP_CLOSED_AFTER_PRIOR_PARTIAL_LIVE",
+        "network": "FOUNDATION_VERIFIED",
+        "voice": "BLOCKED_AT_SIGNAL_SWITCH9_3_LRN",
+        "control_plane": "NOT_REACHED_IN_LATEST_LIVE",
+        "prior_voice_authority": "VERIFIED_42_OF_42_RUN21",
     }
     router0 = state["stages"]["router0-branch"]
-    assert router0["result"] == "NOT_REACHED_AFTER_FLOOR2_NEGATIVE_LIVE"
+    assert router0["result"] == "NOT_REACHED_AFTER_FLOOR3_NEGATIVE_LIVE"
     assert router0["expected_scope"] == {
         "cumulative_devices": 290,
         "cumulative_links": 202,
@@ -54,22 +64,44 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     }
     assert state["latest_live_run"] == {
         "run_identity": (
-            "canonical-cp-scale-voice-20260902T215118136599Z-"
-            "aa94ce992c6b"
+            "canonical-cp-scale-voice-20260903T002846400677Z-"
+            "6c6db5556689"
         ),
-        "source_head": "aa94ce992c6bbcd45e44f4aca097f446b28e2ca4",
-        "highest_verified_stage": "floor1",
-        "failed_stage": "floor2",
+        "source_head": "6c6db55566890f1d9ca9cc06bfc13ae24505e793",
+        "highest_verified_stage": "floor2",
+        "failed_stage": "floor3",
         "failure_boundary": "VOICE_SIGNAL",
-        "terminal_stp": {
+        "floor2_correction_result": {
             "switch": "Switch7",
             "voice_vlan_id": 20,
             "ports": 14,
-            "state": "LRN",
-            "wall_clock_elapsed_ms": 45563,
-            "packet_tracer_simulation_elapsed_ms": 24361,
+            "initial_state": "LRN",
+            "final_state": "FWD",
+            "learning_extension_seconds": 20.0,
+            "wall_clock_elapsed_ms": 45454,
+            "terminal_authority": "AUTHORITATIVE",
         },
-        "fix": "ONE_PROTOCOL_BOUNDED_LRN_EXTENSION_OFFLINE_VERIFIED",
+        "terminal_stp": {
+            "switch": "Switch9",
+            "voice_vlan_id": 20,
+            "ports": 3,
+            "state": "LRN",
+            "wall_clock_elapsed_ms": 66404,
+            "packet_tracer_simulation_elapsed_ms": 39355,
+            "learning_extension_seconds": 20.0,
+            "terminal_authority": "AUTHORITATIVE",
+            "terminal_failure_dimension": "NON_FORWARDING",
+        },
+        "classification": {
+            "product": "NOT_CONTRADICTED",
+            "observer_harness": (
+                "FAILED_WALL_CLOCK_BUDGET_FOR_SIMULATION_TIME_PROTOCOL"
+            ),
+            "capability": "VERIFIED_NOT_FAILURE",
+            "convergence": "FAILED_NON_FORWARDING",
+            "evidence": "AUTHORITATIVE_COMPLETE_FRESH_IDENTITY_BOUND",
+        },
+        "fix": "NONE_THIS_SESSION",
         "cleanup": {
             "workspace_restored_twice": True,
             "semantic_devices": 0,
@@ -77,6 +109,18 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "realtime_restored": True,
         },
     }
+    assert state["unresolved_debt"] == [
+        {
+            "id": "TD-PVST-WINDOW-001",
+            "status": "BLOCKING",
+            "resolve_before": "ANY_FURTHER_CANONICAL_CP_SCALE_LIVE",
+        },
+        {
+            "id": "TD-CP-SCALE-LEDGER-001",
+            "status": "BLOCKING",
+            "resolve_before": "ANY_FURTHER_CANONICAL_CP_SCALE_LIVE",
+        },
+    ]
 
     handoff = parse_handoff_state(HANDOFF_PATH.read_text(encoding="utf-8"))
     assert state["handoff_compatibility"]

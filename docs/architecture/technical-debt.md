@@ -4434,15 +4434,23 @@ initial window closed. It cannot produce a false VERIFIED: an incomplete
 transition still fails closed as `NON_FORWARDING`. The exposure is a valid
 negative that is an artifact of the harness clock rather than of the network.
 
+Latest confirming evidence:
+The governed run
+`canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689` verified the
+corrected Floor2 Switch7 boundary, then reached Floor3 with fresh, complete,
+identity-bound Switch9 evidence. All three VLAN 20 phone ports remained `LRN`
+after the single 20 s wall-clock extension. The group spent 66.404 s wall time
+while the enclosing authoritative Realtime window advanced 39.355 s of Packet
+Tracer simulation time. It failed closed as `NON_FORWARDING`; Router0 was not
+reached.
+
 Blocks now:
-**No.** Fail-closed authority is intact and the measured Floor2 case fits
-inside the budget. It is recorded because the sizing rationale in the source
-comment reads as a protocol guarantee that the wall-clock budget does not
-actually provide under load.
+**Yes.** The predicted harness-clock negative has occurred. Fail-closed
+authority remains intact, but another canonical LIVE would repeat an observer
+budget that is not guaranteed to cover one simulated Forward Delay.
 
 RESOLVE_BEFORE:
-any change to the closed PVST capability contract, or the first governed run
-whose voice access ports fail closed at LRN with the extension already spent.
+any further canonical CP-SCALE LIVE.
 
 Closure criterion:
 
@@ -4454,7 +4462,7 @@ still refusing LIS, BLK, missing rows and stale or unattributed evidence.
 
 ---
 
-## TD-CP-SCALE-LEDGER-001 — The indexed Voice run ledger is one governed run behind the retained archives
+## TD-CP-SCALE-LEDGER-001 — The indexed Voice run ledger is two governed runs behind the retained archives
 
 Status:
 OPEN
@@ -4473,13 +4481,14 @@ entries, and the `handoff.md` counters are derived sums over them:
 `CANONICAL_CP_SCALE_INVALID_LIVE_ATTEMPTS = 2` is
 `sum(invalid_live_attempts)`. `LIVE_RUNS_CONSUMED = 34` moves with them.
 
-The governed run `canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b`
-was executed and both of its immutable archives are retained under
-`canonical-live-evidence/`, hash-pinned in `current_state.json` as the evidence
-for the current decision, with its measured terminal facts in
-`latest_live_run`. It has no entry in the indexed ledger, so the ledger and the
-counters agree with each other at 21 while the archive directory now holds 22
-canonical cleanup attestations.
+The governed runs
+`canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b` and
+`canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689` were executed
+and both pairs of immutable archives are retained under
+`canonical-live-evidence/`, hash-pinned in `current_state.json`, with the latest
+run's measured terminal facts in `latest_live_run`. Neither has an entry in the
+indexed ledger, so the ledger and the counters agree with each other at 21
+while the archive directory now holds 23 canonical cleanup attestations.
 
 A faithful entry carries 19 keys, including `fact_classes`,
 `methodology`, `classification_rationale` and `conclusion`. Those are governed
@@ -4488,12 +4497,13 @@ mechanically from the archive afterwards, so synthesising them inside an
 offline code correction would manufacture provenance rather than record it.
 
 Blocks now:
-**No.** The current decision's evidence and hashes are complete in
-`current_state.json`, which the CP-SCALE README designates as their home, and
-no counter currently misstates the ledger it is derived from.
+**Yes, before another LIVE.** The current decision's evidence and hashes are
+complete in `current_state.json`, but the prior `RESOLVE_BEFORE` boundary has
+now been crossed and the compatibility counters must not fall a third run
+behind.
 
 RESOLVE_BEFORE:
-the next canonical CP-SCALE Voice LIVE that produces a retained archive.
+any further canonical CP-SCALE Voice LIVE.
 
 Closure criterion:
 
