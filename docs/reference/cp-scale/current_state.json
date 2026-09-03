@@ -4,9 +4,9 @@
   "source_head": "6c6db55566890f1d9ca9cc06bfc13ae24505e793",
   "source_head_role": "latest_canonical_live_source",
   "active_stage": "floor3",
-  "status": "ROUTER0_NOT_REACHED_FLOOR3_VOICE_SIGNAL_CONVERGENCE_BLOCKED",
+  "status": "ROUTER0_NOT_REACHED_PVST_SIMULATION_TIME_CORRECTION_OFFLINE_VALIDATED",
   "first_contradicted_boundary": "FLOOR3_VOICE_SIGNAL_SWITCH9_VLAN20_PVST_LRN_AFTER_SINGLE_EXTENSION",
-  "next_active_step": "FIX_PVST_SIMULATION_TIME_BUDGET_BEFORE_ANY_LIVE",
+  "next_active_step": "RUN_ONE_GOVERNED_CANONICAL_ROUTER0_CP_LIVE_FROM_CLEAN_HEAD",
   "stages": {
     "floor2": {
       "network": "VERIFIED",
@@ -97,6 +97,18 @@
       "3650-24PS": "SUPPORTED"
     }
   },
+  "offline_correction": {
+    "debt_id": "TD-PVST-WINDOW-001",
+    "status": "OFFLINE_VALIDATED_LIVE_PENDING",
+    "evidence_checkpoint": "99bf4734f31c6dc7b22e49dd4cc46a3085c10036",
+    "mechanism": "PACKET_TRACER_SIMULATION_TIME_PROGRESS",
+    "forward_delay_source": "FRESH_COMPLETE_IDENTITY_BOUND_SHOW_SPANNING_TREE",
+    "qualified_forward_delay_seconds": 15.0,
+    "simulation_progress_budget_seconds": 20.0,
+    "wall_clock_safety_cap_seconds": 45.0,
+    "single_authority": true,
+    "live_validation": "NOT_RUN_THIS_SESSION"
+  },
   "run_accounting": {
     "authority": "CURRENT_STATE_PLUS_HASH_PINNED_CLEANUP_ARCHIVES",
     "canonical_live_attempts": 23,
@@ -123,13 +135,7 @@
       }
     ]
   },
-  "unresolved_debt": [
-    {
-      "id": "TD-PVST-WINDOW-001",
-      "status": "BLOCKING",
-      "resolve_before": "ANY_FURTHER_CANONICAL_CP_SCALE_LIVE"
-    }
-  ],
+  "unresolved_debt": [],
   "evidence": [
     {
       "role": "floor3_failure_precleanup",
@@ -184,7 +190,7 @@
     "STP_EDGE_CONFIG_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_UNKNOWN | 3650-24PS_SUPPORTED",
     "STP_STATE_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
     "STP_BEHAVIOR_STATUS_BY_MODEL": "3560-24PS_SUPPORTED | 2960-24TT_SUPPORTED | 3650-24PS_SUPPORTED",
-    "NEXT_ACTIVE_STEP": "FIX_PVST_SIMULATION_TIME_BUDGET_BEFORE_ANY_LIVE",
-    "CP_SCALE_STATUS": "FLOOR2_VOICE_VERIFIED_35_OF_35 | FLOOR3_SWITCH9_VLAN20_LRN_AFTER_SINGLE_EXTENSION | ROUTER0_NOT_REACHED"
+    "NEXT_ACTIVE_STEP": "RUN_ONE_GOVERNED_CANONICAL_ROUTER0_CP_LIVE_FROM_CLEAN_HEAD",
+    "CP_SCALE_STATUS": "FLOOR2_VOICE_VERIFIED_35_OF_35 | FLOOR3_SWITCH9_VLAN20_LRN_AFTER_SINGLE_EXTENSION | ROUTER0_NOT_REACHED | PVST_SIM_TIME_FIX_OFFLINE_VALIDATED"
   }
 }

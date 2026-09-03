@@ -1791,6 +1791,7 @@ def _stp_network_device_evidence(
             "vlan_id": vlan_id,
             "authoritative": True,
             "failure_reason": "",
+            "forward_delay_seconds": instance.forward_delay_seconds,
             "root": {
                 "protocol": instance.protocol,
                 "priority": instance.root_priority,

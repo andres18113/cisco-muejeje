@@ -477,6 +477,9 @@ class StpInstanceStatus:
     bridge_base_priority: int | None
     bridge_address: str
     interfaces: tuple[StpPortStatusRow, ...]
+    # Timer reported by the same complete ``show spanning-tree`` instance.
+    # ``None`` preserves absence/ambiguity instead of guessing the default.
+    forward_delay_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -1174,6 +1177,12 @@ def parse_show_spanning_tree(value: str) -> list[StpInstanceStatus]:
             r"\s*Address\s+(?P<address>[0-9A-Fa-f.:-]+)",
             block,
         )
+        forward_delays = {
+            int(item)
+            for item in re.findall(
+                r"Forward Delay\s+(\d+)\s+sec", block, flags=re.IGNORECASE,
+            )
+        }
         if protocol is None or root is None or bridge is None:
             continue
         root_body = root.group("body")
@@ -1217,6 +1226,9 @@ def parse_show_spanning_tree(value: str) -> list[StpInstanceStatus]:
             ),
             bridge_address=bridge.group("address"),
             interfaces=tuple(rows),
+            forward_delay_seconds=(
+                next(iter(forward_delays)) if len(forward_delays) == 1 else None
+            ),
         ))
     return instances
 

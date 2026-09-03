@@ -1274,5 +1274,5 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CP_SCALE_STATUS"] == (
         "FLOOR2_VOICE_VERIFIED_35_OF_35 | "
         "FLOOR3_SWITCH9_VLAN20_LRN_AFTER_SINGLE_EXTENSION | "
-        "ROUTER0_NOT_REACHED"
+        "ROUTER0_NOT_REACHED | PVST_SIM_TIME_FIX_OFFLINE_VALIDATED"
     )

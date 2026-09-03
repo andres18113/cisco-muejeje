@@ -53,6 +53,15 @@ from .ios_terminal import (
     parse_serial_controller,
 )
 from .runtime_inventory import normalize_runtime_inventory
+from .simulation_time_convergence import (
+    BoundedPvstLearningExtension,
+    SimulationTimeConvergenceResult,
+    pvst_learning_progress_target_ms,
+)
+from .simulation_trace_runtime import (
+    SimulationStateObservation,
+    SimulationTraceRuntime,
+)
 from ...shared.utils import same_interface_name
 
 
@@ -81,15 +90,6 @@ _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 # budget expired after 25 complete reads.  Keep the wait bounded while giving
 # the independent forwarding read-back its own lifecycle-sized budget.
 TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS = 45.0
-# A governed Floor2 LIVE's latest pre-terminal PVST snapshots had every pending
-# port in authoritative LRN. PT reports the default 15 s Forward Delay; this
-# one extension lets trunk and voice-access observers finish that
-# already-proven transition without accepting LIS, BLK or missing rows.
-# The budget is wall-clock while the Forward Delay elapses in PT simulation
-# time -- under the measured Floor2 load those differ by about half -- so it
-# covers a transition already under way, not an arbitrary one. See
-# TD-PVST-WINDOW-001.
-PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS = 20.0
 
 
 def voice_access_learning_extension_is_authorized(
@@ -222,6 +222,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         trunk_transition_observer: (
             Callable[[str], dict[str, object]] | None
         ) = None,
+        simulation_time_observer: (
+            Callable[[], SimulationStateObservation] | None
+        ) = None,
     ) -> None:
         self._query_inventory = query_inventory
         self._send = send
@@ -238,6 +241,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._convergence_interval = convergence_interval_seconds
         self._ios_readiness = ios_readiness or self._wait_for_ios
         self._trunk_transition_observer = trunk_transition_observer
+        self._pvst_learning_extension = BoundedPvstLearningExtension(
+            simulation_time_observer
+            or SimulationTraceRuntime(send_and_wait).read_simulation_state,
+            interval_seconds=convergence_interval_seconds,
+        )
         self._ready_ios_devices: set[str] = set()
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
@@ -362,6 +370,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             "vlan_present": False,
             "observed_device_name": "",
             "sample_round": 0,
+            "forward_delay_seconds": None,
         }
         sample_round = 0
 
@@ -376,11 +385,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 show.executed
                 and show.fresh_output_observed
                 and show.output_complete
+                and show.observed_device_name == device_name
                 and show.device_identity_provenance
                 == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
             )
             states: dict[str, str] = {}
             vlan_present = False
+            forward_delay_seconds = None
             if authoritative:
                 instance = next((
                     item for item in parse_show_spanning_tree(show.output)
@@ -388,6 +399,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 ), None)
                 vlan_present = instance is not None
                 if instance is not None:
+                    forward_delay_seconds = instance.forward_delay_seconds
                     for expectation in expectations:
                         interface = expected_interfaces[expectation.id]
                         row = next((
@@ -405,6 +417,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "vlan_present": vlan_present,
                 "observed_device_name": show.observed_device_name,
                 "sample_round": sample_round,
+                "forward_delay_seconds": forward_delay_seconds,
             })
             all_forwarding = bool(
                 authoritative
@@ -418,6 +431,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "found": show.executed,
                 "configuration_channel": all_forwarding,
                 "failure_reason": show.failure_reason,
+                "continuation_authorized": bool(
+                    all_forwarding
+                    or (
+                        voice_access_learning_extension_is_authorized(
+                            latest,
+                            device_name=device_name,
+                            expected_count=len(expectations),
+                            terminal_sample_round=sample_round,
+                        )
+                        and pvst_learning_progress_target_ms(
+                            latest.get("forward_delay_seconds"),
+                        ) is not None
+                    )
+                ),
             }
 
         initial_convergence = StateConvergenceWaiter(
@@ -426,7 +453,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             interval_seconds=self._convergence_interval,
         ).wait()
 
-        learning_extension_authorized = (
+        learning_extension_candidate = (
             not initial_convergence.configuration_channel
             and voice_access_learning_extension_is_authorized(
                 latest,
@@ -435,13 +462,18 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 terminal_sample_round=initial_convergence.attempts,
             )
         )
-        extension_convergence = None
-        if learning_extension_authorized:
-            extension_convergence = StateConvergenceWaiter(
+        learning_extension_target = (
+            pvst_learning_progress_target_ms(
+                latest.get("forward_delay_seconds"),
+            )
+            if learning_extension_candidate else None
+        )
+        extension_convergence: SimulationTimeConvergenceResult | None = None
+        if learning_extension_target is not None:
+            extension_convergence = self._pvst_learning_extension.grant(
                 inspect,
-                timeout_seconds=PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS,
-                interval_seconds=self._convergence_interval,
-            ).wait()
+                required_simulation_progress_ms=learning_extension_target,
+            )
         convergence = (
             initial_convergence
             if extension_convergence is None else extension_convergence
@@ -480,7 +512,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
         elif not show.output_complete:
             failure_dimension = "COMPLETENESS"
         elif (
-            show.device_identity_provenance
+            show.observed_device_name != device_name
+            or show.device_identity_provenance
             != DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
         ):
             failure_dimension = "IDENTITY"
@@ -503,14 +536,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
             "missing_interfaces": missing_interfaces,
             "non_fwd_interfaces": non_forwarding_interfaces,
             "initial_sample_count": initial_convergence.attempts,
-            "learning_extension_authorized": learning_extension_authorized,
-            "learning_extension_seconds": (
-                PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS
-                if learning_extension_authorized else 0.0
+            "observed_forward_delay_seconds": latest.get(
+                "forward_delay_seconds",
             ),
-            "learning_extension_sample_count": (
-                extension_convergence.attempts
-                if extension_convergence is not None else 0
+            "learning_extension_candidate": learning_extension_candidate,
+            **self._pvst_learning_extension.evidence(
+                extension_convergence,
+                requested_progress_ms=learning_extension_target,
             ),
             "sample_count": total_attempts,
             "elapsed_ms": total_elapsed_ms,
@@ -524,8 +556,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             elapsed_ms=total_elapsed_ms,
             final_status=(
                 ActionExecutionStatus.VERIFIED
-                if convergence.state
-                is DeviceInitializationState.CONFIGURATION_READY
+                if convergence.configuration_channel
                 else ActionExecutionStatus.UNOBSERVABLE
             ),
             last_observable_state=", ".join(
@@ -849,6 +880,33 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 results.append(self._unobservable(expectation))
         return results
 
+    def _observe_pvst_boundary(self, device_name: str) -> dict[str, object]:
+        """Read one PVST boundary, normalized so absence cannot authorize.
+
+        Every caller of the registered observer needs the same three outcomes
+        collapsed into one object -- no observer, a raised read, or a result
+        that is not an object at all -- because an extension decision reads
+        these dicts and a missing ``authoritative`` must fail closed rather
+        than raise inside a convergence round.
+        """
+        if self._trunk_transition_observer is None:
+            return {}
+        try:
+            observed = self._trunk_transition_observer(device_name)
+        except Exception as exc:
+            return {
+                "authoritative": False,
+                "failure_reason": f"{type(exc).__name__}: {exc}",
+            }
+        if not isinstance(observed, dict):
+            return {
+                "authoritative": False,
+                "failure_reason": (
+                    "The PVST boundary observer returned a non-object result."
+                ),
+            }
+        return observed
+
     def _verify_trunks(
         self,
         expectations: Sequence[VerificationExpectation],
@@ -868,6 +926,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
         signatures: dict[str, tuple[object, ...]] = {}
         round_failures: list[dict[str, object]] = []
         sample_round = 0
+        learning_boundary_stp: dict[str, dict[str, object]] = {}
+        learning_extension_observation_active = False
 
         def inspect() -> dict[str, object]:
             nonlocal sample_round
@@ -918,21 +978,26 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         round_signatures[expectation.id] = signature
                         if signatures.get(expectation.id) != signature:
                             changed.append(expectation.id)
-                    if not changed:
+                    # An extension is only ever justified by a boundary read
+                    # from THIS round: an unchanged trunk row must not keep
+                    # an earlier LRN alive.  Only a device that still has a
+                    # pending expectation feeds that authority, so no other
+                    # device pays for a read the decision never consults.
+                    device_pending = any(
+                        not self._trunk_observation_verified(
+                            round_latest[item.id],
+                        )
+                        for item in grouped[device_name]
+                    )
+                    refresh_boundary = bool(
+                        learning_extension_observation_active
+                        and device_pending
+                    )
+                    if not changed and not refresh_boundary:
                         continue
-                    correlated: dict[str, object] = {}
-                    if self._trunk_transition_observer is not None:
-                        try:
-                            correlated = self._trunk_transition_observer(
-                                device_name,
-                            )
-                        except Exception as exc:
-                            correlated = {
-                                "authoritative": False,
-                                "failure_reason": (
-                                    f"{type(exc).__name__}: {exc}"
-                                ),
-                            }
+                    correlated = self._observe_pvst_boundary(device_name)
+                    if refresh_boundary:
+                        learning_boundary_stp[device_name] = correlated
                     for identifier in changed:
                         round_correlated[identifier] = correlated
             except Exception as exc:
@@ -973,9 +1038,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "found": bool(latest),
                 "configuration_channel": complete,
                 "failure_reason": "",
+                "continuation_authorized": bool(
+                    complete
+                    or pending_learning_progress_target_ms() is not None
+                ),
             }
-
-        learning_boundary_stp: dict[str, dict[str, object]] = {}
 
         def capture_learning_boundary() -> None:
             if self._trunk_transition_observer is None:
@@ -988,27 +1055,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 )
             })
             for device_name in pending_devices:
-                try:
-                    observed = self._trunk_transition_observer(device_name)
-                    learning_boundary_stp[device_name] = (
-                        observed
-                        if isinstance(observed, dict)
-                        else {
-                            "authoritative": False,
-                            "failure_reason": (
-                                "The PVST boundary observer returned a "
-                                "non-object result."
-                            ),
-                        }
-                    )
-                except Exception as exc:
-                    learning_boundary_stp[device_name] = {
-                        "authoritative": False,
-                        "failure_reason": f"{type(exc).__name__}: {exc}",
-                    }
+                learning_boundary_stp[device_name] = (
+                    self._observe_pvst_boundary(device_name)
+                )
 
-        def learning_extension_is_authorized() -> bool:
+        def pending_learning_progress_target_ms() -> float | None:
             pending = False
+            progress_targets: set[float] = set()
             for expectation in ordered:
                 observed = latest.get(expectation.id, {})
                 if self._trunk_observation_verified(observed):
@@ -1016,7 +1069,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 pending = True
                 fields = observed.get("fields")
                 if not isinstance(fields, dict):
-                    return False
+                    return None
                 if any(
                     fields.get(name) is not FieldVerificationStatus.VERIFIED
                     for name in (
@@ -1026,12 +1079,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         "active_vlans",
                     )
                 ):
-                    return False
+                    return None
                 if (
                     fields.get("forwarding_vlans")
                     is not FieldVerificationStatus.FAILED
                 ):
-                    return False
+                    return None
                 correlated = learning_boundary_stp.get(
                     expectation.device_name,
                 )
@@ -1041,7 +1094,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     or correlated.get("device_name")
                     != expectation.device_name
                 ):
-                    return False
+                    return None
                 instances = {
                     item.get("vlan_id"): item
                     for item in correlated.get("instances", [])
@@ -1061,7 +1114,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         not isinstance(instance, dict)
                         or instance.get("authoritative") is not True
                     ):
-                        return False
+                        return None
+                    progress_target = pvst_learning_progress_target_ms(
+                        instance.get("forward_delay_seconds"),
+                    )
+                    if progress_target is None:
+                        return None
+                    progress_targets.add(progress_target)
                     port = next((
                         item for item in instance.get("ports", [])
                         if isinstance(item, dict)
@@ -1075,8 +1134,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         or port.get("row_present") is not True
                         or str(port.get("state") or "").upper() != "LRN"
                     ):
-                        return False
-            return pending
+                        return None
+            if not pending or len(progress_targets) != 1:
+                return None
+            return next(iter(progress_targets))
 
         initial_convergence = StateConvergenceWaiter(
             inspect,
@@ -1103,19 +1164,29 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     learning_boundary_refresh_error = (
                         f"{type(exc).__name__}: {exc}"
                     )
-        learning_extension_authorized = bool(
-            not initial_convergence.configuration_channel
-            and not learning_boundary_refresh_complete
-            and not learning_boundary_refresh_error
-            and learning_extension_is_authorized()
+        learning_extension_target = (
+            pending_learning_progress_target_ms()
+            if (
+                not initial_convergence.configuration_channel
+                and not learning_boundary_refresh_complete
+                and not learning_boundary_refresh_error
+            ) else None
         )
-        extension_convergence = None
-        if learning_extension_authorized:
-            extension_convergence = StateConvergenceWaiter(
-                inspect,
-                timeout_seconds=PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS,
-                interval_seconds=self._convergence_interval,
-            ).wait()
+        learning_extension_candidate = learning_extension_target is not None
+        extension_convergence: SimulationTimeConvergenceResult | None = None
+        if learning_extension_target is not None:
+            learning_extension_observation_active = True
+            try:
+                extension_convergence = (
+                    self._pvst_learning_extension.grant(
+                        inspect,
+                        required_simulation_progress_ms=(
+                            learning_extension_target
+                        ),
+                    )
+                )
+            finally:
+                learning_extension_observation_active = False
         elapsed_ms = int((monotonic() - started) * 1000)
         results: list[RuntimeVerification] = []
         for expectation in ordered:
@@ -1137,12 +1208,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 }),
                 "sample_rounds": sample_round,
                 "initial_sample_rounds": initial_convergence.attempts,
-                "learning_extension_authorized": (
-                    learning_extension_authorized
+                "learning_extension_candidate": (
+                    learning_extension_candidate
                 ),
-                "learning_extension_seconds": (
-                    PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS
-                    if learning_extension_authorized else 0.0
+                **self._pvst_learning_extension.evidence(
+                    extension_convergence,
+                    requested_progress_ms=learning_extension_target,
                 ),
                 "learning_boundary_refresh_performed": (
                     learning_boundary_refresh_performed

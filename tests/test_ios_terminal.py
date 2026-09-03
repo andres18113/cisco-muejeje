@@ -338,6 +338,7 @@ def test_packet_tracer_rpvst_root_output_parses_exact_live_state():
         instance.bridge_base_priority,
         instance.bridge_address,
     ) == (24577, 24576, "0060.5C2C.521E")
+    assert instance.forward_delay_seconds == 15
     assert [
         (
             row.interface,

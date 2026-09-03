@@ -4402,7 +4402,7 @@ raw IOS.
 ## TD-PVST-WINDOW-001 — The PVST learning extension is budgeted in wall-clock, not in Packet Tracer simulation time
 
 Status:
-OPEN
+RESOLVED
 
 Severity:
 P2
@@ -4414,7 +4414,7 @@ against the retained negative
 
 Description:
 
-`PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS` is sized from the Forward Delay
+`PVST_LEARNING_FORWARD_DELAY_WINDOW_SECONDS` was sized from the Forward Delay
 Packet Tracer itself reports, 15 s, plus margin. That delay elapses in
 **simulation** time. The budget is spent in **wall-clock** time, and the two
 are not the same clock.
@@ -4445,9 +4445,9 @@ Tracer simulation time. It failed closed as `NON_FORWARDING`; Router0 was not
 reached.
 
 Blocks now:
-**Yes.** The predicted harness-clock negative has occurred. Fail-closed
-authority remains intact, but another canonical LIVE would repeat an observer
-budget that is not guaranteed to cover one simulated Forward Delay.
+**No.** The simulation-clock correction and its fail-closed authority cases are
+validated offline. Its Packet Tracer outcome remains LIVE-pending; this debt no
+longer blocks that one governed validation.
 
 RESOLVE_BEFORE:
 any further canonical CP-SCALE LIVE.
@@ -4459,6 +4459,31 @@ clock rather than from wall-clock alone — the same `sim_time` boundaries the
 run already retains — so that one extension covers one Forward Delay of
 **simulated** time under load, still bounded, still spent at most once, and
 still refusing LIS, BLK, missing rows and stale or unattributed evidence.
+
+Resolution (2026-09-03):
+
+`SimulationTimeConvergenceWaiter` now spends the extension against the existing
+read-only `SimulationTraceRuntime.read_simulation_state()` seam. The fresh,
+complete, uniquely attributed `show spanning-tree` instance supplies the
+qualified 15 s Forward Delay; the established 5 s margin yields a 20,000 ms PT
+simulation-time target. A separate 45 s wall-clock safety cap is derived from
+the slower retained 0.53 simulated/wall rate and prevents a stalled simulator
+from creating an unbounded wait. Missing, non-Realtime, invalid or regressing
+clock evidence fails closed. Each non-forwarding sample must retain the same
+LRN-only authority or the single extension stops immediately, and the PVST
+boundary that authority reads is re-observed on every extension round: review
+found the trunk observer could otherwise keep an earlier LRN alive whenever the
+trunk row itself had not changed. Trunk and Voice spend the window through one
+`BoundedPvstLearningExtension` seam, so neither can drift onto a different
+clock, a different cap or a second window, and both project the same evidence.
+
+Fail-first tests cover slower simulation progress, FWD after sufficient
+simulated Forward Delay, progress exhaustion, wall-cap exhaustion, clock loss
+or regression, one-authority termination, wrong-device FWD, and the existing
+LRN/LIS/BLK/missing/incomplete/ambiguous matrix. The canonical runner now
+retains the parsed Forward Delay. No Packet Tracer LIVE was run for closure;
+the next governed LIVE is the validation boundary, not a prerequisite for
+removing the defective wall-clock mechanism.
 
 ---
 
@@ -4555,6 +4580,10 @@ Do not delete historical debt entries.
   cannot be mistaken for a normal enterprise operation. Focused registration,
   capability-resource, instruction and fail-closed policy tests pin the
   boundary; no live Packet Tracer evidence is required.
+
+- **TD-PVST-WINDOW-001** — resolved 2026-09-03. The single LRN-only extension
+  is measured against Packet Tracer simulation-time progress with a separate
+  finite wall-clock safety cap and shared fail-closed authority semantics.
 
 - **TD-CP-SCALE-LEDGER-001** — resolved 2026-09-03. The curated judgment ledger
   has an explicit cutoff; compact current state owns post-cutoff run accounting

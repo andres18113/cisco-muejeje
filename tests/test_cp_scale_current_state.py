@@ -26,13 +26,13 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     assert re.fullmatch(r"[0-9a-f]{40}", state["source_head"])
     assert state["active_stage"] == "floor3"
     assert state["status"] == (
-        "ROUTER0_NOT_REACHED_FLOOR3_VOICE_SIGNAL_CONVERGENCE_BLOCKED"
+        "ROUTER0_NOT_REACHED_PVST_SIMULATION_TIME_CORRECTION_OFFLINE_VALIDATED"
     )
     assert state["first_contradicted_boundary"] == (
         "FLOOR3_VOICE_SIGNAL_SWITCH9_VLAN20_PVST_LRN_AFTER_SINGLE_EXTENSION"
     )
     assert state["next_active_step"] == (
-        "FIX_PVST_SIMULATION_TIME_BUDGET_BEFORE_ANY_LIVE"
+        "RUN_ONE_GOVERNED_CANONICAL_ROUTER0_CP_LIVE_FROM_CLEAN_HEAD"
     )
     assert set(state["stages"]) == {"floor2", "floor3", "router0-branch"}
 
@@ -109,6 +109,22 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "realtime_restored": True,
         },
     }
+    assert state["offline_correction"] == {
+        "debt_id": "TD-PVST-WINDOW-001",
+        "status": "OFFLINE_VALIDATED_LIVE_PENDING",
+        "evidence_checkpoint": (
+            "99bf4734f31c6dc7b22e49dd4cc46a3085c10036"
+        ),
+        "mechanism": "PACKET_TRACER_SIMULATION_TIME_PROGRESS",
+        "forward_delay_source": (
+            "FRESH_COMPLETE_IDENTITY_BOUND_SHOW_SPANNING_TREE"
+        ),
+        "qualified_forward_delay_seconds": 15.0,
+        "simulation_progress_budget_seconds": 20.0,
+        "wall_clock_safety_cap_seconds": 45.0,
+        "single_authority": True,
+        "live_validation": "NOT_RUN_THIS_SESSION",
+    }
     assert state["run_accounting"] == {
         "authority": "CURRENT_STATE_PLUS_HASH_PINNED_CLEANUP_ARCHIVES",
         "canonical_live_attempts": 23,
@@ -144,13 +160,7 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             },
         ],
     }
-    assert state["unresolved_debt"] == [
-        {
-            "id": "TD-PVST-WINDOW-001",
-            "status": "BLOCKING",
-            "resolve_before": "ANY_FURTHER_CANONICAL_CP_SCALE_LIVE",
-        },
-    ]
+    assert state["unresolved_debt"] == []
 
     handoff = parse_handoff_state(HANDOFF_PATH.read_text(encoding="utf-8"))
     assert state["handoff_compatibility"]

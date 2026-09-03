@@ -28,6 +28,9 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     OperationalQueryId,
 )
+from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+    SimulationStateObservation,
+)
 
 from test_enterprise_configuration import _fixture
 
@@ -35,6 +38,19 @@ from test_enterprise_configuration import _fixture
 def _plan():
     enterprise, topology, policy = _fixture()
     return topology, compile_enterprise_configuration(enterprise, topology, policy).plan
+
+
+def _simulation_clock(*sim_times: float):
+    values = iter(sim_times)
+
+    def observe() -> SimulationStateObservation:
+        return SimulationStateObservation(
+            observed=True,
+            simulation_mode=False,
+            sim_time=next(values),
+        )
+
+    return observe
 
 
 def _inventory(topology):
@@ -638,6 +654,7 @@ def test_trunk_learning_state_authorizes_one_forward_delay_window():
                     "authoritative": True,
                     "failure_reason": "",
                     "vlan_id": vlan,
+                    "forward_delay_seconds": 15,
                     "root": {"address": "0011.2233.4455"},
                     "ports": [{
                         "interface": expectation.expected["interface"],
@@ -657,6 +674,7 @@ def test_trunk_learning_state_authorizes_one_forward_delay_window():
         trunk_timeout_seconds=0.0,
         convergence_interval_seconds=0.0,
         trunk_transition_observer=learning_stp,
+        simulation_time_observer=_simulation_clock(0, 20_000),
     )
     runtime._ios = _SequenceIos([
         _authoritative_trunk_result(expectation, trunk_output("none")),
@@ -675,6 +693,141 @@ def test_trunk_learning_state_authorizes_one_forward_delay_window():
     assert result.convergence.details["learning_boundary_stp"][
         "authoritative"
     ] is True
+
+
+def test_trunk_extension_stops_when_fresh_pvst_leaves_learning():
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expected_vlans = expectation.expected["allowed_vlans"]
+    vlans = ",".join(str(item) for item in expected_vlans)
+    trunk_output = "\n".join((
+        "SW#show interfaces trunk",
+        "Port Mode Encapsulation Status Native vlan",
+        "Gig0/1 on 802.1q trunking 1",
+        "Port Vlans allowed on trunk",
+        f"Gig0/1 {vlans}",
+        "Port Vlans allowed and active in management domain",
+        f"Gig0/1 {vlans}",
+        "Port Vlans in spanning tree forwarding state and not pruned",
+        "Gig0/1 none",
+        "SW#",
+    ))
+    states = iter(("LIS", "LRN", "LIS"))
+    observed_states = []
+
+    def stp(_device_name):
+        state = next(states)
+        observed_states.append(state)
+        return {
+            "authoritative": True,
+            "device_name": expectation.device_name,
+            "instances": [
+                {
+                    "authoritative": True,
+                    "vlan_id": vlan,
+                    "forward_delay_seconds": 15,
+                    "ports": [{
+                        "interface": expectation.expected["interface"],
+                        "row_present": True,
+                        "state": state,
+                    }],
+                }
+                for vlan in expected_vlans
+            ],
+        }
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=stp,
+        simulation_time_observer=_simulation_clock(0, 0),
+    )
+    runtime._ios = _SequenceIos([
+        _authoritative_trunk_result(expectation, trunk_output),
+    ])
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert observed_states == ["LIS", "LRN", "LIS"]
+    assert result.convergence is not None
+    assert result.convergence.details["learning_extension_stop_reason"] == (
+        "continuation_unauthorized"
+    )
+    assert result.convergence.details["learning_extension_sample_count"] == 1
+
+
+def test_trunk_extension_is_refused_when_the_forward_delay_is_unqualified():
+    """An LRN boundary is not enough: the protocol budget must be qualified."""
+    _, plan = _plan()
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.required_query == "show_interfaces_trunk"
+    )
+    expected_vlans = expectation.expected["allowed_vlans"]
+    vlans = ",".join(str(item) for item in expected_vlans)
+    trunk_output = "\n".join((
+        "SW#show interfaces trunk",
+        "Port Mode Encapsulation Status Native vlan",
+        "Gig0/1 on 802.1q trunking 1",
+        "Port Vlans allowed on trunk",
+        f"Gig0/1 {vlans}",
+        "Port Vlans allowed and active in management domain",
+        f"Gig0/1 {vlans}",
+        "Port Vlans in spanning tree forwarding state and not pruned",
+        "Gig0/1 none",
+        "SW#",
+    ))
+    simulation_reads = []
+
+    def stp(_device_name):
+        return {
+            "authoritative": True,
+            "device_name": expectation.device_name,
+            "instances": [
+                {
+                    "authoritative": True,
+                    "vlan_id": vlan,
+                    "forward_delay_seconds": 7,
+                    "ports": [{
+                        "interface": expectation.expected["interface"],
+                        "row_present": True,
+                        "state": "LRN",
+                    }],
+                }
+                for vlan in expected_vlans
+            ],
+        }
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=stp,
+        simulation_time_observer=lambda: simulation_reads.append(True),
+    )
+    runtime._ios = _SequenceIos([
+        _authoritative_trunk_result(expectation, trunk_output),
+    ])
+
+    result = runtime.verify([expectation])[0]
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert simulation_reads == []
+    assert result.convergence is not None
+    assert result.convergence.details["learning_extension_candidate"] is False
+    assert result.convergence.details["learning_extension_authorized"] is False
+    assert result.convergence.details["learning_extension_stop_reason"] == (
+        "not_authorized"
+    )
 
 
 def test_trunk_is_refreshed_after_boundary_pvst_reaches_forwarding():
@@ -1379,6 +1532,7 @@ def test_voice_access_forwarding_waits_on_one_registered_stp_query():
             output=_voice_stp_output("LIS"),
             fresh_output_observed=True,
             output_complete=True,
+            observed_device_name="SW",
             device_identity_provenance="confirmed_unique",
         ),
         IosCommandResult(
@@ -1386,6 +1540,7 @@ def test_voice_access_forwarding_waits_on_one_registered_stp_query():
             output=_voice_stp_output("FWD"),
             fresh_output_observed=True,
             output_complete=True,
+            observed_device_name="SW",
             device_identity_provenance="confirmed_unique",
         ),
     ])
@@ -1436,13 +1591,21 @@ def _voice_stp_result(state, *, observed_device_name="SW"):
     )
 
 
-def _voice_runtime(ios, *, trunk_timeout_seconds=0.0):
+def _voice_runtime(
+    ios,
+    *,
+    trunk_timeout_seconds=0.0,
+    simulation_time_observer=None,
+):
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
         send_and_wait=lambda _payload, _timeout: None,
         trunk_timeout_seconds=trunk_timeout_seconds,
         convergence_interval_seconds=0.0,
+        simulation_time_observer=(
+            simulation_time_observer or _simulation_clock(0, 20_000)
+        ),
     )
     runtime._ios = ios
     return runtime
@@ -1451,57 +1614,64 @@ def _voice_runtime(ios, *, trunk_timeout_seconds=0.0):
 def test_voice_access_forwarding_extends_once_from_learning_to_forwarding():
     ios = _SequenceIos([
         _voice_stp_result("LRN"),
+        _voice_stp_result("LRN"),
+        _voice_stp_result("LRN"),
         _voice_stp_result("FWD"),
     ])
-    runtime = _voice_runtime(ios)
+    runtime = _voice_runtime(
+        ios,
+        simulation_time_observer=_simulation_clock(0, 0, 10_000, 20_000),
+    )
 
     result = runtime.wait_for_voice_access_forwarding([_voice_expectation()])[0]
 
     assert result.status is ActionExecutionStatus.VERIFIED
-    assert len(ios.calls) == 2
+    assert len(ios.calls) == 4
     assert result.convergence is not None
     assert result.convergence.details["initial_sample_count"] == 1
     assert result.convergence.details["learning_extension_authorized"] is True
     assert result.convergence.details["learning_extension_seconds"] == 20.0
-    assert result.convergence.details["learning_extension_sample_count"] == 1
-    assert result.convergence.details["sample_count"] == 2
+    assert result.convergence.details["learning_extension_clock"] == (
+        "packet_tracer_simulation_time"
+    )
+    assert result.convergence.details[
+        "learning_extension_simulation_progress_ms"
+    ] == 20_000
+    assert result.convergence.details["learning_extension_sample_count"] == 3
+    assert result.convergence.details["sample_count"] == 4
     assert result.convergence.details["terminal_failure_dimension"] == "NONE"
 
 
 def test_voice_access_forwarding_buys_exactly_one_protocol_sized_window(
-    monkeypatch,
 ):
-    """LRN that never forwards buys the 20 s budget once, then fails closed."""
-    observed_timeouts: list[float] = []
-    real_waiter = configuration_runtime_module.StateConvergenceWaiter
+    """LRN gets one 20 s PT-simulation budget, then fails closed."""
+    observed_sim_times = iter((0, 0, 20_000))
+    simulation_reads = []
 
-    class CapturingWaiter:
-        def __init__(
-            self, inspect, *, timeout_seconds: float, interval_seconds: float,
-        ) -> None:
-            observed_timeouts.append(timeout_seconds)
-            # Only the requested protocol-sized budget is under test here, so
-            # no window burns wall-clock time.
-            self._waiter = real_waiter(
-                inspect, timeout_seconds=0, interval_seconds=interval_seconds,
-            )
+    def observe_simulation_time():
+        sim_time = next(observed_sim_times)
+        simulation_reads.append(sim_time)
+        return SimulationStateObservation(
+            observed=True, simulation_mode=False, sim_time=sim_time,
+        )
 
-        def wait(self):
-            return self._waiter.wait()
-
-    monkeypatch.setattr(
-        configuration_runtime_module, "StateConvergenceWaiter", CapturingWaiter,
-    )
     ios = _SequenceIos([_voice_stp_result("LRN")])
-    runtime = _voice_runtime(ios)
+    runtime = _voice_runtime(
+        ios,
+        simulation_time_observer=observe_simulation_time,
+    )
 
     result = runtime.wait_for_voice_access_forwarding([_voice_expectation()])[0]
 
-    assert observed_timeouts == [0.0, 20.0], "one extension, one Forward Delay"
+    assert simulation_reads == [0, 0, 20_000]
+    assert len(ios.calls) == 3, "one initial read plus one bounded extension"
     assert result.status is ActionExecutionStatus.UNOBSERVABLE
     assert result.convergence is not None
     assert result.convergence.details["learning_extension_authorized"] is True
-    assert result.convergence.details["learning_extension_sample_count"] == 1
+    assert result.convergence.details["learning_extension_sample_count"] == 2
+    assert result.convergence.details["learning_extension_stop_reason"] == (
+        "simulation_progress_exhausted"
+    )
     assert result.convergence.details["terminal_failure_dimension"] == (
         "NON_FORWARDING"
     )
@@ -1562,6 +1732,71 @@ def test_voice_access_forwarding_refuses_to_extend_unattributed_evidence():
     assert len(ios.calls) == 1, "an unattributed sample must not buy a window"
     assert result.convergence is not None
     assert result.convergence.details["learning_extension_authorized"] is False
+
+
+def test_voice_access_forwarding_rejects_wrong_device_terminal_fwd():
+    simulation_reads = []
+    ios = _SequenceIos([
+        _voice_stp_result("FWD", observed_device_name="OTHER"),
+    ])
+    runtime = _voice_runtime(
+        ios,
+        simulation_time_observer=lambda: simulation_reads.append(True),
+    )
+
+    result = runtime.wait_for_voice_access_forwarding([_voice_expectation()])[0]
+
+    assert result.status is ActionExecutionStatus.UNOBSERVABLE
+    assert result.fresh_evidence is False
+    assert simulation_reads == []
+    assert result.convergence is not None
+    assert result.convergence.details["terminal_failure_dimension"] == "IDENTITY"
+
+
+def test_voice_access_forwarding_refuses_an_unqualified_forward_delay():
+    """LRN authority alone never buys a window of unmeasured protocol length."""
+    qualified = _voice_stp_output("LRN")
+    for label, output in (
+        ("unqualified", qualified.replace("Delay 15 sec", "Delay 4 sec")),
+        ("ambiguous", qualified.replace("Delay 15 sec", "Delay 4 sec", 1)),
+        ("absent", "\n".join(
+            line for line in qualified.splitlines()
+            if "Forward Delay" not in line
+        )),
+    ):
+        simulation_reads = []
+        ios = _SequenceIos([
+            IosCommandResult(
+                "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
+                output=output,
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name="SW",
+                device_identity_provenance="confirmed_unique",
+            ),
+        ])
+        runtime = _voice_runtime(
+            ios,
+            simulation_time_observer=lambda: simulation_reads.append(True),
+        )
+
+        result = runtime.wait_for_voice_access_forwarding(
+            [_voice_expectation()],
+        )[0]
+
+        assert result.status is ActionExecutionStatus.UNOBSERVABLE, label
+        assert simulation_reads == [], label
+        assert len(ios.calls) == 1, label
+        details = result.convergence.details
+        assert details["observed_forward_delay_seconds"] != 15, label
+        # The LRN authority itself still held; only the budget was unqualified.
+        assert details["learning_extension_candidate"] is True, label
+        assert details["learning_extension_authorized"] is False, label
+        assert details["learning_extension_seconds"] == 0.0, label
+        assert details["learning_extension_stop_reason"] == (
+            "not_authorized"
+        ), label
+        assert details["terminal_failure_dimension"] == "NON_FORWARDING", label
 
 
 def _voice_learning_observation(states, **overrides):
@@ -1658,6 +1893,7 @@ def test_voice_access_forwarding_retains_one_structured_group_observation():
             output=_voice_stp_group_output({"Fa0/1": "LIS", "Fa0/2": "LRN"}),
             fresh_output_observed=True,
             output_complete=True,
+            observed_device_name="SW",
             device_identity_provenance="confirmed_unique",
         ),
         IosCommandResult(
@@ -1665,6 +1901,7 @@ def test_voice_access_forwarding_retains_one_structured_group_observation():
             output=_voice_stp_group_output({"Fa0/1": "FWD", "Fa0/2": "FWD"}),
             fresh_output_observed=True,
             output_complete=True,
+            observed_device_name="SW",
             device_identity_provenance="confirmed_unique",
         ),
     ])
@@ -1692,8 +1929,18 @@ def test_voice_access_forwarding_retains_one_structured_group_observation():
         "missing_interfaces": [],
         "non_fwd_interfaces": {},
         "initial_sample_count": 2,
+        "observed_forward_delay_seconds": 15,
+        "learning_extension_candidate": False,
         "learning_extension_authorized": False,
         "learning_extension_seconds": 0.0,
+        "learning_extension_clock": "none",
+        "learning_extension_max_wall_seconds": 0.0,
+        "learning_extension_simulation_start_ms": None,
+        "learning_extension_simulation_end_ms": None,
+        "learning_extension_simulation_progress_ms": 0.0,
+        "learning_extension_clock_samples": 0,
+        "learning_extension_stop_reason": "not_authorized",
+        "learning_extension_failure_reason": "",
         "learning_extension_sample_count": 0,
         "sample_count": 2,
         "elapsed_ms": results[0].convergence.elapsed_ms,

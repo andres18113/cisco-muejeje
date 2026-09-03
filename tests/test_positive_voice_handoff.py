@@ -1225,12 +1225,12 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CLEANUP": "VERIFIED_AFTER_EVERY_LIVE",
         "WORKSPACE_RESTORED": "YES",
         "NEXT_ACTIVE_STEP": (
-            "FIX_PVST_SIMULATION_TIME_BUDGET_BEFORE_ANY_LIVE"
+            "RUN_ONE_GOVERNED_CANONICAL_ROUTER0_CP_LIVE_FROM_CLEAN_HEAD"
         ),
         "CP_SCALE_STATUS": (
             "FLOOR2_VOICE_VERIFIED_35_OF_35 | "
             "FLOOR3_SWITCH9_VLAN20_LRN_AFTER_SINGLE_EXTENSION | "
-            "ROUTER0_NOT_REACHED"
+            "ROUTER0_NOT_REACHED | PVST_SIM_TIME_FIX_OFFLINE_VALIDATED"
         ),
     }
 
