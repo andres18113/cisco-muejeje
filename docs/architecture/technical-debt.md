@@ -4399,6 +4399,75 @@ Does not block Stage 3A4. Stage 3A4 must not use this tool: its rule is that a
 missing production seam is named and implemented, never bypassed with raw JS or
 raw IOS.
 
+## TD-CP-EVIDENCE-CAUSE-001 — Compact canonical Voice evidence dropped the convergence stop cause
+
+Status:
+RESOLVED
+
+Severity:
+P2
+
+Discovered:
+Offline audit of the canonical evidence projection introduced alongside the
+simulation-time PVST correction, 2026-09-03.
+
+Description:
+
+`SimulationTimeConvergenceWaiter` retains a causal stop reason for every
+terminal path — `converged`, `simulation_progress_exhausted`,
+`wall_clock_safety_cap`, `simulation_clock_read_failed`,
+`simulation_clock_unobservable`, `simulation_clock_not_realtime`,
+`simulation_clock_invalid`, `simulation_clock_untyped`,
+`simulation_clock_regressed`, `inspection_failed`, `continuation_unauthorized`.
+`CPScaleVoiceAccessGroupEvidence` and `_canonical_voice_access_groups`
+projected only the terminal network reading and dropped that cause.
+
+The clock is read before each inspection, so a lost, non-Realtime, invalid or
+regressing clock ends the extension **without inspecting again**, leaving the
+previous authoritative LRN sample in `latest`. The compaction then produced
+`terminal_authority=AUTHORITATIVE`, `terminal_failure_dimension=NON_FORWARDING`
+and `status=FAILED`, and `phone_access_fwd_failed` counted those phone ports as
+measured failures. A harness/observer failure was therefore indistinguishable
+from the network answering NO — the exact confusion the fail-closed contract
+exists to prevent, in the direction that manufactures a negative rather than a
+false positive.
+
+Blocks now:
+**No.** Resolved before the next canonical LIVE.
+
+RESOLVE_BEFORE:
+the next canonical CP-SCALE Router0 LIVE.
+
+Closure criterion:
+
+Compact canonical Voice evidence distinguishes, in typed form and without
+parsing prose, (1) authoritative network non-forwarding after the qualified
+simulation-time budget was genuinely spent, (2) an observer/harness authority
+that could not complete, and (3) successful convergence.
+
+Resolution (2026-09-03):
+
+`ConvergenceOutcome` is a domain enum with `CONVERGED`, `NETWORK_MEASURED`,
+`OBSERVER_INCOMPLETE` and `UNKNOWN`; only the first two may support a product
+verdict. `classify_extension_stop_reason` maps the stop-reason vocabulary to it
+next to the code that emits that vocabulary, and an unrecognised token fails
+closed as `OBSERVER_INCOMPLETE`. The projection also fails closed when the
+retained sample is not from the final round, which covers a read that raised
+inside the initial convergence and left an earlier sample behind.
+
+`CPScaleVoiceAccessGroupEvidence` gains `convergence_outcome`,
+`learning_extension_stop_reason` and `unresolved_interfaces`. Under
+`OBSERVER_INCOMPLETE` the observed states move from `non_fwd_interfaces` into
+`unresolved_interfaces` and the dimension becomes `CONVERGENCE_UNOBSERVABLE`,
+so nothing is discarded while `phone_access_fwd_failed` stops counting them and
+`phone_access_fwd_unobservable` picks them up. `PHONE_ACCESS_FORWARDING`
+remains the contradicted boundary either way.
+
+Retained archives written before `c455179` do not carry the causal outcome and
+cannot be re-derived; they remain valid for what they do record.
+
+---
+
 ## TD-PVST-WINDOW-001 — The PVST learning extension is budgeted in wall-clock, not in Packet Tracer simulation time
 
 Status:
@@ -4466,9 +4535,13 @@ Resolution (2026-09-03):
 read-only `SimulationTraceRuntime.read_simulation_state()` seam. The fresh,
 complete, uniquely attributed `show spanning-tree` instance supplies the
 qualified 15 s Forward Delay; the established 5 s margin yields a 20,000 ms PT
-simulation-time target. A separate 45 s wall-clock safety cap is derived from
-the slower retained 0.53 simulated/wall rate and prevents a stalled simulator
-from creating an unbounded wait. Missing, non-Realtime, invalid or regressing
+simulation-time target. A separate 45 s wall-clock figure is derived from the
+slower retained 0.53 simulated/wall rate. It is an admission boundary, not an
+execution deadline: past it no further poll round is opened and nothing more
+is slept, while a bounded read already in flight still returns on its own
+timeout, so total elapsed time can exceed 45 s. That prevents a stalled
+simulator from creating an unbounded wait without pretending to a
+cancellation contract the bridge does not offer. Missing, non-Realtime, invalid or regressing
 clock evidence fails closed. Each non-forwarding sample must retain the same
 LRN-only authority or the single extension stops immediately, and the PVST
 boundary that authority reads is re-observed on every extension round: review
@@ -4580,6 +4653,10 @@ Do not delete historical debt entries.
   cannot be mistaken for a normal enterprise operation. Focused registration,
   capability-resource, instruction and fail-closed policy tests pin the
   boundary; no live Packet Tracer evidence is required.
+
+- **TD-CP-EVIDENCE-CAUSE-001** — resolved 2026-09-03. Compact canonical
+  Voice evidence carries a typed convergence outcome, so an observer or
+  clock failure can no longer be compacted as a measured network failure.
 
 - **TD-PVST-WINDOW-001** — resolved 2026-09-03. The single LRN-only extension
   is measured against Packet Tracer simulation-time progress with a separate

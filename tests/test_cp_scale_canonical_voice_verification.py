@@ -24,6 +24,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
+    ConvergenceOutcome,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
     ConvergenceReport,
@@ -181,6 +182,182 @@ def _complete_floor1_evidence():
         "REGISTRATION_COMPLETED",
     ]
     return projection, configuration, voice, binding_evidence, lifecycle
+
+
+def _floor1_pending_voice_evidence(
+    stop_reason: str,
+    outcome_states: str = "LRN",
+    terminal_sample_round: int = 7,
+):
+    """Floor1 with every voice port still pending and one named stop cause."""
+    projection = _floor1()
+    assert projection.voice is not None
+    access_actions = {
+        item.id: item for item in projection.configuration.actions
+        if isinstance(item, ConfigureAccessPort) and item.voice_vlan_id is not None
+    }
+    access_expectations = [
+        item for item in projection.configuration.verification_expectations
+        if item.action_id in access_actions
+    ]
+    interfaces = sorted(item.interface for item in access_actions.values())
+    details = {
+        "kind": "voice_access_forwarding_group",
+        "switch": "Switch5",
+        "voice_vlan_id": 20,
+        "expected_interfaces": interfaces,
+        "verified_fwd_interfaces": [],
+        "missing_interfaces": [],
+        "non_fwd_interfaces": {item: outcome_states for item in interfaces},
+        "sample_count": 7,
+        "elapsed_ms": 21_000,
+        "terminal_authority": "AUTHORITATIVE",
+        "terminal_failure_dimension": "NON_FORWARDING",
+        "terminal_sample_round": terminal_sample_round,
+        "learning_extension_stop_reason": stop_reason,
+    }
+    convergence = ConvergenceReport(
+        attempts=7,
+        elapsed_ms=21_000,
+        final_status=ActionExecutionStatus.UNOBSERVABLE,
+        last_observable_state="pending",
+        details=details,
+    )
+    pending = [
+        VerificationResult(
+            expectation_id=item.id,
+            action_id=item.action_id,
+            status=ActionExecutionStatus.UNOBSERVABLE,
+            evidence_method="fresh_show_spanning_tree_voice_access",
+            fresh_evidence=True,
+            fields={"voice_forwarding": FieldVerificationStatus.UNOBSERVABLE},
+            convergence=convergence,
+        )
+        for item in access_expectations
+    ]
+    configuration = ConfigurationApplicationResult(
+        config_plan_id=projection.configuration.id,
+        config_semantic_hash=projection.configuration.semantic_hash,
+        source_topology_hash=projection.configuration.source_topology_hash,
+        status=ConfigurationApplicationStatus.PARTIAL,
+        voice_signal_barrier=VoiceSignalBarrierResult(
+            required=True,
+            deferred_action_ids=sorted(access_actions),
+            foundation_status=ActionExecutionStatus.VERIFIED,
+            signal_status=ActionExecutionStatus.VERIFIED,
+            post_signal_convergence_results=pending,
+        ),
+    )
+    evidence = canonical_cp_scale_voice_evidence(
+        stage="floor1",
+        configuration_plan=projection.configuration,
+        configuration_result=configuration,
+        voice_plan=projection.voice,
+        voice_result=VoiceApplicationResult(
+            voice_plan_id=projection.voice.id,
+            voice_semantic_hash=projection.voice.semantic_hash,
+            source_topology_hash=projection.voice.source_topology_hash,
+            source_configuration_hash=projection.voice.source_configuration_hash,
+            status=ActionExecutionStatus.PARTIAL,
+            application_status=ActionExecutionStatus.APPLIED,
+        ),
+        dhcp_server_bindings=[],
+        lifecycle_events=["NETWORK_VERIFIED", "VOICE_SIGNAL_VERIFIED"],
+    )
+    return interfaces, evidence
+
+
+@pytest.mark.parametrize("stop_reason", [
+    "simulation_clock_read_failed",
+    "simulation_clock_unobservable",
+    "simulation_clock_not_realtime",
+    "simulation_clock_invalid",
+    "simulation_clock_untyped",
+    "simulation_clock_regressed",
+    "wall_clock_safety_cap",
+    "inspection_failed",
+])
+def test_a_lost_convergence_authority_is_never_an_authoritative_failure(
+    stop_reason,
+):
+    """The harness could not finish observing; the network did not answer NO."""
+    interfaces, evidence = _floor1_pending_voice_evidence(stop_reason)
+    group = evidence.phone_access_fwd_groups[0]
+
+    assert group.convergence_outcome is ConvergenceOutcome.OBSERVER_INCOMPLETE
+    assert group.learning_extension_stop_reason == stop_reason
+    assert group.status is ActionExecutionStatus.UNOBSERVABLE
+    # The measured states are retained, but not as a product verdict.
+    assert group.non_fwd_interfaces == {}
+    assert group.unresolved_interfaces == {item: "LRN" for item in interfaces}
+    assert group.terminal_failure_dimension == "CONVERGENCE_UNOBSERVABLE"
+    assert evidence.phone_access_fwd_failed == 0
+    assert evidence.phone_access_fwd_unobservable == (
+        evidence.phone_access_fwd_expected
+    )
+    assert evidence.complete is False
+
+
+def test_an_all_forwarding_group_is_never_demoted_by_the_convergence_cause():
+    """The cause gates a NO from the network, never a directly observed YES."""
+    projection, configuration, voice, bindings, lifecycle = (
+        _complete_floor1_evidence()
+    )
+    details = (
+        configuration.voice_signal_barrier.post_signal_convergence_results[0]
+        .convergence.details
+    )
+    assert "learning_extension_stop_reason" not in details
+
+    evidence = canonical_cp_scale_voice_evidence(
+        stage="floor1",
+        configuration_plan=projection.configuration,
+        configuration_result=configuration,
+        voice_plan=projection.voice,
+        voice_result=voice,
+        dhcp_server_bindings=bindings,
+        lifecycle_events=lifecycle,
+    )
+    group = evidence.phone_access_fwd_groups[0]
+
+    # Absent typed evidence still fails closed as a cause...
+    assert group.convergence_outcome is ConvergenceOutcome.OBSERVER_INCOMPLETE
+    # ...but every port was read FORWARDING, and that reading stands.
+    assert group.terminal_failure_dimension == "NONE"
+    assert group.status is ActionExecutionStatus.VERIFIED
+    assert group.unresolved_interfaces == {}
+    assert evidence.phone_access_fwd_verified == (
+        evidence.phone_access_fwd_expected
+    )
+
+
+def test_an_exhausted_simulation_budget_stays_a_measured_network_failure():
+    """A full qualified budget with fresh LRN is a real negative, not a gap."""
+    interfaces, evidence = _floor1_pending_voice_evidence(
+        "simulation_progress_exhausted",
+    )
+    group = evidence.phone_access_fwd_groups[0]
+
+    assert group.convergence_outcome is ConvergenceOutcome.NETWORK_MEASURED
+    assert group.status is ActionExecutionStatus.FAILED
+    assert group.non_fwd_interfaces == {item: "LRN" for item in interfaces}
+    assert group.unresolved_interfaces == {}
+    assert group.terminal_failure_dimension == "NON_FORWARDING"
+    assert evidence.phone_access_fwd_failed == len(interfaces)
+
+
+def test_a_stale_terminal_sample_cannot_conclude_for_the_round_it_missed():
+    """A retained earlier sample is not evidence about the round that failed."""
+    interfaces, evidence = _floor1_pending_voice_evidence(
+        "continuation_unauthorized", terminal_sample_round=6,
+    )
+    group = evidence.phone_access_fwd_groups[0]
+
+    assert group.convergence_outcome is ConvergenceOutcome.OBSERVER_INCOMPLETE
+    assert group.status is ActionExecutionStatus.UNOBSERVABLE
+    assert group.non_fwd_interfaces == {}
+    assert group.unresolved_interfaces == {item: "LRN" for item in interfaces}
+    assert evidence.phone_access_fwd_failed == 0
 
 
 def test_complete_floor1_voice_evidence_requires_identities_not_just_counts():

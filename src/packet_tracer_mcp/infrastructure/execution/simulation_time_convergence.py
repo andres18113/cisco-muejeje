@@ -7,6 +7,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from time import monotonic, sleep
 
+from ...domain.enterprise.models.configuration_runtime import (
+    ConvergenceOutcome,
+)
 from .simulation_trace_runtime import SimulationStateObservation
 
 
@@ -17,9 +20,14 @@ SimulationStateObserver = Callable[[], SimulationStateObservation]
 # PT 9.0.1.0858's retained, complete ``show spanning-tree`` output reports a
 # 15 s Forward Delay.  The prior governed policy added 5 s of observation
 # margin.  Those 20 s are now spent on PT's simulation clock.  The 45 s wall
-# cap is a safety boundary: retained canonical runs measured 0.53 and 0.59
-# simulated seconds per wall second under load, so it covers the qualified
-# target at the slower measured rate without becoming an unlimited wait.
+# figure is an ADMISSION boundary, not an execution deadline: retained
+# canonical runs measured 0.53 and 0.59 simulated seconds per wall second
+# under load, so it lets the qualified target be reached at the slower
+# measured rate while refusing to open further rounds after it.  Past the
+# boundary no new round is started and nothing further is slept; a bounded
+# read already in flight still returns on its own timeout, so total elapsed
+# time can exceed 45 s.  Cancelling an in-flight read would need a
+# cancellation contract the bridge does not offer.
 QUALIFIED_PVST_FORWARD_DELAY_SECONDS = 15.0
 PVST_FORWARD_DELAY_MARGIN_SECONDS = 5.0
 PVST_SIMULATION_PROGRESS_WALL_CAP_SECONDS = 45.0
@@ -41,6 +49,50 @@ def pvst_learning_progress_target_ms(
         QUALIFIED_PVST_FORWARD_DELAY_SECONDS
         + PVST_FORWARD_DELAY_MARGIN_SECONDS
     ) * 1000.0
+
+
+#: Stop causes that mean the OBSERVER ran out of authority, not that the
+#: network answered.  Each one leaves whatever sample was last retained
+#: describing a round the observer could not complete, so none of them may
+#: support a network verdict.  ``wall_clock_safety_cap`` is here deliberately:
+#: it means the qualified simulation budget was NOT spent.
+OBSERVER_INCOMPLETE_STOP_REASONS = frozenset({
+    "simulation_clock_read_failed",
+    "simulation_clock_unobservable",
+    "simulation_clock_not_realtime",
+    "simulation_clock_invalid",
+    "simulation_clock_untyped",
+    "simulation_clock_regressed",
+    "wall_clock_safety_cap",
+    "inspection_failed",
+})
+
+#: Stop causes where a fresh sample ended the authority, so the terminal state
+#: is the answer.  ``not_authorized`` means no extension was ever granted and
+#: the initial convergence's own terminal sample stands.
+NETWORK_MEASURED_STOP_REASONS = frozenset({
+    "simulation_progress_exhausted",
+    "continuation_unauthorized",
+    "not_authorized",
+})
+
+
+def classify_extension_stop_reason(stop_reason: object) -> ConvergenceOutcome:
+    """Map one retained stop cause to what it may legitimately conclude.
+
+    An unrecognised token fails closed as ``OBSERVER_INCOMPLETE``: a stop
+    cause this classifier does not know is not a cause it may let speak for
+    the network.  This must stay total -- it runs while a conclusion is
+    being formed, so malformed evidence has to fail closed rather than
+    raise past the caller.
+    """
+    if not isinstance(stop_reason, str):
+        return ConvergenceOutcome.OBSERVER_INCOMPLETE
+    if stop_reason == "converged":
+        return ConvergenceOutcome.CONVERGED
+    if stop_reason in NETWORK_MEASURED_STOP_REASONS:
+        return ConvergenceOutcome.NETWORK_MEASURED
+    return ConvergenceOutcome.OBSERVER_INCOMPLETE
 
 
 @dataclass(frozen=True)
@@ -73,6 +125,9 @@ def simulation_time_extension_evidence(
     authorized = bool(
         result is not None and result.simulation_start_ms is not None
     )
+    stop_reason = (
+        result.stop_reason if result is not None else "not_authorized"
+    )
     return {
         "learning_extension_authorized": authorized,
         "learning_extension_seconds": (
@@ -101,9 +156,10 @@ def simulation_time_extension_evidence(
         "learning_extension_sample_count": (
             result.attempts if result is not None else 0
         ),
-        "learning_extension_stop_reason": (
-            result.stop_reason if result is not None else "not_authorized"
-        ),
+        "learning_extension_stop_reason": stop_reason,
+        "learning_extension_outcome": classify_extension_stop_reason(
+            stop_reason,
+        ).value,
         "learning_extension_failure_reason": (
             result.failure_reason if result is not None else ""
         ),
@@ -115,9 +171,13 @@ class SimulationTimeConvergenceWaiter:
 
     Packet Tracer protocol timers advance in simulation time even in Realtime
     mode.  The protocol budget therefore comes from ``getCurrentSimTime()``;
-    wall time is only a hard safety cap for a stalled or very slow simulator.
-    Both clocks are bounded and neither an invalid clock nor an unauthorized
-    terminal sample is retryable inside this authority.
+    wall time only bounds how long this observer keeps ADMITTING rounds when
+    the simulator is stalled or very slow.  Neither clock is a deadline that
+    interrupts work already started: an inspection or a clock read in flight
+    runs to its own bounded end, so ``elapsed_ms`` may exceed the wall cap by
+    one such read.  What is guaranteed is that no round is opened and no
+    sleep is taken past the boundary, and that neither an invalid clock nor
+    an unauthorized terminal sample is retryable inside this authority.
     """
 
     def __init__(
@@ -163,6 +223,8 @@ class SimulationTimeConvergenceWaiter:
         last_sim_time = baseline
 
         while True:
+            # Admission boundary: past it no further round is opened.  A
+            # round already under way is not interrupted.
             if self._clock() - started >= self._max_wall_seconds:
                 return self._result(
                     False, attempts, started, start_sim_time, last_sim_time,
@@ -274,9 +336,10 @@ class BoundedPvstLearningExtension:
 
     Trunk and Voice observe different surfaces, but the extension itself is
     one contract: a single LRN-only window spent on Packet Tracer's own
-    simulation clock under a finite wall-clock safety cap.  Owning that wiring
-    here is what keeps the two callers from drifting apart -- neither can
-    quietly acquire a different clock, a different cap or a second window.
+    simulation clock under a finite wall-clock admission boundary.  Owning
+    that wiring here is what keeps the two callers from drifting apart --
+    neither can quietly acquire a different clock, a different cap or a
+    second window.
     """
 
     observe_simulation_state: SimulationStateObserver

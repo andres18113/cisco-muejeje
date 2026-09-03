@@ -115,6 +115,9 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
         "evidence_checkpoint": (
             "99bf4734f31c6dc7b22e49dd4cc46a3085c10036"
         ),
+        "implementation_head": (
+            "c45517972892b321fddb8a8032a31c4deb6bdf1a"
+        ),
         "mechanism": "PACKET_TRACER_SIMULATION_TIME_PROGRESS",
         "forward_delay_source": (
             "FRESH_COMPLETE_IDENTITY_BOUND_SHOW_SPANNING_TREE"
@@ -122,6 +125,12 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
         "qualified_forward_delay_seconds": 15.0,
         "simulation_progress_budget_seconds": 20.0,
         "wall_clock_safety_cap_seconds": 45.0,
+        "wall_clock_cap_semantics": (
+            "ADMISSION_BOUNDARY_NOT_EXECUTION_DEADLINE"
+        ),
+        "causal_outcome_projection": (
+            "CONVERGED_NETWORK_MEASURED_OBSERVER_INCOMPLETE"
+        ),
         "single_authority": True,
         "live_validation": "NOT_RUN_THIS_SESSION",
     }

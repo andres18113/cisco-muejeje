@@ -536,6 +536,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             "missing_interfaces": missing_interfaces,
             "non_fwd_interfaces": non_forwarding_interfaces,
             "initial_sample_count": initial_convergence.attempts,
+            "terminal_sample_round": latest.get("sample_round"),
             "observed_forward_delay_seconds": latest.get(
                 "forward_delay_seconds",
             ),

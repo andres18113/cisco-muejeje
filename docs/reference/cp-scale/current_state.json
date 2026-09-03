@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v1",
-  "updated_at": "2026-09-03T01:57:15.893107Z",
+  "updated_at": "2026-09-03T03:41:52.104318Z",
   "source_head": "6c6db55566890f1d9ca9cc06bfc13ae24505e793",
   "source_head_role": "latest_canonical_live_source",
   "active_stage": "floor3",
@@ -101,11 +101,14 @@
     "debt_id": "TD-PVST-WINDOW-001",
     "status": "OFFLINE_VALIDATED_LIVE_PENDING",
     "evidence_checkpoint": "99bf4734f31c6dc7b22e49dd4cc46a3085c10036",
+    "implementation_head": "c45517972892b321fddb8a8032a31c4deb6bdf1a",
     "mechanism": "PACKET_TRACER_SIMULATION_TIME_PROGRESS",
     "forward_delay_source": "FRESH_COMPLETE_IDENTITY_BOUND_SHOW_SPANNING_TREE",
     "qualified_forward_delay_seconds": 15.0,
     "simulation_progress_budget_seconds": 20.0,
     "wall_clock_safety_cap_seconds": 45.0,
+    "wall_clock_cap_semantics": "ADMISSION_BOUNDARY_NOT_EXECUTION_DEADLINE",
+    "causal_outcome_projection": "CONVERGED_NETWORK_MEASURED_OBSERVER_INCOMPLETE",
     "single_authority": true,
     "live_validation": "NOT_RUN_THIS_SESSION"
   },

@@ -116,6 +116,32 @@ class FieldVerificationStatus(str, Enum):
     UNOBSERVABLE = "unobservable"
 
 
+class ConvergenceOutcome(str, Enum):
+    """Why a bounded convergence authority stopped -- as a product claim.
+
+    A terminal network reading and a terminal OBSERVER reading are different
+    claims, and collapsing them is how a lost clock or a failed read becomes a
+    confident statement about the network. Keep them apart:
+
+    * ``CONVERGED`` -- the observed state reached the intended one.
+    * ``NETWORK_MEASURED`` -- the authority ran to its own end on a fresh
+      sample, so the terminal state IS the answer. A qualified simulation-time
+      budget that expired with the port still learning belongs here: that is a
+      real negative.
+    * ``OBSERVER_INCOMPLETE`` -- the authority could not finish. Whatever state
+      is retained describes the last sample the observer managed to take, never
+      a conclusion about the device.
+    * ``UNKNOWN`` -- no typed convergence evidence survived at all.
+
+    Only ``CONVERGED`` and ``NETWORK_MEASURED`` may support a product verdict.
+    """
+
+    CONVERGED = "converged"
+    NETWORK_MEASURED = "network_measured"
+    OBSERVER_INCOMPLETE = "observer_incomplete"
+    UNKNOWN = "unknown"
+
+
 class ConvergenceReport(BaseModel):
     attempts: int = 0
     elapsed_ms: int = 0

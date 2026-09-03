@@ -29,6 +29,7 @@ from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
+    ConvergenceOutcome,
     FieldVerificationStatus,
 )
 from ...domain.enterprise.models.deployment import EnvironmentFingerprint
@@ -56,6 +57,9 @@ from ...domain.enterprise.scenarios.cp_scale import CPScalePoint, cp_scale_inten
 from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
 from ...domain.models.plans import TopologyPlan
 from ...infrastructure.execution.import_isolation_preflight import ImportIsolationPreflight
+from ...infrastructure.execution.simulation_time_convergence import (
+    classify_extension_stop_reason,
+)
 from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 from ...shared.utils import resolve_within, safe_name_component
 from .compose_enterprise_reference import (
@@ -227,11 +231,18 @@ class CPScaleVoiceAccessGroupEvidence(BaseModel):
     expected_interfaces: list[str] = Field(default_factory=list)
     verified_fwd_interfaces: list[str] = Field(default_factory=list)
     missing_interfaces: list[str] = Field(default_factory=list)
+    #: Ports the network itself reported as not forwarding, on an
+    #: authority that ran to its own end.  This is a verdict.
     non_fwd_interfaces: dict[str, str] = Field(default_factory=dict)
+    #: The last state seen for ports whose convergence authority never
+    #: finished.  Retained as observation, never counted as a failure.
+    unresolved_interfaces: dict[str, str] = Field(default_factory=dict)
     sample_count: int = 0
     elapsed_ms: int = 0
     terminal_authority: str = "UNOBSERVABLE"
     terminal_failure_dimension: str = "GROUP_EVIDENCE_MISSING"
+    convergence_outcome: ConvergenceOutcome = ConvergenceOutcome.UNKNOWN
+    learning_extension_stop_reason: str = ""
     status: ActionExecutionStatus = ActionExecutionStatus.UNOBSERVABLE
 
 
@@ -1038,6 +1049,29 @@ def canonical_final_disposition(
     raise ValueError(f"Unsupported final checkpoint command {command!r}.")
 
 
+def _group_convergence_outcome(
+    details: dict[str, object],
+    sample_count: int,
+) -> ConvergenceOutcome:
+    """Decide what one group's retained convergence evidence may conclude.
+
+    Two independent things can invalidate a verdict, and both have to hold for
+    the terminal state to be an answer about the network: the authority must
+    have ended on its own terms, and the retained sample must be the one from
+    the final round.  A round that raised or was never reached leaves the
+    previous sample in place, and that survivor describes an earlier round.
+    """
+    outcome = classify_extension_stop_reason(
+        details.get("learning_extension_stop_reason"),
+    )
+    if outcome is ConvergenceOutcome.OBSERVER_INCOMPLETE:
+        return outcome
+    terminal_round = details.get("terminal_sample_round")
+    if terminal_round is not None and terminal_round != sample_count:
+        return ConvergenceOutcome.OBSERVER_INCOMPLETE
+    return outcome
+
+
 def _canonical_voice_access_groups(
     plan: ConfigurationPlan,
     result: ConfigurationApplicationResult,
@@ -1136,12 +1170,18 @@ def _canonical_voice_access_groups(
             )
             sample_count = int(details.get("sample_count") or 0)
             elapsed_ms = int(details.get("elapsed_ms") or 0)
+            stop_reason = str(
+                details.get("learning_extension_stop_reason") or "",
+            )
+            outcome = _group_convergence_outcome(details, sample_count)
         else:
             verified = []
             missing = expected_interfaces
             non_fwd = {}
             terminal_authority = "UNOBSERVABLE"
             failure_dimension = "GROUP_EVIDENCE_MISSING"
+            stop_reason = ""
+            outcome = ConvergenceOutcome.UNKNOWN
             sample_count = max(
                 (
                     item.convergence.attempts
@@ -1158,6 +1198,20 @@ def _canonical_voice_access_groups(
                 ),
                 default=0,
             )
+        # An authority that never finished cannot speak for the device.
+        # Its last reading is kept, but out of the verdict fields, so the
+        # counts derived from them report a gap instead of a failure.
+        #
+        # This gates the NEGATIVE verdict only.  A positive one rests on
+        # the forwarding states actually read, and an all-forwarding round
+        # is what ends the authority in the first place -- so there is no
+        # stale-sample path to a false VERIFIED here, and demoting one
+        # would discard evidence the network really did supply.
+        unresolved: dict[str, str] = {}
+        if outcome is ConvergenceOutcome.OBSERVER_INCOMPLETE and non_fwd:
+            unresolved = non_fwd
+            non_fwd = {}
+            failure_dimension = "CONVERGENCE_UNOBSERVABLE"
         if (
             terminal_authority == "AUTHORITATIVE"
             and verified == expected_interfaces
@@ -1177,10 +1231,13 @@ def _canonical_voice_access_groups(
             verified_fwd_interfaces=verified,
             missing_interfaces=missing,
             non_fwd_interfaces=non_fwd,
+            unresolved_interfaces=unresolved,
             sample_count=sample_count,
             elapsed_ms=elapsed_ms,
             terminal_authority=terminal_authority,
             terminal_failure_dimension=failure_dimension,
+            convergence_outcome=outcome,
+            learning_extension_stop_reason=stop_reason,
             status=status,
         ))
     return evidence
