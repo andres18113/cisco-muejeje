@@ -51,6 +51,11 @@ from tests.test_e95_serial_product_planning import _reference_planning_intent
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
+from tests.subprocess_harness import (
+    checkout_venv_python,
+    checkout_venv_root,
+    foreign_python,
+)
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 PACKAGE = REPO / "src" / "packet_tracer_mcp"
@@ -215,7 +220,8 @@ def _run(
 def _isolated_preflight() -> ImportIsolationPreflight:
     return ImportIsolationPreflight(
         REPO,
-        executable=lambda: str(REPO / ".venv" / "Scripts" / "python.exe"),
+        executable=lambda: str(checkout_venv_python(REPO)),
+        environment_prefix=lambda: str(checkout_venv_root(REPO)),
         resolve_package_file=lambda: str(
             REPO / "src" / "packet_tracer_mcp" / "__init__.py",
         ),
@@ -226,7 +232,8 @@ def _isolated_preflight() -> ImportIsolationPreflight:
 def _refusing_preflight() -> ImportIsolationPreflight:
     return ImportIsolationPreflight(
         REPO,
-        executable=lambda: r"C:\Python312\python.exe",
+        executable=lambda: str(foreign_python(REPO)),
+        environment_prefix=lambda: str(REPO.parent / "foreign-environment"),
         resolve_package_file=lambda: None,
         modules=lambda: {},
     )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
@@ -208,13 +209,50 @@ def test_full_progression_keeps_wireless_and_iot_function_claims_bounded(tmp_pat
     assert summary["reliable_workload_envelope"] == 279
 
 
-def test_repository_reader_observes_current_exact_branch_upstream_and_head():
-    state = read_git_repository_state(Path(__file__).resolve().parents[1])
+def _git(repository: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def test_repository_reader_observes_an_explicit_governed_upstream(tmp_path):
+    """The LIVE alias is policy; the checkout action's alias is not a fixture."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _git(repository, "init")
+    _git(repository, "checkout", "-b", "feature/runtime-ripv2")
+    (repository / "proof.txt").write_text("governed\n", encoding="utf-8")
+    _git(repository, "add", "proof.txt")
+    _git(
+        repository,
+        "-c", "user.name=CI Test",
+        "-c", "user.email=ci-test@example.invalid",
+        "commit", "-m", "governed fixture",
+    )
+    _git(
+        repository, "remote", "add", "cisco",
+        "https://github.com/andres18113/cisco-muejeje.git",
+    )
+    _git(
+        repository, "update-ref",
+        "refs/remotes/cisco/feature/runtime-ripv2", "HEAD",
+    )
+    _git(
+        repository, "branch", "--set-upstream-to",
+        "cisco/feature/runtime-ripv2",
+    )
+
+    state = read_git_repository_state(repository)
 
     assert state.error == ""
     assert state.branch == "feature/runtime-ripv2"
     assert state.upstream == "cisco/feature/runtime-ripv2"
-    assert len(state.head) == 40
+    assert state.head == _git(repository, "rev-parse", "HEAD")
 
 
 def test_canonical_stage_resume_gate_requires_exact_device_and_link_ownership():

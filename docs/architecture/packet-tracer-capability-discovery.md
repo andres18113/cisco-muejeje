@@ -18,6 +18,7 @@ Catalog
 - `application.use_cases.capability_discovery`: orquesta lotes secuenciales, prerequisites, cache, limpieza y resumen.
 - `infrastructure.execution.probe_runtime`: adaptador tipado del bridge; sólo usa APIs de Packet Tracer ya presentes en el proyecto.
 - `infrastructure.persistence.capability_snapshot_store`: snapshots JSON UTF-8, ordenados y confinados bajo `data/capabilities`.
+- `infrastructure.catalog.measured_capabilities`: proyección revisada, Git-tracked y acotada por build de los resultados gobernados que consumen los planes distribuidos.
 - `adapters.mcp.tool_registry`: dos adaptadores delgados: `pt_probe_capabilities` y `pt_capability_report`.
 
 El dominio no importa MCP, bridge ni JavaScript.
@@ -41,6 +42,20 @@ Las observaciones runtime y los probes controlados se guardan con versión exact
 5. inference.
 
 Los conflictos permanecen registrados como `CapabilityConflict`; el ganador no borra evidencia anterior.
+
+Hay dos superficies de infraestructura con responsabilidades distintas. El
+store bajo `data/capabilities` conserva observaciones mutables y permite que un
+probe/runtime posterior corrija el conocimiento local. No forma parte de una
+instalación limpia. `measured_capabilities.py` conserva únicamente la proyección
+revisada de hechos que un plan distribuido ya requiere, con modelo, build,
+productor, método y hash estable del snapshot de origen. Se publica como
+`static_override`, por debajo de probe/runtime en la precedencia: una nueva
+observación exacta gana sin reescribir el baseline.
+
+Agregar un registro exige evidencia gobernada `VERIFIED` de ese mismo modelo y
+build; no se admite analogía entre modelos ni inferencia por nombre. Lo ausente
+sigue siendo `UNKNOWN`, una evidencia de otro build no se reutiliza y una
+medición negativa se conserva como `UNSUPPORTED`, no como ausencia.
 
 ## Alcance inicial
 

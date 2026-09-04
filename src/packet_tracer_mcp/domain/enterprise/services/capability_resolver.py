@@ -67,22 +67,36 @@ class CapabilityResolver:
         )
 
     @staticmethod
-    def resolve_evidence(
+    def winning_evidence(
         capability: str,
         evidence: Iterable[CapabilityEvidence],
         packet_tracer_version: str | None = None,
-    ) -> CapabilityStatus:
-        """Escoge evidencia por autoridad, sin convertir ausencia de evidencia en False."""
+    ) -> CapabilityEvidence | None:
+        """Return the authoritative matching fact without discarding provenance."""
         candidates = [
             item for item in evidence
             if item.capability == capability and _evidence_matches_version(item, packet_tracer_version)
         ]
         if not candidates:
-            return CapabilityStatus.UNKNOWN
-        winner = max(
+            return None
+        return max(
             candidates,
             key=lambda item: (_EVIDENCE_PRIORITY[item.source], item.verified, item.source.value),
         )
+
+    @classmethod
+    def resolve_evidence(
+        cls,
+        capability: str,
+        evidence: Iterable[CapabilityEvidence],
+        packet_tracer_version: str | None = None,
+    ) -> CapabilityStatus:
+        """Escoge evidencia por autoridad, sin convertir ausencia de evidencia en False."""
+        winner = cls.winning_evidence(
+            capability, evidence, packet_tracer_version,
+        )
+        if winner is None:
+            return CapabilityStatus.UNKNOWN
         return winner.status
 
     def with_evidence(
@@ -104,20 +118,21 @@ class CapabilityResolver:
             status = self.resolve_evidence(capability, collected, packet_tracer_version)
             if status is not CapabilityStatus.UNKNOWN:
                 updates[capability] = status
-        poe_evidence = [
-            item for item in collected
-            if item.capability == "supports_poe" and _evidence_matches_version(item, packet_tracer_version)
-        ]
-        if poe_evidence:
-            winner = max(poe_evidence, key=lambda item: (_EVIDENCE_PRIORITY[item.source], item.verified))
+        winner = self.winning_evidence(
+            "supports_poe", collected, packet_tracer_version,
+        )
+        if winner is not None:
             if winner.status is CapabilityStatus.SUPPORTED and winner.observed_value is not None:
                 updates["poe_ports"] = winner.observed_value
+            elif winner.status is CapabilityStatus.UNSUPPORTED:
+                updates["poe_ports"] = None
         if packet_tracer_version is not None:
             updates["packet_tracer_version"] = packet_tracer_version
         return capabilities.model_copy(update=updates)
 
-    @staticmethod
+    @classmethod
     def conflicts(
+        cls,
         model: str,
         evidence: Iterable[CapabilityEvidence],
         packet_tracer_version: str | None = None,
@@ -134,11 +149,15 @@ class CapabilityResolver:
             statuses = {entry.status for entry in entries}
             if len(statuses) < 2:
                 continue
-            winner = max(entries, key=lambda item: (_EVIDENCE_PRIORITY[item.source], item.verified)).source
+            winning_evidence = cls.winning_evidence(
+                capability, entries, packet_tracer_version,
+            )
+            if winning_evidence is None:
+                continue
             conflicts.append(CapabilityConflict(
                 model=model,
                 capability=capability,
-                winner=winner,
+                winner=winning_evidence.source,
                 evidence_sources=sorted({item.source for item in entries}, key=lambda item: item.value),
                 message=f"EVIDENCE_CONFLICT: {capability} has contradictory retained evidence.",
             ))

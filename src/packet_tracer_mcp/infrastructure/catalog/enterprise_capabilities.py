@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+from copy import copy
 import re
 
 from ...domain.enterprise.models.capabilities import (
-    CapabilityEvidence,
     CapabilityStatus,
     DeviceCapabilities,
-    EvidenceSource,
 )
 from ...domain.enterprise.models.hardware import (
     CatalogCoverageReport,
@@ -30,6 +29,7 @@ from .measured_port_inventories import (
     backend_verified_port_inventory,
     module_state_token,
 )
+from .measured_capabilities import measured_capability_evidence
 from .modules import ALL_MODULES, get_serial_module
 from .capability_providers import (
     ProbeCapabilityProvider,
@@ -68,22 +68,6 @@ _SERIAL_MODULE_SLOT_BY_MODEL = {
     "ISR4331": "0",
 }
 
-_CP_SCALE_2811_LIVE_EVIDENCE = CapabilityEvidence(
-    capability="layer3",
-    status=CapabilityStatus.SUPPORTED,
-    source=EvidenceSource.STATIC_OVERRIDE,
-    source_detail=(
-        "CP-SCALE CORE governed live qualification: 15 typed routed-interface "
-        "and subinterface actions on three disposable 2811 routers were read "
-        "back exactly before fresh RIPv2 forwarding verification; see "
-        "docs/architecture/ripv2-runtime-qualification.md"
-    ),
-    packet_tracer_version="9.0.1.0858",
-    confidence="live_qualified",
-    verified=True,
-)
-
-
 def _normalization_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
 
@@ -100,7 +84,21 @@ class EnterpriseCapabilityAdapter:
         self._resolver = resolver or CapabilityResolver()
         self._providers = providers or []
         self._bound_packet_tracer_version = bound_packet_tracer_version
+        self._resolution_cache: dict[
+            tuple[str, str | None], DeviceCapabilities
+        ] | None = None
         self._normalization_index = self._build_normalization_index()
+
+    def execution_snapshot(self) -> EnterpriseCapabilityAdapter:
+        """Return an execution-scoped view that resolves each model/build once.
+
+        Providers remain dynamic on the source adapter.  The view memoizes the
+        first complete resolution so a later store write cannot change the
+        evidence used by a second composition in the same execution.
+        """
+        snapshot = copy(self)
+        snapshot._resolution_cache = {}
+        return snapshot
 
     def normalize_model_name(self, name: str) -> str | None:
         """Devuelve el `pt_type` canónico reutilizando los aliases existentes."""
@@ -115,9 +113,27 @@ class EnterpriseCapabilityAdapter:
         canonical = self.normalize_model_name(model_name)
         if canonical is None:
             return None
+        effective_version = (
+            self._bound_packet_tracer_version
+            if packet_tracer_version is None
+            else packet_tracer_version
+        )
+        cache_key = (canonical, effective_version)
+        if (
+            self._resolution_cache is not None
+            and cache_key in self._resolution_cache
+        ):
+            return self._resolution_cache[cache_key].model_copy(deep=True)
         model = ALL_MODELS[canonical]
         capabilities = self._resolver.resolve(self._facts_for(model))
-        return self._resolve_runtime_evidence(capabilities, packet_tracer_version)
+        resolved = self._resolve_runtime_evidence(
+            capabilities, packet_tracer_version,
+        )
+        safe_resolved = resolved.model_copy(deep=True)
+        if self._resolution_cache is not None:
+            self._resolution_cache[cache_key] = safe_resolved
+            return self._resolution_cache[cache_key].model_copy(deep=True)
+        return safe_resolved
 
     def all_capabilities(
         self, category: str | None = None, packet_tracer_version: str | None = None,
@@ -127,10 +143,12 @@ class EnterpriseCapabilityAdapter:
             model for model in ALL_MODELS.values()
             if category is None or model.category == category
         )
-        return [
-            self._resolve_runtime_evidence(self._resolver.resolve(self._facts_for(model)), packet_tracer_version)
-            for model in sorted(models, key=lambda item: item.pt_type.casefold())
-        ]
+        capabilities: list[DeviceCapabilities] = []
+        for model in sorted(models, key=lambda item: item.pt_type.casefold()):
+            resolved = self.capabilities_for(model.pt_type, packet_tracer_version)
+            if resolved is not None:
+                capabilities.append(resolved)
+        return capabilities
 
     def port_descriptors_for(
         self,
@@ -258,7 +276,11 @@ class EnterpriseCapabilityAdapter:
             for provider in self._providers
             for item in provider.evidence_for(capabilities.model, effective_version)
         ]
-        evidence = _with_semantic_implications(evidence)
+        evidence = _with_semantic_implications(
+            evidence,
+            resolver=self._resolver,
+            packet_tracer_version=effective_version,
+        )
         return self._resolver.with_evidence(
             capabilities, evidence, effective_version,
         )
@@ -389,9 +411,7 @@ def packet_tracer_enterprise_capability_adapter(
     snapshots = store or CapabilitySnapshotStore()
     return EnterpriseCapabilityAdapter(
         providers=[
-            StaticVerifiedCapabilityProvider({
-                "2811": [_CP_SCALE_2811_LIVE_EVIDENCE],
-            }),
+            StaticVerifiedCapabilityProvider(measured_capability_evidence()),
             ProbeCapabilityProvider(snapshots, version),
             RuntimeCapabilityProvider(snapshots, version),
         ],
@@ -399,19 +419,25 @@ def packet_tracer_enterprise_capability_adapter(
     )
 
 
-def _with_semantic_implications(evidence):
+def _with_semantic_implications(
+    evidence,
+    *,
+    resolver: CapabilityResolver,
+    packet_tracer_version: str | None,
+):
     """Apply model-neutral, one-way implications without defeating explicit facts."""
 
     items = list(evidence)
     direct = {item.capability for item in items}
     if "layer3" not in direct:
-        source = next((
-            item for item in items
-            if item.capability == "multilayer_intervlan"
-            and item.status is CapabilityStatus.SUPPORTED
-            and item.verified
-        ), None)
-        if source is not None:
+        source = resolver.winning_evidence(
+            "multilayer_intervlan", items, packet_tracer_version,
+        )
+        if (
+            source is not None
+            and source.status is CapabilityStatus.SUPPORTED
+            and source.verified
+        ):
             detail = source.source_detail or "verified multilayer forwarding"
             items.append(source.model_copy(update={
                 "capability": "layer3",

@@ -63,6 +63,7 @@ from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
 )
+from ...infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
 from ...infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
     ImportIsolationResult,
@@ -81,6 +82,7 @@ from .deploy_enterprise_topology import (
 )
 from .foundational_evidence import derive_foundational_hashes, derive_foundational_statuses
 from .observe_serial_orientation import SerialOrientationObserver, SerialOrientationResult
+from .plan_enterprise_hardware import capability_catalog_for
 from .qualify_serial_physical_slice import DisposablePhysicalTopologyRuntime
 
 
@@ -506,6 +508,7 @@ def execute_enterprise_reference(
     import_preflight: ImportIsolationPreflight,
     packet_tracer_version: str | None = None,
     capability_store: CapabilitySnapshotStore | None = None,
+    capability_catalog: EnterpriseCapabilityAdapter | None = None,
     voice_intent: VoiceIntent | None = None,
     voice_capabilities: dict[str, VoiceCapabilityProfile] | None = None,
     deployment_id: str = "",
@@ -574,11 +577,21 @@ def execute_enterprise_reference(
         item_count=len(baseline.devices),
     )
 
+    source_catalog = (
+        capability_catalog
+        if capability_catalog is not None
+        else capability_catalog_for(
+            packet_tracer_version,
+            capability_store=capability_store,
+        )
+    )
+    execution_catalog = source_catalog.execution_snapshot()
     stage_started = perf_counter_ns()
     composition = compose_enterprise_reference(
         intent,
         packet_tracer_version=packet_tracer_version,
         capability_store=capability_store,
+        capability_catalog=execution_catalog,
         policy=policy,
     )
     state.composition = composition
@@ -604,6 +617,7 @@ def execute_enterprise_reference(
         environment_fingerprint=environment_fingerprint,
         packet_tracer_version=packet_tracer_version,
         capability_store=capability_store,
+        capability_catalog=execution_catalog,
         voice_intent=voice_intent,
         voice_capabilities=voice_capabilities,
         deployment_id=deployment_id,
@@ -682,6 +696,7 @@ def _execute_mutating_stages(
     environment_fingerprint: EnvironmentFingerprint,
     packet_tracer_version: str | None,
     capability_store: CapabilitySnapshotStore | None,
+    capability_catalog: EnterpriseCapabilityAdapter | None,
     voice_intent: VoiceIntent | None,
     voice_capabilities: dict[str, VoiceCapabilityProfile] | None,
     deployment_id: str,
@@ -733,6 +748,7 @@ def _execute_mutating_stages(
             intent,
             packet_tracer_version=packet_tracer_version,
             capability_store=capability_store,
+            capability_catalog=capability_catalog,
             deployment_manifest=oriented,
             control_plane_intent=control_plane_intent,
             voice_intent=voice_intent,

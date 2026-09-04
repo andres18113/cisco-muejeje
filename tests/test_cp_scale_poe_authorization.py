@@ -86,27 +86,19 @@ def _access_devices(composition):
     ]
 
 
-def test_stage_a_switches_become_eligible_only_from_matching_poe_evidence(tmp_path):
+def test_stage_a_switches_use_the_governed_exact_build_poe_baseline(tmp_path):
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
 
-    before = plan_enterprise_hardware(
+    planned = plan_enterprise_hardware(
         _stage_a_plan(), packet_tracer_version=BUILD, capability_store=store,
     )
-    before_access = _access_devices(before)
-    assert before.plan.status.value == "partially_resolved"
-    assert {item.provisional_model for item in before_access} == {"2950T-24"}
-    assert all(item.selected_model is None for item in before_access)
+    access = _access_devices(planned)
 
-    _save_supported_3560(store)
-    after = plan_enterprise_hardware(
-        _stage_a_plan(), packet_tracer_version=BUILD, capability_store=store,
-    )
-    after_access = _access_devices(after)
-    assert after.plan.status.value == "valid"
-    assert len(after_access) == 2
-    assert {item.selected_model for item in after_access} == {"3560-24PS"}
-    assert all(item.provisional_model is None for item in after_access)
-    assert all(item.poe_capacity == 24 for item in after_access)
+    assert planned.plan.status.value == "valid"
+    assert len(access) == 2
+    assert {item.selected_model for item in access} == {"3560-24PS"}
+    assert all(item.provisional_model is None for item in access)
+    assert all(item.poe_capacity == 24 for item in access)
 
 
 def test_poe_evidence_does_not_cross_model_or_build_and_names_do_not_promote(tmp_path):
@@ -117,15 +109,10 @@ def test_poe_evidence_does_not_cross_model_or_build_and_names_do_not_promote(tmp
     measured = adapter.capabilities_for("3560-24PS", BUILD)
     wrong_model = adapter.capabilities_for("2950T-24", BUILD)
     wrong_build = adapter.capabilities_for("3560-24PS", "9.0.1.9999")
-    unmeasured_named_model = packet_tracer_enterprise_capability_adapter(
-        BUILD, store=CapabilitySnapshotStore(tmp_path / "empty"),
-    ).capabilities_for("3560-24PS", BUILD)
 
     assert measured is not None and measured.supports_poe is CapabilityStatus.SUPPORTED
     assert wrong_model is not None and wrong_model.supports_poe is CapabilityStatus.UNKNOWN
     assert wrong_build is not None and wrong_build.supports_poe is CapabilityStatus.UNKNOWN
-    assert unmeasured_named_model is not None
-    assert unmeasured_named_model.supports_poe is CapabilityStatus.UNKNOWN
 
 
 def test_stage_a_uses_one_exact_routed_819_uplink_without_the_duplicate_alias(tmp_path):

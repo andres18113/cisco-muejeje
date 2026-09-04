@@ -24,11 +24,10 @@ multilayer_intervlan SUPPORTED + verified   (probe controlado, versión exacta)
 
 CORROBORACIÓN EN VIVO. Las mismas transiciones se midieron contra evidencia real
 producida por la vía de cualificación gobernada sobre PT `9.0.1.0858`
-(`3560-24PS`, probe multicapa, forwarding entre VLANs demostrado): con el store
-real y el build exacto la selección devolvió `supported / 3560-24PS`; sin store
-y con un build equivocado devolvió `partially_supported / None`. El registro
-está en `docs/architecture/technical-debt.md`. Estos tests son herméticos a
-propósito -- la evidencia real es local de máquina y no sobrevive a un checkout.
+(`3560-24PS`, probe multicapa, forwarding entre VLANs demostrado). Su proyección
+revisada ahora sobrevive al checkout en `measured_capabilities.py`; estos tests
+siguen inyectando sólo la observación nombrada por cada caso para que la unidad
+bajo prueba sea el selector, no el baseline distribuido.
 """
 
 from __future__ import annotations
@@ -46,6 +45,13 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
 from src.packet_tracer_mcp.domain.enterprise.services.device_selector import DeviceSelector
+from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+    ProbeCapabilityProvider,
+    RuntimeCapabilityProvider,
+)
+from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+    EnterpriseCapabilityAdapter,
+)
 from tests.test_e95_capability_reconciliation import (
     MEASURED_VERSION,
     _probe_result,
@@ -70,11 +76,20 @@ def measured_store(tmp_path_factory):
     ])
 
 
-def _select(store=None, *, version: str | None = MEASURED_VERSION, asked=MEASURED_VERSION):
-    catalog = (
-        capability_catalog_for(version, capability_store=store)
-        if version is not None else capability_catalog_for(None)
+def _catalog(store=None, *, version: str | None = MEASURED_VERSION):
+    if version is None:
+        return capability_catalog_for(None)
+    return EnterpriseCapabilityAdapter(
+        providers=[
+            ProbeCapabilityProvider(store, version),
+            RuntimeCapabilityProvider(store, version),
+        ],
+        bound_packet_tracer_version=version,
     )
+
+
+def _select(store=None, *, version: str | None = MEASURED_VERSION, asked=MEASURED_VERSION):
+    catalog = _catalog(store, version=version)
     candidates = [item.capabilities for item in catalog.hardware_candidates("switch", asked)]
     return DeviceSelector().select(LAYER3_ROLE, candidates)
 
@@ -134,7 +149,7 @@ def test_the_decision_is_deterministic_across_repeated_compositions(measured_sto
 
 
 def test_evidence_is_never_redistributed_to_a_neighbouring_model(measured_store):
-    catalog = capability_catalog_for(MEASURED_VERSION, capability_store=measured_store)
+    catalog = _catalog(measured_store)
     by_model = {
         item.model: item.capabilities
         for item in catalog.hardware_candidates("switch", MEASURED_VERSION)

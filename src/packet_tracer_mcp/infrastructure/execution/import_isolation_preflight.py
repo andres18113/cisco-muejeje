@@ -118,11 +118,13 @@ class ImportIsolationPreflight:
         governed_root: Path | str | None,
         *,
         executable: Callable[[], str] = lambda: sys.executable,
+        environment_prefix: Callable[[], str] = lambda: sys.prefix,
         resolve_package_file: Callable[[], str | None] | None = None,
         modules: Callable[[], Mapping[str, object]] = lambda: sys.modules,
     ) -> None:
         self._governed_root = Path(governed_root) if governed_root is not None else None
         self._executable = executable
+        self._environment_prefix = environment_prefix
         self._modules = modules
         self._resolve_package_file = (
             resolve_package_file
@@ -148,10 +150,20 @@ class ImportIsolationPreflight:
             return ImportIsolationResult(ImportIsolationState.GOVERNED_ROOT_NOT_DECLARED)
         root = self._governed_root.resolve()
 
-        executable = Path(self._executable()).resolve()
-        if not self._within(executable, root):
+        environment_prefix = Path(self._environment_prefix()).resolve()
+        # Keep the invocation path lexical.  POSIX venv executables commonly
+        # symlink to the base interpreter outside the checkout; resolving that
+        # target would reject a genuine checkout-local environment.  The
+        # resolved sys.prefix proves which environment owns the invocation and
+        # prevents an arbitrary in-tree symlink from bypassing the gate.
+        executable = Path(os.path.abspath(self._executable()))
+        if (
+            not self._within(environment_prefix, root)
+            or not self._within(executable, environment_prefix)
+        ):
             return ImportIsolationResult(
-                ImportIsolationState.FOREIGN_INTERPRETER, str(executable),
+                ImportIsolationState.FOREIGN_INTERPRETER,
+                f"executable={executable}; environment={environment_prefix}",
             )
 
         package_file = self._resolve_package_file()

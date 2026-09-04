@@ -27,6 +27,13 @@ from src.packet_tracer_mcp.infrastructure.execution.import_isolation_preflight i
     ImportIsolationState,
     governed_root_from_env,
 )
+from tests.subprocess_harness import (
+    checkout_venv_python,
+    checkout_venv_root,
+    foreign_python,
+    run_isolated_python,
+    subprocess_failure,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -38,6 +45,7 @@ def _preflight(
     *,
     root: Path | None = None,
     executable: str | None = None,
+    environment_prefix: str | None = None,
     package_file: str | None | Exception = "",
     modules: dict[str, object] | None = None,
 ) -> ImportIsolationPreflight:
@@ -53,7 +61,10 @@ def _preflight(
 
     return ImportIsolationPreflight(
         resolved_root,
-        executable=lambda: executable or str(resolved_root / ".venv" / "Scripts" / "python.exe"),
+        executable=lambda: executable or str(checkout_venv_python(resolved_root)),
+        environment_prefix=lambda: (
+            environment_prefix or str(checkout_venv_root(resolved_root))
+        ),
         resolve_package_file=_resolve,
         modules=lambda: {} if modules is None else modules,
     )
@@ -69,15 +80,23 @@ class TestTheGateRefusesWhatItMustRefuse:
         assert _TEST_NAMESPACE in result.render()
 
     def test_a_package_outside_the_governed_tree_is_refused(self):
-        foreign = r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP\src\packet_tracer_mcp\__init__.py"
+        foreign = REPO.parent / "foreign-checkout" / "src" / _PRODUCTION / "__init__.py"
 
-        result = _preflight(package_file=foreign).ensure_isolated()
+        result = _preflight(package_file=str(foreign)).ensure_isolated()
 
         assert result.state is ImportIsolationState.FOREIGN_TREE
         assert not result.isolated
 
     def test_a_foreign_interpreter_is_refused(self):
-        result = _preflight(executable=r"C:\Python312\python.exe").ensure_isolated()
+        result = _preflight(executable=str(foreign_python(REPO))).ensure_isolated()
+
+        assert result.state is ImportIsolationState.FOREIGN_INTERPRETER
+        assert not result.isolated
+
+    def test_a_foreign_environment_cannot_hide_behind_an_in_tree_executable(self):
+        result = _preflight(
+            environment_prefix=str(REPO.parent / "foreign-environment"),
+        ).ensure_isolated()
 
         assert result.state is ImportIsolationState.FOREIGN_INTERPRETER
         assert not result.isolated
@@ -166,8 +185,6 @@ class TestThisSuiteIsNotALivePreflight:
 class TestARealGovernedProcessPasses:
     def test_all_three_checks_pass_in_a_process_that_loads_only_production(self):
         """El unico proceso donde ISOLATED es afirmable: uno vivo, en subprocess."""
-        import subprocess
-
         code = (
             "import sys\n"
             "from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight "
@@ -175,12 +192,9 @@ class TestARealGovernedProcessPasses:
             f"r = ImportIsolationPreflight(r'{REPO}').ensure_isolated()\n"
             "print(r.state.value)\n"
         )
-        out = subprocess.run(
-            [sys.executable, "-c", code], cwd=REPO,
-            capture_output=True, text=True, timeout=120,
-        )
+        out = run_isolated_python(code, cwd=REPO)
 
-        assert out.returncode == 0, out.stderr
+        assert out.returncode == 0, subprocess_failure(out)
         assert out.stdout.strip() == "ISOLATED", out.stdout + out.stderr
 
 

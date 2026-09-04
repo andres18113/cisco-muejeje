@@ -9,6 +9,10 @@ on:
 jobs:
   pytest:
     runs-on: ${{ matrix.os }}
+    env:
+      # Token fijo para que los tests del bridge no toquen el archivo real
+      # del usuario que corre el runner.
+      PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
     strategy:
       fail-fast: false
       matrix:
@@ -24,14 +28,28 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
+      # El preflight de import y el entorno de desarrollo comparten contrato:
+      # el proceso gobernado pertenece a la .venv del checkout. setup-python
+      # es solo el bootstrap con el que se crea ese entorno local.
+      - name: Create checkout-local environment
+        run: python -m venv .venv
 
-      - name: Run tests
-        # Token fijo para que los tests del bridge no toquen el archivo real
-        # del usuario que corre el runner.
-        env:
-          PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
-        run: python -m pytest -q
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -e ".[test]"
+
+      - name: Install (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[test]"
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: .\.venv\Scripts\python.exe -m pytest -q
+
+      - name: Run tests (Ubuntu)
+        if: runner.os == 'Linux'
+        run: .venv/bin/python -m pytest -q

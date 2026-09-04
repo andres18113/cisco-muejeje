@@ -40,9 +40,10 @@ from ...domain.enterprise.models.voice_plan import (
 from ...domain.enterprise.services.enterprise_designer import EnterpriseDesigner
 from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
 from ...domain.enterprise.services.traffic_attribution import attribute_enterprise_traffic
+from ...domain.models.plans import TopologyPlan
+from ...infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
 from ...infrastructure.catalog.enterprise_topology import PacketTracerTopologyCatalogAdapter
 from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
-from ...domain.models.plans import TopologyPlan
 from .compile_configuration import compile_enterprise_configuration
 from .compile_control_plane import compile_enterprise_control_plane
 from .compile_enterprise import compile_enterprise_topology
@@ -113,6 +114,7 @@ def compose_enterprise_reference(
     *,
     packet_tracer_version: str | None = None,
     capability_store: CapabilitySnapshotStore | None = None,
+    capability_catalog: EnterpriseCapabilityAdapter | None = None,
     deployment_manifest: DeploymentManifest | None = None,
     control_plane_intent: ControlPlaneIntent | None = None,
     voice_intent: VoiceIntent | None = None,
@@ -131,7 +133,7 @@ def compose_enterprise_reference(
     # autorizacion de E5 tienen que leer la MISMA evidencia, de la misma
     # version exacta. Construir uno por consumidor abre la puerta a que
     # discrepen sin que nadie lo note.
-    capability_catalog = capability_catalog_for(
+    capability_catalog = capability_catalog or capability_catalog_for(
         packet_tracer_version, capability_store=capability_store,
     )
     hardware = plan_enterprise_hardware(
