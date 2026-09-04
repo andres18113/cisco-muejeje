@@ -63,6 +63,9 @@ from ...domain.models.plans import TopologyPlan
 from ...infrastructure.catalog.control_plane_capabilities import (
     packet_tracer_control_plane_capabilities,
 )
+from ...infrastructure.catalog.enterprise_capabilities import (
+    EnterpriseCapabilityAdapter,
+)
 from ...infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
@@ -142,6 +145,7 @@ def compose_cp_scale_canonical(
     *,
     packet_tracer_version: str,
     capability_store: CapabilitySnapshotStore | None = None,
+    capability_catalog: EnterpriseCapabilityAdapter | None = None,
     control_plane_capabilities: (
         dict[str, ControlPlaneCapabilityProfile] | None
     ) = None,
@@ -155,7 +159,7 @@ def compose_cp_scale_canonical(
         ] or ["E4 design produced no plan."])
     enterprise = designed.plan
 
-    capability_catalog = capability_catalog_for(
+    capability_catalog = capability_catalog or capability_catalog_for(
         packet_tracer_version, capability_store=capability_store,
     )
     switch_candidates = capability_catalog.hardware_candidates(

@@ -8,6 +8,9 @@ from src.packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import
 from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
+from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    compose_cp_scale_canonical,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
@@ -44,7 +47,9 @@ def _stage_a_plan():
     return designed.plan
 
 
-def _save_supported_3560(store: CapabilitySnapshotStore, version: str = BUILD) -> None:
+def _save_delivery_supported_3560(
+    store: CapabilitySnapshotStore, version: str = BUILD,
+) -> None:
     results = [
         CapabilityProbeResult(
             probe_id="poe-inventory-v2",
@@ -56,6 +61,11 @@ def _save_supported_3560(store: CapabilitySnapshotStore, version: str = BUILD) -
             verified=True,
             observed_value=24,
             packet_tracer_version=version,
+            dimensions={
+                "poe_access_port_count": "24",
+                "poe_delivery_tested_ports": "24",
+                "poe_delivery_active_ports": "24",
+            },
         ),
         CapabilityProbeResult(
             probe_id="multilayer-intervlan-probe",
@@ -86,7 +96,7 @@ def _access_devices(composition):
     ]
 
 
-def test_stage_a_switches_use_the_governed_exact_build_poe_baseline(tmp_path):
+def test_stage_a_switches_fail_closed_on_control_only_poe_baseline(tmp_path):
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
 
     planned = plan_enterprise_hardware(
@@ -94,16 +104,28 @@ def test_stage_a_switches_use_the_governed_exact_build_poe_baseline(tmp_path):
     )
     access = _access_devices(planned)
 
-    assert planned.plan.status.value == "valid"
+    assert planned.plan.status.value == "partially_resolved"
     assert len(access) == 2
-    assert {item.selected_model for item in access} == {"3560-24PS"}
-    assert all(item.provisional_model is None for item in access)
-    assert all(item.poe_capacity == 24 for item in access)
+    assert all(item.selected_model is None for item in access)
+    assert all(item.provisional_model is not None for item in access)
+    assert all(item.poe_capacity is None for item in access)
+    assert all(item.selection_status.value == "needs_verification" for item in access)
+    assert all("PoE requiere evidencia" in item.warnings[0] for item in access)
+
+
+def test_canonical_product_stops_before_topology_without_delivery_evidence():
+    composition = compose_cp_scale_canonical(packet_tracer_version=BUILD)
+
+    assert not composition.valid
+    assert composition.topology is None
+    assert composition.hardware_plan is not None
+    assert composition.hardware_plan.status.value == "partially_resolved"
+    assert any("hardware" in issue.casefold() for issue in composition.issues)
 
 
 def test_poe_evidence_does_not_cross_model_or_build_and_names_do_not_promote(tmp_path):
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
-    _save_supported_3560(store)
+    _save_delivery_supported_3560(store)
     adapter = packet_tracer_enterprise_capability_adapter(BUILD, store=store)
 
     measured = adapter.capabilities_for("3560-24PS", BUILD)
@@ -117,7 +139,7 @@ def test_poe_evidence_does_not_cross_model_or_build_and_names_do_not_promote(tmp
 
 def test_stage_a_uses_one_exact_routed_819_uplink_without_the_duplicate_alias(tmp_path):
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
-    _save_supported_3560(store)
+    _save_delivery_supported_3560(store)
 
     composition = compose_enterprise_reference(
         cp_scale_intent_for(CPScalePoint.A),
@@ -158,7 +180,7 @@ def test_corrected_stage_a_identity_preserves_only_phone_and_ap_poe_demand(
     tmp_path,
 ):
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
-    _save_supported_3560(store)
+    _save_delivery_supported_3560(store)
 
     composition = compose_enterprise_reference(
         cp_scale_intent_for(CPScalePoint.A),

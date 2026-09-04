@@ -12,10 +12,12 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     canonical_stage_configuration_mutation_ids,
     canonical_stage_control_plane_mutation_ids,
     canonical_stage_voice_mutation_ids,
-    compose_cp_scale_canonical,
     project_cp_scale_canonical_stage,
     project_cp_scale_canonical_delta,
     project_cp_scale_routing_core,
+)
+from tests.poe_delivery_capabilities import (
+    compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,

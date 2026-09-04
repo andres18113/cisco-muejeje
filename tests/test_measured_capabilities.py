@@ -43,6 +43,14 @@ from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store 
 
 BUILD = MEASURED_BACKEND_VERSION
 
+
+def _delivery_dimensions(*, active: int, tested: int = 24) -> dict[str, str]:
+    return {
+        "poe_access_port_count": "24",
+        "poe_delivery_tested_ports": str(tested),
+        "poe_delivery_active_ports": str(active),
+    }
+
 EXPECTED = {
     "1941": {"layer3": CapabilityStatus.SUPPORTED},
     "2811": {
@@ -57,20 +65,20 @@ EXPECTED = {
     },
     "2960-24TT": {
         "layer2": CapabilityStatus.SUPPORTED,
-        "supports_poe": CapabilityStatus.UNSUPPORTED,
+        "supports_poe": CapabilityStatus.UNKNOWN,
         "supports_trunk": CapabilityStatus.SUPPORTED,
         "supports_vlan": CapabilityStatus.SUPPORTED,
     },
     "3560-24PS": {
         "layer2": CapabilityStatus.SUPPORTED,
         "layer3": CapabilityStatus.SUPPORTED,
-        "supports_poe": CapabilityStatus.SUPPORTED,
+        "supports_poe": CapabilityStatus.UNKNOWN,
         "supports_trunk": CapabilityStatus.SUPPORTED,
         "supports_vlan": CapabilityStatus.SUPPORTED,
     },
     "3650-24PS": {
         "layer2": CapabilityStatus.SUPPORTED,
-        "supports_poe": CapabilityStatus.SUPPORTED,
+        "supports_poe": CapabilityStatus.UNKNOWN,
         "supports_trunk": CapabilityStatus.SUPPORTED,
         "supports_vlan": CapabilityStatus.SUPPORTED,
     },
@@ -100,8 +108,8 @@ def test_governed_capabilities_do_not_depend_on_cwd_machine_state(
         for capability, status in statuses.items():
             assert getattr(resolved, capability) is status, (model, capability)
 
-    assert adapter.capabilities_for("3560-24PS", BUILD).poe_ports == 24
-    assert adapter.capabilities_for("3650-24PS", BUILD).poe_ports == 24
+    assert adapter.capabilities_for("3560-24PS", BUILD).poe_ports is None
+    assert adapter.capabilities_for("3650-24PS", BUILD).poe_ports is None
     assert adapter.capabilities_for("2960-24TT", BUILD).poe_ports is None
 
 
@@ -142,7 +150,7 @@ def test_absent_facts_and_other_builds_remain_unknown(tmp_path):
             assert getattr(resolved, capability) is CapabilityStatus.UNKNOWN
 
 
-def test_newer_runtime_evidence_overrides_the_portable_baseline(tmp_path):
+def test_runtime_negative_without_delivery_test_remains_unknown(tmp_path):
     store = CapabilitySnapshotStore(tmp_path / "runtime")
     store.save_runtime(CapabilitySnapshot(
         packet_tracer_version=BUILD,
@@ -170,7 +178,7 @@ def test_newer_runtime_evidence_overrides_the_portable_baseline(tmp_path):
     ).capabilities_for("3560-24PS", BUILD)
 
     assert resolved is not None
-    assert resolved.supports_poe is CapabilityStatus.UNSUPPORTED
+    assert resolved.supports_poe is CapabilityStatus.UNKNOWN
     assert resolved.poe_ports is None
 
 
@@ -195,6 +203,9 @@ def test_execution_snapshot_reuses_the_first_resolution_when_a_provider_changes(
                 packet_tracer_version=BUILD,
                 verified=True,
                 observed_value=24 if status is CapabilityStatus.SUPPORTED else None,
+                dimensions=_delivery_dimensions(
+                    active=24 if status is CapabilityStatus.SUPPORTED else 0,
+                ),
             ),)
 
     provider = ChangingProvider()
@@ -247,7 +258,7 @@ def test_execution_snapshot_does_not_alias_an_empty_version_to_the_bound_build(
     assert invalid is not None
     assert invalid.supports_poe is CapabilityStatus.UNKNOWN
     assert exact is not None
-    assert exact.supports_poe is CapabilityStatus.SUPPORTED
+    assert exact.supports_poe is CapabilityStatus.UNKNOWN
 
 
 def test_execution_result_mutation_cannot_change_a_later_execution(tmp_path):
@@ -265,7 +276,7 @@ def test_execution_result_mutation_cannot_change_a_later_execution(tmp_path):
     later = mutable.execution_snapshot().capabilities_for("2960-24TT", BUILD)
 
     assert later is not None
-    assert later.supports_poe is CapabilityStatus.UNSUPPORTED
+    assert later.supports_poe is CapabilityStatus.UNKNOWN
     assert later.poe_ports is None
 
 
@@ -314,6 +325,7 @@ def test_poe_projection_and_conflict_share_the_authoritative_winner():
             packet_tracer_version=BUILD,
             verified=True,
             observed_value=24,
+            dimensions=_delivery_dimensions(active=24),
         ),
         CapabilityEvidence(
             capability="supports_poe",
@@ -321,6 +333,7 @@ def test_poe_projection_and_conflict_share_the_authoritative_winner():
             source=EvidenceSource.PACKET_TRACER_RUNTIME,
             packet_tracer_version=BUILD,
             verified=True,
+            dimensions=_delivery_dimensions(active=0),
         ),
     ]
     resolver = CapabilityResolver()
@@ -333,6 +346,35 @@ def test_poe_projection_and_conflict_share_the_authoritative_winner():
     assert resolved.poe_ports is None
     assert len(conflicts) == 1
     assert conflicts[0].winner is EvidenceSource.PACKET_TRACER_RUNTIME
+
+
+def test_decided_delivery_claim_wins_same_authority_legacy_unknown():
+    legacy = CapabilityEvidence(
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        packet_tracer_version=BUILD,
+        verified=True,
+        observed_value=24,
+    )
+    delivery = CapabilityEvidence(
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        packet_tracer_version=BUILD,
+        verified=True,
+        observed_value=2,
+        dimensions=_delivery_dimensions(active=2, tested=2),
+    )
+    resolver = CapabilityResolver()
+    base = resolver.resolve(CatalogDeviceFacts(model="tie", category="switch"))
+
+    winner = resolver.winning_evidence("supports_poe", [legacy, delivery], BUILD)
+    resolved = resolver.with_evidence(base, [legacy, delivery], BUILD)
+
+    assert winner is not None and winner is delivery
+    assert resolved.supports_poe is CapabilityStatus.SUPPORTED
+    assert resolved.poe_ports == 2
 
 
 def test_dynamic_adapter_result_mutation_cannot_change_a_later_execution(tmp_path):
@@ -350,5 +392,5 @@ def test_dynamic_adapter_result_mutation_cannot_change_a_later_execution(tmp_pat
     later = mutable.execution_snapshot().capabilities_for("2960-24TT", BUILD)
 
     assert later is not None
-    assert later.supports_poe is CapabilityStatus.UNSUPPORTED
+    assert later.supports_poe is CapabilityStatus.UNKNOWN
     assert later.poe_ports is None

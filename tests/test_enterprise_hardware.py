@@ -91,7 +91,18 @@ def test_capability_evidence_priority_keeps_unknown_and_runtime_wins_inference()
     resolver = CapabilityResolver()
     evidence = [
         CapabilityEvidence(capability="supports_poe", status=CapabilityStatus.UNSUPPORTED, source=EvidenceSource.INFERRED),
-        CapabilityEvidence(capability="supports_poe", status=CapabilityStatus.SUPPORTED, source=EvidenceSource.PACKET_TRACER_RUNTIME, verified=True),
+        CapabilityEvidence(
+            capability="supports_poe",
+            status=CapabilityStatus.SUPPORTED,
+            source=EvidenceSource.PACKET_TRACER_RUNTIME,
+            verified=True,
+            observed_value=1,
+            dimensions={
+                "poe_access_port_count": "1",
+                "poe_delivery_tested_ports": "1",
+                "poe_delivery_active_ports": "1",
+            },
+        ),
     ]
 
     assert resolver.resolve_evidence("supports_poe", evidence) is CapabilityStatus.SUPPORTED
@@ -104,6 +115,68 @@ def test_capability_evidence_priority_keeps_unknown_and_runtime_wins_inference()
         )],
     )
     assert updated.supports_static_routes is CapabilityStatus.SUPPORTED
+
+
+def test_poe_evidence_without_delivery_dimensions_is_capped_at_resolver():
+    resolver = CapabilityResolver()
+    evidence = CapabilityEvidence(
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        verified=True,
+        observed_value=24,
+    )
+
+    winner = resolver.winning_evidence("supports_poe", [evidence])
+    resolved = resolver.with_evidence(_candidate().capabilities, [evidence])
+
+    assert winner is not None and winner.status is CapabilityStatus.UNKNOWN
+    assert winner.observed_value is None
+    assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+    assert resolved.poe_ports is None
+
+
+def test_unverified_delivery_dimensions_cannot_authorize_at_resolver():
+    resolver = CapabilityResolver()
+    evidence = CapabilityEvidence(
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        verified=False,
+        observed_value=24,
+        dimensions={
+            "poe_access_port_count": "24",
+            "poe_delivery_tested_ports": "24",
+            "poe_delivery_active_ports": "24",
+        },
+    )
+
+    resolved = resolver.with_evidence(_candidate().capabilities, [evidence])
+
+    assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+    assert resolved.poe_ports is None
+
+
+def test_descriptive_sources_cannot_authorize_poe_delivery():
+    resolver = CapabilityResolver()
+    for source in (EvidenceSource.INFERRED, EvidenceSource.CATALOG):
+        evidence = CapabilityEvidence(
+            capability="supports_poe",
+            status=CapabilityStatus.SUPPORTED,
+            source=source,
+            verified=True,
+            observed_value=24,
+            dimensions={
+                "poe_access_port_count": "24",
+                "poe_delivery_tested_ports": "24",
+                "poe_delivery_active_ports": "24",
+            },
+        )
+
+        resolved = resolver.with_evidence(_candidate().capabilities, [evidence])
+
+        assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+        assert resolved.poe_ports is None
 
 
 def test_switch_count_reserves_dedicated_uplinks_without_reducing_access_capacity():

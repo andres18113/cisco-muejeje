@@ -87,6 +87,30 @@ def _supported(
     )
 
 
+def _unknown(
+    model: str,
+    capability: str,
+    snapshot_hash: str,
+    producer: str,
+    verification_method: str,
+    summary: str,
+    *,
+    original_source: EvidenceSource,
+) -> MeasuredCapabilityRecord:
+    """Retain an exact observation without widening it into authorization."""
+
+    return MeasuredCapabilityRecord(
+        model=model,
+        capability=capability,
+        status=CapabilityStatus.UNKNOWN,
+        snapshot_hash=snapshot_hash,
+        producer=producer,
+        original_source=original_source,
+        verification_method=verification_method,
+        summary=summary,
+    )
+
+
 _LAYER2 = "VlanManager was present on the freshly created exact-model device."
 _VLAN = (
     "VLAN 999 was configured through the typed IOS channel, read back through "
@@ -100,9 +124,10 @@ _LAYER3 = (
     "An IPv4 interface was configured through the typed IOS channel, read back "
     "through a registered IOS query, and cleared successfully."
 )
-_POE_SUPPORTED = (
+_POE_CONTROL_ONLY = (
     "24 fresh access ports exposed complete administrative/runtime power-on "
-    "state; powered-device delivery was not observed."
+    "state; powered-device delivery was not observed, so delivery capability "
+    "and capacity remain unknown."
 )
 
 _IE_2000 = "a90573080383dec861b75c72875d2db1d8c75ed5008eaa6e6f866354e765423a"
@@ -157,18 +182,15 @@ MEASURED_CAPABILITY_RECORDS: tuple[MeasuredCapabilityRecord, ...] = (
         "2960-24TT", "supports_trunk", _PT_2960_LOGICAL, "trunk-probe",
         "cli_plus_readback", _TRUNK,
     ),
-    MeasuredCapabilityRecord(
-        model="2960-24TT",
-        capability="supports_poe",
-        status=CapabilityStatus.UNSUPPORTED,
-        snapshot_hash=_PT_2960_POE,
-        producer="supports-poe",
-        original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
-        verification_method="object_state",
-        summary=(
+    _unknown(
+        "2960-24TT", "supports_poe", _PT_2960_POE, "supports-poe",
+        "object_state",
+        (
             "24 fresh access ports exposed complete administrative/runtime "
-            "power-off state; powered-device delivery was not observed."
+            "power-off state; powered-device delivery was not observed, so "
+            "delivery capability remains unknown."
         ),
+        original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
     ),
     _supported(
         "3560-24PS", "layer2", _PT_3560_LOGICAL, "layer2-probe",
@@ -188,11 +210,10 @@ MEASURED_CAPABILITY_RECORDS: tuple[MeasuredCapabilityRecord, ...] = (
         "Both endpoint-to-SVI paths and inter-VLAN forwarding converged; SVI "
         "configuration, addresses, and up/up state were read back.",
     ),
-    _supported(
+    _unknown(
         "3560-24PS", "supports_poe", _PT_3560_POE, "supports-poe",
-        "object_state", _POE_SUPPORTED,
+        "object_state", _POE_CONTROL_ONLY,
         original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
-        observed_value=24,
     ),
     _supported(
         "3650-24PS", "layer2", _PT_3650_LOGICAL, "layer2-probe",
@@ -206,11 +227,10 @@ MEASURED_CAPABILITY_RECORDS: tuple[MeasuredCapabilityRecord, ...] = (
         "3650-24PS", "supports_trunk", _PT_3650_LOGICAL, "trunk-probe",
         "cli_plus_readback", _TRUNK,
     ),
-    _supported(
+    _unknown(
         "3650-24PS", "supports_poe", _PT_3650_POE, "supports-poe",
-        "object_state", _POE_SUPPORTED,
+        "object_state", _POE_CONTROL_ONLY,
         original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
-        observed_value=24,
     ),
 )
 

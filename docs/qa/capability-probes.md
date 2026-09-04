@@ -136,18 +136,23 @@ dispositivos frescos y sin enlaces, los 24 puertos FastEthernet de
 `false/false`. Los dos puertos Gigabit de cada modelo se conservaron como
 uplinks y no se contaron como capacidad PoE de acceso.
 
-El probe físico registrado ahora guarda por separado el estado administrativo
-y el estado runtime, exige booleanos estrictos y una observación completa y
-homogénea. Ausencia, valores malformados o resultados mixtos permanecen
-`UNKNOWN`; modelo o build distintos no heredan la evidencia. El snapshot
-exacto `3560-24PS` / `9.0.1.0858` quedó `SUPPORTED`, `VERIFIED`, con 24 puertos
-de acceso y método `object_state` (hash
-`ae52cee8f8e23d032141aaa025c6ea466aa82b90bc5cc156660f67f625b9156e`).
+El probe físico registrado guarda por separado el estado administrativo, el
+estado runtime y la entrega a un powered device. Exige booleanos estrictos y no
+convierte `getPower()/isPowerOn()` en autorización de entrega. Ausencia,
+valores malformados o resultados mixtos permanecen `UNKNOWN`; modelo o build
+distintos no heredan la evidencia. El snapshot exacto `3560-24PS` /
+`9.0.1.0858`, método `object_state` y hash
+`ae52cee8f8e23d032141aaa025c6ea466aa82b90bc5cc156660f67f625b9156e`,
+verificó estado administrativo/runtime en 24 puertos, pero conserva
+`supports_poe = UNKNOWN` y no publica `poe_ports`.
 
-Esta afirmación autoriza capacidad hardware PoE, no entrega activa a un equipo
-alimentado. No se conectó un powered device y `power_delivery_active` continúa
-sin observarse. La sesión eliminó el temporal por identidad exacta, confirmó
-dos veces el workspace semántico vacío y preservó el PDD preexistente.
+Esta observación no autoriza capacidad hardware PoE: no se conectó un powered
+device y `power_delivery_active` continúa sin observarse. Un resultado fuerte
+reutilizable debe llevar conteos coherentes de puertos de acceso, puertos con
+prueba de entrega y puertos con entrega activa. Snapshots anteriores sin esas
+dimensiones se limitan a `UNKNOWN`. La sesión eliminó el temporal por identidad
+exacta, confirmó dos veces el workspace semántico vacío y preservó el PDD
+preexistente.
 
 Al alcanzar después el preflight de despliegue físico, Stage A identificó cinco
 inventarios exact-build ausentes sin ejecutar ninguna mutación de topología. El

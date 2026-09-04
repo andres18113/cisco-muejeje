@@ -430,6 +430,7 @@ class CapabilityProbeResult(BaseModel):
             verified=self.verified,
             observed_value=self.observed_value,
             notes=self.raw_summary,
+            dimensions=dict(self.dimensions),
         )
 
 

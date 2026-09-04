@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ...domain.enterprise.models.capabilities import CapabilityEvidence, EvidenceSource
+from ...domain.enterprise.models.capabilities import (
+    CapabilityEvidence,
+    CapabilityStatus,
+    EvidenceSource,
+)
+from ...domain.enterprise.services.poe_claims import (
+    poe_claim_has_delivery_basis,
+)
 from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 
 
@@ -49,5 +56,15 @@ def _snapshot_evidence(snapshots, model: str, source: EvidenceSource) -> Iterabl
                 continue
             evidence = result.evidence()
             if evidence is not None:
+                if not poe_claim_has_delivery_basis(result):
+                    evidence = evidence.model_copy(update={
+                        "status": CapabilityStatus.UNKNOWN,
+                        "observed_value": None,
+                        "notes": (
+                            f"{evidence.notes} Claim capped at UNKNOWN: the "
+                            "snapshot has no coherent powered-device delivery "
+                            "measurement."
+                        ).strip(),
+                    })
                 yield evidence
 

@@ -61,6 +61,12 @@ medición negativa se conserva como `UNSUPPORTED`, no como ausencia.
 
 El default es un lote físico y limitado: `PC-PT`, `2911`, `2960-24TT` y `3560-24PS`. El nivel `physical` verifica creación e inventario de puertos y conserva PoE o módulos como `UNKNOWN` si Packet Tracer no expone hechos fiables. El nivel `logical` está modelado con dependencias, pero el bridge actual no cuenta todavía con una vía confirmada de configurar y releer L2/L3 de forma segura; por eso esos probes quedan `SKIPPED`/`UNKNOWN`, nunca inventados.
 
+Para PoE, los getters administrativos/runtime son observabilidad de control, no
+prueba de alimentación del endpoint. `supports_poe = SUPPORTED` y su conteo
+`poe_ports` sólo se proyectan cuando el resultado registra una medición
+coherente de entrega activa en puertos de acceso. Una observación control-only,
+aunque su ejecución sea `VERIFIED`, mantiene la capability en `UNKNOWN`.
+
 Packet Tracer no expone en la superficie confirmada de este proyecto una enumeración fiable de modelos ni una consulta de versión. El runtime no finge esas APIs: usa create probes cuando se le da un modelo y acepta una versión explícita para scope de evidencia.
 
 Los modelos runtime-only, como `IE-3400`, se reportan como tales. No se escriben automáticamente en `devices.py`.

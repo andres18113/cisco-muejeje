@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ..models.capabilities import CapabilityEvidence, CapabilityStatus, DeviceCapabilities, EvidenceSource
+from .poe_claims import poe_claim_has_delivery_basis
 
 
 _EVIDENCE_PRIORITY = {
@@ -74,14 +75,19 @@ class CapabilityResolver:
     ) -> CapabilityEvidence | None:
         """Return the authoritative matching fact without discarding provenance."""
         candidates = [
-            item for item in evidence
+            _cap_claim_to_evidence(item) for item in evidence
             if item.capability == capability and _evidence_matches_version(item, packet_tracer_version)
         ]
         if not candidates:
             return None
         return max(
             candidates,
-            key=lambda item: (_EVIDENCE_PRIORITY[item.source], item.verified, item.source.value),
+            key=lambda item: (
+                _EVIDENCE_PRIORITY[item.source],
+                item.verified,
+                item.status is not CapabilityStatus.UNKNOWN,
+                item.source.value,
+            ),
         )
 
     @classmethod
@@ -106,10 +112,10 @@ class CapabilityResolver:
         packet_tracer_version: str | None = None,
     ) -> DeviceCapabilities:
         """Devuelve una copia con estados respaldados por las fuentes disponibles."""
-        collected = list(evidence)
+        collected = [_cap_claim_to_evidence(item) for item in evidence]
         updates = {"evidence": [*capabilities.evidence, *collected]}
         for capability in (
-            "supports_poe", "layer2", "layer3", "supports_modules", "supports_vlan",
+            "layer2", "layer3", "supports_modules", "supports_vlan",
             "supports_trunk", "supports_svi", "supports_routing", "supports_static_routes",
             "supports_rip", "supports_eigrp", "supports_ospf", "supports_bgp", "supports_stp",
             "supports_acl", "supports_nat", "supports_dhcp_server", "supports_voice",
@@ -122,9 +128,10 @@ class CapabilityResolver:
             "supports_poe", collected, packet_tracer_version,
         )
         if winner is not None:
+            updates["supports_poe"] = winner.status
             if winner.status is CapabilityStatus.SUPPORTED and winner.observed_value is not None:
                 updates["poe_ports"] = winner.observed_value
-            elif winner.status is CapabilityStatus.UNSUPPORTED:
+            else:
                 updates["poe_ports"] = None
         if packet_tracer_version is not None:
             updates["packet_tracer_version"] = packet_tracer_version
@@ -141,7 +148,7 @@ class CapabilityResolver:
         from ..models.discovery import CapabilityConflict
 
         grouped: dict[str, list[CapabilityEvidence]] = {}
-        for item in evidence:
+        for item in (_cap_claim_to_evidence(entry) for entry in evidence):
             if _evidence_matches_version(item, packet_tracer_version):
                 grouped.setdefault(item.capability, []).append(item)
         conflicts = []
@@ -172,3 +179,18 @@ def _evidence_matches_version(
     if evidence.packet_tracer_version is None:
         return True
     return packet_tracer_version is not None and evidence.packet_tracer_version == packet_tracer_version
+
+
+def _cap_claim_to_evidence(evidence: CapabilityEvidence) -> CapabilityEvidence:
+    """Apply the PoE claim ceiling at the resolver's authority boundary."""
+
+    if poe_claim_has_delivery_basis(evidence):
+        return evidence
+    return evidence.model_copy(update={
+        "status": CapabilityStatus.UNKNOWN,
+        "observed_value": None,
+        "notes": (
+            f"{evidence.notes} Claim capped at UNKNOWN: no coherent "
+            "powered-device delivery measurement."
+        ).strip(),
+    })

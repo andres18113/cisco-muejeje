@@ -7,8 +7,9 @@ from collections import Counter
 from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
     compile_enterprise_topology,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
-    compose_cp_scale_canonical,
+from tests.poe_delivery_capabilities import (
+    compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
+    delivery_qualified_capability_catalog,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwarePlanStatus,
@@ -33,9 +34,6 @@ from src.packet_tracer_mcp.domain.enterprise.services.naming import (
 from src.packet_tracer_mcp.domain.enterprise.services.reference_hardware_planner import (
     ReferenceHardwarePlanner,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
-    packet_tracer_enterprise_capability_adapter,
-)
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
@@ -49,7 +47,7 @@ def _compile():
     assert designed.validation.is_valid and designed.plan is not None
     # The productive exact-version root: the canonical design is only true
     # against the evidence the live path actually resolves.
-    catalog = packet_tracer_enterprise_capability_adapter(MEASURED_BACKEND_VERSION)
+    catalog = delivery_qualified_capability_catalog()
     candidates = [
         *catalog.hardware_candidates("router", MEASURED_BACKEND_VERSION),
         *catalog.hardware_candidates("switch", MEASURED_BACKEND_VERSION),

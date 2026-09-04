@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from src.packet_tracer_mcp.application.use_cases.capability_discovery import (
     CapabilityDiscoveryService,
     CapabilityProbeRegistry,
@@ -29,6 +31,7 @@ from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import
 from src.packet_tracer_mcp.domain.enterprise.services.device_selector import DeviceSelector
 from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
     ProbeCapabilityProvider,
+    RuntimeCapabilityProvider,
     StaticVerifiedCapabilityProvider,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
@@ -162,6 +165,76 @@ def test_cache_requires_exact_pt_version_and_force_bypasses_it(tmp_path):
     assert runtime.create_device_calls == 3
 
 
+def _legacy_poe_v2_snapshot(tmp_path, runtime):
+    request = ProbeRequest(
+        models=["3560-24PS"], capabilities=["supports_poe"], force=True,
+    )
+    seed, _ = _service(tmp_path / "seed", runtime).run(request)
+    legacy = seed.model_copy(deep=True)
+    poe_definition = next(
+        item for item in CapabilityProbeRegistry().definitions_for(["supports_poe"])
+        if item.capability == "supports_poe"
+    )
+    legacy_definition = poe_definition.model_copy(update={"probe_version": "2"})
+    fingerprint_key = "3560-24PS:supports_poe"
+    legacy_fingerprint = legacy_definition.semantic_fingerprint(
+        "3560-24PS",
+        {"probe_level": ProbeLevel.PHYSICAL.value, "categories": []},
+    )
+    legacy.probe_fingerprints[fingerprint_key] = legacy_fingerprint
+    legacy_result = next(
+        item for item in legacy.session.results
+        if item.capability == "supports_poe"
+    )
+    legacy_result.status = CapabilityStatus.SUPPORTED
+    legacy_result.verified = True
+    legacy_result.observed_value = 24
+    legacy_result.dimensions = {}
+    assert legacy_result.context is not None
+    legacy_result.context = legacy_result.context.model_copy(update={
+        "probe_version": "2",
+        "probe_fingerprint": legacy_fingerprint,
+    })
+    legacy.session.session = legacy.session.session.model_copy(update={
+        "session_id": "legacy-poe-v2",
+        "started_at": legacy.session.session.started_at + timedelta(seconds=1),
+    })
+    CapabilitySnapshotStore(tmp_path / "capabilities").save_runtime(legacy)
+    return request, legacy
+
+
+def test_poe_probe_semantic_change_does_not_reuse_a_legacy_v2_claim(tmp_path):
+    runtime = FakePacketTracerProbeRuntime({
+        "3560-24PS": _observation("3560-24PS", CapabilityStatus.SUPPORTED),
+    })
+    request, _legacy = _legacy_poe_v2_snapshot(tmp_path, runtime)
+
+    fresh_request = request.model_copy(update={"force": False})
+    fresh, cached = _service(tmp_path, runtime).run(fresh_request)
+    fresh_result = next(
+        item for item in fresh.session.results
+        if item.capability == "supports_poe"
+    )
+
+    assert not cached
+    assert fresh_result.status is CapabilityStatus.UNKNOWN
+    assert fresh_result.observed_value is None
+    assert runtime.create_device_calls == 2
+
+
+def test_readiness_caps_a_legacy_control_only_poe_claim(tmp_path):
+    runtime = FakePacketTracerProbeRuntime({
+        "3560-24PS": _observation("3560-24PS", CapabilityStatus.SUPPORTED),
+    })
+    _request, legacy = _legacy_poe_v2_snapshot(tmp_path, runtime)
+
+    report = _service(tmp_path / "readiness", runtime).readiness_report(legacy)
+
+    assert report.poe_selection.value == "partial"
+    assert report.access_switch_selection.value == "partial"
+    assert report.blocking_unknowns["poe"] == ["3560-24PS"]
+
+
 def test_snapshot_roundtrip_hash_and_diff_are_stable(tmp_path):
     runtime = FakePacketTracerProbeRuntime({"2911": _observation("2911")})
     service = _service(tmp_path, runtime)
@@ -176,7 +249,7 @@ def test_snapshot_roundtrip_hash_and_diff_are_stable(tmp_path):
     assert diff.ports_changed == ["2911"]
 
 
-def test_runtime_probe_evidence_improves_hardware_selection_only_for_exact_version(tmp_path):
+def test_legacy_poe_snapshot_without_delivery_evidence_cannot_authorize_hardware(tmp_path):
     session = ProbeSession(session_id="probe-fixed", packet_tracer_version="PT 9.0")
     result = CapabilityProbeResult(
         probe_id="poe-inventory", model="3560-24PS", capability="supports_poe",
@@ -195,13 +268,124 @@ def test_runtime_probe_evidence_improves_hardware_selection_only_for_exact_versi
     supported = adapter.capabilities_for("3560-24PS", "PT 9.0")
     other_version = adapter.capabilities_for("3560-24PS", "PT 10.0")
     assert supported is not None and other_version is not None
-    assert supported.supports_poe is CapabilityStatus.SUPPORTED
+    assert supported.supports_poe is CapabilityStatus.UNKNOWN
+    assert supported.poe_ports is None
     assert other_version.supports_poe is CapabilityStatus.UNKNOWN
 
     selection = DeviceSelector().select(
         DeviceRequirement(role=DeviceRole.ACCESS_SWITCH, poe_ports=1), [supported],
     )
-    assert selection.selected_model == "3560-24PS"
+    assert selection.selected_model is None
+    assert selection.status.value == "partially_supported"
+
+
+def test_delivery_backed_poe_snapshot_authorizes_only_its_exact_measured_count(tmp_path):
+    session = ProbeSession(session_id="probe-delivery", packet_tracer_version="PT 9.0")
+    result = CapabilityProbeResult(
+        probe_id="poe-delivery", model="3560-24PS", capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED, execution_status=ProbeExecutionStatus.VERIFIED,
+        evidence_source=EvidenceSource.CONTROLLED_PROBE, verified=True,
+        observed_value=2,
+        packet_tracer_version="PT 9.0",
+        dimensions={
+            "poe_access_port_count": "24",
+            "poe_delivery_tested_ports": "2",
+            "poe_delivery_active_ports": "2",
+        },
+    )
+    snapshot = CapabilitySnapshot(
+        packet_tracer_version="PT 9.0",
+        session=ProbeSessionResult(session=session, results=[result]),
+    )
+    store = CapabilitySnapshotStore(tmp_path / "capabilities")
+    store.save_runtime(snapshot)
+
+    resolved = EnterpriseCapabilityAdapter(
+        providers=[ProbeCapabilityProvider(store)],
+    ).capabilities_for("3560-24PS", "PT 9.0")
+
+    assert resolved is not None
+    assert resolved.supports_poe is CapabilityStatus.SUPPORTED
+    assert resolved.poe_ports == 2
+
+
+def test_delivery_snapshot_outweighs_same_authority_legacy_control_snapshot(tmp_path):
+    store = CapabilitySnapshotStore(tmp_path / "capabilities")
+    for session_id, dimensions in (
+        ("legacy-control", {}),
+        ("delivery", {
+            "poe_access_port_count": "24",
+            "poe_delivery_tested_ports": "2",
+            "poe_delivery_active_ports": "2",
+        }),
+    ):
+        store.save_runtime(CapabilitySnapshot(
+            packet_tracer_version="PT 9.0",
+            session=ProbeSessionResult(
+                session=ProbeSession(
+                    session_id=session_id,
+                    packet_tracer_version="PT 9.0",
+                ),
+                results=[CapabilityProbeResult(
+                    probe_id=session_id,
+                    model="3560-24PS",
+                    capability="supports_poe",
+                    status=CapabilityStatus.SUPPORTED,
+                    execution_status=ProbeExecutionStatus.VERIFIED,
+                    evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+                    verified=True,
+                    observed_value=24 if not dimensions else 2,
+                    packet_tracer_version="PT 9.0",
+                    dimensions=dimensions,
+                )],
+            ),
+        ))
+
+    resolved = EnterpriseCapabilityAdapter(
+        providers=[RuntimeCapabilityProvider(store)],
+    ).capabilities_for("3560-24PS", "PT 9.0")
+
+    assert resolved is not None
+    assert resolved.supports_poe is CapabilityStatus.SUPPORTED
+    assert resolved.poe_ports == 2
+
+
+def test_unverified_delivery_snapshot_cannot_authorize_hardware(tmp_path):
+    result = CapabilityProbeResult(
+        probe_id="unverified-delivery",
+        model="3560-24PS",
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        execution_status=ProbeExecutionStatus.VERIFIED,
+        evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        verified=False,
+        observed_value=24,
+        packet_tracer_version="PT 9.0",
+        dimensions={
+            "poe_access_port_count": "24",
+            "poe_delivery_tested_ports": "24",
+            "poe_delivery_active_ports": "24",
+        },
+    )
+    store = CapabilitySnapshotStore(tmp_path / "capabilities")
+    store.save_runtime(CapabilitySnapshot(
+        packet_tracer_version="PT 9.0",
+        session=ProbeSessionResult(
+            session=ProbeSession(
+                session_id="unverified-delivery",
+                packet_tracer_version="PT 9.0",
+            ),
+            results=[result],
+        ),
+    ))
+
+    resolved = EnterpriseCapabilityAdapter(
+        providers=[RuntimeCapabilityProvider(store)],
+    ).capabilities_for("3560-24PS", "PT 9.0")
+
+    assert resolved is not None
+    assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+    assert resolved.poe_ports is None
 
 
 def test_conflicting_evidence_keeps_warning_and_probe_wins_over_static_override():
@@ -344,7 +528,7 @@ def test_bridge_runtime_reads_only_confirmed_port_power_getters():
     assert "setPower" not in sent[0]
 
 
-def test_poe_inventory_requires_complete_nonempty_homogeneous_port_observation(tmp_path):
+def test_poe_inventory_does_not_treat_control_state_as_delivery(tmp_path):
     supported = _observation(poe=CapabilityStatus.SUPPORTED)
     supported.ports[0].power_admin_enabled = True
     supported.ports[0].power_runtime_on = True
@@ -375,8 +559,8 @@ def test_poe_inventory_requires_complete_nonempty_homogeneous_port_observation(t
 
     observations = (supported, unsupported, mixed, empty)
     expected = (
-        (CapabilityStatus.SUPPORTED, ProbeExecutionStatus.VERIFIED, 1),
-        (CapabilityStatus.UNSUPPORTED, ProbeExecutionStatus.VERIFIED, None),
+        (CapabilityStatus.UNKNOWN, ProbeExecutionStatus.VERIFIED, None),
+        (CapabilityStatus.UNKNOWN, ProbeExecutionStatus.VERIFIED, None),
         (CapabilityStatus.UNKNOWN, ProbeExecutionStatus.SKIPPED, None),
         (CapabilityStatus.UNKNOWN, ProbeExecutionStatus.SKIPPED, None),
     )
@@ -640,13 +824,11 @@ def _measured_3650_observation():
     )
 
 
-def test_a_switch_whose_access_ports_are_gigabit_can_still_evidence_poe(tmp_path):
-    """PoE is decided on the model's access ports, not on their speed name.
+def test_gigabit_access_port_control_state_does_not_evidence_poe_delivery(tmp_path):
+    """Administrative/runtime power-on is observable but is not delivery.
 
     The 3650-24PS has no FastEthernet at all: its 24 access ports are
-    `Gi1/0/1..24`. Selecting access ports by interface-type name left the set
-    empty and collapsed a fully observed, homogeneous power-on state to UNKNOWN,
-    which fails closed -- so a PoE switch could never be admitted for PoE.
+    `Gi1/0/1..24`. Their speed does not alter the delivery claim ceiling.
     """
     runtime = FakePacketTracerProbeRuntime({"3650-24PS": _measured_3650_observation()})
 
@@ -658,13 +840,16 @@ def test_a_switch_whose_access_ports_are_gigabit_can_still_evidence_poe(tmp_path
         item for item in snapshot.session.results
         if item.capability == "supports_poe"
     )
-    assert result.status is CapabilityStatus.SUPPORTED
+    assert result.status is CapabilityStatus.UNKNOWN
     assert result.execution_status is ProbeExecutionStatus.VERIFIED
-    assert result.observed_value == 24, "the 4 uplink module ports are not a budget"
+    assert result.observed_value is None
+    assert result.dimensions["poe_access_port_count"] == "24"
+    assert result.dimensions["poe_delivery_tested_ports"] == "0"
+    assert result.dimensions["poe_delivery_active_ports"] == "0"
 
 
-def test_uplink_power_signals_never_inflate_the_admitted_powered_budget(tmp_path):
-    """A 3560-24PS still evidences exactly its 24 powered access ports.
+def test_delivery_evidence_on_uplinks_never_inflates_the_admitted_powered_budget(tmp_path):
+    """A 3560-24PS evidences only delivery observed on its access ports.
 
     Its `Gi0/1-0/2` uplinks report power too. They were never counted and must
     not start being counted now.
@@ -673,6 +858,7 @@ def test_uplink_power_signals_never_inflate_the_admitted_powered_budget(tmp_path
         RuntimePortDescriptor(
             name=f"FastEthernet0/{index}", interface_type="FastEthernet",
             power_admin_enabled=True, power_runtime_on=True,
+            power_delivery_active=True,
             power_observation_complete=True,
             poe_status=CapabilityStatus.SUPPORTED,
         )
@@ -682,6 +868,7 @@ def test_uplink_power_signals_never_inflate_the_admitted_powered_budget(tmp_path
         RuntimePortDescriptor(
             name=f"GigabitEthernet0/{index}", interface_type="GigabitEthernet",
             power_admin_enabled=True, power_runtime_on=True,
+            power_delivery_active=True,
             power_observation_complete=True,
             poe_status=CapabilityStatus.SUPPORTED,
         )
@@ -701,3 +888,4 @@ def test_uplink_power_signals_never_inflate_the_admitted_powered_budget(tmp_path
     )
     assert result.status is CapabilityStatus.SUPPORTED
     assert result.observed_value == 24
+    assert result.dimensions["poe_delivery_active_ports"] == "24"

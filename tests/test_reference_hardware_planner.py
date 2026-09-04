@@ -187,7 +187,10 @@ def _rebudget(candidates, model: str, poe_ports: int):
     return [
         item.model_copy(update={
             "capabilities": item.capabilities.model_copy(
-                update={"poe_ports": poe_ports},
+                update={
+                    "supports_poe": CapabilityStatus.SUPPORTED,
+                    "poe_ports": poe_ports,
+                },
             ),
         })
         if item.model == model else item
@@ -232,37 +235,37 @@ def test_unknown_poe_evidence_never_admits_a_powered_endpoint_binding():
     )
 
 
-def test_a_build_measured_to_deliver_no_power_is_refused_outright():
-    """2960-24TT is not unknown any more; it is measured.
+def test_control_off_without_a_delivery_test_remains_unverified():
+    """2960-24TT has a measured control state, not a delivery refusal.
 
     Every one of its 24 access ports reported complete administrative and
-    runtime power-OFF state on 9.0.1.0858. That is a decided answer, so a
-    powered endpoint bound to it is a contradiction rather than a gap.
+    runtime power-OFF state on 9.0.1.0858. Without an attached powered device,
+    that does not decide delivery capability.
     """
     result = ReferenceHardwarePlanner().plan(
         _poe_enterprise(), _poe_design(model="2960-24TT"), _switch_candidates(),
     )
 
-    assert result.status is HardwarePlanStatus.UNRESOLVED
+    assert result.status is HardwarePlanStatus.PARTIALLY_RESOLVED
     device = result.site_hardware[0].devices[0]
-    assert device.selection_status is DeviceCandidateStatus.INCOMPATIBLE
+    assert device.selection_status is DeviceCandidateStatus.NEEDS_VERIFICATION
     assert any(
-        "2960-24TT" in item and "no PoE" in item for item in result.warnings
+        "2960-24TT" in item and "unknown" in item for item in result.warnings
     )
 
 
-def test_supported_poe_evidence_within_capacity_stays_valid():
-    """3560-24PS carries exact-build evidence for 24 powered access ports."""
+def test_control_only_poe_baseline_never_admits_a_powered_endpoint_binding():
+    """The exact-build 3560 control observation does not prove delivery."""
     result = ReferenceHardwarePlanner().plan(
         _poe_enterprise(phones=24),
         _poe_design(model="3560-24PS", phones=24),
         _switch_candidates(),
     )
 
-    assert result.status is HardwarePlanStatus.VALID, result.warnings
+    assert result.status is HardwarePlanStatus.PARTIALLY_RESOLVED, result.warnings
     device = result.site_hardware[0].devices[0]
-    assert device.selection_status is DeviceCandidateStatus.COMPATIBLE
-    assert device.poe_capacity == 24
+    assert device.selection_status is DeviceCandidateStatus.NEEDS_VERIFICATION
+    assert device.poe_capacity is None
 
 
 def test_poe_demand_beyond_the_exact_admitted_capacity_is_unresolved():
@@ -285,7 +288,7 @@ def test_powered_endpoints_may_not_be_bound_to_unpowered_uplink_ports():
     design.sites[0].endpoint_bindings[0].device_port = "GigabitEthernet0/1"
 
     result = ReferenceHardwarePlanner().plan(
-        _poe_enterprise(), design, _switch_candidates(),
+        _poe_enterprise(), design, _rebudget(_switch_candidates(), "3560-24PS", 24),
     )
 
     assert result.status is HardwarePlanStatus.UNRESOLVED

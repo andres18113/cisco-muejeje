@@ -37,6 +37,7 @@ class CapabilityEvidence(BaseModel):
     verified: bool = False
     observed_value: int | None = None
     notes: str = ""
+    dimensions: dict[str, str] = Field(default_factory=dict)
 
 
 class DeviceCapabilities(BaseModel):

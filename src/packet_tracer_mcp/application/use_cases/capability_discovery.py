@@ -37,6 +37,10 @@ from ...domain.enterprise.models.discovery import (
     RuntimeDeviceDescriptor,
     RuntimeDeviceObservation,
 )
+from ...domain.enterprise.services.poe_claims import (
+    assess_poe_delivery,
+    poe_claim_has_delivery_basis,
+)
 
 
 DEFAULT_SAFE_MODELS = ("PC-PT", "2911", "2960-24TT", "3560-24PS")
@@ -105,7 +109,7 @@ class CapabilityProbeRegistry:
             isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
         "supports_poe": ProbeDefinition(
-            id="poe-inventory", probe_version="2", capability="supports_poe",
+            id="poe-inventory", probe_version="3", capability="supports_poe",
             prerequisites=["port_inventory"],
             cost=ProbeCost.CHEAP, isolation_level=ProbeIsolationLevel.SHARED_DEVICE,
         ),
@@ -395,6 +399,7 @@ class CapabilityDiscoveryService:
         self, snapshot: CapabilitySnapshot, hardware_plan: HardwarePlan | None = None,
     ) -> E4ReadinessReport:
         """Calcula readiness por rol; una capability no requerida no bloquea E4."""
+        snapshot = _with_poe_claim_ceiling(snapshot)
         unknowns = snapshot.blocking_unknowns()
         result_map = {(item.model, item.capability): item.status for item in snapshot.session.results}
         models = {item.identity.canonical_id or item.identity.runtime_id or item.identity.display_name for item in snapshot.session.devices}
@@ -563,22 +568,29 @@ class CapabilityDiscoveryService:
             elif capability == "supports_poe":
                 access_ports = self._poe_access_ports(model, descriptor)
                 statuses = {port.poe_status for port in access_ports}
-                status = _observed_status(statuses)
-                supported_count = sum(
-                    port.poe_status is CapabilityStatus.SUPPORTED
-                    for port in access_ports
-                )
-                if status is CapabilityStatus.SUPPORTED:
+                control_status = _observed_status(statuses)
+                delivery = assess_poe_delivery(access_ports)
+                if delivery.status is CapabilityStatus.SUPPORTED:
                     summary = (
-                        f"{supported_count} fresh access port(s) exposed complete "
-                        "administrative/runtime power-on state; powered-device "
-                        "delivery was not observed."
+                        f"Powered-device delivery was explicitly observed on "
+                        f"{delivery.delivery_active_ports} access port(s)."
                     )
-                elif status is CapabilityStatus.UNSUPPORTED:
+                elif delivery.status is CapabilityStatus.UNSUPPORTED:
                     summary = (
-                        f"{len(access_ports)} fresh access port(s) exposed complete "
-                        "administrative/runtime power-off state; powered-device "
-                        "delivery was not observed."
+                        f"Powered-device delivery was explicitly tested and inactive "
+                        f"on all {delivery.access_port_count} access port(s)."
+                    )
+                elif control_status is CapabilityStatus.SUPPORTED:
+                    summary = (
+                        f"{delivery.control_supported_ports} fresh access port(s) "
+                        "exposed complete administrative/runtime power-on state; "
+                        "powered-device delivery was not observed."
+                    )
+                elif control_status is CapabilityStatus.UNSUPPORTED:
+                    summary = (
+                        f"{delivery.access_port_count} fresh access port(s) exposed "
+                        "complete administrative/runtime power-off state; "
+                        "powered-device delivery was not observed."
                     )
                 else:
                     summary = (
@@ -587,13 +599,15 @@ class CapabilityDiscoveryService:
                         "unobserved."
                     )
                 results.append(_physical_result(
-                    model, capability, status, version,
+                    model, capability, delivery.status, version,
                     summary,
-                    observed_value=(
-                        supported_count
-                        if status is CapabilityStatus.SUPPORTED else None
-                    ),
+                    observed_value=delivery.observed_value,
                     verification_method=CapabilityVerificationMethod.OBJECT_STATE,
+                    dimensions=delivery.dimensions,
+                    observation_verified=(
+                        bool(access_ports)
+                        and control_status is not CapabilityStatus.UNKNOWN
+                    ),
                 ))
 
     def _poe_access_ports(self, model: str, descriptor) -> list:
@@ -742,6 +756,24 @@ def _probe_fingerprint_key(model: str, capability: str) -> str:
     return f"{model}:{capability}"
 
 
+def _with_poe_claim_ceiling(snapshot: CapabilitySnapshot) -> CapabilitySnapshot:
+    """Project legacy raw observations into safe readiness semantics."""
+
+    results = [
+        item if poe_claim_has_delivery_basis(item) else item.model_copy(update={
+            "status": CapabilityStatus.UNKNOWN,
+            "observed_value": None,
+        })
+        for item in snapshot.session.results
+    ]
+    if all(current is original for current, original in zip(
+        results, snapshot.session.results, strict=True,
+    )):
+        return snapshot
+    session = snapshot.session.model_copy(update={"results": results})
+    return snapshot.model_copy(update={"session": session})
+
+
 def _finalize_probe_results(
     results: list[CapabilityProbeResult],
     *,
@@ -833,14 +865,21 @@ def _physical_result(
     model: str, capability: str, status: CapabilityStatus, version: str | None, summary: str,
     observed_value: int | None = None,
     verification_method: CapabilityVerificationMethod | None = None,
+    dimensions: dict[str, str] | None = None,
+    observation_verified: bool = False,
 ) -> CapabilityProbeResult:
+    verified = status is not CapabilityStatus.UNKNOWN or observation_verified
     return CapabilityProbeResult(
         probe_id=capability.replace("_", "-"), model=model, capability=capability, status=status,
-        execution_status=ProbeExecutionStatus.VERIFIED if status is not CapabilityStatus.UNKNOWN else ProbeExecutionStatus.SKIPPED,
+        execution_status=(
+            ProbeExecutionStatus.VERIFIED
+            if verified else ProbeExecutionStatus.SKIPPED
+        ),
         evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
-        verified=status is not CapabilityStatus.UNKNOWN,
+        verified=verified,
         raw_summary=summary, observed_value=observed_value, packet_tracer_version=version,
         verification_method=verification_method,
+        dimensions=dimensions or {},
     )
 
 

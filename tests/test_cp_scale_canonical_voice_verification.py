@@ -9,8 +9,10 @@ import pytest
 
 from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
-    compose_cp_scale_canonical,
     project_cp_scale_canonical_stage,
+)
+from tests.poe_delivery_capabilities import (
+    compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
 )
 from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScaleFinalDisposition,

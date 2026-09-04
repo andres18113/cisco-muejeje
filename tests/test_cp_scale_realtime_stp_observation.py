@@ -42,6 +42,11 @@ from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureTrunk,
 )
 from packet_tracer_mcp.domain.enterprise.models.voice_plan import PhoneAssignment
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
+    CapabilityEvidence,
+    CapabilityStatus,
+    EvidenceSource,
+)
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     OperationalQueryId,
 )
@@ -52,6 +57,15 @@ from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
 )
 from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
+)
+from packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+    StaticVerifiedCapabilityProvider,
+)
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+    EnterpriseCapabilityAdapter,
+)
+from packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
+    measured_capability_evidence,
 )
 from tools.cp_scale_canonical_live import (
     _STP_MAX_LOGICAL_ATTEMPTS,
@@ -306,10 +320,41 @@ verdict["untyped_assignment"] = observe(
     Result(FORWARDING), actions=[], assignments=[1, 2],
 )
 
-# The real canonical Floor 1, not a fixture: the derivation has to land on the
-# exact ports the failing stage owns without ever being told their names.
+# The canonical Floor 1 topology, with a declared test-only delivery premise:
+# the derivation still has to land on the exact stage ports without being told
+# their names.
+class DeliveryEvidenceProvider:
+    def evidence_for(self, model, packet_tracer_version=None):
+        if (
+            model not in {"3560-24PS", "3650-24PS"}
+            or packet_tracer_version != MEASURED_BACKEND_VERSION
+        ):
+            return ()
+        return (CapabilityEvidence(
+            capability="supports_poe",
+            status=CapabilityStatus.SUPPORTED,
+            source=EvidenceSource.STATIC_OVERRIDE,
+            packet_tracer_version=MEASURED_BACKEND_VERSION,
+            verified=True,
+            observed_value=24,
+            dimensions={
+                "poe_access_port_count": "24",
+                "poe_delivery_tested_ports": "24",
+                "poe_delivery_active_ports": "24",
+            },
+        ),)
+
+
+capability_catalog = EnterpriseCapabilityAdapter(
+    providers=[
+        StaticVerifiedCapabilityProvider(measured_capability_evidence()),
+        DeliveryEvidenceProvider(),
+    ],
+    bound_packet_tracer_version=MEASURED_BACKEND_VERSION,
+)
 composition = compose_cp_scale_canonical(
     packet_tracer_version=MEASURED_BACKEND_VERSION,
+    capability_catalog=capability_catalog,
 )
 floor1 = project_cp_scale_canonical_stage(
     composition, CPScaleCanonicalStage.FLOOR1,
