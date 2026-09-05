@@ -69,6 +69,11 @@ for each endpoint arm, the visible indicator or boot state used, observer
 identity, and observation time. This is persisted as
 `MANUAL_VERIFICATION`, matching the repository's existing documented PoE
 manual protocol. It is not silently upgraded to runtime evidence.
+For a dark comparison endpoint to be attributable to absent delivery, the
+observer must also attest that both switches are ready, both exact links are
+ready, and both endpoints have reached a settled observable state. A booting,
+dead, or otherwise unsettled comparison arm is `UNOBSERVABLE`, never a valid
+negative control.
 
 No current automated endpoint API may emit a positive delivery result. SVI
 presence, DHCP state, registration, device creation, and link existence may be
@@ -121,18 +126,24 @@ than adding another evidence store.
 The PoE claim dimensions use canonical JSON strings for structured values.
 They preserve:
 
+- the exact candidate model and Packet Tracer build;
 - observed access-port names;
 - tested candidate/control binding pairs;
 - candidate-active binding triples `(switch_port, endpoint_model,
   endpoint_port)`;
 - the simultaneous candidate-active count;
 - control-arm outcome;
-- observation method and endpoint-observer identity.
+- per-arm visible indicators and ready/link/settled attestations;
+- observation method, endpoint-observer identity, and canonical UTC time;
+- cleanup status and inventory restoration.
 
 The active binding triples are the primitive authorization data. Counts are
 derived from and checked against those triples. Non-canonical JSON, duplicate
 bindings, malformed fields, count/list disagreement, active bindings outside
 the tested scope, or missing endpoint identity cap the claim at `UNKNOWN`.
+The initially qualified method whitelist contains only
+`manual_visible_power_state`. Missing or mismatched model/build provenance and
+anything other than `CLEAN`/`RESTORED` also cap the claim at `UNKNOWN`.
 
 `MeasuredCapabilityRecord` gains immutable dimensions and copies them into
 `CapabilityEvidence`. Existing records default to an empty mapping, preserving
@@ -143,10 +154,19 @@ to fail closed.
 ### 5. Authorize exact port-and-endpoint bindings
 
 `DeviceCapabilities` receives a typed collection of authorized PoE binding
-triples in addition to `poe_ports`. The resolver projects both values only
-from the same winning evidence after the central PoE claim-ceiling parser has
-validated it. Provenance is therefore not selected independently from the
-scope it authorizes.
+triples in addition to `poe_ports`. The resolver first applies the ordinary
+authority winner and malformed-claim blocker, then projects only independently
+valid exact-build scopes. Their exact triples may be unioned because every
+triple retains a corresponding evidence record; their simultaneous counts are
+never summed, and `poe_ports` is the maximum count demonstrated in one run.
+Provenance is therefore retained with every scope that contributes to the
+projection. A malformed decided claim of equal or greater authority blocks the
+aggregate instead of borrowing dimensions from another record.
+
+A control-only `supports_poe=UNKNOWN` observation is not a delivery claim and
+cannot outrank a coherent delivery observation. Snapshot reuse exposes
+`MANUAL_VERIFICATION` through its own provider, preserving that source instead
+of recategorizing it as runtime or controlled-probe evidence.
 
 `EndpointPortBinding` records the endpoint model. Governed physical designs
 must populate it for powered endpoints. The reference planner admits a
@@ -164,6 +184,12 @@ authorize another port, another endpoint model, another endpoint port, or a
 larger concurrent group. Where equivalence is not demonstrated, the planner
 returns `NEEDS_VERIFICATION` and the hardware plan remains
 `PARTIALLY_RESOLVED`.
+
+The generic `HardwarePlanner` follows the same rule: powered slices are drawn
+only from exact authorized switch ports. After the physical endpoint model is
+resolved, the compiler verifies the complete switch-port/endpoint-model/
+endpoint-port triple before emitting the link. It cannot turn an aggregate
+count into permission for a different catalog port or endpoint kind.
 
 ### 6. Govern the live lifecycle fail-closed
 
@@ -218,19 +244,20 @@ The planned file responsibilities are:
   observation, outcome, scope, and lifecycle data.
 - `domain/enterprise/services/poe_claims.py`: canonical dimension encoding,
   parsing, coherence checks, and claim ceiling.
-- `application/use_cases/qualify_poe_delivery.py`: qualification orchestration,
+- `application/use_cases/poe_delivery_qualification.py`: qualification orchestration,
   differential decision, simultaneous observation boundary, and cleanup.
-- `infrastructure/execution/probe_runtime.py`: Packet Tracer fixture operations
+- `infrastructure/execution/poe_delivery_runtime.py`: Packet Tracer fixture operations
   using only repository-confirmed APIs; it does not decide visible power.
-- `infrastructure/execution/manual_poe_delivery_observer.py`: a narrow injected
-  callback adapter that records typed, attributed visible-power judgments for
-  a governed runner without embedding policy in the MCP registry.
+- `PoEDeliveryObserver`: a narrow application protocol implemented by the
+  future governed runner to return typed, attributed visible-power judgments;
+  this offline task does not invent a UI observation or embed policy in the MCP
+  registry.
 - `domain/enterprise/models/capabilities.py` and
-  `domain/enterprise/services/capability_resolver.py`: projection of one
-  winning claim into count plus exact authorized scope.
+  `domain/enterprise/services/capability_resolver.py`: authority gating plus
+  exact-scope aggregation without summing independent concurrency claims.
 - `domain/enterprise/models/hardware.py`, the governed CP-SCALE physical
-  design, and `reference_hardware_planner.py`: exact endpoint-model binding and
-  admission enforcement.
+  design, `reference_hardware_planner.py`, and `enterprise_compiler.py`: exact
+  endpoint-model binding and admission enforcement before a link is emitted.
 - `infrastructure/catalog/measured_capabilities.py`: lossless dimensions in
   reviewed portable records.
 - a thin MCP registration only if needed to expose the new application use

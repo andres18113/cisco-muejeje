@@ -30,6 +30,12 @@ from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     ModulePlanner,
     SwitchCountPlanner,
 )
+from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+    PoEAuthorizedBinding,
+    PoEDeliveryClaimScope,
+    PoEDeliveryTestedBinding,
+    encode_poe_delivery_dimensions,
+)
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
 
 
@@ -50,13 +56,23 @@ def _candidate(
     layer3: CapabilityStatus = CapabilityStatus.SUPPORTED,
     access: int = 24,
     uplinks: int = 2,
+    authorized_ports: tuple[str, ...] | None = None,
 ) -> HardwareCandidate:
+    exact_ports = (
+        tuple(f"FastEthernet0/{index}" for index in range(1, access + 1))
+        if authorized_ports is None and poe is CapabilityStatus.SUPPORTED
+        else authorized_ports or ()
+    )
     return HardwareCandidate(
         model=model,
         capabilities=DeviceCapabilities(
             model=model, category="switch", fastethernet_ports=access,
             gigabit_ports=uplinks, port_count=access + uplinks,
             supports_poe=poe, poe_ports=poe_ports, layer3=layer3,
+            poe_authorized_bindings=[
+                PoEAuthorizedBinding(port, "7960", "Switch")
+                for port in exact_ports
+            ],
         ),
         ports=_ports(access, uplinks),
     )
@@ -87,25 +103,77 @@ def _plan():
     return result.plan
 
 
-def test_capability_evidence_priority_keeps_unknown_and_runtime_wins_inference():
+def _single_phone_plan():
+    result = EnterpriseDesigner().design(EnterpriseIntent(
+        name="Exact PoE",
+        sites=[SiteIntent(
+            name="Site",
+            type=SiteType.BRANCH,
+            endpoints=[EndpointRequirement(
+                role=DeviceRole.IP_PHONE,
+                count=1,
+                requires_poe=True,
+            )],
+        )],
+    ))
+    assert result.plan is not None and result.validation.is_valid
+    return result.plan
+
+
+def _one_port_delivery_dimensions(
+    *,
+    model: str = "Verified-24",
+    port: str = "FastEthernet0/1",
+    endpoint_model: str = "7960",
+    endpoint_port: str = "Switch",
+) -> dict[str, str]:
+    authorized = PoEAuthorizedBinding(port, endpoint_model, endpoint_port)
+    tested = PoEDeliveryTestedBinding(
+        switch_port=port,
+        comparison_port=port,
+        endpoint_model=endpoint_model,
+        endpoint_port=endpoint_port,
+        candidate_state="powered",
+        comparison_state="not_powered",
+        candidate_indicator="phone display booted",
+        comparison_indicator="phone display remained dark",
+        candidate_ready=True,
+        comparison_ready=True,
+    )
+    return encode_poe_delivery_dimensions(PoEDeliveryClaimScope(
+        candidate_model=model,
+        packet_tracer_build="PT 9.0",
+        access_ports=(port,),
+        tested_bindings=(tested,),
+        active_bindings=(authorized,),
+        simultaneous_active_ports=1,
+        comparison_model="2960-24TT",
+        observation_method="manual_visible_power_state",
+        observer_id="reviewer-1",
+        observed_at="2026-09-04T15:00:00Z",
+        cleanup_status="clean",
+        inventory_restoration="restored",
+    ))
+
+
+def test_capability_evidence_priority_keeps_unknown_and_manual_delivery_wins_inference():
     resolver = CapabilityResolver()
     evidence = [
         CapabilityEvidence(capability="supports_poe", status=CapabilityStatus.UNSUPPORTED, source=EvidenceSource.INFERRED),
         CapabilityEvidence(
             capability="supports_poe",
             status=CapabilityStatus.SUPPORTED,
-            source=EvidenceSource.PACKET_TRACER_RUNTIME,
+            source=EvidenceSource.MANUAL_VERIFICATION,
+            packet_tracer_version="PT 9.0",
             verified=True,
             observed_value=1,
-            dimensions={
-                "poe_access_port_count": "1",
-                "poe_delivery_tested_ports": "1",
-                "poe_delivery_active_ports": "1",
-            },
+            dimensions=_one_port_delivery_dimensions(),
         ),
     ]
 
-    assert resolver.resolve_evidence("supports_poe", evidence) is CapabilityStatus.SUPPORTED
+    assert resolver.resolve_evidence(
+        "supports_poe", evidence, "PT 9.0",
+    ) is CapabilityStatus.SUPPORTED
     assert resolver.resolve_evidence("layer3", evidence) is CapabilityStatus.UNKNOWN
     updated = resolver.with_evidence(
         _candidate().capabilities,
@@ -115,6 +183,150 @@ def test_capability_evidence_priority_keeps_unknown_and_runtime_wins_inference()
         )],
     )
     assert updated.supports_static_routes is CapabilityStatus.SUPPORTED
+
+
+def test_control_only_unknown_cannot_outweigh_valid_delivery_scope():
+    resolver = CapabilityResolver()
+    delivery = CapabilityEvidence(
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        source=EvidenceSource.MANUAL_VERIFICATION,
+        packet_tracer_version="PT 9.0",
+        verified=True,
+        observed_value=1,
+        dimensions=_one_port_delivery_dimensions(),
+    )
+    control_only = CapabilityEvidence(
+        capability="supports_poe",
+        status=CapabilityStatus.UNKNOWN,
+        source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        packet_tracer_version="PT 9.0",
+        verified=True,
+        dimensions={"poe_control_supported_ports": "24"},
+    )
+
+    resolved = resolver.with_evidence(
+        _candidate().capabilities, [delivery, control_only], "PT 9.0",
+    )
+
+    assert resolved.supports_poe is CapabilityStatus.SUPPORTED
+    assert resolved.poe_ports == 1
+    assert resolved.poe_authorized_bindings == [
+        PoEAuthorizedBinding("FastEthernet0/1", "7960", "Switch"),
+    ]
+
+
+def test_manual_observation_method_cannot_be_relabelled_as_automated_evidence():
+    for source in (
+        EvidenceSource.PACKET_TRACER_RUNTIME,
+        EvidenceSource.CONTROLLED_PROBE,
+    ):
+        claim = CapabilityEvidence(
+            capability="supports_poe",
+            status=CapabilityStatus.SUPPORTED,
+            source=source,
+            packet_tracer_version="PT 9.0",
+            verified=True,
+            observed_value=1,
+            dimensions=_one_port_delivery_dimensions(),
+        )
+
+        resolved = CapabilityResolver().with_evidence(
+            _candidate().capabilities, [claim], "PT 9.0",
+        )
+
+        assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+        assert resolved.poe_ports is None
+        assert resolved.poe_authorized_bindings == []
+
+
+def test_independent_delivery_claims_union_only_their_exact_bindings():
+    resolver = CapabilityResolver()
+    claims = [
+        CapabilityEvidence(
+            capability="supports_poe",
+            status=CapabilityStatus.SUPPORTED,
+            source=EvidenceSource.MANUAL_VERIFICATION,
+            packet_tracer_version="PT 9.0",
+            verified=True,
+            observed_value=1,
+            dimensions=_one_port_delivery_dimensions(),
+        ),
+        CapabilityEvidence(
+            capability="supports_poe",
+            status=CapabilityStatus.SUPPORTED,
+            source=EvidenceSource.MANUAL_VERIFICATION,
+            packet_tracer_version="PT 9.0",
+            verified=True,
+            observed_value=1,
+            dimensions=_one_port_delivery_dimensions(
+                port="FastEthernet0/2",
+                endpoint_model="AccessPoint-PT",
+                endpoint_port="Port 0",
+            ),
+        ),
+    ]
+
+    resolved = resolver.with_evidence(
+        _candidate().capabilities, claims, "PT 9.0",
+    )
+
+    assert resolved.supports_poe is CapabilityStatus.SUPPORTED
+    assert resolved.poe_ports == 1  # Independent runs do not prove simultaneity.
+    assert resolved.poe_authorized_bindings == [
+        PoEAuthorizedBinding("FastEthernet0/1", "7960", "Switch"),
+        PoEAuthorizedBinding(
+            "FastEthernet0/2", "AccessPoint-PT", "Port 0",
+        ),
+    ]
+    assert PoEAuthorizedBinding(
+        "FastEthernet0/3", "7960", "Switch",
+    ) not in resolved.poe_authorized_bindings
+
+
+def test_malformed_higher_authority_poe_claim_blocks_lower_scope_without_borrowing():
+    resolver = CapabilityResolver()
+    valid = CapabilityEvidence(
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        source=EvidenceSource.MANUAL_VERIFICATION,
+        packet_tracer_version="PT 9.0",
+        verified=True,
+        observed_value=1,
+        dimensions=_one_port_delivery_dimensions(),
+    )
+    malformed = valid.model_copy(update={
+        "source": EvidenceSource.CONTROLLED_PROBE,
+        "dimensions": {},
+    })
+
+    resolved = resolver.with_evidence(
+        _candidate().capabilities, [valid, malformed], "PT 9.0",
+    )
+
+    assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+    assert resolved.poe_ports is None
+    assert resolved.poe_authorized_bindings == []
+
+
+def test_delivery_scope_for_another_model_fails_closed_at_projection():
+    evidence = CapabilityEvidence(
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        source=EvidenceSource.MANUAL_VERIFICATION,
+        packet_tracer_version="PT 9.0",
+        verified=True,
+        observed_value=1,
+        dimensions=_one_port_delivery_dimensions(model="Other-24"),
+    )
+
+    resolved = CapabilityResolver().with_evidence(
+        _candidate().capabilities, [evidence], "PT 9.0",
+    )
+
+    assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+    assert resolved.poe_ports is None
+    assert resolved.poe_authorized_bindings == []
 
 
 def test_poe_evidence_without_delivery_dimensions_is_capped_at_resolver():
@@ -192,6 +404,44 @@ def test_unknown_poe_produces_provisional_candidate_not_a_final_selection():
 
     assert choice is not None
     assert choice.status is DeviceCandidateStatus.NEEDS_VERIFICATION
+
+
+def test_generic_planner_assigns_powered_slice_only_to_an_authorized_port():
+    candidate = _candidate(
+        poe_ports=1,
+        authorized_ports=("FastEthernet0/5",),
+    )
+
+    hardware = HardwarePlanner().plan(_single_phone_plan(), [candidate])
+
+    powered = [
+        assignment
+        for site in hardware.site_hardware
+        for block in site.access_blocks
+        for assignment in block.port_assignments
+        if assignment.requires_poe
+    ]
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert [(item.first_port, item.last_port, item.count) for item in powered] == [
+        ("FastEthernet0/5", "FastEthernet0/5", 1),
+    ]
+
+
+def test_generic_planner_does_not_turn_count_only_poe_into_another_port():
+    candidate = _candidate(poe_ports=1, authorized_ports=())
+
+    hardware = HardwarePlanner().plan(_single_phone_plan(), [candidate])
+
+    powered = [
+        assignment
+        for site in hardware.site_hardware
+        for block in site.access_blocks
+        for assignment in block.port_assignments
+        if assignment.requires_poe
+    ]
+    assert hardware.status is HardwarePlanStatus.PARTIALLY_RESOLVED
+    assert powered == []
+    assert any("sin puerto asignado" in warning for warning in hardware.warnings)
 
 
 def test_hardware_planner_builds_three_tier_access_slices_and_redundant_uplinks():

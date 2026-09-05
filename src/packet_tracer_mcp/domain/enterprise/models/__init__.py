@@ -9,6 +9,7 @@ from .capabilities import (
     DeviceRequirement,
     DeviceSelectionResult,
     EvidenceSource,
+    PoEAuthorizedBinding,
 )
 from .capacity import AccessCapacityRequirement, CapacityPlan, PortAttachmentPolicy
 from .compilation import (
@@ -80,6 +81,14 @@ from .discovery import (
     ProbeLevel, ProbeRequest, ProbeSafety, ProbeSession, ProbeSessionResult,
     RuntimeDeviceDescriptor, RuntimePortDescriptor, SnapshotDiff,
     classify_inventory_restoration,
+)
+from .poe_delivery import (
+    PoEDeliveryArmObservation, PoEDeliveryArmState,
+    PoEDeliveryBindingFixtureIdentity, PoEDeliveryBindingObservation,
+    PoEDeliveryBindingRequest, PoEDeliveryDeviceIdentity,
+    PoEDeliveryFixtureIdentity, PoEDeliveryLinkEndpoint,
+    PoEDeliveryLinkIdentity, PoEDeliveryManualObservation,
+    PoEDeliveryQualificationRequest, PoEDeliveryQualificationResult,
 )
 from .hardware import (
     AccessBlockPlan, CatalogCoverageReport, EndpointPortBinding, HardwareCandidate, HardwareLinkRequirement,
@@ -165,6 +174,13 @@ __all__ = [
     "PlannedNetworkDevice", "PortAssignmentRange", "PortAttachmentPolicy",
     "PhysicalCompilationProfile", "PhysicalModelProfile", "PhysicalSubstitutionEvidence", "PortClass", "PortDescriptor", "ProbeCost", "ProbeDefinition", "ProbeExecutionStatus",
     "InventoryRestoration", "ProbeIsolationLevel", "classify_inventory_restoration",
+    "PoEDeliveryArmObservation", "PoEDeliveryArmState",
+    "PoEDeliveryBindingFixtureIdentity", "PoEDeliveryBindingObservation",
+    "PoEDeliveryBindingRequest", "PoEDeliveryDeviceIdentity",
+    "PoEDeliveryFixtureIdentity", "PoEDeliveryLinkEndpoint",
+    "PoEDeliveryLinkIdentity", "PoEDeliveryManualObservation",
+    "PoEDeliveryQualificationRequest", "PoEDeliveryQualificationResult",
+    "PoEAuthorizedBinding",
     "ProbeLevel", "ProbeRequest", "ProbeSafety", "ProbeSession", "ProbeSessionResult",
     "ResiliencyLevel", "RuntimeDeviceDescriptor", "RuntimePortDescriptor", "SegmentRequirement", "SegmentRole",
     "SiteHardwarePlan", "SiteIntent", "SitePlan", "SiteType", "TopologyDesign",

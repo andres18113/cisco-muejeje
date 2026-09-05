@@ -32,6 +32,7 @@ from .measured_port_inventories import (
 from .measured_capabilities import measured_capability_evidence
 from .modules import ALL_MODULES, get_serial_module
 from .capability_providers import (
+    ManualVerificationCapabilityProvider,
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
     StaticVerifiedCapabilityProvider,
@@ -412,6 +413,7 @@ def packet_tracer_enterprise_capability_adapter(
     return EnterpriseCapabilityAdapter(
         providers=[
             StaticVerifiedCapabilityProvider(measured_capability_evidence()),
+            ManualVerificationCapabilityProvider(snapshots, version),
             ProbeCapabilityProvider(snapshots, version),
             RuntimeCapabilityProvider(snapshots, version),
         ],

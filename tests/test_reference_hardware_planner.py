@@ -5,6 +5,7 @@ from __future__ import annotations
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCandidateStatus,
+    PoEAuthorizedBinding,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     AccessBlockPlan,
@@ -85,6 +86,7 @@ def _design() -> PhysicalDesignSpec:
                 endpoint_id="endpoint/site/default/user_pc/001",
                 device_id="sw1",
                 device_port="FastEthernet0/24",
+                endpoint_model="PC-PT",
             )],
         )],
     )
@@ -167,6 +169,7 @@ def _poe_design(
                     endpoint_id=f"endpoint/site/default/ip_phone/{index:03d}",
                     device_id="sw1",
                     device_port=f"FastEthernet0/{first_port + index - 1}",
+                    endpoint_model="7960",
                     endpoint_port="Switch",
                 )
                 for index in range(1, phones + 1)
@@ -190,6 +193,12 @@ def _rebudget(candidates, model: str, poe_ports: int):
                 update={
                     "supports_poe": CapabilityStatus.SUPPORTED,
                     "poe_ports": poe_ports,
+                    "poe_authorized_bindings": [
+                        PoEAuthorizedBinding(
+                            f"FastEthernet0/{index}", "7960", "Switch",
+                        )
+                        for index in range(1, poe_ports + 1)
+                    ],
                 },
             ),
         })
@@ -280,6 +289,61 @@ def test_poe_demand_beyond_the_exact_admitted_capacity_is_unresolved():
     assert any(
         "sw1" in item and "3" in item and "2" in item for item in result.warnings
     )
+
+
+def test_exact_delivery_binding_authorizes_only_its_measured_switch_port():
+    candidates = _rebudget(_switch_candidates(), "3560-24PS", 1)
+
+    exact = ReferenceHardwarePlanner().plan(
+        _poe_enterprise(), _poe_design(model="3560-24PS"), candidates,
+    )
+    adjacent = ReferenceHardwarePlanner().plan(
+        _poe_enterprise(),
+        _poe_design(model="3560-24PS", first_port=2),
+        candidates,
+    )
+
+    assert exact.status is HardwarePlanStatus.VALID
+    assert adjacent.status is HardwarePlanStatus.PARTIALLY_RESOLVED
+    assert adjacent.site_hardware[0].devices[0].selection_status is (
+        DeviceCandidateStatus.NEEDS_VERIFICATION
+    )
+
+
+def test_exact_delivery_binding_does_not_authorize_another_endpoint_identity():
+    candidates = _rebudget(_switch_candidates(), "3560-24PS", 1)
+    wrong_model = _poe_design(model="3560-24PS")
+    wrong_model.sites[0].endpoint_bindings[0].endpoint_model = "AccessPoint-PT"
+    wrong_port = _poe_design(model="3560-24PS")
+    wrong_port.sites[0].endpoint_bindings[0].endpoint_port = "Port 0"
+
+    model_result = ReferenceHardwarePlanner().plan(
+        _poe_enterprise(), wrong_model, candidates,
+    )
+    port_result = ReferenceHardwarePlanner().plan(
+        _poe_enterprise(), wrong_port, candidates,
+    )
+
+    assert model_result.status is HardwarePlanStatus.PARTIALLY_RESOLVED
+    assert port_result.status is HardwarePlanStatus.PARTIALLY_RESOLVED
+
+
+def test_two_simultaneous_exact_bindings_authorize_only_that_complete_group():
+    candidates = _rebudget(_switch_candidates(), "3560-24PS", 2)
+
+    exact = ReferenceHardwarePlanner().plan(
+        _poe_enterprise(phones=2),
+        _poe_design(model="3560-24PS", phones=2),
+        candidates,
+    )
+    outside = ReferenceHardwarePlanner().plan(
+        _poe_enterprise(phones=2),
+        _poe_design(model="3560-24PS", phones=2, first_port=2),
+        candidates,
+    )
+
+    assert exact.status is HardwarePlanStatus.VALID
+    assert outside.status is HardwarePlanStatus.PARTIALLY_RESOLVED
 
 
 def test_powered_endpoints_may_not_be_bound_to_unpowered_uplink_ports():

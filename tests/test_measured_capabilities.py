@@ -9,6 +9,8 @@ UNKNOWN, and newer runtime evidence keeps precedence.
 
 from __future__ import annotations
 
+import pytest
+
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityEvidence,
     CapabilityStatus,
@@ -26,12 +28,20 @@ from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import
     CapabilityResolver,
     CatalogDeviceFacts,
 )
+from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+    PoEAuthorizedBinding,
+    PoEDeliveryClaimScope,
+    PoEDeliveryTestedBinding,
+    encode_poe_delivery_dimensions,
+)
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
     packet_tracer_enterprise_capability_adapter,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
     MEASURED_CAPABILITY_RECORDS,
+    MeasuredCapabilityRecord,
+    measured_capability_evidence,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
@@ -44,12 +54,77 @@ from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store 
 BUILD = MEASURED_BACKEND_VERSION
 
 
-def _delivery_dimensions(*, active: int, tested: int = 24) -> dict[str, str]:
-    return {
-        "poe_access_port_count": "24",
-        "poe_delivery_tested_ports": str(tested),
-        "poe_delivery_active_ports": str(active),
-    }
+def _delivery_dimensions(
+    *, active: int, tested: int = 24, model: str = "3560-24PS",
+) -> dict[str, str]:
+    access_ports = tuple(
+        f"FastEthernet0/{index}" for index in range(1, 25)
+    )
+    tested_bindings = tuple(
+        PoEDeliveryTestedBinding(
+            switch_port=port,
+            comparison_port=port,
+            endpoint_model="7960",
+            endpoint_port="Switch",
+            candidate_state=(
+                "powered" if index < active else "not_powered"
+            ),
+            comparison_state="not_powered",
+            candidate_indicator="test fixture powered",
+            comparison_indicator="test fixture dark",
+            candidate_ready=True,
+            comparison_ready=True,
+        )
+        for index, port in enumerate(access_ports[:tested])
+    )
+    active_bindings = tuple(
+        binding.authorized_binding for binding in tested_bindings[:active]
+    )
+    return encode_poe_delivery_dimensions(PoEDeliveryClaimScope(
+        candidate_model=model,
+        packet_tracer_build=BUILD,
+        access_ports=access_ports,
+        tested_bindings=tested_bindings,
+        active_bindings=active_bindings,
+        simultaneous_active_ports=len(active_bindings),
+        comparison_model="2960-24TT",
+        observation_method="manual_visible_power_state",
+        observer_id="test-reviewer",
+        observed_at="2026-09-04T15:00:00Z",
+        cleanup_status="clean",
+        inventory_restoration="restored",
+    ))
+
+
+def _one_binding_delivery_dimensions(
+    *, packet_tracer_version: str = BUILD,
+) -> dict[str, str]:
+    binding = PoEAuthorizedBinding("FastEthernet0/1", "7960", "Switch")
+    return encode_poe_delivery_dimensions(PoEDeliveryClaimScope(
+        candidate_model="3560-24PS",
+        packet_tracer_build=packet_tracer_version,
+        access_ports=("FastEthernet0/1",),
+        tested_bindings=(PoEDeliveryTestedBinding(
+            switch_port=binding.switch_port,
+            comparison_port="FastEthernet0/1",
+            endpoint_model=binding.endpoint_model,
+            endpoint_port=binding.endpoint_port,
+            candidate_state="powered",
+            comparison_state="not_powered",
+            candidate_indicator="test fixture powered",
+            comparison_indicator="test fixture dark",
+            candidate_ready=True,
+            comparison_ready=True,
+        ),),
+        active_bindings=(binding,),
+        simultaneous_active_ports=1,
+        comparison_model="2960-24TT",
+        observation_method="manual_visible_power_state",
+        observer_id="reviewer-1",
+        observed_at="2026-09-04T15:00:00Z",
+        cleanup_status="clean",
+        inventory_restoration="restored",
+    ))
 
 EXPECTED = {
     "1941": {"layer3": CapabilityStatus.SUPPORTED},
@@ -94,6 +169,38 @@ EXPECTED_RECORD_IDENTITIES = {
 } - {("3560-24PS", "layer3")} | {
     ("3560-24PS", "multilayer_intervlan"),
 }
+
+
+def test_measured_capability_record_preserves_claim_dimensions(monkeypatch):
+    dimensions = _one_binding_delivery_dimensions(packet_tracer_version="PT 10.0")
+    record = MeasuredCapabilityRecord(
+        model="3560-24PS",
+        capability="supports_poe",
+        status=CapabilityStatus.SUPPORTED,
+        snapshot_hash="a" * 64,
+        producer="poe-delivery-qualification",
+        original_source=EvidenceSource.MANUAL_VERIFICATION,
+        verification_method="manual_visible_power_state",
+        summary="one exact binding",
+        packet_tracer_version="PT 10.0",
+        observed_value=1,
+        dimensions=dimensions,
+    )
+
+    direct = record.as_evidence()
+    assert direct.dimensions == dimensions
+    assert direct.packet_tracer_version == "PT 10.0"
+
+    direct.dimensions["poe_access_port_count"] = "99"
+    assert record.dimensions == dimensions
+    with pytest.raises(TypeError):
+        record.dimensions["poe_access_port_count"] = "99"
+
+    import src.packet_tracer_mcp.infrastructure.catalog.measured_capabilities as measured
+
+    monkeypatch.setattr(measured, "MEASURED_CAPABILITY_RECORDS", (record,))
+    projected = measured_capability_evidence()["3560-24PS"][0]
+    assert projected.dimensions == dimensions
 
 
 def test_governed_capabilities_do_not_depend_on_cwd_machine_state(
@@ -199,10 +306,10 @@ def test_execution_snapshot_reuses_the_first_resolution_when_a_provider_changes(
             return (CapabilityEvidence(
                 capability="supports_poe",
                 status=status,
-                source=EvidenceSource.PACKET_TRACER_RUNTIME,
+                source=EvidenceSource.MANUAL_VERIFICATION,
                 packet_tracer_version=BUILD,
                 verified=True,
-                observed_value=24 if status is CapabilityStatus.SUPPORTED else None,
+                observed_value=24 if status is CapabilityStatus.SUPPORTED else 0,
                 dimensions=_delivery_dimensions(
                     active=24 if status is CapabilityStatus.SUPPORTED else 0,
                 ),
@@ -321,19 +428,20 @@ def test_poe_projection_and_conflict_share_the_authoritative_winner():
         CapabilityEvidence(
             capability="supports_poe",
             status=CapabilityStatus.SUPPORTED,
-            source=EvidenceSource.CONTROLLED_PROBE,
+            source=EvidenceSource.STATIC_OVERRIDE,
             packet_tracer_version=BUILD,
             verified=True,
             observed_value=24,
-            dimensions=_delivery_dimensions(active=24),
+            dimensions=_delivery_dimensions(active=24, model="tie"),
         ),
         CapabilityEvidence(
             capability="supports_poe",
             status=CapabilityStatus.UNSUPPORTED,
-            source=EvidenceSource.PACKET_TRACER_RUNTIME,
+            source=EvidenceSource.MANUAL_VERIFICATION,
             packet_tracer_version=BUILD,
             verified=True,
-            dimensions=_delivery_dimensions(active=0),
+            observed_value=0,
+            dimensions=_delivery_dimensions(active=0, model="tie"),
         ),
     ]
     resolver = CapabilityResolver()
@@ -345,14 +453,14 @@ def test_poe_projection_and_conflict_share_the_authoritative_winner():
     assert resolved.supports_poe is CapabilityStatus.UNSUPPORTED
     assert resolved.poe_ports is None
     assert len(conflicts) == 1
-    assert conflicts[0].winner is EvidenceSource.PACKET_TRACER_RUNTIME
+    assert conflicts[0].winner is EvidenceSource.MANUAL_VERIFICATION
 
 
-def test_decided_delivery_claim_wins_same_authority_legacy_unknown():
+def test_same_authority_malformed_decided_claim_blocks_valid_delivery_scope():
     legacy = CapabilityEvidence(
         capability="supports_poe",
         status=CapabilityStatus.SUPPORTED,
-        source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        source=EvidenceSource.MANUAL_VERIFICATION,
         packet_tracer_version=BUILD,
         verified=True,
         observed_value=24,
@@ -360,11 +468,11 @@ def test_decided_delivery_claim_wins_same_authority_legacy_unknown():
     delivery = CapabilityEvidence(
         capability="supports_poe",
         status=CapabilityStatus.SUPPORTED,
-        source=EvidenceSource.PACKET_TRACER_RUNTIME,
+        source=EvidenceSource.MANUAL_VERIFICATION,
         packet_tracer_version=BUILD,
         verified=True,
         observed_value=2,
-        dimensions=_delivery_dimensions(active=2, tested=2),
+        dimensions=_delivery_dimensions(active=2, tested=2, model="tie"),
     )
     resolver = CapabilityResolver()
     base = resolver.resolve(CatalogDeviceFacts(model="tie", category="switch"))
@@ -372,9 +480,10 @@ def test_decided_delivery_claim_wins_same_authority_legacy_unknown():
     winner = resolver.winning_evidence("supports_poe", [legacy, delivery], BUILD)
     resolved = resolver.with_evidence(base, [legacy, delivery], BUILD)
 
-    assert winner is not None and winner is delivery
-    assert resolved.supports_poe is CapabilityStatus.SUPPORTED
-    assert resolved.poe_ports == 2
+    assert winner is not None and winner.status is CapabilityStatus.UNKNOWN
+    assert winner is not delivery
+    assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+    assert resolved.poe_ports is None
 
 
 def test_dynamic_adapter_result_mutation_cannot_change_a_later_execution(tmp_path):

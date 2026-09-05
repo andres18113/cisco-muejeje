@@ -120,6 +120,18 @@ CONTAINED_MUTATION_FAMILIES = {
         ),
         "ceiling": "a probe result is evidence about the probe, never about a deployed device",
     },
+    "poe_delivery_qualification": {
+        "owner": "infrastructure/execution/poe_delivery_runtime.py",
+        "containment": (
+            "disposable identities are recorded before dispatch; the application "
+            "owns endpoint-first cleanup and bounded inventory restoration"
+        ),
+        "ceiling": (
+            "fixture identity and link read-back are not powered delivery; only "
+            "a complete typed manual observation plus clean restoration may "
+            "authorize its exact bindings"
+        ),
+    },
     "shared_dispatch": {
         "owner": "infrastructure/execution/configuration_runtime.py",
         "containment": (
@@ -186,6 +198,7 @@ PAYLOAD_BUILDERS_AND_PROSE = {
 _ORCHESTRATION_CALLS = {
     "ensure_device", "ensure_link", "ensure_module", "remove_device",
     "create_temporary_device", "delete_temporary_device",
+    "create_device", "create_link", "delete_device",
     "apply_actions", "cleanup_actions",
 }
 

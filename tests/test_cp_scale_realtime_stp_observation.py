@@ -47,6 +47,14 @@ from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
 )
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
+    cp_scale_physical_design,
+)
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+    PoEDeliveryClaimScope,
+    PoEDeliveryTestedBinding,
+    encode_poe_delivery_dimensions,
+)
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     OperationalQueryId,
 )
@@ -330,19 +338,67 @@ class DeliveryEvidenceProvider:
             or packet_tracer_version != MEASURED_BACKEND_VERSION
         ):
             return ()
-        return (CapabilityEvidence(
-            capability="supports_poe",
-            status=CapabilityStatus.SUPPORTED,
-            source=EvidenceSource.STATIC_OVERRIDE,
-            packet_tracer_version=MEASURED_BACKEND_VERSION,
-            verified=True,
-            observed_value=24,
-            dimensions={
-                "poe_access_port_count": "24",
-                "poe_delivery_tested_ports": "24",
-                "poe_delivery_active_ports": "24",
-            },
-        ),)
+        design = cp_scale_physical_design()
+        model_by_device = {
+            device.id: device.model
+            for site in design.sites
+            for device in site.devices
+        }
+        by_fixture = {}
+        for site in design.sites:
+            for binding in site.endpoint_bindings:
+                if binding.endpoint_model not in {"7960", "AccessPoint-PT"}:
+                    continue
+                candidate_model = model_by_device[binding.device_id]
+                if candidate_model != model:
+                    continue
+                by_fixture.setdefault(binding.device_id, []).append(binding)
+        claims = []
+        for fixture_id, bindings in sorted(by_fixture.items()):
+            tested = tuple(
+                PoEDeliveryTestedBinding(
+                    switch_port=binding.device_port,
+                    comparison_port=binding.device_port,
+                    endpoint_model=binding.endpoint_model,
+                    endpoint_port=binding.endpoint_port,
+                    candidate_state="powered",
+                    comparison_state="not_powered",
+                    candidate_indicator="synthetic STP fixture powered",
+                    comparison_indicator="synthetic STP fixture dark",
+                    candidate_ready=True,
+                    comparison_ready=True,
+                )
+                for binding in sorted(
+                    bindings, key=lambda item: item.device_port,
+                )
+            )
+            dimensions = encode_poe_delivery_dimensions(PoEDeliveryClaimScope(
+                candidate_model=model,
+                packet_tracer_build=MEASURED_BACKEND_VERSION,
+                access_ports=tuple(item.switch_port for item in tested),
+                tested_bindings=tested,
+                active_bindings=tuple(
+                    item.authorized_binding for item in tested
+                ),
+                simultaneous_active_ports=len(tested),
+                comparison_model="2960-24TT",
+                observation_method="manual_visible_power_state",
+                observer_id="stp-downstream-test-fixture",
+                observed_at="2026-09-04T15:00:00Z",
+                cleanup_status="clean",
+                inventory_restoration="restored",
+            ))
+            claims.append(CapabilityEvidence(
+                capability="supports_poe",
+                status=CapabilityStatus.SUPPORTED,
+                source=EvidenceSource.STATIC_OVERRIDE,
+                source_detail="synthetic STP prerequisite: " + fixture_id,
+                packet_tracer_version=MEASURED_BACKEND_VERSION,
+                verified=True,
+                observed_value=len(tested),
+                dimensions=dimensions,
+            ))
+        return tuple(claims)
 
 
 capability_catalog = EnterpriseCapabilityAdapter(

@@ -73,6 +73,20 @@ _NM_4A_S = ModuleInstallation(
 )
 
 
+# Exact models selected by the productive E4 compilation profile for every
+# wired endpoint role present in this physical design.  The domain scenario
+# owns its copy of the resulting physical contract; importing the
+# infrastructure catalogue here would invert the domain/infrastructure
+# dependency boundary.
+_ENDPOINT_MODEL_BY_ROLE = {
+    DeviceRole.USER_PC: "PC-PT",
+    DeviceRole.LAPTOP: "Laptop-PT",
+    DeviceRole.IP_PHONE: "7960",
+    DeviceRole.PRINTER: "Printer-PT",
+    DeviceRole.ACCESS_POINT: "AccessPoint-PT",
+}
+
+
 def _device(
     device_id: str,
     site_id: str,
@@ -136,6 +150,7 @@ def _binding(
         endpoint_id=_endpoint_id(zone, role, index),
         device_id=switch,
         device_port=port,
+        endpoint_model=_ENDPOINT_MODEL_BY_ROLE[role],
         endpoint_port=endpoint_port,
         provenance=provenance,
     )

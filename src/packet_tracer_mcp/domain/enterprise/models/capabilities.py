@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -23,6 +24,15 @@ class EvidenceSource(str, Enum):
     CONTROLLED_PROBE = "controlled_probe"
     MANUAL_VERIFICATION = "manual_verification"
     INFERRED = "inferred"
+
+
+@dataclass(frozen=True, order=True)
+class PoEAuthorizedBinding:
+    """Exact powered-endpoint attachment authorized by one delivery claim."""
+
+    switch_port: str
+    endpoint_model: str
+    endpoint_port: str
 
 
 class CapabilityEvidence(BaseModel):
@@ -73,6 +83,7 @@ class DeviceCapabilities(BaseModel):
     supports_cme: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_poe: CapabilityStatus = CapabilityStatus.UNKNOWN
     poe_ports: int | None = None
+    poe_authorized_bindings: list[PoEAuthorizedBinding] = Field(default_factory=list)
     supports_ipv6: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_wireless: CapabilityStatus = CapabilityStatus.UNKNOWN
     source: str = "catalog"

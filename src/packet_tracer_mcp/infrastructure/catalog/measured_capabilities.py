@@ -21,7 +21,9 @@ their conclusions without broadening their claim ceilings.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from ...domain.enterprise.models.capabilities import (
     CapabilityEvidence,
@@ -44,6 +46,13 @@ class MeasuredCapabilityRecord:
     verification_method: str
     summary: str
     observed_value: int | None = None
+    packet_tracer_version: str = MEASURED_BACKEND_VERSION
+    dimensions: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "dimensions", MappingProxyType(dict(self.dimensions)),
+        )
 
     def as_evidence(self) -> CapabilityEvidence:
         """Return resolver evidence without pretending the snapshot is live."""
@@ -55,11 +64,12 @@ class MeasuredCapabilityRecord:
                 f"governed {self.original_source.value}/{self.producer}; "
                 f"snapshot={self.snapshot_hash}; method={self.verification_method}"
             ),
-            packet_tracer_version=MEASURED_BACKEND_VERSION,
+            packet_tracer_version=self.packet_tracer_version,
             confidence="live_qualified",
             verified=True,
             observed_value=self.observed_value,
             notes=self.summary,
+            dimensions=dict(self.dimensions),
         )
 
 
@@ -72,7 +82,9 @@ def _supported(
     summary: str,
     *,
     original_source: EvidenceSource = EvidenceSource.CONTROLLED_PROBE,
+    packet_tracer_version: str = MEASURED_BACKEND_VERSION,
     observed_value: int | None = None,
+    dimensions: Mapping[str, str] | None = None,
 ) -> MeasuredCapabilityRecord:
     return MeasuredCapabilityRecord(
         model=model,
@@ -83,7 +95,9 @@ def _supported(
         original_source=original_source,
         verification_method=verification_method,
         summary=summary,
+        packet_tracer_version=packet_tracer_version,
         observed_value=observed_value,
+        dimensions=dict(dimensions or {}),
     )
 
 
@@ -96,6 +110,8 @@ def _unknown(
     summary: str,
     *,
     original_source: EvidenceSource,
+    packet_tracer_version: str = MEASURED_BACKEND_VERSION,
+    dimensions: Mapping[str, str] | None = None,
 ) -> MeasuredCapabilityRecord:
     """Retain an exact observation without widening it into authorization."""
 
@@ -108,6 +124,8 @@ def _unknown(
         original_source=original_source,
         verification_method=verification_method,
         summary=summary,
+        packet_tracer_version=packet_tracer_version,
+        dimensions=dict(dimensions or {}),
     )
 
 

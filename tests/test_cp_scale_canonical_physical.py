@@ -12,6 +12,7 @@ from tests.poe_delivery_capabilities import (
     delivery_qualified_capability_catalog,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+    EndpointPortBinding,
     HardwarePlanStatus,
     PortClass,
 )
@@ -224,6 +225,44 @@ def test_only_documented_ambiguities_are_marked_as_implementation_allocations():
     ]
 
     assert len(allocated) == 18
+
+
+def test_every_canonical_physical_binding_names_its_exact_endpoint_model():
+    """The physical contract carries the same role/model identity E4 instantiates."""
+    profile = PacketTracerTopologyCatalogAdapter().compilation_profile()
+    expected_by_role = {
+        role.value: model
+        for role, model in profile.endpoint_role_models.items()
+    }
+    bindings = [
+        binding
+        for site in cp_scale_physical_design().sites
+        for binding in site.endpoint_bindings
+    ]
+
+    assert len(bindings) == 199
+    for binding in bindings:
+        role = binding.endpoint_id.rsplit("/", 2)[-2]
+        assert binding.endpoint_model == expected_by_role[role], binding.endpoint_id
+
+
+def test_legacy_binding_without_endpoint_model_is_readable_but_not_exact():
+    legacy = EndpointPortBinding.model_validate({
+        "endpoint_id": "endpoint/site/default/ip_phone/001",
+        "device_id": "sw1",
+        "device_port": "FastEthernet0/1",
+        "endpoint_port": "Switch",
+    })
+    authorized_exact_bindings = {
+        ("FastEthernet0/1", "7960", "Switch"),
+    }
+
+    assert legacy.endpoint_model == ""
+    assert (
+        legacy.device_port,
+        legacy.endpoint_model,
+        legacy.endpoint_port,
+    ) not in authorized_exact_bindings
 
 
 def test_every_powered_endpoint_sits_on_a_powered_access_port():

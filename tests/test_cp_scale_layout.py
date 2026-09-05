@@ -32,6 +32,7 @@ from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
+from tests.poe_delivery_capabilities import synthetic_poe_authorized_bindings
 
 
 _LAYOUT = LayoutProfile(canvas_width=16_000, canvas_height=8_000)
@@ -49,6 +50,9 @@ def _compile():
         "capabilities": switch.capabilities.model_copy(update={
             "supports_poe": CapabilityStatus.SUPPORTED,
             "poe_ports": 24,
+            "poe_authorized_bindings": synthetic_poe_authorized_bindings(
+                tuple(f"FastEthernet0/{index}" for index in range(1, 25))
+            ),
             "layer3": CapabilityStatus.SUPPORTED,
         }),
     })

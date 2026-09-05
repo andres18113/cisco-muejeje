@@ -570,6 +570,11 @@ class EnterpriseCompiler:
         issues: list[CompilationIssue],
     ) -> list[LinkPlan]:
         links: list[LinkPlan] = []
+        planned_devices = {
+            device.id: device
+            for site in hardware.site_hardware
+            for device in site.devices
+        }
         attachable: dict[str, list[_CompiledEndpoint]] = defaultdict(list)
         attached: set[str] = set()
         for endpoint in endpoints.values():
@@ -654,6 +659,15 @@ class EnterpriseCompiler:
             )
             if not switch_port:
                 continue
+            if not _poe_endpoint_authorized(
+                planned_devices.get(binding.device_id),
+                switch_port,
+                endpoint,
+                endpoint_port,
+                issues,
+            ):
+                allocator.release(binding.device_id, switch_port, reservation)
+                continue
             role = (
                 ConcreteLinkRole.SERVER_ACCESS
                 if endpoint.expanded.role in _SERVER_ROLES
@@ -707,6 +721,17 @@ class EnterpriseCompiler:
                     allow_class_fallback=False,
                 )
                 if not switch_port:
+                    continue
+                if not _poe_endpoint_authorized(
+                    planned_devices.get(assignment.device_id),
+                    switch_port,
+                    endpoint,
+                    endpoint.profile.network_port,
+                    issues,
+                ):
+                    allocator.release(
+                        assignment.device_id, switch_port, reservation,
+                    )
                     continue
                 role = (
                     ConcreteLinkRole.SERVER_ACCESS
@@ -953,6 +978,37 @@ def _error(
         subject=subject,
         details=details,
     )
+
+
+def _poe_endpoint_authorized(
+    switch: PlannedNetworkDevice | None,
+    switch_port: str,
+    endpoint: _CompiledEndpoint,
+    endpoint_port: str,
+    issues: list[CompilationIssue],
+) -> bool:
+    """Enforce the exact endpoint/model/port ceiling after model resolution."""
+
+    if not endpoint.expanded.requires_poe:
+        return True
+    authorized = bool(switch) and any(
+        binding.switch_port == switch_port
+        and binding.endpoint_model == endpoint.profile.model
+        and binding.endpoint_port == endpoint_port
+        for binding in switch.poe_authorized_bindings
+    )
+    if authorized:
+        return True
+    issues.append(_error(
+        CompilationIssueCode.POE_DELIVERY_BINDING_UNAUTHORIZED,
+        f"{endpoint.expanded.id}: no PoE delivery claim covers "
+        f"{switch_port}/{endpoint.profile.model}/{endpoint_port}.",
+        endpoint.expanded.id,
+        switch_port=switch_port,
+        endpoint_model=endpoint.profile.model,
+        endpoint_port=endpoint_port,
+    ))
+    return False
 
 
 def _hardware_plan_resolution_issues(hardware: HardwarePlan) -> list[CompilationIssue]:

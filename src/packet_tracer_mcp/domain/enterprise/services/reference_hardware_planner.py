@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from ..models.capabilities import CapabilityStatus, DeviceCandidateStatus
+from ..models.capabilities import (
+    CapabilityStatus,
+    DeviceCandidateStatus,
+    PoEAuthorizedBinding,
+)
 from ..models.enterprise_plan import EnterprisePlan
 from ..models.hardware import (
     HardwareCandidate,
     HardwarePlan,
     HardwarePlanStatus,
     PhysicalDesignSpec,
+    EndpointPortBinding,
     PlannedNetworkDevice,
     PortClass,
     SiteHardwarePlan,
@@ -77,11 +82,11 @@ class ReferenceHardwarePlanner:
             for binding in site.endpoint_bindings:
                 required_ports[binding.device_id].add(binding.device_port)
 
-        powered_ports = self._powered_ports_by_device(enterprise, design)
+        powered_bindings = self._powered_bindings_by_device(enterprise, design)
         for site in design.sites:
             for block in site.access_blocks:
                 exact = sum(
-                    len(powered_ports.get(switch, ())) for switch in block.switches
+                    len(powered_bindings.get(switch, ())) for switch in block.switches
                 )
                 if exact != block.required_poe_ports:
                     errors.append(
@@ -149,7 +154,12 @@ class ReferenceHardwarePlanner:
                 else None
             )
             selection_status = DeviceCandidateStatus.COMPATIBLE
-            demanded = sorted(powered_ports.get(requested.id, set()))
+            demanded = sorted(
+                powered_bindings.get(requested.id, ()),
+                key=lambda item: (
+                    item.device_port, item.endpoint_model, item.endpoint_port,
+                ),
+            )
             if demanded:
                 poe_capacity, selection_status = self._admit_powered_ports(
                     requested, candidate, demanded, ports_by_name, errors, unverified,
@@ -166,6 +176,9 @@ class ReferenceHardwarePlanner:
                 candidate_models=[requested.model],
                 port_capacity=access_ports,
                 poe_capacity=poe_capacity,
+                poe_authorized_bindings=list(
+                    candidate.capabilities.poe_authorized_bindings
+                ),
                 port_descriptors=list(candidate.ports),
                 module_plan=selected_modules,
                 parent_group=requested.parent_group,
@@ -203,10 +216,10 @@ class ReferenceHardwarePlanner:
         )
 
     @staticmethod
-    def _powered_ports_by_device(
+    def _powered_bindings_by_device(
         enterprise: EnterprisePlan,
         design: PhysicalDesignSpec,
-    ) -> dict[str, set[str]]:
+    ) -> dict[str, list[EndpointPortBinding]]:
         """Exact powered demand: expanded endpoint truth joined to the bindings.
 
         `endpoint_id` derives from zone, role and index alone, so the identity
@@ -219,18 +232,18 @@ class ReferenceHardwarePlanner:
             )
             if item.requires_poe
         }
-        ports: dict[str, set[str]] = defaultdict(set)
+        bindings: dict[str, list[EndpointPortBinding]] = defaultdict(list)
         for site in design.sites:
             for binding in site.endpoint_bindings:
                 if binding.endpoint_id in powered:
-                    ports[binding.device_id].add(binding.device_port)
-        return ports
+                    bindings[binding.device_id].append(binding)
+        return bindings
 
     @staticmethod
     def _admit_powered_ports(
         requested,
         candidate: HardwareCandidate,
-        demanded: list[str],
+        demanded: list[EndpointPortBinding],
         ports_by_name: dict,
         errors: list[str],
         unverified: list[str],
@@ -252,7 +265,7 @@ class ReferenceHardwarePlanner:
             )
             return None, DeviceCandidateStatus.NEEDS_VERIFICATION
         if admitted is None:
-            errors.append(
+            unverified.append(
                 f"{requested.id}: {requested.model} reports PoE support without an "
                 f"admitted powered-port count for {len(demanded)} powered "
                 "endpoint(s)."
@@ -264,13 +277,32 @@ class ReferenceHardwarePlanner:
                 f"{admitted} powered port(s) evidenced for {requested.model}."
             )
             return None, DeviceCandidateStatus.INCOMPATIBLE
-        for port in demanded:
-            descriptor = ports_by_name.get(port)
+        authorized = set(candidate.capabilities.poe_authorized_bindings)
+        uncovered: list[PoEAuthorizedBinding] = []
+        for binding in demanded:
+            exact = PoEAuthorizedBinding(
+                binding.device_port,
+                binding.endpoint_model,
+                binding.endpoint_port,
+            )
+            if exact not in authorized:
+                uncovered.append(exact)
+            descriptor = ports_by_name.get(binding.device_port)
             if descriptor is None:
                 continue
             if PortClass.ACCESS_CAPABLE not in descriptor.classes:
                 errors.append(
-                    f"{requested.id}: powered endpoint port {port} is outside the "
+                    f"{requested.id}: powered endpoint port {binding.device_port} is outside the "
                     f"access ports the {requested.model} PoE evidence covers."
                 )
+        if uncovered:
+            summary = ", ".join(
+                f"{item.switch_port}/{item.endpoint_model}/{item.endpoint_port}"
+                for item in uncovered
+            )
+            unverified.append(
+                f"{requested.id}: {requested.model} PoE evidence does not cover "
+                f"the exact powered binding(s): {summary}."
+            )
+            return None, DeviceCandidateStatus.NEEDS_VERIFICATION
         return admitted, DeviceCandidateStatus.COMPATIBLE

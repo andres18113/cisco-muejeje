@@ -10,6 +10,7 @@ from src.packet_tracer_mcp.application.use_cases.compile_enterprise import compi
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
+    PoEAuthorizedBinding,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
     CompilationIssueCode,
@@ -47,6 +48,7 @@ from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, Topo
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
+from tests.poe_delivery_capabilities import synthetic_poe_authorized_bindings
 
 
 def _requirement(
@@ -98,6 +100,14 @@ def _candidate(
             port_count=access + uplinks,
             supports_poe=poe,
             poe_ports=24 if poe is CapabilityStatus.SUPPORTED else None,
+            poe_authorized_bindings=(
+                synthetic_poe_authorized_bindings(tuple(
+                    f"FastEthernet0/{index}"
+                    for index in range(1, access + 1)
+                ))
+                if poe is CapabilityStatus.SUPPORTED
+                else []
+            ),
             layer3=layer3,
         ),
         ports=ports,
@@ -156,6 +166,32 @@ def _reference():
     return enterprise, hardware, result
 
 
+def test_compiler_rejects_powered_endpoint_model_not_covered_by_port_claim():
+    intent = EnterpriseIntent(
+        name="Exact endpoint PoE ceiling",
+        default_growth_percent=0,
+        sites=[SiteIntent(
+            name="Branch",
+            type=SiteType.BRANCH,
+            endpoints=[_requirement(
+                DeviceRole.ACCESS_POINT, 1, poe=True,
+            )],
+        )],
+    )
+    candidate = _candidate(access=1, uplinks=2)
+    candidate.capabilities.poe_authorized_bindings = [
+        PoEAuthorizedBinding("FastEthernet0/1", "7960", "Switch"),
+    ]
+
+    _, hardware, result = _compile(intent, candidate=candidate)
+
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert result.plan is None
+    assert CompilationIssueCode.POE_DELIVERY_BINDING_UNAUTHORIZED in {
+        issue.code for issue in result.issues
+    }
+
+
 def _legacy_non_wan_identity_reference():
     """Preserva la entrada exacta del hash v2 anterior al gate de estado E4."""
     enterprise = _design(_reference_intent())
@@ -169,6 +205,27 @@ def _legacy_non_wan_identity_reference():
         enterprise, partial, catalog.compilation_profile(), catalog.cable_for,
     )
     assert rejected.plan is None
+    # Reconstruct only the historical identity input. The current planner
+    # correctly refuses to allocate UNKNOWN PoE, so the old port ranges and
+    # test-only authorization premise are explicit here.
+    qualified = HardwarePlanner().plan(enterprise, [_candidate()])
+    qualified_blocks = {
+        block.block_id: block
+        for site in qualified.site_hardware
+        for block in site.access_blocks
+    }
+    for site in partial.site_hardware:
+        for block in site.access_blocks:
+            block.port_assignments = list(
+                qualified_blocks[block.block_id].port_assignments
+            )
+        for device in site.devices:
+            device.poe_authorized_bindings = synthetic_poe_authorized_bindings(
+                tuple(
+                    port.name for port in device.port_descriptors
+                    if PortClass.ACCESS_CAPABLE in port.classes
+                )
+            )
     # El pin pertenece a la identidad del artefacto histórico, no autoriza a
     # producción a compilar el HardwarePlan parcial que lo originó.
     identity_input = partial.model_copy(update={"status": HardwarePlanStatus.VALID})

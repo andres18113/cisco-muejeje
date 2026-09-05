@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ..models.capabilities import CapabilityEvidence, CapabilityStatus, DeviceCapabilities, EvidenceSource
-from .poe_claims import poe_claim_has_delivery_basis
+from .poe_claims import decode_poe_delivery_scope, poe_claim_has_delivery_basis
 
 
 _EVIDENCE_PRIORITY = {
@@ -74,21 +74,15 @@ class CapabilityResolver:
         packet_tracer_version: str | None = None,
     ) -> CapabilityEvidence | None:
         """Return the authoritative matching fact without discarding provenance."""
-        candidates = [
-            _cap_claim_to_evidence(item) for item in evidence
+        raw_candidates = [
+            item for item in evidence
             if item.capability == capability and _evidence_matches_version(item, packet_tracer_version)
         ]
-        if not candidates:
+        if not raw_candidates:
             return None
-        return max(
-            candidates,
-            key=lambda item: (
-                _EVIDENCE_PRIORITY[item.source],
-                item.verified,
-                item.status is not CapabilityStatus.UNKNOWN,
-                item.source.value,
-            ),
-        )
+        if capability == "supports_poe":
+            return _winning_poe_evidence(raw_candidates, packet_tracer_version)
+        return max(raw_candidates, key=_evidence_rank)
 
     @classmethod
     def resolve_evidence(
@@ -112,7 +106,8 @@ class CapabilityResolver:
         packet_tracer_version: str | None = None,
     ) -> DeviceCapabilities:
         """Devuelve una copia con estados respaldados por las fuentes disponibles."""
-        collected = [_cap_claim_to_evidence(item) for item in evidence]
+        raw_evidence = list(evidence)
+        collected = [_cap_claim_to_evidence(item) for item in raw_evidence]
         updates = {"evidence": [*capabilities.evidence, *collected]}
         for capability in (
             "layer2", "layer3", "supports_modules", "supports_vlan",
@@ -125,14 +120,15 @@ class CapabilityResolver:
             if status is not CapabilityStatus.UNKNOWN:
                 updates[capability] = status
         winner = self.winning_evidence(
-            "supports_poe", collected, packet_tracer_version,
+            "supports_poe", raw_evidence, packet_tracer_version,
         )
         if winner is not None:
-            updates["supports_poe"] = winner.status
-            if winner.status is CapabilityStatus.SUPPORTED and winner.observed_value is not None:
-                updates["poe_ports"] = winner.observed_value
-            else:
-                updates["poe_ports"] = None
+            updates.update(_poe_projection(
+                raw_evidence,
+                winner,
+                model=capabilities.model,
+                packet_tracer_version=packet_tracer_version,
+            ))
         if packet_tracer_version is not None:
             updates["packet_tracer_version"] = packet_tracer_version
         return capabilities.model_copy(update=updates)
@@ -194,3 +190,131 @@ def _cap_claim_to_evidence(evidence: CapabilityEvidence) -> CapabilityEvidence:
             "powered-device delivery measurement."
         ).strip(),
     })
+
+
+def _evidence_rank(evidence: CapabilityEvidence) -> tuple[int, bool, bool, str]:
+    return (
+        _EVIDENCE_PRIORITY[evidence.source],
+        evidence.verified,
+        evidence.status is not CapabilityStatus.UNKNOWN,
+        evidence.source.value,
+    )
+
+
+def _winning_poe_evidence(
+    evidence: list[CapabilityEvidence],
+    packet_tracer_version: str | None,
+) -> CapabilityEvidence:
+    """Prefer real delivery over control-only UNKNOWN without hiding bad claims.
+
+    An UNKNOWN inventory observation carries no contrary delivery fact.  A
+    malformed decided claim at equal or greater authority is different: it is
+    retained as the winner and capped, so a lower record cannot lend it scope.
+    """
+
+    valid_delivery = [
+        item for item in evidence
+        if decode_poe_delivery_scope(
+            item,
+            expected_packet_tracer_version=packet_tracer_version,
+        ) is not None
+    ]
+    if valid_delivery:
+        winner = max(valid_delivery, key=_evidence_rank)
+        invalid_decided = [
+            item for item in evidence
+            if item.status is not CapabilityStatus.UNKNOWN
+            and decode_poe_delivery_scope(
+                item,
+                expected_packet_tracer_version=packet_tracer_version,
+            ) is None
+            and _evidence_rank(item) >= _evidence_rank(winner)
+        ]
+        if invalid_decided:
+            return _cap_claim_to_evidence(
+                max(invalid_decided, key=_evidence_rank)
+            )
+        return winner
+    return max(
+        (_cap_claim_to_evidence(item) for item in evidence),
+        key=_evidence_rank,
+    )
+
+
+def _poe_projection(
+    evidence: list[CapabilityEvidence],
+    winner: CapabilityEvidence,
+    *,
+    model: str,
+    packet_tracer_version: str | None,
+) -> dict[str, object]:
+    """Project only the exact union proven by coherent delivery claims.
+
+    Independent runs can prove additional endpoint/port triples, but their
+    simultaneous-active counts cannot be added.  The projected capacity is
+    therefore the largest single-run count, while the authorization set is the
+    union of the exact bindings retained with their individual provenance.
+    """
+
+    unknown = {
+        "supports_poe": CapabilityStatus.UNKNOWN,
+        "poe_ports": None,
+        "poe_authorized_bindings": [],
+    }
+    winner_scope = decode_poe_delivery_scope(
+        winner,
+        expected_model=model,
+        expected_packet_tracer_version=packet_tracer_version,
+    )
+    if winner_scope is None:
+        return unknown
+
+    winner_rank = _evidence_rank(winner)
+    if any(
+        item.capability == "supports_poe"
+        and item.status is not CapabilityStatus.UNKNOWN
+        and decode_poe_delivery_scope(
+            item,
+            expected_model=model,
+            expected_packet_tracer_version=packet_tracer_version,
+        ) is None
+        and _evidence_rank(item) >= winner_rank
+        for item in evidence
+    ):
+        return unknown
+
+    if winner.status is CapabilityStatus.UNSUPPORTED:
+        return {
+            "supports_poe": CapabilityStatus.UNSUPPORTED,
+            "poe_ports": None,
+            "poe_authorized_bindings": [],
+        }
+
+    supported_scopes = []
+    for item in evidence:
+        if (
+            item.capability != "supports_poe"
+            or item.status is not CapabilityStatus.SUPPORTED
+        ):
+            continue
+        scope = decode_poe_delivery_scope(
+            item,
+            expected_model=model,
+            expected_packet_tracer_version=packet_tracer_version,
+        )
+        if scope is not None:
+            supported_scopes.append(scope)
+    if not supported_scopes:
+        return unknown
+
+    return {
+        "supports_poe": CapabilityStatus.SUPPORTED,
+        "poe_ports": max(
+            scope.simultaneous_active_ports for scope in supported_scopes
+        ),
+        "poe_authorized_bindings": sorted({
+            binding
+            for scope in supported_scopes
+            for binding in scope.active_bindings
+        }),
+    }

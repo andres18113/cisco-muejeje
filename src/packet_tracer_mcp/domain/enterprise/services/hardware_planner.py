@@ -186,38 +186,77 @@ class PortAssignmentPlanner:
             device.id: [port.name for port in device.port_descriptors if PortClass.ACCESS_CAPABLE in port.classes]
             for device in devices
         }
-        position = {device.id: 0 for device in devices}
-        poe_position = {device.id: 0 for device in devices}
+        used = {device.id: set() for device in devices}
+        poe_used = {device.id: 0 for device in devices}
         for endpoint_slice in block.endpoint_slices:
             remaining = endpoint_slice.count
             start = endpoint_slice.start_index
             for device in devices:
-                free = len(availability[device.id]) - position[device.id]
-                if endpoint_slice.requires_poe and device.poe_capacity is not None:
-                    free = min(free, device.poe_capacity - poe_position[device.id])
-                if free <= 0 or remaining <= 0:
-                    continue
-                count = min(free, remaining)
-                first_index = position[device.id]
-                names = availability[device.id][first_index:first_index + count]
-                block.port_assignments.append(PortAssignmentRange(
-                    device_id=device.id,
-                    source_group=endpoint_slice.group_id,
-                    roles=endpoint_slice.roles,
-                    start_index=start,
-                    count=count,
-                    first_port=names[0],
-                    last_port=names[-1],
-                    requires_poe=endpoint_slice.requires_poe,
-                ))
-                position[device.id] += count
+                names = [
+                    name for name in availability[device.id]
+                    if name not in used[device.id]
+                ]
                 if endpoint_slice.requires_poe:
-                    poe_position[device.id] += count
-                remaining -= count
-                start += count
+                    authorized = {
+                        binding.switch_port
+                        for binding in device.poe_authorized_bindings
+                    }
+                    names = [name for name in names if name in authorized]
+                    capacity = max(
+                        0,
+                        (device.poe_capacity or 0) - poe_used[device.id],
+                    )
+                    names = names[:capacity]
+                if not names or remaining <= 0:
+                    continue
+                selected = names[:remaining]
+                self._append_assignment_ranges(
+                    block, device.id, endpoint_slice, start,
+                    selected, availability[device.id],
+                )
+                used[device.id].update(selected)
+                if endpoint_slice.requires_poe:
+                    poe_used[device.id] += len(selected)
+                remaining -= len(selected)
+                start += len(selected)
             if remaining:
                 warnings.append(f"{endpoint_slice.group_id}: {remaining} endpoint(s) sin puerto asignado.")
         return warnings
+
+    @staticmethod
+    def _append_assignment_ranges(
+        block: AccessBlockPlan,
+        device_id: str,
+        endpoint_slice: EndpointGroupSlice,
+        start: int,
+        selected: list[str],
+        ordered_ports: list[str],
+    ) -> None:
+        """Represent only truly contiguous selected ports as one range."""
+
+        positions = {name: index for index, name in enumerate(ordered_ports)}
+        groups: list[list[str]] = []
+        for name in selected:
+            if (
+                not groups
+                or positions[name] != positions[groups[-1][-1]] + 1
+            ):
+                groups.append([name])
+            else:
+                groups[-1].append(name)
+        consumed = 0
+        for group in groups:
+            block.port_assignments.append(PortAssignmentRange(
+                device_id=device_id,
+                source_group=endpoint_slice.group_id,
+                roles=endpoint_slice.roles,
+                start_index=start + consumed,
+                count=len(group),
+                first_port=group[0],
+                last_port=group[-1],
+                requires_poe=endpoint_slice.requires_poe,
+            ))
+            consumed += len(group)
 
 
 class RedundancyPlanner:
@@ -377,6 +416,9 @@ class HardwarePlanner:
                     ),
                     port_capacity=len([port for port in choice.candidate.ports if PortClass.ACCESS_CAPABLE in port.classes]),
                     poe_capacity=choice.candidate.capabilities.poe_ports,
+                    poe_authorized_bindings=list(
+                        choice.candidate.capabilities.poe_authorized_bindings
+                    ),
                     port_descriptors=choice.candidate.ports,
                     parent_group=block.block_id,
                     warnings=[choice.warning] if choice.warning else [],

@@ -22,6 +22,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceActio
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
+from tests.poe_delivery_capabilities import synthetic_poe_authorized_bindings
 from tests.test_cp_scale_layout import _LAYOUT
 
 
@@ -35,6 +36,9 @@ def _qualify():
         "capabilities": switch.capabilities.model_copy(update={
             "supports_poe": CapabilityStatus.SUPPORTED,
             "poe_ports": 24,
+            "poe_authorized_bindings": synthetic_poe_authorized_bindings(
+                tuple(f"FastEthernet0/{index}" for index in range(1, 25))
+            ),
             "layer3": CapabilityStatus.SUPPORTED,
         }),
     })

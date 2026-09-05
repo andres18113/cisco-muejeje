@@ -6,7 +6,12 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from .capabilities import DeviceCandidateStatus, DeviceCapabilities, DeviceRequirement
+from .capabilities import (
+    DeviceCandidateStatus,
+    DeviceCapabilities,
+    DeviceRequirement,
+    PoEAuthorizedBinding,
+)
 from .link_performance import LinkMedia
 from .roles import DeviceRole
 from .topology import NetworkLayer, TopologyPattern
@@ -73,6 +78,7 @@ class EndpointPortBinding(BaseModel):
     endpoint_id: str
     device_id: str
     device_port: str
+    endpoint_model: str = ""
     endpoint_port: str = ""
     provenance: str = "reference_design"
 
@@ -138,6 +144,7 @@ class PlannedNetworkDevice(BaseModel):
     required_capabilities: DeviceRequirement | None = None
     port_capacity: int = 0
     poe_capacity: int | None = None
+    poe_authorized_bindings: list[PoEAuthorizedBinding] = Field(default_factory=list)
     port_descriptors: list[PortDescriptor] = Field(default_factory=list)
     module_plan: list[ModuleInstallation] = Field(default_factory=list)
     parent_group: str = ""

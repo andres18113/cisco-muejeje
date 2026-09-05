@@ -49,6 +49,28 @@ class ProbeCapabilityProvider:
         return tuple(_snapshot_evidence(self._store.list_runtime(version), model, EvidenceSource.CONTROLLED_PROBE))
 
 
+class ManualVerificationCapabilityProvider:
+    """Expose governed manual results without relabelling their provenance."""
+
+    def __init__(
+        self,
+        store: CapabilitySnapshotStore,
+        packet_tracer_version: str | None = None,
+    ) -> None:
+        self._store = store
+        self._packet_tracer_version = packet_tracer_version
+
+    def evidence_for(
+        self, model: str, packet_tracer_version: str | None = None,
+    ) -> Iterable[CapabilityEvidence]:
+        version = packet_tracer_version or self._packet_tracer_version
+        return tuple(_snapshot_evidence(
+            self._store.list_runtime(version),
+            model,
+            EvidenceSource.MANUAL_VERIFICATION,
+        ))
+
+
 def _snapshot_evidence(snapshots, model: str, source: EvidenceSource) -> Iterable[CapabilityEvidence]:
     for snapshot in snapshots:
         for result in snapshot.session.results:

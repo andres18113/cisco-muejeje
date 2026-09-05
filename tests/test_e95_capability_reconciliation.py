@@ -18,6 +18,7 @@ import pathlib
 import pytest
 
 from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+    ManualVerificationCapabilityProvider,
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
     StaticVerifiedCapabilityProvider,
@@ -239,6 +240,7 @@ class TestTheBoundaryIsExactAndVisible:
         kinds = {type(provider) for provider in wired._providers}
 
         assert kinds == {
+            ManualVerificationCapabilityProvider,
             ProbeCapabilityProvider,
             RuntimeCapabilityProvider,
             StaticVerifiedCapabilityProvider,

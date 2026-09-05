@@ -30,6 +30,11 @@ from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
 from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
+from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+    PoEDeliveryClaimScope,
+    PoEDeliveryTestedBinding,
+    encode_poe_delivery_dimensions,
+)
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     packet_tracer_enterprise_capability_adapter,
 )
@@ -50,6 +55,69 @@ def _stage_a_plan():
 def _save_delivery_supported_3560(
     store: CapabilitySnapshotStore, version: str = BUILD,
 ) -> None:
+    access_ports = tuple(
+        f"FastEthernet0/{index}" for index in range(1, 25)
+    )
+    tested = tuple(
+        PoEDeliveryTestedBinding(
+            switch_port=port,
+            comparison_port=port,
+            endpoint_model="7960",
+            endpoint_port="Switch",
+            candidate_state="powered",
+            comparison_state="not_powered",
+            candidate_indicator="test fixture powered",
+            comparison_indicator="test fixture dark",
+            candidate_ready=True,
+            comparison_ready=True,
+        )
+        for port in access_ports
+    )
+    dimensions = encode_poe_delivery_dimensions(PoEDeliveryClaimScope(
+        candidate_model="3560-24PS",
+        packet_tracer_build=version,
+        access_ports=access_ports,
+        tested_bindings=tested,
+        active_bindings=tuple(item.authorized_binding for item in tested),
+        simultaneous_active_ports=24,
+        comparison_model="2960-24TT",
+        observation_method="manual_visible_power_state",
+        observer_id="synthetic-test-reviewer",
+        observed_at="2026-09-04T15:00:00Z",
+        cleanup_status="clean",
+        inventory_restoration="restored",
+    ))
+    ap_tested = tuple(
+        PoEDeliveryTestedBinding(
+            switch_port=port,
+            comparison_port=port,
+            endpoint_model="AccessPoint-PT",
+            endpoint_port="Port 0",
+            candidate_state="powered",
+            comparison_state="not_powered",
+            candidate_indicator="test AP fixture powered",
+            comparison_indicator="test AP fixture dark",
+            candidate_ready=True,
+            comparison_ready=True,
+        )
+        for port in access_ports
+    )
+    ap_dimensions = encode_poe_delivery_dimensions(PoEDeliveryClaimScope(
+        candidate_model="3560-24PS",
+        packet_tracer_build=version,
+        access_ports=access_ports,
+        tested_bindings=ap_tested,
+        active_bindings=tuple(
+            item.authorized_binding for item in ap_tested
+        ),
+        simultaneous_active_ports=24,
+        comparison_model="2960-24TT",
+        observation_method="manual_visible_power_state",
+        observer_id="synthetic-test-reviewer",
+        observed_at="2026-09-04T15:00:00Z",
+        cleanup_status="clean",
+        inventory_restoration="restored",
+    ))
     results = [
         CapabilityProbeResult(
             probe_id="poe-inventory-v2",
@@ -57,15 +125,23 @@ def _save_delivery_supported_3560(
             capability="supports_poe",
             status=CapabilityStatus.SUPPORTED,
             execution_status=ProbeExecutionStatus.VERIFIED,
-            evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+            evidence_source=EvidenceSource.MANUAL_VERIFICATION,
             verified=True,
             observed_value=24,
             packet_tracer_version=version,
-            dimensions={
-                "poe_access_port_count": "24",
-                "poe_delivery_tested_ports": "24",
-                "poe_delivery_active_ports": "24",
-            },
+            dimensions=dimensions,
+        ),
+        CapabilityProbeResult(
+            probe_id="poe-delivery-ap-test-fixture",
+            model="3560-24PS",
+            capability="supports_poe",
+            status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED,
+            evidence_source=EvidenceSource.MANUAL_VERIFICATION,
+            verified=True,
+            observed_value=24,
+            packet_tracer_version=version,
+            dimensions=ap_dimensions,
         ),
         CapabilityProbeResult(
             probe_id="multilayer-intervlan-probe",
