@@ -56,7 +56,9 @@ def test_exact_link_js_reads_both_links_and_serializes_every_endpoint():
     assert ".getLink()" in script
     assert ".getPort1()" in script
     assert ".getPort2()" in script
-    assert ".getOwnerDevice().getName()" in script
+    assert ".getOwnerDevice()" in script
+    assert ".getName()" in script
+    assert ".getModel()" in script
     assert (
         "__o.same_link&&__matches(__o.observed_link_a)&&"
         "__matches(__o.observed_link_b)"
@@ -144,6 +146,39 @@ def test_link_convergence_rejects_an_exact_flag_for_the_wrong_peer_pair():
     result = verify_exact_link_convergence(
         lambda _script, _timeout: wrong,
         _expectation(),
+        timeout_seconds=0.01,
+        clock=lambda: now[0],
+        sleeper=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+
+    assert result.verified is False
+    assert result.observation.status is LinkObservationStatus.ENDPOINT_MISMATCH
+
+
+def test_link_convergence_rejects_model_drift_when_model_identity_is_required():
+    expectation = LinkExpectation(
+        endpoint_a=LinkEndpoint("R1", "GigabitEthernet0/0", "2911"),
+        endpoint_b=LinkEndpoint("SW1", "GigabitEthernet0/1", "2960-24TT"),
+    )
+    wrong_model = json.dumps({
+        "exact": True,
+        "reason": "EXACT",
+        "both_ports_bound": True,
+        "same_link": True,
+        "observed_link_a": [
+            {"device": "R1", "port": "GigabitEthernet0/0", "model": "1841"},
+            {"device": "SW1", "port": "GigabitEthernet0/1", "model": "2960-24TT"},
+        ],
+        "observed_link_b": [
+            {"device": "SW1", "port": "GigabitEthernet0/1", "model": "2960-24TT"},
+            {"device": "R1", "port": "GigabitEthernet0/0", "model": "1841"},
+        ],
+    })
+    now = [0.0]
+
+    result = verify_exact_link_convergence(
+        lambda _script, _timeout: wrong_model,
+        expectation,
         timeout_seconds=0.01,
         clock=lambda: now[0],
         sleeper=lambda seconds: now.__setitem__(0, now[0] + seconds),

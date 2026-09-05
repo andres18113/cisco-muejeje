@@ -36,7 +36,7 @@ def _endpoint(name: str, model: str, port: str) -> dict[str, str]:
     return {"device_name": name, "device_model": model, "port": port}
 
 
-def _link_payload(
+def _exact_link_readback_payload(
     switch_name: str,
     switch_model: str,
     switch_port: str,
@@ -45,13 +45,20 @@ def _link_payload(
     endpoint_port: str,
 ) -> str:
     ends = [
-        _endpoint(switch_name, switch_model, switch_port),
-        _endpoint(endpoint_name, endpoint_model, endpoint_port),
+        {"device": switch_name, "model": switch_model, "port": switch_port},
+        {"device": endpoint_name, "model": endpoint_model, "port": endpoint_port},
     ]
     return json.dumps({
-        "linked": True,
-        "observed_from_switch": ends,
-        "observed_from_endpoint": list(reversed(ends)),
+        "exact": True,
+        "reason": "EXACT",
+        "port_a_bound": True,
+        "port_b_bound": True,
+        "both_ports_bound": True,
+        "same_link": True,
+        "runtime_link_identifier_a": "link-uuid",
+        "runtime_link_identifier_b": "link-uuid",
+        "observed_link_a": ends,
+        "observed_link_b": list(reversed(ends)),
     })
 
 
@@ -112,13 +119,10 @@ def test_create_link_returns_both_exact_observed_endpoint_views():
     transport = RecordingTransport([
         _device_payload(switch_name, "3560-24PS", [switch_port]),
         _device_payload(endpoint_name, "7960", [endpoint_port]),
-        _link_payload(
-            switch_name,
-            "3560-24PS",
-            switch_port,
-            endpoint_name,
-            "7960",
-            endpoint_port,
+        json.dumps({"requested": True}),
+        _exact_link_readback_payload(
+            switch_name, "3560-24PS", switch_port,
+            endpoint_name, "7960", endpoint_port,
         ),
     ])
     runtime = PacketTracerPoEDeliveryFixtureRuntime(transport, "PT build exact")
@@ -127,7 +131,8 @@ def test_create_link_returns_both_exact_observed_endpoint_views():
 
     observed = runtime.create_link(switch, switch_port, endpoint, endpoint_port)
 
-    script = transport.calls[2][0]
+    mutation_script = transport.calls[2][0]
+    readback_script = transport.calls[3][0]
     assert observed.first.model_dump() == _endpoint(
         switch_name, "3560-24PS", switch_port,
     )
@@ -138,15 +143,111 @@ def test_create_link_returns_both_exact_observed_endpoint_views():
         switch_name, "3560-24PS", switch_port,
         endpoint_name, "7960", endpoint_port,
     ):
-        assert json.dumps(value, ensure_ascii=False) in script
-    assert "lwAddLink(" in script
-    assert ".getPort1()" in script
-    assert ".getPort2()" in script
-    assert ".getOwnerDevice()" in script
-    assert "\n" not in script
-    assert script.count("{") == script.count("}")
-    assert ".getPower(" not in script
-    assert ".isPowerOn(" not in script
+        assert json.dumps(value, ensure_ascii=False) in mutation_script
+    assert "lwAddLink(" in mutation_script
+    assert ".getPort1()" not in mutation_script
+    assert ".getPort2()" not in mutation_script
+    assert ".getOwnerDevice()" not in mutation_script
+    assert ".getPort1()" in readback_script
+    assert ".getPort2()" in readback_script
+    assert ".getOwnerDevice()" in readback_script
+    assert "getObjectUuid" in readback_script
+    assert "lwAddLink(" not in readback_script
+    assert "\n" not in mutation_script
+    assert mutation_script.count("{") == mutation_script.count("}")
+    assert all(".getPower(" not in script for script, _ in transport.calls)
+    assert all(".isPowerOn(" not in script for script, _ in transport.calls)
+
+
+def test_create_link_observes_bilateral_convergence_after_mutation_without_replay():
+    switch_name = "__POE_SWITCH"
+    endpoint_name = "__POE_PHONE"
+    switch_port = "FastEthernet0/1"
+    endpoint_port = "Switch"
+    transport = RecordingTransport([
+        _device_payload(switch_name, "3560-24PS", [switch_port]),
+        _device_payload(endpoint_name, "7960", [endpoint_port]),
+        json.dumps({"requested": True}),
+        json.dumps({
+            "exact": False,
+            "reason": "NO_LINK",
+            "port_a_bound": False,
+            "port_b_bound": False,
+            "both_ports_bound": False,
+            "same_link": False,
+            "observed_link_a": [],
+            "observed_link_b": [],
+        }),
+        _exact_link_readback_payload(
+            switch_name, "3560-24PS", switch_port,
+            endpoint_name, "7960", endpoint_port,
+        ),
+    ])
+    runtime = PacketTracerPoEDeliveryFixtureRuntime(transport, "PT build exact")
+    switch = runtime.create_device(
+        "3560-24PS", switch_name, (switch_port,),
+    )
+    endpoint = runtime.create_device("7960", endpoint_name, (endpoint_port,))
+
+    observed = runtime.create_link(
+        switch, switch_port, endpoint, endpoint_port,
+    )
+
+    assert observed.first.model_dump() == _endpoint(
+        switch_name, "3560-24PS", switch_port,
+    )
+    assert observed.second.model_dump() == _endpoint(
+        endpoint_name, "7960", endpoint_port,
+    )
+    mutation_scripts = [
+        script for script, _ in transport.calls if "lwAddLink(" in script
+    ]
+    assert len(mutation_scripts) == 1
+    readback_scripts = [script for script, _ in transport.calls[3:]]
+    assert len(readback_scripts) == 2
+    assert all("lwAddLink(" not in script for script in readback_scripts)
+    assert all("getObjectUuid" in script for script in readback_scripts)
+
+
+def test_create_link_requires_models_from_the_same_bilateral_readback_episode():
+    switch_name = "__POE_SWITCH"
+    endpoint_name = "__POE_PHONE"
+    switch_port = "FastEthernet0/1"
+    endpoint_port = "Switch"
+    transport = RecordingTransport([
+        _device_payload(switch_name, "3560-24PS", [switch_port]),
+        _device_payload(endpoint_name, "7960", [endpoint_port]),
+        json.dumps({"requested": True}),
+        _exact_link_readback_payload(
+            switch_name, "2960-24TT", switch_port,
+            endpoint_name, "7960", endpoint_port,
+        ),
+        _exact_link_readback_payload(
+            switch_name, "3560-24PS", switch_port,
+            endpoint_name, "7960", endpoint_port,
+        ),
+    ])
+    runtime = PacketTracerPoEDeliveryFixtureRuntime(transport, "PT build exact")
+    switch = runtime.create_device(
+        "3560-24PS", switch_name, (switch_port,),
+    )
+    endpoint = runtime.create_device("7960", endpoint_name, (endpoint_port,))
+
+    observed = runtime.create_link(
+        switch, switch_port, endpoint, endpoint_port,
+    )
+
+    assert observed.first.model_dump() == _endpoint(
+        switch_name, "3560-24PS", switch_port,
+    )
+    assert observed.second.model_dump() == _endpoint(
+        endpoint_name, "7960", endpoint_port,
+    )
+    mutation_scripts = [
+        script for script, _ in transport.calls if "lwAddLink(" in script
+    ]
+    assert len(mutation_scripts) == 1
+    assert len(transport.calls[3:]) == 2
 
 
 @pytest.mark.parametrize(
@@ -186,29 +287,13 @@ def test_create_device_fails_closed_on_incomplete_bridge_payload(reply):
     [
         None,
         "not-json",
-        json.dumps({"linked": False}),
-        json.dumps({
-            "linked": True,
-            "observed_from_switch": [
-                _endpoint("__POE_SWITCH", "3560-24PS", "FastEthernet0/1"),
-                _endpoint("__POE_PHONE", "7960", "Switch"),
-            ],
-            "observed_from_endpoint": [
-                _endpoint("__POE_SWITCH", "3560-24PS", "FastEthernet0/1"),
-                _endpoint("OTHER", "7960", "Switch"),
-            ],
-        }),
-        json.dumps({
-            "linked": True,
-            "observed_from_switch": [
-                _endpoint("__POE_SWITCH", "3560-24PS", "FastEthernet0/1"),
-                {"device_name": "__POE_PHONE", "port": "Switch"},
-            ],
-            "observed_from_endpoint": [],
-        }),
+        "[]",
+        json.dumps({"requested": False}),
+        json.dumps({"linked": True}),
+        json.dumps({"requested": False, "error": "mutation rejected"}),
     ],
 )
-def test_create_link_fails_closed_on_incomplete_or_disagreeing_readback(reply):
+def test_create_link_fails_closed_on_incomplete_mutation_acknowledgement(reply):
     transport = RecordingTransport([
         _device_payload("__POE_SWITCH", "3560-24PS", ["FastEthernet0/1"]),
         _device_payload("__POE_PHONE", "7960", ["Switch"]),

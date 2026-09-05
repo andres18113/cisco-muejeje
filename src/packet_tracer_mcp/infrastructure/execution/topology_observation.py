@@ -31,6 +31,7 @@ class LinkObservationStatus(str, Enum):
 class LinkEndpoint:
     device: str
     port: str
+    model: str = ""
 
 
 @dataclass(frozen=True)
@@ -75,25 +76,30 @@ def build_exact_link_readback_js(expectation: LinkExpectation) -> str:
 
     device_a = json.dumps(expectation.endpoint_a.device, ensure_ascii=False)
     port_a = json.dumps(expectation.endpoint_a.port, ensure_ascii=False)
+    model_a = json.dumps(expectation.endpoint_a.model, ensure_ascii=False)
     device_b = json.dumps(expectation.endpoint_b.device, ensure_ascii=False)
     port_b = json.dumps(expectation.endpoint_b.port, ensure_ascii=False)
+    model_b = json.dumps(expectation.endpoint_b.model, ensure_ascii=False)
     return (
         "try{(function(){"
-        "var __ed1=" + device_a + ",__ep1=" + port_a + ";"
-        "var __ed2=" + device_b + ",__ep2=" + port_b + ";"
+        "var __ed1=" + device_a + ",__ep1=" + port_a + ",__em1=" + model_a + ";"
+        "var __ed2=" + device_b + ",__ep2=" + port_b + ",__em2=" + model_b + ";"
         "var __o={exact:false,port_a_bound:false,port_b_bound:false,"
         "both_ports_bound:false,same_link:false,"
         "reason:'',link_class_a:'',link_class_b:'',"
         "runtime_link_identifier_a:'',runtime_link_identifier_b:'',"
         "observed_link_a:[],observed_link_b:[]};"
         "function __emit(){reportResult(JSON.stringify(__o));}"
-        "function __endpoint(__p){return {device:String(__p.getOwnerDevice().getName()),"
-        "port:String(__p.getName())};}"
+        "function __endpoint(__p){var __d=__p.getOwnerDevice();return {"
+        "device:String(__d.getName()),port:String(__p.getName()),"
+        "model:(typeof __d.getModel==='function'?String(__d.getModel()):'')};}"
         "function __ends(__l){return [__endpoint(__l.getPort1()),__endpoint(__l.getPort2())];}"
-        "function __matches(__e){var __f=(__e[0].device===__ed1&&__e[0].port===__ep1&&"
-        "__e[1].device===__ed2&&__e[1].port===__ep2);"
-        "var __r=(__e[1].device===__ed1&&__e[1].port===__ep1&&"
-        "__e[0].device===__ed2&&__e[0].port===__ep2);return __f||__r;}"
+        "function __same(__x,__d,__p,__m){return __x.device===__d&&__x.port===__p&&"
+        "(!__m||__x.model===__m);}"
+        "function __matches(__e){var __f=(__same(__e[0],__ed1,__ep1,__em1)&&"
+        "__same(__e[1],__ed2,__ep2,__em2));"
+        "var __r=(__same(__e[1],__ed1,__ep1,__em1)&&"
+        "__same(__e[0],__ed2,__ep2,__em2));return __f||__r;}"
         "var __n=ipc.network();var __d1=__n.getDevice(__ed1);var __d2=__n.getDevice(__ed2);"
         "if(!__d1||!__d2){__o.reason='DEVICE_MISSING';__emit();return;}"
         "var __p1=__d1.getPort(__ep1);var __p2=__d2.getPort(__ep2);"
@@ -130,9 +136,14 @@ def _parse_endpoints(value: object) -> tuple[LinkEndpoint, ...]:
             return ()
         device = item.get("device")
         port = item.get("port")
-        if not isinstance(device, str) or not isinstance(port, str):
+        model = item.get("model", "")
+        if (
+            not isinstance(device, str)
+            or not isinstance(port, str)
+            or not isinstance(model, str)
+        ):
             return ()
-        parsed.append(LinkEndpoint(device=device, port=port))
+        parsed.append(LinkEndpoint(device=device, port=port, model=model))
     return tuple(parsed)
 
 
@@ -219,17 +230,35 @@ def verify_exact_link_convergence(
             send_and_wait(script, min(1.0, remaining))
         )
         expected = {
-            (expectation.endpoint_a.device, expectation.endpoint_a.port),
-            (expectation.endpoint_b.device, expectation.endpoint_b.port),
+            (expectation.endpoint_a.device, expectation.endpoint_a.port): (
+                expectation.endpoint_a.model
+            ),
+            (expectation.endpoint_b.device, expectation.endpoint_b.port): (
+                expectation.endpoint_b.model
+            ),
         }
-        observed_a = {(item.device, item.port) for item in observation.observed_link_a}
-        observed_b = {(item.device, item.port) for item in observation.observed_link_b}
-        if observation.exact and (observed_a != expected or observed_b != expected):
+
+        def _matches_expected(endpoints: tuple[LinkEndpoint, ...]) -> bool:
+            observed = {(item.device, item.port) for item in endpoints}
+            return (
+                len(endpoints) == len(expected)
+                and observed == set(expected)
+                and all(
+                    not expected[(item.device, item.port)]
+                    or item.model == expected[(item.device, item.port)]
+                    for item in endpoints
+                )
+            )
+
+        if observation.exact and (
+            not _matches_expected(observation.observed_link_a)
+            or not _matches_expected(observation.observed_link_b)
+        ):
             observation = replace(
                 observation,
                 status=LinkObservationStatus.ENDPOINT_MISMATCH,
                 exact=False,
-                detail="read-back payload did not match the requested endpoint pair",
+                detail="read-back payload did not match the requested endpoint identity",
             )
         if observation.exact:
             return LinkConvergenceResult(

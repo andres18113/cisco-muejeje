@@ -23,6 +23,14 @@ from ...shared.constants import (
     PT_DEVICE_TYPE_DEFAULT,
 )
 from .probe_runtime import PacketTracerBridgeProbeRuntime
+from .topology_observation import (
+    LinkEndpoint,
+    LinkExpectation,
+    verify_exact_link_convergence,
+)
+
+
+_LINK_READBACK_TIMEOUT_SECONDS = 4.0
 
 
 class PacketTracerPoEDeliveryFixtureRuntime:
@@ -157,42 +165,51 @@ class PacketTracerPoEDeliveryFixtureRuntime:
             "else if(__spp.getLink()||__epp.getLink()){reportResult(JSON.stringify({linked:false,error:'fixture port already linked'}));}",
             "else if(typeof lwAddLink!=='function'){reportResult(JSON.stringify({linked:false,error:'lwAddLink unavailable'}));}",
             "else{lwAddLink(__sn,__sp,__en,__ep,", cable, ");",
-            "var __sl=__spp.getLink(),__el=__epp.getLink();",
-            "if(!__sl||!__el){reportResult(JSON.stringify({linked:false,error:'created link not observed at both ports'}));}",
-            "else{function __endpoint(__p){var __owner=__p.getOwnerDevice();return {",
-            "device_name:String(__owner.getName()),device_model:(typeof __owner.getModel==='function'?String(__owner.getModel()):''),port:String(__p.getName())};}",
-            "function __ends(__link){return [__endpoint(__link.getPort1()),__endpoint(__link.getPort2())];}",
-            "reportResult(JSON.stringify({linked:true,observed_from_switch:__ends(__sl),observed_from_endpoint:__ends(__el)}));}}}}",
+            "reportResult(JSON.stringify({requested:true}));}}}",
             "catch(__e){reportResult(JSON.stringify({linked:false,error:String(__e)}));}",
         ))
         data = self._json_object(script, timeout=15.0)
         error = data.get("error")
         if error:
             raise RuntimeError(f"Packet Tracer could not create PoE fixture link: {error}")
-        if data.get("linked") is not True:
-            raise RuntimeError("Packet Tracer did not observe the created PoE fixture link.")
+        if data.get("requested") is not True:
+            raise RuntimeError("Packet Tracer did not acknowledge the PoE link request.")
 
-        switch_view = self._parse_endpoint_view(data.get("observed_from_switch"))
-        endpoint_view = self._parse_endpoint_view(data.get("observed_from_endpoint"))
-        expected = {
-            (switch.name, switch.model, switch_port),
-            (endpoint.name, endpoint.model, endpoint_port),
-        }
-        if (
-            self._endpoint_keys(switch_view) != expected
-            or self._endpoint_keys(endpoint_view) != expected
-        ):
+        convergence = verify_exact_link_convergence(
+            self._send_and_wait,
+            LinkExpectation(
+                endpoint_a=LinkEndpoint(
+                    device=switch.name, port=switch_port, model=switch.model,
+                ),
+                endpoint_b=LinkEndpoint(
+                    device=endpoint.name, port=endpoint_port, model=endpoint.model,
+                ),
+            ),
+            timeout_seconds=_LINK_READBACK_TIMEOUT_SECONDS,
+        )
+        if not convergence.verified:
             raise RuntimeError(
-                "Packet Tracer link read-back did not match both requested endpoints."
+                "Packet Tracer did not observe the requested PoE fixture link "
+                "bilaterally: " + convergence.observation.status.value
             )
 
-        by_key = {
-            (item.device_name, item.device_model, item.port): item
-            for item in switch_view
+        by_location = {
+            (item.device, item.port): item
+            for item in convergence.observation.observed_link_a
         }
+        observed_switch = by_location[(switch.name, switch_port)]
+        observed_endpoint = by_location[(endpoint.name, endpoint_port)]
         return PoEDeliveryLinkIdentity(
-            first=by_key[(switch.name, switch.model, switch_port)],
-            second=by_key[(endpoint.name, endpoint.model, endpoint_port)],
+            first=PoEDeliveryLinkEndpoint(
+                device_name=observed_switch.device,
+                device_model=observed_switch.model,
+                port=observed_switch.port,
+            ),
+            second=PoEDeliveryLinkEndpoint(
+                device_name=observed_endpoint.device,
+                device_model=observed_endpoint.model,
+                port=observed_endpoint.port,
+            ),
         )
 
     def delete_device(self, temporary_name: str) -> bool:
@@ -236,32 +253,3 @@ class PacketTracerPoEDeliveryFixtureRuntime:
                 "Packet Tracer returned a non-object PoE fixture response."
             )
         return value
-
-    @staticmethod
-    def _parse_endpoint_view(value: object) -> tuple[PoEDeliveryLinkEndpoint, ...]:
-        if not isinstance(value, list) or len(value) != 2:
-            raise RuntimeError("Packet Tracer returned malformed PoE link endpoints.")
-        parsed: list[PoEDeliveryLinkEndpoint] = []
-        for item in value:
-            if not isinstance(item, dict):
-                raise RuntimeError("Packet Tracer returned malformed PoE link endpoints.")
-            name = item.get("device_name")
-            model = item.get("device_model")
-            port = item.get("port")
-            if not all(isinstance(field, str) and field for field in (name, model, port)):
-                raise RuntimeError("Packet Tracer returned malformed PoE link endpoints.")
-            parsed.append(PoEDeliveryLinkEndpoint(
-                device_name=name,
-                device_model=model,
-                port=port,
-            ))
-        return tuple(parsed)
-
-    @staticmethod
-    def _endpoint_keys(
-        endpoints: tuple[PoEDeliveryLinkEndpoint, ...],
-    ) -> set[tuple[str, str, str]]:
-        return {
-            (item.device_name, item.device_model, item.port)
-            for item in endpoints
-        }
