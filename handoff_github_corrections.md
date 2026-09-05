@@ -24,10 +24,12 @@ source + tests + evidence
   `0c8ec25dd4783a4096f082b57387ae3ea4a5d3e4`.
 - Product implementation:
   `98a6b671539fb4c67e00ff04fdcce6ef8c09e844`.
+- Reviewed product corrections:
+  `055ee779655fe16d0d0c100a0101fae79f55ba69`.
 - Governance split:
   `61fc5da8e2de1ffd59ccf2e7b9423d34b8d39111`.
 - The commit containing this file is documentary only; the offline operational
-  gate is deliberately bound to the product implementation SHA above.
+  gate is deliberately bound to reviewed product SHA `055ee779655fe16d0d0c100a0101fae79f55ba69`.
 
 ## RESULTING_POE_ARCHITECTURE
 
@@ -66,7 +68,7 @@ Voice/PVST outcomes and compatibility projection remain under
 `last_live_state`. The current offline gate records:
 
 ```text
-source_head           = 98a6b671539fb4c67e00ff04fdcce6ef8c09e844
+source_head           = 055ee779655fe16d0d0c100a0101fae79f55ba69
 poe_delivery          = unknown
 poe_ports             = null
 hardware_plan         = partially_resolved
@@ -80,17 +82,21 @@ obtained, reviewed and persisted.
 ## VALIDATION
 
 - Required focused product matrix: `255 passed`.
+- Recovered-review affected matrix: `249 passed`.
 - Final governance matrix: `10 passed`.
-- Final full offline suite: `3711 passed, 5 warnings`; warnings are the known
+- Final full offline suite after reviewed fixes: `3720 passed, 5 warnings`;
+  warnings are the known
   Pydantic/pytest cache and fixture-deprecation noise.
 - Import preflight used this worktree's `.venv`, resolved the production module
   inside this worktree and loaded exactly `packet_tracer_mcp`.
-- Independent review found three real defects: generated-JS brace imbalance,
+- The first independent review found three real defects: generated-JS brace imbalance,
   a vacuous malformed-claim test provider, and uncaught whitespace-invalid
   manual observations. All three were reproduced with failing tests, fixed and
-  covered by the final green gates. A later fresh review was interrupted and,
-  at the user's direction, was not relaunched; it is not counted as a clean
-  receipt.
+  covered by green gates. The recovered complete fresh review verified those
+  fixes and found two additional gaps: untrimmed request identities could still
+  escape the typed result, and generic compilation could choose a port outside
+  a narrow exact PoE claim. Both were reproduced, corrected surgically and
+  covered by the final green gates.
 
 ## DO_NOT_REDISCOVER
 
