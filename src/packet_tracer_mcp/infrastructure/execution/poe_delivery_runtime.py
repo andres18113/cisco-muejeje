@@ -16,8 +16,10 @@ from ...domain.enterprise.models.poe_delivery import (
     PoEDeliveryLinkEndpoint,
     PoEDeliveryLinkIdentity,
 )
+from ...infrastructure.catalog.cables import infer_cable
 from ...infrastructure.catalog.devices import resolve_model
 from ...shared.constants import (
+    PT_CONNECT_TYPE,
     PT_CONNECT_TYPE_DEFAULT,
     PT_DEVICE_TYPE,
     PT_DEVICE_TYPE_DEFAULT,
@@ -152,7 +154,15 @@ class PacketTracerPoEDeliveryFixtureRuntime:
         endpoint_name = json.dumps(endpoint.name, ensure_ascii=False)
         endpoint_model = json.dumps(endpoint.model, ensure_ascii=False)
         endpoint_port_literal = json.dumps(endpoint_port, ensure_ascii=False)
-        cable = json.dumps(PT_CONNECT_TYPE_DEFAULT)
+        switch_catalog = resolve_model(switch.model)
+        endpoint_catalog = resolve_model(endpoint.model)
+        cable_name = infer_cable(
+            switch_catalog.category if switch_catalog is not None else "",
+            endpoint_catalog.category if endpoint_catalog is not None else "",
+        )
+        cable = json.dumps(
+            PT_CONNECT_TYPE.get(cable_name, PT_CONNECT_TYPE_DEFAULT)
+        )
         script = "".join((
             "try{var __sn=", switch_name, ",__sm=", switch_model,
             ",__sp=", switch_port_literal, ",__en=", endpoint_name,
@@ -164,8 +174,9 @@ class PacketTracerPoEDeliveryFixtureRuntime:
             "if(!__spp||!__epp){reportResult(JSON.stringify({linked:false,error:'fixture port missing'}));}",
             "else if(__spp.getLink()||__epp.getLink()){reportResult(JSON.stringify({linked:false,error:'fixture port already linked'}));}",
             "else if(typeof lwAddLink!=='function'){reportResult(JSON.stringify({linked:false,error:'lwAddLink unavailable'}));}",
-            "else{lwAddLink(__sn,__sp,__en,__ep,", cable, ");",
-            "reportResult(JSON.stringify({requested:true}));}}}",
+            "else{var __accepted=lwAddLink(__sn,__sp,__en,__ep,", cable, ");",
+            "if(__accepted!==true){reportResult(JSON.stringify({requested:false,error:'lwAddLink rejected exact fixture link'}));}",
+            "else{reportResult(JSON.stringify({requested:true}));}}}}",
             "catch(__e){reportResult(JSON.stringify({linked:false,error:String(__e)}));}",
         ))
         data = self._json_object(script, timeout=15.0)

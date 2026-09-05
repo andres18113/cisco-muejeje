@@ -159,6 +159,64 @@ def test_create_link_returns_both_exact_observed_endpoint_views():
     assert all(".isPowerOn(" not in script for script, _ in transport.calls)
 
 
+def test_create_link_requires_positive_lwaddlink_return_before_readback():
+    switch_name = "__POE_SWITCH"
+    endpoint_name = "__POE_PHONE"
+    switch_port = "FastEthernet0/1"
+    endpoint_port = "Switch"
+    transport = RecordingTransport([
+        _device_payload(switch_name, "3560-24PS", [switch_port]),
+        _device_payload(endpoint_name, "7960", [endpoint_port]),
+        json.dumps({
+            "requested": False,
+            "error": "lwAddLink rejected exact fixture link",
+        }),
+    ])
+    runtime = PacketTracerPoEDeliveryFixtureRuntime(transport, "PT build exact")
+    switch = runtime.create_device(
+        "3560-24PS", switch_name, (switch_port,),
+    )
+    endpoint = runtime.create_device("7960", endpoint_name, (endpoint_port,))
+
+    with pytest.raises(RuntimeError, match="lwAddLink rejected exact fixture link"):
+        runtime.create_link(switch, switch_port, endpoint, endpoint_port)
+
+    mutation_script = transport.calls[2][0]
+    assert "var __accepted=lwAddLink(" in mutation_script
+    assert "if(__accepted!==true)" in mutation_script
+    assert len(transport.calls) == 3
+
+
+@pytest.mark.parametrize("switch_model", ["3560-24PS", "2960-24TT"])
+def test_create_link_uses_canonical_switch_to_ip_phone_cable(
+    switch_model: str,
+) -> None:
+    switch_name = "__POE_SWITCH"
+    endpoint_name = "__POE_PHONE"
+    switch_port = "FastEthernet0/1"
+    endpoint_port = "Switch"
+    transport = RecordingTransport([
+        _device_payload(switch_name, switch_model, [switch_port]),
+        _device_payload(endpoint_name, "7960", [endpoint_port]),
+        json.dumps({"requested": True}),
+        _exact_link_readback_payload(
+            switch_name, switch_model, switch_port,
+            endpoint_name, "7960", endpoint_port,
+        ),
+    ])
+    runtime = PacketTracerPoEDeliveryFixtureRuntime(transport, "PT build exact")
+    switch = runtime.create_device(
+        switch_model, switch_name, (switch_port,),
+    )
+    endpoint = runtime.create_device("7960", endpoint_name, (endpoint_port,))
+
+    runtime.create_link(switch, switch_port, endpoint, endpoint_port)
+
+    mutation_script = transport.calls[2][0]
+    assert ",8100);" in mutation_script
+    assert ",8107);" not in mutation_script
+
+
 def test_create_link_observes_bilateral_convergence_after_mutation_without_replay():
     switch_name = "__POE_SWITCH"
     endpoint_name = "__POE_PHONE"
