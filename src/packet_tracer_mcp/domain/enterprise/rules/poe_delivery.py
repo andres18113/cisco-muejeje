@@ -30,6 +30,10 @@ def validate_poe_delivery_request(
     ):
         if not value.strip():
             errors.append(_error(f"PoE qualification requires an exact {field_name}."))
+        elif value != value.strip():
+            errors.append(_error(
+                f"Exact {field_name} cannot contain leading or trailing whitespace."
+            ))
     if not request.bindings:
         errors.append(_error("PoE qualification requires one non-empty simultaneous binding group."))
     keys: set[tuple[str, str, str, str]] = set()
@@ -40,6 +44,10 @@ def validate_poe_delivery_request(
         key = _binding_key(binding)
         if any(not value.strip() for value in key):
             errors.append(_error("Every PoE binding requires exact switch ports and endpoint identity."))
+        elif any(value != value.strip() for value in key):
+            errors.append(_error(
+                "Exact PoE binding identity cannot contain leading or trailing whitespace."
+            ))
         if key in keys:
             errors.append(_error("Duplicate PoE binding requests cannot widen one observation group."))
         keys.add(key)

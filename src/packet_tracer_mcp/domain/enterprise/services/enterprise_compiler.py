@@ -93,12 +93,15 @@ class _PortAllocator:
         required_class: PortClass,
         explicit_port: str | None = None,
         *,
+        allowed_ports: set[str] | None = None,
         allow_class_fallback: bool,
     ) -> str | None:
         inventory = self._inventories.get(device_id, [])
         if explicit_port:
             return self._reserve_explicit(device_id, explicit_port, reservation, inventory)
         free = [port for port in inventory if (device_id, port.name) not in self._used]
+        if allowed_ports is not None:
+            free = [port for port in free if port.name in allowed_ports]
         preferred = [port for port in free if required_class in port.classes]
         candidates = preferred
         if not candidates and allow_class_fallback and free:
@@ -709,6 +712,7 @@ class EnterpriseCompiler:
                 ))
                 continue
             switch = network_devices[assignment.device_id]
+            planned_switch = planned_devices.get(assignment.device_id)
             for endpoint in selected:
                 if (
                     endpoint.expanded.id in attached
@@ -716,8 +720,23 @@ class EnterpriseCompiler:
                 ):
                     continue
                 reservation = f"endpoint:{endpoint.expanded.id}"
+                authorized_ports = {
+                    binding.switch_port
+                    for binding in (
+                        planned_switch.poe_authorized_bindings
+                        if planned_switch is not None
+                        else []
+                    )
+                    if binding.endpoint_model == endpoint.profile.model
+                    and binding.endpoint_port == endpoint.profile.network_port
+                }
                 switch_port = allocator.allocate(
                     assignment.device_id, reservation, PortClass.ACCESS_CAPABLE,
+                    allowed_ports=(
+                        authorized_ports
+                        if endpoint.expanded.requires_poe and authorized_ports
+                        else None
+                    ),
                     allow_class_fallback=False,
                 )
                 if not switch_port:

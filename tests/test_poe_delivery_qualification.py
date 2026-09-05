@@ -473,6 +473,72 @@ def test_service_rejects_untrimmed_manual_observation_text_without_raising(
     assert "whitespace" in result.failure_reason.casefold()
 
 
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda item: setattr(
+            item, "packet_tracer_build", " Packet Tracer 9.0.0 build 1234 ",
+        ),
+        lambda item: setattr(item, "candidate_model", " 3560-24PS "),
+        lambda item: setattr(item, "comparison_model", " 2960-24TT "),
+        lambda item: setattr(
+            item.bindings[0], "candidate_port", " FastEthernet0/1 ",
+        ),
+        lambda item: setattr(
+            item.bindings[0], "comparison_port", " FastEthernet0/1 ",
+        ),
+        lambda item: setattr(item.bindings[0], "endpoint_model", " 7960 "),
+        lambda item: setattr(item.bindings[0], "endpoint_port", " Switch "),
+    ],
+    ids=[
+        "packet-tracer-build",
+        "candidate-model",
+        "comparison-model",
+        "candidate-port",
+        "comparison-port",
+        "endpoint-model",
+        "endpoint-port",
+    ],
+)
+def test_service_rejects_untrimmed_request_identity_without_raising(mutate) -> None:
+    request, runtime, observer, writer, service = _service_fixture()
+    mutate(request)
+
+    result = service.qualify(request)
+
+    assert result.execution_status is ProbeExecutionStatus.EXECUTION_ERROR
+    assert result.capability_result.status is CapabilityStatus.UNKNOWN
+    assert result.attempted_identities == []
+    assert observer.calls == 0
+    assert "whitespace" in result.failure_reason.casefold()
+
+
+def test_service_degrades_dimension_encoder_rejection_to_typed_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, runtime, observer, writer, service = _service_fixture()
+
+    def reject_scope(*_args) -> dict[str, str]:
+        raise ValueError("synthetic canonical scope rejection")
+
+    monkeypatch.setattr(
+        "src.packet_tracer_mcp.application.use_cases.poe_delivery_qualification."
+        "_observation_dimensions",
+        reject_scope,
+    )
+
+    result = service.qualify(request)
+
+    assert result.execution_status is ProbeExecutionStatus.VERIFY_FAILED
+    assert result.observation_status is ObservationStatus.OBSERVED
+    assert result.verification_status is VerificationStatus.FAILED
+    assert result.capability_result.status is CapabilityStatus.UNKNOWN
+    assert result.capability_result.dimensions == {}
+    assert "canonical scope rejection" in result.failure_reason
+    assert len(writer.snapshots) == 1
+    assert writer.snapshots[0].session.results[0].evidence() is None
+
+
 def test_visible_non_discriminating_comparison_is_failed_not_unobservable() -> None:
     request, runtime, observer, writer, service = _service_fixture()
     observer.mutate = lambda item: setattr(

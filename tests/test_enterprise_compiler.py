@@ -192,6 +192,50 @@ def test_compiler_rejects_powered_endpoint_model_not_covered_by_port_claim():
     }
 
 
+def test_compiler_uses_the_narrow_poe_ports_selected_by_the_planner():
+    intent = EnterpriseIntent(
+        name="Narrow exact PoE ports",
+        default_growth_percent=0,
+        sites=[SiteIntent(
+            name="Branch",
+            type=SiteType.BRANCH,
+            endpoints=[_requirement(DeviceRole.IP_PHONE, 2, poe=True)],
+        )],
+    )
+    candidate = _candidate(access=4, uplinks=2)
+    candidate.capabilities.poe_ports = 2
+    candidate.capabilities.poe_authorized_bindings = [
+        PoEAuthorizedBinding("FastEthernet0/2", "7960", "Switch"),
+        PoEAuthorizedBinding("FastEthernet0/4", "7960", "Switch"),
+    ]
+
+    _, hardware, result = _compile(intent, candidate=candidate)
+
+    powered = [
+        assignment
+        for site in hardware.site_hardware
+        for block in site.access_blocks
+        for assignment in block.port_assignments
+        if assignment.requires_poe
+    ]
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert [
+        (item.first_port, item.last_port, item.count) for item in powered
+    ] == [
+        ("FastEthernet0/2", "FastEthernet0/2", 1),
+        ("FastEthernet0/4", "FastEthernet0/4", 1),
+    ]
+    assert result.is_valid
+    assert result.plan is not None
+    phone_links = [
+        link for link in result.plan.links
+        if link.link_role == ConcreteLinkRole.ENDPOINT_ACCESS.value
+    ]
+    assert {link.port_a for link in phone_links} == {
+        "FastEthernet0/2", "FastEthernet0/4",
+    }
+
+
 def _legacy_non_wan_identity_reference():
     """Preserva la entrada exacta del hash v2 anterior al gate de estado E4."""
     enterprise = _design(_reference_intent())

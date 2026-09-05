@@ -283,11 +283,17 @@ class PoEDeliveryQualificationService:
         if not supported and execution_status is ProbeExecutionStatus.VERIFIED:
             execution_status = ProbeExecutionStatus.VERIFY_FAILED
 
-        dimensions = (
-            _observation_dimensions(request, observation)
-            if supported and observation is not None
-            else {}
-        )
+        dimensions: dict[str, str] = {}
+        if supported and observation is not None:
+            try:
+                dimensions = _observation_dimensions(request, observation)
+            except ValueError as exc:
+                supported = False
+                execution_status = ProbeExecutionStatus.VERIFY_FAILED
+                verification_status = VerificationStatus.FAILED
+                failure_reasons.append(
+                    f"PoE delivery claim encoding failed closed: {exc}"
+                )
         capability_result = self._capability_result(
             request=request,
             execution_status=execution_status,
