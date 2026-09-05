@@ -30,8 +30,21 @@ source + tests + evidence
   `61fc5da8e2de1ffd59ccf2e7b9423d34b8d39111`.
 - Planner-to-compiler port authority:
   `ebb996f68da6750d95862616bef42b7d8be413ca`.
+- Productive PoE link-readback correction:
+  `f3f646c872f2ec3d786a810b443fe7996b5ff04a`.
 - The commit containing this file is documentary only; the offline operational
-  gate is deliberately bound to product SHA `ebb996f68da6750d95862616bef42b7d8be413ca`.
+  gate is deliberately bound to product SHA `f3f646c872f2ec3d786a810b443fe7996b5ff04a`.
+
+## LATEST_POE_QUALIFICATION
+
+- Governed session `poe-e76063f692ec` ended
+  `UNOBSERVABLE / INVALID EVIDENCE`; it did not produce delivery evidence.
+- Cause: the fixture attempted bilateral `getLink()` readback immediately after
+  `lwAddLink` in the same command, before the governed convergence boundary.
+- Product fix `f3f646c872f2ec3d786a810b443fe7996b5ff04a` separates the
+  single link mutation from bounded, exact bilateral readback and never replays
+  `lwAddLink`.
+- PoE remains `UNKNOWN`, `poe_ports` remains `null`, and Router0 remains blocked.
 
 ## RESULTING_POE_ARCHITECTURE
 
@@ -76,7 +89,7 @@ Voice/PVST outcomes and compatibility projection remain under
 `last_live_state`. The current offline gate records:
 
 ```text
-source_head           = ebb996f68da6750d95862616bef42b7d8be413ca
+source_head           = f3f646c872f2ec3d786a810b443fe7996b5ff04a
 poe_delivery          = unknown
 poe_ports             = null
 hardware_plan         = partially_resolved
