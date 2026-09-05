@@ -28,8 +28,10 @@ source + tests + evidence
   `055ee779655fe16d0d0c100a0101fae79f55ba69`.
 - Governance split:
   `61fc5da8e2de1ffd59ccf2e7b9423d34b8d39111`.
+- Planner-to-compiler port authority:
+  `ebb996f68da6750d95862616bef42b7d8be413ca`.
 - The commit containing this file is documentary only; the offline operational
-  gate is deliberately bound to reviewed product SHA `055ee779655fe16d0d0c100a0101fae79f55ba69`.
+  gate is deliberately bound to product SHA `ebb996f68da6750d95862616bef42b7d8be413ca`.
 
 ## RESULTING_POE_ARCHITECTURE
 
@@ -54,6 +56,12 @@ source + tests + evidence
   maximum simultaneous count from one execution, never a sum across runs.
 - The planner and compiler both enforce the exact switch port, endpoint model
   and endpoint port. Evidence for a phone cannot authorize an AP or camera.
+- `PortAssignmentRange.first_port`/`last_port` are normative. The compiler
+  rebuilds each range positionally from the planned device's ordered
+  `access_capable` descriptors and reserves those exact ports, so it cannot
+  permute the planner's per-endpoint mapping while keeping the same global
+  port set. A range that contradicts the inventory is
+  `PORT_ASSIGNMENT_RANGE_INCONSISTENT`, not a licence to reassign.
 
 ## CURRENT_GOVERNANCE
 
@@ -68,7 +76,7 @@ Voice/PVST outcomes and compatibility projection remain under
 `last_live_state`. The current offline gate records:
 
 ```text
-source_head           = 055ee779655fe16d0d0c100a0101fae79f55ba69
+source_head           = ebb996f68da6750d95862616bef42b7d8be413ca
 poe_delivery          = unknown
 poe_ports             = null
 hardware_plan         = partially_resolved
@@ -87,6 +95,8 @@ obtained, reviewed and persisted.
 - Final full offline suite after reviewed fixes: `3720 passed, 5 warnings`;
   warnings are the known
   Pydantic/pytest cache and fixture-deprecation noise.
+- Full offline suite after the port-authority correction: `3723 passed,
+  4 warnings`, same known noise.
 - Import preflight used this worktree's `.venv`, resolved the production module
   inside this worktree and loaded exactly `packet_tracer_mcp`.
 - The first independent review found three real defects: generated-JS brace imbalance,
@@ -97,6 +107,13 @@ obtained, reviewed and persisted.
   escape the typed result, and generic compilation could choose a port outside
   a narrow exact PoE claim. Both were reproduced, corrected surgically and
   covered by the final green gates.
+- A later offline audit of the planner-to-compiler contract found that the
+  narrow-PoE fix was verified only by global port sets. The compiler still
+  ignored `first_port`/`last_port` and re-chose every endpoint access port, so
+  it could permute the planner's per-endpoint mapping inside the authorized
+  set. Reproduced with an adversarial fixture (two powered source groups of one
+  endpoint model over four non-contiguous authorized ports on one switch),
+  corrected, and covered by causal tests.
 
 ## DO_NOT_REDISCOVER
 
