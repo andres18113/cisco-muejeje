@@ -236,6 +236,121 @@ def test_compiler_uses_the_narrow_poe_ports_selected_by_the_planner():
     }
 
 
+def _non_contiguous_poe_candidate() -> HardwareCandidate:
+    """24 puertos de acceso con cuatro puertos PoE autorizados no contiguos."""
+    authorized = (
+        "FastEthernet0/2", "FastEthernet0/5", "FastEthernet0/9", "FastEthernet0/14",
+    )
+    candidate = _candidate(access=24, uplinks=2)
+    candidate.capabilities.poe_ports = len(authorized)
+    candidate.capabilities.poe_authorized_bindings = (
+        synthetic_poe_authorized_bindings(authorized)
+    )
+    return candidate
+
+
+def _two_powered_groups_intent() -> EnterpriseIntent:
+    """Dos source_group alimentados del mismo modelo sobre un solo switch."""
+    return EnterpriseIntent(
+        name="Planner port authority",
+        default_growth_percent=0,
+        sites=[SiteIntent(name="Branch", type=SiteType.BRANCH, buildings=[
+            BuildingIntent(name="A", floors=[FloorIntent(name="1", zones=[ZoneIntent(
+                name="Ventas",
+                endpoint_groups=[EndpointGroup(name="Alpha", requirements=[
+                    _requirement(DeviceRole.USER_PC, 2),
+                    _requirement(DeviceRole.IP_PHONE, 4, poe=True),
+                    _requirement(DeviceRole.PRINTER, 3),
+                ])],
+            )])]),
+        ])],
+    )
+
+
+def test_compiler_materializes_the_exact_ports_the_hardware_plan_assigned():
+    """El compiler no puede permutar la asignación física ya decidida por E3.
+
+    Premisa adversarial: dos grupos alimentados del mismo `endpoint_model` y
+    `endpoint_port` comparten cuatro puertos PoE autorizados no contiguos en un
+    único switch. Cualquier permutación entre ellos conserva el conjunto global
+    de puertos, así que sólo una comparación por endpoint distingue conservar la
+    asignación del planner de volver a elegir un puerto autorizado cualquiera.
+    """
+    _, hardware, result = _compile(
+        _two_powered_groups_intent(), candidate=_non_contiguous_poe_candidate(),
+    )
+    assignments = [
+        assignment
+        for site in hardware.site_hardware
+        for block in site.access_blocks
+        for assignment in block.port_assignments
+    ]
+    powered = [item for item in assignments if item.requires_poe]
+
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert len({item.device_id for item in assignments}) == 1
+    assert len({item.source_group for item in powered}) == 2
+    assert [
+        (item.source_group.rsplit("/", 1)[-1], item.start_index, item.first_port, item.count)
+        for item in powered
+    ] == [
+        ("ventas:pc-phone", 1, "FastEthernet0/2", 1),
+        ("ventas:pc-phone", 2, "FastEthernet0/5", 1),
+        ("ventas:Alpha:ip_phone", 3, "FastEthernet0/9", 1),
+        ("ventas:Alpha:ip_phone", 4, "FastEthernet0/14", 1),
+    ]
+    assert result.is_valid, [issue.model_dump(mode="json") for issue in result.issues]
+    assert result.plan is not None
+
+    attached = {
+        link.device_b_id: link.port_a
+        for link in result.plan.links
+        if link.link_role == ConcreteLinkRole.ENDPOINT_ACCESS.value
+    }
+    # Un chequeo por conjunto global no ve el defecto: los cuatro puertos
+    # alimentados siguen siendo los mismos aunque cambien de endpoint.
+    assert {
+        port for endpoint_id, port in attached.items() if "ip_phone" in endpoint_id
+    } == {"FastEthernet0/2", "FastEthernet0/5", "FastEthernet0/9", "FastEthernet0/14"}
+    assert attached == {
+        "endpoint/branch/a/1/ventas/ip_phone/001": "FastEthernet0/2",
+        "endpoint/branch/a/1/ventas/ip_phone/002": "FastEthernet0/5",
+        "endpoint/branch/a/1/ventas/ip_phone/003": "FastEthernet0/9",
+        "endpoint/branch/a/1/ventas/ip_phone/004": "FastEthernet0/14",
+        "endpoint/branch/a/1/ventas/printer/001": "FastEthernet0/1",
+        "endpoint/branch/a/1/ventas/printer/002": "FastEthernet0/3",
+        "endpoint/branch/a/1/ventas/printer/003": "FastEthernet0/4",
+    }
+
+
+def test_a_range_that_contradicts_the_inventory_fails_closed_without_reassigning():
+    """Una desviación no se resuelve moviendo el endpoint a otro puerto libre."""
+    enterprise = _design(_two_powered_groups_intent())
+    hardware = HardwarePlanner().plan(enterprise, [_non_contiguous_poe_candidate()])
+    block = hardware.site_hardware[0].access_blocks[0]
+    corrupted = next(item for item in block.port_assignments if item.requires_poe)
+    # Quedan puertos de acceso y puertos PoE autorizados libres: una
+    # implementación que volviera a elegir puerto seguiría compilando.
+    corrupted.last_port = "FastEthernet0/14"
+    catalog = PacketTracerTopologyCatalogAdapter()
+
+    result = compile_enterprise_topology(
+        enterprise, hardware, catalog.compilation_profile(), catalog.cable_for,
+    )
+
+    codes = {issue.code for issue in result.issues}
+    assert hardware.status is HardwarePlanStatus.VALID
+    assert result.plan is None
+    assert CompilationIssueCode.PORT_ASSIGNMENT_RANGE_INCONSISTENT in codes
+    assert CompilationIssueCode.ENDPOINT_ASSIGNMENT_MISSING in codes
+    inconsistent = next(
+        issue for issue in result.issues
+        if issue.code is CompilationIssueCode.PORT_ASSIGNMENT_RANGE_INCONSISTENT
+    )
+    assert inconsistent.subject == corrupted.device_id
+    assert inconsistent.details["source_group"] == corrupted.source_group
+
+
 def _legacy_non_wan_identity_reference():
     """Preserva la entrada exacta del hash v2 anterior al gate de estado E4."""
     enterprise = _design(_reference_intent())
@@ -521,7 +636,7 @@ def test_unresolved_network_or_endpoint_model_fails_without_partial_plan():
     assert CompilationIssueCode.ENDPOINT_MODEL_UNRESOLVED in {issue.code for issue in unresolved_endpoint.issues}
 
 
-def test_physical_port_exhaustion_is_a_hard_error_and_drops_no_endpoint_silently():
+def test_lost_access_inventory_is_a_hard_error_and_drops_no_endpoint_silently():
     enterprise = _design(_reference_intent())
     hardware = HardwarePlanner().plan(enterprise, [_candidate()])
     access = next(device for device in hardware.site_hardware[0].devices if device.role is DeviceRole.ACCESS_SWITCH)
@@ -532,8 +647,28 @@ def test_physical_port_exhaustion_is_a_hard_error_and_drops_no_endpoint_silently
 
     result = compile_enterprise_topology(enterprise, hardware, catalog.compilation_profile(), catalog.cable_for)
 
+    codes = {issue.code for issue in result.issues}
     assert result.plan is None
     assert result.summary.endpoints == 75
+    # El rango aprobado por E3 ya no describe el inventario del switch: la
+    # incoherencia es dura y no autoriza reasignar otro puerto libre.
+    assert CompilationIssueCode.PORT_ASSIGNMENT_RANGE_INCONSISTENT in codes
+    assert CompilationIssueCode.ENDPOINT_ASSIGNMENT_MISSING in codes
+
+
+def test_physical_port_exhaustion_on_a_planned_link_is_a_hard_error():
+    enterprise = _design(_reference_intent())
+    hardware = HardwarePlanner().plan(enterprise, [_candidate()])
+    distribution = next(
+        device for device in hardware.site_hardware[0].devices
+        if device.role is DeviceRole.DISTRIBUTION_SWITCH
+    )
+    distribution.port_descriptors = []
+    catalog = PacketTracerTopologyCatalogAdapter()
+
+    result = compile_enterprise_topology(enterprise, hardware, catalog.compilation_profile(), catalog.cable_for)
+
+    assert result.plan is None
     assert CompilationIssueCode.INSUFFICIENT_PHYSICAL_PORT_CAPACITY in {issue.code for issue in result.issues}
 
 
@@ -838,7 +973,10 @@ def test_compact_summary_omits_full_plan_and_semantic_hash_is_stable():
 
     assert "plan" not in compact
     assert compact["semantic_hash"] == result.semantic_hash
-    assert legacy.semantic_hash == "9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870"
+    # Rebased when E4 stopped re-choosing endpoint ports: la identidad de
+    # este artefacto la fija ahora la asignación física de E3, no el orden
+    # de asignación del compiler. Valor anterior: 9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870.
+    assert legacy.semantic_hash == "703a2782e15d463ee5d2b02206fc68953ce22fa9eb1ac03f4e6de56e0bfbb54b"
     assert result.plan is not None and result.plan.hash_schema_version == "2"
     assert legacy.plan is not None and legacy.plan.hash_schema_version == "2"
     assert compact["devices"] == 81

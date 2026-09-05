@@ -166,8 +166,12 @@ Reciprocal serial declarations deduplicate to one semantic link per site pair.
 Each router consumes one LAN port and the two serial ports supplied by one
 catalogued `HWIC-2T`; the fixture does not name those serial interfaces.
 Equivalent site/uplink reordering preserves the complete plan, WAN link IDs and
-schema-v2 hashes. The older non-WAN identity pin remains
-`9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870`.
+schema-v2 hashes. The older non-WAN identity pin is
+`703a2782e15d463ee5d2b02206fc68953ce22fa9eb1ac03f4e6de56e0bfbb54b`. It was
+rebased from `9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870`
+when E4 stopped re-choosing endpoint access ports and began materializing the
+exact `PortAssignmentRange` that E3 approved; the fixture, its inputs and its
+device/link counts are unchanged.
 
 This closes only the offline planning gate:
 

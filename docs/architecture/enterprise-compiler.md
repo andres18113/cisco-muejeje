@@ -51,6 +51,19 @@ Allocation order is:
 2. endpoint access assignments from `HardwarePlan`;
 3. phone-to-PC downstream links.
 
+Endpoint access ports are not re-decided here. E4 rebuilds the exact
+`first_port..last_port` run of each `PortAssignmentRange` from the planned
+device's own ordered `access_capable` `PortDescriptor` list — never from the
+interface name as text — and reserves those ports explicitly, so the endpoint at
+`start_index + k` lands on the k-th port E3 approved. A range that does not
+describe a contiguous run of that class in the compiled inventory is
+`PORT_ASSIGNMENT_RANGE_INCONSISTENT`, a hard error: a disagreement between
+`HardwarePlan` and the physical inventory fails closed instead of silently
+reassigning another compatible port. The PoE
+switch-port/endpoint-model/endpoint-port ceiling is still verified after the
+endpoint model resolves, so an unauthorized triple is rejected rather than
+relocated.
+
 Every physical interface is single-use. `Vlan*`, `Loopback*`, `Tunnel*`,
 `Port-channel*`, and `BVI*` are rejected, as are ports classified
 `physical=false`. Natural ordering places `Fa0/2` before `Fa0/10`. Missing

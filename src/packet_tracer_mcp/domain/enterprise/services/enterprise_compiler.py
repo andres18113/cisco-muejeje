@@ -32,6 +32,7 @@ from ..models.hardware import (
     LinkRole,
     NormalizedPortSpeed,
     PlannedNetworkDevice,
+    PortAssignmentRange,
     PortClass,
     PortDescriptor,
 )
@@ -93,15 +94,12 @@ class _PortAllocator:
         required_class: PortClass,
         explicit_port: str | None = None,
         *,
-        allowed_ports: set[str] | None = None,
         allow_class_fallback: bool,
     ) -> str | None:
         inventory = self._inventories.get(device_id, [])
         if explicit_port:
             return self._reserve_explicit(device_id, explicit_port, reservation, inventory)
         free = [port for port in inventory if (device_id, port.name) not in self._used]
-        if allowed_ports is not None:
-            free = [port for port in free if port.name in allowed_ports]
         preferred = [port for port in free if required_class in port.classes]
         candidates = preferred
         if not candidates and allow_class_fallback and free:
@@ -712,7 +710,11 @@ class EnterpriseCompiler:
                 ))
                 continue
             switch = network_devices[assignment.device_id]
-            planned_switch = planned_devices.get(assignment.device_id)
+            approved = _assignment_ports(
+                assignment, planned_devices.get(assignment.device_id), issues,
+            )
+            if approved is None:
+                continue
             for endpoint in selected:
                 if (
                     endpoint.expanded.id in attached
@@ -720,23 +722,9 @@ class EnterpriseCompiler:
                 ):
                     continue
                 reservation = f"endpoint:{endpoint.expanded.id}"
-                authorized_ports = {
-                    binding.switch_port
-                    for binding in (
-                        planned_switch.poe_authorized_bindings
-                        if planned_switch is not None
-                        else []
-                    )
-                    if binding.endpoint_model == endpoint.profile.model
-                    and binding.endpoint_port == endpoint.profile.network_port
-                }
                 switch_port = allocator.allocate(
                     assignment.device_id, reservation, PortClass.ACCESS_CAPABLE,
-                    allowed_ports=(
-                        authorized_ports
-                        if endpoint.expanded.requires_poe and authorized_ports
-                        else None
-                    ),
+                    approved[endpoint.expanded.source_index - assignment.start_index],
                     allow_class_fallback=False,
                 )
                 if not switch_port:
@@ -997,6 +985,43 @@ def _error(
         subject=subject,
         details=details,
     )
+
+
+def _assignment_ports(
+    assignment: PortAssignmentRange,
+    switch: PlannedNetworkDevice | None,
+    issues: list[CompilationIssue],
+) -> list[str] | None:
+    """Reconstruye el tramo de acceso exacto que E3 ya aprobó, o falla cerrado.
+
+    El orden físico viene de los `PortDescriptor` del propio plan, los mismos
+    que consumió `PortAssignmentPlanner`; no se infiere del nombre textual de
+    la interfaz. Un rango que no describe un tramo contiguo de esa clase es una
+    inconsistencia entre HardwarePlan e inventario, no una licencia para
+    reasignar otro puerto.
+    """
+
+    ordered = [
+        port.name
+        for port in (switch.port_descriptors if switch is not None else [])
+        if PortClass.ACCESS_CAPABLE in port.classes
+    ]
+    positions = {name: index for index, name in enumerate(ordered)}
+    first = positions.get(assignment.first_port)
+    last = positions.get(assignment.last_port)
+    if first is None or last is None or last - first + 1 != assignment.count:
+        issues.append(_error(
+            CompilationIssueCode.PORT_ASSIGNMENT_RANGE_INCONSISTENT,
+            f"{assignment.device_id}: el rango {assignment.first_port}..{assignment.last_port} "
+            f"({assignment.count}) no describe un tramo de acceso del inventario físico.",
+            assignment.device_id,
+            source_group=assignment.source_group,
+            first_port=assignment.first_port,
+            last_port=assignment.last_port,
+            count=assignment.count,
+        ))
+        return None
+    return ordered[first:last + 1]
 
 
 def _poe_endpoint_authorized(

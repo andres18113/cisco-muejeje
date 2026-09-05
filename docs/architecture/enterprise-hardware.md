@@ -52,6 +52,14 @@ distribución.
 
 Los puertos se normalizan en clases (`access_capable`, `uplink_capable`, `wan`, `serial`, etc.) y conservan su nombre real del catálogo. Los endpoints se guardan como rangos compactos (`PortAssignmentRange`), no como cientos de objetos host. El asignador limita explícitamente los endpoints PoE a la capacidad PoE conocida de cada switch; si esa capacidad es desconocida, el plan queda provisional.
 
+`PortAssignmentRange` es una decisión física normativa, no metadata: describe el
+tramo exacto `first_port..last_port` de puertos `access_capable` del propio
+`port_descriptors` del dispositivo, y el endpoint `start_index + k` del
+`source_group` corresponde al puerto `k` de ese tramo. Por eso
+`_append_assignment_ranges()` divide una selección no contigua en varios rangos:
+un rango siempre describe un tramo contiguo real. E4 materializa exactamente esa
+asignación; no vuelve a elegir puerto.
+
 `ModulePlanner` sólo usa módulos declarados compatibles por el catálogo y puede respetar un número de slots conocido. Si no existe una combinación compatible, devuelve ausencia de plan en vez de inventar una tarjeta o una ranura. El catálogo actual no conoce todas las ranuras de todos los modelos, por lo que esa evidencia debe llegar desde E3.5 cuando corresponda.
 
 Para una WAN serial, `supports_modules=UNKNOWN` deja el requisito sin resolver
