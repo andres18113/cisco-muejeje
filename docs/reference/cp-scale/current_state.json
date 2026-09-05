@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-05T20:07:48.9988873Z",
+  "updated_at": "2026-09-05T21:23:44.7163890Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -201,7 +201,7 @@
     }
   },
   "current_offline_operational_gate": {
-    "source_head": "055ee779655fe16d0d0c100a0101fae79f55ba69",
+    "source_head": "ebb996f68da6750d95862616bef42b7d8be413ca",
     "source_head_role": "governed_poe_delivery_implementation",
     "poe_delivery": "unknown",
     "poe_ports": null,
