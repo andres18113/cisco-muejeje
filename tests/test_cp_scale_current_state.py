@@ -18,12 +18,39 @@ HANDOFF_PATH = ROOT / "handoff.md"
 
 def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     raw = STATE_PATH.read_bytes()
-    state = json.loads(raw)
+    document = json.loads(raw)
 
-    assert state["schema"] == "cp-scale-current-state-v1"
+    assert document["schema"] == "cp-scale-current-state-v2"
     assert len(raw) < 16_384
-    assert datetime.fromisoformat(state["updated_at"].replace("Z", "+00:00"))
+    assert datetime.fromisoformat(document["updated_at"].replace("Z", "+00:00"))
+    assert set(document) == {
+        "schema",
+        "updated_at",
+        "last_live_state",
+        "current_offline_operational_gate",
+        "handoff_compatibility",
+    }
+
+    state = document["last_live_state"]
+    gate = document["current_offline_operational_gate"]
+    assert state != gate
+    assert state["schema"] == "cp-scale-current-state-v1"
+    assert state["updated_at"] == "2026-09-03T03:41:52.104318Z"
+    assert gate == {
+        "source_head": "98a6b671539fb4c67e00ff04fdcce6ef8c09e844",
+        "source_head_role": "governed_poe_delivery_implementation",
+        "poe_delivery": "unknown",
+        "poe_ports": None,
+        "hardware_plan": "partially_resolved",
+        "canonical_composition": "blocked_before_topology",
+        "router0_authorized": False,
+        "next_active_step": (
+            "RUN_ONE_GOVERNED_POE_DELIVERY_QUALIFICATION_FROM_CLEAN_GREEN_HEAD"
+        ),
+    }
+    assert state["source_head"] == "6c6db55566890f1d9ca9cc06bfc13ae24505e793"
     assert re.fullmatch(r"[0-9a-f]{40}", state["source_head"])
+    assert state["source_head_role"] == "latest_canonical_live_source"
     assert state["active_stage"] == "floor3"
     assert state["status"] == (
         "ROUTER0_NOT_REACHED_PVST_SIMULATION_TIME_CORRECTION_OFFLINE_VALIDATED"
@@ -109,6 +136,28 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "realtime_restored": True,
         },
     }
+    assert state["capabilities"] == {
+        "stp_pvst": {
+            "3560-24PS": "SUPPORTED",
+            "2960-24TT": "SUPPORTED",
+            "3650-24PS": "SUPPORTED",
+        },
+        "stp_edge": {
+            "3560-24PS": "SUPPORTED",
+            "2960-24TT": "UNKNOWN",
+            "3650-24PS": "SUPPORTED",
+        },
+        "stp_state": {
+            "3560-24PS": "SUPPORTED",
+            "2960-24TT": "SUPPORTED",
+            "3650-24PS": "SUPPORTED",
+        },
+        "stp_behavior": {
+            "3560-24PS": "SUPPORTED",
+            "2960-24TT": "SUPPORTED",
+            "3650-24PS": "SUPPORTED",
+        },
+    }
     assert state["offline_correction"] == {
         "debt_id": "TD-PVST-WINDOW-001",
         "status": "OFFLINE_VALIDATED_LIVE_PENDING",
@@ -176,9 +225,24 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     for key, expected in state["handoff_compatibility"].items():
         assert handoff[key] == expected
 
+    assert document["handoff_compatibility"] == {
+        "NEXT_ACTIVE_STEP": (
+            "RUN_ONE_GOVERNED_POE_DELIVERY_QUALIFICATION_FROM_CLEAN_GREEN_HEAD"
+        ),
+        "CP_SCALE_STATUS": (
+            "POE_DELIVERY_UNKNOWN | HARDWARE_PLAN_PARTIALLY_RESOLVED | "
+            "CANONICAL_COMPOSITION_BLOCKED_BEFORE_TOPOLOGY | "
+            "ROUTER0_NOT_AUTHORIZED"
+        ),
+    }
+    assert "ROUTER0_CP_LIVE" not in document["handoff_compatibility"][
+        "NEXT_ACTIVE_STEP"
+    ]
+
 
 def test_compact_current_state_evidence_paths_and_hashes_are_exact():
-    state = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    state = document["last_live_state"]
 
     assert state["evidence"]
     for item in state["evidence"]:
