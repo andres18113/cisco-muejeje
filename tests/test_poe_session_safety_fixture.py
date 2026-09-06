@@ -74,6 +74,20 @@ def _healthy_evidence(
     )
 
 
+@pytest.mark.parametrize("launch_argument", [None, ""], ids=["absent", "empty"])
+def test_launch_argument_does_not_block_otherwise_valid_safety(
+    launch_argument: str | None,
+) -> None:
+    evidence = _healthy_evidence(
+        semantics=LivePathIdentitySemantics.WINDOWS,
+        canonical=r"C:\PacketTracer\V5.pts",
+        disposable=r"C:\PacketTracer\sessions\run-1\packet-tracer-live.pts",
+        active=launch_argument,
+    )
+
+    assert validate_live_session_positive_admission(evidence).is_valid
+
+
 @pytest.mark.parametrize(
     ("evaluator", "evidence"),
     [
@@ -164,13 +178,11 @@ def test_canonical_and_disposable_same_identity_remains_rejected(
             semantics=LivePathIdentitySemantics.WINDOWS,
             canonical=r"C:\PacketTracer\V5.pts",
             disposable=r"C:\PacketTracer\sessions\run-1\packet-tracer-live.pts",
-            active=r"C:\PacketTracer\sessions\run-1\packet-tracer-live.pts",
         ),
         _healthy_evidence(
             semantics=LivePathIdentitySemantics.POSIX,
             canonical="/opt/packet-tracer/V5.pts",
             disposable="/tmp/packet-tracer/run-1/packet-tracer-live.pts",
-            active="/tmp/packet-tracer/run-1/packet-tracer-live.pts",
         ),
     ],
 )
@@ -193,10 +205,11 @@ def test_serialized_safety_admission_is_runner_independent(
     [
         r"C:\PacketTracer\V5.pts",
         r"C:\PacketTracer\sessions\other\packet-tracer-live.pts",
+        "",
         None,
     ],
 )
-def test_positive_admission_requires_exact_disposable_workspace_binding(
+def test_legacy_workspace_launch_metadata_is_not_admission_authority(
     active: str | None,
 ) -> None:
     disposable = r"C:\PacketTracer\sessions\run-1\packet-tracer-live.pts"
@@ -207,10 +220,10 @@ def test_positive_admission_requires_exact_disposable_workspace_binding(
         active=active,
     )
 
-    assert not validate_live_session_positive_admission(evidence).is_valid
+    assert validate_live_session_positive_admission(evidence).is_valid
 
 
-def test_old_positive_snapshot_without_path_semantics_or_workspace_binding_fails_closed() -> None:
+def test_old_positive_snapshot_without_path_semantics_fails_closed() -> None:
     stable_sha256 = "a" * 64
     historical = LiveSessionSafetyEvidence(
         canonical_path=r"C:\PacketTracer\V5.pts",
@@ -232,7 +245,7 @@ def test_old_positive_snapshot_without_path_semantics_or_workspace_binding_fails
     assert not validate_live_session_positive_admission(historical).is_valid
 
 
-def test_workspace_instance_discontinuity_fails_closed() -> None:
+def test_legacy_workspace_instance_discontinuity_is_not_admission_authority() -> None:
     evidence = _healthy_evidence(
         semantics=LivePathIdentitySemantics.WINDOWS,
         canonical=r"C:\PacketTracer\V5.pts",
@@ -242,4 +255,4 @@ def test_workspace_instance_discontinuity_fails_closed() -> None:
     assert evidence.active_workspace_binding is not None
     evidence.active_workspace_binding.post_integrity_instance_id = "instance-2"
 
-    assert not validate_live_session_positive_admission(evidence).is_valid
+    assert validate_live_session_positive_admission(evidence).is_valid

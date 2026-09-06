@@ -6,8 +6,6 @@ import os
 from pathlib import Path
 
 from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
-    ActiveWorkspaceBindingEvidence,
-    ActiveWorkspaceIdentityMethod,
     LivePathIdentitySemantics,
     LiveSessionSafetyEvidence,
 )
@@ -33,17 +31,6 @@ def healthy_live_session_safety() -> LiveSessionSafetyEvidence:
         disposable_path=disposable_path,
         disposable_pre_run_sha256=stable_sha256,
         disposable_post_run_sha256=stable_sha256,
-        active_workspace_binding=ActiveWorkspaceBindingEvidence(
-            method=ActiveWorkspaceIdentityMethod.SCRIPT_MODULE_SELF_COMMAND_LINE,
-            pre_qualification_path=disposable_path,
-            post_integrity_path=disposable_path,
-            pre_qualification_instance_id="synthetic-fixture-instance",
-            post_integrity_instance_id="synthetic-fixture-instance",
-            pre_qualification_module_id="synthetic-fixture-module",
-            post_integrity_module_id="synthetic-fixture-module",
-            pre_qualification_module_name="Synthetic Packet Tracer MCP module",
-            post_integrity_module_name="Synthetic Packet Tracer MCP module",
-        ),
         unexpected_canonical_modification=False,
         disposable_modified=False,
         runtime_healthy=True,

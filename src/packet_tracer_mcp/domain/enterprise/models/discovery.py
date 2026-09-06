@@ -250,13 +250,13 @@ class LivePathIdentitySemantics(str, Enum):
 
 
 class ActiveWorkspaceIdentityMethod(str, Enum):
-    """Productive source used to identify the bridge-serving PT module."""
+    """Legacy source retained only to deserialize historical evidence."""
 
     SCRIPT_MODULE_SELF_COMMAND_LINE = "script_module_self_command_line"
 
 
 class ActiveWorkspaceBindingEvidence(BaseModel):
-    """Identity samples from the PT Script Module executing the LIVE run."""
+    """Legacy, non-authoritative Script Module launch metadata."""
 
     method: ActiveWorkspaceIdentityMethod
     pre_qualification_path: str | None = None
@@ -296,6 +296,8 @@ class LiveSessionSafetyEvidence(BaseModel):
     disposable_path: str | None = None
     disposable_pre_run_sha256: str | None = None
     disposable_post_run_sha256: str | None = None
+    # Retained for historical snapshot compatibility. Packet Tracer does not
+    # expose the active Script Module .pts path through getCommandLineArg().
     active_workspace_binding: ActiveWorkspaceBindingEvidence | None = None
     unexpected_canonical_modification: bool | None = None
     disposable_modified: bool | None = None

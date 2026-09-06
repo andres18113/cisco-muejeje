@@ -1,9 +1,10 @@
 """Fail-closed file integrity for governed Packet Tracer LIVE sessions.
 
-The guard prepares a disposable copy for Packet Tracer and treats the original
-``.pts`` file as canonical, read-only input.  It records exact SHA-256 identity
-before and after the run, restores unexpected changes from a private pre-run
-copy, and never releases a positive claim after a crash or unverifiable health.
+The outer runner prepares a disposable copy and treats the original ``.pts``
+file as canonical, read-only input. The guard records their exact SHA-256
+identities before and after the run, restores unexpected canonical changes,
+and never releases a positive claim after a crash or unverifiable health. It
+does not claim that Packet Tracer exposes which ``.pts`` serves a Script Module.
 """
 
 from __future__ import annotations
@@ -18,13 +19,10 @@ from pathlib import Path
 from typing import TypeVar
 
 from ...domain.enterprise.models.discovery import (
-    ActiveWorkspaceBindingEvidence,
-    ActiveWorkspaceIdentityMethod,
     LivePathIdentitySemantics,
     LiveSessionSafetyEvidence,
 )
 from ...shared.utils import resolve_within, safe_name_component
-from .active_workspace_observer import ActiveWorkspaceIdentitySample
 
 
 _T = TypeVar("_T")
@@ -51,7 +49,6 @@ class PacketTracerLiveSessionIntegrity:
     restoration_verified: bool | None
     runtime_healthy: bool | None
     crash_detected: bool | None
-    workspace_binding_verified: bool | None
     integrity_verified: bool
     session_reusable: bool
     positive_claim_allowed: bool
@@ -60,11 +57,7 @@ class PacketTracerLiveSessionIntegrity:
     def release_positive_claim(self, claim: _T) -> _T | None:
         """Expose a positive claim only after every outer-session gate passed."""
 
-        return (
-            claim
-            if self.positive_claim_allowed and self.workspace_binding_verified is True
-            else None
-        )
+        return claim if self.positive_claim_allowed else None
 
 
 class PacketTracerLiveFileGuard:
@@ -85,7 +78,7 @@ class PacketTracerLiveFileGuard:
         self._finalized = False
 
     def prepare(self) -> PacketTracerLiveFileIdentity:
-        """Pin the canonical identity and create the only file PT should open."""
+        """Pin outer-runner provenance and create its disposable copy."""
 
         if self._identity is not None:
             raise RuntimeError("Packet Tracer LIVE file guard was already prepared.")
@@ -235,10 +228,13 @@ class PacketTracerLiveFileGuard:
         elif runtime_healthy is False and not crash_detected:
             reasons.append("Packet Tracer runtime health check failed after LIVE.")
 
-        # File/runtime verification alone cannot prove which .pts served the
-        # governed commands. The outer adapter may promote these flags only
-        # after productive pre/post workspace identity samples agree.
-        session_reusable = False
+        session_reusable = (
+            runtime_healthy is True
+            and not crash_detected
+            and integrity_verified
+            and unexpected_modification is False
+            and not restoration_attempted
+        )
         return PacketTracerLiveSessionIntegrity(
             identity=self._identity,
             observed_post_run_sha256=post_hash,
@@ -250,10 +246,9 @@ class PacketTracerLiveFileGuard:
             restoration_verified=restoration_verified,
             runtime_healthy=runtime_healthy,
             crash_detected=crash_detected,
-            workspace_binding_verified=None,
             integrity_verified=integrity_verified,
             session_reusable=session_reusable,
-            positive_claim_allowed=False,
+            positive_claim_allowed=session_reusable,
             failure_reasons=tuple(reasons),
         )
 
@@ -312,54 +307,14 @@ class PacketTracerLiveSessionSafety:
         file_guard: PacketTracerLiveFileGuard,
         runtime_health: Callable[[], bool | None],
         crash_detector: Callable[[], bool | None],
-        active_workspace_observer: Callable[
-            [], ActiveWorkspaceIdentitySample | None
-        ],
     ) -> None:
         self._file_guard = file_guard
         self._runtime_health = runtime_health
         self._crash_detector = crash_detector
-        self._active_workspace_observer = active_workspace_observer
-        self._prepared_identity: PacketTracerLiveFileIdentity | None = None
-        self._pre_workspace_sample: ActiveWorkspaceIdentitySample | None = None
-        self._pre_workspace_failure: str | None = None
         self.integrity: PacketTracerLiveSessionIntegrity | None = None
 
     def prepare(self) -> PacketTracerLiveFileIdentity:
-        self._prepared_identity = self._file_guard.prepare()
-        return self._prepared_identity
-
-    def bind_active_workspace(self) -> ActiveWorkspaceIdentitySample | None:
-        """Sample the serving .pts before qualification mutates Packet Tracer."""
-
-        if self._prepared_identity is None:
-            raise RuntimeError(
-                "Packet Tracer LIVE file guard must be prepared before workspace binding."
-            )
-        if self._pre_workspace_sample is not None or self._pre_workspace_failure:
-            raise RuntimeError("Active Packet Tracer workspace was already sampled.")
-        try:
-            sample = self._active_workspace_observer()
-        except Exception as exc:
-            self._pre_workspace_failure = (
-                "Active Packet Tracer workspace identity is unobservable before "
-                f"qualification: {exc}"
-            )
-            return None
-        if sample is None:
-            self._pre_workspace_failure = (
-                "Active Packet Tracer workspace identity is unobservable before "
-                "qualification."
-            )
-            return None
-        self._pre_workspace_sample = sample
-        if not self._workspace_sample_matches_prepared(sample):
-            self._pre_workspace_failure = (
-                "Active Packet Tracer workspace did not match the exact prepared "
-                "disposable .pts before qualification."
-            )
-            return None
-        return sample
+        return self._file_guard.prepare()
 
     def finalize(self) -> LiveSessionSafetyEvidence:
         pre_health, pre_crash, pre_reasons = self._sample_runtime_state(
@@ -368,9 +323,6 @@ class PacketTracerLiveSessionSafety:
         self.integrity = self._file_guard.finalize(
             runtime_healthy=(pre_health if pre_crash is not None else None),
             crash_detected=pre_crash is True,
-        )
-        post_workspace, workspace_reasons = self._sample_active_workspace(
-            phase="post-integrity"
         )
         post_health, post_crash, post_reasons = self._sample_runtime_state(
             phase="post-integrity"
@@ -383,9 +335,6 @@ class PacketTracerLiveSessionSafety:
         reasons = list(self.integrity.failure_reasons)
         reasons.extend(pre_reasons)
         reasons.extend(post_reasons)
-        reasons.extend(workspace_reasons)
-        if self._pre_workspace_failure:
-            reasons.append(self._pre_workspace_failure)
         if crash_state is True and self.integrity.crash_detected is not True:
             reasons.append(
                 "Packet Tracer crash detected by the post-integrity sample."
@@ -406,35 +355,20 @@ class PacketTracerLiveSessionSafety:
             )
 
         identity = self.integrity.identity
-        workspace_verified = self._workspace_binding_matches(
-            identity,
-            self._pre_workspace_sample,
-            post_workspace,
-        )
-        if not workspace_verified and not workspace_reasons and not self._pre_workspace_failure:
-            reasons.append(
-                "Active Packet Tracer workspace did not remain bound to the exact "
-                "prepared disposable .pts."
-            )
         session_reusable = (
             runtime_healthy is True
             and crash_state is False
             and self.integrity.integrity_verified
             and self.integrity.unexpected_modification is False
-            and workspace_verified
+            and not self.integrity.restoration_attempted
         )
         self.integrity = replace(
             self.integrity,
             runtime_healthy=runtime_healthy,
             crash_detected=crash_state,
-            workspace_binding_verified=workspace_verified,
             session_reusable=session_reusable,
             positive_claim_allowed=session_reusable,
             failure_reasons=tuple(reasons),
-        )
-        binding = self._workspace_binding_evidence(
-            self._pre_workspace_sample,
-            post_workspace,
         )
         return LiveSessionSafetyEvidence(
             path_identity_semantics=identity.path_identity_semantics,
@@ -449,7 +383,6 @@ class PacketTracerLiveSessionSafety:
             disposable_post_run_sha256=(
                 self.integrity.observed_disposable_post_run_sha256
             ),
-            active_workspace_binding=binding,
             unexpected_canonical_modification=(
                 self.integrity.unexpected_modification
             ),
@@ -462,81 +395,6 @@ class PacketTracerLiveSessionSafety:
             integrity_verified=self.integrity.integrity_verified,
             crash_detected=self.integrity.crash_detected,
             failure_reasons=reasons,
-        )
-
-    def _sample_active_workspace(
-        self,
-        *,
-        phase: str,
-    ) -> tuple[ActiveWorkspaceIdentitySample | None, list[str]]:
-        try:
-            sample = self._active_workspace_observer()
-        except Exception as exc:
-            return None, [
-                f"Active Packet Tracer workspace identity is unobservable at {phase}: {exc}"
-            ]
-        if sample is None:
-            return None, [
-                f"Active Packet Tracer workspace identity is unobservable at {phase}."
-            ]
-        return sample, []
-
-    @staticmethod
-    def _workspace_binding_matches(
-        identity: PacketTracerLiveFileIdentity,
-        before: ActiveWorkspaceIdentitySample | None,
-        after: ActiveWorkspaceIdentitySample | None,
-    ) -> bool:
-        return bool(
-            before
-            and after
-            and PacketTracerLiveSessionSafety._complete_workspace_sample(before)
-            and PacketTracerLiveSessionSafety._complete_workspace_sample(after)
-            and before.path == identity.disposable_path
-            and after.path == identity.disposable_path
-            and before.instance_id == after.instance_id
-            and before.module_id == after.module_id
-            and before.module_name == after.module_name
-        )
-
-    def _workspace_sample_matches_prepared(
-        self,
-        sample: ActiveWorkspaceIdentitySample,
-    ) -> bool:
-        identity = self._prepared_identity
-        return bool(
-            identity
-            and self._complete_workspace_sample(sample)
-            and sample.path == identity.disposable_path
-        )
-
-    @staticmethod
-    def _complete_workspace_sample(sample: ActiveWorkspaceIdentitySample) -> bool:
-        values = (
-            sample.path,
-            sample.instance_id,
-            sample.module_id,
-            sample.module_name,
-        )
-        return all(value and value == value.strip() for value in values)
-
-    @staticmethod
-    def _workspace_binding_evidence(
-        before: ActiveWorkspaceIdentitySample | None,
-        after: ActiveWorkspaceIdentitySample | None,
-    ) -> ActiveWorkspaceBindingEvidence | None:
-        if before is None and after is None:
-            return None
-        return ActiveWorkspaceBindingEvidence(
-            method=ActiveWorkspaceIdentityMethod.SCRIPT_MODULE_SELF_COMMAND_LINE,
-            pre_qualification_path=before.path if before else None,
-            post_integrity_path=after.path if after else None,
-            pre_qualification_instance_id=before.instance_id if before else None,
-            post_integrity_instance_id=after.instance_id if after else None,
-            pre_qualification_module_id=before.module_id if before else None,
-            post_integrity_module_id=after.module_id if after else None,
-            pre_qualification_module_name=before.module_name if before else None,
-            post_integrity_module_name=after.module_name if after else None,
         )
 
     def _sample_runtime_state(
