@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-06T18:41:55.140196Z",
+  "updated_at": "2026-09-06T19:53:07.168481Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -201,13 +201,29 @@
     }
   },
   "current_offline_operational_gate": {
-    "source_head": "961229ed80299d16ce6ebac0d8babbbf13723123",
-    "source_head_role": "active_workspace_binding_gate_removed",
+    "source_head": "247294b619dfd7805a542a27019d3f78f94713c0",
+    "source_head_role": "read_only_router0_product_admission_source",
     "poe_delivery": "supported",
     "poe_ports": 1,
-    "hardware_plan": "partially_resolved",
+    "hardware_plan": "unresolved",
     "canonical_composition": "blocked_before_topology",
-    "router0_authorized": false,
+    "router0_authorized": true,
+    "router0_precondition": {
+      "decision": "PRECONDITION_BLOCKED",
+      "operator_authorization": "RUN_ONE_GOVERNED_ROUTER0_CP_LIVE_WITH_ASTRA",
+      "attempts_authorized": 1,
+      "attempts_consumed": 0,
+      "product_admitted": false,
+      "live_run_id": null,
+      "packet_tracer_mutations": 0,
+      "first_contradicted_boundary": "PRODUCT_HARDWARE_POE_ADMISSION_BEFORE_TOPOLOGY",
+      "crash_attribution_prerequisite_superseded": true,
+      "live_environment_checks": "NOT_REACHED_PRODUCT_ADMISSION_REFUSED",
+      "artifact": {
+        "path": "docs/reference/cp-scale/prelive-evidence/router0-precondition-20260906T195307168481Z-247294b619df.json",
+        "sha256": "6e2e46376debb1e0cdc5a63de8b501bb9ddcd85c8281ec6d36a53c2f8dd99fab"
+      }
+    },
     "latest_poe_qualification": {
       "run_identity": "poe-7950198d050f",
       "packet_tracer_build": "9.0.1.0858",
@@ -261,13 +277,13 @@
       "current_total_exhaustive": false,
       "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS"
     },
-    "next_active_step": "ATTRIBUTE_0XC0000005_POST_BOUNDARY_CRASH_BEFORE_ANY_ROUTER0_DECISION"
+    "next_active_step": "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
   },
   "handoff_compatibility": {
     "LIVE_RUNS_CONSUMED": "AT_LEAST_42_NON_EXHAUSTIVE_AFTER_20260903",
     "CLEANUP": "LATEST_POE_SEMANTIC_CLEANUP_4_OF_4 | PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE",
     "WORKSPACE_RESTORED": "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED",
-    "NEXT_ACTIVE_STEP": "ATTRIBUTE_0XC0000005_POST_BOUNDARY_CRASH_BEFORE_ANY_ROUTER0_DECISION",
-    "CP_SCALE_STATUS": "POE_DELIVERY_SUPPORTED_EXACT_BINDING_ONLY | LATEST_POE_EVIDENCE_VERIFIED | OBSERVER_PIPELINE_DELIVERED | PTS_GUARD_LIVE_VERIFIED | ROUTER0_NOT_AUTHORIZED"
+    "NEXT_ACTIVE_STEP": "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0",
+    "CP_SCALE_STATUS": "POE_DELIVERY_SUPPORTED_EXACT_BINDING_ONLY | LATEST_POE_EVIDENCE_VERIFIED | ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | PRODUCT_PRECONDITION_BLOCKED"
   }
 }

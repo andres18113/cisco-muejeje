@@ -11,6 +11,11 @@ Supporting records:
   design intent.
 - [canonical-live-evidence](canonical-live-evidence/) contains immutable LIVE
   archives. Hashes used by the current decision are in `current_state.json`.
+- [prelive-evidence](prelive-evidence/) contains read-only product admission
+  decisions. These are not LIVE attempts; the current Router0 record preserves
+  the exact missing PoE bindings, source and snapshot hashes, and the unconsumed
+  one-attempt operator authorization. Intended scope is distinct from a compiled
+  topology, which the current product refuses to materialize.
 - [canonical_voice_runs.json](canonical_voice_runs.json) is the curated Voice
   judgment ledger through its explicit `scope.exhaustive_through` cutoff. It is
   intentionally not an exhaustive attempt counter after that boundary: adding

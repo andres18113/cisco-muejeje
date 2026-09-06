@@ -439,6 +439,17 @@ authorization. Until then the gate stays `poe_delivery = unknown`,
 
 ## NEXT_ACTIVE_STEP
 
+The Router0 mandate `RUN_ONE_GOVERNED_ROUTER0_CP_LIVE_WITH_ASTRA` supersedes
+the earlier crash-attribution sequencing and explicitly authorizes one attempt.
+The read-only admission at `247294b619dfd7805a542a27019d3f78f94713c0` returned
+`PRECONDITION_BLOCKED`: the productive hardware plan is `unresolved` because
+the current exact PoE bindings and simultaneous powered-port capacity do not
+cover the canonical design. No topology was compiled and no Packet Tracer
+contact or mutation occurred; the one authorized LIVE remains unconsumed.
+The earlier PoE decision and historical canonical LIVE state remain intact.
+See [current_state.json](docs/reference/cp-scale/current_state.json) and its
+hash-pinned `router0_precondition.artifact` for the exact per-switch contracts.
+
 ```text
-ATTRIBUTE_0XC0000005_POST_BOUNDARY_CRASH_BEFORE_ANY_ROUTER0_DECISION
+OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0
 ```

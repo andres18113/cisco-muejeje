@@ -1,0 +1,1091 @@
+{
+  "schema": "cp-scale-router0-precondition-v1",
+  "audit_id": "router0-precondition-20260906T195307168481Z-247294b619df",
+  "observed_at": "2026-09-06T19:53:07.168481+00:00",
+  "source_head": "247294b619dfd7805a542a27019d3f78f94713c0",
+  "decision": "PRECONDITION_BLOCKED",
+  "live_run_id": null,
+  "operator_authorization": {
+    "source": "RUN_ONE_GOVERNED_ROUTER0_CP_LIVE_WITH_ASTRA",
+    "attempts_authorized": 1,
+    "attempts_consumed": 0,
+    "router3_authorized": false,
+    "crash_attribution_before_router0_superseded": true
+  },
+  "pre_live_state": {
+    "clean_worktree": true,
+    "branch": "feature/runtime-ripv2",
+    "upstream": "cisco/feature/runtime-ripv2",
+    "remote_head": "247294b619dfd7805a542a27019d3f78f94713c0",
+    "github_actions": [
+      {
+        "name": "pytest (ubuntu-latest, 3.11)",
+        "status": "completed",
+        "conclusion": "success",
+        "head_sha": "247294b619dfd7805a542a27019d3f78f94713c0",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34054949699/job/101545102346"
+      },
+      {
+        "name": "pytest (windows-latest, 3.13)",
+        "status": "completed",
+        "conclusion": "success",
+        "head_sha": "247294b619dfd7805a542a27019d3f78f94713c0",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34054949699/job/101545102314"
+      },
+      {
+        "name": "pytest (windows-latest, 3.11)",
+        "status": "completed",
+        "conclusion": "success",
+        "head_sha": "247294b619dfd7805a542a27019d3f78f94713c0",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34054949699/job/101545102277"
+      },
+      {
+        "name": "pytest (ubuntu-latest, 3.13)",
+        "status": "completed",
+        "conclusion": "success",
+        "head_sha": "247294b619dfd7805a542a27019d3f78f94713c0",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34054949699/job/101545102194"
+      }
+    ],
+    "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\.venv\\Scripts\\python.exe",
+    "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\src\\packet_tracer_mcp\\__init__.py",
+    "loaded_namespaces": [
+      "packet_tracer_mcp"
+    ],
+    "import_isolation": "ISOLATED",
+    "packet_tracer_build_requested_for_offline_composition": "9.0.1.0858",
+    "packet_tracer_process_bridge_inventory_realtime_pts_checks": "NOT_REACHED_PRODUCT_ADMISSION_REFUSED"
+  },
+  "product_admission": {
+    "entrypoint": "compose_cp_scale_canonical(packet_tracer_version=\"9.0.1.0858\", capability_store=CapabilitySnapshotStore(root / \"data\" / \"capabilities\"))",
+    "valid": false,
+    "hardware_plan": "unresolved",
+    "topology_materialized": false,
+    "configuration_materialized": false,
+    "control_plane_materialized": false,
+    "voice_materialized": false,
+    "issues": [
+      "E5 compile: HardwarePlan unresolved no puede llegar a E4; causa insufficient_evidence: sw-acc-large-branch-zone-a-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/23/AccessPoint-PT/Port 0. sw-acc-large-branch-zone-a-02: 23 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-large-branch-zone-b-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/21/AccessPoint-PT/Port 0. sw-acc-large-branch-zone-b-02: 16 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-large-branch-zone-c-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/23/AccessPoint-PT/Port 0. sw-acc-large-branch-zone-c-02: 5 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-large-branch-zone-d-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/21/AccessPoint-PT/Port 0. sw-acc-large-branch-zone-d-02: 6 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-multilayer-branch-mls3-01: 3650-24PS PoE capability is unknown, so the 12 powered endpoint(s) bound to it are not admitted. sw-acc-multilayer-branch-mls4-01: 3650-24PS PoE capability is unknown, so the 2 powered endpoint(s) bound to it are not admitted. sw-acc-multilayer-branch-mls5-01: 8 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-multilayer-branch-mls6-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/13/AccessPoint-PT/Port 0. sw-acc-small-branch-branch-zone-01: 9 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS."
+    ],
+    "hardware_warnings": [
+      "sw-acc-large-branch-zone-a-02: 23 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS.",
+      "sw-acc-large-branch-zone-b-02: 16 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS.",
+      "sw-acc-large-branch-zone-c-02: 5 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS.",
+      "sw-acc-large-branch-zone-d-02: 6 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS.",
+      "sw-acc-multilayer-branch-mls5-01: 8 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS.",
+      "sw-acc-small-branch-branch-zone-01: 9 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS.",
+      "sw-acc-large-branch-zone-a-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/23/AccessPoint-PT/Port 0.",
+      "sw-acc-large-branch-zone-b-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/21/AccessPoint-PT/Port 0.",
+      "sw-acc-large-branch-zone-c-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/23/AccessPoint-PT/Port 0.",
+      "sw-acc-large-branch-zone-d-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/21/AccessPoint-PT/Port 0.",
+      "sw-acc-multilayer-branch-mls3-01: 3650-24PS PoE capability is unknown, so the 12 powered endpoint(s) bound to it are not admitted.",
+      "sw-acc-multilayer-branch-mls4-01: 3650-24PS PoE capability is unknown, so the 2 powered endpoint(s) bound to it are not admitted.",
+      "sw-acc-multilayer-branch-mls6-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/13/AccessPoint-PT/Port 0."
+    ],
+    "router0_projection_error": "A complete canonical composition is required.",
+    "documentary_router0_authorized_field_read_by_entrypoint": false
+  },
+  "router0_scope": {
+    "authority": "Current physical design + expanded enterprise endpoints + current stage membership predicate; not an admitted compiler projection.",
+    "stages": {
+      "floor3": {
+        "intended_devices": 232,
+        "network_devices": [
+          "Router4",
+          "Switch10",
+          "Switch4",
+          "Switch5",
+          "Switch6",
+          "Switch7",
+          "Switch8",
+          "Switch9",
+          "Switch0",
+          "Switch1",
+          "Router0",
+          "Router3"
+        ],
+        "expanded_endpoints_by_role": {
+          "access_point": 12,
+          "humiture_monitor": 2,
+          "ip_phone": 42,
+          "motion_detector": 16,
+          "printer": 8,
+          "smoke_detector": 38,
+          "user_pc": 86,
+          "webcam": 16
+        },
+        "declared_network_links": 12,
+        "declared_direct_endpoint_bindings": 148,
+        "expanded_pc_phone_pair_ids": [],
+        "powered_endpoint_demand": 54
+      },
+      "router0-branch": {
+        "intended_devices": 290,
+        "network_devices": [
+          "Router4",
+          "Switch10",
+          "Switch4",
+          "Switch5",
+          "Switch6",
+          "Switch7",
+          "Switch8",
+          "Switch9",
+          "Switch0",
+          "Switch1",
+          "Router0",
+          "MLS7",
+          "MLS3",
+          "MLS4",
+          "MLS5",
+          "MLS6",
+          "Router3"
+        ],
+        "expanded_endpoints_by_role": {
+          "access_point": 15,
+          "humiture_monitor": 2,
+          "ip_phone": 62,
+          "laptop": 2,
+          "motion_detector": 19,
+          "printer": 8,
+          "smoke_detector": 39,
+          "temperature_monitor": 2,
+          "user_pc": 98,
+          "webcam": 26
+        },
+        "declared_network_links": 17,
+        "declared_direct_endpoint_bindings": 183,
+        "expanded_pc_phone_pair_ids": [
+          "multilayer-branch/multilayer-campus/access/mls3:pc-phone:001",
+          "multilayer-branch/multilayer-campus/access/mls3:pc-phone:002"
+        ],
+        "powered_endpoint_demand": 77
+      }
+    },
+    "new_intended_devices": 58,
+    "compiled_topology_counts": null,
+    "configuration_mutation_count": null,
+    "control_plane_mutation_count": null,
+    "voice_mutation_count": null,
+    "link_count_ceiling": "Declared network links and direct bindings exclude compiler-derived phone passthrough links; no compiled link count claimed.",
+    "historical_counts_used_as_authority": false
+  },
+  "effective_poe_capabilities": {
+    "3560-24PS": {
+      "supports_poe": "supported",
+      "poe_ports": 1,
+      "authorized_bindings": [
+        {
+          "switch_port": "FastEthernet0/1",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch"
+        }
+      ]
+    },
+    "3650-24PS": {
+      "supports_poe": "unknown",
+      "poe_ports": null,
+      "authorized_bindings": []
+    }
+  },
+  "exact_missing_contracts": [
+    {
+      "device_id": "sw-acc-large-branch-zone-a-01",
+      "device_name": "Switch4",
+      "model": "3560-24PS",
+      "site_id": "large-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 1,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/23"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/23"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-large-branch-zone-a-02",
+      "device_name": "Switch5",
+      "model": "3560-24PS",
+      "site_id": "large-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 23,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/1",
+            "FastEthernet0/2",
+            "FastEthernet0/3",
+            "FastEthernet0/4",
+            "FastEthernet0/5",
+            "FastEthernet0/6",
+            "FastEthernet0/7",
+            "FastEthernet0/8",
+            "FastEthernet0/9",
+            "FastEthernet0/10",
+            "FastEthernet0/11",
+            "FastEthernet0/12",
+            "FastEthernet0/13",
+            "FastEthernet0/14",
+            "FastEthernet0/15",
+            "FastEthernet0/16",
+            "FastEthernet0/17",
+            "FastEthernet0/18",
+            "FastEthernet0/19",
+            "FastEthernet0/20",
+            "FastEthernet0/21"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/22",
+            "FastEthernet0/23"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/2",
+            "FastEthernet0/3",
+            "FastEthernet0/4",
+            "FastEthernet0/5",
+            "FastEthernet0/6",
+            "FastEthernet0/7",
+            "FastEthernet0/8",
+            "FastEthernet0/9",
+            "FastEthernet0/10",
+            "FastEthernet0/11",
+            "FastEthernet0/12",
+            "FastEthernet0/13",
+            "FastEthernet0/14",
+            "FastEthernet0/15",
+            "FastEthernet0/16",
+            "FastEthernet0/17",
+            "FastEthernet0/18",
+            "FastEthernet0/19",
+            "FastEthernet0/20",
+            "FastEthernet0/21"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/22",
+            "FastEthernet0/23"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-large-branch-zone-b-01",
+      "device_name": "Switch6",
+      "model": "3560-24PS",
+      "site_id": "large-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 1,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/21"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/21"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-large-branch-zone-b-02",
+      "device_name": "Switch7",
+      "model": "3560-24PS",
+      "site_id": "large-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 16,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/1",
+            "FastEthernet0/2",
+            "FastEthernet0/3",
+            "FastEthernet0/4",
+            "FastEthernet0/5",
+            "FastEthernet0/6",
+            "FastEthernet0/7",
+            "FastEthernet0/8",
+            "FastEthernet0/9",
+            "FastEthernet0/10",
+            "FastEthernet0/11",
+            "FastEthernet0/12",
+            "FastEthernet0/13",
+            "FastEthernet0/14"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/15",
+            "FastEthernet0/16"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/2",
+            "FastEthernet0/3",
+            "FastEthernet0/4",
+            "FastEthernet0/5",
+            "FastEthernet0/6",
+            "FastEthernet0/7",
+            "FastEthernet0/8",
+            "FastEthernet0/9",
+            "FastEthernet0/10",
+            "FastEthernet0/11",
+            "FastEthernet0/12",
+            "FastEthernet0/13",
+            "FastEthernet0/14"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/15",
+            "FastEthernet0/16"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-large-branch-zone-c-01",
+      "device_name": "Switch8",
+      "model": "3560-24PS",
+      "site_id": "large-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 1,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/23"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/23"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-large-branch-zone-c-02",
+      "device_name": "Switch9",
+      "model": "3560-24PS",
+      "site_id": "large-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 5,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/1",
+            "FastEthernet0/2",
+            "FastEthernet0/3"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/4",
+            "FastEthernet0/5"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/2",
+            "FastEthernet0/3"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/4",
+            "FastEthernet0/5"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-large-branch-zone-d-01",
+      "device_name": "Switch0",
+      "model": "3560-24PS",
+      "site_id": "large-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 1,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/21"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/21"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-large-branch-zone-d-02",
+      "device_name": "Switch1",
+      "model": "3560-24PS",
+      "site_id": "large-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 6,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/1",
+            "FastEthernet0/2",
+            "FastEthernet0/3",
+            "FastEthernet0/4"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/14",
+            "FastEthernet0/15"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/2",
+            "FastEthernet0/3",
+            "FastEthernet0/4"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/14",
+            "FastEthernet0/15"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-multilayer-branch-mls3-01",
+      "device_name": "MLS3",
+      "model": "3650-24PS",
+      "site_id": "multilayer-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "unknown",
+      "evidenced_simultaneous_ports": null,
+      "required_simultaneous_ports": 12,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "GigabitEthernet1/0/2",
+            "GigabitEthernet1/0/3",
+            "GigabitEthernet1/0/5",
+            "GigabitEthernet1/0/6",
+            "GigabitEthernet1/0/7",
+            "GigabitEthernet1/0/8",
+            "GigabitEthernet1/0/9",
+            "GigabitEthernet1/0/10",
+            "GigabitEthernet1/0/11",
+            "GigabitEthernet1/0/12",
+            "GigabitEthernet1/0/13"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "GigabitEthernet1/0/4"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "GigabitEthernet1/0/2",
+            "GigabitEthernet1/0/3",
+            "GigabitEthernet1/0/5",
+            "GigabitEthernet1/0/6",
+            "GigabitEthernet1/0/7",
+            "GigabitEthernet1/0/8",
+            "GigabitEthernet1/0/9",
+            "GigabitEthernet1/0/10",
+            "GigabitEthernet1/0/11",
+            "GigabitEthernet1/0/12",
+            "GigabitEthernet1/0/13"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "GigabitEthernet1/0/4"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-multilayer-branch-mls4-01",
+      "device_name": "MLS4",
+      "model": "3650-24PS",
+      "site_id": "multilayer-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "unknown",
+      "evidenced_simultaneous_ports": null,
+      "required_simultaneous_ports": 2,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "GigabitEthernet1/0/2"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "GigabitEthernet1/0/3"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "GigabitEthernet1/0/2"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "GigabitEthernet1/0/3"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-multilayer-branch-mls5-01",
+      "device_name": "MLS5",
+      "model": "3560-24PS",
+      "site_id": "multilayer-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 8,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/1",
+            "FastEthernet0/2",
+            "FastEthernet0/3",
+            "FastEthernet0/4",
+            "FastEthernet0/5",
+            "FastEthernet0/6",
+            "FastEthernet0/7",
+            "FastEthernet0/8"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/2",
+            "FastEthernet0/3",
+            "FastEthernet0/4",
+            "FastEthernet0/5",
+            "FastEthernet0/6",
+            "FastEthernet0/7",
+            "FastEthernet0/8"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-multilayer-branch-mls6-01",
+      "device_name": "MLS6",
+      "model": "3560-24PS",
+      "site_id": "multilayer-branch",
+      "router0_cumulative_scope": true,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 1,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/13"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/13"
+          ]
+        }
+      ]
+    },
+    {
+      "device_id": "sw-acc-small-branch-branch-zone-01",
+      "device_name": "Switch3",
+      "model": "3560-24PS",
+      "site_id": "small-branch",
+      "router0_cumulative_scope": false,
+      "supports_poe": "supported",
+      "evidenced_simultaneous_ports": 1,
+      "required_simultaneous_ports": 9,
+      "required_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/7",
+            "FastEthernet0/8",
+            "FastEthernet0/9",
+            "FastEthernet0/10",
+            "FastEthernet0/11",
+            "FastEthernet0/12",
+            "FastEthernet0/13"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/15",
+            "FastEthernet0/16"
+          ]
+        }
+      ],
+      "missing_exact_bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_ports": [
+            "FastEthernet0/7",
+            "FastEthernet0/8",
+            "FastEthernet0/9",
+            "FastEthernet0/10",
+            "FastEthernet0/11",
+            "FastEthernet0/12",
+            "FastEthernet0/13"
+          ]
+        },
+        {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0",
+          "switch_ports": [
+            "FastEthernet0/15",
+            "FastEthernet0/16"
+          ]
+        }
+      ]
+    }
+  ],
+  "first_contradicted_boundary": "PRODUCT_HARDWARE_POE_ADMISSION_BEFORE_TOPOLOGY",
+  "mutation_delta": {
+    "packet_tracer_mutations": 0,
+    "devices": 0,
+    "links": 0,
+    "configuration": 0,
+    "control_plane": 0,
+    "voice": 0
+  },
+  "verification": "OFFLINE_PRODUCT_REFUSAL_OBSERVED; LIVE_NOT_STARTED",
+  "voice": "NOT_REACHED",
+  "control_plane": "NOT_REACHED",
+  "crash_boundary": "NO_ROUTER0_GOVERNED_BOUNDARY_OPENED; PRIOR_POST_BOUNDARY_POE_INCIDENT_NOT_USED_AS_BLOCKER; NO_DUMP_ANALYSIS",
+  "cleanup": "NOT_REQUIRED_NO_PACKET_TRACER_CONTACT_OR_MUTATION; NO_FRESH_LIVE_BASELINE_CLAIM",
+  "prior_live_state": "UNCHANGED",
+  "provenance": {
+    "source_files": [
+      {
+        "path": "src/packet_tracer_mcp/application/use_cases/compose_cp_scale_canonical.py",
+        "sha256": "3a3cc0974f36c6830566b1159f2762d4a53a65ff71c6bd67c35177c72279b703"
+      },
+      {
+        "path": "src/packet_tracer_mcp/domain/enterprise/services/reference_hardware_planner.py",
+        "sha256": "4a4efb3cae662f28fcb727f2a3b84e752212b8d0ca35a4bba19bd3097b27fca7"
+      },
+      {
+        "path": "src/packet_tracer_mcp/domain/enterprise/scenarios/cp_scale_physical.py",
+        "sha256": "ff902885afb653eca60ee2dfbdca67e07cb885005822c0df9135bba5ddb051ea"
+      },
+      {
+        "path": "src/packet_tracer_mcp/domain/enterprise/scenarios/cp_scale.py",
+        "sha256": "f11876b8af104dedce53ac2b251dff9f938aff341d5e7f28c157114dac91f6d4"
+      },
+      {
+        "path": "src/packet_tracer_mcp/domain/enterprise/services/endpoint_expander.py",
+        "sha256": "00662b6a43f3a67d15644d29aef03716c784ef6e4736f5bd406a93d4a52ab493"
+      },
+      {
+        "path": "tools/cp_scale_canonical_live.py",
+        "sha256": "a33df4201daabb4cf94e9506c5540c26e8022362f46f031d8e13d146ba2fa067"
+      }
+    ],
+    "capability_snapshot_files": [
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/018a8b9f300315c9a44c549f7ae1308e01dbc1d0fd29ff8209a020470f5e4323.json",
+        "sha256": "5179bd02d5b0ea734f67aa014ae786320861c595962ca6b2734458c710db7e9a"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/018f99a6815d4b647e39aab0890b7103c855a692c6c1055eb69bc21c147aa11a.json",
+        "sha256": "e4c2b973f9fc8d354359d01dacfa5f2f7976ac99ae8cdcbf0f2d87883bc61e8d"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/0fa978810e5d4f368126553ce56a767c04c49adc5cb9beac9f04eb52b2494207.json",
+        "sha256": "98901736ba53266a77d55eb8c54f16be8d0587935f7b9e79e9b23e18fb8eb0f4"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/108c28962055783baa1c6eaf08f15d76d2c7dfd0ae97aaca374d1d7cf6379964.json",
+        "sha256": "cf42fe78e2da44158aa3e5f4543bbcb3943f3578968b38c544f258fbb8c3c4f6"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/10c87a13204844b3cde2b30f20cc30f2855f52474e66f87ac12a5383462d0870.json",
+        "sha256": "fd5935793a5fcd8bc90ecf6e7b1f4a5a1e72e1a58229ed15cdce0ed8e28b1627"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/1579ab1ca80ebcfe623534a3fdbf1e9bfb4298bfaa594ac62c21931cee0b32c0.json",
+        "sha256": "99585d4a70fff094cc91db308003e06b6b2d2a944d4bc7b01f67c9d1c3c4aa20"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/1913a5191d77387eb14accb678d7cf8117d079f1f6e39cd84815b2989d17416f.json",
+        "sha256": "c39cf002f36d25b67cd506f104ee7f015283b452ae22b1226748d6d61b422399"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/1b1291f19cff2dbc5d5a22dd00523e87ee13010045bd1d4196b3a44c6ac08c35.json",
+        "sha256": "fcb1f6286b183f9518b73ef9151edecb44b4d3d4a0aaf84c9c8aeb53d36eaba0"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/1bf0053e7d3ed7ffa2f9a2c409fa16a9787f1a56c389c74d1d9be0bec4068c3c.json",
+        "sha256": "bff1bf4c9e41512f0ae0017842deca25f9689cd4832183506165aa93491e98b9"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/1cb61a00b804a48638cd630b95afb59ed1a3adffdfad1fad7d5fc4f4545597db.json",
+        "sha256": "002c6a1b2bee9cb27a538b6819ba8fd58fbf1b422619520c07198d5b23ade7f0"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/1d8ce64c9614535baa9ebf83a5ca88dda94b59e7ffeca55c30da7b6e2566cfb7.json",
+        "sha256": "9df13e0034948a7fe8c1e782ff499f7f88ea212f0d9db8f0baf0bb9d20d80204"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/2064a94560152c9871477b8eb1d606ae67d5e0118bd2c6877d40313d86a69283.json",
+        "sha256": "36b6c229b6c835e155074e6c1bc0faaf5c95f87ea1855400c3a65f63097e8eb1"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/23d4042dd752e74e6a5f9bd6af11590a275cc9b4a91fe3813c29b606ba77e1d9.json",
+        "sha256": "c7c6b4bd507e47117a8feafb6615aec76ae03a5e75010e417c6b38bc3025d3a2"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/27dc75fc2046635f0029c5f9fe5b4343cf1ad399570563c2a912933b5facf02f.json",
+        "sha256": "32ab2d84812afbf267108c393f87831b85403adcc333f02d78b55ae0b9ab2b9f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/287144ff56f7217828f87bad17cefa9748a01121fc94e4fcdf6116373099adde.json",
+        "sha256": "c0774d93d88b346bc4d672107b4a97c883095fdd7b214daf61dc8882755532ed"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/2883be489da80cf9ffe63a5e58e72148ca687882a508876841ec9fa64b93f378.json",
+        "sha256": "f38ab0884f83220f4a0aa180c4f869fd57356cfc300376e02b724848b42da1a4"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/2e46303f5ae5bc2cbdf83bd2f94d785697cbf2c86ca1cb97b999b21391d7a3f6.json",
+        "sha256": "dc2cc40b6bec06bc09c32b09646013da4bb1ea16f86ba1fe5dd8924f494497be"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/2eb59d8dcdd98c44028862deae486ab9ef61389a39c5dd8f11cb65edba8bc2b0.json",
+        "sha256": "f6c1f914d658114492b3be4c0b2c021c90292d1225b9abad81298c2a2d54bac4"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/332feb256e4c6e8eb7cca11dfcd9614619cfaeca585d0fadf87bbc5b8734b147.json",
+        "sha256": "5536ff1c13182b7fb86b7741410b06e219b364219f04032e7a00134fb93c59cc"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/35a38433ccfd546f4793d76406781efdaf5756ddf3c87842a248cd3e3d71311b.json",
+        "sha256": "4742775ce7acbda1390138330651990a82d9306483c5b1f3e3cfc184ab10bb8f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/3d77ebfc5645156bd0acc3d35a45fcc086d894e35a92f3f1e205925b65d684d3.json",
+        "sha256": "783e5377e4894112cee3faa25fa027232bb6afae900f292c2f921d38d72e87e8"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/4153e5f90b641336a9745666cc92bd459debdb01f5ab21ebb7fc041c9d337db8.json",
+        "sha256": "1180efe5f03af43769c3c4312958765b99c621b950b6c1563d85f13e43af3e4f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/47ea8f2b334948a25f6fbb1b79e83f7348fc90c0b905d7ef17bfcb76303624a4.json",
+        "sha256": "2698673c1c48639bc95789f1a0793e43b8c1878b9f3c1a42e6d59cacc1d5971f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/4c2272962e16f497ff894378a722d8c722621e6223c443cdad9c4d37317b6ab8.json",
+        "sha256": "ea7ea30f16df04391ddabddd4da89ebc9f44cf8c9ae415049b538c73fc50e527"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/5591d401315abb5bc726337dd6ebe389e0524e5074a2539a0053b0d0199496b5.json",
+        "sha256": "8f1829955445d1a9247d19705ee8c20ed2ccad2b7b8ae0afc86fe6107c65bf73"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/56882f5100e73f9bd13b0ca581708dfb371d8e112c424df1352c1f9b294d4d2f.json",
+        "sha256": "2878174b09f451e7a1951d134eb0e15650e46f3198a017485a0087333d0cf747"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/58bc9a07e9d17ca6ff4ac182126792f7fd8c15ad03ac57c7fd950a4cbee38853.json",
+        "sha256": "9420b5f4f5da0b69f8b27422be9552ed2126900fbf1b5a120d53409436b2dd4f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/593fbcc496ca199d05c151ad7fa8ce5f16adf32005791e5fa7c9dca8eee2fb50.json",
+        "sha256": "2d15f90a0169bf4cb2ea205fc3af821bf2ed5f8751655912f3f5c736035db653"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/5e70bc4ca5b4a7b6167071511a141fdfbeeb41dcedd5dd001bb58fc0a576d16d.json",
+        "sha256": "53ddecf1de5fb7a4f825640b1e407b7e4ef23ea22f720ff3e1077f31910f1884"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/69545e7d82b00baf0a227ba40a7457787654e5c2747a0567b100459f38416e1b.json",
+        "sha256": "4209b6d69aaf98be458f558fdb97ebf90cf766331be5d90c9334128c5516664f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/7097dff39d25018946784b3527160a8b2e327cc1539b2fd0e22a9445bbf96cb1.json",
+        "sha256": "55e8f482f888e49d3e500e155081ee5763362578163536109372f11f5fa73f7c"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/768c920061700bc0e9c68a5259ba6bc9e88edb337138f692c965c4babd5dc157.json",
+        "sha256": "6b1444513e84bc551e6c5f5d53161d3925e36108815c8975841671dce681e82e"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/78c5a0c6bfeca52b77f874fbb43994313034f9010c93afed3ea350401195a801.json",
+        "sha256": "5b728e220231c995af3cc89627ec1d2923ac6862a177b3a1e6e8fd54e8cfeacd"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/7e330aaade942de5232e372b48fa1704ed3f17159204a68f06379eb5c7e899db.json",
+        "sha256": "1f63d3a7ef9f012ecbdd81d57686d92b0d65fa139205fa5c3b9295f9612c33c0"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/7eb397d4c1e95b258237907fa6c718fe6c481ff698c90e3f897a65fa9ca685a4.json",
+        "sha256": "ee8c1f651a7417b90b8009e46a06f2e125d75e801d5daee40154912d2abbe9b9"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/86299f5471e0346f52a967315b2d8beab687f9a164991b69fee55c2d496d3d2c.json",
+        "sha256": "c04e12cd839f7d7c07eecc5bb704301ba6b994e04bb7cb25ac0b1f67dd943c60"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/86325b20d7d4b3248ec51d494d48d198a0e7697e8379b8a1866ffadba92f05a7.json",
+        "sha256": "5b83531dfb65140bb0963485e357376e7cf727722d5c46a92a70a797bf961adf"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/87ffaed80e3cb8957f9dc0d19dc030810a8fa87bab5b9f36bb50ff39f35f9082.json",
+        "sha256": "a39b507b8c6893a37bcf5215aa7fcba5cfe2744e7b6b7d79d9f05e3ddbfbbcba"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/898193a74499b965b3ace0a368e553376f784143c22468ec9f264367ca86ab94.json",
+        "sha256": "5aa658ce6a19e272f06d003a92862e5b1db7b671f82ddda314d814874b013692"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/8b929e618b26c84a37d25db6ae1252ec44aa57e6d571f19c370c1da3aa02ec84.json",
+        "sha256": "1ed0d00267e270b3685f65f0f21b61ce651c325937481e8fd6b455fddc5ab49d"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/8d8f61183a37ac29883a684131a4e52cd52eb703a288d30ca9218b9915658689.json",
+        "sha256": "7225b2c9f08c770b90948087bff4ca8a102831d891a38689f5b7c56d3bdf1b3c"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/8e0b06ea69a0bcfa66120c18d3b1a27ba9ef1ce64c01303493580901df5fda71.json",
+        "sha256": "5362f0e4dd0336bdcbf43884600ecd2c221b9a733c13e8391de1548355779c4c"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/93031f6d5dc3bb2691d0f0710e1558796ac248dd9527889a875f6406ed572759.json",
+        "sha256": "99b9ee7bab1793e081b0e96281cbe0e7ea98157a18109a03a9ea5d99b1c35454"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/97ef53a03dfa60c48560e6595ee76d606dd7705b9c4780e76d2149f5684bb0c1.json",
+        "sha256": "4380773a728ea5d0bac364e0425ad43de5ec35fd1b319536231293d94d834597"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/a1b5617e06f558287179c833a750357d8c25d1b5518883ddae92e54428c3c167.json",
+        "sha256": "445cb0c2300620b62c2b1eeb66e5d0d51f8e5b7384f71c5d24c5e346c9ea96a5"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/a361d6020f4615bf17f673c5fefe11bc54dc1fc4b85dd731684b09bef3f9f6a1.json",
+        "sha256": "afb86feff972dc8cdd6f09c5a35b862730e77304df8b4fdea30d222859dc0136"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/aa178f7f2484b7094d7051dc5820b828371059122a77251ed326d224f636102c.json",
+        "sha256": "3b734b132fda91fc0192eea76acea9f9b0f76e291a4cb24e82953796d5bbff6f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/ae52cee8f8e23d032141aaa025c6ea466aa82b90bc5cc156660f67f625b9156e.json",
+        "sha256": "2140cbd92a1dade047e2c4be8f5392f3edc6065c1fccc4c74698479606c6c50e"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/ae5f1218221329ded801dd04965750fd9f7dc4bbb11ea568d0fa80694b15c2a8.json",
+        "sha256": "42728f12cd3733c5ad8ef882ecc81a89dfa4c485f2dd4d1d952905dabeb6f849"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/b62d78b3b20df9d3282b1900f6ee34abefeb84209adae821436af2d5faa4a467.json",
+        "sha256": "d0c316ea9cd66086e1a8b7621bb8c5f9f0c44e6daff5f2f5438f8abb7c5f7164"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/bb6f2ff2845dc183f85799ea7d11cb9db1184ea221fb74ce5638b1feb340ab2f.json",
+        "sha256": "e4761c50d80d34dac295617014bd134e9a4ef652217b50f2b875ce8c765dcf69"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/be9b5be851842e6e65e590220306147ac74d6ff68e4c5c03a7dd8d9ce4bb1398.json",
+        "sha256": "bbb67d931159d5db7454e5fe04e586bd2dc60e704442901b09b0fc6b7480838f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/c467012e909d4f8fb47cb728925db1d57945beb9836bf0fb6a1dc6aca836ceab.json",
+        "sha256": "d48e841d3f514636b4d12243d0aab6309ee49bf57b2d990aa5ecdcb5607fdd0e"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/cac13e2fff733a9b3c33ddcf028e3848de48d3fa1fcbcca8a1be0875d741881f.json",
+        "sha256": "82123e3bd93a089527d1f2c441d837c6716390d0ac2cb5186fc904265e5bea86"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/d8c4a69b6d3177cfa814dfe60d47ddb4a625c736dd596721e0a92710633842df.json",
+        "sha256": "8c5b88aad5ea65b5f7aaf5d357f275fe202f79a00236d37f6086d8af7b53c5f3"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/dcbbd35889fab5f0f601b1e5d07e08ce30ab545ccebd4e2dc1b912314525da8b.json",
+        "sha256": "269415b55057196e03ba476edd1fbaa5843fb2e015fd6af830a1daca8a0b098f"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/de3efe276b2239cd49d80987d32fc118f2e1ad3029551a6d24c395b71c0953ee.json",
+        "sha256": "70f2ea00919ad4b877b5b2218ee3306a657b635e92fa2a90a1f3efb134f2a8bc"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/df128f56f3d5b80ed33f7b30f471f0e87c69ec5ccdcd2357c49999f22e716be5.json",
+        "sha256": "a0ed802c7d277c2a709ae3423c3735aad429253769601d0c66f95bdb04e51544"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/e16b8a5410b0b457f76abbf89fc713ee942bbbd7fd612f219013290c1c30f0b7.json",
+        "sha256": "23ba5c778a98ffc341a9a5ccc1806f17fc7b79d903dc8cd5710fbc6cdd8a705b"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/e446646eb7c836beb0346b1b87236e0605dec185c67ea36aaa005d064315de94.json",
+        "sha256": "d1c33375634aac21700c387481e844649c8304320a6a8d9e6e144ab58c47b1d6"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/eb57556af7ae1e93f3005cf379130c25e7660538f9205703ff7889c301bd3db9.json",
+        "sha256": "52a8648259ba3a5e76e7f4662e43a1fe7961e2b2845f835777d523f3e96cf33a"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/ef22fba359506c8d96be157820a4315ed572cb2af2be0281f69cf4d4814c5a5f.json",
+        "sha256": "aaf843323edc1fee8b34175a122a358f9ebdb116a360982d691a6043769359fb"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/f6ae08724c017a731edff70373ab29f17b2c85bfee4033782ceab5a3ac85dc0b.json",
+        "sha256": "06ee42b6c6cbf985d80b238be41b3f5557922caefa41274048ce75992f403176"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/fc9576d43eb0fce0753dea3e33bb6e6a232f5c272412662ea916ea89b6191014.json",
+        "sha256": "0b4d54e4e54a0aaa6d6845da2a9281329ea84d4cdebd002e8fe17c9efb76a0ef"
+      },
+      {
+        "path": "data/capabilities/runtime/9.0.1.0858/fe3191e58a2b6e446436b1c1757c83fb7390e190989f65f8432d9ca07fa6ad85.json",
+        "sha256": "726e42b1562bc78e012b2f043ec3c068daf04d17971dbc99c5f365cc405cb5aa"
+      }
+    ],
+    "latest_verified_poe_evidence": {
+      "path": "docs/reference/cp-scale/canonical-live-evidence/poe-delivery-20260906T184155139196Z-7950198d050f-verified.json",
+      "sha256": "45ea94314228f1b0f49979f5fb815eddd55d63c972429ad548f583b11c3d9a90"
+    }
+  },
+  "next_active_step": "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
+}

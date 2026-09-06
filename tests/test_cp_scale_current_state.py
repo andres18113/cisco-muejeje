@@ -37,13 +37,32 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     assert state["schema"] == "cp-scale-current-state-v1"
     assert state["updated_at"] == "2026-09-03T03:41:52.104318Z"
     assert gate == {
-        "source_head": "961229ed80299d16ce6ebac0d8babbbf13723123",
-        "source_head_role": "active_workspace_binding_gate_removed",
+        "source_head": "247294b619dfd7805a542a27019d3f78f94713c0",
+        "source_head_role": "read_only_router0_product_admission_source",
         "poe_delivery": "supported",
         "poe_ports": 1,
-        "hardware_plan": "partially_resolved",
+        "hardware_plan": "unresolved",
         "canonical_composition": "blocked_before_topology",
-        "router0_authorized": False,
+        "router0_authorized": True,
+        "router0_precondition": {
+            "decision": "PRECONDITION_BLOCKED",
+            "operator_authorization": "RUN_ONE_GOVERNED_ROUTER0_CP_LIVE_WITH_ASTRA",
+            "attempts_authorized": 1,
+            "attempts_consumed": 0,
+            "product_admitted": False,
+            "live_run_id": None,
+            "packet_tracer_mutations": 0,
+            "first_contradicted_boundary": "PRODUCT_HARDWARE_POE_ADMISSION_BEFORE_TOPOLOGY",
+            "crash_attribution_prerequisite_superseded": True,
+            "live_environment_checks": "NOT_REACHED_PRODUCT_ADMISSION_REFUSED",
+            "artifact": {
+                "path": (
+                    "docs/reference/cp-scale/prelive-evidence/"
+                    "router0-precondition-20260906T195307168481Z-247294b619df.json"
+                ),
+                "sha256": "6e2e46376debb1e0cdc5a63de8b501bb9ddcd85c8281ec6d36a53c2f8dd99fab",
+            },
+        },
         "latest_poe_qualification": {
             "run_identity": "poe-7950198d050f",
             "packet_tracer_build": "9.0.1.0858",
@@ -117,8 +136,8 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS",
         },
         "next_active_step": (
-            "ATTRIBUTE_0XC0000005_POST_BOUNDARY_CRASH_"
-            "BEFORE_ANY_ROUTER0_DECISION"
+            "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_"
+            "SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
         ),
     }
     assert state["source_head"] == "6c6db55566890f1d9ca9cc06bfc13ae24505e793"
@@ -310,19 +329,91 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED"
         ),
         "NEXT_ACTIVE_STEP": (
-            "ATTRIBUTE_0XC0000005_POST_BOUNDARY_CRASH_"
-            "BEFORE_ANY_ROUTER0_DECISION"
+            "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_"
+            "SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
         ),
         "CP_SCALE_STATUS": (
             "POE_DELIVERY_SUPPORTED_EXACT_BINDING_ONLY | "
             "LATEST_POE_EVIDENCE_VERIFIED | "
-            "OBSERVER_PIPELINE_DELIVERED | "
-            "PTS_GUARD_LIVE_VERIFIED | ROUTER0_NOT_AUTHORIZED"
+            "ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | "
+            "PRODUCT_PRECONDITION_BLOCKED"
         ),
     }
     assert "ROUTER0_CP_LIVE" not in document["handoff_compatibility"][
         "NEXT_ACTIVE_STEP"
     ]
+
+
+def test_router0_precondition_retains_product_refusal_without_consuming_live():
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    gate = document["current_offline_operational_gate"]
+    admission = gate["router0_precondition"]
+    artifact = admission["artifact"]
+    raw = (ROOT / artifact["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == artifact["sha256"]
+    evidence = json.loads(raw)
+
+    assert evidence["schema"] == "cp-scale-router0-precondition-v1"
+    assert evidence["source_head"] == gate["source_head"]
+    assert evidence["decision"] == admission["decision"] == "PRECONDITION_BLOCKED"
+    assert evidence["live_run_id"] is None
+    assert evidence["operator_authorization"]["attempts_authorized"] == 1
+    assert evidence["operator_authorization"]["attempts_consumed"] == 0
+    assert evidence["operator_authorization"]["router3_authorized"] is False
+    assert all(value == 0 for value in evidence["mutation_delta"].values())
+
+    product = evidence["product_admission"]
+    assert product["valid"] is False
+    assert product["hardware_plan"] == gate["hardware_plan"] == "unresolved"
+    for key in (
+        "topology_materialized", "configuration_materialized",
+        "control_plane_materialized", "voice_materialized",
+    ):
+        assert product[key] is False
+    assert product["router0_projection_error"] == (
+        "A complete canonical composition is required."
+    )
+    assert product["documentary_router0_authorized_field_read_by_entrypoint"] is False
+    assert "insufficient_evidence" in product["issues"][0]
+
+    capabilities = evidence["effective_poe_capabilities"]
+    assert capabilities["3560-24PS"] == {
+        "supports_poe": "supported", "poe_ports": 1,
+        "authorized_bindings": [{
+            "switch_port": "FastEthernet0/1",
+            "endpoint_model": "7960", "endpoint_port": "Switch",
+        }],
+    }
+    assert capabilities["3650-24PS"] == {
+        "supports_poe": "unknown", "poe_ports": None, "authorized_bindings": [],
+    }
+    contracts = {
+        item["device_name"]: item for item in evidence["exact_missing_contracts"]
+    }
+    assert contracts["MLS3"]["required_simultaneous_ports"] == 12
+    assert contracts["MLS4"]["required_simultaneous_ports"] == 2
+    assert contracts["MLS5"]["required_simultaneous_ports"] == 8
+    assert contracts["MLS6"]["missing_exact_bindings"] == [{
+        "endpoint_model": "AccessPoint-PT", "endpoint_port": "Port 0",
+        "switch_ports": ["FastEthernet0/13"],
+    }]
+    assert contracts["Switch3"]["router0_cumulative_scope"] is False
+    assert evidence["router0_scope"]["compiled_topology_counts"] is None
+    assert evidence["router0_scope"]["historical_counts_used_as_authority"] is False
+
+    prelive = evidence["pre_live_state"]
+    assert prelive["clean_worktree"] is True
+    assert prelive["remote_head"] == evidence["source_head"]
+    assert prelive["import_isolation"] == "ISOLATED"
+    assert prelive["loaded_namespaces"] == ["packet_tracer_mcp"]
+    assert len(prelive["github_actions"]) == 4
+    assert all(
+        check["head_sha"] == evidence["source_head"]
+        and check["status"] == "completed" and check["conclusion"] == "success"
+        for check in prelive["github_actions"]
+    )
+    assert evidence["prior_live_state"] == "UNCHANGED"
+    assert evidence["next_active_step"] == gate["next_active_step"]
 
 
 def test_compact_current_state_evidence_paths_and_hashes_are_exact():
