@@ -22,7 +22,6 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CleanupStatus,
-    LiveSessionSafetyEvidence,
     ProbeContext,
     ProbeExecutionStatus,
     ProbeLevel,
@@ -64,6 +63,7 @@ from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store 
     CapabilitySnapshotStore,
     compare_snapshots,
 )
+from tests.poe_session_safety import healthy_live_session_safety
 
 
 def _observation(model: str = "3560-24PS", poe: CapabilityStatus = CapabilityStatus.UNKNOWN):
@@ -188,7 +188,6 @@ def test_cache_requires_exact_pt_version_and_force_bypasses_it(tmp_path):
 
 
 def _governed_live_context() -> ProbeContext:
-    stable_sha256 = "a" * 64
     return ProbeContext(
         probe_id="poe-delivery-qualification",
         probe_version="2",
@@ -198,22 +197,7 @@ def _governed_live_context() -> ProbeContext:
         cleanup_status=CleanupStatus.CLEAN,
         result_status=CapabilityStatus.SUPPORTED,
         execution_status=ProbeExecutionStatus.VERIFIED,
-        live_session_safety=LiveSessionSafetyEvidence(
-            canonical_path="C:/fixture/canonical.pts",
-            canonical_pre_run_sha256=stable_sha256,
-            canonical_observed_post_run_sha256=stable_sha256,
-            canonical_verified_sha256=stable_sha256,
-            disposable_path="C:/fixture/disposable.pts",
-            disposable_pre_run_sha256=stable_sha256,
-            disposable_post_run_sha256=stable_sha256,
-            unexpected_canonical_modification=False,
-            disposable_modified=False,
-            runtime_healthy=True,
-            crash_detected=False,
-            integrity_verified=True,
-            session_reusable=True,
-            positive_claim_allowed=True,
-        ),
+        live_session_safety=healthy_live_session_safety(),
     )
 
 

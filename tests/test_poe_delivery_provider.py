@@ -11,7 +11,6 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CleanupStatus,
-    LiveSessionSafetyEvidence,
     ProbeContext,
     ProbeExecutionStatus,
     ProbeSession,
@@ -33,6 +32,7 @@ from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
+from tests.poe_session_safety import healthy_live_session_safety
 
 
 BUILD = "PT 9.0"
@@ -68,7 +68,6 @@ def _manual_delivery_result(
         cleanup_status="clean",
         inventory_restoration="restored",
     ))
-    stable_sha256 = "a" * 64
     context = ProbeContext(
         probe_id="poe-delivery-qualification",
         probe_version="2",
@@ -78,22 +77,9 @@ def _manual_delivery_result(
         cleanup_status=CleanupStatus.CLEAN,
         result_status=CapabilityStatus.SUPPORTED,
         execution_status=ProbeExecutionStatus.VERIFIED,
-        live_session_safety=LiveSessionSafetyEvidence(
-            canonical_path="C:/fixture/canonical.pts",
-            canonical_pre_run_sha256=stable_sha256,
-            canonical_observed_post_run_sha256=stable_sha256,
-            canonical_verified_sha256=stable_sha256,
-            disposable_path="C:/fixture/disposable.pts",
-            disposable_pre_run_sha256=stable_sha256,
-            disposable_post_run_sha256=stable_sha256,
-            unexpected_canonical_modification=False,
-            disposable_modified=False,
-            runtime_healthy=True,
-            crash_detected=False,
-            integrity_verified=True,
-            session_reusable=True,
-            positive_claim_allowed=True,
-        ) if with_session_safety else None,
+        live_session_safety=(
+            healthy_live_session_safety() if with_session_safety else None
+        ),
     )
     return CapabilityProbeResult(
         probe_id="poe-delivery-qualification",

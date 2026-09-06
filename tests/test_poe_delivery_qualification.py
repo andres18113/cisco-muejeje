@@ -45,6 +45,7 @@ from src.packet_tracer_mcp.infrastructure.execution.live_file_integrity import (
     PacketTracerLiveFileGuard,
     PacketTracerLiveSessionSafety,
 )
+from tests.poe_session_safety import healthy_live_session_safety
 
 
 def _request(*, bindings: int = 1) -> PoEDeliveryQualificationRequest:
@@ -234,23 +235,14 @@ class FakeSessionSafety:
         on_finalize=None,
         raise_error: bool = False,
     ) -> None:
-        stable_sha256 = "a" * 64
-        self.result = LiveSessionSafetyEvidence(
-            canonical_path="C:/fixture/canonical.pts",
-            canonical_pre_run_sha256=stable_sha256,
-            canonical_observed_post_run_sha256=stable_sha256,
-            canonical_verified_sha256=stable_sha256,
-            disposable_path="C:/fixture/disposable.pts",
-            disposable_pre_run_sha256=stable_sha256,
-            disposable_post_run_sha256=stable_sha256,
-            unexpected_canonical_modification=False,
-            disposable_modified=False,
-            runtime_healthy=True,
-            session_reusable=session_reusable,
-            positive_claim_allowed=positive_claim_allowed,
-            integrity_verified=integrity_verified,
-            crash_detected=crash_detected,
-            failure_reasons=failure_reasons,
+        self.result = healthy_live_session_safety().model_copy(
+            update={
+                "session_reusable": session_reusable,
+                "positive_claim_allowed": positive_claim_allowed,
+                "integrity_verified": integrity_verified,
+                "crash_detected": crash_detected,
+                "failure_reasons": list(failure_reasons),
+            },
         )
         self.on_finalize = on_finalize
         self.raise_error = raise_error
