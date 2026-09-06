@@ -261,6 +261,88 @@ Router0. Session `poe-9d0d21961c1c` is prior direct evidence being reconciled,
 not a run performed by this task. Its crash remains a non-attributed
 reliability finding. No new qualification is authorized here.
 
+## AUTHORIZED_LIVE_ATTEMPT_BLOCKED_BEFORE_QUALIFY
+
+One LIVE PoE qualification was explicitly authorized from frozen source
+`d782a0e5ed85776a2f5f6a89f368350df49c6bb3`. It did not run. The attempt
+stopped at the bridge precondition, before any Packet Tracer mutation and
+before `PoEDeliveryQualificationService.qualify()`. The authorization is
+therefore NOT consumed.
+
+Frozen state revalidated at attempt time:
+
+```text
+HEAD                        = d782a0e5ed85776a2f5f6a89f368350df49c6bb3
+cisco/feature/runtime-ripv2 = d782a0e5ed85776a2f5f6a89f368350df49c6bb3
+worktree                    = clean
+actions run 34047619642     = success, 4/4
+  windows 3.11 / windows 3.13 / ubuntu 3.11 / ubuntu 3.13
+```
+
+Offline preflight PASSED: worktree-local `.venv`; `packet_tracer_mcp` resolved
+only inside this worktree; a single production namespace under `python -P`
+(`src.packet_tracer_mcp` is findable only as an artifact of the current working
+directory being on `sys.path`, and is never loaded); canonical
+`C:\Users\Andres\Downloads\V5.2.pts` SHA-256
+`175F775560AF7C17348C3D20CFFC81AE5DC8D294D2486CC9E8409FBEAD8BC071`
+recomputed and matching; `PacketTracer.exe` FileVersion exactly `9.0.1.0858`;
+two Packet Tracer processes running.
+
+BLOCKER, direct evidence: `PacketTracerHttpTransport.start()` cannot bind
+`127.0.0.1:54321`.
+
+```text
+PermissionError: [WinError 10013]
+netsh int ipv4 show excludedportrange protocol=tcp
+  54280-54379   (not administered)
+  54380-54479   (not administered)
+bind 54321 -> 10013 ; bind 54380 -> 10013
+bind 54279 -> OK    ; bind 54200 -> OK
+Get-NetTCPConnection -LocalPort 54321 -> nothing listening
+winnat / hns / vmcompute / vmms -> Running
+process elevated -> False
+```
+
+This is an operating-system port reservation held by the Hyper-V/WSL NAT stack,
+not a port conflict (that would be `10048`) and not a stale listener. The bridge
+port is fixed on both sides: `DEFAULT_PORT = 54321` in `live_bridge.py`, and the
+MCP Control Center extension polls `:54321` from inside the webview
+(`docs/live-deploy.md`). The `.pts` script module is an opaque encrypted Packet
+Tracer artifact with no readable port, and the only negotiated file beside it is
+`bridge_token`; there is no port-discovery channel. Moving the Python transport
+to a free port would therefore leave the extension polling a port nothing
+serves. Precondition 7 (authenticated, fresh, healthy bridge) is unsatisfiable
+in this machine state.
+
+No side effects were produced. `safety.prepare()` was never called,
+`%LOCALAPPDATA%\packet-tracer-mcp\live-sessions` does not exist, no disposable
+`.pts` was created, the canonical SHA-256 is unchanged, and no snapshot,
+qualification or evidence artifact was written. The gate is untouched:
+`poe_delivery = unknown`, `poe_ports = null`, Router0 BLOCKED.
+
+Second precondition, reached but NOT verified because the bridge never
+connected: `PacketTracerLiveSessionSafety.bind_active_workspace()` requires the
+serving Script Module's `getCommandLineArg()` to equal the prepared disposable
+`.pts` path exactly. The disposable must therefore be the module Packet Tracer
+actually serves the bridge from, which is a registered-Script-Module identity
+(**Extensions -> Scripting -> Configure PT Script Modules**), not a topology
+file. Directly observed: both running `PacketTracer.exe` processes carry no
+`.pts` argument on their process command lines. Whether the module argument and
+the process argument coincide was not observable in this session; the next
+attempt must confirm it against a live sample rather than assume it.
+
+Remediation for the next attempt, operator action, elevated shell:
+
+```text
+net stop winnat
+netsh int ipv4 add excludedportrange protocol=tcp startport=54321 numberofports=1
+net start winnat
+```
+
+A reboot also reshuffles these dynamic reservations. Either way, re-probe that
+`127.0.0.1:54321` binds BEFORE preparing a disposable, so a prepared session is
+never abandoned mid-flight.
+
 ## NEXT_ACTIVE_STEP
 
 ```text
