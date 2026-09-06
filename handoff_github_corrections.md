@@ -254,12 +254,45 @@ specialist analysis. It never substitutes for autonomous agents, deterministic
 repository evidence, or Codex's final authority. Treat every external finding
 as a hypothesis until reconciled with source and tests.
 
+## GOVERNED_POE_LIVE_RAN_AND_DELIVERED
+
+The authorization was consumed exactly once, from frozen source
+`961229ed80299d16ce6ebac0d8babbbf13723123` with Actions `34051683550` green
+4/4, on Packet Tracer `9.0.1.0858`.
+
+```text
+decision      A - DELIVERY VERIFIED
+run_identity  poe-7950198d050f
+candidate     3560-24PS Fa0/1 -> 7960 Switch  = powered
+comparison    2960-24TT Fa0/1 -> 7960 Switch  = not_powered
+observer      Andres, manual_visible_power_state, simultaneous, one capture
+execution VERIFIED | observation OBSERVED | verification VERIFIED
+cleanup CLEAN 4/4 created 4/4 deleted | inventory restored | no failure reason
+canonical == disposable SHA-256 175f7755...8bc071 before and after
+```
+
+The claim ceiling is deliberately one port wide: `poe_ports = 1`, authorized
+only for `3560-24PS / FastEthernet0/1 / 7960 / Switch`, no port extrapolation,
+Router0 still NOT AUTHORIZED. Fed back through the composition root this moves
+the CP-SCALE hardware plan from `partially_resolved` to `unresolved`, because
+23 powered endpoints do not fit 1 evidenced port and the access-point bindings
+were never covered. Narrow evidence is not wide evidence.
+
+Packet Tracer then crashed `0xc0000005` at offset `0x00000000020e5204`,
+9.462 s after the decision was persisted and after every governed gate had
+closed. The ordering is demonstrable from the in-process UTC clock, filesystem
+mtimes and the Windows event log. Per the strict temporal boundary it is a
+separate reliability incident and does not retroactively invalidate valid
+evidence. It is the second crash at this identical offset following a PoE
+session; attribution remains NOT ESTABLISHED and no PoE causation is claimed.
+
 ## NO_LIVE
 
-This hardening task executed no Packet Tracer LIVE operation and did not touch
-Router0. Session `poe-9d0d21961c1c` is prior direct evidence being reconciled,
-not a run performed by this task. Its crash remains a non-attributed
-reliability finding. No new qualification is authorized here.
+Historical, and superseded above. The hardening task that wrote this section
+executed no LIVE. Session `poe-9d0d21961c1c` was prior direct evidence being
+reconciled, and its crash remains a non-attributed reliability finding. The
+governed LIVE has since run once as `poe-7950198d050f`; no further
+qualification is authorized here.
 
 ## AUTHORIZED_LIVE_ATTEMPT_BLOCKED_BEFORE_QUALIFY
 
@@ -403,5 +436,5 @@ authorization. Until then the gate stays `poe_delivery = unknown`,
 ## NEXT_ACTIVE_STEP
 
 ```text
-AWAIT_EXPLICIT_AUTHORIZATION_FOR_ANY_FUTURE_FRESH_DISPOSABLE_POE_SESSION
+ATTRIBUTE_0XC0000005_POST_BOUNDARY_CRASH_BEFORE_ANY_ROUTER0_DECISION
 ```

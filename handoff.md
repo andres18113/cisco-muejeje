@@ -553,11 +553,11 @@ CANONICAL_CP_SCALE_EVIDENCE_SHA256 = RUN1_PRECLEANUP_d4b017332c1f0b7f12e5e6fef97
 CANONICAL_CP_SCALE_RUN21_EVIDENCE_SHA256 = PRECLEANUP_e5a8e0ddf05c905d468227a61adc17bf6c9f9c367a7ff15080aaf494011c6dc1 | CLEANUP_57c428a9ad5afe4d5f9d39e02b83498d274241c25b54fdd6efd3ac322237babe
 CANONICAL_CP_SCALE_WORKSPACE_RESTORED = YES
 CANONICAL_CP_SCALE_REALTIME_RESTORED = YES
-LIVE_RUNS_CONSUMED = AT_LEAST_41_NON_EXHAUSTIVE_AFTER_20260903
-CLEANUP = LATEST_POE_SEMANTIC_CLEANUP_4_OF_4 | PTS_INTEGRITY_UNVERIFIED | SESSION_NOT_REUSABLE
-WORKSPACE_RESTORED = SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_UNVERIFIED
-NEXT_ACTIVE_STEP = AWAIT_EXPLICIT_AUTHORIZATION_FOR_ANY_FUTURE_FRESH_DISPOSABLE_POE_SESSION
-CP_SCALE_STATUS = POE_DELIVERY_UNKNOWN | LAST_POE_EVIDENCE_INVALID | OBSERVER_PIPELINE_OFFLINE_CORRECTED | PTS_GUARD_OFFLINE_VERIFIED | ROUTER0_NOT_AUTHORIZED
+LIVE_RUNS_CONSUMED = AT_LEAST_42_NON_EXHAUSTIVE_AFTER_20260903
+CLEANUP = LATEST_POE_SEMANTIC_CLEANUP_4_OF_4 | PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE
+WORKSPACE_RESTORED = SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED
+NEXT_ACTIVE_STEP = ATTRIBUTE_0XC0000005_POST_BOUNDARY_CRASH_BEFORE_ANY_ROUTER0_DECISION
+CP_SCALE_STATUS = POE_DELIVERY_SUPPORTED_EXACT_BINDING_ONLY | LATEST_POE_EVIDENCE_VERIFIED | OBSERVER_PIPELINE_DELIVERED | PTS_GUARD_LIVE_VERIFIED | ROUTER0_NOT_AUTHORIZED
 <!-- CP_SCALE_STATE_END -->
 
 ## Canonical CP-SCALE Voice LIVE terminal result
@@ -4690,6 +4690,89 @@ links.  No rerun occurred.  The unique archive is
 `positive-voice-ab-run11-fresh-dhcp-trigger-unproven.json`, SHA-256
 `8619852a1b405a4191067abefc453d4ccfc14cd28f3702521dd87a981b349a82`;
 the tracked ledger records its source provenance.
+
+## Governed PoE delivery LIVE -- DELIVERED, and the claim is one port wide
+
+Exactly one governed PoE delivery qualification ran, from clean pushed source
+`961229ed80299d16ce6ebac0d8babbbf13723123` with Actions run `34051683550`
+green 4/4, on Packet Tracer `9.0.1.0858`.  The mutating process proved the
+worktree-local interpreter, the package inside this worktree and only the
+production import namespace.  The read-only preflight observed Realtime
+(`observed=True`, `simulation_mode=False`), zero semantic devices and zero
+links, and recomputed the canonical `.pts` SHA-256 before touching anything.
+
+The observer is a human.  `GovernedPoEDeliveryObserver` performed one
+synchronous capture inside `observe(...)`; the identities came from the fixture
+the runtime had already established, and the operator supplied only what was
+visible.  Both arms were reported in one simultaneous episode:
+
+```text
+candidate   3560-24PS Fa0/1 -> 7960 Switch = powered
+            "pantalla encendida; muestra 'Configuring Vlan'"
+comparison  2960-24TT Fa0/1 -> 7960 Switch = not_powered
+            "Packet Tracer indica 'Device must be powered on'"
+```
+
+Every governed gate passed: execution VERIFIED, observation OBSERVED,
+verification VERIFIED, cleanup CLEAN with 4 of 4 created and 4 of 4 deleted,
+inventory restored, and no failure reason.  Canonical and disposable `.pts`
+SHA-256 were byte-identical before and after
+(`175f7755...8bc071`), integrity verified, session reusable.
+
+MEASURED FACT, and the reason this changes less than it appears: the claim is
+exactly one port wide.  `poe_ports = 1`, authorized only for
+`3560-24PS / FastEthernet0/1 / 7960 / Switch`, with no port extrapolation.
+Feeding that back through the productive composition root moves the CP-SCALE
+hardware plan from `partially_resolved` to `unresolved`, because the planner
+now refuses admissions it previously left open:
+
+```text
+sw-acc-large-branch-zone-a-02: 23 powered endpoint(s) exceed the
+                               1 powered port(s) evidenced for 3560-24PS
+sw-acc-large-branch-zone-a-01: PoE evidence does not cover the exact powered
+                               binding(s): Fa0/23/AccessPoint-PT/Port 0
+```
+
+That is the architecture working.  A narrow verified fact is not a wide one,
+and the plan is now blocked by insufficient coverage rather than by absent
+evidence.  Router0 stays NOT AUTHORIZED.
+
+Two tests were reading the host's own snapshot store through the default
+composition root, so a real qualification on this machine silently changed
+their outcome.  Both now pin an explicit empty store and measure what their
+names claim; the suite was re-run with the store removed to prove it.
+
+## Packet Tracer crashed after the boundary closed, for the second time
+
+`0xc0000005` at fault offset `0x00000000020e5204`, process `17884`, Windows
+Application record `17741`, report `93bce622-a3a6-4db4-993b-83b1b89a2a3e`.
+The offset is identical to the crash that ended session `poe-9d0d21961c1c`.
+
+It did not invalidate this qualification, and the ordering is demonstrable
+from three independent readings of one system clock:
+
+```text
+18:37:14.749679Z  observe() window opened, fixture created
+18:41:54.291053Z  human observation supplied
+18:41:54.666836Z  captured_at recorded in the receipt
+18:41:55.139196Z  observation, cleanup, restoration, safety finalization and
+                  capability result all complete (snapshot construction)
+18:41:55.140196Z  decision persisted to disk
+18:41:55.143197Z  runner exited 0
+----------------  margin 9.462 s
+18:42:04.602519Z  PacketTracer.exe 0xc0000005
+```
+
+The governed boundary sampled crash and health before it closed, and both were
+true when sampled.  A crash proven after complete closure is recorded as a
+separate reliability incident, not as retroactive invalidation.  Causal
+attribution remains NOT ESTABLISHED: there is no stack or dump, and no PoE
+causation is claimed.  Reproducibility at an identical offset across two PoE
+sessions is an open question and is the current next active step.
+
+A post-crash read confirmed the canonical `.pts` still hashes to
+`175F7755...8BC071`.  Packet Tracer was not running afterwards and a read-only
+bridge reconnect did not succeed.
 
 ## Commits since the previous handoff
 

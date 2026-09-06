@@ -1,0 +1,349 @@
+{
+ "schema": "governed-poe-live-verified-v1",
+ "run_identity": "poe-7950198d050f",
+ "packet_tracer_build": "9.0.1.0858",
+ "source_head": "961229ed80299d16ce6ebac0d8babbbf13723123",
+ "source_head_role": "active_workspace_binding_gate_removed",
+ "actions_run": {
+  "id": 34051683550,
+  "url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34051683550",
+  "conclusion": "success",
+  "matrix": [
+   "windows-3.11",
+   "windows-3.13",
+   "ubuntu-3.11",
+   "ubuntu-3.13"
+  ]
+ },
+ "decision": "A — DELIVERY VERIFIED",
+ "claim_ceiling": {
+  "supports_poe": "supported",
+  "poe_ports": 1,
+  "authorized_binding": {
+   "candidate_model": "3560-24PS",
+   "candidate_port": "FastEthernet0/1",
+   "endpoint_model": "7960",
+   "endpoint_port": "Switch"
+  },
+  "comparison_model": "2960-24TT",
+  "port_extrapolation_allowed": false,
+  "router0_authorized": false
+ },
+ "observer_pipeline": {
+  "observation_delivered_during_observe": true,
+  "method": "manual_visible_power_state",
+  "observer_id": "Andres",
+  "observed_at": "2026-09-06T18:41:54.666836Z",
+  "simultaneous": true,
+  "deadline_seconds": 300,
+  "deadline_increased": false,
+  "late_capture_accepted": false,
+  "retry_attempted": false,
+  "request_id": "04eb14310f694d7da7d539274341a46a",
+  "fixture_fingerprint": "8f032636255089e8446ff6f6eaaa16c073419a34a9cd4df031651c03671fee8d",
+  "capture_id": "cap-poe-live-1788719834",
+  "observation": {
+   "observer_id": "Andres",
+   "observed_at": "2026-09-06T18:41:54.666836Z",
+   "method": "manual_visible_power_state",
+   "simultaneous": true,
+   "bindings": [
+    {
+     "binding": {
+      "candidate_port": "FastEthernet0/1",
+      "comparison_port": "FastEthernet0/1",
+      "endpoint_model": "7960",
+      "endpoint_port": "Switch"
+     },
+     "candidate": {
+      "switch_name": "__MCP_POE_7950198d050f_CANDIDATE_SWITCH",
+      "switch_model": "3560-24PS",
+      "switch_port": "FastEthernet0/1",
+      "endpoint_name": "__MCP_POE_7950198d050f_CANDIDATE_ENDPOINT_01",
+      "endpoint_model": "7960",
+      "endpoint_port": "Switch",
+      "state": "powered",
+      "visible_indicator": "pantalla encendida; muestra 'Configuring Vlan'",
+      "switch_ready": true,
+      "link_ready": true,
+      "endpoint_settled": true
+     },
+     "comparison": {
+      "switch_name": "__MCP_POE_7950198d050f_COMPARISON_SWITCH",
+      "switch_model": "2960-24TT",
+      "switch_port": "FastEthernet0/1",
+      "endpoint_name": "__MCP_POE_7950198d050f_COMPARISON_ENDPOINT_01",
+      "endpoint_model": "7960",
+      "endpoint_port": "Switch",
+      "state": "not_powered",
+      "visible_indicator": "Packet Tracer indica 'Device must be powered on'; indicador del telefono apagado",
+      "switch_ready": true,
+      "link_ready": true,
+      "endpoint_settled": true
+     }
+    }
+   ]
+  }
+ },
+ "temporal_boundary": {
+  "rule": "A crash invalidates the qualification only if it occurs inside the governed boundary or before observation, cleanup/restoration, safety finalization and decision persistence all complete. A crash proven after the boundary closed does not retroactively invalidate already valid evidence and is recorded as a separate reliability incident.",
+  "clock_note": "All instants come from the same Windows system clock: in-process datetime.now(timezone.utc), filesystem mtimes, and the Windows Application event log.",
+  "sequence": [
+   {
+    "gate": "observe_window_opened_fixture_created",
+    "at": "2026-09-06T18:37:14.749679Z",
+    "source": "observation request file mtime"
+   },
+   {
+    "gate": "human_observation_supplied",
+    "at": "2026-09-06T18:41:54.291053Z",
+    "source": "observation answer file mtime"
+   },
+   {
+    "gate": "observation_captured_at",
+    "at": "2026-09-06T18:41:54.666836Z",
+    "source": "in-process UTC clock, receipt"
+   },
+   {
+    "gate": "observation_cleanup_restoration_safety_finalization_complete",
+    "at": "2026-09-06T18:41:55.139196Z",
+    "source": "snapshot ProbeSession.started_at, constructed after cleanup, inventory restoration, session_safety.finalize() and capability result"
+   },
+   {
+    "gate": "decision_persisted",
+    "at": "2026-09-06T18:41:55.140196Z",
+    "source": "runtime snapshot file mtime"
+   },
+   {
+    "gate": "qualify_returned",
+    "at": "2026-09-06T18:41:55.141200Z",
+    "source": "result file mtime"
+   },
+   {
+    "gate": "runner_exited_zero",
+    "at": "2026-09-06T18:41:55.143197Z",
+    "source": "runner log mtime"
+   },
+   {
+    "gate": "packet_tracer_crash",
+    "at": "2026-09-06T18:42:04.6025191Z",
+    "source": "Windows Application event log record 17741"
+   }
+  ],
+  "all_required_gates_closed_before_crash": true,
+  "margin_seconds": 9.462,
+  "ordering_demonstrable": true
+ },
+ "crash_finding": {
+  "status": "CONFIRMED_NOT_ATTRIBUTED",
+  "classification": "POST_BOUNDARY_RELIABILITY_INCIDENT",
+  "invalidates_this_qualification": false,
+  "observed_at": "2026-09-06T18:42:04.6025191Z",
+  "windows_event_log": "Application",
+  "windows_event_id": 1000,
+  "windows_record_id": 17741,
+  "faulting_application": "PacketTracer.exe",
+  "faulting_application_version": "9.0.1.858",
+  "faulting_module": "PacketTracer.exe",
+  "exception_code": "0xc0000005",
+  "fault_offset": "0x00000000020e5204",
+  "process_id": 17884,
+  "report_id": "93bce622-a3a6-4db4-993b-83b1b89a2a3e",
+  "causal_attribution": "NOT_ESTABLISHED_NO_STACK_OR_DUMP",
+  "poe_causation_claimed": false,
+  "recurrence": {
+   "prior_run_identity": "poe-9d0d21961c1c",
+   "prior_exception_code": "0xc0000005",
+   "prior_fault_offset": "0x00000000020e5204",
+   "identical_offset": true,
+   "occurrences": 2,
+   "note": "Both PoE qualification sessions ended with the same exception code at the same fault offset. The prior crash fell inside its session's unverified boundary; this one is proven after closure. Reproducibility is recorded as an open reliability question, not as PoE causation."
+  },
+  "post_crash_state": {
+   "packet_tracer_running": false,
+   "bridge_reconnect_attempted": true,
+   "bridge_reconnected": false,
+   "canonical_pts_sha256_after_crash": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+   "canonical_pts_intact_after_crash": true
+  }
+ },
+ "file_integrity": {
+  "path_identity_semantics": "windows",
+  "canonical_path": "C:\\Users\\Andres\\Downloads\\V5.2.pts",
+  "canonical_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+  "canonical_observed_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+  "canonical_verified_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+  "disposable_path": "C:\\Users\\Andres\\AppData\\Local\\packet-tracer-mcp\\live-sessions\\poe-live-1788719834\\packet-tracer-live.pts",
+  "disposable_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+  "disposable_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+  "unexpected_canonical_modification": false,
+  "disposable_modified": false,
+  "restoration_attempted": false,
+  "restoration_verified": null,
+  "integrity_verified": true,
+  "runtime_healthy": true,
+  "crash_detected_at_governed_boundary": false,
+  "session_reusable": true,
+  "positive_claim_allowed": true,
+  "failure_reasons": [],
+  "active_workspace_binding": null,
+  "active_workspace_binding_note": "The binding gate was removed offline at 961229e after getCommandLineArg() was proven to return an empty string for a Script Module opened from the Extensions menu. It carries no normative authority in this run."
+ },
+ "cleanup": {
+  "cleanup_status": "clean",
+  "inventory_restored": true,
+  "initial_inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+  "final_inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+  "attempted_identities": [
+   "__MCP_POE_7950198d050f_CANDIDATE_SWITCH",
+   "__MCP_POE_7950198d050f_COMPARISON_SWITCH",
+   "__MCP_POE_7950198d050f_CANDIDATE_ENDPOINT_01",
+   "__MCP_POE_7950198d050f_COMPARISON_ENDPOINT_01"
+  ],
+  "created_identities": [
+   "__MCP_POE_7950198d050f_CANDIDATE_SWITCH",
+   "__MCP_POE_7950198d050f_COMPARISON_SWITCH",
+   "__MCP_POE_7950198d050f_CANDIDATE_ENDPOINT_01",
+   "__MCP_POE_7950198d050f_COMPARISON_ENDPOINT_01"
+  ],
+  "deleted_identities": [
+   "__MCP_POE_7950198d050f_COMPARISON_ENDPOINT_01",
+   "__MCP_POE_7950198d050f_CANDIDATE_ENDPOINT_01",
+   "__MCP_POE_7950198d050f_COMPARISON_SWITCH",
+   "__MCP_POE_7950198d050f_CANDIDATE_SWITCH"
+  ],
+  "cleanup_failed": [],
+  "semantic_inventory_restored_exactly": true,
+  "backend_managed_residue": [
+   "Power Distribution Device/Power Distribution Device0"
+  ],
+  "backend_managed_residue_note": "inventory_restoration_matches requires the semantic half to be identical and allows the backend-managed half only to grow. Packet Tracer created one Power Distribution Device during the session; the probe cannot revert a backend-managed object and this does not invalidate restoration."
+ },
+ "snapshot_source": {
+  "path": "data/capabilities/runtime/9.0.1.0858/8e0b06ea69a0bcfa66120c18d3b1a27ba9ef1ce64c01303493580901df5fda71.json",
+  "sha256": "5362f0e4dd0336bdcbf43884600ecd2c221b9a733c13e8391de1548355779c4c",
+  "tracked": false
+ },
+ "snapshot": {
+  "schema_version": 2,
+  "probe_schema_version": 2,
+  "packet_tracer_version": "9.0.1.0858",
+  "backend_version_provenance": "declared_environment",
+  "backend": "packet_tracer",
+  "environment_fingerprint": "3513a8d4568f36a4a739a6169ad744bfb6e5eca157e97c8cadc5f8aa0c519f5a",
+  "probe_fingerprints": {
+   "poe-delivery-qualification": "38fb96fc565aa46e856bc517d900aeb36cde9102842e51a735a768d5e7a0f388"
+  },
+  "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+  "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+  "inventory_restored": true,
+  "session": {
+   "session": {
+    "session_id": "poe-7950198d050f",
+    "started_at": "2026-09-06T18:41:55.139196Z",
+    "packet_tracer_version": "9.0.1.0858",
+    "created_devices": [
+     "__MCP_POE_7950198d050f_CANDIDATE_SWITCH",
+     "__MCP_POE_7950198d050f_COMPARISON_SWITCH",
+     "__MCP_POE_7950198d050f_CANDIDATE_ENDPOINT_01",
+     "__MCP_POE_7950198d050f_COMPARISON_ENDPOINT_01"
+    ],
+    "mutations": [
+     "temporary-device-attempt:__MCP_POE_7950198d050f_CANDIDATE_SWITCH",
+     "temporary-device-attempt:__MCP_POE_7950198d050f_COMPARISON_SWITCH",
+     "temporary-device-attempt:__MCP_POE_7950198d050f_CANDIDATE_ENDPOINT_01",
+     "temporary-device-attempt:__MCP_POE_7950198d050f_COMPARISON_ENDPOINT_01"
+    ],
+    "cleanup_status": "clean",
+    "warnings": []
+   },
+   "devices": [],
+   "results": [
+    {
+     "probe_id": "poe-delivery-qualification",
+     "model": "3560-24PS",
+     "capability": "supports_poe",
+     "status": "supported",
+     "execution_status": "verified",
+     "evidence_source": "manual_verification",
+     "configured": true,
+     "verified": true,
+     "observed_value": 1,
+     "raw_summary": "Differential visible powered-device delivery observation completed.",
+     "failure_reason": "",
+     "duration_ms": 0,
+     "packet_tracer_version": "9.0.1.0858",
+     "verification_method": "manual_verified",
+     "context": {
+      "probe_id": "poe-delivery-qualification",
+      "probe_version": "2",
+      "backend": "packet_tracer",
+      "backend_version": "9.0.1.0858",
+      "device_model": "3560-24PS",
+      "environment_fingerprint": "3513a8d4568f36a4a739a6169ad744bfb6e5eca157e97c8cadc5f8aa0c519f5a",
+      "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+      "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+      "inventory_restored": true,
+      "isolation_level": "fresh_session_required",
+      "mutations": [
+       "temporary-device-attempt:__MCP_POE_7950198d050f_CANDIDATE_SWITCH",
+       "temporary-device-attempt:__MCP_POE_7950198d050f_COMPARISON_SWITCH",
+       "temporary-device-attempt:__MCP_POE_7950198d050f_CANDIDATE_ENDPOINT_01",
+       "temporary-device-attempt:__MCP_POE_7950198d050f_COMPARISON_ENDPOINT_01"
+      ],
+      "cleanup_status": "clean",
+      "result_status": "supported",
+      "execution_status": "verified",
+      "probe_fingerprint": "38fb96fc565aa46e856bc517d900aeb36cde9102842e51a735a768d5e7a0f388",
+      "live_session_safety": {
+       "path_identity_semantics": "windows",
+       "canonical_path": "C:\\Users\\Andres\\Downloads\\V5.2.pts",
+       "canonical_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+       "canonical_observed_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+       "canonical_verified_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+       "disposable_path": "C:\\Users\\Andres\\AppData\\Local\\packet-tracer-mcp\\live-sessions\\poe-live-1788719834\\packet-tracer-live.pts",
+       "disposable_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+       "disposable_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+       "active_workspace_binding": null,
+       "unexpected_canonical_modification": false,
+       "disposable_modified": false,
+       "restoration_attempted": false,
+       "restoration_verified": null,
+       "runtime_healthy": true,
+       "crash_detected": false,
+       "integrity_verified": true,
+       "session_reusable": true,
+       "positive_claim_allowed": true,
+       "failure_reasons": []
+      }
+     },
+     "dimensions": {
+      "poe_access_port_count": "1",
+      "poe_delivery_tested_ports": "1",
+      "poe_delivery_active_ports": "1",
+      "poe_access_ports": "[\"FastEthernet0/1\"]",
+      "poe_delivery_tested_bindings": "[{\"candidate_indicator\":\"pantalla encendida; muestra 'Configuring Vlan'\",\"candidate_ready\":true,\"candidate_state\":\"powered\",\"comparison_indicator\":\"Packet Tracer indica 'Device must be powered on'; indicador del telefono apagado\",\"comparison_port\":\"FastEthernet0/1\",\"comparison_ready\":true,\"comparison_state\":\"not_powered\",\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/1\"}]",
+      "poe_delivery_active_bindings": "[{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/1\"}]",
+      "poe_delivery_simultaneous_active_ports": "1",
+      "poe_delivery_comparison_model": "2960-24TT",
+      "poe_delivery_comparison_states": "[\"not_powered\"]",
+      "poe_delivery_observation_method": "manual_visible_power_state",
+      "poe_delivery_observer_id": "Andres",
+      "poe_delivery_observed_at": "2026-09-06T18:41:54.666836Z",
+      "poe_delivery_candidate_model": "3560-24PS",
+      "poe_delivery_packet_tracer_build": "9.0.1.0858",
+      "poe_delivery_cleanup_status": "clean",
+      "poe_delivery_inventory_restoration": "restored"
+     }
+    }
+   ],
+   "cleanup_deleted": [
+    "__MCP_POE_7950198d050f_COMPARISON_ENDPOINT_01",
+    "__MCP_POE_7950198d050f_CANDIDATE_ENDPOINT_01",
+    "__MCP_POE_7950198d050f_COMPARISON_SWITCH",
+    "__MCP_POE_7950198d050f_CANDIDATE_SWITCH"
+   ],
+   "cleanup_failed": []
+  }
+ }
+}

@@ -39,6 +39,9 @@ from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import
     EnterpriseCapabilityAdapter,
     packet_tracer_enterprise_capability_adapter,
 )
+from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+    CapabilitySnapshotStore,
+)
 from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
@@ -178,10 +181,15 @@ def _poe_design(
     )
 
 
-def _switch_candidates():
-    """The productive exact-version root, so PoE evidence is the real one."""
+def _switch_candidates(store=None):
+    """The productive exact-version root, so PoE evidence is the real one.
+
+    ``store`` pins the evidence explicitly.  The default reads the host's own
+    snapshot store, so a governed qualification performed on this machine
+    changes what these candidates carry.
+    """
     return packet_tracer_enterprise_capability_adapter(
-        MEASURED_BACKEND_VERSION,
+        MEASURED_BACKEND_VERSION, store=store,
     ).hardware_candidates("switch", MEASURED_BACKEND_VERSION)
 
 
@@ -263,12 +271,16 @@ def test_control_off_without_a_delivery_test_remains_unverified():
     )
 
 
-def test_control_only_poe_baseline_never_admits_a_powered_endpoint_binding():
+def test_control_only_poe_baseline_never_admits_a_powered_endpoint_binding(
+    tmp_path,
+):
     """The exact-build 3560 control observation does not prove delivery."""
+    # Pinned to an empty store: this measures the control-only baseline, so it
+    # must not read whatever delivery evidence the host happens to hold.
     result = ReferenceHardwarePlanner().plan(
         _poe_enterprise(phones=24),
         _poe_design(model="3560-24PS", phones=24),
-        _switch_candidates(),
+        _switch_candidates(CapabilitySnapshotStore(tmp_path / "capabilities")),
     )
 
     assert result.status is HardwarePlanStatus.PARTIALLY_RESOLVED, result.warnings

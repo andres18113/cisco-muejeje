@@ -205,8 +205,14 @@ def test_stage_a_switches_fail_closed_on_control_only_poe_baseline(tmp_path):
     assert all("PoE requiere evidencia" in item.warnings[0] for item in access)
 
 
-def test_canonical_product_stops_before_topology_without_delivery_evidence():
-    composition = compose_cp_scale_canonical(packet_tracer_version=BUILD)
+def test_canonical_product_stops_before_topology_without_delivery_evidence(tmp_path):
+    # An explicit empty store keeps this measuring the absence of delivery
+    # evidence.  Without it the default store is read, so a real governed
+    # qualification performed on the host silently changes the outcome.
+    composition = compose_cp_scale_canonical(
+        packet_tracer_version=BUILD,
+        capability_store=CapabilitySnapshotStore(tmp_path / "capabilities"),
+    )
 
     assert not composition.valid
     assert composition.topology is None

@@ -94,8 +94,31 @@ identity is observed, a fresh frozen SHA with 4/4 green CI, and a new
 single-LIVE authorization. This section records observed state; like the rest of
 this document it grants no LIVE authority.
 
+## The LIVE ran, and delivery is verified for exactly one binding
+
+Session `poe-7950198d050f`, from `961229e` with Actions `34051683550` green
+4/4, on Packet Tracer `9.0.1.0858`. One human capture inside `observe(...)`
+recorded `3560-24PS Fa0/1 -> 7960 Switch = powered` against
+`2960-24TT Fa0/1 -> 7960 Switch = not_powered`, simultaneously. Every governed
+gate passed and the canonical `.pts` was byte-identical before and after.
+
+The ceiling is `supports_poe = SUPPORTED`, `poe_ports = 1`, for that exact
+binding only, with no port extrapolation. Router0 remains BLOCKED.
+
+Packet Tracer crashed `0xc0000005` at offset `0x00000000020e5204` 9.462 s after
+the decision was persisted and after every gate had closed, so under the strict
+temporal boundary it is a separate reliability incident. It is the second crash
+at this identical offset after a PoE session, and attributing it is the next
+active step.
+
+Evidence:
+
+```text
+docs/reference/cp-scale/canonical-live-evidence/poe-delivery-20260906T184155139196Z-7950198d050f-verified.json
+```
+
 Next active step:
 
 ```text
-AWAIT_EXPLICIT_AUTHORIZATION_FOR_ANY_FUTURE_FRESH_DISPOSABLE_POE_SESSION
+ATTRIBUTE_0XC0000005_POST_BOUNDARY_CRASH_BEFORE_ANY_ROUTER0_DECISION
 ```
