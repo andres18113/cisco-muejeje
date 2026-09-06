@@ -1222,10 +1222,10 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CANONICAL_CP_SCALE_WORKSPACE_RESTORED": "YES",
         "CANONICAL_CP_SCALE_REALTIME_RESTORED": "YES",
         "LIVE_RUNS_CONSUMED": (
-            "AT_LEAST_43_NON_EXHAUSTIVE_AFTER_20260903"
+            "AT_LEAST_46_NON_EXHAUSTIVE_AFTER_20260903"
         ),
         "CLEANUP": (
-            "LATEST_POE_ACQUISITION_CLEANUP_6_OF_6 | "
+            "LATEST_POE_ACQUISITION_CLEANUP_4_OF_4 | "
             "PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE"
         ),
         "WORKSPACE_RESTORED": (

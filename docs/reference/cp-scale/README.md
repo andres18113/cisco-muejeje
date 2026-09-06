@@ -6,11 +6,27 @@ the small set of keys still projected into `handoff.md` for compatibility.
 
 Supporting records:
 
+- [Resumed factory diagnosis, 2026-09-06](ROUTER0_POE_RESUME_20260906.md)
+  records fresh API review, the exact-model alias fix, and a read-only preflight
+  blocked by absent bridge polling before any PT command was sent. Factory
+  structure and AP power-source isolation are still unobserved.
+- [Operational session handoff, 2026-09-06](ROUTER0_POE_SESSION_HANDOFF_20260906.md)
+  is the operator-requested continuation prompt: exact authority, closed PoE
+  episodes, human image review, uncommitted factory-diagnostic work and pending
+  validation. It is not a new LIVE decision or a claim that Router0 is complete.
+- [Later Router0 PoE acquisition episodes and operator images](canonical-live-evidence/poe-acquisition-20260906T211432-df79fafe-diagnostic.json)
+  retain the three subsequent closed episodes, exact requests, preflight gates,
+  original UNKNOWN results, and cleanup/safety evidence. The latest images show
+  both factory AP arms with powered presentation; the operator confirms only
+  icon/tab changes. Their late review is diagnostic, not an observer receipt or
+  physical-incapability verdict. Independent AP power-source isolation remains
+  to be established before another informative qualification.
 - [Router0 PoE acquisition episode](canonical-live-evidence/poe-acquisition-20260906T202735-b4810d48-unobservable.json)
   retains the first simultaneous MLS4 fixture: no complete visual receipt,
   no PoE promotion, six owned devices cleaned, Realtime and file/runtime safety
   restored. This is observer failure, not physical impossibility. The bounded
-  canvas-layout correction must pass offline/CI gates before further LIVE.
+  canvas-layout correction subsequently passed offline/CI gates at `ab2e0f0`;
+  later acquisition results are retained separately above.
 - [diseno_logico_IMP.md](diseno_logico_IMP.md) and
   [topologia_completa_IMP.md](topologia_completa_IMP.md) preserve the canonical
   design intent.

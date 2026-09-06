@@ -1,8 +1,8 @@
 """Packet Tracer fixture adapter for governed PoE delivery qualification.
 
-This module deliberately observes only fixture identity and exact link
-endpoints.  Visible powered-device delivery is supplied by the independent
-observer owned by the application use case; PT's administrative power getters
+This module observes fixture identity, exact link endpoints, and read-only
+factory structure diagnostics. Visible powered-device delivery is supplied by
+the independent observer owned by the application use case; PT's administrative power getters
 are not delivery evidence and are never queried here.
 """
 
@@ -62,6 +62,89 @@ class PacketTracerPoEDeliveryFixtureRuntime:
 
     def wait_for_inventory_fingerprint(self, expected: str) -> str:
         return self._inventory_runtime.wait_for_inventory_fingerprint(expected)
+
+    def observe_factory_structure(
+        self, model: str, *, module_type: int,
+    ) -> dict[str, object]:
+        """Read exact factory metadata without instantiating or powering a device.
+
+        Cisco PT 9.0.1 IpcAPI: HardwareFactory.devices(),
+        DeviceFactory.getDescriptor(DeviceType, string), DeviceDescriptor
+        getModel/getType/isModuleTypeSupported/getRootModule, and the
+        ModuleDescriptor getters below. A descriptor is NOT a runtime Module.
+        No returned field establishes power delivery or installed hardware.
+        """
+        catalog_model = resolve_model(model)
+        if (
+            catalog_model is None
+            or catalog_model.pt_type != model
+            or catalog_model.category not in PT_DEVICE_TYPE
+            or type(module_type) is not int
+            or module_type < 0
+        ):
+            raise ValueError("Factory diagnosis requires an exact known model and module type.")
+        device_type = PT_DEVICE_TYPE[catalog_model.category]
+        script = "".join((
+            "try{var __model=", json.dumps(model, ensure_ascii=False),
+            ",__type=", json.dumps(device_type),
+            ",__mt=", json.dumps(module_type), ",__nodes=0;",
+            "function __count(v){if(typeof v!=='number'||v<0||v>64||v%1!==0){throw new Error('invalid descriptor count');}return v;}",
+            "function __tree(m,depth){if(!m||depth>8||++__nodes>64){throw new Error('incomplete or oversized descriptor tree');}",
+            "var slots=[],children=[],s=__count(m.getSlotCount()),n=__count(m.getModuleCount());",
+            "for(var i=0;i<s;i++){slots.push(m.getSlotTypeAt(i));}",
+            "for(var j=0;j<n;j++){children.push(__tree(m.getModuleAt(j),depth+1));}",
+            "return {model:m.getModel(),module_type:m.getType(),hot_swappable:m.isHotSwappable(),slot_types:slots,modules:children};}",
+            "var __d=ipc.hardwareFactory().devices().getDescriptor(__type,__model);",
+            "if(!__d){throw new Error('factory descriptor unavailable');}",
+            "reportResult(JSON.stringify({observed:true,model:__d.getModel(),device_type:__d.getType(),",
+            "queried_module_type:__mt,module_type_supported:__d.isModuleTypeSupported(__mt),root:__tree(__d.getRootModule(),0)}));}",
+            "catch(__e){reportResult(JSON.stringify({observed:false,error:String(__e)}));}",
+        ))
+        data = self._json_object(script, timeout=10.0)
+        if data.get("error"):
+            raise RuntimeError("Packet Tracer factory diagnosis failed: " + str(data["error"]))
+        if (
+            data.get("observed") is not True
+            or data.get("model") != model
+            or type(data.get("device_type")) is not int
+            or data.get("device_type") != device_type
+            or type(data.get("queried_module_type")) is not int
+            or data.get("queried_module_type") != module_type
+            or type(data.get("module_type_supported")) is not bool
+        ):
+            raise RuntimeError("Packet Tracer returned unattributable factory metadata.")
+
+        nodes = 0
+
+        def validate_tree(value: object, depth: int = 0) -> None:
+            nonlocal nodes
+            nodes += 1
+            if not isinstance(value, dict) or depth > 8 or nodes > 64:
+                raise RuntimeError("Packet Tracer returned an incomplete factory tree.")
+            slots, children = value.get("slot_types"), value.get("modules")
+            if (
+                not isinstance(value.get("model"), str)
+                or not value["model"]
+                or type(value.get("module_type")) is not int
+                or type(value.get("hot_swappable")) is not bool
+                or not isinstance(slots, list)
+                or len(slots) > 64
+                or not all(type(slot) is int for slot in slots)
+                or not isinstance(children, list)
+                or len(children) > 64
+            ):
+                raise RuntimeError("Packet Tracer returned malformed factory tree metadata.")
+            for child in children:
+                validate_tree(child, depth + 1)
+
+        validate_tree(data.get("root"))
+        return {
+            "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+            "model": model, "device_type": device_type,
+            "queried_module_type": module_type,
+            "module_type_supported": data["module_type_supported"],
+            "root": data["root"],
+        }
 
     def create_device(
         self,

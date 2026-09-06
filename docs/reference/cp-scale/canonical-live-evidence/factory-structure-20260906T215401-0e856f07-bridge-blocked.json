@@ -1,0 +1,121 @@
+{
+  "schema": "cp-scale-factory-readonly-diagnostic-v1",
+  "run_id": "factory-ap-0e856f07",
+  "started_at": "2026-09-06 21:53:39.953037+00:00",
+  "query": {
+    "model": "AccessPoint-PT",
+    "module_type": 31
+  },
+  "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+  "pt_mutations": 0,
+  "qualifications": 0,
+  "router0_attempts_consumed": 0,
+  "physical_incapability_established": false,
+  "reads": [],
+  "isolation": {
+    "result": {
+      "state": "ISOLATED",
+      "detail": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\src\\packet_tracer_mcp\\__init__.py"
+    },
+    "python": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\.venv\\Scripts\\python.exe",
+    "package": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\src\\packet_tracer_mcp\\__init__.py",
+    "namespaces": [
+      "packet_tracer_mcp"
+    ]
+  },
+  "source_before": {
+    "head": "ab2e0f098a10b9c6f5075cf9cce329418d6b6f50",
+    "branch": "feature/runtime-ripv2",
+    "upstream": "cisco/feature/runtime-ripv2",
+    "status": "M docs/reference/cp-scale/README.md\n M docs/reference/cp-scale/current_state.json\n M handoff.md\n M src/packet_tracer_mcp/infrastructure/execution/poe_delivery_runtime.py\n M tests/test_cp_scale_canonical_voice_evidence_ledger.py\n M tests/test_cp_scale_current_state.py\n M tests/test_positive_voice_handoff.py\n?? docs/reference/cp-scale/ROUTER0_POE_SESSION_HANDOFF_20260906.md\n?? docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T211432-df79fafe-diagnostic.json\n?? docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/\n?? tests/test_poe_factory_structure.py",
+    "dirty_diff_sha256": "7629a9d8c1a558f849fad30456c0f91b38d06285ff994de376fc177564be2dc0",
+    "untracked_sha256": {
+      "docs/reference/cp-scale/ROUTER0_POE_SESSION_HANDOFF_20260906.md": "889f6b49a07c36f761f2980280a3b3290cfcbd65ee3241097ade2110a2d81bf0",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T211432-df79fafe-diagnostic.json": "4c757ed701c3f69ef01b6e2a774698da2b09415ae68a5af7bdd2aeaa1859fe87",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/cli1.png": "72baa7cc583a1baa3a486dbace9d2b61f3eb001aecfe9e73c34b1b133f456c84",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/imagen1.png": "7a1a5aad375ec047429b0ab43ea5d2d061113b3284ab73082aca09d027546284",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/imagen2.png": "189a7a24d96f520f5ef5da9eac0dfbb51190a4f642edbb75f762d826b0c912d5",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/imagen2ap.png": "abc0b0d93b87865c7f608bffcbcfc305f7cf3870ad6d5239c4bb2b95c7d69467",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/imagenap.png": "8e436637c1bf25bd9996d2a5fa59c89a325dee0a40b39da569ebc8fa2ee46e2e",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/topologia.png": "d8671aa7a0efd574b7feab19bb0713bf0f430266b60f69925d4d997b1989c096",
+      "tests/test_poe_factory_structure.py": "aedc70e2e0f984ed92d8ebb2961ba0bdd20d19cc3a88643e0d11f061869ee3ad"
+    },
+    "runtime_sha256": "2d38e41bb61fb7e9dbebfd04aa30f95c911c8fc378daac6ad3a9410f82916cb5",
+    "harness_sha256": "2c17263774b4bf4cc258f22c5a73841b7ea56700d9fc6a15005df3694d6713e4"
+  },
+  "canonical_before": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+  "processes_before": [
+    {
+      "Id": 16184,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    },
+    {
+      "Id": 32992,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    }
+  ],
+  "bridge_before": {
+    "connected": false,
+    "last_poll_ago": null,
+    "unauth_recent": false,
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "client_headers": {},
+    "token_id": "395ba83c275764b9"
+  },
+  "decision": "UNOBSERVABLE_NO_CAPABILITY_PROMOTION",
+  "error": {
+    "type": "AssertionError",
+    "detail": "fresh authenticated bridge unavailable"
+  },
+  "query_dispatched": false,
+  "bridge_after": {
+    "connected": false,
+    "last_poll_ago": null,
+    "unauth_recent": false,
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "client_headers": {},
+    "token_id": "395ba83c275764b9"
+  },
+  "canonical_after": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+  "source_after": {
+    "head": "ab2e0f098a10b9c6f5075cf9cce329418d6b6f50",
+    "branch": "feature/runtime-ripv2",
+    "upstream": "cisco/feature/runtime-ripv2",
+    "status": "M docs/reference/cp-scale/README.md\n M docs/reference/cp-scale/current_state.json\n M handoff.md\n M src/packet_tracer_mcp/infrastructure/execution/poe_delivery_runtime.py\n M tests/test_cp_scale_canonical_voice_evidence_ledger.py\n M tests/test_cp_scale_current_state.py\n M tests/test_positive_voice_handoff.py\n?? docs/reference/cp-scale/ROUTER0_POE_SESSION_HANDOFF_20260906.md\n?? docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T211432-df79fafe-diagnostic.json\n?? docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/\n?? tests/test_poe_factory_structure.py",
+    "dirty_diff_sha256": "7629a9d8c1a558f849fad30456c0f91b38d06285ff994de376fc177564be2dc0",
+    "untracked_sha256": {
+      "docs/reference/cp-scale/ROUTER0_POE_SESSION_HANDOFF_20260906.md": "889f6b49a07c36f761f2980280a3b3290cfcbd65ee3241097ade2110a2d81bf0",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T211432-df79fafe-diagnostic.json": "4c757ed701c3f69ef01b6e2a774698da2b09415ae68a5af7bdd2aeaa1859fe87",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/cli1.png": "72baa7cc583a1baa3a486dbace9d2b61f3eb001aecfe9e73c34b1b133f456c84",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/imagen1.png": "7a1a5aad375ec047429b0ab43ea5d2d061113b3284ab73082aca09d027546284",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/imagen2.png": "189a7a24d96f520f5ef5da9eac0dfbb51190a4f642edbb75f762d826b0c912d5",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/imagen2ap.png": "abc0b0d93b87865c7f608bffcbcfc305f7cf3870ad6d5239c4bb2b95c7d69467",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/imagenap.png": "8e436637c1bf25bd9996d2a5fa59c89a325dee0a40b39da569ebc8fa2ee46e2e",
+      "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-df79fafe-images/topologia.png": "d8671aa7a0efd574b7feab19bb0713bf0f430266b60f69925d4d997b1989c096",
+      "tests/test_poe_factory_structure.py": "aedc70e2e0f984ed92d8ebb2961ba0bdd20d19cc3a88643e0d11f061869ee3ad"
+    },
+    "runtime_sha256": "2d38e41bb61fb7e9dbebfd04aa30f95c911c8fc378daac6ad3a9410f82916cb5",
+    "harness_sha256": "2c17263774b4bf4cc258f22c5a73841b7ea56700d9fc6a15005df3694d6713e4"
+  },
+  "processes_after": [
+    {
+      "Id": 16184,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    },
+    {
+      "Id": 32992,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    }
+  ],
+  "closed_at": "2026-09-06 21:54:01.980115+00:00"
+}

@@ -1250,7 +1250,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
     assert state["LIVE_RUNS_CONSUMED"] == (
-        "AT_LEAST_43_NON_EXHAUSTIVE_AFTER_20260903"
+        "AT_LEAST_46_NON_EXHAUSTIVE_AFTER_20260903"
     )
     assert state["CANONICAL_CP_SCALE_FLOOR2_PRIOR_STAGE_SEMANTICS"] == (
         "CUMULATIVE_REPLAY"

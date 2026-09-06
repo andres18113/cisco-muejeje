@@ -19,9 +19,9 @@ HANDOFF_PATH = ROOT / "handoff.md"
 def test_router0_poe_observer_failure_does_not_promote_or_consume_router0():
     document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
     acquisition = document["current_offline_operational_gate"]["router0_poe_acquisition"]
-    artifact_path = ROOT / acquisition["artifact"]["path"]
+    artifact_path = ROOT / acquisition["prior_artifact"]["path"]
     raw = artifact_path.read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == acquisition["artifact"]["sha256"]
+    assert hashlib.sha256(raw).hexdigest() == acquisition["prior_artifact"]["sha256"]
     artifact = json.loads(raw)
     result = artifact["result"]
     assert artifact["router0_attempts_consumed"] == 0
@@ -36,6 +36,56 @@ def test_router0_poe_observer_failure_does_not_promote_or_consume_router0():
     assert result["live_session_safety"]["integrity_verified"] is True
     assert result["live_session_safety"]["crash_detected"] is False
     assert artifact["closure"]["realtime"]["simulation_mode"] is False
+
+
+def test_later_acquisitions_and_late_images_cannot_retroactively_promote_poe():
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    gate = document["current_offline_operational_gate"]
+    reference = gate["router0_poe_acquisition"]["artifact"]
+    raw = (ROOT / reference["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == reference["sha256"]
+    artifact = json.loads(raw)
+    assert artifact["router0_attempts_consumed"] == 0
+    assert artifact["router3_executed"] is False
+    assert artifact["physical_incapability_established"] is False
+    assert [item["run_id"] for item in artifact["episodes"]] == [
+        "r0poe-mls4-6ffe810b", "r0poe-mls6-07e15945", "r0poe-mls6-df79fafe",
+    ]
+    for episode, count in zip(artifact["episodes"], (6, 4, 4), strict=True):
+        result = episode["result"]
+        assert result["observation"] is None
+        assert result["observation_status"] == "unobservable"
+        assert result["capability_result"]["status"] == "unknown"
+        assert result["capability_result"]["verified"] is False
+        assert result["cleanup_status"] == "clean"
+        assert result["inventory_restored"] is True
+        assert result["cleanup_failed"] == []
+        assert len(result["attempted_identities"]) == count
+        assert len(result["deleted_identities"]) == count
+        assert result["live_session_safety"]["integrity_verified"] is True
+        assert result["live_session_safety"]["crash_detected"] is False
+        assert episode["closure"]["realtime"]["simulation_mode"] is False
+        assert episode["closure"]["workspace"]["links"] == []
+        assert episode["closure"]["product_admission"] is False
+        assert "poe-" + episode["run_id"] in gate["run_accounting"][
+            "direct_poe_runtime_sessions_after_historical_state"
+        ]
+        checks = episode["preflight"]["actions"]
+        assert len(checks) == 4
+        assert all(check["conclusion"] == "success" for check in checks)
+        assert all(check["head_sha"] == episode["preflight"]["source_sha"] for check in checks)
+        assert episode["preflight"]["namespaces"] == ["packet_tracer_mcp"]
+    review = artifact["late_review"]
+    assert review["governed_observation_delivered"] is False
+    assert review["retroactive_poe_promotion_allowed"] is False
+    assert review["physical_incapability_established"] is False
+    assert review["operator_attestation"]["does_not_replace_in_boundary_receipt"] is True
+    for image in review["images"]:
+        image_path = ROOT / review["archived_image_directory"] / image["file"]
+        assert hashlib.sha256(image_path.read_bytes()).hexdigest() == image["sha256"]
+    assert len(review["images"]) == 6
+    assert gate["poe_ports"] == 1
+    assert gate["latest_verified_poe_qualification"]["run_identity"] == "poe-7950198d050f"
 
 
 def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
@@ -87,16 +137,20 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
         },
         "router0_poe_acquisition": {
             "operator_authorization": "ACQUIRE_ROUTER0_POE_EVIDENCE_THEN_RUN_ROUTER0",
-            "latest_attempt": "r0poe-mls4-b4810d48",
+            "latest_attempt": "r0poe-mls6-df79fafe",
             "result": "OBSERVER_UNOBSERVABLE_NO_POE_PROMOTION",
             "physical_limitation_established": False,
-            "cleanup": "6_OF_6_SEMANTIC_INVENTORY_AND_REALTIME_RESTORED",
+            "cleanup": "4_OF_4_SEMANTIC_INVENTORY_AND_REALTIME_RESTORED",
             "file_runtime_safety": "VERIFIED_NO_CRASH",
             "artifact": {
+                "path": "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T211432-df79fafe-diagnostic.json",
+                "sha256": "4c757ed701c3f69ef01b6e2a774698da2b09415ae68a5af7bdd2aeaa1859fe87",
+            },
+            "prior_artifact": {
                 "path": "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T202735-b4810d48-unobservable.json",
                 "sha256": "f26cbe1ab1c2b254b5da73aba285086982b68aa8c7022a38443ad29b0e2640c8",
             },
-            "continuation": "OFFLINE_VISUAL_LAYOUT_AUTOFIX_THEN_CAUSALLY_CHANGED_QUALIFICATION",
+            "continuation": "INVESTIGATE_EXACT_AP_POWER_SOURCE_ISOLATION_BEFORE_NEXT_INFORMATIVE_QUALIFICATION",
         },
         "latest_verified_poe_qualification": {
             "run_identity": "poe-7950198d050f",
@@ -167,8 +221,11 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
                 "poe-9d0d21961c1c",
                 "poe-7950198d050f",
                 "poe-r0poe-mls4-b4810d48",
+                "poe-r0poe-mls4-6ffe810b",
+                "poe-r0poe-mls6-07e15945",
+                "poe-r0poe-mls6-df79fafe",
             ],
-            "known_live_runs_consumed_lower_bound": 43,
+            "known_live_runs_consumed_lower_bound": 46,
             "current_total_exhaustive": False,
             "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS",
         },
@@ -356,10 +413,10 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
 
     assert document["handoff_compatibility"] == {
         "LIVE_RUNS_CONSUMED": (
-            "AT_LEAST_43_NON_EXHAUSTIVE_AFTER_20260903"
+            "AT_LEAST_46_NON_EXHAUSTIVE_AFTER_20260903"
         ),
         "CLEANUP": (
-            "LATEST_POE_ACQUISITION_CLEANUP_6_OF_6 | "
+            "LATEST_POE_ACQUISITION_CLEANUP_4_OF_4 | "
             "PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE"
         ),
         "WORKSPACE_RESTORED": (
