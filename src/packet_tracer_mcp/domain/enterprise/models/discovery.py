@@ -258,6 +258,28 @@ class ProbeEnvironment(BaseModel):
         return semantic_fingerprint(self.model_dump(mode="json"))
 
 
+class LiveSessionSafetyEvidence(BaseModel):
+    """Auditable outer-session admission evidence for one LIVE mutation."""
+
+    canonical_path: str | None = None
+    canonical_pre_run_sha256: str | None = None
+    canonical_observed_post_run_sha256: str | None = None
+    canonical_verified_sha256: str | None = None
+    disposable_path: str | None = None
+    disposable_pre_run_sha256: str | None = None
+    disposable_post_run_sha256: str | None = None
+    unexpected_canonical_modification: bool | None = None
+    disposable_modified: bool | None = None
+    restoration_attempted: bool = False
+    restoration_verified: bool | None = None
+    runtime_healthy: bool | None = None
+    crash_detected: bool | None = None
+    integrity_verified: bool = False
+    session_reusable: bool = False
+    positive_claim_allowed: bool = False
+    failure_reasons: list[str] = Field(default_factory=list)
+
+
 class ProbeContext(BaseModel):
     """Proveniencia y condiciones de confianza de un resultado de probe."""
 
@@ -276,6 +298,7 @@ class ProbeContext(BaseModel):
     result_status: CapabilityStatus = CapabilityStatus.UNKNOWN
     execution_status: ProbeExecutionStatus = ProbeExecutionStatus.SKIPPED
     probe_fingerprint: str = ""
+    live_session_safety: LiveSessionSafetyEvidence | None = None
 
     @property
     def restoration(self) -> InventoryRestoration:
@@ -285,9 +308,21 @@ class ProbeContext(BaseModel):
 
     @property
     def reusable(self) -> bool:
+        live_safety_valid = True
+        if self.live_session_safety is not None:
+            # Local import avoids a model/rule import cycle while keeping the
+            # actual admission policy out of this passive model module.
+            from ..rules.live_session_safety import (
+                validate_live_session_positive_admission,
+            )
+
+            live_safety_valid = validate_live_session_positive_admission(
+                self.live_session_safety,
+            ).is_valid
         return (
             self.cleanup_status is not CleanupStatus.DIRTY_SESSION
             and self.restoration in _REUSABLE_RESTORATIONS
+            and live_safety_valid
         )
 
 
@@ -419,8 +454,33 @@ class CapabilityProbeResult(BaseModel):
 
         if self.execution_status is not ProbeExecutionStatus.VERIFIED:
             return None
+        poe_safety_missing = (
+            self.capability == "supports_poe"
+            and self.status is not CapabilityStatus.UNKNOWN
+            and (
+                self.context is None
+                or self.context.live_session_safety is None
+            )
+        )
         if self.context is not None and not self.context.reusable:
             return None
+        if poe_safety_missing:
+            # Preserve the diagnostic observation while ensuring a decided
+            # pre-hardening result cannot escape as positive evidence.
+            return CapabilityEvidence(
+                capability=self.capability,
+                status=CapabilityStatus.UNKNOWN,
+                source=self.evidence_source,
+                source_detail=self.probe_id,
+                packet_tracer_version=self.packet_tracer_version,
+                verified=False,
+                observed_value=None,
+                notes=(
+                    f"{self.raw_summary} Claim capped at UNKNOWN: LIVE session "
+                    "safety evidence is absent."
+                ).strip(),
+                dimensions={},
+            )
         return CapabilityEvidence(
             capability=self.capability,
             status=self.status,
@@ -560,6 +620,18 @@ class CapabilitySnapshot(BaseModel):
         session["created_devices"] = ["<probe>" for _ in session["created_devices"]]
         payload["session"]["cleanup_deleted"] = ["<probe>" for _ in payload["session"]["cleanup_deleted"]]
         payload["session"]["cleanup_failed"] = ["<probe>" for _ in payload["session"]["cleanup_failed"]]
+        # This optional extension keeps the legacy schema contract.  Omit only
+        # an absent value so historical hashes survive load/re-serialization.
+        for result in payload["session"]["results"]:
+            context = result.get("context")
+            if context is not None and context.get("live_session_safety") is None:
+                context.pop("live_session_safety", None)
+            elif context is not None:
+                safety = context["live_session_safety"]
+                # Exact paths remain persisted for audit, but are per-run
+                # coordinates rather than semantic capability inputs.
+                safety["canonical_path"] = "<canonical.pts>"
+                safety["disposable_path"] = "<disposable.pts>"
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 

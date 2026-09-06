@@ -10,6 +10,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
 from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
+    CleanupStatus,
+    LiveSessionSafetyEvidence,
+    ProbeContext,
     ProbeExecutionStatus,
     ProbeSession,
     ProbeSessionResult,
@@ -35,7 +38,9 @@ from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store 
 BUILD = "PT 9.0"
 
 
-def _manual_delivery_result() -> CapabilityProbeResult:
+def _manual_delivery_result(
+    *, with_session_safety: bool = True,
+) -> CapabilityProbeResult:
     binding = PoEAuthorizedBinding("FastEthernet0/1", "7960", "Switch")
     tested = PoEDeliveryTestedBinding(
         switch_port=binding.switch_port,
@@ -63,6 +68,33 @@ def _manual_delivery_result() -> CapabilityProbeResult:
         cleanup_status="clean",
         inventory_restoration="restored",
     ))
+    stable_sha256 = "a" * 64
+    context = ProbeContext(
+        probe_id="poe-delivery-qualification",
+        probe_version="2",
+        device_model="3560-24PS",
+        inventory_restored=True,
+        mutations=["temporary-device-attempt:fixture"],
+        cleanup_status=CleanupStatus.CLEAN,
+        result_status=CapabilityStatus.SUPPORTED,
+        execution_status=ProbeExecutionStatus.VERIFIED,
+        live_session_safety=LiveSessionSafetyEvidence(
+            canonical_path="C:/fixture/canonical.pts",
+            canonical_pre_run_sha256=stable_sha256,
+            canonical_observed_post_run_sha256=stable_sha256,
+            canonical_verified_sha256=stable_sha256,
+            disposable_path="C:/fixture/disposable.pts",
+            disposable_pre_run_sha256=stable_sha256,
+            disposable_post_run_sha256=stable_sha256,
+            unexpected_canonical_modification=False,
+            disposable_modified=False,
+            runtime_healthy=True,
+            crash_detected=False,
+            integrity_verified=True,
+            session_reusable=True,
+            positive_claim_allowed=True,
+        ) if with_session_safety else None,
+    )
     return CapabilityProbeResult(
         probe_id="poe-delivery-qualification",
         model="3560-24PS",
@@ -73,6 +105,7 @@ def _manual_delivery_result() -> CapabilityProbeResult:
         verified=True,
         observed_value=1,
         packet_tracer_version=BUILD,
+        context=context,
         dimensions=dimensions,
     )
 
@@ -129,3 +162,35 @@ def test_productive_adapter_reuses_manual_snapshot_only_for_exact_model_and_buil
     assert other_build is not None
     assert other_build.supports_poe is CapabilityStatus.UNKNOWN
     assert other_build.poe_ports is None
+
+
+def test_manual_provider_rejects_legacy_positive_without_live_session_safety(tmp_path):
+    store = CapabilitySnapshotStore(tmp_path / "capabilities")
+    store.save_runtime(CapabilitySnapshot(
+        packet_tracer_version=BUILD,
+        session=ProbeSessionResult(
+            session=ProbeSession(
+                session_id="legacy-manual-poe",
+                packet_tracer_version=BUILD,
+            ),
+            results=[_manual_delivery_result(with_session_safety=False)],
+        ),
+    ))
+
+    evidence = tuple(
+        ManualVerificationCapabilityProvider(store, BUILD).evidence_for(
+            "3560-24PS", BUILD,
+        )
+    )
+    capabilities = packet_tracer_enterprise_capability_adapter(
+        BUILD, store=store,
+    ).capabilities_for("3560-24PS", BUILD)
+
+    assert len(evidence) == 1
+    assert evidence[0].status is CapabilityStatus.UNKNOWN
+    assert evidence[0].observed_value is None
+    assert evidence[0].dimensions == {}
+    assert capabilities is not None
+    assert capabilities.supports_poe is CapabilityStatus.UNKNOWN
+    assert capabilities.poe_ports is None
+    assert capabilities.poe_authorized_bindings == []

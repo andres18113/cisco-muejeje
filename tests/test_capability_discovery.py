@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +22,8 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CleanupStatus,
+    LiveSessionSafetyEvidence,
+    ProbeContext,
     ProbeExecutionStatus,
     ProbeLevel,
     ProbeRequest,
@@ -184,6 +187,36 @@ def test_cache_requires_exact_pt_version_and_force_bypasses_it(tmp_path):
     assert runtime.create_device_calls == 3
 
 
+def _governed_live_context() -> ProbeContext:
+    stable_sha256 = "a" * 64
+    return ProbeContext(
+        probe_id="poe-delivery-qualification",
+        probe_version="2",
+        device_model="3560-24PS",
+        inventory_restored=True,
+        mutations=["temporary-device-attempt:fixture"],
+        cleanup_status=CleanupStatus.CLEAN,
+        result_status=CapabilityStatus.SUPPORTED,
+        execution_status=ProbeExecutionStatus.VERIFIED,
+        live_session_safety=LiveSessionSafetyEvidence(
+            canonical_path="C:/fixture/canonical.pts",
+            canonical_pre_run_sha256=stable_sha256,
+            canonical_observed_post_run_sha256=stable_sha256,
+            canonical_verified_sha256=stable_sha256,
+            disposable_path="C:/fixture/disposable.pts",
+            disposable_pre_run_sha256=stable_sha256,
+            disposable_post_run_sha256=stable_sha256,
+            unexpected_canonical_modification=False,
+            disposable_modified=False,
+            runtime_healthy=True,
+            crash_detected=False,
+            integrity_verified=True,
+            session_reusable=True,
+            positive_claim_allowed=True,
+        ),
+    )
+
+
 def _legacy_poe_v2_snapshot(tmp_path, runtime):
     request = ProbeRequest(
         models=["3560-24PS"], capabilities=["supports_poe"], force=True,
@@ -266,6 +299,25 @@ def test_snapshot_roundtrip_hash_and_diff_are_stable(tmp_path):
     changed_port.session.devices[0].ports.append(RuntimePortDescriptor(name="Serial0/0/0"))
     diff = compare_snapshots(first, changed_port)
     assert diff.ports_changed == ["2911"]
+
+
+def test_live_safety_extension_preserves_tracked_legacy_snapshot_hash() -> None:
+    snapshot_path = (
+        Path(__file__).parents[1]
+        / "docs/reference/cp-scale/canonical-live-evidence"
+        / "cme-model-capability-20260901T124507166721Z-2410958d08f2-2911-snapshot.json"
+    )
+    snapshot = CapabilitySnapshot.model_validate_json(
+        snapshot_path.read_text(encoding="utf-8")
+    )
+
+    assert all(
+        result.context is None or result.context.live_session_safety is None
+        for result in snapshot.session.results
+    )
+    assert snapshot.stable_hash() == (
+        "6ec699233db0ef6bc64fcc89bab8daa03f0290d65026c929ad9808a00ac4f36b"
+    )
 
 
 def test_legacy_poe_snapshot_without_delivery_evidence_cannot_authorize_hardware(tmp_path):
@@ -573,6 +625,7 @@ def test_manual_delivery_snapshot_authorizes_only_its_exact_measured_count(tmp_p
         evidence_source=EvidenceSource.MANUAL_VERIFICATION, verified=True,
         observed_value=2,
         packet_tracer_version="PT 9.0",
+        context=_governed_live_context(),
         dimensions=_governed_delivery_dimensions(active=2, tested=2),
     )
     snapshot = CapabilitySnapshot(
@@ -622,6 +675,9 @@ def test_manual_delivery_snapshot_outweighs_higher_priority_control_unknown(tmp_
                     verified=True,
                     observed_value=None if not dimensions else 2,
                     packet_tracer_version="PT 9.0",
+                    context=(
+                        _governed_live_context() if dimensions else None
+                    ),
                     dimensions=dimensions,
                 )],
             ),

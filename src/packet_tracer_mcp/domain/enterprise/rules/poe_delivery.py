@@ -133,6 +133,30 @@ def validate_poe_delivery_observation(
     fixture: PoEDeliveryFixtureIdentity,
     observation: PoEDeliveryManualObservation,
 ) -> ValidationResult:
+    return _validate_poe_delivery_observation(
+        request, fixture, observation, require_differential=True,
+    )
+
+
+def validate_poe_delivery_observation_receipt(
+    request: PoEDeliveryQualificationRequest,
+    fixture: PoEDeliveryFixtureIdentity,
+    observation: PoEDeliveryManualObservation,
+) -> ValidationResult:
+    """Validate attributable visible evidence without deciding its outcome."""
+
+    return _validate_poe_delivery_observation(
+        request, fixture, observation, require_differential=False,
+    )
+
+
+def _validate_poe_delivery_observation(
+    request: PoEDeliveryQualificationRequest,
+    fixture: PoEDeliveryFixtureIdentity,
+    observation: PoEDeliveryManualObservation,
+    *,
+    require_differential: bool,
+) -> ValidationResult:
     errors = list(validate_poe_delivery_fixture(request, fixture).errors)
     if not observation.observer_id.strip():
         errors.append(_error("PoE observation requires an attributed observer identity."))
@@ -176,6 +200,7 @@ def validate_poe_delivery_observation(
             PoEDeliveryArmState.POWERED,
             "candidate",
             errors,
+            require_expected_state=require_differential,
         )
         _check_arm(
             item.comparison,
@@ -186,6 +211,7 @@ def validate_poe_delivery_observation(
             PoEDeliveryArmState.NOT_POWERED,
             "comparison",
             errors,
+            require_expected_state=require_differential,
         )
     if seen != set(fixture_by_key):
         errors.append(_error("PoE observation coverage is incomplete."))
@@ -297,6 +323,8 @@ def _check_arm(
     expected_state: PoEDeliveryArmState,
     label: str,
     errors: list[PlanError],
+    *,
+    require_expected_state: bool,
 ) -> None:
     exact_identity = (
         arm.switch_name == switch.name
@@ -331,7 +359,7 @@ def _check_arm(
         ))
     if arm.state is PoEDeliveryArmState.UNOBSERVABLE:
         errors.append(_error(f"The {label} powered-device state is unobservable."))
-    elif arm.state is not expected_state:
+    elif require_expected_state and arm.state is not expected_state:
         errors.append(_error(
             f"The {label} arm did not provide the required differential power state."
         ))

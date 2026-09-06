@@ -18,6 +18,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
 from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
+    CleanupStatus,
+    LiveSessionSafetyEvidence,
+    ProbeContext,
     ProbeExecutionStatus,
     ProbeSession,
     ProbeSessionResult,
@@ -55,6 +58,33 @@ def _stage_a_plan():
 def _save_delivery_supported_3560(
     store: CapabilitySnapshotStore, version: str = BUILD,
 ) -> None:
+    stable_sha256 = "a" * 64
+    live_context = ProbeContext(
+        probe_id="poe-delivery-qualification",
+        probe_version="2",
+        device_model="3560-24PS",
+        inventory_restored=True,
+        mutations=["temporary-device-attempt:fixture"],
+        cleanup_status=CleanupStatus.CLEAN,
+        result_status=CapabilityStatus.SUPPORTED,
+        execution_status=ProbeExecutionStatus.VERIFIED,
+        live_session_safety=LiveSessionSafetyEvidence(
+            canonical_path="C:/fixture/canonical.pts",
+            canonical_pre_run_sha256=stable_sha256,
+            canonical_observed_post_run_sha256=stable_sha256,
+            canonical_verified_sha256=stable_sha256,
+            disposable_path="C:/fixture/disposable.pts",
+            disposable_pre_run_sha256=stable_sha256,
+            disposable_post_run_sha256=stable_sha256,
+            unexpected_canonical_modification=False,
+            disposable_modified=False,
+            runtime_healthy=True,
+            crash_detected=False,
+            integrity_verified=True,
+            session_reusable=True,
+            positive_claim_allowed=True,
+        ),
+    )
     access_ports = tuple(
         f"FastEthernet0/{index}" for index in range(1, 25)
     )
@@ -129,6 +159,7 @@ def _save_delivery_supported_3560(
             verified=True,
             observed_value=24,
             packet_tracer_version=version,
+            context=live_context,
             dimensions=dimensions,
         ),
         CapabilityProbeResult(
@@ -141,6 +172,7 @@ def _save_delivery_supported_3560(
             verified=True,
             observed_value=24,
             packet_tracer_version=version,
+            context=live_context,
             dimensions=ap_dimensions,
         ),
         CapabilityProbeResult(

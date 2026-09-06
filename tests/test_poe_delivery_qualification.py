@@ -14,6 +14,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     CleanupStatus,
+    LiveSessionSafetyEvidence,
     ProbeExecutionStatus,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
@@ -38,6 +39,11 @@ from src.packet_tracer_mcp.domain.enterprise.rules.poe_delivery import (
 )
 from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     decode_poe_delivery_scope,
+    poe_claim_has_delivery_basis,
+)
+from src.packet_tracer_mcp.infrastructure.execution.live_file_integrity import (
+    PacketTracerLiveFileGuard,
+    PacketTracerLiveSessionSafety,
 )
 
 
@@ -216,6 +222,49 @@ class FakeSnapshotWriter:
         return Path("runtime-snapshot.json")
 
 
+class FakeSessionSafety:
+    def __init__(
+        self,
+        *,
+        session_reusable: bool = True,
+        positive_claim_allowed: bool = True,
+        integrity_verified: bool = True,
+        crash_detected: bool = False,
+        failure_reasons: tuple[str, ...] = (),
+        on_finalize=None,
+        raise_error: bool = False,
+    ) -> None:
+        stable_sha256 = "a" * 64
+        self.result = LiveSessionSafetyEvidence(
+            canonical_path="C:/fixture/canonical.pts",
+            canonical_pre_run_sha256=stable_sha256,
+            canonical_observed_post_run_sha256=stable_sha256,
+            canonical_verified_sha256=stable_sha256,
+            disposable_path="C:/fixture/disposable.pts",
+            disposable_pre_run_sha256=stable_sha256,
+            disposable_post_run_sha256=stable_sha256,
+            unexpected_canonical_modification=False,
+            disposable_modified=False,
+            runtime_healthy=True,
+            session_reusable=session_reusable,
+            positive_claim_allowed=positive_claim_allowed,
+            integrity_verified=integrity_verified,
+            crash_detected=crash_detected,
+            failure_reasons=failure_reasons,
+        )
+        self.on_finalize = on_finalize
+        self.raise_error = raise_error
+        self.calls = 0
+
+    def finalize(self) -> LiveSessionSafetyEvidence:
+        self.calls += 1
+        if self.on_finalize is not None:
+            self.on_finalize()
+        if self.raise_error:
+            raise RuntimeError("session safety unavailable")
+        return self.result
+
+
 def _fixture_for_rules(request: PoEDeliveryQualificationRequest) -> PoEDeliveryFixtureIdentity:
     candidate_switch = PoEDeliveryDeviceIdentity(
         name="candidate",
@@ -315,6 +364,7 @@ def _service_fixture():
         runtime=runtime,
         observer=observer,
         snapshots=writer,
+        session_safety=FakeSessionSafety(),
         session_id_factory=lambda: "fixed-session",
         clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
         observation_window_seconds=120,
@@ -336,6 +386,9 @@ def test_service_persists_supported_manual_evidence_only_after_clean_restoration
     assert result.capability_result.observed_value == 2
     assert result.cleanup_status is CleanupStatus.CLEAN
     assert result.inventory_restored is True
+    assert result.live_session_safety.session_reusable is True
+    assert result.live_session_safety.integrity_verified is True
+    assert result.live_session_safety.crash_detected is False
     assert result.runtime_snapshot_path == "runtime-snapshot.json"
     assert len(writer.snapshots) == 1
     assert writer.snapshots[0].reusable is True
@@ -439,6 +492,29 @@ def test_service_rejects_observation_outside_bounded_deadline() -> None:
     assert result.observation_status is ObservationStatus.OBSERVED
     assert result.verification_status is VerificationStatus.FAILED
     assert "bounded observation window" in result.failure_reason
+
+
+def test_service_rejects_observation_returned_after_deadline_even_with_timely_timestamp() -> None:
+    request, runtime, observer, writer, _service = _service_fixture()
+    started = datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc)
+    times = iter((started, started + timedelta(seconds=121)))
+    service = PoEDeliveryQualificationService(
+        runtime=runtime,
+        observer=observer,
+        snapshots=writer,
+        session_safety=FakeSessionSafety(),
+        session_id_factory=lambda: "fixed-session",
+        clock=lambda: next(times),
+        observation_window_seconds=120,
+    )
+
+    result = service.qualify(request)
+
+    assert result.execution_status is ProbeExecutionStatus.VERIFY_FAILED
+    assert result.observation_status is ObservationStatus.UNOBSERVABLE
+    assert result.verification_status is VerificationStatus.UNVERIFIED
+    assert result.capability_result.status is CapabilityStatus.UNKNOWN
+    assert "returned after" in result.failure_reason.casefold()
 
 
 @pytest.mark.parametrize(
@@ -666,3 +742,230 @@ def test_snapshot_persistence_failure_demotes_in_memory_positive_claim() -> None
     assert result.capability_result.context.result_status is CapabilityStatus.UNKNOWN
     assert result.capability_result.evidence() is None
     assert result.runtime_snapshot_path is None
+
+
+def test_session_safety_gate_runs_after_cleanup_and_before_snapshot_persistence() -> None:
+    request = _request(bindings=2)
+    runtime = FakeRuntime(request)
+    observer = FakeObserver()
+    writer = FakeSnapshotWriter()
+
+    def assert_gate_order() -> None:
+        assert runtime.calls[-1] == "restore:inventory-before"
+        assert writer.snapshots == []
+
+    safety = FakeSessionSafety(
+        session_reusable=False,
+        positive_claim_allowed=False,
+        integrity_verified=False,
+        crash_detected=True,
+        failure_reasons=("synthetic post-deadline crash",),
+        on_finalize=assert_gate_order,
+    )
+    service = PoEDeliveryQualificationService(
+        runtime=runtime,
+        observer=observer,
+        snapshots=writer,
+        session_safety=safety,
+        session_id_factory=lambda: "fixed-session",
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        observation_window_seconds=120,
+    )
+
+    result = service.qualify(request)
+
+    assert safety.calls == 1
+    assert result.execution_status is ProbeExecutionStatus.VERIFY_FAILED
+    assert result.verification_status is VerificationStatus.FAILED
+    assert result.capability_result.status is CapabilityStatus.UNKNOWN
+    assert result.capability_result.verified is False
+    assert result.capability_result.evidence() is None
+    assert result.live_session_safety.session_reusable is False
+    assert result.live_session_safety.integrity_verified is False
+    assert result.live_session_safety.crash_detected is True
+    assert "post-deadline crash" in result.failure_reason
+    assert len(writer.snapshots) == 1
+    snapshot = writer.snapshots[0]
+    assert snapshot.reusable is False
+    assert snapshot.session.results[0].context is not None
+    assert snapshot.session.results[0].context.live_session_safety is not None
+    assert not snapshot.session.results[0].context.live_session_safety.session_reusable
+    assert snapshot.session.results[0].evidence() is None
+
+
+def test_session_safety_exception_is_fail_closed_before_snapshot_persistence() -> None:
+    request = _request(bindings=2)
+    runtime = FakeRuntime(request)
+    observer = FakeObserver()
+    writer = FakeSnapshotWriter()
+    safety = FakeSessionSafety(raise_error=True)
+    service = PoEDeliveryQualificationService(
+        runtime=runtime,
+        observer=observer,
+        snapshots=writer,
+        session_safety=safety,
+        session_id_factory=lambda: "fixed-session",
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        observation_window_seconds=120,
+    )
+
+    result = service.qualify(request)
+
+    assert safety.calls == 1
+    assert result.execution_status is ProbeExecutionStatus.VERIFY_FAILED
+    assert result.verification_status is VerificationStatus.FAILED
+    assert result.capability_result.status is CapabilityStatus.UNKNOWN
+    assert result.live_session_safety.session_reusable is False
+    assert result.live_session_safety.integrity_verified is False
+    assert result.live_session_safety.crash_detected is None
+    assert "safety finalization failed" in result.failure_reason.casefold()
+    assert writer.snapshots[0].reusable is False
+    assert writer.snapshots[0].session.results[0].evidence() is None
+
+
+def test_real_file_safety_evidence_is_persisted_before_positive_release(
+    tmp_path: Path,
+) -> None:
+    request = _request(bindings=2)
+    runtime = FakeRuntime(request)
+    observer = FakeObserver()
+    writer = FakeSnapshotWriter()
+    canonical = tmp_path / "canonical.pts"
+    canonical.write_bytes(b"canonical Packet Tracer module")
+    safety = PacketTracerLiveSessionSafety(
+        file_guard=PacketTracerLiveFileGuard(
+            canonical_path=canonical,
+            disposable_root=tmp_path / "sessions",
+            run_identity="fixed-session",
+        ),
+        runtime_health=lambda: True,
+        crash_detector=lambda: False,
+    )
+    identity = safety.prepare()
+    service = PoEDeliveryQualificationService(
+        runtime=runtime,
+        observer=observer,
+        snapshots=writer,
+        session_safety=safety,
+        session_id_factory=lambda: "fixed-session",
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        observation_window_seconds=120,
+    )
+
+    result = service.qualify(request)
+
+    assert result.capability_result.status is CapabilityStatus.SUPPORTED
+    persisted = writer.snapshots[0].session.results[0]
+    assert persisted.evidence() is not None
+    assert persisted.context is not None
+    file_evidence = persisted.context.live_session_safety
+    assert file_evidence is not None
+    assert file_evidence.canonical_path == identity.canonical_path
+    assert file_evidence.canonical_pre_run_sha256 == identity.canonical_sha256
+    assert file_evidence.canonical_observed_post_run_sha256 == identity.canonical_sha256
+    assert file_evidence.canonical_verified_sha256 == identity.canonical_sha256
+    assert file_evidence.disposable_path == identity.disposable_path
+    assert file_evidence.disposable_pre_run_sha256 == identity.disposable_sha256
+    assert file_evidence.disposable_post_run_sha256 == identity.disposable_sha256
+    relocated = writer.snapshots[0].model_copy(deep=True)
+    relocated_safety = relocated.session.results[0].context.live_session_safety
+    assert relocated_safety is not None
+    relocated_safety.canonical_path = str((tmp_path / "relocated.pts").resolve())
+    relocated_safety.disposable_path = str((tmp_path / "other.pts").resolve())
+    assert relocated.stable_hash() == writer.snapshots[0].stable_hash()
+
+
+def test_real_disposable_pts_change_blocks_persisted_positive_claim(
+    tmp_path: Path,
+) -> None:
+    request = _request(bindings=2)
+    runtime = FakeRuntime(request)
+    observer = FakeObserver()
+    writer = FakeSnapshotWriter()
+    canonical = tmp_path / "canonical.pts"
+    canonical.write_bytes(b"canonical Packet Tracer module")
+    safety = PacketTracerLiveSessionSafety(
+        file_guard=PacketTracerLiveFileGuard(
+            canonical_path=canonical,
+            disposable_root=tmp_path / "sessions",
+            run_identity="fixed-session",
+        ),
+        runtime_health=lambda: True,
+        crash_detector=lambda: False,
+    )
+    identity = safety.prepare()
+    observer.mutate = lambda _item: Path(identity.disposable_path).write_bytes(
+        b"unexpected post-run bytes"
+    )
+    service = PoEDeliveryQualificationService(
+        runtime=runtime,
+        observer=observer,
+        snapshots=writer,
+        session_safety=safety,
+        session_id_factory=lambda: "fixed-session",
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        observation_window_seconds=120,
+    )
+
+    result = service.qualify(request)
+
+    assert canonical.read_bytes() == b"canonical Packet Tracer module"
+    assert result.capability_result.status is CapabilityStatus.UNKNOWN
+    assert result.live_session_safety.disposable_modified is True
+    persisted = writer.snapshots[0].session.results[0]
+    assert persisted.context is not None
+    assert persisted.context.live_session_safety is not None
+    assert persisted.context.live_session_safety.disposable_modified is True
+    assert persisted.evidence() is None
+
+
+@pytest.mark.parametrize(
+    "unsafe_update",
+    [
+        {"crash_detected": True},
+        {"integrity_verified": False},
+        {"canonical_pre_run_sha256": None},
+        {"disposable_post_run_sha256": "b" * 64},
+        {
+            "disposable_pre_run_sha256": "b" * 64,
+            "disposable_post_run_sha256": "b" * 64,
+        },
+    ],
+    ids=[
+        "crash",
+        "integrity",
+        "missing-hash",
+        "changed-disposable",
+        "wrong-disposable-origin",
+    ],
+)
+def test_loaded_contradictory_safety_context_never_releases_evidence(
+    unsafe_update: dict[str, object],
+) -> None:
+    request, _runtime, _observer, writer, service = _service_fixture()
+    service.qualify(request)
+    snapshot = writer.snapshots[0].model_copy(deep=True)
+    persisted = snapshot.session.results[0]
+    assert persisted.context is not None
+    assert persisted.context.live_session_safety is not None
+    persisted.context.live_session_safety = (
+        persisted.context.live_session_safety.model_copy(update=unsafe_update)
+    )
+
+    assert persisted.evidence() is None
+    assert snapshot.reusable is False
+
+
+def test_legacy_decided_poe_result_without_session_safety_cannot_release_claim() -> None:
+    request, _runtime, _observer, writer, service = _service_fixture()
+    service.qualify(request)
+    legacy = writer.snapshots[0].session.results[0].model_copy(deep=True)
+    assert legacy.context is not None
+    legacy.context.live_session_safety = None
+
+    assert poe_claim_has_delivery_basis(legacy) is False
+    evidence = legacy.evidence()
+    assert evidence is not None
+    assert evidence.status is CapabilityStatus.UNKNOWN
+    assert evidence.observed_value is None
+    assert evidence.dimensions == {}

@@ -311,6 +311,18 @@ def poe_claim_has_delivery_basis(result: PoEClaim) -> bool:
         return True
     if result.status is CapabilityStatus.UNKNOWN:
         return True
+    if hasattr(result, "context"):
+        context = getattr(result, "context", None)
+        if context is None or context.live_session_safety is None:
+            return False
+        from ..rules.live_session_safety import (
+            validate_live_session_positive_admission,
+        )
+
+        if not validate_live_session_positive_admission(
+            context.live_session_safety,
+        ).is_valid:
+            return False
     return decode_poe_delivery_scope(result) is not None
 
 

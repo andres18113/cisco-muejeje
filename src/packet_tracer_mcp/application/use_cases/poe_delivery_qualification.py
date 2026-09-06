@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+from ..live_session_safety import LiveSessionSafety
 from ...domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
 from ...domain.enterprise.models.discovery import (
     BackendVersionProvenance,
@@ -21,6 +22,7 @@ from ...domain.enterprise.models.discovery import (
     CapabilitySnapshot,
     CapabilityVerificationMethod,
     CleanupStatus,
+    LiveSessionSafetyEvidence,
     ProbeContext,
     ProbeExecutionStatus,
     ProbeIsolationLevel,
@@ -49,6 +51,9 @@ from ...domain.enterprise.rules.poe_delivery import (
     validate_poe_delivery_observation,
     validate_poe_delivery_request,
 )
+from ...domain.enterprise.rules.live_session_safety import (
+    validate_live_session_positive_admission,
+)
 from ...domain.enterprise.services.poe_claims import (
     PoEAuthorizedBinding,
     PoEDeliveryClaimScope,
@@ -58,7 +63,7 @@ from ...domain.enterprise.services.poe_claims import (
 
 
 _PROBE_ID = "poe-delivery-qualification"
-_PROBE_VERSION = "1"
+_PROBE_VERSION = "2"
 
 
 class PoEDeliveryFixtureRuntime(Protocol):
@@ -111,6 +116,7 @@ class PoEDeliveryQualificationService:
         runtime: PoEDeliveryFixtureRuntime,
         observer: PoEDeliveryObserver,
         snapshots: CapabilitySnapshotWriter,
+        session_safety: LiveSessionSafety,
         session_id_factory: Callable[[], str] | None = None,
         clock: Callable[[], datetime] | None = None,
         observation_window_seconds: float = 300.0,
@@ -118,6 +124,7 @@ class PoEDeliveryQualificationService:
         self._runtime = runtime
         self._observer = observer
         self._snapshots = snapshots
+        self._session_safety = session_safety
         self._session_id_factory = session_id_factory or (
             lambda: uuid4().hex[:12]
         )
@@ -145,6 +152,7 @@ class PoEDeliveryQualificationService:
         execution_status = ProbeExecutionStatus.EXECUTION_ERROR
         observation_status = ObservationStatus.PROBE_FAILED
         verification_status = VerificationStatus.UNVERIFIED
+        live_session_safety: LiveSessionSafetyEvidence | None = None
 
         request_validation = validate_poe_delivery_request(request)
         if not request_validation.is_valid:
@@ -184,6 +192,7 @@ class PoEDeliveryQualificationService:
                     fixture,
                     observation_deadline,
                 )
+                observation_returned_at = self._clock()
             except Exception as exc:
                 execution_status = ProbeExecutionStatus.VERIFY_FAILED
                 observation_status = ObservationStatus.UNOBSERVABLE
@@ -200,6 +209,14 @@ class PoEDeliveryQualificationService:
                         request, fixture, observation,
                     )
                     observation_valid = validation.is_valid
+                    returned_after_deadline = (
+                        observation_returned_at > observation_deadline
+                    )
+                    if returned_after_deadline:
+                        observation_valid = False
+                        failure_reasons.append(
+                            "PoE observation returned after the bounded observation deadline."
+                        )
                     timestamp_is_utc = (
                         observation.observed_at.tzinfo is not None
                         and observation.observed_at.utcoffset() is not None
@@ -220,7 +237,8 @@ class PoEDeliveryQualificationService:
                         execution_status = ProbeExecutionStatus.VERIFY_FAILED
                         observation_status = (
                             ObservationStatus.UNOBSERVABLE
-                            if _observation_is_unobservable(request, observation)
+                            if returned_after_deadline
+                            or _observation_is_unobservable(request, observation)
                             else ObservationStatus.OBSERVED
                         )
                         verification_status = (
@@ -268,11 +286,32 @@ class PoEDeliveryQualificationService:
             and inventory_restored is True
             and set(deleted) == set(attempted)
         )
-        supported = observation_valid and clean_restoration
+        try:
+            live_safety = self._session_safety.finalize()
+        except Exception as exc:
+            live_session_safety = LiveSessionSafetyEvidence(
+                failure_reasons=[
+                    f"LIVE session safety finalization failed: {exc}"
+                ],
+            )
+        else:
+            live_session_safety = live_safety
+        failure_reasons.extend(live_session_safety.failure_reasons)
+        live_claim_allowed = validate_live_session_positive_admission(
+            live_session_safety,
+        ).is_valid
+
+        supported = observation_valid and clean_restoration and live_claim_allowed
         if observation_valid and not clean_restoration:
             verification_status = VerificationStatus.FAILED
             failure_reasons.append(
                 "Valid delivery observation is not reusable because cleanup/restoration is incomplete."
+            )
+        if observation_valid and clean_restoration and not live_claim_allowed:
+            verification_status = VerificationStatus.FAILED
+            failure_reasons.append(
+                "Valid delivery observation is not reusable because LIVE session "
+                "health/file integrity did not pass."
             )
         if (
             not clean_restoration
@@ -306,6 +345,7 @@ class PoEDeliveryQualificationService:
             attempted=attempted,
             observation_status=observation_status,
             failure_reason=" ".join(reason for reason in failure_reasons if reason),
+            live_session_safety=live_session_safety,
         )
         snapshot = _snapshot(
             request=request,
@@ -353,6 +393,7 @@ class PoEDeliveryQualificationService:
             initial_inventory_fingerprint=initial_fingerprint,
             final_inventory_fingerprint=final_fingerprint,
             inventory_restored=inventory_restored,
+            live_session_safety=live_session_safety,
             attempted_identities=attempted,
             created_identities=created,
             deleted_identities=deleted,
@@ -490,6 +531,7 @@ class PoEDeliveryQualificationService:
         attempted: list[str],
         observation_status: ObservationStatus,
         failure_reason: str,
+        live_session_safety: LiveSessionSafetyEvidence,
     ) -> CapabilityProbeResult:
         status = CapabilityStatus.SUPPORTED if supported else CapabilityStatus.UNKNOWN
         context = ProbeContext(
@@ -515,6 +557,7 @@ class PoEDeliveryQualificationService:
                 "probe_version": _PROBE_VERSION,
                 "request": request.model_dump(mode="json"),
             }),
+            live_session_safety=live_session_safety,
         )
         return CapabilityProbeResult(
             probe_id=_PROBE_ID,
