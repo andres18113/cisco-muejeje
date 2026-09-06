@@ -52,6 +52,7 @@ class PacketTracerPoEDeliveryFixtureRuntime:
         # A creation timeout can mean that PT mutated before the acknowledgement
         # was lost.  Record the name before transport so cleanup remains possible.
         self._attempted_device_names: set[str] = set()
+        self._creation_attempt_count = 0
 
     def packet_tracer_build(self) -> str | None:
         return self._packet_tracer_build
@@ -87,13 +88,22 @@ class PacketTracerPoEDeliveryFixtureRuntime:
             list(required_ports), ensure_ascii=False, separators=(",", ":"),
         )
         type_literal = json.dumps(device_type)
+        # Keep simultaneous endpoints individually accessible to the visible
+        # observer. PT clamps the former off-canvas (9000, 9000) onto one point.
+        # Reserve before dispatch: an ambiguous acknowledgement cannot make a
+        # later endpoint reuse a potentially occupied presentation position.
+        ordinal = self._creation_attempt_count
+        self._creation_attempt_count += 1
+        x_literal = json.dumps(160 + 320 * (ordinal % 4))
+        y_literal = json.dumps(160 + 140 * (ordinal // 4))
         script = "".join((
             "var __attempted=false;try{var __model=", model_literal, ",__name=", name_literal,
             ",__required=", ports_literal, ",__type=", type_literal,
             ",__net=ipc.network();",
             "if(__net.getDevice(__name)){reportResult(JSON.stringify({found:false,creation_attempted:false,error:'duplicate fixture name'}));}",
             "else if(typeof lwAddDevice!=='function'){reportResult(JSON.stringify({found:false,creation_attempted:false,error:'lwAddDevice unavailable'}));}",
-            "else{__attempted=true;lwAddDevice(__name,__type,__model,9000,9000);var __d=__net.getDevice(__name);",
+            "else{__attempted=true;lwAddDevice(__name,__type,__model,",
+            x_literal, ",", y_literal, ");var __d=__net.getDevice(__name);",
             "if(!__d){reportResult(JSON.stringify({found:false,creation_attempted:true,error:'created device not found'}));}",
             "else{var __ports=[],__missing=[];for(var __i=0;__i<__required.length;__i++){",
             "var __requested=__required[__i],__p=null;try{__p=__d.getPort(__requested);}catch(__pe){}",

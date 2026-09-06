@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -109,6 +110,46 @@ def test_create_device_returns_exact_candidate_and_comparison_identities():
     }
     assert all(".getPower(" not in script for script, _ in transport.calls)
     assert all(".isPowerOn(" not in script for script, _ in transport.calls)
+
+
+def test_simultaneous_fixture_devices_have_distinct_unclamped_canvas_positions():
+    # Two 24-port switches plus 24 candidate/control endpoint pairs. The LIVE
+    # observer found every old (9000, 9000) request clamped onto (3899, 3900).
+    names = [f"__POE_VISUAL_{index}" for index in range(50)]
+    transport = RecordingTransport([
+        _device_payload(name, "7960", ["Switch"]) for name in names
+    ])
+    runtime = PacketTracerPoEDeliveryFixtureRuntime(transport, "PT build exact")
+
+    for name in names:
+        runtime.create_device("7960", name, ("Switch",))
+
+    positions = []
+    assert len(transport.calls) == len(names)
+    for script, _ in transport.calls:
+        calls = re.findall(r"lwAddDevice\(__name,__type,__model,(\d+),(\d+)\)", script)
+        assert len(calls) == 1
+        positions.append(tuple(map(int, calls[0])))
+    assert len(set(positions)) == len(names)
+    assert all(0 < x < 3899 and 0 < y < 3900 for x, y in positions)
+
+
+def test_ambiguous_creation_reserves_its_visual_position_without_replay():
+    transport = RecordingTransport([
+        None, _device_payload("__POE_NEXT", "7960", ["Switch"]),
+    ])
+    runtime = PacketTracerPoEDeliveryFixtureRuntime(transport, "PT build exact")
+    with pytest.raises((RuntimeError, TimeoutError)):
+        runtime.create_device("7960", "__POE_AMBIGUOUS", ("Switch",))
+
+    runtime.create_device("7960", "__POE_NEXT", ("Switch",))
+
+    assert len(transport.calls) == 2
+    coordinates = [
+        re.search(r"lwAddDevice\(__name,__type,__model,(\d+),(\d+)\)", script).groups()
+        for script, _ in transport.calls
+    ]
+    assert coordinates[0] != coordinates[1]
 
 
 def test_create_link_returns_both_exact_observed_endpoint_views():

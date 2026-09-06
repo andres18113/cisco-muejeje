@@ -1222,10 +1222,10 @@ def test_current_cp_scale_voice_state_uses_exact_values():
         "CANONICAL_CP_SCALE_WORKSPACE_RESTORED": "YES",
         "CANONICAL_CP_SCALE_REALTIME_RESTORED": "YES",
         "LIVE_RUNS_CONSUMED": (
-            "AT_LEAST_42_NON_EXHAUSTIVE_AFTER_20260903"
+            "AT_LEAST_43_NON_EXHAUSTIVE_AFTER_20260903"
         ),
         "CLEANUP": (
-            "LATEST_POE_SEMANTIC_CLEANUP_4_OF_4 | "
+            "LATEST_POE_ACQUISITION_CLEANUP_6_OF_6 | "
             "PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE"
         ),
         "WORKSPACE_RESTORED": (
@@ -1236,8 +1236,8 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
         ),
         "CP_SCALE_STATUS": (
-            "POE_DELIVERY_SUPPORTED_EXACT_BINDING_ONLY | "
-            "LATEST_POE_EVIDENCE_VERIFIED | "
+            "PRIOR_POE_EXACT_BINDING_VERIFIED | "
+            "LATEST_POE_ACQUISITION_UNOBSERVABLE | "
             "ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | "
             "PRODUCT_PRECONDITION_BLOCKED"
         ),

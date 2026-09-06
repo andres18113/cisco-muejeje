@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-06T19:53:07.168481Z",
+  "updated_at": "2026-09-06T20:27:35.626491Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -224,7 +224,20 @@
         "sha256": "6e2e46376debb1e0cdc5a63de8b501bb9ddcd85c8281ec6d36a53c2f8dd99fab"
       }
     },
-    "latest_poe_qualification": {
+    "router0_poe_acquisition": {
+      "operator_authorization": "ACQUIRE_ROUTER0_POE_EVIDENCE_THEN_RUN_ROUTER0",
+      "latest_attempt": "r0poe-mls4-b4810d48",
+      "result": "OBSERVER_UNOBSERVABLE_NO_POE_PROMOTION",
+      "physical_limitation_established": false,
+      "cleanup": "6_OF_6_SEMANTIC_INVENTORY_AND_REALTIME_RESTORED",
+      "file_runtime_safety": "VERIFIED_NO_CRASH",
+      "artifact": {
+        "path": "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T202735-b4810d48-unobservable.json",
+        "sha256": "f26cbe1ab1c2b254b5da73aba285086982b68aa8c7022a38443ad29b0e2640c8"
+      },
+      "continuation": "OFFLINE_VISUAL_LAYOUT_AUTOFIX_THEN_CAUSALLY_CHANGED_QUALIFICATION"
+    },
+    "latest_verified_poe_qualification": {
       "run_identity": "poe-7950198d050f",
       "packet_tracer_build": "9.0.1.0858",
       "decision": "A — DELIVERY VERIFIED",
@@ -239,6 +252,7 @@
       }
     },
     "observer_pipeline": {
+      "finding_run_identity": "poe-7950198d050f",
       "finding": "OBSERVATION_DELIVERED_WITHIN_OBSERVE",
       "offline_status": "CORRECTED_AND_TESTED",
       "deadline_seconds": 300,
@@ -271,19 +285,20 @@
         "poe-e0da8048e559",
         "poe-29d64000dfb5",
         "poe-9d0d21961c1c",
-        "poe-7950198d050f"
+        "poe-7950198d050f",
+        "poe-r0poe-mls4-b4810d48"
       ],
-      "known_live_runs_consumed_lower_bound": 42,
+      "known_live_runs_consumed_lower_bound": 43,
       "current_total_exhaustive": false,
       "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS"
     },
     "next_active_step": "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
   },
   "handoff_compatibility": {
-    "LIVE_RUNS_CONSUMED": "AT_LEAST_42_NON_EXHAUSTIVE_AFTER_20260903",
-    "CLEANUP": "LATEST_POE_SEMANTIC_CLEANUP_4_OF_4 | PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE",
+    "LIVE_RUNS_CONSUMED": "AT_LEAST_43_NON_EXHAUSTIVE_AFTER_20260903",
+    "CLEANUP": "LATEST_POE_ACQUISITION_CLEANUP_6_OF_6 | PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE",
     "WORKSPACE_RESTORED": "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED",
     "NEXT_ACTIVE_STEP": "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0",
-    "CP_SCALE_STATUS": "POE_DELIVERY_SUPPORTED_EXACT_BINDING_ONLY | LATEST_POE_EVIDENCE_VERIFIED | ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | PRODUCT_PRECONDITION_BLOCKED"
+    "CP_SCALE_STATUS": "PRIOR_POE_EXACT_BINDING_VERIFIED | LATEST_POE_ACQUISITION_UNOBSERVABLE | ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | PRODUCT_PRECONDITION_BLOCKED"
   }
 }

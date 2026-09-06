@@ -1,0 +1,427 @@
+{
+  "schema": "governed-poe-acquisition-episode-v1",
+  "run_identity": "r0poe-mls4-b4810d48",
+  "source_head": "c4f1e8d680f569c00e68129bfd8c9a39f34935fd",
+  "decision": "OBSERVER_UNOBSERVABLE_NO_POE_PROMOTION",
+  "physical_limitation_established": false,
+  "router0_attempts_consumed": 0,
+  "preflight": {
+    "run_id": "r0poe-mls4-b4810d48",
+    "source_sha": "c4f1e8d680f569c00e68129bfd8c9a39f34935fd",
+    "at": "2026-09-06 20:22:34.633655+00:00",
+    "harness_sha256": "ce8caedc6fc4ab72d5880695458e5745f9c8cec4dc9e9d25a0d67b4b2277e60f",
+    "request": {
+      "packet_tracer_build": "9.0.1.0858",
+      "candidate_model": "3650-24PS",
+      "comparison_model": "2960-24TT",
+      "bindings": [
+        {
+          "candidate_port": "GigabitEthernet1/0/2",
+          "comparison_port": "FastEthernet0/1",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch"
+        },
+        {
+          "candidate_port": "GigabitEthernet1/0/3",
+          "comparison_port": "FastEthernet0/2",
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0"
+        }
+      ]
+    },
+    "python": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\.venv\\Scripts\\python.exe",
+    "package": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\src\\packet_tracer_mcp\\__init__.py",
+    "namespaces": [
+      "packet_tracer_mcp"
+    ],
+    "processes": [
+      {
+        "Id": 8008,
+        "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "ProductVersion": "9.0.1.0858",
+        "FileVersion": "9.0.1.0858"
+      },
+      {
+        "Id": 32992,
+        "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "ProductVersion": "9.0.1.0858",
+        "FileVersion": "9.0.1.0858"
+      }
+    ],
+    "bridge": {
+      "connected": true,
+      "last_poll_ago": 0,
+      "unauth_recent": false,
+      "unauth_count": 0,
+      "unauth_paths": [],
+      "client_headers": {
+        "Origin": "pt-sm:",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "cors",
+        "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+      },
+      "token_id": "395ba83c275764b9"
+    },
+    "baseline": {
+      "observed": true,
+      "devices": [],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    "realtime": {
+      "observed": true,
+      "simulation_mode": false,
+      "frames": 0,
+      "sim_time": 981354,
+      "current_index": 0,
+      "message": "simulation_state_readback"
+    },
+    "files": {
+      "path_identity_semantics": "windows",
+      "canonical_path": "C:\\Users\\Andres\\Downloads\\V5.2.pts",
+      "canonical_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+      "disposable_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\tmp\\router0-poe-live\\r0poe-mls4-b4810d48\\files\\r0poe-mls4-b4810d48\\packet-tracer-live.pts",
+      "disposable_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071"
+    },
+    "actions": [
+      {
+        "name": "pytest (windows-latest, 3.11)",
+        "head_sha": "c4f1e8d680f569c00e68129bfd8c9a39f34935fd",
+        "conclusion": "success",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34056492520/job/101549241919"
+      },
+      {
+        "name": "pytest (ubuntu-latest, 3.13)",
+        "head_sha": "c4f1e8d680f569c00e68129bfd8c9a39f34935fd",
+        "conclusion": "success",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34056492520/job/101549241882"
+      },
+      {
+        "name": "pytest (windows-latest, 3.13)",
+        "head_sha": "c4f1e8d680f569c00e68129bfd8c9a39f34935fd",
+        "conclusion": "success",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34056492520/job/101549241867"
+      },
+      {
+        "name": "pytest (ubuntu-latest, 3.11)",
+        "head_sha": "c4f1e8d680f569c00e68129bfd8c9a39f34935fd",
+        "conclusion": "success",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34056492520/job/101549241680"
+      }
+    ]
+  },
+  "result": {
+    "execution_status": "verify_failed",
+    "observation_status": "unobservable",
+    "verification_status": "unverified",
+    "capability_result": {
+      "probe_id": "poe-delivery-qualification",
+      "model": "3650-24PS",
+      "capability": "supports_poe",
+      "status": "unknown",
+      "execution_status": "verify_failed",
+      "evidence_source": "manual_verification",
+      "configured": true,
+      "verified": false,
+      "observed_value": null,
+      "raw_summary": "PoE delivery remains UNKNOWN.",
+      "failure_reason": "PoE observer returned no visible-state observation; delivery is unobservable.",
+      "duration_ms": 0,
+      "packet_tracer_version": "9.0.1.0858",
+      "verification_method": "unobservable",
+      "context": {
+        "probe_id": "poe-delivery-qualification",
+        "probe_version": "2",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "device_model": "3650-24PS",
+        "environment_fingerprint": "3513a8d4568f36a4a739a6169ad744bfb6e5eca157e97c8cadc5f8aa0c519f5a",
+        "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+        "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+        "inventory_restored": true,
+        "isolation_level": "fresh_session_required",
+        "mutations": [
+          "temporary-device-attempt:__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH",
+          "temporary-device-attempt:__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+          "temporary-device-attempt:__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_01",
+          "temporary-device-attempt:__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_01",
+          "temporary-device-attempt:__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_02",
+          "temporary-device-attempt:__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_02"
+        ],
+        "cleanup_status": "clean",
+        "result_status": "unknown",
+        "execution_status": "verify_failed",
+        "probe_fingerprint": "51eb2c993e644f255fa06ba735f11d231e36b3bc9952cf6a028f0e41c2d9e37e",
+        "live_session_safety": {
+          "path_identity_semantics": "windows",
+          "canonical_path": "C:\\Users\\Andres\\Downloads\\V5.2.pts",
+          "canonical_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+          "canonical_observed_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+          "canonical_verified_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+          "disposable_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\tmp\\router0-poe-live\\r0poe-mls4-b4810d48\\files\\r0poe-mls4-b4810d48\\packet-tracer-live.pts",
+          "disposable_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+          "disposable_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+          "active_workspace_binding": null,
+          "unexpected_canonical_modification": false,
+          "disposable_modified": false,
+          "restoration_attempted": false,
+          "restoration_verified": null,
+          "runtime_healthy": true,
+          "crash_detected": false,
+          "integrity_verified": true,
+          "session_reusable": true,
+          "positive_claim_allowed": true,
+          "failure_reasons": []
+        }
+      },
+      "dimensions": {}
+    },
+    "cleanup_status": "clean",
+    "initial_inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "final_inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+    "inventory_restored": true,
+    "live_session_safety": {
+      "path_identity_semantics": "windows",
+      "canonical_path": "C:\\Users\\Andres\\Downloads\\V5.2.pts",
+      "canonical_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+      "canonical_observed_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+      "canonical_verified_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+      "disposable_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\tmp\\router0-poe-live\\r0poe-mls4-b4810d48\\files\\r0poe-mls4-b4810d48\\packet-tracer-live.pts",
+      "disposable_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+      "disposable_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+      "active_workspace_binding": null,
+      "unexpected_canonical_modification": false,
+      "disposable_modified": false,
+      "restoration_attempted": false,
+      "restoration_verified": null,
+      "runtime_healthy": true,
+      "crash_detected": false,
+      "integrity_verified": true,
+      "session_reusable": true,
+      "positive_claim_allowed": true,
+      "failure_reasons": []
+    },
+    "attempted_identities": [
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH",
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_02",
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_02"
+    ],
+    "created_identities": [
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH",
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_02",
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_02"
+    ],
+    "deleted_identities": [
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_02",
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_02",
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+      "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH"
+    ],
+    "cleanup_failed": [],
+    "fixture": {
+      "candidate_switch": {
+        "name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH",
+        "model": "3650-24PS",
+        "observed_ports": [
+          "GigabitEthernet1/0/2",
+          "GigabitEthernet1/0/3"
+        ]
+      },
+      "comparison_switch": {
+        "name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+        "model": "2960-24TT",
+        "observed_ports": [
+          "FastEthernet0/1",
+          "FastEthernet0/2"
+        ]
+      },
+      "bindings": [
+        {
+          "request": {
+            "candidate_port": "GigabitEthernet1/0/2",
+            "comparison_port": "FastEthernet0/1",
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch"
+          },
+          "candidate_switch": {
+            "name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH",
+            "model": "3650-24PS",
+            "observed_ports": [
+              "GigabitEthernet1/0/2",
+              "GigabitEthernet1/0/3"
+            ]
+          },
+          "comparison_switch": {
+            "name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+            "model": "2960-24TT",
+            "observed_ports": [
+              "FastEthernet0/1",
+              "FastEthernet0/2"
+            ]
+          },
+          "candidate_endpoint": {
+            "name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_01",
+            "model": "7960",
+            "observed_ports": [
+              "Switch"
+            ]
+          },
+          "comparison_endpoint": {
+            "name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_01",
+            "model": "7960",
+            "observed_ports": [
+              "Switch"
+            ]
+          },
+          "candidate_link": {
+            "first": {
+              "device_name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH",
+              "device_model": "3650-24PS",
+              "port": "GigabitEthernet1/0/2"
+            },
+            "second": {
+              "device_name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_01",
+              "device_model": "7960",
+              "port": "Switch"
+            }
+          },
+          "comparison_link": {
+            "first": {
+              "device_name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+              "device_model": "2960-24TT",
+              "port": "FastEthernet0/1"
+            },
+            "second": {
+              "device_name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_01",
+              "device_model": "7960",
+              "port": "Switch"
+            }
+          }
+        },
+        {
+          "request": {
+            "candidate_port": "GigabitEthernet1/0/3",
+            "comparison_port": "FastEthernet0/2",
+            "endpoint_model": "AccessPoint-PT",
+            "endpoint_port": "Port 0"
+          },
+          "candidate_switch": {
+            "name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH",
+            "model": "3650-24PS",
+            "observed_ports": [
+              "GigabitEthernet1/0/2",
+              "GigabitEthernet1/0/3"
+            ]
+          },
+          "comparison_switch": {
+            "name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+            "model": "2960-24TT",
+            "observed_ports": [
+              "FastEthernet0/1",
+              "FastEthernet0/2"
+            ]
+          },
+          "candidate_endpoint": {
+            "name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_02",
+            "model": "AccessPoint-PT",
+            "observed_ports": [
+              "Port 0"
+            ]
+          },
+          "comparison_endpoint": {
+            "name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_02",
+            "model": "AccessPoint-PT",
+            "observed_ports": [
+              "Port 0"
+            ]
+          },
+          "candidate_link": {
+            "first": {
+              "device_name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_SWITCH",
+              "device_model": "3650-24PS",
+              "port": "GigabitEthernet1/0/3"
+            },
+            "second": {
+              "device_name": "__MCP_POE_r0poe-mls4-b4810d48_CANDIDATE_ENDPOINT_02",
+              "device_model": "AccessPoint-PT",
+              "port": "Port 0"
+            }
+          },
+          "comparison_link": {
+            "first": {
+              "device_name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_SWITCH",
+              "device_model": "2960-24TT",
+              "port": "FastEthernet0/2"
+            },
+            "second": {
+              "device_name": "__MCP_POE_r0poe-mls4-b4810d48_COMPARISON_ENDPOINT_02",
+              "device_model": "AccessPoint-PT",
+              "port": "Port 0"
+            }
+          }
+        }
+      ]
+    },
+    "observation": null,
+    "failure_reason": "PoE observer returned no visible-state observation; delivery is unobservable.",
+    "runtime_snapshot_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\data\\capabilities\\runtime\\9.0.1.0858\\dfe5fc0f47a6ad4025f484a6fddbe27fbe728fbe5df8a210f5ada255a62e13af.json"
+  },
+  "closure": {
+    "closed_at": "2026-09-06 20:27:35.626491+00:00",
+    "result_persisted": true,
+    "workspace": {
+      "observed": true,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    "realtime": {
+      "observed": true,
+      "simulation_mode": false,
+      "frames": 0,
+      "sim_time": 1278373,
+      "current_index": 0,
+      "message": "simulation_state_readback"
+    },
+    "post_boundary_processes": [
+      {
+        "Id": 8008,
+        "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "ProductVersion": "9.0.1.0858",
+        "FileVersion": "9.0.1.0858"
+      },
+      {
+        "Id": 32992,
+        "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "ProductVersion": "9.0.1.0858",
+        "FileVersion": "9.0.1.0858"
+      }
+    ],
+    "product_admission": false,
+    "hardware_status": "unresolved",
+    "issues": [
+      "E5 compile: HardwarePlan unresolved no puede llegar a E4; causa insufficient_evidence: sw-acc-large-branch-zone-a-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/23/AccessPoint-PT/Port 0. sw-acc-large-branch-zone-a-02: 23 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-large-branch-zone-b-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/21/AccessPoint-PT/Port 0. sw-acc-large-branch-zone-b-02: 16 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-large-branch-zone-c-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/23/AccessPoint-PT/Port 0. sw-acc-large-branch-zone-c-02: 5 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-large-branch-zone-d-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/21/AccessPoint-PT/Port 0. sw-acc-large-branch-zone-d-02: 6 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-multilayer-branch-mls3-01: 3650-24PS PoE capability is unknown, so the 12 powered endpoint(s) bound to it are not admitted. sw-acc-multilayer-branch-mls4-01: 3650-24PS PoE capability is unknown, so the 2 powered endpoint(s) bound to it are not admitted. sw-acc-multilayer-branch-mls5-01: 8 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS. sw-acc-multilayer-branch-mls6-01: 3560-24PS PoE evidence does not cover the exact powered binding(s): FastEthernet0/13/AccessPoint-PT/Port 0. sw-acc-small-branch-branch-zone-01: 9 powered endpoint(s) exceed the 1 powered port(s) evidenced for 3560-24PS."
+    ]
+  },
+  "visual_evidence": {
+    "claim_ceiling": "Initial candidate GUI displayed Device must be powered on; complete readiness and differential observation not established.",
+    "path": "tmp/router0-poe-live/r0poe-mls4-b4810d48/candidate-phone-gui-initial.jpg",
+    "sha256": "9573fdc6c802f54322ba082b57dbdc67a5a66391a95e5fb71aa61a586ff530b0"
+  },
+  "observer_failure": "The 300-second capture received no complete receipt. Modal workspace list and foreground interference obstructed capture. All six fixture devices were coincident at clamped coordinates (3899,3900). Offline-tested presentation correction and exact green SHA required before a causally changed qualification."
+}

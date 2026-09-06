@@ -6,6 +6,11 @@ the small set of keys still projected into `handoff.md` for compatibility.
 
 Supporting records:
 
+- [Router0 PoE acquisition episode](canonical-live-evidence/poe-acquisition-20260906T202735-b4810d48-unobservable.json)
+  retains the first simultaneous MLS4 fixture: no complete visual receipt,
+  no PoE promotion, six owned devices cleaned, Realtime and file/runtime safety
+  restored. This is observer failure, not physical impossibility. The bounded
+  canvas-layout correction must pass offline/CI gates before further LIVE.
 - [diseno_logico_IMP.md](diseno_logico_IMP.md) and
   [topologia_completa_IMP.md](topologia_completa_IMP.md) preserve the canonical
   design intent.
