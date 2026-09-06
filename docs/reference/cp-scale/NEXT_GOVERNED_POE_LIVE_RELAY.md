@@ -58,17 +58,41 @@ renegotiate, so relocating the Python transport would only orphan the poller.
 Nothing was prepared and nothing was left behind: no disposable, no session
 directory, unchanged canonical SHA-256, no snapshot and no evidence artifact.
 
-Clear the reservation from an elevated shell, then re-probe the bind before
-preparing a disposable:
+The operator then stopped `winnat` in the same session, `54321` bound, and the
+bridge connected and authenticated. The port is resolved.
+
+## The binding, not the port, is what blocks the next LIVE
+
+With the bridge live the attempt still stopped before `qualify()`. Read-only,
+no mutation: build `9.0.1.0858`, Realtime `observed=True`,
+`simulation_mode=False`, inventory `0` devices and `0` links, bridge fresh with
+zero unauthenticated requests. The serving Script Module answered completely:
 
 ```text
-net stop winnat
-netsh int ipv4 add excludedportrange protocol=tcp startport=54321 numberofports=1
-net start winnat
+getCommandLineArg()   = ""   (typeof "string", length 0)
+getInstanceId()       = {00489806-7f44-e52b-868e-b6f1a68ef950}
+getCep().getId()      = com.matsoto.mcpbuilder
+getCep().getName()    = MCP-BUILDER
+ipcManager().getOpenData() = ""
 ```
 
-A reboot also reshuffles the dynamic ranges. This section records a machine
-state; like the rest of this document it grants no LIVE authority.
+`PacketTracerActiveWorkspaceObserver` derives its `path` from
+`getCommandLineArg()`, so the empty value makes `capture()` raise and
+`bind_active_workspace()` fail closed. `finalize()` would then force
+`workspace_binding_verified=False`, `session_reusable=False` and
+`positive_claim_allowed=False`, which makes classification A unreachable no
+matter what the observer sees. Spending the single authorization on that was
+not justified, so no run was made.
+
+`getCommandLineArg()` is a launch argument, not a module-identity accessor, and
+a module opened from **Extensions -> MCP BUILDER** has none. The CEP exposes no
+path, directory or filename accessor, `ipc.appWindow()` exposes nothing that
+identifies the loaded `.pts`, and no global holds one.
+
+Closing this needs an offline change to how the serving module's `.pts`
+identity is observed, a fresh frozen SHA with 4/4 green CI, and a new
+single-LIVE authorization. This section records observed state; like the rest of
+this document it grants no LIVE authority.
 
 Next active step:
 

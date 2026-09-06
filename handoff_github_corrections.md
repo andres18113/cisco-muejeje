@@ -331,17 +331,74 @@ file. Directly observed: both running `PacketTracer.exe` processes carry no
 the process argument coincide was not observable in this session; the next
 attempt must confirm it against a live sample rather than assume it.
 
-Remediation for the next attempt, operator action, elevated shell:
+RESOLVED, same session: the operator stopped `winnat`, leaving only the
+administered `50000-50059` exclusion. `127.0.0.1:54321` then bound, the bridge
+started, and the extension connected and authenticated. The port is no longer a
+blocker; re-probe the bind before preparing a disposable so a prepared session
+is never abandoned mid-flight.
+
+## WORKSPACE_BINDING_CANNOT_BE_OBSERVED_IN_THE_REAL_PRODUCT
+
+With the bridge finally live, the attempt still stopped before `qualify()`, at
+the active-workspace binding. This is the decisive finding, and it is a source
+defect rather than a machine state.
+
+Authenticated bridge, read-only, no mutation:
 
 ```text
-net stop winnat
-netsh int ipv4 add excludedportrange protocol=tcp startport=54321 numberofports=1
-net start winnat
+bridge      connected=true  last_poll_ago=0.1s  unauth_count=0
+            token_id=395ba83c275764b9  client=QtWebEngine/6.8.7 (Origin pt-sm:)
+pt_version  9.0.1.0858            (getActiveFile().getVersion())
+realtime    observed=True  simulation_mode=False  sim_time=2339665
+inventory   devices=0  links=0
 ```
 
-A reboot also reshuffles these dynamic reservations. Either way, re-probe that
-`127.0.0.1:54321` binds BEFORE preparing a disposable, so a prepared session is
-never abandoned mid-flight.
+The serving Script Module answers, completely and without error:
+
+```text
+getCommandLineArg()  = ""      typeof "string", length 0   <-- empty, not null
+getInstanceId()      = {00489806-7f44-e52b-868e-b6f1a68ef950}
+getCep().getId()     = com.matsoto.mcpbuilder
+getCep().getName()   = MCP-BUILDER
+getCep().getVersion()= 0.5.2
+ipcManager().getOpenData() = ""
+```
+
+`PacketTracerActiveWorkspaceObserver` builds its `path` field from
+`getCommandLineArg()`. Because that value is empty, `capture()` raises
+`"Packet Tracer script module identity is incomplete or ambiguous."`,
+`bind_active_workspace()` returns `None` and records a pre-qualification
+failure, and `finalize()` must then set `workspace_binding_verified = False`,
+`session_reusable = False`, `positive_claim_allowed = False`.
+
+The consequence is structural, not probabilistic: a `qualify()` run in this
+state cannot reach classification A no matter what the visual observer sees. It
+would spend the single authorized LIVE on a predetermined non-reusable result.
+The run was therefore not made, and the authorization is still unconsumed.
+
+The API surface was enumerated directly and carries no substitute. The CEP
+exposes only `getAuthor`, `getContact`, `getDescription`, `getId`, `getName`,
+`getVersion` — no path, directory or filename accessor. `ipc.appWindow()`
+exposes `getBasePath`, `getUserFolder`, `getTempFileLocation`, `listDirectory`,
+`getSessionId` and `getProcessId`, none of which identify which `.pts` the
+serving module was loaded from, and no global holds a `.pts` string.
+
+ROOT CAUSE: `getCommandLineArg()` is a launch argument, not a module-identity
+accessor. A Script Module opened from **Extensions -> MCP BUILDER** has no
+launch argument, so the value is legitimately empty. The binding introduced at
+`d782a0e` assumed that call would yield the serving module's `.pts` path; the
+offline tests all supply that path through fakes, so the assumption was never
+exercised against Packet Tracer. Registering the disposable through
+**Configure PT Script Modules** would change which file PT loads, but would not
+give the instance a launch argument, so it is not expected to populate the field
+either.
+
+This cannot be corrected inside the LIVE mandate, which freezes source. Closing
+it needs an offline change to how the serving module's `.pts` identity is
+observed — a mechanism that survives a module opened from the Extensions menu —
+then a fresh frozen SHA with 4/4 green CI, then a new single-LIVE
+authorization. Until then the gate stays `poe_delivery = unknown`,
+`poe_ports = null`, Router0 BLOCKED.
 
 ## NEXT_ACTIVE_STEP
 
