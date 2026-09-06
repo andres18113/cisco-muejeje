@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-05T23:59:14.0772447Z",
+  "updated_at": "2026-09-06T14:40:42.0454757Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -201,17 +201,63 @@
     }
   },
   "current_offline_operational_gate": {
-    "source_head": "4c4071923b137d401a4b6b6cb41044c26a295bc1",
-    "source_head_role": "governed_poe_delivery_implementation",
+    "source_head": "b356c57aa06443aea8947992e8901aa1af2726d0",
+    "source_head_role": "poe_observer_and_common_live_file_hardening",
     "poe_delivery": "unknown",
     "poe_ports": null,
     "hardware_plan": "partially_resolved",
     "canonical_composition": "blocked_before_topology",
     "router0_authorized": false,
-    "next_active_step": "RUN_ONE_GOVERNED_POE_DELIVERY_QUALIFICATION_FROM_CLEAN_GREEN_HEAD"
+    "latest_poe_qualification": {
+      "run_identity": "poe-9d0d21961c1c",
+      "packet_tracer_build": "9.0.1.0858",
+      "decision": "C — UNOBSERVABLE / INVALID EVIDENCE",
+      "observation_delivery": "NOT_DELIVERED_DURING_GOVERNED_OBSERVE",
+      "session_reusable": false,
+      "artifact": {
+        "path": "docs/reference/cp-scale/canonical-live-evidence/poe-delivery-20260906T033734787716Z-9d0d21961c1c-incident.json",
+        "sha256": "0fe066fcb77a137277440e34e5f582db2780c8d9f62484a9a88e2428d47dc0a9"
+      }
+    },
+    "observer_pipeline": {
+      "finding": "OBSERVATION_WAS_NOT_DELIVERED_WITHIN_OBSERVE",
+      "offline_status": "CORRECTED_AND_TESTED",
+      "deadline_seconds": 300,
+      "deadline_increased": false,
+      "late_capture_accepted": false
+    },
+    "reliability_finding": {
+      "exception_code": "0xc0000005",
+      "status": "CONFIRMED_NOT_ATTRIBUTED",
+      "causal_attribution": "NOT_ESTABLISHED_NO_STACK_OR_DUMP"
+    },
+    "pts_integrity": {
+      "qualification_run_integrity": "UNVERIFIED",
+      "canonical_file_identity_recorded": false,
+      "pre_run_sha256": null,
+      "post_run_sha256": null,
+      "offline_containment": "MANDATORY_PRE_PERSIST_GATE_DISPOSABLE_AND_CANONICAL_PRE_POST_SHA256_DUAL_RUNTIME_CRASH_BOUNDARY_SAMPLING_EXCLUSIVE_RESTORE_FAIL_CLOSED_TESTED"
+    },
+    "run_accounting": {
+      "historical_live_runs_consumed_through_2026-09-03": 36,
+      "direct_poe_runtime_sessions_after_historical_state": [
+        "poe-e76063f692ec",
+        "poe-d085610a5c94",
+        "poe-e0da8048e559",
+        "poe-29d64000dfb5",
+        "poe-9d0d21961c1c"
+      ],
+      "known_live_runs_consumed_lower_bound": 41,
+      "current_total_exhaustive": false,
+      "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS"
+    },
+    "next_active_step": "AWAIT_EXPLICIT_AUTHORIZATION_FOR_ANY_FUTURE_FRESH_DISPOSABLE_POE_SESSION"
   },
   "handoff_compatibility": {
-    "NEXT_ACTIVE_STEP": "RUN_ONE_GOVERNED_POE_DELIVERY_QUALIFICATION_FROM_CLEAN_GREEN_HEAD",
-    "CP_SCALE_STATUS": "POE_DELIVERY_UNKNOWN | HARDWARE_PLAN_PARTIALLY_RESOLVED | CANONICAL_COMPOSITION_BLOCKED_BEFORE_TOPOLOGY | ROUTER0_NOT_AUTHORIZED"
+    "LIVE_RUNS_CONSUMED": "AT_LEAST_41_NON_EXHAUSTIVE_AFTER_20260903",
+    "CLEANUP": "LATEST_POE_SEMANTIC_CLEANUP_4_OF_4 | PTS_INTEGRITY_UNVERIFIED | SESSION_NOT_REUSABLE",
+    "WORKSPACE_RESTORED": "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_UNVERIFIED",
+    "NEXT_ACTIVE_STEP": "AWAIT_EXPLICIT_AUTHORIZATION_FOR_ANY_FUTURE_FRESH_DISPOSABLE_POE_SESSION",
+    "CP_SCALE_STATUS": "POE_DELIVERY_UNKNOWN | LAST_POE_EVIDENCE_INVALID | OBSERVER_PIPELINE_OFFLINE_CORRECTED | PTS_GUARD_OFFLINE_VERIFIED | ROUTER0_NOT_AUTHORIZED"
   }
 }

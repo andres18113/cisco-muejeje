@@ -34,11 +34,30 @@ source + tests + evidence
   `f3f646c872f2ec3d786a810b443fe7996b5ff04a`.
 - Productive PoE link-result/cable correction:
   `4c4071923b137d401a4b6b6cb41044c26a295bc1`.
+- Observer/deadline and common LIVE file-integrity hardening:
+  `b356c57aa06443aea8947992e8901aa1af2726d0`.
 - The commit containing this file is documentary only; the offline operational
-  gate is deliberately bound to product SHA `4c4071923b137d401a4b6b6cb41044c26a295bc1`.
+  gate is deliberately bound to product SHA `b356c57aa06443aea8947992e8901aa1af2726d0`.
 
 ## LATEST_POE_QUALIFICATION
 
+- Governed session `poe-9d0d21961c1c` on Packet Tracer `9.0.1.0858`
+  ended `C — UNOBSERVABLE / INVALID EVIDENCE`. The observer returned no
+  visible-state observation during the governed `observe(...)` invocation, so
+  no later image can be admitted retroactively. The stored result is
+  `UNKNOWN`, has no claim dimensions, keeps `poe_ports=null`, and authorizes
+  no Router0 work.
+- Its product snapshot recorded endpoint-first cleanup of all four temporary
+  identities and semantic inventory restoration. A subsequent Windows
+  Application Error event (`RecordId 17417`, report
+  `cc89fdb1-bc7b-4758-a911-cbad5eb2fab4`) records `PacketTracer.exe`
+  `0xc0000005` at `2026-09-06T03:37:53.1303623Z`. There is no retained stack or
+  dump, so causation is not attributed to PoE or repository code.
+- The run did not record canonical `.pts` identity or pre/post SHA-256. Its
+  semantic cleanup result therefore cannot prove physical file integrity or
+  session reuse after the crash. The combined incident is archived at
+  `docs/reference/cp-scale/canonical-live-evidence/poe-delivery-20260906T033734787716Z-9d0d21961c1c-incident.json`,
+  SHA-256 `0fe066fcb77a137277440e34e5f582db2780c8d9f62484a9a88e2428d47dc0a9`.
 - Governed session `poe-e0da8048e559` ran from clean GREEN HEAD
   `f194ec6bc3302e579c5249b4315567fd2f3e80bf` on Packet Tracer
   `9.0.1.0858` and ended `UNOBSERVABLE / INVALID EVIDENCE`.
@@ -82,9 +101,28 @@ source + tests + evidence
   UTC observation time, visible indicators, deadline, cleanup and inventory
   restoration.
 - The application service captures exact Packet Tracer build/inventory,
-  creates the governed fixture, requests one typed manual observation, cleans
-  endpoints before switches, verifies restoration, and persists only a fully
-  valid result.
+  creates the governed fixture, requests one typed manual observation, rejects
+  an observation delivered after its existing deadline, cleans endpoints
+  before switches, verifies restoration, and persists only a fully valid
+  result.
+- `GovernedPoEDeliveryObserver` owns one complete synchronous visual cycle:
+  request, receipt, request/fixture attribution, deadline/freshness checks,
+  domain validation and typed manual observation. It performs no sleeps or
+  retry-until-green and returns no evidence for late, stale, misattributed or
+  incomplete capture receipts.
+- `PacketTracerLiveFileGuard` is common execution infrastructure. It pins one
+  explicit canonical `.pts` identity, makes the file-to-open disposable,
+  records canonical and disposable SHA-256 before/after, restores unexpected
+  canonical changes through an exclusive verified staging file, and keeps
+  crash, modification or unverifiable health sessions non-reusable.
+- `PacketTracerLiveSessionSafety` samples crash and runtime health immediately
+  before and after file verification/restoration. Either adverse sample, or an
+  unobservable boundary, closes reuse and positive claims before persistence.
+- The application service requires the `LiveSessionSafety` port and finalizes
+  it after semantic cleanup but before snapshot persistence. Exact file
+  identity/hashes are persisted in the probe context; inconsistent or legacy
+  decided PoE snapshots without that evidence are capped at `UNKNOWN` at load
+  and evidence-release boundaries.
 - Infrastructure supplies fixture operations and governed measured-capability
   persistence. There is no checked-in LIVE runner; governed sessions use an
   ephemeral runner around the product service and persist through the existing
@@ -115,12 +153,14 @@ source + tests + evidence
 last_live_state != current_offline_operational_gate
 ```
 
-All previous LIVE source identity, run evidence, counters, hashes, artifacts,
-Voice/PVST outcomes and compatibility projection remain under
-`last_live_state`. The current offline gate records:
+All previous canonical LIVE source identity, run evidence, counters, hashes,
+artifacts and Voice/PVST outcomes remain frozen under `last_live_state`. Its
+`36` counter is historical through 2026-09-03, not the current total. Five
+later PoE runtime snapshots establish only a non-exhaustive lower bound of 41.
+The current offline gate records:
 
 ```text
-source_head           = f3f646c872f2ec3d786a810b443fe7996b5ff04a
+source_head           = b356c57aa06443aea8947992e8901aa1af2726d0
 poe_delivery          = unknown
 poe_ports             = null
 hardware_plan         = partially_resolved
@@ -128,11 +168,23 @@ canonical_composition = blocked_before_topology
 router0_authorized    = false
 ```
 
+The current `source_head` is now
+`b356c57aa06443aea8947992e8901aa1af2726d0`, the product hardening commit.
+The latest qualification is consumed and invalid evidence; the observer and
+`.pts` containment changes completed offline tests and fresh adversarial
+review. No future LIVE qualification is authorized by this handoff. Its next
+step is to await separate, explicit authority for any fresh disposable session.
+
 Router0 is not eligible until sufficient exact PoE-delivery evidence is
 obtained, reviewed and persisted.
 
 ## VALIDATION
 
+- This offline hardening closure: the crash-during-finalization regression
+  failed before the dual boundary sample and passed after it; the final focused
+  product matrix was `72 passed`, the affected product/governance matrix was
+  `189 passed`, and the final full suite was `3768 passed, 5 warnings`. The
+  warnings are the known Pydantic, fixture-deprecation and pytest-cache noise.
 - Required focused product matrix: `255 passed`.
 - Recovered-review affected matrix: `249 passed`.
 - Final governance matrix: `10 passed`.
@@ -204,18 +256,13 @@ as a hypothesis until reconciled with source and tests.
 
 ## NO_LIVE
 
-After `poe-e0da8048e559`, the operator authorized one additional attempt with
-Codex as the Computer Use observer. That additional qualifier was **not**
-invoked: two fresh Computer Use preflights returned no native apps,
-`cua.listApps is not a function`, and
-`Trusted RPC service is not configured: sky`. Therefore no additional LIVE
-budget was consumed, no new snapshot was created, and Router0 was not reached.
-
-The next session relay is checked in at
-`docs/reference/cp-scale/NEXT_GOVERNED_POE_LIVE_RELAY.md`.
+This hardening task executed no Packet Tracer LIVE operation and did not touch
+Router0. Session `poe-9d0d21961c1c` is prior direct evidence being reconciled,
+not a run performed by this task. Its crash remains a non-attributed
+reliability finding. No new qualification is authorized here.
 
 ## NEXT_ACTIVE_STEP
 
 ```text
-RUN_ONE_GOVERNED_POE_DELIVERY_QUALIFICATION_FROM_CLEAN_GREEN_HEAD
+AWAIT_EXPLICIT_AUTHORIZATION_FOR_ANY_FUTURE_FRESH_DISPOSABLE_POE_SESSION
 ```

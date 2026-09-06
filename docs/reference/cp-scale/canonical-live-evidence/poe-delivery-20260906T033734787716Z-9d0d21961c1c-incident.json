@@ -1,0 +1,131 @@
+{
+  "schema": "governed-poe-live-incident-v1",
+  "run_identity": "poe-9d0d21961c1c",
+  "packet_tracer_build": "9.0.1.0858",
+  "decision": "C — UNOBSERVABLE / INVALID EVIDENCE",
+  "claim_ceiling": {
+    "supports_poe": "unknown",
+    "poe_ports": null,
+    "router0_authorized": false
+  },
+  "observer_pipeline": {
+    "observation_delivered_during_observe": false,
+    "observation": null,
+    "failure_reason": "PoE observer returned no visible-state observation; delivery is unobservable.",
+    "late_images_accepted_retroactively": false
+  },
+  "snapshot_source": {
+    "path": "data/capabilities/runtime/9.0.1.0858/27dc75fc2046635f0029c5f9fe5b4343cf1ad399570563c2a912933b5facf02f.json",
+    "sha256": "32ab2d84812afbf267108c393f87831b85403adcc333f02d78b55ae0b9ab2b9f",
+    "tracked": false
+  },
+  "snapshot": {
+    "schema_version": 2,
+    "probe_schema_version": 2,
+    "packet_tracer_version": "9.0.1.0858",
+    "backend_version_provenance": "declared_environment",
+    "backend": "packet_tracer",
+    "environment_fingerprint": "3513a8d4568f36a4a739a6169ad744bfb6e5eca157e97c8cadc5f8aa0c519f5a",
+    "probe_fingerprints": {
+      "poe-delivery-qualification": "bd115d63902634b36e88f698f312ed472b0a0e04cdc9bbb8e5779603cf39c11b"
+    },
+    "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+    "inventory_restored": true,
+    "session": {
+      "session": {
+        "session_id": "poe-9d0d21961c1c",
+        "started_at": "2026-09-06T03:37:34.787716Z",
+        "packet_tracer_version": "9.0.1.0858",
+        "created_devices": [
+          "__MCP_POE_9d0d21961c1c_CANDIDATE_SWITCH",
+          "__MCP_POE_9d0d21961c1c_COMPARISON_SWITCH",
+          "__MCP_POE_9d0d21961c1c_CANDIDATE_ENDPOINT_01",
+          "__MCP_POE_9d0d21961c1c_COMPARISON_ENDPOINT_01"
+        ],
+        "mutations": [
+          "temporary-device-attempt:__MCP_POE_9d0d21961c1c_CANDIDATE_SWITCH",
+          "temporary-device-attempt:__MCP_POE_9d0d21961c1c_COMPARISON_SWITCH",
+          "temporary-device-attempt:__MCP_POE_9d0d21961c1c_CANDIDATE_ENDPOINT_01",
+          "temporary-device-attempt:__MCP_POE_9d0d21961c1c_COMPARISON_ENDPOINT_01"
+        ],
+        "cleanup_status": "clean",
+        "warnings": []
+      },
+      "devices": [],
+      "results": [
+        {
+          "probe_id": "poe-delivery-qualification",
+          "model": "3560-24PS",
+          "capability": "supports_poe",
+          "status": "unknown",
+          "execution_status": "verify_failed",
+          "evidence_source": "manual_verification",
+          "configured": true,
+          "verified": false,
+          "observed_value": null,
+          "raw_summary": "PoE delivery remains UNKNOWN.",
+          "failure_reason": "PoE observer returned no visible-state observation; delivery is unobservable.",
+          "duration_ms": 0,
+          "packet_tracer_version": "9.0.1.0858",
+          "verification_method": "unobservable",
+          "context": {
+            "probe_id": "poe-delivery-qualification",
+            "probe_version": "1",
+            "backend": "packet_tracer",
+            "backend_version": "9.0.1.0858",
+            "device_model": "3560-24PS",
+            "environment_fingerprint": "3513a8d4568f36a4a739a6169ad744bfb6e5eca157e97c8cadc5f8aa0c519f5a",
+            "initial_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+            "final_inventory_hash": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+            "inventory_restored": true,
+            "isolation_level": "fresh_session_required",
+            "mutations": [
+              "temporary-device-attempt:__MCP_POE_9d0d21961c1c_CANDIDATE_SWITCH",
+              "temporary-device-attempt:__MCP_POE_9d0d21961c1c_COMPARISON_SWITCH",
+              "temporary-device-attempt:__MCP_POE_9d0d21961c1c_CANDIDATE_ENDPOINT_01",
+              "temporary-device-attempt:__MCP_POE_9d0d21961c1c_COMPARISON_ENDPOINT_01"
+            ],
+            "cleanup_status": "clean",
+            "result_status": "unknown",
+            "execution_status": "verify_failed",
+            "probe_fingerprint": "bd115d63902634b36e88f698f312ed472b0a0e04cdc9bbb8e5779603cf39c11b"
+          },
+          "dimensions": {}
+        }
+      ],
+      "cleanup_deleted": [
+        "__MCP_POE_9d0d21961c1c_COMPARISON_ENDPOINT_01",
+        "__MCP_POE_9d0d21961c1c_CANDIDATE_ENDPOINT_01",
+        "__MCP_POE_9d0d21961c1c_COMPARISON_SWITCH",
+        "__MCP_POE_9d0d21961c1c_CANDIDATE_SWITCH"
+      ],
+      "cleanup_failed": []
+    }
+  },
+  "crash_finding": {
+    "status": "CONFIRMED_NOT_ATTRIBUTED",
+    "observed_at": "2026-09-06T03:37:53.1303623Z",
+    "windows_event_log": "Application",
+    "windows_event_id": 1000,
+    "windows_record_id": 17417,
+    "faulting_application": "PacketTracer.exe",
+    "faulting_application_version": "9.0.1.858",
+    "faulting_module": "PacketTracer.exe",
+    "exception_code": "0xc0000005",
+    "fault_offset": "0x00000000020e5204",
+    "process_id": 37944,
+    "report_id": "cc89fdb1-bc7b-4758-a911-cbad5eb2fab4",
+    "causal_attribution": "NOT_ESTABLISHED_NO_STACK_OR_DUMP",
+    "poe_causation_claimed": false
+  },
+  "file_integrity": {
+    "canonical_pts_identity": null,
+    "pre_run_sha256": null,
+    "post_run_sha256": null,
+    "integrity_verified": false,
+    "restoration_verified": false,
+    "session_reusable": false,
+    "reason": "The run did not record canonical .pts identity or pre/post SHA-256; semantic cleanup cannot establish physical file integrity after the crash."
+  }
+}

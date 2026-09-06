@@ -37,15 +37,70 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     assert state["schema"] == "cp-scale-current-state-v1"
     assert state["updated_at"] == "2026-09-03T03:41:52.104318Z"
     assert gate == {
-        "source_head": "4c4071923b137d401a4b6b6cb41044c26a295bc1",
-        "source_head_role": "governed_poe_delivery_implementation",
+        "source_head": "b356c57aa06443aea8947992e8901aa1af2726d0",
+        "source_head_role": "poe_observer_and_common_live_file_hardening",
         "poe_delivery": "unknown",
         "poe_ports": None,
         "hardware_plan": "partially_resolved",
         "canonical_composition": "blocked_before_topology",
         "router0_authorized": False,
+        "latest_poe_qualification": {
+            "run_identity": "poe-9d0d21961c1c",
+            "packet_tracer_build": "9.0.1.0858",
+            "decision": "C — UNOBSERVABLE / INVALID EVIDENCE",
+            "observation_delivery": "NOT_DELIVERED_DURING_GOVERNED_OBSERVE",
+            "session_reusable": False,
+            "artifact": {
+                "path": (
+                    "docs/reference/cp-scale/canonical-live-evidence/"
+                    "poe-delivery-20260906T033734787716Z-"
+                    "9d0d21961c1c-incident.json"
+                ),
+                "sha256": (
+                    "0fe066fcb77a137277440e34e5f582db2"
+                    "780c8d9f62484a9a88e2428d47dc0a9"
+                ),
+            },
+        },
+        "observer_pipeline": {
+            "finding": "OBSERVATION_WAS_NOT_DELIVERED_WITHIN_OBSERVE",
+            "offline_status": "CORRECTED_AND_TESTED",
+            "deadline_seconds": 300,
+            "deadline_increased": False,
+            "late_capture_accepted": False,
+        },
+        "reliability_finding": {
+            "exception_code": "0xc0000005",
+            "status": "CONFIRMED_NOT_ATTRIBUTED",
+            "causal_attribution": "NOT_ESTABLISHED_NO_STACK_OR_DUMP",
+        },
+        "pts_integrity": {
+            "qualification_run_integrity": "UNVERIFIED",
+            "canonical_file_identity_recorded": False,
+            "pre_run_sha256": None,
+            "post_run_sha256": None,
+            "offline_containment": (
+                "MANDATORY_PRE_PERSIST_GATE_DISPOSABLE_AND_CANONICAL_"
+                "PRE_POST_SHA256_DUAL_RUNTIME_CRASH_BOUNDARY_SAMPLING_"
+                "EXCLUSIVE_RESTORE_FAIL_CLOSED_TESTED"
+            ),
+        },
+        "run_accounting": {
+            "historical_live_runs_consumed_through_2026-09-03": 36,
+            "direct_poe_runtime_sessions_after_historical_state": [
+                "poe-e76063f692ec",
+                "poe-d085610a5c94",
+                "poe-e0da8048e559",
+                "poe-29d64000dfb5",
+                "poe-9d0d21961c1c",
+            ],
+            "known_live_runs_consumed_lower_bound": 41,
+            "current_total_exhaustive": False,
+            "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS",
+        },
         "next_active_step": (
-            "RUN_ONE_GOVERNED_POE_DELIVERY_QUALIFICATION_FROM_CLEAN_GREEN_HEAD"
+            "AWAIT_EXPLICIT_AUTHORIZATION_FOR_ANY_FUTURE_FRESH_"
+            "DISPOSABLE_POE_SESSION"
         ),
     }
     assert state["source_head"] == "6c6db55566890f1d9ca9cc06bfc13ae24505e793"
@@ -222,17 +277,28 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
 
     handoff = parse_handoff_state(HANDOFF_PATH.read_text(encoding="utf-8"))
     assert state["handoff_compatibility"]
-    for key, expected in state["handoff_compatibility"].items():
+    for key, expected in document["handoff_compatibility"].items():
         assert handoff[key] == expected
 
     assert document["handoff_compatibility"] == {
+        "LIVE_RUNS_CONSUMED": (
+            "AT_LEAST_41_NON_EXHAUSTIVE_AFTER_20260903"
+        ),
+        "CLEANUP": (
+            "LATEST_POE_SEMANTIC_CLEANUP_4_OF_4 | "
+            "PTS_INTEGRITY_UNVERIFIED | SESSION_NOT_REUSABLE"
+        ),
+        "WORKSPACE_RESTORED": (
+            "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_UNVERIFIED"
+        ),
         "NEXT_ACTIVE_STEP": (
-            "RUN_ONE_GOVERNED_POE_DELIVERY_QUALIFICATION_FROM_CLEAN_GREEN_HEAD"
+            "AWAIT_EXPLICIT_AUTHORIZATION_FOR_ANY_FUTURE_FRESH_"
+            "DISPOSABLE_POE_SESSION"
         ),
         "CP_SCALE_STATUS": (
-            "POE_DELIVERY_UNKNOWN | HARDWARE_PLAN_PARTIALLY_RESOLVED | "
-            "CANONICAL_COMPOSITION_BLOCKED_BEFORE_TOPOLOGY | "
-            "ROUTER0_NOT_AUTHORIZED"
+            "POE_DELIVERY_UNKNOWN | LAST_POE_EVIDENCE_INVALID | "
+            "OBSERVER_PIPELINE_OFFLINE_CORRECTED | "
+            "PTS_GUARD_OFFLINE_VERIFIED | ROUTER0_NOT_AUTHORIZED"
         ),
     }
     assert "ROUTER0_CP_LIVE" not in document["handoff_compatibility"][
@@ -249,3 +315,22 @@ def test_compact_current_state_evidence_paths_and_hashes_are_exact():
         path = ROOT / item["path"]
         assert path.is_file()
         assert hashlib.sha256(path.read_bytes()).hexdigest() == item["sha256"]
+
+    poe = document["current_offline_operational_gate"][
+        "latest_poe_qualification"
+    ]
+    artifact = poe["artifact"]
+    path = ROOT / artifact["path"]
+    assert path.is_file()
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+    evidence = json.loads(path.read_text(encoding="utf-8"))
+    assert evidence["run_identity"] == "poe-9d0d21961c1c"
+    assert evidence["decision"] == "C — UNOBSERVABLE / INVALID EVIDENCE"
+    assert evidence["claim_ceiling"] == {
+        "supports_poe": "unknown",
+        "poe_ports": None,
+        "router0_authorized": False,
+    }
+    assert evidence["crash_finding"]["exception_code"] == "0xc0000005"
+    assert evidence["crash_finding"]["poe_causation_claimed"] is False
+    assert evidence["file_integrity"]["session_reusable"] is False

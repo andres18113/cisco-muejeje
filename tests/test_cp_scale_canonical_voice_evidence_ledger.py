@@ -1249,7 +1249,9 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     )
     assert state["CANONICAL_CP_SCALE_WORKSPACE_RESTORED"] == "YES"
     assert state["CANONICAL_CP_SCALE_REALTIME_RESTORED"] == "YES"
-    assert state["LIVE_RUNS_CONSUMED"] == "36"
+    assert state["LIVE_RUNS_CONSUMED"] == (
+        "AT_LEAST_41_NON_EXHAUSTIVE_AFTER_20260903"
+    )
     assert state["CANONICAL_CP_SCALE_FLOOR2_PRIOR_STAGE_SEMANTICS"] == (
         "CUMULATIVE_REPLAY"
     )
@@ -1274,7 +1276,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
         "REFRESH_FWD_9_OF_9 | EXTENSION_NOT_ENGAGED"
     )
     assert state["CP_SCALE_STATUS"] == (
-        "FLOOR2_VOICE_VERIFIED_35_OF_35 | "
-        "FLOOR3_SWITCH9_VLAN20_LRN_AFTER_SINGLE_EXTENSION | "
-        "ROUTER0_NOT_REACHED | PVST_SIM_TIME_FIX_OFFLINE_VALIDATED"
+        "POE_DELIVERY_UNKNOWN | LAST_POE_EVIDENCE_INVALID | "
+        "OBSERVER_PIPELINE_OFFLINE_CORRECTED | "
+        "PTS_GUARD_OFFLINE_VERIFIED | ROUTER0_NOT_AUTHORIZED"
     )
