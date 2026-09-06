@@ -2,4 +2,5 @@
 docs/reference/cp-scale/*.md -text -diff
 docs/reference/cp-scale/README.md text eol=lf diff
 docs/reference/cp-scale/voice_root_cause_implementation_retrospective.md text eol=lf diff
+docs/reference/cp-scale/NEXT_GOVERNED_POE_LIVE_RELAY.md text eol=lf diff
 docs/reference/cp-scale/canonical-live-evidence/*.json -text -diff

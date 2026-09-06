@@ -39,6 +39,23 @@ source + tests + evidence
 
 ## LATEST_POE_QUALIFICATION
 
+- Governed session `poe-e0da8048e559` ran from clean GREEN HEAD
+  `f194ec6bc3302e579c5249b4315567fd2f3e80bf` on Packet Tracer
+  `9.0.1.0858` and ended `UNOBSERVABLE / INVALID EVIDENCE`.
+- Candidate `3560-24PS` and comparison `2960-24TT` each used
+  `FastEthernet0/1` against a `7960` endpoint port `Switch`. Each
+  `lwAddLink` returned exactly `true`, used straight-through `8100`, was
+  emitted once, and reached exact bilateral readback without replay.
+- The attributed simultaneous observation reported only green/red link-side
+  triangles, no unequivocal endpoint-side power signal, and no confirmed
+  endpoint settling. It also arrived outside the 300-second deadline. These
+  facts cannot evidence powered-device delivery.
+- Cleanup deleted all four attempted identities and semantic inventory
+  restoration verified clean. The backend-managed
+  `Power Distribution Device0` is neither semantic residue nor delivery
+  evidence. Runtime snapshot:
+  `data/capabilities/runtime/9.0.1.0858/0fa978810e5d4f368126553ce56a767c04c49adc5cb9beac9f04eb52b2494207.json`,
+  SHA-256 `98901736ba53266a77d55eb8c54f16be8d0587935f7b9e79e9b23e18fb8eb0f4`.
 - Governed session `poe-d085610a5c94` ended
   `UNOBSERVABLE / INVALID EVIDENCE`; it did not produce delivery evidence.
 - Its candidate `lwAddLink` was emitted exactly once, but the old adapter
@@ -69,7 +86,9 @@ source + tests + evidence
   endpoints before switches, verifies restoration, and persists only a fully
   valid result.
 - Infrastructure supplies fixture operations and governed measured-capability
-  persistence. There is no checked-in LIVE runner and none was executed.
+  persistence. There is no checked-in LIVE runner; governed sessions use an
+  ephemeral runner around the product service and persist through the existing
+  snapshot store.
 - `MeasuredCapabilityRecord` carries Packet Tracer version plus immutable
   `dimensions`; `as_evidence()` returns a defensive copy.
 - Only manual verification or curated static override can authorize a manual
@@ -185,8 +204,15 @@ as a hypothesis until reconciled with source and tests.
 
 ## NO_LIVE
 
-This closure was entirely offline. It did not execute Packet Tracer LIVE or
-Router0 CP-LIVE and did not consume LIVE budget.
+After `poe-e0da8048e559`, the operator authorized one additional attempt with
+Codex as the Computer Use observer. That additional qualifier was **not**
+invoked: two fresh Computer Use preflights returned no native apps,
+`cua.listApps is not a function`, and
+`Trusted RPC service is not configured: sky`. Therefore no additional LIVE
+budget was consumed, no new snapshot was created, and Router0 was not reached.
+
+The next session relay is checked in at
+`docs/reference/cp-scale/NEXT_GOVERNED_POE_LIVE_RELAY.md`.
 
 ## NEXT_ACTIVE_STEP
 
