@@ -32,12 +32,24 @@ source + tests + evidence
   `ebb996f68da6750d95862616bef42b7d8be413ca`.
 - Productive PoE link-readback correction:
   `f3f646c872f2ec3d786a810b443fe7996b5ff04a`.
+- Productive PoE link-result/cable correction:
+  `4c4071923b137d401a4b6b6cb41044c26a295bc1`.
 - The commit containing this file is documentary only; the offline operational
-  gate is deliberately bound to product SHA `f3f646c872f2ec3d786a810b443fe7996b5ff04a`.
+  gate is deliberately bound to product SHA `4c4071923b137d401a4b6b6cb41044c26a295bc1`.
 
 ## LATEST_POE_QUALIFICATION
 
-- Governed session `poe-e76063f692ec` ended
+- Governed session `poe-d085610a5c94` ended
+  `UNOBSERVABLE / INVALID EVIDENCE`; it did not produce delivery evidence.
+- Its candidate `lwAddLink` was emitted exactly once, but the old adapter
+  discarded the Boolean result and reported `requested=true`; every bounded
+  exact bilateral readback remained `NO_LINK`. The comparison link and manual
+  observer were not reached, and cleanup/restoration verified clean.
+- Product fix `4c4071923b137d401a4b6b6cb41044c26a295bc1` captures an exact
+  `true` result before readback and applies the existing switch-to-IP-phone
+  straight-through cable rule (`8100`), without replaying `lwAddLink` or
+  relaxing bilateral convergence.
+- The earlier governed session `poe-e76063f692ec` ended
   `UNOBSERVABLE / INVALID EVIDENCE`; it did not produce delivery evidence.
 - Cause: the fixture attempted bilateral `getLink()` readback immediately after
   `lwAddLink` in the same command, before the governed convergence boundary.

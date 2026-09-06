@@ -37,7 +37,7 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     assert state["schema"] == "cp-scale-current-state-v1"
     assert state["updated_at"] == "2026-09-03T03:41:52.104318Z"
     assert gate == {
-        "source_head": "f3f646c872f2ec3d786a810b443fe7996b5ff04a",
+        "source_head": "4c4071923b137d401a4b6b6cb41044c26a295bc1",
         "source_head_role": "governed_poe_delivery_implementation",
         "poe_delivery": "unknown",
         "poe_ports": None,
