@@ -149,15 +149,48 @@
   "fault_offset": "0x00000000020e5204",
   "process_id": 17884,
   "report_id": "93bce622-a3a6-4db4-993b-83b1b89a2a3e",
-  "causal_attribution": "NOT_ESTABLISHED_NO_STACK_OR_DUMP",
+  "causal_attribution": "NOT_ESTABLISHED_DUMP_RETAINED_NOT_YET_ANALYSED",
   "poe_causation_claimed": false,
   "recurrence": {
-   "prior_run_identity": "poe-9d0d21961c1c",
-   "prior_exception_code": "0xc0000005",
-   "prior_fault_offset": "0x00000000020e5204",
-   "identical_offset": true,
-   "occurrences": 2,
-   "note": "Both PoE qualification sessions ended with the same exception code at the same fault offset. The prior crash fell inside its session's unverified boundary; this one is proven after closure. Reproducibility is recorded as an open reliability question, not as PoE causation."
+   "occurrences": 3,
+   "identical_fault_offset": "0x00000000020e5204",
+   "identical_exception_code": "0xc0000005",
+   "pattern": "Each of the three most recent PoE qualification sessions was followed by a crash at the identical instruction, 8.8 to 18.3 seconds after its snapshot was constructed. The three earlier PoE sessions retained no dump, and WER keeps up to ten per application, so they most likely did not crash.",
+   "correlated": [
+    {
+     "run_identity": "poe-29d64000dfb5",
+     "snapshot_at": "2026-09-06T03:26:20.073468Z",
+     "process_id": 15540,
+     "crash_at": "2026-09-06T03:26:28.9088561Z",
+     "seconds_after_snapshot": 8.835,
+     "windows_record_id": 17412,
+     "dump": "PacketTracer.exe.15540.dmp",
+     "dump_sha256": "62dc7d01886e494f1809da456571ed554d5f700866b85f49e2b51448da94a82f"
+    },
+    {
+     "run_identity": "poe-9d0d21961c1c",
+     "snapshot_at": "2026-09-06T03:37:34.787716Z",
+     "process_id": 37944,
+     "crash_at": "2026-09-06T03:37:53.1303623Z",
+     "seconds_after_snapshot": 18.343,
+     "windows_record_id": 17417,
+     "dump": "PacketTracer.exe.37944.dmp",
+     "dump_sha256": "116037ae4fcedd2e45750c54275a44e2712fb240b7a4ec11f646d880f198a23e"
+    },
+    {
+     "run_identity": "poe-7950198d050f",
+     "snapshot_at": "2026-09-06T18:41:55.139196Z",
+     "process_id": 17884,
+     "crash_at": "2026-09-06T18:42:04.6025191Z",
+     "seconds_after_snapshot": 9.463,
+     "windows_record_id": 17741,
+     "dump": "PacketTracer.exe.17884.dmp",
+     "dump_sha256": "fc140f68d40d76c6745fecf1873e28cb988e4d399cc86874df0851e359412232"
+    }
+   ],
+   "poe_causation_claimed": false,
+   "reproduction_run_required": false,
+   "reproduction_note": "No reproduction run is needed to obtain a dump: one already exists for each occurrence, including this governed session. Spending another qualification would add a fourth crash without adding evidence."
   },
   "post_crash_state": {
    "packet_tracer_running": false,
@@ -165,6 +198,16 @@
    "bridge_reconnected": false,
    "canonical_pts_sha256_after_crash": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
    "canonical_pts_intact_after_crash": true
+  },
+  "dump": {
+   "retained": true,
+   "path": "%LOCALAPPDATA%\\CrashDumps\\PacketTracer.exe.17884.dmp",
+   "sha256": "fc140f68d40d76c6745fecf1873e28cb988e4d399cc86874df0851e359412232",
+   "bytes": 22179388,
+   "written_at": "2026-09-06T18:42:07.8394224Z",
+   "source": "Windows Error Reporting LocalDumps (HKLM key present, default settings)",
+   "tracked_in_repository": false,
+   "note": "The earlier incident record stated no stack or dump existed. That was wrong: WER LocalDumps is enabled on this host and retained a dump for every crashing Packet Tracer process. Attribution is still open, but the material to do it exists."
   }
  },
  "file_integrity": {

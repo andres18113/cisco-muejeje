@@ -4746,7 +4746,19 @@ names claim; the suite was re-run with the store removed to prove it.
 
 `0xc0000005` at fault offset `0x00000000020e5204`, process `17884`, Windows
 Application record `17741`, report `93bce622-a3a6-4db4-993b-83b1b89a2a3e`.
-The offset is identical to the crash that ended session `poe-9d0d21961c1c`.
+
+It is the third crash at that identical instruction, and the pattern is exact:
+each of the three most recent PoE qualification sessions was followed by one,
+between 8.8 and 18.3 seconds after its snapshot was constructed.
+
+```text
+poe-29d64000dfb5  snapshot 03:26:20.073Z -> pid 15540 crash 03:26:28.909Z   +8.8s
+poe-9d0d21961c1c  snapshot 03:37:34.788Z -> pid 37944 crash 03:37:53.130Z  +18.3s
+poe-7950198d050f  snapshot 18:41:55.139Z -> pid 17884 crash 18:42:04.603Z   +9.5s
+```
+
+The three earlier PoE sessions retained no dump, and WER keeps up to ten per
+application, so they most likely did not crash.
 
 It did not invalidate this qualification, and the ordering is demonstrable
 from three independent readings of one system clock:
@@ -4766,9 +4778,21 @@ from three independent readings of one system clock:
 The governed boundary sampled crash and health before it closed, and both were
 true when sampled.  A crash proven after complete closure is recorded as a
 separate reliability incident, not as retroactive invalidation.  Causal
-attribution remains NOT ESTABLISHED: there is no stack or dump, and no PoE
-causation is claimed.  Reproducibility at an identical offset across two PoE
-sessions is an open question and is the current next active step.
+attribution remains NOT ESTABLISHED, but not for want of material.  WER
+LocalDumps is enabled on this host and retained a full dump for every
+occurrence:
+
+```text
+PacketTracer.exe.15540.dmp  22023129 B  62dc7d01...da94a82f
+PacketTracer.exe.37944.dmp  21986052 B  116037ae...f198a23e
+PacketTracer.exe.17884.dmp  22179388 B  fc140f68...59412232
+```
+
+under `%LOCALAPPDATA%\CrashDumps`.  The earlier incident record claimed no
+stack or dump existed; that was wrong and is corrected here.  No PoE causation
+is claimed, and no reproduction run is required to obtain a dump -- spending
+another qualification would add a fourth crash without adding evidence.
+Analysing these dumps is the current next active step.
 
 A post-crash read confirmed the canonical `.pts` still hashes to
 `175F7755...8BC071`.  Packet Tracer was not running afterwards and a read-only

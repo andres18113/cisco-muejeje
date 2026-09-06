@@ -219,7 +219,7 @@
       "port_extrapolation_allowed": false,
       "artifact": {
         "path": "docs/reference/cp-scale/canonical-live-evidence/poe-delivery-20260906T184155139196Z-7950198d050f-verified.json",
-        "sha256": "5ddad2aa82248c0d72767a3122308783ffeea8a836025f390602cdde635cf8e0"
+        "sha256": "45ea94314228f1b0f49979f5fb815eddd55d63c972429ad548f583b11c3d9a90"
       }
     },
     "observer_pipeline": {
@@ -234,10 +234,11 @@
       "status": "CONFIRMED_NOT_ATTRIBUTED",
       "classification": "POST_BOUNDARY_RELIABILITY_INCIDENT",
       "invalidates_latest_qualification": false,
-      "occurrences": 2,
+      "occurrences": 3,
       "identical_fault_offset": "0x00000000020e5204",
       "seconds_after_decision_persisted": 9.462,
-      "causal_attribution": "NOT_ESTABLISHED_NO_STACK_OR_DUMP"
+      "dumps_retained": 3,
+      "causal_attribution": "NOT_ESTABLISHED_DUMP_RETAINED_NOT_YET_ANALYSED"
     },
     "pts_integrity": {
       "qualification_run_integrity": "VERIFIED",

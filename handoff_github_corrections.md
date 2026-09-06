@@ -284,7 +284,11 @@ closed. The ordering is demonstrable from the in-process UTC clock, filesystem
 mtimes and the Windows event log. Per the strict temporal boundary it is a
 separate reliability incident and does not retroactively invalidate valid
 evidence. It is the second crash at this identical offset following a PoE
-session; attribution remains NOT ESTABLISHED and no PoE causation is claimed.
+session -- the third at that identical instruction, one for each of the three
+most recent PoE sessions, 8.8 to 18.3 s after each snapshot was constructed.
+Attribution remains NOT ESTABLISHED, but a full WER dump was retained for every
+occurrence under `%LOCALAPPDATA%\CrashDumps`, so no reproduction run is needed
+and none should be spent. No PoE causation is claimed.
 
 ## NO_LIVE
 

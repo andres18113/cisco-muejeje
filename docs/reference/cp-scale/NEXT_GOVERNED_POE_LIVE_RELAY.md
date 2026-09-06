@@ -107,9 +107,11 @@ binding only, with no port extrapolation. Router0 remains BLOCKED.
 
 Packet Tracer crashed `0xc0000005` at offset `0x00000000020e5204` 9.462 s after
 the decision was persisted and after every gate had closed, so under the strict
-temporal boundary it is a separate reliability incident. It is the second crash
-at this identical offset after a PoE session, and attributing it is the next
-active step.
+temporal boundary it is a separate reliability incident. It is the third crash
+at that identical instruction -- one after each of the three most recent PoE
+sessions -- and a full WER dump was retained for every one of them under
+`%LOCALAPPDATA%\CrashDumps`. Analysing those dumps, not reproducing the crash,
+is the next active step.
 
 Evidence:
 

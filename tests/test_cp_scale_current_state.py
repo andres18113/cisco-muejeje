@@ -60,8 +60,8 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
                     "7950198d050f-verified.json"
                 ),
                 "sha256": (
-                    "5ddad2aa82248c0d72767a3122308783"
-                    "ffeea8a836025f390602cdde635cf8e0"
+                    "45ea94314228f1b0f49979f5fb815edd"
+                    "d55d63c972429ad548f583b11c3d9a90"
                 ),
             },
         },
@@ -77,10 +77,13 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "status": "CONFIRMED_NOT_ATTRIBUTED",
             "classification": "POST_BOUNDARY_RELIABILITY_INCIDENT",
             "invalidates_latest_qualification": False,
-            "occurrences": 2,
+            "occurrences": 3,
             "identical_fault_offset": "0x00000000020e5204",
             "seconds_after_decision_persisted": 9.462,
-            "causal_attribution": "NOT_ESTABLISHED_NO_STACK_OR_DUMP",
+            "dumps_retained": 3,
+            "causal_attribution": (
+                "NOT_ESTABLISHED_DUMP_RETAINED_NOT_YET_ANALYSED"
+            ),
         },
         "pts_integrity": {
             "qualification_run_integrity": "VERIFIED",
@@ -367,6 +370,21 @@ def test_compact_current_state_evidence_paths_and_hashes_are_exact():
     crash = evidence["crash_finding"]
     assert crash["classification"] == "POST_BOUNDARY_RELIABILITY_INCIDENT"
     assert crash["invalidates_this_qualification"] is False
+
+    # A dump exists for every occurrence, so attribution is open for want
+    # of analysis, not for want of material.
+    assert crash["dump"]["retained"] is True
+    recurrence = crash["recurrence"]
+    assert recurrence["occurrences"] == 3
+    assert len(recurrence["correlated"]) == 3
+    assert {item["run_identity"] for item in recurrence["correlated"]} == {
+        "poe-29d64000dfb5", "poe-9d0d21961c1c", "poe-7950198d050f",
+    }
+    assert all(
+        item["seconds_after_snapshot"] > 0
+        for item in recurrence["correlated"]
+    )
+    assert recurrence["poe_causation_claimed"] is False
     persisted = next(
         item["at"] for item in boundary["sequence"]
         if item["gate"] == "decision_persisted"
