@@ -45,6 +45,9 @@ from src.packet_tracer_mcp.infrastructure.execution.live_file_integrity import (
     PacketTracerLiveFileGuard,
     PacketTracerLiveSessionSafety,
 )
+from src.packet_tracer_mcp.infrastructure.execution.active_workspace_observer import (
+    ActiveWorkspaceIdentitySample,
+)
 from tests.poe_session_safety import healthy_live_session_safety
 
 
@@ -824,6 +827,7 @@ def test_real_file_safety_evidence_is_persisted_before_positive_release(
     writer = FakeSnapshotWriter()
     canonical = tmp_path / "canonical.pts"
     canonical.write_bytes(b"canonical Packet Tracer module")
+    workspace_path: dict[str, str] = {}
     safety = PacketTracerLiveSessionSafety(
         file_guard=PacketTracerLiveFileGuard(
             canonical_path=canonical,
@@ -832,8 +836,16 @@ def test_real_file_safety_evidence_is_persisted_before_positive_release(
         ),
         runtime_health=lambda: True,
         crash_detector=lambda: False,
+        active_workspace_observer=lambda: ActiveWorkspaceIdentitySample(
+            path=workspace_path["value"],
+            instance_id="instance-1",
+            module_id="module-1",
+            module_name="Packet Tracer MCP",
+        ),
     )
     identity = safety.prepare()
+    workspace_path["value"] = identity.disposable_path
+    safety.bind_active_workspace()
     service = PoEDeliveryQualificationService(
         runtime=runtime,
         observer=observer,
@@ -876,6 +888,7 @@ def test_real_disposable_pts_change_blocks_persisted_positive_claim(
     writer = FakeSnapshotWriter()
     canonical = tmp_path / "canonical.pts"
     canonical.write_bytes(b"canonical Packet Tracer module")
+    workspace_path: dict[str, str] = {}
     safety = PacketTracerLiveSessionSafety(
         file_guard=PacketTracerLiveFileGuard(
             canonical_path=canonical,
@@ -884,8 +897,16 @@ def test_real_disposable_pts_change_blocks_persisted_positive_claim(
         ),
         runtime_health=lambda: True,
         crash_detector=lambda: False,
+        active_workspace_observer=lambda: ActiveWorkspaceIdentitySample(
+            path=workspace_path["value"],
+            instance_id="instance-1",
+            module_id="module-1",
+            module_name="Packet Tracer MCP",
+        ),
     )
     identity = safety.prepare()
+    workspace_path["value"] = identity.disposable_path
+    safety.bind_active_workspace()
     observer.mutate = lambda _item: Path(identity.disposable_path).write_bytes(
         b"unexpected post-run bytes"
     )
@@ -916,6 +937,8 @@ def test_real_disposable_pts_change_blocks_persisted_positive_claim(
     [
         {"crash_detected": True},
         {"integrity_verified": False},
+        {"path_identity_semantics": None},
+        {"active_workspace_binding": None},
         {"canonical_pre_run_sha256": None},
         {"disposable_post_run_sha256": "b" * 64},
         {
@@ -926,6 +949,8 @@ def test_real_disposable_pts_change_blocks_persisted_positive_claim(
     ids=[
         "crash",
         "integrity",
+        "missing-path-semantics",
+        "missing-workspace-binding",
         "missing-hash",
         "changed-disposable",
         "wrong-disposable-origin",

@@ -15,6 +15,10 @@ from .poe_delivery_observer import (
     PoEVisualCaptureReceipt,
     PoEVisualCaptureRequest,
 )
+from .active_workspace_observer import (
+    ActiveWorkspaceIdentitySample,
+    PacketTracerActiveWorkspaceObserver,
+)
 from .live_file_integrity import (
     PacketTracerLiveFileGuard,
     PacketTracerLiveFileIdentity,

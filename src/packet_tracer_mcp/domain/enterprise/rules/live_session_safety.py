@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
+from pathlib import PurePath, PurePosixPath, PureWindowsPath
 
 from ...models.errors import ErrorCode, PlanError, ValidationResult
-from ..models.discovery import LiveSessionSafetyEvidence
+from ..models.discovery import (
+    ActiveWorkspaceIdentityMethod,
+    LivePathIdentitySemantics,
+    LiveSessionSafetyEvidence,
+)
 
 
 def validate_live_session_positive_admission(
@@ -38,12 +41,58 @@ def validate_live_session_positive_admission(
         errors.append(_error(
             "Restoration verification is inconsistent when no restoration was allowed."
         ))
-    if not _exact_path(evidence.canonical_path):
+    semantics = evidence.path_identity_semantics
+    if semantics is None:
+        errors.append(_error("Persisted .pts path identity semantics are missing."))
+    if not _exact_path(evidence.canonical_path, semantics):
         errors.append(_error("Exact canonical .pts identity is missing."))
-    if not _exact_path(evidence.disposable_path):
+    if not _exact_path(evidence.disposable_path, semantics):
         errors.append(_error("Exact disposable .pts identity is missing."))
-    if _same_path(evidence.canonical_path, evidence.disposable_path):
+    if _same_path(evidence.canonical_path, evidence.disposable_path, semantics):
         errors.append(_error("Canonical and disposable .pts identities must differ."))
+    binding = evidence.active_workspace_binding
+    if binding is None:
+        errors.append(_error("Active Packet Tracer workspace binding is missing."))
+    else:
+        if (
+            binding.method
+            is not ActiveWorkspaceIdentityMethod.SCRIPT_MODULE_SELF_COMMAND_LINE
+        ):
+            errors.append(_error(
+                "Active Packet Tracer workspace identity method is unsupported."
+            ))
+        pre_path = binding.pre_qualification_path
+        post_path = binding.post_integrity_path
+        if not _exact_path(pre_path, semantics) or not _exact_path(
+            post_path, semantics
+        ):
+            errors.append(_error("Active Packet Tracer workspace identity is unobservable."))
+        elif not (
+            _same_path(pre_path, evidence.disposable_path, semantics)
+            and _same_path(post_path, evidence.disposable_path, semantics)
+        ):
+            errors.append(_error(
+                "Active Packet Tracer workspace did not match the exact disposable .pts."
+            ))
+        pre_instance = binding.pre_qualification_instance_id
+        post_instance = binding.post_integrity_instance_id
+        if not _matching_identity(pre_instance, post_instance):
+            errors.append(_error(
+                "The bridge-serving Packet Tracer module instance was not continuous."
+            ))
+        pre_module = binding.pre_qualification_module_id
+        post_module = binding.post_integrity_module_id
+        if not _matching_identity(pre_module, post_module):
+            errors.append(_error(
+                "The bridge-serving Packet Tracer module identity was not continuous."
+            ))
+        if not _matching_identity(
+            binding.pre_qualification_module_name,
+            binding.post_integrity_module_name,
+        ):
+            errors.append(_error(
+                "The bridge-serving Packet Tracer module name was not continuous."
+            ))
 
     canonical_hashes = (
         evidence.canonical_pre_run_sha256,
@@ -69,20 +118,61 @@ def validate_live_session_positive_admission(
     return ValidationResult(errors=errors)
 
 
-def _exact_path(value: str | None) -> bool:
-    return bool(
-        value
-        and value == value.strip()
-        and Path(value).is_absolute()
-        and Path(value).suffix.casefold() == ".pts"
-    )
-
-
-def _same_path(first: str | None, second: str | None) -> bool:
-    if not first or not second:
+def _exact_path(
+    value: str | None,
+    semantics: LivePathIdentitySemantics | None,
+) -> bool:
+    if not value or value != value.strip() or semantics is None:
         return False
-    return os.path.normcase(os.path.abspath(first)) == os.path.normcase(
-        os.path.abspath(second)
+    if any(ord(character) < 32 for character in value):
+        return False
+    path_type: type[PurePath]
+    if semantics is LivePathIdentitySemantics.WINDOWS:
+        path_type = PureWindowsPath
+    elif semantics is LivePathIdentitySemantics.POSIX:
+        path_type = PurePosixPath
+    else:
+        return False
+    try:
+        path = path_type(value)
+    except (TypeError, ValueError):
+        return False
+    if str(path) != value or not path.is_absolute() or path.suffix.casefold() != ".pts":
+        return False
+    if ".." in path.parts:
+        return False
+    if semantics is LivePathIdentitySemantics.WINDOWS:
+        invalid = frozenset('<>:"|?*')
+        for part in path.parts[1:]:
+            if any(character in invalid for character in part):
+                return False
+            if part.endswith((" ", ".")):
+                return False
+    return True
+
+
+def _same_path(
+    first: str | None,
+    second: str | None,
+    semantics: LivePathIdentitySemantics | None,
+) -> bool:
+    if not first or not second or semantics is None:
+        return False
+    path_type = (
+        PureWindowsPath
+        if semantics is LivePathIdentitySemantics.WINDOWS
+        else PurePosixPath
+    )
+    return path_type(first) == path_type(second)
+
+
+def _matching_identity(first: str | None, second: str | None) -> bool:
+    return bool(
+        first
+        and second
+        and first == first.strip()
+        and second == second.strip()
+        and first == second
     )
 
 

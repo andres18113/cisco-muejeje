@@ -6,6 +6,9 @@ from pathlib import Path
 import pytest
 
 from src.packet_tracer_mcp.infrastructure.execution import live_file_integrity
+from src.packet_tracer_mcp.infrastructure.execution.active_workspace_observer import (
+    ActiveWorkspaceIdentitySample,
+)
 from src.packet_tracer_mcp.infrastructure.execution.live_file_integrity import (
     PacketTracerLiveFileGuard,
     PacketTracerLiveSessionSafety,
@@ -28,6 +31,41 @@ def _guard(tmp_path: Path):
         run_identity="poe-run/with unsafe separators",
     )
     return canonical, guard
+
+
+def _workspace_sample(path: str, *, instance_id: str = "instance-1"):
+    return ActiveWorkspaceIdentitySample(
+        path=path,
+        instance_id=instance_id,
+        module_id="pt-mcp-module",
+        module_name="Packet Tracer MCP",
+    )
+
+
+def _bound_safety(
+    tmp_path: Path,
+    *,
+    workspace_path=None,
+    runtime_health=lambda: True,
+    crash_detector=lambda: False,
+):
+    _canonical, guard = _guard(tmp_path)
+    observed_path = {"value": workspace_path}
+
+    def observe_workspace():
+        path = observed_path["value"]
+        return None if path is None else _workspace_sample(path)
+
+    safety = PacketTracerLiveSessionSafety(
+        file_guard=guard,
+        runtime_health=runtime_health,
+        crash_detector=crash_detector,
+        active_workspace_observer=observe_workspace,
+    )
+    identity = safety.prepare()
+    if workspace_path == "prepared-disposable":
+        observed_path["value"] = identity.disposable_path
+    return safety, identity, observed_path
 
 
 def test_guard_prepares_an_exact_hash_pinned_disposable_pts_copy(tmp_path: Path):
@@ -86,7 +124,7 @@ def test_changes_to_disposable_pts_never_change_the_canonical_file(tmp_path: Pat
     assert integrity.release_positive_claim("SUPPORTED") is None
 
 
-def test_healthy_unchanged_session_is_reusable_and_may_release_a_positive_claim(tmp_path: Path):
+def test_file_guard_alone_cannot_release_a_positive_live_claim(tmp_path: Path):
     _canonical, guard = _guard(tmp_path)
     guard.prepare()
 
@@ -94,9 +132,10 @@ def test_healthy_unchanged_session_is_reusable_and_may_release_a_positive_claim(
 
     assert integrity.integrity_verified is True
     assert integrity.unexpected_modification is False
-    assert integrity.session_reusable is True
-    assert integrity.positive_claim_allowed is True
-    assert integrity.release_positive_claim("SUPPORTED") == "SUPPORTED"
+    assert integrity.session_reusable is False
+    assert integrity.workspace_binding_verified is None
+    assert integrity.positive_claim_allowed is False
+    assert integrity.release_positive_claim("SUPPORTED") is None
 
 
 def test_crash_makes_session_non_reusable_even_when_canonical_pts_is_unchanged(tmp_path: Path):
@@ -118,6 +157,7 @@ def test_common_session_safety_adapter_closes_claim_before_persistence_on_crash(
         file_guard=guard,
         runtime_health=lambda: False,
         crash_detector=lambda: True,
+        active_workspace_observer=lambda: None,
     )
     safety.prepare()
 
@@ -131,6 +171,122 @@ def test_common_session_safety_adapter_closes_claim_before_persistence_on_crash(
     assert safety.integrity.observed_disposable_post_run_sha256 == _sha256(CANONICAL)
 
 
+def test_exact_disposable_workspace_binding_admits_a_healthy_session(
+    tmp_path: Path,
+) -> None:
+    safety, identity, _observed_path = _bound_safety(
+        tmp_path,
+        workspace_path="prepared-disposable",
+    )
+
+    pre_sample = safety.bind_active_workspace()
+    result = safety.finalize()
+
+    assert pre_sample.path == identity.disposable_path
+    assert result.active_workspace_binding is not None
+    assert (
+        result.active_workspace_binding.pre_qualification_path
+        == identity.disposable_path
+    )
+    assert result.active_workspace_binding.post_integrity_path == (
+        identity.disposable_path
+    )
+    assert result.session_reusable is True
+    assert result.positive_claim_allowed is True
+
+
+@pytest.mark.parametrize("workspace_kind", ["canonical", "other-disposable", None])
+def test_missing_or_mismatched_active_workspace_cannot_release_a_positive_claim(
+    tmp_path: Path,
+    workspace_kind: str | None,
+) -> None:
+    safety, identity, observed_path = _bound_safety(tmp_path)
+    if workspace_kind == "canonical":
+        observed_path["value"] = identity.canonical_path
+    elif workspace_kind == "other-disposable":
+        observed_path["value"] = str(
+            (tmp_path / "other-session" / "packet-tracer-live.pts").resolve()
+        )
+
+    if workspace_kind is not None:
+        assert safety.bind_active_workspace() is None
+    result = safety.finalize()
+
+    assert result.session_reusable is False
+    assert result.positive_claim_allowed is False
+    assert safety.integrity is not None
+    assert safety.integrity.release_positive_claim("SUPPORTED") is None
+    assert any("workspace" in reason.casefold() for reason in result.failure_reasons)
+
+
+def test_crash_still_dominates_a_verified_workspace_binding(tmp_path: Path) -> None:
+    safety, _identity, _observed_path = _bound_safety(
+        tmp_path,
+        workspace_path="prepared-disposable",
+        runtime_health=lambda: False,
+        crash_detector=lambda: True,
+    )
+    safety.bind_active_workspace()
+
+    result = safety.finalize()
+
+    assert result.crash_detected is True
+    assert result.session_reusable is False
+    assert result.positive_claim_allowed is False
+
+
+def test_disposable_integrity_failure_still_dominates_verified_workspace_binding(
+    tmp_path: Path,
+) -> None:
+    safety, identity, _observed_path = _bound_safety(
+        tmp_path,
+        workspace_path="prepared-disposable",
+    )
+    safety.bind_active_workspace()
+    Path(identity.disposable_path).write_bytes(b"changed during live")
+
+    result = safety.finalize()
+
+    assert result.disposable_modified is True
+    assert result.integrity_verified is False
+    assert result.positive_claim_allowed is False
+
+
+def test_post_integrity_workspace_drift_cannot_release_a_positive_claim(
+    tmp_path: Path,
+) -> None:
+    _canonical, guard = _guard(tmp_path)
+    paths: list[str] = []
+
+    def observe_workspace() -> ActiveWorkspaceIdentitySample:
+        return _workspace_sample(paths.pop(0))
+
+    safety = PacketTracerLiveSessionSafety(
+        file_guard=guard,
+        runtime_health=lambda: True,
+        crash_detector=lambda: False,
+        active_workspace_observer=observe_workspace,
+    )
+    identity = safety.prepare()
+    paths.extend([
+        identity.disposable_path,
+        str((tmp_path / "other" / "packet-tracer-live.pts").resolve()),
+    ])
+    safety.bind_active_workspace()
+
+    result = safety.finalize()
+
+    assert result.active_workspace_binding is not None
+    assert result.active_workspace_binding.pre_qualification_path == (
+        identity.disposable_path
+    )
+    assert result.active_workspace_binding.post_integrity_path != (
+        identity.disposable_path
+    )
+    assert result.session_reusable is False
+    assert result.positive_claim_allowed is False
+
+
 def test_crash_during_final_file_verification_cannot_release_a_positive_claim(
     tmp_path: Path,
 ) -> None:
@@ -141,6 +297,7 @@ def test_crash_during_final_file_verification_cannot_release_a_positive_claim(
         file_guard=guard,
         runtime_health=lambda: next(health_samples),
         crash_detector=lambda: next(crash_samples),
+        active_workspace_observer=lambda: None,
     )
     safety.prepare()
 
@@ -162,6 +319,7 @@ def test_unobservable_crash_status_is_preserved_and_fails_closed(tmp_path: Path)
         file_guard=guard,
         runtime_health=lambda: True,
         crash_detector=lambda: None,
+        active_workspace_observer=lambda: None,
     )
     safety.prepare()
 

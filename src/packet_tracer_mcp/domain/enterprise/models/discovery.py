@@ -242,6 +242,33 @@ class ProbeIsolationLevel(str, Enum):
     FRESH_SESSION_REQUIRED = "fresh_session_required"
 
 
+class LivePathIdentitySemantics(str, Enum):
+    """Lexical path rules carried by persisted LIVE evidence."""
+
+    WINDOWS = "windows"
+    POSIX = "posix"
+
+
+class ActiveWorkspaceIdentityMethod(str, Enum):
+    """Productive source used to identify the bridge-serving PT module."""
+
+    SCRIPT_MODULE_SELF_COMMAND_LINE = "script_module_self_command_line"
+
+
+class ActiveWorkspaceBindingEvidence(BaseModel):
+    """Identity samples from the PT Script Module executing the LIVE run."""
+
+    method: ActiveWorkspaceIdentityMethod
+    pre_qualification_path: str | None = None
+    post_integrity_path: str | None = None
+    pre_qualification_instance_id: str | None = None
+    post_integrity_instance_id: str | None = None
+    pre_qualification_module_id: str | None = None
+    post_integrity_module_id: str | None = None
+    pre_qualification_module_name: str | None = None
+    post_integrity_module_name: str | None = None
+
+
 class ProbeEnvironment(BaseModel):
     """Hechos estables que pueden cambiar la validez de una observacion."""
 
@@ -261,6 +288,7 @@ class ProbeEnvironment(BaseModel):
 class LiveSessionSafetyEvidence(BaseModel):
     """Auditable outer-session admission evidence for one LIVE mutation."""
 
+    path_identity_semantics: LivePathIdentitySemantics | None = None
     canonical_path: str | None = None
     canonical_pre_run_sha256: str | None = None
     canonical_observed_post_run_sha256: str | None = None
@@ -268,6 +296,7 @@ class LiveSessionSafetyEvidence(BaseModel):
     disposable_path: str | None = None
     disposable_pre_run_sha256: str | None = None
     disposable_post_run_sha256: str | None = None
+    active_workspace_binding: ActiveWorkspaceBindingEvidence | None = None
     unexpected_canonical_modification: bool | None = None
     disposable_modified: bool | None = None
     restoration_attempted: bool = False
