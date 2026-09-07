@@ -65,6 +65,14 @@ class IosQualificationQueryId(str, Enum):
     """
 
     SHOW_IP_DHCP_POOL = "qualification_show_ip_dhcp_pool"
+    # POE-1. La unica evidencia de entrega PoE autorizada hoy es la observacion
+    # visual del telefono, que necesita un humano mirando la pantalla y no
+    # escala a un puerto mas. Del lado del switch queda este candidato, y entra
+    # por aca -- no por `_COMMANDS` -- porque todavia no hay una sola captura
+    # viva que diga que imprime este build. PT contesta un comando que no
+    # entiende con texto que igual se parsea, asi que registrarlo como read-back
+    # de producto antes de medirlo seria afirmar una forma adivinada.
+    SHOW_POWER_INLINE = "qualification_show_power_inline"
 
 
 class TrunkQueryClassification(str, Enum):
@@ -203,6 +211,10 @@ _INTERFACE_COMMANDS = {
 }
 _QUALIFICATION_COMMANDS = {
     IosQualificationQueryId.SHOW_IP_DHCP_POOL: "show ip dhcp pool",
+    # Forma global a proposito. `show power inline <interfaz>` no tiene soporte
+    # establecido en este build, y la tabla global ya trae una fila por puerto:
+    # la atribucion exacta sale de la fila parseada, no de un comando adivinado.
+    IosQualificationQueryId.SHOW_POWER_INLINE: "show power inline",
 }
 _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_EPHONE,
@@ -222,6 +234,11 @@ _PRIVILEGED_QUERIES = {
 }
 _PRIVILEGED_QUALIFICATION_QUERIES = {
     IosQualificationQueryId.SHOW_IP_DHCP_POOL,
+    # Se pide en EXEC privilegiado y se vuelve a `disable` al terminar. Es la
+    # postura conservadora: si en este build la tabla sale recortada en modo
+    # usuario, el recorte se leeria como ausencia de fila, que es justo la
+    # confusion que esta calibracion tiene que poder distinguir.
+    IosQualificationQueryId.SHOW_POWER_INLINE,
 }
 _INTERFACE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9./:-]{0,79}$")
 _SETUP_DIALOG = "would you like to enter the initial configuration dialog"
