@@ -506,3 +506,42 @@ def test_persisted_pse_evidence_does_not_leak_to_another_model(tmp_path):
     adapter = _adapter_for(tmp_path, [_pse_probe_result()])
     other = adapter.capabilities_for("2960-24TT", packet_tracer_version=BUILD)
     assert other.poe_authorized_bindings == []
+
+
+# ==========================================================================
+# The runner measures the port it was given
+# ==========================================================================
+
+def _tool_source(name: str) -> str:
+    import pathlib
+    return (pathlib.Path(__file__).resolve().parents[1] / "tools" / name).read_text(
+        encoding="utf-8"
+    )
+
+
+def test_the_experiment_drives_and_observes_its_own_port():
+    """Measured once: the harness drove Fa0/13 while its fixture sat on Fa0/1.
+
+    `Experiment` read the measured port from the module-level AP binding at
+    every use, so a runner that placed its endpoint anywhere else silently
+    configured and observed a different port. The raw capture showed the phone
+    delivering 10.0W on Fa0/1 while the typed reading reported the empty
+    Fa0/13 as off/0.0 -- and the PSE contract refused the incoherent scope,
+    which is how the defect surfaced.
+    """
+    source = _tool_source("poe2_ap_live.py")
+    assert "self.switch_port = switch_port or BINDING[\"switch_port\"]" in source
+    assert "_payload(self.switch_port, mode)" in source
+    assert source.count("observe_poe_inline_status(self.switch, (self.switch_port,))") == 2
+    # The measured port must not be read from the module binding at use sites.
+    assert "_payload(BINDING[" not in source
+    assert 'observe_poe_inline_status(self.switch, (BINDING["switch_port"],))' not in source
+
+
+def test_the_poe3a_runner_measures_the_binding_it_derived():
+    source = _tool_source("poe3a_pse_live.py")
+    assert 'Experiment(run_id, switch_port=binding["switch_port"]' in source
+    assert 'if exp.switch_port != binding["switch_port"]:' in source
+    # No caller-supplied IOS or JavaScript, and no raw escape hatch.
+    for forbidden in ("--command", "--ios", "pt_send_raw", "show running-config"):
+        assert forbidden not in source, forbidden

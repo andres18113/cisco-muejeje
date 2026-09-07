@@ -161,7 +161,10 @@ def main() -> int:
               + "-" + token_hex(4))
     started = utc()
 
-    exp = Experiment(run_id)
+    # The measured port must be this ticket's binding, not POE-2's.
+    exp = Experiment(run_id, switch_port=binding["switch_port"], endpoint_role="PH")
+    if exp.switch_port != binding["switch_port"]:
+        raise RuntimeError("Experiment is not measuring the governed port")
     if not exp.bridge.pt_alive():
         raise RuntimeError("File bridge heartbeat stale")
     if list(exp.bridge.dir.glob("req_*.js")) or list(exp.bridge.dir.glob("res_*.txt")):

@@ -115,14 +115,25 @@ def source_baseline() -> dict:
 
 
 class Experiment:
-    def __init__(self, run_id: str) -> None:
+    def __init__(
+        self,
+        run_id: str,
+        *,
+        switch_port: str | None = None,
+        endpoint_role: str = "AP",
+    ) -> None:
         self.bridge = FileBridge()
         self.fixture = PacketTracerPoEDeliveryFixtureRuntime(self.send, BUILD)
         self.executor = ControlledIosExecutor(self.send)
         self.observer = GovernedPoEInlineObserver(self.executor)
         self.config = PacketTracerConfigurationRuntime(self.bridge.send)
+        # The measured port travels with the experiment. It used to be read
+        # from the module-level AP binding at every use, so a caller that put
+        # its endpoint anywhere else silently drove and observed Fa0/13 while
+        # its fixture sat on another port.
+        self.switch_port = switch_port or BINDING["switch_port"]
         self.switch = "MCP-POE2-SW-" + run_id
-        self.endpoint = "MCP-POE2-AP-" + run_id
+        self.endpoint = "MCP-POE2-" + endpoint_role + "-" + run_id
         self.transport_problems: list[str] = []
 
     def send(self, script: str, timeout: float = 12.0) -> str | None:
@@ -144,7 +155,7 @@ class Experiment:
         return self.read(_ENV_JS)
 
     def apply(self, mode: PoEInlineMode) -> None:
-        if not self.config.configure_ios(self.switch, _payload(BINDING["switch_port"], mode)):
+        if not self.config.configure_ios(self.switch, _payload(self.switch_port, mode)):
             raise RuntimeError("Mode was not queued")
         time.sleep(6)
         self.bridge.collect_completed()
@@ -153,12 +164,12 @@ class Experiment:
 
     def capture(self, label: str) -> PoE2Capture:
         start = utc()
-        first = self.observer.observe_poe_inline_status(self.switch, (BINDING["switch_port"],))
+        first = self.observer.observe_poe_inline_status(self.switch, (self.switch_port,))
         # The executor may already have restored user EXEC; its own dispatch
         # receipt retains the privileged prompt against which output must end.
         prompt = first.command_result.expected_prompt if first.command_result else ""
         time.sleep(2)
-        second = self.observer.observe_poe_inline_status(self.switch, (BINDING["switch_port"],))
+        second = self.observer.observe_poe_inline_status(self.switch, (self.switch_port,))
         serialize = lambda x: json.loads(json.dumps(asdict(x), default=lambda v: v.value if isinstance(v, Enum) else str(v)))
         a, b = serialize(first), serialize(second)
         stable = first.raw_output == second.raw_output
