@@ -99,6 +99,7 @@ class FakeRuntime:
         self.delete_failures: set[str] = set()
         self.calls: list[str] = []
         self.attempted_names: list[str] = []
+        self.creation_arms: dict[str, str | None] = {}
 
     def packet_tracer_build(self) -> str | None:
         self.calls.append("packet_tracer_build")
@@ -109,10 +110,16 @@ class FakeRuntime:
         return self.initial_fingerprint
 
     def create_device(
-        self, model: str, temporary_name: str, required_ports: tuple[str, ...],
+        self,
+        model: str,
+        temporary_name: str,
+        required_ports: tuple[str, ...],
+        *,
+        arm: str | None = None,
     ) -> PoEDeliveryDeviceIdentity:
         self.calls.append(f"create:{temporary_name}")
         self.attempted_names.append(temporary_name)
+        self.creation_arms[temporary_name] = arm
         if self.fail_operation == "create" and len(self.attempted_names) == 3:
             raise RuntimeError("endpoint creation failed")
         return PoEDeliveryDeviceIdentity(
@@ -973,3 +980,21 @@ def test_legacy_decided_poe_result_without_session_safety_cannot_release_claim()
     assert evidence.status is CapabilityStatus.UNKNOWN
     assert evidence.observed_value is None
     assert evidence.dimensions == {}
+
+
+def test_fixture_creation_tells_the_runtime_which_arm_each_device_belongs_to() -> None:
+    # The observer reads one canvas holding both arms. Only the use case knows
+    # which side a device is on, so the arm has to reach the runtime -- the
+    # runtime cannot recover it from a temporary name without parsing one.
+    request, runtime, _observer, _writer, service = _service_fixture()
+
+    service.qualify(request)
+
+    arms = runtime.creation_arms
+    assert arms, "no fixture device recorded an arm"
+    candidates = {name for name, arm in arms.items() if arm == "candidate"}
+    comparisons = {name for name, arm in arms.items() if arm == "comparison"}
+    assert candidates | comparisons == set(arms)
+    assert all("CANDIDATE" in name for name in candidates)
+    assert all("COMPARISON" in name for name in comparisons)
+    assert len(candidates) == len(comparisons) == len(request.bindings) + 1

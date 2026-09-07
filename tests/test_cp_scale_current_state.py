@@ -93,7 +93,10 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
     document = json.loads(raw)
 
     assert document["schema"] == "cp-scale-current-state-v2"
-    assert len(raw) < 16_384
+    # One more governed decision -- the observed access-point differential --
+    # earns its place here. The bound still exists so this stays an index of
+    # decisions with hash-pinned artifacts, not a place to inline evidence.
+    assert len(raw) < 20_480
     assert datetime.fromisoformat(document["updated_at"].replace("Z", "+00:00"))
     assert set(document) == {
         "schema",
@@ -151,6 +154,35 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
                 "sha256": "f26cbe1ab1c2b254b5da73aba285086982b68aa8c7022a38443ad29b0e2640c8",
             },
             "continuation": "ACCESSPOINT_PT_HAS_NO_REMOVABLE_POWER_ADAPTER_SO_NO_WITHHOLDABLE_SUPPLY",
+        },
+        "accesspoint_differential": {
+            "run_id": "r0poe-mls6-a1e7aa15",
+            "source_head": "c4f909ca13e289fd91c6be243de5258c1a2f29d8",
+            "decision": "OBSERVED_BOTH_ARMS_POWERED_NO_POE_PROMOTION",
+            "observation_status": "observed",
+            "verification_status": "failed",
+            "capability_status": "unknown",
+            "physical_incapability_established": False,
+            "unqualifiable_accesspoint_bindings": 11,
+            "inline_power_api_signal": "ABSENT_IN_9_0_1_IPCAPI_REFERENCE",
+            "next_observable_candidate": (
+                "SWITCH_SIDE_SHOW_POWER_INLINE_VIA_REGISTERED_IOS_QUERY_"
+                "NOT_YET_EXAMINED"
+            ),
+            "artifact": {
+                "path": (
+                    "docs/reference/cp-scale/canonical-live-evidence/"
+                    "poe-accesspoint-differential-20260907T024424Z-"
+                    "c4f909ca13e2-observed.json"
+                ),
+                "sha256": (
+                    "7f28f575aee4512bd41dc51b42e00fd0"
+                    "9b06dbf6e80d96c1a9022fb40fc2812a"
+                ),
+            },
+            "record": (
+                "docs/reference/cp-scale/POE_ACCESSPOINT_DIFFERENTIAL_20260907.md"
+            ),
         },
         "factory_structure_survey": {
             "run_id": "factory-survey-9f967ef6",
@@ -262,8 +294,9 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
                 "poe-r0poe-mls4-6ffe810b",
                 "poe-r0poe-mls6-07e15945",
                 "poe-r0poe-mls6-df79fafe",
+                "poe-r0poe-mls6-a1e7aa15",
             ],
-            "known_live_runs_consumed_lower_bound": 46,
+            "known_live_runs_consumed_lower_bound": 47,
             "current_total_exhaustive": False,
             "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS",
         },
@@ -716,3 +749,71 @@ def test_no_generic_access_point_model_accepts_the_power_adaptor():
         "LAP-PT#mt31#dtNone#d1", "3702i#mt31#dtNone#d1",
         "802#mt31#dtNone#d1", "803#mt31#dtNone#d1",
     }
+
+
+def test_observed_accesspoint_differential_cannot_promote_or_refuse_poe():
+    # Both arms powered is a determinate reading, not a missing one, and it is
+    # the reason the eleven AccessPoint-PT bindings stay uncovered. It must not
+    # drift into a PoE positive, and it must not drift into UNSUPPORTED either:
+    # an endpoint that is lit without inline power says nothing about whether
+    # the switch delivers any.
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    gate = document["current_offline_operational_gate"]
+    record = gate["accesspoint_differential"]
+    raw = (ROOT / record["artifact"]["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == record["artifact"]["sha256"]
+    artifact = json.loads(raw)
+
+    assert artifact["router0_attempts_consumed"] == 0
+    assert artifact["router3_executed"] is False
+    assert artifact["physical_incapability_established"] is False
+    assert artifact["request"]["candidate_model"] == "3560-24PS"
+    assert artifact["request"]["comparison_model"] == "2960-24TT"
+    assert artifact["request"]["bindings"] == [{
+        "candidate_port": "FastEthernet0/13",
+        "comparison_port": "FastEthernet0/1",
+        "endpoint_model": "AccessPoint-PT",
+        "endpoint_port": "Port 0",
+    }]
+
+    observation = artifact["observation"]
+    assert observation is not None
+    assert observation["method"] == "manual_visible_power_state"
+    assert observation["simultaneous"] is True
+    assert observation["observer_id"].strip() == observation["observer_id"]
+    assert len(observation["bindings"]) == 1
+    arms = observation["bindings"][0]
+    assert arms["candidate"]["state"] == "powered"
+    assert arms["comparison"]["state"] == "powered"
+    for arm in (arms["candidate"], arms["comparison"]):
+        assert arm["state"] != "unobservable"
+        assert arm["visible_indicator"].strip()
+        assert arm["switch_ready"] and arm["link_ready"] and arm["endpoint_settled"]
+
+    outcome = artifact["outcome"]
+    assert outcome["observation_status"] == "observed"
+    assert outcome["verification_status"] == "failed"
+    assert outcome["capability_status"] == "unknown"
+    assert outcome["capability_verified"] is False
+    assert outcome["observed_value"] is None
+
+    cleanup = artifact["cleanup"]
+    assert cleanup["cleanup_status"] == "clean"
+    assert cleanup["inventory_restored"] is True
+    assert cleanup["cleanup_failed"] == []
+    assert sorted(cleanup["attempted_identities"]) == sorted(cleanup["deleted_identities"])
+    assert len(cleanup["attempted_identities"]) == 4
+    safety = artifact["live_session_safety"]
+    assert safety["integrity_verified"] is True
+    assert safety["crash_detected"] is False
+    assert safety["unexpected_canonical_modification"] is False
+    assert artifact["closure"]["product_admission"] is False
+    assert artifact["closure"]["realtime"]["simulation_mode"] is False
+
+    assert gate["poe_ports"] == 1
+    assert gate["poe_delivery"] == "supported"
+    assert record["capability_status"] == "unknown"
+    assert record["physical_incapability_established"] is False
+    # Naming the switch-side candidate must not be readable as having tried it.
+    assert record["next_observable_candidate"].endswith("NOT_YET_EXAMINED")
+    assert (ROOT / record["record"]).is_file()

@@ -466,3 +466,41 @@ def test_packet_tracer_build_and_inventory_lifecycle_delegate_to_probe_runtime()
     assert len(transport.calls) == 2
     assert all("getDeviceCount()" in script for script, _ in transport.calls)
     assert all("getLinkCount()" in script for script, _ in transport.calls)
+
+
+def test_arms_occupy_disjoint_canvas_bands_so_a_large_fixture_stays_readable():
+    # A 23-binding episode puts 46 identical endpoints on one canvas. Ordinal
+    # placement interleaves the arms, so the observer has to identify each
+    # device by name before it can be read. Separating the arms into disjoint
+    # horizontal bands makes "every candidate lit, every control dark" a
+    # comparison of two blocks instead of 46 individual lookups.
+    bindings = 23
+    names = []
+    replies = []
+    for index in range(bindings):
+        names.append((f"__POE_CAND_{index}", "candidate"))
+        names.append((f"__POE_COMP_{index}", "comparison"))
+    for name, _ in names:
+        replies.append(_device_payload(name, "7960", ["Switch"]))
+    transport = RecordingTransport(replies)
+    runtime = PacketTracerPoEDeliveryFixtureRuntime(transport, "PT build exact")
+
+    for name, arm in names:
+        runtime.create_device("7960", name, ("Switch",), arm=arm)
+
+    positions: dict[str, list[tuple[int, int]]] = {"candidate": [], "comparison": []}
+    assert len(transport.calls) == len(names)
+    for (_name, arm), (script, _) in zip(names, transport.calls):
+        found = re.findall(
+            r"lwAddDevice\(__name,__type,__model,(\d+),(\d+)\)", script,
+        )
+        assert len(found) == 1
+        positions[arm].append((int(found[0][0]), int(found[0][1])))
+
+    flat = positions["candidate"] + positions["comparison"]
+    assert len(set(flat)) == len(flat)
+    assert all(0 < x < 3899 and 0 < y < 3900 for x, y in flat)
+    assert max(x for x, _ in positions["candidate"]) < min(
+        x for x, _ in positions["comparison"]
+    )
+    assert max(y for _, y in flat) - min(y for _, y in flat) < 1200

@@ -11,6 +11,17 @@ Supporting records:
   which episode to run first and why, the gates the harness enforces, the
   exact receipt the validator accepts, and why both arms powered is a real
   result rather than a failed run. It authorizes nothing new.
+- [The access-point differential, measured, 2026-09-07](POE_ACCESSPOINT_DIFFERENTIAL_20260907.md)
+  records the first access-point episode a person actually watched. Both arms
+  were OBSERVED powered, so the differential the scope requires was not
+  supplied and `supports_poe` stayed UNKNOWN -- not UNSUPPORTED. It also
+  enumerates Packet Tracer 9.0.1's complete power API, which is five
+  administrative booleans with no endpoint-side inline-power signal to
+  substitute, and states the consequence: the 11 `AccessPoint-PT` bindings among
+  the 43 the design demands cannot be covered by an endpoint-visible method. It
+  names the switch-side alternative -- `show power inline` through the existing
+  registered IOS query mechanism -- as the next E5 observable candidate, and
+  records that nothing has examined it yet.
 - [Factory structure observed, 2026-09-07](ROUTER0_POE_FACTORY_STRUCTURE_20260907.md)
   records why bridge polling was absent, the three read defects that made
   Packet Tracer's own descriptors unreadable, and the resulting measurement:

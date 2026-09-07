@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-07T00:35:00Z",
+  "updated_at": "2026-09-07T03:05:00Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -241,6 +241,23 @@
       },
       "continuation": "ACCESSPOINT_PT_HAS_NO_REMOVABLE_POWER_ADAPTER_SO_NO_WITHHOLDABLE_SUPPLY"
     },
+    "accesspoint_differential": {
+      "run_id": "r0poe-mls6-a1e7aa15",
+      "source_head": "c4f909ca13e289fd91c6be243de5258c1a2f29d8",
+      "decision": "OBSERVED_BOTH_ARMS_POWERED_NO_POE_PROMOTION",
+      "observation_status": "observed",
+      "verification_status": "failed",
+      "capability_status": "unknown",
+      "physical_incapability_established": false,
+      "unqualifiable_accesspoint_bindings": 11,
+      "inline_power_api_signal": "ABSENT_IN_9_0_1_IPCAPI_REFERENCE",
+      "next_observable_candidate": "SWITCH_SIDE_SHOW_POWER_INLINE_VIA_REGISTERED_IOS_QUERY_NOT_YET_EXAMINED",
+      "artifact": {
+        "path": "docs/reference/cp-scale/canonical-live-evidence/poe-accesspoint-differential-20260907T024424Z-c4f909ca13e2-observed.json",
+        "sha256": "7f28f575aee4512bd41dc51b42e00fd09b06dbf6e80d96c1a9022fb40fc2812a"
+      },
+      "record": "docs/reference/cp-scale/POE_ACCESSPOINT_DIFFERENTIAL_20260907.md"
+    },
     "factory_structure_survey": {
       "run_id": "factory-survey-9f967ef6",
       "source_head": "cf89481fa3eaf9efd46c2778cb33b789d2e1197d",
@@ -322,9 +339,10 @@
         "poe-r0poe-mls4-b4810d48",
         "poe-r0poe-mls4-6ffe810b",
         "poe-r0poe-mls6-07e15945",
-        "poe-r0poe-mls6-df79fafe"
+        "poe-r0poe-mls6-df79fafe",
+        "poe-r0poe-mls6-a1e7aa15"
       ],
-      "known_live_runs_consumed_lower_bound": 46,
+      "known_live_runs_consumed_lower_bound": 47,
       "current_total_exhaustive": false,
       "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS"
     },

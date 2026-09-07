@@ -1,27 +1,46 @@
-# Operator runbook: the one governed PoE observation that needs a person
+# Operator runbook: the governed PoE observations that need a person
 
-Everything that can be automated is done. `GovernedPoEDeliveryObserver` turns
-exactly one synchronous, identity-bound visual receipt into evidence, and the
-contract deliberately admits no substitute: delivery may not be inferred from
-catalog metadata, link state, DHCP, forwarding, `getPower()`, `isPowerOn()` or
-an administrative power state. Somebody has to look at the endpoints.
+`GovernedPoEDeliveryObserver` turns exactly one synchronous, identity-bound
+visual receipt per episode into evidence, and the contract admits no substitute
+today: delivery may not be inferred from catalog metadata, link state, DHCP,
+forwarding, `getPower()`, `isPowerOn()` or an administrative power state. So
+somebody has to look at the endpoints, and the IpcAPI offers nothing else to
+look at — its whole power surface is those administrative booleans.
+
+That constraint is about the endpoint side. A switch-side observable is being
+pursued separately; until one is qualified, this runbook is the procedure.
 
 This runbook is the mechanical form of that step. It authorizes nothing new;
 it records how to spend an authorization that already exists.
 
-## Which episode to run first, and why
+## The access-point question is settled
 
-Run the access-point episode. It is the smallest fixture — 4 devices, 2 links —
-and it is the one whose outcome decides whether Router0 is reachable at all.
+Run `r0poe-mls6-a1e7aa15` asked it with somebody watching. Both arms came back
+powered, so the differential was not supplied and `supports_poe` stayed UNKNOWN.
+`AccessPoint-PT` is lit the moment it exists, with or without inline power, so
+the eleven access-point bindings among the 43 cannot be covered by *this*
+method — see
+[POE_ACCESSPOINT_DIFFERENTIAL_20260907.md](POE_ACCESSPOINT_DIFFERENTIAL_20260907.md).
 
-Factory structure already shows that no generic Packet Tracer access point
-accepts `eAccessPointPowerAdaptor`, while the `7960` that already qualified
-does accept `eIpPhonePowerAdapter`. If a receipt records both arms powered,
-that converts a structural finding into a behavioural one and settles the 11
-access-point bindings. If it records the candidate powered and the control not
-powered, the structural reading is wrong and the whole design reopens.
+Do not re-run an access-point episode with this fixture. It has an answer.
+Closing those bindings needs an observable read at the delivering end instead;
+`show power inline` through the registered IOS query mechanism is the named
+candidate, and it is not qualified yet.
 
-Either way one receipt is decisive, which is not true of any other episode.
+## Which episode to run, and why
+
+A scope fails as a whole: one binding whose control is lit invalidates the
+entire episode it sits in. So every remaining episode is phone-only.
+
+| Episode | Candidate | Bindings | What it establishes |
+| --- | --- | --- | --- |
+| `3560-phones` | `3560-24PS` | 23 | all 21 demanded `7960/Switch` triples, and capacity 23 |
+| `3650-phones` | `3650-24PS` | 12 | all 11 demanded `7960/Switch` triples, and capacity 12 |
+
+Each covers every demanded phone triple for its model and then extends, with
+the same `7960`, onto further exact access ports of the same switch until the
+episode reaches the simultaneous capacity the design demands of that model.
+`3650` evidence is acquired independently; nothing is derived from the `3560`.
 
 ## Before starting
 
@@ -37,7 +56,7 @@ Packet Tracer `9.0.1.0858` open, Realtime, workspace empty of semantic devices.
 From the `cplive-ripv2` worktree, with its own interpreter:
 
 ```powershell
-.\.venv\Scripts\python.exe tmp\router0_poe_acquire.py --group mls6 --execute
+.\.venv\Scripts\python.exe tmp\poe_acquire_governed.py --episode 3560-phones --window-seconds 1800 --execute
 ```
 
 The harness enforces every gate before it mutates anything: clean worktree,
@@ -52,19 +71,19 @@ It then builds the fixture and prints one line:
 {"event": "CAPTURE_PENDING", "run_id": "...", "output": "...", "deadline": "...", "fixture": {...}}
 ```
 
-The exact bindings for this group, rederived from source:
+The exact bindings are rederived from source on every invocation and printed
+before anything is created; run without `--execute` to see them first.
 
-| Arm | Switch | Port | Endpoint | Endpoint port |
-| --- | --- | --- | --- | --- |
-| candidate | `3560-24PS` | `FastEthernet0/13` | `AccessPoint-PT` | `Port 0` |
-| control | `2960-24TT` | `FastEthernet0/1` | `AccessPoint-PT` | `Port 0` |
+## Observe, then return the receipt
 
-## Observe, then write the receipt
+Each arm now occupies its own band on the canvas: candidates on the left,
+controls on the right, each block led by its switch. Read the two blocks and
+record what is actually on screen.
 
-Look at both access points in Packet Tracer and record what is actually on
-screen. Write `receipt.json` **inside the run's own `output` directory**, then
-type `receipt.json` on the harness's stdin before the deadline. Typing `abort`
-ends the episode cleanly.
+Write `receipt.json` **inside the run's own `output` directory**, then create an
+empty `receipt.ready` beside it before the deadline. Creating a file named
+`abort` instead ends the episode cleanly. The window is a bounded CLI argument
+capped at one hour; nothing arriving inside it still fails closed to UNKNOWN.
 
 ```json
 {
@@ -78,39 +97,45 @@ ends the episode cleanly.
   "bindings": [
     {
       "binding": {
-        "candidate_port": "FastEthernet0/13",
+        "candidate_port": "FastEthernet0/1",
         "comparison_port": "FastEthernet0/1",
-        "endpoint_model": "AccessPoint-PT",
-        "endpoint_port": "Port 0"
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
       },
       "candidate": {
         "switch_name": "<exact name from the fixture>",
         "switch_model": "3560-24PS",
-        "switch_port": "FastEthernet0/13",
+        "switch_port": "FastEthernet0/1",
         "endpoint_name": "<exact name from the fixture>",
-        "endpoint_model": "AccessPoint-PT",
-        "endpoint_port": "Port 0",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
         "state": "powered",
         "visible_indicator": "<what you saw, in your words>",
         "switch_ready": true,
-        "link_ready": true
+        "link_ready": true,
+        "endpoint_settled": true
       },
       "comparison": {
         "switch_name": "<exact name from the fixture>",
         "switch_model": "2960-24TT",
         "switch_port": "FastEthernet0/1",
         "endpoint_name": "<exact name from the fixture>",
-        "endpoint_model": "AccessPoint-PT",
-        "endpoint_port": "Port 0",
-        "state": "powered",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "state": "not_powered",
         "visible_indicator": "<what you saw, in your words>",
         "switch_ready": true,
-        "link_ready": true
+        "link_ready": true,
+        "endpoint_settled": true
       }
     }
   ]
 }
 ```
+
+One such entry per binding, so a 23-binding episode carries 23 of them, each
+echoing its own exact ports. `capture-request.json` in the run directory holds
+every name to copy.
 
 Rules the validator enforces, so they are worth knowing before you type:
 
@@ -119,12 +144,15 @@ Rules the validator enforces, so they are worth knowing before you type:
 - `simultaneous` must be `true`, and it must be true: both arms seen in one
   episode, not one after the other.
 - `observer_id` must be non-empty and unpadded.
+- `switch_ready`, `link_ready` and `endpoint_settled` all default to `false`
+  and all three must be `true`. Omitting `endpoint_settled` is the easy way to
+  turn a good reading into `unobservable`.
 - every name, model and port must match the fixture exactly.
 
 `state` is one of `powered`, `not_powered`, `unobservable`. Record what you
-see. **Both arms powered is a real and useful result** — it is the outcome the
-factory evidence predicts, and reporting it settles the question. Do not adjust
-an observation to make a run look successful, and use `unobservable` when the
+see, per binding. A partial result — some candidates lit and some dark — is a
+real measurement of capacity and must be reported as it is. Do not adjust an
+observation to make a run look successful, and use `unobservable` when the
 indicator genuinely cannot be read.
 
 ## After the receipt
@@ -142,8 +170,9 @@ somebody can watch the screen for the next five minutes.
 
 ## What this does not do
 
-One receipt for this binding does not admit Router0. Admission needs 43 exact
-bindings — 30 on `3560-24PS` with 23 simultaneous on one device, and 13 on
-`3650-24PS` with 12 simultaneous — and `poe_ports` is 1 today. This episode
-settles whether the 11 access-point bindings among them are reachable at all,
-which decides whether the remaining phone episodes are worth running.
+These two episodes do not admit Router0. Admission needs all 43 exact bindings
+— 30 on `3560-24PS` with 23 simultaneous on one device, and 13 on `3650-24PS`
+with 12 simultaneous — and 11 of those 43 are access points that cannot be
+qualified at all. What the phone episodes can do is remove the phone side as a
+blocker, raise `poe_ports` from 1, and leave the access-point gap as the single
+named reason the composition is still refused.

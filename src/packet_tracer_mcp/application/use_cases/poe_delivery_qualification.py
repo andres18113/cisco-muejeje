@@ -64,6 +64,8 @@ from ...domain.enterprise.services.poe_claims import (
 
 _PROBE_ID = "poe-delivery-qualification"
 _PROBE_VERSION = "2"
+_CANDIDATE_ARM = "candidate"
+_COMPARISON_ARM = "comparison"
 
 
 class PoEDeliveryFixtureRuntime(Protocol):
@@ -74,7 +76,12 @@ class PoEDeliveryFixtureRuntime(Protocol):
     def inventory_fingerprint(self) -> str: ...
 
     def create_device(
-        self, model: str, temporary_name: str, required_ports: tuple[str, ...],
+        self,
+        model: str,
+        temporary_name: str,
+        required_ports: tuple[str, ...],
+        *,
+        arm: str | None = None,
     ) -> PoEDeliveryDeviceIdentity: ...
 
     def create_link(
@@ -420,6 +427,7 @@ class PoEDeliveryQualificationService:
             attempted,
             created,
             switch_attempts,
+            _CANDIDATE_ARM,
         )
         comparison_switch = self._create_device(
             request.comparison_model,
@@ -428,6 +436,7 @@ class PoEDeliveryQualificationService:
             attempted,
             created,
             switch_attempts,
+            _COMPARISON_ARM,
         )
         binding_identities: list[PoEDeliveryBindingFixtureIdentity] = []
         for index, binding in enumerate(request.bindings, start=1):
@@ -438,6 +447,7 @@ class PoEDeliveryQualificationService:
                 attempted,
                 created,
                 endpoint_attempts,
+                _CANDIDATE_ARM,
             )
             comparison_endpoint = self._create_device(
                 binding.endpoint_model,
@@ -446,6 +456,7 @@ class PoEDeliveryQualificationService:
                 attempted,
                 created,
                 endpoint_attempts,
+                _COMPARISON_ARM,
             )
             binding_identities.append(PoEDeliveryBindingFixtureIdentity(
                 request=binding,
@@ -480,10 +491,11 @@ class PoEDeliveryQualificationService:
         attempted: list[str],
         created: list[str],
         cleanup_group: list[str],
+        arm: str,
     ) -> PoEDeliveryDeviceIdentity:
         attempted.append(name)
         cleanup_group.append(name)
-        device = self._runtime.create_device(model, name, required_ports)
+        device = self._runtime.create_device(model, name, required_ports, arm=arm)
         # A returned identity proves that an object may exist even if its
         # model/ports drifted, so it must remain in the cleanup ledger.
         created.append(name)

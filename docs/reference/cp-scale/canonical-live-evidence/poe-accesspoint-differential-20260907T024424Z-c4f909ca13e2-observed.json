@@ -1,0 +1,233 @@
+{
+  "claim_semantics": "The control arm was OBSERVED powered, not unobservable. That is a behavioural fact about AccessPoint-PT on this exact build, not a measured refusal of PoE by any switch. supports_poe stays UNKNOWN for 3560-24PS and 3650-24PS; nothing here authorizes UNSUPPORTED, and nothing here authorizes a PoE positive.",
+  "cleanup": {
+    "attempted_identities": [
+      "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_SWITCH",
+      "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_SWITCH",
+      "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_ENDPOINT_01"
+    ],
+    "cleanup_failed": [],
+    "cleanup_status": "clean",
+    "deleted_identities": [
+      "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_ENDPOINT_01",
+      "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_SWITCH",
+      "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_SWITCH"
+    ],
+    "final_inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1",
+    "initial_inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0;Power Distribution Device/Power Distribution Device1",
+    "inventory_restored": true
+  },
+  "closure": {
+    "hardware_status": "unresolved",
+    "product_admission": false,
+    "realtime": {
+      "current_index": 0,
+      "frames": 0,
+      "message": "simulation_state_readback",
+      "observed": true,
+      "sim_time": 9683900,
+      "simulation_mode": false
+    },
+    "workspace": {
+      "devices": [
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device0",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device1",
+          "ports": []
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory",
+      "observed": true
+    }
+  },
+  "decision": "ACCESSPOINT_DIFFERENTIAL_UNCONSTRUCTIBLE_NO_CAPABILITY_PROMOTION",
+  "episode": "mls6",
+  "evidence_role": "BEHAVIOURAL_CONTROL_ARM_OBSERVATION_NOT_A_POE_POSITIVE",
+  "fixture": {
+    "bindings": [
+      {
+        "candidate_endpoint": {
+          "model": "AccessPoint-PT",
+          "name": "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_ENDPOINT_01",
+          "observed_ports": [
+            "Port 0"
+          ]
+        },
+        "candidate_link": {
+          "first": {
+            "device_model": "3560-24PS",
+            "device_name": "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_SWITCH",
+            "port": "FastEthernet0/13"
+          },
+          "second": {
+            "device_model": "AccessPoint-PT",
+            "device_name": "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_ENDPOINT_01",
+            "port": "Port 0"
+          }
+        },
+        "candidate_switch": {
+          "model": "3560-24PS",
+          "name": "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_SWITCH",
+          "observed_ports": [
+            "FastEthernet0/13"
+          ]
+        },
+        "comparison_endpoint": {
+          "model": "AccessPoint-PT",
+          "name": "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_ENDPOINT_01",
+          "observed_ports": [
+            "Port 0"
+          ]
+        },
+        "comparison_link": {
+          "first": {
+            "device_model": "2960-24TT",
+            "device_name": "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_SWITCH",
+            "port": "FastEthernet0/1"
+          },
+          "second": {
+            "device_model": "AccessPoint-PT",
+            "device_name": "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_ENDPOINT_01",
+            "port": "Port 0"
+          }
+        },
+        "comparison_switch": {
+          "model": "2960-24TT",
+          "name": "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_SWITCH",
+          "observed_ports": [
+            "FastEthernet0/1"
+          ]
+        },
+        "request": {
+          "candidate_port": "FastEthernet0/13",
+          "comparison_port": "FastEthernet0/1",
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0"
+        }
+      }
+    ],
+    "candidate_switch": {
+      "model": "3560-24PS",
+      "name": "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_SWITCH",
+      "observed_ports": [
+        "FastEthernet0/13"
+      ]
+    },
+    "comparison_switch": {
+      "model": "2960-24TT",
+      "name": "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_SWITCH",
+      "observed_ports": [
+        "FastEthernet0/1"
+      ]
+    }
+  },
+  "fixture_fingerprint": "ebce2564ab0e4dc968942ded0880ef633937abac28ce2edc99f0f2c5c708b2a1",
+  "harness_sha256": "b0b29bfbb6a1797ab283e7a42f254dab15775ea41a78f82f77f3bc4a57390268",
+  "live_session_safety": {
+    "active_workspace_binding": null,
+    "canonical_observed_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "canonical_path": "C:\\Users\\Andres\\Downloads\\V5.2.pts",
+    "canonical_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "canonical_verified_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "crash_detected": false,
+    "disposable_modified": false,
+    "disposable_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\tmp\\router0-poe-live\\r0poe-mls6-a1e7aa15\\files\\r0poe-mls6-a1e7aa15\\packet-tracer-live.pts",
+    "disposable_post_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "disposable_pre_run_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "failure_reasons": [],
+    "integrity_verified": true,
+    "path_identity_semantics": "windows",
+    "positive_claim_allowed": true,
+    "restoration_attempted": false,
+    "restoration_verified": null,
+    "runtime_healthy": true,
+    "session_reusable": true,
+    "unexpected_canonical_modification": false
+  },
+  "observation": {
+    "bindings": [
+      {
+        "binding": {
+          "candidate_port": "FastEthernet0/13",
+          "comparison_port": "FastEthernet0/1",
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_port": "Port 0"
+        },
+        "candidate": {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_name": "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_ENDPOINT_01",
+          "endpoint_port": "Port 0",
+          "endpoint_settled": true,
+          "link_ready": true,
+          "state": "powered",
+          "switch_model": "3560-24PS",
+          "switch_name": "__MCP_POE_r0poe-mls6-a1e7aa15_CANDIDATE_SWITCH",
+          "switch_port": "FastEthernet0/13",
+          "switch_ready": true,
+          "visible_indicator": "chassis lit, device shown on in its Physical view"
+        },
+        "comparison": {
+          "endpoint_model": "AccessPoint-PT",
+          "endpoint_name": "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_ENDPOINT_01",
+          "endpoint_port": "Port 0",
+          "endpoint_settled": true,
+          "link_ready": true,
+          "state": "powered",
+          "switch_model": "2960-24TT",
+          "switch_name": "__MCP_POE_r0poe-mls6-a1e7aa15_COMPARISON_SWITCH",
+          "switch_port": "FastEthernet0/1",
+          "switch_ready": true,
+          "visible_indicator": "chassis lit, device shown on in its Physical view"
+        }
+      }
+    ],
+    "method": "manual_visible_power_state",
+    "observed_at": "2026-09-07T02:44:24.350725Z",
+    "observer_id": "andres18113",
+    "simultaneous": true
+  },
+  "outcome": {
+    "capability_status": "unknown",
+    "capability_verified": false,
+    "execution_status": "verify_failed",
+    "failure_reason": "[CAPABILITY_PROBE_FAILED] The comparison arm did not provide the required differential power state. \u2192 Sugerencia: Keep capability UNKNOWN and repeat only in a fresh governed fixture.",
+    "observation_status": "observed",
+    "observed_value": null,
+    "verification_status": "failed"
+  },
+  "packet_tracer_build": "9.0.1.0858",
+  "physical_incapability_established": false,
+  "request": {
+    "bindings": [
+      {
+        "candidate_port": "FastEthernet0/13",
+        "comparison_port": "FastEthernet0/1",
+        "endpoint_model": "AccessPoint-PT",
+        "endpoint_port": "Port 0"
+      }
+    ],
+    "candidate_model": "3560-24PS",
+    "comparison_model": "2960-24TT",
+    "packet_tracer_build": "9.0.1.0858"
+  },
+  "request_id": "bfe4dfe39f144a6bbe25a33c98c4b086",
+  "router0_attempts_consumed": 0,
+  "router3_executed": false,
+  "run_id": "r0poe-mls6-a1e7aa15",
+  "runtime_snapshot": {
+    "path_name": "90607d898ec95e42408df92484b3434f67e64e34d240116b34b18a3c6e4f77fd.json",
+    "sha256": "a3b012d07713169e04c78e54371e8967d24b20197a65db9747c483a8f09f472a"
+  },
+  "schema": "cp-scale-poe-accesspoint-differential-v1",
+  "source_sha": "c4f909ca13e289fd91c6be243de5258c1a2f29d8"
+}

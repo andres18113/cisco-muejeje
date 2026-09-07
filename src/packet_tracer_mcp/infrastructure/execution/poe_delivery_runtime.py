@@ -41,6 +41,16 @@ _LINK_READBACK_TIMEOUT_SECONDS = 4.0
 _FACTORY_TREE_MAX_NODES = 512
 _FACTORY_TREE_MAX_DEPTH = 12
 
+# One canvas carries both arms of a simultaneous episode. Interleaving them by
+# creation order forces the observer to identify 46 identical endpoints by name
+# one at a time; giving each arm its own horizontal band turns the reading into
+# a comparison of two blocks. Presentation only -- position is never authority.
+_ARM_BAND_ORIGIN_X = {"candidate": 100, "comparison": 720, None: 1340}
+_ARM_BAND_COLUMNS = 4
+_ARM_BAND_COLUMN_SPACING = 120
+_ARM_BAND_ROW_SPACING = 120
+_ARM_BAND_ORIGIN_Y = 100
+
 
 class PacketTracerPoEDeliveryFixtureRuntime:
     """Create and read back the narrow temporary PoE qualification fixture."""
@@ -59,7 +69,7 @@ class PacketTracerPoEDeliveryFixtureRuntime:
         # A creation timeout can mean that PT mutated before the acknowledgement
         # was lost.  Record the name before transport so cleanup remains possible.
         self._attempted_device_names: set[str] = set()
-        self._creation_attempt_count = 0
+        self._creation_attempt_counts: dict[str | None, int] = {}
 
     def packet_tracer_build(self) -> str | None:
         return self._packet_tracer_build
@@ -195,12 +205,18 @@ class PacketTracerPoEDeliveryFixtureRuntime:
         model: str,
         temporary_name: str,
         required_ports: tuple[str, ...],
+        *,
+        arm: str | None = None,
     ) -> PoEDeliveryDeviceIdentity:
         """Create one device and observe its exact model/name/required ports.
 
         This is intentionally separate from ``create_temporary_device``: the
         ordinary probe readiness path reads power control getters, which are not
         an observation of powered-endpoint delivery.
+
+        ``arm`` places the device in that arm's presentation band so a large
+        simultaneous fixture stays readable. It carries no authority: identity,
+        links and the observation itself are unchanged by where a device sits.
         """
 
         catalog_model = resolve_model(model)
@@ -219,10 +235,17 @@ class PacketTracerPoEDeliveryFixtureRuntime:
         # observer. PT clamps the former off-canvas (9000, 9000) onto one point.
         # Reserve before dispatch: an ambiguous acknowledgement cannot make a
         # later endpoint reuse a potentially occupied presentation position.
-        ordinal = self._creation_attempt_count
-        self._creation_attempt_count += 1
-        x_literal = json.dumps(160 + 320 * (ordinal % 4))
-        y_literal = json.dumps(160 + 140 * (ordinal // 4))
+        band = arm if arm in _ARM_BAND_ORIGIN_X else None
+        ordinal = self._creation_attempt_counts.get(band, 0)
+        self._creation_attempt_counts[band] = ordinal + 1
+        x_literal = json.dumps(
+            _ARM_BAND_ORIGIN_X[band]
+            + _ARM_BAND_COLUMN_SPACING * (ordinal % _ARM_BAND_COLUMNS)
+        )
+        y_literal = json.dumps(
+            _ARM_BAND_ORIGIN_Y
+            + _ARM_BAND_ROW_SPACING * (ordinal // _ARM_BAND_COLUMNS)
+        )
         script = "".join((
             "var __attempted=false;try{var __model=", model_literal, ",__name=", name_literal,
             ",__required=", ports_literal, ",__type=", type_literal,
