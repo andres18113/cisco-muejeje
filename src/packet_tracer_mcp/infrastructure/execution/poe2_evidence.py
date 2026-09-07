@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from datetime import datetime
 import re
 from ...domain.enterprise.models.poe2 import PoE2Capture, PoE2Evidence
 from ...domain.enterprise.rules.poe2 import validate_poe2_evidence as _validate
@@ -53,7 +55,7 @@ def completeness(observation: dict, expected_prompt: str, stable: bool,
         observer_complete=observation.get("capture_complete") is True,
         all_pagers_traversed=dispatch.get("pager_continuation") in
             {"completed", "not_encountered"} and dispatch.get("pager_pages_captured", 0) >= 1,
-        expected_privileged_prompt_reached=privileged and
+        expected_privileged_prompt_reached=privileged and dispatch.get("expected_prompt") == expected_prompt and
             output.rstrip().endswith("\n" + expected_prompt) and
             dispatch.get("session_state") == "exec_prompt_ready",
         no_pending_continuation=dispatch.get("truncated_by_pager") is False and
@@ -111,7 +113,70 @@ def capture_delivery(capture: PoE2Capture, raw: bytes, switch_name: str) -> str:
     return first["ports"][0]["delivery"]
 
 
+def off_calibration_valid(reference: dict, *, before_utc: str) -> bool:
+    """An independently absent physical path calibrates one PSE off/zero state.
+
+    This is semantic reference only. It can never stand in for AP captures.
+    """
+    try:
+        body = reference["evidence_raw"].encode("utf-8")
+        if hashlib.sha256(body).hexdigest() != reference["sha256"]:
+            return False
+        cal = json.loads(body)
+        def moment(text):
+            value = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if value.tzinfo is None:
+                raise ValueError("Unzoned calibration timestamp")
+            return value
+        if not (cal["schema_version"] == 1 and cal["kind"] == "poe2-pse-off-calibration"
+                and cal["productive"] is False and cal["START_HEAD"] == START_HEAD
+                and cal["packet_tracer_build"] == BUILD and not cal["problems"]
+                and re.fullmatch(r"[0-9a-f]{40}", cal["frozen_live_sha"])
+                and moment(cal["started_at_utc"]) < moment(cal["completed_at_utc"]) < moment(before_utc)):
+            return False
+        fixture = cal["facts"]["fixture"]
+        switch = fixture["switch"]["name"]
+        endpoint = fixture["endpoint"]["name"]
+        link = {"first": {"device_name": switch, "device_model": BINDING["switch_model"], "port": BINDING["switch_port"]},
+                "second": {"device_name": endpoint, "device_model": "7960", "port": "Switch"}}
+        if fixture["switch"]["model"] != BINDING["switch_model"] or fixture["endpoint"]["model"] != "7960" or fixture["link"] != link or cal["facts"]["reconnected_link"] != link:
+            return False
+        absent = cal["facts"]["pd_absent"]
+        if absent["endpoint_absent"] is not True or absent["links"] != 0:
+            return False
+        captures = [PoE2Capture.model_validate(c) for c in cal["captures"]]
+        if [c.raw_file for c in captures] != ["connected_1.txt", "pd_absent.txt", "connected_2.txt"]:
+            return False
+        previous = moment(cal["started_at_utc"])
+        states = []
+        for c in captures:
+            if not previous <= moment(c.started_at_utc) < moment(c.completed_at_utc) < moment(cal["completed_at_utc"]):
+                return False
+            previous = moment(c.completed_at_utc)
+            states.append(capture_delivery(c, reference["raw_files"][c.raw_file].encode(), switch))
+        if states != ["delivering", "not_delivering", "delivering"]:
+            return False
+        row = captures[1].observation["ports"][0]["row"]
+        if not row or row["admin"] != "auto" or row["oper"] != "off" or row["power_watts"] != 0:
+            return False
+        if not moment(captures[0].completed_at_utc) <= moment(absent["observed_at_utc"]) <= moment(captures[1].started_at_utc):
+            return False
+        restoration = cal["restoration"]
+        if not all(restoration.get(k) is True for k in ("clean", "auto_proven", "inventory_restored", "mailbox_clean", "runtime_healthy", "frozen_source_unchanged")):
+            return False
+        restore = PoE2Capture.model_validate(restoration["capture"])
+        if not previous <= moment(restore.started_at_utc) < moment(restore.completed_at_utc) <= moment(cal["completed_at_utc"]):
+            return False
+        return capture_delivery(restore, reference["raw_files"][restore.raw_file].encode(), switch) == "delivering"
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def validate_poe2_evidence(bundle: PoE2Evidence, raw_files: dict[str, bytes]):
     return _validate(bundle, raw_files, expected_start_head=START_HEAD,
                      expected_build=BUILD, expected_binding=BINDING,
-                     capture_verifier=capture_delivery)
+                     capture_verifier=capture_delivery,
+                     off_state_calibrated=off_calibration_valid(
+                         bundle.calibration_reference.get("off_semantics", {}),
+                         before_utc=bundle.started_at_utc,
+                     ))

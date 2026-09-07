@@ -1,0 +1,649 @@
+{
+  "schema_version": 1,
+  "experiment_id": "poe2-20260907T164304Z-496d77e1",
+  "started_at_utc": "2026-09-07T16:43:04.522420Z",
+  "completed_at_utc": "2026-09-07T16:44:15.959216Z",
+  "START_HEAD": "580a64586e51cfb813fc2af48de5bb9a99f535af",
+  "start_head_committed_at_utc": "2026-09-07T08:30:53-05:00",
+  "frozen_live_sha": "c9be9d2408e99ac45f0dffa081d350564648acbc",
+  "packet_tracer_build": "9.0.1.0858",
+  "exact_binding": {
+    "switch_model": "3560-24PS",
+    "switch_port": "FastEthernet0/13",
+    "endpoint_model": "AccessPoint-PT",
+    "endpoint_port": "Port 0"
+  },
+  "fixture": {
+    "switch": {
+      "name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+      "model": "3560-24PS",
+      "observed_ports": [
+        "FastEthernet0/13"
+      ]
+    },
+    "endpoint": {
+      "name": "MCP-POE2-AP-poe2-20260907T164304Z-496d77e1",
+      "model": "AccessPoint-PT",
+      "observed_ports": [
+        "Port 0"
+      ]
+    },
+    "link": {
+      "first": {
+        "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "device_model": "3560-24PS",
+        "port": "FastEthernet0/13"
+      },
+      "second": {
+        "device_name": "MCP-POE2-AP-poe2-20260907T164304Z-496d77e1",
+        "device_model": "AccessPoint-PT",
+        "port": "Port 0"
+      }
+    },
+    "external_power_condition": "as_created_unchanged"
+  },
+  "baseline": {
+    "verified_at_utc": "2026-09-07T16:43:04.028388Z",
+    "local_head": "c9be9d2408e99ac45f0dffa081d350564648acbc",
+    "remote_head": "c9be9d2408e99ac45f0dffa081d350564648acbc",
+    "actions_run": {
+      "conclusion": "success",
+      "databaseId": 34144051159,
+      "headSha": "c9be9d2408e99ac45f0dffa081d350564648acbc",
+      "name": "tests",
+      "status": "completed",
+      "url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34144051159"
+    },
+    "jobs": [
+      {
+        "name": "pytest (windows-latest, 3.13)",
+        "conclusion": "success",
+        "head_sha": "c9be9d2408e99ac45f0dffa081d350564648acbc",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34144051159/job/101812090066"
+      },
+      {
+        "name": "pytest (ubuntu-latest, 3.11)",
+        "conclusion": "success",
+        "head_sha": "c9be9d2408e99ac45f0dffa081d350564648acbc",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34144051159/job/101812090314"
+      },
+      {
+        "name": "pytest (ubuntu-latest, 3.13)",
+        "conclusion": "success",
+        "head_sha": "c9be9d2408e99ac45f0dffa081d350564648acbc",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34144051159/job/101812090367"
+      },
+      {
+        "name": "pytest (windows-latest, 3.11)",
+        "conclusion": "success",
+        "head_sha": "c9be9d2408e99ac45f0dffa081d350564648acbc",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34144051159/job/101812090373"
+      }
+    ],
+    "strict_e5": true,
+    "derived_binding": {
+      "endpoint_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/access_point/001",
+      "device_id": "sw-acc-multilayer-branch-mls6-01",
+      "device_port": "FastEthernet0/13",
+      "endpoint_model": "AccessPoint-PT",
+      "endpoint_port": "Port 0",
+      "provenance": "canonical_reference"
+    },
+    "initial_START_HEAD_verified": true,
+    "processes": [
+      {
+        "ProcessId": 12960,
+        "ParentProcessId": 28072,
+        "Name": "PacketTracer.exe",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" "
+      },
+      {
+        "ProcessId": 28932,
+        "ParentProcessId": 12960,
+        "Name": "PacketTracer.exe",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\"  --progress-bar-server"
+      },
+      {
+        "ProcessId": 37688,
+        "ParentProcessId": 3052,
+        "Name": "python.exe",
+        "ExecutablePath": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+        "CommandLine": "\"C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe\" -u tools/poe2_ap_live.py --execute"
+      },
+      {
+        "ProcessId": 5740,
+        "ParentProcessId": 37688,
+        "Name": "python.exe",
+        "ExecutablePath": "C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "CommandLine": "\"C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -u tools/poe2_ap_live.py --execute"
+      }
+    ],
+    "import_isolation": {
+      "result": "ISOLATED: Aislamiento de import verificado. (C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py)",
+      "executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+      "production_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py",
+      "loaded_namespaces": [
+        "packet_tracer_mcp"
+      ]
+    },
+    "fresh_authenticated_bridge": {
+      "pid": 5740,
+      "token_fingerprint": "ce7e0cb6f25fe6a8",
+      "authenticated_status": 200,
+      "unauthenticated_status": 401,
+      "active_pt_transport": "file_bridge_user_acl",
+      "webview_http_connection_claimed": false
+    },
+    "environment": {
+      "found": true,
+      "saved_filename": "",
+      "pt_version": "9.0.1.0858",
+      "simulation_mode": false,
+      "devices": 0,
+      "links": 0
+    },
+    "inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "devices": [],
+    "boot": {
+      "state": "operational_ready",
+      "attempts": 1,
+      "elapsed_ms": 312,
+      "power": null,
+      "command_prompt": false,
+      "terminal_available": true,
+      "terminal_kind": "ios_command_line",
+      "booting": false,
+      "configuration_channel": false,
+      "components_seen": [],
+      "failure_reason": ""
+    }
+  },
+  "calibration_reference": {
+    "path": "docs/reference/cp-scale/canonical-live-evidence/poe-inline-calibration-poe1-c5626851.json",
+    "sha256": "f870b200d14e79c6a11bd656664f543fa5b91da9c41ab6310cf1ff3cd4584dd8",
+    "productive": false
+  },
+  "captures": [
+    {
+      "label": "AUTO_1",
+      "started_at_utc": "2026-09-07T16:43:14.999724Z",
+      "completed_at_utc": "2026-09-07T16:43:26.284088Z",
+      "expected_prompt": "Switch>",
+      "observation": {
+        "switch_identity": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "status": "observed",
+        "ports": [
+          {
+            "port": "FastEthernet0/13",
+            "delivery": "not_delivering",
+            "row": {
+              "interface": "Fa0/13",
+              "admin": "auto",
+              "oper": "off",
+              "power_watts": 0.0,
+              "device": "n/a",
+              "power_class": "n/a",
+              "max_watts": 15.4
+            }
+          }
+        ],
+        "refusal_reason": "",
+        "capture_complete": true,
+        "fresh_output_observed": true,
+        "device_identity_provenance": "confirmed_unique",
+        "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "summary_used_watts": 0.0,
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "command_result": {
+          "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "query_id": "qualification_show_power_inline",
+          "executed": true,
+          "output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "failure_reason": "",
+          "duration_ms": 3859,
+          "session_state": "exec_prompt_ready",
+          "fresh_output_observed": true,
+          "window_strategy": "prefix_delta",
+          "truncated_by_pager": false,
+          "output_complete": true,
+          "pager_pages_captured": 2,
+          "pager_continuation": "completed",
+          "dispatch_classification": "dispatched",
+          "echo_observed": "show power inline",
+          "dispatch_attempts": 1,
+          "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "device_identity_provenance": "confirmed_unique",
+          "device_identity_evidence": "session_transcript_continuity"
+        }
+      },
+      "repeat_observation": {
+        "switch_identity": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "status": "observed",
+        "ports": [
+          {
+            "port": "FastEthernet0/13",
+            "delivery": "not_delivering",
+            "row": {
+              "interface": "Fa0/13",
+              "admin": "auto",
+              "oper": "off",
+              "power_watts": 0.0,
+              "device": "n/a",
+              "power_class": "n/a",
+              "max_watts": 15.4
+            }
+          }
+        ],
+        "refusal_reason": "",
+        "capture_complete": true,
+        "fresh_output_observed": true,
+        "device_identity_provenance": "confirmed_unique",
+        "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "summary_used_watts": 0.0,
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "command_result": {
+          "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "query_id": "qualification_show_power_inline",
+          "executed": true,
+          "output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "failure_reason": "",
+          "duration_ms": 2530,
+          "session_state": "exec_prompt_ready",
+          "fresh_output_observed": true,
+          "window_strategy": "prefix_delta",
+          "truncated_by_pager": false,
+          "output_complete": true,
+          "pager_pages_captured": 2,
+          "pager_continuation": "completed",
+          "dispatch_classification": "dispatched",
+          "echo_observed": "show power inline",
+          "dispatch_attempts": 1,
+          "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "device_identity_provenance": "confirmed_unique",
+          "device_identity_evidence": "session_transcript_continuity"
+        }
+      },
+      "table_completeness": {
+        "observer_complete": true,
+        "all_pagers_traversed": true,
+        "expected_privileged_prompt_reached": false,
+        "no_pending_continuation": true,
+        "attributable": true,
+        "stable": true,
+        "dispatch_integrity_valid": true,
+        "fresh": true
+      },
+      "stable": true,
+      "raw_file": "auto_1.txt",
+      "raw_sha256": "d338b3213b4ca316a8132bd56540d13edf6e2dcfc5c61abbae425e46f6855e11"
+    },
+    {
+      "label": "NEVER",
+      "started_at_utc": "2026-09-07T16:43:32.792856Z",
+      "completed_at_utc": "2026-09-07T16:43:42.966104Z",
+      "expected_prompt": "Switch>",
+      "observation": {
+        "switch_identity": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "status": "observed",
+        "ports": [
+          {
+            "port": "FastEthernet0/13",
+            "delivery": "not_delivering",
+            "row": null
+          }
+        ],
+        "refusal_reason": "",
+        "capture_complete": true,
+        "fresh_output_observed": true,
+        "device_identity_provenance": "confirmed_unique",
+        "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "summary_used_watts": 0.0,
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\nFa0/18    auto   off        0.0     n/a                 n/a   15.4\n Fa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "command_result": {
+          "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "query_id": "qualification_show_power_inline",
+          "executed": true,
+          "output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\nFa0/18    auto   off        0.0     n/a                 n/a   15.4\n Fa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "failure_reason": "",
+          "duration_ms": 2764,
+          "session_state": "exec_prompt_ready",
+          "fresh_output_observed": true,
+          "window_strategy": "prefix_delta",
+          "truncated_by_pager": false,
+          "output_complete": true,
+          "pager_pages_captured": 2,
+          "pager_continuation": "completed",
+          "dispatch_classification": "dispatched",
+          "echo_observed": "show power inline",
+          "dispatch_attempts": 1,
+          "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "device_identity_provenance": "confirmed_unique",
+          "device_identity_evidence": "session_transcript_continuity"
+        }
+      },
+      "repeat_observation": {
+        "switch_identity": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "status": "observed",
+        "ports": [
+          {
+            "port": "FastEthernet0/13",
+            "delivery": "not_delivering",
+            "row": null
+          }
+        ],
+        "refusal_reason": "",
+        "capture_complete": true,
+        "fresh_output_observed": true,
+        "device_identity_provenance": "confirmed_unique",
+        "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "summary_used_watts": 0.0,
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\nFa0/18    auto   off        0.0     n/a                 n/a   15.4\n Fa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "command_result": {
+          "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "query_id": "qualification_show_power_inline",
+          "executed": true,
+          "output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\nFa0/18    auto   off        0.0     n/a                 n/a   15.4\n Fa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "failure_reason": "",
+          "duration_ms": 2531,
+          "session_state": "exec_prompt_ready",
+          "fresh_output_observed": true,
+          "window_strategy": "prefix_delta",
+          "truncated_by_pager": false,
+          "output_complete": true,
+          "pager_pages_captured": 2,
+          "pager_continuation": "completed",
+          "dispatch_classification": "dispatched",
+          "echo_observed": "show power inline",
+          "dispatch_attempts": 1,
+          "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "device_identity_provenance": "confirmed_unique",
+          "device_identity_evidence": "session_transcript_continuity"
+        }
+      },
+      "table_completeness": {
+        "observer_complete": true,
+        "all_pagers_traversed": true,
+        "expected_privileged_prompt_reached": false,
+        "no_pending_continuation": true,
+        "attributable": true,
+        "stable": true,
+        "dispatch_integrity_valid": true,
+        "fresh": true
+      },
+      "stable": true,
+      "raw_file": "never.txt",
+      "raw_sha256": "1baec69545dbf387e76dd486fcf9e71ddb5a0c9def2c150da7c068c90d4a2379"
+    },
+    {
+      "label": "AUTO_2",
+      "started_at_utc": "2026-09-07T16:43:49.442403Z",
+      "completed_at_utc": "2026-09-07T16:43:58.202214Z",
+      "expected_prompt": "Switch>",
+      "observation": {
+        "switch_identity": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "status": "observed",
+        "ports": [
+          {
+            "port": "FastEthernet0/13",
+            "delivery": "not_delivering",
+            "row": {
+              "interface": "Fa0/13",
+              "admin": "auto",
+              "oper": "off",
+              "power_watts": 0.0,
+              "device": "n/a",
+              "power_class": "n/a",
+              "max_watts": 15.4
+            }
+          }
+        ],
+        "refusal_reason": "",
+        "capture_complete": true,
+        "fresh_output_observed": true,
+        "device_identity_provenance": "confirmed_unique",
+        "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "summary_used_watts": 0.0,
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "command_result": {
+          "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "query_id": "qualification_show_power_inline",
+          "executed": true,
+          "output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "failure_reason": "",
+          "duration_ms": 1344,
+          "session_state": "exec_prompt_ready",
+          "fresh_output_observed": true,
+          "window_strategy": "prefix_delta",
+          "truncated_by_pager": false,
+          "output_complete": true,
+          "pager_pages_captured": 2,
+          "pager_continuation": "completed",
+          "dispatch_classification": "dispatched",
+          "echo_observed": "show power inline",
+          "dispatch_attempts": 1,
+          "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "device_identity_provenance": "confirmed_unique",
+          "device_identity_evidence": "session_transcript_continuity"
+        }
+      },
+      "repeat_observation": {
+        "switch_identity": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "status": "observed",
+        "ports": [
+          {
+            "port": "FastEthernet0/13",
+            "delivery": "not_delivering",
+            "row": {
+              "interface": "Fa0/13",
+              "admin": "auto",
+              "oper": "off",
+              "power_watts": 0.0,
+              "device": "n/a",
+              "power_class": "n/a",
+              "max_watts": 15.4
+            }
+          }
+        ],
+        "refusal_reason": "",
+        "capture_complete": true,
+        "fresh_output_observed": true,
+        "device_identity_provenance": "confirmed_unique",
+        "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "summary_used_watts": 0.0,
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "command_result": {
+          "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "query_id": "qualification_show_power_inline",
+          "executed": true,
+          "output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "failure_reason": "",
+          "duration_ms": 2532,
+          "session_state": "exec_prompt_ready",
+          "fresh_output_observed": true,
+          "window_strategy": "prefix_delta",
+          "truncated_by_pager": false,
+          "output_complete": true,
+          "pager_pages_captured": 2,
+          "pager_continuation": "completed",
+          "dispatch_classification": "dispatched",
+          "echo_observed": "show power inline",
+          "dispatch_attempts": 1,
+          "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "device_identity_provenance": "confirmed_unique",
+          "device_identity_evidence": "session_transcript_continuity"
+        }
+      },
+      "table_completeness": {
+        "observer_complete": true,
+        "all_pagers_traversed": true,
+        "expected_privileged_prompt_reached": false,
+        "no_pending_continuation": true,
+        "attributable": true,
+        "stable": true,
+        "dispatch_integrity_valid": true,
+        "fresh": true
+      },
+      "stable": true,
+      "raw_file": "auto_2.txt",
+      "raw_sha256": "d338b3213b4ca316a8132bd56540d13edf6e2dcfc5c61abbae425e46f6855e11"
+    }
+  ],
+  "experimental_classification": "UNKNOWN",
+  "integration_result": "NOT_ATTEMPTED",
+  "authority_delta": "none; qualification only",
+  "restoration": {
+    "fresh_readback": {
+      "label": "RESTORE",
+      "started_at_utc": "2026-09-07T16:44:04.207741Z",
+      "completed_at_utc": "2026-09-07T16:44:13.361639Z",
+      "expected_prompt": "Switch>",
+      "observation": {
+        "switch_identity": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "status": "observed",
+        "ports": [
+          {
+            "port": "FastEthernet0/13",
+            "delivery": "not_delivering",
+            "row": {
+              "interface": "Fa0/13",
+              "admin": "auto",
+              "oper": "off",
+              "power_watts": 0.0,
+              "device": "n/a",
+              "power_class": "n/a",
+              "max_watts": 15.4
+            }
+          }
+        ],
+        "refusal_reason": "",
+        "capture_complete": true,
+        "fresh_output_observed": true,
+        "device_identity_provenance": "confirmed_unique",
+        "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "summary_used_watts": 0.0,
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "command_result": {
+          "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "query_id": "qualification_show_power_inline",
+          "executed": true,
+          "output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "failure_reason": "",
+          "duration_ms": 1828,
+          "session_state": "exec_prompt_ready",
+          "fresh_output_observed": true,
+          "window_strategy": "prefix_delta",
+          "truncated_by_pager": false,
+          "output_complete": true,
+          "pager_pages_captured": 2,
+          "pager_continuation": "completed",
+          "dispatch_classification": "dispatched",
+          "echo_observed": "show power inline",
+          "dispatch_attempts": 1,
+          "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "device_identity_provenance": "confirmed_unique",
+          "device_identity_evidence": "session_transcript_continuity"
+        }
+      },
+      "repeat_observation": {
+        "switch_identity": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "status": "observed",
+        "ports": [
+          {
+            "port": "FastEthernet0/13",
+            "delivery": "not_delivering",
+            "row": {
+              "interface": "Fa0/13",
+              "admin": "auto",
+              "oper": "off",
+              "power_watts": 0.0,
+              "device": "n/a",
+              "power_class": "n/a",
+              "max_watts": 15.4
+            }
+          }
+        ],
+        "refusal_reason": "",
+        "capture_complete": true,
+        "fresh_output_observed": true,
+        "device_identity_provenance": "confirmed_unique",
+        "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+        "summary_used_watts": 0.0,
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "command_result": {
+          "device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "query_id": "qualification_show_power_inline",
+          "executed": true,
+          "output": "show power inline\nAvailable:370.0(w)  Used:0.0(w)  Remaining:370.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   off        0.0     n/a                 n/a   15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n Fa0/18    auto   off        0.0     n/a                 n/a   15.4\nFa0/19    auto   off        0.0     n/a                 n/a   15.4\nFa0/20    auto   off        0.0     n/a                 n/a   15.4\nFa0/21    auto   off        0.0     n/a                 n/a   15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "failure_reason": "",
+          "duration_ms": 2546,
+          "session_state": "exec_prompt_ready",
+          "fresh_output_observed": true,
+          "window_strategy": "prefix_delta",
+          "truncated_by_pager": false,
+          "output_complete": true,
+          "pager_pages_captured": 2,
+          "pager_continuation": "completed",
+          "dispatch_classification": "dispatched",
+          "echo_observed": "show power inline",
+          "dispatch_attempts": 1,
+          "observed_device_name": "MCP-POE2-SW-poe2-20260907T164304Z-496d77e1",
+          "device_identity_provenance": "confirmed_unique",
+          "device_identity_evidence": "session_transcript_continuity"
+        }
+      },
+      "table_completeness": {
+        "observer_complete": true,
+        "all_pagers_traversed": true,
+        "expected_privileged_prompt_reached": false,
+        "no_pending_continuation": true,
+        "attributable": true,
+        "stable": true,
+        "dispatch_integrity_valid": true,
+        "fresh": true
+      },
+      "stable": true,
+      "raw_file": "restore.txt",
+      "raw_sha256": "d338b3213b4ca316a8132bd56540d13edf6e2dcfc5c61abbae425e46f6855e11"
+    },
+    "endpoint_deleted": true,
+    "switch_deleted": true,
+    "residue_retired": [
+      "Power Distribution Device3"
+    ],
+    "inventory_fingerprint_after": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "inventory_restored": true,
+    "fixture_removed": true,
+    "environment_after": {
+      "found": true,
+      "saved_filename": "",
+      "pt_version": "9.0.1.0858",
+      "simulation_mode": false,
+      "devices": 0,
+      "links": 0
+    },
+    "realtime_restored": true
+  },
+  "safety": {
+    "clean": false,
+    "mailbox_clean": true,
+    "runtime_heartbeat_fresh": true,
+    "same_pt_processes": true,
+    "before_pt_pids": [
+      12960,
+      28932
+    ],
+    "after_pt_pids": [
+      12960,
+      28932
+    ],
+    "transport_problems": [],
+    "file_safety": "untitled workspace; no save issued; saved_filename remained empty",
+    "external_power_condition": "as_created_unchanged",
+    "frozen_source_unchanged": true
+  },
+  "problems": [
+    "Restoration readback: Incomplete, stale or unattributable table"
+  ]
+}

@@ -28,7 +28,7 @@ def bundle_fixture():
     never = "\n".join(line for line in auto.splitlines() if not line.startswith("Fa0/13 ")) + "\n"
     captures, raw_files = [], {}
     for index, (label, output) in enumerate((("AUTO_1", auto), ("NEVER", never), ("AUTO_2", auto))):
-        result = replace(_result(output), echo_observed="show power inline")
+        result = replace(_result(output), echo_observed="show power inline", expected_prompt="Switch#")
         observed = GovernedPoEInlineObserver(_StubExecutor(result)).observe_poe_inline_status(_SWITCH, (BINDING["switch_port"],))
         value = json.loads(json.dumps(asdict(observed)))
         raw = output.encode()
@@ -156,4 +156,108 @@ def test_restore_summary_without_fresh_raw_readback_cannot_authorize():
 def test_restoration_raw_hash_is_verified_too():
     bundle, raw = bundle_fixture()
     raw["restore.txt"] += b"tampered"
+    assert not validate_poe2_evidence(bundle, raw).is_valid
+
+
+def test_raw_evidence_is_not_translated_by_git_on_windows():
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    paths = ["docs/reference/cp-scale/canonical-live-evidence/poe2-synthetic/auto_1.txt",
+             "docs/reference/cp-scale/canonical-live-evidence/poe2-synthetic/evidence.json"]
+    result = subprocess.run(["git", "check-attr", "text", "--", *paths], cwd=root,
+                            capture_output=True, text=True, check=True)
+    assert all(line.endswith(": text: unset") for line in result.stdout.splitlines())
+
+
+def _off_capture(capture, raw_files):
+    output = capture.observation["raw_output"]
+    off_line = next(line for line in output.splitlines() if line.startswith("Fa0/14 ")).replace("Fa0/14", "Fa0/13", 1)
+    output = "\n".join(off_line if line.startswith("Fa0/13 ") else line for line in output.splitlines()) + "\n"
+    result = replace(_result(output), echo_observed="show power inline", expected_prompt="Switch#")
+    observed = GovernedPoEInlineObserver(_StubExecutor(result)).observe_poe_inline_status(_SWITCH, (BINDING["switch_port"],))
+    value = json.loads(json.dumps(asdict(observed)))
+    capture.observation, capture.repeat_observation = value, deepcopy(value)
+    capture.raw_sha256 = hashlib.sha256(output.encode()).hexdigest()
+    raw_files[capture.raw_file] = output.encode()
+
+
+def calibrated_negative_fixture():
+    calibration, calibration_raw = bundle_fixture()
+    absent = calibration.captures[0].model_copy(deep=True)
+    _off_capture(absent, calibration_raw)
+    absent.label, absent.raw_file = "NEVER", "pd_absent.txt"
+    absent.started_at_utc = "2026-09-08T00:00:11Z"
+    absent.completed_at_utc = "2026-09-08T00:00:15Z"
+    calibration.captures[0].raw_file = "connected_1.txt"
+    calibration.captures[2].raw_file = "connected_2.txt"
+    cal_captures = [calibration.captures[0], absent, calibration.captures[2]]
+    fixture = deepcopy(calibration.fixture)
+    fixture["endpoint"]["model"] = "7960"
+    fixture["link"]["second"].update(device_model="7960", port="Switch")
+    payload = dict(schema_version=1, kind="poe2-pse-off-calibration", experiment_id="poe2-off-calibration-synthetic",
+        START_HEAD=START_HEAD, frozen_live_sha="c" * 40, packet_tracer_build=BUILD, productive=False,
+        started_at_utc=calibration.started_at_utc, completed_at_utc=calibration.completed_at_utc,
+        facts=dict(fixture=fixture, reconnected_link=fixture["link"],
+                   pd_absent=dict(endpoint_absent=True, links=0, observed_at_utc="2026-09-08T00:00:10Z")),
+        captures=[c.model_dump(mode="json") for c in cal_captures],
+        restoration=dict(clean=True, auto_proven=True, inventory_restored=True,
+                         mailbox_clean=True, runtime_healthy=True, frozen_source_unchanged=True,
+                         capture=calibration.restoration["fresh_readback"]), problems=[])
+    body = json.dumps(payload)
+    texts = {c.raw_file: c.observation["raw_output"] for c in cal_captures}
+    texts["restore.txt"] = calibration.restoration["fresh_readback"]["observation"]["raw_output"]
+    reference = dict(evidence_raw=body, sha256=hashlib.sha256(body.encode()).hexdigest(), raw_files=texts)
+    bundle, raw = bundle_fixture()
+    bundle.started_at_utc = "2026-09-09T00:00:00Z"
+    bundle.completed_at_utc = "2026-09-09T00:01:00Z"
+    for c in bundle.captures:
+        c.started_at_utc = c.started_at_utc.replace("09-08", "09-09")
+        c.completed_at_utc = c.completed_at_utc.replace("09-08", "09-09")
+    for c in (bundle.captures[0], bundle.captures[2]):
+        _off_capture(c, raw)
+    restored = PoE2Capture.model_validate(bundle.restoration["fresh_readback"])
+    _off_capture(restored, raw)
+    restored.started_at_utc = restored.started_at_utc.replace("09-08", "09-09")
+    restored.completed_at_utc = restored.completed_at_utc.replace("09-08", "09-09")
+    bundle.restoration["fresh_readback"] = restored.model_dump(mode="json")
+    bundle.experimental_classification = "NEGATIVE"
+    bundle.calibration_reference["off_semantics"] = reference
+    return bundle, raw
+
+
+def test_negative_off_signature_requires_prior_causal_calibration():
+    bundle, raw = calibrated_negative_fixture()
+    assert validate_poe2_evidence(bundle, raw).is_valid
+    bundle.calibration_reference.pop("off_semantics")
+    assert not validate_poe2_evidence(bundle, raw).is_valid
+
+
+@pytest.mark.parametrize("change", ["unproven_absence", "wrong_port", "no_return_to_delivery", "dirty", "late", "summary_only", "raw_hash"])
+def test_off_calibration_fails_closed_on_every_causal_or_provenance_gap(change):
+    bundle, raw = calibrated_negative_fixture()
+    reference = bundle.calibration_reference["off_semantics"]
+    cal = json.loads(reference["evidence_raw"])
+    if change == "unproven_absence":
+        cal["facts"]["pd_absent"]["endpoint_absent"] = False
+    elif change == "wrong_port":
+        cal["facts"]["fixture"]["link"]["first"]["port"] = "FastEthernet0/14"
+    elif change == "no_return_to_delivery":
+        cal["captures"][2]["observation"]["ports"][0]["delivery"] = "not_delivering"
+    elif change == "dirty":
+        cal["restoration"]["clean"] = False
+    elif change == "late":
+        cal["completed_at_utc"] = bundle.completed_at_utc
+    elif change == "summary_only":
+        cal["captures"] = []
+    else:
+        reference["raw_files"]["pd_absent.txt"] += "tampered"
+    reference["evidence_raw"] = json.dumps(cal)
+    reference["sha256"] = hashlib.sha256(reference["evidence_raw"].encode()).hexdigest()
+    assert not validate_poe2_evidence(bundle, raw).is_valid
+
+
+def test_off_calibration_alone_never_substitutes_for_the_ap_experiment():
+    bundle, raw = calibrated_negative_fixture()
+    bundle.captures = []
     assert not validate_poe2_evidence(bundle, raw).is_valid

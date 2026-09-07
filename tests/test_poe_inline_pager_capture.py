@@ -136,3 +136,40 @@ def test_a_capture_that_cannot_finish_stays_truncated_rather_than_guessing()  ->
 
     assert not result.output_complete
     assert result.truncated_by_pager
+
+
+def test_capture_retains_the_prompt_at_dispatch_not_after_user_mode_restore():
+    import json
+    from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import IosSessionState
+
+    class ReturningToUserMode(_PagedTerminal):
+        def __call__(self, js, timeout):
+            if 'var before=String(t.getOutput())' in js:
+                reply = json.loads(super().__call__(js, timeout))
+                if 'expected_prompt:expectedPrompt' in js:
+                    reply['expected_prompt'] = self.prompt
+                return json.dumps(reply)
+            return super().__call__(js, timeout)
+
+    terminal = ReturningToUserMode([_MEASURED_FIRST_PAGE, _CONTINUATION_SHAPE],
+                                   prompt='Switch#', command=_COMMAND)
+    executor = _executor(terminal)
+    executor._prepare_session = lambda name: IosSessionState.EXEC_PROMPT_READY
+    original = executor._terminal_state
+    first = True
+    def state(name):
+        nonlocal first
+        if first:
+            first = False
+            return {'prompt': 'Switch>'}
+        return original(name)
+    executor._terminal_state = state
+    executor._wait_for = lambda *args: True
+    def enter(name, command):
+        terminal.prompt = 'Switch>' if command == 'disable' else 'Switch#'
+        return True
+    executor._enter = enter
+    result = executor.qualify('Switch0', IosQualificationQueryId.SHOW_POWER_INLINE)
+    assert terminal.prompt == 'Switch>'
+    assert result.expected_prompt == 'Switch#'
+    assert result.output.rstrip().endswith('Switch#')

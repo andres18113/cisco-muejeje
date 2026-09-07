@@ -25,7 +25,7 @@ from urllib.request import Request, urlopen
 import packet_tracer_mcp
 from packet_tracer_mcp.domain.enterprise.models.poe2 import PoE2Capture, PoE2Evidence
 from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
-    BINDING, BUILD, START_HEAD, capture_delivery, completeness, validate_poe2_evidence,
+    BINDING, BUILD, START_HEAD, capture_delivery, completeness, validate_poe2_evidence, off_calibration_valid,
 )
 from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     cp_scale_physical_design, MLS6,
@@ -153,11 +153,10 @@ class Experiment:
 
     def capture(self, label: str) -> PoE2Capture:
         start = utc()
-        # Same documented getter used by ControlledIosExecutor. Reads only the
-        # exact fixture terminal; the expected prompt is measured, not guessed.
         first = self.observer.observe_poe_inline_status(self.switch, (BINDING["switch_port"],))
-        state = self.executor._terminal_state(json.dumps(self.switch))
-        prompt = str(state.get("prompt") or "").strip()
+        # The executor may already have restored user EXEC; its own dispatch
+        # receipt retains the privileged prompt against which output must end.
+        prompt = first.command_result.expected_prompt if first.command_result else ""
         time.sleep(2)
         second = self.observer.observe_poe_inline_status(self.switch, (BINDING["switch_port"],))
         serialize = lambda x: json.loads(json.dumps(asdict(x), default=lambda v: v.value if isinstance(v, Enum) else str(v)))
@@ -190,6 +189,7 @@ def authenticated_status(bridge: PTCommandBridge) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--off-calibration", default="", help="Committed non-productive off-state calibration directory name.")
     args = parser.parse_args()
     if not args.execute:
         print("No LIVE without --execute")
@@ -203,6 +203,20 @@ def main() -> int:
         production_file=packet_tracer_mcp.__file__, loaded_namespaces=[n for n in ("packet_tracer_mcp", "src.packet_tracer_mcp") if n in sys.modules])
     run_id = "poe2-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + token_hex(4)
     started = utc()
+    calibration_reference = dict(path=CALIBRATION, sha256=CALIBRATION_SHA, productive=False)
+    if args.off_calibration:
+        if args.off_calibration != safe_name_component(args.off_calibration) or not args.off_calibration.startswith("poe2-off-calibration-"):
+            raise RuntimeError("Invalid calibration directory name")
+        cal_root = resolve_within(ROOT, "docs/reference/cp-scale/canonical-live-evidence", args.off_calibration)
+        body = resolve_within(cal_root, "evidence.json").read_bytes()
+        cal = json.loads(body)
+        names = [c["raw_file"] for c in cal["captures"]] + [cal["restoration"]["capture"]["raw_file"]]
+        texts = {name: resolve_within(cal_root, safe_name_component(name)).read_bytes().decode() for name in names}
+        reference = dict(path=str(cal_root.relative_to(ROOT)), evidence_raw=body.decode(),
+                         sha256=hashlib.sha256(body).hexdigest(), raw_files=texts)
+        if not off_calibration_valid(reference, before_utc=started):
+            raise RuntimeError("Supplemental calibration is not valid prior causal evidence")
+        calibration_reference["off_semantics"] = reference
     exp = Experiment(run_id)
     if not exp.bridge.pt_alive():
         raise RuntimeError("File bridge heartbeat stale")
@@ -296,7 +310,7 @@ def main() -> int:
         started_at_utc=started, completed_at_utc=completed, START_HEAD=START_HEAD,
         start_head_committed_at_utc=command("git", "show", "-s", "--format=%cI", START_HEAD),
         frozen_live_sha=baseline["local_head"], packet_tracer_build=BUILD, exact_binding=BINDING,
-        fixture=fixture, baseline=baseline, calibration_reference=dict(path=CALIBRATION, sha256=CALIBRATION_SHA, productive=False),
+        fixture=fixture, baseline=baseline, calibration_reference=calibration_reference,
         captures=captures, experimental_classification="UNKNOWN", integration_result="NOT_ATTEMPTED",
         authority_delta="none; qualification only", restoration=restoration, safety=safety, problems=problems)
     for candidate in ("POSITIVE", "NEGATIVE"):

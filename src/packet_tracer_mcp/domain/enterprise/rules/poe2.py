@@ -22,6 +22,7 @@ def validate_poe2_evidence(
     bundle: PoE2Evidence, raw_files: dict[str, bytes], *,
     expected_start_head: str, expected_build: str, expected_binding: dict[str, str],
     capture_verifier: Callable[[PoE2Capture, bytes, str], str],
+    off_state_calibrated: bool = False,
 ) -> ValidationResult:
     errors = []
     def require(condition: bool, message: str) -> None:
@@ -58,6 +59,12 @@ def validate_poe2_evidence(
             classification = "POSITIVE"
         elif states == ["not_delivering"] * 3 and all(c.observation["ports"][0]["row"] is None for c in bundle.captures):
             classification = "NEGATIVE"
+        elif states == ["not_delivering"] * 3 and off_state_calibrated:
+            before_row = bundle.captures[0].observation["ports"][0]["row"]
+            after_row = bundle.captures[2].observation["ports"][0]["row"]
+            absent = bundle.captures[1].observation["ports"][0]["row"] is None
+            same_off_state = before_row == after_row and before_row is not None and before_row["admin"] == "auto" and before_row["oper"] == "off" and before_row["power_watts"] == 0
+            classification = "NEGATIVE" if absent and same_off_state else "UNKNOWN"
         else:
             classification = "UNKNOWN"
         require(bundle.experimental_classification == classification, "Experimental classification disagrees with evidence")

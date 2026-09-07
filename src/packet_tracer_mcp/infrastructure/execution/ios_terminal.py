@@ -367,6 +367,7 @@ class IosCommandResult:
     # que se pidió, así que rechazarlo no dice nada sobre la consulta.
     dispatch_classification: str = DispatchClassification.ECHO_UNOBSERVABLE.value
     echo_observed: str = ""
+    expected_prompt: str = ""
     dispatch_attempts: int = 1
     # Procedencia de la EJECUCION, no del pedido. `device_name` sigue siendo a
     # quien se le pidio; `observed_device_name` sale de enumerar la red y
@@ -2264,19 +2265,21 @@ class ControlledIosExecutor:
                     )
                 restore_user_mode = True
 
+        expected_prompt = ""
+
         def complete(result: IosCommandResult) -> IosCommandResult:
             if restore_user_mode:
                 self._enter(name, "disable")
-            return result
+            return replace(result, expected_prompt=expected_prompt)
 
         js = "".join((
             "try{var d=ipc.network().getDevice(", name, ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
             "if(!t||typeof t.enterCommand!=='function'||typeof t.getOutput!=='function'){reportResult(JSON.stringify({ok:false,reason:'IOS terminal unavailable'}));}",
-            "else{var before=String(t.getOutput());",
+            "else{var before=String(t.getOutput());var expectedPrompt=String(t.getPrompt());",
             _PAGER_GUARD_JS,
             "if(__pager){reportResult(JSON.stringify({ok:false,reason:'prompt_not_ready:pager_active'}));}",
             "else{t.enterCommand(", command_json, ");",
-            "reportResult(JSON.stringify({ok:true,before:before}));}}}catch(e){reportResult('ERROR:'+e);}",
+            "reportResult(JSON.stringify({ok:true,before:before,expected_prompt:expectedPrompt}));}}}catch(e){reportResult('ERROR:'+e);}",
         ))
         raw = self._send_and_wait(js, 10.0)
         elapsed = int((monotonic() - started) * 1000)
@@ -2304,6 +2307,7 @@ class ControlledIosExecutor:
                     else DispatchClassification.TRANSPORT_FAILED.value
                 ),
             ))
+        expected_prompt = str(state.get("expected_prompt") or "").strip()
         baseline = str(state.get("before") or "")
         def observe() -> dict:
             read_js = "".join((
