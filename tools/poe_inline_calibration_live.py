@@ -169,6 +169,12 @@ _PORT_STATE_JS_TEMPLATE = (
     "}}catch(e){{reportResult('ERROR:'+e);}}"
 )
 
+_DEVICE_NAMES_JS = (
+    "try{var net=ipc.network();var n=net.getDeviceCount();var a=[];"
+    "for(var i=0;i<n;i++){a.push(String(net.getDeviceAt(i).getName()));}"
+    "reportResult(JSON.stringify({devices:a}));}catch(e){reportResult('ERROR:'+e);}"
+)
+
 _ENV_JS = (
     "try{var a=ipc.appWindow();var f=a.getActiveFile();var s=ipc.simulation();"
     "var net=ipc.network();"
@@ -232,11 +238,29 @@ class Calibration:
             "link": link.model_dump(mode="json"),
         }
 
-    def teardown(self) -> dict:
-        return {
+    def device_names(self) -> frozenset[str]:
+        raw = self._bridge.send_and_wait(_DEVICE_NAMES_JS, 15.0)
+        if raw is None or raw.startswith("ERROR:"):
+            raise RuntimeError(f"device enumeration failed: {raw}")
+        return frozenset(json.loads(raw)["devices"])
+
+    def teardown(self, preexisting: frozenset[str]) -> dict:
+        """Borra lo creado y retira lo que PT agrego por su cuenta.
+
+        Medido en `poe1-4d342a1a`: borrar los dos desechables no alcanzo. PT
+        habia puesto un `Power Distribution Device0` al aparecer el 7960, y
+        `delete_device` lo rechaza porque no lo creo este runtime. Sin retirarlo
+        el lienzo queda sucio para el proximo run, cuya precondicion es un
+        inventario vacio.
+        """
+        result = {
             "endpoint_deleted": self._fixture.delete_device(self._endpoint_name),
             "switch_deleted": self._fixture.delete_device(self._switch_name),
         }
+        result["residue_retired"] = list(
+            self._fixture.retire_session_residue(preexisting)
+        )
+        return result
 
     def inventory_fingerprint(self) -> str:
         return self._fixture.inventory_fingerprint()
@@ -380,6 +404,10 @@ def main(argv: list[str] | None = None) -> int:
 
     opening_fingerprint = calibration.inventory_fingerprint()
     report.facts["inventory_fingerprint_before"] = opening_fingerprint
+    # Los nombres de apertura son la ÚNICA autoridad sobre qué puede retirarse
+    # después: lo que ya estaba no se toca ni para dejar limpio.
+    preexisting = calibration.device_names()
+    report.facts["devices_before"] = sorted(preexisting)
 
     try:
         print("\n== FIXTURE ==")
@@ -410,7 +438,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         print("\n== TEARDOWN ==")
         try:
-            report.facts["teardown"] = calibration.teardown()
+            report.facts["teardown"] = calibration.teardown(preexisting)
         except Exception as exc:  # noqa: BLE001 - se reporta, no se traga
             report.facts["teardown"] = {"error": str(exc)}
             report.fail(f"teardown raised: {exc}")

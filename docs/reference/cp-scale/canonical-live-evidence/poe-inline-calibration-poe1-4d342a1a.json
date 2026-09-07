@@ -1,0 +1,188 @@
+{
+  "binding": {
+    "candidate_model": "3560-24PS",
+    "endpoint_model": "7960",
+    "endpoint_port": "Switch",
+    "external_phone_power_adapter": false,
+    "switch_port": "FastEthernet0/1"
+  },
+  "candidate_command": "show power inline",
+  "captures": [
+    {
+      "attributable": false,
+      "captured_at": "2026-09-07T11:26:07.370598Z",
+      "device_identity_evidence": "session_transcript_continuity",
+      "device_identity_provenance": "confirmed_unique",
+      "dispatch_classification": "dispatched",
+      "duration_ms": 2547,
+      "echo_observed": "show power inline",
+      "executed": true,
+      "failure_reason": "",
+      "fresh_output_observed": true,
+      "interface_brief": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nFastEthernet0/1        unassigned      YES unset  up                    up \nFastEthernet0/2        unassigned      YES unset  down                  down \nFastEthernet0/3        unassigned      YES unset  down                  down \nFastEthernet0/4        unassigned      YES unset  down                  down \nFastEthernet0/5        unassigned      YES unset  down                  down \nFastEthernet0/6        unassigned      YES unset  down                  down \nFastEthernet0/7        unassigned      YES unset  down                  down \nFastEthernet0/8        unassigned      YES unset  down                  down \nFastEthernet0/9        unassigned      YES unset  down                  down \nFastEthernet0/10       unassigned      YES unset  down                  down \nFastEthernet0/11       unassigned      YES unset  down                  down \nFastEthernet0/12       unassigned      YES unset  down                  down \nFastEthernet0/13       unassigned      YES unset  down                  down \nFastEthernet0/14       unassigned      YES unset  down                  down \nFastEthernet0/15       unassigned      YES unset  down                  down \nFastEthernet0/16       unassigned      YES unset  down                  down \nFastEthernet0/17       unassigned      YES unset  down                  down \nFastEthernet0/18       unassigned      YES unset  down                  down \nFastEthernet0/19       unassigned      YES unset  down                  down \nFastEthernet0/20       unassigned      YES unset  down                  down \nFastEthernet0/21       unassigned      YES unset  down                  down \n --More-- ",
+      "label": "as_created",
+      "observed_device_name": "MCP-POE1-SW-poe1-4d342a1a",
+      "output": "show power inline\nAvailable:370.0(w)  Used:10.0(w)  Remaining:360.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n --More-- ",
+      "output_complete": false,
+      "pager_continuation": "not_qualified",
+      "port_up_endpoint": true,
+      "port_up_switch": true,
+      "session_state": "exec_prompt_ready",
+      "stable": true,
+      "stable_repeat_output": "show power inline\nAvailable:370.0(w)  Used:10.0(w)  Remaining:360.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n --More-- ",
+      "truncated_by_pager": true
+    },
+    {
+      "attributable": false,
+      "captured_at": "2026-09-07T11:26:23.492303Z",
+      "device_identity_evidence": "session_transcript_continuity",
+      "device_identity_provenance": "confirmed_unique",
+      "dispatch_classification": "dispatched",
+      "duration_ms": 1827,
+      "echo_observed": "show power inline",
+      "executed": true,
+      "failure_reason": "",
+      "fresh_output_observed": true,
+      "interface_brief": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nFastEthernet0/1        unassigned      YES unset  up                    up \nFastEthernet0/2        unassigned      YES unset  down                  down \nFastEthernet0/3        unassigned      YES unset  down                  down \nFastEthernet0/4        unassigned      YES unset  down                  down \nFastEthernet0/5        unassigned      YES unset  down                  down \nFastEthernet0/6        unassigned      YES unset  down                  down \nFastEthernet0/7        unassigned      YES unset  down                  down \nFastEthernet0/8        unassigned      YES unset  down                  down \nFastEthernet0/9        unassigned      YES unset  down                  down \nFastEthernet0/10       unassigned      YES unset  down                  down \nFastEthernet0/11       unassigned      YES unset  down                  down \nFastEthernet0/12       unassigned      YES unset  down                  down \nFastEthernet0/13       unassigned      YES unset  down                  down \nFastEthernet0/14       unassigned      YES unset  down                  down \nFastEthernet0/15       unassigned      YES unset  down                  down \nFastEthernet0/16       unassigned      YES unset  down                  down \nFastEthernet0/17       unassigned      YES unset  down                  down \nFastEthernet0/18       unassigned      YES unset  down                  down \nFastEthernet0/19       unassigned      YES unset  down                  down \nFastEthernet0/20       unassigned      YES unset  down                  down \nFastEthernet0/21       unassigned      YES unset  down                  down \n --More-- ",
+      "label": "auto_1",
+      "observed_device_name": "MCP-POE1-SW-poe1-4d342a1a",
+      "output": "show power inline\nAvailable:370.0(w)  Used:10.0(w)  Remaining:360.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n --More-- ",
+      "output_complete": false,
+      "pager_continuation": "not_qualified",
+      "port_up_endpoint": true,
+      "port_up_switch": true,
+      "session_state": "exec_prompt_ready",
+      "stable": true,
+      "stable_repeat_output": "show power inline\nAvailable:370.0(w)  Used:10.0(w)  Remaining:360.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n --More-- ",
+      "truncated_by_pager": true
+    },
+    {
+      "attributable": false,
+      "captured_at": "2026-09-07T11:26:39.740524Z",
+      "device_identity_evidence": "session_transcript_continuity",
+      "device_identity_provenance": "confirmed_unique",
+      "dispatch_classification": "dispatched",
+      "duration_ms": 1827,
+      "echo_observed": "show power inline",
+      "executed": true,
+      "failure_reason": "",
+      "fresh_output_observed": true,
+      "interface_brief": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nFastEthernet0/1        unassigned      YES unset  up                    up \nFastEthernet0/2        unassigned      YES unset  down                  down \nFastEthernet0/3        unassigned      YES unset  down                  down \nFastEthernet0/4        unassigned      YES unset  down                  down \nFastEthernet0/5        unassigned      YES unset  down                  down \nFastEthernet0/6        unassigned      YES unset  down                  down \nFastEthernet0/7        unassigned      YES unset  down                  down \nFastEthernet0/8        unassigned      YES unset  down                  down \nFastEthernet0/9        unassigned      YES unset  down                  down \nFastEthernet0/10       unassigned      YES unset  down                  down \nFastEthernet0/11       unassigned      YES unset  down                  down \nFastEthernet0/12       unassigned      YES unset  down                  down \nFastEthernet0/13       unassigned      YES unset  down                  down \nFastEthernet0/14       unassigned      YES unset  down                  down \nFastEthernet0/15       unassigned      YES unset  down                  down \nFastEthernet0/16       unassigned      YES unset  down                  down \nFastEthernet0/17       unassigned      YES unset  down                  down \nFastEthernet0/18       unassigned      YES unset  down                  down \nFastEthernet0/19       unassigned      YES unset  down                  down \nFastEthernet0/20       unassigned      YES unset  down                  down \nFastEthernet0/21       unassigned      YES unset  down                  down \n --More-- ",
+      "label": "never",
+      "observed_device_name": "MCP-POE1-SW-poe1-4d342a1a",
+      "output": "show power inline\nAvailable:370.0(w)  Used:10.0(w)  Remaining:360.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\nFa0/18    auto   off        0.0     n/a                 n/a   15.4\n --More-- ",
+      "output_complete": false,
+      "pager_continuation": "not_qualified",
+      "port_up_endpoint": true,
+      "port_up_switch": true,
+      "session_state": "exec_prompt_ready",
+      "stable": true,
+      "stable_repeat_output": "show power inline\nAvailable:370.0(w)  Used:10.0(w)  Remaining:360.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\nFa0/18    auto   off        0.0     n/a                 n/a   15.4\n --More-- ",
+      "truncated_by_pager": true
+    },
+    {
+      "attributable": false,
+      "captured_at": "2026-09-07T11:26:55.860123Z",
+      "device_identity_evidence": "session_transcript_continuity",
+      "device_identity_provenance": "confirmed_unique",
+      "dispatch_classification": "dispatched",
+      "duration_ms": 1718,
+      "echo_observed": "show power inline",
+      "executed": true,
+      "failure_reason": "",
+      "fresh_output_observed": true,
+      "interface_brief": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nFastEthernet0/1        unassigned      YES unset  up                    up \nFastEthernet0/2        unassigned      YES unset  down                  down \nFastEthernet0/3        unassigned      YES unset  down                  down \nFastEthernet0/4        unassigned      YES unset  down                  down \nFastEthernet0/5        unassigned      YES unset  down                  down \nFastEthernet0/6        unassigned      YES unset  down                  down \nFastEthernet0/7        unassigned      YES unset  down                  down \nFastEthernet0/8        unassigned      YES unset  down                  down \nFastEthernet0/9        unassigned      YES unset  down                  down \nFastEthernet0/10       unassigned      YES unset  down                  down \nFastEthernet0/11       unassigned      YES unset  down                  down \nFastEthernet0/12       unassigned      YES unset  down                  down \nFastEthernet0/13       unassigned      YES unset  down                  down \nFastEthernet0/14       unassigned      YES unset  down                  down \nFastEthernet0/15       unassigned      YES unset  down                  down \nFastEthernet0/16       unassigned      YES unset  down                  down \nFastEthernet0/17       unassigned      YES unset  down                  down \nFastEthernet0/18       unassigned      YES unset  down                  down \nFastEthernet0/19       unassigned      YES unset  down                  down \nFastEthernet0/20       unassigned      YES unset  down                  down \nFastEthernet0/21       unassigned      YES unset  down                  down \n --More-- ",
+      "label": "auto_2",
+      "observed_device_name": "MCP-POE1-SW-poe1-4d342a1a",
+      "output": "show power inline\nAvailable:370.0(w)  Used:10.0(w)  Remaining:360.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n --More-- ",
+      "output_complete": false,
+      "pager_continuation": "not_qualified",
+      "port_up_endpoint": true,
+      "port_up_switch": true,
+      "session_state": "exec_prompt_ready",
+      "stable": true,
+      "stable_repeat_output": "show power inline\nAvailable:370.0(w)  Used:10.0(w)  Remaining:360.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   off        0.0     n/a                 n/a   15.4\nFa0/3     auto   off        0.0     n/a                 n/a   15.4\nFa0/4     auto   off        0.0     n/a                 n/a   15.4\nFa0/5     auto   off        0.0     n/a                 n/a   15.4\nFa0/6     auto   off        0.0     n/a                 n/a   15.4\nFa0/7     auto   off        0.0     n/a                 n/a   15.4\nFa0/8     auto   off        0.0     n/a                 n/a   15.4\nFa0/9     auto   off        0.0     n/a                 n/a   15.4\nFa0/10    auto   off        0.0     n/a                 n/a   15.4\nFa0/11    auto   off        0.0     n/a                 n/a   15.4\nFa0/12    auto   off        0.0     n/a                 n/a   15.4\nFa0/13    auto   off        0.0     n/a                 n/a   15.4\nFa0/14    auto   off        0.0     n/a                 n/a   15.4\nFa0/15    auto   off        0.0     n/a                 n/a   15.4\nFa0/16    auto   off        0.0     n/a                 n/a   15.4\nFa0/17    auto   off        0.0     n/a                 n/a   15.4\n --More-- ",
+      "truncated_by_pager": true
+    }
+  ],
+  "claim_authority": {
+    "authorized_observation_methods_unchanged": true,
+    "poe_ports_extrapolated": false,
+    "promotes_candidate_to_product_registry": false
+  },
+  "facts": {
+    "boot": {
+      "attempts": 1,
+      "booting": false,
+      "command_prompt": false,
+      "components_seen": [],
+      "configuration_channel": false,
+      "elapsed_ms": 202,
+      "failure_reason": "",
+      "power": null,
+      "state": "operational_ready",
+      "terminal_available": true,
+      "terminal_kind": "ios_command_line"
+    },
+    "environment_after": {
+      "devices": 1,
+      "found": true,
+      "links": 0,
+      "pt_version": "9.0.1.0858",
+      "saved_filename": "",
+      "simulation_mode": false
+    },
+    "environment_before": {
+      "devices": 0,
+      "found": true,
+      "links": 0,
+      "pt_version": "9.0.1.0858",
+      "saved_filename": "",
+      "simulation_mode": false
+    },
+    "fixture": {
+      "endpoint": {
+        "model": "7960",
+        "name": "MCP-POE1-PH-poe1-4d342a1a",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      "link": {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE1-SW-poe1-4d342a1a",
+          "port": "FastEthernet0/1"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE1-PH-poe1-4d342a1a",
+          "port": "Switch"
+        }
+      },
+      "switch": {
+        "model": "3560-24PS",
+        "name": "MCP-POE1-SW-poe1-4d342a1a",
+        "observed_ports": [
+          "FastEthernet0/1"
+        ]
+      }
+    },
+    "inventory_fingerprint_after": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|Power Distribution Device/Power Distribution Device0",
+    "inventory_fingerprint_before": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "inventory_restored": false,
+    "realtime_restored": true,
+    "teardown": {
+      "endpoint_deleted": true,
+      "switch_deleted": true
+    }
+  },
+  "finished_at": "2026-09-07T11:26:56.876469Z",
+  "packet_tracer_build": "9.0.1.0858",
+  "problems": [
+    "inventory did not return to its opening fingerprint"
+  ],
+  "run_id": "poe1-4d342a1a",
+  "schema": "poe-inline-calibration-v1",
+  "started_at": "2026-09-07T11:25:53.179193Z"
+}

@@ -115,6 +115,25 @@ def test_the_live_harness_restores_and_proves_instead_of_assuming() -> None:
     assert '("auto_2", PoEInlineMode.AUTO)' in source
 
 
+def test_the_live_harness_retires_what_packet_tracer_added_by_itself() -> None:
+    """Borrar sólo lo creado dejaba el lienzo sucio. Medido, no supuesto.
+
+    En `poe1-4d342a1a` el teardown borró los dos desechables y el inventario
+    igual no volvió: PT había puesto un `Power Distribution Device0` al aparecer
+    el 7960. La autoridad para retirarlo se acota contra los nombres de
+    apertura, que se leen ANTES de crear nada.
+    """
+    source = _harness_source()
+
+    assert "retire_session_residue" in source
+    assert "devices_before" in source
+    # El conjunto de apertura tiene que capturarse antes del fixture, o
+    # "no estaba antes" incluiría al propio fixture.
+    assert source.index("preexisting = calibration.device_names()") < source.index(
+        'report.facts["fixture"] = calibration.build_fixture()'
+    )
+
+
 def test_the_live_harness_claims_no_authority_it_did_not_earn() -> None:
     """Calibrar no promueve: el artefacto lo dice explícitamente."""
     source = _harness_source()

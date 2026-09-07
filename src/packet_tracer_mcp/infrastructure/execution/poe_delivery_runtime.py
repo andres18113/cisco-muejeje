@@ -51,6 +51,15 @@ _ARM_BAND_COLUMN_SPACING = 120
 _ARM_BAND_ROW_SPACING = 120
 _ARM_BAND_ORIGIN_Y = 100
 
+# Enumeracion de nombres para el retiro de residuo. Sólo lee: decidir qué se
+# retira es del llamador, contra el inventario de apertura.
+_DEVICE_NAMES_JS = (
+    "try{var __net=ipc.network(),__n=__net.getDeviceCount(),__a=[];"
+    "for(var __i=0;__i<__n;__i++){__a.push(String(__net.getDeviceAt(__i).getName()));}"
+    "reportResult(JSON.stringify({devices:__a}));}"
+    "catch(__e){reportResult(JSON.stringify({devices:null,error:String(__e)}));}"
+)
+
 
 class PacketTracerPoEDeliveryFixtureRuntime:
     """Create and read back the narrow temporary PoE qualification fixture."""
@@ -403,6 +412,49 @@ class PacketTracerPoEDeliveryFixtureRuntime:
         if deleted:
             self._attempted_device_names.discard(temporary_name)
         return deleted
+
+    def retire_session_residue(
+        self, preexisting_device_names: frozenset[str],
+    ) -> tuple[str, ...]:
+        """Retire what Packet Tracer added on its own during this session.
+
+        A disposable fixture's footprint is not only what this runtime created.
+        Measured live in run `poe1-4d342a1a`: deleting both created devices
+        still left the inventory short of its opening fingerprint, because PT
+        had placed a `Power Distribution Device0` of its own when the 7960
+        appeared. ``delete_device`` refused it -- correctly, it only removes
+        names it registered at creation -- so nothing retired it, and the next
+        governed run would open on a dirty canvas its own precondition rejects.
+
+        The authority here is narrower than "delete anything": the only name
+        that can be retired is one absent from the opening inventory. A device
+        that predates the session belongs to the user and is never touched, so
+        a wrong caller-supplied set can fail to clean up but can never delete
+        somebody's work. Returns the names actually retired.
+        """
+
+        listing = self._json_object(_DEVICE_NAMES_JS, timeout=10.0)
+        names = listing.get("devices")
+        if not isinstance(names, list):
+            return ()
+        retired: list[str] = []
+        for entry in names:
+            if not isinstance(entry, str) or entry in preexisting_device_names:
+                continue
+            name_literal = json.dumps(entry, ensure_ascii=False)
+            script = "".join((
+                "try{var __name=", name_literal,
+                ",__net=ipc.network(),__d=__net.getDevice(__name);",
+                "if(!__d){reportResult(JSON.stringify({removed:true}));}",
+                "else{var __lw=ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();",
+                "if(typeof __lw.removeDevice!=='function'){reportResult(JSON.stringify({removed:false,error:'removeDevice unavailable'}));}",
+                "else{__lw.removeDevice(__d.getName());reportResult(JSON.stringify({removed:!__net.getDevice(__name)}));}}}",
+                "catch(__e){reportResult(JSON.stringify({removed:false,error:String(__e)}));}",
+            ))
+            if self._json_object(script, timeout=10.0).get("removed") is True:
+                retired.append(entry)
+                self._attempted_device_names.discard(entry)
+        return tuple(retired)
 
     def _json_object(self, script: str, *, timeout: float) -> dict[str, object]:
         raw = self._send_and_wait(script, timeout)

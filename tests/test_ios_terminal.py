@@ -1392,4 +1392,31 @@ def test_spanning_tree_qualification_does_not_disturb_the_other_qualified_querie
         query = OperationalQueryId._value2member_map_.get(name)
         assert query is not None, name
         assert query in ios_module._PAGINATION_QUALIFIED_QUERIES, name
-    assert len(ios_module._PAGINATION_QUALIFIED_QUERIES) == 7
+    # POE-1 cualificó el pager de un CANDIDATO, medido en `poe1-4d342a1a`.
+    # Nombrarlo acá mantiene exacto al guardián: el conteo solo dejaría entrar
+    # una adición futura sin nombre.
+    assert (
+        ios_module.IosQualificationQueryId.SHOW_POWER_INLINE
+        in ios_module._PAGINATION_QUALIFIED_QUERIES
+    )
+    assert len(ios_module._PAGINATION_QUALIFIED_QUERIES) == 8
+
+
+def test_walking_a_candidates_pager_does_not_make_it_a_product_query():
+    """Cualificar el pager es una cosa; ser read-back de producto es otra.
+
+    `SHOW_POWER_INLINE` puede recorrer su pager y sigue sin poder pedirse por
+    `execute`. Si esas dos autoridades se confundieran, medir un candidato lo
+    promovería de hecho, sin la captura viva que la promoción exige.
+    """
+    qualified = ios_module._PAGINATION_QUALIFIED_QUERIES
+    candidates = {
+        item for item in qualified
+        if isinstance(item, ios_module.IosQualificationQueryId)
+    }
+
+    assert candidates == {ios_module.IosQualificationQueryId.SHOW_POWER_INLINE}
+    for candidate in candidates:
+        assert candidate not in ios_module._COMMANDS
+        assert candidate not in ios_module._INTERFACE_COMMANDS
+        assert candidate.value not in OperationalQueryId._value2member_map_

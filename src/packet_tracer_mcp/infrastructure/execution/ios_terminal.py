@@ -300,6 +300,23 @@ _PAGER_MARKER = "--More--"
 # de un puerto con telefono es inobservable: no dice FORWARDING, no dice
 # BLOCKING, no dice nada. Las cotas duras siguen siendo las mismas y una captura
 # incompleta conserva su techo fail-closed.
+#
+# `SHOW_POWER_INLINE` entra por POE-1 con evidencia fresca del build exacto,
+# medida en el run gobernado `poe1-4d342a1a` sobre un 3560-24PS. Las cuatro
+# capturas de la secuencia causal volvieron ejecutadas, frescas y atribuidas a
+# un unico dispositivo, y las cuatro truncadas. Las dos que se compararon median
+# 1390 bytes EXACTOS, asi que el corte de este build es por tamano y no por
+# cantidad de filas: con `power inline auto` la pagina llega hasta `Fa0/17`
+# porque la fila de `Fa0/1` ocupa lugar, y con `power inline never` esa fila no
+# esta y entra una mas, hasta `Fa0/18`. Esa AUSENCIA es la mitad negativa de la
+# firma causal que la calibracion tiene que sostener, y una primera pagina no
+# puede sostenerla: "no aparece en esta pagina" no es "no esta en la tabla". Es
+# el mismo argumento por el que ya esta `SHOW_IP_DHCP_BINDING`, donde el hecho
+# diagnostico tambien era una ausencia. La consulta no se puede angostar:
+# `show power inline <interfaz>` no tiene soporte establecido en este build y
+# adivinarlo seria inventar la forma del comando para esquivar el pager, y
+# PT 9.0.1 rechaza `terminal length 0`. Las cotas duras son las mismas y una
+# captura incompleta conserva su techo fail-closed.
 _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
     OperationalQueryId.SHOW_IP_DHCP_BINDING,
@@ -308,6 +325,7 @@ _PAGINATION_QUALIFIED_QUERIES = frozenset({
     OperationalQueryId.SHOW_IP_PROTOCOLS,
     OperationalQueryId.SHOW_EPHONE,
     OperationalQueryId.SHOW_SPANNING_TREE,
+    IosQualificationQueryId.SHOW_POWER_INLINE,
 })
 
 # Cotas duras de UNA captura logica. Existen para que no haya forma de que la
