@@ -22,6 +22,8 @@ visual. Sólo abre el camino gobernado para MEDIRLO en vivo.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
@@ -67,3 +69,56 @@ def test_the_poe_candidate_never_accepts_an_interface_from_the_caller() -> None:
             IosQualificationQueryId.SHOW_POWER_INLINE,
             interface="FastEthernet0/1",
         )
+
+
+def _harness_source() -> str:
+    root = Path(__file__).resolve().parents[1]
+    return (
+        root / "tools" / "poe_inline_calibration_live.py"
+    ).read_text(encoding="utf-8")
+
+
+def test_live_harness_accepts_no_ios_or_javascript_from_the_caller() -> None:
+    """El arnés en vivo no tiene por dónde recibir CLI arbitraria.
+
+    Todo lo que llega a Packet Tracer sale de un registro cerrado: los tres
+    cambios de modo desde `PoEInlineMode`, y las lecturas desde los enums del
+    ejecutor gobernado.
+    """
+    source = _harness_source()
+
+    assert "ImportIsolationPreflight" in source
+    assert "IosQualificationQueryId.SHOW_POWER_INLINE" in source
+    assert "--execute" in source
+    assert "--command" not in source
+    assert "--ios" not in source
+    assert "pt_send_raw" not in source
+    assert "show running-config" not in source
+    assert "show run" not in source
+
+
+def test_the_live_harness_restores_and_proves_instead_of_assuming() -> None:
+    """Restaurar y borrar el fixture no puede depender del camino feliz.
+
+    Si la secuencia causal se cae a la mitad, el 3560 y el 7960 desechables
+    quedarían en el lienzo y el próximo run arrancaría sobre un inventario
+    sucio, que es justo lo que su propia precondición rechaza.
+    """
+    source = _harness_source()
+
+    assert "finally:" in source
+    assert "teardown" in source
+    assert "inventory_fingerprint_before" in source
+    assert "inventory_fingerprint_after" in source
+    # La última mutación de la secuencia es `auto`, y su captura ES la
+    # readback que prueba la restauración: no hay un "asumimos que volvió".
+    assert '("auto_2", PoEInlineMode.AUTO)' in source
+
+
+def test_the_live_harness_claims_no_authority_it_did_not_earn() -> None:
+    """Calibrar no promueve: el artefacto lo dice explícitamente."""
+    source = _harness_source()
+
+    assert "authorized_observation_methods_unchanged" in source
+    assert "poe_ports_extrapolated" in source
+    assert "promotes_candidate_to_product_registry" in source
