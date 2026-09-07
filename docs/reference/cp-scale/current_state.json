@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-07T11:55:00Z",
+  "updated_at": "2026-09-07T13:05:00Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -304,7 +304,21 @@
         "result": "RESTORATION_INCOMPLETE_SESSION_RESIDUE_NOT_RETIRED",
         "path": "docs/reference/cp-scale/canonical-live-evidence/poe-inline-calibration-poe1-4d342a1a.json"
       },
-      "record": "docs/reference/cp-scale/POE_INLINE_CALIBRATION_20260907.md"
+      "record": "docs/reference/cp-scale/POE_INLINE_CALIBRATION_20260907.md",
+      "productive_api": {
+        "entry_point": "GovernedPoEInlineObserver.observe_poe_inline_status",
+        "accepts": "EXACT_SWITCH_IDENTITY_AND_EXACT_EXPECTED_PORTS_ONLY",
+        "accepts_ios_or_javascript": false,
+        "end_to_end_run_id": "poe1-c5626851",
+        "end_to_end_source_head": "1e145e8",
+        "api_matched_raw_text_in_every_state": true,
+        "refusals": 0,
+        "interface_abbreviation_defect": "FOUND_AND_FIXED_PT_PRINTS_FA0_1_REPO_USES_FASTETHERNET0_1",
+        "artifact": {
+          "path": "docs/reference/cp-scale/canonical-live-evidence/poe-inline-calibration-poe1-c5626851.json",
+          "sha256": "f870b200d14e79c6a11bd656664f543fa5b91da9c41ab6310cf1ff3cd4584dd8"
+        }
+      }
     },
     "factory_structure_survey": {
       "run_id": "factory-survey-9f967ef6",

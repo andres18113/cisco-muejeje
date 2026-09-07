@@ -241,6 +241,33 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
                     "poe-inline-calibration-poe1-4d342a1a.json"
                 ),
             },
+            "productive_api": {
+                "entry_point": (
+                    "GovernedPoEInlineObserver.observe_poe_inline_status"
+                ),
+                "accepts": (
+                    "EXACT_SWITCH_IDENTITY_AND_EXACT_EXPECTED_PORTS_ONLY"
+                ),
+                "accepts_ios_or_javascript": False,
+                "end_to_end_run_id": "poe1-c5626851",
+                "end_to_end_source_head": "1e145e8",
+                "api_matched_raw_text_in_every_state": True,
+                "refusals": 0,
+                "interface_abbreviation_defect": (
+                    "FOUND_AND_FIXED_PT_PRINTS_FA0_1_REPO_USES_"
+                    "FASTETHERNET0_1"
+                ),
+                "artifact": {
+                    "path": (
+                        "docs/reference/cp-scale/canonical-live-evidence/"
+                        "poe-inline-calibration-poe1-c5626851.json"
+                    ),
+                    "sha256": (
+                        "f870b200d14e79c6a11bd656664f543f"
+                        "a5b91da9c41ab6310cf1ff3cd4584dd8"
+                    ),
+                },
+            },
             "record": (
                 "docs/reference/cp-scale/POE_INLINE_CALIBRATION_20260907.md"
             ),
@@ -935,3 +962,39 @@ def test_calibrating_the_inline_observable_promotes_no_capability():
     assert gate["poe_ports"] == 1
     assert gate["poe_delivery"] == "supported"
     assert (ROOT / record["record"]).is_file()
+
+
+def test_the_productive_api_agreed_with_the_raw_text_in_every_live_state():
+    """El observador corrio en vivo y no reinterpretó: coincidió.
+
+    Su conclusion se guarda AL LADO del texto, no en su lugar, justamente para
+    que una divergencia sea visible. Este test la buscaría.
+    """
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    api = document["current_offline_operational_gate"]["poe_inline_observable"][
+        "productive_api"
+    ]
+    assert api["accepts_ios_or_javascript"] is False
+
+    raw = (ROOT / api["artifact"]["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == api["artifact"]["sha256"]
+    artifact = json.loads(raw)
+    assert artifact["problems"] == []
+    assert artifact["facts"]["inventory_restored"] is True
+    assert artifact["facts"]["realtime_restored"] is True
+
+    powered = "Fa0/1     auto   on         10.0    IP Phone 7960       3     15.4"
+    for capture in artifact["captures"]:
+        assert capture["observed_status"] == "observed"
+        assert capture["observed_refusal_reason"] == ""
+        assert capture["output_complete"] is True
+        # Lo que dice la tabla, leido sin el parser, contra lo que concluyo la
+        # API desde su propio despacho.
+        row_present = powered in capture["output"]
+        expected = "delivering" if row_present else "not_delivering"
+        assert capture["observed_delivery"] == expected, capture["label"]
+
+    by_label = {item["label"]: item for item in artifact["captures"]}
+    assert by_label["auto_1"]["observed_delivery"] == "delivering"
+    assert by_label["never"]["observed_delivery"] == "not_delivering"
+    assert by_label["auto_2"]["observed_delivery"] == "delivering"

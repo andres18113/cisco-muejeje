@@ -104,6 +104,23 @@ JavaScript could arrive — refuses malformed input before Packet Tracer is
 touched at all, and returns `UNOBSERVABLE` with a reason for every gate it
 cannot satisfy rather than reporting an unproven negative.
 
+It was exercised live, not only against replayed bytes, in run `poe1-c5626851`
+from frozen source `1e145e8` with Actions green 4/4. The wiring from the
+governed executor into the observer — attribution, freshness, privileged-EXEC
+entry and restore — cannot be proven with recorded text, which is precisely
+where the interface-abbreviation defect above had been hiding.
+
+| state | raw table | productive API | agree |
+| --- | --- | --- | --- |
+| `auto` | `Fa0/1` row present, `on`, `10.0` | `delivering` | yes |
+| `never` | `Fa0/1` row absent | `not_delivering` | yes |
+| `auto` | `Fa0/1` row present, `on`, `10.0` | `delivering` | yes |
+
+Four captures, zero refusals, all complete, restoration clean
+(`problems: none`). The API's conclusion is stored alongside the raw output and
+never in place of it, so any future disagreement stays visible in the evidence
+instead of being hidden behind whichever one was written down.
+
 ## Restoration
 
 ```text
@@ -141,6 +158,13 @@ its own evidence.
 ```text
 docs/reference/cp-scale/canonical-live-evidence/poe-inline-calibration-poe1-c4fae886.json
 sha256 b13cad40901a94b957bc6738207e5a8b9505258e96662d3e190b7b3b7e9be104
+```
+
+End-to-end run of the productive API:
+
+```text
+docs/reference/cp-scale/canonical-live-evidence/poe-inline-calibration-poe1-c5626851.json
+sha256 f870b200d14e79c6a11bd656664f543fa5b91da9c41ab6310cf1ff3cd4584dd8
 ```
 
 Retained first attempt, restoration incomplete:
