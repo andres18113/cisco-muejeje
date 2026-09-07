@@ -173,6 +173,22 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
                     "33e34b8cfddd109ed34299394220937a"
                 ),
             },
+            "access_point_family": {
+                "run_id": "factory-survey-102006c6",
+                "generic_ap_models_observed": 4,
+                "adaptor_31_supported_by_any": False,
+                "artifact": {
+                    "path": (
+                        "docs/reference/cp-scale/canonical-live-evidence/"
+                        "factory-structure-20260907T005226Z-86c75f1c304c-"
+                        "accesspoint-family.json"
+                    ),
+                    "sha256": (
+                        "5549a9a30da2eda5aba4c8bae89279b4"
+                        "13399073f9dcf396d5639cb41a7463c0"
+                    ),
+                },
+            },
         },
         "latest_verified_poe_qualification": {
             "run_identity": "poe-7950198d050f",
@@ -660,3 +676,43 @@ def test_factory_structure_evidence_observes_without_promoting_anything():
     assert gate["poe_ports"] == 1
     assert gate["hardware_plan"] == "unresolved"
     assert gate["router0_precondition"]["attempts_consumed"] == 0
+
+
+def test_no_generic_access_point_model_accepts_the_power_adaptor():
+    """The refusal is a property of the family, not of the bound model."""
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    family = document["current_offline_operational_gate"][
+        "factory_structure_survey"
+    ]["access_point_family"]
+
+    raw = (ROOT / family["artifact"]["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == family["artifact"]["sha256"]
+    artifact = json.loads(raw)
+
+    assert artifact["pt_mutations"] == 0
+    assert artifact["router0_attempts_consumed"] == 0
+    assert artifact["capability_promotion"] == "NONE"
+    assert artifact["physical_incapability_established"] is False
+    assert artifact["canonical_pts"]["unchanged"] is True
+    assert artifact["source"]["status"] == ""
+
+    supported = artifact["findings"]["adaptor_31_supported"]
+    assert set(supported) == {
+        "AccessPoint-PT", "AccessPoint-PT-A",
+        "AccessPoint-PT-N", "AccessPoint-PT-AC",
+    }
+    assert not any(supported.values())
+    assert len(supported) == family["generic_ap_models_observed"]
+    for key, observation in artifact["observations"].items():
+        assert observation["module_type_supported"] is False, key
+        assert observation["queried_module_type"] == 31
+
+    # A model the factory does not answer for is unobservable, never a
+    # measured absence, and none of them is bound by the physical design.
+    assert artifact["findings"]["no_descriptor_under_eaccesspoint"] == [
+        "LAP-PT", "3702i", "802", "803",
+    ]
+    assert set(artifact["errors"]) == {
+        "LAP-PT#mt31#dtNone#d1", "3702i#mt31#dtNone#d1",
+        "802#mt31#dtNone#d1", "803#mt31#dtNone#d1",
+    }

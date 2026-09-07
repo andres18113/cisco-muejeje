@@ -6,6 +6,11 @@ the small set of keys still projected into `handoff.md` for compatibility.
 
 Supporting records:
 
+- [Operator runbook for the one governed observation](ROUTER0_POE_OPERATOR_RUNBOOK.md)
+  is the mechanical form of the only remaining step that needs a person:
+  which episode to run first and why, the gates the harness enforces, the
+  exact receipt the validator accepts, and why both arms powered is a real
+  result rather than a failed run. It authorizes nothing new.
 - [Factory structure observed, 2026-09-07](ROUTER0_POE_FACTORY_STRUCTURE_20260907.md)
   records why bridge polling was absent, the three read defects that made
   Packet Tracer's own descriptors unreadable, and the resulting measurement:

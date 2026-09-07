@@ -1,0 +1,446 @@
+{
+  "schema": "cp-scale-factory-structure-evidence-v1",
+  "run_id": "factory-survey-102006c6",
+  "packet_tracer_build": "9.0.1.0858",
+  "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+  "decision": "FACTORY_STRUCTURE_OBSERVED_NO_CAPABILITY_PROMOTION",
+  "started_at": "2026-09-07 00:42:27.517678+00:00",
+  "closed_at": "2026-09-07 00:42:31.184326+00:00",
+  "pt_mutations": 0,
+  "qualifications": 0,
+  "router0_attempts_consumed": 0,
+  "router3_executed": false,
+  "physical_incapability_established": false,
+  "capability_promotion": "NONE",
+  "poe_ports_changed": false,
+  "question": "Does any generic Packet Tracer access point model accept eAccessPointPowerAdaptor (31), or is the refusal specific to the AccessPoint-PT the physical design binds?",
+  "source": {
+    "head": "86c75f1c304cc700b0117601e1ff18edcd81b681",
+    "branch": "feature/runtime-ripv2",
+    "upstream": "cisco/feature/runtime-ripv2",
+    "status": "",
+    "dirty_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": {},
+    "runtime_sha256": "209e4ea5c6288f01d0658d289235ce1baf77a31a8a77bd3c71cae8001cc64720",
+    "harness_sha256": "391e6683a8357e5ba98b00c7d568c8527163578cee85db18eefa7c05bee0e9d5"
+  },
+  "source_after": {
+    "head": "86c75f1c304cc700b0117601e1ff18edcd81b681",
+    "branch": "feature/runtime-ripv2",
+    "upstream": "cisco/feature/runtime-ripv2",
+    "status": "",
+    "dirty_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": {},
+    "runtime_sha256": "209e4ea5c6288f01d0658d289235ce1baf77a31a8a77bd3c71cae8001cc64720",
+    "harness_sha256": "391e6683a8357e5ba98b00c7d568c8527163578cee85db18eefa7c05bee0e9d5"
+  },
+  "isolation": {
+    "result": {
+      "state": "ISOLATED",
+      "detail": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py"
+    },
+    "python": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+    "package": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py",
+    "namespaces": [
+      "packet_tracer_mcp"
+    ]
+  },
+  "bridge_before": {
+    "connected": true,
+    "last_poll_ago": 0.0,
+    "unauth_recent": false,
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "client_headers": {
+      "Origin": "pt-sm:",
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "cors",
+      "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+    },
+    "token_id": "395ba83c275764b9"
+  },
+  "bridge_after": {
+    "connected": true,
+    "last_poll_ago": 0.0,
+    "unauth_recent": false,
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "client_headers": {
+      "Origin": "pt-sm:",
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "cors",
+      "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+    },
+    "token_id": "395ba83c275764b9"
+  },
+  "workspace_before": {
+    "observed": true,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "workspace_after": {
+    "observed": true,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "realtime_before": {
+    "observed": true,
+    "simulation_mode": false,
+    "frames": 0,
+    "sim_time": 2578089,
+    "current_index": 0,
+    "message": "simulation_state_readback"
+  },
+  "realtime_after": {
+    "observed": true,
+    "simulation_mode": false,
+    "frames": 0,
+    "sim_time": 2578262,
+    "current_index": 0,
+    "message": "simulation_state_readback"
+  },
+  "canonical_pts": {
+    "path": "C:/Users/Andres/Downloads/V5.2.pts",
+    "before_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "after_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "unchanged": true
+  },
+  "processes_before": [
+    {
+      "Id": 32992,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    },
+    {
+      "Id": 50968,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    }
+  ],
+  "processes_after": [
+    {
+      "Id": 32992,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    },
+    {
+      "Id": 50968,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    }
+  ],
+  "queries": [
+    [
+      "AccessPoint-PT",
+      31,
+      null,
+      1
+    ],
+    [
+      "AccessPoint-PT-A",
+      31,
+      null,
+      1
+    ],
+    [
+      "AccessPoint-PT-N",
+      31,
+      null,
+      1
+    ],
+    [
+      "AccessPoint-PT-AC",
+      31,
+      null,
+      1
+    ],
+    [
+      "LAP-PT",
+      31,
+      null,
+      1
+    ],
+    [
+      "3702i",
+      31,
+      null,
+      1
+    ],
+    [
+      "802",
+      31,
+      null,
+      1
+    ],
+    [
+      "803",
+      31,
+      null,
+      1
+    ]
+  ],
+  "observations": {
+    "AccessPoint-PT#mt31#dtNone#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "AccessPoint-PT",
+      "device_type": 7,
+      "queried_module_type": 31,
+      "module_type_supported": false,
+      "max_depth": 1,
+      "truncated": false,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          6,
+          18
+        ],
+        "modules": [
+          {
+            "model": "PT-REPEATER-NM-1CFE",
+            "module_type": 6,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          },
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "AccessPoint-PT-A#mt31#dtNone#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "AccessPoint-PT-A",
+      "device_type": 7,
+      "queried_module_type": 31,
+      "module_type_supported": false,
+      "max_depth": 1,
+      "truncated": false,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          6,
+          18
+        ],
+        "modules": [
+          {
+            "model": "PT-REPEATER-NM-1CFE",
+            "module_type": 6,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          },
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "AccessPoint-PT-N#mt31#dtNone#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "AccessPoint-PT-N",
+      "device_type": 7,
+      "queried_module_type": 31,
+      "module_type_supported": false,
+      "max_depth": 1,
+      "truncated": false,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          6,
+          18
+        ],
+        "modules": [
+          {
+            "model": "PT-REPEATER-NM-1CFE",
+            "module_type": 6,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          },
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "AccessPoint-PT-AC#mt31#dtNone#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "AccessPoint-PT-AC",
+      "device_type": 7,
+      "queried_module_type": 31,
+      "module_type_supported": false,
+      "max_depth": 1,
+      "truncated": false,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          6,
+          18
+        ],
+        "modules": [
+          {
+            "model": "PT-REPEATER-NM-1CGE",
+            "module_type": 6,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          },
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          }
+        ],
+        "truncated": false
+      }
+    }
+  },
+  "errors": {
+    "LAP-PT#mt31#dtNone#d1": {
+      "type": "RuntimeError",
+      "detail": "Packet Tracer factory diagnosis failed: Error: factory descriptor unavailable"
+    },
+    "3702i#mt31#dtNone#d1": {
+      "type": "RuntimeError",
+      "detail": "Packet Tracer factory diagnosis failed: Error: factory descriptor unavailable"
+    },
+    "802#mt31#dtNone#d1": {
+      "type": "RuntimeError",
+      "detail": "Packet Tracer factory diagnosis failed: Error: factory descriptor unavailable"
+    },
+    "803#mt31#dtNone#d1": {
+      "type": "RuntimeError",
+      "detail": "Packet Tracer factory diagnosis failed: Error: factory descriptor unavailable"
+    }
+  },
+  "reads": [
+    {
+      "started_at": "2026-09-07 00:42:29.834841+00:00",
+      "script_sha256": "4c1bb30540dad90c8543b627bac8c0faa6826d00c9bd87ba8b24ac050bb063fa",
+      "ended_at": "2026-09-07 00:42:29.890923+00:00",
+      "raw": "{\"items\":[],\"links\":[]}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:29.892931+00:00",
+      "script_sha256": "86573ff0e7af17e93aee7add4c060e7cfed832774cf39f62886ce058a69c4b47",
+      "ended_at": "2026-09-07 00:42:29.903439+00:00",
+      "raw": "{\"mode\":false,\"frames\":0,\"sim_time\":2578089,\"current_index\":0}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:29.905438+00:00",
+      "script_sha256": "e711503ce84d0a7e54eb7fc285d39daa7d459115b6a97b1b8644e9bd508daa44",
+      "ended_at": "2026-09-07 00:42:29.947325+00:00",
+      "raw": "{\"observed\":true,\"model\":\"AccessPoint-PT\",\"device_type\":7,\"queried_module_type\":31,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[6,18],\"modules\":[{\"model\":\"PT-REPEATER-NM-1CFE\",\"module_type\":6,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false},{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:29.949328+00:00",
+      "script_sha256": "f9463a260d794bb5d5b5a02ad4535f221a2b00203d7d53627e2db0432c946d0b",
+      "ended_at": "2026-09-07 00:42:29.962056+00:00",
+      "raw": "{\"observed\":true,\"model\":\"AccessPoint-PT-A\",\"device_type\":7,\"queried_module_type\":31,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[6,18],\"modules\":[{\"model\":\"PT-REPEATER-NM-1CFE\",\"module_type\":6,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false},{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:29.964073+00:00",
+      "script_sha256": "ebe95955865239c22c2e95371b039b84495e708c6066277a897f1755add58992",
+      "ended_at": "2026-09-07 00:42:29.977884+00:00",
+      "raw": "{\"observed\":true,\"model\":\"AccessPoint-PT-N\",\"device_type\":7,\"queried_module_type\":31,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[6,18],\"modules\":[{\"model\":\"PT-REPEATER-NM-1CFE\",\"module_type\":6,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false},{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:29.980211+00:00",
+      "script_sha256": "d38cdd30bba3a91f16e6f4e230ae7df80a43490aceb3abb3637efbbc93ca2b5a",
+      "ended_at": "2026-09-07 00:42:29.994960+00:00",
+      "raw": "{\"observed\":true,\"model\":\"AccessPoint-PT-AC\",\"device_type\":7,\"queried_module_type\":31,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[6,18],\"modules\":[{\"model\":\"PT-REPEATER-NM-1CGE\",\"module_type\":6,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false},{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:29.996960+00:00",
+      "script_sha256": "ac5800b982ecfb368483b8997a93960e02568d6d7dd5919ff6daa88d05ae1d1a",
+      "ended_at": "2026-09-07 00:42:30.007996+00:00",
+      "raw": "{\"observed\":false,\"error\":\"Error: factory descriptor unavailable\"}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:30.011510+00:00",
+      "script_sha256": "5a660a514d2d613d4215e45732dab4c4e5b948b4b26c1d69ffb311b60a13847e",
+      "ended_at": "2026-09-07 00:42:30.022024+00:00",
+      "raw": "{\"observed\":false,\"error\":\"Error: factory descriptor unavailable\"}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:30.024528+00:00",
+      "script_sha256": "18f9cec130cbc7e3ccea7029f67d2b18f5e9bae00b1f622f05ab58a780cdb0ed",
+      "ended_at": "2026-09-07 00:42:30.035146+00:00",
+      "raw": "{\"observed\":false,\"error\":\"Error: factory descriptor unavailable\"}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:30.038146+00:00",
+      "script_sha256": "0a9f35c4c5c4cff2648b246e7ee1f134069a2cfacd384949a9fcdcce2f18a901",
+      "ended_at": "2026-09-07 00:42:30.051356+00:00",
+      "raw": "{\"observed\":false,\"error\":\"Error: factory descriptor unavailable\"}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:30.053369+00:00",
+      "script_sha256": "4c1bb30540dad90c8543b627bac8c0faa6826d00c9bd87ba8b24ac050bb063fa",
+      "ended_at": "2026-09-07 00:42:30.066954+00:00",
+      "raw": "{\"items\":[],\"links\":[]}"
+    },
+    {
+      "started_at": "2026-09-07 00:42:30.067980+00:00",
+      "script_sha256": "86573ff0e7af17e93aee7add4c060e7cfed832774cf39f62886ce058a69c4b47",
+      "ended_at": "2026-09-07 00:42:30.078001+00:00",
+      "raw": "{\"mode\":false,\"frames\":0,\"sim_time\":2578262,\"current_index\":0}"
+    }
+  ],
+  "findings": {
+    "adaptor_31_supported": {
+      "AccessPoint-PT": false,
+      "AccessPoint-PT-A": false,
+      "AccessPoint-PT-N": false,
+      "AccessPoint-PT-AC": false
+    },
+    "no_descriptor_under_eaccesspoint": [
+      "LAP-PT",
+      "3702i",
+      "802",
+      "803"
+    ],
+    "unobservable_is_not_negative": "The four models with no descriptor under eAccessPoint are unobservable at that DeviceType. They are not evidence of absent adapter support, and none of them is bound by the physical design.",
+    "interpretation_limit": "Factory structure only. Every generic PT access point observed here refuses eAccessPointPowerAdaptor and exposes the same chassis shape, so the refusal is not specific to the bound model. This does not promote or demote any capability, and it is not a behavioural proof about power delivery."
+  }
+}

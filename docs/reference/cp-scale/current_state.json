@@ -259,6 +259,15 @@
       "artifact": {
         "path": "docs/reference/cp-scale/canonical-live-evidence/factory-structure-20260907T003018Z-cf89481fa3ea-observed.json",
         "sha256": "fa5747e56dfa000d6cc3e2c2bdd57ebf33e34b8cfddd109ed34299394220937a"
+      },
+      "access_point_family": {
+        "run_id": "factory-survey-102006c6",
+        "generic_ap_models_observed": 4,
+        "adaptor_31_supported_by_any": false,
+        "artifact": {
+          "path": "docs/reference/cp-scale/canonical-live-evidence/factory-structure-20260907T005226Z-86c75f1c304c-accesspoint-family.json",
+          "sha256": "5549a9a30da2eda5aba4c8bae89279b413399073f9dcf396d5639cb41a7463c0"
+        }
       }
     },
     "latest_verified_poe_qualification": {

@@ -95,6 +95,30 @@ This is structural evidence. It is **not** a behavioural proof that no
 observation the contract demands cannot be constructed for this endpoint model
 by creating a fixture and withholding its adapter.
 
+**It is not specific to the bound model either.** A second read-only survey,
+`factory-survey-102006c6`, asked the same question of every generic access
+point in the catalog:
+
+| Exact model | `isModuleTypeSupported(31)` |
+| --- | --- |
+| `AccessPoint-PT` | false |
+| `AccessPoint-PT-A` | false |
+| `AccessPoint-PT-N` | false |
+| `AccessPoint-PT-AC` | false |
+| `LAP-PT`, `3702i`, `802`, `803` | no descriptor under `eAccessPoint` — unobservable, not a measured absence |
+
+All four generic models expose the same chassis shape: root slots `[6, 18]`
+with a repeater NM and one non-removable module. Swapping the design to a
+sibling access point would therefore not make the access-point bindings
+qualifiable. The four models the factory does not answer for at that
+DeviceType are unobservable there, and none of them is bound by the physical
+design, so nothing is concluded from them.
+
+```text
+docs/reference/cp-scale/canonical-live-evidence/factory-structure-20260907T005226Z-86c75f1c304c-accesspoint-family.json
+SHA256 5549a9a30da2eda5aba4c8bae89279b413399073f9dcf396d5639cb41a7463c0
+```
+
 **The 3650 supply clue is now named, not resolved.** `3650-24PS` supports
 `ePtSwitchModule`, which is the type the productive catalog gives
 `AC-POWER-SUPPLY` and `POWER-COVER-PLATE`, and its root exposes three
