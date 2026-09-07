@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-06T21:26:08Z",
+  "updated_at": "2026-09-07T00:35:00Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -239,7 +239,27 @@
         "path": "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T202735-b4810d48-unobservable.json",
         "sha256": "f26cbe1ab1c2b254b5da73aba285086982b68aa8c7022a38443ad29b0e2640c8"
       },
-      "continuation": "INVESTIGATE_EXACT_AP_POWER_SOURCE_ISOLATION_BEFORE_NEXT_INFORMATIVE_QUALIFICATION"
+      "continuation": "ACCESSPOINT_PT_HAS_NO_REMOVABLE_POWER_ADAPTER_SO_NO_WITHHOLDABLE_SUPPLY"
+    },
+    "factory_structure_survey": {
+      "run_id": "factory-survey-9f967ef6",
+      "source_head": "cf89481fa3eaf9efd46c2778cb33b789d2e1197d",
+      "decision": "FACTORY_STRUCTURE_OBSERVED_NO_CAPABILITY_PROMOTION",
+      "pt_mutations": 0,
+      "capability_promotion": "NONE",
+      "removable_power_adapter_supported": {
+        "7960": true,
+        "AccessPoint-PT": false
+      },
+      "registered_device_type": {
+        "3560-24PS": 16,
+        "3650-24PS": 16
+      },
+      "physical_incapability_established": false,
+      "artifact": {
+        "path": "docs/reference/cp-scale/canonical-live-evidence/factory-structure-20260907T003018Z-cf89481fa3ea-observed.json",
+        "sha256": "fa5747e56dfa000d6cc3e2c2bdd57ebf33e34b8cfddd109ed34299394220937a"
+      }
     },
     "latest_verified_poe_qualification": {
       "run_identity": "poe-7950198d050f",
@@ -299,13 +319,13 @@
       "current_total_exhaustive": false,
       "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS"
     },
-    "next_active_step": "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
+    "next_active_step": "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_REMAINING_POE_BINDING_BEFORE_ROUTER0"
   },
   "handoff_compatibility": {
     "LIVE_RUNS_CONSUMED": "AT_LEAST_46_NON_EXHAUSTIVE_AFTER_20260903",
     "CLEANUP": "LATEST_POE_ACQUISITION_CLEANUP_4_OF_4 | PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE",
     "WORKSPACE_RESTORED": "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED",
-    "NEXT_ACTIVE_STEP": "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0",
-    "CP_SCALE_STATUS": "PRIOR_POE_EXACT_BINDING_VERIFIED | LATEST_POE_ACQUISITION_UNOBSERVABLE | ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | PRODUCT_PRECONDITION_BLOCKED"
+    "NEXT_ACTIVE_STEP": "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_REMAINING_POE_BINDING_BEFORE_ROUTER0",
+    "CP_SCALE_STATUS": "PRIOR_POE_EXACT_BINDING_VERIFIED | FACTORY_STRUCTURE_OBSERVED_NO_PROMOTION | ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | PRODUCT_PRECONDITION_BLOCKED"
   }
 }

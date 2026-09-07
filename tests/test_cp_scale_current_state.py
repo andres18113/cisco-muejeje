@@ -150,7 +150,29 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
                 "path": "docs/reference/cp-scale/canonical-live-evidence/poe-acquisition-20260906T202735-b4810d48-unobservable.json",
                 "sha256": "f26cbe1ab1c2b254b5da73aba285086982b68aa8c7022a38443ad29b0e2640c8",
             },
-            "continuation": "INVESTIGATE_EXACT_AP_POWER_SOURCE_ISOLATION_BEFORE_NEXT_INFORMATIVE_QUALIFICATION",
+            "continuation": "ACCESSPOINT_PT_HAS_NO_REMOVABLE_POWER_ADAPTER_SO_NO_WITHHOLDABLE_SUPPLY",
+        },
+        "factory_structure_survey": {
+            "run_id": "factory-survey-9f967ef6",
+            "source_head": "cf89481fa3eaf9efd46c2778cb33b789d2e1197d",
+            "decision": "FACTORY_STRUCTURE_OBSERVED_NO_CAPABILITY_PROMOTION",
+            "pt_mutations": 0,
+            "capability_promotion": "NONE",
+            "removable_power_adapter_supported": {
+                "7960": True, "AccessPoint-PT": False,
+            },
+            "registered_device_type": {"3560-24PS": 16, "3650-24PS": 16},
+            "physical_incapability_established": False,
+            "artifact": {
+                "path": (
+                    "docs/reference/cp-scale/canonical-live-evidence/"
+                    "factory-structure-20260907T003018Z-cf89481fa3ea-observed.json"
+                ),
+                "sha256": (
+                    "fa5747e56dfa000d6cc3e2c2bdd57ebf"
+                    "33e34b8cfddd109ed34299394220937a"
+                ),
+            },
         },
         "latest_verified_poe_qualification": {
             "run_identity": "poe-7950198d050f",
@@ -230,8 +252,8 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS",
         },
         "next_active_step": (
-            "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_"
-            "SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
+            "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_"
+            "REMAINING_POE_BINDING_BEFORE_ROUTER0"
         ),
     }
     assert state["source_head"] == "6c6db55566890f1d9ca9cc06bfc13ae24505e793"
@@ -423,12 +445,12 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED"
         ),
         "NEXT_ACTIVE_STEP": (
-            "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_"
-            "SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
+            "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_"
+            "REMAINING_POE_BINDING_BEFORE_ROUTER0"
         ),
         "CP_SCALE_STATUS": (
             "PRIOR_POE_EXACT_BINDING_VERIFIED | "
-            "LATEST_POE_ACQUISITION_UNOBSERVABLE | "
+            "FACTORY_STRUCTURE_OBSERVED_NO_PROMOTION | "
             "ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | "
             "PRODUCT_PRECONDITION_BLOCKED"
         ),
@@ -507,7 +529,17 @@ def test_router0_precondition_retains_product_refusal_without_consuming_live():
         for check in prelive["github_actions"]
     )
     assert evidence["prior_live_state"] == "UNCHANGED"
-    assert evidence["next_active_step"] == gate["next_active_step"]
+    # The artifact is sealed and hash-pinned, so it keeps the step that was
+    # next when its boundary closed. Tying it to the live gate would have made
+    # every later advance require rewriting evidence that must not change.
+    assert evidence["next_active_step"] == (
+        "OBTAIN_GOVERNED_EXACT_POE_BINDING_AND_"
+        "SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
+    )
+    assert gate["next_active_step"] == (
+        "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_"
+        "REMAINING_POE_BINDING_BEFORE_ROUTER0"
+    )
 
 
 def test_compact_current_state_evidence_paths_and_hashes_are_exact():
@@ -575,3 +607,56 @@ def test_compact_current_state_evidence_paths_and_hashes_are_exact():
         if item["gate"] == "decision_persisted"
     )
     assert persisted < crash["observed_at"]
+
+
+def test_factory_structure_evidence_observes_without_promoting_anything():
+    """Reading Packet Tracer's own descriptors changes no capability."""
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    gate = document["current_offline_operational_gate"]
+    survey = gate["factory_structure_survey"]
+
+    raw = (ROOT / survey["artifact"]["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == survey["artifact"]["sha256"]
+    artifact = json.loads(raw)
+
+    assert artifact["evidence_role"] == "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY"
+    assert artifact["pt_mutations"] == 0
+    assert artifact["qualifications"] == 0
+    assert artifact["router0_attempts_consumed"] == 0
+    assert artifact["router3_executed"] is False
+    assert artifact["physical_incapability_established"] is False
+    assert artifact["capability_promotion"] == "NONE"
+    assert artifact["poe_ports_changed"] is False
+
+    # The read stayed inside a clean, CI-green boundary that touched nothing.
+    assert artifact["source"]["head"] == survey["source_head"]
+    assert artifact["source"]["status"] == ""
+    assert artifact["source"]["branch"] == "feature/runtime-ripv2"
+    assert artifact["canonical_pts"]["unchanged"] is True
+    assert artifact["bridge_before"]["unauth_count"] == 0
+    assert artifact["workspace_before"]["devices"] == []
+    assert artifact["workspace_after"]["devices"] == []
+    assert artifact["realtime_after"]["simulation_mode"] is False
+
+    # The measured contrast: the endpoint model that already qualified has a
+    # withholdable supply, and the access point has none of any documented type.
+    observations = artifact["observations"]
+    assert observations["7960#mt11#dtNone#d1"]["module_type_supported"] is True
+    assert observations["7960#mt31#dtNone#d1"]["module_type_supported"] is False
+    assert observations["AccessPoint-PT#mt31#dtNone#dNone"][
+        "module_type_supported"
+    ] is False
+    assert observations["AccessPoint-PT#mt11#dtNone#d1"][
+        "module_type_supported"
+    ] is False
+
+    # Both PoE switches answer only under eMultiLayerSwitch.
+    for key in ("3560-24PS#mt4#dt16#d1", "3650-24PS#mt4#dt16#d1"):
+        assert observations[key]["device_type"] == 16
+    assert observations["3650-24PS#mt4#dt16#d1"]["module_type_supported"] is True
+    assert observations["3560-24PS#mt4#dt16#d1"]["module_type_supported"] is False
+
+    # Nothing here may move the authorized ceiling.
+    assert gate["poe_ports"] == 1
+    assert gate["hardware_plan"] == "unresolved"
+    assert gate["router0_precondition"]["attempts_consumed"] == 0

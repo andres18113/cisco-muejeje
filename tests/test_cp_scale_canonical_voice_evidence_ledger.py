@@ -1277,7 +1277,7 @@ def test_handoff_preserves_terminal_ledger_and_records_offline_diagnosis():
     )
     assert state["CP_SCALE_STATUS"] == (
         "PRIOR_POE_EXACT_BINDING_VERIFIED | "
-        "LATEST_POE_ACQUISITION_UNOBSERVABLE | "
+        "FACTORY_STRUCTURE_OBSERVED_NO_PROMOTION | "
         "ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | "
         "PRODUCT_PRECONDITION_BLOCKED"
     )

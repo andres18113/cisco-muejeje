@@ -1,0 +1,535 @@
+{
+  "schema": "cp-scale-factory-structure-evidence-v1",
+  "run_id": "factory-survey-9f967ef6",
+  "packet_tracer_build": "9.0.1.0858",
+  "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+  "decision": "FACTORY_STRUCTURE_OBSERVED_NO_CAPABILITY_PROMOTION",
+  "started_at": "2026-09-07 00:30:18.153611+00:00",
+  "closed_at": "2026-09-07 00:30:21.253897+00:00",
+  "pt_mutations": 0,
+  "qualifications": 0,
+  "router0_attempts_consumed": 0,
+  "router3_executed": false,
+  "physical_incapability_established": false,
+  "capability_promotion": "NONE",
+  "poe_ports_changed": false,
+  "source": {
+    "head": "cf89481fa3eaf9efd46c2778cb33b789d2e1197d",
+    "branch": "feature/runtime-ripv2",
+    "upstream": "cisco/feature/runtime-ripv2",
+    "status": "",
+    "dirty_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": {},
+    "runtime_sha256": "209e4ea5c6288f01d0658d289235ce1baf77a31a8a77bd3c71cae8001cc64720",
+    "harness_sha256": "a931aaff86eb589c50378492ef84dca21768ea6d7c5a1260439c5ed2be881d45"
+  },
+  "source_after": {
+    "head": "cf89481fa3eaf9efd46c2778cb33b789d2e1197d",
+    "branch": "feature/runtime-ripv2",
+    "upstream": "cisco/feature/runtime-ripv2",
+    "status": "",
+    "dirty_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": {},
+    "runtime_sha256": "209e4ea5c6288f01d0658d289235ce1baf77a31a8a77bd3c71cae8001cc64720",
+    "harness_sha256": "a931aaff86eb589c50378492ef84dca21768ea6d7c5a1260439c5ed2be881d45"
+  },
+  "isolation": {
+    "result": {
+      "state": "ISOLATED",
+      "detail": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py"
+    },
+    "python": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+    "package": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py",
+    "namespaces": [
+      "packet_tracer_mcp"
+    ]
+  },
+  "bridge_before": {
+    "connected": true,
+    "last_poll_ago": 0.0,
+    "unauth_recent": false,
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "client_headers": {
+      "Origin": "pt-sm:",
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "cors",
+      "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+    },
+    "token_id": "395ba83c275764b9"
+  },
+  "bridge_after": {
+    "connected": true,
+    "last_poll_ago": 0.0,
+    "unauth_recent": false,
+    "unauth_count": 0,
+    "unauth_paths": [],
+    "client_headers": {
+      "Origin": "pt-sm:",
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "cors",
+      "User-Agent": "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/6.8.7 Chrome/130.0.0.0 Safari/537.36"
+    },
+    "token_id": "395ba83c275764b9"
+  },
+  "workspace_before": {
+    "observed": true,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "workspace_after": {
+    "observed": true,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "realtime_before": {
+    "observed": true,
+    "simulation_mode": false,
+    "frames": 0,
+    "sim_time": 1849345,
+    "current_index": 0,
+    "message": "simulation_state_readback"
+  },
+  "realtime_after": {
+    "observed": true,
+    "simulation_mode": false,
+    "frames": 0,
+    "sim_time": 1849467,
+    "current_index": 0,
+    "message": "simulation_state_readback"
+  },
+  "canonical_pts": {
+    "path": "C:/Users/Andres/Downloads/V5.2.pts",
+    "before_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "after_sha256": "175f775560af7c17348c3d20cffc81ae5dc8d294d2486cc9e8409fbead8bc071",
+    "unchanged": true
+  },
+  "processes_before": [
+    {
+      "Id": 32992,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    },
+    {
+      "Id": 50968,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    }
+  ],
+  "processes_after": [
+    {
+      "Id": 32992,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    },
+    {
+      "Id": 50968,
+      "Path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "ProductVersion": "9.0.1.0858",
+      "FileVersion": "9.0.1.0858"
+    }
+  ],
+  "queries": [
+    [
+      "AccessPoint-PT",
+      31,
+      null,
+      null
+    ],
+    [
+      "AccessPoint-PT",
+      11,
+      null,
+      1
+    ],
+    [
+      "7960",
+      11,
+      null,
+      1
+    ],
+    [
+      "7960",
+      31,
+      null,
+      1
+    ],
+    [
+      "3650-24PS",
+      4,
+      16,
+      1
+    ],
+    [
+      "3560-24PS",
+      4,
+      16,
+      1
+    ],
+    [
+      "2960-24TT",
+      4,
+      null,
+      1
+    ]
+  ],
+  "observations": {
+    "AccessPoint-PT#mt31#dtNone#dNone": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "AccessPoint-PT",
+      "device_type": 7,
+      "queried_module_type": 31,
+      "module_type_supported": false,
+      "max_depth": 12,
+      "truncated": false,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          6,
+          18
+        ],
+        "modules": [
+          {
+            "model": "PT-REPEATER-NM-1CFE",
+            "module_type": 6,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          },
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "AccessPoint-PT#mt11#dtNone#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "AccessPoint-PT",
+      "device_type": 7,
+      "queried_module_type": 11,
+      "module_type_supported": false,
+      "max_depth": 1,
+      "truncated": false,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          6,
+          18
+        ],
+        "modules": [
+          {
+            "model": "PT-REPEATER-NM-1CFE",
+            "module_type": 6,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          },
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "7960#mt11#dtNone#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "7960",
+      "device_type": 12,
+      "queried_module_type": 11,
+      "module_type_supported": true,
+      "max_depth": 1,
+      "truncated": true,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          18
+        ],
+        "modules": [
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": true,
+            "slot_types": [
+              11
+            ],
+            "modules": [],
+            "truncated": true
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "7960#mt31#dtNone#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "7960",
+      "device_type": 12,
+      "queried_module_type": 31,
+      "module_type_supported": false,
+      "max_depth": 1,
+      "truncated": true,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          18
+        ],
+        "modules": [
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": true,
+            "slot_types": [
+              11
+            ],
+            "modules": [],
+            "truncated": true
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "3650-24PS#mt4#dt16#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "3650-24PS",
+      "device_type": 16,
+      "queried_module_type": 4,
+      "module_type_supported": true,
+      "max_depth": 1,
+      "truncated": true,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          18,
+          18,
+          18
+        ],
+        "modules": [
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          },
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [
+              32,
+              32
+            ],
+            "modules": [],
+            "truncated": true
+          },
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": true,
+            "slot_types": [
+              30,
+              30,
+              30,
+              30,
+              4,
+              4
+            ],
+            "modules": [],
+            "truncated": true
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "3560-24PS#mt4#dt16#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "3560-24PS",
+      "device_type": 16,
+      "queried_module_type": 4,
+      "module_type_supported": false,
+      "max_depth": 1,
+      "truncated": false,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          18
+        ],
+        "modules": [
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          }
+        ],
+        "truncated": false
+      }
+    },
+    "2960-24TT#mt4#dtNone#d1": {
+      "evidence_role": "FACTORY_STRUCTURE_ONLY_NOT_POWER_DELIVERY",
+      "model": "2960-24TT",
+      "device_type": 1,
+      "queried_module_type": 4,
+      "module_type_supported": false,
+      "max_depth": 1,
+      "truncated": false,
+      "root": {
+        "model": "",
+        "module_type": 18,
+        "hot_swappable": false,
+        "slot_types": [
+          18
+        ],
+        "modules": [
+          {
+            "model": "",
+            "module_type": 18,
+            "hot_swappable": false,
+            "slot_types": [],
+            "modules": [],
+            "truncated": false
+          }
+        ],
+        "truncated": false
+      }
+    }
+  },
+  "errors": {},
+  "reads": [
+    {
+      "started_at": "2026-09-07 00:30:19.974325+00:00",
+      "script_sha256": "4c1bb30540dad90c8543b627bac8c0faa6826d00c9bd87ba8b24ac050bb063fa",
+      "ended_at": "2026-09-07 00:30:20.023240+00:00",
+      "raw": "{\"items\":[],\"links\":[]}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.024236+00:00",
+      "script_sha256": "86573ff0e7af17e93aee7add4c060e7cfed832774cf39f62886ce058a69c4b47",
+      "ended_at": "2026-09-07 00:30:20.034403+00:00",
+      "raw": "{\"mode\":false,\"frames\":0,\"sim_time\":1849345,\"current_index\":0}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.035405+00:00",
+      "script_sha256": "330224c7b02b8c9edbef85b00545b83eba0448c2bbb127e82f8057a0a3d78ad4",
+      "ended_at": "2026-09-07 00:30:20.046431+00:00",
+      "raw": "{\"observed\":true,\"model\":\"AccessPoint-PT\",\"device_type\":7,\"queried_module_type\":31,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[6,18],\"modules\":[{\"model\":\"PT-REPEATER-NM-1CFE\",\"module_type\":6,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false},{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.048938+00:00",
+      "script_sha256": "27514712edd701152bfaef86d9449bd727feddaae70e65ab1f3290f1c408d54d",
+      "ended_at": "2026-09-07 00:30:20.061067+00:00",
+      "raw": "{\"observed\":true,\"model\":\"AccessPoint-PT\",\"device_type\":7,\"queried_module_type\":11,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[6,18],\"modules\":[{\"model\":\"PT-REPEATER-NM-1CFE\",\"module_type\":6,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false},{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.063151+00:00",
+      "script_sha256": "c963d0605db837f64fd67c3c40c97f4186a8cdb37ea0e001973c68b946963df1",
+      "ended_at": "2026-09-07 00:30:20.074470+00:00",
+      "raw": "{\"observed\":true,\"model\":\"7960\",\"device_type\":12,\"queried_module_type\":11,\"module_type_supported\":true,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[18],\"modules\":[{\"model\":\"\",\"module_type\":18,\"hot_swappable\":true,\"slot_types\":[11],\"modules\":[],\"truncated\":true}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.077547+00:00",
+      "script_sha256": "6a4254b2acb09f2b4796a18747a392e13ca91c43988a7f542b48353f3c407437",
+      "ended_at": "2026-09-07 00:30:20.090081+00:00",
+      "raw": "{\"observed\":true,\"model\":\"7960\",\"device_type\":12,\"queried_module_type\":31,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[18],\"modules\":[{\"model\":\"\",\"module_type\":18,\"hot_swappable\":true,\"slot_types\":[11],\"modules\":[],\"truncated\":true}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.091604+00:00",
+      "script_sha256": "11a2ebeedfea64613489062c3bb014496d692f3edfaeae07adf455021bc6aef0",
+      "ended_at": "2026-09-07 00:30:20.103271+00:00",
+      "raw": "{\"observed\":true,\"model\":\"3650-24PS\",\"device_type\":16,\"queried_module_type\":4,\"module_type_supported\":true,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[18,18,18],\"modules\":[{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false},{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[32,32],\"modules\":[],\"truncated\":true},{\"model\":\"\",\"module_type\":18,\"hot_swappable\":true,\"slot_types\":[30,30,30,30,4,4],\"modules\":[],\"truncated\":true}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.106258+00:00",
+      "script_sha256": "b5ee6b7bca101c4735b62d8752c4edd58470339d054f3cb0175fb8df5e72d3b7",
+      "ended_at": "2026-09-07 00:30:20.115780+00:00",
+      "raw": "{\"observed\":true,\"model\":\"3560-24PS\",\"device_type\":16,\"queried_module_type\":4,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[18],\"modules\":[{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.118796+00:00",
+      "script_sha256": "32ceef3ee6afa509bb2482835fce7ebc0ed34b1e62fc6de147c847e76384d1c7",
+      "ended_at": "2026-09-07 00:30:20.128443+00:00",
+      "raw": "{\"observed\":true,\"model\":\"2960-24TT\",\"device_type\":1,\"queried_module_type\":4,\"module_type_supported\":false,\"root\":{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[18],\"modules\":[{\"model\":\"\",\"module_type\":18,\"hot_swappable\":false,\"slot_types\":[],\"modules\":[],\"truncated\":false}],\"truncated\":false}}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.132958+00:00",
+      "script_sha256": "4c1bb30540dad90c8543b627bac8c0faa6826d00c9bd87ba8b24ac050bb063fa",
+      "ended_at": "2026-09-07 00:30:20.144476+00:00",
+      "raw": "{\"items\":[],\"links\":[]}"
+    },
+    {
+      "started_at": "2026-09-07 00:30:20.146477+00:00",
+      "script_sha256": "86573ff0e7af17e93aee7add4c060e7cfed832774cf39f62886ce058a69c4b47",
+      "ended_at": "2026-09-07 00:30:20.159521+00:00",
+      "raw": "{\"mode\":false,\"frames\":0,\"sim_time\":1849467,\"current_index\":0}"
+    }
+  ],
+  "module_type_enum_source": "C:/Program Files/Cisco Packet Tracer 9.0.1/help/default/IpcAPI/class_module_descriptor.html",
+  "module_types": {
+    "4": "ePtSwitchModule",
+    "11": "eIpPhonePowerAdapter",
+    "18": "eNonRemovableModule",
+    "31": "eAccessPointPowerAdaptor"
+  },
+  "device_types": {
+    "7": "eAccessPoint",
+    "12": "eIpPhone",
+    "1": "eSwitch",
+    "16": "eMultiLayerSwitch"
+  },
+  "findings": {
+    "removable_power_adapter_module_support": {
+      "7960": {
+        "eIpPhonePowerAdapter": true
+      },
+      "AccessPoint-PT": {
+        "eAccessPointPowerAdaptor": false
+      }
+    },
+    "registered_device_type": {
+      "3560-24PS": 16,
+      "3650-24PS": 16,
+      "2960-24TT": 1,
+      "note": "getDescriptor(eSwitch, ...) answers nothing for either PoE switch; both are filed under eMultiLayerSwitch."
+    },
+    "pt_switch_module_support": {
+      "3650-24PS": true,
+      "3560-24PS": false,
+      "2960-24TT": false,
+      "note": "The catalog declares AC-POWER-SUPPLY and POWER-COVER-PLATE as module_type 4, which is ePtSwitchModule. The 3650-24PS root exposes three eNonRemovableModule slots against one on the 3560-24PS. This is consistent with the two empty supply bays seen in Physical view and with the 3650 boot line inline power denied, and it does NOT establish that installing a supply enables inline power. Only a governed observation could."
+    },
+    "interpretation_limit": "Factory structure only. No field here observes power delivery, installed hardware, or an administrative power state, and none of it promotes a capability or authorizes a PoE binding. A descriptor is not a runtime Module.",
+    "access_point_consequence": "PT 9.0.1 defines eAccessPointPowerAdaptor, and the exact model AccessPoint-PT does not support it, while the exact endpoint model that already qualified positively, 7960, does support eIpPhonePowerAdapter. Every governed positive needs a differential against an endpoint whose external supply can be withheld, so this is the measured reason the AccessPoint-PT arms were unobservable. It is structural evidence, not a behavioural proof that no AccessPoint-PT can ever be powered."
+  }
+}

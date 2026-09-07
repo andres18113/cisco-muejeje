@@ -6,6 +6,13 @@ the small set of keys still projected into `handoff.md` for compatibility.
 
 Supporting records:
 
+- [Factory structure observed, 2026-09-07](ROUTER0_POE_FACTORY_STRUCTURE_20260907.md)
+  records why bridge polling was absent, the three read defects that made
+  Packet Tracer's own descriptors unreadable, and the resulting measurement:
+  `7960` supports `eIpPhonePowerAdapter`, `AccessPoint-PT` supports no
+  documented power-adapter type, and both PoE switches are filed under
+  `eMultiLayerSwitch`. Factory structure only; it promotes no capability and
+  leaves `poe_ports` at 1.
 - [Resumed factory diagnosis, 2026-09-06](ROUTER0_POE_RESUME_20260906.md)
   records fresh API review, the exact-model alias fix, and a read-only preflight
   blocked by absent bridge polling before any PT command was sent. Factory
