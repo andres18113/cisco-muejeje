@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ..models.capabilities import CapabilityEvidence, CapabilityStatus, DeviceCapabilities, EvidenceSource
-from .poe_claims import decode_poe_delivery_scope, poe_claim_has_delivery_basis
+from .poe_claims import decode_poe_authorized_claim, poe_claim_has_delivery_basis
+from .poe_pse_claims import declares_pse_evidence
 
 
 _EVIDENCE_PRIORITY = {
@@ -192,6 +193,31 @@ def _cap_claim_to_evidence(evidence: CapabilityEvidence) -> CapabilityEvidence:
     })
 
 
+def _is_unusable_self_declared_claim(
+    evidence: CapabilityEvidence,
+    packet_tracer_version: str | None,
+) -> bool:
+    """A record that names its own contract and then fails it.
+
+    The ceiling below exists because an unreadable decided claim at high
+    authority might be hiding a real fact, so a weaker record must not supply
+    scope in its place. A claim that declares a known kind is a different
+    thing: the producer said what it was, the contract rejected it, and that
+    tells us this record is unusable -- not that some other, independently
+    valid observation is wrong. Capping on it would let one broken PSE run
+    delete a manual receipt that is still perfectly true.
+
+    It grants nothing either way: it fails to decode, so it never authorizes.
+    """
+    return (
+        declares_pse_evidence(evidence)
+        and decode_poe_authorized_claim(
+            evidence,
+            expected_packet_tracer_version=packet_tracer_version,
+        ) is None
+    )
+
+
 def _evidence_rank(evidence: CapabilityEvidence) -> tuple[int, bool, bool, str]:
     return (
         _EVIDENCE_PRIORITY[evidence.source],
@@ -214,7 +240,7 @@ def _winning_poe_evidence(
 
     valid_delivery = [
         item for item in evidence
-        if decode_poe_delivery_scope(
+        if decode_poe_authorized_claim(
             item,
             expected_packet_tracer_version=packet_tracer_version,
         ) is not None
@@ -224,7 +250,8 @@ def _winning_poe_evidence(
         invalid_decided = [
             item for item in evidence
             if item.status is not CapabilityStatus.UNKNOWN
-            and decode_poe_delivery_scope(
+            and not _is_unusable_self_declared_claim(item, packet_tracer_version)
+            and decode_poe_authorized_claim(
                 item,
                 expected_packet_tracer_version=packet_tracer_version,
             ) is None
@@ -261,7 +288,7 @@ def _poe_projection(
         "poe_ports": None,
         "poe_authorized_bindings": [],
     }
-    winner_scope = decode_poe_delivery_scope(
+    winner_scope = decode_poe_authorized_claim(
         winner,
         expected_model=model,
         expected_packet_tracer_version=packet_tracer_version,
@@ -273,7 +300,8 @@ def _poe_projection(
     if any(
         item.capability == "supports_poe"
         and item.status is not CapabilityStatus.UNKNOWN
-        and decode_poe_delivery_scope(
+        and not _is_unusable_self_declared_claim(item, packet_tracer_version)
+        and decode_poe_authorized_claim(
             item,
             expected_model=model,
             expected_packet_tracer_version=packet_tracer_version,
@@ -297,7 +325,7 @@ def _poe_projection(
             or item.status is not CapabilityStatus.SUPPORTED
         ):
             continue
-        scope = decode_poe_delivery_scope(
+        scope = decode_poe_authorized_claim(
             item,
             expected_model=model,
             expected_packet_tracer_version=packet_tracer_version,

@@ -14,6 +14,7 @@ from ..models.capabilities import (
     PoEAuthorizedBinding,
 )
 from ..models.discovery import RuntimePortDescriptor
+from .poe_pse_claims import decode_poe_pse_delivery_scope
 
 
 POE_ACCESS_PORT_COUNT = "poe_access_port_count"
@@ -304,8 +305,58 @@ def decode_poe_delivery_scope(
     return scope
 
 
+@dataclass(frozen=True)
+class PoEAuthorizedClaim:
+    """What one validated PoE claim authorizes, whatever proved it.
+
+    This is the only PoE vocabulary the resolver and the providers see. Manual
+    receipts and PSE readings are validated by their own contracts, against
+    their own rules, and meet here -- so a consumer can never tell, or depend
+    on, which mechanism established a binding.
+    """
+
+    active_bindings: tuple[PoEAuthorizedBinding, ...]
+    simultaneous_active_ports: int
+
+
+def decode_poe_authorized_claim(
+    result: PoEClaim,
+    *,
+    expected_model: str | None = None,
+    expected_packet_tracer_version: str | None = None,
+) -> PoEAuthorizedClaim | None:
+    """Decode one claim through whichever independent basis it belongs to.
+
+    The bases are tried, never merged: a manual receipt is validated only by
+    the manual contract and a PSE reading only by the PSE contract. Neither
+    can lend the other a field it did not prove.
+    """
+
+    manual = decode_poe_delivery_scope(
+        result,
+        expected_model=expected_model,
+        expected_packet_tracer_version=expected_packet_tracer_version,
+    )
+    if manual is not None:
+        return PoEAuthorizedClaim(
+            active_bindings=manual.active_bindings,
+            simultaneous_active_ports=manual.simultaneous_active_ports,
+        )
+    pse = decode_poe_pse_delivery_scope(
+        result,
+        expected_model=expected_model,
+        expected_packet_tracer_version=expected_packet_tracer_version,
+    )
+    if pse is not None:
+        return PoEAuthorizedClaim(
+            active_bindings=pse.active_bindings,
+            simultaneous_active_ports=pse.simultaneous_active_ports,
+        )
+    return None
+
+
 def poe_claim_has_delivery_basis(result: PoEClaim) -> bool:
-    """Accept decided PoE claims only when the exact scope decodes."""
+    """Accept decided PoE claims only when an exact scope decodes."""
 
     if result.capability != "supports_poe":
         return True
@@ -323,7 +374,7 @@ def poe_claim_has_delivery_basis(result: PoEClaim) -> bool:
             context.live_session_safety,
         ).is_valid:
             return False
-    return decode_poe_delivery_scope(result) is not None
+    return decode_poe_authorized_claim(result) is not None
 
 
 def _claim_source(result: PoEClaim) -> EvidenceSource | None:
