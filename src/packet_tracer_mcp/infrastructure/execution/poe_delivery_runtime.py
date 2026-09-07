@@ -34,6 +34,13 @@ from .topology_observation import (
 
 _LINK_READBACK_TIMEOUT_SECONDS = 4.0
 
+# A real chassis descriptor tree is bigger than a toy ceiling: reading the
+# exact 7960 hit the first 64-node bound and came back as "oversized",
+# discarding a valid answer. The read still has to stay finite, so the
+# bound is raised rather than removed.
+_FACTORY_TREE_MAX_NODES = 512
+_FACTORY_TREE_MAX_DEPTH = 12
+
 
 class PacketTracerPoEDeliveryFixtureRuntime:
     """Create and read back the narrow temporary PoE qualification fixture."""
@@ -64,7 +71,8 @@ class PacketTracerPoEDeliveryFixtureRuntime:
         return self._inventory_runtime.wait_for_inventory_fingerprint(expected)
 
     def observe_factory_structure(
-        self, model: str, *, module_type: int,
+        self, model: str, *, module_type: int, device_type: int | None = None,
+        max_depth: int | None = None,
     ) -> dict[str, object]:
         """Read exact factory metadata without instantiating or powering a device.
 
@@ -73,27 +81,52 @@ class PacketTracerPoEDeliveryFixtureRuntime:
         getModel/getType/isModuleTypeSupported/getRootModule, and the
         ModuleDescriptor getters below. A descriptor is NOT a runtime Module.
         No returned field establishes power delivery or installed hardware.
+
+        ``device_type`` overrides the catalog category for models the factory
+        files elsewhere -- 3560-24PS and 3650-24PS answer nothing under
+        eSwitch. It only accepts a value Packet Tracer documents, so which
+        DeviceType holds a model stays something this reads, never something
+        it asserts, and the response still has to echo it back exactly.
+
+        ``max_depth`` bounds the walk. A 24-port switch descriptor overflows
+        any complete traversal, and refusing the whole read left its slot
+        inventory unreadable. A bounded read carries ``truncated`` so an
+        omitted subtree stays visibly absent and can never be read as an
+        observed absence.
         """
         catalog_model = resolve_model(model)
+        documented = set(PT_DEVICE_TYPE.values())
         if (
             catalog_model is None
             or catalog_model.pt_type != model
             or catalog_model.category not in PT_DEVICE_TYPE
             or type(module_type) is not int
             or module_type < 0
+            or (device_type is not None
+                and (type(device_type) is not int or device_type not in documented))
+            or (max_depth is not None
+                and (type(max_depth) is not int
+                     or not 0 <= max_depth <= _FACTORY_TREE_MAX_DEPTH))
         ):
             raise ValueError("Factory diagnosis requires an exact known model and module type.")
-        device_type = PT_DEVICE_TYPE[catalog_model.category]
+        if device_type is None:
+            device_type = PT_DEVICE_TYPE[catalog_model.category]
+        if max_depth is None:
+            max_depth = _FACTORY_TREE_MAX_DEPTH
+        max_nodes_literal = json.dumps(_FACTORY_TREE_MAX_NODES)
+        max_depth_literal = json.dumps(max_depth)
         script = "".join((
             "try{var __model=", json.dumps(model, ensure_ascii=False),
             ",__type=", json.dumps(device_type),
             ",__mt=", json.dumps(module_type), ",__nodes=0;",
-            "function __count(v){if(typeof v!=='number'||v<0||v>64||v%1!==0){throw new Error('invalid descriptor count');}return v;}",
-            "function __tree(m,depth){if(!m||depth>8||++__nodes>64){throw new Error('incomplete or oversized descriptor tree');}",
+            "function __count(v){if(typeof v!=='number'||v<0||v>", max_nodes_literal, "||v%1!==0){throw new Error('invalid descriptor count');}return v;}",
+            "function __tree(m,depth){if(!m||depth>", max_depth_literal,"||++__nodes>", max_nodes_literal, "){throw new Error('incomplete or oversized descriptor tree');}",
             "var slots=[],children=[],s=__count(m.getSlotCount()),n=__count(m.getModuleCount());",
+            "var cut=(depth>=", max_depth_literal, ");",
             "for(var i=0;i<s;i++){slots.push(m.getSlotTypeAt(i));}",
-            "for(var j=0;j<n;j++){children.push(__tree(m.getModuleAt(j),depth+1));}",
-            "return {model:m.getModel(),module_type:m.getType(),hot_swappable:m.isHotSwappable(),slot_types:slots,modules:children};}",
+            "if(!cut){for(var j=0;j<n;j++){children.push(__tree(m.getModuleAt(j),depth+1));}}",
+            "return {model:m.getModel(),module_type:m.getType(),hot_swappable:m.isHotSwappable(),",
+            "slot_types:slots,modules:children,truncated:(cut&&n>0)};}",
             "var __d=ipc.hardwareFactory().devices().getDescriptor(__type,__model);",
             "if(!__d){throw new Error('factory descriptor unavailable');}",
             "reportResult(JSON.stringify({observed:true,model:__d.getModel(),device_type:__d.getType(),",
@@ -115,25 +148,35 @@ class PacketTracerPoEDeliveryFixtureRuntime:
             raise RuntimeError("Packet Tracer returned unattributable factory metadata.")
 
         nodes = 0
+        truncated = False
 
         def validate_tree(value: object, depth: int = 0) -> None:
-            nonlocal nodes
+            nonlocal nodes, truncated
             nodes += 1
-            if not isinstance(value, dict) or depth > 8 or nodes > 64:
+            if (
+                not isinstance(value, dict)
+                or depth > _FACTORY_TREE_MAX_DEPTH
+                or nodes > _FACTORY_TREE_MAX_NODES
+            ):
                 raise RuntimeError("Packet Tracer returned an incomplete factory tree.")
             slots, children = value.get("slot_types"), value.get("modules")
+            # A chassis descriptor legitimately reports an empty model: on
+            # 9.0.1 the AccessPoint-PT root and its second slot both do. The
+            # tree is attributed by the top-level identity checked above, so
+            # requiring a name here discarded real metadata as malformed.
             if (
                 not isinstance(value.get("model"), str)
-                or not value["model"]
                 or type(value.get("module_type")) is not int
                 or type(value.get("hot_swappable")) is not bool
+                or type(value.get("truncated")) is not bool
                 or not isinstance(slots, list)
-                or len(slots) > 64
+                or len(slots) > _FACTORY_TREE_MAX_NODES
                 or not all(type(slot) is int for slot in slots)
                 or not isinstance(children, list)
-                or len(children) > 64
+                or len(children) > _FACTORY_TREE_MAX_NODES
             ):
                 raise RuntimeError("Packet Tracer returned malformed factory tree metadata.")
+            truncated = truncated or value["truncated"]
             for child in children:
                 validate_tree(child, depth + 1)
 
@@ -143,6 +186,7 @@ class PacketTracerPoEDeliveryFixtureRuntime:
             "model": model, "device_type": device_type,
             "queried_module_type": module_type,
             "module_type_supported": data["module_type_supported"],
+            "max_depth": max_depth, "truncated": truncated,
             "root": data["root"],
         }
 
