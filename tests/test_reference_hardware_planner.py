@@ -229,20 +229,23 @@ def _unmeasured(candidates, model: str):
     ]
 
 
-def test_unknown_poe_evidence_allows_execution_without_a_delivery_claim():
-    """Physical execution is admissible; UNKNOWN still supplies no PoE claim."""
+def test_unknown_poe_evidence_never_admits_a_powered_endpoint_binding():
+    """UNKNOWN is not permission.
+
+    The exact-reference path used to hand this design to E5 as VALID with
+    `poe_capacity=None`: a powered-port requirement admitted with no capability
+    evidence at all.
+    """
     candidates = _unmeasured(_switch_candidates(), "2960-24TT")
 
     result = ReferenceHardwarePlanner().plan(
         _poe_enterprise(), _poe_design(model="2960-24TT"), candidates,
     )
 
-    assert result.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE
+    assert result.status is HardwarePlanStatus.PARTIALLY_RESOLVED
     device = result.site_hardware[0].devices[0]
-    assert device.selection_status is DeviceCandidateStatus.COMPATIBLE
+    assert device.selection_status is DeviceCandidateStatus.NEEDS_VERIFICATION
     assert device.poe_capacity is None
-    assert device.poe_authorized_bindings == []
-    assert device.poe_uncertainty is not None
     assert any(
         "2960-24TT" in item and "unknown" in item.casefold()
         for item in result.warnings
@@ -260,15 +263,15 @@ def test_control_off_without_a_delivery_test_remains_unverified():
         _poe_enterprise(), _poe_design(model="2960-24TT"), _switch_candidates(),
     )
 
-    assert result.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE
+    assert result.status is HardwarePlanStatus.PARTIALLY_RESOLVED
     device = result.site_hardware[0].devices[0]
-    assert device.selection_status is DeviceCandidateStatus.COMPATIBLE
+    assert device.selection_status is DeviceCandidateStatus.NEEDS_VERIFICATION
     assert any(
         "2960-24TT" in item and "unknown" in item for item in result.warnings
     )
 
 
-def test_control_only_poe_baseline_preserves_unverified_execution_demand(
+def test_control_only_poe_baseline_never_admits_a_powered_endpoint_binding(
     tmp_path,
 ):
     """The exact-build 3560 control observation does not prove delivery."""
@@ -280,30 +283,21 @@ def test_control_only_poe_baseline_preserves_unverified_execution_demand(
         _switch_candidates(CapabilitySnapshotStore(tmp_path / "capabilities")),
     )
 
-    assert result.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE, result.warnings
+    assert result.status is HardwarePlanStatus.PARTIALLY_RESOLVED, result.warnings
     device = result.site_hardware[0].devices[0]
-    assert device.selection_status is DeviceCandidateStatus.COMPATIBLE
+    assert device.selection_status is DeviceCandidateStatus.NEEDS_VERIFICATION
     assert device.poe_capacity is None
-    assert device.poe_authorized_bindings == []
-    assert device.poe_uncertainty is not None
 
 
-def test_poe_demand_beyond_evidenced_capacity_is_executable_with_unknown_scope():
-    """A two-port claim cannot prove three simultaneous deliveries or forbid measuring them."""
+def test_poe_demand_beyond_the_exact_admitted_capacity_is_unresolved():
+    """Three powered endpoints do not fit a budget evidenced as two."""
     candidates = _rebudget(_switch_candidates(), "3560-24PS", 2)
 
     result = ReferenceHardwarePlanner().plan(
         _poe_enterprise(phones=3), _poe_design(model="3560-24PS", phones=3), candidates,
     )
 
-    assert result.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE
-    device = result.site_hardware[0].devices[0]
-    assert device.poe_capacity == 2
-    assert device.poe_uncertainty is not None
-    assert device.poe_uncertainty.required_simultaneous_ports == 3
-    assert device.poe_uncertainty.unverified_bindings == [
-        PoEAuthorizedBinding("FastEthernet0/3", "7960", "Switch"),
-    ]
+    assert result.status is HardwarePlanStatus.UNRESOLVED
     assert any(
         "sw1" in item and "3" in item and "2" in item for item in result.warnings
     )
@@ -322,14 +316,9 @@ def test_exact_delivery_binding_authorizes_only_its_measured_switch_port():
     )
 
     assert exact.status is HardwarePlanStatus.VALID
-    assert exact.site_hardware[0].devices[0].poe_uncertainty is None
-    assert adjacent.site_hardware[0].devices[0].poe_capacity == 1
-    assert adjacent.site_hardware[0].devices[0].poe_uncertainty.unverified_bindings == [
-        PoEAuthorizedBinding("FastEthernet0/2", "7960", "Switch"),
-    ]
-    assert adjacent.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE
+    assert adjacent.status is HardwarePlanStatus.PARTIALLY_RESOLVED
     assert adjacent.site_hardware[0].devices[0].selection_status is (
-        DeviceCandidateStatus.COMPATIBLE
+        DeviceCandidateStatus.NEEDS_VERIFICATION
     )
 
 
@@ -347,8 +336,8 @@ def test_exact_delivery_binding_does_not_authorize_another_endpoint_identity():
         _poe_enterprise(), wrong_port, candidates,
     )
 
-    assert model_result.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE
-    assert port_result.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE
+    assert model_result.status is HardwarePlanStatus.PARTIALLY_RESOLVED
+    assert port_result.status is HardwarePlanStatus.PARTIALLY_RESOLVED
 
 
 def test_two_simultaneous_exact_bindings_authorize_only_that_complete_group():
@@ -366,7 +355,7 @@ def test_two_simultaneous_exact_bindings_authorize_only_that_complete_group():
     )
 
     assert exact.status is HardwarePlanStatus.VALID
-    assert outside.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE
+    assert outside.status is HardwarePlanStatus.PARTIALLY_RESOLVED
 
 
 def test_powered_endpoints_may_not_be_bound_to_unpowered_uplink_ports():

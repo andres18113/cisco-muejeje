@@ -76,7 +76,6 @@ from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_final_disposition,
     canonical_required_capability_probes,
     canonical_stage_configuration_error,
-    canonical_stage_poe_admission,
     canonical_stage_resume_error,
     canonical_stage_workspace_error,
     read_git_repository_state,
@@ -3056,7 +3055,6 @@ def _execute_stage(
         )
     evidence: dict[str, object] = {
         "stage": projection.stage.value,
-        "poe_execution_admission": canonical_stage_poe_admission(projection.topology),
         "plan": {
             "topology_hash": projection.topology.physical_identity_hash,
             "configuration_hash": projection.configuration.semantic_hash,

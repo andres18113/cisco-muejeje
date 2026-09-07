@@ -88,31 +88,6 @@ _POINT_COUNTS = {
 }
 
 
-def canonical_stage_poe_admission(topology: TopologyPlan) -> list[dict[str, object]]:
-    """Archive the compiled claim ceiling and uncertainty, separately from runtime success.
-
-    The hardware scope is the canonical demand for each switch present in
-    this stage. Projection copies this metadata; operation never modifies it
-    and this journal is not a capability-provider input.
-    """
-    records: list[dict[str, object]] = []
-    for device in sorted(topology.devices, key=lambda item: item.id):
-        metadata = device.metadata
-        if "poe_authorized_bindings" not in metadata and "poe_execution_uncertainty" not in metadata:
-            continue
-        capacity = metadata.get("poe_capacity", "unknown")
-        records.append({
-            "device_id": device.id,
-            "device_name": device.name,
-            "switch_model": device.model,
-            "evidenced_simultaneous_ports": None if capacity == "unknown" else int(capacity),
-            "authorized_bindings": json.loads(metadata.get("poe_authorized_bindings", "[]")),
-            "uncertainty": json.loads(metadata.get("poe_execution_uncertainty", "null")),
-            "scope": "canonical_hardware_demand_for_present_switch",
-        })
-    return records
-
-
 def canonical_required_capability_probes(
     composition: EnterpriseReferenceComposition,
 ) -> dict[str, list[str]]:

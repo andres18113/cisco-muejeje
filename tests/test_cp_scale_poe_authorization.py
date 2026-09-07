@@ -205,7 +205,7 @@ def test_stage_a_switches_fail_closed_on_control_only_poe_baseline(tmp_path):
     assert all("PoE requiere evidencia" in item.warnings[0] for item in access)
 
 
-def test_canonical_product_carries_unverified_poe_through_topology(tmp_path):
+def test_canonical_product_stops_before_topology_without_delivery_evidence(tmp_path):
     # An explicit empty store keeps this measuring the absence of delivery
     # evidence.  Without it the default store is read, so a real governed
     # qualification performed on the host silently changes the outcome.
@@ -214,16 +214,11 @@ def test_canonical_product_carries_unverified_poe_through_topology(tmp_path):
         capability_store=CapabilitySnapshotStore(tmp_path / "capabilities"),
     )
 
-    assert composition.valid, composition.issues
-    assert composition.topology is not None
+    assert not composition.valid
+    assert composition.topology is None
     assert composition.hardware_plan is not None
-    assert composition.hardware_plan.status.value == "executable_with_unverified_poe"
-    assert any(
-        device.poe_uncertainty is not None
-        for site in composition.hardware_plan.site_hardware for device in site.devices
-    )
-    assert composition.capabilities["3560-24PS"].supports_poe is CapabilityStatus.UNKNOWN
-    assert composition.capabilities["3560-24PS"].poe_authorized_bindings == []
+    assert composition.hardware_plan.status.value == "partially_resolved"
+    assert any("hardware" in issue.casefold() for issue in composition.issues)
 
 
 def test_poe_evidence_does_not_cross_model_or_build_and_names_do_not_promote(tmp_path):

@@ -15,9 +15,6 @@ from ..models.hardware import (
     HardwarePlan,
     HardwarePlanStatus,
     PhysicalDesignSpec,
-    PhysicalDesignDevice,
-    PoEExecutionUncertainty,
-    PortDescriptor,
     EndpointPortBinding,
     PlannedNetworkDevice,
     PortClass,
@@ -28,12 +25,24 @@ from .naming import DeterministicNamingService
 
 
 class ReferenceHardwarePlanner:
-    """Resolve physical execution separately from powered-delivery claims.
+    """Bind exact reference devices only to candidates with exact port evidence.
 
-    Exact model, module, port and design errors still reject execution.
-    Unverified PoE demand is retained as typed uncertainty for runtime
-    measurement. It never changes the candidate's authorized bindings or its
-    evidenced simultaneous capacity. A measured refusal remains a conflict.
+    Powered ports are admitted the same way physical ports are: from exact
+    evidence about the selected build, never from a model name and never from an
+    aggregate nobody reconciled against the bindings. A powered endpoint is a
+    demand on one named port of one selected switch, so that is the granularity
+    the decision is made at:
+
+    * UNSUPPORTED is a measured refusal, so the design is UNRESOLVED;
+    * UNKNOWN is not permission -- the device drops to NEEDS_VERIFICATION and
+      the plan to PARTIALLY_RESOLVED, which E5 already refuses to compile;
+    * SUPPORTED still has to cover the exact demand, on ports the evidence
+      actually reached.
+
+    That last clause is not pedantry. The admitted powered-port count for a
+    build is measured over its access ports, so counting a powered endpoint
+    bound to an uplink would let a 24-port budget silently absorb a 25th
+    powered attachment nobody ever observed delivering power.
     """
 
     def plan(
@@ -145,7 +154,6 @@ class ReferenceHardwarePlanner:
                 else None
             )
             selection_status = DeviceCandidateStatus.COMPATIBLE
-            poe_uncertainty = None
             demanded = sorted(
                 powered_bindings.get(requested.id, ()),
                 key=lambda item: (
@@ -153,7 +161,7 @@ class ReferenceHardwarePlanner:
                 ),
             )
             if demanded:
-                poe_capacity, selection_status, poe_uncertainty = self._assess_powered_ports(
+                poe_capacity, selection_status = self._admit_powered_ports(
                     requested, candidate, demanded, ports_by_name, errors, unverified,
                 )
             resolved_by_id[requested.id] = PlannedNetworkDevice(
@@ -168,11 +176,9 @@ class ReferenceHardwarePlanner:
                 candidate_models=[requested.model],
                 port_capacity=access_ports,
                 poe_capacity=poe_capacity,
-                poe_authorized_bindings=(
-                    list(candidate.capabilities.poe_authorized_bindings)
-                    if poe_capacity is not None else []
+                poe_authorized_bindings=list(
+                    candidate.capabilities.poe_authorized_bindings
                 ),
-                poe_uncertainty=poe_uncertainty,
                 port_descriptors=list(candidate.ports),
                 module_plan=selected_modules,
                 parent_group=requested.parent_group,
@@ -201,7 +207,7 @@ class ReferenceHardwarePlanner:
             status=(
                 HardwarePlanStatus.UNRESOLVED
                 if errors
-                else HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE
+                else HardwarePlanStatus.PARTIALLY_RESOLVED
                 if unverified
                 else HardwarePlanStatus.VALID
             ),
@@ -234,69 +240,69 @@ class ReferenceHardwarePlanner:
         return bindings
 
     @staticmethod
-    def _assess_powered_ports(
-        requested: PhysicalDesignDevice,
+    def _admit_powered_ports(
+        requested,
         candidate: HardwareCandidate,
         demanded: list[EndpointPortBinding],
-        ports_by_name: dict[str, PortDescriptor],
+        ports_by_name: dict,
         errors: list[str],
         unverified: list[str],
-    ) -> tuple[int | None, DeviceCandidateStatus, PoEExecutionUncertainty | None]:
-        """Retain the claim ceiling without predicting unmeasured runtime failure."""
+    ) -> tuple[int | None, DeviceCandidateStatus]:
+        """Decide one selected build against its own exact powered demand."""
         status = candidate.capabilities.supports_poe
-        admitted = (
-            candidate.capabilities.poe_ports
-            if status is CapabilityStatus.SUPPORTED else None
-        )
-        required = [PoEAuthorizedBinding(
-            binding.device_port, binding.endpoint_model, binding.endpoint_port,
-        ) for binding in demanded]
-        for binding in demanded:
-            descriptor = ports_by_name.get(binding.device_port)
-            if descriptor is not None and PortClass.ACCESS_CAPABLE not in descriptor.classes:
-                errors.append(
-                    f"{requested.id}: endpoint port {binding.device_port} is outside "
-                    f"the access-port inventory of {requested.model}."
-                )
+        admitted = candidate.capabilities.poe_ports
         if status is CapabilityStatus.UNSUPPORTED:
             errors.append(
                 f"{requested.id}: {requested.model} has exact-build evidence of no "
                 f"PoE, but {len(demanded)} powered endpoint(s) are bound to it."
             )
-            return None, DeviceCandidateStatus.INCOMPATIBLE, None
-
-        authorized = (
-            set(candidate.capabilities.poe_authorized_bindings)
-            if admitted is not None else set()
-        )
-        uncovered = [binding for binding in required if binding not in authorized]
-        reasons = []
+            return None, DeviceCandidateStatus.INCOMPATIBLE
         if status is CapabilityStatus.UNKNOWN:
-            reasons.append("PoE capability is unknown")
-        elif admitted is None:
-            reasons.append("PoE support has no evidenced simultaneous powered-port count")
-        elif len(demanded) > admitted:
-            reasons.append(
-                f"{len(demanded)} required simultaneous powered ports exceed the "
-                f"{admitted} powered port(s) evidenced"
+            unverified.append(
+                f"{requested.id}: {requested.model} PoE capability is unknown, so "
+                f"the {len(demanded)} powered endpoint(s) bound to it are not "
+                "admitted."
             )
+            return None, DeviceCandidateStatus.NEEDS_VERIFICATION
+        if admitted is None:
+            unverified.append(
+                f"{requested.id}: {requested.model} reports PoE support without an "
+                f"admitted powered-port count for {len(demanded)} powered "
+                "endpoint(s)."
+            )
+            return None, DeviceCandidateStatus.NEEDS_VERIFICATION
+        if len(demanded) > admitted:
+            errors.append(
+                f"{requested.id}: {len(demanded)} powered endpoint(s) exceed the "
+                f"{admitted} powered port(s) evidenced for {requested.model}."
+            )
+            return None, DeviceCandidateStatus.INCOMPATIBLE
+        authorized = set(candidate.capabilities.poe_authorized_bindings)
+        uncovered: list[PoEAuthorizedBinding] = []
+        for binding in demanded:
+            exact = PoEAuthorizedBinding(
+                binding.device_port,
+                binding.endpoint_model,
+                binding.endpoint_port,
+            )
+            if exact not in authorized:
+                uncovered.append(exact)
+            descriptor = ports_by_name.get(binding.device_port)
+            if descriptor is None:
+                continue
+            if PortClass.ACCESS_CAPABLE not in descriptor.classes:
+                errors.append(
+                    f"{requested.id}: powered endpoint port {binding.device_port} is outside the "
+                    f"access ports the {requested.model} PoE evidence covers."
+                )
         if uncovered:
             summary = ", ".join(
                 f"{item.switch_port}/{item.endpoint_model}/{item.endpoint_port}"
                 for item in uncovered
             )
-            reasons.append(f"PoE delivery is unverified for exact bindings: {summary}")
-        if not reasons:
-            return admitted, DeviceCandidateStatus.COMPATIBLE, None
-        reason = (
-            f"{requested.id}: {requested.model}: " + "; ".join(reasons)
-            + ". Physical execution is admitted; these PoE demands remain UNKNOWN."
-        )
-        unverified.append(reason)
-        uncertainty = PoEExecutionUncertainty(
-            required_bindings=required,
-            unverified_bindings=uncovered,
-            required_simultaneous_ports=len(demanded),
-            reason=reason,
-        )
-        return admitted, DeviceCandidateStatus.COMPATIBLE, uncertainty
+            unverified.append(
+                f"{requested.id}: {requested.model} PoE evidence does not cover "
+                f"the exact powered binding(s): {summary}."
+            )
+            return None, DeviceCandidateStatus.NEEDS_VERIFICATION
+        return admitted, DeviceCandidateStatus.COMPATIBLE
