@@ -274,7 +274,7 @@ def test_stage_a_uses_one_exact_routed_819_uplink_without_the_duplicate_alias(tm
     assert len(distribution_peers) == 1
 
 
-def test_corrected_stage_a_identity_preserves_only_phone_and_ap_poe_demand(
+def test_corrected_stage_a_identity_preserves_only_phone_poe_demand(
     tmp_path,
 ):
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
@@ -295,7 +295,8 @@ def test_corrected_stage_a_identity_preserves_only_phone_and_ap_poe_demand(
         for role in {DeviceRole.IP_PHONE.value, DeviceRole.ACCESS_POINT.value}
     } == {
         DeviceRole.IP_PHONE.value: 21,
-        DeviceRole.ACCESS_POINT.value: 3,
+        # Externally powered: present in the topology, absent from PoE demand.
+        DeviceRole.ACCESS_POINT.value: 0,
     }
     smoke = [
         item for item in composition.topology.devices
@@ -311,4 +312,5 @@ def test_corrected_stage_a_identity_preserves_only_phone_and_ap_poe_demand(
         for block in site.access_blocks
     ]
     assert len(blocks) == 1
-    assert blocks[0].required_poe_ports == 29
+    # 21 phones plus the growth reserve; the three access points no longer count.
+    assert blocks[0].required_poe_ports == 26

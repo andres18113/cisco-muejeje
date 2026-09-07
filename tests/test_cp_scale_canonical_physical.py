@@ -273,6 +273,9 @@ def test_every_powered_endpoint_sits_on_a_powered_access_port():
     these switches covers their 24 access ports, so those bindings asked an
     uplink to power a device -- on models (2960-24TT) since measured to deliver
     no power at all.
+
+    The powered population is 69 phones. Access points are externally powered
+    and draw nothing; see `test_cp_scale_access_point_power_provenance.py`.
     """
     _, hardware, _ = _compile()
     designed = EnterpriseDesigner().design(cp_scale_intent())
@@ -301,11 +304,11 @@ def test_every_powered_endpoint_sits_on_a_powered_access_port():
             assert PortClass.ACCESS_CAPABLE in descriptor.classes, (
                 f"{switch.semantic_name}:{binding.device_port} cannot be powered"
             )
-    assert seen == 86
+    assert seen == 69
 
 
 def test_no_access_switch_exceeds_its_evidenced_powered_port_budget():
-    """86 powered endpoints, and every switch inside its own measured 24."""
+    """69 powered phones, and every switch inside its own measured 24."""
     _, hardware, _ = _compile()
     designed = EnterpriseDesigner().design(cp_scale_intent())
     powered = {
@@ -328,4 +331,4 @@ def test_no_access_switch_exceeds_its_evidenced_powered_port_budget():
                 continue
             assert device.poe_capacity is not None
             assert demand[device.id] <= device.poe_capacity, device.semantic_name
-    assert sum(demand.values()) == 86
+    assert sum(demand.values()) == 69

@@ -115,7 +115,14 @@ def _access_points(count: int, *, canonical: bool) -> EndpointRequirement:
     return EndpointRequirement(
         role=DeviceRole.ACCESS_POINT,
         count=count,
-        requires_poe=True,
+        # Externally powered, not a PoE consumer. Nothing upstream ever asked
+        # for inline power here: the admitted reference carries no power
+        # requirement and pinned non-PoE access switches. Measured on
+        # 9.0.1.0858, an AccessPoint-PT draws 0.0W and the PSE table is
+        # byte-identical to one with nothing attached, while a 7960 on the
+        # same model and port draws 10.0. Packet Tracer supplies AP power as
+        # module type 31, ACCESS_POINT_POWER_ADAPTER.
+        requires_poe=False,
         wired=True,
         wireless=False,
         addressing_preference=AddressingPreference.STATIC,
@@ -123,6 +130,7 @@ def _access_points(count: int, *, canonical: bool) -> EndpointRequirement:
         metadata={
             "workload_endpoint": "false",
             "infrastructure_class": "access_point",
+            "power_source": "external_adapter",
         },
     )
 

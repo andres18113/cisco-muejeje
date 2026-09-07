@@ -198,13 +198,18 @@ def _block(
 
 
 def _large_bindings() -> list[EndpointPortBinding]:
-    """Powered endpoints on powered access ports; uplinks on the uplink ports.
+    """Endpoints on access ports; uplinks on the uplink ports.
 
     Every access point here used to sit on `GigabitEthernet0/1-0/2` while the
     switch spent FastEthernet access ports on its infrastructure uplinks. That
-    is backwards in both directions, and PoE is where it stopped being merely
-    untidy: the powered-port evidence for these builds covers the 24 access
-    ports, so an AP on an uplink is a powered attachment nothing can power.
+    is backwards in both directions and is corrected here regardless of power:
+    an access port is where an endpoint belongs.
+
+    The original rationale for the correction also invoked PoE — an AP on an
+    uplink being "a powered attachment nothing can power". That half no longer
+    holds and is not restated: access points are externally powered and draw
+    nothing, so no PoE budget rides on their placement. The phones do, and
+    they sit on access ports too.
     """
     return [
         *_range(SW4, "FastEthernet0/", 1, Z1, DeviceRole.USER_PC, 1, 22, "FastEthernet0"),
@@ -302,10 +307,10 @@ def cp_scale_physical_design() -> PhysicalDesignSpec:
             _link(SW0, "GigabitEthernet0/2", SW1, "GigabitEthernet0/1", LinkRole.ACCESS_LINK),
         ],
         access_blocks=[
-            _block(LARGE, Z1, [SW4, SW5], 49, 24),
-            _block(LARGE, Z2, [SW6, SW7], 39, 17),
-            _block(LARGE, ZC, [SW8, SW9], 31, 6),
-            _block(LARGE, ZD, [SW0, SW1], 29, 7),
+            _block(LARGE, Z1, [SW4, SW5], 49, 21),
+            _block(LARGE, Z2, [SW6, SW7], 39, 14),
+            _block(LARGE, ZC, [SW8, SW9], 31, 3),
+            _block(LARGE, ZD, [SW0, SW1], 29, 4),
         ],
         endpoint_bindings=_large_bindings(),
         resiliency=ResiliencyLevel.BASIC,
@@ -333,10 +338,10 @@ def cp_scale_physical_design() -> PhysicalDesignSpec:
             _link(MLS7, "GigabitEthernet1/0/4", MLS4, "GigabitEthernet1/0/1", LinkRole.DISTRIBUTION_LINK),
         ],
         access_blocks=[
-            _block(MULTILAYER, M3, [MLS3], 12, 12),
-            _block(MULTILAYER, M4, [MLS4], 2, 2),
+            _block(MULTILAYER, M3, [MLS3], 12, 11),
+            _block(MULTILAYER, M4, [MLS4], 2, 1),
             _block(MULTILAYER, M5, [MLS5], 8, 8),
-            _block(MULTILAYER, M6, [MLS6], 13, 1),
+            _block(MULTILAYER, M6, [MLS6], 13, 0),
         ],
         endpoint_bindings=_multilayer_bindings(),
         resiliency=ResiliencyLevel.BASIC,
@@ -354,7 +359,7 @@ def cp_scale_physical_design() -> PhysicalDesignSpec:
         links=[
             _link(R3, "FastEthernet0/0", SW3, "GigabitEthernet0/1", LinkRole.EDGE_LINK),
         ],
-        access_blocks=[_block(SMALL, SB, [SW3], 16, 9)],
+        access_blocks=[_block(SMALL, SB, [SW3], 16, 7)],
         endpoint_bindings=_small_bindings(),
         resiliency=ResiliencyLevel.NONE,
     )
