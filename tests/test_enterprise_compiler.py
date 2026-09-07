@@ -351,8 +351,8 @@ def test_a_range_that_contradicts_the_inventory_fails_closed_without_reassigning
     assert inconsistent.details["source_group"] == corrupted.source_group
 
 
-def _legacy_non_wan_identity_reference():
-    """Preserva la entrada exacta del hash v2 anterior al gate de estado E4."""
+def _non_wan_identity_reference_with_poe_evidence():
+    """Historical port allocation with explicit synthetic PoE authority and capacity."""
     enterprise = _design(_reference_intent())
     partial = HardwarePlanner().plan(enterprise, [_candidate(
         poe=CapabilityStatus.UNKNOWN,
@@ -379,6 +379,11 @@ def _legacy_non_wan_identity_reference():
                 qualified_blocks[block.block_id].port_assignments
             )
         for device in site.devices:
+            # The synthetic claim premise also needs its simultaneous ceiling.
+            device.poe_capacity = next(
+                item.poe_capacity for candidate_site in qualified.site_hardware
+                for item in candidate_site.devices if item.id == device.id
+            )
             device.poe_authorized_bindings = synthetic_poe_authorized_bindings(
                 tuple(
                     port.name for port in device.port_descriptors
@@ -969,14 +974,16 @@ def test_smoke_detector_role_compiles_to_the_exact_packet_tracer_model():
 def test_compact_summary_omits_full_plan_and_semantic_hash_is_stable():
     _, _, result = _reference()
     compact = result.compact_summary()
-    legacy = _legacy_non_wan_identity_reference()
+    legacy = _non_wan_identity_reference_with_poe_evidence()
 
     assert "plan" not in compact
     assert compact["semantic_hash"] == result.semantic_hash
     # Rebased when E4 stopped re-choosing endpoint ports: la identidad de
     # este artefacto la fija ahora la asignación física de E3, no el orden
     # de asignación del compiler. Valor anterior: 9a02ed7c9f2b6c8f4e334b3f17688207f44b7c213682f570febc305541e26870.
-    assert legacy.semantic_hash == "703a2782e15d463ee5d2b02206fc68953ce22fa9eb1ac03f4e6de56e0bfbb54b"
+    # PoE authority metadata and its explicit synthetic simultaneous ceiling
+    # now participate in the existing v2 identity; port allocation is unchanged.
+    assert legacy.semantic_hash == "d63a9ef036b4b46300c42ce0cd07a3b87542755fea5da53aae5552bcd8da70c5"
     assert result.plan is not None and result.plan.hash_schema_version == "2"
     assert legacy.plan is not None and legacy.plan.hash_schema_version == "2"
     assert compact["devices"] == 81

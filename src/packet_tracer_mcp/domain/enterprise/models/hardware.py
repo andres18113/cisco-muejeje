@@ -118,6 +118,7 @@ class HierarchyMode(str, Enum):
 
 class HardwarePlanStatus(str, Enum):
     VALID = "valid"
+    EXECUTABLE_WITH_UNVERIFIED_POE = "executable_with_unverified_poe"
     PARTIALLY_RESOLVED = "partially_resolved"
     UNRESOLVED = "unresolved"
 
@@ -128,6 +129,20 @@ class CatalogCoverageReport(BaseModel):
     unclassified: list[str] = Field(default_factory=list)
     aliases: dict[str, str] = Field(default_factory=dict)
     capability_gaps: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class PoEExecutionUncertainty(BaseModel):
+    """Unproven power demand carried into execution, never a delivery claim.
+
+    Existing authorized bindings and capacity stay on the selected device.
+    This record preserves the exact demand whose operation can be measured;
+    it supplies no evidence to capability providers or claim promotion.
+    """
+
+    required_bindings: list[PoEAuthorizedBinding] = Field(default_factory=list)
+    unverified_bindings: list[PoEAuthorizedBinding] = Field(default_factory=list)
+    required_simultaneous_ports: int
+    reason: str
 
 
 class PlannedNetworkDevice(BaseModel):
@@ -145,6 +160,7 @@ class PlannedNetworkDevice(BaseModel):
     port_capacity: int = 0
     poe_capacity: int | None = None
     poe_authorized_bindings: list[PoEAuthorizedBinding] = Field(default_factory=list)
+    poe_uncertainty: PoEExecutionUncertainty | None = None
     port_descriptors: list[PortDescriptor] = Field(default_factory=list)
     module_plan: list[ModuleInstallation] = Field(default_factory=list)
     parent_group: str = ""

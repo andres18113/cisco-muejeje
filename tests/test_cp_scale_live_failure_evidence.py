@@ -557,7 +557,7 @@ verdict["sim_blind_mutated"] = any(
 projection = SimpleNamespace(
     stage=SimpleNamespace(value="floor1"),
     topology=SimpleNamespace(
-        physical_identity_hash="topology-hash", devices=[1, 2, 3], modules=[], links=[1, 2],
+        physical_identity_hash="topology-hash", devices=[SimpleNamespace(id=str(i), metadata={{}}) for i in (1, 2, 3)], modules=[], links=[1, 2],
     ),
     configuration=SimpleNamespace(
         semantic_hash="config-hash",
@@ -594,6 +594,7 @@ try:
 except CanonicalLiveFailure as exc:
     evidence = exc.stage_evidence
     verdict["raised_with_journal"] = evidence is not None
+    verdict["poe_execution_admission"] = evidence.get("poe_execution_admission")
     verdict["stage"] = (evidence or {{}}).get("stage")
     verdict["configuration_hash"] = (
         (evidence or {{}}).get("plan", {{}}).get("configuration_hash")
@@ -1244,3 +1245,9 @@ def test_the_two_windows_stay_named_apart(verdict):
     assert normal["mode_required"] == "realtime"
     assert diagnostic["diagnostic"] == "POST_FAILURE_SIMULATION_DIAGNOSTIC"
     assert "NOT the original" in diagnostic["observes"]
+
+
+def test_failed_runtime_stage_keeps_its_poe_execution_admission_snapshot(verdict):
+    # This fixture has no powered switches, but the real stage must still journal
+    # the explicit empty scope before its early physical failure.
+    assert verdict["poe_execution_admission"] == []

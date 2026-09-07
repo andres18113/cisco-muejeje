@@ -844,12 +844,13 @@ def _compile_reference_planning(*, reverse_sites: bool = False):
     return enterprise, hardware, compiled
 
 
-def test_e4_status_lattice_only_allows_valid_hardware_plans():
+def test_e4_status_lattice_allows_only_structurally_executable_hardware_plans():
     enterprise, hardware, _ = _compile_reference_planning()
     catalog = PacketTracerTopologyCatalogAdapter()
 
     assert set(HardwarePlanStatus) == {
         HardwarePlanStatus.VALID,
+        HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE,
         HardwarePlanStatus.PARTIALLY_RESOLVED,
         HardwarePlanStatus.UNRESOLVED,
     }
@@ -866,7 +867,10 @@ def test_e4_status_lattice_only_allows_valid_hardware_plans():
             catalog.compilation_profile(),
             catalog.cable_for,
         )
-        if status is HardwarePlanStatus.VALID:
+        if status in {
+            HardwarePlanStatus.VALID,
+            HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE,
+        }:
             assert result.is_valid and result.plan is not None
             continue
         assert not result.is_valid

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ from ..models.compilation import (
     PhysicalSubstitutionEvidence,
 )
 from ..models.enterprise_plan import EnterprisePlan
+from ..rules.poe_execution import validate_poe_execution_uncertainty
+from ..models.capabilities import PoEAuthorizedBinding
 from ..models.hardware import (
     HardwareLinkRequirement,
     HardwarePlan,
@@ -195,9 +198,14 @@ class EnterpriseCompiler:
                 "configuration_deferred_to": "E5",
             },
         )
-        if hardware.status is not HardwarePlanStatus.VALID:
+        if hardware.status not in {
+            HardwarePlanStatus.VALID,
+            HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE,
+        }:
             issues.extend(_hardware_plan_resolution_issues(hardware))
             return self._result(topology, enterprise, issues, [], valid=False)
+        if hardware.status is HardwarePlanStatus.EXECUTABLE_WITH_UNVERIFIED_POE:
+            topology.metadata["poe_execution_status"] = hardware.status.value
         enterprise_sites = {site.site_id: site for site in enterprise.sites}
         hardware_sites = {site.site_id: site for site in hardware.site_hardware}
         for site_id in sorted(enterprise_sites):
@@ -361,6 +369,13 @@ class EnterpriseCompiler:
                     "port_capacity": str(device.port_capacity),
                     "poe_capacity": "unknown" if device.poe_capacity is None else str(device.poe_capacity),
                 }
+                if device.poe_authorized_bindings or device.poe_uncertainty is not None:
+                    metadata["poe_authorized_bindings"] = json.dumps(
+                        device.model_dump(mode="json")["poe_authorized_bindings"],
+                        sort_keys=True,
+                    )
+                if device.poe_uncertainty is not None:
+                    metadata["poe_execution_uncertainty"] = device.poe_uncertainty.model_dump_json()
                 if device.additional_roles:
                     metadata["additional_roles"] = ",".join(
                         role.value for role in sorted(
@@ -660,7 +675,7 @@ class EnterpriseCompiler:
             )
             if not switch_port:
                 continue
-            if not _poe_endpoint_authorized(
+            if not _poe_endpoint_execution_admitted(
                 planned_devices.get(binding.device_id),
                 switch_port,
                 endpoint,
@@ -679,6 +694,8 @@ class EnterpriseCompiler:
                 role, "access", "", physical_profile, cable_resolver,
             )
             link.metadata["binding_provenance"] = binding.provenance
+            if endpoint.device.metadata.get("poe_delivery_claim") == "unknown":
+                link.metadata["poe_delivery_claim"] = "unknown"
             links.append(link)
             attached.add(binding.endpoint_id)
 
@@ -729,7 +746,7 @@ class EnterpriseCompiler:
                 )
                 if not switch_port:
                     continue
-                if not _poe_endpoint_authorized(
+                if not _poe_endpoint_execution_admitted(
                     planned_devices.get(assignment.device_id),
                     switch_port,
                     endpoint,
@@ -745,10 +762,13 @@ class EnterpriseCompiler:
                     if endpoint.expanded.role in _SERVER_ROLES
                     else ConcreteLinkRole.ENDPOINT_ACCESS
                 )
-                links.append(_link_plan(
+                link = _link_plan(
                     switch, switch_port, endpoint.device, endpoint.profile.network_port,
                     role, "access", "", physical_profile, cable_resolver,
-                ))
+                )
+                if endpoint.device.metadata.get("poe_delivery_claim") == "unknown":
+                    link.metadata["poe_delivery_claim"] = "unknown"
+                links.append(link)
                 attached.add(endpoint.expanded.id)
 
         pairs: dict[str, dict[DeviceRole, _CompiledEndpoint]] = defaultdict(dict)
@@ -789,6 +809,26 @@ class EnterpriseCompiler:
                 CompilationIssueCode.ENDPOINT_ASSIGNMENT_MISSING,
                 f"El endpoint cableado {endpoint_id} no obtuvo enlace físico.", endpoint_id,
             ))
+        powered: dict[str, list[PoEAuthorizedBinding]] = defaultdict(list)
+        for link in links:
+            endpoint = endpoints.get(link.device_b_id)
+            if (
+                endpoint is not None
+                and endpoint.expanded.requires_poe
+                and link.device_a_id in planned_devices
+            ):
+                powered[link.device_a_id].append(PoEAuthorizedBinding(
+                    link.port_a, endpoint.profile.model, link.port_b,
+                ))
+        for device in planned_devices.values():
+            validation = validate_poe_execution_uncertainty(
+                device, powered.get(device.id, []),
+            )
+            issues.extend(_error(
+                CompilationIssueCode.HARDWARE_PLAN_UNRESOLVED,
+                error.message, device.id,
+                resolution_cause="inconsistent_poe_execution_uncertainty",
+            ) for error in validation.errors)
         return links
 
     @staticmethod
@@ -1024,14 +1064,14 @@ def _assignment_ports(
     return ordered[first:last + 1]
 
 
-def _poe_endpoint_authorized(
+def _poe_endpoint_execution_admitted(
     switch: PlannedNetworkDevice | None,
     switch_port: str,
     endpoint: _CompiledEndpoint,
     endpoint_port: str,
     issues: list[CompilationIssue],
 ) -> bool:
-    """Enforce the exact endpoint/model/port ceiling after model resolution."""
+    """Require exact claim coverage or an explicit unverified execution demand."""
 
     if not endpoint.expanded.requires_poe:
         return True
@@ -1042,6 +1082,25 @@ def _poe_endpoint_authorized(
         for binding in switch.poe_authorized_bindings
     )
     if authorized:
+        return True
+    exact = PoEAuthorizedBinding(switch_port, endpoint.profile.model, endpoint_port)
+    uncertainty = switch.poe_uncertainty if switch is not None else None
+    if (
+        uncertainty is not None
+        and exact in uncertainty.required_bindings
+        and exact in uncertainty.unverified_bindings
+    ):
+        endpoint.device.metadata["poe_delivery_claim"] = "unknown"
+        issues.append(_warning(
+            CompilationIssueCode.POE_CAPABILITY_UNKNOWN,
+            f"{endpoint.expanded.id}: PoE delivery remains UNKNOWN for "
+            f"{switch_port}/{endpoint.profile.model}/{endpoint_port}; "
+            "exact physical execution can be observed without a delivery claim.",
+            endpoint.expanded.id,
+            switch_port=switch_port,
+            endpoint_model=endpoint.profile.model,
+            endpoint_port=endpoint_port,
+        ))
         return True
     issues.append(_error(
         CompilationIssueCode.POE_DELIVERY_BINDING_UNAUTHORIZED,
