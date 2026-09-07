@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
-from secrets import token_hex
 
 from pydantic_core import SchemaError
 
@@ -20,13 +20,25 @@ from ...shared.utils import resolve_within, safe_name_component
 DEFAULT_BASE_DIR = Path("data") / "capabilities"
 
 
-class CorruptCapabilitySnapshotError(RuntimeError):
-    """A stored snapshot exists but cannot be read as evidence."""
+class UnusableCapabilitySnapshotError(RuntimeError):
+    """One enumerated snapshot could not be turned into evidence.
+
+    Callers that only need to know the read did not happen catch this; the
+    subclasses say whether the file was unreadable or simply no longer there.
+    """
 
     def __init__(self, path: Path, reason: str) -> None:
         self.path = Path(path)
         self.reason = reason
         super().__init__(f"Unusable capability snapshot {self.path}: {reason}")
+
+
+class CorruptCapabilitySnapshotError(UnusableCapabilitySnapshotError):
+    """A stored snapshot exists but cannot be read as evidence."""
+
+
+class VanishedCapabilitySnapshotError(UnusableCapabilitySnapshotError):
+    """A snapshot was enumerated and then disappeared before it was read."""
 
 
 class CapabilitySnapshotStore:
@@ -117,13 +129,22 @@ class CapabilitySnapshotStore:
         target_dir = resolve_within(self.base_dir, scope, version)
         target_dir.mkdir(parents=True, exist_ok=True)
         target = resolve_within(target_dir, f"{snapshot.stable_hash()}.json")
-        # The temporary name must belong to this writer, not to the target.
-        # `stable_hash` ignores session_id and started_at, so two different
-        # snapshots share one target -- and used to share one temporary file,
-        # where their differing bodies could interleave into a truncated one.
-        temporary = target.with_name(f"{target.name}.{os.getpid()}.{token_hex(4)}.tmp")
+        # The temporary must belong to this writer, and that has to be the OS
+        # refusing to hand out a name twice rather than a random suffix being
+        # unlikely to repeat. `stable_hash` ignores session_id and started_at,
+        # so two different snapshots share one target; the loser of a name
+        # collision would not get an error, it would get someone else's
+        # half-written body. `mkstemp` creates with O_EXCL and retries, in the
+        # target's own directory so the replace stays atomic.
+        handle, name = tempfile.mkstemp(
+            dir=target_dir, prefix=f"{target.name}.", suffix=".tmp",
+        )
+        temporary = Path(name)
         try:
-            temporary.write_text(snapshot.model_dump_json(indent=2), encoding="utf-8")
+            # Default newline handling, matching the previous `write_text`, so
+            # stored bytes are unchanged on every platform.
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(snapshot.model_dump_json(indent=2))
             temporary.replace(target)
         except BaseException:
             temporary.unlink(missing_ok=True)
@@ -141,27 +162,32 @@ class CapabilitySnapshotStore:
             files = sorted(resolve_within(root, version).glob("*.json"))
         snapshots: list[CapabilitySnapshot] = []
         for path in files:
-            snapshot = self._load(path)
-            if snapshot is not None:
-                snapshots.append(snapshot)
+            snapshots.append(self._load(path))
         return sorted(snapshots, key=lambda item: item.session.session.started_at)
 
-    def _load(self, path: Path) -> CapabilitySnapshot | None:
-        """Read one stored snapshot, or say which file made that impossible.
+    def _load(self, path: Path) -> CapabilitySnapshot:
+        """Read one enumerated snapshot, or say which file made that impossible.
 
-        Absence and corruption are different answers and must stay that way.
-        A file that was listed and then removed yields `None`: nothing was
-        read from it, so skipping it cannot hide a fact. Anything else -- an
-        unreadable file, invalid JSON, a payload that does not match the
-        schema, or a structurally incompatible one -- is a persistence fault,
-        not a capability fact. It is raised, named, and it aborts the whole
-        read, because returning the survivors would quietly downgrade
+        Absence and failure are different answers and must stay that way. An
+        empty or missing directory is absence, and `_list` answers it with an
+        empty list before reaching here. Everything this method sees was
+        already enumerated, so it is evidence the store held a moment ago.
+
+        A file that disappears between the listing and the read is therefore
+        not absence either: returning the rest would answer with a set the
+        store was never in, assembled from two different instants. That is an
+        inconsistent read, and it is named rather than smoothed over -- as is
+        an unreadable file, invalid JSON, a payload that does not match the
+        schema, and a structurally incompatible one. All of them abort the
+        whole read, because returning the survivors would quietly downgrade
         evidence that exists into evidence that does not.
         """
         try:
             body = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return None
+        except FileNotFoundError as exc:
+            raise VanishedCapabilitySnapshotError(
+                path, "enumerated by this read and gone before it could be read",
+            ) from exc
         except OSError as exc:
             raise CorruptCapabilitySnapshotError(path, f"unreadable ({exc})") from exc
         try:

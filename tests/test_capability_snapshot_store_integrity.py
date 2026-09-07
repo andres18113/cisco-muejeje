@@ -35,6 +35,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
 from src.packet_tracer_mcp.infrastructure.persistence import capability_snapshot_store
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore, CorruptCapabilitySnapshotError,
+    UnusableCapabilitySnapshotError, VanishedCapabilitySnapshotError,
 )
 
 VERSION = "9.0.1.0858"
@@ -192,23 +193,76 @@ def test_find_cached_refuses_to_answer_over_a_corrupt_directory(tmp_path):
 # A file that vanishes mid-read is tolerated, deterministically.
 # --------------------------------------------------------------------------
 
-def test_a_file_listed_and_then_removed_is_tolerated(tmp_path, monkeypatch):
-    """Nothing was read from it, so skipping it cannot hide a fact."""
+def _vanish(monkeypatch, name: str) -> None:
+    """Make one already-enumerated file disappear at read time."""
+    original = pathlib.Path.read_text
+
+    def _read(self, *args, **kwargs):
+        if self.name == name:
+            raise FileNotFoundError(2, "No such file or directory", str(self))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", _read)
+
+
+def test_a_file_enumerated_then_gone_is_an_inconsistent_read(tmp_path, monkeypatch):
+    """Enumeration already saw it, so its disappearance is not absence.
+
+    The listing observed a set of snapshots. If one of them cannot be read,
+    the set that would be returned is not the set that was enumerated, and it
+    is not any state the store was ever in. That is an inconsistent read, and
+    it is attributed rather than smoothed over.
+    """
     store = _store(tmp_path)
     store.save_runtime(_snapshot(session_id="survivor"))
     vanishing = _version_dir(store) / "vanishing.json"
     vanishing.write_text("{}", encoding="utf-8")
 
-    original = pathlib.Path.read_text
+    _vanish(monkeypatch, "vanishing.json")
+    with pytest.raises(VanishedCapabilitySnapshotError) as raised:
+        store.list_runtime(VERSION)
+    assert raised.value.path == vanishing
+    assert "vanishing.json" in str(raised.value)
 
-    def _read(self, *args, **kwargs):
-        if self.name == "vanishing.json":
-            raise FileNotFoundError(2, "No such file or directory", str(self))
-        return original(self, *args, **kwargs)
 
-    monkeypatch.setattr(pathlib.Path, "read_text", _read)
-    listed = store.list_runtime(VERSION)
-    assert [item.session.session.session_id for item in listed] == ["survivor"]
+def test_a_vanished_file_returns_no_survivors(tmp_path, monkeypatch):
+    """The readable snapshot beside it is not a smaller, safer answer."""
+    store = _store(tmp_path)
+    store.save_runtime(_snapshot(model="3560-24PS"))
+    store.save_runtime(_snapshot(model="3650-24PS"))
+    vanishing = _version_dir(store) / "vanishing.json"
+    vanishing.write_text("{}", encoding="utf-8")
+
+    _vanish(monkeypatch, "vanishing.json")
+    with pytest.raises(VanishedCapabilitySnapshotError):
+        store.list_runtime(VERSION)
+
+
+def test_a_vanished_file_gives_the_provider_no_partial_authority(tmp_path, monkeypatch):
+    from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+        RuntimeCapabilityProvider,
+    )
+    store = _store(tmp_path)
+    store.save_runtime(_snapshot())
+    vanishing = _version_dir(store) / "vanishing.json"
+    vanishing.write_text("{}", encoding="utf-8")
+
+    _vanish(monkeypatch, "vanishing.json")
+    provider = RuntimeCapabilityProvider(store, VERSION)
+    with pytest.raises(VanishedCapabilitySnapshotError):
+        provider.evidence_for("3560-24PS")
+
+
+def test_every_unusable_snapshot_shares_one_catchable_base(tmp_path, monkeypatch):
+    """Callers that only care "this read did not happen" catch one type."""
+    assert issubclass(CorruptCapabilitySnapshotError, UnusableCapabilitySnapshotError)
+    assert issubclass(VanishedCapabilitySnapshotError, UnusableCapabilitySnapshotError)
+
+    store = _store(tmp_path)
+    store.save_runtime(_snapshot())
+    (_version_dir(store) / "corrupt.json").write_text("{", encoding="utf-8")
+    with pytest.raises(UnusableCapabilitySnapshotError):
+        store.list_runtime(VERSION)
 
 
 # --------------------------------------------------------------------------
@@ -272,15 +326,17 @@ def test_two_savers_of_one_target_never_share_a_temporary_file(tmp_path, monkeyp
     second = _snapshot(session_id="a-much-longer-session-identifier-than-the-other")
     assert first.stable_hash() == second.stable_hash()
 
+    import tempfile
+
     temporaries: list[pathlib.Path] = []
-    original = pathlib.Path.write_text
+    original = tempfile.mkstemp
 
-    def _record(self, *args, **kwargs):
-        if self.suffix == ".tmp":
-            temporaries.append(self)
-        return original(self, *args, **kwargs)
+    def _record(*args, **kwargs):
+        handle, name = original(*args, **kwargs)
+        temporaries.append(pathlib.Path(name))
+        return handle, name
 
-    monkeypatch.setattr(pathlib.Path, "write_text", _record)
+    monkeypatch.setattr(tempfile, "mkstemp", _record)
     store.save_runtime(first)
     store.save_runtime(second)
     monkeypatch.undo()
@@ -298,3 +354,86 @@ def test_no_temporary_files_are_left_behind(tmp_path):
     store = _store(tmp_path)
     store.save_runtime(_snapshot())
     assert list(_version_dir(store).glob("*.tmp")) == []
+
+
+def test_the_temporary_is_created_exclusively_by_the_os(tmp_path, monkeypatch):
+    """Uniqueness must be the OS refusing to reuse a name, not luck.
+
+    A random suffix makes a collision unlikely; `O_EXCL` makes it impossible.
+    The distinction matters because the loser of a name collision does not get
+    an error, it gets someone else's half-written file.
+    """
+    import tempfile
+
+    store = _store(tmp_path)
+    calls: list[dict] = []
+    original = tempfile.mkstemp
+
+    def _spy(*args, **kwargs):
+        calls.append(kwargs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(tempfile, "mkstemp", _spy)
+    written = store.save_runtime(_snapshot())
+
+    assert len(calls) == 1, "the temporary must come from an exclusive OS create"
+    # Same directory as the target, so the replace stays atomic.
+    assert pathlib.Path(calls[0]["dir"]) == written.parent
+    assert calls[0].get("suffix") == ".tmp"
+
+
+def test_an_existing_candidate_name_is_never_clobbered(tmp_path, monkeypatch):
+    """Force the first candidate names to one that already exists on disk.
+
+    With exclusive creation the OS refuses that name and `mkstemp` keeps
+    looking; a probabilistic scheme would open it and truncate whatever was
+    there. The decoy's bytes are the assertion, and the fresh temporary having
+    the third name proves the first two were actually rejected.
+    """
+    import tempfile
+
+    store = _store(tmp_path)
+    first = store.save_runtime(_snapshot())
+    directory = _version_dir(store)
+
+    second = _snapshot(model="3650-24PS")
+    target_name = f"{second.stable_hash()}.json"
+    # Exactly the path mkstemp will try first: prefix + candidate + suffix.
+    decoy = directory / f"{target_name}.collision.tmp"
+    decoy.write_text("decoy bytes that must survive", encoding="utf-8")
+
+    names = iter(["collision", "collision", "fresh-name"])
+    monkeypatch.setattr(tempfile, "_get_candidate_names", lambda: names)
+
+    created: list[pathlib.Path] = []
+    original = tempfile.mkstemp
+
+    def _record(*args, **kwargs):
+        handle, name = original(*args, **kwargs)
+        created.append(pathlib.Path(name))
+        return handle, name
+
+    monkeypatch.setattr(tempfile, "mkstemp", _record)
+    store.save_runtime(second)
+    monkeypatch.undo()
+
+    assert decoy.read_text(encoding="utf-8") == "decoy bytes that must survive"
+    assert created == [directory / f"{target_name}.fresh-name.tmp"]
+    assert first.exists() and (directory / target_name).exists()
+
+
+def test_a_failed_write_leaves_no_temporary_behind(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    store.save_runtime(_snapshot())
+    directory = _version_dir(store)
+
+    def _boom(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(pathlib.Path, "replace", _boom)
+    with pytest.raises(OSError):
+        store.save_runtime(_snapshot(model="3650-24PS"))
+    monkeypatch.undo()
+
+    assert list(directory.glob("*.tmp")) == []
+    assert len(store.list_runtime(VERSION)) == 1
