@@ -18,6 +18,10 @@ this repository has no capability to open or save one. Fabricating that
 evidence for a file Packet Tracer never touched would be a lie in the exact
 place the contract exists to prevent one, so the bundle records the run as
 non-productive and says why.
+
+The measurement contract deliberately says nothing about that admission. It
+describes what was observed and under what causality; whether that becomes
+authority is decided elsewhere, from the session's own safety evidence.
 """
 from __future__ import annotations
 
@@ -64,25 +68,38 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = "andres18113/cisco-muejeje"
 BRANCH = "feature/runtime-ripv2"
 ENDPOINT_MODEL = "7960"
+SWITCH_MODEL = "3560-24PS"
+# The binding is named by the scenario's own stable identity, not taken from a
+# position in a sorted list. `endpoint_id` is derived from zone, role and index
+# alone, so it survives reordering, renaming and additions -- and if the design
+# stops carrying it, that is a fact worth failing on rather than silently
+# measuring whatever sorted first.
+TARGET_ENDPOINT_ID = "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/001"
 
 
 def governed_binding() -> dict[str, str]:
-    """The exact binding the canonical design demands, read from source."""
+    """Resolve exactly one binding by identity, or refuse to guess."""
     design = cp_scale_physical_design()
     models = {device.id: device.model for site in design.sites for device in site.devices}
-    candidates = sorted(
-        (binding.device_id, binding.device_port, binding.endpoint_port)
-        for site in design.sites for binding in site.endpoint_bindings
-        if binding.endpoint_model == ENDPOINT_MODEL
-        and models.get(binding.device_id) == "3560-24PS"
-    )
-    if not candidates:
-        raise RuntimeError("The canonical design carries no 3560-24PS 7960 binding")
-    device_id, device_port, endpoint_port = candidates[0]
+    matches = [binding for site in design.sites for binding in site.endpoint_bindings
+               if binding.endpoint_id == TARGET_ENDPOINT_ID]
+    if not matches:
+        raise RuntimeError(
+            "The canonical design no longer carries " + TARGET_ENDPOINT_ID)
+    if len(matches) > 1:
+        raise RuntimeError(
+            "The canonical design is ambiguous for " + TARGET_ENDPOINT_ID
+            + ": " + str(len(matches)) + " bindings share that identity")
+    binding = matches[0]
+    switch_model = models.get(binding.device_id)
+    if switch_model != SWITCH_MODEL or binding.endpoint_model != ENDPOINT_MODEL:
+        raise RuntimeError(
+            "The identified binding is no longer " + SWITCH_MODEL + "/"
+            + ENDPOINT_MODEL + ": " + str(switch_model) + "/" + binding.endpoint_model)
     return {
-        "device_id": device_id, "switch_model": "3560-24PS",
-        "switch_port": device_port, "endpoint_model": ENDPOINT_MODEL,
-        "endpoint_port": endpoint_port,
+        "endpoint_id": binding.endpoint_id, "device_id": binding.device_id,
+        "switch_model": switch_model, "switch_port": binding.device_port,
+        "endpoint_model": binding.endpoint_model, "endpoint_port": binding.endpoint_port,
     }
 
 
@@ -288,7 +305,7 @@ def main() -> int:
             observed_at=completed, captures=tuple(pse_captures),
             gates=tuple(sorted(captures[0].table_completeness)),
             simultaneous_active_ports=1, cleanup_status="clean",
-            inventory_restoration="restored", live_safety="admitted",
+            inventory_restoration="restored",
         )
         try:
             dimensions = encode_poe_pse_dimensions(scope)

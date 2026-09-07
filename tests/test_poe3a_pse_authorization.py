@@ -55,12 +55,12 @@ CAUSAL = (
 
 def pse_scope(**overrides) -> PoEPseDeliveryScope:
     base = PoEPseDeliveryScope(
-        schema_version=1, switch_model=SWITCH, switch_port=PORT,
+        schema_version=2, switch_model=SWITCH, switch_port=PORT,
         endpoint_model="7960", endpoint_port="Switch", packet_tracer_build=BUILD,
         observer_id="governed-poe-inline-observer", experiment_id="poe3a-fixture",
         observed_at="2026-09-07T18:00:00Z", captures=CAUSAL, gates=GATES,
         simultaneous_active_ports=1, cleanup_status="clean",
-        inventory_restoration="restored", live_safety="admitted",
+        inventory_restoration="restored",
     )
     return replace(base, **overrides)
 
@@ -211,10 +211,10 @@ def test_a_calibration_alone_authorizes_nothing():
     (lambda d: d.__setitem__(POE_PSE_GATES, '["fresh"]'), "incomplete gates"),
     (lambda d: d.__setitem__(POE_PSE_CAPTURES, "not json"), "corrupt captures"),
     (lambda d: d.pop(POE_PSE_CAPTURES), "captures missing"),
-    (lambda d: d.__setitem__("poe_pse_schema_version", "2"), "unknown schema version"),
+    (lambda d: d.__setitem__("poe_pse_schema_version", "1"), "superseded schema version"),
+    (lambda d: d.__setitem__("poe_pse_schema_version", "9"), "unknown schema version"),
     (lambda d: d.__setitem__("poe_pse_cleanup_status", "dirty"), "unclean teardown"),
     (lambda d: d.__setitem__("poe_pse_inventory_restoration", "unrestored"), "inventory left dirty"),
-    (lambda d: d.__setitem__("poe_pse_live_safety", "unverified"), "live safety unproven"),
     (lambda d: d.__setitem__("poe_pse_observed_at", "yesterday"), "unusable timestamp"),
     (lambda d: d.__setitem__("poe_pse_observer_id", ""), "unattributable"),
 ])

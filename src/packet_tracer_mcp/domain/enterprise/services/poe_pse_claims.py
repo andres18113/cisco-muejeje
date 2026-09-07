@@ -19,6 +19,14 @@ Scope ceiling, deliberately narrow: one exact binding, proven delivering, on
 one exact build. This contract carries no authority over another port, another
 endpoint, another switch, another model, another build, or a larger
 simultaneous count than the single port it watched.
+
+It also says nothing about whether the LIVE session that produced it was
+admitted. Schema 1 carried a `live_safety` string, which let a record assert
+the one thing no record may assert about itself. Admission has exactly one
+source -- the real `LiveSessionSafetyEvidence` on the probe's context, judged
+by `validate_live_session_positive_admission` -- so the field is gone and
+schema 1 records fail closed rather than being reinterpreted under rules they
+were never written against.
 """
 from __future__ import annotations
 
@@ -36,7 +44,7 @@ from ..models.capabilities import (
 
 
 PSE_EVIDENCE_KIND = "pse_inline_delivery"
-PSE_SCHEMA_VERSION = 1
+PSE_SCHEMA_VERSION = 2
 
 POE_PSE_EVIDENCE_KIND = "poe_pse_evidence_kind"
 POE_PSE_SCHEMA_VERSION = "poe_pse_schema_version"
@@ -53,7 +61,6 @@ POE_PSE_GATES = "poe_pse_gates"
 POE_PSE_SIMULTANEOUS_ACTIVE_PORTS = "poe_pse_simultaneous_active_ports"
 POE_PSE_CLEANUP_STATUS = "poe_pse_cleanup_status"
 POE_PSE_INVENTORY_RESTORATION = "poe_pse_inventory_restoration"
-POE_PSE_LIVE_SAFETY = "poe_pse_live_safety"
 
 # The causal shape a positive PSE reading has to have. Delivery present, then
 # removed by the only administrative change made, then restored. A single
@@ -77,7 +84,6 @@ _REQUIRED_GATES = (
 
 _CLEAN_QUALIFICATION = "clean"
 _RESTORED_INVENTORY = "restored"
-_ADMITTED_LIVE_SAFETY = "admitted"
 
 # One governed producer, one source. A PSE reading is a controlled probe: a
 # registered qualification query dispatched by the governed executor and read
@@ -124,7 +130,6 @@ class PoEPseDeliveryScope:
     simultaneous_active_ports: int
     cleanup_status: str
     inventory_restoration: str
-    live_safety: str
 
     @property
     def authorized_binding(self) -> PoEAuthorizedBinding:
@@ -175,7 +180,6 @@ def encode_poe_pse_dimensions(scope: PoEPseDeliveryScope) -> dict[str, str]:
         POE_PSE_SIMULTANEOUS_ACTIVE_PORTS: str(canonical.simultaneous_active_ports),
         POE_PSE_CLEANUP_STATUS: canonical.cleanup_status,
         POE_PSE_INVENTORY_RESTORATION: canonical.inventory_restoration,
-        POE_PSE_LIVE_SAFETY: canonical.live_safety,
     }
 
 
@@ -246,7 +250,6 @@ def decode_poe_pse_delivery_scope(
         simultaneous_active_ports=simultaneous,
         cleanup_status=dimensions.get(POE_PSE_CLEANUP_STATUS),
         inventory_restoration=dimensions.get(POE_PSE_INVENTORY_RESTORATION),
-        live_safety=dimensions.get(POE_PSE_LIVE_SAFETY),
     ))
     if scope is None:
         return None
@@ -277,8 +280,6 @@ def _canonical_scope(scope: PoEPseDeliveryScope) -> PoEPseDeliveryScope | None:
     if scope.cleanup_status != _CLEAN_QUALIFICATION:
         return None
     if scope.inventory_restoration != _RESTORED_INVENTORY:
-        return None
-    if scope.live_safety != _ADMITTED_LIVE_SAFETY:
         return None
     # Every gate, on the whole run. A partial capture cannot be read at all,
     # so it certainly cannot establish that power was or was not delivered.
@@ -332,7 +333,6 @@ def _canonical_scope(scope: PoEPseDeliveryScope) -> PoEPseDeliveryScope | None:
         simultaneous_active_ports=scope.simultaneous_active_ports,
         cleanup_status=scope.cleanup_status,
         inventory_restoration=scope.inventory_restoration,
-        live_safety=scope.live_safety,
     )
 
 
