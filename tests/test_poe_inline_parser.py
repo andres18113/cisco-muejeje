@@ -152,6 +152,39 @@ def test_text_without_the_measured_header_yields_no_rows():
     assert parse_show_power_inline("").rows == ()
 
 
+def test_the_table_is_addressable_by_the_governed_interface_name():
+    """PT abrevia (`Fa0/1`); todo el resto del repo dice `FastEthernet0/1`.
+
+    El catalogo, el fixture y el propio `interface FastEthernet0/1` de la
+    mutacion usan el nombre largo. Comparar textualmente contra la tabla da
+    "fila ausente" -- que en esta calibracion significa "no entrega" -- sobre un
+    puerto que si entrega. La abreviatura es de PT, no del llamador.
+    """
+    table = parse_show_power_inline(_MEASURED_AUTO)
+
+    assert table.row_for("FastEthernet0/1") is not None
+    assert table.row_for("FastEthernet0/1").oper == "on"
+    assert table.row_for("Fa0/1") is table.row_for("FastEthernet0/1")
+
+
+def test_an_abbreviation_never_collapses_two_different_ports():
+    """`Fa0/1` y `Fa0/10` son puertos distintos, y deben seguir siendolo."""
+    table = parse_show_power_inline(_MEASURED_AUTO)
+
+    assert table.row_for("FastEthernet0/1").interface == "Fa0/1"
+    assert table.row_for("FastEthernet0/10").interface == "Fa0/10"
+    assert table.row_for("GigabitEthernet0/1") is None
+
+
+def test_the_classifier_accepts_the_governed_name_too():
+    assert classify_poe_inline_delivery(
+        _MEASURED_AUTO, "FastEthernet0/1", capture_complete=True,
+    ) is PoEInlineDelivery.DELIVERING
+    assert classify_poe_inline_delivery(
+        _MEASURED_NEVER, "FastEthernet0/1", capture_complete=True,
+    ) is PoEInlineDelivery.NOT_DELIVERING
+
+
 # -- la regla tipada --------------------------------------------------------
 
 def test_a_complete_capture_with_the_powered_row_means_delivering():

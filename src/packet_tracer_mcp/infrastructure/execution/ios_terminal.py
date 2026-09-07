@@ -1200,6 +1200,44 @@ _POE_INLINE_SUMMARY = re.compile(
 )
 _POE_INLINE_INTERFACE = re.compile(r"^[A-Za-z]{2}\d+(/\d+)*$")
 
+#: PT abrevia la interfaz en esta tabla (`Fa0/1`), y el resto del repositorio --
+#: el catalogo, el fixture, y el propio `interface FastEthernet0/1` con el que
+#: se muta -- usa el nombre largo. Comparar textualmente devuelve "fila ausente"
+#: sobre un puerto que si entrega, y en esta calibracion la ausencia significa
+#: justo lo contrario de lo que pasa. La tabla es cerrada a proposito: un
+#: prefijo generico haria que `Fa0/1` y `Fa0/10` se confundan.
+_INTERFACE_SPEED_ALIASES = {
+    "fa": "fastethernet",
+    "fas": "fastethernet",
+    "fast": "fastethernet",
+    "fastethernet": "fastethernet",
+    "gi": "gigabitethernet",
+    "gig": "gigabitethernet",
+    "gigabitethernet": "gigabitethernet",
+    "te": "tengigabitethernet",
+    "tengigabitethernet": "tengigabitethernet",
+    "et": "ethernet",
+    "eth": "ethernet",
+    "ethernet": "ethernet",
+}
+_INTERFACE_SPLIT = re.compile(r"^([A-Za-z]+)(.*)$")
+
+
+def canonical_interface_name(value: str) -> str:
+    """Canonicalize an IOS interface so an abbreviation matches its long form.
+
+    Only the alphabetic prefix is translated, and only through the closed table
+    above; the numeric remainder is compared verbatim, so `Fa0/1` can never
+    collapse into `Fa0/10`. An unknown prefix is left alone rather than guessed,
+    which keeps a name this repository does not model from silently matching one
+    it does.
+    """
+    match = _INTERFACE_SPLIT.match(value.strip())
+    if match is None:
+        return value.strip().casefold()
+    prefix, remainder = match.group(1).casefold(), match.group(2)
+    return _INTERFACE_SPEED_ALIASES.get(prefix, prefix) + remainder
+
 
 class PoEInlineDelivery(str, Enum):
     """Que dice `show power inline` sobre UN puerto exacto, y nada mas.
@@ -1239,9 +1277,9 @@ class PoEInlineTable:
     summary_remaining_watts: float | None = None
 
     def row_for(self, interface: str) -> PoEInlineRow | None:
-        wanted = interface.strip().casefold()
+        wanted = canonical_interface_name(interface)
         for row in self.rows:
-            if row.interface.casefold() == wanted:
+            if canonical_interface_name(row.interface) == wanted:
                 return row
         return None
 

@@ -15,6 +15,12 @@ from .poe_delivery_observer import (
     PoEVisualCaptureReceipt,
     PoEVisualCaptureRequest,
 )
+from .poe_inline_observer import (
+    GovernedPoEInlineObserver,
+    PoEInlineObservation,
+    PoEInlineObservationStatus,
+    PoEInlinePortObservation,
+)
 from .live_file_integrity import (
     PacketTracerLiveFileGuard,
     PacketTracerLiveFileIdentity,

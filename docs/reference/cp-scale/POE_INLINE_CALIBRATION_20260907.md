@@ -75,10 +75,34 @@ Derived from measured bytes, not from a remembered IOS layout:
   indistinguishable from an absent one — it reads as "not powered" on a port
   that is.
 - The capture closes with two prompt lines; neither is a row.
+- **PT abbreviates the interface in this table** (`Fa0/1`) while the catalog,
+  the fixture and the `interface FastEthernet0/1` used to mutate it all say the
+  long form. A textual comparison returns "row absent" — which in this
+  calibration means "not delivering" — for a port that is delivering. Lookup
+  canonicalizes the alphabetic prefix through a closed alias table and compares
+  the numeric remainder verbatim, so `Fa0/1` can never collapse into `Fa0/10`.
 
 `classify_poe_inline_delivery(output, interface, capture_complete)` gates only
 the NEGATIVE on completeness. A row that is present and powered is positive
 evidence on its own; an absence in an incomplete capture stays `UNOBSERVABLE`.
+
+## Productive API
+
+```text
+GovernedPoEInlineObserver.observe_poe_inline_status(
+    exact_switch_identity,
+    exact_expected_ports,
+)
+```
+
+The rule alone left the caller to wire freshness, completeness, dispatch
+integrity and switch attribution by hand, and every one of those fails in the
+dangerous direction: passing `capture_complete=True` over a truncated capture
+turns a page break into a negative on a powered port. The observer takes an
+identity and ports — never a command; there is no parameter through which IOS or
+JavaScript could arrive — refuses malformed input before Packet Tracer is
+touched at all, and returns `UNOBSERVABLE` with a reason for every gate it
+cannot satisfy rather than reporting an unproven negative.
 
 ## Restoration
 
