@@ -413,3 +413,195 @@ def test_the_bundle_is_classified_beside_its_own_bytes():
     assert "PRODUCTIVE AUTHORITY = NO" in text
     assert LIVE_SHA in text
     assert "poe_pse_live_safety" in text
+
+
+# ==========================================================================
+# 1 -- the LIVE producer emits the schema that is actually in force
+# ==========================================================================
+
+def _runner(monkeypatch):
+    import sys
+    monkeypatch.syspath_prepend(
+        str(pathlib.Path(__file__).resolve().parents[1] / "tools"))
+    import poe3a_pse_live
+    return poe3a_pse_live
+
+
+def test_the_live_producer_builds_a_scope_of_the_current_schema(monkeypatch):
+    """A producer pinned to a literal version silently outlives its contract."""
+    runner = _runner(monkeypatch)
+    built = runner.pse_scope_for(
+        binding=runner.governed_binding(), run_id="poe3a-producer-fixture",
+        observed_at="2026-09-07T21:39:14Z", captures=CAUSAL, gates=GATES,
+    )
+    assert built.schema_version == PSE_SCHEMA_VERSION
+    assert decode_poe_pse_delivery_scope(
+        _claim(encode_poe_pse_dimensions(built)),
+        expected_model=SWITCH, expected_packet_tracer_version=BUILD,
+    ) is not None
+
+
+def test_the_live_producer_tracks_the_contract_rather_than_a_literal(monkeypatch):
+    """Behavioural: move the contract and the producer must move with it.
+
+    The bundle carries a schema number of its own, so reading source text for
+    "schema_version=" cannot tell the two apart. Bumping the PSE contract can.
+    """
+    runner = _runner(monkeypatch)
+    import src.packet_tracer_mcp.domain.enterprise.services.poe_pse_claims as contract
+
+    monkeypatch.setattr(contract, "PSE_SCHEMA_VERSION", PSE_SCHEMA_VERSION + 7)
+    monkeypatch.setattr(runner, "PSE_SCHEMA_VERSION", PSE_SCHEMA_VERSION + 7)
+    moved = runner.pse_scope_for(
+        binding=runner.governed_binding(), run_id="poe3a-producer-fixture",
+        observed_at="2026-09-07T21:39:14Z", captures=CAUSAL, gates=GATES,
+    )
+    assert moved.schema_version == PSE_SCHEMA_VERSION + 7
+
+
+# ==========================================================================
+# 2 -- an unknown dimension inside the PSE contract fails closed
+# ==========================================================================
+
+def test_the_schema_two_key_set_is_exact():
+    from src.packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
+        PSE_SCHEMA_2_DIMENSIONS,
+    )
+    assert set(encode_poe_pse_dimensions(scope())) == PSE_SCHEMA_2_DIMENSIONS
+
+
+@pytest.mark.parametrize("key, value", [
+    ("poe_pse_live_safety", "admitted"),
+    ("poe_pse_operator_override", "true"),
+    ("poe_pse_notes", "looked fine"),
+])
+def test_an_unknown_pse_dimension_fails_closed(key, value):
+    """A dimension the contract does not define is one nobody validated."""
+    dimensions = encode_poe_pse_dimensions(scope())
+    dimensions[key] = value
+    assert decode_poe_pse_delivery_scope(_claim(dimensions)) is None
+
+
+def test_a_schema_two_record_carrying_the_retired_admission_field_fails_closed():
+    """The exact upgrade hazard: schema bumped, old self-admission kept."""
+    dimensions = encode_poe_pse_dimensions(scope())
+    assert dimensions["poe_pse_schema_version"] == "2"
+    dimensions["poe_pse_live_safety"] = "admitted"
+    assert decode_poe_pse_delivery_scope(_claim(dimensions)) is None
+
+
+def test_a_missing_pse_dimension_also_fails_closed():
+    dimensions = encode_poe_pse_dimensions(scope())
+    dimensions.pop("poe_pse_observer_id")
+    assert decode_poe_pse_delivery_scope(_claim(dimensions)) is None
+
+
+# ==========================================================================
+# 3 -- the binding is pinned in every coordinate
+# ==========================================================================
+
+EXPECTED_BINDING = {
+    "endpoint_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/001",
+    "device_id": "sw-acc-large-branch-zone-a-02",
+    "switch_model": "3560-24PS",
+    "switch_port": "FastEthernet0/1",
+    "endpoint_model": "7960",
+    "endpoint_port": "Switch",
+}
+
+
+def test_the_runner_pins_every_coordinate_of_its_binding(monkeypatch):
+    runner = _runner(monkeypatch)
+    assert runner.EXPECTED_BINDING == EXPECTED_BINDING
+    assert runner.governed_binding() == EXPECTED_BINDING
+
+
+@pytest.mark.parametrize("field, drifted", [
+    ("device_id", "sw-acc-large-branch-zone-a-01"),
+    ("switch_port", "FastEthernet0/2"),
+    ("endpoint_port", "Port 0"),
+])
+def test_any_drift_in_the_pinned_binding_fails_closed(monkeypatch, field, drifted):
+    """The design moving under the runner must stop it, not be measured."""
+    runner = _runner(monkeypatch)
+    design = runner.cp_scale_physical_design()
+    target = next(b for site in design.sites for b in site.endpoint_bindings
+                  if b.endpoint_id == runner.TARGET_ENDPOINT_ID)
+    attribute = {"switch_port": "device_port", "endpoint_port": "endpoint_port",
+                 "device_id": "device_id"}[field]
+    for site in design.sites:
+        for index, existing in enumerate(site.endpoint_bindings):
+            if existing.endpoint_id == target.endpoint_id:
+                site.endpoint_bindings[index] = existing.model_copy(
+                    update={attribute: drifted})
+    monkeypatch.setattr(runner, "cp_scale_physical_design", lambda: design)
+    with pytest.raises(RuntimeError, match="no longer matches"):
+        runner.governed_binding()
+
+
+# ==========================================================================
+# 4 -- both observations of a capture see the measured port
+# ==========================================================================
+
+def test_both_observations_in_one_capture_use_the_measured_port(monkeypatch):
+    """`capture()` reads twice for stability; each read must be the same port."""
+    root = pathlib.Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(root / "tools"))
+    import poe2_ap_live
+
+    monkeypatch.setattr(poe2_ap_live.time, "sleep", lambda _seconds: None)
+    experiment = poe2_ap_live.Experiment("spy-two", switch_port=PORT, endpoint_role="PH")
+    observed: list[tuple] = []
+
+    class _Observer:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def observe_poe_inline_status(self, device, ports):
+            observed.append((device, tuple(ports)))
+            self.calls += 1
+            if self.calls >= 2:
+                raise _Sentinel
+            return _Reading()
+
+    class _Reading:
+        command_result = None
+        raw_output = "unused"
+
+    experiment.observer = _Observer()
+    with pytest.raises(_Sentinel):
+        experiment.capture("AUTO_1")
+
+    assert len(observed) == 2, "capture must read twice for stability"
+    assert observed == [(experiment.switch, (PORT,))] * 2
+
+
+# ==========================================================================
+# 5 -- the committed bundle is pinned from outside itself
+# ==========================================================================
+
+# Externally pinned digests. `evidence.json` declares its own raw hashes, so
+# trusting only those would let a coordinated edit rewrite both the files and
+# the digests that vouch for them. These live outside the artifact.
+PINNED_SHA256 = {
+    "evidence.json": "4d2a1b43fa5b8c42018e477f8faca51f075e997b3be61dab2a2f68357e93dcd8",
+    "auto_1.txt": "6ff575e5ee6851b9fed4733edaabd42e18872d794ece32cb6bf0657987a1643e",
+    "auto_2.txt": "6ff575e5ee6851b9fed4733edaabd42e18872d794ece32cb6bf0657987a1643e",
+    "restore.txt": "6ff575e5ee6851b9fed4733edaabd42e18872d794ece32cb6bf0657987a1643e",
+    "never.txt": "8994852c98b5a3627d7fb57806b8ea2a425c9334fddd45092fe47c666ed91e6a",
+}
+
+
+def test_the_committed_bundle_matches_externally_pinned_digests():
+    for name, digest in PINNED_SHA256.items():
+        raw = (BUNDLE / name).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == digest, name
+
+
+def test_the_pin_covers_every_file_the_bundle_declares():
+    """A file added to the run must not escape the external pin."""
+    body = _bundle()
+    declared = {entry["raw_file"] for entry in body["captures"]}
+    declared.add(body["restoration"]["fresh_readback"]["raw_file"])
+    declared.add("evidence.json")
+    assert declared == set(PINNED_SHA256)

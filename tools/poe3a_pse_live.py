@@ -47,8 +47,8 @@ from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     _AUTHORIZED_OBSERVATION_METHODS,
 )
 from packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
-    PoEPseCapture, PoEPseDeliveryScope, decode_poe_pse_delivery_scope,
-    encode_poe_pse_dimensions,
+    PSE_SCHEMA_VERSION, PoEPseCapture, PoEPseDeliveryScope,
+    decode_poe_pse_delivery_scope, encode_poe_pse_dimensions,
 )
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
@@ -75,6 +75,18 @@ SWITCH_MODEL = "3560-24PS"
 # stops carrying it, that is a fact worth failing on rather than silently
 # measuring whatever sorted first.
 TARGET_ENDPOINT_ID = "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/001"
+# Every coordinate the run claims to have measured, pinned. Identity alone is
+# not enough: the same endpoint could be re-homed onto another switch or port
+# and the runner would happily measure the new one while the evidence still
+# named the old binding.
+EXPECTED_BINDING = {
+    "endpoint_id": TARGET_ENDPOINT_ID,
+    "device_id": "sw-acc-large-branch-zone-a-02",
+    "switch_model": SWITCH_MODEL,
+    "switch_port": "FastEthernet0/1",
+    "endpoint_model": ENDPOINT_MODEL,
+    "endpoint_port": "Switch",
+}
 
 
 def governed_binding() -> dict[str, str]:
@@ -91,16 +103,21 @@ def governed_binding() -> dict[str, str]:
             "The canonical design is ambiguous for " + TARGET_ENDPOINT_ID
             + ": " + str(len(matches)) + " bindings share that identity")
     binding = matches[0]
-    switch_model = models.get(binding.device_id)
-    if switch_model != SWITCH_MODEL or binding.endpoint_model != ENDPOINT_MODEL:
-        raise RuntimeError(
-            "The identified binding is no longer " + SWITCH_MODEL + "/"
-            + ENDPOINT_MODEL + ": " + str(switch_model) + "/" + binding.endpoint_model)
-    return {
-        "endpoint_id": binding.endpoint_id, "device_id": binding.device_id,
-        "switch_model": switch_model, "switch_port": binding.device_port,
-        "endpoint_model": binding.endpoint_model, "endpoint_port": binding.endpoint_port,
+    resolved = {
+        "endpoint_id": binding.endpoint_id,
+        "device_id": binding.device_id,
+        "switch_model": models.get(binding.device_id),
+        "switch_port": binding.device_port,
+        "endpoint_model": binding.endpoint_model,
+        "endpoint_port": binding.endpoint_port,
     }
+    drift = {key: (value, resolved.get(key))
+             for key, value in EXPECTED_BINDING.items() if resolved.get(key) != value}
+    if drift:
+        raise RuntimeError(
+            "The canonical design no longer matches the pinned binding: "
+            + json.dumps(drift, sort_keys=True))
+    return resolved
 
 
 def source_baseline(binding: dict[str, str]) -> dict:
@@ -152,6 +169,31 @@ def pse_capture(label: str, capture, observation: dict) -> PoEPseCapture:
 
 
 _MODE_BY_LABEL = {"AUTO_1": "auto", "NEVER": "never", "AUTO_2": "auto"}
+
+
+def pse_scope_for(
+    *,
+    binding: dict[str, str],
+    run_id: str,
+    observed_at: str,
+    captures: tuple[PoEPseCapture, ...],
+    gates: tuple[str, ...],
+) -> PoEPseDeliveryScope:
+    """Assemble the measured scope under whichever schema is in force.
+
+    Kept separate from `main` so the producer can be exercised offline: a
+    producer pinned to a literal version silently outlives its own contract.
+    """
+    return PoEPseDeliveryScope(
+        schema_version=PSE_SCHEMA_VERSION,
+        switch_model=binding["switch_model"], switch_port=binding["switch_port"],
+        endpoint_model=binding["endpoint_model"],
+        endpoint_port=binding["endpoint_port"], packet_tracer_build=BUILD,
+        observer_id="GovernedPoEInlineObserver", experiment_id=run_id,
+        observed_at=observed_at, captures=captures, gates=gates,
+        simultaneous_active_ports=1, cleanup_status="clean",
+        inventory_restoration="restored",
+    )
 
 
 def main() -> int:
@@ -297,15 +339,10 @@ def main() -> int:
 
     scope = dimensions = decoded = None
     if len(pse_captures) == 3 and not problems:
-        scope = PoEPseDeliveryScope(
-            schema_version=1, switch_model=binding["switch_model"],
-            switch_port=binding["switch_port"], endpoint_model=binding["endpoint_model"],
-            endpoint_port=binding["endpoint_port"], packet_tracer_build=BUILD,
-            observer_id="GovernedPoEInlineObserver", experiment_id=run_id,
-            observed_at=completed, captures=tuple(pse_captures),
+        scope = pse_scope_for(
+            binding=binding, run_id=run_id, observed_at=completed,
+            captures=tuple(pse_captures),
             gates=tuple(sorted(captures[0].table_completeness)),
-            simultaneous_active_ports=1, cleanup_status="clean",
-            inventory_restoration="restored",
         )
         try:
             dimensions = encode_poe_pse_dimensions(scope)

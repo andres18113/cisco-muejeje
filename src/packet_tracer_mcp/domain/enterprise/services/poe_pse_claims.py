@@ -82,6 +82,28 @@ _REQUIRED_GATES = (
     "stable",
 )
 
+# Exactly the keys schema 2 defines. A PSE record carrying anything else is
+# carrying something no version of this contract validated -- a retired field
+# such as `poe_pse_live_safety`, or an invention -- so it is refused rather
+# than read past. Contract dimensions are a closed set, not a prefix.
+PSE_SCHEMA_2_DIMENSIONS = frozenset({
+    POE_PSE_EVIDENCE_KIND,
+    POE_PSE_SCHEMA_VERSION,
+    POE_PSE_SWITCH_MODEL,
+    POE_PSE_SWITCH_PORT,
+    POE_PSE_ENDPOINT_MODEL,
+    POE_PSE_ENDPOINT_PORT,
+    POE_PSE_PACKET_TRACER_BUILD,
+    POE_PSE_OBSERVER_ID,
+    POE_PSE_EXPERIMENT_ID,
+    POE_PSE_OBSERVED_AT,
+    POE_PSE_CAPTURES,
+    POE_PSE_GATES,
+    POE_PSE_SIMULTANEOUS_ACTIVE_PORTS,
+    POE_PSE_CLEANUP_STATUS,
+    POE_PSE_INVENTORY_RESTORATION,
+})
+
 _CLEAN_QUALIFICATION = "clean"
 _RESTORED_INVENTORY = "restored"
 
@@ -257,6 +279,10 @@ def decode_poe_pse_delivery_scope(
     # Re-encoding has to reproduce the record exactly. A dimension the decoder
     # ignored but the producer wrote would otherwise ride along unchecked.
     encoded = encode_poe_pse_dimensions(scope)
+    # Exact equality, not containment: an extra key is a field this contract
+    # never checked, and a missing one is a field it never saw.
+    if set(dimensions) != set(encoded):
+        return None
     if any(dimensions.get(key) != value for key, value in encoded.items()):
         return None
     if result.observed_value != scope.simultaneous_active_ports:
