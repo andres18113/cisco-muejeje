@@ -1188,6 +1188,172 @@ def classify_show_interfaces_trunk(value: str, *, executed: bool = True) -> Trun
     return TrunkQueryClassification.PARSER_UNAVAILABLE
 
 
+#: Cabecera exacta medida en `poe1-c4fae886`. Las anchuras salen de la linea de
+#: guiones, no de contar a ojo, y su presencia es el unico permiso para leer
+#: filas: sin ella no hay tabla, y PT contesta un comando que no entiende con
+#: texto que igual se parsearia.
+_POE_INLINE_RULE = "--------- ------ ---------- ------- ------------------- ----- ----"
+_POE_INLINE_SUMMARY = re.compile(
+    r"Available:\s*(?P<available>[\d.]+)\(w\)\s+"
+    r"Used:\s*(?P<used>[\d.]+)\(w\)\s+"
+    r"Remaining:\s*(?P<remaining>[\d.]+)\(w\)"
+)
+_POE_INLINE_INTERFACE = re.compile(r"^[A-Za-z]{2}\d+(/\d+)*$")
+
+
+class PoEInlineDelivery(str, Enum):
+    """Que dice `show power inline` sobre UN puerto exacto, y nada mas.
+
+    Ningun valor habla de otro puerto ni del modelo: la calibracion es de un
+    binding exacto y la extrapolacion a `poe_ports` sigue prohibida.
+    """
+
+    DELIVERING = "delivering"
+    NOT_DELIVERING = "not_delivering"
+    UNOBSERVABLE = "unobservable"
+
+
+@dataclass(frozen=True)
+class PoEInlineRow:
+    interface: str
+    admin: str
+    oper: str
+    power_watts: float
+    device: str
+    power_class: str
+    max_watts: float
+
+
+@dataclass(frozen=True)
+class PoEInlineTable:
+    """Filas mas el resumen. El resumen se guarda; no decide nada.
+
+    Medido en los cuatro estados de `poe1-c4fae886`: `Used:10.0(w)` es identico
+    con el telefono alimentado y con `power inline never` puesto, cuando ningun
+    puerto entrega. Describe, no afirma.
+    """
+
+    rows: tuple[PoEInlineRow, ...] = ()
+    summary_available_watts: float | None = None
+    summary_used_watts: float | None = None
+    summary_remaining_watts: float | None = None
+
+    def row_for(self, interface: str) -> PoEInlineRow | None:
+        wanted = interface.strip().casefold()
+        for row in self.rows:
+            if row.interface.casefold() == wanted:
+                return row
+        return None
+
+
+def parse_show_power_inline(value: str) -> PoEInlineTable:
+    """Parse the exact inline-power table emitted by PT 9.0.1.0858.
+
+    Two shapes here are measured, not assumed. The `Device` column holds text
+    with spaces (`IP Phone 7960`), so columns are cut at the widths the rule
+    line declares rather than split on whitespace. And the row that lands on a
+    pager seam arrives with one leading space (` Fa0/18`): anchoring at the line
+    start would drop exactly one row per page, and a dropped row is
+    indistinguishable from an absent one -- which is the signal that means the
+    port is not being powered.
+    """
+    normalized = normalize_terminal_output(value)
+    lines = normalized.splitlines()
+    try:
+        rule_index = next(
+            index for index, line in enumerate(lines)
+            if line.strip() == _POE_INLINE_RULE
+        )
+    except StopIteration:
+        return PoEInlineTable()
+
+    spans: list[tuple[int, int]] = []
+    start: int | None = None
+    for column, character in enumerate(_POE_INLINE_RULE):
+        if character == "-" and start is None:
+            start = column
+        elif character != "-" and start is not None:
+            spans.append((start, column))
+            start = None
+    if start is not None:
+        spans.append((start, len(_POE_INLINE_RULE)))
+    if len(spans) != 7:
+        return PoEInlineTable()
+
+    rows: list[PoEInlineRow] = []
+    for line in lines[rule_index + 1:]:
+        # El unico ajuste permitido es el espacio que agrega la costura del
+        # pager: se quita para volver a la forma canonica de columnas.
+        candidate = line.lstrip(" ")
+        if not candidate.strip():
+            continue
+        fields = [candidate[begin:end].strip() for begin, end in spans]
+        if not _POE_INLINE_INTERFACE.fullmatch(fields[0]):
+            # Prompts de cierre y cualquier cola que no sea una fila.
+            continue
+        try:
+            power = float(fields[3])
+            maximum = float(fields[6])
+        except ValueError:
+            continue
+        rows.append(PoEInlineRow(
+            interface=fields[0],
+            admin=fields[1],
+            oper=fields[2],
+            power_watts=power,
+            device=fields[4],
+            power_class=fields[5],
+            max_watts=maximum,
+        ))
+
+    summary = _POE_INLINE_SUMMARY.search(normalized)
+    return PoEInlineTable(
+        rows=tuple(rows),
+        summary_available_watts=(
+            float(summary.group("available")) if summary else None
+        ),
+        summary_used_watts=float(summary.group("used")) if summary else None,
+        summary_remaining_watts=(
+            float(summary.group("remaining")) if summary else None
+        ),
+    )
+
+
+def classify_poe_inline_delivery(
+    output: str,
+    interface: str,
+    *,
+    capture_complete: bool,
+) -> PoEInlineDelivery:
+    """Decide inline-power delivery for ONE exact port, fail-closed.
+
+    Measured causally in `poe1-c4fae886` on 3560-24PS Fa0/1 -> 7960/Switch,
+    with no external phone power adapter, across `auto -> never -> auto`:
+    the row appears with `Oper=on` and `Power=10.0`, disappears entirely, and
+    comes back identical. PT does NOT print the port as `off` under
+    `power inline never`; it removes the row from the table.
+
+    That is why ``capture_complete`` gates only the NEGATIVE. In a truncated
+    capture "absent from the table" and "absent from this page" are the same
+    text, so an absence there proves nothing and stays UNOBSERVABLE. A row that
+    IS present and powered needs no such completeness: seeing it is positive
+    evidence on its own.
+    """
+    table = parse_show_power_inline(output)
+    if not table.rows:
+        return PoEInlineDelivery.UNOBSERVABLE
+    row = table.row_for(interface)
+    if row is None:
+        return (
+            PoEInlineDelivery.NOT_DELIVERING
+            if capture_complete
+            else PoEInlineDelivery.UNOBSERVABLE
+        )
+    if row.oper.casefold() == "on" and row.power_watts > 0.0:
+        return PoEInlineDelivery.DELIVERING
+    return PoEInlineDelivery.NOT_DELIVERING
+
+
 def parse_show_spanning_tree(value: str) -> list[StpInstanceStatus]:
     """Parse the exact multi-instance layout emitted by PT 9.0.1.0858."""
     normalized = normalize_terminal_output(value)
