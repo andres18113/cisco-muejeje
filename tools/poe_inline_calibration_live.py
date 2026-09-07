@@ -61,6 +61,9 @@ from packet_tracer_mcp.infrastructure.execution.poe_delivery_runtime import (
 from packet_tracer_mcp.infrastructure.execution.configuration_runtime import (
     PacketTracerConfigurationRuntime,
 )
+from packet_tracer_mcp.infrastructure.execution.poe_inline_observer import (
+    GovernedPoEInlineObserver,
+)
 
 REQUIRED_BUILD = "9.0.1.0858"
 CANDIDATE_MODEL = "3560-24PS"
@@ -130,6 +133,12 @@ class Capture:
     interface_brief: str = ""
     port_up_switch: object = None
     port_up_endpoint: object = None
+    # Lo que la API productiva concluye del MISMO despacho, con sus propias
+    # puertas. Va al lado del texto crudo a proposito: si alguna vez difieren,
+    # la evidencia lo muestra en lugar de esconderlo detras de la conclusion.
+    observed_status: str = ""
+    observed_delivery: str = ""
+    observed_refusal_reason: str = ""
 
     @property
     def attributable(self) -> bool:
@@ -197,6 +206,7 @@ class Calibration:
             bridge.send_and_wait, REQUIRED_BUILD,
         )
         self._config = PacketTracerConfigurationRuntime(bridge.send)
+        self._observer = GovernedPoEInlineObserver(self._executor)
         self._switch_name = f"MCP-POE1-SW-{report.run_id}"
         self._endpoint_name = f"MCP-POE1-PH-{report.run_id}"
 
@@ -281,6 +291,13 @@ class Calibration:
         second = self._executor.qualify(
             self._switch_name, IosQualificationQueryId.SHOW_POWER_INLINE,
         )
+        # Tercer despacho, por la API productiva. Es un dispatch propio a
+        # proposito: lo que se quiere ejercitar es el camino que POE-2 va a
+        # usar, con sus puertas puestas, no una reinterpretacion del texto ya
+        # capturado arriba.
+        observation = self._observer.observe_poe_inline_status(
+            self._switch_name, (SWITCH_PORT,),
+        )
         brief = self._executor.execute(
             self._switch_name, OperationalQueryId.SHOW_IP_INTERFACE_BRIEF,
         )
@@ -308,6 +325,9 @@ class Calibration:
             interface_brief=brief.output if brief.executed else "",
             port_up_switch=ports.get("switch_port_up"),
             port_up_endpoint=ports.get("endpoint_port_up"),
+            observed_status=observation.status.value,
+            observed_delivery=observation.ports[0].delivery.value,
+            observed_refusal_reason=observation.refusal_reason,
         )
 
     def wait_until_ready(self):
@@ -433,7 +453,10 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(_SETTLE_SECONDS)
             capture = calibration.capture(label)
             report.captures.append(capture)
-            print(f"attributable={capture.attributable} stable={capture.stable}")
+            print(
+                f"attributable={capture.attributable} stable={capture.stable} "
+                f"observed={capture.observed_status}/{capture.observed_delivery}"
+            )
             print(capture.output)
     finally:
         print("\n== TEARDOWN ==")

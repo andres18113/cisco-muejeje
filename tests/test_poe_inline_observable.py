@@ -134,6 +134,23 @@ def test_the_live_harness_retires_what_packet_tracer_added_by_itself() -> None:
     )
 
 
+def test_the_live_harness_exercises_the_productive_api_not_only_the_text() -> None:
+    """El camino que POE-2 va a usar tiene que correr en vivo, no sólo en tests.
+
+    El observador esta probado contra los bytes medidos, pero el cableado
+    ejecutor -> observador (atribucion, frescura, modo privilegiado) no se puede
+    probar con texto reproducido. La corrida gobernada lo ejerce y guarda su
+    conclusion AL LADO del texto crudo, para que una divergencia se vea en la
+    evidencia en vez de quedar tapada por la conclusion.
+    """
+    source = _harness_source()
+
+    assert "GovernedPoEInlineObserver" in source
+    assert "observe_poe_inline_status" in source
+    assert "observed_delivery" in source
+    assert "observed_refusal_reason" in source
+
+
 def test_the_live_harness_claims_no_authority_it_did_not_earn() -> None:
     """Calibrar no promueve: el artefacto lo dice explícitamente."""
     source = _harness_source()
