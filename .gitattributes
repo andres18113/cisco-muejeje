@@ -6,5 +6,6 @@ docs/reference/cp-scale/NEXT_GOVERNED_POE_LIVE_RELAY.md text eol=lf diff
 docs/reference/cp-scale/canonical-live-evidence/*.json -text -diff
 docs/reference/cp-scale/prelive-evidence/*.json -text diff
 
-# POE-2 raw bundles retain exact hashed bytes in every checkout.
+# POE-2 and POE-3A raw bundles retain exact hashed bytes in every checkout.
 docs/reference/cp-scale/canonical-live-evidence/poe2-*/** -text
+docs/reference/cp-scale/canonical-live-evidence/poe3a-*/** -text
