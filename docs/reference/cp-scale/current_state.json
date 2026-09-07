@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-07T03:05:00Z",
+  "updated_at": "2026-09-07T11:55:00Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -251,12 +251,60 @@
       "physical_incapability_established": false,
       "unqualifiable_accesspoint_bindings": 11,
       "inline_power_api_signal": "ABSENT_IN_9_0_1_IPCAPI_REFERENCE",
-      "next_observable_candidate": "SWITCH_SIDE_SHOW_POWER_INLINE_VIA_REGISTERED_IOS_QUERY_NOT_YET_EXAMINED",
+      "next_observable_candidate": "SWITCH_SIDE_SHOW_POWER_INLINE_VIA_REGISTERED_IOS_QUERY_CALIBRATED_POE1",
       "artifact": {
         "path": "docs/reference/cp-scale/canonical-live-evidence/poe-accesspoint-differential-20260907T024424Z-c4f909ca13e2-observed.json",
         "sha256": "7f28f575aee4512bd41dc51b42e00fd09b06dbf6e80d96c1a9022fb40fc2812a"
       },
       "record": "docs/reference/cp-scale/POE_ACCESSPOINT_DIFFERENTIAL_20260907.md"
+    },
+    "poe_inline_observable": {
+      "run_id": "poe1-c4fae886",
+      "source_head": "1d8b568",
+      "packet_tracer_build": "9.0.1.0858",
+      "decision": "OBSERVABLE_CALIBRATED_NO_CAPABILITY_PROMOTION",
+      "execution_path": "REUSED_GOVERNED_IOS_QUALIFICATION_NO_RAW_CLI",
+      "candidate_command": "show power inline",
+      "calibration_binding": "3560-24PS/FastEthernet0/1 + 7960/Switch",
+      "external_phone_power_adapter": false,
+      "causal_signature": {
+        "auto_1": "ROW_PRESENT_OPER_ON_POWER_10_0_DEVICE_IP_PHONE_7960_CLASS_3",
+        "never": "ROW_ABSENT_FROM_COMPLETE_TABLE",
+        "auto_2": "ROW_PRESENT_IDENTICAL_TO_AUTO_1",
+        "reversible": true
+      },
+      "contradicted_expectation": "NEVER_IS_ROW_ABSENCE_NOT_OPER_OFF",
+      "summary_line_is_authority": false,
+      "port_up_is_authority": false,
+      "captures_attributable": 4,
+      "pager_qualified": true,
+      "claim_authority": {
+        "authorized_observation_methods_unchanged": true,
+        "promotes_candidate_to_product_registry": false,
+        "poe_ports_extrapolated": false,
+        "port_coverage_authorized": 0
+      },
+      "restoration": {
+        "power_inline_auto_restored": true,
+        "restoration_proved_by_readback": true,
+        "disposable_deleted": true,
+        "session_residue_retired": [
+          "Power Distribution Device1"
+        ],
+        "inventory_restored": true,
+        "realtime_restored": true,
+        "problems": []
+      },
+      "artifact": {
+        "path": "docs/reference/cp-scale/canonical-live-evidence/poe-inline-calibration-poe1-c4fae886.json",
+        "sha256": "b13cad40901a94b957bc6738207e5a8b9505258e96662d3e190b7b3b7e9be104"
+      },
+      "prior_attempt": {
+        "run_id": "poe1-4d342a1a",
+        "result": "RESTORATION_INCOMPLETE_SESSION_RESIDUE_NOT_RETIRED",
+        "path": "docs/reference/cp-scale/canonical-live-evidence/poe-inline-calibration-poe1-4d342a1a.json"
+      },
+      "record": "docs/reference/cp-scale/POE_INLINE_CALIBRATION_20260907.md"
     },
     "factory_structure_survey": {
       "run_id": "factory-survey-9f967ef6",
@@ -346,13 +394,14 @@
       "current_total_exhaustive": false,
       "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS"
     },
-    "next_active_step": "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_REMAINING_POE_BINDING_BEFORE_ROUTER0"
+    "next_active_step": "POE2_ACCESSPOINT_PT_USING_THE_CALIBRATED_PSE_OBSERVABLE"
   },
   "handoff_compatibility": {
     "LIVE_RUNS_CONSUMED": "AT_LEAST_46_NON_EXHAUSTIVE_AFTER_20260903",
     "CLEANUP": "LATEST_POE_ACQUISITION_CLEANUP_4_OF_4 | PTS_INTEGRITY_VERIFIED | SESSION_REUSABLE",
     "WORKSPACE_RESTORED": "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED",
-    "NEXT_ACTIVE_STEP": "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_REMAINING_POE_BINDING_BEFORE_ROUTER0",
-    "CP_SCALE_STATUS": "PRIOR_POE_EXACT_BINDING_VERIFIED | FACTORY_STRUCTURE_OBSERVED_NO_PROMOTION | ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | PRODUCT_PRECONDITION_BLOCKED"
+    "NEXT_ACTIVE_STEP": "POE2_ACCESSPOINT_PT_USING_THE_CALIBRATED_PSE_OBSERVABLE",
+    "CP_SCALE_STATUS": "PRIOR_POE_EXACT_BINDING_VERIFIED | FACTORY_STRUCTURE_OBSERVED_NO_PROMOTION | ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | PRODUCT_PRECONDITION_BLOCKED",
+    "POE_INLINE_OBSERVABLE": "CALIBRATED_EXACT_BINDING_3560_24PS_FA0_1_7960_SWITCH | NEVER_IS_ROW_ABSENCE | SUMMARY_NOT_AUTHORITY | NO_PORT_EXTRAPOLATION"
   }
 }

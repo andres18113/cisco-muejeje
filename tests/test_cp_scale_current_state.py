@@ -167,7 +167,7 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "inline_power_api_signal": "ABSENT_IN_9_0_1_IPCAPI_REFERENCE",
             "next_observable_candidate": (
                 "SWITCH_SIDE_SHOW_POWER_INLINE_VIA_REGISTERED_IOS_QUERY_"
-                "NOT_YET_EXAMINED"
+                "CALIBRATED_POE1"
             ),
             "artifact": {
                 "path": (
@@ -182,6 +182,67 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             },
             "record": (
                 "docs/reference/cp-scale/POE_ACCESSPOINT_DIFFERENTIAL_20260907.md"
+            ),
+        },
+        "poe_inline_observable": {
+            "run_id": "poe1-c4fae886",
+            "source_head": "1d8b568",
+            "packet_tracer_build": "9.0.1.0858",
+            "decision": "OBSERVABLE_CALIBRATED_NO_CAPABILITY_PROMOTION",
+            "execution_path": "REUSED_GOVERNED_IOS_QUALIFICATION_NO_RAW_CLI",
+            "candidate_command": "show power inline",
+            "calibration_binding": "3560-24PS/FastEthernet0/1 + 7960/Switch",
+            "external_phone_power_adapter": False,
+            "causal_signature": {
+                "auto_1": (
+                    "ROW_PRESENT_OPER_ON_POWER_10_0_DEVICE_IP_PHONE_7960_CLASS_3"
+                ),
+                "never": "ROW_ABSENT_FROM_COMPLETE_TABLE",
+                "auto_2": "ROW_PRESENT_IDENTICAL_TO_AUTO_1",
+                "reversible": True,
+            },
+            "contradicted_expectation": "NEVER_IS_ROW_ABSENCE_NOT_OPER_OFF",
+            "summary_line_is_authority": False,
+            "port_up_is_authority": False,
+            "captures_attributable": 4,
+            "pager_qualified": True,
+            "claim_authority": {
+                "authorized_observation_methods_unchanged": True,
+                "promotes_candidate_to_product_registry": False,
+                "poe_ports_extrapolated": False,
+                "port_coverage_authorized": 0,
+            },
+            "restoration": {
+                "power_inline_auto_restored": True,
+                "restoration_proved_by_readback": True,
+                "disposable_deleted": True,
+                "session_residue_retired": ["Power Distribution Device1"],
+                "inventory_restored": True,
+                "realtime_restored": True,
+                "problems": [],
+            },
+            "artifact": {
+                "path": (
+                    "docs/reference/cp-scale/canonical-live-evidence/"
+                    "poe-inline-calibration-poe1-c4fae886.json"
+                ),
+                "sha256": (
+                    "b13cad40901a94b957bc6738207e5a8b"
+                    "9505258e96662d3e190b7b3b7e9be104"
+                ),
+            },
+            "prior_attempt": {
+                "run_id": "poe1-4d342a1a",
+                "result": (
+                    "RESTORATION_INCOMPLETE_SESSION_RESIDUE_NOT_RETIRED"
+                ),
+                "path": (
+                    "docs/reference/cp-scale/canonical-live-evidence/"
+                    "poe-inline-calibration-poe1-4d342a1a.json"
+                ),
+            },
+            "record": (
+                "docs/reference/cp-scale/POE_INLINE_CALIBRATION_20260907.md"
             ),
         },
         "factory_structure_survey": {
@@ -301,8 +362,7 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "authority": "HISTORICAL_STATE_PLUS_DIRECT_RUNTIME_SNAPSHOTS",
         },
         "next_active_step": (
-            "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_"
-            "REMAINING_POE_BINDING_BEFORE_ROUTER0"
+            "POE2_ACCESSPOINT_PT_USING_THE_CALIBRATED_PSE_OBSERVABLE"
         ),
     }
     assert state["source_head"] == "6c6db55566890f1d9ca9cc06bfc13ae24505e793"
@@ -494,8 +554,14 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED"
         ),
         "NEXT_ACTIVE_STEP": (
-            "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_"
-            "REMAINING_POE_BINDING_BEFORE_ROUTER0"
+            "POE2_ACCESSPOINT_PT_USING_THE_CALIBRATED_PSE_OBSERVABLE"
+        ),
+        # La proyeccion nombra el observable calibrado junto con las dos cosas
+        # que la calibracion contradijo, para que nadie lea la firma de memoria.
+        "POE_INLINE_OBSERVABLE": (
+            "CALIBRATED_EXACT_BINDING_3560_24PS_FA0_1_7960_SWITCH | "
+            "NEVER_IS_ROW_ABSENCE | SUMMARY_NOT_AUTHORITY | "
+            "NO_PORT_EXTRAPOLATION"
         ),
         "CP_SCALE_STATUS": (
             "PRIOR_POE_EXACT_BINDING_VERIFIED | "
@@ -586,8 +652,7 @@ def test_router0_precondition_retains_product_refusal_without_consuming_live():
         "SIMULTANEOUS_CAPACITY_EVIDENCE_BEFORE_ROUTER0"
     )
     assert gate["next_active_step"] == (
-        "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_"
-        "REMAINING_POE_BINDING_BEFORE_ROUTER0"
+        "POE2_ACCESSPOINT_PT_USING_THE_CALIBRATED_PSE_OBSERVABLE"
     )
 
 
@@ -814,6 +879,59 @@ def test_observed_accesspoint_differential_cannot_promote_or_refuse_poe():
     assert gate["poe_delivery"] == "supported"
     assert record["capability_status"] == "unknown"
     assert record["physical_incapability_established"] is False
-    # Naming the switch-side candidate must not be readable as having tried it.
-    assert record["next_observable_candidate"].endswith("NOT_YET_EXAMINED")
+    # POE-1 examined the switch-side candidate, so the field now says so. What
+    # it must still NOT say is that calibrating it moved any PoE claim: the
+    # AccessPoint reading stays `unknown` and the ceiling stays where it was.
+    assert record["next_observable_candidate"].endswith("CALIBRATED_POE1")
+    assert (ROOT / record["record"]).is_file()
+
+
+def test_calibrating_the_inline_observable_promotes_no_capability():
+    """Calibrar un observable no es autorizar un reclamo con el.
+
+    La secuencia causal salio como se esperaba y aun asi nada sube: el metodo
+    de observacion autorizado sigue siendo solo el visual, el candidato sigue
+    fuera del registro de producto, y `poe_ports` sigue en 1 sin extrapolar.
+    """
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    gate = document["current_offline_operational_gate"]
+    record = gate["poe_inline_observable"]
+
+    raw = (ROOT / record["artifact"]["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == record["artifact"]["sha256"]
+    artifact = json.loads(raw)
+
+    assert artifact["problems"] == []
+    assert artifact["binding"]["candidate_model"] == "3560-24PS"
+    assert artifact["binding"]["switch_port"] == "FastEthernet0/1"
+    assert artifact["binding"]["endpoint_model"] == "7960"
+    assert artifact["binding"]["external_phone_power_adapter"] is False
+    assert artifact["facts"]["inventory_restored"] is True
+    assert artifact["facts"]["realtime_restored"] is True
+    assert artifact["facts"]["environment_after"]["simulation_mode"] is False
+
+    captures = {item["label"]: item for item in artifact["captures"]}
+    assert set(captures) == {"as_created", "auto_1", "never", "auto_2"}
+    for capture in captures.values():
+        assert capture["attributable"] is True
+        assert capture["stable"] is True
+        assert capture["output_complete"] is True
+        assert capture["device_identity_provenance"] == "confirmed_unique"
+
+    powered_row = (
+        "Fa0/1     auto   on         10.0    IP Phone 7960       3     15.4"
+    )
+    assert powered_row in captures["auto_1"]["output"]
+    assert powered_row in captures["auto_2"]["output"]
+    # La mitad negativa es una AUSENCIA, no una fila en `off`.
+    assert "Fa0/1 " not in captures["never"]["output"]
+    assert "off" in captures["never"]["output"]
+
+    claim = artifact["claim_authority"]
+    assert claim["authorized_observation_methods_unchanged"] is True
+    assert claim["poe_ports_extrapolated"] is False
+    assert claim["promotes_candidate_to_product_registry"] is False
+    assert record["claim_authority"]["port_coverage_authorized"] == 0
+    assert gate["poe_ports"] == 1
+    assert gate["poe_delivery"] == "supported"
     assert (ROOT / record["record"]).is_file()

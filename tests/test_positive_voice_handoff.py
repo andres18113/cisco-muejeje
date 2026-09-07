@@ -1232,8 +1232,12 @@ def test_current_cp_scale_voice_state_uses_exact_values():
             "SEMANTIC_INVENTORY_YES | PHYSICAL_PTS_VERIFIED"
         ),
         "NEXT_ACTIVE_STEP": (
-            "OPERATOR_VISUAL_RECEIPT_REQUIRED_FOR_EVERY_"
-            "REMAINING_POE_BINDING_BEFORE_ROUTER0"
+            "POE2_ACCESSPOINT_PT_USING_THE_CALIBRATED_PSE_OBSERVABLE"
+        ),
+        "POE_INLINE_OBSERVABLE": (
+            "CALIBRATED_EXACT_BINDING_3560_24PS_FA0_1_7960_SWITCH | "
+            "NEVER_IS_ROW_ABSENCE | SUMMARY_NOT_AUTHORITY | "
+            "NO_PORT_EXTRAPOLATION"
         ),
         "CP_SCALE_STATUS": (
             "PRIOR_POE_EXACT_BINDING_VERIFIED | "
