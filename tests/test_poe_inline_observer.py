@@ -235,3 +235,53 @@ def test_the_observer_drives_the_real_governed_executor() -> None:
     # Sin transporte no hay evidencia, y eso es un rechazo, no un negativo.
     assert observation.status is PoEInlineObservationStatus.UNOBSERVABLE
     assert observation.ports[0].delivery is PoEInlineDelivery.UNOBSERVABLE
+
+
+# POE-2 needs the exact dispatch consumed by the API, not a parallel capture.
+def test_observation_retains_its_own_dispatch_evidence():
+    result = _result()
+    _, observed = _observe(result)
+    assert observed.command_result is result
+    assert observed.raw_output == observed.command_result.output
+
+
+@pytest.mark.parametrize("changes", [
+    {"truncated_by_pager": True},
+    {"pager_continuation": "failed"},
+    {"session_state": IosSessionState.FAILED},
+    {"output": _MEASURED_NEVER.replace("Switch#", "Switch>")},
+])
+def test_contradictory_completeness_cannot_authorize_an_absence(changes):
+    from dataclasses import replace
+    _, observed = _observe(replace(_result(_MEASURED_NEVER), **changes))
+    assert observed.ports[0].delivery is PoEInlineDelivery.UNOBSERVABLE
+    assert not observed.capture_complete
+
+
+@pytest.mark.parametrize("dispatch", ["echo_unobservable", "unrecognized_value"])
+def test_unproven_dispatch_is_a_refusal_not_evidence_or_an_exception(dispatch):
+    from dataclasses import replace
+    _, observed = _observe(replace(_result(), dispatch_classification=dispatch))
+    assert observed.status is PoEInlineObservationStatus.UNOBSERVABLE
+
+
+def test_two_aliases_of_one_requested_interface_are_rejected_before_dispatch():
+    executor, observed = _observe(_result(), ("Fa0/1", "FastEthernet0/1"))
+    assert executor.qualify_calls == []
+    assert observed.status is PoEInlineObservationStatus.UNOBSERVABLE
+
+
+def test_duplicate_table_rows_cannot_select_one_answer_silently():
+    duplicate = next(line for line in _MEASURED_AUTO.splitlines() if line.startswith("Fa0/1 "))
+    _, observed = _observe(_result(_MEASURED_AUTO.replace("Switch#", duplicate + "\nSwitch#", 1)))
+    assert observed.status is PoEInlineObservationStatus.UNOBSERVABLE
+
+
+def test_empty_observed_identity_cannot_inherit_requested_identity():
+    _, observed = _observe(_result(observed_name=""))
+    assert observed.status is PoEInlineObservationStatus.UNOBSERVABLE
+
+
+def test_incomplete_output_cannot_report_an_off_row_as_a_negative():
+    _, observed = _observe(_result(complete=False), ("FastEthernet0/7",))
+    assert observed.ports[0].delivery is PoEInlineDelivery.UNOBSERVABLE

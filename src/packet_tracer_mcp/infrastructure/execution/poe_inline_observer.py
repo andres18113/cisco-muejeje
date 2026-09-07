@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 from .command_dispatch import DispatchClassification, is_command_corrupted
@@ -32,6 +32,9 @@ from .ios_terminal import (
     DeviceIdentityProvenance,
     IosCommandResult,
     IosQualificationQueryId,
+    IosSessionState,
+    PagerContinuation,
+    canonical_interface_name,
     PoEInlineDelivery,
     PoEInlineRow,
     classify_poe_inline_delivery,
@@ -76,6 +79,8 @@ class PoEInlineObservation:
     # incluido aquel en que ningun puerto entrega: describe, no decide.
     summary_used_watts: float | None = None
     raw_output: str = ""
+    # The immutable dispatch actually interpreted, retained for governed audits.
+    command_result: IosCommandResult | None = None
 
     @property
     def delivering_ports(self) -> tuple[str, ...]:
@@ -126,7 +131,22 @@ def _reject_input(identity: str, ports: tuple[str, ...]) -> str | None:
         for port in ports
     ):
         return "Every expected port must be a valid interface name."
+    if len({canonical_interface_name(port) for port in ports}) != len(ports):
+        return "Aliases of the same expected port are not distinct."
     return None
+
+
+def _capture_complete(result: IosCommandResult) -> bool:
+    return bool(
+        result.output_complete
+        and not result.truncated_by_pager
+        and result.pager_continuation in {
+            PagerContinuation.NOT_ENCOUNTERED.value, PagerContinuation.COMPLETED.value,
+        }
+        and result.session_state is IosSessionState.EXEC_PROMPT_READY
+        and "--More--" not in result.output
+        and re.search(r"(?m)^[A-Za-z0-9_.-]+#\s*\Z", result.output)
+    )
 
 
 def _refused(
@@ -144,7 +164,7 @@ def _refused(
             for port in ports
         ),
         refusal_reason=reason,
-        capture_complete=bool(result.output_complete) if result else False,
+        capture_complete=_capture_complete(result) if result else False,
         fresh_output_observed=bool(result.fresh_output_observed) if result else False,
         device_identity_provenance=(
             result.device_identity_provenance if result
@@ -152,6 +172,7 @@ def _refused(
         ),
         observed_device_name=result.observed_device_name if result else "",
         raw_output=result.output if result else "",
+        command_result=result,
     )
 
 
@@ -165,26 +186,28 @@ def _interpret(
         return _refused(identity, ports, reason, result)
 
     table = parse_show_power_inline(result.output)
-    observations = tuple(
-        PoEInlinePortObservation(
-            port=port,
-            delivery=classify_poe_inline_delivery(
-                result.output, port, capture_complete=result.output_complete,
-            ),
-            row=table.row_for(port),
+    complete = _capture_complete(result)
+    observations = []
+    for port in ports:
+        delivery = classify_poe_inline_delivery(
+            result.output, port, capture_complete=complete,
         )
-        for port in ports
-    )
+        if not complete and delivery is PoEInlineDelivery.NOT_DELIVERING:
+            delivery = PoEInlineDelivery.UNOBSERVABLE
+        observations.append(PoEInlinePortObservation(
+            port=port, delivery=delivery, row=table.row_for(port),
+        ))
     return PoEInlineObservation(
         switch_identity=identity,
         status=PoEInlineObservationStatus.OBSERVED,
-        ports=observations,
-        capture_complete=result.output_complete,
+        ports=tuple(observations),
+        capture_complete=_capture_complete(result),
         fresh_output_observed=result.fresh_output_observed,
         device_identity_provenance=result.device_identity_provenance,
         observed_device_name=result.observed_device_name,
         summary_used_watts=table.summary_used_watts,
         raw_output=result.output,
+        command_result=result,
     )
 
 
@@ -199,16 +222,26 @@ def _gate(identity: str, result: IosCommandResult) -> str | None:
         return "The registered query did not execute."
     if not result.fresh_output_observed:
         return "The captured window was not proven fresh."
-    if is_command_corrupted(DispatchClassification(result.dispatch_classification)):
+    try:
+        dispatch = DispatchClassification(result.dispatch_classification)
+    except ValueError:
+        return "The dispatch integrity classification is unknown."
+    if is_command_corrupted(dispatch):
         return "The dispatched command was proven corrupted."
+    if dispatch is not DispatchClassification.DISPATCHED:
+        return "The dispatch integrity was not proven."
     if (
         result.device_identity_provenance
         != DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
     ):
         return "The capture carries no unique device attribution."
     observed = result.observed_device_name
-    if observed and observed != identity:
+    if observed != identity:
         return "The capture was attributed to another device."
-    if not parse_show_power_inline(result.output).rows:
+    table = parse_show_power_inline(result.output)
+    if not table.rows:
         return "The output carries no inline-power table."
+    keys = [canonical_interface_name(row.interface) for row in table.rows]
+    if len(set(keys)) != len(keys):
+        return "The inline-power table carries ambiguous duplicate interfaces."
     return None
