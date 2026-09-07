@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from secrets import token_hex
+
+from pydantic_core import SchemaError
 
 from ...domain.enterprise.models.discovery import (
     BackendVersionProvenance,
@@ -13,11 +17,26 @@ from ...domain.enterprise.models.discovery import (
 from ...shared.utils import resolve_within, safe_name_component
 
 
+DEFAULT_BASE_DIR = Path("data") / "capabilities"
+
+
+class CorruptCapabilitySnapshotError(RuntimeError):
+    """A stored snapshot exists but cannot be read as evidence."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        self.path = Path(path)
+        self.reason = reason
+        super().__init__(f"Unusable capability snapshot {self.path}: {reason}")
+
+
 class CapabilitySnapshotStore:
     """Almacena observaciones runtime y evidencia revisada separadamente."""
 
-    def __init__(self, base_dir: str | Path = Path("data") / "capabilities") -> None:
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: str | Path | None = None) -> None:
+        # Read the module default at call time: it is machine state, and the
+        # test suite redirects it so no test composes evidence from whatever
+        # this checkout happens to have on disk.
+        self.base_dir = Path(base_dir) if base_dir is not None else Path(DEFAULT_BASE_DIR)
 
     def save_runtime(self, snapshot: CapabilitySnapshot) -> Path:
         return self._save("runtime", snapshot)
@@ -98,9 +117,17 @@ class CapabilitySnapshotStore:
         target_dir = resolve_within(self.base_dir, scope, version)
         target_dir.mkdir(parents=True, exist_ok=True)
         target = resolve_within(target_dir, f"{snapshot.stable_hash()}.json")
-        temporary = target.with_suffix(".json.tmp")
-        temporary.write_text(snapshot.model_dump_json(indent=2), encoding="utf-8")
-        temporary.replace(target)
+        # The temporary name must belong to this writer, not to the target.
+        # `stable_hash` ignores session_id and started_at, so two different
+        # snapshots share one target -- and used to share one temporary file,
+        # where their differing bodies could interleave into a truncated one.
+        temporary = target.with_name(f"{target.name}.{os.getpid()}.{token_hex(4)}.tmp")
+        try:
+            temporary.write_text(snapshot.model_dump_json(indent=2), encoding="utf-8")
+            temporary.replace(target)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
         return target
 
     def _list(self, scope: str, packet_tracer_version: str | None) -> list[CapabilitySnapshot]:
@@ -114,11 +141,41 @@ class CapabilitySnapshotStore:
             files = sorted(resolve_within(root, version).glob("*.json"))
         snapshots: list[CapabilitySnapshot] = []
         for path in files:
-            try:
-                snapshots.append(CapabilitySnapshot.model_validate_json(path.read_text(encoding="utf-8")))
-            except (OSError, ValueError, json.JSONDecodeError):
-                continue
+            snapshot = self._load(path)
+            if snapshot is not None:
+                snapshots.append(snapshot)
         return sorted(snapshots, key=lambda item: item.session.session.started_at)
+
+    def _load(self, path: Path) -> CapabilitySnapshot | None:
+        """Read one stored snapshot, or say which file made that impossible.
+
+        Absence and corruption are different answers and must stay that way.
+        A file that was listed and then removed yields `None`: nothing was
+        read from it, so skipping it cannot hide a fact. Anything else -- an
+        unreadable file, invalid JSON, a payload that does not match the
+        schema, or a structurally incompatible one -- is a persistence fault,
+        not a capability fact. It is raised, named, and it aborts the whole
+        read, because returning the survivors would quietly downgrade
+        evidence that exists into evidence that does not.
+        """
+        try:
+            body = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise CorruptCapabilitySnapshotError(path, f"unreadable ({exc})") from exc
+        try:
+            return CapabilitySnapshot.model_validate_json(body)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise CorruptCapabilitySnapshotError(
+                path, "does not match the capability snapshot schema",
+            ) from exc
+        except SchemaError as exc:
+            # Not a ValueError, so this used to escape the persistence
+            # boundary raw, naming nothing the caller could act on.
+            raise CorruptCapabilitySnapshotError(
+                path, f"structurally incompatible with the snapshot schema ({exc})",
+            ) from exc
 
 
 def compare_snapshots(old: CapabilitySnapshot, new: CapabilitySnapshot) -> SnapshotDiff:

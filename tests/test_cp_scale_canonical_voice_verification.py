@@ -50,7 +50,7 @@ from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store 
 def _floor1():
     composition = compose_cp_scale_canonical(
         packet_tracer_version=MEASURED_BACKEND_VERSION,
-        capability_store=CapabilitySnapshotStore(Path("data/capabilities")),
+        capability_store=CapabilitySnapshotStore(),
     )
     assert composition.valid, composition.issues
     return project_cp_scale_canonical_stage(

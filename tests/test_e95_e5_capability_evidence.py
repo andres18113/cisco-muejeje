@@ -199,7 +199,24 @@ def test_the_default_mutable_store_is_machine_state_and_tests_must_inject_it():
     tambien leen este directorio. Un test de evidencia dinamica o de ausencia
     debe inyectar su store para no depender de lo que haya en el disco.
     """
-    assert CapabilitySnapshotStore().base_dir == pathlib.Path("data") / "capabilities"
+    # The production default is pinned from source, because the suite itself
+    # redirects the live constant so that no test reads this checkout's
+    # machine state (see tests/conftest.py). Both facts matter: production
+    # still reads `data/capabilities`, and the store honours one named
+    # constant rather than a literal, so redirecting it is possible at all.
+    source = (
+        pathlib.Path(__file__).resolve().parents[1] / "src" / "packet_tracer_mcp"
+        / "infrastructure" / "persistence" / "capability_snapshot_store.py"
+    ).read_text(encoding="utf-8")
+    assert 'DEFAULT_BASE_DIR = Path("data") / "capabilities"' in source
+
+    from src.packet_tracer_mcp.infrastructure.persistence import (
+        capability_snapshot_store,
+    )
+    assert (
+        CapabilitySnapshotStore().base_dir
+        == pathlib.Path(capability_snapshot_store.DEFAULT_BASE_DIR)
+    )
 
 
 def test_evidence_from_another_build_is_not_reused(tmp_path):

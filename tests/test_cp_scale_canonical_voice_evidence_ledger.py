@@ -245,7 +245,7 @@ def raw_artifacts(run: dict) -> dict[str, dict]:
 def composition():
     result = compose_cp_scale_canonical(
         packet_tracer_version=MEASURED_BACKEND_VERSION,
-        capability_store=CapabilitySnapshotStore(ROOT / "data" / "capabilities"),
+        capability_store=CapabilitySnapshotStore(),
     )
     assert result.valid, result.issues
     return result

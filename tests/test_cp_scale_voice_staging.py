@@ -46,7 +46,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def composition():
     composed = compose_cp_scale_canonical(
         packet_tracer_version=MEASURED_BACKEND_VERSION,
-        capability_store=CapabilitySnapshotStore(ROOT / "data" / "capabilities"),
+        capability_store=CapabilitySnapshotStore(),
     )
     if not composed.valid:
         pytest.skip(
