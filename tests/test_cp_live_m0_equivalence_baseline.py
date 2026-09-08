@@ -26,11 +26,14 @@ import pytest
 
 from tests.cp_live_m0_harness import (
     FIXTURE_VERSION,
-    HARDENING_BASE_SHA,
-    HISTORICAL_FIXTURE_VERSION,
+    HISTORICAL_FIXTURE_VERSIONS,
+    LEVEL_A_SUBSTITUTED_SYMBOLS,
+    POLICY_TRACE_EXTRA_DISPATCH_SOURCE,
     POLICY_TRACE_SOURCE,
+    PRODUCT_RULE_SYMBOLS,
     ROOT,
     SCENARIOS,
+    candidate_provenance_issues,
     coordination_source,
     run_product_probe,
     trace_differences,
@@ -38,42 +41,13 @@ from tests.cp_live_m0_harness import (
 
 
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "cp_live_m0"
-FIXTURE = FIXTURE_DIR / "baseline-v2.json"
+FIXTURE = FIXTURE_DIR / "baseline-v3.json"
 DIGEST = FIXTURE.with_suffix(".sha256")
-HISTORICAL_FIXTURE = FIXTURE_DIR / "baseline-v1.json"
-HISTORICAL_DIGEST = HISTORICAL_FIXTURE.with_suffix(".sha256")
 
 # The commit whose corrected runner this reference characterizes. Re-pointing
 # the reference at another commit is a decision that has to be taken here, in
 # test code, and not by editing the artifact.
-BASELINE_SOURCE_SHA = "7a6c552dd570f683fe3f249c1037815192543ae7"
-
-# What the Level A doubles must replace for a probe to be offline, and what has
-# to stay real for the probe to be characterizing anything at all.
-SUBSTITUTED_SYMBOLS = frozenset({
-    "ImportIsolationPreflight",
-    "read_git_repository_state",
-    "_packet_tracer_processes",
-    "PacketTracerHttpTransport",
-    "PacketTracerPhysicalTopologyRuntime",
-    "CapabilitySnapshotStore",
-    "compose_cp_scale_canonical",
-    "_execute_stage",
-    "_checkpoint",
-    "_cleanup_owned",
-    "_write_evidence",
-    "_write_checkpoint_summary",
-    "archive_cp_scale_canonical_evidence",
-})
-REAL_SYMBOLS = frozenset({
-    "run",
-    "_complete_router0_target",
-    "canonical_cp_scale_target_contract",
-    "canonical_final_disposition",
-    "canonical_checkpoint_repository_error",
-    "canonical_stage_mutation_replay_audit",
-    "_wait_for_site_forwarding",
-})
+BASELINE_SOURCE_SHA = "b428129874f6e668e5074e1b29fa3d208c87df14"
 
 
 @pytest.fixture(scope="module")
@@ -82,26 +56,25 @@ def baseline() -> dict:
 
 
 def _assert_candidate_provenance(verdict: dict, *, substituted: frozenset):
-    """The child's measured provenance, asserted apart from its trace."""
+    """The child's measured provenance, asserted apart from its trace.
 
-    provenance = verdict["provenance"]
-    # One namespace per process is what makes enum and isinstance identity
-    # meaningful; the production one is the only one a probe may load.
-    assert provenance["loaded_namespaces"] == ["packet_tracer_mcp"], provenance
-    assert provenance["package_file_inside_tree"] is True, provenance
-    assert provenance["runner_file_inside_tree"] is True, provenance
-    assert provenance["governed_root_inside_tree"] is True, provenance
-    assert provenance["interpreter"] == sys.executable, provenance
-    # Measured, not declared: no dispatch was even attempted, so no live
-    # environment was contacted.
-    assert provenance["transport_dispatch_attempts"] == [], provenance
-    replaced = set(provenance["substituted_runner_symbols"])
-    assert substituted <= replaced, sorted(substituted - replaced)
-    assert not (REAL_SYMBOLS & replaced), sorted(REAL_SYMBOLS & replaced)
+    One namespace per process, files inside this tree, no dispatch attempted,
+    the doubles installed and the rules left real -- judged by the same
+    function the recorder uses before it writes a reference.
+    """
+
+    issues = candidate_provenance_issues(
+        verdict["provenance"],
+        interpreter=sys.executable,
+        substituted_required=substituted,
+        never_substituted=PRODUCT_RULE_SYMBOLS,
+    )
+
+    assert issues == [], {"issues": issues, "provenance": verdict["provenance"]}
 
 
 def test_reference_artifact_has_pinned_source_and_external_digest(baseline):
-    assert baseline["schema"] == "cp-live-m0-equivalence-baseline-v2"
+    assert baseline["schema"] == "cp-live-m0-equivalence-baseline-v3"
     assert baseline["fixture_version"] == FIXTURE_VERSION
     assert baseline["provenance"]["source_commit"] == BASELINE_SOURCE_SHA
     # A local object read, never a network call. CI checks out with
@@ -127,6 +100,12 @@ def test_reference_artifact_has_pinned_source_and_external_digest(baseline):
     assert baseline["comparison"][
         "candidate_provenance_is_asserted_not_compared"
     ] is True
+    # The reference names the scope it was verified against, not just its
+    # source commit.
+    scope = baseline["provenance"]["executed_scope"]
+    assert scope["verified_against_source_commit"] is True
+    assert scope["repository_files"] > len(scope["recording_inputs"])
+    assert sorted(scope["roots"]) == ["src", "tests", "tools"]
     assert {
         "authority",
         "recipient",
@@ -142,23 +121,26 @@ def test_reference_artifact_has_pinned_source_and_external_digest(baseline):
     )
 
 
-def test_the_superseded_reference_is_retained_and_still_verifiable(baseline):
-    superseded = baseline["supersedes"]
+def test_every_superseded_reference_is_retained_and_still_verifiable(baseline):
+    chain = baseline["supersedes"]
 
-    assert superseded["fixture_version"] == HISTORICAL_FIXTURE_VERSION
-    assert superseded["source_commit"] == HARDENING_BASE_SHA
-    assert superseded["retained_as"] == "tests/fixtures/cp_live_m0/baseline-v1.json"
-    # Retained as history, not as an oracle: it still matches its own digest.
-    assert hashlib.sha256(HISTORICAL_FIXTURE.read_bytes()).hexdigest() == (
-        superseded["sha256"]
+    assert [item["fixture_version"] for item in chain] == list(
+        HISTORICAL_FIXTURE_VERSIONS
     )
-    assert hashlib.sha256(HISTORICAL_FIXTURE.read_bytes()).hexdigest() == (
-        HISTORICAL_DIGEST.read_text(encoding="ascii").strip().split()[0]
-    )
-    # Every difference against it is named, not implied.
-    assert superseded["justified_differences"]
-    for difference in superseded["justified_differences"]:
-        assert difference["change"] and difference["why"]
+    for superseded in chain:
+        retained = ROOT / superseded["retained_as"]
+        # Retained as history, not as an oracle: each still matches its own
+        # digest, recorded here and in the file beside it.
+        digest = hashlib.sha256(retained.read_bytes()).hexdigest()
+        assert digest == superseded["sha256"], superseded["retained_as"]
+        assert digest == (
+            retained.with_suffix(".sha256")
+            .read_text(encoding="ascii").strip().split()[0]
+        ), superseded["retained_as"]
+        # Every difference against it is named, not implied.
+        assert superseded["justified_differences"], superseded["fixture_version"]
+        for difference in superseded["justified_differences"]:
+            assert difference["change"] and difference["why"]
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS)
@@ -174,7 +156,9 @@ def test_run_coordination_matches_the_frozen_ordered_trace(
     expected = baseline["coordination"][scenario]
 
     assert trace_differences(expected, verdict["trace"]) == []
-    _assert_candidate_provenance(verdict, substituted=SUBSTITUTED_SYMBOLS)
+    _assert_candidate_provenance(
+        verdict, substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
+    )
 
 
 def test_policy_and_authority_trace_matches_the_frozen_reference(
@@ -188,6 +172,41 @@ def test_policy_and_authority_trace_matches_the_frozen_reference(
     # the real rules, so every runner symbol is still the product one.
     _assert_candidate_provenance(verdict, substituted=frozenset())
     assert verdict["provenance"]["substituted_runner_symbols"] == []
+
+
+def test_the_capture_keeps_every_dispatch_its_order_and_its_multiplicity(
+    baseline,
+    tmp_path,
+):
+    """An operation the runtime added must reach the trace, not fall off a zip."""
+
+    recorded = baseline["policy_trace"]
+    assert recorded["cardinality"] == {
+        "planned_checks": 2,
+        "dispatched_operations": 2,
+        "evidence_records": 2,
+        "unplanned_operations": [],
+        "aligned": True,
+    }
+
+    verdict = run_product_probe(
+        POLICY_TRACE_EXTRA_DISPATCH_SOURCE, tmp_path / "extra-dispatch",
+    )
+    observed = verdict["trace"]
+
+    # Measured before any comparison: the extra dispatch is in the capture.
+    assert len(observed["operations"]) == 3
+    assert observed["cardinality"]["dispatched_operations"] == 3
+    assert observed["cardinality"]["unplanned_operations"] == [3]
+    assert observed["cardinality"]["aligned"] is False
+    assert observed["operations"][-1]["planned"] is False
+    assert "198.51.100.99" in {
+        item["destination"] for item in observed["operations"]
+    }
+    # And the oracle refuses it, naming the operations rather than a count.
+    differences = trace_differences(recorded, observed)
+    assert any("operations" in item for item in differences), differences
+    assert any("cardinality" in item for item in differences), differences
 
 
 def test_governed_acceptance_is_not_derived_from_an_absent_contradiction(

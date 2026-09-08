@@ -1,0 +1,2663 @@
+{
+  "comparison": {
+    "candidate_provenance_is_asserted_not_compared": true,
+    "omitted_nondeterministic_fields": {
+      "absolute temporary paths": "the harness intentionally relocates host state per probe",
+      "run identity and archive filename digests": "generated identifiers are not operation identities",
+      "session timestamps": "wall-clock values do not alter orchestration semantics"
+    },
+    "ordered_fields": [
+      "coordination.*.events",
+      "coordination.*.final.stages",
+      "policy_trace.operations",
+      "policy_trace.replay.surfaces.*.journaled_action_ids"
+    ],
+    "provenance_is_not_normalized": true,
+    "security_fields_never_normalized": [
+      "authority",
+      "declared_traffic_flow_id",
+      "reverse_of_traffic_flow_id",
+      "recipient",
+      "destination",
+      "status",
+      "verified",
+      "canonically_accepted",
+      "canonical_acceptance_error",
+      "contradiction",
+      "first_failed_boundary",
+      "failure",
+      "closure",
+      "cleanup",
+      "journaled_action_ids"
+    ]
+  },
+  "coordination": {
+    "admission-rejected": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "archive",
+          "phase": "failure-precleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "cleanup"
+        },
+        {
+          "active_stage": "",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": true
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 1,
+      "final": {
+        "cleanup": {
+          "restoration_error": "",
+          "verified": true
+        },
+        "cleanup_archive_error": "",
+        "cleanup_realtime": {
+          "error": "",
+          "state": {
+            "mode": "realtime"
+          },
+          "verified": true
+        },
+        "closure": "",
+        "failure": "CanonicalLiveFailure: Canonical composition failed: synthetic admission rejection",
+        "no_mutation_replay": null,
+        "precleanup_archive_error": "",
+        "presentation_retained": false,
+        "stages": [],
+        "target_stage": "router0-branch"
+      },
+      "raised": ""
+    },
+    "cleanup-failure": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "routing-core"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/routing-core",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "routing-core"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "routing-core"
+        },
+        {
+          "event": "project",
+          "stage": "router4-switch10"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor1"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "floor2"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor2"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor2"
+        },
+        {
+          "event": "project",
+          "stage": "floor3"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor3"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor3"
+        },
+        {
+          "event": "project",
+          "stage": "router0-branch"
+        },
+        {
+          "current": "router0-branch",
+          "event": "transition",
+          "previous": "floor3"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [
+            "forward-1"
+          ],
+          "stage": "router0-branch"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "archive",
+          "phase": "precleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "cleanup-incomplete"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": true
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 1,
+      "final": {
+        "cleanup": {
+          "error": "RuntimeError: SYNTHETIC_CLEANUP_FAILURE",
+          "verified": false
+        },
+        "cleanup_archive_error": "",
+        "cleanup_realtime": {
+          "error": "",
+          "state": {
+            "mode": "realtime"
+          },
+          "verified": true
+        },
+        "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+        "failure": "RuntimeError: SYNTHETIC_CLEANUP_FAILURE",
+        "no_mutation_replay": {
+          "audited_stages": [
+            "routing-core",
+            "router4-switch10",
+            "floor1",
+            "floor2",
+            "floor3",
+            "router0-branch"
+          ],
+          "claim": "NO_MUTATION_REPLAY",
+          "replayed_retained_ids": [],
+          "stages_without_verified_audit": [],
+          "verified": true
+        },
+        "precleanup_archive_error": "",
+        "presentation_retained": false,
+        "stages": [
+          {
+            "first_failed_boundary": "",
+            "stage": "routing-core",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router4-switch10",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor1",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor2",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor3",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router0-branch",
+            "stage_outcome": "",
+            "verified": true
+          }
+        ],
+        "target_stage": "router0-branch"
+      },
+      "raised": ""
+    },
+    "floor2-failure": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "routing-core"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/routing-core",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "routing-core"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "routing-core"
+        },
+        {
+          "event": "project",
+          "stage": "router4-switch10"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor1"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "floor2"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor2"
+        },
+        {
+          "event": "archive",
+          "phase": "failure-precleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "cleanup"
+        },
+        {
+          "active_stage": "",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": true
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 1,
+      "final": {
+        "cleanup": {
+          "restoration_error": "",
+          "verified": true
+        },
+        "cleanup_archive_error": "",
+        "cleanup_realtime": {
+          "error": "",
+          "state": {
+            "mode": "realtime"
+          },
+          "verified": true
+        },
+        "closure": "",
+        "failure": "CanonicalLiveFailure: SYNTHETIC_FLOOR2_FAILURE",
+        "no_mutation_replay": null,
+        "precleanup_archive_error": "",
+        "presentation_retained": false,
+        "stages": [
+          {
+            "first_failed_boundary": "",
+            "stage": "routing-core",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router4-switch10",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor1",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "configuration",
+            "stage": "floor2",
+            "stage_outcome": "failed",
+            "verified": null
+          }
+        ],
+        "target_stage": "router0-branch"
+      },
+      "raised": ""
+    },
+    "full-cleanup": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "routing-core"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/routing-core",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "routing-core"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "routing-core"
+        },
+        {
+          "event": "project",
+          "stage": "router4-switch10"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor1"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "floor2"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor2"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor2"
+        },
+        {
+          "event": "project",
+          "stage": "floor3"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor3"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor3"
+        },
+        {
+          "event": "project",
+          "stage": "router0-branch"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router0-branch"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router0-branch"
+        },
+        {
+          "event": "project",
+          "stage": "router3-branch"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router3-branch/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router3-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router3-branch/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router3-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router3-branch"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router3-branch"
+        },
+        {
+          "event": "project",
+          "stage": "remaining"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/remaining/reconciliation",
+          "event": "reconcile"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "remaining"
+        },
+        {
+          "event": "project",
+          "stage": "remaining"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/full-qualification",
+          "event": "reconcile"
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "remaining"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "full-qualification"
+        },
+        {
+          "active_stage": "",
+          "closure": "CP_SCALE_GOVERNED_VOICE_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "archive",
+          "phase": "precleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "cleanup"
+        },
+        {
+          "active_stage": "",
+          "closure": "CP_SCALE_GOVERNED_VOICE_VERIFIED_AND_CLEANED",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "summary",
+          "stage": "full-qualification"
+        },
+        {
+          "active_stage": "",
+          "closure": "CP_SCALE_GOVERNED_VOICE_VERIFIED_AND_CLEANED",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 0,
+      "final": {
+        "cleanup": {
+          "restoration_error": "",
+          "verified": true
+        },
+        "cleanup_archive_error": "",
+        "cleanup_realtime": {
+          "error": "",
+          "state": {
+            "mode": "realtime"
+          },
+          "verified": true
+        },
+        "closure": "CP_SCALE_GOVERNED_VOICE_VERIFIED_AND_CLEANED",
+        "failure": "",
+        "no_mutation_replay": null,
+        "precleanup_archive_error": "",
+        "presentation_retained": false,
+        "stages": [
+          {
+            "first_failed_boundary": "",
+            "stage": "routing-core",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router4-switch10",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor1",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor2",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor3",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router0-branch",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router3-branch",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "remaining",
+            "stage_outcome": "",
+            "verified": true
+          }
+        ],
+        "target_stage": "full-qualification"
+      },
+      "raised": ""
+    },
+    "full-retain": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "routing-core"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/routing-core",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "routing-core"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "routing-core"
+        },
+        {
+          "event": "project",
+          "stage": "router4-switch10"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor1"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "floor2"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor2"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor2"
+        },
+        {
+          "event": "project",
+          "stage": "floor3"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor3"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor3"
+        },
+        {
+          "event": "project",
+          "stage": "router0-branch"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router0-branch"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router0-branch"
+        },
+        {
+          "event": "project",
+          "stage": "router3-branch"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router3-branch/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router3-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router3-branch/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router3-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router3-branch"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router3-branch"
+        },
+        {
+          "event": "project",
+          "stage": "remaining"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/remaining/reconciliation",
+          "event": "reconcile"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "remaining"
+        },
+        {
+          "event": "project",
+          "stage": "remaining"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/full-qualification",
+          "event": "reconcile"
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "remaining"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "full-qualification"
+        },
+        {
+          "active_stage": "",
+          "closure": "CP_SCALE_GOVERNED_VOICE_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "archive",
+          "phase": "precleanup"
+        },
+        {
+          "active_stage": "",
+          "closure": "CP_SCALE_GOVERNED_VOICE_VERIFIED_RETAINED",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "summary",
+          "stage": "full-qualification"
+        },
+        {
+          "active_stage": "",
+          "closure": "CP_SCALE_GOVERNED_VOICE_VERIFIED_RETAINED",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 0,
+      "final": {
+        "cleanup": null,
+        "cleanup_archive_error": "",
+        "cleanup_realtime": null,
+        "closure": "CP_SCALE_GOVERNED_VOICE_VERIFIED_RETAINED",
+        "failure": "",
+        "no_mutation_replay": null,
+        "precleanup_archive_error": "",
+        "presentation_retained": true,
+        "stages": [
+          {
+            "first_failed_boundary": "",
+            "stage": "routing-core",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router4-switch10",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor1",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor2",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor3",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router0-branch",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router3-branch",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "remaining",
+            "stage_outcome": "",
+            "verified": true
+          }
+        ],
+        "target_stage": "full-qualification"
+      },
+      "raised": ""
+    },
+    "operator-abort": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "routing-core"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/routing-core",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "routing-core"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "routing-core"
+        },
+        {
+          "event": "project",
+          "stage": "router4-switch10"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor1"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor1"
+        },
+        {
+          "event": "archive",
+          "phase": "failure-precleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "cleanup"
+        },
+        {
+          "active_stage": "",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": true
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 1,
+      "final": {
+        "cleanup": {
+          "restoration_error": "",
+          "verified": true
+        },
+        "cleanup_archive_error": "",
+        "cleanup_realtime": {
+          "error": "",
+          "state": {
+            "mode": "realtime"
+          },
+          "verified": true
+        },
+        "closure": "",
+        "failure": "CanonicalLiveFailure: SYNTHETIC_OPERATOR_ABORT",
+        "no_mutation_replay": null,
+        "precleanup_archive_error": "",
+        "presentation_retained": false,
+        "stages": [
+          {
+            "first_failed_boundary": "",
+            "stage": "routing-core",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router4-switch10",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor1",
+            "stage_outcome": "",
+            "verified": true
+          }
+        ],
+        "target_stage": "router0-branch"
+      },
+      "raised": ""
+    },
+    "precleanup-archive-failure": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "routing-core"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/routing-core",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "routing-core"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "routing-core"
+        },
+        {
+          "event": "project",
+          "stage": "router4-switch10"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor1"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "floor2"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor2"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor2"
+        },
+        {
+          "event": "project",
+          "stage": "floor3"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor3"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor3"
+        },
+        {
+          "event": "project",
+          "stage": "router0-branch"
+        },
+        {
+          "current": "router0-branch",
+          "event": "transition",
+          "previous": "floor3"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [
+            "forward-1"
+          ],
+          "stage": "router0-branch"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "archive",
+          "phase": "precleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "failure-precleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "cleanup"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": true
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 1,
+      "final": {
+        "cleanup": {
+          "restoration_error": "",
+          "verified": true
+        },
+        "cleanup_archive_error": "",
+        "cleanup_realtime": {
+          "error": "",
+          "state": {
+            "mode": "realtime"
+          },
+          "verified": true
+        },
+        "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+        "failure": "OSError: SYNTHETIC_PRECLEANUP_ARCHIVE_FAILURE",
+        "no_mutation_replay": {
+          "audited_stages": [
+            "routing-core",
+            "router4-switch10",
+            "floor1",
+            "floor2",
+            "floor3",
+            "router0-branch"
+          ],
+          "claim": "NO_MUTATION_REPLAY",
+          "replayed_retained_ids": [],
+          "stages_without_verified_audit": [],
+          "verified": true
+        },
+        "precleanup_archive_error": "OSError: SYNTHETIC_PRECLEANUP_ARCHIVE_FAILURE",
+        "presentation_retained": false,
+        "stages": [
+          {
+            "first_failed_boundary": "",
+            "stage": "routing-core",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router4-switch10",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor1",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor2",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor3",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router0-branch",
+            "stage_outcome": "",
+            "verified": true
+          }
+        ],
+        "target_stage": "router0-branch"
+      },
+      "raised": ""
+    },
+    "restoration-observation-failure": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "routing-core"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/routing-core",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "routing-core"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "routing-core"
+        },
+        {
+          "event": "project",
+          "stage": "router4-switch10"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor1"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "floor2"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor2"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor2"
+        },
+        {
+          "event": "project",
+          "stage": "floor3"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor3"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor3"
+        },
+        {
+          "event": "project",
+          "stage": "router0-branch"
+        },
+        {
+          "current": "router0-branch",
+          "event": "transition",
+          "previous": "floor3"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [
+            "forward-1"
+          ],
+          "stage": "router0-branch"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "archive",
+          "phase": "precleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "cleanup-incomplete"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": true
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 1,
+      "final": {
+        "cleanup": {
+          "restoration_error": "",
+          "verified": true
+        },
+        "cleanup_archive_error": "",
+        "cleanup_realtime": {
+          "error": "RuntimeError: SYNTHETIC_REALTIME_OBSERVATION_FAILURE",
+          "state": null,
+          "verified": false
+        },
+        "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+        "failure": "CanonicalLiveFailure: Router0 verification completed, but cleanup/restoration did not verify: RuntimeError: SYNTHETIC_REALTIME_OBSERVATION_FAILURE",
+        "no_mutation_replay": {
+          "audited_stages": [
+            "routing-core",
+            "router4-switch10",
+            "floor1",
+            "floor2",
+            "floor3",
+            "router0-branch"
+          ],
+          "claim": "NO_MUTATION_REPLAY",
+          "replayed_retained_ids": [],
+          "stages_without_verified_audit": [],
+          "verified": true
+        },
+        "precleanup_archive_error": "",
+        "presentation_retained": false,
+        "stages": [
+          {
+            "first_failed_boundary": "",
+            "stage": "routing-core",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router4-switch10",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor1",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor2",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor3",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router0-branch",
+            "stage_outcome": "",
+            "verified": true
+          }
+        ],
+        "target_stage": "router0-branch"
+      },
+      "raised": ""
+    },
+    "router0-cleanup": {
+      "events": [
+        {
+          "event": "transport.start"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "routing-core"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/routing-core",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "active_stage": "routing-core",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "routing-core"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "routing-core"
+        },
+        {
+          "event": "project",
+          "stage": "router4-switch10"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router4-switch10/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router4-switch10",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "router4-switch10"
+        },
+        {
+          "event": "project",
+          "stage": "floor1"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor1/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor1",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor1"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor1"
+        },
+        {
+          "event": "project",
+          "stage": "floor2"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor2/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor2",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor2"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor2"
+        },
+        {
+          "event": "project",
+          "stage": "floor3"
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/floor3/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "floor3",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [],
+          "stage": "floor3"
+        },
+        {
+          "event": "checkpoint",
+          "stage": "floor3"
+        },
+        {
+          "event": "project",
+          "stage": "router0-branch"
+        },
+        {
+          "current": "router0-branch",
+          "event": "transition",
+          "previous": "floor3"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/delta",
+          "event": "deploy"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "deployment_id": "cp-scale-canonical/router0-branch/cumulative",
+          "event": "reconcile"
+        },
+        {
+          "active_stage": "router0-branch",
+          "closure": "",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "execute_stage",
+          "site_forwarding_checks": [
+            "forward-1"
+          ],
+          "stage": "router0-branch"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "archive",
+          "phase": "precleanup"
+        },
+        {
+          "event": "cleanup"
+        },
+        {
+          "event": "archive",
+          "phase": "cleanup"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "summary",
+          "stage": "router0-branch"
+        },
+        {
+          "active_stage": "",
+          "closure": "ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+          "event": "evidence.write",
+          "failure": false
+        },
+        {
+          "event": "transport.stop"
+        }
+      ],
+      "exit_code": 0,
+      "final": {
+        "cleanup": {
+          "restoration_error": "",
+          "verified": true
+        },
+        "cleanup_archive_error": "",
+        "cleanup_realtime": {
+          "error": "",
+          "state": {
+            "mode": "realtime"
+          },
+          "verified": true
+        },
+        "closure": "ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+        "failure": "",
+        "no_mutation_replay": {
+          "audited_stages": [
+            "routing-core",
+            "router4-switch10",
+            "floor1",
+            "floor2",
+            "floor3",
+            "router0-branch"
+          ],
+          "claim": "NO_MUTATION_REPLAY",
+          "replayed_retained_ids": [],
+          "stages_without_verified_audit": [],
+          "verified": true
+        },
+        "precleanup_archive_error": "",
+        "presentation_retained": false,
+        "stages": [
+          {
+            "first_failed_boundary": "",
+            "stage": "routing-core",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router4-switch10",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor1",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor2",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "floor3",
+            "stage_outcome": "",
+            "verified": true
+          },
+          {
+            "first_failed_boundary": "",
+            "stage": "router0-branch",
+            "stage_outcome": "",
+            "verified": true
+          }
+        ],
+        "target_stage": "router0-branch"
+      },
+      "raised": ""
+    }
+  },
+  "fixture_version": "cp-live-m0-fixture-v3",
+  "policy_trace": {
+    "cardinality": {
+      "aligned": true,
+      "dispatched_operations": 2,
+      "evidence_records": 2,
+      "planned_checks": 2,
+      "unplanned_operations": []
+    },
+    "configuration": {
+      "accepted_with_governed_ceiling": {
+        "aggregate_status": "partial",
+        "canonical_acceptance_error": "",
+        "canonically_accepted": true,
+        "config_plan_id": "config/cp-live-m0-policy",
+        "contradiction": "",
+        "contradiction_free": true,
+        "fully_verified": false
+      },
+      "rejected_promoted_ceiling": {
+        "aggregate_status": "verified",
+        "canonical_acceptance_error": "DHCP verification 'verify/dhcp-multilayer' exceeded or departed from its exact UNOBSERVABLE getter ceiling.",
+        "canonically_accepted": false,
+        "config_plan_id": "config/cp-live-m0-policy",
+        "contradiction": "",
+        "contradiction_free": true,
+        "fully_verified": false
+      }
+    },
+    "forwarding": {
+      "first_failure": "",
+      "verified": true
+    },
+    "operations": [
+      {
+        "attributed_evidence": true,
+        "authority": "declared-traffic-flow",
+        "declared_traffic_flow_id": "flow/large-to-multilayer",
+        "destination": "192.0.2.20",
+        "operation_id": "forward/large-to-multilayer",
+        "phase": "site-forwarding",
+        "planned": true,
+        "recipient": "Router4",
+        "reverse_of_traffic_flow_id": "",
+        "sequence": 1,
+        "status": "VERIFIED"
+      },
+      {
+        "attributed_evidence": true,
+        "authority": "reverse-path-of-declared-flow",
+        "declared_traffic_flow_id": "",
+        "destination": "192.0.2.10",
+        "operation_id": "forward/multilayer-to-large",
+        "phase": "site-forwarding",
+        "planned": true,
+        "recipient": "Router0",
+        "reverse_of_traffic_flow_id": "flow/large-to-multilayer",
+        "sequence": 2,
+        "status": "VERIFIED"
+      }
+    ],
+    "replay": {
+      "claim": "NO_MUTATION_REPLAY",
+      "stage": "router0-branch",
+      "surfaces": [
+        {
+          "authorized_mutation_ids": [
+            "cfg/new"
+          ],
+          "dispatched_mutation_ids": [
+            "cfg/new"
+          ],
+          "errors": [],
+          "journaled_action_ids": [
+            "cfg/new"
+          ],
+          "replayed_retained_ids": [],
+          "retained_action_ids": [
+            "cfg/retained"
+          ],
+          "surface": "configuration",
+          "unattested_mutation_ids": [],
+          "unauthorized_mutation_ids": [],
+          "verified": true
+        },
+        {
+          "authorized_mutation_ids": [
+            "control/new"
+          ],
+          "dispatched_mutation_ids": [
+            "control/new"
+          ],
+          "errors": [],
+          "journaled_action_ids": [
+            "control/new"
+          ],
+          "replayed_retained_ids": [],
+          "retained_action_ids": [
+            "control/retained"
+          ],
+          "surface": "control-plane",
+          "unattested_mutation_ids": [],
+          "unauthorized_mutation_ids": [],
+          "verified": true
+        },
+        {
+          "authorized_mutation_ids": [
+            "voice/new"
+          ],
+          "dispatched_mutation_ids": [
+            "voice/new"
+          ],
+          "errors": [],
+          "journaled_action_ids": [
+            "voice/new"
+          ],
+          "replayed_retained_ids": [],
+          "retained_action_ids": [
+            "voice/retained"
+          ],
+          "surface": "voice",
+          "unattested_mutation_ids": [],
+          "unauthorized_mutation_ids": [],
+          "verified": true
+        }
+      ],
+      "verified": true
+    }
+  },
+  "provenance": {
+    "dependencies": {
+      "mcp": "1.30.0",
+      "pydantic": "2.13.5",
+      "pytest": "9.1.1"
+    },
+    "executed_scope": {
+      "digest": "55ef51e5d0727becf19b7e6c9004bdc2264a8b84537912e15dfac1ec0eee8217",
+      "environment_files": 51,
+      "recording_inputs": [
+        "tools/cp_scale_canonical_live.py",
+        "tests/cp_live_m0_harness.py",
+        "tests/test_cp_scale_router0_live_runner.py",
+        "tests/cp_live_m0_record_baseline.py"
+      ],
+      "repository_files": 220,
+      "roots": [
+        "src",
+        "tests",
+        "tools"
+      ],
+      "verified_against_source_commit": true
+    },
+    "generated_date": "2026-09-08",
+    "interpreter": {
+      "executable_contract": ".venv checkout-local interpreter",
+      "implementation": "CPython",
+      "version": "3.11.15"
+    },
+    "live_environment_contacted": false,
+    "platform": "Linux-6.18.44-fc-v24-x86_64-with-glibc2.39",
+    "reference_branch": "refactor/cp-live-m0-baseline",
+    "repository": "andres18113/cisco-muejeje",
+    "source_commit": "b428129874f6e668e5074e1b29fa3d208c87df14",
+    "source_tree": "f0107428b2cab3edd48ede23a1d40f42dbb412be",
+    "synthetic_test_capabilities": true
+  },
+  "schema": "cp-live-m0-equivalence-baseline-v3",
+  "supersedes": [
+    {
+      "fixture_version": "cp-live-m0-fixture-v2",
+      "justified_differences": [
+        {
+          "change": "policy_trace.operations is built from every observed dispatch and a policy_trace.cardinality block records planned, dispatched and attributed counts.",
+          "why": "v2 zipped checks, calls and evidence together, so a dispatch beyond the plan fell off the end of the shortest sequence. Operations now keep their order and multiplicity, each says whether it was planned and attributed, and an extra-dispatch probe proves the capture reacts to observed behaviour."
+        },
+        {
+          "change": "provenance.executed_scope records the measured executed scope this recording verified against its source commit.",
+          "why": "v2 verified four static files, so the real rules under src that the probes execute were outside the check. The scope is now measured by the probes themselves and every file in it must match the named commit."
+        },
+        {
+          "change": "The characterized source is the runner whose close is protected through cleanup, archive and the re-read, and whose report channel falls back and promises nothing.",
+          "why": "No coordination scenario in this reference fails a write, a close or a report, so their frozen traces are unchanged; only the policy trace and the provenance differ from v2."
+        }
+      ],
+      "retained_as": "tests/fixtures/cp_live_m0/baseline-v2.json",
+      "retained_reason": "It is the record of the first corrected finalization and of the capture that a zip() could truncate; it stays verifiable and is no longer the oracle.",
+      "schema": "cp-live-m0-equivalence-baseline-v2",
+      "sha256": "766bcbe6de16a320f9dcc5e3bb8d7c0ae4ad5ccf807bf14bd1814dd6a5f10cc9",
+      "source_commit": "7a6c552dd570f683fe3f249c1037815192543ae7"
+    },
+    {
+      "fixture_version": "cp-live-m0-fixture-v1",
+      "justified_differences": [
+        {
+          "change": "Superseded by v2: verdicts split into trace and provenance, and configuration acceptance came from canonical_stage_configuration_error.",
+          "why": "v1 declared its isolation in the expected file and derived acceptance from an absent contradiction. Both are recorded in v2's own supersedes block."
+        }
+      ],
+      "retained_as": "tests/fixtures/cp_live_m0/baseline-v1.json",
+      "retained_reason": "It is the historical record of the defective finalization and stays verifiable; it was superseded by v2.",
+      "schema": "cp-live-m0-equivalence-baseline-v1",
+      "sha256": "99adcea78b0dbf861cfa4a32b49c50577ea6d0cca3f33725a136272273387634",
+      "source_commit": "62db3cea84a4bfca1a5bcd3d2389d62864c45946"
+    }
+  ]
+}
