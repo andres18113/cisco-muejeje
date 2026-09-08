@@ -68,6 +68,7 @@ from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
 )
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScaleFinalDisposition,
+    CanonicalMutationSurfaceObservation,
     EXPECTED_BRANCH,
     EXPECTED_UPSTREAM,
     archive_cp_scale_canonical_evidence,
@@ -81,6 +82,7 @@ from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_final_disposition,
     canonical_required_capability_probes,
     canonical_stage_configuration_error,
+    canonical_stage_mutation_replay_audit,
     canonical_stage_resume_error,
     canonical_stage_workspace_error,
     read_git_repository_state,
@@ -101,6 +103,7 @@ from packet_tracer_mcp.domain.enterprise.models.configuration import (
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
     ActionExecutionStatus,
+    ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
     ConfigurationRuntimeContext,
 )
@@ -613,6 +616,56 @@ def _complete_router0_target(
             "double workspace evidence."
         )
 
+    # NO_MUTATION_REPLAY is a claim about every stage this session built, not
+    # about the last one. A retained action executed again at floor2 is still
+    # a replay when Router0 asks to close, so the audit is read across the
+    # whole run and any stage without a VERIFIED one refuses the closure.
+    audits = [
+        item.get("mutation_replay_audit") if isinstance(item, dict) else None
+        for item in (stages if isinstance(stages, list) else [])
+    ]
+    replayed = sorted({
+        identifier
+        for audit in audits if isinstance(audit, dict)
+        for surface in audit.get("surfaces", [])
+        if isinstance(surface, dict)
+        for identifier in surface.get("replayed_retained_ids", [])
+    })
+    unverified_stages = [
+        str(stage.get("stage") or "")
+        for stage, audit in zip(
+            stages if isinstance(stages, list) else [], audits,
+        )
+        if not isinstance(audit, dict)
+        or audit.get("verified") is not True
+        or audit.get("claim") != "NO_MUTATION_REPLAY"
+    ]
+    evidence["no_mutation_replay"] = {
+        "claim": (
+            "NO_MUTATION_REPLAY" if not unverified_stages
+            else "MUTATION_REPLAY_DETECTED"
+        ),
+        "verified": not unverified_stages,
+        "audited_stages": [
+            str(item.get("stage") or "")
+            for item in (stages if isinstance(stages, list) else [])
+            if isinstance(item, dict)
+        ],
+        "stages_without_verified_audit": unverified_stages,
+        "replayed_retained_ids": replayed,
+    }
+    if unverified_stages:
+        replay_detail = (
+            "; replayed retained actions: " + ", ".join(replayed)
+            if replayed else ""
+        )
+        raise CanonicalLiveFailure(
+            "Router0 terminal closure cannot attest NO_MUTATION_REPLAY; "
+            "stages without a verified runtime audit: "
+            + ", ".join(unverified_stages)
+            + replay_detail
+        )
+
     evidence["final_disposition"] = CPScaleFinalDisposition.CLEANUP.value
     evidence["closure_scope"] = CPScaleCanonicalStage.ROUTER0_BRANCH.value
     evidence["closure"] = target_contract.precleanup_closure
@@ -648,6 +701,7 @@ def _complete_router0_target(
         "target_stage": target_contract.target.value,
         "closure_scope": CPScaleCanonicalStage.ROUTER0_BRANCH.value,
         "canonical_evidence_precleanup": precleanup_archive,
+        "no_mutation_replay": evidence["no_mutation_replay"],
         "cleanup": cleanup_result,
         "cleanup_realtime": cleanup_realtime,
         "closure": target_contract.cleaned_closure,
@@ -717,12 +771,16 @@ def _trunk_vlan_traversal_evidence(plan, result) -> list[dict[str, object]]:
 
 
 def _record_configuration_attempt(
-    evidence: dict[str, object], plan, result,
+    evidence: dict[str, object], plan, result, collected: list | None = None,
 ) -> None:
     """Persist the typed result and its named trunk projection before judging."""
     attempts = evidence.setdefault("configuration_attempts", [])
     assert isinstance(attempts, list)
     attempts.append(result.model_dump(mode="json"))
+    if collected is not None:
+        # The typed attempt itself, kept for the mutation-replay audit: the
+        # JSON view above is evidence, not the thing the audit reads.
+        collected.append(result)
 
     traversal = _trunk_vlan_traversal_evidence(plan, result)
     traversal_attempts = evidence.setdefault("trunk_vlan_traversal_attempts", [])
@@ -3336,6 +3394,10 @@ def _execute_stage(
     configuration_applicator = ConfigurationApplicator(
         configuration_runtime
     )
+    # Every typed E5 attempt this stage makes: first apply, governed re-read
+    # and deferred Voice completion. The mutation-replay audit reads all of
+    # them, so a replay cannot hide in the attempt the evidence overwrote.
+    configuration_attempt_results: list[ConfigurationApplicationResult] = []
     def configuration_phase_observer(
         phase: int,
         action_ids: tuple[str, ...],
@@ -3374,6 +3436,7 @@ def _execute_stage(
     )
     _record_configuration_attempt(
         evidence, projection.configuration, configuration,
+        collected=configuration_attempt_results,
     )
     contradiction = configuration_application_contradiction(configuration)
     evidence["configuration_contradictions"] = [contradiction]
@@ -3422,7 +3485,7 @@ def _execute_stage(
             )
         except ValueError as exc:
             evidence["configuration_reread_scope"] = {
-                "claim": "NO_MUTATION_REPLAY",
+                "claim": "CONFIGURATION_REREAD_MUTATION_SCOPE_EMPTY",
                 "verified": False,
                 "error": str(exc),
             }
@@ -3435,7 +3498,7 @@ def _execute_stage(
             else ()
         )
         evidence["configuration_reread_scope"] = {
-            "claim": "NO_MUTATION_REPLAY",
+            "claim": "CONFIGURATION_REREAD_MUTATION_SCOPE_EMPTY",
             "verified": not reread_mutation_ids,
             "mutation_action_ids": list(reread_mutation_ids),
             "retained_action_ids": [
@@ -3463,6 +3526,7 @@ def _execute_stage(
         )
         _record_configuration_attempt(
             evidence, projection.configuration, configuration,
+            collected=configuration_attempt_results,
         )
         contradiction = configuration_application_contradiction(configuration)
         evidence["configuration_contradictions"].append(contradiction)
@@ -3565,6 +3629,7 @@ def _execute_stage(
         )
         _record_configuration_attempt(
             evidence, projection.configuration, configuration,
+            collected=configuration_attempt_results,
         )
         evidence["configuration"] = configuration.model_dump(mode="json")
         completion_error = canonical_stage_configuration_error(
@@ -3739,6 +3804,48 @@ def _execute_stage(
             f"Control plane at {projection.stage.value!r} was not VERIFIED: "
             f"{control.status.value}/{control.failure_code.value}"
         )
+
+    # Only here, with all three surfaces applied, is there anything to audit.
+    # The plans said what this stage was ALLOWED to mutate; these are the IDs
+    # and journals the runtimes actually produced.
+    staged_voice_result = (
+        VoiceApplicationResult.model_validate(voice_evidence["result"])
+        if isinstance(voice_evidence.get("result"), dict) else None
+    )
+    replay_audit = canonical_stage_mutation_replay_audit(
+        projection.stage.value,
+        (
+            CanonicalMutationSurfaceObservation(
+                surface="configuration",
+                plan_action_ids=tuple(
+                    item.id for item in projection.configuration.actions
+                ),
+                authorized_mutation_ids=tuple(configuration_mutation_ids),
+                results=tuple(configuration_attempt_results),
+            ),
+            CanonicalMutationSurfaceObservation(
+                surface="control-plane",
+                plan_action_ids=tuple(
+                    item.id for item in projection.control_plane.actions
+                ),
+                authorized_mutation_ids=tuple(control_plane_mutation_ids),
+                results=(control,),
+            ),
+            CanonicalMutationSurfaceObservation(
+                surface="voice",
+                plan_action_ids=(
+                    tuple(item.id for item in voice_plan.actions)
+                    if voice_plan is not None else ()
+                ),
+                authorized_mutation_ids=tuple(voice_mutation_ids),
+                results=(
+                    (staged_voice_result,)
+                    if staged_voice_result is not None else ()
+                ),
+            ),
+        ),
+    )
+    evidence["mutation_replay_audit"] = replay_audit.compact_summary()
 
     forwarding_verified, forwarding = _wait_for_core_forwarding(
         TypedPingExecutor(
@@ -4273,7 +4380,9 @@ def run(
                         **asdict(transition),
                         "previous_stage": transition.previous_stage.value,
                         "current_stage": transition.current_stage.value,
-                        "no_mutation_replay": transition.no_mutation_replay,
+                        "mutation_scope_disjoint": (
+                            transition.mutation_scope_disjoint
+                        ),
                         "claim": transition.claim,
                     }
                     pending_stage_evidence["transition_contract"] = (
@@ -4286,7 +4395,7 @@ def run(
                     if (
                         previous_projection.stage
                         is not CPScaleCanonicalStage.FLOOR3
-                        or not transition.no_mutation_replay
+                        or not transition.mutation_scope_disjoint
                     ):
                         raise CanonicalLiveFailure(
                             "Router0 target refused its incremental boundary: "

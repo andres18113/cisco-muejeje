@@ -9,6 +9,7 @@ import pytest
 from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     CPScaleCanonicalTarget,
+    CPScaleForwardingAuthority,
     canonical_cp_scale_target_contract,
     canonical_stage_transition_contract,
     derive_cp_scale_site_forwarding_checks,
@@ -16,7 +17,9 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     project_cp_scale_canonical_stage,
 )
 from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+    CanonicalMutationSurfaceObservation,
     canonical_configuration_reread_scope,
+    canonical_stage_mutation_replay_audit,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
@@ -33,7 +36,16 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureSpanningTree,
     ConfigureStpEdgePort,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
+    ControlPlaneApplicationResult,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+    journal_from_action_results,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    VoiceApplicationResult,
+)
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical,
 )
@@ -90,7 +102,7 @@ def test_default_target_preserves_the_full_qualification_route():
     )
 
 
-def test_floor3_to_router0_is_incremental_without_mutation_replay(composition):
+def test_floor3_to_router0_is_incremental_with_a_disjoint_scope(composition):
     floor3 = project_cp_scale_canonical_stage(
         composition, CPScaleCanonicalStage.FLOOR3,
     )
@@ -119,8 +131,9 @@ def test_floor3_to_router0_is_incremental_without_mutation_replay(composition):
     assert contract.replayed_configuration_ids == ()
     assert contract.replayed_control_plane_ids == ()
     assert contract.replayed_voice_ids == ()
-    assert contract.no_mutation_replay is True
-    assert contract.claim == "NO_MUTATION_REPLAY"
+    assert contract.mutation_scope_disjoint is True
+    assert contract.claim == "MUTATION_SCOPE_DISJOINT"
+    assert not hasattr(contract, "no_mutation_replay")
 
     new_devices = [
         item for item in router0.topology.devices
@@ -202,9 +215,6 @@ def test_large_multilayer_forwarding_is_derived_from_e4_and_e5(composition):
 
     assert checks == projection.branch_forwarding_checks
     assert len(checks) == 2
-    assert {item.traffic_flow_id for item in checks} == {
-        "flow/large-to-multilayer",
-    }
     assert {
         (item.source_site_id, item.destination_site_id)
         for item in checks
@@ -238,6 +248,118 @@ def test_large_multilayer_forwarding_is_derived_from_e4_and_e5(composition):
         ("large-branch-to-multilayer-branch", "172.18.30.2"),
         ("multilayer-branch-to-large-branch", "172.16.30.2"),
     }
+
+
+def test_only_the_declared_direction_is_attributed_to_the_e4_flow(composition):
+    declared = [
+        item for item in composition.enterprise.traffic_flows
+        if {item.source_site_id, item.destination_site_id}
+        == {"large-branch", "multilayer-branch"}
+    ]
+    assert [item.id for item in declared] == ["flow/large-to-multilayer"]
+    assert declared[0].source_site_id == "large-branch"
+
+    projection = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.ROUTER0_BRANCH,
+    )
+    by_direction = {
+        item.direction: item for item in projection.branch_forwarding_checks
+    }
+
+    forward = by_direction["large-branch-to-multilayer-branch"]
+    assert forward.authority is (
+        CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW
+    )
+    assert forward.declared_traffic_flow_id == "flow/large-to-multilayer"
+    assert forward.reverse_of_traffic_flow_id == ""
+    assert forward.id == (
+        "forwarding/declared-traffic-flow/flow/large-to-multilayer/"
+        f"large-branch-to-multilayer-branch/{forward.destination_action_id}"
+    )
+
+    reverse = by_direction["multilayer-branch-to-large-branch"]
+    assert reverse.authority is (
+        CPScaleForwardingAuthority.REVERSE_PATH_OF_DECLARED_FLOW
+    )
+    assert reverse.declared_traffic_flow_id == ""
+    assert reverse.reverse_of_traffic_flow_id == "flow/large-to-multilayer"
+    assert reverse.id == (
+        "forwarding/reverse-path-of-declared-flow/flow/large-to-multilayer/"
+        f"multilayer-branch-to-large-branch/{reverse.destination_action_id}"
+    )
+    assert not any(
+        item.declared_traffic_flow_id == "flow/large-to-multilayer"
+        for item in projection.branch_forwarding_checks
+        if item.source_site_id == "multilayer-branch"
+    )
+    assert not hasattr(reverse, "traffic_flow_id")
+
+
+def test_a_declared_reverse_flow_claims_its_own_direction(composition):
+    enterprise = composition.enterprise.model_copy(deep=True)
+    forward = next(
+        item for item in enterprise.traffic_flows
+        if item.id == "flow/large-to-multilayer"
+    )
+    reverse_flow = forward.model_copy(deep=True)
+    reverse_flow.id = "flow/multilayer-to-large"
+    reverse_flow.source_site_id = "multilayer-branch"
+    reverse_flow.destination_site_id = "large-branch"
+    reverse_flow.explicit_link_ids = []
+    enterprise.traffic_flows = [*enterprise.traffic_flows, reverse_flow]
+    projection = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.ROUTER0_BRANCH,
+    )
+
+    checks = derive_cp_scale_site_forwarding_checks(
+        replace(composition, enterprise=enterprise),
+        projection,
+        source_site_id="large-branch",
+        destination_site_id="multilayer-branch",
+    )
+
+    by_direction = {item.direction: item for item in checks}
+    assert all(
+        item.authority is CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW
+        for item in checks
+    )
+    assert by_direction[
+        "multilayer-branch-to-large-branch"
+    ].declared_traffic_flow_id == "flow/multilayer-to-large"
+    assert by_direction[
+        "large-branch-to-multilayer-branch"
+    ].declared_traffic_flow_id == "flow/large-to-multilayer"
+    assert all(
+        item.reverse_of_traffic_flow_id == "" for item in checks
+    )
+
+
+def test_forwarding_fails_closed_on_ambiguous_reverse_declarations(composition):
+    enterprise = composition.enterprise.model_copy(deep=True)
+    forward = next(
+        item for item in enterprise.traffic_flows
+        if item.id == "flow/large-to-multilayer"
+    )
+    duplicates = []
+    for suffix in ("a", "b"):
+        item = forward.model_copy(deep=True)
+        item.id = f"flow/multilayer-to-large-{suffix}"
+        item.source_site_id = "multilayer-branch"
+        item.destination_site_id = "large-branch"
+        item.explicit_link_ids = []
+        duplicates.append(item)
+    enterprise.traffic_flows = [*enterprise.traffic_flows, *duplicates]
+    projection = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.ROUTER0_BRANCH,
+    )
+
+    with pytest.raises(ValueError, match="cannot attribute a direction"):
+        derive_cp_scale_site_forwarding_checks(
+            replace(composition, enterprise=enterprise),
+            projection,
+            source_site_id="large-branch",
+            destination_site_id="multilayer-branch",
+        )
 
 
 def test_forwarding_destination_changes_when_the_typed_e5_gateway_changes(
@@ -471,3 +593,264 @@ def test_configuration_reread_scope_fails_closed_on_unretained_state(
         canonical_configuration_reread_scope(
             projection.configuration, application,
         )
+
+
+def _journaled_result(model, plan, applied_ids, **fields):
+    """A typed application result with the journal its applicator would write."""
+    results = [
+        ActionApplicationResult(
+            action_id=identifier,
+            status=ActionExecutionStatus.APPLIED,
+            batch_id="batch/1",
+        )
+        for identifier in applied_ids
+    ]
+    return model(
+        action_results=results,
+        mutation_action_ids=list(applied_ids),
+        execution_journal=journal_from_action_results(
+            plan_id=plan.id,
+            deployment_id="deployment/1",
+            actions=list(plan.actions),
+            results=results,
+        ),
+        **fields,
+    )
+
+
+def _configuration_attempt(plan, applied_ids):
+    return _journaled_result(
+        ConfigurationApplicationResult,
+        plan,
+        applied_ids,
+        config_plan_id=plan.id,
+        config_semantic_hash=plan.semantic_hash,
+        source_topology_hash=plan.source_topology_hash,
+        status=ConfigurationApplicationStatus.VERIFIED,
+    )
+
+
+def _control_plane_attempt(plan, applied_ids):
+    return _journaled_result(
+        ControlPlaneApplicationResult,
+        plan,
+        applied_ids,
+        control_plane_plan_id=plan.id,
+        control_plane_semantic_hash=plan.semantic_hash,
+        source_topology_hash=plan.source_topology_hash,
+        source_configuration_hash=plan.source_configuration_hash,
+        status=ConfigurationApplicationStatus.VERIFIED,
+    )
+
+
+def _voice_attempt(plan, applied_ids):
+    return _journaled_result(
+        VoiceApplicationResult,
+        plan,
+        applied_ids,
+        voice_plan_id=plan.id,
+        voice_semantic_hash=plan.semantic_hash,
+        source_topology_hash=plan.source_topology_hash,
+        source_configuration_hash=plan.source_configuration_hash,
+        status=ActionExecutionStatus.VERIFIED,
+    )
+
+
+@pytest.fixture(scope="module")
+def router0_delta(composition):
+    floor3 = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.FLOOR3,
+    )
+    router0 = project_cp_scale_canonical_stage(
+        composition, CPScaleCanonicalStage.ROUTER0_BRANCH,
+    )
+    return floor3, router0, canonical_stage_transition_contract(floor3, router0)
+
+
+def _observations(projection, transition, *, configuration, control, voice):
+    return (
+        CanonicalMutationSurfaceObservation(
+            surface="configuration",
+            plan_action_ids=tuple(
+                item.id for item in projection.configuration.actions
+            ),
+            authorized_mutation_ids=transition.configuration_mutation_ids,
+            results=configuration,
+        ),
+        CanonicalMutationSurfaceObservation(
+            surface="control-plane",
+            plan_action_ids=tuple(
+                item.id for item in projection.control_plane.actions
+            ),
+            authorized_mutation_ids=transition.control_plane_mutation_ids,
+            results=control,
+        ),
+        CanonicalMutationSurfaceObservation(
+            surface="voice",
+            plan_action_ids=tuple(item.id for item in projection.voice.actions),
+            authorized_mutation_ids=transition.voice_mutation_ids,
+            results=voice,
+        ),
+    )
+
+
+def test_no_mutation_replay_is_emitted_only_from_observed_ids_and_journals(
+    router0_delta,
+):
+    _floor3, router0, transition = router0_delta
+
+    audit = canonical_stage_mutation_replay_audit(
+        router0.stage.value,
+        _observations(
+            router0,
+            transition,
+            configuration=(
+                _configuration_attempt(
+                    router0.configuration,
+                    transition.configuration_mutation_ids,
+                ),
+                # The governed re-read: authorized to dispatch nothing at all.
+                _configuration_attempt(router0.configuration, ()),
+            ),
+            control=(_control_plane_attempt(
+                router0.control_plane, transition.control_plane_mutation_ids,
+            ),),
+            voice=(_voice_attempt(
+                router0.voice, transition.voice_mutation_ids,
+            ),),
+        ),
+    )
+
+    assert audit.verified is True
+    assert audit.claim == "NO_MUTATION_REPLAY"
+    assert audit.replayed_retained_ids == ()
+    by_surface = {item.surface: item for item in audit.surfaces}
+    assert set(by_surface) == {"configuration", "control-plane", "voice"}
+    assert by_surface["configuration"].journaled_action_ids == tuple(
+        sorted(transition.configuration_mutation_ids)
+    )
+    assert by_surface["control-plane"].retained_action_ids == (
+        transition.control_plane_retained_ids
+    )
+    assert by_surface["voice"].dispatched_mutation_ids == tuple(
+        sorted(transition.voice_mutation_ids)
+    )
+
+
+@pytest.mark.parametrize(
+    "surface", ["configuration", "control-plane", "voice"],
+)
+def test_a_retained_action_executed_again_refuses_the_claim(
+    router0_delta,
+    surface,
+):
+    _floor3, router0, transition = router0_delta
+    identifier, plan = {
+        "configuration": (
+            transition.configuration_retained_ids[0], router0.configuration,
+        ),
+        "control-plane": (
+            transition.control_plane_retained_ids[0], router0.control_plane,
+        ),
+        "voice": (transition.voice_retained_ids[0], router0.voice),
+    }[surface]
+    builder = {
+        "configuration": _configuration_attempt,
+        "control-plane": _control_plane_attempt,
+        "voice": _voice_attempt,
+    }[surface]
+    attempts = {
+        "configuration": [_configuration_attempt(
+            router0.configuration, transition.configuration_mutation_ids,
+        )],
+        "control-plane": [_control_plane_attempt(
+            router0.control_plane, transition.control_plane_mutation_ids,
+        )],
+        "voice": [_voice_attempt(
+            router0.voice, transition.voice_mutation_ids,
+        )],
+    }
+    attempts[surface].append(builder(plan, (identifier,)))
+
+    audit = canonical_stage_mutation_replay_audit(
+        router0.stage.value,
+        _observations(
+            router0,
+            transition,
+            configuration=tuple(attempts["configuration"]),
+            control=tuple(attempts["control-plane"]),
+            voice=tuple(attempts["voice"]),
+        ),
+    )
+
+    assert audit.verified is False
+    assert audit.claim == "MUTATION_REPLAY_DETECTED"
+    assert audit.replayed_retained_ids == (f"{surface}:{identifier}",)
+    offender = next(
+        item for item in audit.surfaces if item.surface == surface
+    )
+    assert offender.replayed_retained_ids == (identifier,)
+    assert identifier in offender.unauthorized_mutation_ids
+    assert all(
+        item.verified for item in audit.surfaces if item.surface != surface
+    )
+
+
+def test_a_dispatch_no_journal_attests_refuses_the_claim(router0_delta):
+    _floor3, router0, transition = router0_delta
+    unattested = _configuration_attempt(
+        router0.configuration, transition.configuration_mutation_ids,
+    ).model_copy(update={"execution_journal": None})
+
+    audit = canonical_stage_mutation_replay_audit(
+        router0.stage.value,
+        _observations(
+            router0,
+            transition,
+            configuration=(unattested,),
+            control=(_control_plane_attempt(
+                router0.control_plane, transition.control_plane_mutation_ids,
+            ),),
+            voice=(_voice_attempt(
+                router0.voice, transition.voice_mutation_ids,
+            ),),
+        ),
+    )
+
+    offender = next(
+        item for item in audit.surfaces if item.surface == "configuration"
+    )
+    assert audit.claim == "MUTATION_REPLAY_DETECTED"
+    assert offender.unattested_mutation_ids == tuple(
+        sorted(transition.configuration_mutation_ids)
+    )
+    assert "execution journal" in " ".join(offender.errors)
+
+
+def test_an_authorized_surface_that_produced_nothing_refuses_the_claim(
+    router0_delta,
+):
+    _floor3, router0, transition = router0_delta
+
+    audit = canonical_stage_mutation_replay_audit(
+        router0.stage.value,
+        _observations(
+            router0,
+            transition,
+            configuration=(_configuration_attempt(
+                router0.configuration, transition.configuration_mutation_ids,
+            ),),
+            control=(_control_plane_attempt(
+                router0.control_plane, transition.control_plane_mutation_ids,
+            ),),
+            voice=(),
+        ),
+    )
+
+    offender = next(
+        item for item in audit.surfaces if item.surface == "voice"
+    )
+    assert audit.verified is False
+    assert offender.errors == (
+        "authorized mutations produced no typed application result",
+    )

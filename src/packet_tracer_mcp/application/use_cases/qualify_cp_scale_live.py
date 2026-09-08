@@ -94,7 +94,13 @@ def canonical_configuration_reread_scope(
     plan: ConfigurationPlan,
     application: ConfigurationApplicationResult,
 ) -> tuple[tuple[str, ...], tuple[ActionApplicationResult, ...]]:
-    """Build a fail-closed verification-only retry with no mutation replay."""
+    """Bound a retry to verification only: an empty mutation scope.
+
+    An empty mutation scope is what this function can establish offline from
+    the plan and the previous application. It is not `NO_MUTATION_REPLAY`,
+    which is a claim about what a runtime actually dispatched and journaled;
+    `canonical_stage_mutation_replay_audit` is the only place that may emit it.
+    """
 
     plan_ids = tuple(item.id for item in plan.actions)
     errors: list[str] = []
@@ -108,12 +114,12 @@ def canonical_configuration_reread_scope(
         }
         if len(preparation_by_id) != len(barrier.preparation_results):
             raise ValueError(
-                "Configuration re-read cannot guarantee NO_MUTATION_REPLAY: "
+                "Configuration re-read cannot bound its mutation scope: "
                 "duplicate deferred Voice preparation identities."
             )
         if set(preparation_by_id) != set(barrier.deferred_action_ids):
             raise ValueError(
-                "Configuration re-read cannot guarantee NO_MUTATION_REPLAY: "
+                "Configuration re-read cannot bound its mutation scope: "
                 "deferred Voice preparation evidence is incomplete."
             )
         action_results = [
@@ -138,11 +144,174 @@ def canonical_configuration_reread_scope(
         errors.append("actions were not applied: " + ", ".join(invalid))
     if errors:
         raise ValueError(
-            "Configuration re-read cannot guarantee NO_MUTATION_REPLAY: "
+            "Configuration re-read cannot bound its mutation scope: "
             + "; ".join(errors)
         )
     retained = tuple(results_by_id[identifier] for identifier in plan_ids)
     return (), retained
+
+
+@dataclass(frozen=True)
+class CanonicalMutationSurfaceObservation:
+    """What one applied surface was allowed to mutate, and what it produced."""
+
+    surface: str
+    plan_action_ids: tuple[str, ...]
+    authorized_mutation_ids: tuple[str, ...]
+    #: Every typed application result this surface produced for this stage, in
+    #: order. A retry, a re-read and a deferred completion are all attempts and
+    #: all of them count: a replay hidden in the second attempt is still a
+    #: replay.
+    results: tuple[object, ...]
+
+
+@dataclass(frozen=True)
+class CanonicalMutationSurfaceAudit:
+    """Observed dispatch and journals of one surface against its delta."""
+
+    surface: str
+    authorized_mutation_ids: tuple[str, ...]
+    retained_action_ids: tuple[str, ...]
+    dispatched_mutation_ids: tuple[str, ...]
+    journaled_action_ids: tuple[str, ...]
+    replayed_retained_ids: tuple[str, ...]
+    unauthorized_mutation_ids: tuple[str, ...]
+    unattested_mutation_ids: tuple[str, ...]
+    errors: tuple[str, ...]
+
+    @property
+    def verified(self) -> bool:
+        return not (
+            self.replayed_retained_ids
+            or self.unauthorized_mutation_ids
+            or self.unattested_mutation_ids
+            or self.errors
+        )
+
+
+@dataclass(frozen=True)
+class CanonicalMutationReplayAudit:
+    """`NO_MUTATION_REPLAY` for one stage, or the exact reason it is not."""
+
+    stage: str
+    surfaces: tuple[CanonicalMutationSurfaceAudit, ...]
+
+    @property
+    def verified(self) -> bool:
+        return bool(self.surfaces) and all(
+            item.verified for item in self.surfaces
+        )
+
+    @property
+    def claim(self) -> str:
+        return (
+            "NO_MUTATION_REPLAY"
+            if self.verified
+            else "MUTATION_REPLAY_DETECTED"
+        )
+
+    @property
+    def replayed_retained_ids(self) -> tuple[str, ...]:
+        return tuple(
+            f"{item.surface}:{identifier}"
+            for item in self.surfaces
+            for identifier in item.replayed_retained_ids
+        )
+
+    def compact_summary(self) -> dict[str, object]:
+        return {
+            "stage": self.stage,
+            "claim": self.claim,
+            "verified": self.verified,
+            "surfaces": [
+                {
+                    "surface": item.surface,
+                    "verified": item.verified,
+                    "authorized_mutation_ids": list(
+                        item.authorized_mutation_ids
+                    ),
+                    "retained_action_ids": list(item.retained_action_ids),
+                    "dispatched_mutation_ids": list(
+                        item.dispatched_mutation_ids
+                    ),
+                    "journaled_action_ids": list(item.journaled_action_ids),
+                    "replayed_retained_ids": list(item.replayed_retained_ids),
+                    "unauthorized_mutation_ids": list(
+                        item.unauthorized_mutation_ids
+                    ),
+                    "unattested_mutation_ids": list(
+                        item.unattested_mutation_ids
+                    ),
+                    "errors": list(item.errors),
+                }
+                for item in self.surfaces
+            ],
+        }
+
+
+def canonical_stage_mutation_replay_audit(
+    stage: str,
+    observations: Sequence[CanonicalMutationSurfaceObservation],
+) -> CanonicalMutationReplayAudit:
+    """Compare what each surface really executed against its authorized delta.
+
+    The authorized delta is a ceiling, never a floor: a governed re-read is
+    allowed to dispatch nothing at all. What is forbidden is executing an
+    action a previous stage already applied, executing an identity the delta
+    never authorized, or dispatching a mutation no journal attests. Any of the
+    three refuses the claim and names the identities responsible.
+    """
+
+    audits: list[CanonicalMutationSurfaceAudit] = []
+    for observation in observations:
+        plan_ids = set(observation.plan_action_ids)
+        authorized = set(observation.authorized_mutation_ids)
+        retained = plan_ids - authorized
+        errors: list[str] = []
+        if not plan_ids and not authorized and not observation.results:
+            # A surface this stage does not carry at all. Nothing to attest,
+            # and nothing to hide: it is recorded as an empty audit.
+            audits.append(CanonicalMutationSurfaceAudit(
+                surface=observation.surface,
+                authorized_mutation_ids=(),
+                retained_action_ids=(),
+                dispatched_mutation_ids=(),
+                journaled_action_ids=(),
+                replayed_retained_ids=(),
+                unauthorized_mutation_ids=(),
+                unattested_mutation_ids=(),
+                errors=(),
+            ))
+            continue
+        if authorized and not observation.results:
+            errors.append(
+                "authorized mutations produced no typed application result"
+            )
+        dispatched: set[str] = set()
+        journaled: set[str] = set()
+        for result in observation.results:
+            dispatched.update(getattr(result, "mutation_action_ids", ()) or ())
+            journal = getattr(result, "execution_journal", None)
+            if journal is None:
+                if getattr(result, "mutation_action_ids", ()):
+                    errors.append(
+                        "a dispatching attempt produced no execution journal"
+                    )
+                continue
+            journaled.update(item.action_id for item in journal.entries)
+        observed = dispatched | journaled
+        audits.append(CanonicalMutationSurfaceAudit(
+            surface=observation.surface,
+            authorized_mutation_ids=tuple(sorted(authorized)),
+            retained_action_ids=tuple(sorted(retained)),
+            dispatched_mutation_ids=tuple(sorted(dispatched)),
+            journaled_action_ids=tuple(sorted(journaled)),
+            replayed_retained_ids=tuple(sorted(observed & retained)),
+            unauthorized_mutation_ids=tuple(sorted(observed - authorized)),
+            unattested_mutation_ids=tuple(sorted(dispatched - journaled)),
+            errors=tuple(sorted(set(errors))),
+        ))
+    return CanonicalMutationReplayAudit(stage=stage, surfaces=tuple(audits))
 
 
 def canonical_required_capability_probes(

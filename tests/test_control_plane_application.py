@@ -19,6 +19,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 )
 from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureEtherChannel,
+    ConfigureRipv2,
     ConfigureSpanningTree,
     ControlPlaneCapabilityDimension,
     ControlPlaneCapabilityProfile,
@@ -29,7 +30,12 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneVerificationKind,
     EtherChannelProtocol,
     LinkFailureScenario,
+    RipNetwork,
     StpMode,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.verification import (
+    PrerequisiteKind,
+    VerificationPrerequisite,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
@@ -631,3 +637,182 @@ def test_cleanup_failure_takes_precedence_over_invalid_scenario_evidence():
     assert scenario.failure_code is ConfigurationFailureCode.CLEANUP_FAILED
     assert scenario.injection_status is ActionExecutionStatus.APPLIED
     assert scenario.restore_status is ActionExecutionStatus.SKIPPED
+
+
+class RouteGatedRuntime(FakeControlPlaneRuntime):
+    """Records what was actually verified, and can refuse one route read-back."""
+
+    def __init__(self, failed_verification_ids: set[str] | None = None) -> None:
+        super().__init__()
+        self.failed_verification_ids = failed_verification_ids or set()
+        self.verified_expectation_ids: list[str] = []
+
+    def inventory(self) -> list[RuntimeConfigurationTarget]:
+        self.inventory_calls += 1
+        return [RuntimeConfigurationTarget(
+            device_name="R1",
+            model="2911",
+            interfaces=["GigabitEthernet0/0"],
+        )]
+
+    def verify(
+        self, expectations: Sequence[ControlPlaneVerificationExpectation],
+    ) -> list[RuntimeControlPlaneVerification]:
+        self.verified_batches.append([item.id for item in expectations])
+        results = []
+        for item in expectations:
+            self.verified_expectation_ids.append(item.id)
+            failed = item.id in self.failed_verification_ids
+            results.append(RuntimeControlPlaneVerification(
+                expectation_id=item.id,
+                stage=(
+                    ControlPlaneExecutionStage.BEHAVIOR
+                    if item.kind
+                    is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+                    else ControlPlaneExecutionStage.OBSERVED
+                ),
+                status=(
+                    ActionExecutionStatus.FAILED if failed
+                    else ActionExecutionStatus.VERIFIED
+                ),
+                evidence_method=(
+                    "fake_route_readback" if failed
+                    else "fake_fresh_observation"
+                ),
+                fresh_evidence=True,
+            ))
+        return results
+
+
+def _routing_plan() -> ControlPlanePlan:
+    """One RIPv2 action, its route read-back, and the flow that needs it."""
+    action = ConfigureRipv2(
+        id="cp/rip/r1",
+        phase=ControlPlanePhase.DYNAMIC_ROUTING,
+        device_id="r1",
+        device_name="R1",
+        model="2911",
+        site_id="hq",
+        required_capability=ControlPlaneCapabilityDimension.RIPV2_CONFIG,
+        networks=[RipNetwork(network="172.16.0.0")],
+    )
+    route = ControlPlaneVerificationExpectation(
+        id="verify/route/172.18.30.0",
+        kind=ControlPlaneVerificationKind.ROUTE_PRESENT,
+        action_id=action.id,
+        device_id="r1",
+        required_capability=ControlPlaneCapabilityDimension.ROUTE_READBACK,
+        expected={"prefix": "172.18.30.0/24"},
+        depends_on=[action.id],
+    )
+    flow = ControlPlaneVerificationExpectation(
+        id="verify/flow/large-to-multilayer",
+        kind=ControlPlaneVerificationKind.END_TO_END_REACHABILITY,
+        action_id=action.id,
+        device_id="r1",
+        peer_device_id="r1",
+        source_traffic_flow_id="flow/large-to-multilayer",
+        required_capability=ControlPlaneCapabilityDimension.ROUTING_BEHAVIOR,
+        expected={"destination_ipv4": "172.18.30.2", "reachable": True},
+        depends_on=[action.id],
+        # Exactly what the compiler emits: the flow hangs off the route
+        # expectation for the prefix it will address, not off the action.
+        verification_prerequisites=[VerificationPrerequisite(
+            kind=PrerequisiteKind.VERIFICATION_VERIFIED,
+            reference_id=route.id,
+        )],
+    )
+    return ControlPlanePlan(
+        id="cp-plan/routing",
+        semantic_hash="cp-hash",
+        source_topology_id="topology",
+        source_topology_hash="topology-hash",
+        source_configuration_id="configuration",
+        source_configuration_hash="configuration-hash",
+        source_security_id="security",
+        source_security_hash="security-hash",
+        actions=[action],
+        verification_expectations=[route, flow],
+    )
+
+
+def _apply_routing(runtime, plan=None):
+    return _apply(
+        runtime,
+        plan=plan or _routing_plan(),
+        capabilities={"2911": ControlPlaneCapabilityProfile.supported("2911")},
+    )
+
+
+def test_a_verified_route_prerequisite_lets_its_flow_verification_run():
+    runtime = RouteGatedRuntime()
+
+    result = _apply_routing(runtime)
+
+    route = next(
+        item for item in result.observed_results
+        if item.expectation_id == "verify/route/172.18.30.0"
+    )
+    flow = next(
+        item for item in result.behavior_results
+        if item.expectation_id == "verify/flow/large-to-multilayer"
+    )
+    assert route.status is ActionExecutionStatus.VERIFIED
+    assert flow.status is ActionExecutionStatus.VERIFIED
+    # The flow was actually dispatched to the runtime, after its route.
+    assert runtime.verified_expectation_ids == [
+        "verify/route/172.18.30.0",
+        "verify/flow/large-to-multilayer",
+    ]
+
+
+def test_an_unverified_route_prerequisite_blocks_its_flow_without_a_ping():
+    runtime = RouteGatedRuntime(
+        failed_verification_ids={"verify/route/172.18.30.0"},
+    )
+
+    result = _apply_routing(runtime)
+
+    route = next(
+        item for item in result.observed_results
+        if item.expectation_id == "verify/route/172.18.30.0"
+    )
+    flow = next(
+        item for item in result.behavior_results
+        if item.expectation_id == "verify/flow/large-to-multilayer"
+    )
+    assert route.status is ActionExecutionStatus.FAILED
+    assert flow.status is ActionExecutionStatus.DEPENDENCY_BLOCKED
+    assert flow.evidence_method == "verification_prerequisite_gate"
+    assert "verify/route/172.18.30.0" in flow.message
+    # No ping was ever dispatched for the flow: a blocked prerequisite is not
+    # a failed measurement, and the runtime was never asked to take one.
+    assert runtime.verified_expectation_ids == ["verify/route/172.18.30.0"]
+    assert result.behavior_status is ActionExecutionStatus.DEPENDENCY_BLOCKED
+
+
+def test_the_flow_prerequisite_survives_plan_normalization():
+    """The applicator must not rewrite an explicit route prerequisite away."""
+    runtime = RouteGatedRuntime()
+    plan = _routing_plan()
+
+    normalized = ControlPlaneApplicator._normalized_verification_plan(plan)
+
+    flow = next(
+        item for item in normalized.verification_expectations
+        if item.id == "verify/flow/large-to-multilayer"
+    )
+    assert [
+        (item.kind, item.reference_id)
+        for item in flow.verification_prerequisites
+    ] == [
+        (PrerequisiteKind.VERIFICATION_VERIFIED, "verify/route/172.18.30.0"),
+    ]
+    # And the action it was compiled against is not smuggled back in as a
+    # second, weaker prerequisite.
+    assert "cp/rip/r1" not in {
+        item.reference_id for item in flow.verification_prerequisites
+    }
+    assert _apply_routing(runtime, plan=plan).behavior_status is (
+        ActionExecutionStatus.VERIFIED
+    )

@@ -164,7 +164,16 @@ class CPScaleCanonicalStageTransition:
     replayed_voice_ids: tuple[str, ...]
 
     @property
-    def no_mutation_replay(self) -> bool:
+    def mutation_scope_disjoint(self) -> bool:
+        """The planned mutation scope shares no identity with the retained one.
+
+        This is an offline property of two projections. It proves the delta
+        this stage is ALLOWED to mutate does not name an action a previous
+        stage already applied. It does not observe a runtime, so it cannot
+        say what was executed: `NO_MUTATION_REPLAY` is a claim about dispatch
+        and journals, and only
+        `canonical_stage_mutation_replay_audit` may emit it.
+        """
         return not (
             self.replayed_configuration_ids
             or self.replayed_control_plane_ids
@@ -174,10 +183,31 @@ class CPScaleCanonicalStageTransition:
     @property
     def claim(self) -> str:
         return (
-            "NO_MUTATION_REPLAY"
-            if self.no_mutation_replay
-            else "MUTATION_REPLAY_DETECTED"
+            "MUTATION_SCOPE_DISJOINT"
+            if self.mutation_scope_disjoint
+            else "MUTATION_SCOPE_OVERLAPS_RETAINED"
         )
+
+
+class CPScaleForwardingAuthority(str, Enum):
+    """What E4 actually says about one direction of an inter-site probe.
+
+    E4 declares a `TrafficFlowIntent` with a source and a destination site.
+    That intent authorizes THAT direction and no other. The opposite direction
+    is still worth observing -- a branch that only forwards one way is not
+    reachable -- but nothing in E4 declares it, and attributing it to the
+    forward intent would attribute an observation to an authority that never
+    made the claim. The reverse direction names the flow it returns, and says
+    so in its own field.
+    """
+
+    #: E4 declares a traffic flow from this direction's source to its
+    #: destination. `declared_traffic_flow_id` names it.
+    DECLARED_TRAFFIC_FLOW = "declared-traffic-flow"
+    #: No E4 flow declares this direction. It is the return path of a flow
+    #: declared in the opposite direction, named by
+    #: `reverse_of_traffic_flow_id`.
+    REVERSE_PATH_OF_DECLARED_FLOW = "reverse-path-of-declared-flow"
 
 
 @dataclass(frozen=True)
@@ -186,7 +216,12 @@ class CPScaleSiteForwardingCheck:
 
     id: str
     direction: str
-    traffic_flow_id: str
+    authority: CPScaleForwardingAuthority
+    #: The E4 flow that declares THIS direction, empty when none does.
+    declared_traffic_flow_id: str
+    #: The E4 flow this direction returns, empty when this direction is itself
+    #: declared. Exactly one of the two identifiers is populated.
+    reverse_of_traffic_flow_id: str
     source_site_id: str
     destination_site_id: str
     source_device_id: str
@@ -835,11 +870,16 @@ def derive_cp_scale_site_forwarding_checks(
 ) -> tuple[CPScaleSiteForwardingCheck, ...]:
     """Derive bidirectional site probes from E4 and static E5 endpoints.
 
-    The E4 traffic flow authorizes the site relationship. The projected E4
-    topology identifies each site's edge router. The control-plane compiler's
-    deterministic endpoint selector chooses one projected E5 static endpoint
-    in each destination site. No address is selected by convention or copied
-    into this runtime contract.
+    E4 authorizes each direction separately, and the check says which one it
+    got: a direction with its own declared traffic flow is
+    `DECLARED_TRAFFIC_FLOW`, and one that only exists as the return path of a
+    flow declared the other way is `REVERSE_PATH_OF_DECLARED_FLOW`, naming
+    that flow. Both are observed; only one of them is a declared intent.
+
+    The projected E4 topology identifies each site's edge router. The
+    control-plane compiler's deterministic endpoint selector chooses one
+    projected E5 static endpoint in each destination site. No address is
+    selected by convention or copied into this runtime contract.
     """
 
     if composition.enterprise is None:
@@ -854,6 +894,17 @@ def derive_cp_scale_site_forwarding_checks(
             "Canonical site forwarding requires exactly one matching E4 "
             f"traffic flow; found {len(flows)} for "
             f"{source_site_id!r} -> {destination_site_id!r}."
+        )
+    reverse_flows = [
+        item for item in composition.enterprise.traffic_flows
+        if item.source_site_id == destination_site_id
+        and item.destination_site_id == source_site_id
+    ]
+    if len(reverse_flows) > 1:
+        raise ValueError(
+            "Canonical site forwarding cannot attribute a direction to "
+            f"{len(reverse_flows)} E4 traffic flows for "
+            f"{destination_site_id!r} -> {source_site_id!r}."
         )
     if (
         compute_topology_hashes(projection.topology).physical_topology_hash
@@ -951,6 +1002,25 @@ def derive_cp_scale_site_forwarding_checks(
             )
         destination_by_site[site_id] = destination
 
+    # Each direction carries the authority that actually covers it. The
+    # forward direction is declared by its own E4 flow; the reverse is only
+    # declared when E4 says so, and otherwise names the flow it returns.
+    authority_by_direction = {
+        (source_site_id, destination_site_id): (
+            CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW, flows[0].id,
+        ),
+        (destination_site_id, source_site_id): (
+            (
+                CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW,
+                reverse_flows[0].id,
+            )
+            if reverse_flows
+            else (
+                CPScaleForwardingAuthority.REVERSE_PATH_OF_DECLARED_FLOW,
+                flows[0].id,
+            )
+        ),
+    }
     checks: list[CPScaleSiteForwardingCheck] = []
     for from_site, to_site in (
         (source_site_id, destination_site_id),
@@ -961,10 +1031,21 @@ def derive_cp_scale_site_forwarding_checks(
         action = destination_by_site[to_site]
         destination_device = device_by_id[action.device_id]
         direction = f"{from_site}-to-{to_site}"
+        authority, flow_id = authority_by_direction[(from_site, to_site)]
+        declared = (
+            flow_id
+            if authority is CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW
+            else ""
+        )
+        reverse_of = "" if declared else flow_id
         checks.append(CPScaleSiteForwardingCheck(
-            id=f"forwarding/{flows[0].id}/{direction}/{action.id}",
+            id=(
+                f"forwarding/{authority.value}/{flow_id}/{direction}/{action.id}"
+            ),
             direction=direction,
-            traffic_flow_id=flows[0].id,
+            authority=authority,
+            declared_traffic_flow_id=declared,
+            reverse_of_traffic_flow_id=reverse_of,
             source_site_id=from_site,
             destination_site_id=to_site,
             source_device_id=source_device.id,
@@ -980,6 +1061,18 @@ def derive_cp_scale_site_forwarding_checks(
         ))
     if len({item.id for item in checks}) != len(checks):
         raise ValueError("Canonical site forwarding produced duplicate check IDs.")
+    if any(
+        bool(item.declared_traffic_flow_id)
+        == bool(item.reverse_of_traffic_flow_id)
+        or (
+            item.authority is CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW
+        ) != bool(item.declared_traffic_flow_id)
+        for item in checks
+    ):
+        raise ValueError(
+            "Canonical site forwarding check must name exactly one E4 flow "
+            "identity that matches its declared authority."
+        )
     return tuple(checks)
 
 

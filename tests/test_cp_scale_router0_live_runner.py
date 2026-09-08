@@ -31,6 +31,7 @@ import json
 
 import tools.cp_scale_canonical_live as live
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    CPScaleForwardingAuthority,
     CPScaleSiteForwardingCheck,
 )
 from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
@@ -39,7 +40,17 @@ checks = tuple(
     CPScaleSiteForwardingCheck(
         id=f"check-{index}",
         direction=direction,
-        traffic_flow_id="flow/large-to-multilayer",
+        authority=authority,
+        declared_traffic_flow_id=(
+            "flow/large-to-multilayer"
+            if authority is CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW
+            else ""
+        ),
+        reverse_of_traffic_flow_id=(
+            ""
+            if authority is CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW
+            else "flow/large-to-multilayer"
+        ),
         source_site_id=source_site,
         destination_site_id=destination_site,
         source_device_id=source_id,
@@ -54,17 +65,19 @@ checks = tuple(
         source_configuration_hash="e5-hash",
     )
     for index, (
-        direction, source_site, destination_site, source_id, source_name,
-        destination_id, destination_name, destination_router_id,
+        direction, authority, source_site, destination_site, source_id,
+        source_name, destination_id, destination_name, destination_router_id,
         destination_ipv4,
     ) in enumerate((
         (
             "large-branch-to-multilayer-branch",
+            CPScaleForwardingAuthority.DECLARED_TRAFFIC_FLOW,
             "large-branch", "multilayer-branch", "router-large", "Router4",
             "endpoint-multilayer", "MLS-AP", "router-multilayer", "192.0.2.20",
         ),
         (
             "multilayer-branch-to-large-branch",
+            CPScaleForwardingAuthority.REVERSE_PATH_OF_DECLARED_FLOW,
             "multilayer-branch", "large-branch", "router-multilayer", "Router0",
             "endpoint-large", "LARGE-AP", "router-large", "192.0.2.10",
         ),
@@ -161,15 +174,28 @@ def archive(phase, payload):
     events.append("archive:" + phase)
     return {"phase": phase, "path": phase + ".json"}
 
-evidence = {
-    "stages": [{
-        "stage": "router0-branch",
+def audited(stage):
+    return {
+        "stage": stage,
         "verified": True,
         "site_forwarding_verified": True,
         "plan": {"branch_forwarding_checks": [{"id": "forward-1"}]},
         "site_forwarding": [{"check": {"id": "forward-1"}, "verified": True}],
         "workspace_verified_twice": True,
-    }],
+        "mutation_replay_audit": {
+            "stage": stage,
+            "claim": "NO_MUTATION_REPLAY",
+            "verified": True,
+            "surfaces": [{
+                "surface": "configuration",
+                "verified": True,
+                "replayed_retained_ids": [],
+            }],
+        },
+    }
+
+evidence = {
+    "stages": [audited("floor3"), audited("router0-branch")],
     "live_devices": 290,
     "live_links": 202,
 }
@@ -189,6 +215,8 @@ print(json.dumps({
     "events": events,
     "closure": evidence["closure"],
     "scope": evidence["closure_scope"],
+    "no_mutation_replay": evidence["no_mutation_replay"],
+    "attested": result["cleanup_attestation"],
     "result": result,
     "build_stages": [item.value for item in contract.build_stages],
     "remaining": contract.run_remaining_reconciliation,
@@ -207,6 +235,13 @@ print(json.dumps({
     ]
     assert verdict["closure"] == "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
     assert verdict["scope"] == "router0-branch"
+    assert verdict["no_mutation_replay"] == {
+        "claim": "NO_MUTATION_REPLAY",
+        "verified": True,
+        "audited_stages": ["floor3", "router0-branch"],
+        "stages_without_verified_audit": [],
+        "replayed_retained_ids": [],
+    }
     assert verdict["build_stages"][-1] == "router0-branch"
     assert "router3-branch" not in verdict["build_stages"]
     assert verdict["remaining"] is False
@@ -291,6 +326,12 @@ evidence = {{
             "check": {{"id": "forward-1"}}, "verified": True,
         }}],
         "workspace_verified_twice": True,
+        "mutation_replay_audit": {{
+            "stage": "router0-branch",
+            "claim": "NO_MUTATION_REPLAY",
+            "verified": True,
+            "surfaces": [],
+        }},
     }}],
 }}
 try:
@@ -377,3 +418,486 @@ print(json.dumps({
     assert verdict["default_stages"] == verdict["legacy_stages"]
     assert verdict["remaining"] is True
     assert verdict["full"] is True
+
+
+@pytest.mark.parametrize(
+    ("audit", "expected_replay"),
+    [
+        pytest.param(
+            {
+                "stage": "floor2",
+                "claim": "MUTATION_REPLAY_DETECTED",
+                "verified": False,
+                "surfaces": [{
+                    "surface": "configuration",
+                    "verified": False,
+                    "replayed_retained_ids": ["cfg/access/floor1/1"],
+                }],
+            },
+            ["cfg/access/floor1/1"],
+            id="retained-action-executed-again",
+        ),
+        pytest.param(None, [], id="stage-never-audited"),
+    ],
+)
+def test_a_replayed_retained_action_blocks_the_router0_closure(
+    audit,
+    expected_replay,
+):
+    verdict = _probe(rf'''
+import json
+import tools.cp_scale_canonical_live as live
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    CPScaleCanonicalTarget,
+    canonical_cp_scale_target_contract,
+)
+
+contract = canonical_cp_scale_target_contract(CPScaleCanonicalTarget.ROUTER0_BRANCH)
+events = []
+live._write_evidence = lambda evidence: events.append("write")
+live._write_checkpoint_summary = lambda stage, evidence: events.append("summary")
+live._cleanup_owned = lambda *args, **kwargs: (
+    events.append("cleanup") or {{"verified": True}}
+)
+
+def realtime():
+    events.append("realtime")
+    return {{"verified": True, "error": ""}}
+
+def archive(phase, payload):
+    events.append("archive:" + phase)
+    return {{"phase": phase}}
+
+def stage(name, audit):
+    evidence = {{
+        "stage": name,
+        "verified": True,
+        "site_forwarding_verified": True,
+        "plan": {{"branch_forwarding_checks": [{{"id": "forward-1"}}]}},
+        "site_forwarding": [{{
+            "check": {{"id": "forward-1"}}, "verified": True,
+        }}],
+        "workspace_verified_twice": True,
+    }}
+    if audit is not None:
+        evidence["mutation_replay_audit"] = audit
+    return evidence
+
+verified_audit = {{
+    "stage": "router0-branch",
+    "claim": "NO_MUTATION_REPLAY",
+    "verified": True,
+    "surfaces": [],
+}}
+evidence = {{
+    "stages": [
+        stage("floor2", {audit!r}),
+        stage("router0-branch", verified_audit),
+    ],
+}}
+try:
+    live._complete_router0_target(
+        evidence=evidence,
+        target_contract=contract,
+        physical=object(),
+        full_topology=object(),
+        owned_device_ids=set(),
+        baseline=object(),
+        observe_cleanup_realtime=realtime,
+        archive=archive,
+        run_identity="run-id",
+        session_source_head="a" * 40,
+    )
+    error = ""
+except Exception as exc:
+    error = type(exc).__name__ + ": " + str(exc)
+print(json.dumps({{
+    "events": events,
+    "error": error,
+    "closure": evidence.get("closure", ""),
+    "verdict": evidence.get("no_mutation_replay"),
+}}))
+''')
+
+    assert verdict["events"] == []
+    assert "NO_MUTATION_REPLAY" in verdict["error"]
+    assert "floor2" in verdict["error"]
+    assert verdict["closure"] == ""
+    assert verdict["verdict"] == {
+        "claim": "MUTATION_REPLAY_DETECTED",
+        "verified": False,
+        "audited_stages": ["floor2", "router0-branch"],
+        "stages_without_verified_audit": ["floor2"],
+        "replayed_retained_ids": expected_replay,
+    }
+
+
+RUN_DOUBLES = r'''
+import json
+from types import SimpleNamespace
+
+import tools.cp_scale_canonical_live as live
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    CPScaleCanonicalStage,
+    CPScaleCanonicalStageTransition,
+)
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+    PhysicalDeploymentStatus,
+)
+
+HEAD = "a" * 40
+calls = []
+
+
+def record(event, **fields):
+    calls.append({"event": event, **fields})
+
+
+class Transport:
+    """Connected, and refuses to dispatch anything: this run never touches PT."""
+
+    bridge_transport = "http"
+    is_connected = True
+
+    def start(self, timeout_seconds=0.0):
+        record("transport.start")
+        return True
+
+    def status_dict(self):
+        return {"connected": True}
+
+    def stop(self):
+        record("transport.stop")
+
+    def send(self, *args, **kwargs):
+        raise AssertionError("A LIVE dispatch was attempted.")
+
+    def send_and_wait(self, *args, **kwargs):
+        raise AssertionError("A LIVE dispatch was attempted.")
+
+
+class Workspace:
+    def compact_summary(self):
+        return {"devices": 0}
+
+
+class Physical:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def observe_workspace(self):
+        return Workspace()
+
+
+class Deployment:
+    status = PhysicalDeploymentStatus.VERIFIED
+    manifest = SimpleNamespace(deployment_id="deployment/1")
+    errors = ()
+    item_results = ()
+
+    def model_dump(self, mode="json"):
+        return {"status": "verified"}
+
+
+class Deployer:
+    def __init__(self, physical):
+        pass
+
+    def deploy(self, topology, **kwargs):
+        record("deploy", deployment_id=kwargs.get("deployment_id"))
+        return Deployment()
+
+
+def projection_for(composition, stage, **kwargs):
+    record("project", stage=stage.value)
+    return SimpleNamespace(
+        stage=stage,
+        topology=SimpleNamespace(
+            devices=[SimpleNamespace(id=stage.value + "/device")],
+            links=[SimpleNamespace(id=stage.value + "/link")],
+            physical_identity_hash="e4/" + stage.value,
+        ),
+        configuration=SimpleNamespace(
+            actions=[], semantic_hash="e5/" + stage.value,
+        ),
+        control_plane=SimpleNamespace(
+            actions=[], semantic_hash="e9/" + stage.value,
+        ),
+        voice=SimpleNamespace(actions=[]),
+        forwarding_checks={},
+        branch_forwarding_checks=(
+            (SimpleNamespace(id="forward-1"),)
+            if stage is CPScaleCanonicalStage.ROUTER0_BRANCH else ()
+        ),
+    )
+
+
+def execute_stage(projection, **kwargs):
+    stage = projection.stage
+    record(
+        "execute_stage",
+        stage=stage.value,
+        site_forwarding_checks=[
+            item.id for item in kwargs.get("site_forwarding_checks", ())
+        ],
+    )
+    evidence = {
+        "stage": stage.value,
+        "verified": True,
+        "workspace_verified_twice": True,
+        "control_plane": {"action_results": []},
+        "voice": {"result": {"action_results": []}},
+        "plan": {
+            "branch_forwarding_checks": [
+                {"id": item.id}
+                for item in kwargs.get("site_forwarding_checks", ())
+            ],
+        },
+        "mutation_replay_audit": {
+            "stage": stage.value,
+            "claim": "NO_MUTATION_REPLAY",
+            "verified": True,
+            "surfaces": [],
+        },
+    }
+    if stage is CPScaleCanonicalStage.ROUTER0_BRANCH:
+        evidence["site_forwarding_verified"] = True
+        evidence["site_forwarding"] = [
+            {"check": {"id": "forward-1"}, "verified": True},
+        ]
+    return evidence, Deployment().manifest, Workspace(), object()
+
+
+def transition_contract(previous, current):
+    record(
+        "transition",
+        previous=previous.stage.value,
+        current=current.stage.value,
+    )
+    return CPScaleCanonicalStageTransition(
+        previous_stage=previous.stage,
+        current_stage=current.stage,
+        new_device_ids=("router0-branch/device",),
+        anchor_device_ids=(),
+        new_link_ids=(),
+        configuration_mutation_ids=(),
+        configuration_retained_ids=(),
+        control_plane_mutation_ids=(),
+        control_plane_retained_ids=(),
+        voice_mutation_ids=(),
+        voice_retained_ids=(),
+        replayed_configuration_ids=(),
+        replayed_control_plane_ids=(),
+        replayed_voice_ids=(),
+    )
+
+
+def checkpoint(stage, evidence, *, session_source_head):
+    record("checkpoint", stage=stage)
+    return "continue"
+
+
+def cleanup_owned(physical, topology, owned, baseline):
+    record("cleanup")
+    return {"verified": True, "restoration_error": ""}
+
+
+def archive_evidence(payload, *, base_dir, run_identity, phase):
+    record("archive", phase=phase)
+    return SimpleNamespace(model_dump=lambda mode="json": {"phase": phase})
+
+
+def reconcile(topology, physical, **kwargs):
+    deployment_id = kwargs.get("deployment_id")
+    record("reconcile", deployment_id=deployment_id)
+    if deployment_id == "cp-scale-canonical/remaining/reconciliation":
+        # The boundary this test measures: reached by the default target,
+        # never by Router0.
+        raise RuntimeError("remaining reconciliation reached")
+    return Deployment()
+
+
+def refuse_full_qualification(composition):
+    raise AssertionError("Full qualification must not be projected.")
+
+
+live.ImportIsolationPreflight = lambda root: SimpleNamespace(
+    ensure_isolated=lambda: SimpleNamespace(
+        state=SimpleNamespace(value="isolated"),
+        detail="",
+        isolated=True,
+        render=lambda: "",
+    ),
+)
+live.read_git_repository_state = lambda root: SimpleNamespace(
+    model_dump=lambda mode="json": {"head": HEAD},
+    branch=live.EXPECTED_BRANCH,
+    upstream=live.EXPECTED_UPSTREAM,
+    head=HEAD,
+    error="",
+)
+live.subprocess = SimpleNamespace(
+    run=lambda *args, **kwargs: SimpleNamespace(stdout="", returncode=0),
+    CalledProcessError=Exception,
+)
+live._git_output = lambda *arguments: HEAD
+live._packet_tracer_processes = lambda: [{"pid": 1}]
+live.packet_tracer_process_error = lambda processes, version: ""
+live.PacketTracerHttpTransport = Transport
+live.PacketTracerPhysicalTopologyRuntime = Physical
+live.disposable_workspace_error = lambda observation: ""
+live.CapabilitySnapshotStore = lambda base_dir: object()
+live.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
+    valid=True,
+    issues=[],
+    topology=object(),
+    configuration=object(),
+    control_plane=object(),
+    capabilities={},
+)
+live.canonical_required_capability_probes = lambda composition: {}
+live.PacketTracerBridgeProbeRuntime = lambda *args, **kwargs: object()
+live.CapabilityDiscoveryService = lambda **kwargs: object()
+live.EnterpriseCapabilityAdapter = lambda: SimpleNamespace(
+    identity_for=None, access_ports_for=None,
+)
+live.canonical_cleanup_restoration_error = lambda *args: ""
+live.project_cp_scale_canonical_stage = projection_for
+live._voice_dhcp_statistics_target = lambda configuration, voice: None
+live.EnterprisePhysicalTopologyDeployer = Deployer
+live.ControlledIosExecutor = lambda *args, **kwargs: object()
+live.PacketTracerEnterpriseConfigurationRuntime = (
+    lambda *args, **kwargs: object()
+)
+live.PacketTracerEnterpriseControlPlaneRuntime = (
+    lambda *args, **kwargs: object()
+)
+live.PacketTracerEnterpriseVoiceRuntime = lambda *args, **kwargs: object()
+live.canonical_delta_deployment_error = lambda *args, **kwargs: ""
+live.canonical_stage_resume_error = lambda *args, **kwargs: ""
+live._network_state_observation = lambda *args, **kwargs: {}
+live.project_cp_scale_canonical_delta = (
+    lambda previous, current: SimpleNamespace(
+        devices=(), modules=(), links=(),
+    )
+)
+live.canonical_stage_transition_contract = transition_contract
+live.reconcile_canonical_stage_deployment = reconcile
+live._execute_stage = execute_stage
+live._checkpoint = checkpoint
+live._cleanup_owned = cleanup_owned
+live._write_evidence = lambda evidence: None
+live._write_checkpoint_summary = lambda stage, evidence: record(
+    "summary", stage=stage,
+)
+live.archive_cp_scale_canonical_evidence = archive_evidence
+live.SimulationTraceRuntime = lambda *args, **kwargs: object()
+live._voice_window_state = lambda runtime: {"mode": "realtime"}
+live._realtime_boundary_error = lambda state, edge: ""
+live._full_qualification_projection = refuse_full_qualification
+'''
+
+
+def test_run_reaches_router0_cleanup_and_never_enters_the_later_stages():
+    verdict = _probe(RUN_DOUBLES + r'''
+code = live.run(
+    "9.0.1.0858",
+    expected_head=HEAD,
+    retain_on_full_verification=False,
+    target_stage="router0-branch",
+)
+print(json.dumps({"code": code, "calls": calls}))
+''')
+
+    assert verdict["code"] == 0
+    calls = verdict["calls"]
+    build = [
+        item["stage"] for item in calls if item["event"] == "execute_stage"
+    ]
+    assert build == [
+        "routing-core",
+        "router4-switch10",
+        "floor1",
+        "floor2",
+        "floor3",
+        "router0-branch",
+    ]
+    assert [item["event"] for item in calls[-6:]] == [
+        "execute_stage", "archive", "cleanup", "archive", "summary",
+        "transport.stop",
+    ]
+    assert [
+        item["phase"] for item in calls if item["event"] == "archive"
+    ] == ["precleanup", "cleanup"]
+
+    # Router0 is the only stage given branch forwarding, and the only stage
+    # whose boundary is proven by the transition contract.
+    assert [
+        (item["stage"], item["site_forwarding_checks"])
+        for item in calls
+        if item["event"] == "execute_stage" and item["site_forwarding_checks"]
+    ] == [("router0-branch", ["forward-1"])]
+    assert [
+        (item["previous"], item["current"])
+        for item in calls if item["event"] == "transition"
+    ] == [("floor3", "router0-branch")]
+
+    # Nothing after the terminal stage: no checkpoint asking to continue, no
+    # Router3, no remaining reconciliation, no full qualification.
+    assert [
+        item["stage"] for item in calls if item["event"] == "checkpoint"
+    ] == ["routing-core", "router4-switch10", "floor1", "floor2", "floor3"]
+    projected = {item["stage"] for item in calls if item["event"] == "project"}
+    assert "router3-branch" not in projected
+    assert "remaining" not in projected
+    assert not any(
+        "router3-branch" in str(item.get("deployment_id") or "")
+        or "remaining" in str(item.get("deployment_id") or "")
+        for item in calls if item["event"] in {"deploy", "reconcile"}
+    )
+
+
+def test_default_run_still_walks_past_router0_into_router3():
+    verdict = _probe(RUN_DOUBLES + r'''
+code = live.run(
+    "9.0.1.0858",
+    expected_head=HEAD,
+    retain_on_full_verification=False,
+)
+print(json.dumps({"code": code, "calls": calls}))
+''')
+
+    calls = verdict["calls"]
+    build = [
+        item["stage"] for item in calls if item["event"] == "execute_stage"
+    ]
+    # The default target does not stop at Router0: it checkpoints it like any
+    # other stage, builds Router3, and reaches the remaining reconciliation
+    # this double refuses.
+    assert build == [
+        "routing-core",
+        "router4-switch10",
+        "floor1",
+        "floor2",
+        "floor3",
+        "router0-branch",
+        "router3-branch",
+    ]
+    assert "router0-branch" in [
+        item["stage"] for item in calls if item["event"] == "checkpoint"
+    ]
+    assert "remaining" in {
+        item["stage"] for item in calls if item["event"] == "project"
+    }
+    assert "cp-scale-canonical/remaining/reconciliation" in [
+        item["deployment_id"] for item in calls if item["event"] == "reconcile"
+    ]
+    assert verdict["code"] == 1
+
+    # Neither the Router0 boundary contract nor its branch forwarding belongs
+    # to the default route.
+    assert not any(item["event"] == "transition" for item in calls)
+    assert not any(
+        item["event"] == "execute_stage" and item["site_forwarding_checks"]
+        for item in calls
+    )
