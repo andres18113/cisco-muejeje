@@ -555,11 +555,20 @@ class Ping:
         )
 
     def ping(self, source, destination):
-        result = self._dispatch(source, destination)
-        if EXTRA_DISPATCH and len(self.calls) == 1:
+        actual_destination = (
+            "198.51.100.99"
+            if DISPATCH_MUTATION == "wrong-destination" and not self.calls
+            else destination
+        )
+        result = self._dispatch(source, actual_destination)
+        if DISPATCH_MUTATION == "insert" and len(self.calls) == 1:
             # A second, unplanned operation on the same call: the capture must
-            # surface it instead of dropping it off the end of a zip().
+            # surface it without moving the next check's identity onto it.
             self._dispatch(source, "198.51.100.99")
+        elif DISPATCH_MUTATION == "duplicate" and len(self.calls) == 1:
+            # An indistinguishable extra dispatch must fail closed instead of
+            # allowing either occurrence to borrow VERIFIED by position.
+            self._dispatch(source, destination)
         return result
 
 
@@ -570,16 +579,54 @@ forwarding_verified, forwarding_evidence, first_failure = (
     )
 )
 # Every dispatch becomes an operation, in order and with its multiplicity.
-# zip() would have truncated to the shortest of the three sequences and hidden
-# exactly the dispatch worth catching, so the plan and the evidence are looked
-# up by position and their absence is recorded rather than silently dropped.
+# Plan and evidence identities are correlated to the observed source and
+# destination.  Position cannot be authoritative: one inserted dispatch would
+# otherwise borrow the next check and its VERIFIED evidence.  Duplicate
+# identities are deliberately ambiguous and therefore receive neither.
+def dispatch_identity(source, destination):
+    return source, destination
+
+
+def check_identity(check):
+    return check.source_device_name, check.destination_ipv4
+
+
+def evidence_identity(item):
+    check = item.get("check", {})
+    result = item.get("result", {})
+    planned = (
+        check.get("source_device_name"), check.get("destination_ipv4")
+    )
+    observed = (
+        result.get("observed_device_name"),
+        result.get("dispatched_destination"),
+    )
+    return planned if planned == observed else None
+
+
+dispatch_identity_counts = {
+    identity: sum(
+        dispatch_identity(*candidate) == identity for candidate in ping.calls
+    )
+    for identity in {dispatch_identity(*call) for call in ping.calls}
+}
 operations = []
 for sequence, call in enumerate(ping.calls, start=1):
-    index = sequence - 1
-    check = checks[index] if index < len(checks) else None
-    evidence = (
-        forwarding_evidence[index] if index < len(forwarding_evidence) else None
+    identity = dispatch_identity(*call)
+    matching_checks = [item for item in checks if check_identity(item) == identity]
+    check = (
+        matching_checks[0]
+        if len(matching_checks) == 1
+        and dispatch_identity_counts[identity] == 1
+        else None
     )
+    matching_evidence = [
+        item for item in forwarding_evidence
+        if check is not None
+        and item.get("check", {}).get("id") == check.id
+        and evidence_identity(item) == identity
+    ]
+    evidence = matching_evidence[0] if len(matching_evidence) == 1 else None
     operations.append({
         "sequence": sequence,
         "phase": "site-forwarding",
@@ -797,19 +844,32 @@ print(json.dumps({
 '''
 
 
-def policy_trace_source(*, extra_dispatch: bool = False) -> str:
-    """Compose the policy trace child from a boolean; never interpolate input."""
+def policy_trace_source(*, dispatch_mutation: str = "") -> str:
+    """Compose one of the closed, reviewed policy-trace child programs."""
 
-    return (
-        f"EXTRA_DISPATCH = {bool(extra_dispatch)!r}\n"
-        + _POLICY_TRACE_BODY
-        + _PROVENANCE_CORE
-        + _POLICY_TRACE_VERDICT
-    )
+    preambles = {
+        "": 'DISPATCH_MUTATION = ""\n',
+        "insert": 'DISPATCH_MUTATION = "insert"\n',
+        "duplicate": 'DISPATCH_MUTATION = "duplicate"\n',
+        "wrong-destination": 'DISPATCH_MUTATION = "wrong-destination"\n',
+    }
+    try:
+        preamble = preambles[dispatch_mutation]
+    except KeyError as exc:
+        raise ValueError(f"Unknown dispatch mutation {dispatch_mutation!r}.") from exc
+    return preamble + _POLICY_TRACE_BODY + _PROVENANCE_CORE + _POLICY_TRACE_VERDICT
 
 
 POLICY_TRACE_SOURCE = policy_trace_source()
-POLICY_TRACE_EXTRA_DISPATCH_SOURCE = policy_trace_source(extra_dispatch=True)
+POLICY_TRACE_EXTRA_DISPATCH_SOURCE = policy_trace_source(
+    dispatch_mutation="insert",
+)
+POLICY_TRACE_DUPLICATE_DISPATCH_SOURCE = policy_trace_source(
+    dispatch_mutation="duplicate",
+)
+POLICY_TRACE_WRONG_DESTINATION_SOURCE = policy_trace_source(
+    dispatch_mutation="wrong-destination",
+)
 
 
 # What Level A must replace for a probe to be offline, and the rules that have
@@ -868,7 +928,16 @@ def candidate_provenance_issues(
     if provenance.get("interpreter") != interpreter:
         issues.append(f"interpreter is {provenance.get('interpreter')!r}")
     attempts = provenance.get("transport_dispatch_attempts")
-    if attempts:
+    if (
+        "transport_dispatch_attempts" not in provenance
+        or not isinstance(attempts, list)
+        or any(not isinstance(item, str) for item in attempts)
+    ):
+        issues.append(
+            "transport_dispatch_attempts must be a list of strings; "
+            f"got {attempts!r}"
+        )
+    elif attempts:
         issues.append(f"transport dispatch was attempted: {attempts!r}")
     replaced = set(provenance.get("substituted_runner_symbols") or ())
     missing = sorted(substituted_required - replaced)

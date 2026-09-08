@@ -157,6 +157,57 @@ def test_probe_provenance_is_refused_before_anything_is_written():
     }}) == []
 
 
+@pytest.mark.parametrize(
+    "invalid_attempts",
+    [pytest.param(None, id="none"), pytest.param("", id="wrong-type")],
+)
+def test_probe_provenance_requires_typed_dispatch_attempt_metrics(
+    invalid_attempts,
+):
+    healthy = {
+        "interpreter": recorder.sys.executable,
+        "loaded_namespaces": ["packet_tracer_mcp"],
+        "package_file_inside_tree": True,
+        "runner_file_inside_tree": True,
+        "governed_root_inside_tree": True,
+        "transport_dispatch_attempts": [],
+        "substituted_runner_symbols": sorted(LEVEL_A_SUBSTITUTED_SYMBOLS),
+        "executed_repository_files": [IMPORTED_RULE],
+    }
+    provenance = {
+        **healthy,
+        "transport_dispatch_attempts": invalid_attempts,
+    }
+
+    refusals = recorder.provenance_refusals({"router0-cleanup": {
+        "provenance": provenance,
+    }})
+
+    assert len(refusals) == 1
+    assert "transport_dispatch_attempts" in refusals[0]
+    assert "must be a list of strings" in refusals[0]
+
+
+def test_probe_provenance_requires_dispatch_attempt_metric_to_be_present():
+    provenance = {
+        "interpreter": recorder.sys.executable,
+        "loaded_namespaces": ["packet_tracer_mcp"],
+        "package_file_inside_tree": True,
+        "runner_file_inside_tree": True,
+        "governed_root_inside_tree": True,
+        "substituted_runner_symbols": sorted(LEVEL_A_SUBSTITUTED_SYMBOLS),
+        "executed_repository_files": [IMPORTED_RULE],
+    }
+
+    refusals = recorder.provenance_refusals({"router0-cleanup": {
+        "provenance": provenance,
+    }})
+
+    assert len(refusals) == 1
+    assert "transport_dispatch_attempts" in refusals[0]
+    assert "must be a list of strings" in refusals[0]
+
+
 def test_an_unknown_source_commit_is_refused_before_any_probe_runs():
     with pytest.raises(SystemExit) as refusal:
         recorder.record("f" * 40)

@@ -711,18 +711,20 @@ El policy trace M0 llama las funciones reales `_wait_for_site_forwarding`,
 `configuration_application_contradiction` con entradas tipadas sintéticas.
 
 La captura parte de lo observado, no de lo planificado: cada dispatch del ping
-tipado se convierte en una operación, en orden y con su multiplicidad, y el
-plan y la evidencia se buscan por posición registrando su ausencia. Un bloque
-`cardinality` fija cuántas comprobaciones se planificaron, cuántas operaciones
-se despacharon, cuántos registros de evidencia hay, cuáles no estaban
-planificadas y si las tres cuentas coinciden. Un `zip()` habría truncado a la
-más corta y habría escondido exactamente el dispatch que importa; un probe
-gemelo que añade una operación al comportamiento observado demuestra que la
-captura la ve antes de construir la traza y que el comparador la rechaza. Los
-tests existentes aportan casos positivos, negativos y ambiguos de forwarding,
-E9, reread y replay. Las capacidades sintéticas viven sólo bajo `tests/`, el
-store se reemplaza y `live_environment_contacted=false` está fijado en la
-procedencia.
+tipado se convierte en una operación, en orden y con su multiplicidad. El plan
+y la evidencia se correlacionan por la identidad exacta fuente/destino y por el
+ID del check; la evidencia sólo se atribuye si además confirma esa misma
+identidad. La posición nunca concede identidad ni `VERIFIED`. Una identidad de
+dispatch duplicada es ambigua y falla cerrada para todas sus ocurrencias. Un
+bloque `cardinality` fija cuántas comprobaciones se planificaron, cuántas
+operaciones se despacharon, cuántos registros de evidencia hay, cuáles no
+quedaron correlacionadas y si las tres cuentas y atribuciones coinciden. Los
+probes de inserción, duplicación y destino incorrecto ejercitan el
+comportamiento observado: conservan orden y multiplicidad, y ninguna llamada
+ajena hereda la comprobación siguiente. Los tests existentes aportan casos
+positivos, negativos y ambiguos de forwarding, E9, reread y replay. Las
+capacidades sintéticas viven sólo bajo `tests/`, el store se reemplaza y
+`live_environment_contacted=false` está fijado en la procedencia.
 
 ## Matriz escenario → contrato → test → evidencia
 
@@ -750,7 +752,7 @@ procedencia.
 | 10g. Interrupción antes de la escritura | una cancelación durante cleanup, archivo o relectura no puede saltarse el cierre ni llevarse los secundarios | cancelación en cleanup con `stop` fallido; cancelación en la escritura con `stop` fallido | `transport.stop` intentado en ambos; el fallo de cierre queda en el registro y no sustituye la cancelación; no se persiste ningún registro de la sesión fallida |
 | 10h. Canal de reporte | un canal de reporte roto no sustituye la causa primaria ni promete persistencia | `stdout` roto, y luego `stdout`+`stderr` rotos, con causa primaria y escritura fallida | con `stdout` roto el registro sale por `stderr`; con ambos rotos no sale nada, no se inventa nada y el código sigue siendo `1` |
 | 10f. Aceptación Configuration | «sin contradicción» no equivale a aceptación canónica | policy trace: `canonical_stage_configuration_error` sobre plan y relectura coherentes, con un rechazo | aceptado `PARTIAL` con techo gobernado y `fully_verified=false`; techo promovido rechazado aunque no contradiga nada |
-| 11. Captura de operaciones | ninguna operación observada puede quedar fuera de la traza; cardinalidades explícitas | policy trace más un probe gemelo que despacha una operación adicional | tres operaciones capturadas en orden, `unplanned_operations=[3]`, `aligned=false` y diferencias del comparador que nombran `operations` y `cardinality` |
+| 11. Captura de operaciones | ninguna operación observada puede quedar fuera de la traza ni heredar identidad/evidencia por posición; cardinalidades explícitas y ambigüedad fail-closed | policy trace más probes de inserción, duplicación y destino incorrecto | la inserción conserva tres operaciones en orden y marca la segunda como no planificada; una identidad duplicada no recibe `VERIFIED`; un destino incorrecto no recibe check ni evidencia; `aligned=false` y el comparador rechaza cada traza adversarial |
 | 12. Procedencia del registro | una referencia no puede atribuirse a un SHA cuyas dependencias ejecutables difieren | `test_cp_live_m0_reference_recording.py`: alcance ejecutado, regla importada modificada, fichero ausente en cualquiera de los dos lados, procedencia de probes y commit desconocido | el alcance medido incluye las reglas bajo `src`; cualquier diferencia byte a byte rechaza la grabación; una procedencia de probe inválida la rechaza antes de escribir |
 
 La matriz mantiene «aceptación gobernada» separada de `VERIFIED`. El policy
@@ -809,6 +811,11 @@ MCP. Esos datos no se normalizan. La procedencia medida por el candidato
 —intérprete, namespaces cargados, ficheros dentro del árbol, intentos de
 dispatch y símbolos sustituidos— se afirma aparte y nunca entra en la
 comparación.
+
+Las métricas medidas son obligatorias y tipadas. En particular,
+`transport_dispatch_attempts` debe estar presente como `list[str]`: sólo una
+lista vacía demuestra cero intentos; ausencia, `None` o cualquier otro tipo
+rechazan la procedencia antes de grabar.
 
 Se comparan recursivamente tipos, claves, valores y listas ordenadas. La
 comparación conserva operaciones, fases, IDs, destinatarios, orden,

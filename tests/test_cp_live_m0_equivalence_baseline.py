@@ -28,8 +28,10 @@ from tests.cp_live_m0_harness import (
     FIXTURE_VERSION,
     HISTORICAL_FIXTURE_VERSIONS,
     LEVEL_A_SUBSTITUTED_SYMBOLS,
+    POLICY_TRACE_DUPLICATE_DISPATCH_SOURCE,
     POLICY_TRACE_EXTRA_DISPATCH_SOURCE,
     POLICY_TRACE_SOURCE,
+    POLICY_TRACE_WRONG_DESTINATION_SOURCE,
     PRODUCT_RULE_SYMBOLS,
     ROOT,
     SCENARIOS,
@@ -197,9 +199,25 @@ def test_the_capture_keeps_every_dispatch_its_order_and_its_multiplicity(
     # Measured before any comparison: the extra dispatch is in the capture.
     assert len(observed["operations"]) == 3
     assert observed["cardinality"]["dispatched_operations"] == 3
-    assert observed["cardinality"]["unplanned_operations"] == [3]
+    assert observed["cardinality"]["unplanned_operations"] == [2]
     assert observed["cardinality"]["aligned"] is False
-    assert observed["operations"][-1]["planned"] is False
+    assert observed["operations"][1] == {
+        "sequence": 2,
+        "phase": "site-forwarding",
+        "operation_id": "",
+        "recipient": "Router4",
+        "destination": "198.51.100.99",
+        "authority": "",
+        "declared_traffic_flow_id": "",
+        "reverse_of_traffic_flow_id": "",
+        "status": "",
+        "planned": False,
+        "attributed_evidence": False,
+    }
+    assert observed["operations"][2]["operation_id"] == (
+        "forward/multilayer-to-large"
+    )
+    assert observed["operations"][2]["status"] == "VERIFIED"
     assert "198.51.100.99" in {
         item["destination"] for item in observed["operations"]
     }
@@ -207,6 +225,56 @@ def test_the_capture_keeps_every_dispatch_its_order_and_its_multiplicity(
     differences = trace_differences(recorded, observed)
     assert any("operations" in item for item in differences), differences
     assert any("cardinality" in item for item in differences), differences
+
+
+def test_duplicate_dispatch_is_ambiguous_and_cannot_inherit_verified(
+    baseline,
+    tmp_path,
+):
+    verdict = run_product_probe(
+        POLICY_TRACE_DUPLICATE_DISPATCH_SOURCE,
+        tmp_path / "duplicate-dispatch",
+    )
+    observed = verdict["trace"]
+
+    assert [item["destination"] for item in observed["operations"]] == [
+        "192.0.2.20",
+        "192.0.2.20",
+        "192.0.2.10",
+    ]
+    assert observed["cardinality"]["unplanned_operations"] == [1, 2]
+    assert observed["cardinality"]["aligned"] is False
+    assert all(
+        item["status"] != "VERIFIED" for item in observed["operations"][:2]
+    )
+    assert trace_differences(baseline["policy_trace"], observed)
+
+
+def test_wrong_destination_is_observed_but_gets_no_planned_identity_or_evidence(
+    baseline,
+    tmp_path,
+):
+    verdict = run_product_probe(
+        POLICY_TRACE_WRONG_DESTINATION_SOURCE,
+        tmp_path / "wrong-destination",
+    )
+    observed = verdict["trace"]
+
+    assert [item["destination"] for item in observed["operations"]] == [
+        "198.51.100.99",
+        "192.0.2.10",
+    ]
+    wrong = observed["operations"][0]
+    assert wrong["planned"] is False
+    assert wrong["attributed_evidence"] is False
+    assert wrong["operation_id"] == ""
+    assert wrong["status"] == ""
+    assert observed["operations"][1]["operation_id"] == (
+        "forward/multilayer-to-large"
+    )
+    assert observed["cardinality"]["unplanned_operations"] == [1]
+    assert observed["cardinality"]["aligned"] is False
+    assert trace_differences(baseline["policy_trace"], observed)
 
 
 def test_governed_acceptance_is_not_derived_from_an_absent_contradiction(
