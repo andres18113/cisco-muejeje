@@ -4042,6 +4042,17 @@ def run(
     precleanup_archive: dict[str, object] | None = None
     composition = None
     pending_stage_evidence: dict[str, object] | None = None
+    # The code this session settled on, or None while an exception is
+    # still travelling: finalization may only downgrade a settled success,
+    # never a failure it did not cause and never a cancellation.
+    settled_outcome: int | None = None
+
+    def _settled(code: int) -> int:
+        """Record the outcome the session reached before finalization runs."""
+
+        nonlocal settled_outcome
+        settled_outcome = code
+        return code
 
     def archive(phase: str, payload: object) -> dict[str, object]:
         archived = archive_cp_scale_canonical_evidence(
@@ -4099,7 +4110,7 @@ def run(
         if baseline_error:
             evidence["hard_stop"] = baseline_error
             _write_evidence(evidence)
-            return 2
+            return _settled(2)
 
         capability_store = CapabilitySnapshotStore(
             GOVERNED_ROOT / "data" / "capabilities",
@@ -4577,7 +4588,7 @@ def run(
                 cleanup_attempted = True
                 cleanup_attestation_archived = True
                 terminal_cleanup_complete = True
-                return 0
+                return _settled(0)
             command = _checkpoint(
                 stage.value,
                 evidence,
@@ -4736,7 +4747,7 @@ def run(
                 "evidence_path": str(EVIDENCE_PATH),
                 "canonical_archive": precleanup_archive,
             }), flush=True)
-            return 0
+            return _settled(0)
 
         cleanup_result = _cleanup_owned(
             physical, composition.topology, owned_device_ids, baseline,
@@ -4787,7 +4798,7 @@ def run(
             "canonical_archive": precleanup_archive,
             "cleanup_attestation": evidence["cleanup_attestation"],
         }), flush=True)
-        return 0
+        return _settled(0)
     except Exception as exc:
         archived_precleanup = evidence.get("canonical_evidence_precleanup")
         if precleanup_archive is None and isinstance(archived_precleanup, dict):
@@ -4807,7 +4818,7 @@ def run(
             evidence.setdefault("stages", []).append({
                 **partial, "stage_outcome": "failed",
             })
-        return 1
+        return _settled(1)
     finally:
         if (
             physical is not None
@@ -4867,8 +4878,42 @@ def run(
                         f"{type(exc).__name__}: {exc}"
                     )
         evidence["presentation_retained"] = retain_confirmed
-        _write_evidence(evidence)
-        transport.stop()
+        # Three obligations the baseline ran as one statement: persist what
+        # happened, close what this session acquired, and let neither of those
+        # failures replace the cause that ended the session.
+        finalization_errors: list[str] = []
+        try:
+            _write_evidence(evidence)
+        except Exception as exc:
+            finalization_errors.append(
+                f"final_evidence_write: {type(exc).__name__}: {exc}"
+            )
+        finally:
+            # Acquired, therefore closed: a failed write may not skip this.
+            # An attempted close attests nothing about restoration; cleanup
+            # keeps its own verdict above and this never touches it.
+            try:
+                transport.stop()
+            except Exception as exc:
+                finalization_errors.append(
+                    f"transport_stop: {type(exc).__name__}: {exc}"
+                )
+        if finalization_errors:
+            evidence["finalization_errors"] = finalization_errors
+            # The durable channel is exactly what may have just failed, so the
+            # primary cause and every secondary leave on the process channel.
+            print(json.dumps({
+                "event": "CP_SCALE_FINALIZATION_INCOMPLETE",
+                "run_identity": run_identity,
+                "primary_failure": str(evidence.get("failure") or ""),
+                "hard_stop": str(evidence.get("hard_stop") or ""),
+                "finalization_errors": finalization_errors,
+            }), flush=True)
+            if settled_outcome == 0:
+                # No primary cause to preserve, so the unfinished finalization
+                # is itself the failure. A cancellation never settles an
+                # outcome, so it keeps travelling instead of becoming a code.
+                return 1
 
 
 def main() -> int:

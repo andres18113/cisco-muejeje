@@ -22,7 +22,16 @@ jobs:
         python-version: ["3.11", "3.13"]
 
     steps:
+      # Historia completa a proposito: el oraculo CP-LIVE M0 comprueba la
+      # procedencia de su expected contra el objeto commit que caracterizo
+      # (`git show -s --format=%T <sha>` en
+      # tests/test_cp_live_m0_equivalence_baseline.py). El checkout superficial
+      # por defecto no trae ese commit, la comprobacion no puede hacerse y el
+      # test falla en vez de saltarse. Es una lectura local: no hay red dentro
+      # de pytest.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:

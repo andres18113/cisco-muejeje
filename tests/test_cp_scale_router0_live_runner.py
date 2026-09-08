@@ -545,6 +545,10 @@ from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
 )
 
+# Taken before the first double is installed, so a probe can name exactly which
+# runner symbols it replaced instead of asserting a hand-written list.
+PRODUCT_SYMBOLS = dict(vars(live))
+
 HEAD = "a" * 40
 calls = []
 
