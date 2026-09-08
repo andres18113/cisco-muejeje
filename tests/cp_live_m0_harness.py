@@ -53,19 +53,94 @@ from tests.test_cp_scale_router0_live_runner import RUN_DOUBLES
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# The source of the superseded reference: the pre-correction runner, kept so the
-# historical artifact stays identifiable.
+# The sources of the superseded references, kept so both historical artifacts
+# stay identifiable: v1 characterized the pre-correction runner, v2 the first
+# corrected one.
 HARDENING_BASE_SHA = "62db3cea84a4bfca1a5bcd3d2389d62864c45946"
-HISTORICAL_FIXTURE_VERSION = "cp-live-m0-fixture-v1"
-FIXTURE_VERSION = "cp-live-m0-fixture-v2"
+BASELINE_V2_SOURCE_SHA = "7a6c552dd570f683fe3f249c1037815192543ae7"
+HISTORICAL_FIXTURE_VERSIONS = (
+    "cp-live-m0-fixture-v2",
+    "cp-live-m0-fixture-v1",
+)
+FIXTURE_VERSION = "cp-live-m0-fixture-v3"
 
 
-_PROVENANCE = r'''
+_PROVENANCE_CORE = r'''
 import sys as _sys
 from pathlib import Path as _Path
 
 _TREE = _Path(live.__file__).resolve().parents[1]
 dispatch_attempts = []
+
+
+def _inside_tree(value):
+    try:
+        _Path(value).resolve().relative_to(_TREE)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _tree_file(module):
+    name = getattr(module, "__file__", None)
+    if not name or not _inside_tree(name):
+        return ""
+    return _Path(name).resolve().relative_to(_TREE).as_posix()
+
+
+def _executed_files():
+    """Split what ran into repository sources and the checkout-local env.
+
+    The interpreter belongs to the checkout, so its site-packages resolve
+    inside the tree as well.  They are the declared dependency set, pinned by
+    version in the reference, and they are named and counted here rather than
+    quietly dropped from the executed scope.
+    """
+
+    sources = set()
+    environment = set()
+    for module in list(_sys.modules.values()):
+        path = _tree_file(module)
+        if not path:
+            continue
+        if path.split("/")[0] == ".venv":
+            environment.add(path)
+        else:
+            sources.add(path)
+    return sorted(sources), sorted(environment)
+
+
+def candidate_provenance():
+    """Measured facts about this child; never compared against the expected."""
+
+    import packet_tracer_mcp
+
+    _executed_sources, _executed_environment = _executed_files()
+
+    return {
+        "interpreter": _sys.executable,
+        "loaded_namespaces": sorted(
+            name for name in ("packet_tracer_mcp", "src.packet_tracer_mcp")
+            if name in _sys.modules
+        ),
+        "package_file_inside_tree": _inside_tree(packet_tracer_mcp.__file__),
+        "runner_file_inside_tree": _inside_tree(live.__file__),
+        "governed_root_inside_tree": _inside_tree(live.GOVERNED_ROOT),
+        "transport_dispatch_attempts": list(dispatch_attempts),
+        "substituted_runner_symbols": sorted(
+            name for name, value in vars(live).items()
+            if name in PRODUCT_SYMBOLS and PRODUCT_SYMBOLS[name] is not value
+        ),
+        # Every repository file this child actually executed. A reference can
+        # then name the scope it characterizes instead of assuming that the
+        # runner and the doubles are all that ran.
+        "executed_repository_files": _executed_sources,
+        "executed_environment_files": len(_executed_environment),
+    }
+'''
+
+
+_PROVENANCE_TRANSPORT = r'''
 _product_send = Transport.send
 _product_send_and_wait = Transport.send_and_wait
 
@@ -84,36 +159,6 @@ def _counted_send_and_wait(self, *args, **kwargs):
 # "no live environment was contacted" into something this run measured.
 Transport.send = _counted_send
 Transport.send_and_wait = _counted_send_and_wait
-
-
-def _inside_tree(value):
-    try:
-        _Path(value).resolve().relative_to(_TREE)
-    except (TypeError, ValueError):
-        return False
-    return True
-
-
-def candidate_provenance():
-    """Measured facts about this child; never compared against the expected."""
-
-    import packet_tracer_mcp
-
-    return {
-        "interpreter": _sys.executable,
-        "loaded_namespaces": sorted(
-            name for name in ("packet_tracer_mcp", "src.packet_tracer_mcp")
-            if name in _sys.modules
-        ),
-        "package_file_inside_tree": _inside_tree(packet_tracer_mcp.__file__),
-        "runner_file_inside_tree": _inside_tree(live.__file__),
-        "governed_root_inside_tree": _inside_tree(live.GOVERNED_ROOT),
-        "transport_dispatch_attempts": list(dispatch_attempts),
-        "substituted_runner_symbols": sorted(
-            name for name, value in vars(live).items()
-            if name in PRODUCT_SYMBOLS and PRODUCT_SYMBOLS[name] is not value
-        ),
-    }
 '''
 
 
@@ -207,7 +252,12 @@ live._write_checkpoint_summary = lambda stage, evidence, **kwargs: record(
 
 
 _SCENARIO_SOURCES = {
-    "router0-cleanup": RUN_DOUBLES + _PROVENANCE + _CAPTURE_EVIDENCE + r'''
+    "router0-cleanup": (
+        RUN_DOUBLES
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
+        + _CAPTURE_EVIDENCE
+        + r'''
 code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
@@ -215,10 +265,12 @@ code = live.run(
     target_stage="router0-branch",
 )
 print(json.dumps(m0_verdict(code)))
-''',
+'''
+    ),
     "full-cleanup": (
         RUN_DOUBLES
-        + _PROVENANCE
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
         + _CAPTURE_EVIDENCE
         + _FULL_ROUTE_OVERRIDES
         + r'''
@@ -232,7 +284,8 @@ print(json.dumps(m0_verdict(code)))
     ),
     "full-retain": (
         RUN_DOUBLES
-        + _PROVENANCE
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
         + _CAPTURE_EVIDENCE
         + _FULL_ROUTE_OVERRIDES
         + r'''
@@ -250,7 +303,12 @@ code = live.run(
 print(json.dumps(m0_verdict(code)))
 '''
     ),
-    "admission-rejected": RUN_DOUBLES + _PROVENANCE + _CAPTURE_EVIDENCE + r'''
+    "admission-rejected": (
+        RUN_DOUBLES
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
+        + _CAPTURE_EVIDENCE
+        + r'''
 live.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
     valid=False,
     issues=["synthetic admission rejection"],
@@ -266,8 +324,14 @@ code = live.run(
     target_stage="router0-branch",
 )
 print(json.dumps(m0_verdict(code)))
-''',
-    "floor2-failure": RUN_DOUBLES + _PROVENANCE + _CAPTURE_EVIDENCE + r'''
+'''
+    ),
+    "floor2-failure": (
+        RUN_DOUBLES
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
+        + _CAPTURE_EVIDENCE
+        + r'''
 successful_execute_stage = live._execute_stage
 
 
@@ -297,8 +361,14 @@ code = live.run(
     target_stage="router0-branch",
 )
 print(json.dumps(m0_verdict(code)))
-''',
-    "operator-abort": RUN_DOUBLES + _PROVENANCE + _CAPTURE_EVIDENCE + r'''
+'''
+    ),
+    "operator-abort": (
+        RUN_DOUBLES
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
+        + _CAPTURE_EVIDENCE
+        + r'''
 continued = live._checkpoint
 
 
@@ -317,8 +387,14 @@ code = live.run(
     target_stage="router0-branch",
 )
 print(json.dumps(m0_verdict(code)))
-''',
-    "precleanup-archive-failure": RUN_DOUBLES + _PROVENANCE + _CAPTURE_EVIDENCE + r'''
+'''
+    ),
+    "precleanup-archive-failure": (
+        RUN_DOUBLES
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
+        + _CAPTURE_EVIDENCE
+        + r'''
 def fail_precleanup_archive(payload, *, base_dir, run_identity, phase):
     record("archive", phase=phase)
     if phase in {"precleanup", "failure-precleanup"}:
@@ -334,8 +410,14 @@ code = live.run(
     target_stage="router0-branch",
 )
 print(json.dumps(m0_verdict(code)))
-''',
-    "cleanup-failure": RUN_DOUBLES + _PROVENANCE + _CAPTURE_EVIDENCE + r'''
+'''
+    ),
+    "cleanup-failure": (
+        RUN_DOUBLES
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
+        + _CAPTURE_EVIDENCE
+        + r'''
 def fail_cleanup(*args, **kwargs):
     record("cleanup")
     raise RuntimeError("SYNTHETIC_CLEANUP_FAILURE")
@@ -349,8 +431,14 @@ code = live.run(
     target_stage="router0-branch",
 )
 print(json.dumps(m0_verdict(code)))
-''',
-    "restoration-observation-failure": RUN_DOUBLES + _PROVENANCE + _CAPTURE_EVIDENCE + r'''
+'''
+    ),
+    "restoration-observation-failure": (
+        RUN_DOUBLES
+        + _PROVENANCE_CORE
+        + _PROVENANCE_TRANSPORT
+        + _CAPTURE_EVIDENCE
+        + r'''
 live._voice_window_state = lambda runtime: (_ for _ in ()).throw(
     RuntimeError("SYNTHETIC_REALTIME_OBSERVATION_FAILURE")
 )
@@ -361,18 +449,16 @@ code = live.run(
     target_stage="router0-branch",
 )
 print(json.dumps(m0_verdict(code)))
-''',
+'''
+    ),
 }
 
 
-POLICY_TRACE_SOURCE = r'''
+_POLICY_TRACE_BODY = r'''
 import json
-import sys as _sys
-from pathlib import Path as _Path
 from types import SimpleNamespace
 
 import tools.cp_scale_canonical_live as live
-import packet_tracer_mcp
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleForwardingAuthority,
     CPScaleSiteForwardingCheck,
@@ -405,17 +491,8 @@ from packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposi
 from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
 
 # Level C substitutes nothing: this trace calls the real rules with synthetic
-# typed inputs, so the set below stays empty and the probe proves it.
+# typed inputs, so the substituted set stays empty and the probe proves it.
 PRODUCT_SYMBOLS = dict(vars(live))
-_TREE = _Path(live.__file__).resolve().parents[1]
-
-
-def _inside_tree(value):
-    try:
-        _Path(value).resolve().relative_to(_TREE)
-    except (TypeError, ValueError):
-        return False
-    return True
 
 
 checks = (
@@ -461,10 +538,12 @@ checks = (
 
 
 class Ping:
+    """Records every dispatch, including any this runtime was not asked for."""
+
     def __init__(self):
         self.calls = []
 
-    def ping(self, source, destination):
+    def _dispatch(self, source, destination):
         self.calls.append((source, destination))
         return TypedPingResult(
             reachable=True,
@@ -475,6 +554,14 @@ class Ping:
             device_identity_evidence="terminal_object_identity",
         )
 
+    def ping(self, source, destination):
+        result = self._dispatch(source, destination)
+        if EXTRA_DISPATCH and len(self.calls) == 1:
+            # A second, unplanned operation on the same call: the capture must
+            # surface it instead of dropping it off the end of a zip().
+            self._dispatch(source, "198.51.100.99")
+        return result
+
 
 ping = Ping()
 forwarding_verified, forwarding_evidence, first_failure = (
@@ -482,21 +569,50 @@ forwarding_verified, forwarding_evidence, first_failure = (
         ping, checks, attempts=1, interval_seconds=0,
     )
 )
+# Every dispatch becomes an operation, in order and with its multiplicity.
+# zip() would have truncated to the shortest of the three sequences and hidden
+# exactly the dispatch worth catching, so the plan and the evidence are looked
+# up by position and their absence is recorded rather than silently dropped.
 operations = []
-for sequence, (check, call, evidence) in enumerate(
-    zip(checks, ping.calls, forwarding_evidence), start=1,
-):
+for sequence, call in enumerate(ping.calls, start=1):
+    index = sequence - 1
+    check = checks[index] if index < len(checks) else None
+    evidence = (
+        forwarding_evidence[index] if index < len(forwarding_evidence) else None
+    )
     operations.append({
         "sequence": sequence,
         "phase": "site-forwarding",
-        "operation_id": check.id,
+        "operation_id": check.id if check is not None else "",
         "recipient": call[0],
         "destination": call[1],
-        "authority": check.authority.value,
-        "declared_traffic_flow_id": check.declared_traffic_flow_id,
-        "reverse_of_traffic_flow_id": check.reverse_of_traffic_flow_id,
-        "status": "VERIFIED" if evidence["verified"] else "FAILED",
+        "authority": check.authority.value if check is not None else "",
+        "declared_traffic_flow_id": (
+            check.declared_traffic_flow_id if check is not None else ""
+        ),
+        "reverse_of_traffic_flow_id": (
+            check.reverse_of_traffic_flow_id if check is not None else ""
+        ),
+        "status": (
+            ("VERIFIED" if evidence["verified"] else "FAILED")
+            if evidence is not None else ""
+        ),
+        "planned": check is not None,
+        "attributed_evidence": evidence is not None,
     })
+cardinality = {
+    "planned_checks": len(checks),
+    "dispatched_operations": len(ping.calls),
+    "evidence_records": len(forwarding_evidence),
+    "unplanned_operations": [
+        item["sequence"] for item in operations if not item["planned"]
+    ],
+    "aligned": (
+        len(checks) == len(ping.calls) == len(forwarding_evidence)
+        and all(item["planned"] and item["attributed_evidence"]
+                for item in operations)
+    ),
+}
 
 
 def attempt(*ids):
@@ -653,9 +769,17 @@ def configuration_decision(candidate):
     }
 
 
+'''
+
+
+SCENARIOS = tuple(sorted(_SCENARIO_SOURCES))
+
+
+_POLICY_TRACE_VERDICT = r'''
 print(json.dumps({
     "trace": {
         "operations": operations,
+        "cardinality": cardinality,
         "forwarding": {
             "verified": forwarding_verified,
             "first_failure": first_failure,
@@ -668,26 +792,94 @@ print(json.dumps({
             "rejected_promoted_ceiling": configuration_decision(promoted_ceiling),
         },
     },
-    "provenance": {
-        "interpreter": _sys.executable,
-        "loaded_namespaces": sorted(
-            name for name in ("packet_tracer_mcp", "src.packet_tracer_mcp")
-            if name in _sys.modules
-        ),
-        "package_file_inside_tree": _inside_tree(packet_tracer_mcp.__file__),
-        "runner_file_inside_tree": _inside_tree(live.__file__),
-        "governed_root_inside_tree": _inside_tree(live.GOVERNED_ROOT),
-        "transport_dispatch_attempts": [],
-        "substituted_runner_symbols": sorted(
-            name for name, value in vars(live).items()
-            if name in PRODUCT_SYMBOLS and PRODUCT_SYMBOLS[name] is not value
-        ),
-    },
+    "provenance": candidate_provenance(),
 }))
 '''
 
 
-SCENARIOS = tuple(sorted(_SCENARIO_SOURCES))
+def policy_trace_source(*, extra_dispatch: bool = False) -> str:
+    """Compose the policy trace child from a boolean; never interpolate input."""
+
+    return (
+        f"EXTRA_DISPATCH = {bool(extra_dispatch)!r}\n"
+        + _POLICY_TRACE_BODY
+        + _PROVENANCE_CORE
+        + _POLICY_TRACE_VERDICT
+    )
+
+
+POLICY_TRACE_SOURCE = policy_trace_source()
+POLICY_TRACE_EXTRA_DISPATCH_SOURCE = policy_trace_source(extra_dispatch=True)
+
+
+# What Level A must replace for a probe to be offline, and the rules that have
+# to stay real for it to be characterizing anything at all. Shared by the
+# oracle and by the recorder, so both judge a probe by the same measure.
+LEVEL_A_SUBSTITUTED_SYMBOLS = frozenset({
+    "ImportIsolationPreflight",
+    "read_git_repository_state",
+    "_packet_tracer_processes",
+    "PacketTracerHttpTransport",
+    "PacketTracerPhysicalTopologyRuntime",
+    "CapabilitySnapshotStore",
+    "compose_cp_scale_canonical",
+    "_execute_stage",
+    "_checkpoint",
+    "_cleanup_owned",
+    "_write_evidence",
+    "_write_checkpoint_summary",
+    "archive_cp_scale_canonical_evidence",
+})
+PRODUCT_RULE_SYMBOLS = frozenset({
+    "run",
+    "_complete_router0_target",
+    "canonical_cp_scale_target_contract",
+    "canonical_final_disposition",
+    "canonical_checkpoint_repository_error",
+    "canonical_stage_mutation_replay_audit",
+    "_wait_for_site_forwarding",
+})
+
+
+def candidate_provenance_issues(
+    provenance: dict[str, Any],
+    *,
+    interpreter: str,
+    substituted_required: frozenset[str] = frozenset(),
+    never_substituted: frozenset[str] = PRODUCT_RULE_SYMBOLS,
+) -> list[str]:
+    """What is wrong with a child's measured provenance, in order.
+
+    Returned rather than asserted so the oracle can fail a test with it and the
+    recorder can refuse to write a reference for the same reason.
+    """
+
+    issues: list[str] = []
+    namespaces = provenance.get("loaded_namespaces")
+    if namespaces != ["packet_tracer_mcp"]:
+        issues.append(f"loaded namespaces are {namespaces!r}")
+    for key in (
+        "package_file_inside_tree",
+        "runner_file_inside_tree",
+        "governed_root_inside_tree",
+    ):
+        if provenance.get(key) is not True:
+            issues.append(f"{key} is {provenance.get(key)!r}")
+    if provenance.get("interpreter") != interpreter:
+        issues.append(f"interpreter is {provenance.get('interpreter')!r}")
+    attempts = provenance.get("transport_dispatch_attempts")
+    if attempts:
+        issues.append(f"transport dispatch was attempted: {attempts!r}")
+    replaced = set(provenance.get("substituted_runner_symbols") or ())
+    missing = sorted(substituted_required - replaced)
+    if missing:
+        issues.append("not substituted: " + ", ".join(missing))
+    unreal = sorted(never_substituted & replaced)
+    if unreal:
+        issues.append("substituted although it must stay real: " + ", ".join(unreal))
+    if not provenance.get("executed_repository_files"):
+        issues.append("no executed repository file was measured")
+    return issues
 
 
 def coordination_source(scenario: str) -> str:

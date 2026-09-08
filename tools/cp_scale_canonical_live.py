@@ -394,6 +394,27 @@ def _write_evidence(evidence: dict[str, object]) -> None:
     os.replace(temporary, EVIDENCE_PATH)
 
 
+def _emit_finalization_report(payload: dict[str, object]) -> None:
+    """Say what finalization could not finish, on whatever channel still works.
+
+    The durable channel may be exactly what just failed, so this one promises
+    nothing: it tries each process channel in turn and, if every one of them
+    refuses, it stays silent rather than raising over the cause it was called
+    to preserve. The in-memory record and the exit code still carry it.
+    """
+
+    try:
+        line = json.dumps(payload)
+    except Exception:
+        line = repr(payload)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            print(line, file=stream, flush=True)
+            return
+        except Exception:
+            continue
+
+
 def _write_checkpoint_summary(
     stage: str,
     evidence: dict[str, object],
@@ -4054,6 +4075,110 @@ def run(
         settled_outcome = code
         return code
 
+    def _finalize() -> list[str]:
+        """Persist what happened, then close what this session acquired.
+
+        Ownership, retention and the cleanup verdict are decided above and are
+        never touched here: an attempted close is not a verified restoration.
+        Everything this block cannot finish is secondary, and the report leaves
+        before the function returns so a cancellation cannot take the
+        secondaries with it.
+        """
+
+        nonlocal precleanup_archive, cleanup_attempted
+        errors: list[str] = []
+        try:
+            if (
+                physical is not None
+                and baseline is not None
+                and not retain_confirmed
+                and not terminal_cleanup_complete
+                and composition is not None
+            ):
+                if precleanup_archive is None:
+                    try:
+                        precleanup_archive = archive("failure-precleanup", evidence)
+                        evidence["canonical_evidence_precleanup"] = precleanup_archive
+                    except Exception as exc:
+                        evidence["precleanup_archive_error"] = (
+                            f"{type(exc).__name__}: {exc}"
+                        )
+                if not cleanup_attempted:
+                    try:
+                        evidence["cleanup"] = _cleanup_owned(
+                            physical, composition.topology, owned_device_ids, baseline,
+                        )
+                        cleanup_attempted = True
+                    except Exception as exc:
+                        evidence["cleanup"] = {
+                            "verified": False,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                evidence["cleanup_realtime"] = observe_cleanup_realtime()
+                if not cleanup_attestation_archived:
+                    try:
+                        cleanup_attestation = {
+                            "schema": "cp-scale-canonical-cleanup-attestation-v1",
+                            "run_identity": run_identity,
+                            "source_head": session_source_head,
+                            "canonical_evidence_precleanup": precleanup_archive,
+                            "failure": evidence.get("failure", ""),
+                            "cleanup": evidence.get("cleanup"),
+                            "cleanup_realtime": evidence["cleanup_realtime"],
+                            "cleanup_completed_at": (
+                                datetime.now(timezone.utc).isoformat()
+                            ),
+                        }
+                        phase = (
+                            "cleanup"
+                            if (
+                                isinstance(evidence.get("cleanup"), dict)
+                                and evidence["cleanup"].get("verified")
+                                and evidence["cleanup_realtime"].get("verified")
+                            )
+                            else "cleanup-incomplete"
+                        )
+                        evidence["cleanup_attestation"] = archive(
+                            phase, cleanup_attestation,
+                        )
+                    except Exception as exc:
+                        evidence["cleanup_archive_error"] = (
+                            f"{type(exc).__name__}: {exc}"
+                        )
+            evidence["presentation_retained"] = retain_confirmed
+            try:
+                _write_evidence(evidence)
+            except Exception as exc:
+                errors.append(
+                    f"final_evidence_write: {type(exc).__name__}: {exc}"
+                )
+        except Exception as exc:
+            # Cleanup, archive or the re-read before the write: whatever this
+            # block could not finish is still secondary to the session's cause.
+            errors.append(f"finalization: {type(exc).__name__}: {exc}")
+        finally:
+            try:
+                # Acquired, therefore closed. No failure and no cancellation
+                # above may skip this, and closing attests nothing about
+                # restoration.
+                try:
+                    transport.stop()
+                except Exception as exc:
+                    errors.append(
+                        f"transport_stop: {type(exc).__name__}: {exc}"
+                    )
+            finally:
+                if errors:
+                    evidence["finalization_errors"] = list(errors)
+                    _emit_finalization_report({
+                        "event": "CP_SCALE_FINALIZATION_INCOMPLETE",
+                        "run_identity": run_identity,
+                        "primary_failure": str(evidence.get("failure") or ""),
+                        "hard_stop": str(evidence.get("hard_stop") or ""),
+                        "finalization_errors": list(errors),
+                    })
+        return errors
+
     def archive(phase: str, payload: object) -> dict[str, object]:
         archived = archive_cp_scale_canonical_evidence(
             payload,
@@ -4820,100 +4945,12 @@ def run(
             })
         return _settled(1)
     finally:
-        if (
-            physical is not None
-            and baseline is not None
-            and not retain_confirmed
-            and not terminal_cleanup_complete
-            and composition is not None
-        ):
-            if precleanup_archive is None:
-                try:
-                    precleanup_archive = archive("failure-precleanup", evidence)
-                    evidence["canonical_evidence_precleanup"] = precleanup_archive
-                except Exception as exc:
-                    evidence["precleanup_archive_error"] = (
-                        f"{type(exc).__name__}: {exc}"
-                    )
-            if not cleanup_attempted:
-                try:
-                    evidence["cleanup"] = _cleanup_owned(
-                        physical, composition.topology, owned_device_ids, baseline,
-                    )
-                    cleanup_attempted = True
-                except Exception as exc:
-                    evidence["cleanup"] = {
-                        "verified": False,
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
-            evidence["cleanup_realtime"] = observe_cleanup_realtime()
-            if not cleanup_attestation_archived:
-                try:
-                    cleanup_attestation = {
-                        "schema": "cp-scale-canonical-cleanup-attestation-v1",
-                        "run_identity": run_identity,
-                        "source_head": session_source_head,
-                        "canonical_evidence_precleanup": precleanup_archive,
-                        "failure": evidence.get("failure", ""),
-                        "cleanup": evidence.get("cleanup"),
-                        "cleanup_realtime": evidence["cleanup_realtime"],
-                        "cleanup_completed_at": (
-                            datetime.now(timezone.utc).isoformat()
-                        ),
-                    }
-                    phase = (
-                        "cleanup"
-                        if (
-                            isinstance(evidence.get("cleanup"), dict)
-                            and evidence["cleanup"].get("verified")
-                            and evidence["cleanup_realtime"].get("verified")
-                        )
-                        else "cleanup-incomplete"
-                    )
-                    evidence["cleanup_attestation"] = archive(
-                        phase, cleanup_attestation,
-                    )
-                except Exception as exc:
-                    evidence["cleanup_archive_error"] = (
-                        f"{type(exc).__name__}: {exc}"
-                    )
-        evidence["presentation_retained"] = retain_confirmed
-        # Three obligations the baseline ran as one statement: persist what
-        # happened, close what this session acquired, and let neither of those
-        # failures replace the cause that ended the session.
-        finalization_errors: list[str] = []
-        try:
-            _write_evidence(evidence)
-        except Exception as exc:
-            finalization_errors.append(
-                f"final_evidence_write: {type(exc).__name__}: {exc}"
-            )
-        finally:
-            # Acquired, therefore closed: a failed write may not skip this.
-            # An attempted close attests nothing about restoration; cleanup
-            # keeps its own verdict above and this never touches it.
-            try:
-                transport.stop()
-            except Exception as exc:
-                finalization_errors.append(
-                    f"transport_stop: {type(exc).__name__}: {exc}"
-                )
-        if finalization_errors:
-            evidence["finalization_errors"] = finalization_errors
-            # The durable channel is exactly what may have just failed, so the
-            # primary cause and every secondary leave on the process channel.
-            print(json.dumps({
-                "event": "CP_SCALE_FINALIZATION_INCOMPLETE",
-                "run_identity": run_identity,
-                "primary_failure": str(evidence.get("failure") or ""),
-                "hard_stop": str(evidence.get("hard_stop") or ""),
-                "finalization_errors": finalization_errors,
-            }), flush=True)
-            if settled_outcome == 0:
-                # No primary cause to preserve, so the unfinished finalization
-                # is itself the failure. A cancellation never settles an
-                # outcome, so it keeps travelling instead of becoming a code.
-                return 1
+        # A cancellation travelling out of _finalize keeps travelling: it never
+        # reaches this test and is never turned into a code.
+        if _finalize() and settled_outcome == 0:
+            # No primary cause to preserve, so the unfinished finalization is
+            # itself the failure. Codes 1 and 2 already carry their own.
+            return 1
 
 
 def main() -> int:
