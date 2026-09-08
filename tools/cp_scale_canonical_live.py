@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,8 +41,11 @@ from packet_tracer_mcp.application.use_cases.capability_discovery import (
 )
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
+    CPScaleCanonicalTarget,
+    canonical_cp_scale_target_contract,
     canonical_stage_configuration_mutation_ids,
     canonical_stage_control_plane_mutation_ids,
+    canonical_stage_transition_contract,
     canonical_stage_voice_mutation_ids,
     compose_cp_scale_canonical,
     project_cp_scale_canonical_delta,
@@ -72,6 +76,7 @@ from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_cp_scale_voice_evidence,
     canonical_checkpoint_repository_error,
     canonical_cleanup_restoration_error,
+    canonical_configuration_reread_scope,
     canonical_configuration_retryable_operational_unknown,
     canonical_final_disposition,
     canonical_required_capability_probes,
@@ -340,6 +345,41 @@ def _wait_for_core_forwarding(
     return verified, evidence
 
 
+def _wait_for_site_forwarding(
+    ping: TypedPingExecutor,
+    checks,
+    *,
+    attempts: int = 4,
+    interval_seconds: float = 5.0,
+) -> tuple[bool, list[dict[str, object]], str]:
+    """Observe every derived E4/E5 site check and retain the first failure."""
+
+    evidence: list[dict[str, object]] = []
+    first_failure = ""
+    for check in checks:
+        result = ping.ping(check.source_device_name, check.destination_ipv4)
+        for _attempt in range(attempts - 1):
+            if result.fresh_output_observed and result.reachable is True:
+                break
+            time.sleep(interval_seconds)
+            result = ping.ping(check.source_device_name, check.destination_ipv4)
+        verified = bool(
+            result.fresh_output_observed
+            and result.reachable is True
+            and result.dispatched_destination == check.destination_ipv4
+            and result.observed_device_name == check.source_device_name
+            and result.device_identity_provenance == "confirmed_unique"
+        )
+        evidence.append({
+            "check": asdict(check),
+            "result": serialize_typed_ping_evidence(result),
+            "verified": verified,
+        })
+        if not verified and not first_failure:
+            first_failure = check.id
+    return not first_failure, evidence, first_failure
+
+
 def _write_evidence(evidence: dict[str, object]) -> None:
     EVIDENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(evidence, ensure_ascii=False, indent=2) + "\n"
@@ -508,6 +548,131 @@ def _cleanup_owned(
         "second": second.compact_summary(),
         "restoration_error": restoration_error,
         "verified": not restoration_error,
+    }
+
+
+def _complete_router0_target(
+    *,
+    evidence: dict[str, object],
+    target_contract,
+    physical: PacketTracerPhysicalTopologyRuntime,
+    full_topology,
+    owned_device_ids: set[str],
+    baseline,
+    observe_cleanup_realtime,
+    archive,
+    run_identity: str,
+    session_source_head: str,
+) -> dict[str, object]:
+    """Publish Router0 success only after archive and full restoration."""
+
+    stages = evidence.get("stages")
+    latest = stages[-1] if isinstance(stages, list) and stages else None
+    plan = latest.get("plan") if isinstance(latest, dict) else None
+    planned_forwarding = (
+        plan.get("branch_forwarding_checks")
+        if isinstance(plan, dict) else None
+    )
+    observed_forwarding = (
+        latest.get("site_forwarding") if isinstance(latest, dict) else None
+    )
+    planned_ids = {
+        str(item.get("id") or "")
+        for item in planned_forwarding
+        if isinstance(item, dict)
+    } if isinstance(planned_forwarding, list) else set()
+    observed_ids = {
+        str(item.get("check", {}).get("id") or "")
+        for item in observed_forwarding
+        if isinstance(item, dict) and isinstance(item.get("check"), dict)
+    } if isinstance(observed_forwarding, list) else set()
+    forwarding_coverage_verified = bool(
+        isinstance(planned_forwarding, list)
+        and isinstance(observed_forwarding, list)
+        and len(planned_forwarding) == len(planned_ids)
+        and len(observed_forwarding) == len(observed_ids)
+        and planned_ids == observed_ids
+        and all(
+            item.get("verified") is True
+            for item in observed_forwarding
+            if isinstance(item, dict)
+        )
+    )
+    if (
+        target_contract.target is not CPScaleCanonicalTarget.ROUTER0_BRANCH
+        or not isinstance(latest, dict)
+        or latest.get("stage") != CPScaleCanonicalStage.ROUTER0_BRANCH.value
+        or latest.get("verified") is not True
+        or latest.get("site_forwarding_verified") is not True
+        or latest.get("workspace_verified_twice") is not True
+        or not planned_ids
+        or not forwarding_coverage_verified
+    ):
+        raise CanonicalLiveFailure(
+            "Router0 terminal closure lacks verified stage, forwarding, or "
+            "double workspace evidence."
+        )
+
+    evidence["final_disposition"] = CPScaleFinalDisposition.CLEANUP.value
+    evidence["closure_scope"] = CPScaleCanonicalStage.ROUTER0_BRANCH.value
+    evidence["closure"] = target_contract.precleanup_closure
+    evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+    _write_evidence(evidence)
+    precleanup_archive = archive("precleanup", evidence)
+    evidence["canonical_evidence_precleanup"] = precleanup_archive
+
+    cleanup_result = _cleanup_owned(
+        physical,
+        full_topology,
+        owned_device_ids,
+        baseline,
+    )
+    cleanup_realtime = observe_cleanup_realtime()
+    evidence["cleanup"] = cleanup_result
+    evidence["cleanup_realtime"] = cleanup_realtime
+    if not cleanup_result.get("verified") or not cleanup_realtime["verified"]:
+        raise CanonicalLiveFailure(
+            "Router0 verification completed, but cleanup/restoration did not "
+            "verify: "
+            + str(
+                cleanup_result.get("restoration_error")
+                or cleanup_realtime.get("error")
+            )
+        )
+
+    cleanup_completed_at = datetime.now(timezone.utc).isoformat()
+    cleanup_attestation = {
+        "schema": "cp-scale-canonical-cleanup-attestation-v1",
+        "run_identity": run_identity,
+        "source_head": session_source_head,
+        "target_stage": target_contract.target.value,
+        "closure_scope": CPScaleCanonicalStage.ROUTER0_BRANCH.value,
+        "canonical_evidence_precleanup": precleanup_archive,
+        "cleanup": cleanup_result,
+        "cleanup_realtime": cleanup_realtime,
+        "closure": target_contract.cleaned_closure,
+        "cleanup_completed_at": cleanup_completed_at,
+    }
+    archived_cleanup = archive("cleanup", cleanup_attestation)
+    evidence["cleanup_attestation"] = archived_cleanup
+    evidence["closure"] = target_contract.cleaned_closure
+    evidence["cleanup_completed_at"] = cleanup_completed_at
+    _write_evidence(evidence)
+    _write_checkpoint_summary(CPScaleCanonicalStage.ROUTER0_BRANCH.value, evidence)
+    print(json.dumps({
+        "event": "ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+        "stage": CPScaleCanonicalStage.ROUTER0_BRANCH.value,
+        "devices": evidence.get("live_devices", 0),
+        "links": evidence.get("live_links", 0),
+        "evidence_path": str(EVIDENCE_PATH),
+        "canonical_archive": precleanup_archive,
+        "cleanup_attestation": evidence["cleanup_attestation"],
+    }), flush=True)
+    return {
+        "precleanup_archive": precleanup_archive,
+        "cleanup": cleanup_result,
+        "cleanup_realtime": cleanup_realtime,
+        "cleanup_attestation": evidence["cleanup_attestation"],
     }
 
 
@@ -2985,6 +3150,7 @@ def _execute_stage(
         ActionApplicationResult, ...
     ] = (),
     network_boundaries: list[dict[str, object]] | None = None,
+    site_forwarding_checks=(),
 ) -> tuple[dict[str, object], object, object, object]:
     if (previous_projection is None) != (previous_configuration is None):
         raise CanonicalLiveFailure(
@@ -3100,6 +3266,9 @@ def _execute_stage(
             "verification_expectations": len(
                 projection.control_plane.verification_expectations
             ),
+            "branch_forwarding_checks": [
+                asdict(item) for item in site_forwarding_checks
+            ],
         },
         "physical": deployment.model_dump(mode="json"),
         "physical_delta": (
@@ -3244,6 +3413,38 @@ def _execute_stage(
             ),
         )
     ):
+        try:
+            reread_mutation_ids, reread_retained_results = (
+                canonical_configuration_reread_scope(
+                    projection.configuration,
+                    configuration,
+                )
+            )
+        except ValueError as exc:
+            evidence["configuration_reread_scope"] = {
+                "claim": "NO_MUTATION_REPLAY",
+                "verified": False,
+                "error": str(exc),
+            }
+            raise _failed(str(exc)) from exc
+        deferred_voice_action_ids = (
+            tuple(configuration.voice_signal_barrier.deferred_action_ids)
+            if configuration.voice_signal_barrier is not None
+            and configuration.voice_signal_barrier.signal_status
+            is ActionExecutionStatus.INTENDED
+            else ()
+        )
+        evidence["configuration_reread_scope"] = {
+            "claim": "NO_MUTATION_REPLAY",
+            "verified": not reread_mutation_ids,
+            "mutation_action_ids": list(reread_mutation_ids),
+            "retained_action_ids": [
+                item.action_id for item in reread_retained_results
+            ],
+            "retained_deferred_voice_action_ids": list(
+                deferred_voice_action_ids
+            ),
+        }
         configuration = configuration_applicator.apply(
             projection.configuration,
             actual_source_topology_hash=projection.topology.physical_identity_hash,
@@ -3255,11 +3456,9 @@ def _execute_stage(
                 and voice_plan.actions
                 and voice_mutation_ids
             ),
-            mutation_action_ids=configuration_mutation_ids,
-            retained_action_results=(
-                previous_configuration.action_results
-                if previous_configuration is not None else ()
-            ),
+            mutation_action_ids=reread_mutation_ids,
+            retained_action_results=reread_retained_results,
+            retained_deferred_voice_action_ids=deferred_voice_action_ids,
             phase_observer=configuration_phase_observer,
         )
         _record_configuration_attempt(
@@ -3556,6 +3755,28 @@ def _execute_stage(
             f"Core forwarding regressed at {projection.stage.value!r}."
         )
 
+    if site_forwarding_checks:
+        (
+            site_forwarding_verified,
+            site_forwarding,
+            first_forwarding_failure,
+        ) = _wait_for_site_forwarding(
+            TypedPingExecutor(
+                transport.send_and_wait,
+                timeout_seconds=30.0,
+                measurement_attempts=3,
+            ),
+            site_forwarding_checks,
+        )
+        evidence["site_forwarding"] = site_forwarding
+        evidence["site_forwarding_verified"] = site_forwarding_verified
+        evidence["site_forwarding_first_failure"] = first_forwarding_failure
+        if not site_forwarding_verified:
+            raise _failed(
+                f"Site forwarding failed at {projection.stage.value!r}; "
+                f"first failed check: {first_forwarding_failure}."
+            )
+
     first = physical.observe_workspace()
     second = physical.observe_workspace()
     first_error = canonical_stage_workspace_error(first, projection.topology)
@@ -3595,7 +3816,11 @@ def run(
     *,
     expected_head: str,
     retain_on_full_verification: bool,
+    target_stage: CPScaleCanonicalTarget | str = (
+        CPScaleCanonicalTarget.FULL_QUALIFICATION
+    ),
 ) -> int:
+    target_contract = canonical_cp_scale_target_contract(target_stage)
     started_at = datetime.now(timezone.utc)
     run_identity = (
         "canonical-cp-scale-voice-"
@@ -3614,9 +3839,32 @@ def run(
             name for name in ("packet_tracer_mcp", "src.packet_tracer_mcp")
             if name in sys.modules
         ],
+        "target_stage": target_contract.target.value,
+        "target_contract": {
+            "build_stages": [
+                stage.value for stage in target_contract.build_stages
+            ],
+            "terminal_stage": target_contract.terminal_stage.value,
+            "run_remaining_reconciliation": (
+                target_contract.run_remaining_reconciliation
+            ),
+            "run_full_qualification": target_contract.run_full_qualification,
+            "allow_retention": target_contract.allow_retention,
+            "precleanup_closure": target_contract.precleanup_closure,
+            "cleaned_closure": target_contract.cleaned_closure,
+        },
         "stages": [],
         "presentation_retained": False,
     }
+    if (
+        target_contract.target is CPScaleCanonicalTarget.ROUTER0_BRANCH
+        and retain_on_full_verification
+    ):
+        evidence["hard_stop"] = (
+            "Router0 target cannot be combined with full-scale retention."
+        )
+        _write_evidence(evidence)
+        return 2
     isolation = ImportIsolationPreflight(GOVERNED_ROOT).ensure_isolated()
     evidence["import_isolation"] = {
         "state": isolation.state.value,
@@ -3683,8 +3931,10 @@ def run(
     retain_confirmed = False
     cleanup_attempted = False
     cleanup_attestation_archived = False
+    terminal_cleanup_complete = False
     precleanup_archive: dict[str, object] | None = None
     composition = None
+    pending_stage_evidence: dict[str, object] | None = None
 
     def archive(phase: str, payload: object) -> dict[str, object]:
         archived = archive_cp_scale_canonical_evidence(
@@ -3921,7 +4171,7 @@ def run(
         verified_serial_topology = None
         stage_snapshot = None
         dhcp_statistics_baseline = None
-        for index, stage in enumerate(_BUILD_STAGES):
+        for index, stage in enumerate(target_contract.build_stages):
             projection = project_cp_scale_canonical_stage(
                 composition,
                 stage,
@@ -3929,6 +4179,18 @@ def run(
                     packet_tracer_control_plane_capabilities(packet_tracer_version)
                 ),
             )
+            pending_stage_evidence = {
+                "stage": stage.value,
+                "plan": {
+                    "topology_hash": projection.topology.physical_identity_hash,
+                    "configuration_hash": projection.configuration.semantic_hash,
+                    "control_plane_hash": projection.control_plane.semantic_hash,
+                    "devices": len(projection.topology.devices),
+                    "links": len(projection.topology.links),
+                },
+                "stage_outcome": "in_progress",
+            }
+            evidence["active_stage"] = pending_stage_evidence
             active_network_projection["projection"] = projection
             stage_network_boundaries: list[dict[str, object]] = []
             if index == 0:
@@ -3938,6 +4200,10 @@ def run(
                     deployment_id="cp-scale-canonical/routing-core",
                     require_empty_workspace=True,
                 )
+                pending_stage_evidence["physical_delta"] = (
+                    delta_deployment.model_dump(mode="json")
+                )
+                _write_evidence(evidence)
                 owned_device_ids |= _attempted_device_ids(delta_deployment)
                 ownership_error = canonical_delta_deployment_error(
                     None, projection.topology, delta_deployment,
@@ -3994,12 +4260,49 @@ def run(
                 delta_topology = project_cp_scale_canonical_delta(
                     previous_projection.topology, projection.topology,
                 )
+                if (
+                    target_contract.target
+                    is CPScaleCanonicalTarget.ROUTER0_BRANCH
+                    and stage is CPScaleCanonicalStage.ROUTER0_BRANCH
+                ):
+                    transition = canonical_stage_transition_contract(
+                        previous_projection,
+                        projection,
+                    )
+                    transition_evidence = {
+                        **asdict(transition),
+                        "previous_stage": transition.previous_stage.value,
+                        "current_stage": transition.current_stage.value,
+                        "no_mutation_replay": transition.no_mutation_replay,
+                        "claim": transition.claim,
+                    }
+                    pending_stage_evidence["transition_contract"] = (
+                        transition_evidence
+                    )
+                    evidence["router0_transition_contract"] = (
+                        transition_evidence
+                    )
+                    _write_evidence(evidence)
+                    if (
+                        previous_projection.stage
+                        is not CPScaleCanonicalStage.FLOOR3
+                        or not transition.no_mutation_replay
+                    ):
+                        raise CanonicalLiveFailure(
+                            "Router0 target refused its incremental boundary: "
+                            + transition.claim,
+                            stage_evidence=pending_stage_evidence,
+                        )
                 delta_deployment = deployer.deploy(
                     delta_topology,
                     environment_fingerprint=fingerprint,
                     deployment_id=f"cp-scale-canonical/{stage.value}/delta",
                     require_empty_workspace=False,
                 )
+                pending_stage_evidence["physical_delta"] = (
+                    delta_deployment.model_dump(mode="json")
+                )
+                _write_evidence(evidence)
                 owned_device_ids |= _attempted_device_ids(delta_deployment)
                 ownership_error = canonical_delta_deployment_error(
                     previous_projection.topology,
@@ -4027,6 +4330,10 @@ def run(
                     verified_core_deployment=verified_core_deployment,
                     deployment_id=f"cp-scale-canonical/{stage.value}/cumulative",
                 )
+            pending_stage_evidence["physical"] = deployment.model_dump(
+                mode="json",
+            )
+            _write_evidence(evidence)
             if (
                 deployment.status is not PhysicalDeploymentStatus.VERIFIED
                 or deployment.manifest is None
@@ -4069,6 +4376,15 @@ def run(
                     previous_control_plane_action_results
                 ),
                 network_boundaries=stage_network_boundaries,
+                site_forwarding_checks=(
+                    projection.branch_forwarding_checks
+                    if (
+                        target_contract.target
+                        is CPScaleCanonicalTarget.ROUTER0_BRANCH
+                        and stage is CPScaleCanonicalStage.ROUTER0_BRANCH
+                    )
+                    else ()
+                ),
             )
             if stage is CPScaleCanonicalStage.ROUTER4_SWITCH10:
                 if dhcp_statistics_target is None:
@@ -4092,6 +4408,8 @@ def run(
                 verified_serial_topology = projection.topology
                 verified_serial_manifest = stage_manifest
             evidence["stages"].append(stage_evidence)
+            pending_stage_evidence = None
+            evidence.pop("active_stage", None)
             evidence["live_devices"] = len(projection.topology.devices)
             evidence["live_links"] = len(projection.topology.links)
 
@@ -4130,6 +4448,27 @@ def run(
                     "devices": 3,
                     "links": 3,
                 }), flush=True)
+            if (
+                target_contract.target is CPScaleCanonicalTarget.ROUTER0_BRANCH
+                and stage is target_contract.terminal_stage
+            ):
+                completion = _complete_router0_target(
+                    evidence=evidence,
+                    target_contract=target_contract,
+                    physical=physical,
+                    full_topology=composition.topology,
+                    owned_device_ids=owned_device_ids,
+                    baseline=baseline,
+                    observe_cleanup_realtime=observe_cleanup_realtime,
+                    archive=archive,
+                    run_identity=run_identity,
+                    session_source_head=session_source_head,
+                )
+                precleanup_archive = completion["precleanup_archive"]
+                cleanup_attempted = True
+                cleanup_attestation_archived = True
+                terminal_cleanup_complete = True
+                return 0
             command = _checkpoint(
                 stage.value,
                 evidence,
@@ -4140,6 +4479,8 @@ def run(
                     "Retention is forbidden before full CP-SCALE qualification."
                 )
 
+        assert target_contract.run_remaining_reconciliation
+        assert target_contract.run_full_qualification
         assert previous_projection is not None
         remaining_projection = project_cp_scale_canonical_stage(
             composition,
@@ -4339,10 +4680,21 @@ def run(
         }), flush=True)
         return 0
     except Exception as exc:
+        archived_precleanup = evidence.get("canonical_evidence_precleanup")
+        if precleanup_archive is None and isinstance(archived_precleanup, dict):
+            precleanup_archive = archived_precleanup
+        cleanup_attempted = cleanup_attempted or isinstance(
+            evidence.get("cleanup"), dict,
+        )
+        cleanup_attestation_archived = (
+            cleanup_attestation_archived
+            or isinstance(evidence.get("cleanup_attestation"), dict)
+        )
         evidence["failure"] = f"{type(exc).__name__}: {exc}"
-        partial = getattr(exc, "stage_evidence", None)
+        partial = getattr(exc, "stage_evidence", None) or pending_stage_evidence
         if isinstance(partial, dict):
             # Durable, and marked for what it is: this stage did not pass.
+            evidence.pop("active_stage", None)
             evidence.setdefault("stages", []).append({
                 **partial, "stage_outcome": "failed",
             })
@@ -4352,6 +4704,7 @@ def run(
             physical is not None
             and baseline is not None
             and not retain_confirmed
+            and not terminal_cleanup_complete
             and composition is not None
         ):
             if precleanup_archive is None:
@@ -4419,6 +4772,12 @@ def main() -> int:
     parser.add_argument("--packet-tracer-version", required=True)
     parser.add_argument("--expected-head", required=True)
     parser.add_argument(
+        "--target-stage",
+        choices=[item.value for item in CPScaleCanonicalTarget],
+        default=CPScaleCanonicalTarget.FULL_QUALIFICATION.value,
+        help="Stop with governed cleanup at Router0 or run full qualification.",
+    )
+    parser.add_argument(
         "--retain-on-full-verification",
         action="store_true",
         help="Permit final retention, but only after the final 'retain' command.",
@@ -4433,6 +4792,7 @@ def main() -> int:
         args.packet_tracer_version,
         expected_head=args.expected_head,
         retain_on_full_verification=args.retain_on_full_verification,
+        target_stage=args.target_stage,
     )
 
 

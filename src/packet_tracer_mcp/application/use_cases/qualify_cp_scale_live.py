@@ -26,12 +26,14 @@ from ...domain.enterprise.models.configuration import (
     VerificationKind,
 )
 from ...domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
     ConvergenceOutcome,
     FieldVerificationStatus,
 )
+from ...domain.enterprise.models.execution import satisfies_apply_dependency
 from ...domain.enterprise.models.deployment import EnvironmentFingerprint
 from ...domain.enterprise.models.discovery import (
     BackendVersionProvenance,
@@ -86,6 +88,61 @@ _POINT_COUNTS = {
     CPScalePoint.C: (208, 12),
     CPScalePoint.D: (279, 17),
 }
+
+
+def canonical_configuration_reread_scope(
+    plan: ConfigurationPlan,
+    application: ConfigurationApplicationResult,
+) -> tuple[tuple[str, ...], tuple[ActionApplicationResult, ...]]:
+    """Build a fail-closed verification-only retry with no mutation replay."""
+
+    plan_ids = tuple(item.id for item in plan.actions)
+    errors: list[str] = []
+    if len(set(plan_ids)) != len(plan_ids):
+        errors.append("duplicate plan action identities")
+    action_results = list(application.action_results)
+    barrier = application.voice_signal_barrier
+    if barrier is not None and barrier.signal_status is ActionExecutionStatus.INTENDED:
+        preparation_by_id = {
+            item.action_id: item for item in barrier.preparation_results
+        }
+        if len(preparation_by_id) != len(barrier.preparation_results):
+            raise ValueError(
+                "Configuration re-read cannot guarantee NO_MUTATION_REPLAY: "
+                "duplicate deferred Voice preparation identities."
+            )
+        if set(preparation_by_id) != set(barrier.deferred_action_ids):
+            raise ValueError(
+                "Configuration re-read cannot guarantee NO_MUTATION_REPLAY: "
+                "deferred Voice preparation evidence is incomplete."
+            )
+        action_results = [
+            preparation_by_id.get(item.action_id, item)
+            for item in action_results
+        ]
+    results_by_id = {item.action_id: item for item in action_results}
+    if len(results_by_id) != len(action_results):
+        errors.append("duplicate retained action identities")
+    missing = sorted(set(plan_ids) - set(results_by_id))
+    extra = sorted(set(results_by_id) - set(plan_ids))
+    invalid = sorted(
+        f"{identifier}:{results_by_id[identifier].status.value}"
+        for identifier in set(plan_ids) & set(results_by_id)
+        if not satisfies_apply_dependency(results_by_id[identifier].status)
+    )
+    if missing:
+        errors.append("missing retained actions: " + ", ".join(missing))
+    if extra:
+        errors.append("actions outside the plan: " + ", ".join(extra))
+    if invalid:
+        errors.append("actions were not applied: " + ", ".join(invalid))
+    if errors:
+        raise ValueError(
+            "Configuration re-read cannot guarantee NO_MUTATION_REPLAY: "
+            + "; ".join(errors)
+        )
+    retained = tuple(results_by_id[identifier] for identifier in plan_ids)
+    return (), retained
 
 
 def canonical_required_capability_probes(

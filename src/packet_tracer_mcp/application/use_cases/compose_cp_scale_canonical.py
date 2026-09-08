@@ -9,7 +9,8 @@ and bounded LIVE qualification.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from ...domain.enterprise.models.capabilities import DeviceCapabilities
@@ -17,6 +18,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationActionType,
     ConfigurationIssueSeverity,
     ConfigurationPlan,
+    SetEndpointStaticAddress,
 )
 from ...domain.enterprise.models.roles import DeviceRole
 from ...domain.enterprise.models.voice_plan import (
@@ -24,6 +26,7 @@ from ...domain.enterprise.models.voice_plan import (
     VoicePlan,
 )
 from ...domain.enterprise.models.control_plane import (
+    ConfigureRipv2,
     ControlPlaneCapabilityProfile,
     ControlPlanePlan,
     ControlPlaneVerificationKind,
@@ -33,12 +36,16 @@ from ...domain.enterprise.services.configuration_compiler import (
 )
 from ...domain.enterprise.services.control_plane_compiler import (
     control_plane_plan_semantic_hash,
+    representative_static_endpoint_for_routing_device,
 )
 from ...domain.enterprise.services.enterprise_designer import EnterpriseDesigner
 from ...domain.enterprise.services.reference_hardware_planner import (
     ReferenceHardwarePlanner,
 )
-from ...domain.enterprise.services.topology_identity import stamp_topology_hashes
+from ...domain.enterprise.services.topology_identity import (
+    compute_topology_hashes,
+    stamp_topology_hashes,
+)
 from ...domain.enterprise.services.traffic_attribution import (
     attribute_enterprise_traffic,
 )
@@ -116,6 +123,84 @@ class CPScaleCanonicalStage(str, Enum):
     REMAINING = "remaining"
 
 
+class CPScaleCanonicalTarget(str, Enum):
+    """Terminal boundary selected for one governed canonical LIVE run."""
+
+    FULL_QUALIFICATION = "full-qualification"
+    ROUTER0_BRANCH = CPScaleCanonicalStage.ROUTER0_BRANCH.value
+
+
+@dataclass(frozen=True)
+class CPScaleCanonicalTargetContract:
+    """Exact stages and terminal claims authorized by a LIVE target."""
+
+    target: CPScaleCanonicalTarget
+    build_stages: tuple[CPScaleCanonicalStage, ...]
+    terminal_stage: CPScaleCanonicalStage
+    run_remaining_reconciliation: bool
+    run_full_qualification: bool
+    allow_retention: bool
+    precleanup_closure: str
+    cleaned_closure: str
+
+
+@dataclass(frozen=True)
+class CPScaleCanonicalStageTransition:
+    """Typed mutation boundary between two cumulative canonical stages."""
+
+    previous_stage: CPScaleCanonicalStage
+    current_stage: CPScaleCanonicalStage
+    new_device_ids: tuple[str, ...]
+    anchor_device_ids: tuple[str, ...]
+    new_link_ids: tuple[str, ...]
+    configuration_mutation_ids: tuple[str, ...]
+    configuration_retained_ids: tuple[str, ...]
+    control_plane_mutation_ids: tuple[str, ...]
+    control_plane_retained_ids: tuple[str, ...]
+    voice_mutation_ids: tuple[str, ...]
+    voice_retained_ids: tuple[str, ...]
+    replayed_configuration_ids: tuple[str, ...]
+    replayed_control_plane_ids: tuple[str, ...]
+    replayed_voice_ids: tuple[str, ...]
+
+    @property
+    def no_mutation_replay(self) -> bool:
+        return not (
+            self.replayed_configuration_ids
+            or self.replayed_control_plane_ids
+            or self.replayed_voice_ids
+        )
+
+    @property
+    def claim(self) -> str:
+        return (
+            "NO_MUTATION_REPLAY"
+            if self.no_mutation_replay
+            else "MUTATION_REPLAY_DETECTED"
+        )
+
+
+@dataclass(frozen=True)
+class CPScaleSiteForwardingCheck:
+    """One E4-related and E5-addressed inter-site forwarding observation."""
+
+    id: str
+    direction: str
+    traffic_flow_id: str
+    source_site_id: str
+    destination_site_id: str
+    source_device_id: str
+    source_device_name: str
+    destination_device_id: str
+    destination_device_name: str
+    destination_router_id: str
+    destination_action_id: str
+    destination_segment_id: str
+    destination_ipv4: str
+    source_topology_hash: str
+    source_configuration_hash: str
+
+
 @dataclass(frozen=True)
 class CPScaleCanonicalStageProjection:
     """Exact typed plans for one cumulative LIVE construction boundary."""
@@ -129,6 +214,7 @@ class CPScaleCanonicalStageProjection:
     #: exact E4/E5 hashes it will be applied against, and a stage's hashes are
     #: not the full topology's. None where the stage carries no phone yet.
     voice: VoicePlan | None = None
+    branch_forwarding_checks: tuple[CPScaleSiteForwardingCheck, ...] = ()
 
 
 _CANONICAL_STAGE_ORDER = {
@@ -139,6 +225,41 @@ _CORE_FORWARDING_CHECKS = {
     "Router0": "10.0.0.6",
     "Router3": "10.0.0.1",
 }
+
+
+def canonical_cp_scale_target_contract(
+    target: CPScaleCanonicalTarget | str,
+) -> CPScaleCanonicalTargetContract:
+    """Resolve the bounded run contract while keeping the legacy default exact."""
+
+    target = CPScaleCanonicalTarget(target)
+    full_build_stages = tuple(
+        stage for stage in CPScaleCanonicalStage
+        if stage is not CPScaleCanonicalStage.REMAINING
+    )
+    if target is CPScaleCanonicalTarget.ROUTER0_BRANCH:
+        terminal = CPScaleCanonicalStage.ROUTER0_BRANCH
+        terminal_index = full_build_stages.index(terminal)
+        return CPScaleCanonicalTargetContract(
+            target=target,
+            build_stages=full_build_stages[:terminal_index + 1],
+            terminal_stage=terminal,
+            run_remaining_reconciliation=False,
+            run_full_qualification=False,
+            allow_retention=False,
+            precleanup_closure="ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
+            cleaned_closure="ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+        )
+    return CPScaleCanonicalTargetContract(
+        target=target,
+        build_stages=full_build_stages,
+        terminal_stage=CPScaleCanonicalStage.ROUTER3_BRANCH,
+        run_remaining_reconciliation=True,
+        run_full_qualification=True,
+        allow_retention=True,
+        precleanup_closure="CP_SCALE_GOVERNED_VOICE_VERIFIED_PRECLEANUP",
+        cleaned_closure="CP_SCALE_GOVERNED_VOICE_VERIFIED_AND_CLEANED",
+    )
 
 
 def compose_cp_scale_canonical(
@@ -371,7 +492,7 @@ def project_cp_scale_canonical_stage(
         stage,
         control_plane_capabilities=control_plane_capabilities,
     )
-    return CPScaleCanonicalStageProjection(
+    projection = CPScaleCanonicalStageProjection(
         stage=stage,
         topology=topology,
         configuration=configuration,
@@ -379,6 +500,17 @@ def project_cp_scale_canonical_stage(
         forwarding_checks=dict(_CORE_FORWARDING_CHECKS),
         voice=_compile_stage_voice(composition, topology, configuration, stage),
     )
+    if stage is CPScaleCanonicalStage.ROUTER0_BRANCH:
+        projection = replace(
+            projection,
+            branch_forwarding_checks=derive_cp_scale_site_forwarding_checks(
+                composition,
+                projection,
+                source_site_id=LARGE,
+                destination_site_id=MULTILAYER,
+            ),
+        )
+    return projection
 
 
 def _compile_stage_voice(
@@ -612,6 +744,243 @@ def canonical_stage_voice_mutation_ids(
         for item in current.actions
         if item.id not in previous_by_id or item.id in changed
     )
+
+
+def canonical_stage_transition_contract(
+    previous: CPScaleCanonicalStageProjection,
+    current: CPScaleCanonicalStageProjection,
+) -> CPScaleCanonicalStageTransition:
+    """Prove one adjacent stage is a physical and typed-action delta only."""
+
+    previous_order = _CANONICAL_STAGE_ORDER[previous.stage]
+    current_order = _CANONICAL_STAGE_ORDER[current.stage]
+    if current_order != previous_order + 1:
+        raise ValueError(
+            "Canonical transition contract requires adjacent ordered stages."
+        )
+
+    delta = project_cp_scale_canonical_delta(
+        previous.topology,
+        current.topology,
+    )
+    previous_device_ids = {item.id for item in previous.topology.devices}
+    current_device_ids = {item.id for item in current.topology.devices}
+    new_device_ids = current_device_ids - previous_device_ids
+    anchor_device_ids = {
+        item.id for item in delta.devices
+        if item.id in previous_device_ids
+    }
+
+    configuration_mutation_ids = canonical_stage_configuration_mutation_ids(
+        previous.configuration,
+        current.configuration,
+    )
+    control_plane_mutation_ids = canonical_stage_control_plane_mutation_ids(
+        previous.control_plane,
+        current.control_plane,
+    )
+    previous_voice = previous.voice
+    current_voice = current.voice
+    if current_voice is None:
+        voice_mutation_ids: tuple[str, ...] = ()
+    elif previous_voice is None or not previous_voice.actions:
+        voice_mutation_ids = tuple(item.id for item in current_voice.actions)
+    else:
+        voice_mutation_ids = canonical_stage_voice_mutation_ids(
+            previous_voice,
+            current_voice,
+        )
+
+    previous_configuration_ids = {
+        item.id for item in previous.configuration.actions
+    }
+    previous_control_plane_ids = {
+        item.id for item in previous.control_plane.actions
+    }
+    previous_voice_ids = {
+        item.id for item in previous_voice.actions
+    } if previous_voice is not None else set()
+    return CPScaleCanonicalStageTransition(
+        previous_stage=previous.stage,
+        current_stage=current.stage,
+        new_device_ids=tuple(sorted(new_device_ids)),
+        anchor_device_ids=tuple(sorted(anchor_device_ids)),
+        new_link_ids=tuple(sorted(item.id for item in delta.links)),
+        configuration_mutation_ids=configuration_mutation_ids,
+        configuration_retained_ids=tuple(sorted(
+            previous_configuration_ids
+        )),
+        control_plane_mutation_ids=control_plane_mutation_ids,
+        control_plane_retained_ids=tuple(sorted(previous_control_plane_ids)),
+        voice_mutation_ids=voice_mutation_ids,
+        voice_retained_ids=tuple(sorted(previous_voice_ids)),
+        replayed_configuration_ids=tuple(sorted(
+            set(configuration_mutation_ids) & previous_configuration_ids
+        )),
+        replayed_control_plane_ids=tuple(sorted(
+            set(control_plane_mutation_ids) & previous_control_plane_ids
+        )),
+        replayed_voice_ids=tuple(sorted(
+            set(voice_mutation_ids) & previous_voice_ids
+        )),
+    )
+
+
+def derive_cp_scale_site_forwarding_checks(
+    composition: EnterpriseReferenceComposition,
+    projection: CPScaleCanonicalStageProjection,
+    *,
+    source_site_id: str,
+    destination_site_id: str,
+) -> tuple[CPScaleSiteForwardingCheck, ...]:
+    """Derive bidirectional site probes from E4 and static E5 endpoints.
+
+    The E4 traffic flow authorizes the site relationship. The projected E4
+    topology identifies each site's edge router. The control-plane compiler's
+    deterministic endpoint selector chooses one projected E5 static endpoint
+    in each destination site. No address is selected by convention or copied
+    into this runtime contract.
+    """
+
+    if composition.enterprise is None:
+        raise ValueError("Canonical enterprise E4 plan is required for forwarding.")
+    flows = [
+        item for item in composition.enterprise.traffic_flows
+        if item.source_site_id == source_site_id
+        and item.destination_site_id == destination_site_id
+    ]
+    if len(flows) != 1:
+        raise ValueError(
+            "Canonical site forwarding requires exactly one matching E4 "
+            f"traffic flow; found {len(flows)} for "
+            f"{source_site_id!r} -> {destination_site_id!r}."
+        )
+    if (
+        compute_topology_hashes(projection.topology).physical_topology_hash
+        != projection.topology.physical_identity_hash
+    ):
+        raise ValueError(
+            "Canonical site forwarding E4 physical provenance is stale."
+        )
+    if (
+        projection.configuration.source_topology_hash
+        != projection.topology.physical_identity_hash
+    ):
+        raise ValueError(
+            "Canonical site forwarding E5 source does not match projected E4."
+        )
+    if (
+        configuration_plan_semantic_hash(projection.configuration)
+        != projection.configuration.semantic_hash
+    ):
+        raise ValueError(
+            "Canonical site forwarding E5 semantic provenance is stale."
+        )
+    if (
+        projection.control_plane.source_topology_hash
+        != projection.topology.physical_identity_hash
+        or projection.control_plane.source_configuration_hash
+        != projection.configuration.semantic_hash
+        or control_plane_plan_semantic_hash(projection.control_plane)
+        != projection.control_plane.semantic_hash
+    ):
+        raise ValueError(
+            "Canonical site forwarding control-plane provenance is stale."
+        )
+
+    edge_by_site: dict[str, object] = {}
+    for site_id in (source_site_id, destination_site_id):
+        candidates = [
+            item for item in projection.topology.devices
+            if item.site_id == site_id
+            and item.enterprise_role == DeviceRole.EDGE_ROUTER.value
+        ]
+        if len(candidates) != 1:
+            raise ValueError(
+                "Canonical site forwarding requires exactly one projected E4 "
+                f"edge router for {site_id!r}; found {len(candidates)}."
+            )
+        edge_by_site[site_id] = candidates[0]
+
+    routing_actions = {
+        item.device_id: item for item in projection.control_plane.actions
+        if isinstance(item, ConfigureRipv2)
+    }
+    l3_by_device: dict[str, list[object]] = defaultdict(list)
+    static_endpoints_by_segment: dict[
+        str, list[SetEndpointStaticAddress]
+    ] = defaultdict(list)
+    for action in projection.configuration.actions:
+        if action.action_type in {
+            ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE,
+            ConfigurationActionType.CONFIGURE_SUBINTERFACE,
+            ConfigurationActionType.CONFIGURE_SVI,
+        }:
+            l3_by_device[action.device_id].append(action)
+        elif isinstance(action, SetEndpointStaticAddress):
+            static_endpoints_by_segment[action.segment_id].append(action)
+
+    destination_by_site: dict[str, SetEndpointStaticAddress] = {}
+    device_by_id = {item.id: item for item in projection.topology.devices}
+    linked_device_ids = {
+        identifier
+        for link in projection.topology.links
+        for identifier in (link.device_a_id, link.device_b_id)
+    }
+    for site_id, router in edge_by_site.items():
+        destination = representative_static_endpoint_for_routing_device(
+            router.id,
+            routing_actions,
+            l3_by_device,
+            static_endpoints_by_segment,
+        )
+        if destination is None:
+            raise ValueError(
+                "Canonical site forwarding requires a representative static "
+                f"E5 endpoint for {site_id!r}; router fallback is forbidden."
+            )
+        endpoint = device_by_id.get(destination.device_id)
+        if (
+            endpoint is None
+            or endpoint.site_id != site_id
+            or destination.device_id not in linked_device_ids
+        ):
+            raise ValueError(
+                "Canonical site forwarding representative endpoint is not "
+                f"present and linked in projected E4: {destination.device_id!r}."
+            )
+        destination_by_site[site_id] = destination
+
+    checks: list[CPScaleSiteForwardingCheck] = []
+    for from_site, to_site in (
+        (source_site_id, destination_site_id),
+        (destination_site_id, source_site_id),
+    ):
+        source_device = edge_by_site[from_site]
+        destination_router = edge_by_site[to_site]
+        action = destination_by_site[to_site]
+        destination_device = device_by_id[action.device_id]
+        direction = f"{from_site}-to-{to_site}"
+        checks.append(CPScaleSiteForwardingCheck(
+            id=f"forwarding/{flows[0].id}/{direction}/{action.id}",
+            direction=direction,
+            traffic_flow_id=flows[0].id,
+            source_site_id=from_site,
+            destination_site_id=to_site,
+            source_device_id=source_device.id,
+            source_device_name=source_device.name,
+            destination_device_id=destination_device.id,
+            destination_device_name=destination_device.name,
+            destination_router_id=destination_router.id,
+            destination_action_id=action.id,
+            destination_segment_id=action.segment_id,
+            destination_ipv4=action.ipv4,
+            source_topology_hash=projection.topology.physical_identity_hash,
+            source_configuration_hash=projection.configuration.semantic_hash,
+        ))
+    if len({item.id for item in checks}) != len(checks):
+        raise ValueError("Canonical site forwarding produced duplicate check IDs.")
+    return tuple(checks)
 
 
 def _stage_includes_device(

@@ -99,6 +99,7 @@ class ConfigurationApplicator:
         defer_voice_signal_until_bootstrap: bool = False,
         mutation_action_ids: Collection[str] | None = None,
         retained_action_results: Sequence[ActionApplicationResult] = (),
+        retained_deferred_voice_action_ids: Collection[str] = (),
         phase_observer: (
             Callable[[int, tuple[str, ...]], None] | None
         ) = None,
@@ -184,6 +185,28 @@ class ConfigurationApplicator:
             mutation_action_ids=mutation_action_ids,
             retained_action_results=retained_action_results,
         )
+        retained_deferred_voice_ids = frozenset(
+            retained_deferred_voice_action_ids
+        )
+        actions_by_id = {item.id: item for item in plan.actions}
+        invalid_retained_deferred = sorted(
+            identifier for identifier in retained_deferred_voice_ids
+            if (
+                identifier in mutation_ids
+                or identifier not in retained_results
+                or not isinstance(actions_by_id.get(identifier), ConfigureAccessPort)
+                or actions_by_id[identifier].voice_vlan_id is None
+            )
+        )
+        if retained_deferred_voice_ids and not defer_voice_signal_until_bootstrap:
+            mutation_scope_errors.append(
+                "Retained deferred Voice actions require the Voice signal barrier."
+            )
+        if invalid_retained_deferred:
+            mutation_scope_errors.append(
+                "Retained deferred Voice action scope is invalid: "
+                + ", ".join(invalid_retained_deferred)
+            )
         if mutation_scope_errors:
             return self._preflight_failure(
                 plan,
@@ -322,7 +345,7 @@ class ConfigurationApplicator:
             action.id: action
             for action in plan.actions
             if (
-                action.id in mutation_ids
+                action.id in mutation_ids | retained_deferred_voice_ids
                 and isinstance(action, ConfigureAccessPort)
                 and action.voice_vlan_id is not None
             )

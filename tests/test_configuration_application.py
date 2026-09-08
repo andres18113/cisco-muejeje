@@ -8,6 +8,9 @@ from pathlib import Path
 from src.packet_tracer_mcp.application.use_cases.apply_configuration import (
     ConfigurationApplicator,
 )
+from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+    canonical_configuration_reread_scope,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
@@ -562,6 +565,53 @@ def test_incremental_application_mutates_only_delta_and_verifies_cumulative_voic
     } == {
         item.id for item in current_plan.verification_expectations
     }
+
+
+def test_operational_reread_preserves_deferred_voice_without_mutation_replay():
+    topology, plan = _compiled()
+    runtime = FakeConfigurationRuntime(topology)
+    applicator = ConfigurationApplicator(runtime)
+    prepared = applicator.apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        defer_voice_signal_until_bootstrap=True,
+    )
+    assert prepared.voice_signal_barrier is not None
+    assert prepared.voice_signal_barrier.deferred_action_ids
+
+    mutation_ids, retained = canonical_configuration_reread_scope(
+        plan, prepared,
+    )
+    runtime.apply_calls.clear()
+    runtime.action_batches.clear()
+
+    reread = applicator.apply(
+        plan,
+        actual_source_topology_hash=plan.source_topology_hash,
+        capabilities=_supported_capabilities(),
+        defer_voice_signal_until_bootstrap=True,
+        mutation_action_ids=mutation_ids,
+        retained_action_results=retained,
+        retained_deferred_voice_action_ids=(
+            prepared.voice_signal_barrier.deferred_action_ids
+        ),
+    )
+
+    assert runtime.apply_calls == []
+    assert runtime.action_batches == []
+    assert reread.mutation_action_ids == []
+    assert set(reread.retained_action_ids) == {
+        item.id for item in plan.actions
+    }
+    assert reread.voice_signal_barrier is not None
+    assert reread.voice_signal_barrier.deferred_action_ids == (
+        prepared.voice_signal_barrier.deferred_action_ids
+    )
+    assert (
+        reread.voice_signal_barrier.signal_status
+        is ActionExecutionStatus.INTENDED
+    )
 
 
 def test_zero_delta_qualification_reverifies_retained_voice_without_mutation():

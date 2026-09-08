@@ -2366,21 +2366,40 @@ def _destination_address_for(
     no hay ninguno, se cae a una identidad L3 del router, que es lo que el
     camino genérico ya hacía.
     """
-    action = action_by_device.get(device_id)
-    if action is not None:
-        segments = sorted({
-            getattr(item, "segment_id", "")
-            for item in l3_by_device.get(device_id, [])
-            if getattr(item, "segment_id", "")
-        })
-        for segment_id in segments:
-            endpoints = sorted(
-                static_endpoints_by_segment.get(segment_id, []),
-                key=lambda item: (item.device_id, item.id),
-            )
-            if endpoints:
-                return endpoints[0].ipv4
+    endpoint = representative_static_endpoint_for_routing_device(
+        device_id,
+        action_by_device,
+        l3_by_device,
+        static_endpoints_by_segment,
+    )
+    if endpoint is not None:
+        return endpoint.ipv4
     identities = sorted(
         l3_by_device.get(device_id, []), key=lambda item: item.id,
     )
     return identities[0].ipv4 if identities else None
+
+
+def representative_static_endpoint_for_routing_device(
+    device_id: str,
+    action_by_device: dict,
+    l3_by_device: dict,
+    static_endpoints_by_segment: dict,
+) -> SetEndpointStaticAddress | None:
+    """Select the deterministic static LAN endpoint for one routing device."""
+
+    if device_id not in action_by_device:
+        return None
+    segments = sorted({
+        getattr(item, "segment_id", "")
+        for item in l3_by_device.get(device_id, [])
+        if getattr(item, "segment_id", "")
+    })
+    for segment_id in segments:
+        endpoints = sorted(
+            static_endpoints_by_segment.get(segment_id, []),
+            key=lambda item: (item.device_id, item.id),
+        )
+        if endpoints:
+            return endpoints[0]
+    return None
