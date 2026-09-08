@@ -1,0 +1,3 @@
+# The oracle digest names exact bytes and must survive Windows autocrlf.
+baseline-v1.json -text -diff
+baseline-v1.sha256 text eol=lf
