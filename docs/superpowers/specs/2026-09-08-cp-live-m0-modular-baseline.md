@@ -7,17 +7,20 @@ el mapa de extracción, los contratos propuestos, la matriz de caracterización
 y la procedencia del oráculo. No autoriza ni contiene implementación de M1,
 M2-A, M2-B o M3.
 
-El resultado de M0 es **`BLOCKED_FOR_BASELINE_FIX`**. La caracterización
-reprodujo un defecto anterior a la extracción: una excepción de la escritura
-final de evidencia impide intentar `transport.stop()` y sustituye la causa
-primaria. Una excepción de `transport.stop()` también sustituye la causa
-primaria. Las reproducciones están deliberadamente rojas, sin `xfail`, `skip`
-ni cambio de expectativa. La corrección productiva necesita autorización
-separada y, si se aprueba, un baseline nuevo identificado explícitamente.
+M0 se entregó primero como **`BLOCKED_FOR_BASELINE_FIX`**: la
+caracterización reprodujo un defecto anterior a la extracción en la
+finalización de `run()`. Bajo la fase autorizada **M0-FIX** ese defecto está
+corregido, las reproducciones causales están verdes y la referencia de
+equivalencia se volvió a registrar como `baseline-v2`, con `baseline-v1`
+conservado como histórico. El resultado de M0 es ahora
+**`CORRECTED_BASELINE_RECORDED`**.
 
-No se modificaron `src/`, `tools/`, `EXTENSION/`, snapshots de capacidades,
-evidencia LIVE ni gates. No se abrió Packet Tracer, no se conectó al bridge y
-no se ejecutó el runner con transporte real.
+M0-FIX tocó exactamente tres superficies: la finalización de
+`tools/cp_scale_canonical_live.py`, los tests y el harness de M0, y la
+preparación de CI. No se modificaron `src/`, `EXTENSION/`, snapshots de
+capacidades, evidencia LIVE ni gates. No se abrió Packet Tracer, no se conectó
+al bridge y no se ejecutó el runner con transporte real. La admisión productiva
+sigue `BLOCKED` y M1 sigue sin autorizar.
 
 ## Fuente, aislamiento y autoridad vigente
 
@@ -36,15 +39,26 @@ no se ejecutó el runner con transporte real.
 | Namespace de pytest | sólo `src.packet_tracer_mcp` en el proceso padre |
 | Namespace de probes productivos | sólo `packet_tracer_mcp` en subprocess |
 
+M0-FIX continuó sobre la misma rama, desde
+`8ba24fe7896114eeab15eeacff84d928c02e0a5f`, con la `.venv` local del checkout
+(Linux, CPython 3.11.15). Los dos namespaces se siguen comprobando, y ahora
+cada probe los reporta él mismo en su sección `provenance`: el proceso de
+pytest nunca carga `packet_tracer_mcp` y cada hijo carga sólo ése.
+
 Los datos históricos del relevo y los datos reproducidos se mantienen
 separados:
 
-| Evidencia | Reportada en el relevo | Reproducida en M0 |
-| --- | --- | --- |
-| Suite completa del baseline | `4147 passed` | `4147 passed, 3 warnings` en 128.83 s |
-| CI | run `34181547224`, Windows/Ubuntu × 3.11/3.13 | no se lanzó ni se presenta como ejecución M0 |
-| Admisión productiva | `BLOCKED` | no se volvió a adquirir evidencia ni se alteró el gate |
-| Router0 LIVE | `NOT_RUN` | `NOT_RUN` |
+| Evidencia | Reportada en el relevo | Reproducida en M0 | Reproducida en M0-FIX |
+| --- | --- | --- | --- |
+| Suite completa del baseline | `4147 passed` | `4147 passed, 3 warnings` en 128.83 s | ver «Registro reproducible» |
+| CI | run `34181547224`, Windows/Ubuntu × 3.11/3.13 | no se lanzó ni se presenta como ejecución M0 | run del SHA final de la rama, 4/4 |
+| Admisión productiva | `BLOCKED` | no se volvió a adquirir evidencia ni se alteró el gate | sin cambios: no se tocó el gate |
+| Router0 LIVE | `NOT_RUN` | `NOT_RUN` | `NOT_RUN` |
+
+M0-FIX se ejecutó en un entorno distinto del que registró `baseline-v1`
+(Linux, CPython 3.11.15, frente a Windows 11 y CPython 3.12.10). Esa diferencia
+queda en la procedencia del artefacto, no se normaliza, y no altera las trazas
+comparables: son órdenes de coordinación bajo dobles, sin rutas ni relojes.
 
 El techo del claim continúa sin cambios: `3560-24PS` sólo tiene evidencia para
 un puerto, insuficiente para los conjuntos simultáneos; `3650-24PS` permanece
@@ -123,7 +137,7 @@ La columna «autoridad» indica qué decisión puede producir la responsabilidad
 | R10 | Checkpoints: `_checkpoint`, `canonical_checkpoint_repository_error`, `canonical_final_disposition` | stage/evidencia + stdin + estado Git fresco → continue/retain o fallo | Escribe antes de preguntar, relee Git y fuente; el operador autoriza continuar/retener, pero no concede `VERIFIED` | runtime-gate tests, runner tests y `operator-abort` |
 | R11 | Ownership físico: `_attempted_device_ids`, `owned_device_ids`, manifests y estado interno de `PacketTracerPhysicalTopologyRuntime` | resultados de deploy → IDs intentados de esta sesión | Acumula exactamente lo intentado; autoriza sólo el alcance de cleanup, nunca borrar por plan/nombre | physical-runtime tests, delta/replay tests y runner cleanup |
 | R12 | Cleanup/restauración: `_cleanup_owned`, `canonical_cleanup_restoration_error`, observación Realtime y attestation | ownership + topología + baseline → mutaciones de borrado + dos inventarios + estado de restauración | Muta recursos propios y observa dos veces; puede acreditar restauración, no la cualificación de red | runtime-gate cleanup, runner terminal, escenarios `cleanup-failure` y `restoration-observation-failure` |
-| R13 | Resultado/cierre: `except/finally` de `run`, escritura final y `transport.stop` | resultado primario + fallos secundarios → código/exception observable | Debe intentar cierre exactamente una vez y conservar causa primaria. El baseline no cumple ambos invariantes | dos tests rojos `test_cp_live_m0_finalization_invariant.py` |
+| R13 | Resultado/cierre: `except/finally` de `run`, escritura final y `transport.stop` | resultado primario + fallos secundarios → código y registro observables | Intenta el cierre exactamente una vez, siempre que se adquirió, y conserva la causa primaria; sin causa primaria, un fallo de finalización impide el éxito. Corregido en M0-FIX | doce casos en `test_cp_live_m0_finalization_invariant.py` |
 | R14 | Políticas reutilizadas: compositores/proyectores, `ConfigurationApplicator`, `ControlPlaneApplicator`, `VoiceApplicator`, `canonical_stage_mutation_replay_audit` | planes y resultados tipados → aceptación, estados y auditorías | Son la única autoridad de sus dominios. No se duplican al modularizar | target-stage, configuration, control-plane, voice y oracle de política |
 
 ### Propiedad propuesta y fase prevista
@@ -140,7 +154,7 @@ La columna «autoridad» indica qué decisión puede producir la responsabilidad
 | R8–R9 | `infrastructure/persistence/cp_scale_live.py` | filesystem + serializadores de contratos | M2-A |
 | R10 | puerto application `CPScaleCheckpointPort`; adapter de consola | estado/provenance tipados, sin runtimes | M2-A |
 | R11–R12 | coordinator + servicio application de cleanup; runtime físico ejecuta | ownership ledger, topología y protocolo físico | M2-A |
-| R13 | session owner para cierre; coordinator para precedencia de resultados | result/finalization contracts y persistence port | fix separado primero; extracción M2-A |
+| R13 | session owner para cierre; coordinator para precedencia de resultados | result/finalization contracts y persistence port | fix aplicado en M0-FIX; extracción M2-A |
 | R14 | permanece donde está | contratos domain/application existentes | se reutiliza; no se extrae ni duplica |
 
 `execute_enterprise_reference()` y `_ExecutionState` son precedentes útiles para
@@ -149,6 +163,8 @@ invocarse una vez por stage: cada llamada ejecuta su propio cleanup antes de
 devolver y destruiría la continuidad física que CP-LIVE necesita.
 
 ## Arquitectura objetivo aprobada
+
+El destino, alcanzable sólo cuando el coordinador viva bajo `src`:
 
 ```text
 tools/cp_scale_canonical_live.py  (façade compatible)
@@ -163,10 +179,23 @@ application/cp_scale_live/*  <-- ports -- infrastructure/*
 use cases, applicators, validators y modelos existentes
 ```
 
+Mientras el coordinador siga en `tools`, la forma correcta es la intermedia:
+`tools` conserva `main`/`run` y **llama** a las piezas ya extraídas.
+
+```text
+tools/cp_scale_canonical_live.py  (entrada + composition root + coordinador)
+                  |
+                  v
+application/cp_scale_live/*  <-- ports -- infrastructure/*
+```
+
 Reglas de dependencia:
 
-1. `tools` puede depender del adapter; ningún archivo bajo `src` depende de
-   `tools`.
+1. `tools` puede depender de `src`; ningún archivo bajo `src` depende de
+   `tools`. De ahí se sigue la regla que M1 tenía mal: `tools` sólo puede
+   convertirse en façade cuando aquello a lo que reenvía ya vive bajo `src`.
+   Una façade que siga alojando al coordinador obligaría al adapter a importar
+   `tools`, que es exactamente el ciclo que estas reglas prohíben.
 2. El adapter es el composition root y puede conocer implementaciones de
    infrastructure. Application sólo conoce contratos y puertos.
 3. Domain no depende de application, infrastructure, adapters ni tools.
@@ -183,6 +212,43 @@ Reglas de dependencia:
    política de aceptación.
 9. Los contratos internos son tipados. `dict`/JSON sólo aparecen al escribir,
    archivar o presentar.
+
+### Mecanismos, políticas CP-SCALE y adaptadores PT
+
+La extracción sólo es reutilizable si estas tres cosas dejan de estar mezcladas.
+La clasificación decide qué puede moverse, qué se inyecta y qué queda detrás de
+un puerto.
+
+| Clase | Qué es | Piezas actuales | Regla |
+| --- | --- | --- | --- |
+| Mecanismo | Coordinación sin conocimiento del dominio CP-SCALE ni de Packet Tracer | vida de sesión y `close` (R3), bucle de stages y precedencia de resultados (R4, R13), persistencia/archivo (R8–R9), puerto de checkpoint (R10), ledger de ownership (R11) | Puede extraerse y reutilizarse. Recibe políticas y adaptadores por parámetro; nunca los nombra |
+| Política CP-SCALE | La decisión canónica concreta: qué se construye, qué se acepta y qué cierra | target contract y orden de stages, autoridad de forwarding, `canonical_stage_configuration_error`, replay audit, `canonical_cleanup_restoration_error`, probes de capacidad requeridos, nombres de closure | No se extrae, no se duplica y no se reimplementa. Se sigue invocando donde ya vive (R14) |
+| Adaptador PT | Cómo se le habla a Packet Tracer | transporte HTTP y `FileBridge`, runtime físico, runtimes E5/E9/Voice, parsers IOS, typed ping, Simulation/frame, store de capacidades | Vive en infrastructure detrás de puertos nombrados. Ni el mecanismo ni la política conocen `send_and_wait` |
+
+Consecuencias que ya se aplican en este documento:
+
+- un mecanismo que necesite leer una regla CP-SCALE para decidir no es un
+  mecanismo: es política mal ubicada;
+- un puerto que exponga `execute(kind, dict)` no es un adaptador: es un bus
+  genérico, y la regla 8 lo prohíbe;
+- «reutilizable» no se declara: se demuestra con los criterios de la sección
+  «Criterios de reutilización».
+
+### Preflight local, comprobación de backend y admisión productiva
+
+Son tres decisiones distintas, con autoridad distinta, y confundirlas es cómo
+una sesión sintética terminaría pareciendo una admisión. El orden es estricto:
+ninguna de ellas implica la siguiente.
+
+| Decisión | Qué comprueba | Efectos | Resultado | Autoridad |
+| --- | --- | --- | --- | --- |
+| Preflight local | Offline y sin red: `--execute`, target contract, aislamiento de imports, Git/upstream/dirty, procesos PT presentes | sólo lecturas locales | hard stop con código `2`, o continuar | Ninguna. Sólo puede negar |
+| Comprobación de backend | El PT que está corriendo: `transport.start` con polling fresco, workspace baseline descartable, probes de capacidad requeridos | abre el bridge, consulta capacidades, escribe evidencia | fallo adquirido con código `1`, o sesión utilizable | Evidencia sobre ese proceso PT. No promueve nada del producto |
+| Admisión productiva | Si la composición canónica puede ejecutarse como producto | ninguno aquí: es un gate ya gobernado | hoy `BLOCKED` | La de los gates vigentes en `docs/reference/cp-scale/`. Ni M0, ni M0-FIX, ni M1 la mueven |
+
+Un preflight verde no es un backend comprobado; un backend comprobado no es
+admisión productiva. Los fixtures sintéticos de M0 alimentan sólo la primera
+columna del harness y nunca las otras dos.
 
 ## Contratos propuestos
 
@@ -229,6 +295,64 @@ Se construye sólo después de validar import isolation y Git. `source_head` es
 el observado, no sólo `request.expected_head`; ambos se comparan en admisión.
 La identidad nunca cambia al avanzar stages y viaja completa a cada recibo de
 archivo. `loaded_namespace` sólo puede ser `packet_tracer_mcp` en producción.
+
+### Admisión: los tipos de la primera extracción, cerrados
+
+La primera familia que M1 puede mover es request + identidad + admisión, así
+que sus tipos no pueden quedar en prosa. Son cerrados: cada campo tiene tipo,
+no hay `dict` de propósito general y no hay campo libre para añadir señales
+más tarde sin decidirlo aquí.
+
+```python
+@dataclass(frozen=True)
+class CPScaleImportIsolationEvidence:
+    state: str
+    detail: str
+    isolated: bool
+
+@dataclass(frozen=True)
+class CPScaleRepositoryEvidence:
+    branch: str
+    upstream: str
+    head: str
+    upstream_head: str
+    dirty: bool
+    error: str
+
+@dataclass(frozen=True)
+class CPScaleProcessRecord:
+    pid: int
+    name: str
+    version: str
+
+@dataclass(frozen=True)
+class CPScaleProcessEvidence:
+    processes: tuple[CPScaleProcessRecord, ...]
+    error: str
+
+@dataclass(frozen=True)
+class CPScalePreflightResult:
+    admitted: bool
+    target: CPScaleCanonicalTargetContract
+    import_isolation: CPScaleImportIsolationEvidence
+    repository: CPScaleRepositoryEvidence
+    process: CPScaleProcessEvidence
+    issues: tuple[str, ...]
+```
+
+Reglas de estos tipos:
+
+1. `admitted` es exactamente `not issues`; no es un campo que alguien pueda
+   poner en `True` por su cuenta.
+2. `issues` conserva orden y duplicados: es el texto que hoy se une con un
+   espacio para `evidence["hard_stop"]`, y el adapter lo sigue traduciendo a
+   código `2`.
+3. `target` es el contrato que devuelve `canonical_cp_scale_target_contract`.
+   La regla no se reimplementa ni se copia dentro del preflight.
+4. Ninguna de estas evidencias contiene transportes, runtimes, reloj ni
+   callbacks, así que el resultado es serializable y comparable tal cual.
+5. El preflight no abre el bridge, no consulta capacidades y no escribe
+   evidencia: eso ya es comprobación de backend.
 
 ### Estado de avance y continuidad
 
@@ -315,6 +439,11 @@ primaria, escritura, archivo, diagnóstico, cleanup, observación o `close`
 fallidos se conservan como secundarios y no la sustituyen. Si no hay causa
 primaria, un fallo de finalización convierte el resultado en fallo.
 
+Esa precedencia ya no es sólo el contrato futuro: es lo que hace hoy `run()`
+tras M0-FIX, con `primary_failure` y `secondary_failures` representados por la
+causa registrada y la lista `finalization_errors`. La extracción de M2-A tendrá
+que conservar ese comportamiento, no inventarlo.
+
 ### Puertos necesarios
 
 Sólo se proponen fronteras con un consumidor y un efecto distintos:
@@ -365,6 +494,45 @@ un `close()` idempotente cuyo owner es la session. Los protocolos
 físico existente se reutilizan; no se crea un `TransportPort` genérico ni se
 expone `send_and_wait` al coordinator. Observación obligatoria y diagnóstico
 son puertos distintos porque tienen autoridad y efectos diferentes.
+
+### Criterios de reutilización
+
+Un mecanismo no se declara reutilizable: se demuestra. Los dos criterios
+siguientes se definen ahora y **no se implementan en M0-FIX**; son la condición
+de aceptación del hito que extraiga cada mecanismo.
+
+**Estado acotado.** Un mecanismo cumple el criterio cuando:
+
+1. su estado es un conjunto cerrado y enumerado de campos tipados, sin `dict`
+   abierto ni `object` de propósito general;
+2. tiene un propietario único y un ciclo de vida declarado (quién lo crea,
+   quién lo reemplaza, quién lo cierra);
+3. no contiene servicios, transportes, runtimes, reloj, entrada de operador ni
+   callbacks capturados;
+4. es reemplazable como snapshot y serializable en el límite sin perder orden,
+   duplicados ni autoridad;
+5. nada fuera de su propietario lo muta.
+
+`CPScaleLiveProgress`, `CPScaleStageContinuity` y `CPScaleSessionResources`
+están escritos contra estos cinco puntos; `active_network_projection` y las
+closures `archive`/`observe_cleanup_realtime` de hoy no los cumplen, y por eso
+son parte del trabajo del hito, no de su premisa.
+
+**Segundo escenario sintético.** Cuando un mecanismo se extraiga, su prueba de
+reutilización es una prueba futura que lo ejecuta con un segundo escenario
+sintético que no es CP-SCALE canónico: otro contrato de target, otra secuencia
+de stages, otra política de aceptación inyectada y otros adaptadores dobles.
+Si el mecanismo necesita tocarse para admitir ese segundo escenario, no era un
+mecanismo. Esa prueba:
+
+- vive sólo bajo `tests/`, como los fixtures sintéticos actuales;
+- no adquiere autoridad productiva ni entra en la admisión;
+- no sustituye al oráculo de equivalencia: éste sigue comparando el escenario
+  canónico contra la referencia registrada.
+
+Ninguno de los dos criterios autoriza trabajo ahora, ni convierte un mecanismo
+en framework: siguen prohibidos el workflow framework, el event bus, el
+`Context` de acceso universal y cualquier segunda política de aceptación.
 
 ## Observación, diagnóstico y autoridad
 
@@ -441,12 +609,25 @@ expectativas desde la implementación candidata.
 ### Nivel A — coordinación exterior
 
 `tests/cp_live_m0_harness.py` ejecuta el `run()` productivo real en subprocess.
-Son reales su control flow, target contract, checkpoints/closures,
-`_complete_router0_target`, manejo de excepciones y `finally`. Se sustituyen
-Git/proceso/import preflight, transporte, store, composición/proyección,
-runtimes, stage executor, persistencia y entrada del operador. El transporte
-doble lanza si alguien llama `send` o `send_and_wait`; ninguna operación puede
-escapar a PT. El filesystem y token están aislados por subprocess.
+
+| Qué sustituye el doble | Qué queda real |
+| --- | --- |
+| preflight de import, Git/upstream/dirty y procesos PT | resolución del target contract y su recorrido |
+| transporte HTTP y `CapabilitySnapshotStore` | bucle de stages, orden, multiplicidad y continuidad |
+| composición, proyección y delta | manejo de checkpoints y cierre Router0 |
+| runtime físico y runtimes E5/E9/Voice | `_complete_router0_target` y su lectura de `NO_MUTATION_REPLAY` |
+| `_execute_stage`, `_checkpoint`, `_cleanup_owned` | secuencia archive/cleanup/attestation |
+| `_write_evidence`, `_write_checkpoint_summary`, archivo de evidencia | `except`/`finally`, precedencia de fallos y código devuelto |
+
+La sustitución no se declara: cada probe la mide. El hijo toma una foto de los
+símbolos del runner antes de instalar el primer doble y devuelve, en una
+sección `provenance` separada de la traza comparable, exactamente qué símbolos
+reemplazó, qué namespaces cargó, si el paquete y el runner resuelven dentro de
+este árbol y cuántos intentos de dispatch hubo. El transporte doble lanza si
+alguien llama `send` o `send_and_wait`, y esos intentos se cuentan: el cero
+observado es lo que sostiene «no se contactó ningún entorno LIVE», en lugar de
+un campo declarado en el expected. El filesystem y el token están aislados por
+subprocess.
 
 Este nivel demuestra recorrido, orden, multiplicidad, checkpoints,
 terminación, archivo/cleanup y cierre. No demuestra la semántica interna de un
@@ -496,7 +677,8 @@ procedencia.
 | 10b. Archivo | fallo precleanup conserva causa, intenta cleanup/attestation/stop | oracle `precleanup-archive-failure` | exit 1, closure queda precleanup, segundo archive de fallo y cleanup se intentan |
 | 10c. Cleanup | fallo de cleanup no permite cierre exitoso, pero no abandona attestation/stop | oracle `cleanup-failure` | cleanup inicial falla, finally vuelve a intentar según estado actual, archiva y cierra; exit 1 |
 | 10d. Restauración | observación Realtime fallida rechaza cierre y continúa finalización | oracle `restoration-observation-failure` | cierre sólo precleanup, causa explícita, cleanup archive y stop |
-| 10e. Escritura/cierre | escritura final no debe impedir stop; close no debe sustituir causa primaria | dos tests rojos M0 | baseline observado incumple ambos; bloquea M0 |
+| 10e. Escritura/cierre | escritura final no impide stop; ni escritura ni close sustituyen la causa primaria; sin causa primaria, un fallo de finalización impide el éxito | doce casos en `test_cp_live_m0_finalization_invariant.py`: escritura y stop fallando solos y juntos, con y sin fallo previo, más cancelación y control sano | siempre se intenta `transport.stop`; código `1` en los seis casos de fallo; causa primaria y secundarios en el registro `CP_SCALE_FINALIZATION_INCOMPLETE`; la cancelación sigue viajando y nunca se convierte en código |
+| 10f. Aceptación Configuration | «sin contradicción» no equivale a aceptación canónica | policy trace: `canonical_stage_configuration_error` sobre plan y relectura coherentes, con un rechazo | aceptado `PARTIAL` con techo gobernado y `fully_verified=false`; techo promovido rechazado aunque no contradiga nada |
 
 La matriz mantiene «aceptación gobernada» separada de `VERIFIED`. El policy
 trace congela un resultado Configuration `PARTIAL`, aceptado por la regla
@@ -504,26 +686,56 @@ vigente y explícitamente `fully_verified=false`; no lo promociona.
 
 ## Oráculo y procedencia
 
-Artefactos:
+Referencia vigente tras M0-FIX:
 
-- `tests/fixtures/cp_live_m0/baseline-v1.json`
-- `tests/fixtures/cp_live_m0/baseline-v1.sha256`
-- `tests/fixtures/cp_live_m0/.gitattributes` fija el JSON como bytes exactos
+- `tests/fixtures/cp_live_m0/baseline-v2.json`
+- `tests/fixtures/cp_live_m0/baseline-v2.sha256`
+- `tests/fixtures/cp_live_m0/.gitattributes` fija ambos JSON como bytes exactos
   para que `core.autocrlf` no cambie su digest
-- schema `cp-live-m0-equivalence-baseline-v1`
-- fixture version `cp-live-m0-fixture-v1`
+- schema `cp-live-m0-equivalence-baseline-v2`
+- fixture version `cp-live-m0-fixture-v2`
+- fuente caracterizada: el commit del código corregido, fijado también en
+  `BASELINE_SOURCE_SHA` dentro de `test_cp_live_m0_equivalence_baseline.py`
+
+Referencia histórica, conservada y verificable, ya no oráculo:
+
+- `tests/fixtures/cp_live_m0/baseline-v1.json` y su `.sha256`
+- schema `cp-live-m0-equivalence-baseline-v1`, fuente
+  `62db3cea84a4bfca1a5bcd3d2389d62864c45946`
 - SHA-256 `99adcea78b0dbf861cfa4a32b49c50577ea6d0cca3f33725a136272273387634`
 
+El bloque `supersedes` de v2 nombra esa referencia, su digest y las diferencias
+justificadas. Son exactamente tres:
+
+1. cada verdict se parte en `trace` y `provenance`, porque la procedencia del
+   candidato se mide y se afirma, no se compara ni normaliza nada;
+2. `configuration_acceptance` se sustituye por `configuration`, con una
+   decisión aceptada y un rechazo emitidos por `canonical_stage_configuration_error`;
+3. la fuente caracterizada es el runner corregido. Ningún escenario de
+   coordinación de esta referencia ejerce una escritura o un cierre fallidos,
+   así que sus trazas congeladas no cambian por la corrección.
+
+Un test comprueba el digest de v1 y que cada diferencia esté nombrada; otro
+comprueba que el commit fijado existe, que su árbol coincide y que el digest de
+v2 corresponde a sus bytes. Esa lectura de `git` es local y necesita la
+historia completa: por eso el workflow de CI hace checkout con
+`fetch-depth: 0`, con el motivo escrito junto al paso. Si el objeto falta, el
+test falla nombrando esa dependencia; no se salta y no toca la red.
+
 La procedencia fijada dentro del JSON es commit y árbol fuente, repositorio,
-referencia remota, fecha, CPython 3.12.10, Windows 11, pytest 9.1.1, Pydantic
-2.13.5 y MCP 1.29.1. Esos datos no se normalizan.
+referencia, fecha, intérprete, plataforma y versiones de pytest, Pydantic y
+MCP. Esos datos no se normalizan. La procedencia medida por el candidato
+—intérprete, namespaces cargados, ficheros dentro del árbol, intentos de
+dispatch y símbolos sustituidos— se afirma aparte y nunca entra en la
+comparación.
 
 Se comparan recursivamente tipos, claves, valores y listas ordenadas. La
 comparación conserva operaciones, fases, IDs, destinatarios, orden,
 multiplicidad, stages, primera frontera, decisión, autoridad, estado, journals,
 archivo, cleanup, cierre y exit code. Pruebas adversariales demuestran que el
 comparador detecta una operación extra, destinatario cambiado, autoridad
-incorrecta y promoción indebida a `VERIFIED`.
+incorrecta, promoción indebida a `VERIFIED` y una aceptación puesta sobre un
+resultado que la regla canónica rechaza.
 
 Sólo se omiten del trace comparable:
 
@@ -533,9 +745,21 @@ Sólo se omiten del trace comparable:
 
 Son variabilidad no semántica. No se omiten ni normalizan SHA/árbol/entorno de
 procedencia, autoridades, destinos, status, duplicados, orden o journals. El
-expected es un archivo test-only; las pruebas nunca lo recalculan. Regenerarlo
-requiere una decisión explícita y no forma parte del runner ni de una futura
-implementación candidata.
+expected es un archivo test-only; las pruebas nunca lo recalculan.
+
+Regenerarlo es una decisión, y se toma fuera de pytest:
+
+```bash
+.venv/bin/python -m tests.cp_live_m0_record_baseline \
+    --record --source-sha <sha del código corregido>
+```
+
+`tests/cp_live_m0_record_baseline.py` no es un módulo de test, pytest no lo
+recoge y se niega a ejecutarse dentro de un proceso de pytest. Además rechaza
+grabar si algún fichero caracterizado del worktree difiere byte a byte de ese
+commit, de modo que una referencia no puede describir código que nunca se
+comiteó. El registro de la referencia va en un commit distinto del de la
+corrección.
 
 ## Registro reproducible de validación M0
 
@@ -565,6 +789,29 @@ sólo `src.packet_tracer_mcp`; el probe productivo resolvió sólo
 | invariantes de finalización | `2 failed` en 1.54 s | reproducción causal deliberada, no regresión escondida |
 | suite completa candidata | `4163 passed, 2 failed, 3 warnings` en 139.72 s | sólo fallan los dos invariantes; M0 queda bloqueada |
 
+M0-FIX se validó en Linux con CPython 3.11.15, la `.venv` local del checkout,
+instalación editable y sin `PYTHONPATH`:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[test]"
+.venv/bin/python -m pytest -q
+```
+
+| Gate | Resultado M0-FIX | Interpretación |
+| --- | --- | --- |
+| invariantes de finalización sobre el runner anterior | `10 failed, 2 passed` en 10.85 s | la cobertura causal nueva es roja antes del cambio; los dos verdes son el control sano |
+| invariantes de finalización sobre el runner corregido | `12 passed` en 11.23 s | escritura y stop, solos y juntos, con y sin fallo previo, más cancelaciones |
+| oráculo aislado | `19 passed` en 9.24 s | artefacto/digest, referencia superseded, nueve coordinaciones con su procedencia medida, policy trace, aceptación canónica y sensibilidad |
+| matriz afectada, ya sin reproducciones rojas | `220 passed` en 41.20 s | runners, `_execute_stage`, forwarding, E9, replay/reread, ambigüedad, gates canónicos e imports |
+| suite completa | `4176 passed, 2 skipped, 3 warnings` en 173.07 s | +13 tests frente a la candidata de M0: 10 de finalización y 3 del oráculo |
+
+Los dos `skipped` son los ya existentes de artefactos ausentes en el checkout
+(`test_positive_voice_ab_evidence_ledger.py`,
+`test_positive_voice_dhcp_pool_observer.py`), y aparecían igual en el CI del
+SHA anterior. Los tres warnings siguen siendo la misma deprecación de fixtures
+de clase.
+
 Comandos de los gates nuevos:
 
 ```powershell
@@ -591,12 +838,23 @@ Comandos de los gates nuevos:
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
+Los mismos gates en el entorno POSIX de M0-FIX, añadiendo
+`tests/test_cp_scale_canonical_runtime_gates.py` a la matriz afectada porque
+la aceptación canónica de Configuration entró en el policy trace:
+
+```bash
+.venv/bin/python -m pytest tests/test_cp_live_m0_equivalence_baseline.py -q
+.venv/bin/python -m pytest tests/test_cp_live_m0_finalization_invariant.py -q
+.venv/bin/python -m pytest -q
+```
+
 Los tres warnings completos son la deprecación ya existente de fixtures de
 clase en pytest. Ningún resultado anterior se presenta como ejecución LIVE.
 
-## Defecto previo a la extracción
+## Defecto previo a la extracción, corregido en M0-FIX
 
-Frontera afectada: R13, `tools/cp_scale_canonical_live.py:4811-4871`.
+Frontera afectada: R13, la finalización de `run()` en
+`tools/cp_scale_canonical_live.py`.
 
 Reproducción causal mínima:
 
@@ -612,30 +870,51 @@ Reproducción causal mínima:
 El segundo probe deja escribir la evidencia y hace fallar `stop`: el caller
 recibe sólo `OSError("TRANSPORT_STOP_FAILED")`, no la causa primaria.
 
-| Dimensión | Baseline observado | Invariante exigido |
-| --- | --- | --- |
-| intento de cierre tras fallo de escritura | no | sí, siempre que se adquirió |
-| causa primaria observable | sustituida | preservada como primaria |
-| cleanup disponible | ocurrió en memoria/doble antes de escribir | debe conservarse si se puede; su persistencia fallida queda secundaria |
-| resultado del caller | excepción secundaria | resultado/fallo que incluye primaria y secundarios |
+| Dimensión | Baseline observado | Invariante exigido | Comportamiento corregido |
+| --- | --- | --- | --- |
+| intento de cierre tras fallo de escritura | no | sí, siempre que se adquirió | `transport.stop()` vive en el `finally` interno de la escritura, así que se intenta también cuando la escritura lanza |
+| causa primaria observable | sustituida | preservada como primaria | la causa sigue en el resultado; escritura y cierre sólo pueden añadir secundarios |
+| cleanup disponible | ocurrió en memoria/doble antes de escribir | debe conservarse si se puede; su persistencia fallida queda secundaria | el bloque de cleanup/attestation no cambia; su fallo sigue siendo secundario |
+| resultado del caller | excepción secundaria | resultado/fallo que incluye primaria y secundarios | código `1` más un registro `CP_SCALE_FINALIZATION_INCOMPLETE` con la causa primaria y cada secundario |
 
-Corrección propuesta para autorización separada: capturar primero el resultado
-primario; ejecutar persistencia final y `stop` en bloques independientes con un
-`finally` interno que garantice el intento de cierre; acumular ambos fallos como
-secundarios; devolver/elevar con precedencia explícita de la causa primaria.
-Si no existe fallo primario, cualquier fallo de persistencia/cierre impide el
-éxito. La corrección debe ser mínima en el runner actual, con estas dos pruebas
-en rojo antes y verde después. Sólo entonces se identifica un nuevo SHA/árbol,
-se vuelve a ejecutar suite completa y se crea, mediante revisión explícita, un
-nuevo baseline. No se actualiza automáticamente este fixture.
+La corrección aplicada es mínima y no cambia la API: `run()` sigue devolviendo
+`int` y conserva los códigos publicados (`0` éxito o retención, `1` fallo
+adquirido, `2` hard stop de request/preflight). No se fuerza una excepción sólo
+porque el texto fuese cómodo de afirmar en un test.
+
+1. Cada salida de la sesión pasa por `_settled(code)`, que deja registrado qué
+   código alcanzó la sesión antes de finalizar. Una cancelación nunca llega a
+   registrar uno.
+2. La escritura final y `transport.stop()` son bloques independientes; el
+   `stop` está en el `finally` de la escritura, así que ninguna excepción de
+   ésta —ni siquiera una cancelación— impide intentar el cierre.
+3. Los fallos de escritura y de cierre se acumulan como secundarios, en orden,
+   con su tipo y su mensaje.
+4. Si hubo secundarios, se emite un registro
+   `CP_SCALE_FINALIZATION_INCOMPLETE` con `run_identity`, la causa primaria, el
+   hard stop si lo hubo y la lista de secundarios. Va por el canal de proceso
+   precisamente porque el canal durable puede ser el que acaba de fallar; el
+   intento de cierre no se anota como restauración ni toca el veredicto de
+   cleanup.
+5. Sin causa primaria, un fallo de finalización convierte el `0` en `1`. Con
+   causa primaria, el código ya es `1` y no se toca. Con hard stop, el `2` se
+   conserva.
+6. `KeyboardInterrupt` y demás `BaseException` no se capturan como secundarios
+   ni se convierten en código: siguen viajando después de intentar el cierre.
+
+La cobertura causal son doce casos en
+`tests/test_cp_live_m0_finalization_invariant.py`: escritura y `stop` fallando
+solos y juntos, con y sin fallo previo (seis), la comprobación de que la
+escritura que falla es la de finalización y no una anterior (dos), una
+finalización sana que sigue devolviendo `0` (uno), y cancelaciones durante el
+stage y durante la escritura final (tres). Diez de ellos fallan sobre el runner
+anterior a la corrección; los otros dos son el control sano.
 
 ## Plan acotado de M1
 
-M1 permanece no autorizado y no puede comenzar mientras este baseline esté
-bloqueado.
-
-Prerequisito fuera de M1: aprobar y aplicar la corrección aislada de R13,
-obtener suite verde, fijar el nuevo SHA/árbol y aprobar un nuevo oracle.
+M1 permanece no autorizado. Su prerequisito —corregir R13, obtener suite
+verde y registrar una referencia nueva identificada— está cumplido por M0-FIX;
+eso no lo autoriza a comenzar.
 
 Primera familia a extraer en M1: **solicitud, identidad y admisión/preflight**
 (R1 parcial + R2). Es la frontera anterior a cualquier contacto/mutación y no
@@ -643,32 +922,43 @@ requiere mover `_execute_stage` ni alterar lifecycle.
 
 Slice propuesto:
 
-1. Crear los contratos `CPScaleLiveRequest`, `CPScaleLiveSessionIdentity` y el
-   resultado tipado de preflight en application.
-2. Mover parseo/presentación a `adapters/cli/cp_scale_live.py`; mantener
-   `tools/cp_scale_canonical_live.py` como façade con flags, firma y códigos.
-3. Extraer sólo la coordinación de import isolation, Git/upstream/dirty,
+1. Crear los contratos `CPScaleLiveRequest`, `CPScaleLiveSessionIdentity` y
+   `CPScalePreflightResult` —con los tipos ya cerrados arriba— en application.
+2. Extraer sólo la coordinación de import isolation, Git/upstream/dirty,
    proceso/build y validación de target a `application/cp_scale_live/admission.py`.
-4. Implementar el puerto de entorno en infrastructure y reutilizar
+3. Implementar el puerto de entorno en infrastructure y reutilizar
    `canonical_cp_scale_target_contract`, `ImportIsolationPreflight` y reglas
    actuales. No duplicar composición ni aceptación.
+4. `tools/cp_scale_canonical_live.py` **sigue siendo la entrada y el
+   composition root**, y pasa a llamar a esas piezas. No se crea todavía
+   `adapters/cli/cp_scale_live.py` ni se convierte `tools` en façade: el
+   coordinador aún vive ahí, y una façade que reenvía a algo que no está bajo
+   `src` obligaría a `src` a importar `tools`. El parseo, la presentación y la
+   façade se mueven en el mismo slice que mueva el coordinador, no antes.
 5. Dejar transporte, sesión, stage loop, applicators, observaciones,
    diagnóstico, persistencia, cleanup y cierre en su ubicación actual.
-6. Comparar con el oracle fijo, ejecutar tests de namespaces y full suite; no
-   avanzar a la siguiente familia dentro del mismo mandato.
+6. Comparar con la referencia fija `baseline-v2`, ejecutar tests de namespaces
+   y full suite; no avanzar a la siguiente familia dentro del mismo mandato.
 
-M2-A sería la sesión persistente/coordinación/persistencia/finalización; M2-B,
-el stage executor, observación y diagnóstico; M3, la retirada de compatibilidad
-privada después de migrar consumidores. Son únicamente hitos de diseño.
+M2-A sería la sesión persistente/coordinación/persistencia/finalización, y es
+el hito que mueve el coordinador y, con él, habilita el adapter CLI y la façade
+de `tools`; M2-B, el stage executor, observación y diagnóstico; M3, la retirada
+de compatibilidad privada después de migrar consumidores. Son únicamente hitos
+de diseño. Cada mecanismo que salga en esos hitos se acepta contra los
+«Criterios de reutilización»: estado acotado y, más adelante, un segundo
+escenario sintético.
 
 ## Criterio de cierre de esta entrega
 
-M0 entrega documentación, harness, fixture, digest, comparador y reproducciones
-causales. No puede declararse completa porque las pruebas de seguridad de R13
-fallan en el baseline productivo. El estado final correcto es:
+M0 entregó documentación, harness, fixture, digest, comparador y reproducciones
+causales, y quedó bloqueada porque las pruebas de seguridad de R13 fallaban en
+el baseline productivo. M0-FIX corrige esa finalización, deja las
+reproducciones verdes, corrige el oráculo y su preparación de CI, y registra
+`baseline-v2` sobre el código corregido conservando `baseline-v1` como
+histórico. El estado final es:
 
 ```text
-CP_LIVE_M0=BLOCKED_FOR_BASELINE_FIX
+CP_LIVE_M0=CORRECTED_BASELINE_RECORDED
 PRODUCT_ADMISSION=BLOCKED
 ROUTER0_LIVE=NOT_RUN
 M1=NOT_AUTHORIZED_NOT_STARTED
