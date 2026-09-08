@@ -17,7 +17,11 @@ conservado como histórico. El resultado de M0 es ahora
 
 M0-FIX tocó exactamente tres superficies: la finalización de
 `tools/cp_scale_canonical_live.py`, los tests y el harness de M0, y la
-preparación de CI. No se modificaron `src/`, `EXTENSION/`, snapshots de
+preparación de CI. Una segunda pasada autorizada cerró la finalización frente a
+interrupciones durante cleanup/archivo/relectura, completó la captura del
+oráculo y extendió la procedencia del registro a las reglas realmente
+ejecutadas; la referencia pasó a `baseline-v3` y `v1`/`v2` quedan como
+histórico. No se modificaron `src/`, `EXTENSION/`, snapshots de
 capacidades, evidencia LIVE ni gates. No se abrió Packet Tracer, no se conectó
 al bridge y no se ejecutó el runner con transporte real. La admisión productiva
 sigue `BLOCKED` y M1 sigue sin autorizar.
@@ -303,21 +307,33 @@ que sus tipos no pueden quedar en prosa. Son cerrados: cada campo tiene tipo,
 no hay `dict` de propósito general y no hay campo libre para añadir señales
 más tarde sin decidirlo aquí.
 
+El preflight actual **cortocircuita**: si el aislamiento de imports falla, no
+llega a leer Git; si Git rechaza, no enumera procesos. Los tipos tienen que
+poder decir «no se ejecutó» sin inventar una evidencia que nadie obtuvo, así
+que cada comprobación es un resultado con estado propio y `NOT_RUN` es uno de
+ellos.
+
 ```python
+class CPScaleCheckState(str, Enum):
+    NOT_RUN = "not_run"
+    PASSED = "passed"
+    FAILED = "failed"
+
 @dataclass(frozen=True)
 class CPScaleImportIsolationEvidence:
-    state: str
-    detail: str
-    isolated: bool
+    state: CPScaleCheckState
+    isolation_state: str = ""
+    detail: str = ""
 
 @dataclass(frozen=True)
 class CPScaleRepositoryEvidence:
-    branch: str
-    upstream: str
-    head: str
-    upstream_head: str
-    dirty: bool
-    error: str
+    state: CPScaleCheckState
+    branch: str = ""
+    upstream: str = ""
+    head: str = ""
+    upstream_head: str = ""
+    dirty: bool | None = None
+    error: str = ""
 
 @dataclass(frozen=True)
 class CPScaleProcessRecord:
@@ -327,31 +343,47 @@ class CPScaleProcessRecord:
 
 @dataclass(frozen=True)
 class CPScaleProcessEvidence:
-    processes: tuple[CPScaleProcessRecord, ...]
-    error: str
+    state: CPScaleCheckState
+    processes: tuple[CPScaleProcessRecord, ...] = ()
+    error: str = ""
+
+class CPScalePreflightOutcome(str, Enum):
+    ADMITTED = "admitted"
+    REJECTED = "rejected"
 
 @dataclass(frozen=True)
 class CPScalePreflightResult:
-    admitted: bool
     target: CPScaleCanonicalTargetContract
     import_isolation: CPScaleImportIsolationEvidence
     repository: CPScaleRepositoryEvidence
     process: CPScaleProcessEvidence
     issues: tuple[str, ...]
+
+    @property
+    def outcome(self) -> CPScalePreflightOutcome:
+        return (
+            CPScalePreflightOutcome.REJECTED if self.issues
+            else CPScalePreflightOutcome.ADMITTED
+        )
 ```
 
 Reglas de estos tipos:
 
-1. `admitted` es exactamente `not issues`; no es un campo que alguien pueda
-   poner en `True` por su cuenta.
-2. `issues` conserva orden y duplicados: es el texto que hoy se une con un
+1. La autorización **se deriva del resultado**: `outcome` se calcula desde
+   `issues` y no existe un booleano que alguien pueda poner en `True` mientras
+   la lista de problemas dice lo contrario. Un `admitted=True` junto a
+   `issues` no vacío es un estado que estos tipos no pueden representar.
+2. `NOT_RUN` es un estado legítimo y frecuente: es lo que queda tras el
+   cortocircuito. Nunca se rellena con un valor por defecto que parezca una
+   comprobación superada; una evidencia obligatoria ausente no se fabrica.
+3. `issues` conserva orden y duplicados: es el texto que hoy se une con un
    espacio para `evidence["hard_stop"]`, y el adapter lo sigue traduciendo a
    código `2`.
-3. `target` es el contrato que devuelve `canonical_cp_scale_target_contract`.
+4. `target` es el contrato que devuelve `canonical_cp_scale_target_contract`.
    La regla no se reimplementa ni se copia dentro del preflight.
-4. Ninguna de estas evidencias contiene transportes, runtimes, reloj ni
+5. Ninguna de estas evidencias contiene transportes, runtimes, reloj ni
    callbacks, así que el resultado es serializable y comparable tal cual.
-5. El preflight no abre el bridge, no consulta capacidades y no escribe
+6. El preflight no abre el bridge, no consulta capacidades y no escribe
    evidencia: eso ya es comprobación de backend.
 
 ### Estado de avance y continuidad
@@ -518,6 +550,30 @@ están escritos contra estos cinco puntos; `active_network_projection` y las
 closures `archive`/`observe_cleanup_realtime` de hoy no los cumplen, y por eso
 son parte del trabajo del hito, no de su premisa.
 
+**Volumen acotado no es lo mismo que estado tipado.** Un `frozen dataclass`
+puede crecer sin límite: `completed_stages`, `issues`, `archives`,
+`required_observations` y `diagnostics` son tuplas tipadas y aun así
+acumulan. Para la futura extracción, la medida es explícita:
+
+| Campo | Cota declarada | Cómo se mide |
+| --- | --- | --- |
+| `completed_stages` | número de stages del target contract | `len(...) <= len(target.build_stages)` |
+| `required_observations` por stage | operaciones obligatorias que el stage declara | comparar con el plan del stage, no con lo observado |
+| `diagnostics` por stage | intentos diagnósticos declarados | `DIAGNOSTIC_ONLY`, sin autoridad y sin crecer por reintento |
+| `archives` | fases de archivo alcanzadas | una entrada por fase, no una por escritura |
+| `issues` | problemas del preflight | fijo por comprobación; conserva orden y duplicados |
+
+Ningún campo puede crecer por observación, por mutación ni por reintento sin
+una cota declarada aquí. Una cota se mide contando entradas frente al plan que
+las autoriza, no frente a lo que el runtime produjo.
+
+**No duplicar historial.** El snapshot de progreso referencia la evidencia
+durable y los journals; no los copia. Un stage terminado se guarda una vez y no
+se vuelve a incrustar en snapshots posteriores, y un recibo de archivo se
+referencia por identidad en vez de repetir su payload. Si dos estructuras
+distintas contienen la misma lista de acciones, una de ellas es historial
+duplicado y el hito no ha terminado.
+
 **Segundo escenario sintético.** Cuando un mecanismo se extraiga, su prueba de
 reutilización es una prueba futura que lo ejecuta con un segundo escenario
 sintético que no es CP-SCALE canónico: otro contrato de target, otra secuencia
@@ -623,7 +679,9 @@ La sustitución no se declara: cada probe la mide. El hijo toma una foto de los
 símbolos del runner antes de instalar el primer doble y devuelve, en una
 sección `provenance` separada de la traza comparable, exactamente qué símbolos
 reemplazó, qué namespaces cargó, si el paquete y el runner resuelven dentro de
-este árbol y cuántos intentos de dispatch hubo. El transporte doble lanza si
+este árbol, cuántos intentos de dispatch hubo y **qué ficheros del repositorio
+ejecutó realmente** (las reglas bajo `src` incluidas; los del entorno local
+`.venv` se cuentan aparte y se nombran, no se descartan en silencio). El transporte doble lanza si
 alguien llama `send` o `send_and_wait`, y esos intentos se cuentan: el cero
 observado es lo que sostiene «no se contactó ningún entorno LIVE», en lugar de
 un campo declarado en el expected. El filesystem y el token están aislados por
@@ -648,8 +706,19 @@ evidencia parcial y no continúa; no pretende reemplazar estos tests B.
 ### Nivel C — política y evidencia
 
 El policy trace M0 llama las funciones reales `_wait_for_site_forwarding`,
-`canonical_stage_mutation_replay_audit` y
-`configuration_application_contradiction` con entradas tipadas sintéticas. Los
+`canonical_stage_mutation_replay_audit`,
+`canonical_stage_configuration_error` y
+`configuration_application_contradiction` con entradas tipadas sintéticas.
+
+La captura parte de lo observado, no de lo planificado: cada dispatch del ping
+tipado se convierte en una operación, en orden y con su multiplicidad, y el
+plan y la evidencia se buscan por posición registrando su ausencia. Un bloque
+`cardinality` fija cuántas comprobaciones se planificaron, cuántas operaciones
+se despacharon, cuántos registros de evidencia hay, cuáles no estaban
+planificadas y si las tres cuentas coinciden. Un `zip()` habría truncado a la
+más corta y habría escondido exactamente el dispatch que importa; un probe
+gemelo que añade una operación al comportamiento observado demuestra que la
+captura la ve antes de construir la traza y que el comparador la rechaza. Los
 tests existentes aportan casos positivos, negativos y ambiguos de forwarding,
 E9, reread y replay. Las capacidades sintéticas viven sólo bajo `tests/`, el
 store se reemplaza y `live_environment_contacted=false` está fijado en la
@@ -677,8 +746,12 @@ procedencia.
 | 10b. Archivo | fallo precleanup conserva causa, intenta cleanup/attestation/stop | oracle `precleanup-archive-failure` | exit 1, closure queda precleanup, segundo archive de fallo y cleanup se intentan |
 | 10c. Cleanup | fallo de cleanup no permite cierre exitoso, pero no abandona attestation/stop | oracle `cleanup-failure` | cleanup inicial falla, finally vuelve a intentar según estado actual, archiva y cierra; exit 1 |
 | 10d. Restauración | observación Realtime fallida rechaza cierre y continúa finalización | oracle `restoration-observation-failure` | cierre sólo precleanup, causa explícita, cleanup archive y stop |
-| 10e. Escritura/cierre | escritura final no impide stop; ni escritura ni close sustituyen la causa primaria; sin causa primaria, un fallo de finalización impide el éxito | doce casos en `test_cp_live_m0_finalization_invariant.py`: escritura y stop fallando solos y juntos, con y sin fallo previo, más cancelación y control sano | siempre se intenta `transport.stop`; código `1` en los seis casos de fallo; causa primaria y secundarios en el registro `CP_SCALE_FINALIZATION_INCOMPLETE`; la cancelación sigue viajando y nunca se convierte en código |
+| 10e. Escritura/cierre | escritura final no impide stop; ni escritura ni close sustituyen la causa primaria; sin causa primaria, un fallo de finalización impide el éxito | quince casos en `test_cp_live_m0_finalization_invariant.py`: escritura y stop fallando solos y juntos, con y sin fallo previo, más cancelaciones y control sano | siempre se intenta `transport.stop`; código `1` en los seis casos de fallo; causa primaria y secundarios en el registro `CP_SCALE_FINALIZATION_INCOMPLETE`; la cancelación sigue viajando y nunca se convierte en código |
+| 10g. Interrupción antes de la escritura | una cancelación durante cleanup, archivo o relectura no puede saltarse el cierre ni llevarse los secundarios | cancelación en cleanup con `stop` fallido; cancelación en la escritura con `stop` fallido | `transport.stop` intentado en ambos; el fallo de cierre queda en el registro y no sustituye la cancelación; no se persiste ningún registro de la sesión fallida |
+| 10h. Canal de reporte | un canal de reporte roto no sustituye la causa primaria ni promete persistencia | `stdout` roto, y luego `stdout`+`stderr` rotos, con causa primaria y escritura fallida | con `stdout` roto el registro sale por `stderr`; con ambos rotos no sale nada, no se inventa nada y el código sigue siendo `1` |
 | 10f. Aceptación Configuration | «sin contradicción» no equivale a aceptación canónica | policy trace: `canonical_stage_configuration_error` sobre plan y relectura coherentes, con un rechazo | aceptado `PARTIAL` con techo gobernado y `fully_verified=false`; techo promovido rechazado aunque no contradiga nada |
+| 11. Captura de operaciones | ninguna operación observada puede quedar fuera de la traza; cardinalidades explícitas | policy trace más un probe gemelo que despacha una operación adicional | tres operaciones capturadas en orden, `unplanned_operations=[3]`, `aligned=false` y diferencias del comparador que nombran `operations` y `cardinality` |
+| 12. Procedencia del registro | una referencia no puede atribuirse a un SHA cuyas dependencias ejecutables difieren | `test_cp_live_m0_reference_recording.py`: alcance ejecutado, regla importada modificada, fichero ausente en cualquiera de los dos lados, procedencia de probes y commit desconocido | el alcance medido incluye las reglas bajo `src`; cualquier diferencia byte a byte rechaza la grabación; una procedencia de probe inválida la rechaza antes de escribir |
 
 La matriz mantiene «aceptación gobernada» separada de `VERIFIED`. El policy
 trace congela un resultado Configuration `PARTIAL`, aceptado por la regla
@@ -686,38 +759,46 @@ vigente y explícitamente `fully_verified=false`; no lo promociona.
 
 ## Oráculo y procedencia
 
-Referencia vigente tras M0-FIX:
+Referencia vigente:
 
-- `tests/fixtures/cp_live_m0/baseline-v2.json`
-- `tests/fixtures/cp_live_m0/baseline-v2.sha256`
-- `tests/fixtures/cp_live_m0/.gitattributes` fija ambos JSON como bytes exactos
-  para que `core.autocrlf` no cambie su digest
-- schema `cp-live-m0-equivalence-baseline-v2`
-- fixture version `cp-live-m0-fixture-v2`
+- `tests/fixtures/cp_live_m0/baseline-v3.json`
+- `tests/fixtures/cp_live_m0/baseline-v3.sha256`
+- `tests/fixtures/cp_live_m0/.gitattributes` fija los tres JSON como bytes
+  exactos para que `core.autocrlf` no cambie su digest
+- schema `cp-live-m0-equivalence-baseline-v3`
+- fixture version `cp-live-m0-fixture-v3`
 - fuente caracterizada: el commit del código corregido, fijado también en
   `BASELINE_SOURCE_SHA` dentro de `test_cp_live_m0_equivalence_baseline.py`
 
-Referencia histórica, conservada y verificable, ya no oráculo:
+Referencias históricas, conservadas y verificables, ya no oráculo:
 
-- `tests/fixtures/cp_live_m0/baseline-v1.json` y su `.sha256`
-- schema `cp-live-m0-equivalence-baseline-v1`, fuente
-  `62db3cea84a4bfca1a5bcd3d2389d62864c45946`
-- SHA-256 `99adcea78b0dbf861cfa4a32b49c50577ea6d0cca3f33725a136272273387634`
+- `baseline-v2.json` y su `.sha256`, schema
+  `cp-live-m0-equivalence-baseline-v2`, fuente
+  `7a6c552dd570f683fe3f249c1037815192543ae7`
+- `baseline-v1.json` y su `.sha256`, schema
+  `cp-live-m0-equivalence-baseline-v1`, fuente
+  `62db3cea84a4bfca1a5bcd3d2389d62864c45946`, SHA-256
+  `99adcea78b0dbf861cfa4a32b49c50577ea6d0cca3f33725a136272273387634`
 
-El bloque `supersedes` de v2 nombra esa referencia, su digest y las diferencias
-justificadas. Son exactamente tres:
+El bloque `supersedes` de v3 es una cadena, de la más reciente a la más
+antigua, con el digest de cada artefacto conservado y las diferencias
+justificadas. Frente a v2 son exactamente tres:
 
-1. cada verdict se parte en `trace` y `provenance`, porque la procedencia del
-   candidato se mide y se afirma, no se compara ni normaliza nada;
-2. `configuration_acceptance` se sustituye por `configuration`, con una
-   decisión aceptada y un rechazo emitidos por `canonical_stage_configuration_error`;
-3. la fuente caracterizada es el runner corregido. Ningún escenario de
-   coordinación de esta referencia ejerce una escritura o un cierre fallidos,
-   así que sus trazas congeladas no cambian por la corrección.
+1. `policy_trace.operations` se construye desde cada dispatch observado y se
+   añade `policy_trace.cardinality`, porque el `zip()` anterior podía truncar y
+   esconder una operación adicional;
+2. `provenance.executed_scope` registra el alcance ejecutado que la grabación
+   verificó contra su commit, porque antes sólo se comprobaban cuatro ficheros
+   estáticos y las reglas reales bajo `src` quedaban fuera;
+3. la fuente caracterizada es el runner con el cierre protegido también durante
+   cleanup/archivo/relectura y con el canal de reporte con reserva. Ningún
+   escenario de coordinación ejerce una escritura, un cierre o un reporte
+   fallidos, así que sus trazas congeladas son idénticas a las de v2.
 
-Un test comprueba el digest de v1 y que cada diferencia esté nombrada; otro
-comprueba que el commit fijado existe, que su árbol coincide y que el digest de
-v2 corresponde a sus bytes. Esa lectura de `git` es local y necesita la
+Un test comprueba, para cada referencia conservada, que sigue coincidiendo con
+su propio digest y que cada diferencia está nombrada; otro comprueba que el
+commit fijado existe, que su árbol coincide y que el digest de v3 corresponde a
+sus bytes. Esa lectura de `git` es local y necesita la
 historia completa: por eso el workflow de CI hace checkout con
 `fetch-depth: 0`, con el motivo escrito junto al paso. Si el objeto falta, el
 test falla nombrando esa dependencia; no se salta y no toca la red.
@@ -755,10 +836,21 @@ Regenerarlo es una decisión, y se toma fuera de pytest:
 ```
 
 `tests/cp_live_m0_record_baseline.py` no es un módulo de test, pytest no lo
-recoge y se niega a ejecutarse dentro de un proceso de pytest. Además rechaza
-grabar si algún fichero caracterizado del worktree difiere byte a byte de ese
-commit, de modo que una referencia no puede describir código que nunca se
-comiteó. El registro de la referencia va en un commit distinto del de la
+recoge y se niega a ejecutarse dentro de un proceso de pytest. Antes de
+escribir nada hace dos cosas:
+
+1. **valida la procedencia de cada probe** con la misma función que usa el
+   oráculo: un solo namespace, ficheros dentro del árbol, cero intentos de
+   dispatch, los dobles instalados y las reglas intactas. Una sola discrepancia
+   rechaza la grabación;
+2. **comprueba el alcance ejecutado completo**: la unión de los ficheros del
+   repositorio que los probes importaron, más las entradas estáticas de la
+   grabación, tiene que ser byte a byte idéntica a la del commit nombrado. Una
+   regla importada modificada rechaza la grabación aunque el runner esté
+   comiteado.
+
+Así una referencia no puede atribuirse a un SHA cuyas dependencias ejecutables
+difieren. El registro de la referencia va en un commit distinto del de la
 corrección.
 
 ## Registro reproducible de validación M0
@@ -806,6 +898,17 @@ python3 -m venv .venv
 | matriz afectada, ya sin reproducciones rojas | `220 passed` en 41.20 s | runners, `_execute_stage`, forwarding, E9, replay/reread, ambigüedad, gates canónicos e imports |
 | suite completa | `4176 passed, 2 skipped, 3 warnings` en 173.07 s | +13 tests frente a la candidata de M0: 10 de finalización y 3 del oráculo |
 
+Segunda pasada, en el mismo entorno:
+
+| Gate | Resultado | Interpretación |
+| --- | --- | --- |
+| finalización sobre el runner de `baseline-v2` | `4 failed, 11 passed` en 14.88 s | los cuatro casos nuevos son rojos antes del cambio: cancelación en cleanup, cancelación en la escritura con `stop` fallido, `stdout` roto y los dos canales rotos |
+| finalización sobre el runner corregido | `15 passed` en 14.77 s | los doce anteriores más esos cuatro, menos ninguno |
+| reglas de grabación de referencia | `7 passed` en 1.08 s | alcance ejecutado, regla importada modificada, ausencias en cada lado, procedencia de probes y commit desconocido |
+| oráculo aislado | `20 passed` en 10.75 s | añade la captura completa con su probe de dispatch adicional |
+| matriz afectada | `231 passed` en 50.00 s | la anterior más las reglas de grabación |
+| suite completa | `4187 passed, 2 skipped, 3 warnings` en 190.88 s | +11 frente a la pasada anterior: 3 de finalización, 1 del oráculo y 7 de grabación |
+
 Los dos `skipped` son los ya existentes de artefactos ausentes en el checkout
 (`test_positive_voice_ab_evidence_ledger.py`,
 `test_positive_voice_dhcp_pool_observer.py`), y aparecían igual en el CI del
@@ -845,6 +948,7 @@ la aceptación canónica de Configuration entró en el policy trace:
 ```bash
 .venv/bin/python -m pytest tests/test_cp_live_m0_equivalence_baseline.py -q
 .venv/bin/python -m pytest tests/test_cp_live_m0_finalization_invariant.py -q
+.venv/bin/python -m pytest tests/test_cp_live_m0_reference_recording.py -q
 .venv/bin/python -m pytest -q
 ```
 
@@ -885,30 +989,39 @@ porque el texto fuese cómodo de afirmar en un test.
 1. Cada salida de la sesión pasa por `_settled(code)`, que deja registrado qué
    código alcanzó la sesión antes de finalizar. Una cancelación nunca llega a
    registrar uno.
-2. La escritura final y `transport.stop()` son bloques independientes; el
-   `stop` está en el `finally` de la escritura, así que ninguna excepción de
-   ésta —ni siquiera una cancelación— impide intentar el cierre.
-3. Los fallos de escritura y de cierre se acumulan como secundarios, en orden,
-   con su tipo y su mensaje.
+2. Toda la finalización vive en `_finalize()`: cleanup, archivo, relectura de
+   Realtime, attestation y escritura final ocurren dentro de un `try`, y
+   `transport.stop()` está en su `finally`. El cierre queda protegido aunque la
+   interrupción ocurra **antes** de la escritura —durante cleanup, durante el
+   archivo o durante la relectura— y no sólo cuando falla la escritura.
+3. Los fallos de escritura, de cierre y de cualquier otro paso de finalización
+   se acumulan como secundarios, en orden, con su tipo y su mensaje.
 4. Si hubo secundarios, se emite un registro
    `CP_SCALE_FINALIZATION_INCOMPLETE` con `run_identity`, la causa primaria, el
-   hard stop si lo hubo y la lista de secundarios. Va por el canal de proceso
-   precisamente porque el canal durable puede ser el que acaba de fallar; el
-   intento de cierre no se anota como restauración ni toca el veredicto de
-   cleanup.
-5. Sin causa primaria, un fallo de finalización convierte el `0` en `1`. Con
+   hard stop si lo hubo y la lista de secundarios. Sale desde el `finally`
+   interno, así que una cancelación que siga viajando no se lleva los
+   secundarios con ella. El intento de cierre no se anota como restauración ni
+   toca el veredicto de cleanup.
+5. El registro usa los canales disponibles y no promete persistencia:
+   `_emit_finalization_report` intenta `stdout`, luego `stderr`, y si ambos
+   rechazan la escritura calla en vez de lanzar por encima de la causa que
+   estaba preservando. El canal durable puede ser justo el que acaba de fallar;
+   el código de salida y el registro en memoria siguen llevándola.
+6. Sin causa primaria, un fallo de finalización convierte el `0` en `1`. Con
    causa primaria, el código ya es `1` y no se toca. Con hard stop, el `2` se
    conserva.
-6. `KeyboardInterrupt` y demás `BaseException` no se capturan como secundarios
+7. `KeyboardInterrupt` y demás `BaseException` no se capturan como secundarios
    ni se convierten en código: siguen viajando después de intentar el cierre.
 
-La cobertura causal son doce casos en
+La cobertura causal son quince casos en
 `tests/test_cp_live_m0_finalization_invariant.py`: escritura y `stop` fallando
-solos y juntos, con y sin fallo previo (seis), la comprobación de que la
-escritura que falla es la de finalización y no una anterior (dos), una
-finalización sana que sigue devolviendo `0` (uno), y cancelaciones durante el
-stage y durante la escritura final (tres). Diez de ellos fallan sobre el runner
-anterior a la corrección; los otros dos son el control sano.
+solos y juntos, con y sin fallo previo (seis); la comprobación de que la
+escritura que falla es la de finalización y no una anterior (dos); una
+finalización sana que sigue devolviendo `0` (uno); cancelación durante el stage
+(dos), durante cleanup y durante la escritura final, ambas con `stop` fallido
+(dos); y el canal de reporte roto —sólo `stdout`, y luego los dos— con la causa
+primaria intacta (dos). Diez fallan sobre el runner previo a la primera
+corrección y cuatro sobre el previo a esta segunda pasada.
 
 ## Plan acotado de M1
 
@@ -955,7 +1068,11 @@ causales, y quedó bloqueada porque las pruebas de seguridad de R13 fallaban en
 el baseline productivo. M0-FIX corrige esa finalización, deja las
 reproducciones verdes, corrige el oráculo y su preparación de CI, y registra
 `baseline-v2` sobre el código corregido conservando `baseline-v1` como
-histórico. El estado final es:
+histórico. La segunda pasada cierra el cierre frente a interrupciones anteriores
+a la escritura y frente a un canal de reporte roto, completa la captura de
+operaciones con sus cardinalidades, extiende la procedencia del registro al
+alcance ejecutado real y registra `baseline-v3` conservando `v1` y `v2`. El
+estado final es:
 
 ```text
 CP_LIVE_M0=CORRECTED_BASELINE_RECORDED
