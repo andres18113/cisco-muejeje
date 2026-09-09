@@ -150,6 +150,7 @@ class CPScaleLiveFinalResult:
     closure: str | None
     presentation_retained: bool
     cleanup: CPScaleCleanupResult | None
+    cleanup_realtime: CPScaleCleanupRealtime | None
     archives: tuple[CPScaleEvidenceArchive, ...]
     primary_failure: str | None
     secondary_failures: tuple[str, ...]
@@ -163,7 +164,7 @@ class CPScaleLiveFinalResult:
                 next((item.first_failed_boundary for item in stages if item.first_failed_boundary), None),
                 report.checkpoint or None, any(item.remaining for item in report.stages)),
             report.final_disposition,
-            report.closure or None, report.presentation_retained, report.cleanup, report.archives,
+            report.closure or None, report.presentation_retained, report.cleanup, report.cleanup_realtime, report.archives,
             report.failure or report.hard_stop or None, report.secondary_failures + report.finalization_errors)
 
 
