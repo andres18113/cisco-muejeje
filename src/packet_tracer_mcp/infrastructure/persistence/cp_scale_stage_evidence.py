@@ -5,12 +5,23 @@ from __future__ import annotations
 import collections
 from dataclasses import asdict
 
-from ...application.cp_scale_live.contracts import CPScaleLiveStageResult, CPScaleVoiceStageResult
+from ...application.cp_scale_live.contracts import (
+    CPScaleLiveStageResult,
+    CPScaleRealtimeObservation,
+    CPScaleRealtimeState,
+    CPScaleVoiceStageResult,
+)
 from ...application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection
 from ...domain.enterprise.models.configuration import VerificationKind
 from ...domain.enterprise.models.configuration_runtime import ActionExecutionStatus
 from ...domain.models.typed_ping import TypedPingResult
 from ...shared.utils import serialize_typed_ping_evidence
+
+
+def realtime_state_evidence(state: CPScaleRealtimeState | None) -> dict[str, object] | None:
+    if state is None:
+        return None
+    return {name: getattr(state, name) for name in state.present}
 
 
 def _trunk_vlan_traversal_evidence(plan, result) -> list[dict[str, object]]:
@@ -292,6 +303,8 @@ def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
             evidence["configuration"] = result.configuration.model_dump(mode="json")
             evidence["configuration_acceptance_error"] = configured.acceptance_error
     for observation in result.required_observations:
+        if isinstance(observation, CPScaleRealtimeObservation):
+            continue
         if observation.kind == "network_state":
             evidence["network_state_timeline"].append(observation.evidence)
         elif observation.kind == "serial_interfaces":
@@ -306,8 +319,8 @@ def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
         evidence["voice_realtime_continuity"] = {
             "window": "NORMAL_WINDOW", "mode_required": "realtime",
             "proves": "Both boundaries of the authoritative window were observed in Realtime. It does NOT prove the mode was never toggled between the two reads.",
-            "before": window.before.evidence,
-            "after": window.after.evidence if window.after is not None else None,
+            "before": realtime_state_evidence(window.before.state),
+            "after": realtime_state_evidence(window.after.state) if window.after is not None else None,
             "verified": window.verified, "failure_reason": window.failure_reason,
         }
     if report.voice is not None:

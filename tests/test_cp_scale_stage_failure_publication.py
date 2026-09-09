@@ -10,7 +10,7 @@ import pytest
 from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleCoreForwardingObservation, CPScaleDiagnosticRecord,
     CPScaleDhcpStatisticsTarget, CPScaleObservationRecord,
-    CPScaleSiteForwardingObservation,
+    CPScaleRealtimeState, CPScaleSiteForwardingObservation,
 )
 from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
 from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
@@ -87,8 +87,18 @@ def _acquired_voice_failure(*, failing=(), after_state=None, monkeypatch):
     runtime = FakeVoiceRuntime()
     fixture.executor.voice.applicator = VoiceApplicator(runtime)
     fixture.executor.voice.runtime = runtime
-    states = iter([{"observed": True, "simulation_mode": False},
-        after_state if after_state is not None else {"observed": True, "simulation_mode": False}])
+    states = iter([
+        CPScaleRealtimeState(
+            observed=True,
+            simulation_mode=False,
+            present=("observed", "simulation_mode"),
+        ),
+        after_state if after_state is not None else CPScaleRealtimeState(
+            observed=True,
+            simulation_mode=False,
+            present=("observed", "simulation_mode"),
+        ),
+    ])
     fixture.executor.observations.voice_window_state = lambda: next(states)
     observed = []
 
@@ -156,8 +166,10 @@ def test_attributable_voice_cause_precedes_secondary_observation_errors(failing,
 
 
 @pytest.mark.parametrize("after_state", [
-    {"observed": False, "simulation_mode": False},
-    {"observed": True, "simulation_mode": True},
+    CPScaleRealtimeState(observed=False, simulation_mode=False,
+        present=("observed", "simulation_mode")),
+    CPScaleRealtimeState(observed=True, simulation_mode=True,
+        present=("observed", "simulation_mode")),
 ])
 def test_unattributable_voice_window_cannot_claim_a_realtime_primary(after_state, monkeypatch):
     fixture, observed, diagnostics = _acquired_voice_failure(

@@ -26,14 +26,13 @@ def test_runner_dispatches_both_typed_branch_directions_and_fails_each_closed():
     verdict = _probe(r'''
 import json
 
-import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from types import SimpleNamespace
-seams = SimpleNamespace()
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleForwardingAuthority,
     CPScaleSiteForwardingCheck,
 )
 from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
+from packet_tracer_mcp.infrastructure.observation.cp_scale_live import _wait_for_site_forwarding
 
 checks = tuple(
     CPScaleSiteForwardingCheck(
@@ -102,13 +101,13 @@ class Ping:
         )
 
 success_ping = Ping()
-success, evidence, first = live._wait_for_site_forwarding(
+success, evidence, first = _wait_for_site_forwarding(
     success_ping, checks, attempts=1, interval_seconds=0,
 )
 failures = []
 for failed in (0, 1):
     ping = Ping(failed=failed)
-    verified, failed_evidence, first_failure = live._wait_for_site_forwarding(
+    verified, failed_evidence, first_failure = _wait_for_site_forwarding(
         ping, checks, attempts=1, interval_seconds=0,
     )
     failures.append({
@@ -116,7 +115,7 @@ for failed in (0, 1):
         "first": first_failure,
         "evidence": failed_evidence,
     })
-stale, _, stale_first = live._wait_for_site_forwarding(
+stale, _, stale_first = _wait_for_site_forwarding(
     Ping(stale=True), checks, attempts=1, interval_seconds=0,
 )
 print(json.dumps({
@@ -226,6 +225,7 @@ import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from types import SimpleNamespace
 seams = SimpleNamespace()
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    CPScaleCanonicalStage,
     CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
 )
@@ -240,12 +240,12 @@ live.PacketTracerImportIsolationReader = lambda: SimpleNamespace(read=contact)
 live.GitCPScaleRepositoryReader = lambda: SimpleNamespace(read=contact)
 live.PowerShellPacketTracerProcessReader = lambda: SimpleNamespace(read=contact)
 seams._write_evidence = lambda evidence: None
-original_factory = live._build_coordinator
+original_factory = live.build_coordinator
 def isolated_factory(request, **kwargs):
     coordinator = original_factory(request, **kwargs)
     coordinator.persistence.write_progress = lambda report: None
     return coordinator
-live._build_coordinator = isolated_factory
+live.build_coordinator = isolated_factory
 try:
     live.run(
         "9.0.1.0858",
@@ -271,7 +271,10 @@ print(json.dumps({
     "contacted": contacted,
     "default_target": default_target.value,
     "default_stages": [item.value for item in full_contract.build_stages],
-    "legacy_stages": [item.value for item in live._BUILD_STAGES],
+    "legacy_stages": [
+        item.value for item in CPScaleCanonicalStage
+        if item is not CPScaleCanonicalStage.REMAINING
+    ],
     "remaining": full_contract.run_remaining_reconciliation,
     "full": full_contract.run_full_qualification,
 }))
@@ -342,9 +345,11 @@ print(json.dumps({"error": result.primary_failure, "closure": result.closure,
 
 RUN_DOUBLES = r'''
 import json
+import sys
 from types import SimpleNamespace
 
 import tools.cp_scale_canonical_live as entry
+import packet_tracer_mcp
 import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from types import SimpleNamespace
 seams = SimpleNamespace()
@@ -361,6 +366,11 @@ from packet_tracer_mcp.application.cp_scale_live import (
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     CPScaleCanonicalStageTransition,
+    canonical_cp_scale_target_contract,
+)
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+    EXPECTED_BRANCH,
+    EXPECTED_UPSTREAM,
 )
 from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
@@ -585,16 +595,16 @@ def refuse_full_qualification(composition):
 
 class LocalPreflight:
     def inspect(self, request, *, run_identity, started_at):
-        target = live.canonical_cp_scale_target_contract(request.target_stage)
+        target = canonical_cp_scale_target_contract(request.target_stage)
         runtime = CPScaleRuntimeEvidence(
-            python_executable=live.sys.executable,
-            package_file=live.packet_tracer_mcp.__file__,
+            python_executable=sys.executable,
+            package_file=packet_tracer_mcp.__file__,
             loaded_namespaces=("packet_tracer_mcp",),
         )
         repository = CPScaleRepositoryEvidence(
             state=CPScaleCheckState.PASSED,
-            branch=live.EXPECTED_BRANCH,
-            upstream=live.EXPECTED_UPSTREAM,
+            branch=EXPECTED_BRANCH,
+            upstream=EXPECTED_UPSTREAM,
             head=HEAD,
             upstream_head=HEAD,
             source_tree="b" * 40,

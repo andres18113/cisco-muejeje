@@ -3,8 +3,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from ...application.cp_scale_live.contracts import CPScaleDhcpStatisticsTarget, CPScaleObservationRecord
-from ...application.cp_scale_live.run_contracts import CPScaleCleanupRealtime, CPScaleRealtimeState
+from ...application.cp_scale_live.contracts import (
+    CPScaleDhcpStatisticsTarget,
+    CPScaleObservationRecord,
+    CPScaleRealtimeState,
+)
+from ...application.cp_scale_live.run_contracts import CPScaleCleanupRealtime
 from ...application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalStageProjection
 from ..execution.ios_terminal import ControlledIosExecutor
 from ..execution.simulation_trace_runtime import SimulationTraceRuntime
@@ -54,9 +58,10 @@ class PacketTracerCPScaleRunObservations:
 
     def cleanup_realtime(self) -> CPScaleCleanupRealtime:
         try:
-            state = _voice_window_state(SimulationTraceRuntime(self.transport.send_and_wait))
+            raw = _voice_window_state(SimulationTraceRuntime(self.transport.send_and_wait))
+            state = cleanup_realtime_state(raw)
             error = _realtime_boundary_error(state, "after cleanup")
-            return CPScaleCleanupRealtime(not error, error, cleanup_realtime_state(state))
+            return CPScaleCleanupRealtime(not error, error, state)
         except Exception as exc:
             return CPScaleCleanupRealtime(False, f"{type(exc).__name__}: {exc}")
 

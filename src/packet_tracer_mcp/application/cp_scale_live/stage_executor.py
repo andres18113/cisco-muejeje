@@ -25,9 +25,10 @@ from .configuration_stage import CPScaleConfigurationStage
 from .control_plane_stage import CPScaleControlPlaneStage
 from .contracts import (
     CPScaleDiagnosticRecord, CPScaleDiagnosticRequest, CPScaleLiveStageResult,
-    CPScaleMutationScope, CPScaleObservationRecord, CPScaleRealtimeWindow,
-    CPScaleStageContinuity, CPScaleStageExecutionInput, CPScaleStageReport,
-    CPScaleStageSecondaryFailure, CPScaleVoiceLifecycleEvent,
+    CPScaleMutationScope, CPScaleObservationRecord, CPScaleRealtimeObservation,
+    CPScaleRealtimeState, CPScaleRealtimeWindow, CPScaleStageContinuity,
+    CPScaleStageExecutionInput, CPScaleStageReport, CPScaleStageSecondaryFailure,
+    CPScaleVoiceLifecycleEvent,
 )
 from .forwarding_stage import CPScaleForwardingStage
 from .observation import CPScaleDiagnosticPort, CPScaleRequiredObservations
@@ -136,6 +137,22 @@ class CPScaleStageExecutor:
             observations.append(record)
             return record
 
+        def observe_realtime(
+            kind,
+            state: CPScaleRealtimeState,
+            error: str = "",
+        ) -> CPScaleRealtimeObservation:
+            record = CPScaleRealtimeObservation(
+                kind,
+                projection.stage,
+                "required_stage_observation",
+                "observed",
+                state,
+                error,
+            )
+            observations.append(record)
+            return record
+
         def record_lifecycle(event: str) -> None:
             lifecycle.append(CPScaleVoiceLifecycleEvent(
                 event, len(lifecycle) + 1, time.monotonic_ns(), datetime.now(timezone.utc),
@@ -202,8 +219,9 @@ class CPScaleStageExecutor:
                 record_lifecycle("NETWORK_VERIFIED")
 
             if has_voice:
-                before = observe("voice_window_before", self.observations.voice_window_state())
-                before_error = realtime_boundary_error(before.evidence, "before")
+                before_state = self.observations.voice_window_state()
+                before_error = realtime_boundary_error(before_state, "before")
+                before = observe_realtime("voice_window_before", before_state, before_error)
                 window = CPScaleRealtimeWindow(before, failure_reason=before_error)
                 if before_error:
                     raise _StageStopped(f"Voice at {projection.stage.value!r} was not attempted: " + before_error)
@@ -239,8 +257,9 @@ class CPScaleStageExecutor:
             )
             observe("stp_realtime_after_voice", self.observations.stp(projection, edge="after"))
             if window is not None:
-                after = observe("voice_window_after", self.observations.voice_window_state())
-                after_error = realtime_boundary_error(after.evidence, "after")
+                after_state = self.observations.voice_window_state()
+                after_error = realtime_boundary_error(after_state, "after")
+                after = observe_realtime("voice_window_after", after_state, after_error)
                 window = replace(window, after=after, verified=not after_error, failure_reason=after_error)
                 if after_error:
                     raise _StageStopped(f"Voice at {projection.stage.value!r} is not interpretable: " + after_error)

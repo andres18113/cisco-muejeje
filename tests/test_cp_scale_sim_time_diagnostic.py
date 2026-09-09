@@ -29,7 +29,7 @@ from types import SimpleNamespace
 sys.path.insert(0, __ROOT__)
 sys.path.insert(0, __SRC__)
 
-from packet_tracer_mcp.adapters.cli.cp_scale_live import (
+from packet_tracer_mcp.infrastructure.diagnostics.cp_scale_live import (
     _SIMULATION_GLOBAL_EVENT_LIST_CEILING,
     _SIMULATION_HARD_MAX_STEPS,
     _SIMULATION_HARD_WALL_CLOCK_SECONDS,

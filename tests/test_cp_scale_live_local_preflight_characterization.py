@@ -22,7 +22,9 @@ def _probe(scenario: str) -> dict:
 
 _PROBE_SOURCE = r'''
 import json
+import sys
 
+import packet_tracer_mcp
 import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleImportIsolationObservation,
@@ -30,6 +32,10 @@ from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleProcessRecord,
     CPScaleRepositoryObservation,
     CPScaleRuntimeEvidence,
+)
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+    EXPECTED_BRANCH,
+    EXPECTED_UPSTREAM,
 )
 
 
@@ -43,8 +49,8 @@ class RuntimeReader:
     def read(self):
         events.append("runtime")
         return CPScaleRuntimeEvidence(
-            python_executable=live.sys.executable,
-            package_file=live.packet_tracer_mcp.__file__,
+            python_executable=sys.executable,
+            package_file=packet_tracer_mcp.__file__,
             loaded_namespaces=("packet_tracer_mcp",),
         )
 
@@ -66,8 +72,8 @@ class RepositoryReader:
         events.extend(("repository", "dirty", "upstream-head", "source-tree"))
         rejected = SCENARIO == "repository-rejected"
         return CPScaleRepositoryObservation(
-            branch="wrong-branch" if rejected else live.EXPECTED_BRANCH,
-            upstream="wrong/upstream" if rejected else live.EXPECTED_UPSTREAM,
+            branch="wrong-branch" if rejected else EXPECTED_BRANCH,
+            upstream="wrong/upstream" if rejected else EXPECTED_UPSTREAM,
             head=HEAD,
             upstream_head="b" * 40 if rejected else HEAD,
             source_tree="c" * 40,
@@ -113,14 +119,14 @@ live.GitCPScaleRepositoryReader = RepositoryReader
 live.PowerShellPacketTracerProcessReader = ProcessReader
 live.PacketTracerHttpTransport = transport
 from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import run_evidence
-original_factory = live._build_coordinator
+original_factory = live.build_coordinator
 def build_coordinator(request, **kwargs):
     coordinator = original_factory(request, **kwargs)
     coordinator.persistence.write_progress = lambda report: write(run_evidence(report))
     # This sentinel marks entry into the factory, before any session acquisition.
     coordinator.session_factory = transport
     return coordinator
-live._build_coordinator = build_coordinator
+live.build_coordinator = build_coordinator
 
 try:
     code = live.run(

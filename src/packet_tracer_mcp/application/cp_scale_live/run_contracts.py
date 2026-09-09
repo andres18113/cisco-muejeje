@@ -4,12 +4,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .checkpoint import CPScaleCheckpointRepository
 
-from .contracts import CPScaleLiveStageResult, CPScaleObservationRecord, CPScalePreflightResult
+from .contracts import (
+    CPScaleLiveStageResult,
+    CPScaleObservationRecord,
+    CPScalePreflightResult,
+    CPScaleRealtimeState,
+)
 from .contracts import CPScaleLiveSessionIdentity
 from .errors import CPScaleStageFailure
 from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection, CPScaleCanonicalStageTransition, CPScaleCanonicalStage, CPScaleCanonicalTarget
@@ -39,18 +44,6 @@ class CPScaleCleanupResult:
     first: PhysicalWorkspaceObservation | None = None
     second: PhysicalWorkspaceObservation | None = None
     error: str = ""
-
-
-@dataclass(frozen=True)
-class CPScaleRealtimeState:
-    observed: bool | None = None
-    simulation_mode: bool | None = None
-    frames: int | None = None
-    sim_time: float | None = None
-    current_index: int | None = None
-    message: str | None = None
-    mode: str | None = None
-    present: tuple[Literal["observed", "simulation_mode", "frames", "sim_time", "current_index", "message", "mode"], ...] = ()
 
 
 @dataclass(frozen=True)

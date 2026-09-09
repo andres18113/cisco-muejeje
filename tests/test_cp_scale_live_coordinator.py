@@ -248,7 +248,8 @@ def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failu
     from src.packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
     from src.packet_tracer_mcp.application.cp_scale_live.coordinator import CPScaleLiveCoordinator
     from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
-    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupRealtime, CPScaleRealtimeState
+    from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleRealtimeState
+    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupRealtime
     from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import PacketTracerCPScaleSession
     from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
     from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (

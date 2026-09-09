@@ -1,13 +1,9 @@
 """A failed CP-SCALE stage must keep the evidence it already gathered.
 
-The Floor-1 run died with a 43-identifier failure string and nothing else. The
-per-field read-backs that would have named the root cause existed at the moment
-of the raise -- `_execute_stage` had already written the full typed
-`ConfigurationApplicationResult` into its local journal three lines earlier --
-but that dict escapes only through the success return, and the outer loop
-appends it only after the call returns. The exception threw away the exact
-evidence and kept the summary. Reconstructing what the run had already seen
-cost a full offline investigation.
+The original Floor-1 run died with a summary string after acquiring detailed
+read-backs.  The extracted executor now returns one typed failed result before
+the coordinator judges it; these regressions exercise that real result and its
+owner serializers directly, without rebuilding the retired adapter wrapper.
 
 `tools/cp_scale_canonical_live.py` imports the PRODUCTION `packet_tracer_mcp`
 namespace, and `ImportIsolationPreflight` exists precisely so that the live
@@ -34,27 +30,36 @@ ROOT = Path(__file__).resolve().parents[1]
 _PROBE = '''
 import inspect, json, subprocess, sys
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, {root!r})
 sys.path.insert(0, {src!r})
 
-from packet_tracer_mcp.adapters.cli.cp_scale_live import (
-    CHECKPOINT_PATH,
-    EVIDENCE_PATH,
-    FINAL_CHECKPOINT_PATH,
-    CanonicalLiveFailure,
-    _execute_stage,
+from packet_tracer_mcp.adapters.cli.cp_scale_live import build_stage_executor as compose_stage_executor
+from packet_tracer_mcp.application.cp_scale_live.errors import CanonicalLiveFailure
+from packet_tracer_mcp.infrastructure.observation.cp_scale_live import (
+    _dhcp_server_binding_evidence,
     _dhcp_server_statistics_delta,
     _dhcp_server_statistics_observation,
     _dhcp_server_statistics_point,
+    _voice_dhcp_statistics_target,
+)
+from packet_tracer_mcp.infrastructure.diagnostics.cp_scale_live import (
     _post_failure_simulation_diagnostic,
     _representative_phone_evidence,
-    _trunk_vlan_traversal_evidence,
-    _voice_dhcp_statistics_target,
-    _write_checkpoint_summary,
 )
-import packet_tracer_mcp.adapters.cli.cp_scale_live as live
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
+    _trunk_vlan_traversal_evidence,
+    stage_result_evidence,
+)
+from packet_tracer_mcp.application.cp_scale_live.contracts import (
+    CPScaleDhcpStatisticsTarget,
+    CPScaleObservationRecord,
+    CPScaleStageContinuity,
+    CPScaleStageExecutionInput,
+)
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     VerificationKind,
@@ -80,10 +85,10 @@ verdict = {{}}
 from packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleVoiceStageResult, CPScaleDiagnosticRecord,
 )
-original_stage_factory = live._build_stage_executor
+original_stage_factory = compose_stage_executor
 stage_injections = {{}}
 
-def build_stage_executor(**dependencies):
+def stage_executor_with_injections(**dependencies):
     executor = original_stage_factory(**dependencies)
     if "configuration_applicator" in stage_injections:
         executor.configuration.applicator = stage_injections["configuration_applicator"]
@@ -112,7 +117,79 @@ def build_stage_executor(**dependencies):
         )
     return executor
 
-live._build_stage_executor = build_stage_executor
+
+def execute_stage_result(
+    projection,
+    *,
+    composition,
+    deployment,
+    delta_deployment,
+    physical,
+    configuration_runtime,
+    control_runtime,
+    voice_runtime,
+    transport,
+    fingerprint,
+    packet_tracer_version,
+    dhcp_statistics_target=None,
+    dhcp_statistics_baseline=None,
+    verified_serial_topology=None,
+    verified_serial_manifest=None,
+    previous_projection=None,
+    previous_configuration=None,
+    previous_voice_action_results=(),
+    previous_control_plane_action_results=(),
+    network_boundaries=None,
+    site_forwarding_checks=(),
+):
+    request = CPScaleStageExecutionInput(
+        projection=projection,
+        composition=composition,
+        deployment=deployment,
+        delta_deployment=delta_deployment,
+        fingerprint=fingerprint,
+        packet_tracer_version=packet_tracer_version,
+        continuity=CPScaleStageContinuity(
+            previous_projection,
+            previous_configuration,
+            previous_voice_action_results,
+            previous_control_plane_action_results,
+            verified_serial_topology,
+            verified_serial_manifest,
+        ),
+        dhcp_statistics_target=(
+            CPScaleDhcpStatisticsTarget(**dhcp_statistics_target)
+            if dhcp_statistics_target is not None else None
+        ),
+        dhcp_statistics_baseline=(
+            CPScaleObservationRecord(
+                "dhcp_baseline", projection.stage, "test_composition", "observed",
+                dhcp_statistics_baseline,
+            )
+            if dhcp_statistics_baseline is not None else None
+        ),
+        network_boundaries=tuple(
+            CPScaleObservationRecord(
+                "network_state", projection.stage, "test_composition", "observed", item,
+            )
+            for item in network_boundaries or ()
+        ),
+        site_forwarding_checks=tuple(site_forwarding_checks),
+    )
+    return stage_executor_with_injections(
+        physical=physical,
+        configuration_runtime=configuration_runtime,
+        control_runtime=control_runtime,
+        voice_runtime=voice_runtime,
+        transport=transport,
+        packet_tracer_version=packet_tracer_version,
+    ).execute(request)
+
+
+persistence = CPScaleLivePersistence(Path({root!r}))
+EVIDENCE_PATH = persistence.evidence_path
+CHECKPOINT_PATH = persistence.checkpoint_path
+FINAL_CHECKPOINT_PATH = persistence.final_checkpoint_path
 
 verdict["runtime_checkpoint_sits_with_ignored_evidence"] = (
     CHECKPOINT_PATH.parent == EVIDENCE_PATH.parent
@@ -122,8 +199,8 @@ verdict["runtime_checkpoint_is_gitignored"] = subprocess.run(
     cwd={root!r},
 ).returncode == 0
 verdict["runtime_checkpoint_is_writer_default"] = (
-    inspect.signature(_write_checkpoint_summary)
-    .parameters["destination"].default == CHECKPOINT_PATH
+    inspect.signature(CPScaleLivePersistence.write_checkpoint_summary)
+    .parameters["destination"].default is None
 )
 verdict["final_checkpoint_is_tracked"] = subprocess.run(
     ["git", "ls-files", "--error-unmatch", str(FINAL_CHECKPOINT_PATH)],
@@ -131,12 +208,8 @@ verdict["final_checkpoint_is_tracked"] = subprocess.run(
     capture_output=True,
 ).returncode == 0
 
-carried = CanonicalLiveFailure("boom", stage_evidence={{"stage": "floor1"}})
-verdict["carries_evidence"] = carried.stage_evidence == {{"stage": "floor1"}}
-verdict["message_intact"] = str(carried) == "boom"
-
 bare = CanonicalLiveFailure("boom")
-verdict["defaults_to_none"] = bare.stage_evidence is None
+verdict["defaults_to_none"] = bare.partial_stage is None
 verdict["still_runtime_error"] = isinstance(bare, RuntimeError)
 
 trunk_plan = SimpleNamespace(verification_expectations=[SimpleNamespace(
@@ -170,7 +243,7 @@ IP address      Client-ID/              Lease expiration        Type
 172.16.10.2     0001.1111.1111          --                      Automatic
 172.16.30.22    0002.2222.2222          --                      Automatic
 Router4#"""
-binding_helper = getattr(live, "_dhcp_server_binding_evidence", None)
+binding_helper = _dhcp_server_binding_evidence
 if binding_helper is not None:
     class BindingIos:
         def __init__(self, output=binding_output):
@@ -619,32 +692,24 @@ deployment = SimpleNamespace(
     model_dump=lambda mode="json": {{"status": "failed"}},
 )
 
-try:
-    _execute_stage(
-        projection,
-        composition=SimpleNamespace(capabilities={{}}),
-        deployment=deployment,
-        delta_deployment=None,
-        physical=None,
-        configuration_runtime=None,
-        control_runtime=None,
-        voice_runtime=None,
-        transport=SimpleNamespace(
-            send_and_wait=lambda *args, **kwargs: None,
-        ),
-        fingerprint=None,
-        packet_tracer_version="9.0.1.0858",
-    )
-except CanonicalLiveFailure as exc:
-    evidence = exc.stage_evidence
-    verdict["raised_with_journal"] = evidence is not None
-    verdict["stage"] = (evidence or {{}}).get("stage")
-    verdict["configuration_hash"] = (
-        (evidence or {{}}).get("plan", {{}}).get("configuration_hash")
-    )
-    verdict["physical"] = (evidence or {{}}).get("physical")
-else:
-    verdict["raised_with_journal"] = False
+failed_physical = execute_stage_result(
+    projection,
+    composition=SimpleNamespace(capabilities={{}}),
+    deployment=deployment,
+    delta_deployment=None,
+    physical=None,
+    configuration_runtime=None,
+    control_runtime=None,
+    voice_runtime=None,
+    transport=SimpleNamespace(send_and_wait=lambda *args, **kwargs: None),
+    fingerprint=None,
+    packet_tracer_version="9.0.1.0858",
+)
+evidence = stage_result_evidence(failed_physical)
+verdict["failed_result_keeps_journal"] = failed_physical.outcome == "failed"
+verdict["stage"] = evidence.get("stage")
+verdict["configuration_hash"] = evidence.get("plan", {{}}).get("configuration_hash")
+verdict["physical"] = evidence.get("physical")
 
 # A typed configuration contradiction happens after the full application
 # result exists. Its human-readable trunk projection must escape with the same
@@ -669,8 +734,7 @@ stage_injections["orientation"] = lambda *args, **kwargs: SimpleNamespace(
     errors=[],
     model_dump=lambda mode="json": {{"verified": True}},
 )
-try:
-    _execute_stage(
+contradicted = execute_stage_result(
         projection,
         composition=SimpleNamespace(capabilities={{}}),
         deployment=verified_deployment,
@@ -687,13 +751,10 @@ try:
         verified_serial_topology=SimpleNamespace(),
         verified_serial_manifest=SimpleNamespace(),
     )
-except CanonicalLiveFailure as exc:
-    contradiction_evidence = exc.stage_evidence or {{}}
-    verdict["contradicted_stage_trunk"] = contradiction_evidence.get(
-        "trunk_vlan_traversal"
-    )
-else:
-    verdict["contradicted_stage_trunk"] = None
+contradiction_evidence = stage_result_evidence(contradicted)
+verdict["contradicted_stage_trunk"] = contradiction_evidence.get(
+    "trunk_vlan_traversal"
+)
 
 # A voice contradiction is precisely when server bindings are diagnostic. The
 # additive observation must therefore be journalled before that contradiction
@@ -717,8 +778,7 @@ stage_injections["diagnostic"] = lambda *args, **kwargs: {{
     "sentinel": "post failure simulation retained",
 }}
 projection.voice = SimpleNamespace(actions=[], phone_assignments=[])
-try:
-    _execute_stage(
+voice_failure = execute_stage_result(
         projection,
         composition=SimpleNamespace(capabilities={{}}),
         deployment=verified_deployment,
@@ -735,21 +795,16 @@ try:
         verified_serial_topology=SimpleNamespace(),
         verified_serial_manifest=SimpleNamespace(),
     )
-except CanonicalLiveFailure as exc:
-    voice_failure_evidence = exc.stage_evidence or {{}}
-    verdict["bindings_before_voice_failure"] = voice_failure_evidence.get(
-        "dhcp_server_bindings"
-    )
-    verdict["statistics_before_voice_failure"] = voice_failure_evidence.get(
-        "dhcp_voice_exchange"
-    )
-    verdict["simulation_before_voice_failure"] = voice_failure_evidence.get(
-        "post_failure_simulation"
-    )
-else:
-    verdict["bindings_before_voice_failure"] = None
-    verdict["statistics_before_voice_failure"] = None
-    verdict["simulation_before_voice_failure"] = None
+voice_failure_evidence = stage_result_evidence(voice_failure)
+verdict["bindings_before_voice_failure"] = voice_failure_evidence.get(
+    "dhcp_server_bindings"
+)
+verdict["statistics_before_voice_failure"] = voice_failure_evidence.get(
+    "dhcp_voice_exchange"
+)
+verdict["simulation_before_voice_failure"] = voice_failure_evidence.get(
+    "post_failure_simulation"
+)
 
 # ---- VOICE_REALTIME_CONTINUITY -------------------------------------------
 # Simulation mode changes execution semantics, so a 180s convergence window
@@ -781,10 +836,7 @@ projection.voice = SimpleNamespace(
 def run_continuity(*states):
     del voice_invocations[:]
     bridge = ContinuityBridge(*states)
-    stage_evidence = None
-    message = ""
-    try:
-        _execute_stage(
+    result = execute_stage_result(
             projection,
             composition=SimpleNamespace(capabilities={{}}),
             deployment=verified_deployment,
@@ -799,17 +851,14 @@ def run_continuity(*states):
             verified_serial_topology=SimpleNamespace(),
             verified_serial_manifest=SimpleNamespace(),
         )
-    except CanonicalLiveFailure as exc:
-        stage_evidence = exc.stage_evidence or {{}}
-        message = str(exc)
-    stage_evidence = stage_evidence or {{}}
+    stage_evidence = stage_result_evidence(result)
     return {{
         "continuity": stage_evidence.get("voice_realtime_continuity"),
         "voice_invoked": bool(voice_invocations),
         "has_voice": "voice" in stage_evidence,
         "has_bindings": "dhcp_server_bindings" in stage_evidence,
         "has_diagnostic": "post_failure_simulation" in stage_evidence,
-        "message": message,
+        "message": result.failure,
         "mode_scripts": sum(
             1 for script in bridge.scripts if "setSimulationMode" in script
         ),
@@ -848,11 +897,6 @@ def verdict() -> dict:
     return json.loads(completed.stdout.strip().splitlines()[-1])
 
 
-def test_canonical_live_failure_carries_the_stage_evidence_it_had(verdict):
-    assert verdict["carries_evidence"]
-    assert verdict["message_intact"]
-
-
 def test_runtime_checkpoint_summary_cannot_dirty_the_governed_worktree(verdict):
     assert verdict["runtime_checkpoint_sits_with_ignored_evidence"]
     assert verdict["runtime_checkpoint_is_gitignored"]
@@ -863,13 +907,13 @@ def test_terminal_reference_checkpoint_remains_a_tracked_artifact(verdict):
     assert verdict["final_checkpoint_is_tracked"]
 
 
-def test_canonical_live_failure_without_evidence_still_behaves_as_before(verdict):
+def test_canonical_live_failure_without_partial_stage_is_still_a_runtime_error(verdict):
     assert verdict["defaults_to_none"]
     assert verdict["still_runtime_error"]
 
 
-def test_a_failed_stage_raises_with_the_journal_it_had_already_written(verdict):
-    assert verdict["raised_with_journal"], "the stage journal was thrown away again"
+def test_a_failed_stage_result_keeps_the_journal_it_had_already_written(verdict):
+    assert verdict["failed_result_keeps_journal"], "the stage journal was thrown away again"
     assert verdict["stage"] == "floor1"
     assert verdict["configuration_hash"] == "config-hash"
     assert verdict["physical"] == {"status": "failed"}

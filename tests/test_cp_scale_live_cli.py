@@ -63,10 +63,10 @@ class RefusingTransport(Transport):
     def start(self, **kwargs):
         record("offline.start")
         raise RuntimeError("OFFLINE_START_FAILURE")
-live._build_local_preflight = lambda governed_root: LocalPreflight()
+live.build_local_preflight = lambda governed_root: LocalPreflight()
 live.PacketTracerHttpTransport = RefusingTransport
 request = CPScaleLiveRequest("9.0.1.0858", HEAD, False)
-coordinator = PRODUCT_SYMBOLS["_build_coordinator"](request, governed_root=root)
+coordinator = PRODUCT_SYMBOLS["build_coordinator"](request, governed_root=root)
 result = coordinator.run(request)
 payload = json.loads((root / "data/cp-scale/live-canonical-progress.json").read_text(encoding="utf-8"))
 print(json.dumps({"outcome": result.outcome.value, "calls": calls, "schema": payload["schema"],

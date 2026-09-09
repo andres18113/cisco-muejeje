@@ -84,8 +84,7 @@ calls = []
 def forbidden(*args, **kwargs):
     calls.append("assembly")
     raise RuntimeError("ASSEMBLY_MUST_NOT_RUN")
-name = "build_coordinator" if hasattr(live, "build_coordinator") else "_build_coordinator"
-setattr(live, name, forbidden)
+live.build_coordinator = forbidden
 try:
     code = live.run("9.0.1.0858", expected_head="a" * 40,
         retain_on_full_verification=False)

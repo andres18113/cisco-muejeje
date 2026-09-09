@@ -195,7 +195,11 @@ def stage_fixture(executor_type, *, partial=False, unobservable=False, reread=Fa
 def voice_window_trace(*, after_simulating=False, diagnostic_raises=False):
     from dataclasses import replace
     from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleVoiceStageResult, CPScaleDiagnosticRecord
+    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+        CPScaleDiagnosticRecord,
+        CPScaleRealtimeState,
+        CPScaleVoiceStageResult,
+    )
     from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoicePlan
     from tests.test_voice_runtime import _compile
 
@@ -207,7 +211,11 @@ def voice_window_trace(*, after_simulating=False, diagnostic_raises=False):
     states = iter([False, after_simulating])
     def read():
         trace.append("before" if "before" not in trace else "after")
-        return {"observed": True, "simulation_mode": next(states)}
+        return CPScaleRealtimeState(
+            observed=True,
+            simulation_mode=next(states),
+            present=("observed", "simulation_mode"),
+        )
     fixture.executor.observations.voice_window_state = read
     fixture.executor.observations.stp = lambda projection, edge: trace.append("stp_" + edge) or {}
     fixture.executor.observations.bindings = lambda projection: trace.append("bindings") or []

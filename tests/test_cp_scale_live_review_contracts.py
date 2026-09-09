@@ -57,7 +57,7 @@ def report(value):
 coordinator.persistence.write_progress = write
 coordinator.presentation.finalization_incomplete = report
 result = coordinator.run(request)
-live._build_coordinator = lambda request, **kwargs: coordinator
+live.build_coordinator = lambda request, **kwargs: coordinator
 calls.clear()
 code = live.run("9.0.1.0858", expected_head=HEAD, retain_on_full_verification=False, target_stage="router0-branch")
 print(json.dumps({"outcome": result.outcome.value, "code": code, "secondary": result.secondary_failures,
@@ -187,7 +187,8 @@ from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import CPScal
 from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
 request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
 coordinator = offline_coordinator(request)
-repository = CPScaleRepositoryState(branch=live.EXPECTED_BRANCH, upstream=live.EXPECTED_UPSTREAM, head=HEAD)
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import EXPECTED_BRANCH, EXPECTED_UPSTREAM
+repository = CPScaleRepositoryState(branch=EXPECTED_BRANCH, upstream=EXPECTED_UPSTREAM, head=HEAD)
 resumption = CPScaleCheckpointRepository(repository, HEAD, False, False)
 events = []
 class Repository:

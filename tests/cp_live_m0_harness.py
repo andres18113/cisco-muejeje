@@ -20,7 +20,7 @@ Every child answers with two separate sections, and they are never mixed:
 
 What the coordination doubles replace, and what stays real:
 
-* Replaced (Level A): the explicit CLI ``_build_coordinator`` composition factory
+* Replaced (Level A): the explicit CLI ``build_coordinator`` composition factory
   injects controlled import/Git/process preflight, transport, capability access,
   projection, physical/E5/E9/Voice runtimes, stage executor, checkpoint, cleanup,
   and persistence ports. The transport double
@@ -72,10 +72,11 @@ FIXTURE_VERSION = "cp-live-m0-fixture-v3"
 
 
 _PROVENANCE_CORE = r'''
+import os as _os
 import sys as _sys
 from pathlib import Path as _Path
 
-_TREE = _Path(live.GOVERNED_ROOT).resolve()
+_TREE = _Path(_os.environ["PT_MCP_GOVERNED_ROOT"]).resolve()
 dispatch_attempts = []
 
 
@@ -131,7 +132,7 @@ def candidate_provenance():
         ),
         "package_file_inside_tree": _inside_tree(packet_tracer_mcp.__file__),
         "runner_file_inside_tree": _inside_tree(live.__file__),
-        "governed_root_inside_tree": _inside_tree(live.GOVERNED_ROOT),
+        "governed_root_inside_tree": _inside_tree(_TREE),
         "transport_dispatch_attempts": list(dispatch_attempts),
         "substituted_runner_symbols": sorted(
             name for name, value in vars(live).items()
@@ -492,6 +493,7 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
 )
 from packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
 from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
+from packet_tracer_mcp.infrastructure.observation.cp_scale_live import _wait_for_site_forwarding
 
 # Level C substitutes nothing: this trace calls the real rules with synthetic
 # typed inputs, so the substituted set stays empty and the probe proves it.
@@ -577,7 +579,7 @@ class Ping:
 
 ping = Ping()
 forwarding_verified, forwarding_evidence, first_failure = (
-    live._wait_for_site_forwarding(
+    _wait_for_site_forwarding(
         ping, checks, attempts=1, interval_seconds=0,
     )
 )
@@ -878,18 +880,13 @@ POLICY_TRACE_WRONG_DESTINATION_SOURCE = policy_trace_source(
 # What Level A must replace for a probe to be offline, and the rules that have
 # to stay real for it to be characterizing anything at all. Shared by the
 # oracle and by the recorder, so both judge a probe by the same measure.
-LEVEL_A_SUBSTITUTED_SYMBOLS = frozenset({'_build_coordinator'})
+LEVEL_A_SUBSTITUTED_SYMBOLS = frozenset({'build_coordinator'})
 PRODUCT_RULE_SYMBOLS = frozenset({
     "run",
-    "_execute_stage",
     "CPScaleLiveCoordinator",
     "CPScaleCompletion",
     "CPScaleBuildPolicy",
     "canonical_cp_scale_target_contract",
-    "canonical_final_disposition",
-    "canonical_checkpoint_repository_error",
-    "canonical_stage_mutation_replay_audit",
-    "_wait_for_site_forwarding",
 })
 
 

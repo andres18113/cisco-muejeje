@@ -178,7 +178,8 @@ from types import SimpleNamespace
 sys.path.insert(0, {root!r})
 sys.path.insert(0, {src!r})
 
-from packet_tracer_mcp.adapters.cli.cp_scale_live import _stage_voice
+from packet_tracer_mcp.application.cp_scale_live.voice_stage import CPScaleVoiceStage
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import voice_stage_evidence
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationRuntimeContext,
@@ -245,21 +246,21 @@ def _run(plan, result):
     applicator = SimpleNamespace(
         apply=lambda *a, **k: result,
     )
-    return _stage_voice(
-        SimpleNamespace(
+    projection = SimpleNamespace(
             voice=plan,
             stage=SimpleNamespace(value="floor1"),
             topology=SimpleNamespace(physical_identity_hash="t"),
             configuration=SimpleNamespace(semantic_hash="c"),
-        ),
-        voice_runtime=None,
-        applicator=applicator,
+        )
+    staged = CPScaleVoiceStage(applicator, None).apply(
+        projection,
         composition=SimpleNamespace(voice_capabilities={{}}),
         configuration=None,
         statuses={{}},
         context=ConfigurationRuntimeContext(),
         manifest=None,
     )
+    return voice_stage_evidence(projection, staged)
 
 
 # No phone in this stage: nothing applied, nothing claimed, no failure.

@@ -14,16 +14,16 @@ from ...domain.enterprise.models.configuration_runtime import (
 from ...domain.enterprise.models.deployment import DeploymentManifest
 from ...domain.enterprise.models.voice_plan import VoicePlan
 from ...domain.enterprise.models.voice_runtime import VoiceApplicationResult
-from .contracts import CPScaleObservationRecord, CPScaleVoiceStageResult
+from .contracts import CPScaleObservationRecord, CPScaleRealtimeState, CPScaleVoiceStageResult
 
 
-def realtime_boundary_error(state: dict[str, object] | None, edge: str) -> str:
-    if not isinstance(state, dict) or not state.get("observed"):
+def realtime_boundary_error(state: CPScaleRealtimeState | None, edge: str) -> str:
+    if state is None or state.observed is not True:
         return (
             f"The simulation state {edge} the authoritative voice window was not "
             "observable, so the window cannot be attributed to REALTIME."
         )
-    if state.get("simulation_mode"):
+    if state.simulation_mode is True:
         return (
             f"Packet Tracer was in Simulation mode {edge} the authoritative voice "
             "window. Packets do not progress autonomously there, so the window "

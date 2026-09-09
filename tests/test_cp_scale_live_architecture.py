@@ -460,3 +460,34 @@ def test_production_dependency_graph_and_static_facade():
 
 def test_run_snapshots_are_closed_frozen_and_only_coordinator_replaces_them():
     assert _state_issues(_production_sources()) == ()
+
+
+def test_cli_and_tool_publish_no_temporary_private_compatibility_surface():
+    adapter = ast.parse((ROOT / "src/packet_tracer_mcp/adapters/cli/cp_scale_live.py").read_text(encoding="utf-8"))
+    facade = ast.parse((ROOT / "tools/cp_scale_canonical_live.py").read_text(encoding="utf-8"))
+    retired = {
+        "GOVERNED_ROOT", "EVIDENCE_PATH", "CHECKPOINT_PATH", "FINAL_CHECKPOINT_PATH",
+        "CANONICAL_EVIDENCE_DIR", "CPScaleStageAdapterResult", "_BUILD_STAGES",
+        "_execute_stage", "_stage_voice",
+        "_write_evidence", "_write_checkpoint_summary", "_wait_for_site_forwarding",
+        "_wait_for_core_forwarding", "_network_state_observation",
+        "_post_failure_simulation_diagnostic", "_frame_observer_discovery",
+    }
+    adapter_definitions = {
+        node.name for node in adapter.body
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+    } | {
+        target.id for node in adapter.body if isinstance(node, ast.Assign)
+        for target in node.targets if isinstance(target, ast.Name)
+    } | {
+        item.asname or item.name
+        for node in adapter.body if isinstance(node, (ast.Import, ast.ImportFrom))
+        for item in node.names
+    }
+    facade_imports = {
+        item.name for node in facade.body if isinstance(node, ast.ImportFrom)
+        and node.module == CLI for item in node.names
+    }
+
+    assert adapter_definitions.isdisjoint(retired)
+    assert facade_imports == {"main", "run"}

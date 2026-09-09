@@ -3,6 +3,9 @@ from __future__ import annotations
 
 
 OFFLINE_COMPOSITION = r'''
+import os
+from datetime import datetime, timezone
+from pathlib import Path
 from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
 from packet_tracer_mcp.application.cp_scale_live.build_policy import CPScaleBuildPolicy
 from packet_tracer_mcp.application.cp_scale_live.checkpoint import CPScaleCheckpointDecision
@@ -14,7 +17,10 @@ from packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCle
 from packet_tracer_mcp.application.cp_scale_live.session import CPScaleRuntimeResources
 from packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import PacketTracerCPScaleSession
 from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import run_evidence, attestation_evidence
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
 from packet_tracer_mcp.infrastructure.observation.cp_scale_live_run import PacketTracerCPScaleRunObservations, CPScaleActiveProjection, cleanup_realtime_state
+
+test_persistence = CPScaleLivePersistence(Path(os.environ["PT_MCP_GOVERNED_ROOT"]))
 
 
 class Evidence:
@@ -22,18 +28,18 @@ class Evidence:
         seams._write_evidence(run_evidence(report))
 
     def checkpoint(self, stage, report, *, final=False):
-        kwargs = {"destination": live.FINAL_CHECKPOINT_PATH} if final else {}
+        kwargs = {"destination": test_persistence.final_checkpoint_path} if final else {}
         seams._write_checkpoint_summary(stage, run_evidence(report), **kwargs)
 
     def archive(self, phase, payload, *, run_identity):
         serialized = run_evidence(payload) if hasattr(payload, "preflight") else attestation_evidence(payload)
         return seams.archive_cp_scale_canonical_evidence(serialized,
-            base_dir=live.CANONICAL_EVIDENCE_DIR, run_identity=run_identity, phase=phase)
+            base_dir=test_persistence.archive_dir, run_identity=run_identity, phase=phase)
 
 
 class Checkpoint:
     def prepare(self, stage):
-        return CPScaleCheckpointPrepared(stage, live.datetime.now(live.timezone.utc), None)
+        return CPScaleCheckpointPrepared(stage, datetime.now(timezone.utc), None)
 
     def publish_and_prompt(self, prepared, publication):
         return CPScaleCheckpointDecision(seams._checkpoint(prepared.stage, run_evidence(publication),
@@ -86,7 +92,7 @@ stage_requests = []
 
 def offline_coordinator(request, **kwargs):
     persistence = Evidence()
-    presentation = live.CPScaleConsolePresentation(live.EVIDENCE_PATH)
+    presentation = live.CPScaleConsolePresentation(test_persistence.evidence_path)
 
     def session_factory():
         session = PacketTracerCPScaleSession(transport_factory=seams.PacketTracerHttpTransport,
@@ -124,5 +130,5 @@ def offline_coordinator(request, **kwargs):
     return coordinator
 
 
-live._build_coordinator = offline_coordinator
+live.build_coordinator = offline_coordinator
 '''

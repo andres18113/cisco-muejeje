@@ -18,8 +18,8 @@ from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import (
     CPScaleCapabilityQualification,
     CPScaleCleanupRealtime,
     CPScaleCleanupResult,
-    CPScaleRealtimeState,
 )
+from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleRealtimeState
 from src.packet_tracer_mcp.application.cp_scale_live.run_state import (
     CPScaleProgressState,
     CPScaleQualificationState,

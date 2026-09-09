@@ -128,7 +128,7 @@ def test_probe_provenance_is_refused_before_anything_is_written():
     undoubled = {
         **healthy,
         "substituted_runner_symbols": sorted(
-            LEVEL_A_SUBSTITUTED_SYMBOLS - {"_build_coordinator"},
+            LEVEL_A_SUBSTITUTED_SYMBOLS - {"build_coordinator"},
         ),
     }
 
@@ -148,7 +148,7 @@ def test_probe_provenance_is_refused_before_anything_is_written():
     assert recorder.provenance_refusals({"full-cleanup": {
         "provenance": undoubled,
     }}) == [
-        "full-cleanup: not substituted: _build_coordinator",
+        "full-cleanup: not substituted: build_coordinator",
     ]
     # The policy trace substitutes nothing, so the same provenance without the
     # doubles is exactly what it should report.

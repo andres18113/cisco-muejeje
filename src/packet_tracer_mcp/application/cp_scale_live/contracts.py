@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from ..use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
@@ -34,6 +35,26 @@ from ...domain.models.typed_ping import TypedPingResult
 
 
 @dataclass(frozen=True)
+class CPScaleRealtimeState:
+    """Finite Realtime readback; ``present`` preserves observed field absence."""
+
+    observed: bool | None = None
+    simulation_mode: bool | None = None
+    frames: int | None = None
+    sim_time: float | int | None = None
+    current_index: int | None = None
+    message: str | None = None
+    mode: str | None = None
+    present: tuple[
+        Literal[
+            "observed", "simulation_mode", "frames", "sim_time",
+            "current_index", "message", "mode",
+        ],
+        ...,
+    ] = ()
+
+
+@dataclass(frozen=True)
 class CPScaleStageContinuity:
     """Caller-owned replacement snapshot; no runtime or session ownership."""
 
@@ -56,6 +77,25 @@ class CPScaleObservationRecord:
     status: str
     evidence: dict[str, object]
     error: str = ""
+
+
+@dataclass(frozen=True)
+class CPScaleRealtimeObservation:
+    """One required stage boundary with typed Realtime state and no new authority."""
+
+    kind: Literal["voice_window_before", "voice_window_after"]
+    stage: CPScaleCanonicalStage
+    provenance: str
+    status: str
+    state: CPScaleRealtimeState | None
+    error: str = ""
+    authority: Literal["REQUIRED_STAGE_OBSERVATION"] = field(
+        default="REQUIRED_STAGE_OBSERVATION",
+        init=False,
+    )
+
+
+CPScaleRequiredObservation = CPScaleObservationRecord | CPScaleRealtimeObservation
 
 
 @dataclass(frozen=True)
@@ -186,8 +226,8 @@ class CPScaleVoiceLifecycleEvent:
 
 @dataclass(frozen=True)
 class CPScaleRealtimeWindow:
-    before: CPScaleObservationRecord
-    after: CPScaleObservationRecord | None = None
+    before: CPScaleRealtimeObservation
+    after: CPScaleRealtimeObservation | None = None
     verified: bool = False
     failure_reason: str = ""
 
@@ -262,7 +302,7 @@ class CPScaleLiveStageResult:
     voice: VoiceApplicationResult | None
     replay_audit: CanonicalMutationReplayAudit | None
     orientation: SerialOrientationResult | None
-    required_observations: tuple[CPScaleObservationRecord, ...]
+    required_observations: tuple[CPScaleRequiredObservation, ...]
     diagnostics: tuple[CPScaleDiagnosticRecord, ...]
     first_failed_boundary: str | None
     failure: str

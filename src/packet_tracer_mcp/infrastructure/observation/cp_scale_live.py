@@ -45,7 +45,11 @@ from ..execution.simulation_trace_runtime import SimulationTraceRuntime
 from ..execution.live_bridge import PacketTracerHttpTransport
 from ..execution.packet_tracer_physical_runtime import PacketTracerPhysicalTopologyRuntime
 from ...application.cp_scale_live.voice_stage import realtime_boundary_error as _realtime_boundary_error
-from ...application.cp_scale_live.contracts import CPScaleDhcpStatisticsTarget, CPScaleObservationRecord
+from ...application.cp_scale_live.contracts import (
+    CPScaleDhcpStatisticsTarget,
+    CPScaleObservationRecord,
+    CPScaleRealtimeState,
+)
 from ...application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection, CPScaleSiteForwardingCheck
 from ...application.use_cases.observe_serial_orientation import SerialOrientationResult
 from ...domain.enterprise.models.deployment import DeploymentManifest
@@ -82,8 +86,20 @@ class PacketTracerCPScaleObservations:
     def serial_interfaces(self, projection: CPScaleCanonicalStageProjection) -> tuple[bool, list[dict[str, object]]]:
         return _wait_for_serial_interfaces(self.ios, _core_serial_addresses(projection))
 
-    def voice_window_state(self) -> dict[str, object]:
-        return _voice_window_state(self.simulation)
+    def voice_window_state(self) -> CPScaleRealtimeState:
+        state = self.simulation.read_simulation_state()
+        return CPScaleRealtimeState(
+            observed=state.observed,
+            simulation_mode=state.simulation_mode,
+            frames=state.frames,
+            sim_time=state.sim_time,
+            current_index=state.current_index,
+            message=state.message,
+            present=(
+                "observed", "simulation_mode", "frames", "sim_time",
+                "current_index", "message",
+            ),
+        )
 
     def stp(self, projection: CPScaleCanonicalStageProjection, *, edge: str) -> dict[str, object]:
         return _stp_realtime_evidence(self.ios, projection, edge=edge)

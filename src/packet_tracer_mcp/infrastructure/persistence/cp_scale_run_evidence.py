@@ -9,7 +9,7 @@ from ...application.cp_scale_live.run_contracts import (
     CPScaleRunReport, CPScaleRunReplayAudit, CPScaleStageProgress,
     CPScaleBridgeStatus,
 )
-from .cp_scale_stage_evidence import stage_result_evidence
+from .cp_scale_stage_evidence import realtime_state_evidence, stage_result_evidence
 
 
 def transition_evidence(transition):
@@ -48,8 +48,7 @@ def cleanup_evidence(result: CPScaleCleanupResult) -> dict[str, object]:
 
 
 def realtime_evidence(result: CPScaleCleanupRealtime) -> dict[str, object]:
-    state = {name: getattr(result.state, name) for name in result.state.present} if result.state is not None else None
-    return {"state": state, "error": result.error, "verified": result.verified}
+    return {"state": realtime_state_evidence(result.state), "error": result.error, "verified": result.verified}
 
 
 def replay_evidence(result: CPScaleRunReplayAudit) -> dict[str, object]:
