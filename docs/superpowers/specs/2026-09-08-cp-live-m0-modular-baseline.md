@@ -1328,16 +1328,16 @@ M3 sigue pendiente; merge, force-push y adquisición LIVE siguen prohibidos.
 
 M3 parte de `fae7a7f9ae7db80c1fad921ddc81ed57d695d853`. Su
 HEAD funcional revisado antes de este registro es
-`8adc919de18816b3baf0bb0f121249f79e16db1e`; el SHA final de documentación y
+`030e6ae7be7546fbfdaa071495e524a8037b6ea3`; el SHA final de documentación y
 CI se reporta fuera del propio commit para no crear una autorreferencia.
 
 | Requisito | Implementación | Prueba | Evidencia offline |
 | --- | --- | --- | --- |
 | Raíz gobernada independiente | `run()` lee únicamente `PT_MCP_GOVERNED_ROOT`; la misma `Path` entra en preflight, store de capacidades, checkpoint y `CPScaleLivePersistence`. No existe fallback a `packet_tracer_mcp.__file__` | `test_cp_scale_live_governed_root.py`, CLI, import/worktree isolation | dos clones A/B en el mismo SHA: tool A + venv/paquete B retorna `2`, no escribe en B, no crea store y no alcanza backend |
 | Fallos parciales serializables | `run_evidence()` trata `first`, `second`, `unresolved` y errores de cleanup de forma independiente, conservando `None` como ausencia | `test_cp_scale_live_partial_persistence.py` | el fallo real de la segunda observación conserva la primera, la causa `SECOND_WORKSPACE_READ_FAILED`, un solo close y evidencia/archives reales en `tmp_path` |
-| Aislamiento fuera de Git | snapshot SHA-256 de rutas protegidas, fixture de sesión y entorno común para subprocess; token/mailbox/temp/store separados | `test_cp_live_data_integrity.py`, harness M0 y affected | crear, borrar o reemplazar un ignorado rompe el sentinel; affected **819 passed** y full **4 403 passed** terminaron sin diferencia protegida |
+| Aislamiento fuera de Git | snapshot SHA-256+mtime iniciado en `pytest_configure`, verificado en `pytest_unconfigure`, y entorno común para subprocess; token/mailbox/temp/store separados | `test_cp_live_data_integrity.py`, harness M0 y affected | crear, borrar, reemplazar, reescribir los mismos bytes o retargetear symlink rompe el sentinel; affected **822 passed / 1 skip** y full **4 406 passed / 1 skip** terminaron sin diferencia protegida |
 | Migración y Realtime de stage | tool reducido a `main/run`; adapter conserva sólo composición/presentación; consumidores importan desde application/observation/diagnostics/persistence. `CPScaleRealtimeObservation` y `CPScaleRealtimeState` llevan presencia, error, provenance y autoridad requerida | `test_cp_scale_live_realtime_contract.py`, stage/failure/Voice/diagnostics/arquitectura | mapping público before/after idéntico; ausencia y Simulation permanecen fallos, diagnóstico no adquiere autoridad y no queda wrapper `_execute_stage` |
-| Equivalencia e integración | inyección del harness adaptada a factories propietarias; ninguna expectativa del oráculo se regeneró | Router0/default/retención/rechazos/cancelación/finalización, baseline-v3 | foco Realtime/migración **334 passed**, arquitectura/estado **88 passed**, affected **819 passed**, full **4 403 passed / 3 warnings existentes** |
+| Equivalencia e integración | inyección del harness adaptada a factories propietarias; ninguna expectativa del oráculo se regeneró | Router0/default/retención/rechazos/cancelación/finalización, baseline-v3 | foco Realtime/migración **334 passed**, review-fix **120 passed / 1 skip**, affected **822 passed / 1 skip**, full **4 406 passed / 1 skip / 3 warnings existentes**; re-review independiente **Ready YES** |
 
 ### Incidencia de evidencia ignorada
 
@@ -1360,7 +1360,7 @@ La referencia remota se refrescó sin merge. El HEAD contemporáneo de
 `cisco/feature/runtime-ripv2` es
 `62db3cea84a4bfca1a5bcd3d2389d62864c45946`; es también el merge-base con el
 HEAD funcional M3. La divergencia observada fue **0 commits exclusivos de
-feature / 28 commits de CP-LIVE**. Por tanto no había avances de feature que
+feature / 30 commits de CP-LIVE**. Por tanto no había avances de feature que
 incorporar o resolver, y no se exigió igualdad entre ramas. No se hizo merge ni
 push a la rama productiva.
 
