@@ -1082,6 +1082,21 @@ def _stage_includes_device(
     site_id: str,
     zone_id: str,
 ) -> bool:
+    """Backward-compatible private alias for the canonical stage policy."""
+
+    return cp_scale_canonical_stage_includes_device(
+        stage, device_id, site_id, zone_id,
+    )
+
+
+def cp_scale_canonical_stage_includes_device(
+    stage: CPScaleCanonicalStage,
+    device_id: str,
+    site_id: str,
+    zone_id: str,
+) -> bool:
+    """Return whether one canonical physical device is present at ``stage``."""
+
     order = _CANONICAL_STAGE_ORDER[stage]
     if device_id in _CORE_ROUTER_IDS:
         return True
