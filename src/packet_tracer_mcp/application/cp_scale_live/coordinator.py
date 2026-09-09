@@ -81,6 +81,21 @@ class CPScaleLiveCoordinator:
                 terminal = replace(terminal, finalization_errors=errors)
             return errors
 
+        def settle_terminal_errors(
+            errors: tuple[str, ...],
+            *,
+            publication_required: bool,
+        ) -> tuple[str, ...]:
+            """Publish acquired terminal facts, report once, then persist a report failure."""
+            nonlocal terminal
+            published = publish_terminal_outcome(errors) if publication_required else errors
+            reported = report_terminal_errors(published, report_errors)
+            terminal = replace(terminal, finalization_errors=reported)
+            if reported != published:
+                reported = publish_terminal_outcome(reported)
+                terminal = replace(terminal, finalization_errors=reported)
+            return reported
+
         if preflight.outcome is CPScalePreflightOutcome.REJECTED:
             terminal = replace(terminal, hard_stop=" ".join(preflight.issues) or "Local preflight evidence is incomplete or inconsistent.")
         elif preflight.identity is None:
@@ -381,18 +396,19 @@ class CPScaleLiveCoordinator:
             terminal = replace(terminal, finalization_errors=final.errors)
             if final.errors and terminal.outcome is CPScaleRunOutcome.COMPLETED:
                 terminal = replace(terminal, outcome=CPScaleRunOutcome.FAILED)
-        published = final.errors
-        if final.errors != prepared_secondaries:
-            published = publish_terminal_outcome(final.errors)
-        if published:
-            published = report_terminal_errors(published, report_errors)
-            terminal = replace(terminal, finalization_errors=published)
+        if final.errors:
+            settle_terminal_errors(
+                final.errors,
+                publication_required=final.errors != prepared_secondaries,
+            )
         if terminal.outcome is CPScaleRunOutcome.COMPLETED:
             try:
                 self.presentation.terminal(terminal.event, snapshot())
             except Exception as exc:
                 terminal = replace(terminal, outcome=CPScaleRunOutcome.FAILED)
-                errors = publish_terminal_outcome((f"terminal_presentation: {type(exc).__name__}: {exc}",))
-                errors = report_terminal_errors(errors, report_errors)
+                errors = settle_terminal_errors(
+                    (f"terminal_presentation: {type(exc).__name__}: {exc}",),
+                    publication_required=True,
+                )
                 terminal = replace(terminal, outcome=CPScaleRunOutcome.FAILED, finalization_errors=errors)
         return CPScaleLiveFinalResult.from_report(terminal.outcome, snapshot())

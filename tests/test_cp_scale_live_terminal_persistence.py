@@ -67,6 +67,7 @@ def _controlled_coordinator(
     stop_error: str = "",
     terminal_error: str = "",
     terminal_write_error: str = "",
+    incomplete_error: str = "",
     cleanup_failure: str = "",
 ):
     request = _request(target_stage="router0-branch")
@@ -222,6 +223,8 @@ def _controlled_coordinator(
         def finalization_incomplete(self, report):
             incomplete_reports.append(report.finalization_errors)
             calls.append("finalization_incomplete")
+            if incomplete_error:
+                raise OSError(incomplete_error)
 
     completion = CPScaleCompletion(cleanup=CPScaleCleanup(), clock=lambda: FIXED_TIME)
     completion.review_router0 = lambda *args: CPScaleRouter0Review(None, "")
@@ -333,6 +336,27 @@ def test_failed_terminal_publication_preserves_the_previous_file_and_reports_abs
     assert "finalization_errors" not in previous
     assert fixture.incomplete_reports[-1] == result.secondary_failures
     assert "terminal_published" not in fixture.calls
+    assert fixture.calls.count("stop") == 1
+
+
+def test_failed_finalization_report_is_added_to_the_durable_outcome(
+    tmp_path: Path,
+) -> None:
+    fixture = _controlled_coordinator(
+        tmp_path,
+        stop_error="STOP_FAILED",
+        incomplete_error="FINALIZATION_REPORT_FAILED",
+    )
+
+    result = fixture.coordinator.run(fixture.request)
+
+    assert result.secondary_failures == (
+        "transport_stop: OSError: STOP_FAILED",
+        "finalization_report: OSError: FINALIZATION_REPORT_FAILED",
+    )
+    evidence = json.loads(fixture.persistence.evidence_path.read_text(encoding="utf-8"))
+    assert evidence["finalization_errors"] == list(result.secondary_failures)
+    assert fixture.calls.count("finalization_incomplete") == 1
     assert fixture.calls.count("stop") == 1
 
 
