@@ -31,14 +31,18 @@ class StageSequenceResult(Generic[Continuity, Value]):
 
 def execute_stage_sequence(stages: tuple[StageId, ...], initial: Continuity,
                            step: StageStepPort[StageId, Continuity, Value]) -> StageSequenceResult[Continuity, Value]:
-    completed: tuple[StageStepResult[Continuity, Value], ...] = ()
+    completed: list[StageStepResult[Continuity, Value]] = []
     continuity = initial
-    secondaries: tuple[str, ...] = ()
+    secondaries: list[str] = []
     for stage in stages:
         acquired = step(stage, continuity)
-        completed += (acquired,)
+        completed.append(acquired)
         continuity = acquired.continuity
-        secondaries += acquired.secondary_failures
+        secondaries.extend(acquired.secondary_failures)
         if not acquired.succeeded:
-            return StageSequenceResult(completed, continuity, False, secondaries)
-    return StageSequenceResult(completed, continuity, True, secondaries)
+            return StageSequenceResult(
+                tuple(completed), continuity, False, tuple(secondaries),
+            )
+    return StageSequenceResult(
+        tuple(completed), continuity, True, tuple(secondaries),
+    )

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import datetime, timezone
+import inspect
 import json
 from pathlib import Path
 
@@ -158,6 +159,58 @@ def test_mechanism_snapshot_is_linear_and_has_no_completed_history(count):
         assert step.value.journal == ((1, "read"), (2, "check"), (3, "check"), (4, "seal"))
         assert not any(isinstance(getattr(step.continuity, field.name), (DocumentReceipt, tuple, list))
                        for field in fields(step.continuity))
+
+
+@pytest.mark.parametrize("failed_at", [None, 257])
+def test_large_sequence_reuses_local_accumulators_and_freezes_once(failed_at):
+    stages = tuple(f"stage-{index % 11}" for index in range(512))
+    initial = Cursor(0, "initial")
+    acquired = []
+    calls = []
+    accumulator_ids = []
+
+    def step(stage, continuity):
+        frame = inspect.currentframe()
+        assert frame is not None and frame.f_back is not None
+        caller = frame.f_back
+        try:
+            accumulator_ids.append((
+                id(caller.f_locals["completed"]),
+                id(caller.f_locals["secondaries"]),
+            ))
+        finally:
+            del caller
+            del frame
+        ordinal = len(calls)
+        calls.append(stage)
+        following = Cursor(ordinal + 1, f"cursor-{ordinal + 1}")
+        result = StageStepResult(
+            DocumentReceipt(stage, 0, ((1, "read"),), ()),
+            following,
+            ordinal != failed_at,
+            (f"secondary-{ordinal % 7}", f"secondary-{ordinal % 7}"),
+        )
+        acquired.append(result)
+        return result
+
+    result = execute_stage_sequence(stages, initial, step)
+    expected_count = len(stages) if failed_at is None else failed_at + 1
+
+    assert len(set(item[0] for item in accumulator_ids)) == 1
+    assert len(set(item[1] for item in accumulator_ids)) == 1
+    assert isinstance(result.steps, tuple)
+    assert isinstance(result.secondary_failures, tuple)
+    assert result.steps == tuple(acquired)
+    assert all(actual is expected for actual, expected in zip(result.steps, acquired))
+    assert calls == list(stages[:expected_count])
+    assert len(result.steps) == expected_count
+    assert result.continuity is acquired[-1].continuity
+    assert result.succeeded is (failed_at is None)
+    assert result.secondary_failures == tuple(
+        value
+        for ordinal in range(expected_count)
+        for value in (f"secondary-{ordinal % 7}", f"secondary-{ordinal % 7}")
+    )
 
 
 @dataclass(frozen=True)
