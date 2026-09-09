@@ -10,8 +10,9 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag
 
 from .capabilities import CapabilityStatus, EvidenceSource
 
@@ -321,6 +322,8 @@ class LiveSessionSafetyEvidence(BaseModel):
 
 
 class EphemeralUntitledWorkspaceSafetyEvidence(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     mode: LiveSessionSafetyMode = LiveSessionSafetyMode.EPHEMERAL_UNTITLED_WORKSPACE
     initial_device_count: int | None = None
     final_device_count: int | None = None
@@ -357,9 +360,28 @@ class EphemeralUntitledWorkspaceSafetyEvidence(BaseModel):
     failure_reasons: list[str] = Field(default_factory=list)
 
 
-LiveSessionSafetyAdmissionEvidence = (
-    EphemeralUntitledWorkspaceSafetyEvidence | LiveSessionSafetyEvidence
-)
+def _live_session_safety_discriminator(value: object) -> str | None:
+    if isinstance(value, EphemeralUntitledWorkspaceSafetyEvidence):
+        return "ephemeral"
+    if isinstance(value, LiveSessionSafetyEvidence):
+        return "guarded"
+    if isinstance(value, dict):
+        mode = value.get("mode")
+        if mode in {
+            LiveSessionSafetyMode.EPHEMERAL_UNTITLED_WORKSPACE,
+            LiveSessionSafetyMode.EPHEMERAL_UNTITLED_WORKSPACE.value,
+        }:
+            return "ephemeral"
+        if "mode" not in value:
+            return "guarded"
+    return None
+
+
+LiveSessionSafetyAdmissionEvidence = Annotated[
+    Annotated[EphemeralUntitledWorkspaceSafetyEvidence, Tag("ephemeral")]
+    | Annotated[LiveSessionSafetyEvidence, Tag("guarded")],
+    Discriminator(_live_session_safety_discriminator),
+]
 
 
 class ProbeContext(BaseModel):

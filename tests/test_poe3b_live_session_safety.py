@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
+from pydantic import ValidationError
 
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     EvidenceSource,
@@ -33,8 +36,14 @@ def _healthy_ephemeral_safety() -> EphemeralUntitledWorkspaceSafetyEvidence:
         final_saved_filename="",
         authorized_file_operations=(),
         executed_file_operations=(),
-        initial_inventory_fingerprint="inventory-v1|backend-managed-device",
-        final_inventory_fingerprint="inventory-v1|backend-managed-device",
+        initial_inventory_fingerprint=(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "|backend-managed-device"
+        ),
+        final_inventory_fingerprint=(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "|backend-managed-device"
+        ),
         fixture_removed=True,
         initial_realtime=True,
         final_realtime=True,
@@ -72,7 +81,7 @@ def _snapshot_with_safety(
         context={
             "probe_id": "poe-delivery-qualification",
             "device_model": "3560-24PS",
-            "live_session_safety": safety.model_dump(mode="json"),
+            "live_session_safety": safety,
         },
     )
     return CapabilitySnapshot(
@@ -116,6 +125,113 @@ def test_complete_ephemeral_evidence_is_admitted() -> None:
 
     assert evidence.mode is LiveSessionSafetyMode.EPHEMERAL_UNTITLED_WORKSPACE
     assert validate_live_session_positive_admission(evidence).is_valid
+
+
+@pytest.mark.parametrize(
+    "malformed_update",
+    [
+        {"initial_device_count": False},
+        {"final_link_count": "0"},
+        {"initial_saved_filename": b""},
+        {"authorized_file_operations": []},
+        {
+            "initial_inventory_fingerprint": (
+                b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|"
+            )
+        },
+        {"fixture_removed": 1},
+        {"packet_tracer_pids_before": (True,)},
+        {"mailbox_entries_before": []},
+        {"source_branch_before": b"feature/runtime-ripv2"},
+        {"failure_reasons": ()},
+    ],
+    ids=[
+        "boolean-as-count",
+        "string-as-count",
+        "bytes-as-filename",
+        "list-as-file-ledger",
+        "bytes-as-inventory",
+        "integer-as-boolean",
+        "boolean-as-pid",
+        "list-as-mailbox",
+        "bytes-as-branch",
+        "tuple-as-failure-list",
+    ],
+)
+def test_ephemeral_model_validate_rejects_coercible_values(
+    malformed_update: dict[str, object],
+) -> None:
+    payload = _healthy_ephemeral_safety().model_dump(mode="python")
+    payload.update(malformed_update)
+
+    with pytest.raises(ValidationError):
+        EphemeralUntitledWorkspaceSafetyEvidence.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "malformed_value"),
+    [
+        ("initial_device_count", False),
+        ("fixture_removed", 1),
+        ("packet_tracer_pids_before", [True]),
+    ],
+)
+def test_capability_snapshot_json_rejects_coercible_ephemeral_values(
+    field: str,
+    malformed_value: object,
+) -> None:
+    snapshot = _snapshot_with_safety(_healthy_ephemeral_safety())
+    payload = json.loads(snapshot.model_dump_json())
+    safety = payload["session"]["results"][0]["context"]["live_session_safety"]
+    safety[field] = malformed_value
+
+    with pytest.raises(ValidationError):
+        CapabilitySnapshot.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    "unsafe_update",
+    [
+        {
+            "initial_inventory_fingerprint": "opaque-but-not-encoded",
+            "final_inventory_fingerprint": "opaque-but-not-encoded",
+        },
+        {
+            "initial_inventory_fingerprint": "a" * 64,
+            "final_inventory_fingerprint": "a" * 64,
+        },
+        {
+            "initial_inventory_fingerprint": f"{'A' * 64}|",
+            "final_inventory_fingerprint": f"{'A' * 64}|",
+        },
+        {
+            "initial_inventory_fingerprint": f"{'a' * 64}|z;a",
+            "final_inventory_fingerprint": f"{'a' * 64}|z;a",
+        },
+        {
+            "source_head_before": "same-arbitrary-head",
+            "source_head_after": "same-arbitrary-head",
+        },
+        {
+            "source_tree_before": "B" * 40,
+            "source_tree_after": "B" * 40,
+        },
+    ],
+    ids=[
+        "unencoded-inventory",
+        "legacy-inventory-without-separator",
+        "uppercase-inventory-semantic-hash",
+        "noncanonical-inventory-managed-order",
+        "malformed-git-head",
+        "uppercase-git-tree",
+    ],
+)
+def test_ephemeral_evidence_rejects_malformed_equal_identities(
+    unsafe_update: dict[str, object],
+) -> None:
+    evidence = _healthy_ephemeral_safety().model_copy(update=unsafe_update)
+
+    assert not validate_live_session_positive_admission(evidence).is_valid
 
 
 @pytest.mark.parametrize(

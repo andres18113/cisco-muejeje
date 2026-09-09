@@ -11,6 +11,8 @@ from ..models.discovery import (
     LiveSessionSafetyAdmissionEvidence,
     LiveSessionSafetyEvidence,
     LiveSessionSafetyMode,
+    decode_inventory_observation,
+    encode_inventory_observation,
 )
 
 
@@ -121,10 +123,14 @@ def _validate_ephemeral_untitled_workspace(
 
     initial_inventory = evidence.initial_inventory_fingerprint
     final_inventory = evidence.final_inventory_fingerprint
-    if not _is_nonblank_identity(initial_inventory):
-        errors.append(_error("Ephemeral LIVE initial inventory identity is missing."))
-    if not _is_nonblank_identity(final_inventory):
-        errors.append(_error("Ephemeral LIVE final inventory identity is missing."))
+    if not _is_canonical_inventory_identity(initial_inventory):
+        errors.append(_error(
+            "Ephemeral LIVE initial inventory identity is missing or malformed."
+        ))
+    if not _is_canonical_inventory_identity(final_inventory):
+        errors.append(_error(
+            "Ephemeral LIVE final inventory identity is missing or malformed."
+        ))
     if initial_inventory != final_inventory:
         errors.append(_error("Ephemeral LIVE inventory identity changed."))
 
@@ -169,12 +175,23 @@ def _validate_ephemeral_untitled_workspace(
             "source branch",
             evidence.source_branch_before,
             evidence.source_branch_after,
+            _is_exact_identity,
         ),
-        ("source HEAD", evidence.source_head_before, evidence.source_head_after),
-        ("source tree", evidence.source_tree_before, evidence.source_tree_after),
+        (
+            "source HEAD",
+            evidence.source_head_before,
+            evidence.source_head_after,
+            _is_git_object_id,
+        ),
+        (
+            "source tree",
+            evidence.source_tree_before,
+            evidence.source_tree_after,
+            _is_git_object_id,
+        ),
     )
-    for label, before, after in source_identities:
-        if not _is_exact_identity(before) or not _is_exact_identity(after):
+    for label, before, after, identity_is_valid in source_identities:
+        if not identity_is_valid(before) or not identity_is_valid(after):
             errors.append(_error(f"Ephemeral LIVE {label} identity is missing or malformed."))
         if before != after:
             errors.append(_error(f"Ephemeral LIVE {label} identity changed."))
@@ -192,8 +209,32 @@ def _is_nonblank_identity(value: object) -> bool:
     return type(value) is str and bool(value.strip())
 
 
+def _is_canonical_inventory_identity(value: object) -> bool:
+    if type(value) is not str:
+        return False
+    semantic, backend_managed = decode_inventory_observation(value)
+    return (
+        _is_lower_hex_identity(semantic, length=64)
+        and encode_inventory_observation(
+            semantic, list(backend_managed),
+        ) == value
+    )
+
+
 def _is_exact_identity(value: object) -> bool:
     return _is_nonblank_identity(value) and value == value.strip()
+
+
+def _is_git_object_id(value: object) -> bool:
+    return _is_lower_hex_identity(value, length=40)
+
+
+def _is_lower_hex_identity(value: object, *, length: int) -> bool:
+    return (
+        type(value) is str
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _is_single_positive_pid(value: tuple[int, ...] | None) -> bool:
