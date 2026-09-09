@@ -50,11 +50,17 @@ class CPScaleLiveCoordinator:
         report = CPScaleRunReport(preflight, run_identity, started_at, request.packet_tracer_version)
         if preflight.outcome is CPScalePreflightOutcome.REJECTED:
             report.hard_stop = " ".join(preflight.issues) or "Local preflight evidence is incomplete or inconsistent."
-            self.persistence.write_progress(report)
-            return CPScaleLiveFinalResult.from_report(CPScaleRunOutcome.REJECTED, report)
-        if preflight.identity is None:
+        elif preflight.identity is None:
             report.hard_stop = "Local preflight did not produce a session identity."
-            self.persistence.write_progress(report)
+        if report.hard_stop:
+            try:
+                self.persistence.write_progress(report)
+            except Exception as exc:
+                def report_rejection(errors: tuple[str, ...]) -> None:
+                    report.finalization_errors = errors
+                    self.presentation.finalization_incomplete(report)
+                report.finalization_errors = report_terminal_errors(
+                    (f"preflight_evidence_write: {type(exc).__name__}: {exc}",), report_rejection)
             return CPScaleLiveFinalResult.from_report(CPScaleRunOutcome.REJECTED, report)
         session = self.session_factory()  # Allocated before any acquisition.
         finalization = CPScaleFinalizationState()
