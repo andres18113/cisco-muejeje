@@ -17,6 +17,8 @@ class ProtectedPathEntry:
     kind: str
     length: int | None = None
     sha256: str = ""
+    modified_ns: int | None = None
+    symlink_target: str = ""
 
 
 @dataclass(frozen=True)
@@ -42,25 +44,47 @@ def _file_entry(path: Path) -> ProtectedPathEntry:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             length += len(chunk)
             digest.update(chunk)
-    return ProtectedPathEntry(str(path), "file", length, digest.hexdigest())
+    return ProtectedPathEntry(
+        str(path),
+        "file",
+        length,
+        digest.hexdigest(),
+        path.stat().st_mtime_ns,
+    )
+
+
+def _symlink_entry(path: Path) -> ProtectedPathEntry:
+    return ProtectedPathEntry(
+        str(path),
+        "symlink",
+        modified_ns=path.lstat().st_mtime_ns,
+        symlink_target=os.readlink(path),
+    )
 
 
 def capture_protected_paths(paths: Sequence[Path]) -> ProtectedPathsSnapshot:
-    roots = tuple(Path(path).resolve() for path in paths)
+    roots = tuple(Path(os.path.abspath(path)) for path in paths)
     entries: list[ProtectedPathEntry] = []
     for root in roots:
+        if root.is_symlink():
+            entries.append(_symlink_entry(root))
+            continue
         if not root.exists():
             entries.append(ProtectedPathEntry(str(root), "absent"))
             continue
         if root.is_file():
             entries.append(_file_entry(root))
             continue
-        entries.append(ProtectedPathEntry(str(root), "directory"))
+        entries.append(ProtectedPathEntry(
+            str(root), "directory", modified_ns=root.stat().st_mtime_ns,
+        ))
         for child in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
             if child.is_symlink():
-                entries.append(ProtectedPathEntry(str(child), "symlink"))
+                entries.append(_symlink_entry(child))
             elif child.is_dir():
-                entries.append(ProtectedPathEntry(str(child), "directory"))
+                entries.append(ProtectedPathEntry(
+                    str(child), "directory", modified_ns=child.stat().st_mtime_ns,
+                ))
             elif child.is_file():
                 entries.append(_file_entry(child))
     return ProtectedPathsSnapshot(roots, tuple(entries))

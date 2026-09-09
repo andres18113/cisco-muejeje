@@ -8,18 +8,15 @@ test that reads it composes different evidence from the same source SHA.
 
 The productive composition root builds that default store itself
 (`packet_tracer_enterprise_capability_adapter`), so a test cannot avoid it by
-being careful; it has to be redirected. This fixture points the default at an
-empty per-session temporary directory. Tests that want snapshots inject their
-own store, as they already do.
-
-Session-scoped on purpose: module- and session-scoped fixtures elsewhere build
-capability stores during their own setup, which runs before any function-scoped
-fixture could patch anything.
+being careful; it has to be redirected. The early pytest hooks below redirect
+it before test-module collection and keep a byte/metadata sentinel until pytest
+is fully unconfigured. Tests that want snapshots inject their own store.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -34,12 +31,20 @@ from src.packet_tracer_mcp.infrastructure.persistence import capability_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[1]
+_ISOLATION_ATTRIBUTE = "_cp_live_early_isolation"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _isolate_machine_and_repository_state(tmp_path_factory):
-    protected = capture_protected_paths((*cp_live_workspace_protected_paths(ROOT), token_path()))
-    isolated = tmp_path_factory.mktemp("cp-live-session-state")
+def pytest_configure(config) -> None:
+    """Capture and redirect state before pytest imports any test module."""
+    if hasattr(config, _ISOLATION_ATTRIBUTE):
+        return
+    extra = os.environ.get("PT_MCP_TEST_EXTRA_PROTECTED_PATH", "").strip()
+    protected_paths = [*cp_live_workspace_protected_paths(ROOT), token_path()]
+    if extra:
+        protected_paths.append(Path(extra))
+    protected = capture_protected_paths(tuple(protected_paths))
+    temporary = TemporaryDirectory(prefix="cp-live-pytest-")
+    isolated = Path(temporary.name)
     environment = isolated_subprocess_environment(isolated)
     patcher = pytest.MonkeyPatch()
     for name in (
@@ -54,10 +59,18 @@ def _isolate_machine_and_repository_state(tmp_path_factory):
         "DEFAULT_BASE_DIR",
         isolated / "capability-store",
     )
+    setattr(config, _ISOLATION_ATTRIBUTE, (protected, patcher, temporary))
+
+
+def pytest_unconfigure(config) -> None:
+    state = getattr(config, _ISOLATION_ATTRIBUTE, None)
+    if state is None:
+        return
+    protected, patcher, temporary = state
     try:
-        yield
+        assert_protected_paths_unchanged(protected)
     finally:
         try:
-            assert_protected_paths_unchanged(protected)
-        finally:
             patcher.undo()
+        finally:
+            temporary.cleanup()

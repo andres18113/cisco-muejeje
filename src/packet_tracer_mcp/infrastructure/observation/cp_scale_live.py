@@ -44,7 +44,6 @@ from ..execution.serial_orientation_runtime import PacketTracerSerialOrientation
 from ..execution.simulation_trace_runtime import SimulationTraceRuntime
 from ..execution.live_bridge import PacketTracerHttpTransport
 from ..execution.packet_tracer_physical_runtime import PacketTracerPhysicalTopologyRuntime
-from ...application.cp_scale_live.voice_stage import realtime_boundary_error as _realtime_boundary_error
 from ...application.cp_scale_live.contracts import (
     CPScaleDhcpStatisticsTarget,
     CPScaleObservationRecord,

@@ -153,7 +153,30 @@ def _boundary_issues(sources: dict[str, str]) -> tuple[tuple[str, ...], ...]:
         graph[module] = tuple(dict.fromkeys(edges))
         if module == FACADE and not _static_facade(tree, aliases):
             issues.append(("facade_implementation", module))
-    return tuple(issues) + tuple(("runtime_cycle", *cycle) for cycle in _cycles(graph))
+    return (tuple(issues) + tuple(("runtime_cycle", *cycle) for cycle in _cycles(graph))
+        + _private_relay_issues(sources))
+
+
+def _private_relay_issues(sources: dict[str, str]) -> tuple[tuple[str, ...], ...]:
+    relays: dict[tuple[str, str], str] = {}
+    imports: list[tuple[str, str, str]] = []
+    for module, source in sources.items():
+        tree = ast.parse(source, filename=module)
+        _, targets = _import_facts(module, tree, sources)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            base = targets[node][0]
+            for item in node.names:
+                local = item.asname or item.name
+                imports.append((module, base, item.name))
+                if item.asname and local.startswith("_") and not item.name.startswith("_"):
+                    relays[(module, local)] = base + "." + item.name
+    return tuple(
+        ("private_relay", consumer, relay, name, relays[(relay, name)])
+        for consumer, relay, name in imports
+        if consumer != relay and (relay, name) in relays
+    )
 
 
 _LEXICAL_SCOPES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
@@ -345,6 +368,18 @@ def test_import_checker_ignores_docstrings_and_type_only_cycles():
         FACADE: '"""def run(): use globals()"""\nfrom packet_tracer_mcp.adapters.cli.cp_scale_live import main, run\nif __name__ == "__main__":\n    raise SystemExit(main())\n',
     }
     assert _boundary_issues(sources) == ()
+
+
+def test_import_checker_rejects_private_owner_relay():
+    sources = {
+        APP + ".owner": "def decide(): return True",
+        "packet_tracer_mcp.infrastructure.observation.relay":
+            "from ...application.cp_scale_live.owner import decide as _decide",
+        "packet_tracer_mcp.infrastructure.observation.consumer":
+            "from .relay import _decide",
+    }
+
+    assert [item[0] for item in _boundary_issues(sources)] == ["private_relay"]
 
 
 @pytest.mark.parametrize("order", tuple(permutations(("first", "second", "coordinator"))))

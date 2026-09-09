@@ -9,12 +9,13 @@ from ...application.cp_scale_live.contracts import (
     CPScaleRealtimeState,
 )
 from ...application.cp_scale_live.run_contracts import CPScaleCleanupRealtime
+from ...application.cp_scale_live.voice_stage import realtime_boundary_error
 from ...application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalStageProjection
 from ..execution.ios_terminal import ControlledIosExecutor
 from ..execution.simulation_trace_runtime import SimulationTraceRuntime
 from .cp_scale_live import (
     _network_state_observation, _voice_dhcp_statistics_target,
-    _dhcp_server_statistics_point, _voice_window_state, _realtime_boundary_error,
+    _dhcp_server_statistics_point, _voice_window_state,
     _stp_network_device_evidence,
 )
 
@@ -60,7 +61,7 @@ class PacketTracerCPScaleRunObservations:
         try:
             raw = _voice_window_state(SimulationTraceRuntime(self.transport.send_and_wait))
             state = cleanup_realtime_state(raw)
-            error = _realtime_boundary_error(state, "after cleanup")
+            error = realtime_boundary_error(state, "after cleanup")
             return CPScaleCleanupRealtime(not error, error, state)
         except Exception as exc:
             return CPScaleCleanupRealtime(False, f"{type(exc).__name__}: {exc}")
