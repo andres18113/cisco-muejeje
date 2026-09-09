@@ -95,6 +95,365 @@ def test_later_baseexception_never_replaces_the_original_cancellation(
     assert reports == [expected[:1]]
 
 
+@pytest.mark.parametrize("cancel_boundary", ["stage", "checkpoint"])
+@pytest.mark.parametrize("stop_failure", ["oserror", "systemexit"])
+def test_execute_session_cancellation_survives_close_and_is_published(
+    cancel_boundary,
+    stop_failure,
+):
+    verdict = _probe(
+        RUN_DOUBLES
+        + "\ncancel_boundary = "
+        + repr(cancel_boundary)
+        + "\nstop_failure = "
+        + repr(stop_failure)
+        + r'''
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
+
+if cancel_boundary == "stage":
+    def cancel_stage(*args, **kwargs):
+        record("cancel_stage")
+        raise original
+    seams._execute_stage = cancel_stage
+else:
+    def cancel_checkpoint(*args, **kwargs):
+        record("cancel_checkpoint")
+        raise original
+    seams._checkpoint = cancel_checkpoint
+
+def stop(self):
+    record("transport.stop")
+    if stop_failure == "oserror":
+        raise OSError("STOP_FAILED_AFTER_EXECUTE_CANCELLATION")
+    raise SystemExit("STOP_ABORTED_AFTER_EXECUTE_CANCELLATION")
+Transport.stop = stop
+
+coordinator = offline_coordinator(request)
+writes = []
+reports = []
+
+def write(report):
+    after_close = any(item["event"] == "transport.stop" for item in calls)
+    writes.append({
+        "after_close": after_close,
+        "errors": list(report.finalization_errors),
+        "archives": [item.model_dump(mode="json")["phase"] for item in report.archives],
+    })
+
+def report(report):
+    reports.append(list(report.finalization_errors))
+
+coordinator.persistence.write_progress = write
+coordinator.presentation.finalization_incomplete = report
+
+caught = None
+try:
+    coordinator.run(request)
+except BaseException as exc:
+    caught = exc
+
+print(json.dumps({
+    "identity_preserved": caught is original,
+    "raised": type(caught).__name__ + ": " + str(caught),
+    "finalization_errors": list(getattr(caught, "finalization_errors", ())),
+    "cancel_count": sum(item["event"] == "cancel_" + cancel_boundary for item in calls),
+    "session_effects_after_cancel": [
+        item["event"]
+        for item in calls[
+            next(index for index, item in enumerate(calls)
+                 if item["event"] == "cancel_" + cancel_boundary) + 1:
+        ]
+        if item["event"] in ("deploy", "execute_stage", "checkpoint", "reconcile")
+    ],
+    "cleanup_count": sum(item["event"] == "cleanup" for item in calls),
+    "stop_count": sum(item["event"] == "transport.stop" for item in calls),
+    "post_close_writes": [item for item in writes if item["after_close"]],
+    "reports": reports,
+}))
+'''
+    )
+
+    expected_error = (
+        "transport_stop: OSError: STOP_FAILED_AFTER_EXECUTE_CANCELLATION"
+        if stop_failure == "oserror"
+        else "transport_stop: SystemExit: STOP_ABORTED_AFTER_EXECUTE_CANCELLATION"
+    )
+    assert verdict == {
+        "identity_preserved": True,
+        "raised": "KeyboardInterrupt: ORIGINAL_EXECUTE_SESSION_CANCELLATION",
+        "finalization_errors": [expected_error],
+        "cancel_count": 1,
+        "session_effects_after_cancel": [],
+        "cleanup_count": 1,
+        "stop_count": 1,
+        "post_close_writes": [{
+            "after_close": True,
+            "errors": [expected_error],
+            "archives": ["failure-precleanup", "cleanup"],
+        }],
+        "reports": [[expected_error]],
+    }
+
+
+def test_execute_session_cancellation_classifies_post_close_baseexception():
+    verdict = _probe(RUN_DOUBLES + r'''
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
+seams._execute_stage = lambda *args, **kwargs: (_ for _ in ()).throw(original)
+
+def stop(self):
+    record("transport.stop")
+    raise OSError("STOP_FAILED_AFTER_EXECUTE_CANCELLATION")
+Transport.stop = stop
+
+coordinator = offline_coordinator(request)
+publication_attempts = []
+reports = []
+
+def write(report):
+    if any(item["event"] == "transport.stop" for item in calls):
+        publication_attempts.append(list(report.finalization_errors))
+        raise SystemExit("POST_CLOSE_PUBLICATION_ABORTED")
+
+coordinator.persistence.write_progress = write
+coordinator.presentation.finalization_incomplete = (
+    lambda report: reports.append(list(report.finalization_errors))
+)
+
+caught = None
+try:
+    coordinator.run(request)
+except BaseException as exc:
+    caught = exc
+
+print(json.dumps({
+    "identity_preserved": caught is original,
+    "finalization_errors": list(getattr(caught, "finalization_errors", ())),
+    "cleanup_count": sum(item["event"] == "cleanup" for item in calls),
+    "stop_count": sum(item["event"] == "transport.stop" for item in calls),
+    "publication_attempts": publication_attempts,
+    "reports": reports,
+}))
+''')
+
+    stop_error = "transport_stop: OSError: STOP_FAILED_AFTER_EXECUTE_CANCELLATION"
+    publication_error = (
+        "terminal_evidence_write: SystemExit: POST_CLOSE_PUBLICATION_ABORTED"
+    )
+    assert verdict == {
+        "identity_preserved": True,
+        "finalization_errors": [stop_error, publication_error],
+        "cleanup_count": 1,
+        "stop_count": 1,
+        "publication_attempts": [[stop_error]],
+        "reports": [[stop_error, publication_error]],
+    }
+
+
+def test_execute_session_cancellation_classifies_final_write_baseexception():
+    verdict = _probe(RUN_DOUBLES + r'''
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
+seams._execute_stage = lambda *args, **kwargs: (_ for _ in ()).throw(original)
+
+def stop(self):
+    record("transport.stop")
+    raise OSError("STOP_FAILED_AFTER_EXECUTE_CANCELLATION")
+Transport.stop = stop
+
+coordinator = offline_coordinator(request)
+writes = []
+reports = []
+
+def write(report):
+    after_close = any(item["event"] == "transport.stop" for item in calls)
+    phases = [item.model_dump(mode="json")["phase"] for item in report.archives]
+    writes.append({"after_close": after_close, "errors": list(report.finalization_errors)})
+    if not after_close and phases == ["failure-precleanup", "cleanup"]:
+        raise SystemExit("FINAL_WRITE_ABORTED")
+
+coordinator.persistence.write_progress = write
+coordinator.presentation.finalization_incomplete = (
+    lambda report: reports.append(list(report.finalization_errors))
+)
+
+caught = None
+try:
+    coordinator.run(request)
+except BaseException as exc:
+    caught = exc
+
+print(json.dumps({
+    "identity_preserved": caught is original,
+    "finalization_errors": list(getattr(caught, "finalization_errors", ())),
+    "cleanup_count": sum(item["event"] == "cleanup" for item in calls),
+    "stop_count": sum(item["event"] == "transport.stop" for item in calls),
+    "post_close_writes": [item for item in writes if item["after_close"]],
+    "reports": reports,
+}))
+''')
+
+    write_error = "final_evidence_write: SystemExit: FINAL_WRITE_ABORTED"
+    stop_error = "transport_stop: OSError: STOP_FAILED_AFTER_EXECUTE_CANCELLATION"
+    assert verdict == {
+        "identity_preserved": True,
+        "finalization_errors": [write_error, stop_error],
+        "cleanup_count": 1,
+        "stop_count": 1,
+        "post_close_writes": [{
+            "after_close": True,
+            "errors": [write_error, stop_error],
+        }],
+        "reports": [[write_error, stop_error]],
+    }
+
+
+def test_execute_session_cancellation_bounds_publication_and_report_failures():
+    verdict = _probe(RUN_DOUBLES + r'''
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
+seams._execute_stage = lambda *args, **kwargs: (_ for _ in ()).throw(original)
+
+def stop(self):
+    record("transport.stop")
+    raise OSError("STOP_FAILED_AFTER_EXECUTE_CANCELLATION")
+Transport.stop = stop
+
+coordinator = offline_coordinator(request)
+publication_attempts = []
+report_attempts = []
+
+def write(report):
+    if any(item["event"] == "transport.stop" for item in calls):
+        publication_attempts.append(list(report.finalization_errors))
+        raise OSError("POST_CLOSE_PUBLICATION_FAILED_" + str(len(publication_attempts)))
+
+def report(report):
+    report_attempts.append(list(report.finalization_errors))
+    raise SystemExit("POST_CLOSE_REPORT_ABORTED")
+
+coordinator.persistence.write_progress = write
+coordinator.presentation.finalization_incomplete = report
+
+caught = None
+try:
+    coordinator.run(request)
+except BaseException as exc:
+    caught = exc
+
+print(json.dumps({
+    "identity_preserved": caught is original,
+    "finalization_errors": list(getattr(caught, "finalization_errors", ())),
+    "cleanup_count": sum(item["event"] == "cleanup" for item in calls),
+    "stop_count": sum(item["event"] == "transport.stop" for item in calls),
+    "publication_attempts": publication_attempts,
+    "report_attempts": report_attempts,
+}))
+''')
+
+    stop_error = "transport_stop: OSError: STOP_FAILED_AFTER_EXECUTE_CANCELLATION"
+    first_write = "terminal_evidence_write: OSError: POST_CLOSE_PUBLICATION_FAILED_1"
+    report_error = "finalization_report: SystemExit: POST_CLOSE_REPORT_ABORTED"
+    second_write = "terminal_evidence_write: OSError: POST_CLOSE_PUBLICATION_FAILED_2"
+    assert verdict == {
+        "identity_preserved": True,
+        "finalization_errors": [stop_error, first_write, report_error, second_write],
+        "cleanup_count": 1,
+        "stop_count": 1,
+        "publication_attempts": [
+            [stop_error],
+            [stop_error, first_write, report_error],
+        ],
+        "report_attempts": [[stop_error, first_write]],
+    }
+
+
+@pytest.mark.parametrize("cancel_boundary", ["stage", "checkpoint"])
+def test_execute_session_cancellation_declares_failed_post_close_publication_limit(
+    cancel_boundary,
+):
+    verdict = _probe(
+        RUN_DOUBLES
+        + "\ncancel_boundary = "
+        + repr(cancel_boundary)
+        + r'''
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
+
+if cancel_boundary == "stage":
+    def cancel_stage(*args, **kwargs):
+        raise original
+    seams._execute_stage = cancel_stage
+else:
+    def cancel_checkpoint(*args, **kwargs):
+        raise original
+    seams._checkpoint = cancel_checkpoint
+
+def stop(self):
+    record("transport.stop")
+    raise OSError("STOP_FAILED_AFTER_EXECUTE_CANCELLATION")
+Transport.stop = stop
+
+coordinator = offline_coordinator(request)
+publication_attempts = []
+reports = []
+
+def write(report):
+    after_close = any(item["event"] == "transport.stop" for item in calls)
+    if after_close:
+        publication_attempts.append(list(report.finalization_errors))
+        raise OSError("POST_CLOSE_PUBLICATION_FAILED")
+
+def report(report):
+    reports.append(list(report.finalization_errors))
+
+coordinator.persistence.write_progress = write
+coordinator.presentation.finalization_incomplete = report
+
+caught = None
+try:
+    coordinator.run(request)
+except BaseException as exc:
+    caught = exc
+
+print(json.dumps({
+    "identity_preserved": caught is original,
+    "raised": type(caught).__name__ + ": " + str(caught),
+    "finalization_errors": list(getattr(caught, "finalization_errors", ())),
+    "cleanup_count": sum(item["event"] == "cleanup" for item in calls),
+    "stop_count": sum(item["event"] == "transport.stop" for item in calls),
+    "publication_attempts": publication_attempts,
+    "reports": reports,
+}))
+'''
+    )
+
+    stop_error = "transport_stop: OSError: STOP_FAILED_AFTER_EXECUTE_CANCELLATION"
+    publication_error = (
+        "terminal_evidence_write: OSError: POST_CLOSE_PUBLICATION_FAILED"
+    )
+    assert verdict == {
+        "identity_preserved": True,
+        "raised": "KeyboardInterrupt: ORIGINAL_EXECUTE_SESSION_CANCELLATION",
+        "finalization_errors": [stop_error, publication_error],
+        "cleanup_count": 1,
+        "stop_count": 1,
+        "publication_attempts": [[stop_error]],
+        "reports": [[stop_error, publication_error]],
+    }
+
+
 @pytest.mark.parametrize("boundary", ["realtime", "postcleanup_write", "checkpoint"])
 def test_router0_acquired_cleanup_is_never_repeated_after_cancellation(boundary):
     verdict = _probe(RUN_DOUBLES + "\nboundary = " + repr(boundary) + r'''

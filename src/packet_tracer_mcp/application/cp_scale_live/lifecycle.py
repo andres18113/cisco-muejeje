@@ -31,6 +31,7 @@ def finalize_session(
     report: Callable[[tuple[str, ...]], None],
     secondary_failures: Callable[[], tuple[str, ...]] = lambda: (),
     defer_report: bool = False,
+    initial_interruption: BaseException | None = None,
 ) -> FinalizationResult:
     """Always attempt close; a cancellation remains an exception in flight.
 
@@ -38,17 +39,25 @@ def finalize_session(
     decide cleanup, retention, or acceptance, and it never retries an operation.
     """
     errors: list[str] = []
-    interruption: BaseException | None = None
+    interruption = initial_interruption
     try:
         prepare()
         try:
             write()
         except Exception as exc:
             errors.append(f"final_evidence_write: {type(exc).__name__}: {exc}")
+        except BaseException as exc:
+            if interruption is None:
+                interruption = exc
+            else:
+                errors.append(f"final_evidence_write: {type(exc).__name__}: {exc}")
     except Exception as exc:
         errors.append(f"finalization: {type(exc).__name__}: {exc}")
     except BaseException as exc:
-        interruption = exc
+        if interruption is None:
+            interruption = exc
+        else:
+            errors.append(f"finalization: {type(exc).__name__}: {exc}")
 
     try:
         session.close()

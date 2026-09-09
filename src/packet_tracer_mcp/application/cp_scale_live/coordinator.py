@@ -70,7 +70,11 @@ class CPScaleLiveCoordinator:
             terminal = replace(terminal, secondary_failures=(), finalization_errors=errors)
             self.presentation.finalization_incomplete(snapshot())
 
-        def publish_terminal_outcome(errors: tuple[str, ...]) -> tuple[str, ...]:
+        def publish_terminal_outcome(
+            errors: tuple[str, ...],
+            *,
+            preserve_base_exceptions: bool = False,
+        ) -> tuple[str, ...]:
             """Attempt one post-session correction without repeating session effects."""
             nonlocal terminal
             terminal = replace(terminal, secondary_failures=(), finalization_errors=errors)
@@ -79,20 +83,40 @@ class CPScaleLiveCoordinator:
             except Exception as exc:
                 errors = (*errors, f"terminal_evidence_write: {type(exc).__name__}: {exc}")
                 terminal = replace(terminal, finalization_errors=errors)
+            except BaseException as exc:
+                if not preserve_base_exceptions:
+                    raise
+                errors = (*errors, f"terminal_evidence_write: {type(exc).__name__}: {exc}")
+                terminal = replace(terminal, finalization_errors=errors)
             return errors
 
         def settle_terminal_errors(
             errors: tuple[str, ...],
             *,
             publication_required: bool,
+            preserve_base_exceptions: bool = False,
         ) -> tuple[str, ...]:
             """Publish acquired terminal facts, report once, then persist a report failure."""
             nonlocal terminal
-            published = publish_terminal_outcome(errors) if publication_required else errors
-            reported = report_terminal_errors(published, report_errors)
+            published = (
+                publish_terminal_outcome(
+                    errors,
+                    preserve_base_exceptions=preserve_base_exceptions,
+                )
+                if publication_required else errors
+            )
+            try:
+                reported = report_terminal_errors(published, report_errors)
+            except BaseException as exc:
+                if not preserve_base_exceptions:
+                    raise
+                reported = (*published, f"finalization_report: {type(exc).__name__}: {exc}")
             terminal = replace(terminal, finalization_errors=reported)
             if reported != published:
-                reported = publish_terminal_outcome(reported)
+                reported = publish_terminal_outcome(
+                    reported,
+                    preserve_base_exceptions=preserve_base_exceptions,
+                )
                 terminal = replace(terminal, finalization_errors=reported)
             return reported
 
@@ -383,6 +407,7 @@ class CPScaleLiveCoordinator:
             prepare_finalization()
             prepared_secondaries = terminal.secondary_failures
 
+        interruption: BaseException | None = None
         try:
             outcome = execute_session()
             terminal = replace(terminal, outcome=outcome)
@@ -391,10 +416,30 @@ class CPScaleLiveCoordinator:
             if progress.active_stage is not None:
                 failed = replace(progress.active_stage, failed=True, failure_details=getattr(exc, "partial_stage", None))
                 progress = replace(progress, stages=(*progress.stages, failed), active_stage=None)
+        except BaseException as exc:
+            interruption = exc
         finally:
-            final = finalize_session(prepare=prepare_and_capture_secondaries, write=lambda: self.persistence.write_progress(snapshot()),
-                session=session, report=report_errors, secondary_failures=lambda: terminal.secondary_failures,
-                defer_report=True)
+            settled_interruption_errors: tuple[str, ...] | None = None
+
+            def finalize_report(errors: tuple[str, ...]) -> None:
+                nonlocal settled_interruption_errors
+                if interruption is None:
+                    report_errors(errors)
+                    return
+                settled_interruption_errors = settle_terminal_errors(
+                    errors,
+                    publication_required=errors != prepared_secondaries,
+                    preserve_base_exceptions=True,
+                )
+
+            try:
+                final = finalize_session(prepare=prepare_and_capture_secondaries, write=lambda: self.persistence.write_progress(snapshot()),
+                    session=session, report=finalize_report, secondary_failures=lambda: terminal.secondary_failures,
+                    defer_report=True, initial_interruption=interruption)
+            except BaseException as exc:
+                if exc is interruption and settled_interruption_errors is not None:
+                    exc.finalization_errors = settled_interruption_errors
+                raise
             terminal = replace(terminal, finalization_errors=final.errors)
             if final.errors and terminal.outcome is CPScaleRunOutcome.COMPLETED:
                 terminal = replace(terminal, outcome=CPScaleRunOutcome.FAILED)
