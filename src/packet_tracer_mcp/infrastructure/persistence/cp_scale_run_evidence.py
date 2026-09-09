@@ -36,7 +36,7 @@ def cleanup_evidence(result: CPScaleCleanupResult) -> dict[str, object]:
     value: dict[str, object] = {"verified": result.verified}
     if result.error:
         value["error"] = result.error
-    else:
+    if result.restoration_error or not result.error:
         value["restoration_error"] = result.restoration_error
     if result.mutations is not None:
         value["mutations"] = [item.model_dump(mode="json") for item in result.mutations]
@@ -133,13 +133,22 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
             "summary": probe.snapshot.compact_summary(), "results": [item.model_dump(mode="json")
                 for item in probe.snapshot.session.results if item.capability in probe.required],
             "error": probe.error} for probe in qualification.sessions]
-        if qualification.first is None:
+        structured = (
+            qualification.first is not None
+            or qualification.second is not None
+            or qualification.unresolved is not None
+            or bool(qualification.restoration_error)
+        )
+        if not structured:
             value["capability_prequalification"] = sessions
         else:
             value["capability_prequalification"] = {
                 "requirements": {model: list(capabilities) for model, capabilities in qualification.requirements},
-                "sessions": sessions, "workspace_first": qualification.first.compact_summary(),
-                "workspace_second": qualification.second.compact_summary(), "restoration_error": qualification.restoration_error}
+                "sessions": sessions,
+                "workspace_first": qualification.first.compact_summary() if qualification.first is not None else None,
+                "workspace_second": qualification.second.compact_summary() if qualification.second is not None else None,
+                "restoration_error": qualification.restoration_error,
+            }
             if qualification.unresolved is not None:
                 value["capability_prequalification"]["unresolved_after_composition"] = list(qualification.unresolved)
     if report.checkpoint_repository is not None:
