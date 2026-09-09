@@ -83,6 +83,7 @@ def test_isolation_and_sentinel_start_before_test_module_collection(tmp_path: Pa
         timeout=60,
     )
 
+    assert observed.exists(), subprocess_failure(completed)
     observed_state_root = observed.read_text(encoding="utf-8")
     assert observed_state_root != "MISSING"
     assert observed_state_root != inherited_state_root
