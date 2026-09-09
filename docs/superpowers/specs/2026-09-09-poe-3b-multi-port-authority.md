@@ -45,8 +45,8 @@ An ephemeral positive admission requires all of these raw facts:
 2. `saved_filename` is exactly empty before and after.
 3. Authorized and executed Packet Tracer file-operation ledgers are explicitly
    present and empty.
-4. Initial and final inventory fingerprints are present, valid SHA-256 values,
-   and equal.
+4. Initial and final inventory fingerprints are present, exact non-blank
+   identities in the existing semantic format, and equal.
 5. The fixture is completely removed.
 6. Simulation mode is Realtime before and after.
 7. Exactly one positive Packet Tracer PID is observed before and after, and it
