@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..domain.enterprise.models.discovery import LiveSessionSafetyEvidence
+from ..domain.enterprise.models.discovery import LiveSessionSafetyAdmissionEvidence
 
 
 class LiveSessionSafety(Protocol):
     """Finalize outer runtime/file health before evidence is persisted."""
 
-    def finalize(self) -> LiveSessionSafetyEvidence: ...
+    def finalize(self) -> LiveSessionSafetyAdmissionEvidence: ...

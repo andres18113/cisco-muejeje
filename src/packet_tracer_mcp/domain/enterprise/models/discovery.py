@@ -285,6 +285,11 @@ class ProbeEnvironment(BaseModel):
         return semantic_fingerprint(self.model_dump(mode="json"))
 
 
+class LiveSessionSafetyMode(str, Enum):
+    GUARDED_PTS_COPY = "guarded_pts_copy"
+    EPHEMERAL_UNTITLED_WORKSPACE = "ephemeral_untitled_workspace"
+
+
 class LiveSessionSafetyEvidence(BaseModel):
     """Auditable outer-session admission evidence for one LIVE mutation."""
 
@@ -310,6 +315,52 @@ class LiveSessionSafetyEvidence(BaseModel):
     positive_claim_allowed: bool = False
     failure_reasons: list[str] = Field(default_factory=list)
 
+    @property
+    def mode(self) -> LiveSessionSafetyMode:
+        return LiveSessionSafetyMode.GUARDED_PTS_COPY
+
+
+class EphemeralUntitledWorkspaceSafetyEvidence(BaseModel):
+    mode: LiveSessionSafetyMode = LiveSessionSafetyMode.EPHEMERAL_UNTITLED_WORKSPACE
+    initial_device_count: int | None = None
+    final_device_count: int | None = None
+    initial_link_count: int | None = None
+    final_link_count: int | None = None
+    initial_saved_filename: str | None = None
+    final_saved_filename: str | None = None
+    authorized_file_operations: tuple[str, ...] | None = None
+    executed_file_operations: tuple[str, ...] | None = None
+    initial_inventory_fingerprint: str = ""
+    final_inventory_fingerprint: str = ""
+    fixture_removed: bool | None = None
+    initial_realtime: bool | None = None
+    final_realtime: bool | None = None
+    packet_tracer_pids_before: tuple[int, ...] | None = None
+    packet_tracer_pids_after: tuple[int, ...] | None = None
+    bridge_healthy_before: bool | None = None
+    bridge_healthy_after: bool | None = None
+    mailbox_entries_before: tuple[str, ...] | None = None
+    mailbox_entries_after: tuple[str, ...] | None = None
+    source_branch_before: str = ""
+    source_branch_after: str = ""
+    source_head_before: str = ""
+    source_head_after: str = ""
+    source_tree_before: str = ""
+    source_tree_after: str = ""
+    worktree_clean_before: bool | None = None
+    worktree_clean_after: bool | None = None
+    runtime_healthy: bool | None = None
+    crash_detected: bool | None = None
+    integrity_verified: bool = False
+    session_reusable: bool = False
+    positive_claim_allowed: bool = False
+    failure_reasons: list[str] = Field(default_factory=list)
+
+
+LiveSessionSafetyAdmissionEvidence = (
+    EphemeralUntitledWorkspaceSafetyEvidence | LiveSessionSafetyEvidence
+)
+
 
 class ProbeContext(BaseModel):
     """Proveniencia y condiciones de confianza de un resultado de probe."""
@@ -329,7 +380,7 @@ class ProbeContext(BaseModel):
     result_status: CapabilityStatus = CapabilityStatus.UNKNOWN
     execution_status: ProbeExecutionStatus = ProbeExecutionStatus.SKIPPED
     probe_fingerprint: str = ""
-    live_session_safety: LiveSessionSafetyEvidence | None = None
+    live_session_safety: LiveSessionSafetyAdmissionEvidence | None = None
 
     @property
     def restoration(self) -> InventoryRestoration:
@@ -661,8 +712,9 @@ class CapabilitySnapshot(BaseModel):
                 safety = context["live_session_safety"]
                 # Exact paths remain persisted for audit, but are per-run
                 # coordinates rather than semantic capability inputs.
-                safety["canonical_path"] = "<canonical.pts>"
-                safety["disposable_path"] = "<disposable.pts>"
+                if "canonical_path" in safety:
+                    safety["canonical_path"] = "<canonical.pts>"
+                    safety["disposable_path"] = "<disposable.pts>"
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 

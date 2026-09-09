@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from .discovery import (
     CapabilityProbeResult,
     CleanupStatus,
-    LiveSessionSafetyEvidence,
+    LiveSessionSafetyAdmissionEvidence,
     ProbeExecutionStatus,
 )
 from .evidence import ObservationStatus, VerificationStatus
@@ -110,7 +110,7 @@ class PoEDeliveryQualificationResult(BaseModel):
     initial_inventory_fingerprint: str = ""
     final_inventory_fingerprint: str = ""
     inventory_restored: bool | None = None
-    live_session_safety: LiveSessionSafetyEvidence
+    live_session_safety: LiveSessionSafetyAdmissionEvidence
     attempted_identities: list[str] = Field(default_factory=list)
     created_identities: list[str] = Field(default_factory=list)
     deleted_identities: list[str] = Field(default_factory=list)

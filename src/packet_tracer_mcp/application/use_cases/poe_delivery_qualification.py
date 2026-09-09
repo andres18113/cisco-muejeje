@@ -22,6 +22,7 @@ from ...domain.enterprise.models.discovery import (
     CapabilitySnapshot,
     CapabilityVerificationMethod,
     CleanupStatus,
+    LiveSessionSafetyAdmissionEvidence,
     LiveSessionSafetyEvidence,
     ProbeContext,
     ProbeExecutionStatus,
@@ -159,7 +160,7 @@ class PoEDeliveryQualificationService:
         execution_status = ProbeExecutionStatus.EXECUTION_ERROR
         observation_status = ObservationStatus.PROBE_FAILED
         verification_status = VerificationStatus.UNVERIFIED
-        live_session_safety: LiveSessionSafetyEvidence | None = None
+        live_session_safety: LiveSessionSafetyAdmissionEvidence | None = None
 
         request_validation = validate_poe_delivery_request(request)
         if not request_validation.is_valid:
@@ -543,7 +544,7 @@ class PoEDeliveryQualificationService:
         attempted: list[str],
         observation_status: ObservationStatus,
         failure_reason: str,
-        live_session_safety: LiveSessionSafetyEvidence,
+        live_session_safety: LiveSessionSafetyAdmissionEvidence,
     ) -> CapabilityProbeResult:
         status = CapabilityStatus.SUPPORTED if supported else CapabilityStatus.UNKNOWN
         context = ProbeContext(
