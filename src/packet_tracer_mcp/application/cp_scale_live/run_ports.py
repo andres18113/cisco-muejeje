@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from .checkpoint import CPScaleCheckpointDecision
 
 from .contracts import CPScaleLiveRequest, CPScalePreflightResult, CPScaleStageExecutionInput, CPScaleLiveStageResult
-from .run_contracts import CPScaleRunReport, CPScaleCleanupAttestation, CPScaleBackendProgress
+from .run_contracts import CPScaleRunReport, CPScaleCleanupAttestation, CPScaleBackendProgress, CPScaleTerminalEvent
 from .session import CPScaleSessionPort, CPScaleRunObservationPort
 from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
 from ..use_cases.qualify_cp_scale_live import CPScaleEvidenceArchive
@@ -34,7 +34,7 @@ class CPScaleCheckpointPort(Protocol):
 
 class CPScalePresentationPort(Protocol):
     def core_rematerialized(self) -> None: ...
-    def terminal(self, event: str, report: CPScaleRunReport) -> None: ...
+    def terminal(self, event: CPScaleTerminalEvent, report: CPScaleRunReport) -> None: ...
     def finalization_incomplete(self, report: CPScaleRunReport) -> None: ...
 
 

@@ -11,8 +11,8 @@ from .completion import CPScaleCompletion
 from .checkpoint import CPScaleCheckpointDecision
 from .contracts import CPScaleLiveRequest, CPScalePreflightOutcome, CPScaleStageContinuity, CPScaleStageExecutionInput
 from .errors import CanonicalLiveFailure
-from .lifecycle import finalize_session
-from .run_contracts import CPScaleRunReport, CPScaleFinalizationState, CPScaleBackendProgress, CPScaleLiveFinalResult, CPScaleRunOutcome
+from .lifecycle import finalize_session, report_terminal_errors
+from .run_contracts import CPScaleRunReport, CPScaleFinalizationState, CPScaleBackendProgress, CPScaleLiveFinalResult, CPScaleRunOutcome, CPScaleStageProgress
 from .run_ports import CPScalePreflightPort, CPScaleEvidencePort, CPScaleCheckpointPort, CPScaleStageExecutorPort, CPScalePresentationPort
 from .session import CPScaleSessionPort, CPScaleRunObservationPort, CPScaleRuntimeResources
 from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalTarget
@@ -62,8 +62,9 @@ class CPScaleLiveCoordinator:
         physical_stages = None
         observations = None
         settled = None
+        terminal_event = None
         def execute_session() -> CPScaleRunOutcome:
-            nonlocal physical_stages, observations, settled
+            nonlocal physical_stages, observations, settled, terminal_event
             if not session.start():
                 report.http_bridge = self.backend.polling_failure_status(session)
                 raise CanonicalLiveFailure("Authenticated Packet Tracer HTTP bridge did not obtain fresh polling: " + canonical_bridge_polling_error(report.http_bridge))
@@ -97,6 +98,7 @@ class CPScaleLiveCoordinator:
                         preflight.target.target is CPScaleCanonicalTarget.ROUTER0_BRANCH
                         and stage is CPScaleCanonicalStage.ROUTER0_BRANCH) else ())
                 result = executor.execute(stage_request)
+                report.record_stage_failures(result)
                 report.active_stage = replace(report.active_stage, result=result)
                 if result.outcome == "failed":
                     raise CanonicalLiveFailure(result.failure)
@@ -120,7 +122,7 @@ class CPScaleLiveCoordinator:
                 if stage is CPScaleCanonicalStage.ROUTING_CORE:
                     self.presentation.core_rematerialized()
                 if preflight.target.target is CPScaleCanonicalTarget.ROUTER0_BRANCH and stage is preflight.target.terminal_stage:
-                    self.completion.complete(report=report, state=finalization, session=session, composition=composition,
+                    terminal_event = self.completion.complete(report=report, state=finalization, session=session, composition=composition,
                         owned=physical_stages.state.owned, observations=observations, router0=True)
                     settled = CPScaleRunOutcome.COMPLETED
                     return settled
@@ -136,16 +138,17 @@ class CPScaleLiveCoordinator:
             deployment = physical_stages.cumulative(projection, "cp-scale-canonical/full-qualification")
             result = executor.execute(CPScaleStageExecutionInput(projection, composition, deployment, None,
                 fingerprint, request.packet_tracer_version, continuity))
+            report.record_stage_failures(result)
             if result.outcome == "failed":
-                # Full qualification was never a build-stage entry; its acquired
-                # result still accompanies the failure for publication.
-                report.full_qualification = result
+                # Legacy failure evidence lives in the stages journal. Keep
+                # the original typed result there, not a success-only full slot.
+                report.active_stage = CPScaleStageProgress(projection, deployment=deployment, result=result)
                 raise CanonicalLiveFailure(result.failure)
             report.full_qualification = result
             report.live_devices = len(composition.topology.devices)
             report.live_links = len(composition.topology.links)
             command = self.checkpoint.decide("full-qualification", report, session_source_head=preflight.identity.source_head)
-            self.completion.complete(report=report, state=finalization, session=session, composition=composition,
+            terminal_event = self.completion.complete(report=report, state=finalization, session=session, composition=composition,
                 owned=physical_stages.state.owned, observations=observations, command=command,
                 retain_authorized=request.retain_on_full_verification)
             settled = CPScaleRunOutcome.COMPLETED
@@ -176,8 +179,18 @@ class CPScaleLiveCoordinator:
 
             final = finalize_session(prepare=prepare, write=lambda: self.persistence.write_progress(report),
                 session=session, report=report_errors)
-            if final.errors and settled is CPScaleRunOutcome.COMPLETED:
+            report.finalization_errors = final.errors
+            if (final.errors or report.secondary_failures) and settled is CPScaleRunOutcome.COMPLETED:
                 settled = CPScaleRunOutcome.FAILED
+        # A cancellation never reaches this point. Publication follows every
+        # terminal obligation, including final write and the sole close.
+        if settled is CPScaleRunOutcome.COMPLETED:
+            try:
+                self.presentation.terminal(terminal_event, report)
+            except Exception as exc:
+                settled = CPScaleRunOutcome.FAILED
+                report.finalization_errors = report_terminal_errors(
+                    (f"terminal_presentation: {type(exc).__name__}: {exc}",), report_errors)
         return CPScaleLiveFinalResult.from_report(settled, report)
 
     def _continue(self, stage: str, report: CPScaleRunReport) -> None:

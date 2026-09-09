@@ -550,7 +550,7 @@ def _build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path = GOV
         persistence=persistence, presentation=presentation,
         checkpoint=CPScaleCheckpoint(repository=CPScaleCheckpointRepositoryReader(governed_root),
             console=CPScaleConsoleCheckpoint(persistence.evidence_path), persistence=persistence),
-        completion=CPScaleCompletion(evidence=persistence, presentation=presentation, cleanup=CPScaleCleanup()))
+        completion=CPScaleCompletion(evidence=persistence, cleanup=CPScaleCleanup()))
 
 
 def _write_evidence(evidence: dict[str, object]) -> None:

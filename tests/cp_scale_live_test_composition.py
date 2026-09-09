@@ -107,7 +107,7 @@ def offline_coordinator(request, **kwargs):
             discovery_factory=lambda session, version: object(), requirements=seams.canonical_required_capability_probes,
             restoration_error=seams.canonical_cleanup_restoration_error),
         checkpoint=Checkpoint(), persistence=persistence, presentation=presentation,
-        completion=CPScaleCompletion(evidence=persistence, presentation=presentation, cleanup=Cleanup()),
+        completion=CPScaleCompletion(evidence=persistence, cleanup=Cleanup()),
         baseline_policy=seams.disposable_workspace_error)
     coordinators.append(coordinator)
     return coordinator
@@ -177,8 +177,7 @@ def _complete_router0_target(*, evidence, target_contract, physical, full_topolo
             value = observe_cleanup_realtime()
             return CPScaleCleanupRealtime(value["verified"], value.get("error", ""), value.get("state"))
 
-    completion = CPScaleCompletion(evidence=Persistence(), cleanup=Cleanup(),
-        presentation=live.CPScaleConsolePresentation(live.EVIDENCE_PATH))
+    completion = CPScaleCompletion(evidence=Persistence(), cleanup=Cleanup())
     try:
         completion.complete(report=report, state=CPScaleFinalizationState(),
             session=SimpleNamespace(physical=physical), composition=SimpleNamespace(topology=full_topology),

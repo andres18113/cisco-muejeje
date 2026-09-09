@@ -8,9 +8,9 @@ from .checkpoint import CPScaleCheckpointDecision
 from .errors import CanonicalLiveFailure
 from .run_contracts import (
     CPScaleCleanupAttestation, CPScaleCleanupResult, CPScaleFinalizationState,
-    CPScaleRunReport, CPScaleRunReplayAudit,
+    CPScaleRunReport, CPScaleRunReplayAudit, CPScaleTerminalEvent,
 )
-from .run_ports import CPScaleEvidencePort, CPScalePresentationPort
+from .run_ports import CPScaleEvidencePort
 from .session import CPScaleSessionPort, CPScaleRunObservationPort
 from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
 from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalTarget, CPScaleCanonicalStage
@@ -18,10 +18,9 @@ from ..use_cases.qualify_cp_scale_live import CPScaleFinalDisposition, canonical
 
 
 class CPScaleCompletion:
-    def __init__(self, *, evidence: CPScaleEvidencePort, presentation: CPScalePresentationPort,
+    def __init__(self, *, evidence: CPScaleEvidencePort,
                  cleanup: CPScaleCleanup, clock=lambda: datetime.now(timezone.utc)) -> None:
         self.evidence = evidence
-        self.presentation = presentation
         self.cleanup = cleanup
         self.clock = clock
 
@@ -58,7 +57,7 @@ class CPScaleCompletion:
     def complete(self, *, report: CPScaleRunReport, state: CPScaleFinalizationState,
                  session: CPScaleSessionPort, composition: EnterpriseReferenceComposition, owned: frozenset[str],
                  observations: CPScaleRunObservationPort, command: CPScaleCheckpointDecision = CPScaleCheckpointDecision.CONTINUE,
-                 retain_authorized: bool = False, router0: bool = False) -> None:
+                 retain_authorized: bool = False, router0: bool = False) -> CPScaleTerminalEvent:
         target = report.preflight.target
         if router0:
             self.require_router0(report)
@@ -72,24 +71,26 @@ class CPScaleCompletion:
         self.evidence.write_progress(report)
         receipt = self.archive("precleanup", report, report)
         report.canonical_evidence_precleanup = receipt
-        if not router0:
-            state.precleanup_archive = receipt
+        state.precleanup_archive = receipt
         if disposition is CPScaleFinalDisposition.RETAIN:
             report.presentation_retained = True
             report.closure = "CP_SCALE_GOVERNED_VOICE_VERIFIED_RETAINED"
             state.retain_confirmed = True
             self.evidence.write_progress(report)
             self.evidence.checkpoint("full-qualification", report, final=True)
-            self.presentation.terminal("PRESENTATION_RETAINED", report)
-            return
+            return CPScaleTerminalEvent.RETAINED
         cleanup = self.cleanup.restore(session.physical, composition.topology, owned, report.baseline)
-        if not router0:
-            state.cleanup_attempted = True
-        realtime = observations.cleanup_realtime()
+        # Ownership is acquired by the returned cleanup result, before any
+        # following observation can fail or cancel. A throwing restore still
+        # leaves the historical failure-finalization retry available.
         report.cleanup = cleanup
+        state.cleanup_attempted = True
+        realtime = observations.cleanup_realtime()
         report.cleanup_realtime = realtime
         if not cleanup.verified or not realtime.verified:
             prefix = "Router0" if router0 else "Canonical"
+            if cleanup.restoration_error and realtime.error:
+                report.secondary_failures += ("cleanup_realtime: " + realtime.error,)
             raise CanonicalLiveFailure(prefix + " verification completed, but cleanup/restoration did not verify: " + (cleanup.restoration_error or realtime.error))
         completed_at = self.clock()
         if not router0:
@@ -100,18 +101,14 @@ class CPScaleCompletion:
             target_stage=target.target.value if router0 else "", closure_scope=report.closure_scope,
             replay=report.no_mutation_replay if router0 else None)
         report.cleanup_attestation = self.archive("cleanup", attestation, report)
-        if not router0:
-            state.cleanup_attestation_archived = True
+        state.cleanup_attestation_archived = True
         report.closure = target.cleaned_closure
         report.cleanup_completed_at = completed_at
         self.evidence.write_progress(report)
         self.evidence.checkpoint("router0-branch" if router0 else "full-qualification", report, final=not router0)
-        self.presentation.terminal("ROUTER0_BRANCH_VERIFIED_AND_CLEANED" if router0 else "CANONICAL_VERIFIED_AND_CLEANED", report)
         if router0:
-            state.precleanup_archive = receipt
-            state.cleanup_attempted = True
-            state.cleanup_attestation_archived = True
             state.terminal_cleanup_complete = True
+        return CPScaleTerminalEvent.ROUTER0_CLEANED if router0 else CPScaleTerminalEvent.CANONICAL_CLEANED
 
     def prepare_finalization(self, *, report: CPScaleRunReport, state: CPScaleFinalizationState,
                              session: CPScaleSessionPort, composition: EnterpriseReferenceComposition | None,
@@ -124,19 +121,29 @@ class CPScaleCompletion:
                     report.canonical_evidence_precleanup = state.precleanup_archive
                 except Exception as exc:
                     report.precleanup_archive_error = f"{type(exc).__name__}: {exc}"
+                    report.secondary_failures += ("precleanup_archive: " + report.precleanup_archive_error,)
             if not state.cleanup_attempted:
                 try:
                     report.cleanup = self.cleanup.restore(session.physical, composition.topology, owned, report.baseline)
                     state.cleanup_attempted = True
+                    if report.cleanup.error:
+                        report.secondary_failures += ("cleanup: " + report.cleanup.error,)
+                    if report.cleanup.restoration_error:
+                        report.secondary_failures += ("cleanup_restoration: " + report.cleanup.restoration_error,)
                 except Exception as exc:
                     report.cleanup = CPScaleCleanupResult(False, error=f"{type(exc).__name__}: {exc}")
+                    report.secondary_failures += ("cleanup: " + report.cleanup.error,)
             report.cleanup_realtime = observations.cleanup_realtime()
+            if report.cleanup_realtime.error:
+                report.secondary_failures += ("cleanup_realtime: " + report.cleanup_realtime.error,)
             if not state.cleanup_attestation_archived:
                 try:
                     attestation = CPScaleCleanupAttestation(report.run_identity, report.preflight.identity.source_head,
                         state.precleanup_archive, report.cleanup, report.cleanup_realtime, self.clock(), failure=report.failure)
                     phase = "cleanup" if report.cleanup and report.cleanup.verified and report.cleanup_realtime.verified else "cleanup-incomplete"
                     report.cleanup_attestation = self.archive(phase, attestation, report)
+                    state.cleanup_attestation_archived = True
                 except Exception as exc:
                     report.cleanup_archive_error = f"{type(exc).__name__}: {exc}"
+                    report.secondary_failures += ("cleanup_archive: " + report.cleanup_archive_error,)
         report.presentation_retained = state.retain_confirmed

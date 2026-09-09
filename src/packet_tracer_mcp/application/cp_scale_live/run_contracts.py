@@ -123,10 +123,17 @@ class CPScaleRunOutcome(str, Enum):
     REJECTED = "rejected"
 
 
+class CPScaleTerminalEvent(str, Enum):
+    ROUTER0_CLEANED = "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
+    CANONICAL_CLEANED = "CANONICAL_VERIFIED_AND_CLEANED"
+    RETAINED = "PRESENTATION_RETAINED"
+
+
 @dataclass(frozen=True)
 class CPScaleLiveProgress:
     target: CPScaleCanonicalTarget
     completed_stages: tuple[CPScaleLiveStageResult, ...]
+    full_qualification: CPScaleLiveStageResult | None
     active_stage: CPScaleCanonicalStage | None
     first_failed_boundary: str | None
     checkpoint_stage: str | None
@@ -151,13 +158,13 @@ class CPScaleLiveFinalResult:
     def from_report(cls, outcome: CPScaleRunOutcome, report: CPScaleRunReport) -> CPScaleLiveFinalResult:
         stages = tuple(item.result for item in report.stages if item.result is not None)
         return cls(report.preflight.identity, outcome, report.preflight.target.target,
-            CPScaleLiveProgress(report.preflight.target.target, stages,
+            CPScaleLiveProgress(report.preflight.target.target, stages, report.full_qualification,
                 report.active_stage.projection.stage if report.active_stage else None,
                 next((item.first_failed_boundary for item in stages if item.first_failed_boundary), None),
                 report.checkpoint or None, any(item.remaining for item in report.stages)),
             report.final_disposition,
             report.closure or None, report.presentation_retained, report.cleanup, report.archives,
-            report.failure or report.hard_stop or None, report.finalization_errors)
+            report.failure or report.hard_stop or None, report.secondary_failures + report.finalization_errors)
 
 
 @dataclass
@@ -198,11 +205,22 @@ class CPScaleRunReport:
     archives: tuple[CPScaleEvidenceArchive, ...] = ()
     precleanup_archive_error: str = ""
     cleanup_archive_error: str = ""
+    secondary_failures: tuple[str, ...] = ()
     finalization_errors: tuple[str, ...] = ()
     checkpoint: str = ""
     checkpoint_at: datetime | None = None
     checkpoint_repository: CPScaleRepositoryState | None = None
     checkpoint_resume_repository: CPScaleCheckpointRepository | None = None
+
+    def record_stage_failures(self, result: CPScaleLiveStageResult) -> None:
+        """Keep acquired later failures in order; the primary is never copied."""
+        prefix = "stage:" + result.stage.value + ":"
+        self.secondary_failures += tuple(prefix + item.operation + ": " + item.error
+            for item in result.secondary_failures)
+        # Diagnostics run after required observations and have no authority
+        # to replace the stage's established first failed boundary.
+        self.secondary_failures += tuple(prefix + "diagnostic: " + item.error
+            for item in result.diagnostics if item.error)
 
     @property
     def completed_stage_limit(self) -> int:

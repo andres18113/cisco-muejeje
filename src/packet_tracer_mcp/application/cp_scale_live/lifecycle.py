@@ -13,6 +13,16 @@ class SessionClosePort(Protocol):
 class FinalizationResult:
     errors: tuple[str, ...] = ()
 
+
+def report_terminal_errors(errors: tuple[str, ...], report: Callable[[tuple[str, ...]], None]) -> tuple[str, ...]:
+    """A failed report is a secondary; never a replacement exception."""
+    try:
+        report(errors)
+    except Exception as exc:
+        return (*errors, f"finalization_report: {type(exc).__name__}: {exc}")
+    return errors
+
+
 def finalize_session(
     *,
     prepare: Callable[[], None],
@@ -42,5 +52,5 @@ def finalize_session(
                 errors.append(f"transport_stop: {type(exc).__name__}: {exc}")
         finally:
             if errors:
-                report(tuple(errors))
+                errors = list(report_terminal_errors(tuple(errors), report))
     return FinalizationResult(tuple(errors))

@@ -116,8 +116,8 @@ class CPScalePhysicalStages:
             deployment_id="cp-scale-canonical/routing-core" if first else f"cp-scale-canonical/{stage.value}/delta",
             require_empty_workspace=first)
         report.active_stage = replace(report.active_stage, delta=delta)
-        self.evidence.write_progress(report)
         self.state = replace(self.state, owned=self.state.owned | attempted_device_ids(delta))
+        self.evidence.write_progress(report)
         error = self.policy.ownership_error(None if first else continuity.previous_projection.topology, delta_topology, delta)
         if error:
             prefix = "Routing-core ownership was not proven: " if first else f"Physical delta {stage.value!r} lacked session ownership: "

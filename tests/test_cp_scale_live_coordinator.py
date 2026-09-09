@@ -226,6 +226,7 @@ coordinator.backend.compose = lambda **kwargs: SimpleNamespace(valid=True, topol
 seams._write_checkpoint_summary = lambda stage, evidence, **kwargs: record("summary", stage=stage)
 result = coordinator.run(request)
 assert stage_requests[1].continuity.previous_projection is result.progress.completed_stages[0].projection
+assert result.progress.full_qualification.projection is stage_requests[-1].projection
 print(json.dumps({"outcome": result.outcome.value,
     "stages": [item.stage.value for item in result.progress.completed_stages],
     "remaining": result.progress.remaining_reconciled,
@@ -235,7 +236,8 @@ print(json.dumps({"outcome": result.outcome.value,
                        "remaining": True, "archives": 2, "closed": [{"event": "transport.stop"}]}
 
 
-def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failure(tmp_path):
+@pytest.mark.parametrize("publication_failure", ["", "write", "cancel"])
+def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failure(tmp_path, publication_failure):
     import json
     from dataclasses import replace
     from types import SimpleNamespace
@@ -296,6 +298,18 @@ def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failu
     session = PacketTracerCPScaleSession(transport_factory=Transport, physical_factory=lambda transport: physical,
                                         runtime_factory=lambda *args: SimpleNamespace())
     persistence = CPScaleLivePersistence(tmp_path)
+    original_write = persistence.write_progress
+    interrupted = []
+
+    def write_progress(report):
+        if publication_failure and report.active_stage and report.active_stage.delta and not interrupted:
+            interrupted.append(True)
+            if publication_failure == "cancel":
+                raise KeyboardInterrupt("cancel acquired physical delta")
+            raise OSError("cannot publish acquired physical delta")
+        original_write(report)
+
+    persistence.write_progress = write_progress
     presentation = SimpleNamespace(core_rematerialized=lambda: calls.append("core"),
         terminal=lambda *args: calls.append("terminal"), finalization_incomplete=lambda report: calls.append("report"))
     observations = SimpleNamespace(dhcp_target=lambda projection: None, activate=lambda projection: None,
@@ -308,8 +322,21 @@ def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failu
             deployer_factory=lambda physical: SimpleNamespace(deploy=lambda *args, **kwargs: deployment),
             ownership_error=lambda *args: ""),
         checkpoint=SimpleNamespace(decide=lambda *args, **kwargs: pytest.fail("Failed stage reached checkpoint")),
-        persistence=persistence, completion=CPScaleCompletion(evidence=persistence, presentation=presentation, cleanup=CPScaleCleanup()),
+        persistence=persistence, completion=CPScaleCompletion(evidence=persistence, cleanup=CPScaleCleanup()),
         presentation=presentation)
+    if publication_failure:
+        if publication_failure == "cancel":
+            with pytest.raises(KeyboardInterrupt, match="cancel acquired physical delta"):
+                coordinator.run(_request())
+        else:
+            result = coordinator.run(_request())
+            assert result.primary_failure == "OSError: cannot publish acquired physical delta"
+        assert calls == ["start", "workspace", "workspace", "workspace", "remove:r", "workspace", "workspace", "stop"]
+        payload = json.loads(persistence.evidence_path.read_text(encoding="utf-8"))
+        assert payload["cleanup"]["verified"] is True
+        assert payload["cleanup"]["mutations"][0]["target_id"] == "r"
+        assert [item["phase"] for item in payload["archives"]] == ["failure-precleanup", "cleanup"]
+        return
     result = coordinator.run(_request())
     assert result.outcome.value == "failed"
     assert result.progress.completed_stages[0].configuration is fixture.configuration_results[0]

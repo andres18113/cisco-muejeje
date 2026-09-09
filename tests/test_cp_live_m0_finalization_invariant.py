@@ -270,7 +270,7 @@ def test_finalization_closes_and_never_replaces_the_cause(
         # preserve, so the unfinished finalization is itself the failure and
         # the run may not report success.
         assert report["primary_failure"] == "", verdict
-        assert any(
+        assert not any(
             item.get("event") == "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
             for item in verdict["reports"]
         ), verdict
