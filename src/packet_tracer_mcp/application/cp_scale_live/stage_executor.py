@@ -27,7 +27,7 @@ from .contracts import (
     CPScaleDiagnosticRecord, CPScaleDiagnosticRequest, CPScaleLiveStageResult,
     CPScaleMutationScope, CPScaleObservationRecord, CPScaleRealtimeWindow,
     CPScaleStageContinuity, CPScaleStageExecutionInput, CPScaleStageReport,
-    CPScaleVoiceLifecycleEvent,
+    CPScaleStageSecondaryFailure, CPScaleVoiceLifecycleEvent,
 )
 from .forwarding_stage import CPScaleForwardingStage
 from .observation import CPScaleDiagnosticPort, CPScaleRequiredObservations
@@ -124,13 +124,14 @@ class CPScaleStageExecutor:
         canonical_voice_error = ""
         observations = list(request.network_boundaries)
         diagnostics = []
+        secondary_failures = []
         lifecycle = []
         boundary = "physical_delta"
         failure = ""
 
-        def observe(kind, payload, status="observed"):
+        def observe(kind, payload, status="observed", error=""):
             record = CPScaleObservationRecord(
-                kind, projection.stage, "required_stage_observation", status, payload,
+                kind, projection.stage, "required_stage_observation", status, payload, error,
             )
             observations.append(record)
             return record
@@ -244,22 +245,40 @@ class CPScaleStageExecutor:
                 if after_error:
                     raise _StageStopped(f"Voice at {projection.stage.value!r} is not interpretable: " + after_error)
 
-            bindings = self.observations.bindings(projection) if voice.staged else []
-            observe("dhcp_server_bindings", {"bindings": bindings})
-            if voice.staged:
-                if request.dhcp_statistics_target is not None and request.dhcp_statistics_baseline is not None:
-                    exchange = self.observations.dhcp_exchange(
-                        bindings, request.dhcp_statistics_target, request.dhcp_statistics_baseline,
-                    )
-                else:
-                    exchange = {
-                        "baseline": request.dhcp_statistics_baseline.evidence if request.dhcp_statistics_baseline else None, "post": None,
-                        "voice_binding_count": None, "delta_readable": False, "counters": None,
-                        "control_counters": None, "scope_discriminated": False, "fork": "UNOBSERVABLE",
-                        "failure_reason": "A unique voice DHCP statistics target or baseline was unavailable at this stage.",
-                    }
-                observe("dhcp_voice_exchange", exchange)
-            if voice.staged and voice_plan is not None and voice.result is not None:
+            # Only two valid Realtime boundaries make this acquired E7 error
+            # authoritative. Later reads enrich its evidence, never replace it.
+            attributable_voice_failure = bool(voice.error and window is not None and window.verified)
+            bindings = None
+            try:
+                bindings = self.observations.bindings(projection) if voice.staged else []
+                observe("dhcp_server_bindings", {"bindings": bindings})
+            except Exception as exc:
+                if not attributable_voice_failure:
+                    raise
+                error = f"{type(exc).__name__}: {exc}"
+                secondary_failures.append(CPScaleStageSecondaryFailure("bindings", error))
+                observe("dhcp_server_bindings", {"bindings": None}, "failed", error)
+            if voice.staged and bindings is not None:
+                try:
+                    if request.dhcp_statistics_target is not None and request.dhcp_statistics_baseline is not None:
+                        exchange = self.observations.dhcp_exchange(
+                            bindings, request.dhcp_statistics_target, request.dhcp_statistics_baseline,
+                        )
+                    else:
+                        exchange = {
+                            "baseline": request.dhcp_statistics_baseline.evidence if request.dhcp_statistics_baseline else None, "post": None,
+                            "voice_binding_count": None, "delta_readable": False, "counters": None,
+                            "control_counters": None, "scope_discriminated": False, "fork": "UNOBSERVABLE",
+                            "failure_reason": "A unique voice DHCP statistics target or baseline was unavailable at this stage.",
+                        }
+                    observe("dhcp_voice_exchange", exchange)
+                except Exception as exc:
+                    if not attributable_voice_failure:
+                        raise
+                    error = f"{type(exc).__name__}: {exc}"
+                    secondary_failures.append(CPScaleStageSecondaryFailure("statistics", error))
+                    observe("dhcp_voice_exchange", {"fork": "UNOBSERVABLE", "failure_reason": error}, "failed", error)
+            if voice.staged and voice_plan is not None and voice.result is not None and bindings is not None:
                 try:
                     canonical_voice = canonical_cp_scale_voice_evidence(
                         stage=projection.stage.value, configuration_plan=projection.configuration,
@@ -268,9 +287,11 @@ class CPScaleStageExecutor:
                     )
                 except Exception as exc:
                     canonical_voice_error = f"{type(exc).__name__}: {exc}"
-                    raise _StageStopped(
-                        "Canonical Voice evidence could not be correlated: " + canonical_voice_error
-                    ) from exc
+                    if not attributable_voice_failure:
+                        raise _StageStopped(
+                            "Canonical Voice evidence could not be correlated: " + canonical_voice_error
+                        ) from exc
+                    secondary_failures.append(CPScaleStageSecondaryFailure("correlation", canonical_voice_error))
             if voice.error:
                 try:
                     diagnostics.append(self.diagnostics.diagnose(CPScaleDiagnosticRequest(
@@ -346,6 +367,7 @@ class CPScaleStageExecutor:
             control_plane=control, voice=voice.result if voice else None, replay_audit=replay_audit,
             orientation=orientation, required_observations=tuple(observations), diagnostics=tuple(diagnostics),
             first_failed_boundary=boundary if failure else None, failure=failure, continuity=next_continuity,
+            secondary_failures=tuple(secondary_failures),
             report=CPScaleStageReport(
                 scope, configuration_report, voice, tuple(lifecycle), window, canonical_voice,
                 canonical_voice_error, forwarded,

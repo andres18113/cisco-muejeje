@@ -59,6 +59,14 @@ class CPScaleObservationRecord:
 
 
 @dataclass(frozen=True)
+class CPScaleStageSecondaryFailure:
+    """One later observation failure; never an acceptance or first-cause claim."""
+
+    operation: str
+    error: str
+
+
+@dataclass(frozen=True)
 class CPScaleDiagnosticRequest:
     projection: CPScaleCanonicalStageProjection
     voice: CPScaleVoiceStageResult
@@ -110,6 +118,11 @@ class CPScaleStageExecutionInput:
     @property
     def diagnostic_attempt_limit(self) -> int:
         return int(bool(self.projection.voice and self.projection.voice.actions))
+
+    @property
+    def secondary_failure_limit(self) -> int:
+        """One error each for bindings, statistics and correlation after Voice."""
+        return 3 * self.diagnostic_attempt_limit
 
     @property
     def required_observation_limit(self) -> int:
@@ -255,6 +268,7 @@ class CPScaleLiveStageResult:
     failure: str
     continuity: CPScaleStageContinuity
     report: CPScaleStageReport
+    secondary_failures: tuple[CPScaleStageSecondaryFailure, ...] = ()
 
     @property
     def forwarding(self) -> tuple[CPScaleSiteForwardingObservation, ...]:

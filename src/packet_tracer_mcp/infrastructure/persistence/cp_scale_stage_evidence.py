@@ -9,6 +9,7 @@ from ...application.cp_scale_live.contracts import CPScaleLiveStageResult, CPSca
 from ...application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection
 from ...domain.enterprise.models.configuration import VerificationKind
 from ...domain.enterprise.models.configuration_runtime import ActionExecutionStatus
+from ...domain.models.typed_ping import TypedPingResult
 from ...shared.utils import serialize_typed_ping_evidence
 
 
@@ -179,6 +180,19 @@ def voice_stage_evidence(
 
 
 
+def _forwarding_attempt_evidence(attempts: tuple[TypedPingResult, ...]) -> dict[str, object]:
+    if attempts:
+        return serialize_typed_ping_evidence(attempts[-1])
+    # A missing slot is not a synthetic ping. Preserve the stable evidence keys
+    # while explicitly withholding freshness, attribution and any measurement.
+    return {
+        "reachable": False, "fresh_output_observed": False, "window_strategy": "none",
+        "failure_reason": "No typed forwarding attempt was acquired.", "attempts": 0,
+        "statistics": "", "dispatched_destination": "", "observed_device_name": "",
+        "device_identity_provenance": "not_observed", "device_identity_evidence": "none",
+    }
+
+
 def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
     projection = result.projection
     report = result.report
@@ -283,7 +297,8 @@ def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
         elif observation.kind == "serial_interfaces":
             evidence["serial_interfaces"] = observation.evidence["readings"]
         elif observation.kind == "dhcp_server_bindings":
-            evidence["dhcp_server_bindings"] = observation.evidence["bindings"]
+            if not observation.error:
+                evidence["dhcp_server_bindings"] = observation.evidence["bindings"]
         elif observation.kind in {"stp_realtime_before_voice", "stp_realtime_after_voice", "dhcp_voice_exchange"}:
             evidence[observation.kind] = observation.evidence
     if report.realtime is not None:
@@ -301,6 +316,8 @@ def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
         evidence["canonical_voice_verification"] = report.canonical_voice.model_dump(mode="json")
     if report.canonical_voice_error:
         evidence["canonical_voice_verification_error"] = report.canonical_voice_error
+    if result.secondary_failures:
+        evidence["secondary_failures"] = [asdict(item) for item in result.secondary_failures]
     for diagnostic in result.diagnostics:
         evidence["post_failure_simulation"] = diagnostic.evidence or {
             "status": "FAILED", "failure_reason": diagnostic.error,
@@ -312,12 +329,13 @@ def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
     if report.forwarding is not None:
         forwarded = report.forwarding
         evidence["core_forwarding"] = {
-            item.source_device_name: serialize_typed_ping_evidence(item.attempts[-1]) for item in forwarded.core
+            item.source_device_name: _forwarding_attempt_evidence(item.attempts) for item in forwarded.core
         }
         evidence["core_forwarding_verified"] = forwarded.core_verified
         if forwarded.site_verified is not None:
             evidence["site_forwarding"] = [
-                {"check": asdict(item.check), "result": serialize_typed_ping_evidence(item.attempts[-1]), "verified": item.verified}
+                {"check": asdict(item.check), "result": _forwarding_attempt_evidence(item.attempts),
+                 "verified": item.verified and bool(item.attempts)}
                 for item in forwarded.site
             ]
             evidence["site_forwarding_verified"] = forwarded.site_verified
