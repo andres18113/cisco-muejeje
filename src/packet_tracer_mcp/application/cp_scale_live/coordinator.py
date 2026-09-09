@@ -180,11 +180,12 @@ class CPScaleLiveCoordinator:
                     observations=observations)
 
             def report_errors(errors: tuple[str, ...]) -> None:
+                report.secondary_failures = ()
                 report.finalization_errors = errors
                 self.presentation.finalization_incomplete(report)
 
             final = finalize_session(prepare=prepare, write=lambda: self.persistence.write_progress(report),
-                session=session, report=report_errors)
+                session=session, report=report_errors, secondary_failures=lambda: report.secondary_failures)
             report.finalization_errors = final.errors
             if (final.errors or report.secondary_failures) and settled is CPScaleRunOutcome.COMPLETED:
                 settled = CPScaleRunOutcome.FAILED

@@ -67,3 +67,48 @@ print(json.dumps({"outcome": result.outcome.value, "code": code, "secondary": re
         errors += ["finalization_report: OSError: report unavailable"]
     assert verdict == {"outcome": "rejected", "code": 2, "secondary": errors,
         "calls": ["write", "report"], "sessions": 0}
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("broken_report", [False, True])
+def test_owned_secondaries_report_once_after_close_even_during_cancellation(cancel, broken_report):
+    verdict = _probe(RUN_DOUBLES + "\ncancel = " + repr(cancel)
+        + "\nbroken_report = " + repr(broken_report) + r'''
+from dataclasses import replace
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest, CPScaleStageSecondaryFailure
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+coordinator = offline_coordinator(request)
+def stage(projection, **kwargs):
+    value = execute_stage(projection, **kwargs)
+    return replace(value, outcome="failed", failure="FIRST", secondary_failures=(
+        CPScaleStageSecondaryFailure("bindings", "repeated"), CPScaleStageSecondaryFailure("bindings", "repeated")))
+seams._execute_stage = stage
+coordinator.completion.cleanup.restore = lambda *args: CPScaleCleanupResult(False, "restore failed")
+original_write = coordinator.persistence.write_progress
+def write(value):
+    if cancel and value.failure:
+        raise KeyboardInterrupt("ORIGINAL_CANCELLATION")
+    return original_write(value)
+coordinator.persistence.write_progress = write
+reports = []
+def report(value):
+    reports.append(list(value.finalization_errors))
+    record("report")
+    if broken_report:
+        raise OSError("broken report")
+coordinator.presentation.finalization_incomplete = report
+raised = ""
+result = None
+try:
+    result = coordinator.run(request)
+except BaseException as exc:
+    raised = type(exc).__name__ + ": " + str(exc)
+print(json.dumps({"raised": raised, "reports": reports,
+    "secondary": list(result.secondary_failures) if result else None,
+    "calls": [item["event"] for item in calls if item["event"] in ("transport.stop", "report")]}))
+''')
+    errors = ["stage:routing-core:bindings: repeated", "stage:routing-core:bindings: repeated",
+        "cleanup_restoration: restore failed"]
+    assert verdict == {"raised": "KeyboardInterrupt: ORIGINAL_CANCELLATION" if cancel else "",
+        "reports": [errors], "secondary": None if cancel else errors + (["finalization_report: OSError: broken report"] if broken_report else []),
+        "calls": ["transport.stop", "report"]}

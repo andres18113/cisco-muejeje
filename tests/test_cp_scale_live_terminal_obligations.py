@@ -290,4 +290,4 @@ print(json.dumps({"outcome": result.outcome.value, "secondary": result.secondary
     "calls": [item["event"] for item in calls if item["event"] in ("transport.stop", "terminal", "report")]}))
 ''')
     assert verdict == {"outcome": "failed", "secondary": ["cleanup_realtime: late realtime error"],
-        "calls": ["transport.stop"]}
+        "calls": ["transport.stop", "report"]}
