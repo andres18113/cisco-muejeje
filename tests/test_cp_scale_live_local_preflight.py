@@ -329,7 +329,64 @@ def test_process_reader_preserves_path_and_both_version_fields():
     }
 
 
-def test_git_reader_performs_only_the_six_explicit_local_reads():
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    [
+        ("ProcessName", 7),
+        ("ProductVersion", ["9.0.1.0858"]),
+        ("FileVersion", {"value": "9.0.1.0858"}),
+        ("Path", [r"C:\PT\PacketTracer.exe"]),
+    ],
+)
+def test_process_reader_rejects_invalid_text_types_instead_of_stringifying(
+    field,
+    invalid,
+):
+    payload = {
+        "ProcessName": "PacketTracer",
+        "Id": 77,
+        "MainWindowHandle": 0,
+        "ProductVersion": "9.0.1.0858",
+        "FileVersion": "9.0.1.0858",
+        "Path": r"C:\PT\PacketTracer.exe",
+    }
+    payload[field] = invalid
+
+    result = PowerShellPacketTracerProcessReader(
+        run_command=lambda *_args, **_kwargs: SimpleNamespace(
+            stdout=json.dumps(payload),
+        ),
+    ).read()
+
+    assert result.processes == ()
+    assert f"{field} must be a string" in result.error
+
+
+def test_process_reader_preserves_file_version_fallback_when_product_is_absent():
+    payload = {
+        "ProcessName": "PacketTracer",
+        "Id": 77,
+        "MainWindowHandle": 0,
+        "ProductVersion": None,
+        "FileVersion": "9.0.1.0858-file",
+        "Path": r"C:\PT\PacketTracer.exe",
+    }
+    result = PowerShellPacketTracerProcessReader(
+        run_command=lambda *_args, **_kwargs: SimpleNamespace(
+            stdout=json.dumps(payload),
+        ),
+    ).read()
+
+    assert result.error == ""
+    assert result.processes[0].product_version == ""
+    assert result.processes[0].file_version == "9.0.1.0858-file"
+    assert packet_tracer_process_error(
+        [process_record_mapping(result.processes[0])],
+        "9.0.1.0858",
+    ) == ""
+
+
+def test_git_reader_pins_the_tree_to_the_captured_head_and_rechecks_references():
     calls = []
     values = {
         ("branch", "--show-current"): "feature/runtime-ripv2",
@@ -339,7 +396,7 @@ def test_git_reader_performs_only_the_six_explicit_local_reads():
         ("rev-parse", "HEAD"): HEAD,
         ("status", "--porcelain"): "",
         ("rev-parse", "@{upstream}"): HEAD,
-        ("rev-parse", "HEAD^{tree}"): TREE,
+        ("rev-parse", f"{HEAD}^{{tree}}"): TREE,
     }
 
     def git(root, *arguments):
@@ -348,7 +405,16 @@ def test_git_reader_performs_only_the_six_explicit_local_reads():
 
     result = GitCPScaleRepositoryReader(git_output=git).read(ROOT)
 
-    assert [arguments for _, arguments in calls] == list(values)
+    assert [arguments for _, arguments in calls] == [
+        ("branch", "--show-current"),
+        ("rev-parse", "--abbrev-ref", "@{upstream}"),
+        ("rev-parse", "HEAD"),
+        ("status", "--porcelain"),
+        ("rev-parse", "@{upstream}"),
+        ("rev-parse", f"{HEAD}^{{tree}}"),
+        ("rev-parse", "HEAD"),
+        ("rev-parse", "@{upstream}"),
+    ]
     assert all(root == ROOT for root, _ in calls)
     assert result == CPScaleRepositoryObservation(
         branch="feature/runtime-ripv2",
@@ -358,6 +424,65 @@ def test_git_reader_performs_only_the_six_explicit_local_reads():
         source_tree=TREE,
         dirty=False,
     )
+
+
+@pytest.mark.parametrize("moving_reference", ["head", "upstream"])
+def test_git_reader_rejects_a_reference_that_moves_during_its_snapshot(
+    moving_reference,
+):
+    moved = "c" * 40
+    head_values = iter((HEAD, moved if moving_reference == "head" else HEAD))
+    upstream_values = iter(
+        (HEAD, moved if moving_reference == "upstream" else HEAD),
+    )
+
+    def git(_root, *arguments):
+        if arguments == ("branch", "--show-current"):
+            return "feature/runtime-ripv2"
+        if arguments == ("rev-parse", "--abbrev-ref", "@{upstream}"):
+            return "cisco/feature/runtime-ripv2"
+        if arguments == ("rev-parse", "HEAD"):
+            return next(head_values)
+        if arguments == ("status", "--porcelain"):
+            return ""
+        if arguments == ("rev-parse", "@{upstream}"):
+            return next(upstream_values)
+        if arguments == ("rev-parse", f"{HEAD}^{{tree}}"):
+            return TREE
+        raise AssertionError(arguments)
+
+    result = GitCPScaleRepositoryReader(git_output=git).read(ROOT)
+
+    assert result.source_tree == TREE
+    if moving_reference == "head":
+        assert "HEAD changed during repository inspection" in result.source_tree_error
+        assert result.upstream_head_error == ""
+    else:
+        assert "upstream changed during repository inspection" in (
+            result.upstream_head_error
+        )
+        assert result.source_tree_error == ""
+
+
+def test_repository_snapshot_error_short_circuits_before_process_inspection():
+    events = []
+    result = _inspect(_service(
+        events=events,
+        repository=CPScaleRepositoryObservation(
+            branch="feature/runtime-ripv2",
+            upstream="cisco/feature/runtime-ripv2",
+            head=HEAD,
+            upstream_head=HEAD,
+            source_tree=TREE,
+            dirty=False,
+            source_tree_error="HEAD changed during repository inspection.",
+        ),
+    ))
+
+    assert events == ["runtime", "imports", "repository"]
+    assert result.outcome is CPScalePreflightOutcome.REJECTED
+    assert result.issues == ("HEAD changed during repository inspection.",)
+    assert result.process.state is CPScaleCheckState.NOT_RUN
 
 
 def test_runtime_reader_observes_loaded_modules_without_importing_anything():

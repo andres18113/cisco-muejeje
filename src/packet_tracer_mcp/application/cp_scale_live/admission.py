@@ -356,7 +356,11 @@ def _repository_issues(
         issues.append(
             "Live session requires its exact initial HEAD pushed to upstream.",
         )
-    if not evidence.source_tree:
+    if evidence.upstream_head and evidence.upstream_head_error:
+        issues.append(evidence.upstream_head_error)
+    if evidence.source_tree and evidence.source_tree_error:
+        issues.append(evidence.source_tree_error)
+    elif not evidence.source_tree:
         issues.append(
             evidence.source_tree_error or "Repository source tree could not be proven.",
         )

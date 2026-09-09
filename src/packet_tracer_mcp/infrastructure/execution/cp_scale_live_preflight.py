@@ -125,14 +125,52 @@ class GitCPScaleRepositoryReader:
 
         source_tree = ""
         source_tree_error = ""
-        try:
-            source_tree = self._git_output(
-                governed_root,
-                "rev-parse",
-                "HEAD^{tree}",
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            source_tree_error = str(exc)
+        if head:
+            try:
+                source_tree = self._git_output(
+                    governed_root,
+                    "rev-parse",
+                    f"{head}^{{tree}}",
+                )
+            except (OSError, subprocess.CalledProcessError) as exc:
+                source_tree_error = str(exc)
+        else:
+            source_tree_error = "Repository HEAD was unavailable for tree capture."
+
+        if head:
+            try:
+                final_head = self._git_output(
+                    governed_root,
+                    "rev-parse",
+                    "HEAD",
+                )
+                if final_head != head:
+                    source_tree_error = (
+                        "HEAD changed during repository inspection: "
+                        f"captured {head!r}; observed {final_head!r}."
+                    )
+            except (OSError, subprocess.CalledProcessError) as exc:
+                source_tree_error = (
+                    "Repository HEAD could not be revalidated: " + str(exc)
+                )
+
+        if upstream_head:
+            try:
+                final_upstream_head = self._git_output(
+                    governed_root,
+                    "rev-parse",
+                    "@{upstream}",
+                )
+                if final_upstream_head != upstream_head:
+                    upstream_head_error = (
+                        "upstream changed during repository inspection: "
+                        f"captured {upstream_head!r}; "
+                        f"observed {final_upstream_head!r}."
+                    )
+            except (OSError, subprocess.CalledProcessError) as exc:
+                upstream_head_error = (
+                    "Repository upstream could not be revalidated: " + str(exc)
+                )
 
         return CPScaleRepositoryObservation(
             branch=branch,
@@ -205,14 +243,17 @@ def _git_output(root: Path, *arguments: str) -> str:
 def _process_record(row: Mapping[str, object]) -> CPScaleProcessRecord:
     return CPScaleProcessRecord(
         pid=_required_int(row.get("Id"), "Id"),
-        name=str(row.get("ProcessName") or ""),
+        name=_required_string(row.get("ProcessName"), "ProcessName"),
         main_window_handle=_required_int(
             row.get("MainWindowHandle"),
             "MainWindowHandle",
         ),
-        product_version=str(row.get("ProductVersion") or ""),
-        file_version=str(row.get("FileVersion") or ""),
-        executable_path=str(row.get("Path") or ""),
+        product_version=_optional_string(
+            row.get("ProductVersion"),
+            "ProductVersion",
+        ),
+        file_version=_optional_string(row.get("FileVersion"), "FileVersion"),
+        executable_path=_required_string(row.get("Path"), "Path"),
     )
 
 
@@ -220,3 +261,15 @@ def _required_int(value: object, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{field} must be an integer; got {value!r}.")
     return value
+
+
+def _required_string(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string; got {value!r}.")
+    return value
+
+
+def _optional_string(value: object, field: str) -> str:
+    if value is None:
+        return ""
+    return _required_string(value, field)

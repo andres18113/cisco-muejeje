@@ -10,6 +10,7 @@ from ..use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
     CPScaleCanonicalTargetContract,
 )
+from .process_identity import packet_tracer_version_path_error
 
 
 class CPScaleCheckState(str, Enum):
@@ -270,15 +271,14 @@ def _processes_match_version_and_path(
     processes: tuple[CPScaleProcessRecord, ...],
     expected_version: str,
 ) -> bool:
-    versions = {
-        item.product_version or item.file_version
-        for item in processes
-    }
-    paths = {item.executable_path for item in processes}
-    return bool(
-        expected_version
-        and len(versions) == 1
-        and all(value.startswith(expected_version) for value in versions)
-        and len(paths) == 1
-        and next(iter(paths), "")
+    return not packet_tracer_version_path_error(
+        tuple(
+            (
+                item.product_version,
+                item.file_version,
+                item.executable_path,
+            )
+            for item in processes
+        ),
+        expected_version,
     )

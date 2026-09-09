@@ -33,3 +33,22 @@ def test_process_identity_still_rejects_version_and_path_ambiguity():
     assert "identity is ambiguous" in packet_tracer_process_error(
         [_process(4004), different], "9.0.1.0858",
     )
+
+
+def test_process_identity_rejects_non_string_path_instead_of_stringifying_it():
+    process = _process(4004)
+    process["Path"] = [
+        "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    ]
+
+    assert "invalid type" in packet_tracer_process_error(
+        [process],
+        "9.0.1.0858",
+    )
+
+
+def test_process_identity_uses_file_version_when_product_version_is_absent():
+    process = _process(4004)
+    process["ProductVersion"] = None
+
+    assert packet_tracer_process_error([process], "9.0.1.0858") == ""

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from ...application.cp_scale_live.process_identity import (
+    packet_tracer_version_path_error,
+)
+
 
 def packet_tracer_process_error(
     processes: Sequence[Mapping[str, object]],
@@ -19,17 +23,14 @@ def packet_tracer_process_error(
     complete semantic workspace observation.
     """
 
-    if not processes:
-        return "No running Packet Tracer process was observed."
-    versions = {
-        str(item.get("ProductVersion") or item.get("FileVersion") or "")
-        for item in processes
-    }
-    paths = {str(item.get("Path") or "") for item in processes}
-    if len(versions) != 1 or not all(
-        value.startswith(expected_version) for value in versions
-    ):
-        return f"Packet Tracer version mismatch: {sorted(versions)!r}."
-    if len(paths) != 1 or not next(iter(paths), ""):
-        return f"Packet Tracer executable identity is ambiguous: {sorted(paths)!r}."
-    return ""
+    return packet_tracer_version_path_error(
+        tuple(
+            (
+                item.get("ProductVersion"),
+                item.get("FileVersion"),
+                item.get("Path"),
+            )
+            for item in processes
+        ),
+        expected_version,
+    )
