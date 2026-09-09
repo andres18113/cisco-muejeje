@@ -211,7 +211,9 @@ _ORCHESTRATION_CALLS = {
 #: crea y borra un router de verdad y aun así no llama a ninguna primitiva de
 #: mutación -- así que sin esta segunda regla la partición tenía un agujero del
 #: tamaño de `application/`.
-_ORCHESTRATION_LAYER = "application/use_cases/"
+# Both application slices require runtime mediation. CP-SCALE was extracted
+# from tools in M2; it is not a new transport dispatcher or an exempt family.
+_ORCHESTRATION_LAYER = ("application/use_cases/", "application/cp_scale_live/")
 
 
 def _docstrings(tree: ast.AST) -> set[int]:
@@ -355,8 +357,8 @@ def test_every_orchestrator_sits_in_the_layer_where_a_runtime_mediates():
 
     Una pasada de cualificación crea y borra un router de verdad sin llamar a
     ninguna primitiva de mutación: se lo pide al runtime físico. Eso está bien
-    -- hereda su contención -- pero sólo mientras viva donde esa mediación es
-    obligatoria. Un orquestador en otra capa es una mutación que nadie clasificó.
+    -- hereda su contención -- pero sólo mientras viva en los slices application
+    declarados, donde esa mediación es obligatoria. Otra ruta sigue sin clasificar.
     """
     orchestrating = _modules_orchestrating_mutations()
 
@@ -367,7 +369,7 @@ def test_every_orchestrator_sits_in_the_layer_where_a_runtime_mediates():
     }
 
     assert stray == set(), (
-        f"These modules ask a runtime to mutate from outside "
+        f"These modules ask a runtime to mutate from outside the application roots "
         f"{_ORCHESTRATION_LAYER!r} and are not a classified dispatcher: "
         f"{sorted(stray)}."
     )
@@ -385,6 +387,26 @@ def test_the_qualification_passes_are_seen_as_orchestrators():
     ):
         assert module in orchestrating
         assert module not in dispatching
+
+
+def test_cp_scale_cleanup_is_mediated_application_orchestration_not_dispatch():
+    module = "application/cp_scale_live/cleanup.py"
+    assert module in _modules_orchestrating_mutations()
+    assert module not in _modules_dispatching_mutations()
+    assert module not in _owners()
+    assert module.startswith(_ORCHESTRATION_LAYER)
+
+
+def test_an_orchestrator_outside_both_application_roots_is_rejected(tmp_path, monkeypatch):
+    module = tmp_path / "application" / "other_policy.py"
+    module.parent.mkdir()
+    module.write_text("def restore(runtime, device):\n    runtime.remove_device(device)\n", encoding="utf-8")
+    monkeypatch.setattr(f"{__name__}.PACKAGE", tmp_path)
+    discovered = _modules_orchestrating_mutations()
+    assert set(discovered) == {"application/other_policy.py"}
+    assert not any(module.startswith(_ORCHESTRATION_LAYER) for module in discovered)
+    with pytest.raises(AssertionError, match="application/other_policy.py"):
+        test_every_orchestrator_sits_in_the_layer_where_a_runtime_mediates()
 
 
 def test_an_orchestrator_never_counts_as_its_own_containment_family():

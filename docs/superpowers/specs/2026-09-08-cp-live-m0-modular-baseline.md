@@ -30,6 +30,12 @@ abrió Packet Tracer, no se conectó al bridge y no se ejecutó el runner con
 transporte real. La admisión productiva sigue `BLOCKED`. M2-A y M2-B quedan
 autorizadas únicamente offline bajo los límites de esta especificación.
 
+La consolidación offline de Task 4 (2026-09-09) verifica las extracciones ya
+revisadas de M2-A/M2-B mediante arquitectura, un segundo escenario no canónico
+y medidas 1/2/4, sin modificar sus mecanismos. Los resultados y SHAs vigentes
+están en «Consolidación offline M1/M2 y prueba de reutilización» al final. Las
+secciones de inventario y baseline M0 conservan su contexto histórico.
+
 ## Fuente, aislamiento y autoridad vigente
 
 | Concepto | Valor comprobado en M0 |
@@ -126,7 +132,7 @@ no sustituye al transporte HTTP. `CapabilitySnapshotStore` usa
 el checkpoint terminal a `docs/reference/cp-scale` y los archivos inmutables a
 `canonical-live-evidence`.
 
-## Mapa de responsabilidades actual
+## Mapa de responsabilidades de M0 (histórico)
 
 La columna «autoridad» indica qué decisión puede producir la responsabilidad;
 «ninguna» significa que no puede promover aceptación o `VERIFIED`.
@@ -172,7 +178,7 @@ devolver y destruiría la continuidad física que CP-LIVE necesita.
 
 ## Arquitectura objetivo aprobada
 
-El destino, alcanzable sólo cuando el coordinador viva bajo `src`:
+El destino, alcanzado offline en M2-B con el coordinador bajo `src`:
 
 ```text
 tools/cp_scale_canonical_live.py  (façade compatible)
@@ -187,8 +193,8 @@ application/cp_scale_live/*  <-- ports -- infrastructure/*
 use cases, applicators, validators y modelos existentes
 ```
 
-Mientras el coordinador siga en `tools`, la forma correcta es la intermedia:
-`tools` conserva `main`/`run` y **llama** a las piezas ya extraídas.
+Antes de M2-B, mientras el coordinador seguía en `tools`, la forma intermedia
+correcta conservaba `main`/`run` en `tools` y **llamaba** a las piezas extraídas.
 
 ```text
 tools/cp_scale_canonical_live.py  (entrada + composition root + coordinador)
@@ -1130,3 +1136,170 @@ M2_A=AUTHORIZED_OFFLINE_IN_PROGRESS
 M2_B=AUTHORIZED_OFFLINE_PENDING_M2_A_GATE
 M3=NOT_AUTHORIZED_NOT_STARTED
 ```
+
+## Consolidación offline M1/M2 y prueba de reutilización
+
+Estado vigente después de las correcciones y revisiones de M2; el bloque
+anterior documenta el cierre histórico de M1, no el estado actual.
+
+| Hito | Commits | Gates y revisión |
+| --- | --- | --- |
+| M1 fixes — COMPLETE | `aad6da0ee6e5d77ab57be45c2bdb2d1c0ebfb2be` | parsing estricto, política única de identidad/build y snapshot Git ligado al SHA capturado; ledger de revisión limpio con dos sugerencias Minor de cobertura; revalidación focal Task 4: **27 passed** |
+| M2-A — COMPLETE | `14a79bcde15df95e8ca832e14afc9bebe00da9a2`, `585dc08ad979341ee762c58f6f16d115fc9a0763` | Gate A del implementador: **665 passed**; re-review de los dos Important: **Ready yes**, **8 passed** frescos; serializer sin ping inventado y primera causa Voice atribuible preservada |
+| M2-B — COMPLETE | `aea3a19`, `22bbc17`, `884f1a5`, `0df0e5f`, `89cb524`, `3ee64c65f2c23e609b778f23b6c88ea1e45512d3` | Gate B del implementador: **727 passed**; re-review independiente: **124 passed**, **Ready yes**, sin Critical/Important/Minor |
+
+Las revisiones y registros causales completos están en el ledger local de
+ejecución `.superpowers/sdd/2026-09-08-cp-live-m2-modular-execution/`. Son
+artefactos locales ignorados por Git; esta sección conserva los resultados
+esenciales en documentación versionada.
+
+El coordinator es el único dueño que reemplaza los tres ledgers frozen de
+cualificación, progreso y finalización. `CPScaleRunReport` es una proyección
+frozen de publicación, no un Context compartido. Backend/build/completion
+reciben valores estrechos; checkpoint divide preparación/publicación/prompt y
+reanudación/publicación para adquirir cada valor antes del siguiente efecto.
+El resultado final mantiene `cleanup_realtime` tipado junto a `cleanup`, un
+equivalente explícito del contrato propuesto que conserva la identidad de ambos
+resultados originales. El adapter es el único que traduce outcome a 0/1/2.
+
+La observación Realtime de cleanup está cerrada y tipada. No se afirma que la
+observación Realtime del stage (`observation.py`/`voice_stage.py`), ni todos los
+payloads históricos de evidencia de dominio, hayan sido reescritos: el Minor de
+tipado de esa observación interna de M2-A sigue registrado. No se amplía su
+autoridad y no se modifica producción como parte de estas pruebas.
+
+### Prueba no canónica y mecanismos sin cambios
+
+`tests/test_cp_scale_live_reuse_and_state.py` usa un `DocumentAuditTarget` con
+`capture → inspect → seal`, cursor propio y dos adaptadores dobles distintos
+(`MemoryDocumentReader`, `AuditReceiptAdapter`). Una política de máximo de
+errores inyectada hace fallar `inspect` o permite los tres pasos con exactamente
+las mismas observaciones. El `execute_stage_sequence` real permanece intacto:
+la prueba afirma orden, duplicados de IDs, primera falla, identidad exacta de
+continuidad/resultados/journals y secundarios duplicados en orden.
+
+El mecanismo sólo itera y acumula. No conoce este target, CP-SCALE, Router0,
+PoE, checkpoints, cleanup, persistencia ni PT. El target sintético no pasa por
+admisión y no concede ninguna autoridad productiva.
+
+Identidad del archivo aceptado antes/después de Task 4:
+
+- Git blob: `4beb4860d031296b12f5963315f3061a8a06a5c0`.
+- SHA-256 de `application/cp_scale_live/sequence.py`:
+  `661629942ef62c31c0e8b28baef31d9e46996f1f86c6cd26989d1323cf18a562`.
+
+### Medidas de estado y serialización 1/2/4
+
+Las cotas se declaran **antes** de ejecutar la medida en `MeasurementPlan` y
+en el target, no se obtienen contando lo que produjo un runtime: dos lecturas
+obligatorias, un intento diagnóstico `DIAGNOSTIC_ONLY`, tres journals completos
+de tres entradas por stage, dos fases de archivo y cuatro comprobaciones de
+preflight. El mecanismo sintético conserva cuatro entradas de journal por
+stage, con la operación `check` duplicada de forma intencional.
+
+La fixture CP declara además una acción Voice controlada para habilitar el
+único intento diagnóstico permitido. Cada resultado se contrasta con las
+cotas reales de `CPScaleStageExecutionInput`: configuration attempts ≤ 3,
+required observations ≤ 9, diagnostics ≤ 1, secondary failures ≤ 3 para ese
+plan. `completed_stages` no supera los seis stages declarados del target y
+los dos recibos no superan `archive_phase_limit`. No se afirma que estos planes
+de medida sean la composición canónica ni que una secuencia de snapshots de
+fallo equivalga a una ejecución que continúe después de fallar.
+
+Para la proyección pública se construyen snapshots CP tipados/controlados,
+frozen y sin aceptación productiva, y se llama al boundary real `run_evidence`.
+Se usan las opciones productivas exactas: JSON UTF-8 con `ensure_ascii=False`,
+`indent=2`, orden de inserción y LF final. Para cada tamaño, la prueba compara
+los bytes con `CPScaleLivePersistence.write_progress` real en un directorio
+temporal. Reloj, IDs y payloads son fijos: una segunda construcción produce
+exactamente los mismos bytes. Esta es una medida del boundary público y del
+escritor real, no una serialización alternativa ni una captura LIVE.
+
+| Stages | Entradas del mecanismo | Filas journal sintético | Resultados CP únicos | Journals CP únicos | Filas journal CP | Observaciones requeridas | Diagnósticos | Archivos | Issues | JSON UTF-8 bytes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 4 | 1 | 3 | 9 | 2 | 1 | 2 | 0 | 11 451 |
+| 2 | 2 | 8 | 2 | 6 | 18 | 4 | 2 | 2 | 0 | 20 967 |
+| 4 | 4 | 16 | 4 | 12 | 36 | 8 | 4 | 2 | 0 | 39 979 |
+
+El sobre sin stages es idéntico en las tres medidas: **1 937 bytes**. Las
+cuatro entradas con su indentación miden **9 510 / 9 514 / 9 504 / 9 504 bytes**;
+las pequeñas diferencias se deben a los nombres canónicos, no a historial.
+La prueba comprueba la descomposición exacta
+`bytes = sobre + suma(bytes_de_stage) + 4 + 2(n - 1)` y las cotas predeclaradas de
+8 192 bytes para el sobre y 16 384 por stage. No fija como supuesto el tamaño
+observado ni recorta journals para cumplir la cota. Estas cotas en bytes son
+del plan controlado de medición, no límites universales para cualquier payload
+de evidencia canónico.
+
+Se recorre el grafo de valores por identidad: hay exactamente `n` resultados
+de stage y `3n` journals originales, no copias. Cada entrada de progreso apunta
+al mismo resultado que el final frozen; las continuidades no contienen
+resultados terminados ni snapshots previos. Los recibos sólo llevan metadatos,
+no payloads archivados. En JSON hay exactamente `n` objetos de stage, sin
+historial anidado; las tres colecciones completas de journal se conservan en
+su orden y multiplicidad. Los aliases legítimos de resultados tipados no se
+cuentan como objetos nuevos. Esto no elimina claves redundantes que otros
+escenarios del esquema público histórico deban conservar por compatibilidad.
+
+### Guardas de arquitectura y alcance de la prueba
+
+`tests/test_cp_scale_live_architecture.py` analiza AST y el grafo real de imports,
+incluyendo rutas intermedias fuera del slice cuando conectan sus componentes.
+Rechaza `src → tools` en todo `src`, imports concretos de infrastructure en
+`application/cp_scale_live`, ciclos runtime de coordinación/ejecución/
+observación/diagnóstico/persistencia y una façade que ejecute coordinación,
+defina funciones/clases, cargue dinámicamente o reenvíe globals. Ignora texto
+de docstrings y aristas exclusivas de `TYPE_CHECKING` para ciclos, no para la
+dirección de capas. Los use cases históricos con imports de infrastructure
+siguen explícitamente fuera de esta extracción; no se presenta el repositorio
+entero como una migración de capas completada.
+
+Los guardas de estado resuelven aliases/annotations/constructores/`replace`
+y mutaciones sobre valores identificados, requieren registros frozen sin
+campos abiertos y detectan servicios directos o anidados en bundles. No se
+basan en LOC ni en buscar palabras dentro de texto. Los controles adversariales
+del checker pasaron de **19 + 3 + 2 + 2 REDs** a GREEN; seis controles adicionales
+prueban sensibilidad a snapshots corruptos (pérdida, duplicado, copia, cambio
+de continuidad, truncado y secundarios reordenados). El control de truncado
+mantiene intacta la identidad del recibo para fallar por pérdida de filas, no
+por sustituir un objeto. Tres REDs adicionales identificaron que la primera
+medida compacta no era byte a byte la escritura pública; se corrigieron las
+opciones de medida, sin tocar producción. Otros tres REDs detectaron una
+fixture con diagnóstico sin acción Voice declarada; la corrección fue sólo
+de la fixture y no cambió los bytes públicos. Esos REDs pertenecen a las nuevas
+pruebas, no a un defecto productivo inventado: no se modificó M2 para fabricarlos.
+
+La primera suite completa produjo **4 365 passed / 1 failed**: el guard legacy
+de contención sólo clasificaba `application/use_cases/`. Conforme R11–R12 se
+actualizó exclusivamente su clasificación a las dos raíces application
+explícitas, añadiendo pruebas de que cleanup se descubre como orquestador pero
+no dispatcher y de que una tercera ruta sigue rechazada por el guard real.
+No se añadió una excepción de dispatcher ni se relajó la tabla de familias.
+
+Verificación final Task 4: foco arquitectura/reuse/estado/contención **74 passed
+en 13.41 s**; matriz afectada incluido el oráculo fijo **801 passed en 116.76 s**;
+suite completa checkout-local **4 370 passed, 3 warnings en 195.81 s**. Los tres
+warnings existentes son de fixtures class-scoped de pytest en pruebas E9.5,
+no fallos de esta extracción. No se ha verificado CI remoto bajo el mandato
+sin push.
+
+El oráculo sigue siendo `baseline-v3`, SHA-256
+`639cd07674460c83c9a78d6c66459f0ce84648cc18a21579bcbc83826766baa7`.
+No se regraba ni normaliza una divergencia. Las pruebas de reuse/volumen no lo
+sustituyen.
+
+```text
+M1_FIXES=COMPLETE
+M2_A=COMPLETE_OFFLINE
+M2_B=COMPLETE_OFFLINE
+PRODUCT_ADMISSION=BLOCKED
+ROUTER0_LIVE=NOT_RUN
+M3=NOT_STARTED
+M3_AUTHORIZATION=NOT_AUTHORIZED
+```
+
+Ninguna prueba offline demuestra PT/webview/CORS real, capacidad PoE simultánea
+ni admisión productiva. No se abrió PT, no se contactó el bridge del usuario,
+no se adquirieron capacidades LIVE y no se modificaron `.pts`. La autorización
+de Task 4 excluye push/merge; el paso de publicación del plan general no se
+ejecuta bajo este mandato.
