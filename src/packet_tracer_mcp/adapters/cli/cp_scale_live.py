@@ -298,7 +298,7 @@ from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLi
 from packet_tracer_mcp.application.cp_scale_live.coordinator import CPScaleLiveCoordinator
 from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
 from packet_tracer_mcp.application.cp_scale_live.build_policy import CPScaleBuildPolicy
-from packet_tracer_mcp.application.cp_scale_live.checkpoint import CPScaleCheckpoint, CPScaleCheckpointDecision
+from packet_tracer_mcp.application.cp_scale_live.checkpoint import CPScaleCheckpoint, CPScaleCheckpointDecision, CPScaleCheckpointPrompt
 from packet_tracer_mcp.application.cp_scale_live.cleanup import CPScaleCleanup
 from packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
 from packet_tracer_mcp.application.cp_scale_live.session import CPScaleRuntimeResources
@@ -504,15 +504,15 @@ class CPScaleConsoleCheckpoint:
     def __init__(self, evidence_path: Path) -> None:
         self.evidence_path = evidence_path
 
-    def decide(self, stage: str, report) -> CPScaleCheckpointDecision:
-        print(json.dumps({"event": "CHECKPOINT_READY", "stage": stage,
-            "evidence_path": str(self.evidence_path), "devices": report.live_devices or 0,
-            "links": report.live_links or 0}), flush=True)
+    def decide(self, prompt: CPScaleCheckpointPrompt) -> CPScaleCheckpointDecision:
+        print(json.dumps({"event": "CHECKPOINT_READY", "stage": prompt.stage,
+            "evidence_path": str(self.evidence_path), "devices": prompt.devices,
+            "links": prompt.links}), flush=True)
         command = input().strip().casefold()
         try:
             return CPScaleCheckpointDecision(command)
         except ValueError as exc:
-            raise CanonicalLiveFailure(f"Checkpoint {stage!r} received operator command {command!r}; aborting.") from exc
+            raise CanonicalLiveFailure(f"Checkpoint {prompt.stage!r} received operator command {command!r}; aborting.") from exc
 
 
 def _build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path = GOVERNED_ROOT) -> CPScaleLiveCoordinator:
@@ -550,7 +550,7 @@ def _build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path = GOV
         persistence=persistence, presentation=presentation,
         checkpoint=CPScaleCheckpoint(repository=CPScaleCheckpointRepositoryReader(governed_root),
             console=CPScaleConsoleCheckpoint(persistence.evidence_path), persistence=persistence),
-        completion=CPScaleCompletion(evidence=persistence, cleanup=CPScaleCleanup()))
+        completion=CPScaleCompletion(cleanup=CPScaleCleanup()))
 
 
 def _write_evidence(evidence: dict[str, object]) -> None:

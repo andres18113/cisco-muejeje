@@ -5,12 +5,10 @@ from datetime import datetime
 from typing import Protocol, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .checkpoint import CPScaleCheckpointDecision
+    from .checkpoint import CPScaleCheckpointDecision, CPScaleCheckpointPrepared, CPScaleCheckpointResumption
 
 from .contracts import CPScaleLiveRequest, CPScalePreflightResult, CPScaleStageExecutionInput, CPScaleLiveStageResult
-from .run_contracts import CPScaleRunReport, CPScaleCleanupAttestation, CPScaleBackendProgress, CPScaleTerminalEvent
-from .session import CPScaleSessionPort, CPScaleRunObservationPort
-from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
+from .run_contracts import CPScaleRunReport, CPScaleCleanupAttestation, CPScaleTerminalEvent
 from ..use_cases.qualify_cp_scale_live import CPScaleEvidenceArchive
 
 
@@ -29,15 +27,13 @@ class CPScaleEvidencePort(Protocol):
 
 
 class CPScaleCheckpointPort(Protocol):
-    def decide(self, stage: str, report: CPScaleRunReport, *, session_source_head: str) -> CPScaleCheckpointDecision: ...
+    def prepare(self, stage: str) -> CPScaleCheckpointPrepared: ...
+    def publish_and_prompt(self, prepared: CPScaleCheckpointPrepared, publication: CPScaleRunReport) -> CPScaleCheckpointDecision: ...
+    def resume(self, session_source_head: str) -> CPScaleCheckpointResumption: ...
+    def publish_resumed(self, resumed: CPScaleCheckpointResumption, publication: CPScaleRunReport) -> None: ...
 
 
 class CPScalePresentationPort(Protocol):
     def core_rematerialized(self) -> None: ...
     def terminal(self, event: CPScaleTerminalEvent, report: CPScaleRunReport) -> None: ...
     def finalization_incomplete(self, report: CPScaleRunReport) -> None: ...
-
-
-class CPScaleBackendPort(Protocol):
-    def qualify(self, session: CPScaleSessionPort, report: CPScaleRunReport, progress: CPScaleBackendProgress) -> EnterpriseReferenceComposition: ...
-    def polling_failure_status(self, session: CPScaleSessionPort) -> dict[str, object]: ...

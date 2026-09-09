@@ -1,14 +1,16 @@
-"""Backend qualification policy after local preflight, before build stages."""
+"""Narrow backend qualification operations; run state belongs to coordinator."""
 from __future__ import annotations
+
 from dataclasses import replace
 from typing import Callable
 
 from .errors import CanonicalLiveFailure
-from .run_contracts import CPScaleRunReport, CPScaleBackendProgress, CPScaleCapabilityQualification, CPScaleCapabilityProbe
+from .run_contracts import CPScaleCapabilityProbe, CPScaleBridgeStatus
 from .session import CPScaleSessionPort
 from ..use_cases.qualify_cp_scale_live import (
     canonical_required_capability_probes, canonical_capability_probe_error,
     canonical_cleanup_restoration_error,
+    canonical_bridge_polling_error,
 )
 from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
 from ..use_cases.capability_discovery import CapabilityDiscoveryService
@@ -30,47 +32,39 @@ class CPScaleBackendQualification:
         self.restoration_error = restoration_error
         self.file_alive = file_alive
 
-    def polling_failure_status(self, session: CPScaleSessionPort) -> dict[str, object]:
+    def polling_failure_status(self, session: CPScaleSessionPort) -> CPScaleBridgeStatus:
         status = session.status()
         try:
-            status["file_bridge_alive"] = self.file_alive()
+            status = replace(status, file_bridge_alive=self.file_alive())
         except Exception:
             pass
         return status
 
-    def qualify(self, session: CPScaleSessionPort, report: CPScaleRunReport, progress: CPScaleBackendProgress) -> EnterpriseReferenceComposition:
-        version = report.packet_tracer_version
-        progress.composition = self.compose(packet_tracer_version=version)
-        if not progress.composition.valid:
-            raise CanonicalLiveFailure("Canonical composition failed: " + "; ".join(progress.composition.issues))
-        assert progress.composition.topology is not None
-        assert progress.composition.configuration is not None
-        assert progress.composition.control_plane is not None
-        required = self.requirements(progress.composition)
-        discovery = self.discovery_factory(session, version)
-        sessions: tuple[CPScaleCapabilityProbe, ...] = ()
-        requirements = tuple((model, tuple(capabilities)) for model, capabilities in required.items())
-        for model, capabilities in required.items():
-            snapshot, cached = discovery.run(ProbeRequest(models=[model], capabilities=capabilities,
-                probe_level=ProbeLevel.LOGICAL, force=True, packet_tracer_version=version))
-            error = self.probe_error(snapshot, model=model, capabilities=capabilities, packet_tracer_version=version)
-            sessions += (CPScaleCapabilityProbe(model, tuple(capabilities), snapshot, cached, error),)
-            if error:
-                report.capability_prequalification = CPScaleCapabilityQualification(requirements, sessions)
-                raise CanonicalLiveFailure(error)
-        first = session.physical.observe_workspace()
-        second = session.physical.observe_workspace()
-        error = self.restoration_error(report.baseline, first, second)
-        report.capability_prequalification = CPScaleCapabilityQualification(requirements, sessions, first, second, error)
-        if error:
-            raise CanonicalLiveFailure(error)
-        progress.composition = self.compose(packet_tracer_version=version)
-        if not progress.composition.valid:
-            raise CanonicalLiveFailure("Canonical post-probe composition failed: " + "; ".join(progress.composition.issues))
-        unresolved = sorted(f"{model}:{capability}" for model, capabilities in required.items() for capability in capabilities
-            if progress.composition.capabilities.get(model) is None
-            or getattr(progress.composition.capabilities[model], capability, CapabilityStatus.UNKNOWN) is not CapabilityStatus.SUPPORTED)
-        report.capability_prequalification = replace(report.capability_prequalification, unresolved=tuple(unresolved))
-        if unresolved:
-            raise CanonicalLiveFailure("Canonical composition did not consume VERIFIED capability evidence: " + ", ".join(unresolved))
-        return progress.composition
+    def polling_error(self, status: CPScaleBridgeStatus) -> str:
+        facts = {"connected": status.connected, "last_poll_ago": status.last_poll_ago,
+            "unauth_count": status.unauth_count, "unauth_paths": status.unauth_paths,
+            "token_id": status.token_id}
+        if status.file_bridge_alive is not None:
+            facts["file_bridge_alive"] = status.file_bridge_alive
+        return canonical_bridge_polling_error(facts)
+
+    def validate_composition(self, composition: EnterpriseReferenceComposition, *, post_probe: bool = False) -> None:
+        if not composition.valid:
+            prefix = "Canonical post-probe composition failed: " if post_probe else "Canonical composition failed: "
+            raise CanonicalLiveFailure(prefix + "; ".join(composition.issues))
+        assert composition.topology is not None
+        assert composition.configuration is not None
+        assert composition.control_plane is not None
+
+    def probe(self, discovery: CapabilityDiscoveryService, version: str,
+              model: str, capabilities: tuple[str, ...]) -> CPScaleCapabilityProbe:
+        snapshot, cached = discovery.run(ProbeRequest(models=[model], capabilities=list(capabilities),
+            probe_level=ProbeLevel.LOGICAL, force=True, packet_tracer_version=version))
+        error = self.probe_error(snapshot, model=model, capabilities=list(capabilities), packet_tracer_version=version)
+        return CPScaleCapabilityProbe(model, capabilities, snapshot, cached, error)
+
+    def unresolved(self, composition: EnterpriseReferenceComposition,
+                   requirements: tuple[tuple[str, tuple[str, ...]], ...]) -> tuple[str, ...]:
+        return tuple(sorted(f"{model}:{capability}" for model, capabilities in requirements for capability in capabilities
+            if composition.capabilities.get(model) is None
+            or getattr(composition.capabilities[model], capability, CapabilityStatus.UNKNOWN) is not CapabilityStatus.SUPPORTED))

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Callable, TYPE_CHECKING
 
+from ...application.cp_scale_live.run_contracts import CPScaleBridgeStatus
+
 if TYPE_CHECKING:
     from .live_bridge import PacketTracerHttpTransport
     from ...application.cp_scale_live.session import CPScaleRuntimeResources
@@ -59,8 +61,13 @@ class PacketTracerCPScaleSession:
     def channel(self) -> str:
         return self.transport.bridge_transport
 
-    def status(self) -> dict[str, object]:
-        return self.transport.status_dict()
+    def status(self) -> CPScaleBridgeStatus:
+        value = self.transport.status_dict()
+        return CPScaleBridgeStatus(bool(value.get("connected")), value.get("last_poll_ago"),
+            "last_poll_ago" in value, value.get("unauth_recent"), value.get("unauth_count"),
+            tuple(value["unauth_paths"]) if "unauth_paths" in value else None,
+            tuple(value["client_headers"].items()) if "client_headers" in value else None,
+            value.get("token_id"), value.get("file_bridge_alive"))
 
     def acquire_runtimes(self) -> CPScaleRuntimeResources:
         if self._closed or not self._started:

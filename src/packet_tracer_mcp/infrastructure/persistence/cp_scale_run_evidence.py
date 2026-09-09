@@ -7,6 +7,7 @@ from ...application.cp_scale_live import CPScaleCheckState, process_record_mappi
 from ...application.cp_scale_live.run_contracts import (
     CPScaleCleanupAttestation, CPScaleCleanupResult, CPScaleCleanupRealtime,
     CPScaleRunReport, CPScaleRunReplayAudit, CPScaleStageProgress,
+    CPScaleBridgeStatus,
 )
 from .cp_scale_stage_evidence import stage_result_evidence
 
@@ -15,6 +16,20 @@ def transition_evidence(transition):
     return {**asdict(transition), "previous_stage": transition.previous_stage.value,
             "current_stage": transition.current_stage.value,
             "mutation_scope_disjoint": transition.mutation_scope_disjoint, "claim": transition.claim}
+
+
+def bridge_evidence(status: CPScaleBridgeStatus) -> dict[str, object]:
+    value: dict[str, object] = {"connected": status.connected}
+    if status.last_poll_reported:
+        value["last_poll_ago"] = status.last_poll_ago
+    for name in ("unauth_recent", "unauth_count", "token_id", "file_bridge_alive"):
+        if getattr(status, name) is not None:
+            value[name] = getattr(status, name)
+    if status.unauth_paths is not None:
+        value["unauth_paths"] = list(status.unauth_paths)
+    if status.client_headers is not None:
+        value["client_headers"] = dict(status.client_headers)
+    return value
 
 
 def cleanup_evidence(result: CPScaleCleanupResult) -> dict[str, object]:
@@ -33,7 +48,8 @@ def cleanup_evidence(result: CPScaleCleanupResult) -> dict[str, object]:
 
 
 def realtime_evidence(result: CPScaleCleanupRealtime) -> dict[str, object]:
-    return {"state": result.state, "error": result.error, "verified": result.verified}
+    state = {name: getattr(result.state, name) for name in result.state.present} if result.state is not None else None
+    return {"state": state, "error": result.error, "verified": result.verified}
 
 
 def replay_evidence(result: CPScaleRunReplayAudit) -> dict[str, object]:
@@ -106,7 +122,9 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
             value[name] = getattr(report, name)
     if report.final_disposition is not None:
         value["final_disposition"] = report.final_disposition.value
-    for name in ("http_bridge", "live_devices", "live_links"):
+    if report.http_bridge is not None:
+        value["http_bridge"] = bridge_evidence(report.http_bridge)
+    for name in ("live_devices", "live_links"):
         if getattr(report, name) is not None:
             value[name] = getattr(report, name)
     if report.capability_prequalification is not None:
@@ -143,7 +161,7 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
     if report.full_qualification is not None:
         value["full_qualification"] = {**stage_result_evidence(report.full_qualification), "stage": "full-qualification"}
     if report.resume_gates:
-        value["resume_gates"] = [{"before_stage": gate.before_stage, "bridge": gate.bridge,
+        value["resume_gates"] = [{"before_stage": gate.before_stage, "bridge": bridge_evidence(gate.bridge),
             "observations": [item.compact_summary() for item in gate.observations], "errors": list(gate.errors)} for gate in report.resume_gates]
     if report.network_boundaries:
         value["network_state_boundaries"] = [{"before_stage": stage, **item.evidence} for stage, item in report.network_boundaries]

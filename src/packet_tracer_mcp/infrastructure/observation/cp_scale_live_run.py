@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 from ...application.cp_scale_live.contracts import CPScaleDhcpStatisticsTarget, CPScaleObservationRecord
-from ...application.cp_scale_live.run_contracts import CPScaleCleanupRealtime
+from ...application.cp_scale_live.run_contracts import CPScaleCleanupRealtime, CPScaleRealtimeState
 from ...application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalStageProjection
 from ..execution.ios_terminal import ControlledIosExecutor
 from ..execution.simulation_trace_runtime import SimulationTraceRuntime
@@ -18,6 +18,15 @@ from .cp_scale_live import (
 @dataclass
 class CPScaleActiveProjection:
     projection: CPScaleCanonicalStageProjection | None = None
+
+
+def cleanup_realtime_state(value: dict[str, object] | None) -> CPScaleRealtimeState | None:
+    if value is None:
+        return None
+    fields = ("observed", "simulation_mode", "frames", "sim_time", "current_index", "message", "mode")
+    return CPScaleRealtimeState(value.get("observed"), value.get("simulation_mode"), value.get("frames"),
+        value.get("sim_time"), value.get("current_index"), value.get("message"), value.get("mode"),
+        tuple(name for name in fields if name in value))
 
 
 class PacketTracerCPScaleRunObservations:
@@ -47,7 +56,7 @@ class PacketTracerCPScaleRunObservations:
         try:
             state = _voice_window_state(SimulationTraceRuntime(self.transport.send_and_wait))
             error = _realtime_boundary_error(state, "after cleanup")
-            return CPScaleCleanupRealtime(not error, error, state)
+            return CPScaleCleanupRealtime(not error, error, cleanup_realtime_state(state))
         except Exception as exc:
             return CPScaleCleanupRealtime(False, f"{type(exc).__name__}: {exc}")
 

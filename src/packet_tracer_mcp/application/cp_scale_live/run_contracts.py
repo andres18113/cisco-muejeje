@@ -1,10 +1,10 @@
 """Bounded run facts; no services, transport, operator or captured callbacks."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .checkpoint import CPScaleCheckpointRepository
@@ -14,7 +14,6 @@ from .contracts import CPScaleLiveSessionIdentity
 from .errors import CPScaleStageFailure
 from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection, CPScaleCanonicalStageTransition, CPScaleCanonicalStage, CPScaleCanonicalTarget
 from ..use_cases.qualify_cp_scale_live import CPScaleEvidenceArchive, CPScaleRepositoryState, CPScaleFinalDisposition
-from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
 from ...domain.enterprise.models.physical_deployment import PhysicalDeploymentResult, PhysicalWorkspaceObservation, PhysicalMutationResult
 from ...domain.enterprise.models.discovery import CapabilitySnapshot
 
@@ -43,10 +42,22 @@ class CPScaleCleanupResult:
 
 
 @dataclass(frozen=True)
+class CPScaleRealtimeState:
+    observed: bool | None = None
+    simulation_mode: bool | None = None
+    frames: int | None = None
+    sim_time: float | None = None
+    current_index: int | None = None
+    message: str | None = None
+    mode: str | None = None
+    present: tuple[Literal["observed", "simulation_mode", "frames", "sim_time", "current_index", "message", "mode"], ...] = ()
+
+
+@dataclass(frozen=True)
 class CPScaleCleanupRealtime:
     verified: bool
     error: str = ""
-    state: dict[str, object] | None = None
+    state: CPScaleRealtimeState | None = None
 
 
 @dataclass(frozen=True)
@@ -71,7 +82,7 @@ class CPScaleCapabilityQualification:
 @dataclass(frozen=True)
 class CPScaleResumeGate:
     before_stage: str
-    bridge: dict[str, object]
+    bridge: CPScaleBridgeStatus
     observations: tuple[PhysicalWorkspaceObservation, ...]
     errors: tuple[str, ...]
 
@@ -100,21 +111,6 @@ class CPScaleCleanupAttestation:
     target_stage: str = ""
     closure_scope: str = ""
     replay: CPScaleRunReplayAudit | None = None
-
-
-@dataclass
-class CPScaleFinalizationState:
-    """One coordinator execution owns this finite terminal-obligation ledger."""
-    retain_confirmed: bool = False
-    cleanup_attempted: bool = False
-    cleanup_attestation_archived: bool = False
-    terminal_cleanup_complete: bool = False
-    precleanup_archive: CPScaleEvidenceArchive | None = None
-
-
-@dataclass
-class CPScaleBackendProgress:
-    composition: EnterpriseReferenceComposition | None = None
 
 
 class CPScaleRunOutcome(str, Enum):
@@ -168,7 +164,7 @@ class CPScaleLiveFinalResult:
             report.failure or report.hard_stop or None, report.secondary_failures + report.finalization_errors)
 
 
-@dataclass
+@dataclass(frozen=True)
 class CPScaleRunReport:
     """Publication facts owned by one execution, bounded by its target contract.
 
@@ -183,7 +179,7 @@ class CPScaleRunReport:
     presentation_retained: bool = False
     hard_stop: str = ""
     failure: str = ""
-    http_bridge: dict[str, object] | None = None
+    http_bridge: CPScaleBridgeStatus | None = None
     baseline: PhysicalWorkspaceObservation | None = None
     capability_prequalification: CPScaleCapabilityQualification | None = None
     active_stage: CPScaleStageProgress | None = None
@@ -213,16 +209,6 @@ class CPScaleRunReport:
     checkpoint_repository: CPScaleRepositoryState | None = None
     checkpoint_resume_repository: CPScaleCheckpointRepository | None = None
 
-    def record_stage_failures(self, result: CPScaleLiveStageResult) -> None:
-        """Keep acquired later failures in order; the primary is never copied."""
-        prefix = "stage:" + result.stage.value + ":"
-        self.secondary_failures += tuple(prefix + item.operation + ": " + item.error
-            for item in result.secondary_failures)
-        # Diagnostics run after required observations and have no authority
-        # to replace the stage's established first failed boundary.
-        self.secondary_failures += tuple(prefix + "diagnostic: " + item.error
-            for item in result.diagnostics if item.error)
-
     @property
     def completed_stage_limit(self) -> int:
         return len(self.preflight.target.build_stages) + int(self.preflight.target.run_remaining_reconciliation)
@@ -230,3 +216,23 @@ class CPScaleRunReport:
     @property
     def archive_phase_limit(self) -> int:
         return 2
+
+
+@dataclass(frozen=True)
+class CPScaleBridgeStatus:
+    """Named transport facts, not a mutable bag of run data."""
+    connected: bool
+    last_poll_ago: float | None = None
+    last_poll_reported: bool = False
+    unauth_recent: bool | None = None
+    unauth_count: int | None = None
+    unauth_paths: tuple[str, ...] | None = None
+    client_headers: tuple[tuple[str, str], ...] | None = None
+    token_id: str | None = None
+    file_bridge_alive: bool | None = None
+
+
+def stage_secondary_failures(result: CPScaleLiveStageResult) -> tuple[str, ...]:
+    prefix = "stage:" + result.stage.value + ":"
+    return (tuple(prefix + item.operation + ": " + item.error for item in result.secondary_failures)
+        + tuple(prefix + "diagnostic: " + item.error for item in result.diagnostics if item.error))

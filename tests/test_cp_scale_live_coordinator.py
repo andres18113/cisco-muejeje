@@ -199,13 +199,12 @@ def test_backend_qualification_exposes_original_snapshot_before_serialization():
         discovery_factory=lambda session, version: SimpleNamespace(run=lambda request: (snapshot, False)),
         requirements=lambda composition: {"switch": ["poe"]}, probe_error=lambda *args, **kwargs: "",
         restoration_error=lambda *args: "")
-    progress = run_contracts.CPScaleBackendProgress()
-    assert backend.qualify(session, report, progress) is composition
-    qualification = report.capability_prequalification
-    assert qualification.sessions[0].snapshot is snapshot
-    assert qualification.first is first and qualification.second is second
-    assert qualification.requirements == (("switch", ("poe",)),)
-    assert qualification.unresolved == ()
+    backend.validate_composition(composition)
+    discovery = backend.discovery_factory(session, report.packet_tracer_version)
+    acquired = backend.probe(discovery, report.packet_tracer_version, "switch", ("poe",))
+    assert acquired.snapshot is snapshot
+    assert acquired.model == "switch" and acquired.required == ("poe",)
+    assert backend.unresolved(composition, (("switch", ("poe",)),)) == ()
 
 
 def test_same_coordinator_mechanism_accepts_a_second_synthetic_target_sequence():
@@ -249,7 +248,7 @@ def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failu
     from src.packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
     from src.packet_tracer_mcp.application.cp_scale_live.coordinator import CPScaleLiveCoordinator
     from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
-    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupRealtime
+    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupRealtime, CPScaleRealtimeState
     from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import PacketTracerCPScaleSession
     from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
     from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
@@ -313,7 +312,8 @@ def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failu
     presentation = SimpleNamespace(core_rematerialized=lambda: calls.append("core"),
         terminal=lambda *args: calls.append("terminal"), finalization_incomplete=lambda report: calls.append("report"))
     observations = SimpleNamespace(dhcp_target=lambda projection: None, activate=lambda projection: None,
-                                   cleanup_realtime=lambda: CPScaleCleanupRealtime(True, state={"mode": "realtime"}))
+                                   cleanup_realtime=lambda: CPScaleCleanupRealtime(True, state=CPScaleRealtimeState(observed=True, simulation_mode=False,
+                                       present=("observed", "simulation_mode"))))
     coordinator = CPScaleLiveCoordinator(preflight=_service(), session_factory=lambda: session,
         stage_factory=lambda *args: fixture.executor, observations_factory=lambda session: observations,
         backend=CPScaleBackendQualification(compose=lambda **kwargs: composition,
@@ -322,7 +322,7 @@ def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failu
             deployer_factory=lambda physical: SimpleNamespace(deploy=lambda *args, **kwargs: deployment),
             ownership_error=lambda *args: ""),
         checkpoint=SimpleNamespace(decide=lambda *args, **kwargs: pytest.fail("Failed stage reached checkpoint")),
-        persistence=persistence, completion=CPScaleCompletion(evidence=persistence, cleanup=CPScaleCleanup()),
+        persistence=persistence, completion=CPScaleCompletion(cleanup=CPScaleCleanup()),
         presentation=presentation)
     if publication_failure:
         if publication_failure == "cancel":

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.cp_scale_live_test_composition import OFFLINE_COMPOSITION, TERMINAL_FIXTURE
+from tests.cp_scale_live_test_composition import OFFLINE_COMPOSITION
 
 import json
 import subprocess
@@ -16,10 +16,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _probe(source: str) -> dict:
-    if "live._complete_router0_target" in source:
-        source = source.replace("live._complete_router0_target", "_complete_router0_target")
-        source = source.replace("import packet_tracer_mcp.adapters.cli.cp_scale_live as live",
-            "import packet_tracer_mcp.adapters.cli.cp_scale_live as live\n" + TERMINAL_FIXTURE)
     completed = subprocess.run(
         [sys.executable, "-c", source],
         cwd=ROOT,
@@ -155,222 +151,74 @@ print(json.dumps({
 
 
 def test_runner_router0_terminal_sequence_is_successful_and_stops_at_target():
-    verdict = _probe(r'''
-import json
-import packet_tracer_mcp.adapters.cli.cp_scale_live as live
-from types import SimpleNamespace
-seams = SimpleNamespace()
-from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
-    CPScaleCanonicalTarget,
-    canonical_cp_scale_target_contract,
-)
-
-contract = canonical_cp_scale_target_contract(CPScaleCanonicalTarget.ROUTER0_BRANCH)
-events = []
-seams._write_evidence = lambda evidence: events.append("write")
-seams._write_checkpoint_summary = lambda stage, evidence: events.append(
-    "summary:" + stage
-)
-seams._cleanup_owned = lambda *args, **kwargs: (
-    events.append("cleanup")
-    or {"verified": True, "first": {}, "second": {}, "restoration_error": ""}
-)
-
-def observe_realtime():
-    events.append("realtime")
-    return {"verified": True, "error": ""}
-
-def archive(phase, payload):
-    events.append("archive:" + phase)
-    return {"phase": phase, "path": phase + ".json"}
-
-def audited(stage):
-    return {
-        "stage": stage,
-        "verified": True,
-        "site_forwarding_verified": True,
-        "plan": {"branch_forwarding_checks": [{"id": "forward-1"}]},
-        "site_forwarding": [{"check": {"id": "forward-1"}, "verified": True}],
-        "workspace_verified_twice": True,
-        "mutation_replay_audit": {
-            "stage": stage,
-            "claim": "NO_MUTATION_REPLAY",
-            "verified": True,
-            "surfaces": [{
-                "surface": "configuration",
-                "verified": True,
-                "replayed_retained_ids": [],
-            }],
-        },
-    }
-
-evidence = {
-    "stages": [audited("floor3"), audited("router0-branch")],
-    "live_devices": 290,
-    "live_links": 202,
-}
-result = live._complete_router0_target(
-    evidence=evidence,
-    target_contract=contract,
-    physical=object(),
-    full_topology=object(),
-    owned_device_ids=set(),
-    baseline=object(),
-    observe_cleanup_realtime=observe_realtime,
-    archive=archive,
-    run_identity="run-id",
-    session_source_head="a" * 40,
-)
-print(json.dumps({
-    "events": events,
-    "closure": evidence["closure"],
-    "scope": evidence["closure_scope"],
-    "no_mutation_replay": evidence["no_mutation_replay"],
-    "attested": result["cleanup_attestation"],
-    "result": result,
-    "build_stages": [item.value for item in contract.build_stages],
-    "remaining": contract.run_remaining_reconciliation,
-    "full": contract.run_full_qualification,
-}))
+    verdict = _probe(RUN_DOUBLES + r'''
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+coordinator = offline_coordinator(request)
+coordinator.presentation.terminal = lambda event, report: record("terminal")
+result = coordinator.run(request)
+print(json.dumps({"outcome": result.outcome.value, "closure": result.closure,
+    "scope": result.target.value, "stages": [item.stage.value for item in result.progress.completed_stages],
+    "events": [item["event"] for item in calls if item["event"] in ("archive", "cleanup", "summary", "transport.stop", "terminal")],
+    "archives": [item.model_dump()["phase"] for item in result.archives]}))
 ''')
-
-    assert verdict["events"] == [
-        "write",
-        "archive:precleanup",
-        "cleanup",
-        "realtime",
-        "archive:cleanup",
-        "write",
-        "summary:router0-branch",
-    ]
-    assert verdict["closure"] == "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
-    assert verdict["scope"] == "router0-branch"
-    assert verdict["no_mutation_replay"] == {
-        "claim": "NO_MUTATION_REPLAY",
-        "verified": True,
-        "audited_stages": ["floor3", "router0-branch"],
-        "stages_without_verified_audit": [],
-        "replayed_retained_ids": [],
-    }
-    assert verdict["build_stages"][-1] == "router0-branch"
-    assert "router3-branch" not in verdict["build_stages"]
-    assert verdict["remaining"] is False
-    assert verdict["full"] is False
+    assert verdict == {"outcome": "completed", "closure": "ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+        "scope": "router0-branch", "stages": ["routing-core", "router4-switch10", "floor1", "floor2", "floor3", "router0-branch"],
+        "events": ["archive", "cleanup", "archive", "summary", "transport.stop", "terminal"],
+        "archives": ["precleanup", "cleanup"]}
 
 
 @pytest.mark.parametrize(
     ("failure", "expected_events"),
     [
-        ("precleanup", ["write", "archive:precleanup"]),
-        (
-            "first-restoration",
-            ["write", "archive:precleanup", "cleanup", "realtime"],
-        ),
-        (
-            "second-restoration",
-            ["write", "archive:precleanup", "cleanup", "realtime"],
-        ),
-        (
-            "realtime",
-            ["write", "archive:precleanup", "cleanup", "realtime"],
-        ),
-        (
-            "cleanup-archive",
-            [
-                "write", "archive:precleanup", "cleanup", "realtime",
-                "archive:cleanup",
-            ],
-        ),
+        ("precleanup", ["archive:precleanup", "archive:failure-precleanup", "cleanup", "realtime", "archive:cleanup", "stop"]),
+        ("first-restoration", ["archive:precleanup", "cleanup", "realtime", "realtime", "archive:cleanup-incomplete", "stop"]),
+        ("second-restoration", ["archive:precleanup", "cleanup", "realtime", "realtime", "archive:cleanup-incomplete", "stop"]),
+        ("realtime", ["archive:precleanup", "cleanup", "realtime", "realtime", "archive:cleanup-incomplete", "stop"]),
+        ("cleanup-archive", ["archive:precleanup", "cleanup", "realtime", "archive:cleanup", "realtime", "archive:cleanup", "stop"]),
     ],
 )
-def test_runner_never_publishes_router0_success_before_every_terminal_gate(
-    failure,
-    expected_events,
-):
-    verdict = _probe(rf'''
-import json
-import packet_tracer_mcp.adapters.cli.cp_scale_live as live
-from types import SimpleNamespace
-seams = SimpleNamespace()
-from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
-    CPScaleCanonicalTarget,
-    canonical_cp_scale_target_contract,
-)
-
-failure = {failure!r}
-contract = canonical_cp_scale_target_contract(CPScaleCanonicalTarget.ROUTER0_BRANCH)
-events = []
-seams._write_evidence = lambda evidence: events.append("write")
-seams._write_checkpoint_summary = lambda stage, evidence: events.append("summary")
-
-def cleanup(*args, **kwargs):
-    events.append("cleanup")
-    restoration = failure if "restoration" in failure else ""
-    return {{
-        "verified": not restoration,
-        "restoration_error": restoration,
-        "first": {{}},
-        "second": {{}},
-    }}
-
-seams._cleanup_owned = cleanup
-
-def realtime():
-    events.append("realtime")
-    return {{
-        "verified": failure != "realtime",
-        "error": "realtime" if failure == "realtime" else "",
-    }}
-
-def archive(phase, payload):
-    events.append("archive:" + phase)
+def test_runner_never_publishes_router0_success_before_every_terminal_gate(failure, expected_events):
+    verdict = _probe(RUN_DOUBLES + "\nfailure = " + repr(failure) + r'''
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+coordinator = offline_coordinator(request)
+terminal_events = []
+original_archive = coordinator.persistence.archive
+def archive(phase, payload, **kwargs):
+    terminal_events.append("archive:" + phase)
     if failure == phase or (failure == "cleanup-archive" and phase == "cleanup"):
         raise RuntimeError("archive failed: " + phase)
-    return {{"phase": phase}}
-
-evidence = {{
-    "stages": [{{
-        "stage": "router0-branch",
-        "verified": True,
-        "site_forwarding_verified": True,
-        "plan": {{"branch_forwarding_checks": [{{"id": "forward-1"}}]}},
-        "site_forwarding": [{{
-            "check": {{"id": "forward-1"}}, "verified": True,
-        }}],
-        "workspace_verified_twice": True,
-        "mutation_replay_audit": {{
-            "stage": "router0-branch",
-            "claim": "NO_MUTATION_REPLAY",
-            "verified": True,
-            "surfaces": [],
-        }},
-    }}],
-}}
-try:
-    live._complete_router0_target(
-        evidence=evidence,
-        target_contract=contract,
-        physical=object(),
-        full_topology=object(),
-        owned_device_ids=set(),
-        baseline=object(),
-        observe_cleanup_realtime=realtime,
-        archive=archive,
-        run_identity="run-id",
-        session_source_head="a" * 40,
-    )
-    error = ""
-except Exception as exc:
-    error = type(exc).__name__ + ": " + str(exc)
-print(json.dumps({{
-    "events": events,
-    "error": error,
-    "closure": evidence.get("closure", ""),
-}}))
+    return original_archive(phase, payload, **kwargs)
+coordinator.persistence.archive = archive
+def cleanup(*args):
+    terminal_events.append("cleanup")
+    error = failure if "restoration" in failure else ""
+    return CPScaleCleanupResult(not error, error)
+coordinator.completion.cleanup.restore = cleanup
+original_observations = coordinator.observations_factory
+def observations(session):
+    value = original_observations(session)
+    def realtime():
+        terminal_events.append("realtime")
+        return CPScaleCleanupRealtime(failure != "realtime", "realtime" if failure == "realtime" else "")
+    value.cleanup_realtime = realtime
+    return value
+coordinator.observations_factory = observations
+Transport.stop = lambda self: terminal_events.append("stop")
+coordinator.presentation.terminal = lambda *args: terminal_events.append("terminal")
+result = coordinator.run(request)
+print(json.dumps({"events": terminal_events, "error": result.primary_failure, "closure": result.closure, "outcome": result.outcome.value}))
 ''')
-
     assert verdict["events"] == expected_events
-    assert verdict["error"]
+    assert verdict["error"] == {
+        "precleanup": "RuntimeError: archive failed: precleanup",
+        "cleanup-archive": "RuntimeError: archive failed: cleanup",
+        "first-restoration": "CanonicalLiveFailure: Router0 verification completed, but cleanup/restoration did not verify: first-restoration",
+        "second-restoration": "CanonicalLiveFailure: Router0 verification completed, but cleanup/restoration did not verify: second-restoration",
+        "realtime": "CanonicalLiveFailure: Router0 verification completed, but cleanup/restoration did not verify: realtime",
+    }[failure]
+    assert verdict["outcome"] == "failed"
     assert verdict["closure"] != "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
 
 
@@ -463,97 +311,37 @@ print(json.dumps({
         pytest.param(None, [], id="stage-never-audited"),
     ],
 )
-def test_a_replayed_retained_action_blocks_the_router0_closure(
-    audit,
-    expected_replay,
-):
-    verdict = _probe(rf'''
-import json
-import packet_tracer_mcp.adapters.cli.cp_scale_live as live
-from types import SimpleNamespace
-seams = SimpleNamespace()
-from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
-    CPScaleCanonicalTarget,
-    canonical_cp_scale_target_contract,
-)
-
-contract = canonical_cp_scale_target_contract(CPScaleCanonicalTarget.ROUTER0_BRANCH)
-events = []
-seams._write_evidence = lambda evidence: events.append("write")
-seams._write_checkpoint_summary = lambda stage, evidence: events.append("summary")
-seams._cleanup_owned = lambda *args, **kwargs: (
-    events.append("cleanup") or {{"verified": True}}
-)
-
-def realtime():
-    events.append("realtime")
-    return {{"verified": True, "error": ""}}
-
-def archive(phase, payload):
-    events.append("archive:" + phase)
-    return {{"phase": phase}}
-
-def stage(name, audit):
-    evidence = {{
-        "stage": name,
-        "verified": True,
-        "site_forwarding_verified": True,
-        "plan": {{"branch_forwarding_checks": [{{"id": "forward-1"}}]}},
-        "site_forwarding": [{{
-            "check": {{"id": "forward-1"}}, "verified": True,
-        }}],
-        "workspace_verified_twice": True,
-    }}
-    if audit is not None:
-        evidence["mutation_replay_audit"] = audit
-    return evidence
-
-verified_audit = {{
-    "stage": "router0-branch",
-    "claim": "NO_MUTATION_REPLAY",
-    "verified": True,
-    "surfaces": [],
-}}
-evidence = {{
-    "stages": [
-        stage("floor2", {audit!r}),
-        stage("router0-branch", verified_audit),
-    ],
-}}
-try:
-    live._complete_router0_target(
-        evidence=evidence,
-        target_contract=contract,
-        physical=object(),
-        full_topology=object(),
-        owned_device_ids=set(),
-        baseline=object(),
-        observe_cleanup_realtime=realtime,
-        archive=archive,
-        run_identity="run-id",
-        session_source_head="a" * 40,
-    )
-    error = ""
-except Exception as exc:
-    error = type(exc).__name__ + ": " + str(exc)
-print(json.dumps({{
-    "events": events,
-    "error": error,
-    "closure": evidence.get("closure", ""),
-    "verdict": evidence.get("no_mutation_replay"),
-}}))
+def test_a_replayed_retained_action_blocks_the_router0_closure(audit, expected_replay):
+    verdict = _probe(RUN_DOUBLES + "\naudit = " + repr(audit) + r'''
+from dataclasses import replace
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+coordinator = offline_coordinator(request)
+def stage(projection, **kwargs):
+    result = execute_stage(projection, **kwargs)
+    if projection.stage is CPScaleCanonicalStage.FLOOR2:
+        typed = None if audit is None else SimpleNamespace(verified=audit["verified"], claim=audit["claim"],
+            surfaces=tuple(SimpleNamespace(replayed_retained_ids=surface["replayed_retained_ids"]) for surface in audit["surfaces"]),
+            compact_summary=lambda: audit)
+        result = replace(result, replay_audit=typed)
+    return result
+seams._execute_stage = stage
+evidence = []
+seams._write_evidence = evidence.append
+coordinator.presentation.terminal = lambda *args: record("terminal")
+result = coordinator.run(request)
+print(json.dumps({"error": result.primary_failure, "closure": result.closure,
+    "verdict": evidence[-1].get("no_mutation_replay"),
+    "terminal_events": [item for item in calls if item["event"] == "terminal"]}))
 ''')
-
-    assert verdict["events"] == []
+    assert verdict["terminal_events"] == []
     assert "NO_MUTATION_REPLAY" in verdict["error"]
     assert "floor2" in verdict["error"]
-    assert verdict["closure"] == ""
+    assert verdict["closure"] is None
     assert verdict["verdict"] == {
-        "claim": "MUTATION_REPLAY_DETECTED",
-        "verified": False,
-        "audited_stages": ["floor2", "router0-branch"],
-        "stages_without_verified_audit": ["floor2"],
-        "replayed_retained_ids": expected_replay,
+        "claim": "MUTATION_REPLAY_DETECTED", "verified": False,
+        "audited_stages": ["routing-core", "router4-switch10", "floor1", "floor2", "floor3", "router0-branch"],
+        "stages_without_verified_audit": ["floor2"], "replayed_retained_ids": expected_replay,
     }
 
 

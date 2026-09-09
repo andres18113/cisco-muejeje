@@ -587,19 +587,61 @@ def test_voice_delta_rejects_changed_stable_action_outside_phone_files():
         canonical_stage_voice_mutation_ids(floor1, changed)
 
 
-def test_canonical_live_runner_uses_voice_delta_and_retained_results():
+@pytest.mark.parametrize("voice_case", ["retained", "missing", "failed"])
+def test_canonical_live_runner_uses_voice_delta_and_retained_results(voice_case):
     application = Path("src/packet_tracer_mcp/application/cp_scale_live")
     executor = (application / "stage_executor.py").read_text(encoding="utf-8")
     voice = (application / "voice_stage.py").read_text(encoding="utf-8")
-    coordinator = (application / "coordinator.py").read_text(encoding="utf-8")
 
     assert "canonical_stage_voice_mutation_ids(" in executor
     assert "voice_mutation_ids=scope.voice" in executor
     assert "continuity.previous_voice_action_results" in executor
     assert "retained_action_results=retained_voice_action_results" in voice
-    assert "tuple(result.voice.action_results)" in coordinator
     assert "retained_state_only=not scope.voice" in executor
-    assert "ActionApplicationResult.model_validate" not in coordinator
+
+    from tests.test_cp_scale_router0_live_runner import RUN_DOUBLES, _probe
+    verdict = _probe(RUN_DOUBLES + "\nvoice_case = " + repr(voice_case) + r'''
+from dataclasses import replace
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import ActionApplicationResult, ActionExecutionStatus
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import VoiceApplicationResult
+first = ActionApplicationResult(action_id="voice/first", status=ActionExecutionStatus.VERIFIED)
+second = ActionApplicationResult(action_id="voice/second", status=ActionExecutionStatus.VERIFIED)
+voice = VoiceApplicationResult(voice_plan_id="voice", voice_semantic_hash="hash",
+    source_topology_hash="topology", source_configuration_hash="configuration",
+    status=ActionExecutionStatus.FAILED if voice_case == "failed" else ActionExecutionStatus.VERIFIED,
+    action_results=[first, second, first])
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+coordinator = offline_coordinator(request)
+def stage(projection, **kwargs):
+    acquired = execute_stage(projection, **kwargs)
+    if projection.stage is CPScaleCanonicalStage.ROUTER4_SWITCH10:
+        if voice_case == "missing":
+            projection.voice.actions = [first]
+        else:
+            acquired = replace(acquired, voice=voice)
+        if voice_case == "failed":
+            acquired = replace(acquired, outcome="failed", first_failed_boundary="voice", failure="VOICE_FIRST_CAUSE")
+    return acquired
+seams._execute_stage = stage
+result = coordinator.run(request)
+if voice_case == "retained":
+    for stage_request in stage_requests[2:4]:
+        retained = stage_request.continuity.previous_voice_action_results
+        assert len(retained) == 3
+        assert retained[0] is first and retained[1] is second and retained[2] is first
+    assert result.progress.completed_stages[1].voice is voice
+print(json.dumps({"outcome": result.outcome.value, "primary": result.primary_failure,
+    "stages": [item.projection.stage.value for item in stage_requests]}))
+''')
+    assert verdict == {
+        "outcome": "completed" if voice_case == "retained" else "failed",
+        "primary": {"retained": None,
+            "missing": "CanonicalLiveFailure: Verified stage 'router4-switch10' did not retain its Voice application results.",
+            "failed": "CanonicalLiveFailure: VOICE_FIRST_CAUSE"}[voice_case],
+        "stages": ["routing-core", "router4-switch10"] + (
+            ["floor1", "floor2", "floor3", "router0-branch"] if voice_case == "retained" else []),
+    }
 
 
 def test_canonical_live_retains_network_state_at_each_causal_boundary():
