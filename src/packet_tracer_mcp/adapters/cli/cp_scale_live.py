@@ -183,6 +183,10 @@ from packet_tracer_mcp.infrastructure.execution.live_bridge import (
 from packet_tracer_mcp.infrastructure.execution.live_environment_preflight import (
     packet_tracer_process_error,
 )
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
+    GOVERNED_ROOT_ENV_VAR,
+    governed_root_from_env,
+)
 from packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
@@ -307,16 +311,25 @@ from packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import Pac
 from packet_tracer_mcp.infrastructure.execution.cp_scale_live_backend import CPScaleCapabilityAdapters, CPScaleCheckpointRepositoryReader
 from packet_tracer_mcp.infrastructure.observation.cp_scale_live_run import CPScaleActiveProjection, PacketTracerCPScaleRunObservations
 
-GOVERNED_ROOT = Path(packet_tracer_mcp.__file__).resolve().parents[2]
-EVIDENCE_PATH = GOVERNED_ROOT / "data" / "cp-scale" / "live-canonical-progress.json"
-CHECKPOINT_PATH = EVIDENCE_PATH.parent / "live-canonical-checkpoint.json"
+# Temporary compatibility values for the M2 harnesses.  They come only from
+# the caller declaration and are removed with those private consumers in M3;
+# invocation itself always reads the declaration afresh in ``run``.
+GOVERNED_ROOT = governed_root_from_env()
+EVIDENCE_PATH = (
+    GOVERNED_ROOT / "data" / "cp-scale" / "live-canonical-progress.json"
+    if GOVERNED_ROOT is not None else None
+)
+CHECKPOINT_PATH = (
+    EVIDENCE_PATH.parent / "live-canonical-checkpoint.json"
+    if EVIDENCE_PATH is not None else None
+)
 FINAL_CHECKPOINT_PATH = (
-    GOVERNED_ROOT / "docs" / "reference" / "cp-scale"
-    / "live_canonical_checkpoint.json"
+    GOVERNED_ROOT / "docs" / "reference" / "cp-scale" / "live_canonical_checkpoint.json"
+    if GOVERNED_ROOT is not None else None
 )
 CANONICAL_EVIDENCE_DIR = (
-    GOVERNED_ROOT / "docs" / "reference" / "cp-scale"
-    / "canonical-live-evidence"
+    GOVERNED_ROOT / "docs" / "reference" / "cp-scale" / "canonical-live-evidence"
+    if GOVERNED_ROOT is not None else None
 )
 _GOVERNED_SOURCE_PATHS = (
     "src",
@@ -330,7 +343,7 @@ _BUILD_STAGES = tuple(
     if stage is not CPScaleCanonicalStage.REMAINING
 )
 
-def _build_local_preflight(governed_root: Path = GOVERNED_ROOT) -> CPScaleLocalPreflight:
+def _build_local_preflight(governed_root: Path) -> CPScaleLocalPreflight:
     """Compose local readers without granting any backend or product authority."""
 
     return CPScaleLocalPreflight(
@@ -515,7 +528,7 @@ class CPScaleConsoleCheckpoint:
             raise CanonicalLiveFailure(f"Checkpoint {prompt.stage!r} received operator command {command!r}; aborting.") from exc
 
 
-def _build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path = GOVERNED_ROOT) -> CPScaleLiveCoordinator:
+def _build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path) -> CPScaleLiveCoordinator:
     persistence = CPScaleLivePersistence(governed_root)
     presentation = CPScaleConsolePresentation(persistence.evidence_path)
     active = CPScaleActiveProjection()
@@ -554,11 +567,22 @@ def _build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path = GOV
 
 
 def _write_evidence(evidence: dict[str, object]) -> None:
-    CPScaleLivePersistence(GOVERNED_ROOT).write_evidence(evidence)
+    root = governed_root_from_env()
+    if root is None:
+        raise RuntimeError(f"{GOVERNED_ROOT_ENV_VAR} is not declared.")
+    CPScaleLivePersistence(root).write_evidence(evidence)
 
 
-def _write_checkpoint_summary(stage: str, evidence: dict[str, object], *, destination: Path = CHECKPOINT_PATH) -> None:
-    CPScaleLivePersistence(GOVERNED_ROOT).write_checkpoint_summary(stage, evidence, destination=destination)
+def _write_checkpoint_summary(
+    stage: str,
+    evidence: dict[str, object],
+    *,
+    destination: Path | None = CHECKPOINT_PATH,
+) -> None:
+    root = governed_root_from_env()
+    if root is None:
+        raise RuntimeError(f"{GOVERNED_ROOT_ENV_VAR} is not declared.")
+    CPScaleLivePersistence(root).write_checkpoint_summary(stage, evidence, destination=destination)
 
 
 def run(
@@ -570,8 +594,17 @@ def run(
         CPScaleCanonicalTarget.FULL_QUALIFICATION
     ),
 ) -> int:
+    governed_root = governed_root_from_env()
+    if governed_root is None:
+        print(json.dumps({
+            "hard_stop": (
+                f"{GOVERNED_ROOT_ENV_VAR} must declare the governed checkout; "
+                "no Packet Tracer mutation occurred."
+            ),
+        }))
+        return 2
     request = CPScaleLiveRequest(packet_tracer_version, expected_head, retain_on_full_verification, target_stage)
-    result = _build_coordinator(request).run(request)
+    result = _build_coordinator(request, governed_root=governed_root).run(request)
     return {CPScaleRunOutcome.COMPLETED: 0, CPScaleRunOutcome.FAILED: 1, CPScaleRunOutcome.REJECTED: 2}[result.outcome]
 
 

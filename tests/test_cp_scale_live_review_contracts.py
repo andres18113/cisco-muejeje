@@ -57,7 +57,7 @@ def report(value):
 coordinator.persistence.write_progress = write
 coordinator.presentation.finalization_incomplete = report
 result = coordinator.run(request)
-live._build_coordinator = lambda request: coordinator
+live._build_coordinator = lambda request, **kwargs: coordinator
 calls.clear()
 code = live.run("9.0.1.0858", expected_head=HEAD, retain_on_full_verification=False, target_stage="router0-branch")
 print(json.dumps({"outcome": result.outcome.value, "code": code, "secondary": result.secondary_failures,

@@ -246,8 +246,8 @@ live.GitCPScaleRepositoryReader = lambda: SimpleNamespace(read=contact)
 live.PowerShellPacketTracerProcessReader = lambda: SimpleNamespace(read=contact)
 seams._write_evidence = lambda evidence: None
 original_factory = live._build_coordinator
-def isolated_factory(request):
-    coordinator = original_factory(request)
+def isolated_factory(request, **kwargs):
+    coordinator = original_factory(request, **kwargs)
     coordinator.persistence.write_progress = lambda report: None
     return coordinator
 live._build_coordinator = isolated_factory

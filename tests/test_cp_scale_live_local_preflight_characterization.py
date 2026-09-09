@@ -120,8 +120,8 @@ live.PowerShellPacketTracerProcessReader = ProcessReader
 live.PacketTracerHttpTransport = transport
 from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import run_evidence
 original_factory = live._build_coordinator
-def build_coordinator(request):
-    coordinator = original_factory(request)
+def build_coordinator(request, **kwargs):
+    coordinator = original_factory(request, **kwargs)
     coordinator.persistence.write_progress = lambda report: write(run_evidence(report))
     # This sentinel marks entry into the factory, before any session acquisition.
     coordinator.session_factory = transport
