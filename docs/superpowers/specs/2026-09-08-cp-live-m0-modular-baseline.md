@@ -1255,7 +1255,10 @@ siguen explícitamente fuera de esta extracción; no se presenta el repositorio
 entero como una migración de capas completada.
 
 Los guardas de estado resuelven aliases/annotations/constructores/`replace`
-y mutaciones sobre valores identificados, requieren registros frozen sin
+por ámbito léxico de módulo, función y clase, y acumulan conjuntos de tipos
+monótonos hasta un punto fijo finito. Incluyen annotations locales con un
+inicializador opaco, sin mezclar los bindings de funciones hermanas. Detectan
+mutaciones sobre valores identificados, requieren registros frozen sin
 campos abiertos y detectan servicios directos o anidados en bundles. No se
 basan en LOC ni en buscar palabras dentro de texto. Los controles adversariales
 del checker pasaron de **19 + 3 + 2 + 2 REDs** a GREEN; seis controles adicionales
@@ -1276,12 +1279,25 @@ explícitas, añadiendo pruebas de que cleanup se descubre como orquestador pero
 no dispatcher y de que una tercera ruta sigue rechazada por el guard real.
 No se añadió una excepción de dispatcher ni se relajó la tabla de familias.
 
-Verificación final Task 4: foco arquitectura/reuse/estado/contención **74 passed
+Verificación de la primera implementación Task 4 (`930bb6f`): foco
+arquitectura/reuse/estado/contención **74 passed
 en 13.41 s**; matriz afectada incluido el oráculo fijo **801 passed en 116.76 s**;
 suite completa checkout-local **4 370 passed, 3 warnings en 195.81 s**. Los tres
 warnings existentes son de fixtures class-scoped de pytest en pruebas E9.5,
-no fallos de esta extracción. No se ha verificado CI remoto bajo el mandato
-sin push.
+no fallos de esta extracción. La revisión posterior encontró dos defectos del
+checker: el filtro prematuro de ciclos DFS y la inferencia global oscilante de
+bindings. El detector ahora calcula SCC/Tarjan sobre **todo** el grafo runtime
+antes de seleccionar componentes cíclicos con CP; reporta una ruta cerrada
+real, no el listado de miembros del SCC. Doce permutaciones de nodos/aristas
+comprueban la ruta transitiva por dos módulos externos. La inferencia scoped
+conserva sus controles de ownership; un subprocess con timeout de cinco
+segundos acota la reproducción de dos funciones con locales homónimos.
+
+Gates después de estas correcciones de revisión: foco **90 passed en 12.20 s**,
+matriz afectada/oráculo **817 passed en 117.47 s**, suite completa local
+**4 386 passed, 3 warnings existentes en 197.95 s**. Los tres Important se
+entregan corregidos para re-review; estos gates no sustituyen la revisión
+independiente ni el CI remoto pendiente.
 
 El oráculo sigue siendo `baseline-v3`, SHA-256
 `639cd07674460c83c9a78d6c66459f0ce84648cc18a21579bcbc83826766baa7`.
@@ -1296,10 +1312,15 @@ PRODUCT_ADMISSION=BLOCKED
 ROUTER0_LIVE=NOT_RUN
 M3=NOT_STARTED
 M3_AUTHORIZATION=NOT_AUTHORIZED
+CI=PENDING
 ```
 
 Ninguna prueba offline demuestra PT/webview/CORS real, capacidad PoE simultánea
 ni admisión productiva. No se abrió PT, no se contactó el bridge del usuario,
-no se adquirieron capacidades LIVE y no se modificaron `.pts`. La autorización
-de Task 4 excluye push/merge; el paso de publicación del plan general no se
-ejecuta bajo este mandato.
+no se adquirieron capacidades LIVE y no se modificaron `.pts`. El implementador
+y el revisor de esta subtarea no hacen push. El mandato general sí autoriza y
+exige al coordinador publicar `refactor/cp-live-m0-baseline` en `cisco` sin
+force-push, después de cerrar la revisión, y verificar los cuatro jobs de CI
+del SHA final. Esa publicación/verificación sigue pendiente del coordinador:
+`CI=PENDING`, no cancelada. Merge, force-push y adquisición LIVE siguen
+prohibidos.
