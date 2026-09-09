@@ -366,6 +366,7 @@ def test_api_rejects_invalid_or_retained_router0_target_before_pt_contact():
     verdict = _probe(r'''
 import inspect
 import json
+from types import SimpleNamespace
 import tools.cp_scale_canonical_live as live
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
@@ -378,7 +379,9 @@ def contact():
     contacted = True
     raise AssertionError("Packet Tracer contact was attempted")
 
-live._packet_tracer_processes = contact
+live.PacketTracerImportIsolationReader = lambda: SimpleNamespace(read=contact)
+live.GitCPScaleRepositoryReader = lambda: SimpleNamespace(read=contact)
+live.PowerShellPacketTracerProcessReader = lambda: SimpleNamespace(read=contact)
 live._write_evidence = lambda evidence: None
 try:
     live.run(
@@ -537,6 +540,16 @@ import json
 from types import SimpleNamespace
 
 import tools.cp_scale_canonical_live as live
+from packet_tracer_mcp.application.cp_scale_live import (
+    CPScaleCheckState,
+    CPScaleImportIsolationEvidence,
+    CPScaleLiveSessionIdentity,
+    CPScalePreflightResult,
+    CPScaleProcessEvidence,
+    CPScaleProcessRecord,
+    CPScaleRepositoryEvidence,
+    CPScaleRuntimeEvidence,
+)
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     CPScaleCanonicalStageTransition,
@@ -725,28 +738,61 @@ def refuse_full_qualification(composition):
     raise AssertionError("Full qualification must not be projected.")
 
 
-live.ImportIsolationPreflight = lambda root: SimpleNamespace(
-    ensure_isolated=lambda: SimpleNamespace(
-        state=SimpleNamespace(value="isolated"),
-        detail="",
-        isolated=True,
-        render=lambda: "",
-    ),
-)
-live.read_git_repository_state = lambda root: SimpleNamespace(
-    model_dump=lambda mode="json": {"head": HEAD},
-    branch=live.EXPECTED_BRANCH,
-    upstream=live.EXPECTED_UPSTREAM,
-    head=HEAD,
-    error="",
-)
-live.subprocess = SimpleNamespace(
-    run=lambda *args, **kwargs: SimpleNamespace(stdout="", returncode=0),
-    CalledProcessError=Exception,
-)
-live._git_output = lambda *arguments: HEAD
-live._packet_tracer_processes = lambda: [{"pid": 1}]
-live.packet_tracer_process_error = lambda processes, version: ""
+class LocalPreflight:
+    def inspect(self, request, *, run_identity, started_at):
+        target = live.canonical_cp_scale_target_contract(request.target_stage)
+        runtime = CPScaleRuntimeEvidence(
+            python_executable=live.sys.executable,
+            package_file=live.packet_tracer_mcp.__file__,
+            loaded_namespaces=("packet_tracer_mcp",),
+        )
+        repository = CPScaleRepositoryEvidence(
+            state=CPScaleCheckState.PASSED,
+            branch=live.EXPECTED_BRANCH,
+            upstream=live.EXPECTED_UPSTREAM,
+            head=HEAD,
+            upstream_head=HEAD,
+            source_tree="b" * 40,
+            dirty=False,
+        )
+        process = CPScaleProcessEvidence(
+            state=CPScaleCheckState.PASSED,
+            processes=(CPScaleProcessRecord(
+                pid=1,
+                name="PacketTracer",
+                main_window_handle=0,
+                product_version=request.packet_tracer_version,
+                file_version=request.packet_tracer_version,
+                executable_path=r"C:\\PacketTracer.exe",
+            ),),
+        )
+        return CPScalePreflightResult(
+            target=target,
+            runtime=runtime,
+            import_isolation=CPScaleImportIsolationEvidence(
+                state=CPScaleCheckState.PASSED,
+                isolation_state="ISOLATED",
+                detail=runtime.package_file,
+            ),
+            repository=repository,
+            process=process,
+            identity=CPScaleLiveSessionIdentity(
+                run_identity=run_identity,
+                started_at=started_at,
+                packet_tracer_version=request.packet_tracer_version,
+                source_head=HEAD,
+                source_tree=repository.source_tree,
+                branch=repository.branch,
+                upstream=repository.upstream,
+                python_executable=runtime.python_executable,
+                package_file=runtime.package_file,
+                loaded_namespace="packet_tracer_mcp",
+            ),
+            issues=(),
+        )
+
+
+live._build_local_preflight = lambda: LocalPreflight()
 live.PacketTracerHttpTransport = Transport
 live.PacketTracerPhysicalTopologyRuntime = Physical
 live.disposable_workspace_error = lambda observation: ""

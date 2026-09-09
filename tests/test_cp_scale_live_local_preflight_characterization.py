@@ -28,10 +28,15 @@ def _probe(scenario: str) -> dict:
 
 _PROBE_SOURCE = r'''
 import json
-import subprocess as stdlib_subprocess
-from types import SimpleNamespace
 
 import tools.cp_scale_canonical_live as live
+from packet_tracer_mcp.application.cp_scale_live import (
+    CPScaleImportIsolationObservation,
+    CPScaleProcessObservation,
+    CPScaleProcessRecord,
+    CPScaleRepositoryObservation,
+    CPScaleRuntimeEvidence,
+)
 
 
 SCENARIO = __SCENARIO__
@@ -40,60 +45,58 @@ events = []
 writes = []
 
 
-class Isolation:
-    def ensure_isolated(self):
-        events.append("imports")
-        rejected = SCENARIO == "imports-rejected"
-        return SimpleNamespace(
-            state=SimpleNamespace(
-                value="DUAL_IDENTITY" if rejected else "ISOLATED",
-            ),
-            detail="two namespaces" if rejected else "package.py",
-            isolated=not rejected,
-            render=lambda: "DUAL_IDENTITY: rejected",
+class RuntimeReader:
+    def read(self):
+        events.append("runtime")
+        return CPScaleRuntimeEvidence(
+            python_executable=live.sys.executable,
+            package_file=live.packet_tracer_mcp.__file__,
+            loaded_namespaces=("packet_tracer_mcp",),
         )
 
 
-def repository(_root):
-    events.append("repository")
-    rejected = SCENARIO == "repository-rejected"
-    values = {
-        "branch": "wrong-branch" if rejected else live.EXPECTED_BRANCH,
-        "upstream": "wrong/upstream" if rejected else live.EXPECTED_UPSTREAM,
-        "head": HEAD,
-        "error": "REPOSITORY_READ_ERROR" if rejected else "",
-    }
-    return SimpleNamespace(
-        **values,
-        model_dump=lambda mode="json": dict(values),
-    )
+class IsolationReader:
+    def read(self, root):
+        events.append("imports")
+        rejected = SCENARIO == "imports-rejected"
+        return CPScaleImportIsolationObservation(
+            isolated=not rejected,
+            isolation_state="DUAL_IDENTITY" if rejected else "ISOLATED",
+            detail="two namespaces" if rejected else "package.py",
+            error="DUAL_IDENTITY: rejected" if rejected else "",
+        )
 
 
-def git_status(*args, **kwargs):
-    events.append("dirty")
-    return SimpleNamespace(
-        stdout=" M governed.py" if SCENARIO == "repository-rejected" else "",
-        returncode=0,
-    )
+class RepositoryReader:
+    def read(self, root):
+        events.extend(("repository", "dirty", "upstream-head", "source-tree"))
+        rejected = SCENARIO == "repository-rejected"
+        return CPScaleRepositoryObservation(
+            branch="wrong-branch" if rejected else live.EXPECTED_BRANCH,
+            upstream="wrong/upstream" if rejected else live.EXPECTED_UPSTREAM,
+            head=HEAD,
+            upstream_head="b" * 40 if rejected else HEAD,
+            source_tree="c" * 40,
+            dirty=rejected,
+            error="REPOSITORY_READ_ERROR" if rejected else "",
+        )
 
 
-def upstream_head(*arguments):
-    events.append("upstream-head")
-    return "b" * 40 if SCENARIO == "repository-rejected" else HEAD
-
-
-def processes():
-    events.append("processes")
-    if SCENARIO == "process-rejected":
-        return []
-    return [{
-        "ProcessName": "PacketTracer",
-        "Id": 101,
-        "MainWindowHandle": 0,
-        "ProductVersion": "9.0.1.0858",
-        "FileVersion": "9.0.1.0858",
-        "Path": r"C:\\Program Files\\Cisco Packet Tracer\\bin\\PacketTracer.exe",
-    }]
+class ProcessReader:
+    def read(self):
+        events.append("processes")
+        if SCENARIO == "process-rejected":
+            return CPScaleProcessObservation()
+        return CPScaleProcessObservation(processes=(CPScaleProcessRecord(
+            pid=101,
+            name="PacketTracer",
+            main_window_handle=0,
+            product_version="9.0.1.0858",
+            file_version="9.0.1.0858",
+            executable_path=(
+                r"C:\\Program Files\\Cisco Packet Tracer\\bin\\PacketTracer.exe"
+            ),
+        ),))
 
 
 class BackendReached(RuntimeError):
@@ -110,14 +113,10 @@ def write(evidence):
     writes.append(evidence)
 
 
-live.ImportIsolationPreflight = lambda root: Isolation()
-live.read_git_repository_state = repository
-live.subprocess = SimpleNamespace(
-    run=git_status,
-    CalledProcessError=stdlib_subprocess.CalledProcessError,
-)
-live._git_output = upstream_head
-live._packet_tracer_processes = processes
+live.PythonRuntimeEvidenceReader = RuntimeReader
+live.PacketTracerImportIsolationReader = IsolationReader
+live.GitCPScaleRepositoryReader = RepositoryReader
+live.PowerShellPacketTracerProcessReader = ProcessReader
 live.PacketTracerHttpTransport = transport
 live._write_evidence = write
 
@@ -157,7 +156,7 @@ def test_request_rejection_stops_before_import_inspection():
     assert verdict == {
         "code": 2,
         "escaped": "",
-        "events": ["write"],
+        "events": ["runtime", "write"],
         "write_count": 1,
         "hard_stop": (
             "Router0 target cannot be combined with full-scale retention."
@@ -172,7 +171,7 @@ def test_import_rejection_does_not_read_git_or_enumerate_processes():
     verdict = _probe("imports-rejected")
 
     assert verdict["code"] == 2
-    assert verdict["events"] == ["imports", "write"]
+    assert verdict["events"] == ["runtime", "imports", "write"]
     assert verdict["hard_stop"] == "DUAL_IDENTITY: rejected"
     assert verdict["import_isolation"] == {
         "state": "DUAL_IDENTITY",
@@ -187,7 +186,8 @@ def test_repository_rejection_preserves_issue_order_and_skips_processes():
 
     assert verdict["code"] == 2
     assert verdict["events"] == [
-        "imports", "repository", "dirty", "upstream-head", "write",
+        "runtime", "imports", "repository", "dirty", "upstream-head",
+        "source-tree", "write",
     ]
     assert verdict["hard_stop"] == " ".join((
         "Expected branch 'feature/runtime-ripv2'; observed 'wrong-branch'.",
@@ -210,7 +210,8 @@ def test_process_rejection_stops_before_the_backend_boundary():
 
     assert verdict["code"] == 2
     assert verdict["events"] == [
-        "imports", "repository", "dirty", "upstream-head", "processes", "write",
+        "runtime", "imports", "repository", "dirty", "upstream-head",
+        "source-tree", "processes", "write",
     ]
     assert verdict["hard_stop"] == "No running Packet Tracer process was observed."
     assert verdict["processes"] == []
@@ -222,7 +223,8 @@ def test_success_crosses_every_local_boundary_once_and_only_then_reaches_backend
     assert verdict["code"] is None
     assert verdict["escaped"] == "BackendReached: local preflight passed"
     assert verdict["events"] == [
-        "imports", "repository", "dirty", "upstream-head", "processes", "backend",
+        "runtime", "imports", "repository", "dirty", "upstream-head",
+        "source-tree", "processes", "backend",
     ]
     assert verdict["write_count"] == 0
     assert verdict["hard_stop"] == ""

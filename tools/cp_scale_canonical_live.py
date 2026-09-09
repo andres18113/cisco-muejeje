@@ -29,6 +29,13 @@ from pathlib import Path
 
 import packet_tracer_mcp
 
+from packet_tracer_mcp.application.cp_scale_live import (
+    CPScaleCheckState,
+    CPScaleLiveRequest,
+    CPScaleLocalPreflight,
+    CPScalePreflightOutcome,
+    process_record_mapping,
+)
 from packet_tracer_mcp.application.use_cases.apply_configuration import (
     ConfigurationApplicator,
 )
@@ -137,12 +144,15 @@ from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime
 from packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
     PacketTracerEnterpriseVoiceRuntime,
 )
-from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
-    ImportIsolationPreflight,
-)
 from packet_tracer_mcp.infrastructure.execution.command_dispatch import (
     DispatchClassification,
     is_command_corrupted,
+)
+from packet_tracer_mcp.infrastructure.execution.cp_scale_live_preflight import (
+    GitCPScaleRepositoryReader,
+    PacketTracerImportIsolationReader,
+    PowerShellPacketTracerProcessReader,
+    PythonRuntimeEvidenceReader,
 )
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
@@ -218,6 +228,22 @@ _BUILD_STAGES = tuple(
 )
 
 
+def _build_local_preflight() -> CPScaleLocalPreflight:
+    """Compose local readers without granting any backend or product authority."""
+
+    return CPScaleLocalPreflight(
+        governed_root=GOVERNED_ROOT,
+        runtime_reader=PythonRuntimeEvidenceReader(),
+        import_reader=PacketTracerImportIsolationReader(),
+        repository_reader=GitCPScaleRepositoryReader(),
+        process_reader=PowerShellPacketTracerProcessReader(),
+        process_error_policy=packet_tracer_process_error,
+        expected_branch=EXPECTED_BRANCH,
+        expected_upstream=EXPECTED_UPSTREAM,
+        target_resolver=canonical_cp_scale_target_contract,
+    )
+
+
 class CanonicalLiveFailure(RuntimeError):
     """One governed stage failed after the session had acquired ownership.
 
@@ -234,29 +260,6 @@ class CanonicalLiveFailure(RuntimeError):
     ) -> None:
         super().__init__(message)
         self.stage_evidence = stage_evidence
-
-
-def _packet_tracer_processes() -> list[dict[str, object]]:
-    command = (
-        "Get-Process | Where-Object { $_.ProcessName -like 'PacketTracer*' } | "
-        "ForEach-Object { [PSCustomObject]@{ "
-        "ProcessName=$_.ProcessName; Id=$_.Id; "
-        "MainWindowHandle=$_.MainWindowHandle; "
-        "ProductVersion=$_.MainModule.FileVersionInfo.ProductVersion; "
-        "FileVersion=$_.MainModule.FileVersionInfo.FileVersion; "
-        "Path=$_.MainModule.FileName } } | ConvertTo-Json -Compress"
-    )
-    completed = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-Command", command],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    raw = completed.stdout.strip()
-    if not raw:
-        return []
-    parsed = json.loads(raw)
-    return parsed if isinstance(parsed, list) else [parsed]
 
 
 def _inventory(physical: PacketTracerPhysicalTopologyRuntime) -> list[dict]:
@@ -3948,7 +3951,12 @@ def run(
         CPScaleCanonicalTarget.FULL_QUALIFICATION
     ),
 ) -> int:
-    target_contract = canonical_cp_scale_target_contract(target_stage)
+    request = CPScaleLiveRequest(
+        packet_tracer_version=packet_tracer_version,
+        expected_head=expected_head,
+        retain_on_full_verification=retain_on_full_verification,
+        target_stage=target_stage,
+    )
     started_at = datetime.now(timezone.utc)
     run_identity = (
         "canonical-cp-scale-voice-"
@@ -3956,17 +3964,20 @@ def run(
         + "-"
         + (expected_head[:12] or "unknown-head")
     )
+    preflight = _build_local_preflight().inspect(
+        request,
+        run_identity=run_identity,
+        started_at=started_at,
+    )
+    target_contract = preflight.target
     evidence: dict[str, object] = {
         "schema": "cp-scale-canonical-voice-live-v1",
         "run_identity": run_identity,
         "started_at": started_at.isoformat(),
         "packet_tracer_version": packet_tracer_version,
-        "python_executable": sys.executable,
-        "package_file": packet_tracer_mcp.__file__,
-        "loaded_namespaces": [
-            name for name in ("packet_tracer_mcp", "src.packet_tracer_mcp")
-            if name in sys.modules
-        ],
+        "python_executable": preflight.runtime.python_executable,
+        "package_file": preflight.runtime.package_file,
+        "loaded_namespaces": list(preflight.runtime.loaded_namespaces),
         "target_stage": target_contract.target.value,
         "target_contract": {
             "build_stages": [
@@ -3984,73 +3995,41 @@ def run(
         "stages": [],
         "presentation_retained": False,
     }
-    if (
-        target_contract.target is CPScaleCanonicalTarget.ROUTER0_BRANCH
-        and retain_on_full_verification
-    ):
+    if preflight.import_isolation.state is not CPScaleCheckState.NOT_RUN:
+        evidence["import_isolation"] = {
+            "state": preflight.import_isolation.isolation_state,
+            "detail": preflight.import_isolation.detail,
+        }
+    if preflight.repository.state is not CPScaleCheckState.NOT_RUN:
+        evidence["repository"] = {
+            "branch": preflight.repository.branch,
+            "upstream": preflight.repository.upstream,
+            "head": preflight.repository.head,
+            "error": preflight.repository.error,
+        }
+        if preflight.repository.upstream_head_error:
+            evidence["initial_upstream_error"] = (
+                preflight.repository.upstream_head_error
+            )
+    if preflight.process.state is not CPScaleCheckState.NOT_RUN:
+        evidence["packet_tracer_processes"] = [
+            process_record_mapping(item)
+            for item in preflight.process.processes
+        ]
+    if preflight.outcome is CPScalePreflightOutcome.REJECTED:
+        evidence["hard_stop"] = " ".join(preflight.issues) or (
+            "Local preflight evidence is incomplete or inconsistent."
+        )
+        _write_evidence(evidence)
+        return 2
+    identity = preflight.identity
+    if identity is None:  # Defensive: outcome already rejects absent identity.
         evidence["hard_stop"] = (
-            "Router0 target cannot be combined with full-scale retention."
+            "Local preflight did not produce a session identity."
         )
         _write_evidence(evidence)
         return 2
-    isolation = ImportIsolationPreflight(GOVERNED_ROOT).ensure_isolated()
-    evidence["import_isolation"] = {
-        "state": isolation.state.value,
-        "detail": isolation.detail,
-    }
-    if not isolation.isolated:
-        evidence["hard_stop"] = isolation.render()
-        _write_evidence(evidence)
-        return 2
-
-    repository = read_git_repository_state(GOVERNED_ROOT)
-    evidence["repository"] = repository.model_dump(mode="json")
-    dirty = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=GOVERNED_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    try:
-        initial_upstream_head = _git_output("rev-parse", "@{upstream}")
-    except (OSError, subprocess.CalledProcessError) as exc:
-        initial_upstream_head = ""
-        evidence["initial_upstream_error"] = str(exc)
-    repository_errors = []
-    if repository.branch != EXPECTED_BRANCH:
-        repository_errors.append(
-            f"Expected branch {EXPECTED_BRANCH!r}; observed {repository.branch!r}."
-        )
-    if repository.upstream != EXPECTED_UPSTREAM:
-        repository_errors.append(
-            f"Expected upstream {EXPECTED_UPSTREAM!r}; observed {repository.upstream!r}."
-        )
-    if expected_head and repository.head != expected_head:
-        repository_errors.append(
-            f"Expected HEAD {expected_head!r}; observed {repository.head!r}."
-        )
-    if repository.error:
-        repository_errors.append(repository.error)
-    if dirty:
-        repository_errors.append("Live session requires a clean initial worktree.")
-    if repository.head != initial_upstream_head:
-        repository_errors.append(
-            "Live session requires its exact initial HEAD pushed to upstream."
-        )
-    if repository_errors:
-        evidence["hard_stop"] = " ".join(repository_errors)
-        _write_evidence(evidence)
-        return 2
-    session_source_head = repository.head
-
-    processes = _packet_tracer_processes()
-    evidence["packet_tracer_processes"] = processes
-    process_error = packet_tracer_process_error(processes, packet_tracer_version)
-    if process_error:
-        evidence["hard_stop"] = process_error
-        _write_evidence(evidence)
-        return 2
+    session_source_head = identity.source_head
 
     transport = PacketTracerHttpTransport()
     physical = None

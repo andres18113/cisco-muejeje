@@ -876,9 +876,7 @@ POLICY_TRACE_WRONG_DESTINATION_SOURCE = policy_trace_source(
 # to stay real for it to be characterizing anything at all. Shared by the
 # oracle and by the recorder, so both judge a probe by the same measure.
 LEVEL_A_SUBSTITUTED_SYMBOLS = frozenset({
-    "ImportIsolationPreflight",
-    "read_git_repository_state",
-    "_packet_tracer_processes",
+    "_build_local_preflight",
     "PacketTracerHttpTransport",
     "PacketTracerPhysicalTopologyRuntime",
     "CapabilitySnapshotStore",

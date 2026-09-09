@@ -2,10 +2,10 @@
 
 ## Decisión y alcance
 
-Este documento es la única especificación normativa de CP-LIVE M0. Consolida
-el mapa de extracción, los contratos propuestos, la matriz de caracterización
-y la procedencia del oráculo. No autoriza ni contiene implementación de M1,
-M2-A, M2-B o M3.
+Este documento nació como la especificación normativa de CP-LIVE M0 y
+consolida el mapa de extracción, los contratos, la matriz de caracterización y
+la procedencia del oráculo. La autorización posterior de M1 añade aquí el
+resultado de la primera extracción; no autoriza M2-A, M2-B ni M3.
 
 M0 se entregó primero como **`BLOCKED_FOR_BASELINE_FIX`**: la
 caracterización reprodujo un defecto anterior a la extracción en la
@@ -21,10 +21,12 @@ preparación de CI. Una segunda pasada autorizada cerró la finalización frente
 interrupciones durante cleanup/archivo/relectura, completó la captura del
 oráculo y extendió la procedencia del registro a las reglas realmente
 ejecutadas; la referencia pasó a `baseline-v3` y `v1`/`v2` quedan como
-histórico. No se modificaron `src/`, `EXTENSION/`, snapshots de
-capacidades, evidencia LIVE ni gates. No se abrió Packet Tracer, no se conectó
-al bridge y no se ejecutó el runner con transporte real. La admisión productiva
-sigue `BLOCKED` y M1 sigue sin autorizar.
+histórico. M1 añade sólo contratos/coordinación del preflight local bajo `src`,
+lectores locales en infrastructure y la llamada compatible desde `tools`; no
+modifica `EXTENSION/`, snapshots de capacidades, evidencia LIVE ni gates. No se
+abrió Packet Tracer, no se conectó al bridge y no se ejecutó el runner con
+transporte real. La admisión productiva sigue `BLOCKED` y M2 sigue sin
+autorizar.
 
 ## Fuente, aislamiento y autoridad vigente
 
@@ -148,7 +150,7 @@ La columna «autoridad» indica qué decisión puede producir la responsabilidad
 
 | ID | Propietario propuesto | Dependencias permitidas | Fase prevista, no autorizada ahora |
 | --- | --- | --- | --- |
-| R1 | `adapters/cli/cp_scale_live.py`; `tools/...` queda como façade | application contracts/coordinator e infrastructure composition root | M1 para request/CLI; façade hasta M3 |
+| R1 | `tools/...` conserva `main`, `run`, presentación y composition root; request tipado en `application/cp_scale_live` | application contracts/preflight e infrastructure readers | M1 para request/preflight; adapter y façade sólo al mover el coordinador en M2-A |
 | R2 | `application/cp_scale_live/admission.py` con puertos de entorno | reglas existentes de application/domain; implementaciones de Git/proceso/import en infrastructure | primera familia de M1 |
 | R3 | `infrastructure/execution/cp_scale_live_session.py`, único dueño de `close` | transporte/runtimes concretos; no políticas | M2-A, después del fix de baseline |
 | R4 | `application/cp_scale_live/coordinator.py` | contratos, admission, stage executor y puertos estrechos | M2-A |
@@ -254,12 +256,14 @@ Un preflight verde no es un backend comprobado; un backend comprobado no es
 admisión productiva. Los fixtures sintéticos de M0 alimentan sólo la primera
 columna del harness y nunca las otras dos.
 
-## Contratos propuestos
+## Contratos propuestos en M0 e implementados en M1
 
-Las firmas siguientes son diseño de M0, no clases creadas. Los nombres se
-derivan de consumidores concretos: argumentos actuales de `run`, metadatos ya
-archivados, continuidad que `_execute_stage` recibe, valores que sus callers
-desempaquetan y campos inspeccionados por los tests.
+Las firmas siguientes nacieron como diseño de M0. M1 implementa la primera
+familia —request, identidad local y preflight— en
+`application/cp_scale_live`; las familias de continuidad, stage y finalización
+siguen siendo diseño para hitos posteriores. Los nombres se derivan de
+consumidores concretos: argumentos actuales de `run`, metadatos ya archivados,
+valores que sus callers desempaquetan y campos inspeccionados por los tests.
 
 ### Solicitud
 
@@ -269,7 +273,7 @@ class CPScaleLiveRequest:
     packet_tracer_version: str
     expected_head: str
     retain_on_full_verification: bool
-    target_stage: CPScaleCanonicalTarget = CPScaleCanonicalTarget.FULL_QUALIFICATION
+    target_stage: CPScaleCanonicalTarget | str = CPScaleCanonicalTarget.FULL_QUALIFICATION
 ```
 
 Es la traducción uno a uno de `run(...)`. `--execute` permanece como guard de
@@ -292,13 +296,16 @@ class CPScaleLiveSessionIdentity:
     python_executable: str
     package_file: str
     loaded_namespace: str
-    environment_fingerprint: EnvironmentFingerprint
 ```
 
 Se construye sólo después de validar import isolation y Git. `source_head` es
-el observado, no sólo `request.expected_head`; ambos se comparan en admisión.
-La identidad nunca cambia al avanzar stages y viaja completa a cada recibo de
-archivo. `loaded_namespace` sólo puede ser `packet_tracer_mcp` en producción.
+el observado, no sólo `request.expected_head`; ambos se comparan en preflight.
+`source_tree` también se lee de Git, no se deriva del worktree mutable.
+`loaded_namespace` sólo puede ser `packet_tracer_mcp` en producción. La
+identidad local no contiene `EnvironmentFingerprint`: antes de abrir el bridge
+no existe una observación del backend que lo autorice. El fingerprint continúa
+adquiriéndose donde ya lo hacía el runner, después del baseline de workspace;
+M1 no lo inventa ni lo adelanta.
 
 ### Admisión: los tipos de la primera extracción, cerrados
 
@@ -324,6 +331,14 @@ class CPScaleImportIsolationEvidence:
     state: CPScaleCheckState
     isolation_state: str = ""
     detail: str = ""
+    error: str = ""
+
+@dataclass(frozen=True)
+class CPScaleRuntimeEvidence:
+    python_executable: str = ""
+    package_file: str = ""
+    loaded_namespaces: tuple[str, ...] = ()
+    error: str = ""
 
 @dataclass(frozen=True)
 class CPScaleRepositoryEvidence:
@@ -332,14 +347,21 @@ class CPScaleRepositoryEvidence:
     upstream: str = ""
     head: str = ""
     upstream_head: str = ""
+    source_tree: str = ""
     dirty: bool | None = None
     error: str = ""
+    dirty_error: str = ""
+    upstream_head_error: str = ""
+    source_tree_error: str = ""
 
 @dataclass(frozen=True)
 class CPScaleProcessRecord:
     pid: int
     name: str
-    version: str
+    main_window_handle: int
+    product_version: str
+    file_version: str
+    executable_path: str
 
 @dataclass(frozen=True)
 class CPScaleProcessEvidence:
@@ -354,25 +376,33 @@ class CPScalePreflightOutcome(str, Enum):
 @dataclass(frozen=True)
 class CPScalePreflightResult:
     target: CPScaleCanonicalTargetContract
+    runtime: CPScaleRuntimeEvidence
     import_isolation: CPScaleImportIsolationEvidence
     repository: CPScaleRepositoryEvidence
     process: CPScaleProcessEvidence
+    identity: CPScaleLiveSessionIdentity | None
     issues: tuple[str, ...]
 
     @property
     def outcome(self) -> CPScalePreflightOutcome:
         return (
-            CPScalePreflightOutcome.REJECTED if self.issues
-            else CPScalePreflightOutcome.ADMITTED
+            CPScalePreflightOutcome.ADMITTED
+            if (
+                not self.issues
+                and all(check.state is CPScaleCheckState.PASSED for check in checks)
+                and evidence_is_coherent
+            )
+            else CPScalePreflightOutcome.REJECTED
         )
 ```
 
 Reglas de estos tipos:
 
-1. La autorización **se deriva del resultado**: `outcome` se calcula desde
-   `issues` y no existe un booleano que alguien pueda poner en `True` mientras
-   la lista de problemas dice lo contrario. Un `admitted=True` junto a
-   `issues` no vacío es un estado que estos tipos no pueden representar.
+1. La autorización local **se deriva del resultado completo**: continuar exige
+   `import_isolation`, `repository` y `process` en `PASSED`, evidencia
+   estructuralmente coherente, identidad local presente/coincidente y cero
+   `issues`. `FAILED`, `NOT_RUN`, evidencia ausente o incoherente bloquean aun
+   cuando `issues` esté vacío. No existe un booleano `admitted` escribible.
 2. `NOT_RUN` es un estado legítimo y frecuente: es lo que queda tras el
    cortocircuito. Nunca se rellena con un valor por defecto que parezca una
    comprobación superada; una evidencia obligatoria ausente no se fabrica.
@@ -381,9 +411,14 @@ Reglas de estos tipos:
    código `2`.
 4. `target` es el contrato que devuelve `canonical_cp_scale_target_contract`.
    La regla no se reimplementa ni se copia dentro del preflight.
-5. Ninguna de estas evidencias contiene transportes, runtimes, reloj ni
-   callbacks, así que el resultado es serializable y comparable tal cual.
-6. El preflight no abre el bridge, no consulta capacidades y no escribe
+5. Los procesos preservan todos los datos que consumen los validadores y la
+   evidencia vigente: `Path`, `ProductVersion`, `FileVersion`, PID, nombre y
+   `MainWindowHandle`. Ninguna conversión tipada los colapsa a una versión
+   sintética.
+6. Ninguna de estas evidencias contiene transportes, runtimes PT ni callbacks,
+   así que el resultado es serializable y comparable tal cual. `started_at`
+   sólo pertenece a la identidad local inmutable.
+7. El preflight no abre el bridge, no consulta capacidades y no escribe
    evidencia: eso ya es comprobación de backend.
 
 ### Estado de avance y continuidad
@@ -1030,17 +1065,19 @@ finalización sana que sigue devolviendo `0` (uno); cancelación durante el stag
 primaria intacta (dos). Diez fallan sobre el runner previo a la primera
 corrección y cuatro sobre el previo a esta segunda pasada.
 
-## Plan acotado de M1
+## M1 autorizado: extracción acotada
 
-M1 permanece no autorizado. Su prerequisito —corregir R13, obtener suite
-verde y registrar una referencia nueva identificada— está cumplido por M0-FIX;
-eso no lo autoriza a comenzar.
+M1 fue autorizado por separado con un gate inicial M1-0. Su prerequisito
+—corregir R13, obtener suite verde y registrar una referencia nueva
+identificada— estaba cumplido por M0-FIX. M1-0 corrigió antes de extraer la
+correlación del policy trace y la validación tipada de su procedencia, sin
+regenerar `baseline-v3` ni cambiar la traza normal.
 
 Primera familia a extraer en M1: **solicitud, identidad y admisión/preflight**
 (R1 parcial + R2). Es la frontera anterior a cualquier contacto/mutación y no
 requiere mover `_execute_stage` ni alterar lifecycle.
 
-Slice propuesto:
+Slice implementado:
 
 1. Crear los contratos `CPScaleLiveRequest`, `CPScaleLiveSessionIdentity` y
    `CPScalePreflightResult` —con los tipos ya cerrados arriba— en application.
@@ -1057,7 +1094,7 @@ Slice propuesto:
    façade se mueven en el mismo slice que mueva el coordinador, no antes.
 5. Dejar transporte, sesión, stage loop, applicators, observaciones,
    diagnóstico, persistencia, cleanup y cierre en su ubicación actual.
-6. Comparar con la referencia fija `baseline-v2`, ejecutar tests de namespaces
+6. Comparar con la referencia fija `baseline-v3`, ejecutar tests de namespaces
    y full suite; no avanzar a la siguiente familia dentro del mismo mandato.
 
 M2-A sería la sesión persistente/coordinación/persistencia/finalización, y es
@@ -1085,5 +1122,6 @@ estado final es:
 CP_LIVE_M0=CORRECTED_BASELINE_RECORDED
 PRODUCT_ADMISSION=BLOCKED
 ROUTER0_LIVE=NOT_RUN
-M1=NOT_AUTHORIZED_NOT_STARTED
+M1=AUTHORIZED_LOCAL_PREFLIGHT_EXTRACTED
+M2=NOT_AUTHORIZED_NOT_STARTED
 ```
