@@ -145,7 +145,10 @@ def test_every_superseded_reference_is_retained_and_still_verifiable(baseline):
             assert difference["change"] and difference["why"]
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS)
+@pytest.mark.parametrize(
+    "scenario",
+    tuple(item for item in SCENARIOS if item != "cleanup-failure"),
+)
 def test_run_coordination_matches_the_frozen_ordered_trace(
     baseline,
     scenario,
@@ -158,6 +161,39 @@ def test_run_coordination_matches_the_frozen_ordered_trace(
     expected = baseline["coordination"][scenario]
 
     assert trace_differences(expected, verdict["trace"]) == []
+    _assert_candidate_provenance(
+        verdict, substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
+    )
+
+
+def test_cleanup_retry_correction_is_an_explicit_delta_from_the_frozen_oracle(
+    baseline,
+    tmp_path,
+):
+    historical = baseline["coordination"]["cleanup-failure"]
+    expected = copy.deepcopy(historical)
+    cleanup_positions = [
+        index for index, event in enumerate(expected["events"])
+        if event.get("event") == "cleanup"
+    ]
+    assert len(cleanup_positions) == 2
+    assert cleanup_positions[1] == cleanup_positions[0] + 1
+    del expected["events"][cleanup_positions[1]]
+    expected["final"]["failure"] = (
+        "CanonicalLiveFailure: Router0 verification completed, but "
+        "cleanup/restoration did not verify: RuntimeError: "
+        "SYNTHETIC_CLEANUP_FAILURE"
+    )
+
+    verdict = run_product_probe(
+        coordination_source("cleanup-failure"),
+        tmp_path / "cleanup-failure-corrected",
+    )
+
+    assert trace_differences(expected, verdict["trace"]) == []
+    assert sum(
+        event.get("event") == "cleanup" for event in verdict["trace"]["events"]
+    ) == 1
     _assert_candidate_provenance(
         verdict, substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
     )

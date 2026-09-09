@@ -54,7 +54,10 @@ class Checkpoint:
 
 class Cleanup:
     def restore(self, physical, topology, owned, baseline):
-        value = seams._cleanup_owned(physical, topology, owned, baseline)
+        try:
+            value = seams._cleanup_owned(physical, topology, owned, baseline)
+        except Exception as exc:
+            return CPScaleCleanupResult(False, error=f"{type(exc).__name__}: {exc}")
         return CPScaleCleanupResult(value["verified"], value.get("restoration_error", ""), error=value.get("error", ""))
 
 
