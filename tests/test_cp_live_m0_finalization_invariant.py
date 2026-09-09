@@ -254,13 +254,18 @@ def test_finalization_closes_and_never_replaces_the_cause(
         prefix for prefix, failed in (
             ("final_evidence_write:", write_fails),
             ("transport_stop:", stop_fails),
+            ("terminal_evidence_write:", write_fails),
         ) if failed
     ]
     assert _secondary_prefixes(report) == expected_secondaries, verdict
     if write_fails:
         assert "FINAL_EVIDENCE_WRITE_FAILED" in report["finalization_errors"][0]
     if stop_fails:
-        assert "TRANSPORT_STOP_FAILED" in report["finalization_errors"][-1]
+        stop_error = next(
+            item for item in report["finalization_errors"]
+            if item.startswith("transport_stop:")
+        )
+        assert "TRANSPORT_STOP_FAILED" in stop_error
 
     if primary_fails:
         # The primary cause survives its own secondaries and stays the reason.
@@ -378,7 +383,10 @@ def test_a_broken_report_channel_never_replaces_the_primary_cause(tmp_path):
     assert verdict["report_channels"] == {"stdout": "broken", "stderr": 1}, verdict
     report = _finalization_report(verdict)
     assert "PRIMARY_STAGE_FAILURE" in report["primary_failure"], verdict
-    assert _secondary_prefixes(report) == ["final_evidence_write:"], verdict
+    assert _secondary_prefixes(report) == [
+        "final_evidence_write:",
+        "terminal_evidence_write:",
+    ], verdict
 
 
 def test_no_channel_left_promises_nothing_and_still_fails_the_run(tmp_path):

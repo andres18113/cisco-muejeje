@@ -81,6 +81,8 @@ class CPScaleCompletion:
         if cleanup.verified and realtime.verified:
             return CPScaleCleanupReview("")
         prefix = "Router0" if router0 else "Canonical"
-        secondaries = ("cleanup_realtime: " + realtime.error,) if cleanup.restoration_error and realtime.error else ()
+        secondaries = ("cleanup_realtime: " + realtime.error,) if (
+            (cleanup.error or cleanup.restoration_error) and realtime.error
+        ) else ()
         return CPScaleCleanupReview(prefix + " verification completed, but cleanup/restoration did not verify: "
-            + (cleanup.restoration_error or realtime.error), secondaries)
+            + (cleanup.error or cleanup.restoration_error or realtime.error), secondaries)

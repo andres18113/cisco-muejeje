@@ -70,6 +70,17 @@ class CPScaleLiveCoordinator:
             terminal = replace(terminal, secondary_failures=(), finalization_errors=errors)
             self.presentation.finalization_incomplete(snapshot())
 
+        def publish_terminal_outcome(errors: tuple[str, ...]) -> tuple[str, ...]:
+            """Attempt one post-session correction without repeating session effects."""
+            nonlocal terminal
+            terminal = replace(terminal, secondary_failures=(), finalization_errors=errors)
+            try:
+                self.persistence.write_progress(snapshot())
+            except Exception as exc:
+                errors = (*errors, f"terminal_evidence_write: {type(exc).__name__}: {exc}")
+                terminal = replace(terminal, finalization_errors=errors)
+            return errors
+
         if preflight.outcome is CPScalePreflightOutcome.REJECTED:
             terminal = replace(terminal, hard_stop=" ".join(preflight.issues) or "Local preflight evidence is incomplete or inconsistent.")
         elif preflight.identity is None:
@@ -348,6 +359,13 @@ class CPScaleLiveCoordinator:
             complete(checkpoint("full-qualification"))
             return CPScaleRunOutcome.COMPLETED
 
+        prepared_secondaries = terminal.secondary_failures
+
+        def prepare_and_capture_secondaries() -> None:
+            nonlocal prepared_secondaries
+            prepare_finalization()
+            prepared_secondaries = terminal.secondary_failures
+
         try:
             outcome = execute_session()
             terminal = replace(terminal, outcome=outcome)
@@ -357,15 +375,24 @@ class CPScaleLiveCoordinator:
                 failed = replace(progress.active_stage, failed=True, failure_details=getattr(exc, "partial_stage", None))
                 progress = replace(progress, stages=(*progress.stages, failed), active_stage=None)
         finally:
-            final = finalize_session(prepare=prepare_finalization, write=lambda: self.persistence.write_progress(snapshot()),
-                session=session, report=report_errors, secondary_failures=lambda: terminal.secondary_failures)
+            final = finalize_session(prepare=prepare_and_capture_secondaries, write=lambda: self.persistence.write_progress(snapshot()),
+                session=session, report=report_errors, secondary_failures=lambda: terminal.secondary_failures,
+                defer_report=True)
             terminal = replace(terminal, finalization_errors=final.errors)
             if final.errors and terminal.outcome is CPScaleRunOutcome.COMPLETED:
                 terminal = replace(terminal, outcome=CPScaleRunOutcome.FAILED)
+        published = final.errors
+        if final.errors != prepared_secondaries:
+            published = publish_terminal_outcome(final.errors)
+        if published:
+            published = report_terminal_errors(published, report_errors)
+            terminal = replace(terminal, finalization_errors=published)
         if terminal.outcome is CPScaleRunOutcome.COMPLETED:
             try:
                 self.presentation.terminal(terminal.event, snapshot())
             except Exception as exc:
-                errors = report_terminal_errors((f"terminal_presentation: {type(exc).__name__}: {exc}",), report_errors)
+                terminal = replace(terminal, outcome=CPScaleRunOutcome.FAILED)
+                errors = publish_terminal_outcome((f"terminal_presentation: {type(exc).__name__}: {exc}",))
+                errors = report_terminal_errors(errors, report_errors)
                 terminal = replace(terminal, outcome=CPScaleRunOutcome.FAILED, finalization_errors=errors)
         return CPScaleLiveFinalResult.from_report(terminal.outcome, snapshot())

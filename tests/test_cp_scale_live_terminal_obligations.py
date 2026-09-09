@@ -159,13 +159,21 @@ print(json.dumps({"outcome": result.outcome.value, "events": names[last_stage + 
     if target == "full-cleanup":
         expected.insert(0, "checkpoint")
     expected += ["write", "summary", "write", "transport.stop"]
-    expected += ["terminal"] if not broken else ["terminal", "report"] if broken == "presentation" else ["report"]
+    if not broken:
+        expected += ["terminal"]
+    elif broken == "presentation":
+        expected += ["terminal", "write", "report"]
+    else:
+        expected += ["write", "report"]
     assert verdict["events"] == expected, verdict
     assert verdict["outcome"] == ("failed" if broken else "completed")
     assert verdict["primary"] is None
     assert verdict["secondary"] == {
         "": [],
-        "write": ["final_evidence_write: OSError: final write failed"],
+        "write": [
+            "final_evidence_write: OSError: final write failed",
+            "terminal_evidence_write: OSError: final write failed",
+        ],
         "close": ["transport_stop: OSError: close failed"],
         "presentation": ["terminal_presentation: OSError: terminal channel failed"],
     }[broken]
@@ -229,6 +237,7 @@ print(json.dumps({"outcome": result.outcome.value, "primary": result.primary_fai
             "cleanup_archive: OSError: cleanup-incomplete archive error",
             "final_evidence_write: OSError: write error",
             "transport_stop: OSError: close error",
+            "terminal_evidence_write: OSError: write error",
         ],
         "diagnostic_identity": "diagnostic error", "closed": ["transport.stop"],
     }

@@ -20,8 +20,32 @@ def attempted_device_ids(deployment: PhysicalDeploymentResult) -> frozenset[str]
 class CPScaleCleanup:
     def restore(self, physical: PhysicalTopologyRuntime, topology: TopologyPlan,
                 owned: frozenset[str], baseline: PhysicalWorkspaceObservation) -> CPScaleCleanupResult:
-        mutations = tuple(physical.remove_device(device) for device in reversed(topology.devices) if device.id in owned)
-        first = physical.observe_workspace()
-        second = physical.observe_workspace()
-        error = canonical_cleanup_restoration_error(baseline, first, second)
-        return CPScaleCleanupResult(not error, error, mutations, first, second)
+        mutations: list[PhysicalMutationResult] = []
+        first: PhysicalWorkspaceObservation | None = None
+        second: PhysicalWorkspaceObservation | None = None
+        try:
+            for device in reversed(topology.devices):
+                if device.id in owned:
+                    mutations.append(physical.remove_device(device))
+            first = physical.observe_workspace()
+            second = physical.observe_workspace()
+            restoration_error = canonical_cleanup_restoration_error(
+                baseline,
+                first,
+                second,
+            )
+        except Exception as exc:
+            return CPScaleCleanupResult(
+                False,
+                mutations=tuple(mutations),
+                first=first,
+                second=second,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        return CPScaleCleanupResult(
+            not restoration_error,
+            restoration_error,
+            tuple(mutations),
+            first,
+            second,
+        )
