@@ -7,7 +7,8 @@ consolida el mapa de extracción, los contratos, la matriz de caracterización y
 la procedencia del oráculo. La autorización posterior de M1 añade aquí el
 resultado de la primera extracción. La autorización posterior de M2 reemplaza
 el mapa de fases provisional: **M2-A es ejecución de etapas** y **M2-B es
-coordinador, ciclo de sesión y CLI**. M3 continúa sin autorización.
+coordinador, ciclo de sesión y CLI**. M3 fue autorizado después para el cierre
+e integración offline descritos al final; no autoriza LIVE ni cambia admisión.
 
 M0 se entregó primero como **`BLOCKED_FOR_BASELINE_FIX`**: la
 caracterización reprodujo un defecto anterior a la extracción en la
@@ -1110,8 +1111,8 @@ stage executor, sus colaboradores de Configuration, Voice, Control Plane,
 forwarding y reconciliación, más observación y diagnóstico separados; **M2-B**
 extrae la coordinación, sesión persistente, persistencia/finalización y mueve
 la composición/presentación al adapter CLI, dejando `tools` como façade. M3 es
-la retirada de compatibilidad privada después de migrar consumidores y sigue
-sin autorización. Cada mecanismo que salga en M2 se acepta contra los
+la retirada de compatibilidad privada después de migrar consumidores; esa fase
+fue autorizada y cerrada offline el 2026-09-09. Cada mecanismo que salga en M2 se acepta contra los
 «Criterios de reutilización»: estado acotado y un segundo escenario sintético.
 
 ## Criterio de cierre de esta entrega
@@ -1310,17 +1311,61 @@ M2_A=COMPLETE_OFFLINE
 M2_B=COMPLETE_OFFLINE
 PRODUCT_ADMISSION=BLOCKED
 ROUTER0_LIVE=NOT_RUN
-M3=NOT_STARTED
-M3_AUTHORIZATION=NOT_AUTHORIZED
-CI=PENDING
+M3=COMPLETE_OFFLINE_READY_FOR_FINAL_AUDIT
+M3_AUTHORIZATION=OFFLINE_ONLY
+CI=PENDING_FINAL_M3_SHA
 ```
 
 Ninguna prueba offline demuestra PT/webview/CORS real, capacidad PoE simultánea
 ni admisión productiva. No se abrió PT, no se contactó el bridge del usuario,
-no se adquirieron capacidades LIVE y no se modificaron `.pts`. El implementador
-y el revisor de esta subtarea no hacen push. El mandato general sí autoriza y
-exige al coordinador publicar `refactor/cp-live-m0-baseline` en `cisco` sin
-force-push, después de cerrar la revisión, y verificar los cuatro jobs de CI
-del SHA final. Esa publicación/verificación sigue pendiente del coordinador:
-`CI=PENDING`, no cancelada. Merge, force-push y adquisición LIVE siguen
-prohibidos.
+no se adquirieron capacidades LIVE y no se modificaron `.pts`. La entrega M2 se
+publicó en `fae7a7f9` y su run `34322942037` terminó 4/4. Para M3, el mandato
+autoriza y exige publicar `refactor/cp-live-m0-baseline` en `cisco` sin force
+después de la revisión final y verificar los cuatro jobs del nuevo SHA. Ese CI
+M3 sigue pendiente; merge, force-push y adquisición LIVE siguen prohibidos.
+
+## M3 — cierre e integración offline
+
+M3 parte de `fae7a7f9ae7db80c1fad921ddc81ed57d695d853`. Su
+HEAD funcional revisado antes de este registro es
+`8adc919de18816b3baf0bb0f121249f79e16db1e`; el SHA final de documentación y
+CI se reporta fuera del propio commit para no crear una autorreferencia.
+
+| Requisito | Implementación | Prueba | Evidencia offline |
+| --- | --- | --- | --- |
+| Raíz gobernada independiente | `run()` lee únicamente `PT_MCP_GOVERNED_ROOT`; la misma `Path` entra en preflight, store de capacidades, checkpoint y `CPScaleLivePersistence`. No existe fallback a `packet_tracer_mcp.__file__` | `test_cp_scale_live_governed_root.py`, CLI, import/worktree isolation | dos clones A/B en el mismo SHA: tool A + venv/paquete B retorna `2`, no escribe en B, no crea store y no alcanza backend |
+| Fallos parciales serializables | `run_evidence()` trata `first`, `second`, `unresolved` y errores de cleanup de forma independiente, conservando `None` como ausencia | `test_cp_scale_live_partial_persistence.py` | el fallo real de la segunda observación conserva la primera, la causa `SECOND_WORKSPACE_READ_FAILED`, un solo close y evidencia/archives reales en `tmp_path` |
+| Aislamiento fuera de Git | snapshot SHA-256 de rutas protegidas, fixture de sesión y entorno común para subprocess; token/mailbox/temp/store separados | `test_cp_live_data_integrity.py`, harness M0 y affected | crear, borrar o reemplazar un ignorado rompe el sentinel; affected **819 passed** y full **4 403 passed** terminaron sin diferencia protegida |
+| Migración y Realtime de stage | tool reducido a `main/run`; adapter conserva sólo composición/presentación; consumidores importan desde application/observation/diagnostics/persistence. `CPScaleRealtimeObservation` y `CPScaleRealtimeState` llevan presencia, error, provenance y autoridad requerida | `test_cp_scale_live_realtime_contract.py`, stage/failure/Voice/diagnostics/arquitectura | mapping público before/after idéntico; ausencia y Simulation permanecen fallos, diagnóstico no adquiere autoridad y no queda wrapper `_execute_stage` |
+| Equivalencia e integración | inyección del harness adaptada a factories propietarias; ninguna expectativa del oráculo se regeneró | Router0/default/retención/rechazos/cancelación/finalización, baseline-v3 | foco Realtime/migración **334 passed**, arquitectura/estado **88 passed**, affected **819 passed**, full **4 403 passed / 3 warnings existentes** |
+
+### Incidencia de evidencia ignorada
+
+Al comenzar M3 existía
+`data/cp-scale/live-canonical-progress.json`, ignorado por Git, con **1 218
+bytes**, SHA-256
+`bf2ac3bfda1326ee274a5714df0d16bebd53afb9e31e4f90d49ba28eaef9c60d` y
+mtime `2026-09-08T22:16:35.3824955-05:00`. Sus propios campos lo clasifican
+como `SYNTHETIC_PREFLIGHT_REJECTION_NON_AUTHORITATIVE`: run identity terminado
+en `aaaaaaaaaaaa`, target Router0 combinado deliberadamente con retención,
+cero stages, hard stop anterior al backend, sin `http_bridge` ni
+`capability_prequalification`. Es consistente con la incidencia del harness
+reportada en M2, pero no permite saber qué bytes había antes de esa escritura.
+Por eso M3 no lo borró, reemplazó ni presentó como restaurado. Su longitud y
+hash permanecieron iguales después de focused, affected y full.
+
+### Compatibilidad con `feature/runtime-ripv2`
+
+La referencia remota se refrescó sin merge. El HEAD contemporáneo de
+`cisco/feature/runtime-ripv2` es
+`62db3cea84a4bfca1a5bcd3d2389d62864c45946`; es también el merge-base con el
+HEAD funcional M3. La divergencia observada fue **0 commits exclusivos de
+feature / 28 commits de CP-LIVE**. Por tanto no había avances de feature que
+incorporar o resolver, y no se exigió igualdad entre ramas. No se hizo merge ni
+push a la rama productiva.
+
+`baseline-v3` continúa byte-idéntico con SHA-256
+`639cd07674460c83c9a78d6c66459f0ce84648cc18a21579bcbc83826766baa7`.
+M3 queda técnicamente cerrado y listo para auditoría final, separado de
+`PRODUCT_ADMISSION=BLOCKED` y `ROUTER0_LIVE=NOT_RUN`. Ningún resultado de esta
+sección afirma comportamiento PT/webview/CORS o autoridad PoE LIVE.
