@@ -4,21 +4,22 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
+
+from tests.subprocess_harness import run_isolated_command, subprocess_failure
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_cli_refuses_without_execute_in_a_subprocess():
-    result = subprocess.run(
+    result = run_isolated_command(
         [sys.executable, "tools/cp_scale_canonical_live.py",
          "--packet-tracer-version", "9.0.1.0858", "--expected-head", "a" * 40],
-        cwd=ROOT, capture_output=True, text=True,
+        cwd=ROOT,
     )
-    assert result.returncode == 2, result.stderr
+    assert result.returncode == 2, subprocess_failure(result)
     assert json.loads(result.stdout) == {
         "hard_stop": "--execute is required; no Packet Tracer mutation occurred."
     }

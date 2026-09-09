@@ -5,25 +5,20 @@ from __future__ import annotations
 from tests.cp_scale_live_test_composition import OFFLINE_COMPOSITION
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from tests.subprocess_harness import run_isolated_python, subprocess_failure
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _probe(source: str) -> dict:
-    completed = subprocess.run(
-        [sys.executable, "-c", source],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0, completed.stderr or completed.stdout
+    bootstrap = "import sys\nsys.path.insert(0, " + repr(str(ROOT)) + ")\n"
+    completed = run_isolated_python(bootstrap + source, cwd=ROOT, governed_root=ROOT)
+    assert completed.returncode == 0, subprocess_failure(completed)
     return json.loads(completed.stdout.strip().splitlines()[-1])
 
 

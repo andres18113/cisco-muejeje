@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.subprocess_harness import run_isolated_python, subprocess_failure
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -314,13 +316,8 @@ def verdict():
     code = _PROBE.replace("__ROOT__", repr(str(ROOT))).replace(
         "__SRC__", repr(str(ROOT / "src")),
     )
-    completed = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    completed = run_isolated_python(code, cwd=ROOT, governed_root=ROOT)
+    assert completed.returncode == 0, subprocess_failure(completed)
     return json.loads(completed.stdout)
 
 

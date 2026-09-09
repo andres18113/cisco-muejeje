@@ -10,6 +10,7 @@ import site
 import subprocess
 import sys
 
+from tests.cp_live_data_integrity import isolated_subprocess_environment
 from tests.subprocess_harness import run_isolated_python, subprocess_failure
 
 
@@ -131,16 +132,10 @@ def test_real_entry_rejects_checkout_a_with_interpreter_and_package_b_before_wro
         checkout_b / "docs" / "reference" / "cp-scale" / "live_canonical_checkpoint.json",
     )
     before_b = tuple(_digest(path) for path in protected_b)
-    environment = os.environ.copy()
-    for name in ("PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP"):
-        environment.pop(name, None)
-    environment.update({
-        "PT_MCP_GOVERNED_ROOT": str(checkout_a),
-        "PT_MCP_BRIDGE_TOKEN": "cp-live-m3-two-checkout-offline-token",
-        "LOCALAPPDATA": str(machine_state),
-        "TEMP": str(machine_state),
-        "TMP": str(machine_state),
-    })
+    environment = isolated_subprocess_environment(
+        machine_state,
+        governed_root=checkout_a,
+    )
     completed = subprocess.run(
         [
             str(python_b),

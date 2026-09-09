@@ -50,6 +50,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from tests.cp_live_data_integrity import (
+    assert_protected_paths_unchanged,
+    capture_protected_paths,
+    isolated_subprocess_environment,
+)
 from tests.test_cp_scale_router0_live_runner import RUN_DOUBLES
 
 
@@ -951,25 +956,31 @@ def run_product_probe(source: str, isolated_dir: Path) -> dict[str, Any]:
     """Run production-namespace code with no product transport or host state."""
 
     isolated_dir.mkdir(parents=True, exist_ok=True)
-    environment = os.environ.copy()
-    # A custom PYTHONPATH would invalidate the governed namespace baseline.
-    environment.pop("PYTHONPATH", None)
-    environment.update({
-        "LOCALAPPDATA": str(isolated_dir),
-        "TEMP": str(isolated_dir),
-        "TMP": str(isolated_dir),
-        "PT_MCP_BRIDGE_TOKEN": "cp-live-m0-synthetic-token",
-        "PT_MCP_GOVERNED_ROOT": str(ROOT),
-    })
-    completed = subprocess.run(
-        [sys.executable, "-c", source],
-        cwd=ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=60,
+    # Localise the reported mutable-evidence incident on every probe.  The
+    # session-wide sentinel separately hashes the capability/archive trees once
+    # before and after the whole suite; rehashing their ~300 MB per scenario
+    # would add no protection and would make the fixed oracle needlessly slow.
+    protected = capture_protected_paths((
+        ROOT / "data" / "cp-scale" / "live-canonical-progress.json",
+        ROOT / "data" / "cp-scale" / "live-canonical-checkpoint.json",
+        ROOT / "docs" / "reference" / "cp-scale" / "live_canonical_checkpoint.json",
+    ))
+    environment = isolated_subprocess_environment(
+        isolated_dir,
+        governed_root=ROOT,
     )
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    finally:
+        assert_protected_paths_unchanged(protected)
     assert completed.returncode == 0, completed.stderr or completed.stdout
     lines = completed.stdout.strip().splitlines()
     assert lines, "CP-LIVE M0 child produced no JSON verdict"

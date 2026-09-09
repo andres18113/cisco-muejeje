@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.subprocess_harness import run_isolated_python, subprocess_failure
+
 from src.packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
     MAX_FRAME_TARGETS,
     MAX_MEMBER_NAMES,
@@ -394,16 +396,11 @@ print(json.dumps(verdict))
 
 @pytest.fixture(scope="module")
 def selection():
-    import subprocess
-    import sys as _sys
-
     code = _SEL_PROBE.replace("__ROOT__", repr(str(ROOT))).replace(
         "__SRC__", repr(str(ROOT / "src")),
     )
-    completed = subprocess.run(
-        [_sys.executable, "-c", code], cwd=ROOT, check=True,
-        capture_output=True, text=True,
-    )
+    completed = run_isolated_python(code, cwd=ROOT, governed_root=ROOT)
+    assert completed.returncode == 0, subprocess_failure(completed)
     return json.loads(completed.stdout)
 
 
@@ -770,16 +767,11 @@ print(json.dumps(verdict))
 
 @pytest.fixture(scope="module")
 def phase2():
-    import subprocess
-    import sys as _sys
-
     code = _P2_PROBE.replace("__ROOT__", repr(str(ROOT))).replace(
         "__SRC__", repr(str(ROOT / "src")),
     )
-    completed = subprocess.run(
-        [_sys.executable, "-c", code], cwd=ROOT, check=True,
-        capture_output=True, text=True,
-    )
+    completed = run_isolated_python(code, cwd=ROOT, governed_root=ROOT)
+    assert completed.returncode == 0, subprocess_failure(completed)
     return json.loads(completed.stdout)
 
 
@@ -1279,16 +1271,11 @@ print(json.dumps(verdict))
 
 @pytest.fixture(scope="module")
 def phase3():
-    import subprocess
-    import sys as _sys
-
     code = _P3_PROBE.replace("__ROOT__", repr(str(ROOT))).replace(
         "__SRC__", repr(str(ROOT / "src")),
     )
-    completed = subprocess.run(
-        [_sys.executable, "-c", code], cwd=ROOT, check=True,
-        capture_output=True, text=True,
-    )
+    completed = run_isolated_python(code, cwd=ROOT, governed_root=ROOT)
+    assert completed.returncode == 0, subprocess_failure(completed)
     return json.loads(completed.stdout)
 
 

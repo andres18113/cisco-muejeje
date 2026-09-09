@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.subprocess_harness import run_isolated_python, subprocess_failure
+
 from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     project_cp_scale_canonical_stage,
@@ -308,13 +310,12 @@ print(json.dumps(verdict))
 
 @pytest.fixture(scope="module")
 def gate() -> dict:
-    completed = subprocess.run(
-        [sys.executable, "-c", _PROBE.format(root=str(ROOT), src=str(ROOT / "src"))],
-        capture_output=True,
-        text=True,
-        cwd=str(ROOT),
+    completed = run_isolated_python(
+        _PROBE.format(root=str(ROOT), src=str(ROOT / "src")),
+        cwd=ROOT,
+        governed_root=ROOT,
     )
-    assert completed.returncode == 0, completed.stderr
+    assert completed.returncode == 0, subprocess_failure(completed)
     return json.loads(completed.stdout.strip().splitlines()[-1])
 
 

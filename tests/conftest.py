@@ -18,18 +18,46 @@ fixture could patch anything.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
+from tests.cp_live_data_integrity import (
+    assert_protected_paths_unchanged,
+    capture_protected_paths,
+    cp_live_workspace_protected_paths,
+    isolated_subprocess_environment,
+)
+from src.packet_tracer_mcp.infrastructure.execution.bridge_token import token_path
 from src.packet_tracer_mcp.infrastructure.persistence import capability_snapshot_store
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _isolate_default_capability_store(tmp_path_factory):
+def _isolate_machine_and_repository_state(tmp_path_factory):
+    protected = capture_protected_paths((*cp_live_workspace_protected_paths(ROOT), token_path()))
+    isolated = tmp_path_factory.mktemp("cp-live-session-state")
+    environment = isolated_subprocess_environment(isolated)
     patcher = pytest.MonkeyPatch()
+    for name in (
+        "LOCALAPPDATA", "APPDATA", "XDG_STATE_HOME", "TEMP", "TMP", "TMPDIR",
+        "PT_MCP_BRIDGE_TOKEN", "PYTHONNOUSERSITE",
+    ):
+        patcher.setenv(name, environment[name])
+    patcher.delenv("PT_MCP_GOVERNED_ROOT", raising=False)
+    patcher.setenv("PT_MCP_TEST_STATE_ROOT", str(isolated))
     patcher.setattr(
         capability_snapshot_store,
         "DEFAULT_BASE_DIR",
-        tmp_path_factory.mktemp("default-capability-store"),
+        isolated / "capability-store",
     )
-    yield
-    patcher.undo()
+    try:
+        yield
+    finally:
+        try:
+            assert_protected_paths_unchanged(protected)
+        finally:
+            patcher.undo()
