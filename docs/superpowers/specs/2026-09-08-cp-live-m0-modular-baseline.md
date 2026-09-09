@@ -5,7 +5,9 @@
 Este documento nació como la especificación normativa de CP-LIVE M0 y
 consolida el mapa de extracción, los contratos, la matriz de caracterización y
 la procedencia del oráculo. La autorización posterior de M1 añade aquí el
-resultado de la primera extracción; no autoriza M2-A, M2-B ni M3.
+resultado de la primera extracción. La autorización posterior de M2 reemplaza
+el mapa de fases provisional: **M2-A es ejecución de etapas** y **M2-B es
+coordinador, ciclo de sesión y CLI**. M3 continúa sin autorización.
 
 M0 se entregó primero como **`BLOCKED_FOR_BASELINE_FIX`**: la
 caracterización reprodujo un defecto anterior a la extracción en la
@@ -25,8 +27,8 @@ histórico. M1 añade sólo contratos/coordinación del preflight local bajo `sr
 lectores locales en infrastructure y la llamada compatible desde `tools`; no
 modifica `EXTENSION/`, snapshots de capacidades, evidencia LIVE ni gates. No se
 abrió Packet Tracer, no se conectó al bridge y no se ejecutó el runner con
-transporte real. La admisión productiva sigue `BLOCKED` y M2 sigue sin
-autorizar.
+transporte real. La admisión productiva sigue `BLOCKED`. M2-A y M2-B quedan
+autorizadas únicamente offline bajo los límites de esta especificación.
 
 ## Fuente, aislamiento y autoridad vigente
 
@@ -146,22 +148,22 @@ La columna «autoridad» indica qué decisión puede producir la responsabilidad
 | R13 | Resultado/cierre: `except/finally` de `run`, escritura final y `transport.stop` | resultado primario + fallos secundarios → código y registro observables | Intenta el cierre exactamente una vez, siempre que se adquirió, y conserva la causa primaria; sin causa primaria, un fallo de finalización impide el éxito. Corregido en M0-FIX | doce casos en `test_cp_live_m0_finalization_invariant.py` |
 | R14 | Políticas reutilizadas: compositores/proyectores, `ConfigurationApplicator`, `ControlPlaneApplicator`, `VoiceApplicator`, `canonical_stage_mutation_replay_audit` | planes y resultados tipados → aceptación, estados y auditorías | Son la única autoridad de sus dominios. No se duplican al modularizar | target-stage, configuration, control-plane, voice y oracle de política |
 
-### Propiedad propuesta y fase prevista
+### Propiedad propuesta y fase autorizada
 
-| ID | Propietario propuesto | Dependencias permitidas | Fase prevista, no autorizada ahora |
+| ID | Propietario propuesto | Dependencias permitidas | Fase autorizada |
 | --- | --- | --- | --- |
-| R1 | `tools/...` conserva `main`, `run`, presentación y composition root; request tipado en `application/cp_scale_live` | application contracts/preflight e infrastructure readers | M1 para request/preflight; adapter y façade sólo al mover el coordinador en M2-A |
+| R1 | `tools/...` conserva `main`, `run`, presentación y composition root; request tipado en `application/cp_scale_live` | application contracts/preflight e infrastructure readers | M1 para request/preflight; adapter y façade al mover el coordinador en M2-B |
 | R2 | `application/cp_scale_live/admission.py` con puertos de entorno | reglas existentes de application/domain; implementaciones de Git/proceso/import en infrastructure | primera familia de M1 |
-| R3 | `infrastructure/execution/cp_scale_live_session.py`, único dueño de `close` | transporte/runtimes concretos; no políticas | M2-A, después del fix de baseline |
-| R4 | `application/cp_scale_live/coordinator.py` | contratos, admission, stage executor y puertos estrechos | M2-A |
-| R5 | `application/cp_scale_live/stage_executor.py` | applicators, proyectores, validadores y protocolos runtime existentes | M2-B |
-| R6 | `infrastructure/observation/cp_scale_live.py` | IOS parsers, typed ping, frame/runtime adapters | M2-B |
-| R7 | `infrastructure/diagnostics/cp_scale_live.py` | Simulation/frame adapters; sin acceso a decisiones | M2-B |
-| R8–R9 | `infrastructure/persistence/cp_scale_live.py` | filesystem + serializadores de contratos | M2-A |
-| R10 | puerto application `CPScaleCheckpointPort`; adapter de consola | estado/provenance tipados, sin runtimes | M2-A |
-| R11–R12 | coordinator + servicio application de cleanup; runtime físico ejecuta | ownership ledger, topología y protocolo físico | M2-A |
-| R13 | session owner para cierre; coordinator para precedencia de resultados | result/finalization contracts y persistence port | fix aplicado en M0-FIX; extracción M2-A |
-| R14 | permanece donde está | contratos domain/application existentes | se reutiliza; no se extrae ni duplica |
+| R3 | `infrastructure/execution/cp_scale_live_session.py`, único dueño de `close` | transporte/runtimes concretos; no políticas | M2-B, después de M2-A |
+| R4 | `application/cp_scale_live/coordinator.py` | contratos, admission, stage executor y puertos estrechos | M2-B |
+| R5 | `application/cp_scale_live/stage_executor.py` | applicators, proyectores, validadores y protocolos runtime existentes | M2-A |
+| R6 | `infrastructure/observation/cp_scale_live.py` | IOS parsers, typed ping, frame/runtime adapters | M2-A |
+| R7 | `infrastructure/diagnostics/cp_scale_live.py` | Simulation/frame adapters; sin acceso a decisiones | M2-A |
+| R8–R9 | `infrastructure/persistence/cp_scale_live.py` | filesystem + serializadores de contratos | M2-B |
+| R10 | puerto application `CPScaleCheckpointPort`; adapter de consola | estado/provenance tipados, sin runtimes | M2-B |
+| R11–R12 | coordinator + servicio application de cleanup; runtime físico ejecuta | ownership ledger, topología y protocolo físico | M2-B |
+| R13 | session owner para cierre; coordinator para precedencia de resultados | result/finalization contracts y persistence port | fix aplicado en M0-FIX; extracción M2-B |
+| R14 | permanece donde está | contratos domain/application existentes | se reutiliza desde M2-A/M2-B; no se extrae ni duplica |
 
 `execute_enterprise_reference()` y `_ExecutionState` son precedentes útiles para
 resultados tipados, diagnóstico separado y cleanup por ownership. No pueden
@@ -508,7 +510,7 @@ primaria, un fallo de finalización convierte el resultado en fallo.
 
 Esa precedencia ya no es sólo el contrato futuro: es lo que hace hoy `run()`
 tras M0-FIX, con `primary_failure` y `secondary_failures` representados por la
-causa registrada y la lista `finalization_errors`. La extracción de M2-A tendrá
+causa registrada y la lista `finalization_errors`. La extracción de M2-B tendrá
 que conservar ese comportamiento, no inventarlo.
 
 ### Puertos necesarios
@@ -1097,13 +1099,14 @@ Slice implementado:
 6. Comparar con la referencia fija `baseline-v3`, ejecutar tests de namespaces
    y full suite; no avanzar a la siguiente familia dentro del mismo mandato.
 
-M2-A sería la sesión persistente/coordinación/persistencia/finalización, y es
-el hito que mueve el coordinador y, con él, habilita el adapter CLI y la façade
-de `tools`; M2-B, el stage executor, observación y diagnóstico; M3, la retirada
-de compatibilidad privada después de migrar consumidores. Son únicamente hitos
-de diseño. Cada mecanismo que salga en esos hitos se acepta contra los
-«Criterios de reutilización»: estado acotado y, más adelante, un segundo
-escenario sintético.
+La nomenclatura autorizada reemplaza ese mapa provisional: **M2-A** extrae el
+stage executor, sus colaboradores de Configuration, Voice, Control Plane,
+forwarding y reconciliación, más observación y diagnóstico separados; **M2-B**
+extrae la coordinación, sesión persistente, persistencia/finalización y mueve
+la composición/presentación al adapter CLI, dejando `tools` como façade. M3 es
+la retirada de compatibilidad privada después de migrar consumidores y sigue
+sin autorización. Cada mecanismo que salga en M2 se acepta contra los
+«Criterios de reutilización»: estado acotado y un segundo escenario sintético.
 
 ## Criterio de cierre de esta entrega
 
@@ -1123,5 +1126,7 @@ CP_LIVE_M0=CORRECTED_BASELINE_RECORDED
 PRODUCT_ADMISSION=BLOCKED
 ROUTER0_LIVE=NOT_RUN
 M1=AUTHORIZED_LOCAL_PREFLIGHT_EXTRACTED
-M2=NOT_AUTHORIZED_NOT_STARTED
+M2_A=AUTHORIZED_OFFLINE_IN_PROGRESS
+M2_B=AUTHORIZED_OFFLINE_PENDING_M2_A_GATE
+M3=NOT_AUTHORIZED_NOT_STARTED
 ```
