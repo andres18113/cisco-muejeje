@@ -98,7 +98,7 @@ def test_a_schema_one_record_that_admitted_itself_fails_closed():
 
 def test_an_unknown_future_schema_also_fails_closed():
     forward = encode_poe_pse_dimensions(scope())
-    forward["poe_pse_schema_version"] = "3"
+    forward["poe_pse_schema_version"] = "4"
     assert decode_poe_pse_delivery_scope(_claim(forward)) is None
 
 

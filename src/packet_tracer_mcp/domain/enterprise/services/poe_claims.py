@@ -15,6 +15,7 @@ from ..models.capabilities import (
 )
 from ..models.discovery import RuntimePortDescriptor
 from .poe_pse_claims import decode_poe_pse_delivery_scope
+from .poe_pse_multiport_claims import decode_poe_pse_multi_port_delivery_scope
 
 
 POE_ACCESS_PORT_COUNT = "poe_access_port_count"
@@ -351,6 +352,16 @@ def decode_poe_authorized_claim(
         return PoEAuthorizedClaim(
             active_bindings=pse.active_bindings,
             simultaneous_active_ports=pse.simultaneous_active_ports,
+        )
+    multi_port_pse = decode_poe_pse_multi_port_delivery_scope(
+        result,
+        expected_model=expected_model,
+        expected_packet_tracer_version=expected_packet_tracer_version,
+    )
+    if multi_port_pse is not None:
+        return PoEAuthorizedClaim(
+            active_bindings=multi_port_pse.active_bindings,
+            simultaneous_active_ports=multi_port_pse.simultaneous_active_ports,
         )
     return None
 
