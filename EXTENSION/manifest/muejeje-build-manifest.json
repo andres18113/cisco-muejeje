@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "extension": {"name": "muejeje", "version": "0.1.0"},
+  "output": {"artifact": "muejeje.pts", "report": "muejeje.build.json"},
+  "own_inputs": [
+    "EXTENSION/script-engine/main.js",
+    "EXTENSION/webview/bootstrap.bundle.min.js",
+    "EXTENSION/webview/bootstrap.min.css",
+    "EXTENSION/webview/index.html",
+    "EXTENSION/webview/interface.js",
+    "src/packet_tracer_mcp/infrastructure/pts/build.py",
+    "tools/build_muejeje_pts.py"
+  ],
+  "reference_inputs": [],
+  "builder": {
+    "name": "Cisco Packet Tracer",
+    "version": "9.0.1.0858",
+    "kind": "packet-tracer-scripting-interface",
+    "sha256": "843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1"
+  },
+  "build_options": {
+    "engine_script_order": null,
+    "custom_interface_order": null,
+    "module_id": null,
+    "startup": null,
+    "privileges": null
+  },
+  "packaging": {
+    "status": "unresolved",
+    "compiler_command": null,
+    "content_validation": null
+  }
+}
