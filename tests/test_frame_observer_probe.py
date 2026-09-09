@@ -487,7 +487,7 @@ def test_each_target_identity_is_reconfirmed_against_the_enumerated_frame(select
 # 12, 13, 14 -- this slice adds no classifier, no MAC work, no PortFast.
 
 def test_the_runner_slice_adds_no_classifier_mac_or_portfast():
-    source = (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(
+    source = (ROOT / "src/packet_tracer_mcp/infrastructure/diagnostics/cp_scale_live.py").read_text(
         encoding="utf-8",
     )
     start = source.index("def _frame_observer_discovery")
@@ -1478,7 +1478,7 @@ def test_only_a_port_the_plan_gives_one_vlan_can_calibrate(phase3):
 # 16, 17, 18 -- this phase still adds no MAC work, no lifecycle, no classifier.
 
 def test_the_phase_three_slice_adds_no_mac_lifecycle_or_classifier():
-    source = (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(
+    source = (ROOT / "src/packet_tracer_mcp/infrastructure/diagnostics/cp_scale_live.py").read_text(
         encoding="utf-8",
     )
     start = source.index("def _tag_field_observation")
@@ -1552,7 +1552,7 @@ def test_the_control_getter_is_a_constant_and_never_chosen_by_side():
     namespace into this pytest process, which is exactly what the import
     isolation preflight exists to refuse.
     """
-    source = (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(
+    source = (ROOT / "src/packet_tracer_mcp/infrastructure/diagnostics/cp_scale_live.py").read_text(
         encoding="utf-8",
     )
 

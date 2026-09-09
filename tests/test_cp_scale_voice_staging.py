@@ -240,28 +240,24 @@ class _Applied:
 
 
 def _run(plan, result):
-    import tools.cp_scale_canonical_live as live
-    original = live.VoiceApplicator
-    live.VoiceApplicator = lambda runtime: SimpleNamespace(
+    applicator = SimpleNamespace(
         apply=lambda *a, **k: result,
     )
-    try:
-        return _stage_voice(
-            SimpleNamespace(
-                voice=plan,
-                stage=SimpleNamespace(value="floor1"),
-                topology=SimpleNamespace(physical_identity_hash="t"),
-                configuration=SimpleNamespace(semantic_hash="c"),
-            ),
-            voice_runtime=None,
-            composition=SimpleNamespace(voice_capabilities={{}}),
-            configuration=None,
-            statuses={{}},
-            context=ConfigurationRuntimeContext(),
-            manifest=None,
-        )
-    finally:
-        live.VoiceApplicator = original
+    return _stage_voice(
+        SimpleNamespace(
+            voice=plan,
+            stage=SimpleNamespace(value="floor1"),
+            topology=SimpleNamespace(physical_identity_hash="t"),
+            configuration=SimpleNamespace(semantic_hash="c"),
+        ),
+        voice_runtime=None,
+        applicator=applicator,
+        composition=SimpleNamespace(voice_capabilities={{}}),
+        configuration=None,
+        statuses={{}},
+        context=ConfigurationRuntimeContext(),
+        manifest=None,
+    )
 
 
 # No phone in this stage: nothing applied, nothing claimed, no failure.

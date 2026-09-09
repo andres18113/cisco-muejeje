@@ -611,7 +611,7 @@ def test_the_registered_spanning_tree_query_is_the_only_one_dispatched(verdict):
 
 
 def _runner_source():
-    return (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(
+    return (ROOT / "src/packet_tracer_mcp/infrastructure/observation/cp_scale_live.py").read_text(
         encoding="utf-8",
     )
 
@@ -619,31 +619,21 @@ def _runner_source():
 # 5 -- the reads sit inside the two proven Realtime boundaries.
 
 def test_both_reads_sit_inside_the_proven_realtime_window():
-    source = _runner_source()
-    start = source.index("def _execute_stage")
-    body = source[start:]
+    from tests.cp_scale_stage_fixture import voice_window_trace
 
-    before_boundary = body.index('"before": _voice_window_state(simulation)')
-    before_gate = body.index('_realtime_boundary_error(continuity["before"]')
-    before_read = body.index('evidence["stp_realtime_before_voice"]')
-    voice = body.index("voice_evidence = _stage_voice(")
-    after_read = body.index('evidence["stp_realtime_after_voice"]')
-    after_boundary = body.index('continuity["after"] = _voice_window_state')
+    result, trace = voice_window_trace()
+    assert trace == ["before", "stp_before", "voice", "stp_after", "after", "bindings", "diagnostic"]
+    assert result.report.realtime.verified
+    assert result.first_failed_boundary == "voice"
 
-    assert before_boundary < before_gate < before_read < voice
-    assert voice < after_read < after_boundary
-
-
-# 6 -- Simulation can never be the source of a Realtime STP claim.
 
 def test_the_simulation_diagnostic_runs_only_after_the_after_read():
-    source = _runner_source()
-    start = source.index("def _execute_stage")
-    body = source[start:]
+    from tests.cp_scale_stage_fixture import voice_window_trace
 
-    assert body.index('evidence["stp_realtime_after_voice"]') < body.index(
-        "_post_failure_simulation_diagnostic(",
-    )
+    result, trace = voice_window_trace(after_simulating=True)
+    assert trace == ["before", "stp_before", "voice", "stp_after", "after"]
+    assert not result.report.realtime.verified
+    assert result.diagnostics == ()
 
 
 def test_realtime_stp_evidence_reads_no_simulation_surface():
@@ -921,27 +911,17 @@ def test_the_retry_lives_in_the_cp_scale_observation_seam():
 
 
 def test_before_and_after_share_one_logical_observation_helper():
-    source = _runner_source()
-    start = source.index("def _execute_stage")
-    body = source[start:]
+    from tests.cp_scale_stage_fixture import voice_window_trace
 
-    before = body.index('evidence["stp_realtime_before_voice"]')
-    after = body.index('evidence["stp_realtime_after_voice"]')
-    for index in (before, after):
-        assert "_stp_realtime_evidence(" in body[index:index + 220]
-    # AFTER is not special-cased with its own retry knob.
-    assert body.count("_stp_realtime_evidence(") == 2
-    assert "attempts=" not in body[before:after + 220]
+    _, trace = voice_window_trace()
+    assert [item for item in trace if item.startswith("stp_")] == ["stp_before", "stp_after"]
 
 
 def test_the_logical_observation_completes_before_the_realtime_after_boundary():
-    source = _runner_source()
-    start = source.index("def _execute_stage")
-    body = source[start:]
+    from tests.cp_scale_stage_fixture import voice_window_trace
 
-    assert body.index('evidence["stp_realtime_after_voice"]') < body.index(
-        'continuity["after"] = _voice_window_state',
-    )
+    _, trace = voice_window_trace()
+    assert trace.index("stp_after") < trace.index("after")
 
 
 def test_this_patch_leaves_the_staging_defect_and_dhcp_untouched():

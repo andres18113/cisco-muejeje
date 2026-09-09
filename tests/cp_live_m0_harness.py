@@ -22,12 +22,13 @@ What the coordination doubles replace, and what stays real:
 
 * Replaced (Level A): import/Git/process preflight, the HTTP transport, the
   capability snapshot store, composition/projection, the physical, E5, E9 and
-  Voice runtimes, ``_execute_stage``, ``_checkpoint``, ``_cleanup_owned``,
+  Voice runtimes, the explicit ``_build_stage_executor`` factory,
+  ``_checkpoint``, ``_cleanup_owned``,
   evidence/checkpoint persistence and evidence archiving.  The transport double
   raises on both dispatch methods and every attempt is counted, so a passing
   probe cannot have contacted Packet Tracer or written synthetic capability
   evidence into the product store.
-* Real: ``run`` itself -- target contract resolution, the stage loop and its
+* Real: ``run`` and its ``_execute_stage`` adapter -- target contract resolution, the stage loop and its
   order, continuity between stages, checkpoint handling, ``_complete_router0_target``
   and its NO_MUTATION_REPLAY reading, archive/cleanup sequencing, the
   ``except``/``finally`` finalization and the returned code.
@@ -332,10 +333,11 @@ print(json.dumps(m0_verdict(code)))
         + _PROVENANCE_TRANSPORT
         + _CAPTURE_EVIDENCE
         + r'''
-successful_execute_stage = live._execute_stage
+successful_stage_factory = live._build_stage_executor
 
 
-def fail_floor2(projection, **kwargs):
+def fail_floor2(request):
+    projection = request.projection
     if projection.stage is CPScaleCanonicalStage.FLOOR2:
         record(
             "execute_stage",
@@ -350,10 +352,10 @@ def fail_floor2(projection, **kwargs):
                 "stage_outcome": "in_progress",
             },
         )
-    return successful_execute_stage(projection, **kwargs)
+    return successful_stage_factory().execute(request)
 
 
-live._execute_stage = fail_floor2
+live._build_stage_executor = lambda **kwargs: SimpleNamespace(execute=fail_floor2)
 code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
@@ -881,7 +883,7 @@ LEVEL_A_SUBSTITUTED_SYMBOLS = frozenset({
     "PacketTracerPhysicalTopologyRuntime",
     "CapabilitySnapshotStore",
     "compose_cp_scale_canonical",
-    "_execute_stage",
+    "_build_stage_executor",
     "_checkpoint",
     "_cleanup_owned",
     "_write_evidence",
@@ -890,6 +892,7 @@ LEVEL_A_SUBSTITUTED_SYMBOLS = frozenset({
 })
 PRODUCT_RULE_SYMBOLS = frozenset({
     "run",
+    "_execute_stage",
     "_complete_router0_target",
     "canonical_cp_scale_target_contract",
     "canonical_final_disposition",

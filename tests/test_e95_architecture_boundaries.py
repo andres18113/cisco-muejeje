@@ -57,3 +57,10 @@ def test_phone_control_port_exposes_no_ui_coordinates_or_callbacks():
     assert "coordinate" not in source.casefold()
     assert "click" not in source.casefold()
     assert "infrastructure" not in _imports(path)
+
+
+def test_cp_scale_stage_application_has_no_transport_tools_or_serialization_dependency():
+    for path in (PACKAGE / "application" / "cp_scale_live").glob("*.py"):
+        imports = _imports(path)
+        assert not any("infrastructure" in name or name.startswith("tools") for name in imports), path
+        assert not any(name in {"json", "subprocess"} for name in imports), path

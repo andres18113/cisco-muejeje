@@ -1,8 +1,8 @@
-"""Typed contracts for the local, offline CP-SCALE LIVE preflight."""
+"""Typed CP-SCALE LIVE preflight and bounded stage execution contracts."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
@@ -11,6 +11,254 @@ from ..use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTargetContract,
 )
 from .process_identity import packet_tracer_version_path_error
+
+from ..use_cases.compose_cp_scale_canonical import (
+    CPScaleCanonicalStage, CPScaleCanonicalStageProjection,
+    CPScaleSiteForwardingCheck,
+)
+from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
+from ..use_cases.observe_serial_orientation import SerialOrientationResult
+from ..use_cases.qualify_cp_scale_live import CanonicalMutationReplayAudit, CPScaleCanonicalVoiceEvidence
+from ...domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult, ConfigurationApplicationResult,
+)
+from ...domain.enterprise.models.configuration import ConfigurationPhase
+from ...domain.enterprise.models.control_plane_runtime import ControlPlaneApplicationResult
+from ...domain.enterprise.models.deployment import DeploymentManifest, EnvironmentFingerprint
+from ...domain.enterprise.models.physical_deployment import (
+    PhysicalDeploymentResult, PhysicalWorkspaceObservation,
+)
+from ...domain.enterprise.models.voice_runtime import VoiceApplicationResult
+from ...domain.models.plans import TopologyPlan
+from ...domain.models.typed_ping import TypedPingResult
+
+
+@dataclass(frozen=True)
+class CPScaleStageContinuity:
+    """Caller-owned replacement snapshot; no runtime or session ownership."""
+
+    previous_projection: CPScaleCanonicalStageProjection | None = None
+    previous_configuration: ConfigurationApplicationResult | None = None
+    previous_voice_action_results: tuple[ActionApplicationResult, ...] = ()
+    previous_control_plane_action_results: tuple[ActionApplicationResult, ...] = ()
+    verified_serial_topology: TopologyPlan | None = None
+    verified_serial_manifest: DeploymentManifest | None = None
+    last_workspace: PhysicalWorkspaceObservation | None = None
+
+
+@dataclass(frozen=True)
+class CPScaleObservationRecord:
+    """One bounded read with named provenance and its raw observation evidence."""
+
+    kind: str
+    stage: CPScaleCanonicalStage
+    provenance: str
+    status: str
+    evidence: dict[str, object]
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class CPScaleDiagnosticRequest:
+    projection: CPScaleCanonicalStageProjection
+    voice: CPScaleVoiceStageResult
+    realtime_failure_established: bool
+
+
+@dataclass(frozen=True)
+class CPScaleDiagnosticRecord:
+    """Diagnostic evidence has no acceptance or primary-failure field."""
+
+    stage: CPScaleCanonicalStage
+    evidence: dict[str, object]
+    initial_mode: str = ""
+    final_mode: str = ""
+    attempted_mutations: tuple[str, ...] = ()
+    restoration_verified: bool = False
+    error: str = ""
+    authority: str = field(default="DIAGNOSTIC_ONLY", init=False)
+
+
+@dataclass(frozen=True)
+class CPScaleDhcpStatisticsTarget:
+    device_name: str
+    interface: str = ""
+    segment_id: str = ""
+    control_interface: str = ""
+    control_segment_id: str = ""
+
+
+@dataclass(frozen=True)
+class CPScaleStageExecutionInput:
+    projection: CPScaleCanonicalStageProjection
+    composition: EnterpriseReferenceComposition
+    deployment: PhysicalDeploymentResult
+    delta_deployment: PhysicalDeploymentResult | None
+    fingerprint: EnvironmentFingerprint
+    packet_tracer_version: str
+    continuity: CPScaleStageContinuity = field(default_factory=CPScaleStageContinuity)
+    dhcp_statistics_target: CPScaleDhcpStatisticsTarget | None = None
+    dhcp_statistics_baseline: CPScaleObservationRecord | None = None
+    network_boundaries: tuple[CPScaleObservationRecord, ...] = ()
+    site_forwarding_checks: tuple[CPScaleSiteForwardingCheck, ...] = ()
+
+    @property
+    def configuration_attempt_limit(self) -> int:
+        """Initial application, one zero-mutation reread, optional Voice signal."""
+        return 2 + int(bool(self.projection.voice and self.projection.voice.actions))
+
+    @property
+    def diagnostic_attempt_limit(self) -> int:
+        return int(bool(self.projection.voice and self.projection.voice.actions))
+
+    @property
+    def required_observation_limit(self) -> int:
+        """Plan-derived cap, not a count inferred from the adapter's output.
+
+        Before/after physical (2), serial (1), STP (2), bindings (1),
+        one observation per declared L2 phase, and Voice mode pair/exchange (3).
+        Rereads authorize no mutation-phase callbacks. Workspace's two reads
+        and forwarding attempts have their own typed result slots.
+        """
+        phases = {action.phase for action in self.projection.configuration.actions}
+        l2_count = sum(phase in phases for phase in (
+            ConfigurationPhase.L2_DEFINITIONS, ConfigurationPhase.L2_INTERFACES,
+        ))
+        return 6 + l2_count + 3 * self.diagnostic_attempt_limit
+
+
+@dataclass(frozen=True)
+class CPScaleVoiceStageResult:
+    result: VoiceApplicationResult | None
+    staged: bool
+    error: str = ""
+    reason: str = ""
+    runtime_diagnostics: CPScaleObservationRecord | None = None
+
+
+@dataclass(frozen=True)
+class CPScaleMutationScope:
+    configuration: tuple[str, ...]
+    retained_configuration: tuple[str, ...]
+    control_plane: tuple[str, ...]
+    retained_control_plane: tuple[str, ...]
+    voice: tuple[str, ...]
+    retained_voice: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CPScaleRereadScope:
+    verified: bool
+    mutation_action_ids: tuple[str, ...] = ()
+    retained_action_ids: tuple[str, ...] = ()
+    retained_deferred_voice_action_ids: tuple[str, ...] = ()
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class CPScaleConfigurationReport:
+    contradictions: tuple[str, ...] = ()
+    serial_interfaces: CPScaleObservationRecord | None = None
+    reread_scope: CPScaleRereadScope | None = None
+    acceptance_error: str | None = None
+
+
+@dataclass(frozen=True)
+class CPScaleVoiceLifecycleEvent:
+    event: str
+    sequence: int
+    monotonic_ns: int
+    recorded_at: datetime
+
+
+@dataclass(frozen=True)
+class CPScaleRealtimeWindow:
+    before: CPScaleObservationRecord
+    after: CPScaleObservationRecord | None = None
+    verified: bool = False
+    failure_reason: str = ""
+
+
+@dataclass(frozen=True)
+class CPScaleCoreForwardingObservation:
+    source_device_name: str
+    destination_ipv4: str
+    attempts: tuple[TypedPingResult, ...]
+    verified: bool
+
+
+@dataclass(frozen=True)
+class CPScaleSiteForwardingObservation:
+    check: CPScaleSiteForwardingCheck
+    attempts: tuple[TypedPingResult, ...]
+    verified: bool
+
+
+@dataclass(frozen=True)
+class CPScaleForwardingResult:
+    core_verified: bool
+    core: tuple[CPScaleCoreForwardingObservation, ...]
+    site: tuple[CPScaleSiteForwardingObservation, ...] = ()
+    site_verified: bool | None = None
+    first_failure: str = ""
+    error: str = ""
+
+    @property
+    def verified(self) -> bool:
+        return self.core_verified and self.site_verified is not False
+
+
+@dataclass(frozen=True)
+class CPScaleStageReport:
+    """Closed reporting facts, never a second copy of application journals."""
+
+    scope: CPScaleMutationScope | None
+    configuration: CPScaleConfigurationReport | None
+    voice: CPScaleVoiceStageResult | None
+    lifecycle: tuple[CPScaleVoiceLifecycleEvent, ...]
+    realtime: CPScaleRealtimeWindow | None
+    canonical_voice: CPScaleCanonicalVoiceEvidence | None
+    canonical_voice_error: str
+    forwarding: CPScaleForwardingResult | None
+    workspace_first: PhysicalWorkspaceObservation | None
+    workspace_second: PhysicalWorkspaceObservation | None
+    workspace_verified: bool | None
+    site_forwarding_checks: tuple[CPScaleSiteForwardingCheck, ...]
+
+
+@dataclass(frozen=True)
+class CPScaleLiveStageResult:
+    """Typed authority survives failures; evidence is a compatibility view only.
+
+    The executor owns this snapshot. It keeps each application attempt once;
+    `configuration` refers to the last attempt, it is never reconstructed from
+    the reporting view. Retry bounds remain owned by the existing applicators.
+    """
+
+    stage: CPScaleCanonicalStage
+    outcome: str
+    projection: CPScaleCanonicalStageProjection
+    deployment: PhysicalDeploymentResult
+    delta_deployment: PhysicalDeploymentResult | None
+    manifest: DeploymentManifest | None
+    workspace: PhysicalWorkspaceObservation | None
+    configuration: ConfigurationApplicationResult | None
+    configuration_accepted: bool
+    configuration_attempts: tuple[ConfigurationApplicationResult, ...]
+    control_plane: ControlPlaneApplicationResult | None
+    voice: VoiceApplicationResult | None
+    replay_audit: CanonicalMutationReplayAudit | None
+    orientation: SerialOrientationResult | None
+    required_observations: tuple[CPScaleObservationRecord, ...]
+    diagnostics: tuple[CPScaleDiagnosticRecord, ...]
+    first_failed_boundary: str | None
+    failure: str
+    continuity: CPScaleStageContinuity
+    report: CPScaleStageReport
+
+    @property
+    def forwarding(self) -> tuple[CPScaleSiteForwardingObservation, ...]:
+        return self.report.forwarding.site if self.report.forwarding else ()
 
 
 class CPScaleCheckState(str, Enum):

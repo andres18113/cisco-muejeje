@@ -74,6 +74,44 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
 
 verdict = {{}}
 
+# Explicit per-executor injection; no runner globals are forwarded to src.
+from packet_tracer_mcp.application.cp_scale_live.contracts import (
+    CPScaleVoiceStageResult, CPScaleDiagnosticRecord,
+)
+original_stage_factory = live._build_stage_executor
+stage_injections = {{}}
+
+def build_stage_executor(**dependencies):
+    executor = original_stage_factory(**dependencies)
+    if "configuration_applicator" in stage_injections:
+        executor.configuration.applicator = stage_injections["configuration_applicator"]
+    if "contradiction" in stage_injections:
+        executor.configuration.contradiction_policy = stage_injections["contradiction"]
+    if "acceptance" in stage_injections:
+        executor.configuration.acceptance_policy = stage_injections["acceptance"]
+    if "orientation" in stage_injections:
+        executor.observations.serial_orientation = stage_injections["orientation"]
+    if "serial_wait" in stage_injections:
+        executor.configuration.serial_wait = stage_injections["serial_wait"]
+    if "network" in stage_injections:
+        executor.observations.network_state = stage_injections["network"]
+    if "voice" in stage_injections:
+        def voice(*args, **kwargs):
+            evidence = stage_injections["voice"](*args, **kwargs)
+            return CPScaleVoiceStageResult(None, evidence["staged"], error=evidence.get("error", ""))
+        executor.voice.apply = voice
+    if "bindings" in stage_injections:
+        executor.observations.bindings = stage_injections["bindings"]
+    if "exchange" in stage_injections:
+        executor.observations.dhcp_exchange = stage_injections["exchange"]
+    if "diagnostic" in stage_injections:
+        executor.diagnostics.diagnose = lambda request: CPScaleDiagnosticRecord(
+            request.projection.stage, stage_injections["diagnostic"](),
+        )
+    return executor
+
+live._build_stage_executor = build_stage_executor
+
 verdict["runtime_checkpoint_sits_with_ignored_evidence"] = (
     CHECKPOINT_PATH.parent == EVIDENCE_PATH.parent
 )
@@ -108,6 +146,7 @@ trunk_plan = SimpleNamespace(verification_expectations=[SimpleNamespace(
 )])
 trunk_result = SimpleNamespace(verification_results=[SimpleNamespace(
     expectation_id="verify-trunk",
+    action_id="cfg-1",
     status=ActionExecutionStatus.VERIFIED,
     evidence_method="fresh_show_interfaces_trunk",
     fresh_evidence=True,
@@ -401,15 +440,18 @@ def sim_topology():
     )
 
 def sim_voice(**overrides):
+    from packet_tracer_mcp.domain.enterprise.models.voice_runtime import VoiceApplicationResult, PhoneRegistrationResult
     row = {{
-        "phone_id": PHONE_ID, "extension": "3002", "status": "failed",
+        "expectation_id": "registration/phone", "phone_id": PHONE_ID, "extension": "3002", "status": "failed",
         "evidence_method": "fresh_privileged_show_ephone", "fresh_evidence": True,
         "endpoint_interface": "Vlan20", "endpoint_interface_present": True,
         "endpoint_address_channel": True, "endpoint_dhcp_enabled": True,
         "endpoint_ipv4": "",
     }}
     row.update(overrides)
-    return {{"staged": True, "error": "voice failed", "result": {{"registrations": [row]}}}}
+    return VoiceApplicationResult(voice_plan_id="voice", voice_semantic_hash="voice-hash",
+        source_topology_hash="physical", source_configuration_hash="configuration", status="failed",
+        registrations=[PhoneRegistrationResult(**row)])
 
 class SimBridge:
     """Scripted PT bridge. Records every script the diagnostic dispatches."""
@@ -612,13 +654,14 @@ verified_deployment = SimpleNamespace(
     status=PhysicalDeploymentStatus.VERIFIED,
     manifest=SimpleNamespace(),
     errors=[],
+    item_results=[],
     model_dump=lambda mode="json": {{"status": "verified"}},
 )
-live.ConfigurationApplicator = lambda _runtime: SimpleNamespace(
+stage_injections["configuration_applicator"] = SimpleNamespace(
     apply=lambda *args, **kwargs: trunk_result,
 )
-live.configuration_application_contradiction = lambda _result: "typed mismatch"
-live.inherit_verified_serial_orientation = lambda *args, **kwargs: SimpleNamespace(
+stage_injections["contradiction"] = lambda _result: "typed mismatch"
+stage_injections["orientation"] = lambda *args, **kwargs: SimpleNamespace(
     verified=True,
     oriented_manifest=verified_deployment.manifest,
     errors=[],
@@ -653,26 +696,22 @@ else:
 # A voice contradiction is precisely when server bindings are diagnostic. The
 # additive observation must therefore be journalled before that contradiction
 # escapes, not on the stage's success-only tail.
-live.configuration_application_contradiction = lambda _result: ""
-live.canonical_stage_configuration_error = lambda *args, **kwargs: ""
-live._wait_for_serial_interfaces = lambda *args, **kwargs: (True, [])
-live._network_state_observation = lambda *args, **kwargs: {{
+stage_injections["contradiction"] = lambda _result: ""
+stage_injections["acceptance"] = lambda *args, **kwargs: ""
+stage_injections["serial_wait"] = lambda *args, **kwargs: (True, [])
+stage_injections["network"] = lambda *args, **kwargs: {{
     "boundary": kwargs.get("boundary", ""),
 }}
-live.derive_foundational_statuses = lambda *args, **kwargs: {{}}
-live._stage_voice = lambda *args, **kwargs: {{
+stage_injections["voice"] = lambda *args, **kwargs: {{
     "staged": True, "error": "voice mismatch",
 }}
-live._dhcp_server_binding_evidence = lambda *args, **kwargs: [{{
+stage_injections["bindings"] = lambda *args, **kwargs: [{{
     "sentinel": "binding evidence retained",
 }}]
-live._dhcp_server_statistics_point = lambda *args, **kwargs: {{
-    "sentinel": "post statistics retained",
-}}
-live._dhcp_server_statistics_delta = lambda *args, **kwargs: {{
+stage_injections["exchange"] = lambda *args, **kwargs: {{
     "sentinel": "statistics delta retained",
 }}
-live._post_failure_simulation_diagnostic = lambda *args, **kwargs: {{
+stage_injections["diagnostic"] = lambda *args, **kwargs: {{
     "sentinel": "post failure simulation retained",
 }}
 projection.voice = SimpleNamespace(actions=[], phone_assignments=[])
@@ -729,7 +768,7 @@ class ContinuityBridge:
         return None if state is None else json.dumps(state)
 
 voice_invocations = []
-live._stage_voice = lambda *args, **kwargs: (
+stage_injections["voice"] = lambda *args, **kwargs: (
     voice_invocations.append(True) or {{"staged": True, "error": "voice mismatch"}}
 )
 projection.voice = SimpleNamespace(
@@ -1157,9 +1196,9 @@ def test_the_diagnostic_never_mutates_the_control_endpoint(verdict):
 
 
 def test_the_runner_carries_no_dhcp_trace_classifier():
-    source = (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(encoding="utf-8")
+    source = (ROOT / "src/packet_tracer_mcp/infrastructure/diagnostics/cp_scale_live.py").read_text(encoding="utf-8")
     start = source.index("def _post_failure_simulation_diagnostic")
-    body = source[start:source.index("\ndef ", start + 10)]
+    body = source[start:]
 
     for forbidden in ("0.0.0.0", "255.255.255.255", "DHCPDISCOVER", "bootp", "type67"):
         assert forbidden not in body

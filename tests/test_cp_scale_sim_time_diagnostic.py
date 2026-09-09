@@ -190,15 +190,16 @@ def topology():
 
 
 def voice():
-    return {"staged": True, "error": "voice failed", "result": {
-        "registrations": [{
-            "phone_id": PHONE_ID, "extension": "3002", "status": "failed",
+    from packet_tracer_mcp.domain.enterprise.models.voice_runtime import VoiceApplicationResult, PhoneRegistrationResult
+    return VoiceApplicationResult(voice_plan_id="voice", voice_semantic_hash="voice-hash",
+        source_topology_hash="physical", source_configuration_hash="configuration", status="failed",
+        registrations=[PhoneRegistrationResult(**{
+            "expectation_id": "registration/phone", "phone_id": PHONE_ID, "extension": "3002", "status": "failed",
             "evidence_method": "fresh", "fresh_evidence": True,
             "endpoint_interface": "Vlan20", "endpoint_interface_present": True,
             "endpoint_address_channel": True, "endpoint_dhcp_enabled": True,
             "endpoint_ipv4": "",
-        }],
-    }}
+        })])
 
 
 class Bridge:
@@ -484,11 +485,11 @@ def test_every_progression_terminal_path_restores_then_keeps_raw_scopes(
 
 
 def test_runner_source_contains_no_dhcp_or_topology_mutator():
-    source = (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(
+    source = (ROOT / "src/packet_tracer_mcp/infrastructure/diagnostics/cp_scale_live.py").read_text(
         encoding="utf-8",
     )
     start = source.index("def _post_failure_simulation_diagnostic")
-    body = source[start:source.index("\ndef ", start + 10)]
+    body = source[start:]
 
     for forbidden in (
         "setDhcpClientFlag", "configurePcIp", "setIpAddress", "renew",
@@ -499,7 +500,7 @@ def test_runner_source_contains_no_dhcp_or_topology_mutator():
 
 
 def test_the_obsolete_fixed_step_budget_contract_is_gone():
-    source = (ROOT / "tools" / "cp_scale_canonical_live.py").read_text(
+    source = (ROOT / "src/packet_tracer_mcp/infrastructure/diagnostics/cp_scale_live.py").read_text(
         encoding="utf-8",
     )
 

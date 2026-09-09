@@ -632,18 +632,19 @@ def projection_for(composition, stage, **kwargs):
         topology=SimpleNamespace(
             devices=[SimpleNamespace(id=stage.value + "/device")],
             links=[SimpleNamespace(id=stage.value + "/link")],
+            modules=[],
             physical_identity_hash="e4/" + stage.value,
         ),
         configuration=SimpleNamespace(
-            actions=[], semantic_hash="e5/" + stage.value,
+            actions=[], semantic_hash="e5/" + stage.value, verification_expectations=[],
         ),
         control_plane=SimpleNamespace(
-            actions=[], semantic_hash="e9/" + stage.value,
+            actions=[], semantic_hash="e9/" + stage.value, verification_expectations=[],
         ),
-        voice=SimpleNamespace(actions=[]),
+        voice=SimpleNamespace(actions=[], phone_assignments=[]),
         forwarding_checks={},
         branch_forwarding_checks=(
-            (SimpleNamespace(id="forward-1"),)
+            (ForwardingCheck(id="forward-1"),)
             if stage is CPScaleCanonicalStage.ROUTER0_BRANCH else ()
         ),
     )
@@ -682,7 +683,42 @@ def execute_stage(projection, **kwargs):
         evidence["site_forwarding"] = [
             {"check": {"id": "forward-1"}, "verified": True},
         ]
-    return evidence, Deployment().manifest, Workspace(), object()
+    from packet_tracer_mcp.application.cp_scale_live.contracts import (
+        CPScaleLiveStageResult, CPScaleStageContinuity, CPScaleStageReport,
+        CPScaleMutationScope, CPScaleForwardingResult, CPScaleSiteForwardingObservation,
+    )
+    from packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
+    control = SimpleNamespace(action_results=(), model_dump=lambda mode: {"action_results": []})
+    forwarding = (
+        CPScaleForwardingResult(True, (), tuple(
+            CPScaleSiteForwardingObservation(check, (TypedPingResult(True, True),), True)
+            for check in kwargs.get("site_forwarding_checks", ())
+        ), True) if kwargs.get("site_forwarding_checks") else None
+    )
+    return CPScaleLiveStageResult(
+        stage=stage, outcome="verified", projection=projection, deployment=Deployment(),
+        delta_deployment=None, manifest=Deployment().manifest, workspace=Workspace(),
+        configuration=object(), configuration_accepted=True, configuration_attempts=(),
+        control_plane=control, voice=None,
+        replay_audit=SimpleNamespace(compact_summary=lambda: evidence["mutation_replay_audit"]),
+        orientation=None, required_observations=(), diagnostics=(), first_failed_boundary=None,
+        failure="", continuity=CPScaleStageContinuity(), report=CPScaleStageReport(
+            CPScaleMutationScope((), (), (), (), (), ()), None, None, (), None, None, "",
+            forwarding, Workspace(), Workspace(), True, tuple(kwargs.get("site_forwarding_checks", ())),
+        ),
+    )
+
+
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ForwardingCheck:
+    id: str
+
+
+class StageExecutor:
+    def execute(self, request):
+        return execute_stage(request.projection, site_forwarding_checks=request.site_forwarding_checks)
 
 
 def transition_contract(previous, current):
@@ -833,7 +869,7 @@ live.project_cp_scale_canonical_delta = (
 )
 live.canonical_stage_transition_contract = transition_contract
 live.reconcile_canonical_stage_deployment = reconcile
-live._execute_stage = execute_stage
+live._build_stage_executor = lambda **kwargs: StageExecutor()
 live._checkpoint = checkpoint
 live._cleanup_owned = cleanup_owned
 live._write_evidence = lambda evidence: None
@@ -872,6 +908,12 @@ print(json.dumps({"code": code, "calls": calls}))
         "floor3",
         "router0-branch",
     ]
+    # Physical manifest assembly happens once before each incremental stage;
+    # it is distinct from the two terminal workspace reads tested on the real
+    # StageExecutor. Neither gate may be moved or duplicated by extraction.
+    assert [item["event"] for item in calls if item["event"] in {
+        "deploy", "reconcile", "execute_stage",
+    }] == ["deploy", "execute_stage"] + ["deploy", "reconcile", "execute_stage"] * 5
     assert [item["event"] for item in calls[-6:]] == [
         "execute_stage", "archive", "cleanup", "archive", "summary",
         "transport.stop",

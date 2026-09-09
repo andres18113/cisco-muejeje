@@ -468,19 +468,21 @@ def test_every_control_plane_stage_mutates_only_new_actions():
 
 
 def test_canonical_live_runner_uses_delta_mutation_with_cumulative_plan():
-    source = Path("tools/cp_scale_canonical_live.py").read_text(
-        encoding="utf-8",
-    )
+    from dataclasses import replace
+    from tests.cp_scale_stage_fixture import stage_fixture
+    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
 
-    assert "canonical_stage_configuration_mutation_ids(" in source
-    assert "mutation_action_ids=configuration_mutation_ids" in source
-    assert "retained_action_results=(" in source
-    assert "previous_configuration.action_results" in source
-    assert "previous_configuration = configuration" in source
-    assert "canonical_stage_control_plane_mutation_ids(" in source
-    assert "mutation_action_ids=control_plane_mutation_ids" in source
-    assert "retained_action_results=retained_control_plane_action_results" in source
-    assert "previous_control_plane_action_results = tuple(" in source
+    fixture = stage_fixture(CPScaleStageExecutor)
+    first = fixture.executor.execute(fixture.request)
+    second = fixture.executor.execute(replace(fixture.request, continuity=first.continuity))
+    assert second.outcome == "verified"
+    assert second.projection is first.projection  # The cumulative typed plan is retained.
+    assert second.report.scope.configuration == ()
+    assert second.report.scope.control_plane == ()
+    assert second.configuration.retained_action_ids == ["hostname"]
+    assert second.control_plane.retained_action_ids == [item.id for item in fixture.request.projection.control_plane.actions]
+    assert fixture.configuration_runtime.apply_calls == [["hostname"]]
+    assert second.replay_audit.verified
 
 
 def test_floor2_voice_mutation_is_delta_with_phone_files_regenerated():
@@ -586,34 +588,38 @@ def test_voice_delta_rejects_changed_stable_action_outside_phone_files():
 
 
 def test_canonical_live_runner_uses_voice_delta_and_retained_results():
-    source = Path("tools/cp_scale_canonical_live.py").read_text(
-        encoding="utf-8",
-    )
+    application = Path("src/packet_tracer_mcp/application/cp_scale_live")
+    executor = (application / "stage_executor.py").read_text(encoding="utf-8")
+    voice = (application / "voice_stage.py").read_text(encoding="utf-8")
+    coordinator = Path("tools/cp_scale_canonical_live.py").read_text(encoding="utf-8")
 
-    assert "canonical_stage_voice_mutation_ids(" in source
-    assert "mutation_action_ids=voice_mutation_ids" in source
-    assert "retained_voice_action_results=retained_voice_action_results" in source
-    assert "retained_action_results=retained_voice_action_results" in source
-    assert "previous_voice_action_results = tuple(" in source
-    assert "previous_projection=previous_projection" in source
-    assert "retained_state_only=not voice_mutation_ids" in source
+    assert "canonical_stage_voice_mutation_ids(" in executor
+    assert "voice_mutation_ids=scope.voice" in executor
+    assert "continuity.previous_voice_action_results" in executor
+    assert "retained_action_results=retained_voice_action_results" in voice
+    assert "previous_voice_action_results = tuple(voice_result.action_results)" in coordinator
+    assert "retained_state_only=not scope.voice" in executor
+    assert "ActionApplicationResult.model_validate" not in coordinator
 
 
 def test_canonical_live_retains_network_state_at_each_causal_boundary():
-    source = Path("tools/cp_scale_canonical_live.py").read_text(
-        encoding="utf-8",
-    )
+    coordinator = Path("tools/cp_scale_canonical_live.py").read_text(encoding="utf-8")
+    application = Path("src/packet_tracer_mcp/application/cp_scale_live")
+    executor = (application / "stage_executor.py").read_text(encoding="utf-8")
+    configuration = (application / "configuration_stage.py").read_text(encoding="utf-8")
+    voice = (application / "voice_stage.py").read_text(encoding="utf-8")
+    observations = Path("src/packet_tracer_mcp/infrastructure/observation/cp_scale_live.py").read_text(encoding="utf-8")
 
+    assert "before_physical_delta" in coordinator
     for boundary in (
-        "before_physical_delta",
         "after_physical_delta",
         "after_l2_definitions",
         "after_l2_interfaces",
     ):
-        assert boundary in source
-    assert "phase_observer=configuration_phase_observer" in source
-    assert "trunk_transition_observer=" in source
-    assert "parse_show_interfaces_trunk" in source
-    assert "parse_show_spanning_tree" in source
-    assert '"runtime_diagnostics"' in source
-    assert "drain_diagnostic_evidence" in source
+        assert boundary in executor
+    assert "phase_observer=configuration_phase_observer" in configuration
+    assert "trunk_transition_observer=" in coordinator
+    assert "parse_show_interfaces_trunk" in observations
+    assert "parse_show_spanning_tree" in observations
+    assert "runtime_diagnostics=diagnostics" in voice
+    assert "drain_diagnostic_evidence" in voice
