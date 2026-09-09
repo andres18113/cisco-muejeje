@@ -288,3 +288,57 @@ def test_cleanup_rejects_unknown_realtime_presence_and_stays_serializable(
     assert result.verified is False
     assert result.error
     assert evidence["state"] == {"observed": True, "simulation_mode": False}
+
+
+def test_stage_wrong_realtime_object_fails_closed_and_serializes_as_absent() -> None:
+    from dataclasses import replace
+
+    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import (
+        CPScaleStageExecutor,
+    )
+    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
+        stage_result_evidence,
+    )
+    from tests.cp_scale_stage_fixture import stage_fixture
+    from tests.test_voice_runtime import _compile
+
+    fixture = stage_fixture(CPScaleStageExecutor)
+    fixture.request = replace(
+        fixture.request,
+        projection=replace(fixture.request.projection, voice=_compile().plan),
+    )
+    fixture.executor.observations.voice_window_state = lambda: "not-a-realtime-state"
+
+    result = fixture.executor.execute(fixture.request)
+    evidence = stage_result_evidence(result)
+
+    assert result.outcome == "failed"
+    assert result.report.realtime.before.error
+    assert evidence["voice_realtime_continuity"]["before"] is None
+
+
+def test_cleanup_wrong_realtime_object_fails_closed_and_serializes_as_absent(
+    monkeypatch,
+) -> None:
+    from src.packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
+    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
+        realtime_evidence,
+    )
+
+    monkeypatch.setattr(cp_scale_live_run, "_voice_window_state", lambda runtime: {})
+    monkeypatch.setattr(
+        cp_scale_live_run,
+        "cleanup_realtime_state",
+        lambda raw: "not-a-realtime-state",
+    )
+    observations = cp_scale_live_run.PacketTracerCPScaleRunObservations(
+        SimpleTransport(),
+        cp_scale_live_run.CPScaleActiveProjection(),
+    )
+
+    result = observations.cleanup_realtime()
+    evidence = realtime_evidence(result)
+
+    assert result.verified is False
+    assert result.error
+    assert evidence["state"] is None

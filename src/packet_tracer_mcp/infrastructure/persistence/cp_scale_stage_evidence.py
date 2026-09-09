@@ -20,7 +20,7 @@ from ...shared.utils import serialize_typed_ping_evidence
 
 
 def realtime_state_evidence(state: CPScaleRealtimeState | None) -> dict[str, object] | None:
-    if state is None:
+    if state is None or type(state) is not CPScaleRealtimeState:
         return None
     present = state.present if type(state.present) is tuple else ()
     return {
