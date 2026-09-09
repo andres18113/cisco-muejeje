@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.cp_scale_live_test_composition import OFFLINE_COMPOSITION, TERMINAL_FIXTURE
+
 import json
 import subprocess
 import sys
@@ -14,6 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _probe(source: str) -> dict:
+    if "live._complete_router0_target" in source:
+        source = source.replace("live._complete_router0_target", "_complete_router0_target")
+        source = source.replace("import packet_tracer_mcp.adapters.cli.cp_scale_live as live",
+            "import packet_tracer_mcp.adapters.cli.cp_scale_live as live\n" + TERMINAL_FIXTURE)
     completed = subprocess.run(
         [sys.executable, "-c", source],
         cwd=ROOT,
@@ -29,7 +35,9 @@ def test_runner_dispatches_both_typed_branch_directions_and_fails_each_closed():
     verdict = _probe(r'''
 import json
 
-import tools.cp_scale_canonical_live as live
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
+from types import SimpleNamespace
+seams = SimpleNamespace()
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleForwardingAuthority,
     CPScaleSiteForwardingCheck,
@@ -149,7 +157,9 @@ print(json.dumps({
 def test_runner_router0_terminal_sequence_is_successful_and_stops_at_target():
     verdict = _probe(r'''
 import json
-import tools.cp_scale_canonical_live as live
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
+from types import SimpleNamespace
+seams = SimpleNamespace()
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
@@ -157,11 +167,11 @@ from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
 
 contract = canonical_cp_scale_target_contract(CPScaleCanonicalTarget.ROUTER0_BRANCH)
 events = []
-live._write_evidence = lambda evidence: events.append("write")
-live._write_checkpoint_summary = lambda stage, evidence: events.append(
+seams._write_evidence = lambda evidence: events.append("write")
+seams._write_checkpoint_summary = lambda stage, evidence: events.append(
     "summary:" + stage
 )
-live._cleanup_owned = lambda *args, **kwargs: (
+seams._cleanup_owned = lambda *args, **kwargs: (
     events.append("cleanup")
     or {"verified": True, "first": {}, "second": {}, "restoration_error": ""}
 )
@@ -279,7 +289,9 @@ def test_runner_never_publishes_router0_success_before_every_terminal_gate(
 ):
     verdict = _probe(rf'''
 import json
-import tools.cp_scale_canonical_live as live
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
+from types import SimpleNamespace
+seams = SimpleNamespace()
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
@@ -288,8 +300,8 @@ from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
 failure = {failure!r}
 contract = canonical_cp_scale_target_contract(CPScaleCanonicalTarget.ROUTER0_BRANCH)
 events = []
-live._write_evidence = lambda evidence: events.append("write")
-live._write_checkpoint_summary = lambda stage, evidence: events.append("summary")
+seams._write_evidence = lambda evidence: events.append("write")
+seams._write_checkpoint_summary = lambda stage, evidence: events.append("summary")
 
 def cleanup(*args, **kwargs):
     events.append("cleanup")
@@ -301,7 +313,7 @@ def cleanup(*args, **kwargs):
         "second": {{}},
     }}
 
-live._cleanup_owned = cleanup
+seams._cleanup_owned = cleanup
 
 def realtime():
     events.append("realtime")
@@ -367,7 +379,9 @@ def test_api_rejects_invalid_or_retained_router0_target_before_pt_contact():
 import inspect
 import json
 from types import SimpleNamespace
-import tools.cp_scale_canonical_live as live
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
+from types import SimpleNamespace
+seams = SimpleNamespace()
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
@@ -382,7 +396,13 @@ def contact():
 live.PacketTracerImportIsolationReader = lambda: SimpleNamespace(read=contact)
 live.GitCPScaleRepositoryReader = lambda: SimpleNamespace(read=contact)
 live.PowerShellPacketTracerProcessReader = lambda: SimpleNamespace(read=contact)
-live._write_evidence = lambda evidence: None
+seams._write_evidence = lambda evidence: None
+original_factory = live._build_coordinator
+def isolated_factory(request):
+    coordinator = original_factory(request)
+    coordinator.persistence.write_progress = lambda report: None
+    return coordinator
+live._build_coordinator = isolated_factory
 try:
     live.run(
         "9.0.1.0858",
@@ -449,7 +469,9 @@ def test_a_replayed_retained_action_blocks_the_router0_closure(
 ):
     verdict = _probe(rf'''
 import json
-import tools.cp_scale_canonical_live as live
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
+from types import SimpleNamespace
+seams = SimpleNamespace()
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
@@ -457,9 +479,9 @@ from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
 
 contract = canonical_cp_scale_target_contract(CPScaleCanonicalTarget.ROUTER0_BRANCH)
 events = []
-live._write_evidence = lambda evidence: events.append("write")
-live._write_checkpoint_summary = lambda stage, evidence: events.append("summary")
-live._cleanup_owned = lambda *args, **kwargs: (
+seams._write_evidence = lambda evidence: events.append("write")
+seams._write_checkpoint_summary = lambda stage, evidence: events.append("summary")
+seams._cleanup_owned = lambda *args, **kwargs: (
     events.append("cleanup") or {{"verified": True}}
 )
 
@@ -539,7 +561,10 @@ RUN_DOUBLES = r'''
 import json
 from types import SimpleNamespace
 
-import tools.cp_scale_canonical_live as live
+import tools.cp_scale_canonical_live as entry
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
+from types import SimpleNamespace
+seams = SimpleNamespace()
 from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleCheckState,
     CPScaleImportIsolationEvidence,
@@ -561,6 +586,7 @@ from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
 # Taken before the first double is installed, so a probe can name exactly which
 # runner symbols it replaced instead of asserting a hand-written list.
 PRODUCT_SYMBOLS = dict(vars(live))
+assert entry.run is live.run
 
 HEAD = "a" * 40
 calls = []
@@ -700,7 +726,7 @@ def execute_stage(projection, **kwargs):
         delta_deployment=None, manifest=Deployment().manifest, workspace=Workspace(),
         configuration=object(), configuration_accepted=True, configuration_attempts=(),
         control_plane=control, voice=None,
-        replay_audit=SimpleNamespace(compact_summary=lambda: evidence["mutation_replay_audit"]),
+        replay_audit=SimpleNamespace(verified=True, claim="NO_MUTATION_REPLAY", surfaces=(), compact_summary=lambda: evidence["mutation_replay_audit"]),
         orientation=None, required_observations=(), diagnostics=(), first_failed_boundary=None,
         failure="", continuity=CPScaleStageContinuity(), report=CPScaleStageReport(
             CPScaleMutationScope((), (), (), (), (), ()), None, None, (), None, None, "",
@@ -828,12 +854,12 @@ class LocalPreflight:
         )
 
 
-live._build_local_preflight = lambda: LocalPreflight()
-live.PacketTracerHttpTransport = Transport
-live.PacketTracerPhysicalTopologyRuntime = Physical
-live.disposable_workspace_error = lambda observation: ""
-live.CapabilitySnapshotStore = lambda base_dir: object()
-live.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
+seams._build_local_preflight = lambda: LocalPreflight()
+seams.PacketTracerHttpTransport = Transport
+seams.PacketTracerPhysicalTopologyRuntime = Physical
+seams.disposable_workspace_error = lambda observation: ""
+seams.CapabilitySnapshotStore = lambda base_dir: object()
+seams.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
     valid=True,
     issues=[],
     topology=object(),
@@ -841,47 +867,48 @@ live.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
     control_plane=object(),
     capabilities={},
 )
-live.canonical_required_capability_probes = lambda composition: {}
-live.PacketTracerBridgeProbeRuntime = lambda *args, **kwargs: object()
-live.CapabilityDiscoveryService = lambda **kwargs: object()
-live.EnterpriseCapabilityAdapter = lambda: SimpleNamespace(
+seams.canonical_required_capability_probes = lambda composition: {}
+seams.PacketTracerBridgeProbeRuntime = lambda *args, **kwargs: object()
+seams.CapabilityDiscoveryService = lambda **kwargs: object()
+seams.EnterpriseCapabilityAdapter = lambda: SimpleNamespace(
     identity_for=None, access_ports_for=None,
 )
-live.canonical_cleanup_restoration_error = lambda *args: ""
-live.project_cp_scale_canonical_stage = projection_for
-live._voice_dhcp_statistics_target = lambda configuration, voice: None
-live.EnterprisePhysicalTopologyDeployer = Deployer
-live.ControlledIosExecutor = lambda *args, **kwargs: object()
-live.PacketTracerEnterpriseConfigurationRuntime = (
+seams.canonical_cleanup_restoration_error = lambda *args: ""
+seams.project_cp_scale_canonical_stage = projection_for
+seams._voice_dhcp_statistics_target = lambda configuration, voice: None
+seams.EnterprisePhysicalTopologyDeployer = Deployer
+seams.ControlledIosExecutor = lambda *args, **kwargs: object()
+seams.PacketTracerEnterpriseConfigurationRuntime = (
     lambda *args, **kwargs: object()
 )
-live.PacketTracerEnterpriseControlPlaneRuntime = (
+seams.PacketTracerEnterpriseControlPlaneRuntime = (
     lambda *args, **kwargs: object()
 )
-live.PacketTracerEnterpriseVoiceRuntime = lambda *args, **kwargs: object()
-live.canonical_delta_deployment_error = lambda *args, **kwargs: ""
-live.canonical_stage_resume_error = lambda *args, **kwargs: ""
-live._network_state_observation = lambda *args, **kwargs: {}
-live.project_cp_scale_canonical_delta = (
+seams.PacketTracerEnterpriseVoiceRuntime = lambda *args, **kwargs: object()
+seams.canonical_delta_deployment_error = lambda *args, **kwargs: ""
+seams.canonical_stage_resume_error = lambda *args, **kwargs: ""
+seams._network_state_observation = lambda *args, **kwargs: {}
+seams.project_cp_scale_canonical_delta = (
     lambda previous, current: SimpleNamespace(
         devices=(), modules=(), links=(),
     )
 )
-live.canonical_stage_transition_contract = transition_contract
-live.reconcile_canonical_stage_deployment = reconcile
-live._build_stage_executor = lambda **kwargs: StageExecutor()
-live._checkpoint = checkpoint
-live._cleanup_owned = cleanup_owned
-live._write_evidence = lambda evidence: None
-live._write_checkpoint_summary = lambda stage, evidence: record(
+seams.canonical_stage_transition_contract = transition_contract
+seams.reconcile_canonical_stage_deployment = reconcile
+seams._build_stage_executor = lambda **kwargs: StageExecutor()
+seams._checkpoint = checkpoint
+seams._cleanup_owned = cleanup_owned
+seams._write_evidence = lambda evidence: None
+seams._write_checkpoint_summary = lambda stage, evidence: record(
     "summary", stage=stage,
 )
-live.archive_cp_scale_canonical_evidence = archive_evidence
-live.SimulationTraceRuntime = lambda *args, **kwargs: object()
-live._voice_window_state = lambda runtime: {"mode": "realtime"}
-live._realtime_boundary_error = lambda state, edge: ""
-live._full_qualification_projection = refuse_full_qualification
-'''
+seams.archive_cp_scale_canonical_evidence = archive_evidence
+seams.SimulationTraceRuntime = lambda *args, **kwargs: object()
+seams._voice_window_state = lambda runtime: {"mode": "realtime"}
+seams._realtime_boundary_error = lambda state, edge: ""
+seams._full_qualification_projection = refuse_full_qualification
+seams._execute_stage = None
+''' + OFFLINE_COMPOSITION
 
 
 def test_run_reaches_router0_cleanup_and_never_enters_the_later_stages():

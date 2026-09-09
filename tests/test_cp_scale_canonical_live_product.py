@@ -591,26 +591,27 @@ def test_canonical_live_runner_uses_voice_delta_and_retained_results():
     application = Path("src/packet_tracer_mcp/application/cp_scale_live")
     executor = (application / "stage_executor.py").read_text(encoding="utf-8")
     voice = (application / "voice_stage.py").read_text(encoding="utf-8")
-    coordinator = Path("tools/cp_scale_canonical_live.py").read_text(encoding="utf-8")
+    coordinator = (application / "coordinator.py").read_text(encoding="utf-8")
 
     assert "canonical_stage_voice_mutation_ids(" in executor
     assert "voice_mutation_ids=scope.voice" in executor
     assert "continuity.previous_voice_action_results" in executor
     assert "retained_action_results=retained_voice_action_results" in voice
-    assert "previous_voice_action_results = tuple(voice_result.action_results)" in coordinator
+    assert "tuple(result.voice.action_results)" in coordinator
     assert "retained_state_only=not scope.voice" in executor
     assert "ActionApplicationResult.model_validate" not in coordinator
 
 
 def test_canonical_live_retains_network_state_at_each_causal_boundary():
-    coordinator = Path("tools/cp_scale_canonical_live.py").read_text(encoding="utf-8")
     application = Path("src/packet_tracer_mcp/application/cp_scale_live")
+    adapter = Path("src/packet_tracer_mcp/adapters/cli/cp_scale_live.py").read_text(encoding="utf-8")
+    boundaries = Path("src/packet_tracer_mcp/infrastructure/observation/cp_scale_live_run.py").read_text(encoding="utf-8")
     executor = (application / "stage_executor.py").read_text(encoding="utf-8")
     configuration = (application / "configuration_stage.py").read_text(encoding="utf-8")
     voice = (application / "voice_stage.py").read_text(encoding="utf-8")
     observations = Path("src/packet_tracer_mcp/infrastructure/observation/cp_scale_live.py").read_text(encoding="utf-8")
 
-    assert "before_physical_delta" in coordinator
+    assert "before_physical_delta" in boundaries
     for boundary in (
         "after_physical_delta",
         "after_l2_definitions",
@@ -618,7 +619,7 @@ def test_canonical_live_retains_network_state_at_each_causal_boundary():
     ):
         assert boundary in executor
     assert "phase_observer=configuration_phase_observer" in configuration
-    assert "trunk_transition_observer=" in coordinator
+    assert "trunk_transition_observer=" in adapter
     assert "parse_show_interfaces_trunk" in observations
     assert "parse_show_spanning_tree" in observations
     assert "runtime_diagnostics=diagnostics" in voice

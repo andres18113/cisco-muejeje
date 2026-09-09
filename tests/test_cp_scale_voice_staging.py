@@ -176,7 +176,7 @@ from types import SimpleNamespace
 sys.path.insert(0, {root!r})
 sys.path.insert(0, {src!r})
 
-from tools.cp_scale_canonical_live import _stage_voice
+from packet_tracer_mcp.adapters.cli.cp_scale_live import _stage_voice
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationRuntimeContext,

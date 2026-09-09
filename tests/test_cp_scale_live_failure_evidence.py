@@ -37,7 +37,7 @@ from types import SimpleNamespace
 sys.path.insert(0, {root!r})
 sys.path.insert(0, {src!r})
 
-from tools.cp_scale_canonical_live import (
+from packet_tracer_mcp.adapters.cli.cp_scale_live import (
     CHECKPOINT_PATH,
     EVIDENCE_PATH,
     FINAL_CHECKPOINT_PATH,
@@ -52,7 +52,7 @@ from tools.cp_scale_canonical_live import (
     _voice_dhcp_statistics_target,
     _write_checkpoint_summary,
 )
-import tools.cp_scale_canonical_live as live
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     VerificationKind,

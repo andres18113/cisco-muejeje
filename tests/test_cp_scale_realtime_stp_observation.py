@@ -75,7 +75,7 @@ from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
 from packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
     measured_capability_evidence,
 )
-from tools.cp_scale_canonical_live import (
+from packet_tracer_mcp.adapters.cli.cp_scale_live import (
     _STP_MAX_LOGICAL_ATTEMPTS,
     _phone_edge_ports,
     _stp_realtime_evidence,

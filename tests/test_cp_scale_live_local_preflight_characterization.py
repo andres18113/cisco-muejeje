@@ -29,7 +29,7 @@ def _probe(scenario: str) -> dict:
 _PROBE_SOURCE = r'''
 import json
 
-import tools.cp_scale_canonical_live as live
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleImportIsolationObservation,
     CPScaleProcessObservation,
@@ -118,7 +118,15 @@ live.PacketTracerImportIsolationReader = IsolationReader
 live.GitCPScaleRepositoryReader = RepositoryReader
 live.PowerShellPacketTracerProcessReader = ProcessReader
 live.PacketTracerHttpTransport = transport
-live._write_evidence = write
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import run_evidence
+original_factory = live._build_coordinator
+def build_coordinator(request):
+    coordinator = original_factory(request)
+    coordinator.persistence.write_progress = lambda report: write(run_evidence(report))
+    # This sentinel marks entry into the factory, before any session acquisition.
+    coordinator.session_factory = transport
+    return coordinator
+live._build_coordinator = build_coordinator
 
 try:
     code = live.run(

@@ -34,7 +34,7 @@ import sys as _sys
 
 writes = []
 finalizing = []
-summary_double = live._write_checkpoint_summary
+summary_double = seams._write_checkpoint_summary
 
 
 def summary_marker(stage, evidence, **kwargs):
@@ -46,7 +46,7 @@ def summary_marker(stage, evidence, **kwargs):
     return summary_double(stage, evidence, **kwargs)
 
 
-live._write_checkpoint_summary = summary_marker
+seams._write_checkpoint_summary = summary_marker
 
 
 def record_write(evidence):
@@ -85,10 +85,7 @@ def failing_stage(projection, **kwargs):
     record("execute_stage", stage=projection.stage.value)
     raise live.CanonicalLiveFailure(
         "PRIMARY_STAGE_FAILURE",
-        stage_evidence={
-            "stage": projection.stage.value,
-            "first_failed_boundary": "configuration",
-        },
+        partial_stage=CPScaleStageFailure(projection.stage.value, "configuration"),
     )
 
 
@@ -112,14 +109,14 @@ class BrokenChannel:
         raise OSError("REPORT_CHANNEL_BROKEN")
 
 
-live._write_evidence = write_evidence
+seams._write_evidence = write_evidence
 Transport.stop = stop
 if PRIMARY_FAILS:
-    live._execute_stage = failing_stage
+    seams._execute_stage = failing_stage
 if CANCEL_AT_STAGE:
-    live._execute_stage = cancelled_stage
+    seams._execute_stage = cancelled_stage
 if CANCEL_AT_CLEANUP:
-    live._cleanup_owned = cancelled_cleanup
+    seams._cleanup_owned = cancelled_cleanup
 
 verdict_channel = _sys.stdout
 out = BrokenChannel() if BREAK_STDOUT else io.StringIO()

@@ -64,3 +64,47 @@ def test_cp_scale_stage_application_has_no_transport_tools_or_serialization_depe
         imports = _imports(path)
         assert not any("infrastructure" in name or name.startswith("tools") for name in imports), path
         assert not any(name in {"json", "subprocess"} for name in imports), path
+
+
+def test_cp_live_tool_is_a_static_facade_and_session_owns_stop():
+    facade = ast.parse((ROOT / "tools/cp_scale_canonical_live.py").read_text(encoding="utf-8"))
+    assert not any(isinstance(node, (ast.FunctionDef, ast.ClassDef)) for node in ast.walk(facade))
+    assert not any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                   and node.func.id in {"eval", "exec", "__import__"} for node in ast.walk(facade))
+    for path in (PACKAGE / "application/cp_scale_live").glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        assert not any(isinstance(node, ast.Attribute) and node.attr in {"send_and_wait", "stop"}
+                       for node in ast.walk(tree)), path
+
+
+def test_cp_live_runtime_imports_are_acyclic():
+    from importlib.util import resolve_name
+    checked = list((PACKAGE / "application/cp_scale_live").glob("*.py"))
+    checked += list((PACKAGE / "infrastructure").glob("*/cp_scale_live*.py"))
+    checked += [PACKAGE / "adapters/cli/cp_scale_live.py"]
+    names = {"packet_tracer_mcp." + path.relative_to(PACKAGE).with_suffix("").as_posix().replace("/", "."): path for path in checked}
+    graph = {}
+    for name, path in names.items():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        runtime_nodes = []
+        def visit(node):
+            if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":
+                return
+            runtime_nodes.append(node)
+            for child in ast.iter_child_nodes(node):
+                visit(child)
+        visit(tree)
+        imports = []
+        for node in runtime_nodes:
+            if isinstance(node, ast.ImportFrom):
+                module = "." * node.level + (node.module or "")
+                imports.append(resolve_name(module, name.rsplit(".", 1)[0]) if node.level else module)
+            elif isinstance(node, ast.Import):
+                imports.extend(item.name for item in node.names)
+        graph[name] = [item for item in imports if item in names]
+    def walk(name, active):
+        assert name not in active, " -> ".join((*active, name))
+        for dependency in graph[name]:
+            walk(dependency, (*active, name))
+    for name in graph:
+        walk(name, ())

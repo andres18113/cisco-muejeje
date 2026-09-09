@@ -20,18 +20,18 @@ Every child answers with two separate sections, and they are never mixed:
 
 What the coordination doubles replace, and what stays real:
 
-* Replaced (Level A): import/Git/process preflight, the HTTP transport, the
-  capability snapshot store, composition/projection, the physical, E5, E9 and
-  Voice runtimes, the explicit ``_build_stage_executor`` factory,
-  ``_checkpoint``, ``_cleanup_owned``,
-  evidence/checkpoint persistence and evidence archiving.  The transport double
+* Replaced (Level A): the explicit CLI ``_build_coordinator`` composition factory
+  injects controlled import/Git/process preflight, transport, capability access,
+  projection, physical/E5/E9/Voice runtimes, stage executor, checkpoint, cleanup,
+  and persistence ports. The transport double
   raises on both dispatch methods and every attempt is counted, so a passing
   probe cannot have contacted Packet Tracer or written synthetic capability
   evidence into the product store.
-* Real: ``run`` and its ``_execute_stage`` adapter -- target contract resolution, the stage loop and its
-  order, continuity between stages, checkpoint handling, ``_complete_router0_target``
-  and its NO_MUTATION_REPLAY reading, archive/cleanup sequencing, the
-  ``except``/``finally`` finalization and the returned code.
+* Real: the static tool façade and CLI ``run``, application ``CPScaleLiveCoordinator``,
+  target resolution, stage order and typed continuity, physical preparation,
+  ``CPScaleCompletion`` and its NO_MUTATION_REPLAY decision, archive/cleanup
+  sequencing, ``finalize_session`` and the sole session close owner. The internal
+  stage executor is explicitly controlled here, not claimed as real Level B.
 * Not proven here: the internal semantics of a stage, a productive full
   qualification, or anything that needs a live Packet Tracer.  Level B and the
   application tests own those.
@@ -70,7 +70,7 @@ _PROVENANCE_CORE = r'''
 import sys as _sys
 from pathlib import Path as _Path
 
-_TREE = _Path(live.__file__).resolve().parents[1]
+_TREE = _Path(live.GOVERNED_ROOT).resolve()
 dispatch_attempts = []
 
 
@@ -179,7 +179,7 @@ def capture_evidence(evidence):
     )
 
 
-live._write_evidence = capture_evidence
+seams._write_evidence = capture_evidence
 
 
 def m0_result(code=None, raised=""):
@@ -228,7 +228,7 @@ def m0_verdict(code=None, raised=""):
 
 
 _FULL_ROUTE_OVERRIDES = r'''
-live.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
+seams.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
     valid=True,
     issues=[],
     topology=SimpleNamespace(
@@ -240,13 +240,13 @@ live.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
     capabilities={},
     voice=None,
 )
-live.reconcile_canonical_stage_deployment = lambda topology, physical, **kwargs: (
+seams.reconcile_canonical_stage_deployment = lambda topology, physical, **kwargs: (
     record("reconcile", deployment_id=kwargs.get("deployment_id")) or Deployment()
 )
-live._full_qualification_projection = lambda composition: projection_for(
+seams._full_qualification_projection = lambda composition: projection_for(
     composition, CPScaleCanonicalStage.REMAINING,
 )
-live._write_checkpoint_summary = lambda stage, evidence, **kwargs: record(
+seams._write_checkpoint_summary = lambda stage, evidence, **kwargs: record(
     "summary", stage=stage,
 )
 '''
@@ -295,7 +295,7 @@ def disposition_checkpoint(stage, evidence, *, session_source_head):
     return "retain" if stage == "full-qualification" else "continue"
 
 
-live._checkpoint = disposition_checkpoint
+seams._checkpoint = disposition_checkpoint
 code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
@@ -310,7 +310,7 @@ print(json.dumps(m0_verdict(code)))
         + _PROVENANCE_TRANSPORT
         + _CAPTURE_EVIDENCE
         + r'''
-live.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
+seams.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
     valid=False,
     issues=["synthetic admission rejection"],
     topology=SimpleNamespace(devices=[], links=[]),
@@ -333,7 +333,7 @@ print(json.dumps(m0_verdict(code)))
         + _PROVENANCE_TRANSPORT
         + _CAPTURE_EVIDENCE
         + r'''
-successful_stage_factory = live._build_stage_executor
+successful_stage_factory = seams._build_stage_executor
 
 
 def fail_floor2(request):
@@ -346,16 +346,12 @@ def fail_floor2(request):
         )
         raise live.CanonicalLiveFailure(
             "SYNTHETIC_FLOOR2_FAILURE",
-            stage_evidence={
-                "stage": projection.stage.value,
-                "first_failed_boundary": "configuration",
-                "stage_outcome": "in_progress",
-            },
+            partial_stage=CPScaleStageFailure(projection.stage.value, "configuration", "in_progress"),
         )
     return successful_stage_factory().execute(request)
 
 
-live._build_stage_executor = lambda **kwargs: SimpleNamespace(execute=fail_floor2)
+seams._build_stage_executor = lambda **kwargs: SimpleNamespace(execute=fail_floor2)
 code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
@@ -371,7 +367,7 @@ print(json.dumps(m0_verdict(code)))
         + _PROVENANCE_TRANSPORT
         + _CAPTURE_EVIDENCE
         + r'''
-continued = live._checkpoint
+continued = seams._checkpoint
 
 
 def abort_at_floor1(stage, evidence, *, session_source_head):
@@ -381,7 +377,7 @@ def abort_at_floor1(stage, evidence, *, session_source_head):
     return continued(stage, evidence, session_source_head=session_source_head)
 
 
-live._checkpoint = abort_at_floor1
+seams._checkpoint = abort_at_floor1
 code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
@@ -404,7 +400,7 @@ def fail_precleanup_archive(payload, *, base_dir, run_identity, phase):
     return SimpleNamespace(model_dump=lambda mode="json": {"phase": phase})
 
 
-live.archive_cp_scale_canonical_evidence = fail_precleanup_archive
+seams.archive_cp_scale_canonical_evidence = fail_precleanup_archive
 code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
@@ -425,7 +421,7 @@ def fail_cleanup(*args, **kwargs):
     raise RuntimeError("SYNTHETIC_CLEANUP_FAILURE")
 
 
-live._cleanup_owned = fail_cleanup
+seams._cleanup_owned = fail_cleanup
 code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
@@ -441,7 +437,7 @@ print(json.dumps(m0_verdict(code)))
         + _PROVENANCE_TRANSPORT
         + _CAPTURE_EVIDENCE
         + r'''
-live._voice_window_state = lambda runtime: (_ for _ in ()).throw(
+seams._voice_window_state = lambda runtime: (_ for _ in ()).throw(
     RuntimeError("SYNTHETIC_REALTIME_OBSERVATION_FAILURE")
 )
 code = live.run(
@@ -460,7 +456,7 @@ _POLICY_TRACE_BODY = r'''
 import json
 from types import SimpleNamespace
 
-import tools.cp_scale_canonical_live as live
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleForwardingAuthority,
     CPScaleSiteForwardingCheck,
@@ -877,23 +873,13 @@ POLICY_TRACE_WRONG_DESTINATION_SOURCE = policy_trace_source(
 # What Level A must replace for a probe to be offline, and the rules that have
 # to stay real for it to be characterizing anything at all. Shared by the
 # oracle and by the recorder, so both judge a probe by the same measure.
-LEVEL_A_SUBSTITUTED_SYMBOLS = frozenset({
-    "_build_local_preflight",
-    "PacketTracerHttpTransport",
-    "PacketTracerPhysicalTopologyRuntime",
-    "CapabilitySnapshotStore",
-    "compose_cp_scale_canonical",
-    "_build_stage_executor",
-    "_checkpoint",
-    "_cleanup_owned",
-    "_write_evidence",
-    "_write_checkpoint_summary",
-    "archive_cp_scale_canonical_evidence",
-})
+LEVEL_A_SUBSTITUTED_SYMBOLS = frozenset({'_build_coordinator'})
 PRODUCT_RULE_SYMBOLS = frozenset({
     "run",
     "_execute_stage",
-    "_complete_router0_target",
+    "CPScaleLiveCoordinator",
+    "CPScaleCompletion",
+    "CPScaleBuildPolicy",
     "canonical_cp_scale_target_contract",
     "canonical_final_disposition",
     "canonical_checkpoint_repository_error",

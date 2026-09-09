@@ -280,7 +280,7 @@ import sys
 sys.path.insert(0, __ROOT__)
 sys.path.insert(0, __SRC__)
 
-from tools.cp_scale_canonical_live import _frame_observer_discovery
+from packet_tracer_mcp.adapters.cli.cp_scale_live import _frame_observer_discovery
 
 
 class Transport:
@@ -661,7 +661,7 @@ import sys
 sys.path.insert(0, __ROOT__)
 sys.path.insert(0, __SRC__)
 
-from tools.cp_scale_canonical_live import _frame_observer_discovery
+from packet_tracer_mcp.adapters.cli.cp_scale_live import _frame_observer_discovery
 
 PHONE = "LARGE-BRANCH-CAMPUS-FLOOR-1-ZONE-A-PHONE-02"
 
@@ -1081,7 +1081,7 @@ import sys
 sys.path.insert(0, __ROOT__)
 sys.path.insert(0, __SRC__)
 
-from tools.cp_scale_canonical_live import (
+from packet_tracer_mcp.adapters.cli.cp_scale_live import (
     _frame_observer_discovery,
     _single_vlan_access_ports,
 )
