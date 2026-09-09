@@ -25,7 +25,10 @@ def test_pytest_session_uses_isolated_machine_state() -> None:
     isolated = Path(os.environ["PT_MCP_TEST_STATE_ROOT"])
     assert os.environ["PT_MCP_BRIDGE_TOKEN"] == ISOLATED_TEST_TOKEN
     for name in ("LOCALAPPDATA", "APPDATA", "XDG_STATE_HOME", "TEMP", "TMP", "TMPDIR"):
-        assert Path(os.environ[name]).is_relative_to(isolated)
+        # Windows runners may spell the same parent once with an 8.3 alias
+        # (RUNNER~1) and once with its long name (runneradmin).  This assertion
+        # is about filesystem identity, not lexical path spelling.
+        assert os.path.samefile(Path(os.environ[name]).parent, isolated)
 
 
 @pytest.mark.parametrize("change", ["create", "replace", "rewrite_same_bytes", "delete"])
