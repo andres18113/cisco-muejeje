@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from tests.cp_scale_stage_fixture import voice_window_trace
 
 
@@ -73,3 +75,113 @@ def test_packet_tracer_observation_adapter_converts_runtime_state_field_by_field
     assert state.present == (
         "observed", "simulation_mode", "frames", "sim_time", "current_index", "message",
     )
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        None,
+        pytest.param(
+            {"observed": True, "simulation_mode": None, "present": ("observed", "simulation_mode")},
+            id="missing-mode-value",
+        ),
+        pytest.param(
+            {"observed": True, "simulation_mode": 0, "present": ("observed", "simulation_mode")},
+            id="integer-mode",
+        ),
+        pytest.param(
+            {"observed": 1, "simulation_mode": False, "present": ("observed", "simulation_mode")},
+            id="integer-observed",
+        ),
+        pytest.param(
+            {"observed": True, "simulation_mode": False, "present": ("observed",)},
+            id="mode-value-without-presence",
+        ),
+        pytest.param(
+            {"observed": True, "simulation_mode": False, "present": ("simulation_mode",)},
+            id="observed-value-without-presence",
+        ),
+    ],
+)
+def test_realtime_rule_rejects_absent_mistyped_or_presence_inconsistent_state(
+    state,
+) -> None:
+    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+        CPScaleRealtimeState,
+    )
+    from src.packet_tracer_mcp.application.cp_scale_live.voice_stage import (
+        realtime_boundary_error,
+    )
+
+    value = CPScaleRealtimeState(**state) if isinstance(state, dict) else state
+
+    assert realtime_boundary_error(value, "before")
+
+
+def test_stage_stops_before_voice_when_realtime_mode_is_not_explicitly_false() -> None:
+    from dataclasses import replace
+
+    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+        CPScaleRealtimeState,
+    )
+    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import (
+        CPScaleStageExecutor,
+    )
+    from tests.cp_scale_stage_fixture import stage_fixture
+    from tests.test_voice_runtime import _compile
+
+    fixture = stage_fixture(CPScaleStageExecutor)
+    fixture.request = replace(
+        fixture.request,
+        projection=replace(fixture.request.projection, voice=_compile().plan),
+    )
+    invalid = CPScaleRealtimeState(
+        observed=True,
+        simulation_mode=None,
+        present=("observed", "simulation_mode"),
+    )
+    calls: list[str] = []
+    fixture.executor.observations.voice_window_state = lambda: invalid
+    fixture.executor.voice.apply = lambda *args, **kwargs: calls.append("voice")
+
+    result = fixture.executor.execute(fixture.request)
+
+    assert result.outcome == "failed"
+    assert result.first_failed_boundary == "voice"
+    assert result.report.realtime is not None
+    assert result.report.realtime.before.state is invalid
+    assert result.report.realtime.before.error
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"observed": True},
+        {"observed": True, "simulation_mode": None},
+        {"observed": True, "simulation_mode": "false"},
+    ],
+)
+def test_cleanup_consumer_fails_closed_for_incoherent_realtime_state(
+    monkeypatch,
+    raw,
+) -> None:
+    from src.packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
+
+    monkeypatch.setattr(cp_scale_live_run, "_voice_window_state", lambda runtime: raw)
+    observations = cp_scale_live_run.PacketTracerCPScaleRunObservations(
+        SimpleTransport(),
+        cp_scale_live_run.CPScaleActiveProjection(),
+    )
+
+    result = observations.cleanup_realtime()
+
+    assert result.verified is False
+    assert result.error
+    assert result.state is not None
+    assert result.state.observed is True
+
+
+class SimpleTransport:
+    def send_and_wait(self, script, timeout):
+        raise AssertionError("The controlled Realtime observation must not contact a transport")

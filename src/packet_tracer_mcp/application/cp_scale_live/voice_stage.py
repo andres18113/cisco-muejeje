@@ -18,7 +18,28 @@ from .contracts import CPScaleObservationRecord, CPScaleRealtimeState, CPScaleVo
 
 
 def realtime_boundary_error(state: CPScaleRealtimeState | None, edge: str) -> str:
-    if state is None or state.observed is not True:
+    if state is None:
+        return (
+            f"The simulation state {edge} the authoritative voice window was not "
+            "observable, so the window cannot be attributed to REALTIME."
+        )
+    if (
+        type(state.present) is not tuple
+        or "observed" not in state.present
+        or "simulation_mode" not in state.present
+    ):
+        return (
+            f"The simulation state {edge} the authoritative voice window did not "
+            "explicitly expose both observed and simulation_mode, so the window "
+            "cannot be attributed to REALTIME."
+        )
+    if type(state.observed) is not bool or type(state.simulation_mode) is not bool:
+        return (
+            f"The simulation state {edge} the authoritative voice window did not "
+            "contain explicit boolean observed and simulation_mode values, so the "
+            "window cannot be attributed to REALTIME."
+        )
+    if state.observed is not True:
         return (
             f"The simulation state {edge} the authoritative voice window was not "
             "observable, so the window cannot be attributed to REALTIME."
