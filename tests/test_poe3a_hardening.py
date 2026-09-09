@@ -226,7 +226,9 @@ def test_the_experiment_configures_and_observes_only_its_own_port(monkeypatch):
     monkeypatch.syspath_prepend(str(root / "tools"))
     import poe2_ap_live
     from poe_inline_calibration_live import PoEInlineMode
+    from types import SimpleNamespace
 
+    monkeypatch.setattr(poe2_ap_live, "FileBridge", lambda: SimpleNamespace(send=None))
     monkeypatch.setattr(poe2_ap_live.time, "sleep", lambda _seconds: None)
     experiment = poe2_ap_live.Experiment("spy-run", switch_port=PORT, endpoint_role="PH")
     assert experiment.switch_port == PORT
@@ -273,58 +275,12 @@ def test_the_experiment_still_defaults_to_the_poe2_binding(monkeypatch):
     root = pathlib.Path(__file__).resolve().parents[1]
     monkeypatch.syspath_prepend(str(root / "tools"))
     import poe2_ap_live
+    from types import SimpleNamespace
+    monkeypatch.setattr(poe2_ap_live, "FileBridge", lambda: SimpleNamespace(send=None))
 
     assert poe2_ap_live.Experiment("default-run").switch_port == (
         poe2_ap_live.BINDING["switch_port"]
     )
-
-
-# ==========================================================================
-# 3 -- the binding is resolved by identity, not by position
-# ==========================================================================
-
-def test_the_runner_resolves_its_binding_by_stable_scenario_identity(monkeypatch):
-    import sys
-    root = pathlib.Path(__file__).resolve().parents[1]
-    monkeypatch.syspath_prepend(str(root / "tools"))
-    import poe3a_pse_live
-
-    assert poe3a_pse_live.TARGET_ENDPOINT_ID == (
-        "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/001"
-    )
-    binding = poe3a_pse_live.governed_binding()
-    assert binding == {
-        "endpoint_id": poe3a_pse_live.TARGET_ENDPOINT_ID,
-        "device_id": "sw-acc-large-branch-zone-a-02",
-        "switch_model": SWITCH, "switch_port": PORT,
-        "endpoint_model": "7960", "endpoint_port": "Switch",
-    }
-
-
-def test_the_binding_resolution_fails_closed_when_it_disappears(monkeypatch):
-    import sys
-    root = pathlib.Path(__file__).resolve().parents[1]
-    monkeypatch.syspath_prepend(str(root / "tools"))
-    import poe3a_pse_live
-
-    monkeypatch.setattr(poe3a_pse_live, "TARGET_ENDPOINT_ID", "endpoint/does/not/exist")
-    with pytest.raises(RuntimeError, match="no longer carries"):
-        poe3a_pse_live.governed_binding()
-
-
-def test_the_binding_resolution_fails_closed_on_ambiguity(monkeypatch):
-    import sys
-    root = pathlib.Path(__file__).resolve().parents[1]
-    monkeypatch.syspath_prepend(str(root / "tools"))
-    import poe3a_pse_live
-
-    design = poe3a_pse_live.cp_scale_physical_design()
-    target = next(b for site in design.sites for b in site.endpoint_bindings
-                  if b.endpoint_id == poe3a_pse_live.TARGET_ENDPOINT_ID)
-    design.sites[0].endpoint_bindings.append(target.model_copy())
-    monkeypatch.setattr(poe3a_pse_live, "cp_scale_physical_design", lambda: design)
-    with pytest.raises(RuntimeError, match="ambiguous"):
-        poe3a_pse_live.governed_binding()
 
 
 # ==========================================================================
@@ -430,13 +386,20 @@ def _runner(monkeypatch):
 def test_the_live_producer_builds_a_scope_of_the_current_schema(monkeypatch):
     """A producer pinned to a literal version silently outlives its contract."""
     runner = _runner(monkeypatch)
+    from tests.test_poe3b_capacity_runner import typed_captures
+    plan = runner.governed_plan(SWITCH)
     built = runner.pse_scope_for(
-        binding=runner.governed_binding(), run_id="poe3a-producer-fixture",
-        observed_at="2026-09-07T21:39:14Z", captures=CAUSAL, gates=GATES,
+        plan=plan, run_id="poe3b-producer-fixture",
+        observed_at="2026-09-09T18:00:00Z", captures=typed_captures(runner, plan), gates=GATES,
     )
-    assert built.schema_version == PSE_SCHEMA_VERSION
-    assert decode_poe_pse_delivery_scope(
-        _claim(encode_poe_pse_dimensions(built)),
+    from src.packet_tracer_mcp.domain.enterprise.services.poe_pse_multiport_claims import (
+        decode_poe_pse_multi_port_delivery_scope,
+    )
+    assert built.schema_version == 3
+    claim = _claim(runner.encode_poe_pse_multi_port_dimensions(built))
+    claim.observed_value = 21
+    assert decode_poe_pse_multi_port_delivery_scope(
+        claim,
         expected_model=SWITCH, expected_packet_tracer_version=BUILD,
     ) is not None
 
@@ -448,15 +411,14 @@ def test_the_live_producer_tracks_the_contract_rather_than_a_literal(monkeypatch
     "schema_version=" cannot tell the two apart. Bumping the PSE contract can.
     """
     runner = _runner(monkeypatch)
-    import src.packet_tracer_mcp.domain.enterprise.services.poe_pse_claims as contract
-
-    monkeypatch.setattr(contract, "PSE_SCHEMA_VERSION", PSE_SCHEMA_VERSION + 7)
-    monkeypatch.setattr(runner, "PSE_SCHEMA_VERSION", PSE_SCHEMA_VERSION + 7)
+    from tests.test_poe3b_capacity_runner import typed_captures
+    plan = runner.governed_plan(SWITCH)
+    monkeypatch.setattr(runner, "PSE_MULTI_PORT_SCHEMA_VERSION", 10)
     moved = runner.pse_scope_for(
-        binding=runner.governed_binding(), run_id="poe3a-producer-fixture",
-        observed_at="2026-09-07T21:39:14Z", captures=CAUSAL, gates=GATES,
+        plan=plan, run_id="poe3b-producer-fixture",
+        observed_at="2026-09-09T18:00:00Z", captures=typed_captures(runner, plan), gates=GATES,
     )
-    assert moved.schema_version == PSE_SCHEMA_VERSION + 7
+    assert moved.schema_version == 10
 
 
 # ==========================================================================
@@ -496,47 +458,8 @@ def test_a_missing_pse_dimension_also_fails_closed():
     assert decode_poe_pse_delivery_scope(_claim(dimensions)) is None
 
 
-# ==========================================================================
-# 3 -- the binding is pinned in every coordinate
-# ==========================================================================
-
-EXPECTED_BINDING = {
-    "endpoint_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/001",
-    "device_id": "sw-acc-large-branch-zone-a-02",
-    "switch_model": "3560-24PS",
-    "switch_port": "FastEthernet0/1",
-    "endpoint_model": "7960",
-    "endpoint_port": "Switch",
-}
 
 
-def test_the_runner_pins_every_coordinate_of_its_binding(monkeypatch):
-    runner = _runner(monkeypatch)
-    assert runner.EXPECTED_BINDING == EXPECTED_BINDING
-    assert runner.governed_binding() == EXPECTED_BINDING
-
-
-@pytest.mark.parametrize("field, drifted", [
-    ("device_id", "sw-acc-large-branch-zone-a-01"),
-    ("switch_port", "FastEthernet0/2"),
-    ("endpoint_port", "Port 0"),
-])
-def test_any_drift_in_the_pinned_binding_fails_closed(monkeypatch, field, drifted):
-    """The design moving under the runner must stop it, not be measured."""
-    runner = _runner(monkeypatch)
-    design = runner.cp_scale_physical_design()
-    target = next(b for site in design.sites for b in site.endpoint_bindings
-                  if b.endpoint_id == runner.TARGET_ENDPOINT_ID)
-    attribute = {"switch_port": "device_port", "endpoint_port": "endpoint_port",
-                 "device_id": "device_id"}[field]
-    for site in design.sites:
-        for index, existing in enumerate(site.endpoint_bindings):
-            if existing.endpoint_id == target.endpoint_id:
-                site.endpoint_bindings[index] = existing.model_copy(
-                    update={attribute: drifted})
-    monkeypatch.setattr(runner, "cp_scale_physical_design", lambda: design)
-    with pytest.raises(RuntimeError, match="no longer matches"):
-        runner.governed_binding()
 
 
 # ==========================================================================
@@ -548,6 +471,8 @@ def test_both_observations_in_one_capture_use_the_measured_port(monkeypatch):
     root = pathlib.Path(__file__).resolve().parents[1]
     monkeypatch.syspath_prepend(str(root / "tools"))
     import poe2_ap_live
+    from types import SimpleNamespace
+    monkeypatch.setattr(poe2_ap_live, "FileBridge", lambda: SimpleNamespace(send=None))
 
     monkeypatch.setattr(poe2_ap_live.time, "sleep", lambda _seconds: None)
     experiment = poe2_ap_live.Experiment("spy-two", switch_port=PORT, endpoint_role="PH")

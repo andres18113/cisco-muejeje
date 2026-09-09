@@ -1,61 +1,58 @@
-"""One governed PSE run over the exact canonical 7960 binding on a 3560-24PS.
+"""Governed PSE capacity qualification on an empty, untitled PT workspace.
 
-The binding is rederived from `cp_scale_physical_design()` at the frozen SHA,
-never supplied by the caller, and no caller-supplied IOS or JavaScript reaches
-Packet Tracer: the three mode changes come from `PoEInlineMode` and the reads
-from the governed executor's own registered qualification query.
-
-What this produces is one typed `PoEPseDeliveryScope` -- the POE-3A claim
-contract -- built from the measured captures, plus the raw bytes it was read
-from, so a later reader can check the typed conclusion against the text.
-
-What it deliberately does NOT produce is authority. A positive PoE claim also
-requires `LiveSessionSafetyEvidence` that passes
-`validate_live_session_positive_admission`, which demands an exact canonical
-`.pts` and a disposable copy with matching SHA-256 identities. This session
-runs on an empty untitled workspace: there is no canonical file at risk, and
-this repository has no capability to open or save one. Fabricating that
-evidence for a file Packet Tracer never touched would be a lie in the exact
-place the contract exists to prevent one, so the bundle records the run as
-non-productive and says why.
-
-The measurement contract deliberately says nothing about that admission. It
-describes what was observed and under what causality; whether that becomes
-authority is decided elsewhere, from the session's own safety evidence.
+Only model and qualification identity are caller supplied. The ordered binding
+set comes from the Router0 capacity plan. Positive schema-3 runtime evidence is
+persisted only after cleanup, ephemeral safety admission and schema decoding.
+No Packet Tracer file operation is authorized or executed by this runner.
 """
 from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
 from datetime import datetime, timezone
-from enum import Enum
 import hashlib
 import json
 import os
 from pathlib import Path
 from secrets import token_hex, token_urlsafe
 import sys
+from types import SimpleNamespace
 
 import packet_tracer_mcp
 from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus, EvidenceSource,
 )
-from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
-    cp_scale_physical_design,
+from packet_tracer_mcp.application.use_cases.plan_cp_scale_poe_capacity import (
+    cp_scale_poe_capacity_qualification_plan,
+)
+from packet_tracer_mcp.domain.enterprise.models.poe_capacity import PoEModelQualificationPlan
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
+    BackendVersionProvenance, CapabilityProbeResult, CapabilitySnapshot,
+    CapabilityVerificationMethod, CleanupStatus, EphemeralUntitledWorkspaceSafetyEvidence,
+    ProbeContext, ProbeExecutionStatus, ProbeIsolationLevel, ProbeSession, ProbeSessionResult,
+    semantic_fingerprint,
+)
+from packet_tracer_mcp.domain.enterprise.rules.live_session_safety import (
+    validate_live_session_positive_admission,
 )
 from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     _AUTHORIZED_OBSERVATION_METHODS,
 )
-from packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
-    PSE_SCHEMA_VERSION, PoEPseCapture, PoEPseDeliveryScope,
-    decode_poe_pse_delivery_scope, encode_poe_pse_dimensions,
+from packet_tracer_mcp.domain.enterprise.services.poe_pse_multiport_claims import (
+    PSE_MULTI_PORT_SCHEMA_VERSION, PoEPseBindingCapture, PoEPseMultiPortCapture,
+    PoEPseMultiPortDeliveryScope, decode_poe_pse_multi_port_delivery_scope,
+    encode_poe_pse_multi_port_dimensions,
 )
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
 from packet_tracer_mcp.infrastructure.execution.live_bridge import PTCommandBridge
 from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
-    BUILD, START_HEAD, completeness,
+    BUILD, START_HEAD, COMPLETENESS_KEYS, completeness,
+)
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    parse_show_power_inline, classify_poe_inline_delivery,
 )
 from packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
 
@@ -67,61 +64,11 @@ from poe_inline_calibration_live import PoEInlineMode
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "andres18113/cisco-muejeje"
 BRANCH = "feature/runtime-ripv2"
-ENDPOINT_MODEL = "7960"
-SWITCH_MODEL = "3560-24PS"
-# The binding is named by the scenario's own stable identity, not taken from a
-# position in a sorted list. `endpoint_id` is derived from zone, role and index
-# alone, so it survives reordering, renaming and additions -- and if the design
-# stops carrying it, that is a fact worth failing on rather than silently
-# measuring whatever sorted first.
-TARGET_ENDPOINT_ID = "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/001"
-# Every coordinate the run claims to have measured, pinned. Identity alone is
-# not enough: the same endpoint could be re-homed onto another switch or port
-# and the runner would happily measure the new one while the evidence still
-# named the old binding.
-EXPECTED_BINDING = {
-    "endpoint_id": TARGET_ENDPOINT_ID,
-    "device_id": "sw-acc-large-branch-zone-a-02",
-    "switch_model": SWITCH_MODEL,
-    "switch_port": "FastEthernet0/1",
-    "endpoint_model": ENDPOINT_MODEL,
-    "endpoint_port": "Switch",
-}
 
 
-def governed_binding() -> dict[str, str]:
-    """Resolve exactly one binding by identity, or refuse to guess."""
-    design = cp_scale_physical_design()
-    models = {device.id: device.model for site in design.sites for device in site.devices}
-    matches = [binding for site in design.sites for binding in site.endpoint_bindings
-               if binding.endpoint_id == TARGET_ENDPOINT_ID]
-    if not matches:
-        raise RuntimeError(
-            "The canonical design no longer carries " + TARGET_ENDPOINT_ID)
-    if len(matches) > 1:
-        raise RuntimeError(
-            "The canonical design is ambiguous for " + TARGET_ENDPOINT_ID
-            + ": " + str(len(matches)) + " bindings share that identity")
-    binding = matches[0]
-    resolved = {
-        "endpoint_id": binding.endpoint_id,
-        "device_id": binding.device_id,
-        "switch_model": models.get(binding.device_id),
-        "switch_port": binding.device_port,
-        "endpoint_model": binding.endpoint_model,
-        "endpoint_port": binding.endpoint_port,
-    }
-    drift = {key: (value, resolved.get(key))
-             for key, value in EXPECTED_BINDING.items() if resolved.get(key) != value}
-    if drift:
-        raise RuntimeError(
-            "The canonical design no longer matches the pinned binding: "
-            + json.dumps(drift, sort_keys=True))
-    return resolved
-
-
-def source_baseline(binding: dict[str, str]) -> dict:
-    if command("git", "branch", "--show-current") != BRANCH:
+def source_baseline(plan: PoEModelQualificationPlan) -> dict:
+    branch = command("git", "branch", "--show-current")
+    if branch != BRANCH:
         raise RuntimeError("Wrong branch")
     if command("git", "status", "--porcelain"):
         raise RuntimeError("Worktree must be clean")
@@ -151,21 +98,109 @@ def source_baseline(binding: dict[str, str]) -> dict:
         verified_at_utc=utc(), local_head=sha, remote_head=remote, actions_run=run,
         jobs=[{k: job[k] for k in ("name", "conclusion", "head_sha", "html_url")}
               for job in jobs],
-        strict_e5_manual_allowlist=True, derived_binding=binding,
+        strict_e5_manual_allowlist=True, qualification_plan=plan.model_dump(mode="json"),
+        source_branch=branch, source_tree=command("git", "rev-parse", "HEAD^{tree}"),
+        worktree_clean=True,
+        authorized_file_operations=(), executed_file_operations=(),
         initial_START_HEAD_verified=True,
     )
 
 
-def pse_capture(label: str, capture, observation: dict) -> PoEPseCapture:
-    """Translate one governed observation into the typed claim vocabulary."""
-    row = observation["ports"][0]["row"]
-    delivering = observation["ports"][0]["delivery"] == "delivering"
-    if row is None:
-        return PoEPseCapture(label, _MODE_BY_LABEL[label], "absent", 0.0, False, delivering)
-    return PoEPseCapture(
-        label=label, admin_mode=row["admin"], oper_state=row["oper"],
-        power_watts=float(row["power_watts"]), row_present=True, delivering=delivering,
-    )
+def governed_plan(model: str) -> PoEModelQualificationPlan:
+    return cp_scale_poe_capacity_qualification_plan(BUILD).for_model(model)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument("--execute", action="store_true", required=True)
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--qualification-id", required=True)
+    args = parser.parse_args(argv)
+    if args.qualification_id != safe_name_component(args.qualification_id):
+        raise ValueError("qualification-id must be an exact safe name component")
+    governed_plan(args.model)
+    return args
+
+
+def create_fixture(exp: Experiment, plan: PoEModelQualificationPlan,
+                   attempted: list[str], created: list[str]) -> dict:
+    """Create exactly the governed scope, tracking attempts before each mutation."""
+    attempted.append(exp.switch)
+    switch = exp.fixture.create_device(plan.candidate_model, exp.switch,
+        tuple(b.switch_port for b in plan.bindings), arm="candidate")
+    created.append(exp.switch)
+    if switch.model != plan.candidate_model:
+        raise RuntimeError("Fixture switch model readback mismatch")
+    endpoints, links = [], []
+    for index, binding in enumerate(plan.bindings, start=1):
+        name = exp.endpoint + "-" + str(index)
+        attempted.append(name)
+        phone = exp.fixture.create_device(binding.endpoint_model, name,
+            (binding.endpoint_port,), arm="candidate")
+        created.append(name)
+        if phone.model != binding.endpoint_model:
+            raise RuntimeError("Fixture endpoint model readback mismatch")
+        link = exp.fixture.create_link(switch, binding.switch_port, phone, binding.endpoint_port)
+        endpoints.append(phone.model_dump(mode="json"))
+        links.append(link.model_dump(mode="json"))
+    return dict(switch=switch.model_dump(mode="json"), endpoints=endpoints, links=links)
+
+
+def cleanup_fixture(exp: Experiment, attempted: list[str], problems: list[str]) -> list[str]:
+    deleted = []
+    for name in reversed(attempted):
+        try:
+            if exp.fixture.delete_device(name):
+                deleted.append(name)
+            else:
+                problems.append("Cleanup did not verify deletion: " + name)
+        except Exception as exc:
+            problems.append("Cleanup " + name + ": " + str(exc))
+    return deleted
+
+
+def pse_capture(plan: PoEModelQualificationPlan, label: str, capture,
+                switch_name: str) -> PoEPseMultiPortCapture:
+    """Check both complete captures before translating every ordered binding."""
+    if (not capture.stable or capture.observation.get("raw_output") !=
+            capture.repeat_observation.get("raw_output")):
+        raise ValueError("Capture is not stable")
+    translated = []
+    for observation in (capture.observation, capture.repeat_observation):
+        gates = completeness(observation, capture.expected_prompt, capture.stable, switch_name)
+        if (set(gates) != COMPLETENESS_KEYS or not all(gates.values())
+                or capture.table_completeness != gates
+                or observation.get("status") != "observed" or observation.get("refusal_reason")):
+            raise ValueError("Incomplete or refused governed capture")
+        output = observation.get("raw_output", "")
+        if (hashlib.sha256(output.encode()).hexdigest() != capture.raw_sha256
+                or output != observation["command_result"].get("output")):
+            raise ValueError("Capture raw output disagrees with dispatch")
+        ports = observation.get("ports", [])
+        if tuple(p.get("port") for p in ports) != tuple(b.switch_port for b in plan.bindings):
+            raise ValueError("Capture does not cover the exact ordered plan")
+        rows = []
+        table = parse_show_power_inline(output)
+        for binding, port in zip(plan.bindings, ports):
+            row = port["row"]
+            raw_row = table.row_for(binding.switch_port)
+            if (row != (asdict(raw_row) if raw_row is not None else None)
+                    or port["delivery"] != classify_poe_inline_delivery(
+                        output, binding.switch_port, capture_complete=True).value):
+                raise ValueError("Raw table and typed binding observation disagree")
+            if row is not None and row["admin"] != _MODE_BY_LABEL[label]:
+                raise ValueError("Capture admin mode disagrees with causal step")
+            if port["delivery"] not in {"delivering", "not_delivering"}:
+                raise ValueError("Unobservable delivery")
+            rows.append(PoEPseBindingCapture(
+                binding.switch_port, binding.endpoint_model, binding.endpoint_port,
+                row["oper"] if row is not None else "absent",
+                float(row["power_watts"]) if row is not None else 0.0,
+                row is not None, port["delivery"] == "delivering"))
+        translated.append(tuple(rows))
+    if translated[0] != translated[1]:
+        raise ValueError("Repeated binding observations disagree")
+    return PoEPseMultiPortCapture(label, _MODE_BY_LABEL[label], translated[0])
 
 
 _MODE_BY_LABEL = {"AUTO_1": "auto", "NEVER": "never", "AUTO_2": "auto"}
@@ -173,42 +208,153 @@ _MODE_BY_LABEL = {"AUTO_1": "auto", "NEVER": "never", "AUTO_2": "auto"}
 
 def pse_scope_for(
     *,
-    binding: dict[str, str],
+    plan: PoEModelQualificationPlan,
     run_id: str,
     observed_at: str,
-    captures: tuple[PoEPseCapture, ...],
+    captures: tuple[PoEPseMultiPortCapture, ...],
     gates: tuple[str, ...],
-) -> PoEPseDeliveryScope:
+) -> PoEPseMultiPortDeliveryScope:
     """Assemble the measured scope under whichever schema is in force.
 
     Kept separate from `main` so the producer can be exercised offline: a
     producer pinned to a literal version silently outlives its own contract.
     """
-    return PoEPseDeliveryScope(
-        schema_version=PSE_SCHEMA_VERSION,
-        switch_model=binding["switch_model"], switch_port=binding["switch_port"],
-        endpoint_model=binding["endpoint_model"],
-        endpoint_port=binding["endpoint_port"], packet_tracer_build=BUILD,
+    return PoEPseMultiPortDeliveryScope(
+        schema_version=PSE_MULTI_PORT_SCHEMA_VERSION,
+        switch_model=plan.candidate_model, bindings=plan.bindings,
+        packet_tracer_build=plan.packet_tracer_build,
         observer_id="GovernedPoEInlineObserver", experiment_id=run_id,
         observed_at=observed_at, captures=captures, gates=gates,
-        simultaneous_active_ports=1, cleanup_status="clean",
+        simultaneous_active_ports=plan.simultaneous_active_ports, cleanup_status="clean",
         inventory_restoration="restored",
     )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--execute", action="store_true")
-    args = parser.parse_args()
-    if not args.execute:
-        print("No LIVE without --execute")
-        return 1
+def ephemeral_safety_for(baseline: dict, restoration: dict, safety: dict,
+                         problems: list[str]) -> EphemeralUntitledWorkspaceSafetyEvidence:
+    """Project acquired fields only; missing measurements stay unproven."""
+    initial, final = baseline.get("environment", {}), restoration.get("environment_after", {})
+    def pids(facts):
+        processes = facts.get("processes")
+        return (tuple(sorted(p["ProcessId"] for p in processes if p["Name"] == "PacketTracer.exe"))
+                if processes is not None else None)
+    before, after = pids(baseline), pids(safety)
+    healthy = (baseline.get("bridge_healthy") is True and safety.get("bridge_healthy") is True
+               and before is not None and len(before) == 1 and before == after
+               and safety.get("transport_problems") == [])
+    # These summaries derive from the recorded checks, never substitute for them.
+    clean = (healthy and not problems and restoration.get("fixture_removed") is True
+             and restoration.get("inventory_restored") is True
+             and initial == final and bool(initial)
+             and baseline.get("mailbox_entries") == safety.get("mailbox_entries") == ()
+             and baseline.get("worktree_clean") is True and safety.get("worktree_clean") is True
+             and baseline.get("source_branch") == safety.get("source_branch")
+             and baseline.get("local_head") == safety.get("source_head")
+             and baseline.get("source_tree") == safety.get("source_tree"))
+    def ledger(key):
+        return () if baseline.get(key) == safety.get(key) == () else None
+    return EphemeralUntitledWorkspaceSafetyEvidence(
+        initial_device_count=initial.get("devices"), final_device_count=final.get("devices"),
+        initial_link_count=initial.get("links"), final_link_count=final.get("links"),
+        initial_saved_filename=initial.get("saved_filename"), final_saved_filename=final.get("saved_filename"),
+        authorized_file_operations=ledger("authorized_file_operations"),
+        executed_file_operations=ledger("executed_file_operations"),
+        initial_inventory_fingerprint=baseline.get("inventory_fingerprint", ""),
+        final_inventory_fingerprint=restoration.get("inventory_fingerprint_after", ""),
+        fixture_removed=restoration.get("fixture_removed"),
+        initial_realtime=initial.get("simulation_mode") is False,
+        final_realtime=final.get("simulation_mode") is False,
+        packet_tracer_pids_before=before, packet_tracer_pids_after=after,
+        bridge_healthy_before=baseline.get("bridge_healthy"), bridge_healthy_after=safety.get("bridge_healthy"),
+        mailbox_entries_before=baseline.get("mailbox_entries"), mailbox_entries_after=safety.get("mailbox_entries"),
+        source_branch_before=baseline.get("source_branch", ""), source_branch_after=safety.get("source_branch", ""),
+        source_head_before=baseline.get("local_head", ""), source_head_after=safety.get("source_head", ""),
+        source_tree_before=baseline.get("source_tree", ""), source_tree_after=safety.get("source_tree", ""),
+        worktree_clean_before=baseline.get("worktree_clean"), worktree_clean_after=safety.get("worktree_clean"),
+        runtime_healthy=healthy, crash_detected=not healthy,
+        integrity_verified=clean, session_reusable=clean, positive_claim_allowed=clean,
+        failure_reasons=list(problems) + list(safety.get("transport_problems") or []),
+    )
 
+
+def persist_qualification(*, plan: PoEModelQualificationPlan,
+                          scope: PoEPseMultiPortDeliveryScope, baseline: dict,
+                          restoration: dict, safety: dict, problems: list[str],
+                          store: CapabilitySnapshotStore) -> tuple[CapabilitySnapshot, Path]:
+    """Release a controlled result only beyond cleanup, safety and schema gates."""
+    attempted = restoration.get("attempted", [])
+    created = restoration.get("created", [])
+    deleted = restoration.get("deleted", [])
+    if (problems or restoration.get("inventory_restored") is not True
+            or restoration.get("fixture_removed") is not True
+            or restoration.get("power_inline_auto_proven") is not True
+            or len(attempted) != len(plan.bindings) + 1
+            or len(set(attempted)) != len(attempted)
+            or created != attempted or len(deleted) != len(attempted)
+            or set(deleted) != set(attempted)):
+        raise ValueError("Qualification cleanup or fixture creation is incomplete")
+    if (plan != governed_plan(plan.candidate_model) or scope.bindings != plan.bindings
+            or scope.switch_model != plan.candidate_model
+            or scope.packet_tracer_build != plan.packet_tracer_build
+            or scope.simultaneous_active_ports != plan.simultaneous_active_ports):
+        raise ValueError("Scope differs from governed qualification plan")
+    if (baseline.get("environment", {}).get("pt_version") != plan.packet_tracer_build
+            or restoration.get("environment_after", {}).get("pt_version") != plan.packet_tracer_build):
+        raise ValueError("Acquired Packet Tracer build differs from qualification plan")
+    evidence = ephemeral_safety_for(baseline, restoration, safety, problems)
+    validation = validate_live_session_positive_admission(evidence)
+    if not validation.is_valid:
+        raise ValueError("LIVE safety refused: " + "; ".join(validation.error_messages()))
+    dimensions = encode_poe_pse_multi_port_dimensions(scope)
+    # Decoder input is a structural contract candidate, not a released probe.
+    candidate = SimpleNamespace(capability="supports_poe", status=CapabilityStatus.SUPPORTED,
+        verified=True, observed_value=plan.simultaneous_active_ports, dimensions=dimensions,
+        evidence_source=EvidenceSource.CONTROLLED_PROBE, packet_tracer_version=plan.packet_tracer_build)
+    decoded = decode_poe_pse_multi_port_delivery_scope(candidate,
+        expected_model=plan.candidate_model, expected_packet_tracer_version=plan.packet_tracer_build)
+    if decoded is None:
+        raise ValueError("Schema decoder refused qualification")
+    probe_id = "poe-pse-capacity-qualification"
+    mutations = ["temporary-device-attempt:" + name for name in attempted]
+    context = ProbeContext(probe_id=probe_id, probe_version="3",
+        backend_version=plan.packet_tracer_build, device_model=plan.candidate_model,
+        environment_fingerprint=semantic_fingerprint(baseline["environment"]),
+        initial_inventory_hash=evidence.initial_inventory_fingerprint,
+        final_inventory_hash=evidence.final_inventory_fingerprint, inventory_restored=True,
+        isolation_level=ProbeIsolationLevel.FRESH_SESSION_REQUIRED, mutations=mutations,
+        cleanup_status=CleanupStatus.CLEAN, result_status=CapabilityStatus.SUPPORTED,
+        execution_status=ProbeExecutionStatus.VERIFIED,
+        probe_fingerprint=semantic_fingerprint(plan.model_dump(mode="json")), live_session_safety=evidence)
+    result = CapabilityProbeResult(probe_id=probe_id, model=plan.candidate_model,
+        capability="supports_poe", status=CapabilityStatus.SUPPORTED,
+        execution_status=ProbeExecutionStatus.VERIFIED, evidence_source=EvidenceSource.CONTROLLED_PROBE,
+        configured=True, verified=True, observed_value=plan.simultaneous_active_ports,
+        packet_tracer_version=plan.packet_tracer_build,
+        verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
+        raw_summary="Governed simultaneous PSE AUTO/NEVER/AUTO qualification.",
+        dimensions=dimensions, context=context)
+    snapshot = CapabilitySnapshot(packet_tracer_version=plan.packet_tracer_build,
+        backend_version_provenance=BackendVersionProvenance.DIRECTLY_OBSERVED,
+        environment_fingerprint=context.environment_fingerprint,
+        probe_fingerprints={probe_id: context.probe_fingerprint},
+        initial_inventory_hash=evidence.initial_inventory_fingerprint,
+        final_inventory_hash=evidence.final_inventory_fingerprint, inventory_restored=True,
+        session=ProbeSessionResult(session=ProbeSession(session_id=scope.experiment_id,
+            packet_tracer_version=plan.packet_tracer_build, created_devices=created,
+            mutations=mutations, cleanup_status=CleanupStatus.CLEAN),
+            results=[result], cleanup_deleted=deleted, cleanup_failed=[]))
+    # This writes evidence JSON to the repository store, not a PT workspace.
+    path = store.save_runtime(snapshot)
+    return snapshot, path
+
+
+def main() -> int:
+    args = parse_args()
     isolation = ImportIsolationPreflight(ROOT).ensure_isolated()
     if not isolation.isolated:
         raise RuntimeError(isolation.render())
-    binding = governed_binding()
-    baseline = source_baseline(binding)
+    plan = governed_plan(args.model)
+    baseline = source_baseline(plan)
     baseline["processes"] = prove_processes()
     baseline["import_isolation"] = dict(
         result=isolation.render(), executable=sys.executable,
@@ -216,17 +362,17 @@ def main() -> int:
         loaded_namespaces=[n for n in ("packet_tracer_mcp", "src.packet_tracer_mcp")
                            if n in sys.modules],
     )
-    run_id = ("poe3a-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = ("poe3b-" + args.qualification_id + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
               + "-" + token_hex(4))
     started = utc()
 
-    # The measured port must be this ticket's binding, not POE-2's.
-    exp = Experiment(run_id, switch_port=binding["switch_port"], endpoint_role="PH")
-    if exp.switch_port != binding["switch_port"]:
-        raise RuntimeError("Experiment is not measuring the governed port")
-    if not exp.bridge.pt_alive():
+    exp = Experiment(run_id, switch_ports=tuple(b.switch_port for b in plan.bindings), endpoint_role="PH")
+    baseline["bridge_healthy"] = exp.bridge.pt_alive()
+    if not baseline["bridge_healthy"]:
         raise RuntimeError("File bridge heartbeat stale")
-    if list(exp.bridge.dir.glob("req_*.js")) or list(exp.bridge.dir.glob("res_*.txt")):
+    baseline["mailbox_entries"] = tuple(sorted(p.name for pattern in ("req_*.js", "res_*.txt")
+        for p in exp.bridge.dir.glob(pattern)))
+    if baseline["mailbox_entries"]:
         raise RuntimeError("Foreign mailbox residue")
     os.environ["PT_MCP_BRIDGE_TOKEN"] = token_urlsafe(32)
     http = PTCommandBridge(port=54321, token=os.environ["PT_MCP_BRIDGE_TOKEN"])
@@ -234,6 +380,7 @@ def main() -> int:
 
     captures, pse_captures, problems = [], [], []
     fixture, restoration, safety, raw_files = {}, {}, {}, {}
+    attempted, created, deleted = [], [], []
     opening = preexisting = env = None
     creation_started = False
     try:
@@ -252,17 +399,7 @@ def main() -> int:
         print("LIVE OPEN " + run_id + " source=" + baseline["local_head"], flush=True)
         creation_started = True
 
-        switch = exp.fixture.create_device(
-            binding["switch_model"], exp.switch, (binding["switch_port"],), arm="candidate")
-        phone = exp.fixture.create_device(
-            binding["endpoint_model"], exp.endpoint, (binding["endpoint_port"],), arm="candidate")
-        if switch.model != binding["switch_model"] or phone.model != binding["endpoint_model"]:
-            raise RuntimeError("Fixture model readback mismatch")
-        link = exp.fixture.create_link(
-            switch, binding["switch_port"], phone, binding["endpoint_port"])
-        fixture = dict(switch=switch.model_dump(mode="json"),
-                       endpoint=phone.model_dump(mode="json"),
-                       link=link.model_dump(mode="json"))
+        fixture = create_fixture(exp, plan, attempted, created)
         baseline["boot"] = exp.executor.wait_until_ready(
             exp.switch, timeout_seconds=150).model_dump(mode="json")
 
@@ -279,7 +416,7 @@ def main() -> int:
             raw_files[capture.raw_file] = capture.observation["raw_output"].encode()
             if not all(capture.table_completeness.values()):
                 raise RuntimeError(label + " did not satisfy every completeness gate")
-            pse_captures.append(pse_capture(label, capture, capture.observation))
+            pse_captures.append(pse_capture(plan, label, capture, exp.switch))
             print(label + " captured; ports=" + str(capture.observation["ports"])
                   + "; completeness=True", flush=True)
     except Exception as exc:
@@ -291,16 +428,13 @@ def main() -> int:
                 restored = exp.capture("RESTORE")
                 raw_files[restored.raw_file] = restored.observation["raw_output"].encode()
                 restoration["fresh_readback"] = restored.model_dump(mode="json")
-                row = restored.observation["ports"][0]["row"]
-                restoration["power_inline_auto_proven"] = (
-                    row is not None and row["admin"] == "auto")
+                # RESTORE uses the same complete multi-port readback checks.
+                restore_capture = pse_capture(plan, "AUTO_2", restored, exp.switch)
+                restoration["power_inline_auto_proven"] = all(
+                    row.row_present for row in restore_capture.binding_captures)
             except Exception as exc:
                 problems.append("Restoration readback: " + str(exc))
-            for name, key in ((exp.endpoint, "endpoint_deleted"), (exp.switch, "switch_deleted")):
-                try:
-                    restoration[key] = exp.fixture.delete_device(name)
-                except Exception as exc:
-                    problems.append("Cleanup: " + str(exc))
+            deleted.extend(cleanup_fixture(exp, attempted, problems))
             try:
                 restoration["residue_retired"] = list(
                     exp.fixture.retire_session_residue(preexisting))
@@ -313,57 +447,52 @@ def main() -> int:
                 restoration["environment_after"] = closing
                 restoration["realtime_restored"] = closing.get("simulation_mode") is False
                 exp.bridge.collect_completed()
-                files_clean = (not list(exp.bridge.dir.glob("req_*.js"))
-                               and not list(exp.bridge.dir.glob("res_*.txt")))
+                mailbox_entries = tuple(sorted(p.name for pattern in ("req_*.js", "res_*.txt")
+                    for p in exp.bridge.dir.glob(pattern)))
                 final_processes = prove_processes()
-                before = {p["ProcessId"] for p in baseline["processes"]
-                          if p["Name"] == "PacketTracer.exe"}
-                after = {p["ProcessId"] for p in final_processes
-                         if p["Name"] == "PacketTracer.exe"}
                 safety = dict(
-                    clean=(files_clean and exp.bridge.pt_alive() and before == after
-                           and closing == env and not exp.transport_problems and not problems),
-                    mailbox_clean=files_clean, runtime_heartbeat_fresh=exp.bridge.pt_alive(),
-                    same_pt_processes=before == after, before_pt_pids=sorted(before),
-                    after_pt_pids=sorted(after), transport_problems=exp.transport_problems,
-                    file_safety="untitled workspace; no save issued; saved_filename remained empty",
-                    frozen_source_unchanged=(
-                        command("git", "rev-parse", "HEAD") == baseline["local_head"]
-                        and not command("git", "status", "--porcelain")),
+                    mailbox_entries=mailbox_entries, bridge_healthy=exp.bridge.pt_alive(),
+                    processes=final_processes, transport_problems=list(exp.transport_problems),
+                    authorized_file_operations=(), executed_file_operations=(),
+                    source_branch=command("git", "branch", "--show-current"),
+                    source_head=command("git", "rev-parse", "HEAD"),
+                    source_tree=command("git", "rev-parse", "HEAD^{tree}"),
+                    worktree_clean=not command("git", "status", "--porcelain"),
                 )
             except Exception as exc:
                 problems.append("Safety finalization: " + str(exc))
         http.stop()
+    restoration.update(attempted=attempted, created=created, deleted=deleted)
     completed = utc()
     print("LIVE CLOSED; persisting after cleanup", flush=True)
 
-    scope = dimensions = decoded = None
+    scope = dimensions = snapshot_path = None
+    admitted_safety = None
     if len(pse_captures) == 3 and not problems:
         scope = pse_scope_for(
-            binding=binding, run_id=run_id, observed_at=completed,
+            plan=plan, run_id=run_id, observed_at=completed,
             captures=tuple(pse_captures),
             gates=tuple(sorted(captures[0].table_completeness)),
         )
         try:
-            dimensions = encode_poe_pse_dimensions(scope)
-        except ValueError as exc:
-            problems.append("PSE contract refused the measured scope: " + str(exc))
+            dimensions = encode_poe_pse_multi_port_dimensions(scope)
+            snapshot, snapshot_path = persist_qualification(
+                plan=plan, scope=scope, baseline=baseline, restoration=restoration,
+                safety=safety, problems=problems,
+                store=CapabilitySnapshotStore(resolve_within(ROOT, Path("data") / "capabilities")))
+            admitted_safety = snapshot.session.results[0].context.live_session_safety
+        except Exception as exc:
+            problems.append("Qualification not persisted: " + str(exc))
 
     bundle = dict(
-        schema_version=1, kind="poe3a-pse-delivery-measurement", experiment_id=run_id,
+        schema_version=1, kind="poe3b-pse-capacity-qualification", experiment_id=run_id,
         started_at_utc=started, completed_at_utc=completed, START_HEAD=START_HEAD,
         frozen_live_sha=baseline["local_head"], packet_tracer_build=BUILD,
-        exact_binding=binding, productive=False,
-        integration_result="NOT_ATTEMPTED",
-        authority_delta="none; measurement only",
-        not_productive_because=(
-            "A positive PoE claim additionally requires LiveSessionSafetyEvidence that "
-            "passes validate_live_session_positive_admission, which demands an exact "
-            "canonical .pts and a disposable copy with matching SHA-256 identities. This "
-            "run used an empty untitled workspace, so no canonical file was ever at risk "
-            "and none can honestly be attested. The measurement below is real; the "
-            "authority step is not taken."
-        ),
+        qualification_id=args.qualification_id, qualification_plan=plan.model_dump(mode="json"),
+        productive=snapshot_path is not None,
+        integration_result="PERSISTED" if snapshot_path is not None else "NOT_ADMITTED",
+        runtime_snapshot_path=str(snapshot_path) if snapshot_path is not None else None,
+        live_session_safety=admitted_safety.model_dump(mode="json") if admitted_safety is not None else None,
         baseline=baseline, fixture=fixture,
         captures=[c.model_dump(mode="json") for c in captures],
         pse_scope=(asdict(scope) if scope is not None else None),
@@ -380,7 +509,7 @@ def main() -> int:
     path.write_bytes((json.dumps(bundle, indent=2, sort_keys=True) + "\n").encode())
 
     print(json.dumps(dict(
-        bundle=str(directory), binding=binding,
+        bundle=str(directory), qualification_plan=plan.model_dump(mode="json"),
         measured=[asdict(c) for c in pse_captures],
         pse_contract_accepts_the_measurement=dimensions is not None,
         integration_result=bundle["integration_result"],

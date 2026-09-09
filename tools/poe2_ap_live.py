@@ -120,8 +120,18 @@ class Experiment:
         run_id: str,
         *,
         switch_port: str | None = None,
+        switch_ports: tuple[str, ...] | None = None,
         endpoint_role: str = "AP",
     ) -> None:
+        ports = switch_ports if switch_ports is not None else (switch_port or BINDING["switch_port"],)
+        if (not isinstance(ports, tuple) or not ports
+                or any(not isinstance(port, str) or not port.strip() for port in ports)
+                or len(set(ports)) != len(ports)):
+            raise ValueError("switch_ports must be an ordered, nonempty unique tuple")
+        if switch_port is not None and switch_port != ports[0]:
+            raise ValueError("switch_port disagrees with switch_ports")
+        self.switch_ports = ports
+        self.switch_port = ports[0]
         self.bridge = FileBridge()
         self.fixture = PacketTracerPoEDeliveryFixtureRuntime(self.send, BUILD)
         self.executor = ControlledIosExecutor(self.send)
@@ -131,7 +141,6 @@ class Experiment:
         # from the module-level AP binding at every use, so a caller that put
         # its endpoint anywhere else silently drove and observed Fa0/13 while
         # its fixture sat on another port.
-        self.switch_port = switch_port or BINDING["switch_port"]
         self.switch = "MCP-POE2-SW-" + run_id
         self.endpoint = "MCP-POE2-" + endpoint_role + "-" + run_id
         self.transport_problems: list[str] = []
@@ -155,21 +164,22 @@ class Experiment:
         return self.read(_ENV_JS)
 
     def apply(self, mode: PoEInlineMode) -> None:
-        if not self.config.configure_ios(self.switch, _payload(self.switch_port, mode)):
-            raise RuntimeError("Mode was not queued")
-        time.sleep(6)
-        self.bridge.collect_completed()
-        if self.bridge._pending:
-            raise RuntimeError("Mode dispatch still pending")
+        for port in self.switch_ports:
+            if not self.config.configure_ios(self.switch, _payload(port, mode)):
+                raise RuntimeError("Mode was not queued")
+            time.sleep(6)
+            self.bridge.collect_completed()
+            if self.bridge._pending:
+                raise RuntimeError("Mode dispatch still pending")
 
     def capture(self, label: str) -> PoE2Capture:
         start = utc()
-        first = self.observer.observe_poe_inline_status(self.switch, (self.switch_port,))
+        first = self.observer.observe_poe_inline_status(self.switch, self.switch_ports)
         # The executor may already have restored user EXEC; its own dispatch
         # receipt retains the privileged prompt against which output must end.
         prompt = first.command_result.expected_prompt if first.command_result else ""
         time.sleep(2)
-        second = self.observer.observe_poe_inline_status(self.switch, (self.switch_port,))
+        second = self.observer.observe_poe_inline_status(self.switch, self.switch_ports)
         serialize = lambda x: json.loads(json.dumps(asdict(x), default=lambda v: v.value if isinstance(v, Enum) else str(v)))
         a, b = serialize(first), serialize(second)
         stable = first.raw_output == second.raw_output
