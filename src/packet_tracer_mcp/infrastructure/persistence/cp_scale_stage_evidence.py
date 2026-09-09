@@ -6,6 +6,7 @@ import collections
 from dataclasses import asdict
 
 from ...application.cp_scale_live.contracts import (
+    CP_SCALE_REALTIME_FIELDS,
     CPScaleLiveStageResult,
     CPScaleRealtimeObservation,
     CPScaleRealtimeState,
@@ -21,7 +22,12 @@ from ...shared.utils import serialize_typed_ping_evidence
 def realtime_state_evidence(state: CPScaleRealtimeState | None) -> dict[str, object] | None:
     if state is None:
         return None
-    return {name: getattr(state, name) for name in state.present}
+    present = state.present if type(state.present) is tuple else ()
+    return {
+        name: getattr(state, name)
+        for name in CP_SCALE_REALTIME_FIELDS
+        if name in present
+    }
 
 
 def _trunk_vlan_traversal_evidence(plan, result) -> list[dict[str, object]]:

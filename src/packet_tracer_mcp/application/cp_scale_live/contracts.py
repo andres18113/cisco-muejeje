@@ -34,6 +34,16 @@ from ...domain.models.plans import TopologyPlan
 from ...domain.models.typed_ping import TypedPingResult
 
 
+CPScaleRealtimeField = Literal[
+    "observed", "simulation_mode", "frames", "sim_time",
+    "current_index", "message", "mode",
+]
+CP_SCALE_REALTIME_FIELDS: tuple[CPScaleRealtimeField, ...] = (
+    "observed", "simulation_mode", "frames", "sim_time",
+    "current_index", "message", "mode",
+)
+
+
 @dataclass(frozen=True)
 class CPScaleRealtimeState:
     """Finite Realtime readback; ``present`` preserves observed field absence."""
@@ -45,13 +55,7 @@ class CPScaleRealtimeState:
     current_index: int | None = None
     message: str | None = None
     mode: str | None = None
-    present: tuple[
-        Literal[
-            "observed", "simulation_mode", "frames", "sim_time",
-            "current_index", "message", "mode",
-        ],
-        ...,
-    ] = ()
+    present: tuple[CPScaleRealtimeField, ...] = ()
 
 
 @dataclass(frozen=True)

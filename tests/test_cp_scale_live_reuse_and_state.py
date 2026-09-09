@@ -167,17 +167,21 @@ def test_large_sequence_reuses_local_accumulators_and_freezes_once(failed_at):
     initial = Cursor(0, "initial")
     acquired = []
     calls = []
-    accumulator_ids = []
+    accumulator_id_sets = []
+    accumulator_values = {}
 
     def step(stage, continuity):
         frame = inspect.currentframe()
         assert frame is not None and frame.f_back is not None
         caller = frame.f_back
         try:
-            accumulator_ids.append((
-                id(caller.f_locals["completed"]),
-                id(caller.f_locals["secondaries"]),
-            ))
+            local_lists = {
+                id(value): value
+                for value in caller.f_locals.values()
+                if type(value) is list
+            }
+            accumulator_id_sets.append(set(local_lists))
+            accumulator_values.update(local_lists)
         finally:
             del caller
             del frame
@@ -196,8 +200,14 @@ def test_large_sequence_reuses_local_accumulators_and_freezes_once(failed_at):
     result = execute_stage_sequence(stages, initial, step)
     expected_count = len(stages) if failed_at is None else failed_at + 1
 
-    assert len(set(item[0] for item in accumulator_ids)) == 1
-    assert len(set(item[1] for item in accumulator_ids)) == 1
+    stable_ids = set.intersection(*accumulator_id_sets)
+    stable_values = [accumulator_values[identifier] for identifier in stable_ids]
+    assert any(
+        len(value) == len(acquired)
+        and all(actual is expected for actual, expected in zip(value, acquired))
+        for value in stable_values
+    )
+    assert any(value == list(result.secondary_failures) for value in stable_values)
     assert isinstance(result.steps, tuple)
     assert isinstance(result.secondary_failures, tuple)
     assert result.steps == tuple(acquired)

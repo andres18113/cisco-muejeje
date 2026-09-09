@@ -38,7 +38,7 @@ def finalize_session(
     decide cleanup, retention, or acceptance, and it never retries an operation.
     """
     errors: list[str] = []
-    interrupted = False
+    interruption: BaseException | None = None
     try:
         prepare()
         try:
@@ -47,20 +47,39 @@ def finalize_session(
             errors.append(f"final_evidence_write: {type(exc).__name__}: {exc}")
     except Exception as exc:
         errors.append(f"finalization: {type(exc).__name__}: {exc}")
-    except BaseException:
-        interrupted = True
-        raise
-    finally:
+    except BaseException as exc:
+        interruption = exc
+
+    try:
+        session.close()
+    except Exception as exc:
+        errors.append(f"transport_stop: {type(exc).__name__}: {exc}")
+    except BaseException as exc:
+        if interruption is None:
+            interruption = exc
+        else:
+            errors.append(f"transport_stop: {type(exc).__name__}: {exc}")
+
+    try:
+        errors = [*secondary_failures(), *errors]
+    except Exception as exc:
+        errors.insert(0, f"secondary_failures: {type(exc).__name__}: {exc}")
+    except BaseException as exc:
+        if interruption is None:
+            interruption = exc
+        else:
+            errors.insert(0, f"secondary_failures: {type(exc).__name__}: {exc}")
+
+    if errors and (not defer_report or interruption is not None):
         try:
-            try:
-                session.close()
-            except Exception as exc:
-                errors.append(f"transport_stop: {type(exc).__name__}: {exc}")
-            except BaseException:
-                interrupted = True
-                raise
-        finally:
-            errors = [*secondary_failures(), *errors]
-            if errors and (not defer_report or interrupted):
-                errors = list(report_terminal_errors(tuple(errors), report))
+            errors = list(report_terminal_errors(tuple(errors), report))
+        except BaseException as exc:
+            if interruption is None:
+                interruption = exc
+            else:
+                errors.append(f"finalization_report: {type(exc).__name__}: {exc}")
+
+    if interruption is not None:
+        interruption.finalization_errors = tuple(errors)
+        raise interruption
     return FinalizationResult(tuple(errors))

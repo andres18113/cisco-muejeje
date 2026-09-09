@@ -43,6 +43,58 @@ def test_report_callback_failure_cannot_mask_obligations_or_cancellation(cancel)
     assert calls == ["prepare", "write", "close", "report"]
 
 
+@pytest.mark.parametrize("secondary_boundary", ["close", "report"])
+def test_later_baseexception_never_replaces_the_original_cancellation(
+    secondary_boundary,
+):
+    from src.packet_tracer_mcp.application.cp_scale_live.lifecycle import (
+        finalize_session,
+    )
+
+    calls = []
+    reports = []
+    original = KeyboardInterrupt("FIRST")
+
+    class Session:
+        def close(self):
+            calls.append("close")
+            if secondary_boundary == "close":
+                raise SystemExit("SECOND")
+            raise OSError("ordinary close failure")
+
+    def write():
+        calls.append("write")
+        raise original
+
+    def report(errors):
+        calls.append("report")
+        reports.append(errors)
+        if secondary_boundary == "report":
+            raise SystemExit("SECOND")
+
+    with pytest.raises(KeyboardInterrupt, match="FIRST") as caught:
+        finalize_session(
+            prepare=lambda: calls.append("prepare"),
+            write=write,
+            session=Session(),
+            report=report,
+            defer_report=True,
+        )
+
+    assert calls == ["prepare", "write", "close", "report"]
+    assert caught.value is original
+    expected = (
+        ("transport_stop: SystemExit: SECOND",)
+        if secondary_boundary == "close"
+        else (
+            "transport_stop: OSError: ordinary close failure",
+            "finalization_report: SystemExit: SECOND",
+        )
+    )
+    assert caught.value.finalization_errors == expected
+    assert reports == [expected[:1]]
+
+
 @pytest.mark.parametrize("boundary", ["realtime", "postcleanup_write", "checkpoint"])
 def test_router0_acquired_cleanup_is_never_repeated_after_cancellation(boundary):
     verdict = _probe(RUN_DOUBLES + "\nboundary = " + repr(boundary) + r'''

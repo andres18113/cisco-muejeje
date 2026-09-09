@@ -81,6 +81,7 @@ def test_packet_tracer_observation_adapter_converts_runtime_state_field_by_field
     "state",
     [
         None,
+        pytest.param("not-a-realtime-state", id="wrong-state-type"),
         pytest.param(
             {"observed": True, "simulation_mode": None, "present": ("observed", "simulation_mode")},
             id="missing-mode-value",
@@ -100,6 +101,22 @@ def test_packet_tracer_observation_adapter_converts_runtime_state_field_by_field
         pytest.param(
             {"observed": True, "simulation_mode": False, "present": ("simulation_mode",)},
             id="observed-value-without-presence",
+        ),
+        pytest.param(
+            {
+                "observed": True,
+                "simulation_mode": False,
+                "present": ("observed", "simulation_mode", "bogus"),
+            },
+            id="unknown-presence-field",
+        ),
+        pytest.param(
+            {
+                "observed": True,
+                "simulation_mode": False,
+                "present": ("observed", "simulation_mode", 7),
+            },
+            id="non-string-presence-field",
         ),
     ],
 )
@@ -185,3 +202,89 @@ def test_cleanup_consumer_fails_closed_for_incoherent_realtime_state(
 class SimpleTransport:
     def send_and_wait(self, script, timeout):
         raise AssertionError("The controlled Realtime observation must not contact a transport")
+
+
+@pytest.mark.parametrize(
+    "present",
+    [
+        ("observed", "simulation_mode", "bogus"),
+        ("observed", "simulation_mode", 7),
+    ],
+)
+def test_stage_and_serializer_reject_unknown_realtime_presence_without_crashing(
+    present,
+) -> None:
+    from dataclasses import replace
+
+    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+        CPScaleRealtimeState,
+    )
+    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import (
+        CPScaleStageExecutor,
+    )
+    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
+        stage_result_evidence,
+    )
+    from tests.cp_scale_stage_fixture import stage_fixture
+    from tests.test_voice_runtime import _compile
+
+    fixture = stage_fixture(CPScaleStageExecutor)
+    fixture.request = replace(
+        fixture.request,
+        projection=replace(fixture.request.projection, voice=_compile().plan),
+    )
+    state = CPScaleRealtimeState(
+        observed=True,
+        simulation_mode=False,
+        present=present,
+    )
+    fixture.executor.observations.voice_window_state = lambda: state
+
+    result = fixture.executor.execute(fixture.request)
+    evidence = stage_result_evidence(result)
+
+    assert result.outcome == "failed"
+    assert result.report.realtime.before.error
+    assert evidence["voice_realtime_continuity"]["before"] == {
+        "observed": True,
+        "simulation_mode": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "present",
+    [
+        ("observed", "simulation_mode", "bogus"),
+        ("observed", "simulation_mode", 7),
+    ],
+)
+def test_cleanup_rejects_unknown_realtime_presence_and_stays_serializable(
+    monkeypatch,
+    present,
+) -> None:
+    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+        CPScaleRealtimeState,
+    )
+    from src.packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
+    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
+        realtime_evidence,
+    )
+
+    state = CPScaleRealtimeState(
+        observed=True,
+        simulation_mode=False,
+        present=present,
+    )
+    monkeypatch.setattr(cp_scale_live_run, "_voice_window_state", lambda runtime: {})
+    monkeypatch.setattr(cp_scale_live_run, "cleanup_realtime_state", lambda raw: state)
+    observations = cp_scale_live_run.PacketTracerCPScaleRunObservations(
+        SimpleTransport(),
+        cp_scale_live_run.CPScaleActiveProjection(),
+    )
+
+    result = observations.cleanup_realtime()
+    evidence = realtime_evidence(result)
+
+    assert result.verified is False
+    assert result.error
+    assert evidence["state"] == {"observed": True, "simulation_mode": False}

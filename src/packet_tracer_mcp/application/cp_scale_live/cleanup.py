@@ -6,7 +6,7 @@ from ..use_cases.deploy_enterprise_topology import PhysicalTopologyRuntime
 from ..use_cases.qualify_cp_scale_live import canonical_cleanup_restoration_error
 from ...domain.models.plans import TopologyPlan
 from ...domain.enterprise.models.physical_deployment import (
-    PhysicalDeploymentResult, PhysicalWorkspaceObservation,
+    PhysicalDeploymentResult, PhysicalMutationResult, PhysicalWorkspaceObservation,
     PhysicalObjectKind, PhysicalDeploymentItemStatus,
 )
 

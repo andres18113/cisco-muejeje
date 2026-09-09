@@ -14,17 +14,26 @@ from ...domain.enterprise.models.configuration_runtime import (
 from ...domain.enterprise.models.deployment import DeploymentManifest
 from ...domain.enterprise.models.voice_plan import VoicePlan
 from ...domain.enterprise.models.voice_runtime import VoiceApplicationResult
-from .contracts import CPScaleObservationRecord, CPScaleRealtimeState, CPScaleVoiceStageResult
+from .contracts import (
+    CP_SCALE_REALTIME_FIELDS,
+    CPScaleObservationRecord,
+    CPScaleRealtimeState,
+    CPScaleVoiceStageResult,
+)
 
 
 def realtime_boundary_error(state: CPScaleRealtimeState | None, edge: str) -> str:
-    if state is None:
+    if state is None or type(state) is not CPScaleRealtimeState:
         return (
             f"The simulation state {edge} the authoritative voice window was not "
             "observable, so the window cannot be attributed to REALTIME."
         )
     if (
         type(state.present) is not tuple
+        or any(
+            type(name) is not str or name not in CP_SCALE_REALTIME_FIELDS
+            for name in state.present
+        )
         or "observed" not in state.present
         or "simulation_mode" not in state.present
     ):

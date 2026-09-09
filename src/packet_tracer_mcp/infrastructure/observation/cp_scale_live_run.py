@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 from ...application.cp_scale_live.contracts import (
+    CP_SCALE_REALTIME_FIELDS,
     CPScaleDhcpStatisticsTarget,
     CPScaleObservationRecord,
     CPScaleRealtimeState,
@@ -28,10 +29,9 @@ class CPScaleActiveProjection:
 def cleanup_realtime_state(value: dict[str, object] | None) -> CPScaleRealtimeState | None:
     if value is None:
         return None
-    fields = ("observed", "simulation_mode", "frames", "sim_time", "current_index", "message", "mode")
     return CPScaleRealtimeState(value.get("observed"), value.get("simulation_mode"), value.get("frames"),
         value.get("sim_time"), value.get("current_index"), value.get("message"), value.get("mode"),
-        tuple(name for name in fields if name in value))
+        tuple(name for name in CP_SCALE_REALTIME_FIELDS if name in value))
 
 
 class PacketTracerCPScaleRunObservations:
