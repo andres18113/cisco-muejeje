@@ -229,9 +229,10 @@ class CPScaleLiveCoordinator:
                 self.persistence.checkpoint(plan.checkpoint, snapshot(), final=True)
                 terminal = replace(terminal, event=plan.event)
                 return
+            terminal = replace(terminal, cleanup_attempted=True)
             cleanup = self.completion.cleanup.restore(session.physical, qualification.composition.topology,
                 progress.physical.owned, qualification.baseline)
-            terminal = replace(terminal, cleanup=cleanup, cleanup_attempted=True)
+            terminal = replace(terminal, cleanup=cleanup)
             realtime = observations.cleanup_realtime()
             terminal = replace(terminal, realtime=realtime)
             review = self.completion.review_cleanup(cleanup, realtime, router0=router0)
@@ -265,10 +266,11 @@ class CPScaleLiveCoordinator:
                     terminal = replace(terminal, precleanup_archive_error=error,
                         secondary_failures=(*terminal.secondary_failures, "precleanup_archive: " + error))
             if not terminal.cleanup_attempted:
+                terminal = replace(terminal, cleanup_attempted=True)
                 try:
                     cleanup = self.completion.cleanup.restore(session.physical, qualification.composition.topology,
                         progress.physical.owned, qualification.baseline)
-                    terminal = replace(terminal, cleanup=cleanup, cleanup_attempted=True)
+                    terminal = replace(terminal, cleanup=cleanup)
                     errors = (("cleanup: " + cleanup.error,) if cleanup.error else ()) + (
                         ("cleanup_restoration: " + cleanup.restoration_error,) if cleanup.restoration_error else ())
                     terminal = replace(terminal, secondary_failures=terminal.secondary_failures + errors)

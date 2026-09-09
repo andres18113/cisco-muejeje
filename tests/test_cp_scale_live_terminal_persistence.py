@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from src.packet_tracer_mcp.application.cp_scale_live.backend import (
     CPScaleBackendQualification,
 )
@@ -76,7 +78,7 @@ def _controlled_coordinator(
     devices = []
     if cleanup_failure == "second_read":
         devices = [DevicePlan(id="r", name="R", model="2911", category="router")]
-    elif cleanup_failure == "second_remove":
+    elif cleanup_failure in {"second_remove", "cancel_second_remove"}:
         devices = [
             DevicePlan(id="r", name="R", model="2911", category="router"),
             DevicePlan(id="s", name="S", model="2911", category="router"),
@@ -145,6 +147,8 @@ def _controlled_coordinator(
             calls.append("remove:" + device.id)
             if cleanup_failure == "second_remove" and device.id == "r":
                 raise RuntimeError("SECOND_REMOVE_FAILED")
+            if cleanup_failure == "cancel_second_remove" and device.id == "r":
+                raise KeyboardInterrupt("CANCELLED_DURING_SECOND_REMOVE")
             return PhysicalMutationResult(
                 target_id=device.id,
                 target_kind=PhysicalObjectKind.DEVICE,
@@ -410,3 +414,24 @@ def test_second_remove_failure_retains_only_the_confirmed_prior_mutation(
     assert [item["target_id"] for item in evidence["cleanup"]["mutations"]] == ["s"]
     assert "first" not in evidence["cleanup"]
     assert "second" not in evidence["cleanup"]
+
+
+def test_cleanup_cancellation_is_not_retried_or_converted_to_a_result(
+    tmp_path: Path,
+) -> None:
+    fixture = _controlled_coordinator(
+        tmp_path,
+        cleanup_failure="cancel_second_remove",
+    )
+
+    with pytest.raises(KeyboardInterrupt, match="CANCELLED_DURING_SECOND_REMOVE"):
+        fixture.coordinator.run(fixture.request)
+
+    assert [call for call in fixture.calls if call.startswith("remove:")] == [
+        "remove:s",
+        "remove:r",
+    ]
+    assert fixture.calls.count("stop") == 1
+    evidence = json.loads(fixture.persistence.evidence_path.read_text(encoding="utf-8"))
+    assert "cleanup" not in evidence
+    assert "finalization_errors" not in evidence
