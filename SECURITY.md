@@ -2,13 +2,25 @@
 
 ## Reporting a vulnerability
 
-Please **do not open a public issue.** Report it privately through
-[GitHub Security Advisories](https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new),
-and I'll get back to you.
+Please **do not open a public issue.** Report it privately through GitHub
+Security Advisories on the repository you got the code from:
 
-I'll acknowledge within a few days and work with you on a fix before anything is
-published. If you want a CVE, say so in the report — coordinated disclosure with
-the fix already shipped is the goal, not a race.
+| You are using | Report to |
+| --- | --- |
+| This repository (`andres18113/cisco-muejeje`), including the Muejeje runtime and anything on its branches | [cisco-muejeje advisories](https://github.com/andres18113/cisco-muejeje/security/advisories/new) |
+| Upstream `Mats2208/MCP-Packet-Tracer` releases, including the published *MCP Control Center* `.pts` | [MCP-Packet-Tracer advisories](https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new) |
+
+This repository is a fork of `Mats2208/MCP-Packet-Tracer` (MIT, © Mateo
+[@Mats2208](https://github.com/Mats2208)) and carries changes that do not exist
+upstream, so **this fork's maintainer owns disclosure for anything reported
+here** — there is no delegation of that to upstream, and none is claimed. Much of
+the code is still shared, so a finding in shared code affects both: report it
+here and say so, and it will be coordinated upstream before either side
+publishes. Report it upstream instead if you prefer; please do not race the two.
+
+You will get an acknowledgement within a few days and a fix worked out with you
+before anything is published. If you want a CVE, say so in the report —
+coordinated disclosure with the fix already shipped is the goal, not a race.
 
 ## Threat model — read this before you file anything
 

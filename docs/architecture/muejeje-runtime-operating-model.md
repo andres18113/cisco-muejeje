@@ -19,10 +19,42 @@ decided here, not inherited from any other work stream.
 
 | Relationship | Role |
 | --- | --- |
-| Packet Tracer + its IpcAPI | **primary external compatibility boundary** — the only contract Muejeje must satisfy |
+| Runtime Protocol V6 | **northbound / public contract** — what Muejeje offers its consumers |
+| Packet Tracer + its IpcAPI | **southbound / platform compatibility contract** — what Muejeje consumes |
 | CP LIVE | **one integration consumer.** It exercises Muejeje; it does not define it |
 | `refactor/cp-live-m0-baseline` | the commit this branch was re-parented onto — an **initial ancestry correction only** |
 | `feature/runtime-protocol-v6-foundation` | donor/reference for V6 shapes; never merged |
+
+### Two contracts, not one
+
+An earlier wording called Packet Tracer and its IpcAPI *the only* contract
+Muejeje must satisfy. That is too broad: it describes the platform Muejeje
+depends on and silently omits the contract Muejeje itself publishes.
+
+```text
+Consumers / MCP / projects
+        │
+ Runtime Protocol V6      ← northbound: what consumers may rely on
+        │
+   muejeje.pts
+        │
+    Cisco IpcAPI          ← southbound: what Muejeje must adapt to
+        │
+ Packet Tracer
+```
+
+- **Northbound (V6)** is a contract Muejeje **owns**. Consumers depend on it and
+  on nothing else — not on internals, not on the transport, not on Packet Tracer
+  specifics. Muejeje decides when it changes, and changing it is a consumer-
+  visible event.
+- **Southbound (IpcAPI)** is a contract Muejeje **does not own**. Muejeje adapts
+  to it, never extends or reinterprets it, and every claim about its behaviour
+  needs target-build evidence.
+
+The two are independent: a southbound change must not reach consumers as a V6
+change unless V6 genuinely changed. Keeping them named separately is what makes
+that check possible. V6 itself is not designed here — see
+[the requirements baseline](muejeje-pts-requirements.md) (`MJ-005`, `MJ-006`).
 
 Consequences, stated so they cannot be quietly reversed:
 
@@ -51,8 +83,13 @@ state is preserved on the local ref `muejeje-pts-prealign-e2d912b`
 (`e2d912b5fe8c67077c6b753e634967f626393d87`) for architectural review.
 
 Details, with evidence markers, are in
-[the v2 preflight inventory](../qa/muejeje-pts-v2-preflight-inventory.md) and
-[ADR-001](../qa/muejeje-pts-adr-001-branch-realignment.md).
+[the v2 preflight inventory](../qa/muejeje-pts-v2-preflight-inventory.md),
+[ADR-001](../qa/muejeje-pts-adr-001-branch-realignment.md) and its
+[resolution](../qa/muejeje-pts-adr-001-resolution.md).
+
+Binding requirements carry stable IDs in
+[the requirements baseline](muejeje-pts-requirements.md); this document explains
+the governance, that one records what is decided and how each item is verified.
 
 ## Runtime architecture (target)
 
@@ -139,13 +176,36 @@ tests never substitute for it.
 Packaging is the Scripting Interface (Extensions → Scripting → New PT Script
 Module → import engine and Custom Interface files → Save). Engine files evaluate
 in listed order, then `main()`; `cleanUp()` runs on stop; `#include` resolves one
-level and is expanded at save. No packaging CLI is demonstrated:
-`BUILD_TOOLCHAIN_AUTOMATION_UNPROVEN`. `.pts` is an encrypted container, so
-content validation is behavioural only.
+level and is expanded at save. `.pts` is an encrypted container, so content
+validation is behavioural only.
+
+**Build state is five facts, not one.** The audit tool reports exactly one
+dominant state and keeps the axes readable in a `packaging_state` block:
+
+| State | Meaning |
+| --- | --- |
+| `BUILD_SOURCE_INVALID` | the source is unidentifiable, or dirty / differing from HEAD |
+| `BUILD_INPUT_INVALID` | the manifest or an input violates the contract |
+| `BUILD_TOOLCHAIN_BLOCKED` | **a genuine inability to build**: no usable Packet Tracer, or a declared input that is not on disk |
+| `BUILD_AUTOMATION_UNPROVEN` | nothing is broken; the recipe is not fully specified and no automated packaging path is demonstrated |
+| `PACKAGING_MANUAL_AVAILABLE` | a human can package this recipe in the Scripting Interface now |
+
+`BUILD_TOOLCHAIN_BLOCKED` never means "no automation exists". Manual packaging
+availability, automation provenness and recipe completeness are three separate
+fields; no packaging CLI has been demonstrated, so `automation` stays
+`BUILD_AUTOMATION_UNPROVEN` until evidence says otherwise and is never inferred
+from a clean report.
 
 `muejeje.pts` is an **owned artifact**. Candidate and report destinations are the
 ignored `dist/muejeje.pts` and `dist/muejeje.build.json`; no existing `.pts` is
 ever replaced automatically.
+
+**Open: the source root.** The manifest's `own_inputs` are today the legacy
+`EXTENSION/**` tree — the same sources that produce the existing published *MCP
+Control Center* `.pts`, including the `main.js` that carries the six PTBuilder
+globals. An owned artifact sharing a source root with the legacy extension
+cannot evolve independently of it. Assessed, not migrated: see `TODO-SRC-ROOT`
+and `TODO-RECIPE-SCOPE` in [the requirements baseline](muejeje-pts-requirements.md).
 
 ## Gates
 
