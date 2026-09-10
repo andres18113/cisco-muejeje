@@ -15,6 +15,7 @@ nothing there measures a file.
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -80,12 +81,44 @@ def js_function_lengths(path: Path) -> list[tuple[str, int]]:
     return lengths
 
 
-def packaged_sources() -> list[Path]:
-    suffixes = {".js", ".html", ".htm", ".css", ".png", ".gif", ".jpg", ".svg"}
+# Packaged assets, split by whether their bytes are text. An asset is not text
+# because it ships in the artifact: a `.png` is packaged and would raise on
+# `read_text`, so every gate that reads prose reads `packaged_text_bodies()`
+# and never the whole inventory. A suffix in neither set is unclassified, which
+# is a gate failure rather than a default.
+TEXT_SUFFIXES = frozenset({".js", ".html", ".htm", ".css", ".svg"})
+BINARY_SUFFIXES = frozenset({".png", ".gif", ".jpg"})
+PACKAGED_SUFFIXES = TEXT_SUFFIXES | BINARY_SUFFIXES
+
+
+def packaged_sources(root: Path | None = None) -> list[Path]:
+    """Every packageable asset under the owned root, text or not."""
+    base = SOURCE_ROOT if root is None else root
     return sorted(
-        path for path in SOURCE_ROOT.rglob("*")
-        if path.is_file() and path.suffix.lower() in suffixes
+        path for path in base.rglob("*")
+        if path.is_file() and path.suffix.lower() in PACKAGED_SUFFIXES
     )
+
+
+def packaged_binary_sources(root: Path | None = None) -> list[Path]:
+    """The packaged assets whose bytes are not text, and are never decoded."""
+    return [
+        path for path in packaged_sources(root)
+        if path.suffix.lower() in BINARY_SUFFIXES
+    ]
+
+
+def packaged_text_bodies(root: Path | None = None) -> dict[str, str]:
+    """`relative path -> decoded text` for the packaged assets that are text.
+
+    Binary assets are absent rather than replaced by an empty string: a gate
+    that swept them as "" would report a clean file it had never read.
+    """
+    return {
+        relative(path): path.read_text(encoding="utf-8")
+        for path in packaged_sources(root)
+        if path.suffix.lower() in TEXT_SUFFIXES
+    }
 
 
 def engine_sources() -> list[Path]:
@@ -93,37 +126,63 @@ def engine_sources() -> list[Path]:
 
 
 def relative(path: Path) -> str:
-    return path.relative_to(REPO_ROOT).as_posix()
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        # A synthetic tree outside the checkout, used to assert that a gate can
+        # fail. Its own name is enough to report it by.
+        return path.name
 
 
 def symbols_present(body: str, symbols: Iterable[str]) -> list[str]:
     """Which of `symbols` appear literally in `body`, case-insensitively.
 
-    A layer gate and a vocabulary gate both reduce to this question. Keeping
-    the measurement here and the *lists* in the test modules is what lets a
-    test claim "this symbol belongs to that layer" instead of hiding it.
+    A vocabulary gate reduces to this question: does this file name a
+    consumer's project or one topology's device. Keeping the measurement here
+    and the *lists* in the test modules is what lets a test claim "this symbol
+    belongs to that layer" instead of hiding it.
     """
     lowered = body.lower()
     return [symbol for symbol in symbols if symbol.lower() in lowered]
 
 
+def literal_pattern(symbol: str) -> tuple[str, re.Pattern[str]]:
+    """`symbol` named anywhere, case-insensitively: the substring rule."""
+    return symbol, re.compile(re.escape(symbol), re.IGNORECASE)
+
+
+def global_pattern(name: str) -> tuple[str, re.Pattern[str]]:
+    """`name` used as a global — a member access `x.name` is not one.
+
+    One spelling, two entirely different dependencies: PTBuilder supplies a
+    global `addDevice(...)`, while Cisco documents `addDevice` as a member
+    reached through `ipc`. A substring rule cannot tell them apart, so it must
+    either forbid the official API — and be deleted the first time an adapter
+    needs it — or admit the global it exists to keep out (MJ-013).
+    """
+    return name, re.compile(r"(?<![.\w$])" + re.escape(name) + r"\b")
+
+
 def layer_offenders(
     bodies: dict[str, str],
-    symbols: Iterable[str],
+    patterns: Iterable[tuple[str, re.Pattern[str]]],
     adapters: Iterable[str],
 ) -> list[str]:
-    """`path: symbol` for every non-adapter file that names a foreign layer.
+    """`path: label` for every non-adapter file that names a foreign layer.
 
     A *declared* adapter is the one place a layer may be named, so the gate
     stays strict for the core without making an adapter impossible to add.
+    Each pattern carries the label it is reported by, so a refusal names the
+    symbol a reader would search for rather than a regular expression.
     """
     declared = set(adapters)
-    symbols = list(symbols)
+    patterns = list(patterns)
     return [
-        f"{path}: {symbol}"
+        f"{path}: {label}"
         for path, body in sorted(bodies.items())
         if path not in declared
-        for symbol in symbols_present(body, symbols)
+        for label, pattern in patterns
+        if pattern.search(body)
     ]
 
 

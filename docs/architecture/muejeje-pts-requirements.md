@@ -131,7 +131,7 @@ whitelist admits `runtime.capabilities` and `runtime.identify`, both read-only.
 dispatcher holds no operation implementation and the protocol module holds no
 whitelist. See MJ-022 for the taxonomy those tests pin. A document that names
 an operation the dispatcher does not admit — or omits one it does — fails
-`tests/muejeje/test_unobserved_claims.py`.
+`tests/muejeje/test_capability_claims.py`.
 **Status.** `ENFORCED` — the whitelist admits those two names, and every other
 name fails closed.
 
@@ -189,8 +189,19 @@ document claims independence that the code has not reached.
 **Rationale.** PTBuilder is unlicensed; depending on it blocks distribution and
 makes the runtime unexplainable from its own sources.
 **Verification.** `reference_inputs: []` in the manifest, the regressions in
-`tests/muejeje/test_inventory.py`, and an architecture test that fails if any of
-the six globals appears in the owned sources.
+`tests/muejeje/test_inventory.py`, and `tests/muejeje/test_layer_boundaries.py`,
+which fails if any of the six globals is *reached as a global* in the owned
+sources.
+
+**A global and a member of the same name are different dependencies.** Four of
+the six names are also members of documented Cisco interfaces:
+`ipc.network().addDevice(...)` is the platform's API, while a bare
+`addDevice(...)` is PTBuilder's. The gate matches an identifier that is not
+preceded by a dot, so it keeps the global out and leaves the official member
+available to a declared adapter. A substring rule could not separate them, and
+would therefore have to be deleted the first time an adapter needed the
+official call — taking this boundary with it. A declared adapter is *not*
+exempt from this one: a bare global is PTBuilder's whichever file names it.
 **Status.** `ENFORCED` for the build inputs; `BASELINED (deviation)` for the
 runtime — `htmlWindow`, `runCode`, `configureIosDevice`, `allModuleTypes`,
 `addDevice` and `addLink` are still PTBuilder-supplied.
@@ -317,11 +328,19 @@ Bridge, PTBuilder, legacy `runCode` or arbitrary JavaScript execution. Cisco IPC
 access is an adapter concern and stays outside protocol, core and operation
 logic.
 
-**The runtime gate is layer-aware.** Core, protocol, dispatch, lifecycle and
-operations may never name a transport or the platform. A *declared* adapter
-may, because naming the layer it adapts is what an adapter is for. Adapters are
-declared by path in the gate itself, both registries are empty today, and
-adding one is therefore a visible edit rather than a relaxation of the rule.
+**The runtime gate is layer-aware.** Core, protocol, admission, dispatch,
+lifecycle and operations may never name a transport or the platform. A
+*declared* adapter may, because naming the layer it adapts is what an adapter
+is for. Adapters are declared by path in the gate itself, so adding one is a
+visible edit rather than a relaxation of the rule.
+
+**A declaration is checked, not trusted.** An exemption that could be pointed
+at any file would be a switch for turning the layer gates off, so a declared
+adapter must be named `*_adapter.js`, must be a declared artifact input, must
+exist, and must hold no dispatch, no envelope and no read of core — it adapts,
+it does not answer. The platform gate also matches `ipc` as an identifier
+rather than as the prefix `ipc.`, because an alias (`var p = ipc;`) is a
+rename, not a boundary.
 **Rationale.** A cycle makes every module the whole system again, which is what
 the split was for. Naming the direction is what lets a violation be detected
 instead of argued. A blanket ban with no notion of an adapter would have to be
@@ -329,9 +348,10 @@ deleted or ignored the first time a transport arrives, and either outcome loses
 the core boundary it was protecting.
 **Verification.** An import-graph test per auditor module, which resolves every
 spelling of an import — relative and absolute — to the sibling it names, so the
-rule cannot be satisfied by rephrasing. A layer gate over the owned root for
-transport symbols and for `ipc.*`, asserted on synthetic sources to report a
-core file and not a declared adapter.
+rule cannot be satisfied by rephrasing. `tests/muejeje/test_layer_boundaries.py`
+gates the owned root for transport symbols and for `ipc`, asserted on synthetic
+sources to report a core file and not a declared adapter, and checks every
+adapter declaration against the rules above.
 **Status.** `ENFORCED`
 
 ### MJ-020 — Source and test complexity budgets
@@ -367,15 +387,26 @@ and what the dispatcher admits, and the separation of the test area by
 responsibility.
 
 **A gate must be able to fail.** Where a rule distinguishes two cases — a
-kernel file from a declared adapter, a consumer's identifier from the
-platform's vocabulary, one spelling of an import from another — the gate is
-asserted on synthetic inputs in both directions. Otherwise a gate that has
-quietly stopped checking anything is indistinguishable from a rule nobody has
-broken yet.
+kernel file from a declared adapter, a PTBuilder global from a documented
+member of the same name, a consumer's identifier from the platform's
+vocabulary, one spelling of an import from another, an operation from a kernel
+feature, a text asset from an image — the gate is asserted on synthetic inputs
+in both directions. Otherwise a gate that has quietly stopped checking
+anything is indistinguishable from a rule nobody has broken yet.
+
+**A gate must also survive the runtime growing.** A rule that would have to be
+deleted the first time an adapter, a second operation namespace or a packaged
+image arrived is a delay, not a rule. So the operation namespaces are declared
+rather than hard-coded into a pattern, the layer gates name their adapters, and
+every gate that reads prose reads only the assets whose bytes are text — an
+earlier revision decoded the whole packaged inventory, `.png` included, so the
+first packaged image would have replaced each of those verdicts with a
+`UnicodeDecodeError`.
 **Rationale.** M0E's boundary held because a test failed when it was crossed.
 Rules that live only in a document are re-argued at every change.
 **Verification.** `tests/muejeje/test_architecture.py`,
-`test_auditor_layers.py`, `test_source_root.py` and `test_unobserved_claims.py`;
+`test_auditor_layers.py`, `test_source_root.py`, `test_layer_boundaries.py`,
+`test_capability_claims.py` and `test_unobserved_claims.py`;
 the retired monolithic test modules are asserted absent so the split cannot
 silently reverse.
 **Status.** `ENFORCED`
@@ -539,9 +570,10 @@ HTTP default: 127.0.0.1:18123
 than to retrofit into one. The default endpoint is written here rather than in
 the kernel for the same reason: an address in the kernel is a topology
 assumption (MJ-002).
-**Verification.** `tests/muejeje/test_source_root.py` fails if a packaged source
-names a transport symbol or hard-codes a dotted-quad address, and the adapter
-registries that would permit one are declared empty. The rest is `BASELINED`
+**Verification.** `tests/muejeje/test_layer_boundaries.py` fails if a packaged
+source names a transport symbol, `tests/muejeje/test_source_root.py` fails on a
+hard-coded dotted-quad address, and the transport adapter registry that would
+permit one is asserted empty. The rest is `BASELINED`
 until a transport exists to test.
 **Status.** `BASELINED`; the kernel-side exclusions are `ENFORCED`.
 
@@ -584,9 +616,13 @@ than at the moment of discovery.
 **Verification.** `tests/muejeje/test_runtime_capabilities.py` pins the result
 shape, asserts the reported whitelist equals the dispatcher's, asserts every
 reported feature names a symbol that exists in a kernel source, asserts the
-reply mentions no transport, platform or mutation concept, and asserts no
-self-certified verdict. `tests/muejeje/test_unobserved_claims.py` fails if a
-document names an operation the dispatcher does not admit, or omits one it does.
+reply promises nothing the kernel cannot do, and asserts no self-certified
+verdict. `tests/muejeje/test_capability_claims.py` fails if a document omits an
+admitted operation, or names a capability — an operation *or* a kernel feature
+— that this artifact does not have. Operations and features share a shape, so
+they are separated by the sets they belong to and the two sets must stay
+disjoint: a name that is both would make "is this admitted" and "does this
+exist" the same question.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against Packet Tracer `9.0.1.0858` (MJ-015).
 

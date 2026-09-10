@@ -2,13 +2,19 @@
 
 Every defect this module gates for was a real one found by review: a document
 that still said the dispatcher did not exist after it did, a static page that
-reported the lifecycle as running without looking at it, and a protocol escape
-hatch that was withdrawn but still written down. Each of those reads as
-evidence, and none of them was.
+reported the lifecycle as running without looking at it, a protocol escape
+hatch that was withdrawn but still written down, and a comment claiming a
+Packet Tracer restart semantic that Cisco's own reference contradicts. Each of
+those reads as evidence, and none of them was.
 
-The rule is one rule. A claim about what the runtime *is doing* has to be
-traceable to something that watched it, and a claim about what the runtime
-*admits* has to agree with the whitelist itself (MJ-021).
+A claim about what the runtime *is doing* has to be traceable to something
+that watched it. A withdrawn claim has to be gone from the sources as well as
+from the documents, because a comment drifts more quietly than a document
+does: nothing about a comment looks like a claim (MJ-021).
+
+What the runtime *admits* is the other half of the rule, and it lives in
+`test_capability_claims` — split out when this module crossed its own line
+budget (MJ-020).
 """
 
 from __future__ import annotations
@@ -18,7 +24,9 @@ import re
 import pytest
 
 from tests.muejeje.measure import (
+    packaged_binary_sources,
     packaged_sources,
+    packaged_text_bodies,
     relative,
 )
 from tests.muejeje.support import (
@@ -76,12 +84,6 @@ CISCO_LIFECYCLE_SENTENCES = (
     " until it has been stopped and started again.",
 )
 
-# An operation name as a document writes it: inside backticks, or inside a
-# <code> element on the Custom Interface page.
-DOCUMENTED_OPERATION = re.compile(r"[`>](runtime\.[a-z_]+)[`<]")
-# An entry in the dispatcher's whitelist table.
-ADMITTED_OPERATION = re.compile(r'"(runtime\.[a-z_]+)":\s*\{')
-
 # Present-tense liveness. A static page cannot know any of these.
 LIVENESS_CLAIM = re.compile(
     r"\b(?:is|are|has)\s+(?:currently\s+)?"
@@ -97,12 +99,6 @@ SELF_CERTIFICATION = re.compile(r"\b(?:VERIFIED|QUALIFIED|ATTESTED)\b")
 
 def _document(logical: str) -> str:
     return (REPO_ROOT / logical).read_text(encoding="utf-8")
-
-
-def admitted_operations() -> set[str]:
-    """The whitelist, read from the dispatcher that owns it."""
-    body = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
-    return set(ADMITTED_OPERATION.findall(body))
 
 
 # ---------------------------------------------------------------------------
@@ -160,36 +156,21 @@ def test_the_withdrawn_claim_gate_reads_the_kernel_sources_too():
     assert "muejeje_pts/script-engine/core.js" in DESCRIBING_SOURCES
     assert len(DESCRIBING_SOURCES) == len(list(SCRIPT_ENGINE.glob("*.js")))
 
-
-@pytest.mark.parametrize("logical", DESCRIBING_DOCUMENTS)
-def test_a_document_names_every_admitted_operation_and_no_other(logical: str):
-    """A whitelist written twice is a whitelist that will disagree with itself.
-
-    Naming an operation the dispatcher does not admit is a roadmap promise
-    read as a present capability; omitting one leaves a consumer unable to
-    discover what it may actually send.
-    """
-    documented = set(DOCUMENTED_OPERATION.findall(_document(logical)))
-    assert documented == admitted_operations(), (
-        f"{logical} documents {sorted(documented)}; the dispatcher admits "
-        f"{sorted(admitted_operations())}"
-    )
-
-
-def test_the_whitelist_is_read_from_the_dispatcher_and_is_not_empty():
-    """Guards the gate above from passing because it parsed nothing."""
-    assert admitted_operations(), "the whitelist reader found no operation"
-
-
 # ---------------------------------------------------------------------------
 # The Custom Interface observes nothing, so it asserts nothing.
 # ---------------------------------------------------------------------------
 
 def _interface_files() -> dict[str, str]:
+    """The interface files that carry prose. An image carries none.
+
+    Reading only the text assets is what lets the Custom Interface ship a logo
+    without this gate crashing on its bytes (MJ-021).
+    """
+    interface = f"{relative(SOURCE_ROOT / 'interface')}/"
     return {
-        relative(path): path.read_text(encoding="utf-8")
-        for path in sorted((SOURCE_ROOT / "interface").rglob("*"))
-        if path.is_file()
+        logical: body
+        for logical, body in packaged_text_bodies().items()
+        if logical.startswith(interface)
     }
 
 
@@ -224,11 +205,28 @@ def test_the_custom_interface_calls_nothing_and_stays_static():
 
 def test_no_packaged_source_certifies_its_own_verification():
     offenders = [
-        f"{relative(path)}: {found.group(0)}"
-        for path in packaged_sources()
-        for found in SELF_CERTIFICATION.finditer(path.read_text(encoding="utf-8"))
+        f"{logical}: {found.group(0)}"
+        for logical, body in sorted(packaged_text_bodies().items())
+        for found in SELF_CERTIFICATION.finditer(body)
     ]
     assert not offenders, (
         "Python owns verification, from outside the artifact; the runtime "
         f"reports observations and reaches no verdict about them: {offenders}"
     )
+
+
+def test_the_self_certification_sweep_covers_every_text_asset():
+    """Guards the gate above from passing because it read the wrong list.
+
+    It used to decode the whole packaged inventory, images included, so the
+    first packaged `.png` would have replaced its verdict with a
+    `UnicodeDecodeError`. It now reads the text assets, and this asserts that
+    the two lists differ only by the assets that are not text.
+    """
+    text = set(packaged_text_bodies())
+    every = {relative(path) for path in packaged_sources()}
+    binary = {relative(path) for path in packaged_binary_sources()}
+
+    assert text, "the sweep found no text asset to read"
+    assert text | binary == every
+    assert text.isdisjoint(binary)

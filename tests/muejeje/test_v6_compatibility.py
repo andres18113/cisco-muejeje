@@ -161,7 +161,7 @@ def test_every_admitted_operation_publishes_a_frozen_result_shape():
     Adding an operation therefore means declaring what its result promises, in
     the same commit — not later, once a consumer has started reading it.
     """
-    from tests.muejeje.test_unobserved_claims import admitted_operations
+    from tests.muejeje.test_capability_claims import admitted_operations
 
     assert set(REQUIRED_RESULT_FIELDS) == admitted_operations()
 

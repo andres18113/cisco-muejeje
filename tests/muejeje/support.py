@@ -51,7 +51,7 @@ TOOLING_INPUTS = [
 # Every kernel feature `MUEJEJE_CORE.SUPPORTED_FEATURES` may name, and the
 # symbol in the artifact that backs it. Data, not a claim: the modules that
 # assert against it are `test_runtime_identify` and `test_runtime_capabilities`
-# for the reported list, and `test_unobserved_claims` for what a document may
+# for the reported list, and `test_capability_claims` for what a document may
 # call a capability. It lives here because two copies of this map could
 # disagree, and a feature backed by one of them would be a capability claim
 # nobody was checking (MJ-028).

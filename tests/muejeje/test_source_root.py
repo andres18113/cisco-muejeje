@@ -1,9 +1,19 @@
-"""What the owned source tree may and may not contain.
+"""What the owned source tree contains, and what may never enter it.
 
 Architecture tests over the real repository, not fixtures. They pin the
 boundary that lets `muejeje.pts` evolve independently of the legacy
-`EXTENSION/**` extension, and they pin what may never enter the owned tree
-(MJ-001, MJ-002, MJ-004, MJ-013, MJ-019).
+`EXTENSION/**` extension: which assets ship, whose vocabulary may appear in
+them, that no endpoint or arbitrary JavaScript does, and that there is exactly
+one lifecycle and one dispatcher (MJ-001, MJ-002, MJ-004, MJ-007, MJ-009).
+
+Which *layers* those sources may name — PTBuilder, a transport, the Cisco
+platform — is `test_layer_boundaries`, split out of here when this module
+crossed its own line budget (MJ-020).
+
+**Every gate here has to survive the runtime growing.** A rule that would have
+to be deleted the first time a packaged image arrived is not a rule; it is a
+delay. So the prose gates read only the assets whose bytes are text, and a
+suffix in neither class is a failure rather than a default (MJ-021).
 """
 
 from __future__ import annotations
@@ -13,23 +23,19 @@ import re
 import pytest
 
 from tests.muejeje.measure import (
+    BINARY_SUFFIXES,
+    PACKAGED_SUFFIXES,
+    TEXT_SUFFIXES,
     engine_sources,
     layer_offenders,
+    literal_pattern,
+    packaged_binary_sources,
     packaged_sources,
+    packaged_text_bodies,
     relative,
     symbols_present,
 )
-from tests.muejeje.support import (
-    REPO_ROOT,
-    SOURCE_ROOT,
-)
-
-# The six globals PTBuilder supplies today. Inheriting any of them is what the
-# owned source root exists to avoid (MJ-013).
-PTBUILDER_GLOBALS = (
-    "htmlWindow", "runCode", "configureIosDevice", "allModuleTypes",
-    "addDevice", "addLink",
-)
+from tests.muejeje.support import SOURCE_ROOT
 
 # A consumer's *identifiers*: the project a scenario belongs to, and the device
 # names one topology happens to use. These are what MJ-004 excludes.
@@ -47,21 +53,6 @@ GENERIC_NETWORKING_VOCABULARY = (
     "dhcp", "vlan", "ospf", "eigrp", "poe", "voice", "ripv2",
 )
 
-# Layers outside the V6 kernel. Naming one is how a dependency on it starts.
-TRANSPORT_SYMBOLS = (
-    "webview", "XMLHttpRequest", "systemFileManager", "localStorage",
-    "fileBridge", "file_bridge", "bridge_token", "http://", "https://",
-)
-IPC_SYMBOLS = ("ipc.",)
-
-# Declared adapters, by path. Only a declared adapter may name the layer it
-# adapts; every other packaged source is kernel and may not. Both are empty
-# today — no operation needs a transport or the platform yet — so the strict
-# boundary currently applies to every packaged source. Declaring one later is
-# an edit to this gate, which is the point: an adapter arrives visibly.
-TRANSPORT_ADAPTER_FILES: tuple[str, ...] = ()
-IPC_ADAPTER_FILES: tuple[str, ...] = ()
-
 # A dotted-quad literal is a hard-coded endpoint, which is a topology
 # assumption wearing a transport's clothes (MJ-002). The baselined HTTP default
 # lives in the requirements; it never lives in the kernel.
@@ -69,10 +60,7 @@ ADDRESS_LITERAL = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
 
 
 def _packaged_bodies() -> dict[str, str]:
-    return {
-        relative(path): path.read_text(encoding="utf-8")
-        for path in packaged_sources()
-    }
+    return packaged_text_bodies()
 
 
 def test_owned_source_root_has_an_engine_and_an_interface():
@@ -82,13 +70,58 @@ def test_owned_source_root_has_an_engine_and_an_interface():
 
 
 # ---------------------------------------------------------------------------
+# Not every packaged asset is text.
+# ---------------------------------------------------------------------------
+
+def test_every_packaged_asset_is_classified_as_text_or_as_bytes():
+    """A suffix in neither set is unclassified, and that is a failure.
+
+    The prose gates below decode what they read. An earlier revision decoded
+    the whole packaged inventory, which included `.png`, `.gif` and `.jpg` —
+    so the first packaged image would have crashed every one of them with a
+    `UnicodeDecodeError` rather than reporting anything about the tree.
+    """
+    assert TEXT_SUFFIXES.isdisjoint(BINARY_SUFFIXES)
+    assert PACKAGED_SUFFIXES == TEXT_SUFFIXES | BINARY_SUFFIXES
+
+    from src.packet_tracer_mcp.infrastructure.pts import inventory
+
+    assert PACKAGED_SUFFIXES == inventory.PACKAGED_SUFFIXES, (
+        "what the auditor packages and what the gates sweep must be one set"
+    )
+
+
+def test_a_binary_asset_is_inventoried_and_never_decoded(tmp_path):
+    """Asserted on a synthetic tree, because the real one has no image yet.
+
+    A gate that could only be checked once someone shipped a PNG would be
+    discovered by the crash it was written to prevent.
+    """
+    root = tmp_path / "muejeje_pts"
+    (root / "interface").mkdir(parents=True)
+    (root / "interface/index.html").write_text("<p>text</p>", encoding="utf-8")
+    logo = root / "interface/logo.png"
+    logo.write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe invalid utf-8")
+
+    swept = sorted(logical.rsplit("/", 1)[-1] for logical in packaged_text_bodies(root))
+
+    assert [path.name for path in packaged_binary_sources(root)] == ["logo.png"]
+    assert swept == ["index.html"], "a binary asset must not be swept as prose"
+    with pytest.raises(UnicodeDecodeError):
+        logo.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # Vocabulary: a consumer's identifiers stay out; the platform's domain does not.
 # ---------------------------------------------------------------------------
 
 def test_owned_sources_carry_no_consumer_project_or_topology_identifier():
     offenders = layer_offenders(
         _packaged_bodies(),
-        CONSUMER_PROJECT_IDENTIFIERS + TOPOLOGY_IDENTIFIERS,
+        [
+            literal_pattern(symbol)
+            for symbol in CONSUMER_PROJECT_IDENTIFIERS + TOPOLOGY_IDENTIFIERS
+        ],
         adapters=(),
     )
     assert not offenders, (
@@ -114,60 +147,6 @@ def test_the_vocabulary_gate_rejects_identifiers_without_rejecting_the_domain():
     assert sorted(symbols_present(scenario, identifiers)) == ["cp-live", "router0"]
 
 
-def test_owned_sources_inherit_no_ptbuilder_global():
-    offenders = layer_offenders(_packaged_bodies(), PTBUILDER_GLOBALS, adapters=())
-    assert not offenders, f"owned sources must not depend on PTBuilder: {offenders}"
-
-
-# ---------------------------------------------------------------------------
-# Layers: the kernel stays independent, and an adapter stays possible.
-# ---------------------------------------------------------------------------
-
-def test_the_kernel_reaches_for_no_transport_layer():
-    """WebView, HTTP, the File Bridge and browser storage are outside it."""
-    offenders = layer_offenders(
-        _packaged_bodies(), TRANSPORT_SYMBOLS, adapters=TRANSPORT_ADAPTER_FILES,
-    )
-    assert not offenders, f"the V6 kernel depends on none of these: {offenders}"
-
-
-def test_ipc_access_stays_out_of_protocol_core_and_domain_logic():
-    """`ipc.*` is an adapter concern, and no adapter exists yet (MJ-006)."""
-    offenders = layer_offenders(
-        _packaged_bodies(), IPC_SYMBOLS, adapters=IPC_ADAPTER_FILES,
-    )
-    assert not offenders, (
-        "core, protocol, dispatcher, lifecycle and read-only operations make no "
-        f"IPC call; the module requests no privilege: {offenders}"
-    )
-
-
-def test_no_transport_or_platform_adapter_is_declared_yet():
-    """The registries are evidence. An empty one is a claim, not an omission."""
-    assert TRANSPORT_ADAPTER_FILES == ()
-    assert IPC_ADAPTER_FILES == ()
-
-
-def test_the_layer_gate_admits_a_declared_adapter_without_weakening_the_core():
-    """Layer-aware, asserted on synthetic sources so it cannot pass vacuously.
-
-    One symbol is a violation in the kernel and the adapter's whole reason to
-    exist. A gate that could not tell those apart would have to be deleted or
-    ignored the day a transport arrives, and both outcomes lose the boundary
-    the gate was protecting.
-    """
-    bodies = {
-        "muejeje_pts/script-engine/core.js": "var x = new XMLHttpRequest();",
-        "muejeje_pts/script-engine/http_adapter.js": "var y = new XMLHttpRequest();",
-    }
-    declared = ("muejeje_pts/script-engine/http_adapter.js",)
-
-    assert layer_offenders(bodies, TRANSPORT_SYMBOLS, adapters=declared) == [
-        "muejeje_pts/script-engine/core.js: XMLHttpRequest"
-    ]
-    assert len(layer_offenders(bodies, TRANSPORT_SYMBOLS, adapters=())) == 2
-
-
 def test_owned_sources_hardcode_no_endpoint_address():
     offenders = [
         f"{path}: {found.group(0)}"
@@ -183,11 +162,10 @@ def test_owned_sources_hardcode_no_endpoint_address():
 def test_owned_sources_execute_no_arbitrary_javascript():
     """No `eval`, no `new Function`, no `setTimeout`-with-a-string (MJ-009)."""
     offenders: list[str] = []
-    for path in packaged_sources():
-        body = path.read_text(encoding="utf-8")
+    for logical, body in sorted(_packaged_bodies().items()):
         for pattern in (r"\beval\s*\(", r"\bnew\s+Function\b", r"\bFunction\s*\("):
             if re.search(pattern, body):
-                offenders.append(f"{relative(path)}: {pattern}")
+                offenders.append(f"{logical}: {pattern}")
     assert not offenders, (
         f"V6 admits typed operations only; arbitrary JS is a V5 surface: {offenders}"
     )
