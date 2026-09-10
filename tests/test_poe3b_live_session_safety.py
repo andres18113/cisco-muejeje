@@ -23,6 +23,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
 from src.packet_tracer_mcp.domain.enterprise.rules.live_session_safety import (
     validate_live_session_positive_admission,
 )
+from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+    CapabilitySnapshotStore,
+    CorruptCapabilitySnapshotError,
+)
 from tests.poe_session_safety import healthy_live_session_safety
 
 
@@ -187,6 +191,33 @@ def test_capability_snapshot_json_rejects_coercible_ephemeral_values(
 
     with pytest.raises(ValidationError):
         CapabilitySnapshot.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("mode", [[], {}], ids=["array", "object"])
+def test_snapshot_json_refuses_unhashable_safety_mode(mode) -> None:
+    payload = json.loads(
+        _snapshot_with_safety(_healthy_ephemeral_safety()).model_dump_json(),
+    )
+    payload["session"]["results"][0]["context"]["live_session_safety"]["mode"] = mode
+
+    with pytest.raises(ValidationError):
+        CapabilitySnapshot.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("mode", [[], {}], ids=["array", "object"])
+def test_store_reports_unhashable_safety_mode_as_snapshot_corruption(
+    tmp_path, mode,
+) -> None:
+    store = CapabilitySnapshotStore(tmp_path / "capabilities")
+    snapshot = _snapshot_with_safety(_healthy_ephemeral_safety())
+    written = store.save_runtime(snapshot)
+    payload = json.loads(written.read_text(encoding="utf-8"))
+    payload["session"]["results"][0]["context"]["live_session_safety"]["mode"] = mode
+    written.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(CorruptCapabilitySnapshotError) as raised:
+        store.list_runtime(snapshot.packet_tracer_version)
+    assert raised.value.path == written
 
 
 @pytest.mark.parametrize(

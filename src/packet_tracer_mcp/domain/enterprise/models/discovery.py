@@ -367,10 +367,10 @@ def _live_session_safety_discriminator(value: object) -> str | None:
         return "guarded"
     if isinstance(value, dict):
         mode = value.get("mode")
-        if mode in {
-            LiveSessionSafetyMode.EPHEMERAL_UNTITLED_WORKSPACE,
-            LiveSessionSafetyMode.EPHEMERAL_UNTITLED_WORKSPACE.value,
-        }:
+        if (
+            isinstance(mode, str)
+            and mode == LiveSessionSafetyMode.EPHEMERAL_UNTITLED_WORKSPACE.value
+        ):
             return "ephemeral"
         if "mode" not in value:
             return "guarded"

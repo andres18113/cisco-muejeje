@@ -164,6 +164,25 @@ def test_valid_schema_three_round_trips_in_governed_binding_order():
     assert decoded.bindings == (BINDING_A, BINDING_B)
 
 
+@pytest.mark.parametrize("invalid_scope", [
+    None,
+    scope(captures=(None, *CAPTURES[1:])),
+    scope(captures=({}, *CAPTURES[1:])),
+    scope(captures=(replace(CAPTURES[0], binding_captures=None), *CAPTURES[1:])),
+    scope(captures=(replace(CAPTURES[0], binding_captures=1), *CAPTURES[1:])),
+    scope(captures=(replace(CAPTURES[0], binding_captures=(None,)), *CAPTURES[1:])),
+    scope(captures=(replace(CAPTURES[0], binding_captures=({},)), *CAPTURES[1:])),
+    scope(gates=([], *GATES[1:])),
+    scope(gates=(1, *GATES[1:])),
+], ids=[
+    "scope-none", "capture-none", "capture-dict", "rows-none", "rows-integer",
+    "row-none", "row-dict", "gate-list", "gate-integer",
+])
+def test_encoder_refuses_malformed_runtime_types_with_value_error(invalid_scope):
+    with pytest.raises(ValueError):
+        encode_poe_pse_multi_port_dimensions(invalid_scope)
+
+
 def test_schema_three_converges_only_to_the_canonical_authorized_claim():
     decoded = decode_poe_authorized_claim(
         claim(), expected_model=SWITCH, expected_packet_tracer_version=BUILD,
@@ -247,6 +266,17 @@ def test_incomplete_never_capture_fails_closed():
     assert decode_poe_pse_multi_port_delivery_scope(claim(dimensions)) is None
 
 
+def test_unrepresentable_json_power_fails_closed():
+    dimensions = dict(VALID_DIMENSIONS)
+    mutate_json(
+        dimensions, "poe_pse_captures",
+        lambda captures: captures[0]["binding_captures"][0].__setitem__(
+            "power_watts", 10**400,
+        ),
+    )
+    assert decode_poe_pse_multi_port_delivery_scope(claim(dimensions)) is None
+
+
 @pytest.mark.parametrize("field, value", [
     ("row_present", 1),
     ("delivering", 1),
@@ -273,6 +303,25 @@ def test_incoherent_schema_three_dimensions_fail_closed(key, value):
     assert decode_poe_pse_multi_port_delivery_scope(
         claim(dimensions), expected_model=SWITCH,
         expected_packet_tracer_version=BUILD,
+    ) is None
+
+
+@pytest.mark.parametrize("decoder", [
+    decode_poe_pse_multi_port_delivery_scope,
+    decode_poe_authorized_claim,
+], ids=["multi-port", "authorized-claim"])
+def test_expected_build_ceiling_rejects_an_internally_consistent_other_build(
+    decoder,
+):
+    evidence = claim()
+    assert evidence.packet_tracer_version == BUILD
+    assert evidence.dimensions["poe_pse_packet_tracer_build"] == BUILD
+    assert decoder(
+        evidence, expected_model=SWITCH, expected_packet_tracer_version=BUILD,
+    ) is not None
+    assert decoder(
+        evidence, expected_model=SWITCH,
+        expected_packet_tracer_version="9.0.2.0000",
     ) is None
 
 

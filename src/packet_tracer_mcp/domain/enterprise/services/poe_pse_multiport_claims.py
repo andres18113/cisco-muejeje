@@ -240,6 +240,8 @@ def decode_poe_pse_multi_port_delivery_scope(
 def _canonical_scope(
     scope: PoEPseMultiPortDeliveryScope,
 ) -> PoEPseMultiPortDeliveryScope | None:
+    if not isinstance(scope, PoEPseMultiPortDeliveryScope):
+        return None
     try:
         bindings = tuple(scope.bindings)
         captures = tuple(scope.captures)
@@ -267,6 +269,8 @@ def _canonical_scope(
         return None
     if len(bindings) != len(set(bindings)):
         return None
+    if any(not _exact_identity(gate) for gate in gates):
+        return None
     if tuple(sorted(set(gates))) != _REQUIRED_GATES:
         return None
     if len(gates) != len(set(gates)):
@@ -275,21 +279,24 @@ def _canonical_scope(
         return None
     if scope.simultaneous_active_ports != len(bindings):
         return None
+    if any(not isinstance(capture, PoEPseMultiPortCapture) for capture in captures):
+        return None
     if tuple(capture.label for capture in captures) != _CAUSAL_SEQUENCE:
         return None
 
     for capture in captures:
-        if not isinstance(capture, PoEPseMultiPortCapture):
-            return None
         if capture.admin_mode != _ADMIN_BY_LABEL[capture.label]:
             return None
-        rows = tuple(capture.binding_captures)
+        try:
+            rows = tuple(capture.binding_captures)
+        except TypeError:
+            return None
+        if any(not _valid_binding_capture(row) for row in rows):
+            return None
         if tuple(row.authorized_binding for row in rows) != bindings:
             return None
         expected_delivering = _DELIVERING_BY_LABEL[capture.label]
         for row in rows:
-            if not _valid_binding_capture(row):
-                return None
             if row.delivering is not expected_delivering:
                 return None
             if expected_delivering:
@@ -446,7 +453,10 @@ def _decode_binding_captures(
             return None
         if not isinstance(item["power_watts"], (int, float)):
             return None
-        power_watts = float(item["power_watts"])
+        try:
+            power_watts = float(item["power_watts"])
+        except OverflowError:
+            return None
         if not math.isfinite(power_watts):
             return None
         rows.append(PoEPseBindingCapture(

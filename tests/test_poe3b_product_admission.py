@@ -307,6 +307,31 @@ def test_independent_same_model_runs_use_maximum_capacity_not_sum(
     assert resolved.poe_authorized_bindings == sorted(model_3560.bindings)
 
 
+def test_unrepresentable_power_produces_unknown_without_authority(tmp_path) -> None:
+    model_3560, _ = _qualification_models()
+    result = _probe_result(model_3560, run_number=6)
+    captures = json.loads(result.dimensions["poe_pse_captures"])
+    captures[0]["binding_captures"][0]["power_watts"] = 10**400
+    result.dimensions["poe_pse_captures"] = json.dumps(
+        captures, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+    store = CapabilitySnapshotStore(tmp_path / "capabilities")
+    _persist_probe(store, result, run_number=6)
+
+    evidence = tuple(
+        ProbeCapabilityProvider(store, BUILD).evidence_for("3560-24PS", BUILD)
+    )
+    assert len(evidence) == 1
+    assert evidence[0].status is CapabilityStatus.UNKNOWN
+    resolved = packet_tracer_enterprise_capability_adapter(
+        BUILD, store=store,
+    ).capabilities_for("3560-24PS", BUILD)
+    assert resolved is not None
+    assert resolved.supports_poe is CapabilityStatus.UNKNOWN
+    assert resolved.poe_ports is None
+    assert resolved.poe_authorized_bindings == []
+
+
 def test_probe_a_plus_b_composes_and_projects_router0_with_current_hashes(
     tmp_path,
 ) -> None:
