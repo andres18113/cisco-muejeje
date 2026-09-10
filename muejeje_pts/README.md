@@ -111,12 +111,14 @@ fails if any adapter names a platform member at a call site, and a third
 compares the calls that actually ran against the same set. The mutating-verb
 pattern stays as a second line of defence over the list itself.
 
-**A defect in here is never reported as something Packet Tracer did.** Only a
-call the boundary made and an answer a validator refused become an unavailable
-reading; anything else reaches the caller as `ENGINE_EXCEPTION` (`MJ-022`,
-`MJ-031`). On a target, `PLATFORM_CALL_FAILED` is what a missing privilege
-looks like — so a bug of ours wearing that name would be indistinguishable from
-real evidence.
+**A defect in here is never reported as something Packet Tracer did.** Only
+something the boundary observed about the platform, and an answer a validator
+refused, become an unavailable reading; anything else — a bug, or an argument
+outside an adapter's own bounds — reaches the caller as `ENGINE_EXCEPTION`
+(`MJ-022`, `MJ-031`). The boundary also checks that an admitted member is there
+before calling it, and reports `PLATFORM_MEMBER_ABSENT` when it is not: nothing
+was called, so nothing was refused, and a reading that says otherwise would be
+a refusal nobody performed.
 
 The numbers it reports are Packet Tracer's own, read back out of the platform.
 That is the point: a hand-maintained numeric mirror of a Cisco enum is correct
@@ -154,9 +156,9 @@ copied — its six PTBuilder globals are exactly what Muejeje must not inherit
 ## What is deliberately not here yet
 
 No mutation of any kind: no device, link, module, IP or CLI operation. No
-transport: no HTTP, no file mailbox, no polling. The platform adapter reads and
-nothing else, and it grew from one operation actually needing the platform —
-not ahead of one.
+transport: no HTTP, no file mailbox, no polling. The platform surface reads and
+nothing else, and each part of it grew from an operation that actually needed
+it — never ahead of one.
 
 The kernel is verified offline. It has never run inside Packet Tracer, and no
 `.pts` has been built from these sources. See
