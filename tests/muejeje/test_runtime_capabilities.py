@@ -40,9 +40,9 @@ RESULT_FIELDS = {
 }
 ADMITTED = [
     "platform.device_descriptors", "platform.module_descriptors",
-    "runtime.capabilities", "runtime.identify",
+    "platform.module_type_support", "runtime.capabilities", "runtime.identify",
 ]
-FEATURES = 5
+FEATURES = 6
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",

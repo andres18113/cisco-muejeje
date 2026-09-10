@@ -48,6 +48,7 @@
  *   DeviceDescriptor.getModel()                      -> string
  *   DeviceDescriptor.getType()                       -> DeviceType
  *   DeviceDescriptor.isModelSupported()              -> bool
+ *   DeviceDescriptor.isModuleTypeSupported(ModuleType) -> bool
  *   DeviceDescriptor.getSupportedModuleTypeCount()   -> int
  *   DeviceDescriptor.getSupportedModuleTypeAt(int)   -> ModuleType
  *   DeviceDescriptor.getRootModule()                 -> ModuleDescriptor
@@ -80,6 +81,7 @@ var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
     getModel: true,
     getType: true,
     isModelSupported: true,
+    isModuleTypeSupported: true,
     getSupportedModuleTypeCount: true,
     getSupportedModuleTypeAt: true,
     getRootModule: true,

@@ -25,17 +25,20 @@ It is declared once, in `build_options.engine_script_order`:
 | ---: | --- | --- |
 | 1 | `core.js` | constants and session state; depends on nothing |
 | 2 | `protocol_v6.js` | the response envelope and the failure taxonomy |
-| 3 | `validation_v6.js` | bounded request admission, and the bounds themselves |
-| 4 | `platform_reading.js` | what a platform reading is: its bounds, its words, its value rules |
-| 5 | `platform_adapter.js` | the **only** file that names `ipc`; the read-only call boundary |
-| 6 | `platform_device_adapter.js` | the device-descriptor reading, through that boundary |
-| 7 | `platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
-| 8 | `platform_discovery.js` | the `platform.device_descriptors` operation |
-| 9 | `platform_modules.js` | the `platform.module_descriptors` operation |
-| 10 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
-| 11 | `runtime_identity.js` | the `runtime.identify` operation |
-| 12 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
-| 13 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+| 3 | `validation_v6.js` | bounded envelope admission, and the bounds themselves |
+| 4 | `arguments_v6.js` | an operation's own argument rules, against what it declares |
+| 5 | `platform_reading.js` | what a platform reading is: its bounds, its words, its value rules |
+| 6 | `platform_adapter.js` | the **only** file that names `ipc`; the read-only call boundary |
+| 7 | `platform_device_adapter.js` | the device-descriptor reading, through that boundary |
+| 8 | `platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
+| 9 | `platform_support_adapter.js` | the module-type support reading, through that boundary |
+| 10 | `platform_discovery.js` | the `platform.device_descriptors` operation |
+| 11 | `platform_modules.js` | the `platform.module_descriptors` operation |
+| 12 | `platform_support.js` | the `platform.module_type_support` operation |
+| 13 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
+| 14 | `runtime_identity.js` | the `runtime.identify` operation |
+| 15 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| 16 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
 
 The arrows point one way — `lifecycle → dispatcher → operations → adapter →
 protocol + core` — and nothing points back. An operation is never implemented
@@ -74,7 +77,7 @@ copy is five that a new operation puts out of step, so every other document
 names whichever operations it has a reason to name and a gate holds this one
 complete (`MJ-008`).
 
-Four operations are admitted, all read-only:
+Five operations are admitted, all read-only:
 
 | Operation | Answers |
 | --- | --- |
@@ -82,14 +85,17 @@ Four operations are admitted, all read-only:
 | `runtime.capabilities` | *what does it admit now* — session token, protocol versions, each whitelisted operation with its `read_only` flag, and the kernel features behind them |
 | `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the DeviceType and the module types the platform reports for it, or a reason the reading was unavailable |
 | `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a factory index, node by node, each with the index it was read at, its type, its slot types and its hot-swap flag, or a reason the reading was unavailable |
+| `platform.module_type_support` | *does this model accept this module type* — the descriptor's own answer for one type value, with the model and DeviceType read back beside it, or a reason the reading was unavailable |
 
 The two runtime operations read the same whitelist, from the dispatcher that
-owns it, so they can never describe different contracts. The two platform ones
-pair up the same way: the first reports which models exist and at which index,
-and the second reads the chassis of the model at one of those indexes, so
-neither needs a DeviceType nor a catalogue of model names to be useful.
+owns it, so they can never describe different contracts. The platform ones
+compose: the first reports which models exist and at which index, and the other
+two ask about the model at one of those indexes — its chassis, or whether it
+accepts a module type the platform itself named. None of them needs a
+DeviceType, a module-type table or a catalogue of model names to be useful,
+which is what keeps them free of a Cisco enum mirror (`MJ-014`).
 
-None of the four reports anything it has not observed, and none certifies its
+None of the five reports anything it has not observed, and none certifies its
 own verification: the engine cannot audit the engine, so Python decides what an
 answer establishes (`MJ-011`).
 
@@ -100,8 +106,9 @@ gates say so by path: naming the platform is legal there and a violation in
 every other packaged source (`MJ-006`, `MJ-019`). Every platform call this
 artifact makes goes through one function in it, by member name, and that
 function admits only the names on a declared read-only allowlist. The adapters
-beside it read one subject each — the device factory, and the chassis of one
-model — and name no platform object of their own.
+beside it read one subject each — the device factory, the chassis of one model,
+and whether one model accepts one module type — and name no platform object of
+their own.
 
 **The read-only proof is that list, not a list of forbidden verbs.** A
 blacklist admits every name nobody thought to forbid, and once the member name

@@ -710,6 +710,7 @@ shape and the values of the arguments:
 | `args` field count | how many fields the envelope may carry | `INVALID_REQUEST` |
 | `args` values | bounded scalars only; no nested object or array | `INVALID_REQUEST` |
 | a declared argument's value | the rule the operation states for it | `INVALID_ARGS` |
+| a required argument's absence | the operation declares it required | `INVALID_ARGS` |
 
 **No bound is a Packet Tracer limit.** Nothing in this repository has measured
 what PT's Script Engine accepts, so a number presented as the platform's would
@@ -730,6 +731,16 @@ the second would send a consumer looking for an operation.
 
 **An argument rule the kernel cannot read refuses the argument.** A rule of an
 unrecognised kind bounds nothing, so it admits nothing.
+
+**An argument is required only where no default would be honest.** Most
+arguments have one — an offset starts at the origin of an enumeration, a window
+at its ceiling — and an omitted one is a default rather than a refusal. But
+where every value in a space is a *different question*, defaulting answers a
+question the caller did not ask and reports the answer as an observation, which
+is the failure this contract exists to prevent. `module_type` is the first such
+argument. Its absence is `INVALID_ARGS` — the code that already means "a
+whitelisted operation given arguments it does not support" — and never a
+reading, because nothing was read.
 **Rationale.** Unbounded input hands the cost of a refusal to whoever sent it:
 a caller could make the engine parse any length of JSON, correlate against any
 length of id, and walk any depth of argument structure before a single check
@@ -822,6 +833,16 @@ records whichever reading comes back — an answer, or an unavailable one with
 its reason. Predicting the refusal would be the same defect as predicting the
 answer: a claim about `9.0.1.0858` with nothing behind it (MJ-015).
 
+**A capability may compose with another without owning its vocabulary.**
+`platform.device_descriptors` reports which models the factory offers and at
+which index; `platform.module_descriptors` and `platform.module_type_support`
+ask about the model at one of those indexes. The second takes a `ModuleType`
+value as an argument, and that value comes from the platform too — from a
+descriptor's own supported-type list, or from a module in its chassis. Passing a
+number the platform produced back to the platform is not a mirror; it is the
+opposite of one, and it is what lets a consumer ask "does this model accept
+this" without either side carrying a table of what the types are (MJ-014).
+
 **`runtime.capabilities` may name a capability only once it exists.** The
 operation being admitted, and the kernel feature behind it, are facts about
 this artifact and are reported. Whether the platform answers is not, and is
@@ -847,7 +868,8 @@ caller as `ENGINE_EXCEPTION` rather than as a platform reading;
 `tests/muejeje/test_platform_module_walk.py` does the same for the chassis
 walk, including each bound and the subtree it marks.
 `tests/muejeje/test_platform_descriptors.py` and
-`tests/muejeje/test_platform_modules.py` cover the two platform operations: one
+`tests/muejeje/test_platform_modules.py` and
+`tests/muejeje/test_platform_support.py` cover the platform operations: one
 result shape whether the platform answered or not, the window or chassis it reports,
 the declared argument rules, and no self-certified verdict.
 `tests/muejeje/test_source_root.py` gates the enum identifiers, and

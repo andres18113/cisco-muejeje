@@ -28,6 +28,7 @@ var MUEJEJE_CORE = {
     SUPPORTED_FEATURES: [
         "platform.descriptor_discovery",
         "platform.module_discovery",
+        "platform.support_lookup",
         "protocol.v6",
         "runtime.operation_catalog",
         "runtime.session_id"

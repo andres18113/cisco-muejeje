@@ -17,13 +17,11 @@ the half a reader cannot check by eye, so the recorded call log is compared
 against the same set — per operation, and as a union.
 
 That an adapter shapes no envelope and reads no kernel state is checked once,
-over every declared adapter, in `test_platform_declarations`; it used to be
-checked twice, and two copies of a rule are two rules waiting to disagree.
+over every declared adapter, in `test_platform_declarations`.
 
-What an adapter *reports* is `test_platform_readings` and
-`test_platform_module_walk`; the V6 surface in front of it is
-`test_platform_descriptors` and `test_platform_modules`. Nothing in any of them
-has reached `9.0.1.0858` (MJ-015, MJ-031).
+What an adapter *reports*, and the V6 surface in front of it, are the
+`test_platform_*` modules beside this one. Nothing in any of them has reached
+`9.0.1.0858` (MJ-015, MJ-031).
 """
 
 from __future__ import annotations
@@ -59,12 +57,17 @@ DOCUMENTED_CALLS = {
     "getModel", "getType", "isModelSupported",
     "getSupportedModuleTypeCount", "getSupportedModuleTypeAt",
     "getRootModule", "isHotSwappable", "getSlotCount", "getSlotTypeAt",
-    "getModuleCount", "getModuleAt",
+    "getModuleCount", "getModuleAt", "isModuleTypeSupported",
 }
 # Which operation exercises which half of that list. No single call reaches all
 # of it, so the log is compared per operation and as a union: a name nobody
 # calls would otherwise sit on the allowlist unnoticed.
-CALL_DRIVERS = ("platform.device_descriptors", "platform.module_descriptors")
+CALL_DRIVERS = (
+    "platform.device_descriptors", "platform.module_descriptors",
+    "platform.module_type_support",
+)
+# An operation that requires an argument answers nothing without it.
+REQUIRED_ARGS = {"platform.module_type_support": {"module_type": 6}}
 
 # A member call in JavaScript source, by the name it invokes.
 MEMBER_CALL = re.compile(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(")
@@ -96,7 +99,8 @@ requires_node = pytest.mark.skipif(
 
 def _request(op: str = CALL_DRIVERS[0]) -> str:
     return json.dumps({
-        "v": 6, "operation_rid": "rid-adapter", "op": op, "args": {},
+        "v": 6, "operation_rid": "rid-adapter", "op": op,
+        "args": REQUIRED_ARGS.get(op, {}),
     })
 
 

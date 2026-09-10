@@ -11,7 +11,10 @@
  */
 
 /* Built on first use rather than at evaluation time, so this file makes no
- * assumption about the order Packet Tracer evaluated the others in. */
+ * assumption about the order Packet Tracer evaluated the others in. Each entry
+ * names its handler directly: a wrapper that only forwarded its arguments was
+ * two lines of nothing per operation, and the table is the one place a reader
+ * should be able to see the whole whitelist at once. */
 var MUEJEJE_V6_DISPATCH = {table: null};
 
 function muejejeV6OperationTable() {
@@ -22,30 +25,27 @@ function muejejeV6OperationTable() {
                 /* The operation declares what its own arguments mean; this
                  * table decides which names exist at all. */
                 args: MUEJEJE_PLATFORM_DESCRIPTOR_ARGS,
-                handler: function (args, context) {
-                    return muejejePlatformDeviceDescriptors(args, context);
-                }
+                handler: muejejePlatformDeviceDescriptors
             },
             "platform.module_descriptors": {
                 read_only: true,
                 args: MUEJEJE_PLATFORM_MODULE_ARGS,
-                handler: function (args, context) {
-                    return muejejePlatformModuleDescriptors(args, context);
-                }
+                handler: muejejePlatformModuleDescriptors
+            },
+            "platform.module_type_support": {
+                read_only: true,
+                args: MUEJEJE_PLATFORM_SUPPORT_ARGS,
+                handler: muejejePlatformModuleTypeSupport
             },
             "runtime.capabilities": {
                 read_only: true,
                 args: {},
-                handler: function (args, context) {
-                    return muejejeRuntimeCapabilities(args, context);
-                }
+                handler: muejejeRuntimeCapabilities
             },
             "runtime.identify": {
                 read_only: true,
                 args: {},
-                handler: function (args, context) {
-                    return muejejeRuntimeIdentify(args, context);
-                }
+                handler: muejejeRuntimeIdentify
             }
         };
     }

@@ -52,6 +52,11 @@ REQUIRED_RESULT_FIELDS = {
         "descriptor_present", "model", "device_type", "root_present", "nodes",
         "nodes_truncated", "depth_truncated",
     },
+    "platform.module_type_support": {
+        "resolution", "unavailable_reason", "device_index", "module_type",
+        "available_count", "descriptor_present", "model", "device_type",
+        "module_type_supported",
+    },
     "runtime.identify": {
         "extension_name", "extension_version", "protocol_versions",
         "operations", "supported_features", "runtime_session_id",
@@ -89,6 +94,9 @@ REQUIRED_NESTED_FIELDS = {
             "children_truncated": bool,
         },
     },
+    # No nested object of its own: one flag, and the identity that attributes
+    # it. Frozen as empty on purpose — a nested object added later is additive.
+    "platform.module_type_support": {},
     "runtime.identify": {
         "provenance": {
             "state": str, "source_sha": type(None),
@@ -111,7 +119,11 @@ REQUIRED_NESTED_FIELDS = {
 PRELUDE = {
     "platform.device_descriptors": platform_stub(CHASSIS_MODELS),
     "platform.module_descriptors": platform_stub(CHASSIS_MODELS),
+    "platform.module_type_support": platform_stub(CHASSIS_MODELS),
 }
+# An operation whose arguments are not all optional needs them supplied before
+# it will answer at all, and a shape gate has to see the answer.
+REQUIRED_ARGS = {"platform.module_type_support": {"module_type": 6}}
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",
@@ -130,7 +142,8 @@ def missing_fields(frozen: set[str], observed: set[str]) -> set[str]:
 
 def _request(op: str) -> str:
     return json.dumps({
-        "v": 6, "operation_rid": f"rid-shape-{op}", "op": op, "args": {},
+        "v": 6, "operation_rid": f"rid-shape-{op}", "op": op,
+        "args": REQUIRED_ARGS.get(op, {}),
     })
 
 

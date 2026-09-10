@@ -46,7 +46,7 @@ ERROR_CODES = {
 # operation is a new name (MJ-008).
 READ_ONLY_OPERATIONS = {
     "platform.device_descriptors", "platform.module_descriptors",
-    "runtime.capabilities", "runtime.identify",
+    "platform.module_type_support", "runtime.capabilities", "runtime.identify",
 }
 
 REQUIREMENTS = "docs/architecture/muejeje-pts-requirements.md"

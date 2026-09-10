@@ -215,36 +215,3 @@ function muejejeV6IsBoundedScalar(value) {
         && value.length <= MUEJEJE_V6_LIMITS.ARG_STRING_CHARS
     );
 }
-
-/* Arguments are whitelisted per operation, by name, and each admitted name
- * carries the rule its value must satisfy. An operation that takes none
- * declares an empty rule set and accepts an empty object and nothing else. */
-function muejejeV6ArgsError(args, rules) {
-    var supplied = muejejeV6OwnKeys(args);
-    for (var i = 0; i < supplied.length; i++) {
-        var name = supplied[i];
-        if (!Object.prototype.hasOwnProperty.call(rules, name)) {
-            return "args carries a field this operation does not support";
-        }
-        var reason = muejejeV6ArgValueError(args[name], rules[name]);
-        if (reason !== null) {
-            return reason;
-        }
-    }
-    return null;
-}
-
-/* One rule kind so far. An unrecognised kind refuses the argument rather than
- * admitting it: a rule the kernel cannot read bounds nothing. */
-function muejejeV6ArgValueError(value, rule) {
-    if (rule.kind === "integer") {
-        if (typeof value !== "number" || value % 1 !== 0) {
-            return "an argument of this operation must be a whole number";
-        }
-        if (value < rule.min || value > rule.max) {
-            return "an argument of this operation is outside its bounds";
-        }
-        return null;
-    }
-    return "this operation declares no readable rule for that argument";
-}

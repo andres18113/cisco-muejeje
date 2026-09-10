@@ -44,7 +44,13 @@ var MUEJEJE_PLATFORM_LIMITS = {
      * omit is still marked. */
     MAX_MODULE_NODES: 512,
     MAX_MODULE_DEPTH: 12,
-    MAX_SLOTS: 64
+    MAX_SLOTS: 64,
+    /* The largest module-type value this artifact will pass to the platform.
+     * It is not a claim that Packet Tracer's enum stops here — nothing has
+     * measured that, and the values this artifact reports come back out of the
+     * platform in the first place. It bounds what one request may ask about,
+     * which is a decision this runtime is entitled to make (MJ-029). */
+    MAX_MODULE_TYPE: 65535
 };
 
 /* Why a reading is unavailable. Four different facts, kept apart because a

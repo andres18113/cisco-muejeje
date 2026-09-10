@@ -44,6 +44,7 @@ IPC_ADAPTER_FILES: tuple[str, ...] = (
 PLATFORM_ADAPTER_FILES: tuple[str, ...] = IPC_ADAPTER_FILES + (
     "muejeje_pts/script-engine/platform_device_adapter.js",
     "muejeje_pts/script-engine/platform_module_adapter.js",
+    "muejeje_pts/script-engine/platform_support_adapter.js",
 )
 # Every packaged source that carries platform vocabulary: the adapters, and the
 # file that declares what a platform reading *is*. That file names no platform
@@ -131,6 +132,7 @@ def test_the_declared_adapter_registries_are_what_this_artifact_ships():
         "muejeje_pts/script-engine/platform_adapter.js",
         "muejeje_pts/script-engine/platform_device_adapter.js",
         "muejeje_pts/script-engine/platform_module_adapter.js",
+        "muejeje_pts/script-engine/platform_support_adapter.js",
     )
     assert set(PLATFORM_ADAPTER_FILES) < set(PLATFORM_SOURCE_FILES)
 

@@ -44,6 +44,7 @@ PACKAGED_SUFFIXES = frozenset(
 # Bytes that ship inside the artifact.
 EXPECTED_ARTIFACT_INPUTS = (
     "muejeje_pts/interface/index.html",
+    "muejeje_pts/script-engine/arguments_v6.js",
     "muejeje_pts/script-engine/core.js",
     "muejeje_pts/script-engine/dispatcher_v6.js",
     "muejeje_pts/script-engine/lifecycle.js",
@@ -53,6 +54,8 @@ EXPECTED_ARTIFACT_INPUTS = (
     "muejeje_pts/script-engine/platform_module_adapter.js",
     "muejeje_pts/script-engine/platform_modules.js",
     "muejeje_pts/script-engine/platform_reading.js",
+    "muejeje_pts/script-engine/platform_support.js",
+    "muejeje_pts/script-engine/platform_support_adapter.js",
     "muejeje_pts/script-engine/protocol_v6.js",
     "muejeje_pts/script-engine/runtime_capabilities.js",
     "muejeje_pts/script-engine/runtime_identity.js",
