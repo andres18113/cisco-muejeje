@@ -129,7 +129,7 @@ function muejejeAdapterModuleTree(reading, descriptor) {
  * recurses: a descriptor that described itself would otherwise be a stack
  * overflow inside Packet Tracer's engine rather than a bounded reading. */
 function muejejeAdapterWalk(reading, root) {
-    var pending = [{descriptor: root, parent: null, depth: 0, slot: null}];
+    var pending = [{descriptor: root, parent: null, depth: 0, position: null}];
     var head = 0;
     while (head < pending.length) {
         var item = pending[head];
@@ -144,14 +144,21 @@ function muejejeAdapterWalk(reading, root) {
 /* One node, every field read through the boundary and checked before it is
  * reported. A partial node is deliberately not an option: reporting three
  * fields of a module and dropping the fourth would look like an answer about
- * the platform rather than about our inability to read it. */
+ * the platform rather than about our inability to read it.
+ *
+ * `module_index` is the index this module was read at — the argument
+ * `getModuleAt` was called with — and nothing more. It is deliberately not
+ * called a slot: `getSlotCount()`/`getSlotTypeAt(i)` are a second enumeration
+ * on the same descriptor, and nothing this repository has observed says the
+ * two correspond. Publishing it as a slot position would be a claim about
+ * Packet Tracer's model that no reading here supports (MJ-015). */
 function muejejeAdapterModuleNode(item, index) {
     var slots = muejejeAdapterSlotTypes(item.descriptor);
     return {
         index: index,
         parent_index: item.parent,
         depth: item.depth,
-        slot_index: item.slot,
+        module_index: item.position,
         model: muejejeReadingModel(
             muejejeAdapterCall(item.descriptor, "getModel")
         ),
@@ -166,14 +173,18 @@ function muejejeAdapterModuleNode(item, index) {
         module_count: muejejeReadingCount(
             muejejeAdapterCall(item.descriptor, "getModuleCount")
         ),
-        children_present: 0,
         children_truncated: false
     };
 }
 
-/* The slots this module offers, as the platform's own numbers. Nothing here
- * translates them; naming a slot type is a consumer's job, against Cisco's
- * documentation (MJ-014). */
+/* The slot types this module offers, as the platform's own numbers. Nothing
+ * here translates them; naming a slot type is a consumer's job, against Cisco's
+ * documentation (MJ-014).
+ *
+ * This is a different enumeration from the modules below it, and the reading
+ * keeps them apart: `getSlotCount()` bounds this list, `getModuleCount()`
+ * bounds that one, and nothing here claims the i-th of one is the i-th of the
+ * other. */
 function muejejeAdapterSlotTypes(descriptor) {
     var count = muejejeReadingCount(
         muejejeAdapterCall(descriptor, "getSlotCount")
@@ -189,13 +200,8 @@ function muejejeAdapterSlotTypes(descriptor) {
 }
 
 /* Children are queued, never walked here, and a bound refuses the whole set of
- * a node's children rather than a prefix of it: half a bay list read as a
- * complete one is the failure mode this marking exists to prevent.
- *
- * An empty bay is a real answer. `getModuleAt(j)` answering nothing means the
- * descriptor carries no module in that slot, which is metadata about the
- * model, not a malformed reading — discarding it once already cost a correct
- * answer about a chassis root. */
+ * a node's children rather than a prefix of it: half a module list read as a
+ * complete one is the failure mode this marking exists to prevent. */
 function muejejeAdapterQueueChildren(reading, item, node, pending) {
     if (node.module_count === 0) {
         return;
@@ -213,21 +219,27 @@ function muejejeAdapterQueueChildren(reading, item, node, pending) {
         reading.nodes_truncated = true;
         return;
     }
-    for (var slot = 0; slot < node.module_count; slot++) {
-        muejejeAdapterQueueChild(item, node, pending, slot);
+    for (var position = 0; position < node.module_count; position++) {
+        muejejeAdapterQueueChild(item, node, pending, position);
     }
 }
 
-function muejejeAdapterQueueChild(item, node, pending, slot) {
-    var child = muejejeAdapterCallAt(item.descriptor, "getModuleAt", slot);
+/* A missing module inside the count the platform itself reported is an answer
+ * that cannot be attributed, exactly as a missing descriptor inside the device
+ * count is. It is deliberately *not* read as "this position is empty": that
+ * would be a semantic for `null` that no target reading supports, and inventing
+ * one here would publish a fact about Packet Tracer's model that nobody
+ * observed. If a target run shows a null is ordinary there, this becomes a
+ * reported position with that evidence behind it — not before (MJ-015). */
+function muejejeAdapterQueueChild(item, node, pending, position) {
+    var child = muejejeAdapterCallAt(item.descriptor, "getModuleAt", position);
     if (!child) {
-        return;
+        throw MUEJEJE_PLATFORM_UNUSABLE;
     }
-    node.children_present = node.children_present + 1;
     pending.push({
         descriptor: child,
         parent: node.index,
         depth: item.depth + 1,
-        slot: slot
+        position: position
     });
 }

@@ -81,7 +81,7 @@ Four operations are admitted, all read-only:
 | `runtime.identify` | *who is this* — name, version, session token, provenance, the lifecycle the module recorded |
 | `runtime.capabilities` | *what does it admit now* — session token, protocol versions, each whitelisted operation with its `read_only` flag, and the kernel features behind them |
 | `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the DeviceType and the module types the platform reports for it, or a reason the reading was unavailable |
-| `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a factory index, node by node, with each module's type, slot types and hot-swap flag, or a reason the reading was unavailable |
+| `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a factory index, node by node, each with the index it was read at, its type, its slot types and its hot-swap flag, or a reason the reading was unavailable |
 
 The two runtime operations read the same whitelist, from the dispatcher that
 owns it, so they can never describe different contracts. The two platform ones

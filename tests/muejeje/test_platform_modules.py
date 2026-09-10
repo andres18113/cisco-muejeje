@@ -43,9 +43,9 @@ RESULT_FIELDS = {
     "nodes_truncated", "depth_truncated",
 }
 NODE_FIELDS = {
-    "index", "parent_index", "depth", "slot_index", "model", "module_type",
+    "index", "parent_index", "depth", "module_index", "model", "module_type",
     "hot_swappable", "slot_types", "slot_types_truncated", "module_count",
-    "children_present", "children_truncated",
+    "children_truncated",
 }
 
 requires_node = pytest.mark.skipif(
@@ -121,18 +121,22 @@ def test_a_chassis_is_reported_node_by_node_with_its_own_identity():
 
 
 @requires_node
-def test_every_node_says_where_in_the_chassis_it_sits():
-    """Parent, depth and slot, so a flat list still describes a tree.
+def test_every_node_says_where_in_the_chassis_it_was_read():
+    """Parent, depth and module index, so a flat list still describes a tree.
 
     Reported flat on purpose: a nested answer has a depth a consumer cannot
     bound in advance, and each level would be a published shape of its own.
+
+    `module_index` is the argument `getModuleAt` was called with, and is
+    deliberately not called a slot: the descriptor's slot enumeration is a
+    different one, and nothing observed here says the two correspond (MJ-015).
     """
     nodes = _observed()["nodes"]
 
     assert [node["index"] for node in nodes] == [0, 1, 2]
     assert [node["parent_index"] for node in nodes] == [None, 0, 0]
     assert [node["depth"] for node in nodes] == [0, 1, 1]
-    assert [node["slot_index"] for node in nodes] == [None, 0, 1]
+    assert [node["module_index"] for node in nodes] == [None, 0, 1]
 
 
 @requires_node
@@ -152,11 +156,15 @@ def test_the_numbers_come_back_from_the_platform_untranslated():
 
 
 @requires_node
-def test_an_empty_bay_is_a_real_answer_and_not_a_malformed_one():
-    """A descriptor may carry no module in a slot. That is metadata.
+def test_a_missing_module_inside_the_reported_count_is_unusable():
+    """`null` from `getModuleAt` is not read as "this position is empty".
 
-    Refusing it would discard a correctly attributed answer, which is exactly
-    what a stricter rule cost this repository once already on a chassis root.
+    That semantic was published once and withdrawn: nothing this repository has
+    observed on `9.0.1.0858` says a null inside `0..getModuleCount()-1` means an
+    empty bay, and inventing the meaning would state a fact about Packet
+    Tracer's model that nobody measured. A missing module inside a count the
+    platform itself reported is an answer that cannot be attributed — exactly
+    what a missing descriptor inside the device count already is (MJ-015).
     """
     models = (
         "[{model: 'half', type: 1, supported: true, module_types: [], root:"
@@ -167,12 +175,9 @@ def test_an_empty_bay_is_a_real_answer_and_not_a_malformed_one():
     )
     result = _observed(models)
 
-    assert result["resolution"] == "OBSERVED"
-    assert [node["model"] for node in result["nodes"]] == ["root", "card"]
-    assert result["nodes"][0]["module_count"] == 2
-    assert result["nodes"][0]["children_present"] == 1
-    assert result["nodes"][0]["children_truncated"] is False
-    assert result["nodes"][1]["slot_index"] == 1
+    assert result["resolution"] == "UNAVAILABLE"
+    assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
+    assert result["nodes"] == []
 
 
 @requires_node

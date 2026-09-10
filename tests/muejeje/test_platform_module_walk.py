@@ -80,7 +80,10 @@ def test_a_tree_deeper_than_the_bound_is_marked_rather_than_cut_silently():
     assert result["nodes_truncated"] is False
     assert deepest["depth"] == 12
     assert deepest["children_truncated"] is True
-    assert deepest["children_present"] == 0
+    assert deepest["module_count"] == 1, (
+        "the count the platform reported is still reported; what is missing is "
+        "the subtree, and the mark says so"
+    )
 
 
 @requires_node

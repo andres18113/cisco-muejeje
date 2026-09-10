@@ -188,8 +188,8 @@ def platform_stub(models: str, *, count: str | None = None, fail: bool = False) 
     `{model, type, supported, module_types}` objects, each optionally carrying
     `root`: a chassis-module tree of
     `{model, module_type, hot_swappable, slot_types, modules}` nodes, where a
-    `null` entry in `modules` is an empty bay and `module_count` overrides what
-    `getModuleCount()` answers. `count` overrides what
+    `null` entry in `modules` makes `getModuleAt` answer nothing at that index,
+    and `module_count` overrides what `getModuleCount()` answers. `count` overrides what
     `getAvailableDeviceCount()` answers, which is how an unusable answer is
     delivered; `fail` makes the first platform call throw, which is how a
     denied or otherwise refused call is delivered.

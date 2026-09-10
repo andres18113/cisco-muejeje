@@ -83,10 +83,10 @@ REQUIRED_NESTED_FIELDS = {
     "platform.module_descriptors": {
         "nodes[]": {
             "index": int, "parent_index": (int, type(None)), "depth": int,
-            "slot_index": (int, type(None)), "model": str,
+            "module_index": (int, type(None)), "model": str,
             "module_type": int, "hot_swappable": bool, "slot_types": list,
             "slot_types_truncated": bool, "module_count": int,
-            "children_present": int, "children_truncated": bool,
+            "children_truncated": bool,
         },
     },
     "runtime.identify": {
