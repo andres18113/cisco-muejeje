@@ -106,7 +106,7 @@ def test_provenance_is_reported_unbound_rather_than_invented():
 
 
 # ---------------------------------------------------------------------------
-# runtime_session_id: stable within a session, different between sessions.
+# runtime_session_id: one token per engine evaluation, and nothing wider.
 # ---------------------------------------------------------------------------
 
 @requires_node
@@ -123,8 +123,22 @@ def test_the_session_id_is_stable_across_calls_within_one_session():
 
 
 @requires_node
-def test_the_session_id_survives_a_restart_within_the_same_session():
-    """`main()` may run more than once; the session is the evaluation, not the run."""
+def test_calling_the_lifecycle_twice_rebinds_no_token_and_is_only_bookkeeping():
+    """What our own `main()`/`cleanUp()` record, and nothing more than that.
+
+    This calls the two functions directly, in one Node evaluation. It
+    establishes that the token is bound at evaluation time rather than at
+    startup, and that the lifecycle counter counts the calls it saw. It
+    establishes **nothing** about Packet Tracer's stop/start semantics: an
+    earlier revision read exactly this run as evidence that "restarting the
+    module is not re-evaluating it", which is a claim about PT that Cisco's
+    own reference contradicts — every script file is evaluated when the module
+    starts, so a restart is a new evaluation and a new token (MJ-015, MJ-023).
+
+    Whether PT ever calls `main()` twice inside one evaluation is not
+    documented and is not claimed here; the counter exists so a reader can
+    tell one call from two, not to predict how many PT will make.
+    """
     observed = dispatch_v6(
         IDENTIFY,
         prelude="main(); cleanUp(); main();",

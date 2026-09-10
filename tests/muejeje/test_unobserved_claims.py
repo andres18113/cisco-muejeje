@@ -17,12 +17,15 @@ import re
 
 import pytest
 
+from tests.muejeje.measure import (
+    packaged_sources,
+    relative,
+)
 from tests.muejeje.support import (
+    INSTALLED_HELP,
     REPO_ROOT,
     SCRIPT_ENGINE,
     SOURCE_ROOT,
-    packaged_sources,
-    relative,
 )
 
 # Documents that describe the runtime to a reader. A claim here carries the
@@ -44,6 +47,33 @@ RETIRED_CLAIMS = (
      "V6 has no compatibility escape; a non-V6 request is refused"),
     (r"empty of behaviour",
      "the owned source root carries the V6 kernel"),
+    (r"restarting the module is not re-?evaluating",
+     "Cisco documents the opposite: a module start evaluates every engine file"),
+    (r"including across a [`']?cleanUp\(\)",
+     "the session token spans one evaluation, and a restart is a new one"),
+)
+
+# Sources that describe the runtime in prose, the way a document does. A
+# withdrawn claim in a comment reads as evidence exactly as one in a document
+# does, and drifts more quietly, because nothing about a comment looks like a
+# claim. Engine sources are always JavaScript, so reading them as text is safe.
+DESCRIBING_SOURCES = tuple(
+    relative(path) for path in sorted(SCRIPT_ENGINE.glob("*.js"))
+)
+
+# What Cisco's installed reference says about the Script Engine lifecycle.
+# Quoted, not paraphrased: the claim these sentences correct was a claim about
+# Packet Tracer, so only Packet Tracer's own documentation can settle it
+# (MJ-015, `AGENTS.md` rule 6). The page is hash-pinned in the v2 preflight
+# inventory as `d22cafa8...`.
+CISCO_SCRIPT_ENGINE_PAGE = "scriptModules_scriptEngine.htm"
+CISCO_LIFECYCLE_SENTENCES = (
+    "When the Script Module starts, all script files are executed (evaluated)"
+    " in the Script Engine in the same order as listed in the Scripting"
+    " Interface.",
+    "As long as the Script Module is running, the Script Engine is running.",
+    "Changes made to the Script Engine after it has started DO NOT take effect"
+    " until it has been stopped and started again.",
 )
 
 # An operation name as a document writes it: inside backticks, or inside a
@@ -79,8 +109,9 @@ def admitted_operations() -> set[str]:
 # Documents describe the runtime that exists.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("logical", DESCRIBING_DOCUMENTS)
-def test_no_document_repeats_a_withdrawn_claim(logical: str):
+@pytest.mark.parametrize("logical", DESCRIBING_DOCUMENTS + DESCRIBING_SOURCES)
+def test_nothing_that_describes_the_runtime_repeats_a_withdrawn_claim(logical: str):
+    """Documents and source comments are held to the same claim."""
     body = _document(logical)
     offenders = [
         f"{logical}: {found.group(0)!r} — {because}"
@@ -89,6 +120,45 @@ def test_no_document_repeats_a_withdrawn_claim(logical: str):
         if found is not None
     ]
     assert not offenders, offenders
+
+
+@pytest.mark.skipif(
+    not INSTALLED_HELP.is_dir(),
+    reason="the target build is not installed; its documentation cannot be read",
+)
+@pytest.mark.parametrize("sentence", CISCO_LIFECYCLE_SENTENCES)
+def test_cisco_documents_that_a_module_start_evaluates_the_engine(sentence: str):
+    """The evidence behind the correction, read from the installed reference.
+
+    An earlier revision claimed the session token survived a module restart,
+    "because restarting the module is not re-evaluating it". Cisco's page says
+    the opposite in three places: every engine file is evaluated when the
+    module *starts*, the engine lives exactly as long as the module runs, and
+    an engine change needs a stop and a start to take effect. So a restart is
+    a new evaluation and a new token, and the withdrawn claim was a statement
+    about Packet Tracer that Packet Tracer's own documentation contradicts.
+
+    Quoting it here is what keeps the correction checkable: if a future
+    installed build words this differently, this gate fails and the
+    requirement is re-read against the new wording rather than assumed.
+    """
+    page = (INSTALLED_HELP / CISCO_SCRIPT_ENGINE_PAGE).read_text(
+        encoding="utf-8", errors="replace",
+    )
+    collapsed = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
+
+    assert sentence in collapsed, CISCO_SCRIPT_ENGINE_PAGE
+
+
+def test_the_withdrawn_claim_gate_reads_the_kernel_sources_too():
+    """Guards the gate above from passing because it swept no source.
+
+    The claim it was added for lived in a `core.js` comment, not in a
+    document, so a gate that reads only documents would have reported the
+    tree clean while the artifact itself still carried the claim.
+    """
+    assert "muejeje_pts/script-engine/core.js" in DESCRIBING_SOURCES
+    assert len(DESCRIBING_SOURCES) == len(list(SCRIPT_ENGINE.glob("*.js")))
 
 
 @pytest.mark.parametrize("logical", DESCRIBING_DOCUMENTS)

@@ -131,6 +131,13 @@ Each returns a JSON **string** carrying
 `{v, operation_rid, op, ok, result, error}`, with the `operation_rid` echoed
 back unchanged and `error: null` on success.
 
+**Record both envelopes from one start.** Cisco documents that every engine
+file is evaluated when the module starts, so a stop and a start is a new
+evaluation and the `runtime_session_id` will differ (`MJ-023`). Two envelopes
+carrying the same token were observed in the same evaluation; two carrying
+different tokens say the module was restarted between them, which is a
+different observation and must be written down as one.
+
 *Which* surface issues those calls is the operator's choice — the module editor
 has a Debug part, and a consumer could call in another way. This repository has
 no recorded evidence of the Debug part's exact behaviour, so no steps for it are

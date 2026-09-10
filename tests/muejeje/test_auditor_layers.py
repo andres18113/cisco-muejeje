@@ -14,11 +14,13 @@ from pathlib import Path
 
 import pytest
 
+from tests.muejeje.measure import (
+    imported_siblings,
+    relative,
+)
 from tests.muejeje.support import (
     CLI,
     PTS_PACKAGE,
-    imported_siblings,
-    relative,
 )
 
 # Allowed intra-package imports, innermost layer first. A module may import from

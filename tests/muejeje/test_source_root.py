@@ -12,14 +12,16 @@ import re
 
 import pytest
 
-from tests.muejeje.support import (
-    REPO_ROOT,
-    SOURCE_ROOT,
+from tests.muejeje.measure import (
     engine_sources,
     layer_offenders,
     packaged_sources,
     relative,
     symbols_present,
+)
+from tests.muejeje.support import (
+    REPO_ROOT,
+    SOURCE_ROOT,
 )
 
 # The six globals PTBuilder supplies today. Inheriting any of them is what the

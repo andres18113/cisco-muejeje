@@ -6,9 +6,11 @@
  * this one, and this one reads none of them, which is what makes the
  * dependency direction checkable rather than arguable.
  *
- * Packet Tracer evaluates the Script Engine files in the order the Scripting
- * Interface lists them, and this file is first. The session identity below is
- * therefore established exactly once per Script Module session.
+ * Cisco documents that "when the Script Module starts, all script files are
+ * executed (evaluated) in the Script Engine in the same order as listed in the
+ * Scripting Interface", and this file is listed first. The session identity
+ * below is therefore established exactly once per engine evaluation — which is
+ * once per module start, not once per install (MJ-023).
  */
 
 var MUEJEJE_CORE = {
@@ -53,10 +55,18 @@ var MUEJEJE_CORE = {
  * nothing about who is calling. A caller that treats it as a credential has
  * misread the contract.
  *
- * It is generated exactly once — Packet Tracer evaluates this file once — and
- * is therefore stable for the life of that evaluation, including across a
- * cleanUp()/main() cycle, because restarting the module is not re-evaluating
- * it.
+ * Its scope is one engine evaluation. Cisco documents that every script file
+ * is evaluated when the Script Module starts, that the engine runs exactly as
+ * long as the module runs, and that an engine change takes effect only once
+ * the module "has been stopped and started again" — so stopping and starting
+ * the module is a new evaluation and a new token, by design. Nothing here
+ * claims otherwise, and no consumer should read stability across a restart
+ * into it (MJ-023).
+ *
+ * What a cleanUp()/main() sequence does *within* one evaluation is recorded
+ * below because these two functions record it. That is this module's own
+ * bookkeeping; Packet Tracer is not documented to call main() twice in one
+ * evaluation, and nothing here asserts that it does.
  *
  * What it is not is globally unique. It is a clock reading and a random draw,
  * and the engine guarantees neither: two evaluations may in principle produce

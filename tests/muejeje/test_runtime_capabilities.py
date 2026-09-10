@@ -18,11 +18,13 @@ import json
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.measure import (
+    engine_sources,
+    relative,
+)
 from tests.muejeje.support import (
     FEATURE_EVIDENCE,
     SCRIPT_ENGINE,
-    engine_sources,
-    relative,
 )
 
 CAPABILITIES = json.dumps({

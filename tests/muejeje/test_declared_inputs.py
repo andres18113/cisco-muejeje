@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from tests.muejeje.support import (
-    REPO_ROOT,
+from tests.muejeje.measure import (
     packaged_sources,
     relative,
+)
+from tests.muejeje.support import (
+    REPO_ROOT,
     repo_manifest,
 )
 

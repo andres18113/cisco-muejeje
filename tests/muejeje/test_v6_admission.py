@@ -25,7 +25,13 @@ import json
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
-from tests.muejeje.support import SCRIPT_ENGINE, engine_sources, relative
+from tests.muejeje.measure import (
+    engine_sources,
+    relative,
+)
+from tests.muejeje.support import (
+    SCRIPT_ENGINE,
+)
 
 VALID = {"v": 6, "operation_rid": "rid-bound", "op": "runtime.identify", "args": {}}
 

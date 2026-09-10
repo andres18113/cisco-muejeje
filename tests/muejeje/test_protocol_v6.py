@@ -16,12 +16,14 @@ import pytest
 
 from tests.muejeje import engine_harness
 from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.measure import (
+    engine_sources,
+    relative,
+)
 from tests.muejeje.support import (
     MUEJEJE_TESTS,
     REPO_ROOT,
     SCRIPT_ENGINE,
-    engine_sources,
-    relative,
     repo_manifest,
 )
 

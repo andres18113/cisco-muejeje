@@ -19,16 +19,18 @@ from pathlib import Path
 
 import pytest
 
-from tests.muejeje.support import (
-    CLI,
-    MUEJEJE_TESTS,
-    PTS_PACKAGE,
-    REPO_ROOT,
+from tests.muejeje.measure import (
     engine_sources,
     js_function_lengths,
     python_function_lengths,
     relative,
     source_lines,
+)
+from tests.muejeje.support import (
+    CLI,
+    MUEJEJE_TESTS,
+    PTS_PACKAGE,
+    REPO_ROOT,
 )
 
 MODULE_TARGET, MODULE_HARD = 300, 500
@@ -41,9 +43,14 @@ TARGET_EXCEPTIONS: dict[str, str] = {}
 # "path::function" -> why this function may exceed the target.
 FUNCTION_EXCEPTIONS: dict[str, str] = {}
 
-# Modules in the test area that carry fixtures and harnesses rather than
-# claims. Everything else there must be a test module.
-SUPPORT_MODULES = {"support.py", "engine_harness.py"}
+# Modules in the test area that carry fixtures, measurement or a harness
+# rather than claims. Everything else there must be a test module.
+#
+# `measure.py` was split out of `support.py` when that module crossed its own
+# line budget: building a fixture and measuring a file are two
+# responsibilities, and the budget is what forced the split instead of letting
+# it be argued about (MJ-018, MJ-020).
+SUPPORT_MODULES = {"support.py", "measure.py", "engine_harness.py"}
 
 # The monolith M0F broke up. Its absence is part of the gate: moving the same
 # oversized responsibility into a new file is not a fix.

@@ -414,11 +414,17 @@ failure.
 
 ### MJ-023 — `runtime_session_id` is a correlation token, never authentication
 **Requirement.** `runtime_session_id` is a **non-secret correlation token
-generated once per Script Module evaluation**. It is stable for the life of
-that evaluation, including across a `cleanUp()`/`main()` cycle, because
-restarting the module is not re-evaluating it. It exists so two observations
-can be attributed to the same evaluation. It grants nothing, proves nothing
-about who is calling, and the runtime never compares it against anything.
+generated once per engine evaluation**. It exists so two observations can be
+attributed to the same evaluation. It grants nothing, proves nothing about who
+is calling, and the runtime never compares it against anything.
+
+**Its scope is one evaluation, and a module restart ends that scope.** Cisco's
+installed reference says every script file is evaluated *"when the Script
+Module starts"*, that *"as long as the Script Module is running, the Script
+Engine is running"*, and that an engine change takes effect only once the
+module *"has been stopped and started again"*. A stop and a start are therefore
+a new evaluation, and a new token. Muejeje claims nothing beyond that, and a
+consumer that needs an identity spanning a restart carries its own.
 
 **No global uniqueness is claimed.** The token is a clock reading and a random
 draw; the Script Engine guarantees neither, so two evaluations may in principle
@@ -429,18 +435,29 @@ that carries its own and correlates on both.
 for a credential. Saying what it is not — in the contract and in the source —
 is what stops it from quietly becoming one. Claiming uniqueness would be a
 second mistake of the same kind: an unverifiable guarantee that consumers would
-build on.
+build on, and so would claiming a lifetime the platform does not give it.
 **Verification.** `tests/muejeje/test_runtime_identify.py` asserts stability
-within an evaluation (including across a `main()`/`cleanUp()`/`main()` cycle),
-that exactly one generation site exists and binds the token once, that
-regenerating does not rebind the session, and that no kernel source compares
-the id.
+across calls within one evaluation, that exactly one generation site exists and
+binds the token once, that regenerating does not rebind the session, and that
+no kernel source compares the id. `tests/muejeje/test_unobserved_claims.py`
+quotes the three sentences above out of the installed page and fails if any
+source or document restates the withdrawn lifetime.
 
+> **Two claims here were wrong and are withdrawn, not restated.**
+>
 > An earlier revision required the token to be "different between sessions" and
 > verified it by comparing two Node processes. Nothing in the kernel guarantees
 > that, so the gate was probabilistic: it could fail with nothing wrong, which
-> teaches a reader to re-run a red test rather than read it. Both the claim and
-> its assertion are withdrawn and replaced by what the kernel does guarantee.
+> teaches a reader to re-run a red test rather than read it.
+>
+> A later revision claimed the token was stable *"including across a
+> `cleanUp()`/`main()` cycle, because restarting the module is not
+> re-evaluating it"*. That is a statement about Packet Tracer, it was verified
+> by calling our own `main()` and `cleanUp()` under Node, and Cisco's own
+> documentation contradicts it. What the Node run establishes is what this
+> module's bookkeeping records when those two functions are called in that
+> order — never what Packet Tracer does when a user stops and starts a module
+> (MJ-015).
 
 **Status.** `ENFORCED`
 
