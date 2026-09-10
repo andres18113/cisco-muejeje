@@ -1,0 +1,4263 @@
+{
+  "START_HEAD": "580a64586e51cfb813fc2af48de5bb9a99f535af",
+  "baseline": {
+    "actions_run": {
+      "conclusion": "success",
+      "databaseId": 34473147984,
+      "headSha": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+      "name": "tests",
+      "status": "completed",
+      "url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34473147984"
+    },
+    "boot": {
+      "attempts": 1,
+      "booting": false,
+      "command_prompt": false,
+      "components_seen": [],
+      "configuration_channel": false,
+      "elapsed_ms": 296,
+      "failure_reason": "",
+      "power": null,
+      "state": "operational_ready",
+      "terminal_available": true,
+      "terminal_kind": "ios_command_line"
+    },
+    "bridge_healthy": true,
+    "devices": [],
+    "environment": {
+      "devices": 0,
+      "found": true,
+      "links": 0,
+      "pt_version": "9.0.1.0858",
+      "saved_filename": "",
+      "simulation_mode": false
+    },
+    "fresh_authenticated_bridge": {
+      "active_pt_transport": "file_bridge_user_acl",
+      "authenticated_status": 200,
+      "pid": 52024,
+      "token_fingerprint": "38c31be38b4c98d8",
+      "unauthenticated_status": 401,
+      "webview_http_connection_claimed": false
+    },
+    "import_isolation": {
+      "executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+      "loaded_namespaces": [
+        "packet_tracer_mcp"
+      ],
+      "production_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py",
+      "result": "ISOLATED: Aislamiento de import verificado. (C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py)"
+    },
+    "initial_START_HEAD_verified": true,
+    "inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "jobs": [
+      {
+        "conclusion": "success",
+        "head_sha": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34473147984/job/102857525540",
+        "name": "pytest (windows-latest, 3.11)"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34473147984/job/102857525675",
+        "name": "pytest (windows-latest, 3.13)"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34473147984/job/102857525751",
+        "name": "pytest (ubuntu-latest, 3.11)"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34473147984/job/102857525836",
+        "name": "pytest (ubuntu-latest, 3.13)"
+      }
+    ],
+    "local_head": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+    "mailbox_entries": [],
+    "processes": [
+      {
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" ",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "Name": "PacketTracer.exe",
+        "ParentProcessId": 61140,
+        "ProcessId": 24796
+      },
+      {
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\"  --progress-bar-server",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "Name": "PacketTracer.exe",
+        "ParentProcessId": 24796,
+        "ProcessId": 53640
+      },
+      {
+        "CommandLine": "\"C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe\" tools/poe3a_pse_live.py --execute --model 3560-24PS --qualification-id router0-a-3560-21",
+        "ExecutablePath": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+        "Name": "python.exe",
+        "ParentProcessId": 21796,
+        "ProcessId": 58892
+      },
+      {
+        "CommandLine": "\"C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" tools/poe3a_pse_live.py --execute --model 3560-24PS --qualification-id router0-a-3560-21",
+        "ExecutablePath": "C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "Name": "python.exe",
+        "ParentProcessId": 58892,
+        "ProcessId": 52024
+      }
+    ],
+    "qualification_plan": {
+      "bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/1"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/2"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/3"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/4"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/5"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/6"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/7"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/8"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/9"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/10"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/11"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/12"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/13"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/14"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/15"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/16"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/17"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/18"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/19"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/20"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "FastEthernet0/21"
+        }
+      ],
+      "candidate_model": "3560-24PS",
+      "packet_tracer_build": "9.0.1.0858",
+      "simultaneous_active_ports": 21
+    },
+    "remote_head": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+    "source_branch": "feature/runtime-ripv2",
+    "source_tree": "026891e4dc0331e4f4b94fc6f520f1a5582abf31",
+    "strict_e5_manual_allowlist": true,
+    "upstream": "cisco/feature/runtime-ripv2",
+    "upstream_head": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+    "verified_at_utc": "2026-09-10T11:54:08.334331Z",
+    "worktree_clean": true
+  },
+  "captures": [
+    {
+      "completed_at_utc": "2026-09-10T11:56:46.084659Z",
+      "expected_prompt": "Switch#",
+      "label": "AUTO_1",
+      "observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2375,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "completed",
+          "pager_pages_captured": 2,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "prefix_delta"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+        "ports": [
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/1",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/1",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/2",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/2",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/3",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/3",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/4",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/4",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/5",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/5",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/6",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/6",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/7",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/7",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/8",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/8",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/9",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/9",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/10",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/10",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/11",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/11",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/12",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/12",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/13",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/13",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/14",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/14",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/15",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/15",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/16",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/16",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/17",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/17",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/18",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/18",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/19",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/19",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/20",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/20",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/21",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/21",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 210.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+      },
+      "raw_file": "auto_1.txt",
+      "raw_sha256": "db809eacc1bb0f8a691e21c0f7fa0b5a963b1e853406d64a737da3aebd8a8467",
+      "repeat_observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2639,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "completed",
+          "pager_pages_captured": 2,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "rolled_suffix_anchor"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+        "ports": [
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/1",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/1",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/2",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/2",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/3",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/3",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/4",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/4",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/5",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/5",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/6",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/6",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/7",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/7",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/8",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/8",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/9",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/9",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/10",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/10",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/11",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/11",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/12",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/12",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/13",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/13",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/14",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/14",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/15",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/15",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/16",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/16",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/17",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/17",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/18",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/18",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/19",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/19",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/20",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/20",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/21",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/21",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 210.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+      },
+      "stable": true,
+      "started_at_utc": "2026-09-10T11:56:36.511655Z",
+      "table_completeness": {
+        "all_pagers_traversed": true,
+        "attributable": true,
+        "dispatch_integrity_valid": true,
+        "expected_privileged_prompt_reached": true,
+        "fresh": true,
+        "no_pending_continuation": true,
+        "observer_complete": true,
+        "stable": true
+      }
+    },
+    {
+      "completed_at_utc": "2026-09-10T11:59:01.727258Z",
+      "expected_prompt": "Switch#",
+      "label": "NEVER",
+      "observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2703,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "not_encountered",
+          "pager_pages_captured": 1,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "prefix_delta"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+        "ports": [
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/1",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/2",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/3",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/4",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/5",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/6",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/7",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/8",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/9",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/10",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/11",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/12",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/13",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/14",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/15",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/16",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/17",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/18",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/19",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/20",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/21",
+            "row": null
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 210.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+      },
+      "raw_file": "never.txt",
+      "raw_sha256": "41108af994e0f6398ad7f7f0927664bc1bb461bbb9194c65d8f159f0dbe71a91",
+      "repeat_observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2547,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "not_encountered",
+          "pager_pages_captured": 1,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "prefix_delta"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+        "ports": [
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/1",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/2",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/3",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/4",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/5",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/6",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/7",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/8",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/9",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/10",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/11",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/12",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/13",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/14",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/15",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/16",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/17",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/18",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/19",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/20",
+            "row": null
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "FastEthernet0/21",
+            "row": null
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 210.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+      },
+      "stable": true,
+      "started_at_utc": "2026-09-10T11:58:53.437472Z",
+      "table_completeness": {
+        "all_pagers_traversed": true,
+        "attributable": true,
+        "dispatch_integrity_valid": true,
+        "expected_privileged_prompt_reached": true,
+        "fresh": true,
+        "no_pending_continuation": true,
+        "observer_complete": true,
+        "stable": true
+      }
+    },
+    {
+      "completed_at_utc": "2026-09-10T12:01:18.981561Z",
+      "expected_prompt": "Switch#",
+      "label": "AUTO_2",
+      "observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2843,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "completed",
+          "pager_pages_captured": 2,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "prefix_delta"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+        "ports": [
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/1",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/1",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/2",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/2",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/3",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/3",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/4",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/4",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/5",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/5",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/6",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/6",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/7",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/7",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/8",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/8",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/9",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/9",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/10",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/10",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/11",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/11",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/12",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/12",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/13",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/13",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/14",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/14",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/15",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/15",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/16",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/16",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/17",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/17",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/18",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/18",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/19",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/19",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/20",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/20",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/21",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/21",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 210.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+      },
+      "raw_file": "auto_2.txt",
+      "raw_sha256": "db809eacc1bb0f8a691e21c0f7fa0b5a963b1e853406d64a737da3aebd8a8467",
+      "repeat_observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2547,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "completed",
+          "pager_pages_captured": 2,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "rolled_suffix_anchor"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+        "ports": [
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/1",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/1",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/2",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/2",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/3",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/3",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/4",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/4",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/5",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/5",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/6",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/6",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/7",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/7",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/8",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/8",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/9",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/9",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/10",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/10",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/11",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/11",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/12",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/12",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/13",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/13",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/14",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/14",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/15",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/15",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/16",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/16",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/17",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/17",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/18",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/18",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/19",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/19",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/20",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/20",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/21",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/21",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 210.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+      },
+      "stable": true,
+      "started_at_utc": "2026-09-10T12:01:09.010384Z",
+      "table_completeness": {
+        "all_pagers_traversed": true,
+        "attributable": true,
+        "dispatch_integrity_valid": true,
+        "expected_privileged_prompt_reached": true,
+        "fresh": true,
+        "no_pending_continuation": true,
+        "observer_complete": true,
+        "stable": true
+      }
+    }
+  ],
+  "completed_at_utc": "2026-09-10T12:03:44.344321Z",
+  "experiment_id": "poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+  "file_operation_ledger": {
+    "attempted_operations": [],
+    "authorized_operations": [],
+    "completed_operations": [],
+    "denied_operations": [],
+    "indeterminate_operations": [],
+    "invoked_operations": []
+  },
+  "fixture": {
+    "endpoints": [
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-1",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-2",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-3",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-4",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-5",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-6",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-7",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-8",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-9",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-10",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-11",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-12",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-13",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-14",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-15",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-16",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-17",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-18",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-19",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-20",
+        "observed_ports": [
+          "Switch"
+        ]
+      },
+      {
+        "model": "7960",
+        "name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-21",
+        "observed_ports": [
+          "Switch"
+        ]
+      }
+    ],
+    "links": [
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/1"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-1",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/2"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-2",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/3"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-3",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/4"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-4",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/5"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-5",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/6"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-6",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/7"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-7",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/8"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-8",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/9"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-9",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/10"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-10",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/11"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-11",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/12"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-12",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/13"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-13",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/14"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-14",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/15"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-15",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/16"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-16",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/17"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-17",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/18"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-18",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/19"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-19",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/20"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-20",
+          "port": "Switch"
+        }
+      },
+      {
+        "first": {
+          "device_model": "3560-24PS",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "port": "FastEthernet0/21"
+        },
+        "second": {
+          "device_model": "7960",
+          "device_name": "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-21",
+          "port": "Switch"
+        }
+      }
+    ],
+    "switch": {
+      "model": "3560-24PS",
+      "name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+      "observed_ports": [
+        "FastEthernet0/1",
+        "FastEthernet0/2",
+        "FastEthernet0/3",
+        "FastEthernet0/4",
+        "FastEthernet0/5",
+        "FastEthernet0/6",
+        "FastEthernet0/7",
+        "FastEthernet0/8",
+        "FastEthernet0/9",
+        "FastEthernet0/10",
+        "FastEthernet0/11",
+        "FastEthernet0/12",
+        "FastEthernet0/13",
+        "FastEthernet0/14",
+        "FastEthernet0/15",
+        "FastEthernet0/16",
+        "FastEthernet0/17",
+        "FastEthernet0/18",
+        "FastEthernet0/19",
+        "FastEthernet0/20",
+        "FastEthernet0/21"
+      ]
+    }
+  },
+  "frozen_live_sha": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+  "integration_result": "PERSISTED",
+  "kind": "poe3b-pse-capacity-qualification",
+  "live_session_safety": {
+    "attempted_file_operations": [],
+    "authorized_file_operations": [],
+    "bridge_healthy_after": true,
+    "bridge_healthy_before": true,
+    "completed_file_operations": [],
+    "crash_detected": false,
+    "denied_file_operations": [],
+    "failure_reasons": [],
+    "final_device_count": 0,
+    "final_inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "final_link_count": 0,
+    "final_realtime": true,
+    "final_saved_filename": "",
+    "fixture_removed": true,
+    "indeterminate_file_operations": [],
+    "initial_device_count": 0,
+    "initial_inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "initial_link_count": 0,
+    "initial_realtime": true,
+    "initial_saved_filename": "",
+    "integrity_verified": true,
+    "invoked_file_operations": [],
+    "mailbox_entries_after": [],
+    "mailbox_entries_before": [],
+    "mode": "ephemeral_untitled_workspace",
+    "packet_tracer_pids_after": [
+      24796
+    ],
+    "packet_tracer_pids_before": [
+      24796
+    ],
+    "positive_claim_allowed": true,
+    "runtime_healthy": true,
+    "session_reusable": true,
+    "source_branch_after": "feature/runtime-ripv2",
+    "source_branch_before": "feature/runtime-ripv2",
+    "source_head_after": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+    "source_head_before": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+    "source_tree_after": "026891e4dc0331e4f4b94fc6f520f1a5582abf31",
+    "source_tree_before": "026891e4dc0331e4f4b94fc6f520f1a5582abf31",
+    "worktree_clean_after": true,
+    "worktree_clean_before": true
+  },
+  "packet_tracer_build": "9.0.1.0858",
+  "problems": [],
+  "productive": true,
+  "pse_dimensions": {
+    "poe_pse_bindings": "[{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/1\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/2\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/3\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/4\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/5\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/6\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/7\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/8\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/9\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/10\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/11\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/12\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/13\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/14\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/15\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/16\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/17\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/18\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/19\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/20\"},{\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"switch_port\":\"FastEthernet0/21\"}]",
+    "poe_pse_captures": "[{\"admin_mode\":\"auto\",\"binding_captures\":[{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/1\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/2\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/3\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/4\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/5\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/6\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/7\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/8\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/9\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/10\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/11\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/12\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/13\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/14\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/15\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/16\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/17\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/18\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/19\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/20\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/21\"}],\"label\":\"AUTO_1\"},{\"admin_mode\":\"never\",\"binding_captures\":[{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/1\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/2\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/3\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/4\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/5\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/6\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/7\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/8\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/9\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/10\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/11\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/12\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/13\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/14\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/15\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/16\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/17\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/18\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/19\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/20\"},{\"delivering\":false,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"absent\",\"power_watts\":0.0,\"row_present\":false,\"switch_port\":\"FastEthernet0/21\"}],\"label\":\"NEVER\"},{\"admin_mode\":\"auto\",\"binding_captures\":[{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/1\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/2\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/3\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/4\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/5\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/6\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/7\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/8\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/9\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/10\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/11\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/12\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/13\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/14\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/15\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/16\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/17\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/18\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/19\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/20\"},{\"delivering\":true,\"endpoint_model\":\"7960\",\"endpoint_port\":\"Switch\",\"oper_state\":\"on\",\"power_watts\":10.0,\"row_present\":true,\"switch_port\":\"FastEthernet0/21\"}],\"label\":\"AUTO_2\"}]",
+    "poe_pse_cleanup_status": "clean",
+    "poe_pse_evidence_kind": "pse_inline_delivery",
+    "poe_pse_experiment_id": "poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+    "poe_pse_gates": "[\"all_pagers_traversed\",\"attributable\",\"dispatch_integrity_valid\",\"expected_privileged_prompt_reached\",\"fresh\",\"no_pending_continuation\",\"observer_complete\",\"stable\"]",
+    "poe_pse_inventory_restoration": "restored",
+    "poe_pse_observed_at": "2026-09-10T12:03:44.344321Z",
+    "poe_pse_observer_id": "GovernedPoEInlineObserver",
+    "poe_pse_packet_tracer_build": "9.0.1.0858",
+    "poe_pse_schema_version": "3",
+    "poe_pse_simultaneous_active_ports": "21",
+    "poe_pse_switch_model": "3560-24PS"
+  },
+  "pse_scope": {
+    "bindings": [
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/1"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/2"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/3"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/4"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/5"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/6"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/7"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/8"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/9"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/10"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/11"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/12"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/13"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/14"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/15"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/16"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/17"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/18"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/19"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/20"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/21"
+      }
+    ],
+    "captures": [
+      {
+        "admin_mode": "auto",
+        "binding_captures": [
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/1"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/2"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/3"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/4"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/5"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/6"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/7"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/8"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/9"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/10"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/11"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/12"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/13"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/14"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/15"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/16"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/17"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/18"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/19"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/20"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/21"
+          }
+        ],
+        "label": "AUTO_1"
+      },
+      {
+        "admin_mode": "never",
+        "binding_captures": [
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/1"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/2"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/3"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/4"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/5"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/6"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/7"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/8"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/9"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/10"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/11"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/12"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/13"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/14"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/15"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/16"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/17"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/18"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/19"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/20"
+          },
+          {
+            "delivering": false,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "absent",
+            "power_watts": 0.0,
+            "row_present": false,
+            "switch_port": "FastEthernet0/21"
+          }
+        ],
+        "label": "NEVER"
+      },
+      {
+        "admin_mode": "auto",
+        "binding_captures": [
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/1"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/2"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/3"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/4"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/5"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/6"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/7"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/8"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/9"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/10"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/11"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/12"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/13"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/14"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/15"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/16"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/17"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/18"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/19"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/20"
+          },
+          {
+            "delivering": true,
+            "endpoint_model": "7960",
+            "endpoint_port": "Switch",
+            "oper_state": "on",
+            "power_watts": 10.0,
+            "row_present": true,
+            "switch_port": "FastEthernet0/21"
+          }
+        ],
+        "label": "AUTO_2"
+      }
+    ],
+    "cleanup_status": "clean",
+    "experiment_id": "poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+    "gates": [
+      "all_pagers_traversed",
+      "attributable",
+      "dispatch_integrity_valid",
+      "expected_privileged_prompt_reached",
+      "fresh",
+      "no_pending_continuation",
+      "observer_complete",
+      "stable"
+    ],
+    "inventory_restoration": "restored",
+    "observed_at": "2026-09-10T12:03:44.344321Z",
+    "observer_id": "GovernedPoEInlineObserver",
+    "packet_tracer_build": "9.0.1.0858",
+    "schema_version": 3,
+    "simultaneous_active_ports": 21,
+    "switch_model": "3560-24PS"
+  },
+  "qualification_id": "router0-a-3560-21",
+  "qualification_plan": {
+    "bindings": [
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/1"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/2"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/3"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/4"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/5"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/6"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/7"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/8"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/9"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/10"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/11"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/12"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/13"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/14"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/15"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/16"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/17"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/18"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/19"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/20"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "FastEthernet0/21"
+      }
+    ],
+    "candidate_model": "3560-24PS",
+    "packet_tracer_build": "9.0.1.0858",
+    "simultaneous_active_ports": 21
+  },
+  "restoration": {
+    "attempted": [
+      "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-1",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-2",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-3",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-4",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-5",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-6",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-7",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-8",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-9",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-10",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-11",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-12",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-13",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-14",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-15",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-16",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-17",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-18",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-19",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-20",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-21"
+    ],
+    "created": [
+      "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-1",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-2",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-3",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-4",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-5",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-6",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-7",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-8",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-9",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-10",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-11",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-12",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-13",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-14",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-15",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-16",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-17",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-18",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-19",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-20",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-21"
+    ],
+    "deleted": [
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-21",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-20",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-19",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-18",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-17",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-16",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-15",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-14",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-13",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-12",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-11",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-10",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-9",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-8",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-7",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-6",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-5",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-4",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-3",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-2",
+      "MCP-POE3B-PH-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d-1",
+      "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+    ],
+    "environment_after": {
+      "devices": 0,
+      "found": true,
+      "links": 0,
+      "pt_version": "9.0.1.0858",
+      "saved_filename": "",
+      "simulation_mode": false
+    },
+    "fixture_removed": true,
+    "fresh_readback": {
+      "completed_at_utc": "2026-09-10T12:03:34.802671Z",
+      "expected_prompt": "Switch#",
+      "label": "RESTORE",
+      "observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2547,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "completed",
+          "pager_pages_captured": 2,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "prefix_delta"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+        "ports": [
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/1",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/1",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/2",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/2",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/3",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/3",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/4",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/4",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/5",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/5",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/6",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/6",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/7",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/7",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/8",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/8",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/9",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/9",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/10",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/10",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/11",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/11",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/12",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/12",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/13",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/13",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/14",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/14",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/15",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/15",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/16",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/16",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/17",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/17",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/18",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/18",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/19",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/19",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/20",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/20",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/21",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/21",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 210.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+      },
+      "raw_file": "restore.txt",
+      "raw_sha256": "db809eacc1bb0f8a691e21c0f7fa0b5a963b1e853406d64a737da3aebd8a8467",
+      "repeat_observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2641,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+          "output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "completed",
+          "pager_pages_captured": 2,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "rolled_suffix_anchor"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d",
+        "ports": [
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/1",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/1",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/2",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/2",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/3",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/3",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/4",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/4",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/5",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/5",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/6",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/6",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/7",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/7",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/8",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/8",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/9",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/9",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/10",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/10",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/11",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/11",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/12",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/12",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/13",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/13",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/14",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/14",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/15",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/15",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/16",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/16",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/17",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/17",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/18",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/18",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/19",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/19",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/20",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/20",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          },
+          {
+            "delivery": "delivering",
+            "port": "FastEthernet0/21",
+            "row": {
+              "admin": "auto",
+              "device": "IP Phone 7960",
+              "interface": "Fa0/21",
+              "max_watts": 15.4,
+              "oper": "on",
+              "power_class": "3",
+              "power_watts": 10.0
+            }
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:370.0(w)  Used:210.0(w)  Remaining:160.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nFa0/1     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/2     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/3     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/4     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/5     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/6     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/7     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/8     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/9     auto   on         10.0    IP Phone 7960       3     15.4\nFa0/10    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/11    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/12    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/13    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/14    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/15    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/16    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/17    auto   on         10.0    IP Phone 7960       3     15.4\n Fa0/18    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/19    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/20    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/21    auto   on         10.0    IP Phone 7960       3     15.4\nFa0/22    auto   off        0.0     n/a                 n/a   15.4\nFa0/23    auto   off        0.0     n/a                 n/a   15.4\nFa0/24    auto   off        0.0     n/a                 n/a   15.4\nSwitch#\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 210.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-a-3560-21-20260910T115410Z-c1f8b38d"
+      },
+      "stable": true,
+      "started_at_utc": "2026-09-10T12:03:25.033464Z",
+      "table_completeness": {
+        "all_pagers_traversed": true,
+        "attributable": true,
+        "dispatch_integrity_valid": true,
+        "expected_privileged_prompt_reached": true,
+        "fresh": true,
+        "no_pending_continuation": true,
+        "observer_complete": true,
+        "stable": true
+      }
+    },
+    "inventory_fingerprint_after": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "inventory_restored": true,
+    "power_inline_auto_proven": true,
+    "realtime_restored": true,
+    "residue_retired": [
+      "Power Distribution Device0"
+    ]
+  },
+  "runtime_snapshot_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\data\\capabilities\\runtime\\9.0.1.0858\\0cf67146a9d171336697831bf164babcdeed419988389cd3ad26ad3638cf14d1.json",
+  "safety": {
+    "bridge_healthy": true,
+    "mailbox_entries": [],
+    "processes": [
+      {
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" ",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "Name": "PacketTracer.exe",
+        "ParentProcessId": 61140,
+        "ProcessId": 24796
+      },
+      {
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\"  --progress-bar-server",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "Name": "PacketTracer.exe",
+        "ParentProcessId": 24796,
+        "ProcessId": 53640
+      },
+      {
+        "CommandLine": "\"C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe\" tools/poe3a_pse_live.py --execute --model 3560-24PS --qualification-id router0-a-3560-21",
+        "ExecutablePath": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+        "Name": "python.exe",
+        "ParentProcessId": 21796,
+        "ProcessId": 58892
+      },
+      {
+        "CommandLine": "\"C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" tools/poe3a_pse_live.py --execute --model 3560-24PS --qualification-id router0-a-3560-21",
+        "ExecutablePath": "C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "Name": "python.exe",
+        "ParentProcessId": 58892,
+        "ProcessId": 52024
+      }
+    ],
+    "source_branch": "feature/runtime-ripv2",
+    "source_head": "5becc59ea7ca3e8264b2c965fb46627e8c12a983",
+    "source_tree": "026891e4dc0331e4f4b94fc6f520f1a5582abf31",
+    "transport_problems": [],
+    "worktree_clean": true
+  },
+  "schema_version": 1,
+  "session_dispatches": [
+    {
+      "operation": "transport_health",
+      "sequence": 1
+    },
+    {
+      "operation": "mailbox_observation",
+      "sequence": 2
+    },
+    {
+      "operation": "control_bridge_start",
+      "sequence": 3
+    },
+    {
+      "operation": "environment_observation",
+      "sequence": 4
+    },
+    {
+      "operation": "inventory_observation",
+      "sequence": 5
+    },
+    {
+      "operation": "device_names_observation",
+      "sequence": 6
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 7
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 8
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 9
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 10
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 11
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 12
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 13
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 14
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 15
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 16
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 17
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 18
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 19
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 20
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 21
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 22
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 23
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 24
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 25
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 26
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 27
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 28
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 29
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 30
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 31
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 32
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 33
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 34
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 35
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 36
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 37
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 38
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 39
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 40
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 41
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 42
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 43
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 44
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 45
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 46
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 47
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 48
+    },
+    {
+      "operation": "fixture_link_create",
+      "sequence": 49
+    },
+    {
+      "operation": "device_readiness",
+      "sequence": 50
+    },
+    {
+      "operation": "inline_mode_apply",
+      "sequence": 51
+    },
+    {
+      "operation": "inline_capture",
+      "sequence": 52
+    },
+    {
+      "operation": "inline_mode_apply",
+      "sequence": 53
+    },
+    {
+      "operation": "inline_capture",
+      "sequence": 54
+    },
+    {
+      "operation": "inline_mode_apply",
+      "sequence": 55
+    },
+    {
+      "operation": "inline_capture",
+      "sequence": 56
+    },
+    {
+      "operation": "inline_mode_apply",
+      "sequence": 57
+    },
+    {
+      "operation": "inline_capture",
+      "sequence": 58
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 59
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 60
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 61
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 62
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 63
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 64
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 65
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 66
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 67
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 68
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 69
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 70
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 71
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 72
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 73
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 74
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 75
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 76
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 77
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 78
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 79
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 80
+    },
+    {
+      "operation": "residue_retire",
+      "sequence": 81
+    },
+    {
+      "operation": "inventory_restoration",
+      "sequence": 82
+    },
+    {
+      "operation": "device_names_observation",
+      "sequence": 83
+    },
+    {
+      "operation": "environment_observation",
+      "sequence": 84
+    },
+    {
+      "operation": "ipc_drain",
+      "sequence": 85
+    },
+    {
+      "operation": "mailbox_observation",
+      "sequence": 86
+    },
+    {
+      "operation": "transport_health",
+      "sequence": 87
+    },
+    {
+      "operation": "transport_problems",
+      "sequence": 88
+    },
+    {
+      "operation": "control_bridge_stop",
+      "sequence": 89
+    }
+  ],
+  "started_at_utc": "2026-09-10T11:54:10.019570Z"
+}

@@ -1,0 +1,10 @@
+show power inline
+Available:370.0(w)  Used:210.0(w)  Remaining:160.0(w)
+
+Interface Admin  Oper       Power   Device              Class Max
+                            (Watts)
+--------- ------ ---------- ------- ------------------- ----- ----
+Fa0/22    auto   off        0.0     n/a                 n/a   15.4
+Fa0/23    auto   off        0.0     n/a                 n/a   15.4
+Fa0/24    auto   off        0.0     n/a                 n/a   15.4
+Switch#
