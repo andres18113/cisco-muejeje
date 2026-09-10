@@ -15,7 +15,7 @@ import pytest
 
 from tests.muejeje.support import (
     INSTALLED_BUILDER,
-    RESOLVED_OPTIONS,
+    resolved_options,
     build_api,
     commit_manifest,
     make_repo,
@@ -182,7 +182,7 @@ def test_verified_builder_with_unresolved_options_is_automation_unproven(tmp_pat
 def test_resolved_options_with_a_verified_builder_report_manual_packaging(tmp_path: Path):
     root, manifest_path = make_repo(tmp_path)
     manifest = manifest_document()
-    manifest["build_options"] = dict(RESOLVED_OPTIONS)
+    manifest["build_options"] = resolved_options()
     commit_manifest(root, manifest_path, manifest)
 
     report = build_api().inspect_build(

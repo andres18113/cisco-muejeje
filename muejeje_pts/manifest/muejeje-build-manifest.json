@@ -15,7 +15,8 @@
     "muejeje_pts/script-engine/lifecycle.js",
     "muejeje_pts/script-engine/protocol_v6.js",
     "muejeje_pts/script-engine/runtime_capabilities.js",
-    "muejeje_pts/script-engine/runtime_identity.js"
+    "muejeje_pts/script-engine/runtime_identity.js",
+    "muejeje_pts/script-engine/validation_v6.js"
   ],
   "tooling_inputs": [
     "src/packet_tracer_mcp/infrastructure/pts/__init__.py",
@@ -38,6 +39,7 @@
     "engine_script_order": [
       "muejeje_pts/script-engine/core.js",
       "muejeje_pts/script-engine/protocol_v6.js",
+      "muejeje_pts/script-engine/validation_v6.js",
       "muejeje_pts/script-engine/runtime_capabilities.js",
       "muejeje_pts/script-engine/runtime_identity.js",
       "muejeje_pts/script-engine/dispatcher_v6.js",

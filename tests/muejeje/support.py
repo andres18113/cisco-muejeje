@@ -41,23 +41,30 @@ TOOLING_INPUTS = [
     "tools/build_muejeje_pts.py",
 ]
 
-# The baselined packaging recipe (MJ-025). The synthetic repository declares
-# the same artifact inputs as this one, so these are the values the real
-# manifest carries; `test_declared_inputs` pins the two together.
-RESOLVED_OPTIONS = {
-    "engine_script_order": [
-        "muejeje_pts/script-engine/core.js",
-        "muejeje_pts/script-engine/protocol_v6.js",
-        "muejeje_pts/script-engine/runtime_capabilities.js",
-        "muejeje_pts/script-engine/runtime_identity.js",
-        "muejeje_pts/script-engine/dispatcher_v6.js",
-        "muejeje_pts/script-engine/lifecycle.js",
-    ],
-    "custom_interface_order": ["muejeje_pts/interface/index.html"],
-    "module_id": "io.github.andres18113.muejeje.runtime",
-    "startup": "on_startup",
-    "privileges": [],
+# Every kernel feature `MUEJEJE_CORE.SUPPORTED_FEATURES` may name, and the
+# symbol in the artifact that backs it. Data, not a claim: the modules that
+# assert against it are `test_runtime_identify` and `test_runtime_capabilities`
+# for the reported list, and `test_unobserved_claims` for what a document may
+# call a capability. It lives here because two copies of this map could
+# disagree, and a feature backed by one of them would be a capability claim
+# nobody was checking (MJ-028).
+FEATURE_EVIDENCE = {
+    "protocol.v6": ("validation_v6.js", "muejejeV6ParseRequest"),
+    "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),
+    "runtime.session_id": ("core.js", "muejejeCoreNewSessionId"),
 }
+
+
+def resolved_options() -> dict[str, Any]:
+    """The baselined packaging recipe (MJ-025), read from the real manifest.
+
+    The synthetic repository declares this repository's own artifact inputs,
+    so its build options have to be this repository's own too: a fixture
+    carrying its own copy of the engine order would keep the synthetic audit
+    green after a reorder that no artifact reflects. `test_protocol_v6` is
+    where the expected order is written down and asserted; here it is read.
+    """
+    return dict(repo_manifest()["build_options"])
 
 
 def build_api():

@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from tests.muejeje.support import (
-    RESOLVED_OPTIONS,
+    resolved_options,
     build_api,
     commit_manifest,
     git,
@@ -182,7 +182,7 @@ def test_a_resolved_build_option_with_an_unusable_value_is_invalid(
     """
     root, manifest_path = make_repo(tmp_path)
     manifest = manifest_document()
-    manifest["build_options"] = dict(RESOLVED_OPTIONS) | {option: value}
+    manifest["build_options"] = resolved_options() | {option: value}
     commit_manifest(root, manifest_path, manifest)
 
     report = build_api().inspect_build(root, manifest_path)
@@ -202,7 +202,7 @@ def test_an_unset_option_is_unresolved_rather_than_invalid(tmp_path: Path):
     """
     root, manifest_path = make_repo(tmp_path)
     manifest = manifest_document()
-    manifest["build_options"] = dict(RESOLVED_OPTIONS) | {"module_id": None}
+    manifest["build_options"] = resolved_options() | {"module_id": None}
     commit_manifest(root, manifest_path, manifest)
 
     report = build_api().inspect_build(root, manifest_path)
@@ -217,7 +217,7 @@ def test_an_empty_privilege_set_is_a_decision_not_an_omission(tmp_path: Path):
     """`privileges: []` is resolved: the module asks for nothing (MJ-025)."""
     root, manifest_path = make_repo(tmp_path)
     manifest = manifest_document()
-    manifest["build_options"] = dict(RESOLVED_OPTIONS)
+    manifest["build_options"] = resolved_options()
     commit_manifest(root, manifest_path, manifest)
 
     report = build_api().inspect_build(root, manifest_path)

@@ -25,15 +25,22 @@ from tests.muejeje.support import (
     repo_manifest,
 )
 
-# The declared evaluation order. Packet Tracer evaluates the Script Engine files
-# in the order the Scripting Interface lists them, so this order *is* the
-# dependency direction: core and protocol first, then operations, then dispatch,
-# then the lifecycle that may call all of it (MJ-019). Operations depend on
-# nothing but core and protocol, so they are ordered alphabetically among
-# themselves — a rule, rather than an accident nobody could re-derive.
+# The declared evaluation order, written down exactly once. Packet Tracer
+# evaluates the Script Engine files in the order the Scripting Interface lists
+# them, so this order *is* the dependency direction: core, the protocol
+# envelope, the admission that refuses with that envelope, then operations,
+# then dispatch, then the lifecycle that may call all of it (MJ-019).
+# Operations depend on nothing but core and protocol, so they are ordered
+# alphabetically among themselves — a rule, rather than an accident nobody
+# could re-derive.
+#
+# This list is the expectation; the manifest is the source every other reader
+# derives from. One written-down copy is what makes a reorder a visible edit
+# here instead of a silent drift everywhere.
 ENGINE_SCRIPT_ORDER = [
     "muejeje_pts/script-engine/core.js",
     "muejeje_pts/script-engine/protocol_v6.js",
+    "muejeje_pts/script-engine/validation_v6.js",
     "muejeje_pts/script-engine/runtime_capabilities.js",
     "muejeje_pts/script-engine/runtime_identity.js",
     "muejeje_pts/script-engine/dispatcher_v6.js",
@@ -106,8 +113,21 @@ def test_the_dispatcher_holds_no_operation_implementation():
 def test_the_protocol_module_holds_no_operation_and_no_whitelist():
     body = (SCRIPT_ENGINE / "protocol_v6.js").read_text(encoding="utf-8")
     assert "runtime.identify" not in body, (
-        "protocol_v6 validates envelopes; which operations exist is dispatch"
+        "protocol_v6 shapes envelopes; which operations exist is dispatch"
     )
+
+
+def test_the_protocol_module_shapes_answers_and_reads_no_request():
+    """The envelope and the admission that uses it are two responsibilities.
+
+    `protocol_v6.js` used to hold both, and the bounded admission rules would
+    have pushed it past its budget — which is the budget working (MJ-020).
+    Reading a request is now `validation_v6.js`, and the split is asserted so
+    the two cannot quietly merge back.
+    """
+    body = (SCRIPT_ENGINE / "protocol_v6.js").read_text(encoding="utf-8")
+    for owned_by_admission in ("JSON.parse", "MUEJEJE_V6_LIMITS", "muejejeV6ParseRequest"):
+        assert owned_by_admission not in body, owned_by_admission
 
 
 def test_core_is_constants_and_session_state_only():

@@ -24,11 +24,12 @@ It is declared once, in `build_options.engine_script_order`:
 | Order | File | Responsibility |
 | ---: | --- | --- |
 | 1 | `core.js` | constants and session state; depends on nothing |
-| 2 | `protocol_v6.js` | request validation and response envelopes |
-| 3 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
-| 4 | `runtime_identity.js` | the `runtime.identify` operation |
-| 5 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
-| 6 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+| 2 | `protocol_v6.js` | the response envelope and the failure taxonomy |
+| 3 | `validation_v6.js` | bounded request admission, and the bounds themselves |
+| 4 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
+| 5 | `runtime_identity.js` | the `runtime.identify` operation |
+| 6 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| 7 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
 
 The arrows point one way — `lifecycle → dispatcher/operations → protocol +
 core` — and nothing points back. An operation is never implemented inside the
@@ -36,6 +37,14 @@ dispatcher, and the dispatcher hands an operation what it needs rather than
 being read by it. Operations depend on nothing but core and protocol, so among
 themselves they are ordered alphabetically: a rule, rather than an accident a
 later reader would have to reverse-engineer.
+
+Shaping an answer and deciding whether a request deserves one are two
+responsibilities, so they are two files. `validation_v6.js` owns every bound V6
+applies to an incoming request — its length, its correlation id, its operation
+name, and the shape and values of its arguments. **Those bounds are Muejeje's
+own and none of them is a Packet Tracer limit** (`MJ-029`): nothing here has
+measured what PT's engine accepts, and a number presented as the platform's
+would be a claim with no evidence behind it.
 
 The single entry point is `mcpDispatchV6(requestJson)`: a JSON string in, a
 JSON string out.

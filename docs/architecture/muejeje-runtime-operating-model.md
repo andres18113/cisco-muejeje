@@ -102,14 +102,19 @@ target as though it were the present and then closed by asserting that
 `mcpDispatchV6` did not exist — after it did. Both halves are needed: one says
 what a consumer may send today, the other says what is still unbuilt.
 
-**What exists.** One Script Module, six engine files, one dispatcher, two
+**What exists.** One Script Module, seven engine files, one dispatcher, two
 read-only operations, and no transport at all:
 
 ```text
-consumer -> mcpDispatchV6(requestJson) -> V6 whitelist
+consumer -> mcpDispatchV6(requestJson) -> bounded V6 admission -> V6 whitelist
          -> runtime.identify | runtime.capabilities
          -> one JSON envelope back
 ```
+
+Admission is bounded: the request length, the correlation id, the operation
+name and the shape and values of the arguments are all checked against limits
+this runtime declares for itself, before any handler runs. **Those limits are
+Muejeje's, not Packet Tracer's** (`MJ-029`).
 
 Neither operation calls Packet Tracer: there is no `ipc.*` call anywhere in the
 kernel, so the module requests no privilege to start. The artifact contains no

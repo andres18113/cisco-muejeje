@@ -398,10 +398,12 @@ A refusal names its class:
 | `ENGINE_EXCEPTION` | the operation handler itself failed |
 
 `ENGINE_EXCEPTION` is reserved for the last row. A malformed request, a
-protocol mismatch and a validation failure are never reported as one: nothing
-went wrong inside the engine when a request was simply not admissible.
-Error messages are fixed strings and never echo a caller-supplied name or
-value. The dispatcher never throws out of the engine.
+protocol mismatch, a validation failure and an exceeded bound are never
+reported as one: nothing went wrong inside the engine when a request was
+simply not admissible. Error messages are fixed strings and never echo a
+caller-supplied name or value; a message is diagnostic prose, and `code` is
+what a consumer branches on (MJ-030). The dispatcher never throws out of the
+engine.
 **Rationale.** One shape is what makes a consumer's parser total. One code per
 cause is what makes a failure diagnosable without reading the runtime's source
 — which MJ-005 forbids relying on anyway.
@@ -465,7 +467,7 @@ validated rather than merely present:
 | `module_id` | `io.github.andres18113.muejeje.runtime` | hierarchical and reverse-DNS shaped, rooted in a namespace the publisher demonstrably controls, so a second publisher's module cannot collide with this one |
 | `startup` | `on_startup` | the module must be able to answer `runtime.identify` without a human opening anything first. It is safe to start unconditionally precisely because it initiates nothing: no transport, no polling, no platform call |
 | `custom_interface_order` | `[muejeje_pts/interface/index.html]` | one static page, the only interface file that ships |
-| `engine_script_order` | core → protocol → operations (alphabetical) → dispatch → lifecycle | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019) |
+| `engine_script_order` | core → protocol → admission → operations (alphabetical) → dispatch → lifecycle | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019) |
 | `privileges` | `[]` | no operation makes a Cisco IPC call, so the module needs nothing. An empty set is a decision, not an omission |
 
 An option is **unresolved** when it is `null` — nobody has decided, which is not
@@ -571,6 +573,54 @@ document names an operation the dispatcher does not admit, or omits one it does.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against Packet Tracer `9.0.1.0858` (MJ-015).
 
+### MJ-029 — V6 input is bounded, and every bound is Muejeje's own
+**Requirement.** Nothing a caller sends is unbounded. V6 bounds the request
+string before parsing it, the correlation id, the operation name, and both the
+shape and the values of the arguments:
+
+| Bound | Applies to | Refusal |
+| --- | --- | --- |
+| request length | the string, measured before `JSON.parse` | `MALFORMED_REQUEST` |
+| `operation_rid` | length, and printable ASCII | `INVALID_REQUEST` |
+| `op` | length, and `namespace.name` | `INVALID_REQUEST` |
+| `args` field count | how many fields the envelope may carry | `INVALID_REQUEST` |
+| `args` values | bounded scalars only; no nested object or array | `INVALID_REQUEST` |
+| a declared argument's value | the rule the operation states for it | `INVALID_ARGS` |
+
+**No bound is a Packet Tracer limit.** Nothing in this repository has measured
+what PT's Script Engine accepts, so a number presented as the platform's would
+be a claim about `9.0.1.0858` with no evidence behind it (MJ-015). Each number
+is chosen for a reason that holds whatever the platform allows, and the reason
+is written at its definition. A consumer that needs more than a bound allows
+reopens *that number* with a stated case; it never reopens the principle.
+
+**The taxonomy does not grow.** A bound belongs to the contract it bounds, so
+an exceeded bound is reported as `MALFORMED_REQUEST`, `INVALID_REQUEST` or
+`INVALID_ARGS` — never as a new code, and never as `ENGINE_EXCEPTION`. Adding a
+seventh code would break every consumer that switches on the six (MJ-030).
+
+**A refused name is not an unknown operation.** An `op` that the envelope could
+not carry never reached the whitelist, so it is `INVALID_REQUEST`; a well-shaped
+name the whitelist does not admit is `UNKNOWN_OPERATION`. Reporting the first as
+the second would send a consumer looking for an operation.
+
+**An argument rule the kernel cannot read refuses the argument.** A rule of an
+unrecognised kind bounds nothing, so it admits nothing.
+**Rationale.** Unbounded input hands the cost of a refusal to whoever sent it:
+a caller could make the engine parse any length of JSON, correlate against any
+length of id, and walk any depth of argument structure before a single check
+ran. Bounding admission is what makes the cost of one request a property of the
+runtime. Insisting the numbers are ours is what stops them from being read back
+later as platform facts nobody measured.
+**Verification.** `tests/muejeje/test_v6_admission.py` drives each bound in
+both directions — refused past it, admitted at it — asserts that the limits are
+declared in exactly one kernel file, and asserts that no bound is ever reported
+as `ENGINE_EXCEPTION`. The per-operation argument rules are driven on a
+synthetic operation, so the first operation to declare one inherits a tested
+mechanism.
+**Status.** `ENFORCED` for the kernel's own logic under Node;
+`NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
+
 ## Open decisions
 
 Not requirements. Each needs a decision before it can become one.
@@ -585,7 +635,7 @@ Not requirements. Each needs a decision before it can become one.
 | TODO | Resolution |
 | --- | --- |
 | **TODO-SRC-ROOT** | **RESOLVED.** `muejeje_pts/` is the owned source root: `script-engine/`, `interface/`, `manifest/`. `EXTENSION/**` stays untouched, keeps serving the existing published `.pts`, and is no longer any part of Muejeje's inventory — the completeness check now sweeps the owned root alone. The legacy `main.js` was not copied. |
-| **TODO-V6-SHAPE** | **RESOLVED for the kernel.** The envelope is `{v, operation_rid, op, args}` in and `{v, operation_rid, op, ok, result, error}` out, both as JSON strings, through the single entry point `mcpDispatchV6`. Operations are whitelisted by name with a per-operation argument whitelist, and the failure taxonomy is MJ-022. The whitelist admits `runtime.identify` alone; adding an operation extends the table, not the envelope. |
+| **TODO-V6-SHAPE** | **RESOLVED for the kernel.** The envelope is `{v, operation_rid, op, args}` in and `{v, operation_rid, op, ok, result, error}` out, both as JSON strings, through the single entry point `mcpDispatchV6`. Operations are whitelisted by name, each admitted argument carries the rule its value must satisfy (MJ-029), and the failure taxonomy is MJ-022. Adding an operation extends the table, not the envelope; which operations the table holds is MJ-008, and it is not restated here, because a whitelist written down twice is one that will disagree with itself. |
 | **TODO-MODULE-ID** | **RESOLVED** by `MJ-025`: `io.github.andres18113.muejeje.runtime`. Hierarchical and reverse-DNS shaped, rooted in a namespace the publisher controls. Stability across rebuilds is a property of the manifest, which is committed and hashed into recipe identity. Packet Tracer's own acceptance of the representation still needs target evidence (`MJ-015`). |
 | **TODO-STARTUP** | **RESOLVED** by `MJ-025`: `on_startup`. The module must answer `runtime.identify` without a human opening anything, and starting it unconditionally is safe precisely because it initiates nothing — no transport, no polling, no platform call. Revisit if and when a channel that *does* initiate is added. |
 | **TODO-PRIVILEGES** | **RESOLVED** by `MJ-025`: `[]`. No operation makes a Cisco IPC call, so the module requests nothing. The `.pki` privilege catalogue is still not installed, and this resolution deliberately does not need it: an empty set requires no catalogue to justify. The first operation that needs the platform reopens this with evidence for the one privilege it needs. |

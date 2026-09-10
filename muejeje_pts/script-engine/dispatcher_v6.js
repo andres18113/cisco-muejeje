@@ -19,14 +19,14 @@ function muejejeV6OperationTable() {
         MUEJEJE_V6_DISPATCH.table = {
             "runtime.capabilities": {
                 read_only: true,
-                allowed_args: [],
+                args: {},
                 handler: function (args, context) {
                     return muejejeRuntimeCapabilities(args, context);
                 }
             },
             "runtime.identify": {
                 read_only: true,
-                allowed_args: [],
+                args: {},
                 handler: function (args, context) {
                     return muejejeRuntimeIdentify(args, context);
                 }
@@ -49,9 +49,13 @@ function muejejeV6OperationNames() {
 }
 
 /* The whitelist as data a caller may be told about: each admitted name with
- * the one property that bounds what sending it can do. Derived here, where the
+ * the property that bounds what sending it can do. Derived here, where the
  * whitelist lives, so no operation can publish a claim about admission that
- * the dispatcher would not honour. */
+ * the dispatcher would not honour.
+ *
+ * The argument rules stay behind: they are how a request is refused, not
+ * something a caller is invited to reason about, and publishing them would
+ * make the kernel's own validation part of the consumer contract (MJ-005). */
 function muejejeV6OperationCatalog() {
     var table = muejejeV6OperationTable();
     var names = muejejeV6OperationNames();
@@ -85,7 +89,7 @@ function mcpDispatchV6(requestJson) {
         ));
     }
     var operation = table[request.op];
-    var argsError = muejejeV6ArgsError(request.args, operation.allowed_args);
+    var argsError = muejejeV6ArgsError(request.args, operation.args);
     if (argsError !== null) {
         return muejejeV6Encode(muejejeV6Fail(
             request.operation_rid, request.op,

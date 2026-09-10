@@ -53,13 +53,14 @@ here: the manifest is the source, this table is the reading of it.
 | Privileges | none selected |
 | Signing | none (`TODO-SIGNING` is open; an unsigned module is what this recipe produces) |
 | Custom Interfaces | `muejeje_pts/interface/index.html` |
-| Script Engine files, **in this order** | `core.js`, `protocol_v6.js`, `runtime_capabilities.js`, `runtime_identity.js`, `dispatcher_v6.js`, `lifecycle.js` |
+| Script Engine files, **in this order** | `core.js`, `protocol_v6.js`, `validation_v6.js`, `runtime_capabilities.js`, `runtime_identity.js`, `dispatcher_v6.js`, `lifecycle.js` |
 
 The engine order is the dependency direction, because *"all script files are
 executed (evaluated) in the Script Engine in the same order as listed in the
-Scripting Interface"*. Core and protocol first, then operations — alphabetically
-among themselves, since they depend only on core and protocol — then dispatch,
-then the lifecycle that may call all of it (`MJ-019`).
+Scripting Interface"*. Core first, then the protocol envelope and the admission
+that refuses with it, then operations — alphabetically among themselves, since
+they depend only on core and protocol — then dispatch, then the lifecycle that
+may call all of it (`MJ-019`).
 
 ## Steps
 
@@ -70,7 +71,7 @@ then the lifecycle that may call all of it (`MJ-019`).
    privilege unselected. *"The security privileges indicate which IPC calls this
    Script Module can make. Calls to unselected privileges will be denied"* — the
    kernel makes no IPC call, so denying all of them changes nothing it does.
-4. **Script Engine**: import the six files in the order above. Import; do not
+4. **Script Engine**: import the seven files in the order above. Import; do not
    paste. Pasted source loses its newlines in the Builder Code Editor, and these
    files are ordinary multi-line JavaScript with comments.
 5. **Custom Interfaces**: import `index.html`. It is the only interface file, it

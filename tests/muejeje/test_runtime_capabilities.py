@@ -18,7 +18,12 @@ import json
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
-from tests.muejeje.support import SCRIPT_ENGINE, engine_sources, relative
+from tests.muejeje.support import (
+    FEATURE_EVIDENCE,
+    SCRIPT_ENGINE,
+    engine_sources,
+    relative,
+)
 
 CAPABILITIES = json.dumps({
     "v": 6, "operation_rid": "rid-capabilities", "op": "runtime.capabilities",
@@ -129,15 +134,12 @@ def test_every_reported_feature_names_something_in_this_artifact():
 
     The map is the point: a feature added to the list without code behind it
     fails here, which is what stops the report from drifting into a roadmap.
+    It is single-sourced in `support`, because two copies of it could disagree
+    and a feature backed by only one would be a claim nobody was checking.
     """
-    evidence = {
-        "protocol.v6": ("protocol_v6.js", "muejejeV6ParseRequest"),
-        "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),
-        "runtime.session_id": ("core.js", "muejejeCoreNewSessionId"),
-    }
     for feature in _result()["supported_features"]:
-        assert feature in evidence, f"{feature} names nothing in this artifact"
-        name, symbol = evidence[feature]
+        assert feature in FEATURE_EVIDENCE, f"{feature} names nothing in this artifact"
+        name, symbol = FEATURE_EVIDENCE[feature]
         assert symbol in (SCRIPT_ENGINE / name).read_text(encoding="utf-8")
 
 

@@ -50,6 +50,7 @@ EXPECTED_ARTIFACT_INPUTS = (
     "muejeje_pts/script-engine/protocol_v6.js",
     "muejeje_pts/script-engine/runtime_capabilities.js",
     "muejeje_pts/script-engine/runtime_identity.js",
+    "muejeje_pts/script-engine/validation_v6.js",
 )
 # The auditor. It ships nothing, but it decides how the artifact was inspected,
 # so it belongs to recipe identity and never to artifact content. Every module

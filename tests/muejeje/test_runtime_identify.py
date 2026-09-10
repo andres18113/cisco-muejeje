@@ -12,7 +12,7 @@ import json
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
-from tests.muejeje.support import SCRIPT_ENGINE, repo_manifest
+from tests.muejeje.support import FEATURE_EVIDENCE, SCRIPT_ENGINE, repo_manifest
 
 IDENTIFY = json.dumps({
     "v": 6, "operation_rid": "rid-identify", "op": "runtime.identify", "args": {},
@@ -90,14 +90,9 @@ def test_the_reported_protocol_and_operations_are_what_the_kernel_admits():
 @requires_node
 def test_every_declared_feature_is_backed_by_kernel_source():
     """A feature list is a promise. Each entry names something that exists."""
-    evidence = {
-        "protocol.v6": ("protocol_v6.js", "muejejeV6ParseRequest"),
-        "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),
-        "runtime.session_id": ("core.js", "muejejeCoreNewSessionId"),
-    }
     for feature in _result()["supported_features"]:
-        assert feature in evidence, f"{feature} names nothing in this artifact"
-        name, symbol = evidence[feature]
+        assert feature in FEATURE_EVIDENCE, f"{feature} names nothing in this artifact"
+        name, symbol = FEATURE_EVIDENCE[feature]
         assert symbol in (SCRIPT_ENGINE / name).read_text(encoding="utf-8")
 
 
