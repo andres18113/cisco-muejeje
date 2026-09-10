@@ -8,12 +8,48 @@ to any project that consumes Muejeje (`MJ-001`, `MJ-002`, `MJ-004`).
 
 | Path | Packaged as |
 | --- | --- |
-| `script-engine/` | Script Engine files, evaluated in the order the Scripting Interface lists them, then `main()` |
+| `script-engine/` | Script Engine files, evaluated in `engine_script_order`, then `main()` |
 | `interface/` | Custom Interface files, imported into the Custom Interfaces tab |
 | `manifest/` | the build manifest — build metadata, **not** packaged |
 
 `README.md` files are documentation and are **not** packaged; only the
 extensions the build manifest declares as artifact inputs are.
+
+## The V6 kernel
+
+Packet Tracer evaluates the Script Engine files in the order the Scripting
+Interface lists them, so that order **is** the dependency direction (`MJ-019`).
+It is declared once, in `build_options.engine_script_order`:
+
+| Order | File | Responsibility |
+| ---: | --- | --- |
+| 1 | `core.js` | constants and session state; depends on nothing |
+| 2 | `protocol_v6.js` | request validation and response envelopes |
+| 3 | `runtime_identity.js` | the `runtime.identify` operation |
+| 4 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| 5 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+
+The arrows point one way — `lifecycle → dispatcher/operations → protocol +
+core` — and nothing points back. An operation is never implemented inside the
+dispatcher, and the dispatcher hands an operation what it needs rather than
+being read by it.
+
+The single entry point is `mcpDispatchV6(requestJson)`: a JSON string in, a
+JSON string out.
+
+```json
+{"v": 6, "operation_rid": "rid-123", "op": "runtime.identify", "args": {}}
+```
+
+```json
+{"v": 6, "operation_rid": "rid-123", "op": "runtime.identify",
+ "ok": true, "result": {"...": "..."}, "error": null}
+```
+
+Failures use the same envelope with `ok: false`, `result: null` and an `error`
+naming its class (`MJ-022`). There is no fallback to an earlier protocol, no
+path that executes a caller's JavaScript, and no Cisco IPC call anywhere in the
+kernel — so the module implies no privilege to start (`TODO-PRIVILEGES`).
 
 ## Relationship to `EXTENSION/`
 
@@ -29,5 +65,10 @@ copied — its six PTBuilder globals are exactly what Muejeje must not inherit
 
 ## What is deliberately not here yet
 
-`mcpDispatchV6`, `runtime.identify`, any operation, any transport. See
+No device, link, module, IP or CLI operation. No transport: no HTTP, no file
+mailbox, no polling. No Cisco IPC adapter — one arrives when an operation
+actually needs the platform, and not before.
+
+The kernel is verified offline. It has never run inside Packet Tracer, and no
+`.pts` has been built from these sources. See
 [the requirements baseline](../docs/architecture/muejeje-pts-requirements.md).

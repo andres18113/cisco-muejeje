@@ -4,7 +4,11 @@
   "output": {"artifact": "muejeje.pts", "report": "muejeje.build.json"},
   "artifact_inputs": [
     "muejeje_pts/interface/index.html",
-    "muejeje_pts/script-engine/lifecycle.js"
+    "muejeje_pts/script-engine/core.js",
+    "muejeje_pts/script-engine/dispatcher_v6.js",
+    "muejeje_pts/script-engine/lifecycle.js",
+    "muejeje_pts/script-engine/protocol_v6.js",
+    "muejeje_pts/script-engine/runtime_identity.js"
   ],
   "tooling_inputs": [
     "src/packet_tracer_mcp/infrastructure/pts/__init__.py",
@@ -23,7 +27,13 @@
     "sha256": "843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1"
   },
   "build_options": {
-    "engine_script_order": null,
+    "engine_script_order": [
+      "muejeje_pts/script-engine/core.js",
+      "muejeje_pts/script-engine/protocol_v6.js",
+      "muejeje_pts/script-engine/runtime_identity.js",
+      "muejeje_pts/script-engine/dispatcher_v6.js",
+      "muejeje_pts/script-engine/lifecycle.js"
+    ],
     "custom_interface_order": null,
     "module_id": null,
     "startup": null,

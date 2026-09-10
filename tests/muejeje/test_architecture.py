@@ -40,6 +40,10 @@ TARGET_EXCEPTIONS: dict[str, str] = {}
 # "path::function" -> why this function may exceed the target.
 FUNCTION_EXCEPTIONS: dict[str, str] = {}
 
+# Modules in the test area that carry fixtures and harnesses rather than
+# claims. Everything else there must be a test module.
+SUPPORT_MODULES = {"support.py", "engine_harness.py"}
+
 # The monolith M0F broke up. Its absence is part of the gate: moving the same
 # oversized responsibility into a new file is not a fix.
 RETIRED_TEST_MODULES = (
@@ -238,22 +242,38 @@ def test_the_monolithic_muejeje_test_module_is_gone(retired: str):
 
 def test_muejeje_tests_live_in_their_own_area_and_stay_plural():
     modules = {path.name for path in owned_test_modules()}
-    assert "support.py" in modules
-    responsibilities = modules - {"support.py"}
+    assert SUPPORT_MODULES <= modules
+    responsibilities = modules - SUPPORT_MODULES
     assert len(responsibilities) >= 4, (
         f"one giant integration file is what M0F removed: {sorted(responsibilities)}"
     )
     for name in responsibilities:
-        assert name.startswith("test_"), name
+        assert name.startswith("test_"), (
+            f"{name} is neither a test module nor a declared support module"
+        )
 
 
-def test_the_shared_support_module_asserts_nothing():
-    """Fixtures build; tests claim. A helper that asserts hides the claim."""
-    body = (MUEJEJE_TESTS / "support.py").read_text(encoding="utf-8")
+@pytest.mark.parametrize("support", sorted(SUPPORT_MODULES))
+def test_a_support_module_asserts_nothing_of_its_own(support: str):
+    """Fixtures build; tests claim. A helper that asserts hides the claim.
+
+    A guard *inside* a harness is different from a behaviour claim: the Node
+    harness asserts that Node was checked for and that the kernel did not throw
+    out of the engine, which are preconditions for the caller's claim rather
+    than the claim itself. Those two are named here so a third one cannot
+    appear unnoticed.
+    """
+    allowed_guards = (
+        "assert node is not None",
+        "assert completed.returncode == 0",
+    )
+    body = (MUEJEJE_TESTS / support).read_text(encoding="utf-8")
     assert "def test_" not in body
     for line in body.splitlines():
         stripped = line.strip()
-        assert not stripped.startswith("assert "), stripped
+        if not stripped.startswith("assert "):
+            continue
+        assert stripped.startswith(allowed_guards), f"{support}: {stripped}"
 
 
 def test_every_muejeje_test_module_states_its_responsibility():

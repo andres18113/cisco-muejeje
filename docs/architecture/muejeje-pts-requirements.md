@@ -80,8 +80,11 @@ Protocol V6. Consumers do not depend on Muejeje internals, on the transport, or
 on Packet Tracer specifics.
 **Rationale.** One northbound contract is what makes consumers replaceable and
 makes Muejeje's own internals free to change.
-**Verification.** V6 schema and its conformance tests, once V6 exists.
-**Status.** `BASELINED` — V6 is not implemented.
+**Verification.** The V6 envelope and its conformance tests
+(`tests/muejeje/test_protocol_v6.py`).
+**Status.** `ENFORCED` for the envelope and for `runtime.identify`; `BASELINED`
+for every operation not yet migrated to V6 — consumers still reach the legacy
+runtime for those.
 
 ### MJ-006 — Packet Tracer and its IpcAPI are the platform boundary
 **Requirement.** The southbound compatibility contract is Packet Tracer and its
@@ -100,27 +103,34 @@ Muejeje and the IpcAPI; see MJ-012.
 entry point, no shadow path.
 **Rationale.** Two dispatchers means two answers to "what actually ran", and
 evidence stops being attributable.
-**Verification.** Runtime source review; a test asserting a single dispatch
-symbol, once V6 exists.
-**Status.** `BASELINED` — not implemented.
+**Verification.** Two gates: `tests/muejeje/test_source_root.py` fails if a
+second `mcpDispatchV6` appears anywhere in the owned tree, and
+`tests/muejeje/test_protocol_v6.py` fails if the one in `dispatcher_v6.js`
+disappears.
+**Status.** `ENFORCED` — one dispatcher, in `dispatcher_v6.js`.
 
 ### MJ-008 — V6 is typed, declarative, whitelisted and fail-closed
 **Requirement.** V6 operations are typed and declarative, admitted by an explicit
 whitelist, and fail closed on version, schema or correlation mismatch. The
 initial whitelist contains only read-only `runtime.identify`.
 **Rationale.** A permissive dispatcher cannot bound what a consumer can cause.
-**Verification.** Schema validation tests and negative tests per mismatch class,
-once V6 exists.
-**Status.** `BASELINED` — not implemented.
+**Verification.** One negative test per rejection class, plus a gate that the
+dispatcher holds no operation implementation and the protocol module holds no
+whitelist. See MJ-022 for the taxonomy those tests pin.
+**Status.** `ENFORCED` — the whitelist admits `runtime.identify` alone, and
+every other name fails closed.
 
 ### MJ-009 — Raw JavaScript is V5 compatibility only
 **Requirement.** Arbitrary JavaScript execution is a legacy V5 surface. Migrated
 V6 operations accept no arbitrary JS.
 **Rationale.** Raw JS is unbounded by construction; keeping it out of V6 is what
 lets V6 make any guarantee at all.
-**Verification.** V6 handlers reject free-form source; review of any new raw-JS
-call site.
-**Status.** `BASELINED` — the V5 surface is in use today.
+**Verification.** `tests/muejeje/test_source_root.py` fails on `eval`,
+`new Function` or any `Function(` call in the owned tree; the V6 dispatcher
+admits no argument that is not on an operation's whitelist.
+**Status.** `ENFORCED` for the owned V6 kernel, which has no path that executes
+a caller's JavaScript; `BASELINED` for the legacy V5 surface, which is still in
+use outside the owned tree.
 
 ## Evidence
 
@@ -171,9 +181,11 @@ runtime — `htmlWindow`, `runCode`, `configureIosDevice`, `allModuleTypes`,
 `addDevice` and `addLink` are still PTBuilder-supplied.
 
 > An owned source root that contains no PTBuilder code does **not** satisfy this
-> requirement. The owned tree is empty of behaviour; the runtime that consumers
-> actually use is still the legacy one. Independence is proven when a built
-> artifact runs and demonstrates it, not before.
+> requirement, and neither does a V6 kernel that runs under Node. The owned tree
+> now has behaviour — the kernel and `runtime.identify` — but the runtime that
+> consumers actually use is still the legacy one, and no `.pts` has been built
+> from these sources. Independence is proven when a built artifact runs in
+> Packet Tracer and demonstrates it, not before.
 
 ### MJ-014 — No numeric Cisco enum table is a source of truth
 **Requirement.** Hand-maintained numeric tables mirroring Cisco enums are working
@@ -328,24 +340,81 @@ Rules that live only in a document are re-argued at every change.
 asserted absent so the split cannot silently reverse.
 **Status.** `ENFORCED`
 
+## Runtime Protocol V6 contract
+
+### MJ-022 — One envelope, and a failure taxonomy that names the cause
+**Requirement.** `mcpDispatchV6(requestJson)` takes a JSON string and returns a
+JSON string. Every outcome uses the same envelope —
+`{v, operation_rid, op, ok, result, error}` — so a consumer parses one shape.
+A refusal names its class:
+
+| Code | Cause |
+| --- | --- |
+| `MALFORMED_REQUEST` | not a JSON string, not JSON, or not a JSON object |
+| `PROTOCOL_MISMATCH` | readable, but not addressed to protocol 6 |
+| `INVALID_REQUEST` | a V6 envelope that violates the envelope contract |
+| `UNKNOWN_OPERATION` | an operation the whitelist does not admit |
+| `INVALID_ARGS` | a whitelisted operation given arguments it does not support |
+| `ENGINE_EXCEPTION` | the operation handler itself failed |
+
+`ENGINE_EXCEPTION` is reserved for the last row. A malformed request, a
+protocol mismatch and a validation failure are never reported as one: nothing
+went wrong inside the engine when a request was simply not admissible.
+Error messages are fixed strings and never echo a caller-supplied name or
+value. The dispatcher never throws out of the engine.
+**Rationale.** One shape is what makes a consumer's parser total. One code per
+cause is what makes a failure diagnosable without reading the runtime's source
+— which MJ-005 forbids relying on anyway.
+**Verification.** `tests/muejeje/test_protocol_v6.py` drives one case per
+rejection class and asserts the shared envelope shape across success and
+failure.
+**Status.** `ENFORCED`
+
+### MJ-023 — `runtime_session_id` is correlation evidence, never authentication
+**Requirement.** The runtime session id is non-secret, stable for one Script
+Module session, and different between sessions. It exists so two observations
+can be attributed to the same run. It grants nothing, proves nothing about who
+is calling, and the runtime never compares it against anything.
+**Rationale.** A stable per-session token is exactly the shape people mistake
+for a credential. Saying what it is not, in the contract and in the source, is
+what stops it from quietly becoming one.
+**Verification.** `tests/muejeje/test_runtime_identify.py` asserts stability
+within a session (including across a `main()`/`cleanUp()`/`main()` cycle),
+difference between sessions, and that no kernel source compares the id.
+**Status.** `ENFORCED`
+
+### MJ-024 — The runtime reports provenance as bound or explicitly unbound
+**Requirement.** `runtime.identify` reports `provenance` with an explicit
+`state`. Nothing binds a source SHA or a build recipe id into the artifact
+today, so it reports `UNBOUND` with both fields null. Neither value is ever
+guessed, derived at runtime, or filled in from anything the runtime can reach.
+The artifact's own SHA-256 is never embedded in the artifact.
+**Rationale.** An unbound field reported as a value is a fabricated provenance
+claim, and a fabricated one is worse than a missing one because it looks
+checkable. MJ-017 says this about the build report; this says it about the
+runtime.
+**Verification.** `tests/muejeje/test_runtime_identify.py` pins the unbound
+shape and fails if any kernel source mentions `ARTIFACT_SHA256`.
+**Status.** `ENFORCED`
+
 ## Open decisions
 
 Not requirements. Each needs a decision before it can become one.
 
 | TODO | Question | Blocks |
 | --- | --- | --- |
-| **TODO-MANIFEST-HOME** | The manifest now lives at `muejeje_pts/manifest/`. Its path is pinned in `build.py`; if the owned root is ever renamed, that pin moves with it. | — |
+| **TODO-MANIFEST-HOME** | The manifest now lives at `muejeje_pts/manifest/`. Its path is pinned in `infrastructure/pts/manifest.py`; if the owned root is ever renamed, that pin moves with it. | — |
 | **TODO-MODULE-ID** | The Script Module ID and its stability across rebuilds. | `build_options.module_id` |
 | **TODO-STARTUP** | `On Startup` vs `On Demand`. The file channel only runs while the module runs. | `build_options.startup` |
 | **TODO-PRIVILEGES** | The requested IPC privilege set. The privilege catalogue lives in `.pki` files that are not installed. | `build_options.privileges` |
 | **TODO-SIGNING** | Publisher signing (PKCS#12) and key custody. | reproducibility |
-| **TODO-V6-SHAPE** | The V6 schema itself. Explicitly out of scope until the runtime kernel task. | MJ-005, MJ-007, MJ-008 |
 
 ### Resolved
 
 | TODO | Resolution |
 | --- | --- |
 | **TODO-SRC-ROOT** | **RESOLVED.** `muejeje_pts/` is the owned source root: `script-engine/`, `interface/`, `manifest/`. `EXTENSION/**` stays untouched, keeps serving the existing published `.pts`, and is no longer any part of Muejeje's inventory — the completeness check now sweeps the owned root alone. The legacy `main.js` was not copied. |
+| **TODO-V6-SHAPE** | **RESOLVED for the kernel.** The envelope is `{v, operation_rid, op, args}` in and `{v, operation_rid, op, ok, result, error}` out, both as JSON strings, through the single entry point `mcpDispatchV6`. Operations are whitelisted by name with a per-operation argument whitelist, and the failure taxonomy is MJ-022. The whitelist admits `runtime.identify` alone; adding an operation extends the table, not the envelope. |
 | **TODO-RECIPE-SCOPE** | **RESOLVED.** Manifest `schema_version: 2` splits inputs into `artifact_inputs` (bytes packaged into the `.pts`, required to live under the owned root), `tooling_inputs` (the auditor — ships nothing, still part of recipe identity) and `reference_inputs` (empty). A path may not appear in two categories. |
 
 ## Related documents

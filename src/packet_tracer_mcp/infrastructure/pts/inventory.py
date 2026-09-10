@@ -39,7 +39,11 @@ PACKAGED_SUFFIXES = frozenset(
 # Bytes that ship inside the artifact.
 EXPECTED_ARTIFACT_INPUTS = (
     "muejeje_pts/interface/index.html",
+    "muejeje_pts/script-engine/core.js",
+    "muejeje_pts/script-engine/dispatcher_v6.js",
     "muejeje_pts/script-engine/lifecycle.js",
+    "muejeje_pts/script-engine/protocol_v6.js",
+    "muejeje_pts/script-engine/runtime_identity.js",
 )
 # The auditor. It ships nothing, but it decides how the artifact was inspected,
 # so it belongs to recipe identity and never to artifact content. Every module

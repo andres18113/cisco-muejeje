@@ -1,7 +1,7 @@
-<!-- Muejeje runtime — placeholder Custom Interface.
-     Imported into the Custom Interfaces tab so the artifact owns an interface
-     slot from the start. It is static on purpose: no $se call, no polling, no
-     bridge, no operation. Behaviour arrives with Runtime Protocol V6. -->
+<!-- Muejeje runtime — Custom Interface.
+     Imported into the Custom Interfaces tab. Static on purpose: it describes
+     the module and calls nothing. No polling, no bridge, no transport. The V6
+     kernel is reached by a consumer through mcpDispatchV6, not from here. -->
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
@@ -9,17 +9,33 @@
 <style>
   body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.5; }
   h1 { font-size: 1.1rem; margin: 0 0 .5rem; }
+  h2 { font-size: .95rem; margin: 1.25rem 0 .4rem; }
   p { margin: 0 0 .75rem; max-width: 40rem; }
   code { font-family: ui-monospace, monospace; }
+  ul { margin: 0 0 .75rem; padding-left: 1.2rem; max-width: 40rem; }
 </style>
 </head>
 <body>
 <h1>Muejeje runtime</h1>
 <p>This Script Module is present and its lifecycle is running.</p>
-<p>It exposes no operations yet. The consumer-facing contract is Runtime
-Protocol V6, which is not implemented; until it is, this interface stays
-static and this module does nothing on its own.</p>
+
+<h2>Runtime Protocol V6</h2>
+<p>The consumer-facing contract is Runtime Protocol V6. Its single entry point
+is <code>mcpDispatchV6(requestJson)</code>: a JSON string in, a JSON string
+out, one envelope for success and failure alike.</p>
+<p>One operation is admitted so far, <code>runtime.identify</code>, which is
+read-only and makes no platform call. Every other operation name fails closed.
+There is no fallback to an earlier protocol and no path that runs a
+caller's JavaScript.</p>
+
+<h2>What this module does on its own</h2>
+<ul>
+  <li>nothing — it answers, and never initiates;</li>
+  <li>no transport, no polling and no mailbox;</li>
+  <li>no platform call, so it requests no privilege to start.</li>
+</ul>
 <p>Module state lives in the script engine as
-<code>muejejeLifecycleState()</code>.</p>
+<code>muejejeLifecycleState()</code>, and the same facts are reported through
+<code>runtime.identify</code>.</p>
 </body>
 </html>
