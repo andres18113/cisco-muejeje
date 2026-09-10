@@ -95,10 +95,10 @@ on Packet Tracer specifics.
 makes Muejeje's own internals free to change.
 **Verification.** The V6 envelope and its conformance tests
 (`tests/muejeje/test_protocol_v6.py`).
-**Status.** `ENFORCED` for the envelope and for the three read-only
-operations, `runtime.identify`, `runtime.capabilities` and
-`platform.device_descriptors`; `BASELINED` for every operation not yet migrated
-to V6 — consumers still reach the legacy runtime for those.
+**Status.** `ENFORCED` for the envelope and for every operation the
+dispatcher admits, all of them read-only; the complete list is the catalogue in
+`muejeje_pts/README.md` (MJ-008). `BASELINED` for every operation not yet
+migrated to V6 — consumers still reach the legacy runtime for those.
 
 ### MJ-006 — Packet Tracer and its IpcAPI are the platform boundary
 **Requirement.** The southbound compatibility contract is Packet Tracer and its
@@ -130,18 +130,33 @@ disappears.
 
 ### MJ-008 — V6 is typed, declarative, whitelisted and fail-closed
 **Requirement.** V6 operations are typed and declarative, admitted by an explicit
-whitelist, and fail closed on version, schema or correlation mismatch. The
-whitelist admits `runtime.capabilities`, `runtime.identify` and
-`platform.device_descriptors`, all three read-only.
+whitelist, and fail closed on version, schema or correlation mismatch. Every
+admitted operation is read-only today.
+
+**The whitelist is declared once and enumerated once.** It lives in
+`dispatcher_v6.js`, which is the only thing that decides what may be sent, and
+it is written out for a reader in exactly one document — the artifact's own
+`muejeje_pts/README.md`, the authoritative catalogue, which a gate holds
+complete. Every other document names whichever operations it has a reason to
+name. Requiring all of them to enumerate all of it made the whitelist five
+copies that one new operation could put out of step, and pushed each document
+toward a list it had no reason to carry; what is checked instead is that no
+document claims a capability this artifact does not have, and that any count it
+writes — "three read-only operations" is a completeness claim in fewer words —
+matches what the dispatcher admits, or what the namespace it names admits.
 **Rationale.** A permissive dispatcher cannot bound what a consumer can cause.
+A catalogue nobody can find is the same problem for a consumer, and five
+catalogues are worse than one: they disagree, and the reader cannot tell which
+is current.
 **Verification.** One negative test per rejection class, plus a gate that the
 dispatcher holds no operation implementation and the protocol module holds no
-whitelist. See MJ-022 for the taxonomy those tests pin. A document that names
-an operation the dispatcher does not admit — or omits one it does — fails
-`tests/muejeje/test_capability_claims.py`.
-**Status.** `ENFORCED` — the whitelist admits those three names, and every
-other name fails closed. An operation name outside a declared namespace fails
-the claim gates rather than passing unnoticed.
+whitelist. See MJ-022 for the taxonomy those tests pin.
+`tests/muejeje/test_capability_claims.py` holds the catalogue complete against
+the dispatcher, fails on any document that names an operation or feature this
+artifact does not have, and fails on a miscounted claim in any of them.
+**Status.** `ENFORCED` — a name the whitelist does not hold fails closed, and
+an operation name outside a declared namespace fails the claim gates rather
+than passing unnoticed.
 
 ### MJ-009 — Raw JavaScript is V5 compatibility only
 **Requirement.** Arbitrary JavaScript execution is a legacy V5 surface. Migrated
@@ -644,9 +659,11 @@ than at the moment of discovery.
 shape, asserts the reported whitelist equals the dispatcher's, asserts every
 reported feature names a symbol that exists in a kernel source, asserts the
 reply promises nothing the kernel cannot do, and asserts no self-certified
-verdict. `tests/muejeje/test_capability_claims.py` fails if a document omits an
-admitted operation, or names a capability — an operation *or* a kernel feature
-— that this artifact does not have. Operations and features share a shape, so
+verdict. `tests/muejeje/test_capability_claims.py` fails if the authoritative
+catalogue omits an admitted operation, if any document names a capability — an
+operation *or* a kernel feature — that this artifact does not have, or if a
+document writes a count of operations that is not the number there are
+(MJ-008). Operations and features share a shape, so
 they are separated by the sets they belong to and the two sets must stay
 disjoint: a name that is both would make "is this admitted" and "does this
 exist" the same question.

@@ -5,6 +5,16 @@ with the artifact itself. Two lists decide that — the dispatcher's whitelist
 and the kernel's feature list — and both are read out of the sources here
 rather than written down again (MJ-008, MJ-028, MJ-021).
 
+**One catalogue is complete; every other claim is checked, not repeated.**
+Requiring every descriptive document to enumerate every operation made the
+whitelist five copies that a single new operation could put out of step, and it
+pushed each document toward a list it had no reason to carry. So exactly one
+document is the authoritative catalogue and is held complete; everywhere else,
+a document names whichever operations it has a reason to name, may claim no
+capability that does not exist, and may not miscount the ones that do — a
+count is a completeness claim in fewer words, and "three read-only operations"
+goes stale exactly as a list does.
+
 **An operation and a feature share a shape.** `runtime.capabilities` is one,
 `runtime.session_id` is the other, and a reader that knew only about
 operations would either miss a false feature claim or reject a true one. So a
@@ -38,6 +48,12 @@ DESCRIBING_DOCUMENTS = (
     "muejeje_pts/README.md",
     "muejeje_pts/interface/index.html",
 )
+# The one document that enumerates the whitelist for a reader: the artifact's
+# own README, which is where somebody holding `muejeje.pts` looks for what they
+# may send. It is held complete. Every other document names whichever
+# operations it has a reason to name, and is held to the claim rules below
+# rather than to the list.
+AUTHORITATIVE_CATALOGUE = "muejeje_pts/README.md"
 
 # The namespaces V6 operations live in. The dispatcher may admit a name only
 # in one of these, so adding a namespace is an edit here — which is what makes
@@ -62,6 +78,18 @@ def _dotted(namespaces: tuple[str, ...]) -> str:
 # read as a capability claim.
 DOCUMENTED_OPERATION = re.compile(rf"[`>]({_dotted(OPERATION_NAMESPACES)})[`<]")
 DOCUMENTED_CAPABILITY = re.compile(rf"[`>]({_dotted(CAPABILITY_NAMESPACES)})[`<]")
+# A written count of operations — "three operations", "two runtime
+# operations", "four read-only operations". Spelled numbers because that is how
+# a document writes one, and the words between the number and the noun are
+# captured because one of them may name the namespace being counted.
+WORD_COUNTS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+OPERATION_COUNT = re.compile(
+    rf"\b({'|'.join(WORD_COUNTS)}|\d+)((?:\s+[a-z-]+)*)\s+operations\b",
+    re.IGNORECASE,
+)
 # An entry in the dispatcher's whitelist table, in *any* namespace: an
 # operation this reader cannot see is one nothing holds to the contract.
 ADMITTED_OPERATION = re.compile(rf'"({_SEGMENT}\.{_SEGMENT})":\s*\{{')
@@ -92,19 +120,69 @@ def declared_capabilities() -> set[str]:
     return admitted_operations() | declared_features()
 
 
-@pytest.mark.parametrize("logical", DESCRIBING_DOCUMENTS)
-def test_a_document_names_every_admitted_operation(logical: str):
-    """A whitelist written twice is a whitelist that will disagree with itself.
+def counted_operations(body: str) -> list[tuple[int, str]]:
+    """`(how many, which namespace)` for every operation count `body` writes.
 
-    Omitting an admitted operation leaves a consumer unable to discover what
-    it may actually send. Naming one the dispatcher does not admit is caught
-    by the capability gate below, which also covers a document claiming a
-    kernel feature that does not exist.
+    The namespace is `""` when the count is unqualified, which makes it a claim
+    about the whole whitelist rather than about one namespace.
     """
-    documented = set(DOCUMENTED_OPERATION.findall(_document(logical)))
+    counts = []
+    for found in OPERATION_COUNT.finditer(body):
+        written = found.group(1).lower()
+        modifiers = found.group(2).lower().split()
+        scope = next(
+            (word for word in modifiers if word in OPERATION_NAMESPACES), "",
+        )
+        counts.append((WORD_COUNTS.get(written, 0) or int(written), scope))
+    return counts
+
+
+def test_the_authoritative_catalogue_names_every_admitted_operation():
+    """One place a consumer can read the whole whitelist from.
+
+    Omitting an admitted operation there leaves a consumer unable to discover
+    what it may actually send. Naming one the dispatcher does not admit is
+    caught by the capability gate below, which covers every document and also
+    covers a claimed kernel feature that does not exist.
+    """
+    documented = set(DOCUMENTED_OPERATION.findall(_document(AUTHORITATIVE_CATALOGUE)))
     assert admitted_operations() <= documented, (
-        f"{logical} omits {sorted(admitted_operations() - documented)}"
+        f"{AUTHORITATIVE_CATALOGUE} omits "
+        f"{sorted(admitted_operations() - documented)}"
     )
+
+
+def test_the_catalogue_is_one_of_the_documents_held_to_the_claim_rules():
+    """A catalogue outside the swept set would be checked for completeness and
+    for nothing else, which is the one combination that lets it be complete and
+    wrong at the same time."""
+    assert AUTHORITATIVE_CATALOGUE in DESCRIBING_DOCUMENTS
+
+
+@pytest.mark.parametrize("logical", DESCRIBING_DOCUMENTS)
+def test_every_written_operation_count_is_the_number_that_exists(logical: str):
+    """A count is a completeness claim in fewer words, so it is checked.
+
+    This is what replaced "every document lists every admitted operation".
+    Repeating the list everywhere made one new operation a five-document edit
+    and pushed each document toward a list it had no reason to carry; a stale
+    count is the same failure, and it is the one worth catching, because
+    "three read-only operations" reads as evidence that there are three.
+
+    A count qualified by a namespace is a claim about that namespace and is
+    checked against it, so a document may go on saying "the two runtime
+    operations" while the platform namespace grows.
+    """
+    admitted = admitted_operations()
+    for claimed, scope in counted_operations(_document(logical)):
+        counted = (
+            {op for op in admitted if op.startswith(f"{scope}.")} if scope
+            else admitted
+        )
+        assert claimed == len(counted), (
+            f"{logical} says {claimed} {scope or 'admitted'} operations; the "
+            f"dispatcher admits {len(counted)}"
+        )
 
 
 @pytest.mark.parametrize("logical", DESCRIBING_DOCUMENTS)
@@ -176,3 +254,7 @@ def test_the_claim_readers_find_something_and_read_every_namespace():
     assert DOCUMENTED_CAPABILITY.findall("`platform.x` `protocol.v6` `core.js`") == [
         "platform.x", "protocol.v6",
     ]
+    assert counted_operations(
+        "three operations are admitted; the two runtime operations;"
+        " four read-only operations; operations"
+    ) == [(3, ""), (2, "runtime"), (4, "")]
