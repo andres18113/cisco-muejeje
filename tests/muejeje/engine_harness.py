@@ -156,6 +156,29 @@ def _device_descriptor_js() -> list[str]:
     ]
 
 
+def _network_js() -> list[str]:
+    """`Network` and the devices it enumerates, as this repository drives them.
+
+    A workspace, not a catalogue: the names are neutral on purpose, because a
+    stub carrying one topology's device names would be a consumer's identifiers
+    living in the test area (MJ-004).
+    """
+    return [
+        "function workspaceDevice(spec) {",
+        "  return {getName: function () { log('getName'); return spec.name; }};",
+        "}",
+        "var NETWORK = {",
+        "  getDeviceCount: function () {",
+        "    log('getDeviceCount'); return DEVICES.length;",
+        "  },",
+        "  getDeviceAt: function (index) {",
+        "    log('getDeviceAt');",
+        "    return DEVICES[index] ? workspaceDevice(DEVICES[index]) : null;",
+        "  }",
+        "};",
+    ]
+
+
 def _factory_js(reported: str, refuses: str) -> list[str]:
     """The factory enumeration, and the platform object that answers for it."""
     return [
@@ -174,11 +197,17 @@ def _factory_js(reported: str, refuses: str) -> list[str]:
         "    throw new Error('the platform refused this call');",
         "  }",
         "  return {devices: function () { log('devices'); return FACTORY; }};",
-        "}};",
+        "}, network: function () { log('network'); return NETWORK; }};",
     ]
 
 
-def platform_stub(models: str, *, count: str | None = None, fail: bool = False) -> str:
+def platform_stub(
+    models: str,
+    *,
+    count: str | None = None,
+    fail: bool = False,
+    devices: str = "[{name: 'n1'}, {name: 'n2'}, {name: 'n3'}]",
+) -> str:
     """A platform stub built from the documented getters, plus a call log.
 
     It is a *stub*, and it stays one: it establishes what an adapter does with
@@ -195,15 +224,19 @@ def platform_stub(models: str, *, count: str | None = None, fail: bool = False) 
     `null` entry in `modules` makes `getModuleAt` answer nothing at that index,
     and `module_count` overrides what `getModuleCount()` answers. `count` overrides what
     `getAvailableDeviceCount()` answers, which is how an unusable answer is
-    delivered; `fail` makes the first platform call throw, which is how a
-    denied or otherwise refused call is delivered.
+    delivered; `fail` makes the first factory call throw, which is how a refused
+    call is delivered. `devices` is the workspace `Network` enumerates, as
+    `{name}` objects — a `null` entry is a device the platform will not hand
+    over.
     """
     return "\n".join([
         f"var MODELS = {models};",
+        f"var DEVICES = {devices};",
         "var CALLS = [];",
         "function log(name) { CALLS.push(name); }",
         *_module_descriptor_js(),
         *_device_descriptor_js(),
+        *_network_js(),
         *_factory_js("MODELS.length" if count is None else count,
                      "true" if fail else "false"),
     ])

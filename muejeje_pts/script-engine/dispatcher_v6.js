@@ -20,6 +20,11 @@ var MUEJEJE_V6_DISPATCH = {table: null};
 function muejejeV6OperationTable() {
     if (MUEJEJE_V6_DISPATCH.table === null) {
         MUEJEJE_V6_DISPATCH.table = {
+            "network.device_inventory": {
+                read_only: true,
+                args: MUEJEJE_NETWORK_INVENTORY_ARGS,
+                handler: muejejeNetworkDeviceInventory
+            },
             "platform.device_descriptors": {
                 read_only: true,
                 /* The operation declares what its own arguments mean; this

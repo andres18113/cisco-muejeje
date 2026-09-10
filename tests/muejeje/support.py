@@ -56,6 +56,9 @@ TOOLING_INPUTS = [
 # disagree, and a feature backed by one of them would be a capability claim
 # nobody was checking (MJ-028).
 FEATURE_EVIDENCE = {
+    "network.device_reading": (
+        "network_adapter.js", "muejejeAdapterDeviceInventory",
+    ),
     "platform.descriptor_discovery": (
         "platform_device_adapter.js", "muejejeAdapterDeviceDescriptors",
     ),

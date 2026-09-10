@@ -101,7 +101,10 @@ function muejejeAdapterRead(platform, window) {
 function muejejeAdapterDescriptor(descriptor) {
     var supported = muejejeAdapterModuleTypes(descriptor);
     return {
-        model: muejejeReadingModel(muejejeAdapterCall(descriptor, "getModel")),
+        model: muejejeReadingText(
+            muejejeAdapterCall(descriptor, "getModel"),
+            MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
+        ),
         device_type: muejejeReadingWholeNumber(
             muejejeAdapterCall(descriptor, "getType")
         ),

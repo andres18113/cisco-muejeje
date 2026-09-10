@@ -58,12 +58,12 @@ AUTHORITATIVE_CATALOGUE = "muejeje_pts/README.md"
 # The namespaces V6 operations live in. The dispatcher may admit a name only
 # in one of these, so adding a namespace is an edit here — which is what makes
 # a new one visible.
-OPERATION_NAMESPACES = ("platform", "runtime")
+OPERATION_NAMESPACES = ("network", "platform", "runtime")
 # Namespaces a document may name a *capability* in — an operation or a kernel
 # feature. `protocol.v6` is a feature, not an operation, and the two share a
 # shape, so they are told apart by the sets they belong to rather than by how
 # they are spelled.
-CAPABILITY_NAMESPACES = ("platform", "protocol", "runtime")
+CAPABILITY_NAMESPACES = ("network", "platform", "protocol", "runtime")
 
 _SEGMENT = r"[a-z][a-z0-9_]*"
 

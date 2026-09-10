@@ -110,8 +110,9 @@ function muejejeAdapterModuleTree(reading, descriptor) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
     reading.descriptor_present = true;
-    reading.model = muejejeReadingModel(
-        muejejeAdapterCall(descriptor, "getModel")
+    reading.model = muejejeReadingText(
+        muejejeAdapterCall(descriptor, "getModel"),
+        MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
     reading.device_type = muejejeReadingWholeNumber(
         muejejeAdapterCall(descriptor, "getType")
@@ -159,8 +160,9 @@ function muejejeAdapterModuleNode(item, index) {
         parent_index: item.parent,
         depth: item.depth,
         module_index: item.position,
-        model: muejejeReadingModel(
-            muejejeAdapterCall(item.descriptor, "getModel")
+        model: muejejeReadingText(
+            muejejeAdapterCall(item.descriptor, "getModel"),
+            MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
         ),
         module_type: muejejeReadingWholeNumber(
             muejejeAdapterCall(item.descriptor, "getType")

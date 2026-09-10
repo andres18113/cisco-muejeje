@@ -153,6 +153,19 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_d
 mcpDispatchV6('{"v":6,"operation_rid":"qual-modules","op":"platform.module_descriptors","args":{"device_index":0}}')
 ```
 
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-support","op":"platform.module_type_support","args":{"device_index":0,"module_type":18}}')
+```
+
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-inventory","op":"network.device_inventory","args":{"offset":0,"limit":8}}')
+```
+
+The last one reads the **workspace**, so what it reports depends on what the
+running instance holds — an empty workspace answering `available_count: 0` is a
+reading, not a failure. Record the workspace's state alongside it, because the
+same call on a different session is a different observation (`MJ-002`).
+
 The `platform.*` calls are the ones that reach Packet Tracer, and **either
 outcome is a result worth recording verbatim**:
 

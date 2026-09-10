@@ -42,6 +42,7 @@ IPC_ADAPTER_FILES: tuple[str, ...] = (
 # which is why only the boundary needs the `ipc` exemption — but the
 # declaration rules below apply to all of them.
 PLATFORM_ADAPTER_FILES: tuple[str, ...] = IPC_ADAPTER_FILES + (
+    "muejeje_pts/script-engine/network_adapter.js",
     "muejeje_pts/script-engine/platform_device_adapter.js",
     "muejeje_pts/script-engine/platform_module_adapter.js",
     "muejeje_pts/script-engine/platform_support_adapter.js",
@@ -130,6 +131,7 @@ def test_the_declared_adapter_registries_are_what_this_artifact_ships():
     assert IPC_ADAPTER_FILES == ("muejeje_pts/script-engine/platform_adapter.js",)
     assert PLATFORM_ADAPTER_FILES == (
         "muejeje_pts/script-engine/platform_adapter.js",
+        "muejeje_pts/script-engine/network_adapter.js",
         "muejeje_pts/script-engine/platform_device_adapter.js",
         "muejeje_pts/script-engine/platform_module_adapter.js",
         "muejeje_pts/script-engine/platform_support_adapter.js",

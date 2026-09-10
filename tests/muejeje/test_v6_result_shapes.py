@@ -43,6 +43,10 @@ from tests.muejeje.engine_harness import (
 # Per operation, the result fields a consumer may already be reading. An
 # operation may answer with more; it may never answer with fewer.
 REQUIRED_RESULT_FIELDS = {
+    "network.device_inventory": {
+        "resolution", "unavailable_reason", "available_count", "offset",
+        "limit", "devices", "window_truncated",
+    },
     "platform.device_descriptors": {
         "resolution", "unavailable_reason", "available_count", "offset",
         "limit", "descriptors", "window_truncated",
@@ -79,6 +83,9 @@ REQUIRED_RESULT_FIELDS = {
 # additive, and a consumer not reading it cannot see it — but it may never stop
 # publishing one that is frozen here.
 REQUIRED_NESTED_FIELDS = {
+    "network.device_inventory": {
+        "devices[]": {"index": int, "name": str},
+    },
     "platform.device_descriptors": {
         "descriptors[]": {
             "model": str, "device_type": int, "model_supported": bool,
@@ -117,6 +124,7 @@ REQUIRED_NESTED_FIELDS = {
 # platform, and an empty list publishes no nested object, so the reading a
 # consumer actually parses is the one driven here.
 PRELUDE = {
+    "network.device_inventory": platform_stub(CHASSIS_MODELS),
     "platform.device_descriptors": platform_stub(CHASSIS_MODELS),
     "platform.module_descriptors": platform_stub(CHASSIS_MODELS),
     "platform.module_type_support": platform_stub(CHASSIS_MODELS),

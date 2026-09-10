@@ -50,7 +50,13 @@ var MUEJEJE_PLATFORM_LIMITS = {
      * measured that, and the values this artifact reports come back out of the
      * platform in the first place. It bounds what one request may ask about,
      * which is a decision this runtime is entitled to make (MJ-029). */
-    MAX_MODULE_TYPE: 65535
+    MAX_MODULE_TYPE: 65535,
+    /* A workspace has as many devices as somebody put on it, and this
+     * repository has measured no ceiling on either the count or a device's
+     * name. Both numbers bound what one reading will do, and a window past the
+     * first is reported as truncated rather than silently dropped (MJ-029). */
+    MAX_DEVICE_WINDOW: 64,
+    MAX_NAME_CHARS: 256
 };
 
 /* Why a reading is unavailable. Four different facts, kept apart because a
@@ -128,15 +134,15 @@ function muejejeReadingWholeNumber(value) {
     return value;
 }
 
-/* An empty model is a real answer, not a malformed one: on 9.0.1 a chassis
- * root can report "". Requiring a name here discarded correct metadata once
- * already, so the only thing checked is that it is a bounded string — and the
- * bound is a length of its own, not a count reused as one. */
-function muejejeReadingModel(value) {
-    if (
-        typeof value !== "string"
-        || value.length > MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
-    ) {
+/* A bounded string, and nothing else asked of it.
+ *
+ * An empty one is a real answer, not a malformed one: on 9.0.1 a chassis root
+ * reports `model: ""`. Requiring a non-empty value discarded correct metadata
+ * once already, so the only thing checked is the bound — and the caller passes
+ * which bound, because a model name and a device name are different subjects
+ * with different reasons for their length. */
+function muejejeReadingText(value, limit) {
+    if (typeof value !== "string" || value.length > limit) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
     return value;

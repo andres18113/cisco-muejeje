@@ -101,8 +101,9 @@ function muejejeAdapterSupportAsk(reading, descriptor, type) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
     reading.descriptor_present = true;
-    reading.model = muejejeReadingModel(
-        muejejeAdapterCall(descriptor, "getModel")
+    reading.model = muejejeReadingText(
+        muejejeAdapterCall(descriptor, "getModel"),
+        MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
     reading.device_type = muejejeReadingWholeNumber(
         muejejeAdapterCall(descriptor, "getType")

@@ -49,6 +49,17 @@
  *   DeviceDescriptor.getType()                       -> DeviceType
  *   DeviceDescriptor.isModelSupported()              -> bool
  *   DeviceDescriptor.isModuleTypeSupported(ModuleType) -> bool
+ *   ipc.network()                          -> Network            (class_i_p_c)
+ *   Network.getDeviceCount()                         -> int
+ *   Network.getDeviceAt(int)                         -> Device
+ *   Device.getName()                                 -> string
+ *
+ * The `Network` and `Device` getters are evidenced against 9.0.1.0858 by this
+ * repository's own live channel, which enumerates a workspace this way and
+ * reads names from it. `Network` also offers members that create a device or a
+ * link, and none of them is on this list: an allowlist is what makes
+ * "read-only" a property of the boundary rather than a promise about call
+ * sites.
  *   DeviceDescriptor.getSupportedModuleTypeCount()   -> int
  *   DeviceDescriptor.getSupportedModuleTypeAt(int)   -> ModuleType
  *   DeviceDescriptor.getRootModule()                 -> ModuleDescriptor
@@ -82,6 +93,10 @@ var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
     getType: true,
     isModelSupported: true,
     isModuleTypeSupported: true,
+    network: true,
+    getDeviceCount: true,
+    getDeviceAt: true,
+    getName: true,
     getSupportedModuleTypeCount: true,
     getSupportedModuleTypeAt: true,
     getRootModule: true,

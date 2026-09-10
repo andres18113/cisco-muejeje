@@ -113,7 +113,8 @@ The complete list of operations is the catalogue in `muejeje_pts/README.md`
 ```text
 consumer -> mcpDispatchV6(requestJson) -> bounded V6 admission -> V6 whitelist
          -> a runtime.* operation, which asks the platform nothing
-         -> a platform.* operation -> subject adapter -> one call boundary
+         -> a platform.* or network.* operation
+                                   -> subject adapter -> one call boundary
                                    -> Cisco IpcAPI
          -> one JSON envelope back
 ```
@@ -123,8 +124,9 @@ name and the shape and values of the arguments are all checked against limits
 this runtime declares for itself, before any handler runs. **Those limits are
 Muejeje's, not Packet Tracer's** (`MJ-029`).
 
-The two runtime operations call Packet Tracer not at all. The platform ones
-do, through the one file declared as the platform-call boundary — the only
+The two runtime operations call Packet Tracer not at all. The `platform.*` and
+`network.*` ones do, through the one file declared as the platform-call
+boundary — the only
 packaged source that may name `ipc`, and the only one that does (`MJ-031`).
 Every call goes through one function there, by member name, and that function
 admits only names on a declared read-only allowlist of documented getters, so
@@ -143,9 +145,9 @@ Interface is a static page that calls nothing and therefore reports no module
 state.
 
 **What is not built.** The transport, every mutating operation, and every
-platform reading beyond the hardware factory — nothing reads a workspace, a
-device instance, a link or an address. The target shape, with each stage
-marked:
+reading beyond the hardware factory and the workspace *inventory* — nothing
+reads a device instance's state, a link, an address or a port. The target
+shape, with each stage marked:
 
 ```text
 Python/MCP -> Runtime Protocol -> explicit channel policy   (unbuilt)

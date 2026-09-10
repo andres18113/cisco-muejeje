@@ -45,8 +45,9 @@ ERROR_CODES = {
 # changing it is changing what the name means, not extending it. A mutating
 # operation is a new name (MJ-008).
 READ_ONLY_OPERATIONS = {
-    "platform.device_descriptors", "platform.module_descriptors",
-    "platform.module_type_support", "runtime.capabilities", "runtime.identify",
+    "network.device_inventory", "platform.device_descriptors",
+    "platform.module_descriptors", "platform.module_type_support",
+    "runtime.capabilities", "runtime.identify",
 }
 
 REQUIREMENTS = "docs/architecture/muejeje-pts-requirements.md"

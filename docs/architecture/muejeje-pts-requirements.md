@@ -47,11 +47,20 @@ does not exist yet.
 **Requirement.** Muejeje makes no assumption about device counts, models, roles,
 naming, addressing or link layout. It never hardcodes a topology or a fragment
 of one.
+**Reading what is there is not assuming what is there.** `network.device_inventory`
+reports the devices a workspace currently holds; it expects no count, no naming
+scheme, no role and no ordering that outlives the reading, and the same code
+answers an empty workspace and a full one. A runtime that could not look at a
+workspace at all could never serve a consumer that has one; a runtime that
+*expects* a particular one has become part of that consumer.
 **Rationale.** Topology is the consumer's domain. A runtime that knows a topology
 has silently become part of that consumer.
 **Verification.** Review; absence of topology fixtures in the runtime and in the
-build inputs.
-**Status.** `BASELINED`
+build inputs; `tests/muejeje/test_network_inventory.py` drives the inventory
+against an empty workspace, a single device, an unnamed one and four unrelated
+names, so "assumes nothing" is exercised rather than asserted.
+**Status.** `ENFORCED` for the one workspace reading that exists; `BASELINED`
+for everything not yet built.
 
 ### MJ-003 — Capability-driven behaviour
 **Requirement.** Behaviour is selected from capabilities observed at runtime, not
@@ -105,9 +114,14 @@ migrated to V6 — consumers still reach the legacy runtime for those.
 IpcAPI. Muejeje adapts to it; it does not extend or reinterpret it.
 **Rationale.** The platform is the one thing Muejeje cannot change. Naming it as
 the boundary keeps compatibility work in one place.
+**Both subjects are the platform.** The factory and the workspace are reached
+through the same call boundary and the same allowlist, so "what does this
+artifact do to Packet Tracer" stays one list — and that list is what keeps the
+workspace read-only, since the same `Network` interface offers members that
+create a device or a link and none of them is on it.
 **Verification.** All platform access in the owned artifact goes through one
 declared call boundary, which admits only names present in Cisco's installed
-IpcAPI reference. A gate fails if any other packaged source names `ipc` or
+IpcAPI reference or already evidenced against the pinned build. A gate fails if any other packaged source names `ipc` or
 names a platform member at a call site; another compares the calls actually
 made, at runtime, against the documented set (MJ-031).
 **Status.** `ENFORCED` for the owned artifact's own platform access, which is
@@ -788,10 +802,18 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
    Cisco's, and forbidding the word would forbid the reference while leaving a
    hand-written table of type numbers legal. What is forbidden is the mirror,
    which is why the enumeration in use takes no `DeviceType` argument.
-4. **No consumer or topology assumption.** It reads the *factory*, which
-   describes what models exist and what hardware each model can accept. It
-   never reads a workspace, a device instance, a link or an address (MJ-002,
-   MJ-004).
+4. **No consumer or topology assumption.** Two subjects, and the difference
+   matters. The *factory* describes what models exist and what hardware each
+   can accept; it does not change under a reading. The *workspace* is what a
+   session happens to hold, and it does — so a reading of it is an observation
+   at a moment, never a fact about "the network", and nothing caches one.
+
+   Reading an inventory is not assuming a topology, which is what MJ-002
+   forbids: no expected count, no naming scheme, no role, no ordering that
+   outlives a reading. What is still unread is unread on purpose — a link, an
+   address, a port and a configuration are each a further subject with its own
+   evidence and its own bounds, and none has an operation that needs it yet.
+   Nothing anywhere reads or writes a device instance's state.
 
 **An unreadable platform is an observation, not a failure.** No V6 error is
 reported for it: the request was admissible, and the answer is that no reading
