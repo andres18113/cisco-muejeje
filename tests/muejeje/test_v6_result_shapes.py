@@ -33,7 +33,12 @@ import json
 
 import pytest
 
-from tests.muejeje.engine_harness import dispatch_v6, node_available, platform_stub
+from tests.muejeje.engine_harness import (
+    CHASSIS_MODELS,
+    dispatch_v6,
+    node_available,
+    platform_stub,
+)
 
 # Per operation, the result fields a consumer may already be reading. An
 # operation may answer with more; it may never answer with fewer.
@@ -41,6 +46,11 @@ REQUIRED_RESULT_FIELDS = {
     "platform.device_descriptors": {
         "resolution", "unavailable_reason", "available_count", "offset",
         "limit", "descriptors", "window_truncated",
+    },
+    "platform.module_descriptors": {
+        "resolution", "unavailable_reason", "device_index", "available_count",
+        "descriptor_present", "model", "device_type", "root_present", "nodes",
+        "nodes_truncated", "depth_truncated",
     },
     "runtime.identify": {
         "extension_name", "extension_version", "protocol_versions",
@@ -63,6 +73,14 @@ REQUIRED_NESTED_FIELDS = {
             "supported_module_types", "module_types_truncated",
         },
     },
+    "platform.module_descriptors": {
+        "nodes[]": {
+            "index", "parent_index", "depth", "slot_index", "model",
+            "module_type", "hot_swappable", "slot_types",
+            "slot_types_truncated", "module_count", "children_present",
+            "children_truncated",
+        },
+    },
     "runtime.identify": {
         "provenance": {"state", "source_sha", "build_recipe_id"},
         "lifecycle": {"started", "started_at", "stopped_at", "start_count"},
@@ -73,14 +91,13 @@ REQUIRED_NESTED_FIELDS = {
 }
 
 # What each operation has to be asked against for its published shape to be
-# visible at all. `platform.device_descriptors` answers an empty `descriptors`
-# list when there is no platform, and an empty list publishes no nested object,
-# so the reading a consumer actually parses is the one driven here.
-THREE_MODELS = (
-    "[{model: '2960-24TT', type: 1, supported: true, module_types: [18]},"
-    " {model: '', type: 7, supported: false, module_types: [6, 18]}]"
-)
-PRELUDE = {"platform.device_descriptors": platform_stub(THREE_MODELS)}
+# visible at all. A platform operation answers an empty list when there is no
+# platform, and an empty list publishes no nested object, so the reading a
+# consumer actually parses is the one driven here.
+PRELUDE = {
+    "platform.device_descriptors": platform_stub(CHASSIS_MODELS),
+    "platform.module_descriptors": platform_stub(CHASSIS_MODELS),
+}
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",

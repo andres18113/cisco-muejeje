@@ -27,6 +27,7 @@ var MUEJEJE_CORE = {
      * something behind it exists; the list is not a roadmap. */
     SUPPORTED_FEATURES: [
         "platform.descriptor_discovery",
+        "platform.module_discovery",
         "protocol.v6",
         "runtime.operation_catalog",
         "runtime.session_id"

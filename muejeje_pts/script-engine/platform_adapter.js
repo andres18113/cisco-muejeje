@@ -11,30 +11,29 @@
  * EVERY PLATFORM CALL GOES THROUGH ONE FUNCTION. `muejejeAdapterCall` takes the
  * member name as data and refuses any name outside the read-only allowlist
  * below, so "what does this artifact do to Packet Tracer" is answered by one
- * list rather than by reading every call site. Nothing here mutates anything:
- * each admitted name is a documented getter, so no call instantiates a device,
- * powers one, or touches a workspace. A descriptor is not a runtime `Module`,
- * and no field it returns establishes installed hardware (MJ-014).
+ * list rather than by reading every call site. Each admitted name is a
+ * documented getter, so no call instantiates a device, powers one, or touches
+ * a workspace (MJ-014, MJ-031).
  *
  * WHOSE FAILURE WAS IT. Only two things become an unavailable reading: a call
  * made at the boundary below, and an answer the validators below refused.
  * Anything else that throws in a platform adapter is a defect in this
  * artifact, and it is left to reach the dispatcher as `ENGINE_EXCEPTION` —
  * reporting it as `PLATFORM_CALL_FAILED` would manufacture an observation
- * about Packet Tracer that Packet Tracer never produced, and a consumer could
- * not tell it from the real thing (MJ-022, MJ-031).
+ * about Packet Tracer that Packet Tracer never produced, and on a target,
+ * where that reading is what a missing privilege looks like, a consumer could
+ * not tell the two apart (MJ-022).
  *
- * WHAT IS READ THROUGH IT lives beside it, one adapter per subject, because a
- * boundary and the things read across it are different responsibilities and
- * this file is the one that must stay short enough to check in full (MJ-018,
- * MJ-020). Those adapters name no platform object of their own: they are
- * handed one and call it by name through `muejejeAdapterCall`.
+ * WHAT IS READ THROUGH IT lives beside it, one adapter per subject: a boundary
+ * and the things read across it are different responsibilities, and this file
+ * is the one that has to stay short enough to check in full (MJ-018, MJ-020).
+ * Those adapters name no platform object of their own.
  *
- * IT REPORTS OBSERVATIONS AND REACHES NO VERDICT. Whether an answer qualifies
- * anything is decided in Python, from outside the artifact (MJ-011). And the
- * module requests no privilege, so on a real target these calls are denied
- * until a privilege is evidenced — which is reported as an unavailable reading
- * rather than as a failure of the platform (MJ-032).
+ * IT REACHES NO VERDICT. Whether an answer qualifies anything is decided in
+ * Python, from outside the artifact (MJ-011). The module requests no
+ * privilege, so on a target these calls are denied until one is evidenced —
+ * reported as an unavailable reading, never as a failure of the platform
+ * (MJ-032).
  */
 
 /* The platform members this artifact may call, and the whole of what it may
@@ -50,6 +49,21 @@
  *   DeviceDescriptor.isModelSupported()              -> bool
  *   DeviceDescriptor.getSupportedModuleTypeCount()   -> int
  *   DeviceDescriptor.getSupportedModuleTypeAt(int)   -> ModuleType
+ *   DeviceDescriptor.getRootModule()                 -> ModuleDescriptor
+ *   ModuleDescriptor.getModel()                      -> string
+ *   ModuleDescriptor.getType()                       -> ModuleType
+ *   ModuleDescriptor.isHotSwappable()                -> bool
+ *   ModuleDescriptor.getSlotCount()                  -> int
+ *   ModuleDescriptor.getSlotTypeAt(int)              -> ModuleType
+ *   ModuleDescriptor.getModuleCount()                -> int
+ *   ModuleDescriptor.getModuleAt(int)                -> ModuleDescriptor
+ *
+ * `getModel` and `getType` are members of both descriptor interfaces, which is
+ * why one entry serves both. The `ModuleDescriptor` getters are additionally
+ * evidenced against 9.0.1.0858 by this repository's own read-only factory
+ * surveys — from another channel, with its own privileges, which is evidence
+ * that the getters answer on this build and none that this artifact may call
+ * them (MJ-015).
  *
  * An allowlist rather than a list of forbidden verbs: a name nobody thought to
  * forbid is admitted by a blacklist and refused by this. The enumeration is
@@ -66,38 +80,14 @@ var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
     getType: true,
     isModelSupported: true,
     getSupportedModuleTypeCount: true,
-    getSupportedModuleTypeAt: true
+    getSupportedModuleTypeAt: true,
+    getRootModule: true,
+    isHotSwappable: true,
+    getSlotCount: true,
+    getSlotTypeAt: true,
+    getModuleCount: true,
+    getModuleAt: true
 };
-
-/* Bounds, and they are Muejeje's own. Nothing here has measured how many
- * models the factory offers or how many module types a descriptor lists, so
- * each number is a limit on what this adapter will do in one call and never a
- * claim about the platform (MJ-029). A read past a bound is reported as
- * truncated, so an omitted tail stays visibly absent and can never be read as
- * an observed absence. */
-var MUEJEJE_PLATFORM_LIMITS = {
-    MAX_WINDOW: 32,
-    MAX_OFFSET: 4096,
-    MAX_MODULE_TYPES: 64,
-    MAX_COUNT: 65536,
-    MAX_MODEL_CHARS: 256
-};
-
-/* Why a reading is unavailable. Three different facts, kept apart because a
- * consumer acts differently on each.
- *
- * ABSENT       there is no platform object here at all.
- * CALL_FAILED  the platform was asked and the call did not return. A denied
- *              privilege is one cause; so is any other engine-side refusal,
- *              and this adapter cannot tell which, so it does not say.
- * UNUSABLE     the platform answered, and the answer could not be attributed:
- *              a count that is not a whole number, a missing descriptor. */
-var MUEJEJE_PLATFORM_ABSENT = "PLATFORM_ABSENT";
-var MUEJEJE_PLATFORM_CALL_FAILED = "PLATFORM_CALL_FAILED";
-var MUEJEJE_PLATFORM_UNUSABLE = "PLATFORM_ANSWER_UNUSABLE";
-
-var MUEJEJE_PLATFORM_OBSERVED = "OBSERVED";
-var MUEJEJE_PLATFORM_UNAVAILABLE = "UNAVAILABLE";
 
 /* THE PLATFORM-CALL BOUNDARY. One member call, by name, with the reason it can
  * fail decided here rather than by whoever wrote the call site.
@@ -147,86 +137,4 @@ function muejejeAdapterPlatform() {
         return null;
     }
     return ipc;
-}
-
-/* One result shape for every outcome, so a consumer parses one thing whether
- * the platform answered or not. */
-function muejejeAdapterUnavailable(reason, offset, limit) {
-    return {
-        resolution: MUEJEJE_PLATFORM_UNAVAILABLE,
-        unavailable_reason: reason,
-        available_count: null,
-        offset: offset,
-        limit: limit,
-        descriptors: [],
-        window_truncated: false
-    };
-}
-
-/* Clamp the requested window. The caller's arguments were already bounded by
- * V6 admission, and they are bounded again here: what this adapter will do in
- * one call is its own decision, not the caller's. */
-function muejejeAdapterWindow(offset, limit) {
-    var start = typeof offset === "number" && offset % 1 === 0 && offset > 0
-        ? Math.min(offset, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET)
-        : 0;
-    var size = typeof limit === "number" && limit % 1 === 0 && limit > 0
-        ? Math.min(limit, MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW)
-        : MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW;
-    return {offset: start, limit: size};
-}
-
-/* Which thrown values are a reading, and which are this artifact's own bug.
- *
- * The two sentinels are the only failures this adapter attributed to the
- * platform: one at the call boundary, one at a validator. Anything else got
- * here from our own code, so it is rethrown for the dispatcher to report as an
- * engine exception. Swallowing it would publish a platform observation nobody
- * observed (MJ-031). */
-function muejejeAdapterReading(thrown, window) {
-    if (
-        thrown !== MUEJEJE_PLATFORM_CALL_FAILED
-        && thrown !== MUEJEJE_PLATFORM_UNUSABLE
-    ) {
-        throw thrown;
-    }
-    return muejejeAdapterUnavailable(thrown, window.offset, window.limit);
-}
-
-function muejejeAdapterCount(value) {
-    if (
-        typeof value !== "number" || value % 1 !== 0 || value < 0
-        || value > MUEJEJE_PLATFORM_LIMITS.MAX_COUNT
-    ) {
-        throw MUEJEJE_PLATFORM_UNUSABLE;
-    }
-    return value;
-}
-
-function muejejeAdapterWholeNumber(value) {
-    if (typeof value !== "number" || value % 1 !== 0) {
-        throw MUEJEJE_PLATFORM_UNUSABLE;
-    }
-    return value;
-}
-
-/* An empty model is a real answer, not a malformed one: on 9.0.1 a chassis
- * root can report "". Requiring a name here discarded correct metadata once
- * already, so the only thing checked is that it is a bounded string — and the
- * bound is a length of its own, not a count reused as one. */
-function muejejeAdapterModel(value) {
-    if (
-        typeof value !== "string"
-        || value.length > MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
-    ) {
-        throw MUEJEJE_PLATFORM_UNUSABLE;
-    }
-    return value;
-}
-
-function muejejeAdapterFlag(value) {
-    if (typeof value !== "boolean") {
-        throw MUEJEJE_PLATFORM_UNUSABLE;
-    }
-    return value;
 }

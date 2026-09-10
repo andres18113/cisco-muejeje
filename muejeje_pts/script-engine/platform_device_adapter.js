@@ -18,6 +18,33 @@
  * (MJ-014).
  */
 
+/* One result shape for every outcome, so a consumer parses one thing whether
+ * the platform answered or not. */
+function muejejeAdapterUnavailable(reason, offset, limit) {
+    return {
+        resolution: MUEJEJE_PLATFORM_UNAVAILABLE,
+        unavailable_reason: reason,
+        available_count: null,
+        offset: offset,
+        limit: limit,
+        descriptors: [],
+        window_truncated: false
+    };
+}
+
+/* Clamp the requested window. The caller's arguments were already bounded by
+ * V6 admission, and they are bounded again here: what this adapter will do in
+ * one call is its own decision, not the caller's. */
+function muejejeAdapterWindow(offset, limit) {
+    var start = typeof offset === "number" && offset % 1 === 0 && offset > 0
+        ? Math.min(offset, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET)
+        : 0;
+    var size = typeof limit === "number" && limit % 1 === 0 && limit > 0
+        ? Math.min(limit, MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW)
+        : MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW;
+    return {offset: start, limit: size};
+}
+
 /* The one entry point. An unreadable platform is an observation about the
  * platform, not an exception for the caller. */
 function muejejeAdapterDeviceDescriptors(offset, limit) {
@@ -33,8 +60,11 @@ function muejejeAdapterDeviceDescriptors(offset, limit) {
     } catch (platformError) {
         /* The thrown value is engine-internal and never reaches the result: a
          * consumer that could read it would be depending on an internal
-         * (MJ-005). Only our own sentinels are a reading. */
-        return muejejeAdapterReading(platformError, window);
+         * (MJ-005). Only our own sentinels are a reading; anything else is a
+         * defect here and is rethrown for the dispatcher. */
+        return muejejeAdapterUnavailable(
+            muejejeReadingReason(platformError), window.offset, window.limit
+        );
     }
 }
 
@@ -42,7 +72,7 @@ function muejejeAdapterRead(platform, window) {
     var factory = muejejeAdapterCall(
         muejejeAdapterCall(platform, "hardwareFactory"), "devices"
     );
-    var count = muejejeAdapterCount(
+    var count = muejejeReadingCount(
         muejejeAdapterCall(factory, "getAvailableDeviceCount")
     );
     var last = Math.min(count, window.offset + window.limit);
@@ -66,11 +96,11 @@ function muejejeAdapterRead(platform, window) {
 function muejejeAdapterDescriptor(descriptor) {
     var supported = muejejeAdapterModuleTypes(descriptor);
     return {
-        model: muejejeAdapterModel(muejejeAdapterCall(descriptor, "getModel")),
-        device_type: muejejeAdapterWholeNumber(
+        model: muejejeReadingModel(muejejeAdapterCall(descriptor, "getModel")),
+        device_type: muejejeReadingWholeNumber(
             muejejeAdapterCall(descriptor, "getType")
         ),
-        model_supported: muejejeAdapterFlag(
+        model_supported: muejejeReadingFlag(
             muejejeAdapterCall(descriptor, "isModelSupported")
         ),
         supported_module_types: supported.types,
@@ -85,13 +115,13 @@ function muejejeAdapterDescriptor(descriptor) {
  * translates them (MJ-014). Naming them is a consumer's job, against the
  * platform's own documentation. */
 function muejejeAdapterModuleTypes(descriptor) {
-    var count = muejejeAdapterCount(
+    var count = muejejeReadingCount(
         muejejeAdapterCall(descriptor, "getSupportedModuleTypeCount")
     );
     var readable = Math.min(count, MUEJEJE_PLATFORM_LIMITS.MAX_MODULE_TYPES);
     var types = [];
     for (var index = 0; index < readable; index++) {
-        types.push(muejejeAdapterWholeNumber(
+        types.push(muejejeReadingWholeNumber(
             muejejeAdapterCallAt(descriptor, "getSupportedModuleTypeAt", index)
         ));
     }

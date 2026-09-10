@@ -4,15 +4,16 @@ Three rules, one shape. The V6 kernel inherits no PTBuilder global (MJ-013),
 names no transport (MJ-026), and reaches the Cisco platform only from a
 *declared* adapter (MJ-006, MJ-019).
 
-**Each of these has to survive the runtime growing**, which is what most of
-this module is about. A gate that forbade `addDevice` as a substring would
-also forbid Cisco's documented `ipc.network().addDevice(...)`, and would be
-deleted the first time an adapter needed it. A gate with no notion of an
-adapter would be deleted the first time one arrived. So the PTBuilder rule
-separates a global from a member of the same name, the layer rules name their
-adapters by path, and every declaration is itself checked — an exemption that
-could be pointed at `core.js` is a switch for turning these gates off
-(MJ-021).
+**Each of these has to survive the runtime growing.** A gate that forbade
+`addDevice` as a substring would also forbid Cisco's documented
+`ipc.network().addDevice(...)`, and would be deleted the first time an adapter
+needed it. A gate with no notion of an adapter would be deleted the first time
+one arrived. So the PTBuilder rule separates a global from a member of the same
+name, and the layer rules name their adapters by path (MJ-021).
+
+The declarations themselves — which files those are, and what a declared
+adapter has to be — are `test_platform_declarations`, split out when this
+module crossed its line budget (MJ-020).
 """
 
 from __future__ import annotations
@@ -27,7 +28,10 @@ from tests.muejeje.measure import (
     literal_pattern,
     packaged_text_bodies,
 )
-from tests.muejeje.support import REPO_ROOT, repo_manifest
+from tests.muejeje.test_platform_declarations import (
+    IPC_ADAPTER_FILES,
+    TRANSPORT_ADAPTER_FILES,
+)
 
 # The six globals PTBuilder supplies today. Inheriting any of them is what the
 # owned source root exists to avoid (MJ-013).
@@ -49,45 +53,6 @@ TRANSPORT_SYMBOLS = (
     "fileBridge", "file_bridge", "bridge_token", "http://", "https://",
 )
 
-# Declared adapters, by path. Only a declared adapter may name the layer it
-# adapts; every other packaged source is kernel and may not. Declaring one is
-# an edit to this gate, which is the point: an adapter arrives visibly, and
-# every declaration is checked against the rules below.
-TRANSPORT_ADAPTER_FILES: tuple[str, ...] = ()
-IPC_ADAPTER_FILES: tuple[str, ...] = (
-    # The read-only platform-call boundary (MJ-031): the one file that names
-    # `ipc`, and the one function every platform call in this artifact goes
-    # through. What it may call — no mutation, no undocumented getter, no
-    # Cisco enum — is gated in `test_platform_adapter`; the declaration here is
-    # what makes naming `ipc` legal in that one file and a violation in every
-    # other.
-    "muejeje_pts/script-engine/platform_adapter.js",
-)
-# Every declared platform adapter: the boundary above, and the subject adapters
-# that read one thing each *through* it. They name no platform object of their
-# own — which is why only the boundary needs the `ipc` exemption — but they are
-# still adapters, so the declaration rules below apply to all of them, and
-# `test_platform_adapter` holds each to the read-only allowlist.
-PLATFORM_ADAPTER_FILES: tuple[str, ...] = IPC_ADAPTER_FILES + (
-    "muejeje_pts/script-engine/platform_device_adapter.js",
-)
-
-# What a declared adapter must be. Without these, the layer gate could be
-# silenced by declaring `core.js` an adapter, which is the one way a boundary
-# like this fails without anybody noticing.
-ADAPTER_SUFFIX = "_adapter.js"
-# An adapter adapts. It does not answer a request, shape an envelope, or decide
-# what is admitted; those belong to the kernel it is called from (MJ-019).
-ADAPTER_MAY_NOT_NAME = (
-    "mcpDispatchV6", "muejejeV6Ok", "muejejeV6Fail", "muejejeV6OperationTable",
-    "MUEJEJE_V6_ERRORS", "MUEJEJE_CORE",
-)
-
-DECLARED_ADAPTERS = sorted(
-    set(TRANSPORT_ADAPTER_FILES) | set(PLATFORM_ADAPTER_FILES)
-)
-
-
 def ptbuilder_patterns() -> list[tuple[str, re.Pattern[str]]]:
     return [global_pattern(name) for name in PTBUILDER_GLOBALS]
 
@@ -105,23 +70,6 @@ def ipc_patterns() -> list[tuple[str, re.Pattern[str]]]:
     fires on an explanation of the boundary teaches people to stop explaining.
     """
     return [global_pattern("ipc")]
-
-
-def adapter_declaration_error(logical: str, artifact_inputs: set[str]) -> str | None:
-    """Why `logical` may not be declared an adapter, or None.
-
-    A declared adapter is an exemption from the layer gates, so the
-    declaration itself is checked: it has to name a file that ships, and the
-    name has to say what it is. Otherwise the exemption is a way to turn the
-    gate off.
-    """
-    if not logical.endswith(ADAPTER_SUFFIX):
-        return f"an adapter's name must end with {ADAPTER_SUFFIX}: {logical}"
-    if logical not in artifact_inputs:
-        return f"a declared adapter must be a declared artifact input: {logical}"
-    if not (REPO_ROOT / logical).is_file():
-        return f"a declared adapter must exist: {logical}"
-    return None
 
 
 def _packaged_bodies() -> dict[str, str]:
@@ -197,58 +145,6 @@ def test_the_ipc_gate_is_not_satisfied_by_renaming_the_object():
         "core.js: ipc"
     ]
     assert layer_offenders({"core.js": prose}, ipc_patterns(), adapters=()) == []
-
-
-@pytest.mark.parametrize("logical", DECLARED_ADAPTERS)
-def test_every_declared_adapter_is_a_file_that_ships_and_says_so(logical: str):
-    inputs = set(repo_manifest()["artifact_inputs"])
-    assert adapter_declaration_error(logical, inputs) is None
-
-
-@pytest.mark.parametrize("logical", DECLARED_ADAPTERS)
-def test_a_declared_adapter_adapts_and_does_not_answer(logical: str):
-    body = (REPO_ROOT / logical).read_text(encoding="utf-8")
-    named = [symbol for symbol in ADAPTER_MAY_NOT_NAME if symbol in body]
-    assert named == [], (
-        f"{logical} is an adapter; dispatching, shaping an envelope and "
-        f"reading core belong to the kernel that calls it: {named}"
-    )
-
-
-def test_the_declared_adapter_registries_are_what_this_artifact_ships():
-    """A registry is evidence, and an empty one is a claim, not an omission.
-
-    Adding an entry is an edit to this assertion, which is what makes an
-    adapter arrive visibly rather than by a file quietly matching a naming
-    convention. One platform adapter ships; no transport adapter does, and no
-    transport exists for one to adapt (MJ-026).
-    """
-    assert TRANSPORT_ADAPTER_FILES == ()
-    assert IPC_ADAPTER_FILES == ("muejeje_pts/script-engine/platform_adapter.js",)
-    assert PLATFORM_ADAPTER_FILES == (
-        "muejeje_pts/script-engine/platform_adapter.js",
-        "muejeje_pts/script-engine/platform_device_adapter.js",
-    )
-
-
-def test_the_adapter_declaration_rule_refuses_a_kernel_file():
-    """Asserted in every direction, so the exemption cannot become a switch.
-
-    Declaring `core.js` an adapter would silence the layer gates for the one
-    file they exist to protect, so the declaration is checked rather than
-    trusted. Each reason is exercised here because the registries themselves
-    are empty, and a check nobody has run is a check nobody can rely on.
-    """
-    shipped = "muejeje_pts/script-engine/core.js"
-    missing = "muejeje_pts/script-engine/absent_adapter.js"
-    inputs = {shipped, missing}
-
-    assert "must end with" in (adapter_declaration_error(shipped, inputs) or "")
-    assert "declared artifact input" in (
-        adapter_declaration_error(missing, {shipped}) or ""
-    )
-    assert "must exist" in (adapter_declaration_error(missing, inputs) or "")
-    assert not (REPO_ROOT / missing).exists(), "the missing-file case needs a gap"
 
 
 def test_the_layer_gate_admits_a_declared_adapter_without_weakening_the_core():

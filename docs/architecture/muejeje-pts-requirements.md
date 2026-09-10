@@ -96,8 +96,8 @@ makes Muejeje's own internals free to change.
 **Verification.** The V6 envelope and its conformance tests
 (`tests/muejeje/test_protocol_v6.py`).
 **Status.** `ENFORCED` for the envelope and for every operation the
-dispatcher admits, all of them read-only; the complete list is the catalogue in
-`muejeje_pts/README.md` (MJ-008). `BASELINED` for every operation not yet
+dispatcher admits, each of them read-only; the complete list is the catalogue
+in `muejeje_pts/README.md` (MJ-008). `BASELINED` for every operation not yet
 migrated to V6 — consumers still reach the legacy runtime for those.
 
 ### MJ-006 — Packet Tracer and its IpcAPI are the platform boundary
@@ -142,8 +142,9 @@ name. Requiring all of them to enumerate all of it made the whitelist five
 copies that one new operation could put out of step, and pushed each document
 toward a list it had no reason to carry; what is checked instead is that no
 document claims a capability this artifact does not have, and that any count it
-writes — "three read-only operations" is a completeness claim in fewer words —
-matches what the dispatcher admits, or what the namespace it names admits.
+writes matches what the dispatcher admits, or what the namespace it names
+admits: a sentence that counts the read-only operations is a completeness claim
+in fewer words, and it goes stale exactly as a list does.
 **Rationale.** A permissive dispatcher cannot bound what a consumer can cause.
 A catalogue nobody can find is the same problem for a consumer, and five
 catalogues are worse than one: they disagree, and the reader cannot tell which
@@ -268,6 +269,16 @@ docstring; `infrastructure/execution/probe_runtime.py` and
 `docs/reference/cp-scale/ROUTER0_POE_FACTORY_STRUCTURE_20260907.md` records the
 LIVE observation against `9.0.1.0858`.
 
+**The owned artifact now walks the descriptor column of that table**, in
+`platform_module_adapter.js`: `getRootModule()` and the `ModuleDescriptor`
+getters beside it, reached from a descriptor the factory enumeration handed
+back rather than from `getDescriptor(DeviceType, model)`. Asking by type would
+need a table of type numbers to ask with, which is what this requirement
+forbids; asking by index needs nothing. **Those legacy runs are not this
+artifact's evidence** (MJ-015): they were driven from another channel with its
+own privileges, so they establish that the getters answer on this build, and
+nothing about whether a Script Module carrying `privileges: []` may call them.
+
 **Verification.** Enum values reconciled against the descriptor API; each mirror
 marked as a mirror at its definition. In the owned artifact,
 `platform.device_descriptors` reads `DeviceType` and the supported `ModuleType`
@@ -280,8 +291,9 @@ on either list — `getDescriptor` is one, and forbidding the word would forbid
 the reference while leaving a hand-written table of type numbers legal
 (MJ-031).
 **Status.** `ENFORCED` for the owned artifact, which carries no mirror and
-enumerates the factory without one — its enumeration takes no `DeviceType`
-argument, so no table has to exist for it to work;
+both enumerates the factory and walks a model's chassis without one — the
+enumeration takes no `DeviceType` argument and a model is addressed by its
+index in it, so no table has to exist for either to work;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 `BASELINED (deviation)` for the legacy runtime — `PT_DEVICE_TYPE` (33 entries),
 `PT_CONNECT_TYPE` (16) and `ModuleSpec.module_type` (151) are mirrors still in
@@ -796,7 +808,7 @@ rather than from assumptions, and nothing could observe one until something
 could ask. Bounding that reach to one cited, read-only call boundary is what
 keeps the answer to "what does this artifact do to Packet Tracer" short enough
 to check: it is a list, not a reading of every call site.
-**Verification.** Four modules, one per responsibility.
+**Verification.** One module per responsibility.
 `tests/muejeje/test_platform_adapter.py` asserts that one file names `ipc`,
 that only declared adapters reach the boundary, that no adapter names a
 platform member at a call site, that the allowlist equals the documented set,
@@ -804,19 +816,25 @@ that no admitted name is shaped like a mutation, and that an adapter carries no
 number but its own bounds — then compares the calls actually made, recorded by
 a stub, against the documented set, in both directions, and drives the boundary
 refusing a name outside the allowlist without touching the receiver.
-`tests/muejeje/test_platform_readings.py` drives every reading, every field
-validator behind them, and that a defect inside an adapter reaches the caller
-as `ENGINE_EXCEPTION` rather than as a platform reading.
-`tests/muejeje/test_platform_descriptors.py` covers the operations: one result
-shape whether the platform answered or not, the window and its truncation
-marks, the declared argument rules, and no self-certified verdict.
+`tests/muejeje/test_platform_readings.py` drives every device reading, every
+field validator behind them, and that a defect inside an adapter reaches the
+caller as `ENGINE_EXCEPTION` rather than as a platform reading;
+`tests/muejeje/test_platform_module_walk.py` does the same for the chassis
+walk, including each bound and the subtree it marks.
+`tests/muejeje/test_platform_descriptors.py` and
+`tests/muejeje/test_platform_modules.py` cover the two platform operations: one
+result shape whether the platform answered or not, the window or chassis it reports,
+the declared argument rules, and no self-certified verdict.
 `tests/muejeje/test_source_root.py` gates the enum identifiers, and
-`tests/muejeje/test_layer_boundaries.py` checks the declarations themselves.
+`tests/muejeje/test_platform_declarations.py` checks the declarations
+themselves — which files may name `ipc`, which are adapters, and which may
+shape a reading at all.
 **Status.** `ENFORCED` for the boundary, the read-only rule, the failure
-attribution and the adapters' own logic under Node; `PENDING_TARGET` for the
-capabilities themselves. The `OBSERVED` branch has only ever been driven
-against a stub, no `.pts` has been built from these sources, and nothing here
-has reached `9.0.1.0858` (MJ-015).
+attribution and the adapters' own logic under Node; `PENDING_TARGET` for both
+capabilities — `platform.device_descriptors` and `platform.module_descriptors`.
+Their `OBSERVED` branches have only ever been driven against a stub, no `.pts`
+has been built from these sources, and nothing here has reached `9.0.1.0858`
+(MJ-015).
 
 ### MJ-032 — A declared privilege must be a privilege Cisco names
 **Requirement.** `build_options.privileges` may be empty, or may hold only

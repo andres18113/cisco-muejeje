@@ -58,9 +58,10 @@ here: the manifest is the source, this table is the reading of it.
 The engine order is the dependency direction, because *"all script files are
 executed (evaluated) in the Script Engine in the same order as listed in the
 Scripting Interface"*. Core first, then the protocol envelope and the admission
-that refuses with it, then the declared platform adapter, then operations —
-alphabetically among themselves, since no operation depends on another — then
-dispatch, then the lifecycle that may call all of it (`MJ-019`).
+that refuses with it, then what a platform reading is, then the call boundary
+and the adapters that read through it, then operations — alphabetically among
+themselves, since no operation depends on another — then dispatch, then the
+lifecycle that may call all of it (`MJ-019`).
 
 ## Steps
 
@@ -147,6 +148,10 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-capabilities","op":"runtime.capabili
 mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_descriptors","args":{"offset":0,"limit":4}}')
 ```
 
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-modules","op":"platform.module_descriptors","args":{"device_index":0}}')
+```
+
 The `platform.*` calls are the ones that reach Packet Tracer, and **either
 outcome is a result worth recording verbatim**:
 
@@ -155,7 +160,7 @@ outcome is a result worth recording verbatim**:
 | `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the module asked and the call did not return. With no privilege selected this is the expected reading, and it does not distinguish a denied privilege from any other refusal — the runtime cannot tell, and does not guess (`MJ-031`) |
 | `UNAVAILABLE` | `PLATFORM_ABSENT` | there was no `ipc` object in the Script Engine at all. That would be a fact about the engine, not about privileges, and it needs recording as such |
 | `UNAVAILABLE` | `PLATFORM_ANSWER_UNUSABLE` | Packet Tracer answered and the answer could not be attributed. Record the whole envelope: this is the interesting failure |
-| `OBSERVED` | `null` | the factory answered. Record `available_count` and every descriptor verbatim — this is the first real target evidence for `MJ-014`'s descriptor path from inside the artifact |
+| `OBSERVED` | `null` | the factory answered. Record `available_count` and every descriptor and chassis node verbatim — this is the first real target evidence for `MJ-014`'s descriptor path from inside the artifact |
 
 None of the four is a verdict. Python decides what the run established, from
 the recorded envelopes, outside the artifact (`MJ-011`).

@@ -26,6 +26,13 @@ function muejejeV6OperationTable() {
                     return muejejePlatformDeviceDescriptors(args, context);
                 }
             },
+            "platform.module_descriptors": {
+                read_only: true,
+                args: MUEJEJE_PLATFORM_MODULE_ARGS,
+                handler: function (args, context) {
+                    return muejejePlatformModuleDescriptors(args, context);
+                }
+            },
             "runtime.capabilities": {
                 read_only: true,
                 args: {},

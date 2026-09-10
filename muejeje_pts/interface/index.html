@@ -31,14 +31,15 @@ with the lifecycle it recorded.</p>
 <p>The consumer-facing contract is Runtime Protocol V6. Its single entry point
 is <code>mcpDispatchV6(requestJson)</code>: a JSON string in, a JSON string
 out, one envelope for success and failure alike.</p>
-<p>Three operations are admitted, all read-only.
-<code>runtime.identify</code> reports what the artifact can say about itself.
-<code>runtime.capabilities</code> reports what this kernel admits right now,
-without asking Packet Tracer anything. <code>platform.device_descriptors</code>
-does ask: it reports the device models this Packet Tracer offers, each with the
-module types the platform states for it. Every other operation name fails
-closed. There is no fallback to an earlier protocol and no path that runs a
-caller's JavaScript.</p>
+<p>Every admitted operation is read-only, and
+<code>runtime.capabilities</code> reports which ones they are — this page
+carries no copy of that list, because a copy is a list that goes out of date
+where nobody is looking. <code>runtime.identify</code> reports what the
+artifact can say about itself, and neither of those asks Packet Tracer
+anything. The <code>platform</code> operations do ask: they report what this
+Packet Tracer offers, or the reason a reading was unavailable. Every other
+operation name fails closed. There is no fallback to an earlier protocol and no
+path that runs a caller's JavaScript.</p>
 
 <h2>What this module does on its own</h2>
 <ul>

@@ -39,9 +39,10 @@ RESULT_FIELDS = {
     "runtime_session_id", "protocol_versions", "operations", "supported_features",
 }
 ADMITTED = [
-    "platform.device_descriptors", "runtime.capabilities", "runtime.identify",
+    "platform.device_descriptors", "platform.module_descriptors",
+    "runtime.capabilities", "runtime.identify",
 ]
-FEATURES = 4
+FEATURES = 5
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",

@@ -112,8 +112,9 @@ The complete list of operations is the catalogue in `muejeje_pts/README.md`
 
 ```text
 consumer -> mcpDispatchV6(requestJson) -> bounded V6 admission -> V6 whitelist
-         -> runtime.identify | runtime.capabilities
-         -> platform.device_descriptors -> platform adapter -> Cisco IpcAPI
+         -> a runtime.* operation, which asks the platform nothing
+         -> a platform.* operation -> subject adapter -> one call boundary
+                                   -> Cisco IpcAPI
          -> one JSON envelope back
 ```
 
@@ -141,7 +142,8 @@ Interface is a static page that calls nothing and therefore reports no module
 state.
 
 **What is not built.** The transport, every mutating operation, and every
-platform reading beyond the device factory. The target shape, with each stage
+platform reading beyond the hardware factory — nothing reads a workspace, a
+device instance, a link or an address. The target shape, with each stage
 marked:
 
 ```text

@@ -222,7 +222,7 @@ def test_a_defect_in_this_artifact_is_never_reported_as_a_platform_failure():
     `ENGINE_EXCEPTION`, which is the code that means the engine itself broke
     (MJ-022).
     """
-    defect = "\nmuejejeAdapterCount = function () { throw new Error('defect'); };"
+    defect = "\nmuejejeReadingCount = function () { throw new Error('defect'); };"
     response = dispatch_v6(
         _request(), prelude=platform_stub(THREE_MODELS) + defect,
     )

@@ -30,9 +30,10 @@ from tests.muejeje.support import (
 # The declared evaluation order, written down exactly once. Packet Tracer
 # evaluates the Script Engine files in the order the Scripting Interface lists
 # them, so this order *is* the dependency direction: core, the protocol
-# envelope, the admission that refuses with that envelope, the declared
-# adapters, then operations, then dispatch, then the lifecycle that may call
-# all of it (MJ-019).
+# envelope, the admission that refuses with that envelope, what a platform
+# reading is, the call boundary, the adapters that read through it, then
+# operations, then dispatch, then the lifecycle that may call all of it
+# (MJ-019).
 # Operations depend on nothing but core and protocol, so they are ordered
 # alphabetically among themselves — a rule, rather than an accident nobody
 # could re-derive.
@@ -44,9 +45,12 @@ ENGINE_SCRIPT_ORDER = [
     "muejeje_pts/script-engine/core.js",
     "muejeje_pts/script-engine/protocol_v6.js",
     "muejeje_pts/script-engine/validation_v6.js",
+    "muejeje_pts/script-engine/platform_reading.js",
     "muejeje_pts/script-engine/platform_adapter.js",
     "muejeje_pts/script-engine/platform_device_adapter.js",
+    "muejeje_pts/script-engine/platform_module_adapter.js",
     "muejeje_pts/script-engine/platform_discovery.js",
+    "muejeje_pts/script-engine/platform_modules.js",
     "muejeje_pts/script-engine/runtime_capabilities.js",
     "muejeje_pts/script-engine/runtime_identity.js",
     "muejeje_pts/script-engine/dispatcher_v6.js",

@@ -59,6 +59,9 @@ FEATURE_EVIDENCE = {
     "platform.descriptor_discovery": (
         "platform_device_adapter.js", "muejejeAdapterDeviceDescriptors",
     ),
+    "platform.module_discovery": (
+        "platform_module_adapter.js", "muejejeAdapterModuleDescriptors",
+    ),
     "protocol.v6": ("validation_v6.js", "muejejeV6ParseRequest"),
     "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),
     "runtime.session_id": ("core.js", "muejejeCoreNewSessionId"),

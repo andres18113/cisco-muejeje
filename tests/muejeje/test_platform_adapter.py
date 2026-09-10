@@ -11,20 +11,19 @@ no Cisco enum mirror, and no call this repository cannot cite.
 blacklist of mutating prefixes admits every name nobody thought to forbid, and
 it cannot see a call at all once the member name is data. So the boundary
 carries the set of calls this artifact may make, the gates here hold that set
-to Cisco's documented getters, and no adapter names a platform member at a call
-site — which is checked positively, by reading every member call each adapter
-makes. The verb pattern stays as a second, cheaper line of defence over the
-allowlist itself.
+equal to Cisco's documented getters in both directions, and no adapter names a
+platform member at a call site. The verb pattern stays as a second, cheaper
+line of defence over the allowlist itself.
 
 The half a reader cannot check by eye is what actually ran, so the recorded
-call log is compared against the same set in both directions. A call with no
-reference behind it fails here rather than on a target as a bare `Invalid
-arguments for IPC call "X"` (`AGENTS.md` rule 6).
+call log is compared against the same set — per operation, and as a union, so
+neither an uncited call nor an admitted one nothing reaches goes unnoticed.
 
-What an adapter *reports* is `test_platform_readings`; the V6 surface of the
-operation in front of it is `test_platform_descriptors`. Nothing in any of the
-three has reached `9.0.1.0858`, so the capability's live state is
-`PENDING_TARGET` (MJ-015, MJ-031).
+What an adapter *reports* is `test_platform_readings` and
+`test_platform_module_walk`; the V6 surface in front of it is
+`test_platform_descriptors` and `test_platform_modules`. Nothing in any of them
+has reached `9.0.1.0858`, so both capabilities are `PENDING_TARGET` (MJ-015,
+MJ-031).
 """
 
 from __future__ import annotations
@@ -34,16 +33,21 @@ import re
 
 import pytest
 
-from tests.muejeje.engine_harness import dispatch_v6, node_available, platform_stub
+from tests.muejeje.engine_harness import (
+    ACCESS_POINT_ROOT,
+    dispatch_v6,
+    node_available,
+    platform_stub,
+)
 from tests.muejeje.measure import js_code_only
 from tests.muejeje.support import SCRIPT_ENGINE
-from tests.muejeje.test_layer_boundaries import (
+from tests.muejeje.test_platform_declarations import (
     IPC_ADAPTER_FILES,
     PLATFORM_ADAPTER_FILES,
+    PLATFORM_SOURCE_FILES,
 )
 
 BOUNDARY = "platform_adapter.js"
-OPERATION = "platform.device_descriptors"
 
 # Every platform method the boundary may admit, as Cisco's installed IpcAPI
 # reference for 9.0.1.0858 names it. An undocumented call is a guess, and
@@ -54,7 +58,13 @@ DOCUMENTED_CALLS = {
     "getAvailableDeviceCount", "getAvailableDeviceAt",
     "getModel", "getType", "isModelSupported",
     "getSupportedModuleTypeCount", "getSupportedModuleTypeAt",
+    "getRootModule", "isHotSwappable", "getSlotCount", "getSlotTypeAt",
+    "getModuleCount", "getModuleAt",
 }
+# Which operation exercises which half of that list. No single call reaches all
+# of it, so the log is compared per operation and as a union: a name nobody
+# calls would otherwise sit on the allowlist unnoticed.
+CALL_DRIVERS = ("platform.device_descriptors", "platform.module_descriptors")
 
 # A member call in JavaScript source, by the name it invokes.
 MEMBER_CALL = re.compile(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(")
@@ -67,12 +77,14 @@ LANGUAGE_MEMBER_CALLS = {"call", "min", "push"}
 # The read-only allowlist, as the boundary declares it.
 ALLOWLIST_ENTRY = re.compile(r"([A-Za-z_$][A-Za-z0-9_$]*):\s*true")
 # Every documented mutator on these interfaces begins with one of these verbs:
-# `addSupportedModuleType`, `setModelSupportedFlag`, `removeModuleAt`,
-# `create`. Second line of defence, over the allowlist rather than the source.
+# `addSupportedModuleType`, `setModelSupportedFlag`, `removeModuleAt`, `create`.
 MUTATING_NAME = re.compile(r"^(?:set|add|remove|create|delete|clear)[A-Z]")
 
+# Three models, the first of them carrying a chassis, so one stub drives both
+# platform operations and the whole allowlist is reachable from it.
 THREE_MODELS = (
-    "[{model: '2960-24TT', type: 1, supported: true, module_types: [18]},"
+    "[{model: '2960-24TT', type: 1, supported: true, module_types: [18],"
+    f" root: {ACCESS_POINT_ROOT}}},"
     " {model: '', type: 7, supported: false, module_types: [6, 18]},"
     " {model: '3650-24PS', type: 16, supported: true, module_types: [4, 18]}]"
 )
@@ -82,9 +94,9 @@ requires_node = pytest.mark.skipif(
 )
 
 
-def _request(**args) -> str:
+def _request(op: str = CALL_DRIVERS[0]) -> str:
     return json.dumps({
-        "v": 6, "operation_rid": "rid-adapter", "op": OPERATION, "args": args,
+        "v": 6, "operation_rid": "rid-adapter", "op": op, "args": {},
     })
 
 
@@ -94,6 +106,10 @@ def _body(name: str) -> str:
 
 def _adapter_names() -> list[str]:
     return [logical.rsplit("/", 1)[-1] for logical in PLATFORM_ADAPTER_FILES]
+
+
+def _platform_source_names() -> list[str]:
+    return [logical.rsplit("/", 1)[-1] for logical in PLATFORM_SOURCE_FILES]
 
 
 def platform_members_called(body: str) -> set[str]:
@@ -126,12 +142,8 @@ def test_the_boundary_is_the_only_file_that_names_the_platform():
 
 
 def test_only_a_declared_adapter_reaches_the_boundary():
-    """The kernel calls an adapter; an adapter calls the platform (MJ-019).
-
-    A kernel file that called `muejejeAdapterCall` itself would be making a
-    platform call from outside every gate this module holds, so the set of
-    files that name it is asserted rather than assumed.
-    """
+    """A kernel file naming `muejejeAdapterCall` would be calling the platform
+    from outside every gate here, so the set that names it is asserted."""
     callers = [
         path.name for path in sorted(SCRIPT_ENGINE.glob("*.js"))
         if "muejejeAdapterCall" in js_code_only(path.read_text(encoding="utf-8"))
@@ -141,12 +153,8 @@ def test_only_a_declared_adapter_reaches_the_boundary():
 
 @pytest.mark.parametrize("name", sorted(_adapter_names()))
 def test_no_adapter_names_a_platform_member_at_a_call_site(name: str):
-    """Positive, and asserted in both directions on synthetic sources.
-
-    A gate that matched nothing would be indistinguishable from a source that
-    calls nothing, so the reader is exercised on a call that should trip it and
-    on the language's own members, which should not.
-    """
+    """Positive, and asserted in both directions on synthetic sources: a gate
+    matching nothing looks exactly like a source that calls nothing."""
     assert platform_members_called(_body(name)) == set()
 
     assert platform_members_called("var m = descriptor.getModel();") == {"getModel"}
@@ -179,36 +187,26 @@ def test_an_adapter_reads_no_kernel_state_and_answers_no_request(name: str):
 # ---------------------------------------------------------------------------
 
 def test_the_allowlist_is_exactly_what_this_repository_can_cite():
-    """Both directions: an uncited call fails, and a cited one stays available.
-
-    Equality rather than containment, because either half alone is a different
-    rule. A subset check would admit a call nobody can point at a reference
-    for; a superset check would let a documented getter be dropped from the
-    boundary while every citation still reads as current.
-    """
+    """Equality, because either half alone is a different rule: a subset check
+    admits an uncited call, a superset check lets a cited one disappear."""
     assert admitted_calls() == DOCUMENTED_CALLS
 
 
 def test_no_admitted_call_is_shaped_like_a_mutation():
-    """The verb pattern, over the allowlist rather than over the source.
-
-    Second line of defence, and deliberately not the first: a blacklist admits
-    every name nobody thought of, and cannot see a call whose member name is
-    data. Asserted in both directions so it cannot quietly stop matching.
-    """
+    """The verb pattern, over the allowlist rather than the source: a second
+    line of defence, asserted both ways so it cannot stop matching."""
     assert [name for name in admitted_calls() if MUTATING_NAME.search(name)] == []
     assert MUTATING_NAME.search("addSupportedModuleType") is not None
     assert MUTATING_NAME.search("getSupportedModuleTypeCount") is None
 
 
-@pytest.mark.parametrize("name", sorted(_adapter_names()))
-def test_the_only_numbers_an_adapter_carries_are_its_own_bounds(name: str):
+@pytest.mark.parametrize("name", sorted(_platform_source_names()))
+def test_the_only_numbers_a_platform_source_carries_are_its_own_bounds(name: str):
     """A type value written down here would be a mirror by another spelling.
 
-    Muejeje's bounds are declared in one block and are a limit on what an
-    adapter will do in one call (MJ-029); `0` and `1` are structural — an index
-    origin and a whole-number test. Any other literal is a number about the
-    platform, and the platform is the only authority on those.
+    Muejeje's bounds are declared in one block (MJ-029); `0` and `1` are
+    structural. Any other literal is a number about the platform, and the
+    platform is the only authority on those.
     """
     code = js_code_only(_body(name))
     if "MUEJEJE_PLATFORM_LIMITS = {" in code:
@@ -225,20 +223,35 @@ def test_the_only_numbers_an_adapter_carries_are_its_own_bounds(name: str):
 # ---------------------------------------------------------------------------
 
 @requires_node
-def test_the_adapters_ask_for_nothing_this_repository_cannot_cite():
-    """The call log, compared against the documented getters.
-
-    A grep over the source shows what is written; this shows what actually
-    ran, which is the half a reader cannot check by eye.
-    """
+@pytest.mark.parametrize("op", CALL_DRIVERS)
+def test_an_operation_asks_for_nothing_this_repository_cannot_cite(op: str):
+    """A grep shows what is written; the log shows what ran."""
     called = dispatch_v6(
-        _request(),
+        _request(op),
         prelude=platform_stub(THREE_MODELS),
         report="{result: JSON.parse(mcpDispatchV6(REQUEST)).result, calls: CALLS}",
     )
 
     assert called["result"]["resolution"] == "OBSERVED"
-    assert set(called["calls"]) == DOCUMENTED_CALLS
+    assert set(called["calls"]) <= DOCUMENTED_CALLS, (
+        f"{op} called something with no reference behind it: "
+        f"{sorted(set(called['calls']) - DOCUMENTED_CALLS)}"
+    )
+
+
+@requires_node
+def test_every_admitted_call_is_one_an_operation_actually_makes():
+    """An entry no operation reaches is a permission granted for nothing, and
+    a citation beside it that has stopped describing the artifact."""
+    reached = set()
+    for op in CALL_DRIVERS:
+        reached |= set(dispatch_v6(
+            _request(op),
+            prelude=platform_stub(THREE_MODELS),
+            report="{done: mcpDispatchV6(REQUEST) !== null, calls: CALLS}",
+        )["calls"])
+
+    assert reached == DOCUMENTED_CALLS
 
 
 @requires_node
@@ -255,13 +268,9 @@ def test_the_call_log_would_notice_an_undocumented_call():
 
 @requires_node
 def test_a_call_outside_the_allowlist_never_reaches_the_platform():
-    """The boundary refuses by name, before the receiver is touched at all.
-
-    And it refuses as a *defect*, not as a reading: asking for a call this
-    artifact does not admit is our bug, and a bug that came back as
-    `PLATFORM_CALL_FAILED` would be an observation about Packet Tracer that
-    Packet Tracer never produced (MJ-031).
-    """
+    """Refused by name, before the receiver is touched — and refused as a
+    *defect*, since a bug of ours wearing `PLATFORM_CALL_FAILED` would be an
+    observation about Packet Tracer that Packet Tracer never produced."""
     probe = "\n".join([
         "function attempt(name) {",
         "  var touched = false;",
