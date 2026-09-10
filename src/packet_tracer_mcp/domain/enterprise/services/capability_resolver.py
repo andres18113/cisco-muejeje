@@ -6,7 +6,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..models.capabilities import CapabilityEvidence, CapabilityStatus, DeviceCapabilities, EvidenceSource
+from ..models.capabilities import (
+    CapabilityEvidence,
+    CapabilityStatus,
+    DeviceCapabilities,
+    EvidenceSource,
+    PoEAuthorizedScope,
+)
 from .poe_claims import decode_poe_authorized_claim, poe_claim_has_delivery_basis
 from .poe_pse_claims import declares_pse_evidence
 
@@ -275,18 +281,19 @@ def _poe_projection(
     model: str,
     packet_tracer_version: str | None,
 ) -> dict[str, object]:
-    """Project only the exact union proven by coherent delivery claims.
+    """Project coherent delivery claims without erasing their cohorts.
 
     Independent runs can prove additional endpoint/port triples, but their
-    simultaneous-active counts cannot be added.  The projected capacity is
-    therefore the largest single-run count, while the authorization set is the
-    union of the exact bindings retained with their individual provenance.
+    simultaneous-active authority cannot be combined. ``poe_ports`` and the
+    binding union remain compatibility summaries; productive admission consumes
+    ``poe_authorized_scopes`` and requires one scope to cover a whole demand.
     """
 
     unknown = {
         "supports_poe": CapabilityStatus.UNKNOWN,
         "poe_ports": None,
         "poe_authorized_bindings": [],
+        "poe_authorized_scopes": [],
     }
     winner_scope = decode_poe_authorized_claim(
         winner,
@@ -316,6 +323,7 @@ def _poe_projection(
             "supports_poe": CapabilityStatus.UNSUPPORTED,
             "poe_ports": None,
             "poe_authorized_bindings": [],
+            "poe_authorized_scopes": [],
         }
 
     supported_scopes = []
@@ -335,6 +343,14 @@ def _poe_projection(
     if not supported_scopes:
         return unknown
 
+    authority_scopes = sorted({
+        PoEAuthorizedScope(
+            active_bindings=tuple(sorted(scope.active_bindings)),
+            simultaneous_active_ports=scope.simultaneous_active_ports,
+        )
+        for scope in supported_scopes
+    })
+
     return {
         "supports_poe": CapabilityStatus.SUPPORTED,
         "poe_ports": max(
@@ -345,4 +361,5 @@ def _poe_projection(
             for scope in supported_scopes
             for binding in scope.active_bindings
         }),
+        "poe_authorized_scopes": authority_scopes,
     }

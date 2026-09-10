@@ -3,6 +3,12 @@
 Notes for coding agents working in this repo. Read this before changing anything
 under `src/`.
 
+## SCM authority
+
+`ACTIVE_DEVELOPMENT_BRANCH=feature/runtime-ripv2`
+
+`FROZEN_ARCHIVE_BRANCH=refactor/cp-live-m0-baseline@e9e26b3`
+
 ## What this is
 
 An MCP server that automates Cisco Packet Tracer. It plans network topologies,

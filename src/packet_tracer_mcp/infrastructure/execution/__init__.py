@@ -27,6 +27,11 @@ from .live_file_integrity import (
     PacketTracerLiveSessionSafety,
     PacketTracerLiveSessionIntegrity,
 )
+from .pt_file_operations import (
+    PacketTracerFileOperationDenied,
+    PacketTracerFileOperationGuard,
+    PacketTracerFileOperationLedger,
+)
 from .import_isolation_preflight import (
     ImportIsolationPreflight,
     ImportIsolationResult,

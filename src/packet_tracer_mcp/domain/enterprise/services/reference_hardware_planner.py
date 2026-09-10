@@ -22,6 +22,7 @@ from ..models.hardware import (
 )
 from .endpoint_expander import EndpointGroupExpander
 from .naming import DeterministicNamingService
+from .poe_scope_authority import select_authorizing_poe_scope
 
 
 class ReferenceHardwarePlanner:
@@ -277,16 +278,19 @@ class ReferenceHardwarePlanner:
                 f"{admitted} powered port(s) evidenced for {requested.model}."
             )
             return None, DeviceCandidateStatus.INCOMPATIBLE
-        authorized = set(candidate.capabilities.poe_authorized_bindings)
-        uncovered: list[PoEAuthorizedBinding] = []
-        for binding in demanded:
-            exact = PoEAuthorizedBinding(
+        required = tuple(
+            PoEAuthorizedBinding(
                 binding.device_port,
                 binding.endpoint_model,
                 binding.endpoint_port,
             )
-            if exact not in authorized:
-                uncovered.append(exact)
+            for binding in demanded
+        )
+        authorizing_scope = select_authorizing_poe_scope(
+            candidate.capabilities.poe_authorized_scopes,
+            required,
+        )
+        for binding in demanded:
             descriptor = ports_by_name.get(binding.device_port)
             if descriptor is None:
                 continue
@@ -295,14 +299,17 @@ class ReferenceHardwarePlanner:
                     f"{requested.id}: powered endpoint port {binding.device_port} is outside the "
                     f"access ports the {requested.model} PoE evidence covers."
                 )
-        if uncovered:
+        if authorizing_scope is None:
             summary = ", ".join(
                 f"{item.switch_port}/{item.endpoint_model}/{item.endpoint_port}"
-                for item in uncovered
+                for item in required
             )
             unverified.append(
-                f"{requested.id}: {requested.model} PoE evidence does not cover "
-                f"the exact powered binding(s): {summary}."
+                f"{requested.id}: {requested.model} has no single simultaneous "
+                f"scope covering the exact powered binding(s): {summary}."
             )
             return None, DeviceCandidateStatus.NEEDS_VERIFICATION
-        return admitted, DeviceCandidateStatus.COMPATIBLE
+        return (
+            authorizing_scope.simultaneous_active_ports,
+            DeviceCandidateStatus.COMPATIBLE,
+        )

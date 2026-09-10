@@ -35,6 +35,14 @@ class PoEAuthorizedBinding:
     endpoint_port: str
 
 
+@dataclass(frozen=True, order=True)
+class PoEAuthorizedScope:
+    """One cohort observed delivering power at the same time."""
+
+    active_bindings: tuple[PoEAuthorizedBinding, ...]
+    simultaneous_active_ports: int
+
+
 class CapabilityEvidence(BaseModel):
     """Evidencia versionable para una capacidad; la prioridad es determinista."""
 
@@ -83,7 +91,10 @@ class DeviceCapabilities(BaseModel):
     supports_cme: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_poe: CapabilityStatus = CapabilityStatus.UNKNOWN
     poe_ports: int | None = None
+    # Aggregate compatibility view only. Simultaneous authority lives in the
+    # scopes and must never be reconstructed from this union plus ``poe_ports``.
     poe_authorized_bindings: list[PoEAuthorizedBinding] = Field(default_factory=list)
+    poe_authorized_scopes: list[PoEAuthorizedScope] = Field(default_factory=list)
     supports_ipv6: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_wireless: CapabilityStatus = CapabilityStatus.UNKNOWN
     source: str = "catalog"

@@ -332,7 +332,9 @@ class EphemeralUntitledWorkspaceSafetyEvidence(BaseModel):
     initial_saved_filename: str | None = None
     final_saved_filename: str | None = None
     authorized_file_operations: tuple[str, ...] | None = None
+    attempted_file_operations: tuple[str, ...] | None = None
     executed_file_operations: tuple[str, ...] | None = None
+    denied_file_operations: tuple[str, ...] | None = None
     initial_inventory_fingerprint: str = ""
     final_inventory_fingerprint: str = ""
     fixture_removed: bool | None = None

@@ -47,6 +47,10 @@ from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight impor
     ImportIsolationPreflight,
 )
 from packet_tracer_mcp.infrastructure.execution.live_bridge import PTCommandBridge
+from packet_tracer_mcp.infrastructure.execution.pt_file_operations import (
+    PacketTracerFileOperationDenied,
+    PacketTracerFileOperationGuard,
+)
 from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
     BUILD, START_HEAD, COMPLETENESS_KEYS, completeness,
 )
@@ -104,7 +108,6 @@ def source_baseline(plan: PoEModelQualificationPlan) -> dict:
         strict_e5_manual_allowlist=True, qualification_plan=plan.model_dump(mode="json"),
         source_branch=branch, source_tree=command("git", "rev-parse", "HEAD^{tree}"),
         worktree_clean=True,
-        authorized_file_operations=(), executed_file_operations=(),
         initial_START_HEAD_verified=True,
     )
 
@@ -269,6 +272,23 @@ def pse_capture(plan: PoEModelQualificationPlan, label: str, capture,
 _MODE_BY_LABEL = {"AUTO_1": "auto", "NEVER": "never", "AUTO_2": "auto"}
 
 
+def ephemeral_file_operation_guard() -> PacketTracerFileOperationGuard:
+    """Create the PT-file boundary used for one governed ephemeral session."""
+
+    return PacketTracerFileOperationGuard.ephemeral()
+
+
+def _crash_state_from_process_continuity(
+    before: tuple[int, ...] | None,
+    after: tuple[int, ...] | None,
+) -> bool | None:
+    """Separate observed process loss from composite runtime health."""
+
+    if before is None or after is None or len(before) != 1:
+        return None
+    return False if before[0] in after else True
+
+
 def pse_scope_for(
     *,
     plan: PoEModelQualificationPlan,
@@ -293,9 +313,18 @@ def pse_scope_for(
     )
 
 
-def ephemeral_safety_for(baseline: dict, restoration: dict, safety: dict,
-                         problems: list[str]) -> EphemeralUntitledWorkspaceSafetyEvidence:
+def ephemeral_safety_for(
+    baseline: dict,
+    restoration: dict,
+    safety: dict,
+    problems: list[str],
+    *,
+    file_operations: PacketTracerFileOperationGuard,
+) -> EphemeralUntitledWorkspaceSafetyEvidence:
     """Project acquired fields only; missing measurements stay unproven."""
+    if not isinstance(file_operations, PacketTracerFileOperationGuard):
+        raise ValueError("Observed Packet Tracer file-operation guard is required")
+    file_ledger = file_operations.snapshot()
     initial, final = baseline.get("environment", {}), restoration.get("environment_after", {})
     def pids(facts):
         processes = facts.get("processes")
@@ -305,6 +334,7 @@ def ephemeral_safety_for(baseline: dict, restoration: dict, safety: dict,
     healthy = (baseline.get("bridge_healthy") is True and safety.get("bridge_healthy") is True
                and before is not None and len(before) == 1 and before == after
                and safety.get("transport_problems") == [])
+    crash_detected = _crash_state_from_process_continuity(before, after)
     # These summaries derive from the recorded checks, never substitute for them.
     clean = (healthy and not problems and restoration.get("fixture_removed") is True
              and restoration.get("inventory_restored") is True
@@ -313,15 +343,29 @@ def ephemeral_safety_for(baseline: dict, restoration: dict, safety: dict,
              and baseline.get("worktree_clean") is True and safety.get("worktree_clean") is True
              and baseline.get("source_branch") == safety.get("source_branch")
              and baseline.get("local_head") == safety.get("source_head")
-             and baseline.get("source_tree") == safety.get("source_tree"))
-    def ledger(key):
-        return () if baseline.get(key) == safety.get(key) == () else None
+             and baseline.get("source_tree") == safety.get("source_tree")
+             and file_ledger.ephemeral_safe)
+    failure_reasons = list(problems) + list(safety.get("transport_problems") or [])
+    if not file_ledger.ephemeral_safe:
+        failure_reasons.append(
+            "Packet Tracer file-operation ledger is not empty under EPHEMERAL policy."
+        )
+    if crash_detected is True:
+        failure_reasons.append(
+            "Packet Tracer process loss was observed during the governed session."
+        )
+    elif crash_detected is None:
+        failure_reasons.append(
+            "Packet Tracer crash status is indeterminate from process evidence."
+        )
     return EphemeralUntitledWorkspaceSafetyEvidence(
         initial_device_count=initial.get("devices"), final_device_count=final.get("devices"),
         initial_link_count=initial.get("links"), final_link_count=final.get("links"),
         initial_saved_filename=initial.get("saved_filename"), final_saved_filename=final.get("saved_filename"),
-        authorized_file_operations=ledger("authorized_file_operations"),
-        executed_file_operations=ledger("executed_file_operations"),
+        authorized_file_operations=file_ledger.authorized_operations,
+        attempted_file_operations=file_ledger.attempted_operations,
+        executed_file_operations=file_ledger.executed_operations,
+        denied_file_operations=file_ledger.denied_operations,
         initial_inventory_fingerprint=baseline.get("inventory_fingerprint", ""),
         final_inventory_fingerprint=restoration.get("inventory_fingerprint_after", ""),
         fixture_removed=restoration.get("fixture_removed"),
@@ -334,15 +378,16 @@ def ephemeral_safety_for(baseline: dict, restoration: dict, safety: dict,
         source_head_before=baseline.get("local_head", ""), source_head_after=safety.get("source_head", ""),
         source_tree_before=baseline.get("source_tree", ""), source_tree_after=safety.get("source_tree", ""),
         worktree_clean_before=baseline.get("worktree_clean"), worktree_clean_after=safety.get("worktree_clean"),
-        runtime_healthy=healthy, crash_detected=not healthy,
+        runtime_healthy=healthy, crash_detected=crash_detected,
         integrity_verified=clean, session_reusable=clean, positive_claim_allowed=clean,
-        failure_reasons=list(problems) + list(safety.get("transport_problems") or []),
+        failure_reasons=failure_reasons,
     )
 
 
 def persist_qualification(*, plan: PoEModelQualificationPlan,
                           scope: PoEPseMultiPortDeliveryScope, baseline: dict,
                           restoration: dict, safety: dict, problems: list[str],
+                          file_operations: PacketTracerFileOperationGuard,
                           artifacts: ArtifactReservation,
                           store: CapabilitySnapshotStore) -> tuple[CapabilitySnapshot, Path]:
     """Release a controlled result only beyond cleanup, safety and schema gates."""
@@ -366,7 +411,13 @@ def persist_qualification(*, plan: PoEModelQualificationPlan,
     if (baseline.get("environment", {}).get("pt_version") != plan.packet_tracer_build
             or restoration.get("environment_after", {}).get("pt_version") != plan.packet_tracer_build):
         raise ValueError("Acquired Packet Tracer build differs from qualification plan")
-    evidence = ephemeral_safety_for(baseline, restoration, safety, problems)
+    evidence = ephemeral_safety_for(
+        baseline,
+        restoration,
+        safety,
+        problems,
+        file_operations=file_operations,
+    )
     validation = validate_live_session_positive_admission(evidence)
     if not validation.is_valid:
         raise ValueError("LIVE safety refused: " + "; ".join(validation.error_messages()))
@@ -419,6 +470,7 @@ def main() -> int:
     if not isolation.isolated:
         raise RuntimeError(isolation.render())
     plan = governed_plan(args.model)
+    file_operations = ephemeral_file_operation_guard()
     baseline = source_baseline(plan)
     baseline["processes"] = prove_processes()
     baseline["import_isolation"] = dict(
@@ -518,7 +570,6 @@ def main() -> int:
                 safety = dict(
                     mailbox_entries=mailbox_entries, bridge_healthy=exp.bridge.pt_alive(),
                     processes=final_processes, transport_problems=list(exp.transport_problems),
-                    authorized_file_operations=(), executed_file_operations=(),
                     source_branch=command("git", "branch", "--show-current"),
                     source_head=command("git", "rev-parse", "HEAD"),
                     source_tree=command("git", "rev-parse", "HEAD^{tree}"),
@@ -544,6 +595,7 @@ def main() -> int:
             snapshot, snapshot_path = persist_qualification(
                 plan=plan, scope=scope, baseline=baseline, restoration=restoration,
                 safety=safety, problems=problems, artifacts=artifacts,
+                file_operations=file_operations,
                 store=CapabilitySnapshotStore(resolve_within(ROOT, Path("data") / "capabilities")))
             admitted_safety = snapshot.session.results[0].context.live_session_safety
         except Exception as exc:
@@ -562,6 +614,7 @@ def main() -> int:
         captures=[c.model_dump(mode="json") for c in captures],
         pse_scope=(asdict(scope) if scope is not None else None),
         pse_dimensions=dimensions, restoration=restoration, safety=safety,
+        file_operation_ledger=asdict(file_operations.snapshot()),
         problems=problems,
     )
 

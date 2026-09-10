@@ -6,6 +6,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCandidateStatus,
     PoEAuthorizedBinding,
+    PoEAuthorizedScope,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     AccessBlockPlan,
@@ -195,17 +196,24 @@ def _switch_candidates(store=None):
 
 def _rebudget(candidates, model: str, poe_ports: int):
     """Same exact-build ports, a deliberately smaller admitted power budget."""
+    bindings = tuple(
+        PoEAuthorizedBinding(
+            f"FastEthernet0/{index}", "7960", "Switch",
+        )
+        for index in range(1, poe_ports + 1)
+    )
     return [
         item.model_copy(update={
             "capabilities": item.capabilities.model_copy(
                 update={
                     "supports_poe": CapabilityStatus.SUPPORTED,
                     "poe_ports": poe_ports,
-                    "poe_authorized_bindings": [
-                        PoEAuthorizedBinding(
-                            f"FastEthernet0/{index}", "7960", "Switch",
+                    "poe_authorized_bindings": list(bindings),
+                    "poe_authorized_scopes": [
+                        PoEAuthorizedScope(
+                            active_bindings=bindings,
+                            simultaneous_active_ports=poe_ports,
                         )
-                        for index in range(1, poe_ports + 1)
                     ],
                 },
             ),

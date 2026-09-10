@@ -108,8 +108,7 @@ def facts():
         source_branch="feature/runtime-ripv2", local_head="b" * 40,
         source_tree="c" * 40, worktree_clean=True,
         processes=[dict(Name="PacketTracer.exe", ProcessId=42)],
-        bridge_healthy=True, mailbox_entries=(),
-        authorized_file_operations=(), executed_file_operations=())
+        bridge_healthy=True, mailbox_entries=())
     restoration = dict(environment_after=deepcopy(env),
         inventory_fingerprint_after="a" * 64 + "|", inventory_restored=True,
         fixture_removed=True, power_inline_auto_proven=True,
@@ -117,23 +116,115 @@ def facts():
     final = dict(source_branch="feature/runtime-ripv2", source_head="b" * 40,
         source_tree="c" * 40, worktree_clean=True,
         processes=[dict(Name="PacketTracer.exe", ProcessId=42)],
-        bridge_healthy=True, mailbox_entries=(), transport_problems=[],
-        authorized_file_operations=(), executed_file_operations=())
+        bridge_healthy=True, mailbox_entries=(), transport_problems=[])
     return baseline, restoration, final
 
 
 def test_ephemeral_evidence_carries_acquired_facts_and_explicit_file_ledgers(runner):
     baseline, restoration, final = facts()
-    evidence = runner.ephemeral_safety_for(baseline, restoration, final, [])
+    file_operations = runner.ephemeral_file_operation_guard()
+    evidence = runner.ephemeral_safety_for(
+        baseline, restoration, final, [], file_operations=file_operations,
+    )
     assert runner.validate_live_session_positive_admission(evidence).is_valid
-    assert evidence.authorized_file_operations == evidence.executed_file_operations == ()
+    assert evidence.authorized_file_operations == ()
+    assert evidence.attempted_file_operations == ()
+    assert evidence.executed_file_operations == ()
+    assert evidence.denied_file_operations == ()
     assert evidence.packet_tracer_pids_before == evidence.packet_tracer_pids_after == (42,)
     assert evidence.source_tree_before == "c" * 40
     assert not any("canonical" in key or "disposable" in key for key in evidence.model_dump())
     final["processes"] = [dict(Name="PacketTracer.exe", ProcessId=99)]
-    changed = runner.ephemeral_safety_for(baseline, restoration, final, [])
+    changed = runner.ephemeral_safety_for(
+        baseline, restoration, final, [], file_operations=file_operations,
+    )
     assert changed.packet_tracer_pids_after == (99,)
     assert not runner.validate_live_session_positive_admission(changed).is_valid
+
+
+def test_ephemeral_save_attempt_uses_governed_boundary_and_blocks_admission(
+    runner,
+) -> None:
+    baseline, restoration, final = facts()
+    file_operations = runner.ephemeral_file_operation_guard()
+    dispatched: list[str] = []
+
+    with pytest.raises(runner.PacketTracerFileOperationDenied):
+        file_operations.attempt(
+            "save",
+            lambda: dispatched.append("save reached Packet Tracer"),
+        )
+
+    evidence = runner.ephemeral_safety_for(
+        baseline,
+        restoration,
+        final,
+        [],
+        file_operations=file_operations,
+    )
+    ledger = file_operations.snapshot()
+
+    assert ledger.authorized_operations == ()
+    assert ledger.attempted_operations == ("save",)
+    assert ledger.denied_operations == ("save",)
+    assert ledger.executed_operations == ()
+    assert dispatched == []
+    assert evidence.authorized_file_operations == ledger.authorized_operations
+    assert evidence.attempted_file_operations == ("save",)
+    assert evidence.executed_file_operations == ledger.executed_operations
+    assert evidence.denied_file_operations == ("save",)
+    assert evidence.positive_claim_allowed is False
+    assert not runner.validate_live_session_positive_admission(evidence).is_valid
+
+
+def test_transport_failure_with_same_pid_is_unhealthy_but_not_a_crash(runner) -> None:
+    baseline, restoration, final = facts()
+    final["transport_problems"] = ["synthetic mailbox timeout"]
+
+    evidence = runner.ephemeral_safety_for(
+        baseline,
+        restoration,
+        final,
+        [],
+        file_operations=runner.ephemeral_file_operation_guard(),
+    )
+
+    assert evidence.runtime_healthy is False
+    assert evidence.crash_detected is False
+    assert not runner.validate_live_session_positive_admission(evidence).is_valid
+
+
+@pytest.mark.parametrize(
+    "processes_after, expected_crash",
+    [
+        ([], True),
+        ([dict(Name="PacketTracer.exe", ProcessId=99)], True),
+        (None, None),
+    ],
+    ids=["pid-disappeared", "pid-changed", "process-evidence-unavailable"],
+)
+def test_crash_state_comes_only_from_process_continuity(
+    runner,
+    processes_after,
+    expected_crash,
+) -> None:
+    baseline, restoration, final = facts()
+    if processes_after is None:
+        final.pop("processes")
+    else:
+        final["processes"] = processes_after
+
+    evidence = runner.ephemeral_safety_for(
+        baseline,
+        restoration,
+        final,
+        [],
+        file_operations=runner.ephemeral_file_operation_guard(),
+    )
+
+    assert evidence.runtime_healthy is False
+    assert evidence.crash_detected is expected_crash
+    assert not runner.validate_live_session_positive_admission(evidence).is_valid
 
 
 def typed_captures(runner, plan):
@@ -153,7 +244,8 @@ def persist_inputs(runner):
     scope = runner.pse_scope_for(plan=plan, run_id=artifacts.run_id, observed_at="2026-09-09T18:00:00Z",
         captures=typed_captures(runner, plan), gates=tuple(sorted(runner.COMPLETENESS_KEYS)))
     return dict(plan=plan, scope=scope, artifacts=artifacts, baseline=baseline, restoration=restoration,
-                safety=final, problems=[])
+                safety=final, problems=[],
+                file_operations=runner.ephemeral_file_operation_guard())
 
 
 @pytest.mark.parametrize("area,key", [
@@ -161,8 +253,7 @@ def persist_inputs(runner):
     ("baseline", "processes"), ("baseline", "bridge_healthy"),
     ("baseline", "mailbox_entries"), ("baseline", "source_branch"),
     ("baseline", "local_head"), ("baseline", "source_tree"),
-    ("baseline", "worktree_clean"), ("baseline", "authorized_file_operations"),
-    ("baseline", "executed_file_operations"),
+    ("baseline", "worktree_clean"),
     ("restoration", "environment_after"), ("restoration", "inventory_fingerprint_after"),
     ("restoration", "inventory_restored"), ("restoration", "fixture_removed"),
     ("restoration", "power_inline_auto_proven"), ("restoration", "deleted"),
@@ -170,7 +261,6 @@ def persist_inputs(runner):
     ("safety", "processes"), ("safety", "bridge_healthy"), ("safety", "mailbox_entries"),
     ("safety", "source_branch"), ("safety", "source_head"), ("safety", "source_tree"),
     ("safety", "worktree_clean"), ("safety", "transport_problems"),
-    ("safety", "authorized_file_operations"), ("safety", "executed_file_operations"),
 ])
 def test_missing_boundary_never_constructs_positive_result_or_saves(runner, monkeypatch, area, key):
     inputs = persist_inputs(runner)
@@ -180,6 +270,24 @@ def test_missing_boundary_never_constructs_positive_result_or_saves(runner, monk
     monkeypatch.setattr(runner, "CapabilityProbeResult", forbidden)
     with pytest.raises(ValueError):
         runner.persist_qualification(**inputs, store=SimpleNamespace(save_runtime=forbidden))
+
+
+def test_persistence_requires_the_observed_file_operation_guard(
+    runner,
+    monkeypatch,
+) -> None:
+    inputs = persist_inputs(runner)
+    inputs["file_operations"] = None
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Missing PT-file guard crossed the persistence boundary")
+
+    monkeypatch.setattr(runner, "CapabilityProbeResult", forbidden)
+    with pytest.raises(ValueError, match="file-operation guard"):
+        runner.persist_qualification(
+            **inputs,
+            store=SimpleNamespace(save_runtime=forbidden),
+        )
 
 
 @pytest.mark.parametrize("failure", ["schema", "safety", "problems", "plan", "capture", "cleanup"])
@@ -238,7 +346,9 @@ def test_snapshot_saved_only_after_both_validators_accept(runner, monkeypatch):
     probe = snapshot.session.results[0]
     assert probe.observed_value == 21
     assert probe.evidence_source is runner.EvidenceSource.CONTROLLED_PROBE
+    assert probe.context.live_session_safety.attempted_file_operations == ()
     assert probe.context.live_session_safety.executed_file_operations == ()
+    assert probe.context.live_session_safety.denied_file_operations == ()
     assert probe.evidence() is not None
 
 

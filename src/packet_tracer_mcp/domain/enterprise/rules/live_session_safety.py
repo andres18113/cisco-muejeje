@@ -115,7 +115,9 @@ def _validate_ephemeral_untitled_workspace(
 
     file_ledgers = (
         ("authorized file-operation ledger", evidence.authorized_file_operations),
+        ("attempted file-operation ledger", evidence.attempted_file_operations),
         ("executed file-operation ledger", evidence.executed_file_operations),
+        ("denied file-operation ledger", evidence.denied_file_operations),
     )
     for label, value in file_ledgers:
         if not _is_explicitly_empty_tuple(value):

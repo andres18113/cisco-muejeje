@@ -39,7 +39,9 @@ def _healthy_ephemeral_safety() -> EphemeralUntitledWorkspaceSafetyEvidence:
         initial_saved_filename="",
         final_saved_filename="",
         authorized_file_operations=(),
+        attempted_file_operations=(),
         executed_file_operations=(),
+        denied_file_operations=(),
         initial_inventory_fingerprint=(
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             "|backend-managed-device"
@@ -138,6 +140,7 @@ def test_complete_ephemeral_evidence_is_admitted() -> None:
         {"final_link_count": "0"},
         {"initial_saved_filename": b""},
         {"authorized_file_operations": []},
+        {"attempted_file_operations": []},
         {
             "initial_inventory_fingerprint": (
                 b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|"
@@ -154,6 +157,7 @@ def test_complete_ephemeral_evidence_is_admitted() -> None:
         "string-as-count",
         "bytes-as-filename",
         "list-as-file-ledger",
+        "list-as-attempt-ledger",
         "bytes-as-inventory",
         "integer-as-boolean",
         "boolean-as-pid",
@@ -277,8 +281,12 @@ def test_ephemeral_evidence_rejects_malformed_equal_identities(
         {"final_saved_filename": "qualification.pts"},
         {"authorized_file_operations": None},
         {"authorized_file_operations": ("save",)},
+        {"attempted_file_operations": None},
+        {"attempted_file_operations": ("save",)},
         {"executed_file_operations": None},
         {"executed_file_operations": ("save_as",)},
+        {"denied_file_operations": None},
+        {"denied_file_operations": ("open",)},
         {"initial_inventory_fingerprint": ""},
         {"initial_inventory_fingerprint": "   "},
         {"final_inventory_fingerprint": "different-inventory"},
@@ -322,8 +330,12 @@ def test_ephemeral_evidence_rejects_malformed_equal_identities(
         "final-saved-filename-nonempty",
         "authorized-file-ledger-missing",
         "authorized-file-operation-present",
+        "attempted-file-ledger-missing",
+        "attempted-file-operation-present",
         "executed-file-ledger-missing",
         "executed-file-operation-present",
+        "denied-file-ledger-missing",
+        "denied-file-operation-present",
         "initial-inventory-missing",
         "initial-inventory-blank",
         "inventory-changed",

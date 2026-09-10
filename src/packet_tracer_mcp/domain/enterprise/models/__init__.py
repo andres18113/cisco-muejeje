@@ -10,6 +10,7 @@ from .capabilities import (
     DeviceSelectionResult,
     EvidenceSource,
     PoEAuthorizedBinding,
+    PoEAuthorizedScope,
 )
 from .capacity import AccessCapacityRequirement, CapacityPlan, PortAttachmentPolicy
 from .compilation import (
@@ -180,7 +181,7 @@ __all__ = [
     "PoEDeliveryFixtureIdentity", "PoEDeliveryLinkEndpoint",
     "PoEDeliveryLinkIdentity", "PoEDeliveryManualObservation",
     "PoEDeliveryQualificationRequest", "PoEDeliveryQualificationResult",
-    "PoEAuthorizedBinding",
+    "PoEAuthorizedBinding", "PoEAuthorizedScope",
     "ProbeLevel", "ProbeRequest", "ProbeSafety", "ProbeSession", "ProbeSessionResult",
     "ResiliencyLevel", "RuntimeDeviceDescriptor", "RuntimePortDescriptor", "SegmentRequirement", "SegmentRole",
     "SiteHardwarePlan", "SiteIntent", "SitePlan", "SiteType", "TopologyDesign",
