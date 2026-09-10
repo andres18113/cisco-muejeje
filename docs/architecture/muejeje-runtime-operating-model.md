@@ -104,12 +104,14 @@ target as though it were the present and then closed by asserting that
 `mcpDispatchV6` did not exist — after it did. Both halves are needed: one says
 what a consumer may send today, the other says what is still unbuilt.
 
-**What exists.** One Script Module, seven engine files, one dispatcher, two
-read-only operations, and no transport at all:
+**What exists.** One Script Module, nine engine files, one dispatcher, three
+read-only operations, one declared read-only platform adapter, and no transport
+at all:
 
 ```text
 consumer -> mcpDispatchV6(requestJson) -> bounded V6 admission -> V6 whitelist
          -> runtime.identify | runtime.capabilities
+         -> platform.device_descriptors -> platform adapter -> Cisco IpcAPI
          -> one JSON envelope back
 ```
 
@@ -118,20 +120,32 @@ name and the shape and values of the arguments are all checked against limits
 this runtime declares for itself, before any handler runs. **Those limits are
 Muejeje's, not Packet Tracer's** (`MJ-029`).
 
-Neither operation calls Packet Tracer: there is no `ipc.*` call anywhere in the
-kernel, so the module requests no privilege to start. The artifact contains no
-HTTP listener, no file mailbox and no polling loop, and the Custom Interface is
-a static page that calls nothing and therefore reports no module state.
+The two runtime operations call Packet Tracer not at all. The third does, from
+the one file declared as the platform adapter — the only packaged source that
+may name `ipc`, and the only one that does (`MJ-031`). It is read-only: every
+call is a documented getter on a *descriptor*, so nothing it does instantiates
+a device, powers one or touches a workspace, and a gate fails on any member
+call shaped like a mutation.
 
-**What is not built.** The transport, the platform adapter and every mutating
-operation. The target shape, with each stage marked:
+**The module still requests no privilege.** No privilege is evidenced as the
+one a descriptor reading needs, so naming one would be a guess (`MJ-032`). On a
+target the call is therefore denied, and the operation reports an unavailable
+reading with its reason rather than a claim about the platform. The artifact
+contains no HTTP listener, no file mailbox and no polling loop, and the Custom
+Interface is a static page that calls nothing and therefore reports no module
+state.
+
+**What is not built.** The transport, every mutating operation, and every
+platform reading beyond the device factory. The target shape, with each stage
+marked:
 
 ```text
 Python/MCP -> Runtime Protocol -> explicit channel policy   (unbuilt)
            -> HTTP webview | File Script Engine             (unbuilt)
            -> one runtime kernel -> mcpDispatchV6(...)      (built)
            -> whitelisted typed handler                     (built, read-only)
-           -> documented ipc.*                              (unbuilt)
+           -> documented ipc.* through one adapter          (built, read-only,
+                                                             PENDING_TARGET)
            -> structured result -> Python evidence/verdict  (built engine side)
 ```
 
@@ -146,8 +160,12 @@ V6 principles:
   `muejeje_pts/script-engine/dispatcher_v6.js` and a gate fails if a second one
   appears.
 - **Typed, declarative, whitelisted, fail-closed.** The whitelist holds the
-  read-only `runtime.identify` and `runtime.capabilities`. Version, schema and
-  correlation mismatches fail closed.
+  read-only `runtime.identify`, `runtime.capabilities` and
+  `platform.device_descriptors`. Version, schema and correlation mismatches
+  fail closed, and so does an operation name in a namespace nobody declared.
+- **Additive change, and nothing else.** A result may gain a field; nothing may
+  lose one, be renamed, or keep its name while meaning something else
+  (`MJ-030`).
 - V6 identity is `(operation_rid, op)`. A request that does not declare protocol
   6 is refused as `PROTOCOL_MISMATCH` and never reinterpreted: V6 has no
   compatibility escape into V5, and the marker that once described one is
@@ -175,13 +193,19 @@ document claims the runtime is already PTBuilder-free. Per-symbol evidence, owne
 alternatives and the ADRs they need are in the v2 preflight inventory.
 
 Numeric Cisco enum tables (`PT_DEVICE_TYPE`, `PT_CONNECT_TYPE`,
-`ModuleSpec.module_type`) are working mirrors, **not** a source of truth.
-`allModuleTypes` must ultimately resolve through the hardware factory's
-**descriptor** API — `DeviceDescriptor.isModuleTypeSupported(...)` and
-`ModuleDescriptor.getType()`, reached via
-`ipc.hardwareFactory().devices().getDescriptor(...)`. A descriptor is not a
-runtime `Module`, and the runtime module surface exposes neither. See `MJ-014`
-for the evidenced distinction.
+`ModuleSpec.module_type`) are working mirrors in the legacy runtime, **not** a
+source of truth. `allModuleTypes` must ultimately resolve through the hardware
+factory's **descriptor** API. A descriptor is not a runtime `Module`, and the
+runtime module surface exposes neither `isModuleTypeSupported` nor `getType`.
+See `MJ-014` for the evidenced distinction.
+
+**The owned artifact already carries no mirror.** Its platform adapter
+enumerates the factory with `getAvailableDeviceCount()` and
+`getAvailableDeviceAt(int)` — neither of which takes a `DeviceType` — and
+reports the `DeviceType` and supported `ModuleType` values the descriptors
+themselves return, untranslated. A gate fails if any Cisco enum name appears in
+the packaged sources at all. That is `MJ-014` satisfied in the owned tree; the
+legacy mirrors stay until the legacy runtime is replaced.
 
 ## Identity and provenance
 
@@ -275,10 +299,10 @@ A path may not appear in two categories. `TODO-SRC-ROOT` and
 [the requirements baseline](muejeje-pts-requirements.md).
 
 The owned root being free of PTBuilder code does **not** make the runtime
-PTBuilder-free (`MJ-013`). The owned root now carries the V6 kernel and two
-read-only operations, but the runtime consumers actually use is still the
-legacy one, and independence is proven when a built artifact demonstrates it
-inside Packet Tracer — not before.
+PTBuilder-free (`MJ-013`). The owned root now carries the V6 kernel, three
+read-only operations and one read-only platform adapter, but the runtime
+consumers actually use is still the legacy one, and independence is proven when
+a built artifact demonstrates it inside Packet Tracer — not before.
 
 ## Gates
 

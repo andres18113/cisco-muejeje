@@ -17,6 +17,15 @@ var MUEJEJE_V6_DISPATCH = {table: null};
 function muejejeV6OperationTable() {
     if (MUEJEJE_V6_DISPATCH.table === null) {
         MUEJEJE_V6_DISPATCH.table = {
+            "platform.device_descriptors": {
+                read_only: true,
+                /* The operation declares what its own arguments mean; this
+                 * table decides which names exist at all. */
+                args: MUEJEJE_PLATFORM_DESCRIPTOR_ARGS,
+                handler: function (args, context) {
+                    return muejejePlatformDeviceDescriptors(args, context);
+                }
+            },
             "runtime.capabilities": {
                 read_only: true,
                 args: {},

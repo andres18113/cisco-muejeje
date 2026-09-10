@@ -53,14 +53,14 @@ here: the manifest is the source, this table is the reading of it.
 | Privileges | none selected |
 | Signing | none (`TODO-SIGNING` is open; an unsigned module is what this recipe produces) |
 | Custom Interfaces | `muejeje_pts/interface/index.html` |
-| Script Engine files, **in this order** | `core.js`, `protocol_v6.js`, `validation_v6.js`, `runtime_capabilities.js`, `runtime_identity.js`, `dispatcher_v6.js`, `lifecycle.js` |
+| Script Engine files, **in this order** | `core.js`, `protocol_v6.js`, `validation_v6.js`, `platform_adapter.js`, `platform_discovery.js`, `runtime_capabilities.js`, `runtime_identity.js`, `dispatcher_v6.js`, `lifecycle.js` |
 
 The engine order is the dependency direction, because *"all script files are
 executed (evaluated) in the Script Engine in the same order as listed in the
 Scripting Interface"*. Core first, then the protocol envelope and the admission
-that refuses with it, then operations — alphabetically among themselves, since
-they depend only on core and protocol — then dispatch, then the lifecycle that
-may call all of it (`MJ-019`).
+that refuses with it, then the declared platform adapter, then operations —
+alphabetically among themselves, since no operation depends on another — then
+dispatch, then the lifecycle that may call all of it (`MJ-019`).
 
 ## Steps
 
@@ -69,9 +69,17 @@ may call all of it (`MJ-019`).
    parts: Info, General, Script Engine, Custom Interfaces, Data Store, Debug.
 3. **General**: set the Module ID, set Startup to `On Startup`, and leave every
    privilege unselected. *"The security privileges indicate which IPC calls this
-   Script Module can make. Calls to unselected privileges will be denied"* — the
-   kernel makes no IPC call, so denying all of them changes nothing it does.
-4. **Script Engine**: import the seven files in the order above. Import; do not
+   Script Module can make. Calls to unselected privileges will be denied"*.
+
+   **This is a deliberate, and consequential, choice.** The two runtime
+   operations make no IPC call, so denying everything changes nothing they do.
+   `platform.device_descriptors` *does* make one, and with nothing selected it
+   will be denied — which the operation reports as an unavailable reading with
+   its reason, not as an answer about Packet Tracer (`MJ-031`). Selecting a
+   privilege here would mean guessing which one the descriptor reading needs,
+   and no evidence in this repository says (`MJ-032`). Record the denial; it is
+   the observation this run is for.
+4. **Script Engine**: import the nine files in the order above. Import; do not
    paste. Pasted source loses its newlines in the Builder Code Editor, and these
    files are ordinary multi-line JavaScript with comments.
 5. **Custom Interfaces**: import `index.html`. It is the only interface file, it
@@ -107,12 +115,15 @@ The artifact is exercised, never used to change anything. Import the saved
 
 - the module lifecycle — start, then stop;
 - `mcpDispatchV6` with `runtime.identify`;
-- `mcpDispatchV6` with `runtime.capabilities`.
+- `mcpDispatchV6` with `runtime.capabilities`;
+- `mcpDispatchV6` with `platform.device_descriptors`.
 
 No topology is created, opened or modified; no device, link or configuration is
-touched; no transport, bridge or HTTP endpoint is implemented or contacted. Both
-operations are read-only and make no platform call, so a qualification run
-changes nothing in Packet Tracer beyond starting and stopping a module.
+touched; no transport, bridge or HTTP endpoint is implemented or contacted. All
+three operations are read-only. The first two make no platform call at all; the
+third makes documented getter calls on the hardware *factory*, which describes
+what models exist and instantiates nothing — and with no privilege selected it
+is expected to be denied outright.
 
 The two calls, each on one line. Anything **pasted** into the Builder Code
 Editor loses its newlines, so a pasted snippet must be a single line and carry
@@ -126,6 +137,23 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-identify","op":"runtime.identify","a
 ```javascript
 mcpDispatchV6('{"v":6,"operation_rid":"qual-capabilities","op":"runtime.capabilities","args":{}}')
 ```
+
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_descriptors","args":{"offset":0,"limit":4}}')
+```
+
+The third call is the one that reaches Packet Tracer, and **either outcome is a
+result worth recording verbatim**:
+
+| `result.resolution` | `unavailable_reason` | What it establishes |
+| --- | --- | --- |
+| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the module asked and the call did not return. With no privilege selected this is the expected reading, and it does not distinguish a denied privilege from any other refusal — the runtime cannot tell, and does not guess (`MJ-031`) |
+| `UNAVAILABLE` | `PLATFORM_ABSENT` | there was no `ipc` object in the Script Engine at all. That would be a fact about the engine, not about privileges, and it needs recording as such |
+| `UNAVAILABLE` | `PLATFORM_ANSWER_UNUSABLE` | Packet Tracer answered and the answer could not be attributed. Record the whole envelope: this is the interesting failure |
+| `OBSERVED` | `null` | the factory answered. Record `available_count` and every descriptor verbatim — this is the first real target evidence for `MJ-014`'s descriptor path from inside the artifact |
+
+None of the four is a verdict. Python decides what the run established, from
+the recorded envelopes, outside the artifact (`MJ-011`).
 
 Each returns a JSON **string** carrying
 `{v, operation_rid, op, ok, result, error}`, with the `operation_rid` echoed

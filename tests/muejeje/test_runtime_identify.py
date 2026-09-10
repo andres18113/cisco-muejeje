@@ -81,9 +81,12 @@ def test_the_reported_protocol_and_operations_are_what_the_kernel_admits():
     result = _result()
 
     assert result["protocol_versions"] == [6]
-    assert result["operations"] == ["runtime.capabilities", "runtime.identify"]
+    assert result["operations"] == [
+        "platform.device_descriptors", "runtime.capabilities", "runtime.identify",
+    ]
     assert result["supported_features"] == [
-        "protocol.v6", "runtime.operation_catalog", "runtime.session_id",
+        "platform.descriptor_discovery", "protocol.v6",
+        "runtime.operation_catalog", "runtime.session_id",
     ]
 
 

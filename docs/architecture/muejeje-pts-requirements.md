@@ -95,19 +95,25 @@ on Packet Tracer specifics.
 makes Muejeje's own internals free to change.
 **Verification.** The V6 envelope and its conformance tests
 (`tests/muejeje/test_protocol_v6.py`).
-**Status.** `ENFORCED` for the envelope and for the two read-only operations,
-`runtime.identify` and `runtime.capabilities`; `BASELINED` for every operation
-not yet migrated to V6 — consumers still reach the legacy runtime for those.
+**Status.** `ENFORCED` for the envelope and for the three read-only
+operations, `runtime.identify`, `runtime.capabilities` and
+`platform.device_descriptors`; `BASELINED` for every operation not yet migrated
+to V6 — consumers still reach the legacy runtime for those.
 
 ### MJ-006 — Packet Tracer and its IpcAPI are the platform boundary
 **Requirement.** The southbound compatibility contract is Packet Tracer and its
 IpcAPI. Muejeje adapts to it; it does not extend or reinterpret it.
 **Rationale.** The platform is the one thing Muejeje cannot change. Naming it as
 the boundary keeps compatibility work in one place.
-**Verification.** All platform access goes through documented or evidenced
-`ipc.*` calls; deviations recorded with evidence.
-**Status.** `BASELINED (deviation)` — six PTBuilder globals still sit between
-Muejeje and the IpcAPI; see MJ-012.
+**Verification.** All platform access in the owned artifact goes through one
+declared adapter, and every call it makes is named in Cisco's installed IpcAPI
+reference. A gate fails if any other packaged source names `ipc`; another
+compares the calls the adapter actually made, at runtime, against the
+documented set (MJ-031).
+**Status.** `ENFORCED` for the owned artifact's own platform access, which is
+one read-only adapter over documented getters; `BASELINED (deviation)` for the
+legacy runtime consumers still use, where six PTBuilder globals sit between
+Muejeje and the IpcAPI (MJ-013).
 
 ## V6 dispatch
 
@@ -125,15 +131,17 @@ disappears.
 ### MJ-008 — V6 is typed, declarative, whitelisted and fail-closed
 **Requirement.** V6 operations are typed and declarative, admitted by an explicit
 whitelist, and fail closed on version, schema or correlation mismatch. The
-whitelist admits `runtime.capabilities` and `runtime.identify`, both read-only.
+whitelist admits `runtime.capabilities`, `runtime.identify` and
+`platform.device_descriptors`, all three read-only.
 **Rationale.** A permissive dispatcher cannot bound what a consumer can cause.
 **Verification.** One negative test per rejection class, plus a gate that the
 dispatcher holds no operation implementation and the protocol module holds no
 whitelist. See MJ-022 for the taxonomy those tests pin. A document that names
 an operation the dispatcher does not admit — or omits one it does — fails
 `tests/muejeje/test_capability_claims.py`.
-**Status.** `ENFORCED` — the whitelist admits those two names, and every other
-name fails closed.
+**Status.** `ENFORCED` — the whitelist admits those three names, and every
+other name fails closed. An operation name outside a declared namespace fails
+the claim gates rather than passing unnoticed.
 
 ### MJ-009 — Raw JavaScript is V5 compatibility only
 **Requirement.** Arbitrary JavaScript execution is a legacy V5 surface. Migrated
@@ -246,10 +254,17 @@ docstring; `infrastructure/execution/probe_runtime.py` and
 LIVE observation against `9.0.1.0858`.
 
 **Verification.** Enum values reconciled against the descriptor API; each mirror
-marked as a mirror at its definition.
-**Status.** `BASELINED (deviation)` — `PT_DEVICE_TYPE` (33 entries),
-`PT_CONNECT_TYPE` (16) and `ModuleSpec.module_type` (151) are mirrors in use, and
-`allModuleTypes` is still PTBuilder's table.
+marked as a mirror at its definition. In the owned artifact,
+`platform.device_descriptors` reads `DeviceType` and the supported `ModuleType`
+values back out of the descriptor API and reports them untranslated, and a gate
+fails if any Cisco enum name appears in the packaged sources at all (MJ-031).
+**Status.** `ENFORCED` for the owned artifact, which carries no mirror and
+enumerates the factory without one — its enumeration takes no `DeviceType`
+argument, so no table has to exist for it to work;
+`NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
+`BASELINED (deviation)` for the legacy runtime — `PT_DEVICE_TYPE` (33 entries),
+`PT_CONNECT_TYPE` (16) and `ModuleSpec.module_type` (151) are mirrors still in
+use there, and `allModuleTypes` is still PTBuilder's table.
 
 > An earlier revision of this requirement cited
 > `device.isModuleTypeSupported(int)` and `module.getType()`, attributing both to
@@ -322,11 +337,13 @@ declared tooling input, so no rule can move outside recipe identity.
 **Requirement.** In the auditor, `build_state`, `manifest` and `provenance`
 depend on no sibling; `inventory` may depend on `build_state` and `provenance`;
 `references` may depend on those three; only `build` may depend on all of them.
-In the runtime, the direction is `lifecycle → dispatcher/operations → protocol +
-core`, and the V6 core depends on none of CP LIVE, WebView, HTTP, the File
-Bridge, PTBuilder, legacy `runCode` or arbitrary JavaScript execution. Cisco IPC
-access is an adapter concern and stays outside protocol, core and operation
-logic.
+In the runtime, the direction is `lifecycle → dispatcher → operations →
+adapter → protocol + core`, and the V6 core depends on none of CP LIVE,
+WebView, HTTP, the File Bridge, PTBuilder, legacy `runCode` or arbitrary
+JavaScript execution. Cisco IPC access is an adapter concern and stays outside
+protocol, core, dispatch and operation logic: an operation calls the adapter,
+and the adapter reads no kernel state, shapes no envelope and dispatches
+nothing.
 
 **The runtime gate is layer-aware.** Core, protocol, admission, dispatch,
 lifecycle and operations may never name a transport or the platform. A
@@ -606,6 +623,14 @@ the answer, never listed as planned or pending. It reaches **no verification
 verdict** about itself — the engine cannot audit the engine, so Python decides
 what an observation establishes (MJ-011).
 
+**It stays platform-free even now that a platform capability exists.** The
+operation being admitted, and the kernel feature behind it, are facts about
+this artifact and are reported. Whether Packet Tracer answers is not, and is
+never folded in: discovery that depended on a platform call would turn one
+unavailable platform into "this runtime has no capabilities". What the platform
+said is what `platform.device_descriptors` reports, when a consumer asks
+(MJ-031).
+
 The whitelist has one owner. Both operations receive it from the dispatcher, so
 `runtime.identify`'s operation names and `runtime.capabilities`' operation
 descriptors can never describe different contracts.
@@ -674,6 +699,74 @@ mechanism.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 
+### MJ-031 — The platform adapter is one declared file, read-only, and cited
+**Requirement.** Muejeje reaches Packet Tracer from **one** packaged file,
+declared as an adapter by path in the architecture gates. Core, protocol,
+admission, dispatch, lifecycle and every operation stay platform-agnostic: an
+operation calls the adapter, and the adapter reads no kernel state, shapes no
+envelope and dispatches nothing (MJ-019).
+
+**Four rules bound what the adapter may do.**
+
+1. **Documented or evidenced only.** Every platform call it makes is named in
+   Cisco's installed IpcAPI reference for the pinned build, or is already
+   evidenced against it. A guess earns a bare `Invalid arguments for IPC call
+   "X"` that says nothing about why (`AGENTS.md` rule 6).
+2. **No mutation.** Every call is a getter on a *descriptor* — a description of
+   what a model can accept — so nothing it does instantiates a device, powers
+   one, or touches a workspace. A descriptor is not a runtime `Module`, and no
+   field it returns establishes installed hardware (MJ-014).
+3. **No numeric Cisco enum as authority.** The values it reports come back out
+   of the platform and are never matched against a table of ours. The
+   enumeration it uses — `getAvailableDeviceCount()` with
+   `getAvailableDeviceAt(int)` — takes no `DeviceType` argument for exactly
+   this reason, so no such table has to exist.
+4. **No consumer or topology assumption.** It reads the *factory*, which
+   describes what models exist. It never reads a workspace, a device instance,
+   a link or an address (MJ-002, MJ-004).
+
+**An unreadable platform is an observation, not a failure.** The adapter never
+throws out of the engine and never reports a V6 error for it: the request was
+admissible, and the answer is that no reading was obtained. Three reasons stay
+distinct, because a consumer acts differently on each — `PLATFORM_ABSENT`
+(there is no platform object here), `PLATFORM_CALL_FAILED` (it was asked and
+the call did not return) and `PLATFORM_ANSWER_UNUSABLE` (it answered, and the
+answer could not be attributed). **A denied privilege is one cause of the
+second, and the adapter does not claim to know which cause it was.**
+
+**A capability with no evidenced privilege stays pending.** This module
+requests no privilege (MJ-025, MJ-032), so on a target these calls are denied
+until one is evidenced. That is reported as an unavailable reading with its
+reason — never as a claim about what Packet Tracer does or does not offer, and
+never as a reason to guess a privilege name.
+
+**`runtime.capabilities` may name a capability only once it exists.** The
+operation being admitted, and the kernel feature behind it, are facts about
+this artifact and are reported. Whether the platform answers is not, and is
+never folded into the capability report: discovery that depended on a platform
+call would turn one unavailable platform into "this runtime has no
+capabilities" (MJ-028).
+**Rationale.** MJ-003 asks for behaviour selected from observed capabilities
+rather than from assumptions, and nothing could observe one until something
+could ask. Bounding that first reach to a single declared, read-only, cited
+file is what keeps the answer to "what does this artifact do to Packet Tracer"
+short enough to check.
+**Verification.** `tests/muejeje/test_platform_adapter.py` asserts the adapter
+is the only file naming `ipc`, that it names no kernel symbol, that no member
+call is shaped like a mutation (in both directions), and that no Cisco enum
+name appears anywhere in the packaged sources. It drives every unavailable
+reading, asserts the adapter never throws out of the engine, and compares the
+calls it *actually made* — recorded by a stub — against the documented set, in
+both directions. `tests/muejeje/test_platform_descriptors.py` covers the
+operation: one result shape whether the platform answered or not, the window
+and its truncation marks, the declared argument rules, and no self-certified
+verdict. `tests/muejeje/test_layer_boundaries.py` checks the declaration
+itself.
+**Status.** `ENFORCED` for the boundary, the read-only rule and the adapter's
+own logic under Node; `PENDING_TARGET` for the capability itself. The
+`OBSERVED` branch has only ever been driven against a stub, no `.pts` has been
+built from these sources, and nothing here has reached `9.0.1.0858` (MJ-015).
+
 ### MJ-032 — A declared privilege must be a privilege Cisco names
 **Requirement.** `build_options.privileges` may be empty, or may hold only
 privilege identifiers this repository has evidence for. An empty list needs no
@@ -698,8 +791,9 @@ into HTML fails the gate rather than being missed.
 
 **Which privilege a given IPC call requires is a separate unknown.** It is
 recorded as open in the v2 preflight inventory, and MJ-031 is the case that
-depends on it: a capability whose privilege cannot be evidenced stays
-unsupported rather than being shipped with a guessed name.
+depends on it: the read-only descriptor capability ships with its code in place
+and its target resolution pending, because the honest answer to "which
+privilege does this need" is that nobody here knows yet.
 **Rationale.** This is `AGENTS.md` rule 6 — never guess a PT API signature —
 applied to the one field whose wrong value is invisible until the target runs.
 The shape rules run before the evidence rule, so a typo is still reported as a

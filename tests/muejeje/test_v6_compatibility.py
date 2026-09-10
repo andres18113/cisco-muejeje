@@ -40,6 +40,10 @@ ERROR_CODES = {
 # Per operation, the result fields a consumer may already be reading. An
 # operation may answer with more; it may never answer with fewer.
 REQUIRED_RESULT_FIELDS = {
+    "platform.device_descriptors": {
+        "resolution", "unavailable_reason", "available_count", "offset",
+        "limit", "descriptors", "window_truncated",
+    },
     "runtime.identify": {
         "extension_name", "extension_version", "protocol_versions",
         "operations", "supported_features", "runtime_session_id",
@@ -55,7 +59,9 @@ REQUIRED_RESULT_FIELDS = {
 # name. A consumer decides whether it may call something from this flag, so
 # changing it is changing what the name means, not extending it. A mutating
 # operation is a new name (MJ-008).
-READ_ONLY_OPERATIONS = {"runtime.capabilities", "runtime.identify"}
+READ_ONLY_OPERATIONS = {
+    "platform.device_descriptors", "runtime.capabilities", "runtime.identify",
+}
 
 REQUIREMENTS = "docs/architecture/muejeje-pts-requirements.md"
 

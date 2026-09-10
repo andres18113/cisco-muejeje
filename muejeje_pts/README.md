@@ -26,15 +26,17 @@ It is declared once, in `build_options.engine_script_order`:
 | 1 | `core.js` | constants and session state; depends on nothing |
 | 2 | `protocol_v6.js` | the response envelope and the failure taxonomy |
 | 3 | `validation_v6.js` | bounded request admission, and the bounds themselves |
-| 4 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
-| 5 | `runtime_identity.js` | the `runtime.identify` operation |
-| 6 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
-| 7 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+| 4 | `platform_adapter.js` | the **only** file that reaches Packet Tracer; read-only |
+| 5 | `platform_discovery.js` | the `platform.device_descriptors` operation |
+| 6 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
+| 7 | `runtime_identity.js` | the `runtime.identify` operation |
+| 8 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| 9 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
 
-The arrows point one way — `lifecycle → dispatcher/operations → protocol +
-core` — and nothing points back. An operation is never implemented inside the
-dispatcher, and the dispatcher hands an operation what it needs rather than
-being read by it. Operations depend on nothing but core and protocol, so among
+The arrows point one way — `lifecycle → dispatcher → operations → adapter →
+protocol + core` — and nothing points back. An operation is never implemented
+inside the dispatcher, and the dispatcher hands an operation what it needs
+rather than being read by it. No operation depends on another, so among
 themselves they are ordered alphabetically: a rule, rather than an accident a
 later reader would have to reverse-engineer.
 
@@ -59,21 +61,46 @@ JSON string out.
 ```
 
 Failures use the same envelope with `ok: false`, `result: null` and an `error`
-naming its class (`MJ-022`). There is no fallback to an earlier protocol, no
-path that executes a caller's JavaScript, and no Cisco IPC call anywhere in the
-kernel — so the module requests no privilege at all (`privileges: []`).
+naming its class (`MJ-022`). There is no fallback to an earlier protocol and no
+path that executes a caller's JavaScript.
 
-Two operations are admitted, both read-only:
+Three operations are admitted, all read-only:
 
 | Operation | Answers |
 | --- | --- |
 | `runtime.identify` | *who is this* — name, version, session token, provenance, the lifecycle the module recorded |
 | `runtime.capabilities` | *what does it admit now* — session token, protocol versions, each whitelisted operation with its `read_only` flag, and the kernel features behind them |
+| `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the DeviceType and the module types the platform reports for it, or a reason the reading was unavailable |
 
-Both read the same whitelist, from the dispatcher that owns it, so the two can
-never describe different contracts. Neither reports anything it has not
-observed, and neither certifies its own verification: the engine cannot audit
-the engine, so Python decides what an answer establishes (`MJ-011`).
+The two runtime operations read the same whitelist, from the dispatcher that
+owns it, so they can never describe different contracts. None of the three
+reports anything it has not observed, and none certifies its own verification:
+the engine cannot audit the engine, so Python decides what an answer
+establishes (`MJ-011`).
+
+## The platform boundary
+
+`platform_adapter.js` is the one file that names `ipc`, and the architecture
+gates say so by path: naming the platform is legal there and a violation in
+every other packaged source (`MJ-006`, `MJ-019`). It is read-only by
+construction — every call is a documented getter on a *descriptor*, so nothing
+it does instantiates a device, powers one, or touches a workspace — and a gate
+fails on any member call shaped like a mutation.
+
+The numbers it reports are Packet Tracer's own, read back out of the platform.
+That is the point: a hand-maintained numeric mirror of a Cisco enum is correct
+only until Packet Tracer changes, and nothing here would notice (`MJ-014`). The
+enumeration it uses takes no `DeviceType` argument, so no such table has to
+exist at all.
+
+**The module still requests no privilege** (`privileges: []`). No privilege is
+evidenced as the one these calls need — the catalogue lives in `.pki` files
+Cisco does not install — and an invented name would be denied on the target
+rather than refused here (`MJ-032`). So on a real Packet Tracer the platform
+call is denied until that evidence exists, and
+`platform.device_descriptors` reports an unavailable reading with its reason
+instead of pretending otherwise. Nothing in this tree has ever run inside
+Packet Tracer, so the capability's target state is pending, not proven.
 
 ## Relationship to `EXTENSION/`
 
@@ -89,9 +116,10 @@ copied — its six PTBuilder globals are exactly what Muejeje must not inherit
 
 ## What is deliberately not here yet
 
-No device, link, module, IP or CLI operation. No transport: no HTTP, no file
-mailbox, no polling. No Cisco IPC adapter — one arrives when an operation
-actually needs the platform, and not before.
+No mutation of any kind: no device, link, module, IP or CLI operation. No
+transport: no HTTP, no file mailbox, no polling. The platform adapter reads and
+nothing else, and it grew from one operation actually needing the platform —
+not ahead of one.
 
 The kernel is verified offline. It has never run inside Packet Tracer, and no
 `.pts` has been built from these sources. See

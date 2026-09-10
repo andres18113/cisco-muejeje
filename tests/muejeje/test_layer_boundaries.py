@@ -54,7 +54,13 @@ TRANSPORT_SYMBOLS = (
 # an edit to this gate, which is the point: an adapter arrives visibly, and
 # every declaration is checked against the rules below.
 TRANSPORT_ADAPTER_FILES: tuple[str, ...] = ()
-IPC_ADAPTER_FILES: tuple[str, ...] = ()
+IPC_ADAPTER_FILES: tuple[str, ...] = (
+    # The read-only device-descriptor adapter (MJ-031). Its own boundary — no
+    # mutation, no kernel state, no undocumented call — is gated in
+    # `test_platform_adapter`; the declaration here is what makes naming `ipc`
+    # legal in that one file and a violation in every other.
+    "muejeje_pts/script-engine/platform_adapter.js",
+)
 
 # What a declared adapter must be. Without these, the layer gate could be
 # silenced by declaring `core.js` an adapter, which is the one way a boundary
@@ -206,10 +212,11 @@ def test_the_declared_adapter_registries_are_what_this_artifact_ships():
 
     Adding an entry is an edit to this assertion, which is what makes an
     adapter arrive visibly rather than by a file quietly matching a naming
-    convention.
+    convention. One platform adapter ships; no transport adapter does, and no
+    transport exists for one to adapt (MJ-026).
     """
     assert TRANSPORT_ADAPTER_FILES == ()
-    assert IPC_ADAPTER_FILES == ()
+    assert IPC_ADAPTER_FILES == ("muejeje_pts/script-engine/platform_adapter.js",)
 
 
 def test_the_adapter_declaration_rule_refuses_a_kernel_file():

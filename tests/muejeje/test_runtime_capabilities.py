@@ -38,7 +38,10 @@ IDENTIFY = json.dumps({
 RESULT_FIELDS = {
     "runtime_session_id", "protocol_versions", "operations", "supported_features",
 }
-ADMITTED = ["runtime.capabilities", "runtime.identify"]
+ADMITTED = [
+    "platform.device_descriptors", "runtime.capabilities", "runtime.identify",
+]
+FEATURES = 4
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",
@@ -94,7 +97,7 @@ def test_the_result_carries_exactly_the_declared_fields():
 
 
 @requires_node
-def test_the_whitelist_admits_exactly_the_two_read_only_operations():
+def test_the_whitelist_admits_exactly_these_read_only_operations():
     operations = _result()["operations"]
 
     assert [entry["op"] for entry in operations] == ADMITTED
@@ -146,14 +149,42 @@ def test_every_reported_feature_names_something_in_this_artifact():
 
 
 @requires_node
-def test_the_report_promises_no_capability_the_kernel_does_not_have():
-    """Transport, platform access and mutation are absent, not pending."""
+def test_the_report_names_no_roadmap_and_no_layer_the_kernel_does_not_have():
+    """A capability that does not exist is absent, never listed as pending.
+
+    An earlier revision also forbade the words "device", "platform" and "ipc",
+    which was the same rule as "there is no platform adapter" — true then, and
+    it would have had to be deleted the moment one arrived. What must stay
+    forbidden is the vocabulary of things this kernel genuinely does not have,
+    and of things nothing can have: a roadmap entry a consumer cannot act on
+    (MJ-028).
+    """
     reported = json.dumps(_result()).lower()
     for absent in (
-        "http", "bridge", "mailbox", "polling", "ipc", "transport", "batch",
-        "device", "topology", "write", "mutate", "planned", "roadmap",
+        "http", "bridge", "mailbox", "polling", "transport", "batch",
+        "topology", "write", "mutate", "planned", "roadmap", "pending",
+        "future", "coming",
     ):
         assert absent not in reported, f"the report mentions {absent}"
+
+
+@requires_node
+def test_the_report_makes_no_platform_call_and_carries_no_observation():
+    """It answers what the kernel admits, not what the platform said.
+
+    A platform capability now exists, and this operation still does not use
+    it: whether Packet Tracer answers is what `platform.device_descriptors`
+    reports, when a consumer asks. Folding a reading into the capability
+    report would make discovery depend on a platform call and turn one
+    unavailable platform into "this runtime has no capabilities" (MJ-028).
+    """
+    body = (SCRIPT_ENGINE / "runtime_capabilities.js").read_text(encoding="utf-8")
+    assert "muejejeAdapter" not in body
+    assert "MUEJEJE_PLATFORM" not in body
+
+    reported = json.dumps(_result())
+    for observation in ("resolution", "available_count", "unavailable_reason"):
+        assert observation not in reported, observation
 
 
 @requires_node
@@ -197,7 +228,7 @@ def test_the_answer_carries_copies_of_the_kernel_state_it_reports():
         ),
     )
 
-    assert observed["features"] == 3
+    assert observed["features"] == FEATURES
     assert observed["protocols"] == 1
     assert observed["admitted"] == len(ADMITTED)
     assert [entry["op"] for entry in observed["reported"]["operations"]] == ADMITTED

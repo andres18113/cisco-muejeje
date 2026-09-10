@@ -31,19 +31,30 @@ with the lifecycle it recorded.</p>
 <p>The consumer-facing contract is Runtime Protocol V6. Its single entry point
 is <code>mcpDispatchV6(requestJson)</code>: a JSON string in, a JSON string
 out, one envelope for success and failure alike.</p>
-<p>Two operations are admitted, both read-only and neither making any platform
-call: <code>runtime.identify</code>, which reports what the artifact can say
-about itself, and <code>runtime.capabilities</code>, which reports what this
-kernel admits right now. Every other operation name fails closed. There is no
-fallback to an earlier protocol and no path that runs a caller's
-JavaScript.</p>
+<p>Three operations are admitted, all read-only.
+<code>runtime.identify</code> reports what the artifact can say about itself.
+<code>runtime.capabilities</code> reports what this kernel admits right now,
+without asking Packet Tracer anything. <code>platform.device_descriptors</code>
+does ask: it reports the device models this Packet Tracer offers, each with the
+module types the platform states for it. Every other operation name fails
+closed. There is no fallback to an earlier protocol and no path that runs a
+caller's JavaScript.</p>
 
 <h2>What this module does on its own</h2>
 <ul>
   <li>nothing — it answers, and never initiates;</li>
   <li>no transport, no polling and no mailbox;</li>
-  <li>no platform call, so it requests no privilege to start.</li>
+  <li>no change to anything: every operation reads.</li>
 </ul>
+
+<h2>Privileges</h2>
+<p>The module requests none. Cisco's security privileges decide which IPC calls
+a Script Module may make, and no privilege this repository has evidence for is
+known to be the one a descriptor reading needs — so naming one would be a
+guess. A reading Packet Tracer declines therefore comes back marked
+unavailable, with its reason, rather than as an answer about what Packet Tracer
+offers.</p>
+
 <p>Module state lives in the script engine as
 <code>muejejeLifecycleState()</code>, and the same facts are reported through
 <code>runtime.identify</code>.</p>

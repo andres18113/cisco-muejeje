@@ -26,6 +26,7 @@ var MUEJEJE_CORE = {
      * artifact and verifiable from it. A feature is named here only once
      * something behind it exists; the list is not a roadmap. */
     SUPPORTED_FEATURES: [
+        "platform.descriptor_discovery",
         "protocol.v6",
         "runtime.operation_catalog",
         "runtime.session_id"

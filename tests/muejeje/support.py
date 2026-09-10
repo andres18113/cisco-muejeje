@@ -56,6 +56,9 @@ TOOLING_INPUTS = [
 # disagree, and a feature backed by one of them would be a capability claim
 # nobody was checking (MJ-028).
 FEATURE_EVIDENCE = {
+    "platform.descriptor_discovery": (
+        "platform_adapter.js", "muejejeAdapterDeviceDescriptors",
+    ),
     "protocol.v6": ("validation_v6.js", "muejejeV6ParseRequest"),
     "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),
     "runtime.session_id": ("core.js", "muejejeCoreNewSessionId"),

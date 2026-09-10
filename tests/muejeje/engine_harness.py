@@ -74,6 +74,62 @@ def run_engine(epilogue: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def platform_stub(models: str, *, count: str | None = None, fail: bool = False) -> str:
+    """A platform stub built from the documented getters, plus a call log.
+
+    It is a *stub*, and it stays one: it establishes what the adapter does with
+    a well-formed answer and nothing whatever about Packet Tracer, whose engine
+    and hardware factory are a different implementation (MJ-015). The call log
+    is what stops it from quietly becoming evidence about the platform — the
+    caller compares the recorded calls against Cisco's documented getters, so
+    an undocumented call fails here rather than on a target.
+
+    `models` is a JavaScript array literal of
+    `{model, type, supported, module_types}` objects. `count` overrides what
+    `getAvailableDeviceCount()` answers, which is how an unusable answer is
+    delivered; `fail` makes the first platform call throw, which is how a
+    denied or otherwise refused call is delivered.
+    """
+    reported = "MODELS.length" if count is None else count
+    refuses = "true" if fail else "false"
+    return "\n".join([
+        f"var MODELS = {models};",
+        "var CALLS = [];",
+        "function log(name) { CALLS.push(name); }",
+        "function descriptor(spec) {",
+        "  return {",
+        "    getModel: function () { log('getModel'); return spec.model; },",
+        "    getType: function () { log('getType'); return spec.type; },",
+        "    isModelSupported: function () {",
+        "      log('isModelSupported'); return spec.supported;",
+        "    },",
+        "    getSupportedModuleTypeCount: function () {",
+        "      log('getSupportedModuleTypeCount'); return spec.module_types.length;",
+        "    },",
+        "    getSupportedModuleTypeAt: function (index) {",
+        "      log('getSupportedModuleTypeAt'); return spec.module_types[index];",
+        "    }",
+        "  };",
+        "}",
+        "var FACTORY = {",
+        "  getAvailableDeviceCount: function () {",
+        f"    log('getAvailableDeviceCount'); return {reported};",
+        "  },",
+        "  getAvailableDeviceAt: function (index) {",
+        "    log('getAvailableDeviceAt');",
+        "    return MODELS[index] ? descriptor(MODELS[index]) : null;",
+        "  }",
+        "};",
+        "var ipc = {hardwareFactory: function () {",
+        "  log('hardwareFactory');",
+        f"  if ({refuses}) {{",
+        "    throw new Error('the platform refused this call');",
+        "  }",
+        "  return {devices: function () { log('devices'); return FACTORY; }};",
+        "}};",
+    ])
+
+
 def dispatch_v6(
     request: str,
     *,
