@@ -27,8 +27,11 @@ The current, evidence-marked audit of record is
 
 ## Packaging readiness
 
-Recomputed on the clean committed tree at `fc9e460`, with the pinned builder
-given explicitly:
+Two measurements, on two machines, and they say different things because the
+machines differ — not because the repository changed under them.
+
+**With the pinned builder installed**, recomputed on the clean committed tree at
+`fc9e460`:
 
 ```text
 .venv/Scripts/python.exe tools/build_muejeje_pts.py --check --builder 'C:/Program Files/Cisco Packet Tracer 9.0.1/bin/PacketTracer.exe'
@@ -51,11 +54,40 @@ PACKAGING_MANUAL_AVAILABLE; exit 0
 | `builder.actual_sha256` | matches the pinned hash |
 | `artifact_sha256` | `null` — no artifact exists yet |
 
-`build_options` at that commit: `module_id`
+**Without it**, on the Linux container this line was developed in, at
+`f70ccca` — the commit before the one you are reading:
+
+```text
+.venv/bin/python tools/build_muejeje_pts.py --check
+BUILD_TOOLCHAIN_BLOCKED; exit 1
+```
+
+| Field | Value |
+| --- | --- |
+| `status` | `BUILD_TOOLCHAIN_BLOCKED` |
+| `blockers` | `missing explicit builder path`, and the two automation prerequisites |
+| `build_recipe_id` | `null` — no id is issued outside `PACKAGING_MANUAL_AVAILABLE` |
+| `source.commit` | `f70ccca0d2e31817b25d95bedbeebd86b1c53546`, `clean: true` |
+| `source.tree` | `3e40f9547fc9463db976155ff060a3886780a6bd` |
+| `inputs.artifact` | 14 files, all under `muejeje_pts/` |
+| `packaging_state.recipe_complete` | `true` |
+| `packaging_state.unresolved_build_options` | `[]` |
+| `packaging_state.manual` | `PACKAGING_MANUAL_UNAVAILABLE` — one blocker, the builder |
+
+**That difference is the five-state model working** (`MJ-016`). Nothing about
+the repository is unresolved on either machine: the recipe is complete in both
+readings and no build option is missing. What the second machine lacks is
+Packet Tracer, and the audit says so in the one field that means it rather than
+reporting the tree as invalid. A `BUILD_TOOLCHAIN_BLOCKED` here is a fact about
+this container; it is not a regression, and it is not a claim that packaging is
+impossible.
+
+`build_options` at `f70ccca`: `module_id`
 `io.github.andres18113.muejeje.runtime`, `startup` `on_startup`, `privileges`
-`[]`, one Custom Interface file, and the nine-file `engine_script_order` — core,
-protocol, admission, the declared platform adapter, then the three operations
-alphabetically, then dispatch, then lifecycle.
+`[]`, one Custom Interface file, and a thirteen-file `engine_script_order` —
+core, protocol, admission, what a platform reading is, the call boundary, the
+two subject adapters, the four operations alphabetically, then dispatch, then
+lifecycle.
 
 **A report cannot carry its own commit's recipe id.** Source commit and tree are
 part of recipe identity, so committing this file changes the id it records. The
@@ -65,17 +97,13 @@ gives the id at whatever HEAD you are on, and step 2 of
 [the packaging recipe](muejeje-pts-packaging-recipe.md) is where a packaging run
 does exactly that.
 
-The two standing blockers are `compiler_command` and `content_validation`, both
-automation prerequisites. Neither stops a human from packaging, which is exactly
-the distinction the five-state model exists to keep (`MJ-016`).
-
 **The recipe id is a measurement, not a constant**, and that is the design
 working: an id that survived a change to its inputs would identify the wrong
-build. Read it as "at `fc9e460`, the audit reported this".
+build. Read it as "at `fc9e460`, on that machine, the audit reported this".
 
 **It also depends on the line endings of the checkout it was measured in.** The
-audit hashes the *working* bytes of each declared input, and this repository is
-checked out with `core.autocrlf=true`, so a fresh clone and this worktree can
+audit hashes the *working* bytes of each declared input, and the Windows
+checkout uses `core.autocrlf=true`, so a fresh clone and that worktree can
 disagree on the id while agreeing on every commit. That is a property of the
 measurement rather than a defect in it — the recipe's own anchors, the manifest
 hash and the source commit and tree, are byte-stable — but it means one recipe
@@ -126,8 +154,11 @@ review rather than a hypothetical:
 
 ## Current offline result
 
-Run on the rebaselined branch with the checkout-local interpreter, from the
-repository root, with worktree-local temporaries (per `AGENTS.md`):
+Two environments have run this suite, and the record keeps them apart: a
+measurement is only comparable with another taken the same way.
+
+**Windows, with Packet Tracer `9.0.1.0858` installed**, at `fc9e460` — the last
+run recorded from the machine that has the target build:
 
 ```text
 .venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/m1-focused -o cache_dir=tmp/m1-focused-cache
@@ -140,30 +171,58 @@ repository root, with worktree-local temporaries (per `AGENTS.md`):
 4798 passed, 3 skipped in 329.53s; exit 0
 ```
 
-M0F split the two monolithic modules into `tests/muejeje/`. The ADR-001 run this
-replaced was `39 passed, 2 skipped` over `tests/test_muejeje_build.py` and
-`tests/test_muejeje_build_identity.py`, which no longer exist. The muejeje area
-grew from `155 passed` to `214 passed` with `runtime.capabilities` and the
-layer-aware fitness gates, and from `214` to `353` with the kernel hardening
-and the first M2 slice: bounded V6 admission, the V6 compatibility contract,
-the privilege-evidence rule, the future-safe architecture gates, and the
-read-only platform adapter with `platform.device_descriptors`.
+**Linux, with Packet Tracer absent**, at `f70ccca` — the container this line was
+developed in, checkout-local `.venv` (Python 3.11.15, pytest 9.1.1), Node
+v22.22.2:
 
-Five test modules were split out along the way, each because its predecessor
-crossed the 300-line budget rather than because anyone chose to: `measure` out
-of `support`, `test_layer_boundaries` out of `test_source_root`,
-`test_capability_claims` out of `test_unobserved_claims`, and
-`test_platform_adapter` and then `test_platform_readings` out of
-`test_platform_descriptors`. `validation_v6.js` came out of `protocol_v6.js`
-for the same reason. That is `MJ-020` doing what it is for: the budget forced
-each split at the point a file stopped being readable in one sitting, and both
-exception tables in the fitness gate are still empty.
+```text
+.venv/bin/python -m pytest tests/muejeje -q
+409 passed, 9 skipped in 23.58s; exit 0
 
-The two skips are Windows symlink-creation privilege limitations. The hardlink
-alias, hidden-source/manifest, malformed-JSON and reference-input security checks
-all executed. Two further gates skip when Packet Tracer is **not** installed —
-they read Cisco's own pages for the Script Engine lifecycle sentences and the
-privilege identifiers — and both ran here.
+.venv/bin/python -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q
+12 passed in 2.39s; exit 0
+
+.venv/bin/python -m pytest -q
+4853 passed, 11 skipped in 249.40s; exit 0
+```
+
+**The skip counts differ for a reason, and it is the one the guards exist for.**
+On Linux the two Windows symlink-privilege skips do not apply and pass instead,
+while nine checks skip because there is no installed Packet Tracer to read: the
+three that quote Cisco's Script Engine lifecycle sentences, the four that
+re-derive the privilege identifiers from the installed reference, and the two
+that measure the pinned builder. A machine without the target build reports what
+it could not check rather than inventing a verdict about `9.0.1.0858`
+(`MJ-015`). The hardlink-alias, hidden-source/manifest, malformed-JSON and
+reference-input security checks ran in both.
+
+**A green run on either machine establishes the same thing and no more**: what
+this repository's own code does. Neither is evidence about Packet Tracer, and
+the Linux run is not evidence that packaging works — it is a run of the audit
+and the kernel, on a machine with no builder (see *Packaging readiness*).
+
+The muejeje area grew from `155 passed` to `214` with `runtime.capabilities` and
+the layer-aware fitness gates, from `214` to `353` with the kernel hardening and
+the first M2 slice, and from `353` to `409` with this one: the platform-call
+boundary and its allowlist, the nested half of the V6 compatibility contract,
+the single-catalogue claim rule, and `platform.module_descriptors` with its
+bounded chassis walk. The ADR-001 run this replaced was `39 passed, 2 skipped`
+over two modules that no longer exist.
+
+Ten test modules have been split out along the way, each because its predecessor
+crossed the 300-line budget rather than because anyone chose to: `measure` out of
+`support`, `test_layer_boundaries` out of `test_source_root`,
+`test_capability_claims` out of `test_unobserved_claims`, `test_platform_adapter`
+and then `test_platform_readings` out of `test_platform_descriptors`,
+`test_v6_result_shapes` out of `test_v6_compatibility`,
+`test_platform_declarations` out of `test_layer_boundaries`, and
+`test_platform_module_walk` out of `test_platform_modules`. The artifact split
+the same way and for the same reason: `validation_v6.js` out of `protocol_v6.js`,
+then `platform_reading.js`, `platform_device_adapter.js` and
+`platform_module_adapter.js` out of `platform_adapter.js`. That is `MJ-020`
+doing what it is for — the budget forced each split at the point a file stopped
+being readable in one sitting, and both exception tables in the fitness gate are
+still empty.
 
 ### The full run needs a short `--basetemp`
 
@@ -191,17 +250,18 @@ would be the same error this document was corrected for.
 | --- | --- | --- |
 | `STRUCTURAL_VERIFIED` — always runs | the source layout, who owns `mcpDispatchV6`, `main()` and `cleanUp()`, the absence of `eval`/`new Function` and of `ipc` outside the one declared adapter, the declared `engine_script_order`, and that no document claims a capability this artifact does not have | any behaviour |
 | `RUNTIME_VERIFIED` — Node, skipped when absent | what *our* JavaScript does: the envelope, every bound, each rejection class, the session token, and the two platform-free results — `runtime.identify` and `runtime.capabilities` | anything about Packet Tracer |
-| `STUB_DRIVEN` — Node, skipped when absent | what the *platform adapter* does with a well-formed answer, with an unusable one, with a call that throws, and with no platform object at all; and which methods it actually called | anything about Packet Tracer's hardware factory, or about whether these calls are permitted there |
+| `STUB_DRIVEN` — Node, skipped when absent | what the *platform adapters* do with a well-formed answer, with an unusable one, with a call that throws, and with no platform object at all; where a bounded walk stops and what it marks; which methods were actually called; and that a defect inside an adapter comes back as `ENGINE_EXCEPTION` rather than as a platform reading | anything about Packet Tracer's hardware factory, or about whether these calls are permitted there |
 
-**The third row is the one to be careful with.** `platform.device_descriptors`
-was driven against a stub that answers with Cisco's documented getter names. A
-stub written from a reference is not the reference implementation: it proves
-our adapter reads a well-formed answer correctly and refuses a malformed one,
-and it proves the adapter asked for nothing outside the documented set — which
-is a claim about *our code*, checked by comparing the recorded call log against
-that set. It is not evidence that Packet Tracer answers those calls, that it
-answers them with these shapes, or that a module with `privileges: []` may make
-them at all.
+**The third row is the one to be careful with.** Both platform operations were
+driven against a stub that answers with Cisco's documented getter names, and
+whose chassis shape was copied from a reading this repository actually recorded
+against `9.0.1.0858`. A stub written from a recording is still not the
+implementation: it proves our adapters read a well-formed answer correctly and
+refuse a malformed one, and it proves they asked for nothing outside the
+documented set — which is a claim about *our code*, checked by comparing the
+recorded call log against that set, in both directions. It is not evidence that
+Packet Tracer answers those calls, that it answers them with these shapes, or
+that a module with `privileges: []` may make them at all.
 
 Node is a different Script Engine implementation from Packet Tracer's. A green
 Node run is evidence about the kernel's own logic and is never evidence about
@@ -234,7 +294,7 @@ limit, not an unresolved decision:
 | `OFFICIAL_PACKAGING_PROVED` | `PENDING_GUI` | packaging is a native GUI procedure and no agent-operable path to it exists here |
 | `TARGET_API_BASELINED` | `PENDING_TARGET` | nothing has been imported or started on the target build |
 | `V6_KERNEL_VERIFIED` | `NOT_YET_LIVE_VERIFIED` | Node establishes our JavaScript; it establishes nothing about PT's engine |
-| `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | the platform adapter has only ever been driven against a stub |
+| `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | both platform capabilities have only ever been driven against a stub |
 
 ### A green V6 run is not IpcAPI qualification
 
@@ -246,7 +306,7 @@ perfectly: `runtime.identify` and `runtime.capabilities` make no platform call,
 so they can succeed on a target with every privilege denied and every factory
 API missing.
 
-The nine calls the adapter makes, and what each is actually backed by:
+The fifteen calls the boundary admits, and what each is actually backed by:
 
 | Call | Cisco reference | Target-evidenced against `9.0.1.0858` |
 | --- | --- | --- |
@@ -254,34 +314,54 @@ The nine calls the adapter makes, and what each is actually backed by:
 | `HardwareFactory.devices()` | `class_hardware_factory.html` | **yes** — same surveys |
 | `DeviceDescriptor.getModel()` | `class_device_descriptor.html` | **yes** — same surveys |
 | `DeviceDescriptor.getType()` | `class_device_descriptor.html` | **yes** — same surveys |
+| `DeviceDescriptor.getRootModule()` | `class_device_descriptor.html` | **yes** — same surveys |
+| `ModuleDescriptor.getModel()` | `class_module_descriptor.html` | **yes** — same surveys |
+| `ModuleDescriptor.getType()` | `class_module_descriptor.html` | **yes** — same surveys |
+| `ModuleDescriptor.isHotSwappable()` | `class_module_descriptor.html` | **yes** — same surveys |
+| `ModuleDescriptor.getSlotCount()` | `class_module_descriptor.html` | **yes** — same surveys |
+| `ModuleDescriptor.getSlotTypeAt(int)` | `class_module_descriptor.html` | **yes** — same surveys |
+| `ModuleDescriptor.getModuleCount()` | `class_module_descriptor.html` | **yes** — same surveys |
+| `ModuleDescriptor.getModuleAt(int)` | `class_module_descriptor.html` | **yes** — same surveys |
 | `DeviceFactory.getAvailableDeviceCount()` | `class_device_factory.html` | **no** — documented only |
 | `DeviceFactory.getAvailableDeviceAt(int)` | `class_device_factory.html` | **no** — documented only |
 | `DeviceDescriptor.isModelSupported()` | `class_device_descriptor.html` | **no** — documented only |
-| `DeviceDescriptor.getSupportedModuleTypeCount()` | `class_device_descriptor.html` | **no** — documented only |
-| `DeviceDescriptor.getSupportedModuleTypeAt(int)` | `class_device_descriptor.html` | **no** — documented only |
 
-The four "yes" rows are evidenced by
+`getModel` and `getType` are members of both descriptor interfaces; the
+allowlist carries one entry for each name, and both interfaces are evidenced.
+
+The twelve "yes" rows are evidenced by
 [the factory-structure record](../reference/cp-scale/ROUTER0_POE_FACTORY_STRUCTURE_20260907.md)
 — runs `factory-survey-9f967ef6` and `factory-survey-102006c6`, read-only, zero
-mutations, against `9.0.1.0858`. **Those runs are not Muejeje's evidence.** They
-were driven from the legacy channel, in a context with its own privileges, not
-from a Script Module carrying `privileges: []`; and they used
-`getDescriptor(DeviceType, string)`, which Muejeje deliberately does not, since
-asking by type would require carrying a numeric Cisco enum as the authority for
-which types exist (`MJ-014`). So they establish that the descriptor path works
-on this build — which is why it was chosen — and nothing about whether *this
-artifact* may walk it.
+mutations, against `9.0.1.0858`. That record carries whole chassis trees read
+through exactly these getters: an `AccessPoint-PT` root reporting `model: ""`
+with slot types `[6, 18]` and two child modules, and a `3650-24PS` with three
+non-removable root slots.
 
-The five "no" rows are documented and unmeasured. They are the enumeration and
-per-model support pair, and they are exactly what a target run has to observe
-first. Until it does, `platform.device_descriptors` is code with a contract and
-no target reading, which is what `PENDING_TARGET` means.
+**Those runs are not Muejeje's evidence**, and the distinction is the whole
+point of this section. They were driven from the legacy channel, in a context
+with its own privileges, not from a Script Module carrying `privileges: []`;
+and they reached the descriptor through `getDescriptor(DeviceType, string)`,
+which Muejeje deliberately does not use, because asking by type would require
+carrying a numeric Cisco enum as the authority for which types exist
+(`MJ-014`). Muejeje reaches the same descriptors through the unqualified
+enumeration and addresses a model by its index in it. So those runs establish
+that this descriptor path answers on this build — which is why it was chosen —
+and nothing about whether *this artifact* may walk it.
+
+The three "no" rows are documented and unmeasured. They are the enumeration
+pair and the per-model support flag, and they are exactly what a target run has
+to observe first: the enumeration is how Muejeje reaches every one of the
+twelve. Until that happens, both platform operations are code with a contract
+and no target reading, which is what `PENDING_TARGET` means.
 
 **And the expected first reading is a denial.** The module requests no
 privilege, because no evidence says which privilege these calls need
-(`MJ-032`), so the first target run should report
-`PLATFORM_CALL_FAILED` — an observation worth recording, and still not
-qualification of any API.
+(`MJ-032`), so the first target run should report `PLATFORM_CALL_FAILED` from
+both platform operations — an observation worth recording, and still not
+qualification of any API. It is also the reading that made the attribution rule
+worth fixing: a bug inside an adapter used to come back under that same name,
+and on a target nothing would have distinguished it from the denial
+(`MJ-022`, `MJ-031`).
 
 What was checked, and what each check found:
 
@@ -304,20 +384,22 @@ preconditions are met at `fc9e460` — clean tree, `PACKAGING_MANUAL_AVAILABLE`,
 recipe id `73f087e7…`, verified builder — so a person can start at its step 1.
 
 When that run happens, it records: source commit and tree, the recipe id, the
-externally measured artifact SHA-256, the Packet Tracer build, and the **three**
-response envelopes verbatim — including whichever `resolution` and
-`unavailable_reason` the descriptor reading came back with. Only then do
+externally measured artifact SHA-256, the Packet Tracer build, and every
+response envelope verbatim — including whichever `resolution` and
+`unavailable_reason` each platform reading came back with. Only then do
 `OFFICIAL_PACKAGING_PROVED`, `TARGET_API_BASELINED` and
 `CAPABILITY_RESOLUTION_VERIFIED` change, and only from that evidence — never
-from a clean offline report, and never from the two operations that make no
+from a clean offline report, and never from the operations that make no
 platform call.
 
-**No exact-HEAD `.pts` exists.** Checked at this commit: `dist/` holds only the
-ignored `muejeje.build.json`, no `muejeje*.pts` exists anywhere in the checkout
-outside pytest temporaries, and the user profile's
-`Cisco Packet Tracer 9.0.1\extensions\` directory is empty. There is therefore
-nothing to qualify read-only, and `OFFICIAL_PACKAGING_PROVED` stays
-`PENDING_GUI` rather than being softened into anything else.
+**No exact-HEAD `.pts` exists.** Checked on the container this line was
+developed in: `dist/` holds only the ignored `muejeje.build.json`, and no
+`muejeje*.pts` exists anywhere in the checkout. The Windows machine's
+`Cisco Packet Tracer 9.0.1\extensions\` directory was recorded empty at
+`fc9e460` and cannot be re-checked from here, so that reading stands as of that
+commit and is not restated as current. Either way nothing has been packaged
+from these sources, and `OFFICIAL_PACKAGING_PROVED` stays `PENDING_GUI` rather
+than being softened into anything else.
 
 ## Scope
 
@@ -326,7 +408,7 @@ candidate `.pts`, its content, or its runtime behaviour. No `.pts` was built or
 installed, no Script Module was imported or started, and no LIVE operation was
 performed.
 
-The platform adapter added in this line does not change that. Its only
+The platform surface added in this line does not change that. Its only
 executions have been under Node — against no platform object, and against a
 stub — and neither is a Packet Tracer reading.
 
@@ -334,10 +416,17 @@ stub — and neither is a Packet Tracer reading.
 KERNEL_HARDENING               = PASS
 V6_CONTRACT_VERIFIED           = PASS
 M1_OFFLINE                     = COMPLETE
+M2_DEVICE_DISCOVERY            = IMPLEMENTED
+M2_MODULE_DISCOVERY            = IMPLEMENTED
+CAPABILITY_RESOLUTION_VERIFIED = PENDING_TARGET
 OFFICIAL_PACKAGING_PROVED      = PENDING_GUI
 TARGET_API_BASELINED           = PENDING_TARGET
-M2_IMPLEMENTATION              = STARTED
-CAPABILITY_RESOLUTION_VERIFIED = PENDING_TARGET
 ```
+
+`IMPLEMENTED` is a statement about this repository — the operation exists, is
+admitted, is bounded and is tested offline — and deliberately not about Packet
+Tracer. Both capabilities stay `PENDING_TARGET` until an artifact built from
+these sources answers inside `9.0.1.0858`, and an offline or Node result is
+never promoted into that evidence (`MJ-015`).
 
 `LIVE: NO_LIVE_THIS_SESSION`
