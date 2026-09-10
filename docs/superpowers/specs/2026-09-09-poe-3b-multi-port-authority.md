@@ -50,8 +50,10 @@ An ephemeral positive admission requires all of these raw facts:
    identities in the existing semantic format, and equal.
 5. The fixture is completely removed.
 6. Simulation mode is Realtime before and after.
-7. Exactly one positive Packet Tracer PID is observed before and after, and it
-   is the same PID.
+7. Exactly one positive primary Packet Tracer PID is observed before and after,
+   and it is the same PID. The raw process evidence may also contain its sole
+   `--progress-bar-server` helper only when parent PID and executable identity
+   match that primary; no second primary is accepted.
 8. File-bridge heartbeat is healthy and mailbox entry tuples are explicitly
    empty before and after.
 9. Branch, source HEAD and source tree are exact and unchanged; the worktree is

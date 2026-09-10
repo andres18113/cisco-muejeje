@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 from secrets import token_hex
 import subprocess
 import sys
@@ -71,6 +72,9 @@ UPSTREAM = "cisco/feature/runtime-ripv2"
 # 100-character path component budget: 6 prefix + 68 caller metadata +
 # 1 separator + 16 UTC timestamp + 1 separator + 8 random hex characters.
 QUALIFICATION_ID_MAX_LENGTH = 68
+_PACKET_TRACER_HELPER_ARGUMENT = re.compile(
+    r"(?:^|\s)--progress-bar-server(?:\s|$)",
+)
 
 
 def utc() -> str:
@@ -110,12 +114,55 @@ def prove_processes() -> list[dict]:
     ]
     if foreign:
         raise RuntimeError("Foreign Python/test process: " + json.dumps(foreign))
-    packet_tracer = [
-        process for process in result if process["Name"] == "PacketTracer.exe"
-    ]
-    if len(packet_tracer) != 1:
-        raise RuntimeError("Exactly one PacketTracer.exe process is required")
+    try:
+        packet_tracer_primary_pids(result)
+    except ValueError as exc:
+        raise RuntimeError(
+            "Packet Tracer process cohort is invalid: " + str(exc)
+        ) from exc
     return result
+
+
+def packet_tracer_primary_pids(processes: list[dict]) -> tuple[int, ...]:
+    """Identify one PT instance while retaining its exact helper in raw evidence."""
+
+    packet_tracer = [
+        process for process in processes
+        if process.get("Name") == "PacketTracer.exe"
+    ]
+    if not packet_tracer:
+        raise ValueError("Packet Tracer is absent")
+    if any(
+        type(process.get("ProcessId")) is not int
+        or process["ProcessId"] <= 0
+        or type(process.get("ParentProcessId")) is not int
+        or type(process.get("ExecutablePath")) is not str
+        or not process["ExecutablePath"]
+        or type(process.get("CommandLine")) is not str
+        for process in packet_tracer
+    ):
+        raise ValueError("process identity evidence is incomplete")
+    if len({process["ProcessId"] for process in packet_tracer}) != len(
+        packet_tracer
+    ):
+        raise ValueError("process IDs are duplicated")
+
+    helpers = [
+        process for process in packet_tracer
+        if _PACKET_TRACER_HELPER_ARGUMENT.search(process["CommandLine"])
+    ]
+    primary = [process for process in packet_tracer if process not in helpers]
+    if len(primary) != 1 or len(helpers) > 1:
+        raise ValueError("exactly one primary and at most one helper are allowed")
+    owner = primary[0]
+    for helper in helpers:
+        if (
+            helper["ParentProcessId"] != owner["ProcessId"]
+            or os.path.normcase(os.path.normpath(helper["ExecutablePath"]))
+            != os.path.normcase(os.path.normpath(owner["ExecutablePath"]))
+        ):
+            raise ValueError("progress helper is not owned by the primary process")
+    return (owner["ProcessId"],)
 
 
 def source_baseline(plan: PoEModelQualificationPlan) -> dict:
@@ -340,8 +387,21 @@ def ephemeral_safety_for(
     initial, final = baseline.get("environment", {}), restoration.get("environment_after", {})
     def pids(facts):
         processes = facts.get("processes")
-        return (tuple(sorted(p["ProcessId"] for p in processes if p["Name"] == "PacketTracer.exe"))
-                if processes is not None else None)
+        if processes is None:
+            return None
+        if (
+            isinstance(processes, list)
+            and not any(
+                isinstance(process, dict)
+                and process.get("Name") == "PacketTracer.exe"
+                for process in processes
+            )
+        ):
+            return ()
+        try:
+            return packet_tracer_primary_pids(processes)
+        except (AttributeError, TypeError, ValueError):
+            return None
     before, after = pids(baseline), pids(safety)
     healthy = (baseline.get("bridge_healthy") is True and safety.get("bridge_healthy") is True
                and before is not None and len(before) == 1 and before == after

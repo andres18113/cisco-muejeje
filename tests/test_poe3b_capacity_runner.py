@@ -130,7 +130,7 @@ def facts():
     baseline = dict(environment=env, inventory_fingerprint="a" * 64 + "|",
         source_branch="feature/runtime-ripv2", local_head="b" * 40,
         source_tree="c" * 40, worktree_clean=True,
-        processes=[dict(Name="PacketTracer.exe", ProcessId=42)],
+        processes=packet_tracer_processes(),
         bridge_healthy=True, mailbox_entries=())
     restoration = dict(environment_after=deepcopy(env),
         inventory_fingerprint_after="a" * 64 + "|", inventory_restored=True,
@@ -138,9 +138,61 @@ def facts():
         attempted=["SW", "PH"], created=["SW", "PH"], deleted=["PH", "SW"])
     final = dict(source_branch="feature/runtime-ripv2", source_head="b" * 40,
         source_tree="c" * 40, worktree_clean=True,
-        processes=[dict(Name="PacketTracer.exe", ProcessId=42)],
+        processes=packet_tracer_processes(),
         bridge_healthy=True, mailbox_entries=(), transport_problems=[])
     return baseline, restoration, final
+
+
+def packet_tracer_processes(*, main_pid=42, helper_pid=43):
+    executable = r"C:\Program Files\Cisco Packet Tracer 9.0.1\bin\PacketTracer.exe"
+    return [
+        dict(
+            Name="PacketTracer.exe",
+            ProcessId=main_pid,
+            ParentProcessId=1,
+            ExecutablePath=executable,
+            CommandLine=f'"{executable}" ',
+        ),
+        dict(
+            Name="PacketTracer.exe",
+            ProcessId=helper_pid,
+            ParentProcessId=main_pid,
+            ExecutablePath=executable,
+            CommandLine=f'"{executable}" --progress-bar-server',
+        ),
+    ]
+
+
+def test_one_primary_packet_tracer_and_its_exact_helper_are_one_runtime_cohort(
+    runner,
+    monkeypatch,
+) -> None:
+    observed = packet_tracer_processes()
+    monkeypatch.setattr(runner, "processes", lambda: observed)
+
+    acquired = runner.prove_processes()
+
+    assert acquired == observed
+    assert runner.packet_tracer_primary_pids(acquired) == (42,)
+
+
+@pytest.mark.parametrize("mutation", ["second-primary", "wrong-parent", "wrong-executable"])
+def test_packet_tracer_process_cohort_rejects_unrelated_same_name_processes(
+    runner,
+    monkeypatch,
+    mutation,
+) -> None:
+    observed = packet_tracer_processes()
+    if mutation == "second-primary":
+        observed.append(dict(observed[0], ProcessId=44))
+    elif mutation == "wrong-parent":
+        observed[1]["ParentProcessId"] = 999
+    else:
+        observed[1]["ExecutablePath"] = r"C:\Other\PacketTracer.exe"
+    monkeypatch.setattr(runner, "processes", lambda: observed)
+
+    with pytest.raises(RuntimeError, match="Packet Tracer process cohort"):
+        runner.prove_processes()
 
 
 def test_ephemeral_evidence_carries_acquired_facts_and_explicit_file_ledgers(runner):
@@ -163,7 +215,7 @@ def test_ephemeral_evidence_carries_acquired_facts_and_explicit_file_ledgers(run
     assert evidence.packet_tracer_pids_before == evidence.packet_tracer_pids_after == (42,)
     assert evidence.source_tree_before == "c" * 40
     assert not any("canonical" in key or "disposable" in key for key in evidence.model_dump())
-    final["processes"] = [dict(Name="PacketTracer.exe", ProcessId=99)]
+    final["processes"] = packet_tracer_processes(main_pid=99, helper_pid=100)
     changed = runner.ephemeral_safety_for(
         baseline,
         restoration,
@@ -173,6 +225,28 @@ def test_ephemeral_evidence_carries_acquired_facts_and_explicit_file_ledgers(run
     )
     assert changed.packet_tracer_pids_after == (99,)
     assert not runner.validate_live_session_positive_admission(changed).is_valid
+
+
+def test_ephemeral_continuity_tracks_primary_pid_and_retains_helper_raw(
+    runner,
+) -> None:
+    baseline, restoration, final = facts()
+    baseline["processes"] = packet_tracer_processes()
+    final["processes"] = packet_tracer_processes()
+
+    evidence = runner.ephemeral_safety_for(
+        baseline,
+        restoration,
+        final,
+        [],
+        file_operation_ledger=empty_file_ledger(runner),
+    )
+
+    assert len(baseline["processes"]) == len(final["processes"]) == 2
+    assert evidence.packet_tracer_pids_before == (42,)
+    assert evidence.packet_tracer_pids_after == (42,)
+    assert evidence.crash_detected is False
+    assert runner.validate_live_session_positive_admission(evidence).is_valid
 
 
 def test_ephemeral_save_attempt_uses_governed_boundary_and_blocks_admission(
@@ -239,7 +313,7 @@ def test_transport_failure_with_same_pid_is_unhealthy_but_not_a_crash(runner) ->
     "processes_after, expected_crash",
     [
         ([], True),
-        ([dict(Name="PacketTracer.exe", ProcessId=99)], True),
+        (packet_tracer_processes(main_pid=99, helper_pid=100), True),
         (None, None),
     ],
     ids=["pid-disappeared", "pid-changed", "process-evidence-unavailable"],
@@ -811,7 +885,7 @@ def test_runner_cycle_uses_only_the_instrumented_bounded_session_transport(
             save_runtime=lambda snapshot: saved.append(snapshot)
             or Path("synthetic-snapshot.json"),
         ),
-        process_probe=lambda: [dict(Name="PacketTracer.exe", ProcessId=42)],
+        process_probe=packet_tracer_processes,
         source_state_probe=lambda: dict(source),
     )
 
