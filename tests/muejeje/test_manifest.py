@@ -163,6 +163,8 @@ INVALID_OPTIONS = [
     ("privileges", "PrivGetNetwork", "must be a list"),
     ("privileges", [""], "non-empty strings"),
     ("privileges", ["PrivOne", "PrivOne"], "must not repeat"),
+    ("privileges", ["PrivMadeUp"], "no evidence"),
+    ("privileges", ["PrivGetNetwork", "PrivInvented"], "no evidence"),
     ("engine_script_order", ["muejeje_pts/script-engine/core.js"],
      "declared artifact inputs"),
 ]

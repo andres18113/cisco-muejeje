@@ -49,6 +49,24 @@ MODULE_ID_MIN_SEGMENTS = 3
 # A declared list is a hand-written inventory, not a generated one.
 MAX_OPTION_ITEMS = 64
 
+# Privilege identifiers this repository has evidence for.
+#
+# Privileges decide which IPC calls a Script Module may make, and Cisco is
+# explicit that "calls to unselected privileges will be denied" — so a wrong
+# name is not caught at packaging time, it is caught on the target as a denied
+# call, where nothing here can see it. A non-empty list may therefore hold only
+# names Cisco itself names (MJ-032). An empty list needs no evidence: asking
+# for nothing cannot ask for the wrong thing.
+#
+# The set is small because the privilege catalogue lives in `.pki` files that
+# are **not installed**. These three are the identifiers the installed IpcAPI
+# reference leaks through its event declarations; each one, with the page and
+# page hash it was read from, is recorded in `tests/muejeje/test_privileges.py`
+# and re-derived there against the installed build. A name absent from this
+# tuple is unevidenced *here* — never "nonexistent". Which privilege any given
+# IPC call requires is a separate open question.
+EVIDENCED_PRIVILEGES = ("PrivActivityWizard", "PrivApplication", "PrivGetNetwork")
+
 
 def _reject_non_finite(value: str) -> Any:
     raise ValueError(f"non-finite JSON value: {value}")
@@ -186,12 +204,32 @@ def _startup_error(value: Any) -> str | None:
     return None
 
 
+def _privileges_error(value: Any) -> str | None:
+    """A bounded list of privilege names Cisco names, or an empty one.
+
+    The shape rules run first, so a typo is reported as a typo rather than as
+    a missing privilege catalogue. Only the unevidenced names are named back:
+    a reason listing the valid ones alongside them would read as if all of
+    them were at fault.
+    """
+    reason = _string_list_error(value)
+    if reason is not None:
+        return reason
+    unevidenced = sorted(set(value) - set(EVIDENCED_PRIVILEGES))
+    if unevidenced:
+        return (
+            "must name only privileges Cisco documents; this repository has no "
+            f"evidence for {', '.join(unevidenced)}"
+        )
+    return None
+
+
 _OPTION_VALIDATORS = {
     "engine_script_order": _path_list_error,
     "custom_interface_order": _path_list_error,
     "module_id": _module_id_error,
     "startup": _startup_error,
-    "privileges": _string_list_error,
+    "privileges": _privileges_error,
 }
 
 
