@@ -912,15 +912,22 @@ decides which happened:
 inside a nested object breaks a reader in the same way — and a gate that reads
 only top-level names cannot see it. That was measured, not supposed: renaming
 `descriptors[].model_supported` passed the whole compatibility gate before it
-walked results. So nested shapes are frozen by the path that reaches them, and
-the *set of paths* is held equal rather than as a subset: a published nested
-object nobody froze is one nothing is holding still.
+walked results.
+
+**A nested path is a floor, not a fixed set.** An earlier revision held the set
+of published paths *equal*, which made publishing a new nested object a failure
+— an additive change, invisible to a consumer that does not read it, refused by
+a rule written to permit exactly that kind of growth. What is held is that every
+frozen path is still answered, that every field under it is still there, and
+that each still carries the type it carried: "keeps its name while meaning
+something else" is the half of this rule a name-only reader cannot see.
 
 **Compatible — no protocol version change:**
 
 | Change | Why a consumer survives it |
 | --- | --- |
 | a new field in an operation's `result`, at any level | a consumer that does not read it cannot see it |
+| a new nested object in a `result` | same: nothing was reading a path that did not exist |
 | a new operation name in the whitelist | nobody was sending it |
 | a new argument an operation accepts | nobody was supplying it, and omitting it must keep the old behaviour |
 | different `error.message` prose | the message is diagnostic; `error.code` is the contract |
@@ -941,6 +948,29 @@ object nobody froze is one nothing is holding still.
 `error.message` is deliberately outside the contract: a fixed diagnostic string
 that never echoes caller input (MJ-022), free to improve.
 
+**A published shape is externally frozen once it is release-qualified — not
+before.** V6's guarantees are made to consumers of a *released* artifact, and
+nothing here has been released: no `.pts` has been built from these sources,
+every platform capability is `PENDING_TARGET` (MJ-031), and the only readers of
+these results are this repository's own tests. While that holds, a result field
+that turns out to misdescribe what the platform actually said is **corrected**
+rather than carried forward, and the correction is recorded here with the
+evidence that forced it. Preserving a known mistake because a gate froze it
+would be the gate defeating its own purpose: it exists to make a contract change
+*visible and deliberate*, not to make a wrong answer permanent.
+
+Once a version is release-qualified against the target — packaged, run and
+recorded — the tables in `tests/muejeje/test_v6_result_shapes.py` stop being a
+working baseline and become the promise this section describes, and a change to
+one is a new protocol version.
+
+**Corrections made under that rule, so far:**
+
+| Shape | Why it was wrong |
+| --- | --- |
+| `nodes[].slot_index` → `nodes[].module_index` | `getModuleAt(i)` indexes a module enumeration; nothing evidenced it as a slot position, and `getSlotCount()`/`getSlotTypeAt()` are a separate enumeration this repository has never observed to correspond with it |
+| `nodes[].children_present` withdrawn | it counted "bays that hold a module", which required reading a `null` from `getModuleAt` as an empty bay — a semantic no target evidence supports |
+
 **A new protocol version is a new number, never a reinterpretation.** V6 has no
 compatibility escape and never guesses at a neighbouring version's meaning
 (MJ-008); a V7 would be admitted as V7 or refused as `PROTOCOL_MISMATCH`.
@@ -956,9 +986,10 @@ answers in that envelope, that a read-only operation stays read-only, and that
 this rule is stated here. `tests/muejeje/test_v6_result_shapes.py` asserts each
 operation's published result fields as a **subset** of what it answers — so an
 added field passes and a removed or renamed one fails — walks every nested
-object a result publishes and holds the set of those paths equal, drives a
+object a result publishes, holds every frozen path to still being answered with
+its fields *and their types*, admits a path nobody froze as additive, drives a
 platform operation against a stub so an empty list cannot hide a shape, and
-asserts both measures in both directions on synthetic results.
+asserts each measure in both directions on synthetic results.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 
