@@ -147,6 +147,41 @@ def test_the_vocabulary_gate_rejects_identifiers_without_rejecting_the_domain():
     assert sorted(symbols_present(scenario, identifiers)) == ["cp-live", "router0"]
 
 
+# Cisco's own enum identifiers. A hand-maintained mirror of one is correct
+# only until Packet Tracer changes, and nothing in this repository would notice
+# (MJ-014). An official *API* is deliberately absent from this list:
+# `getDescriptor` is Cisco's, and forbidding the word would forbid the
+# reference along with the mirror while leaving a table of type numbers — the
+# actual defect — perfectly legal. The numbers themselves are gated where they
+# could be written down, in `test_platform_adapter`.
+CISCO_ENUM_IDENTIFIERS = (
+    "eRouter", "eSwitch", "eMultiLayerSwitch", "eAccessPoint",
+    "ePtSwitchModule", "eIpPhonePowerAdapter", "eNonRemovableModule",
+    "eAccessPointPowerAdaptor",
+)
+
+
+def test_owned_sources_mirror_no_cisco_enum_identifier():
+    """The platform is the authority on its own values, never a table of ours.
+
+    Asserted in both directions: a mirrored identifier is an offender, and the
+    prose that explains why is not — these sources have to be able to say what
+    they refuse to carry.
+    """
+    offenders = layer_offenders(
+        packaged_text_bodies(),
+        [literal_pattern(name) for name in CISCO_ENUM_IDENTIFIERS],
+        adapters=(),
+    )
+    assert not offenders, f"a Cisco enum inside the artifact: {offenders}"
+
+    mirror = {"core.js": "var TYPES = {eRouter: 1, eSwitch: 2};"}
+    patterns = [literal_pattern(name) for name in CISCO_ENUM_IDENTIFIERS]
+    assert sorted(layer_offenders(mirror, patterns, adapters=())) == [
+        "core.js: eRouter", "core.js: eSwitch",
+    ]
+
+
 def test_owned_sources_hardcode_no_endpoint_address():
     offenders = [
         f"{path}: {found.group(0)}"

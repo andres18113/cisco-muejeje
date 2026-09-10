@@ -57,7 +57,7 @@ TOOLING_INPUTS = [
 # nobody was checking (MJ-028).
 FEATURE_EVIDENCE = {
     "platform.descriptor_discovery": (
-        "platform_adapter.js", "muejejeAdapterDeviceDescriptors",
+        "platform_device_adapter.js", "muejejeAdapterDeviceDescriptors",
     ),
     "protocol.v6": ("validation_v6.js", "muejejeV6ParseRequest"),
     "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),

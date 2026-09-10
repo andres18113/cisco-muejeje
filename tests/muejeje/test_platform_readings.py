@@ -186,8 +186,8 @@ def test_every_adapter_bound_is_a_positive_whole_number():
 
 
 @requires_node
-def test_the_adapter_never_throws_out_of_the_engine():
-    """Whatever the platform does, the caller gets a reading.
+def test_whatever_the_platform_does_the_caller_still_gets_a_reading():
+    """Every platform-shaped outcome is an answer, not an exception.
 
     An uncaught error inside a Script Engine call is not something a consumer
     can correlate, diagnose or retry, and in Packet Tracer it opens a modal.
@@ -202,3 +202,34 @@ def test_the_adapter_never_throws_out_of_the_engine():
         response = dispatch_v6(_request(), prelude=prelude)
         assert response["ok"] is True, prelude[:40]
         assert response["result"]["resolution"] in {"OBSERVED", "UNAVAILABLE"}
+
+
+@requires_node
+def test_a_defect_in_this_artifact_is_never_reported_as_a_platform_failure():
+    """The boundary this adapter exists to keep: whose failure was it?
+
+    `PLATFORM_CALL_FAILED` is an *observation about Packet Tracer* — the
+    module asked and the call did not return — and a consumer may record it as
+    one, on a target, as the reading that says a privilege is missing
+    (MJ-031, MJ-032). A bug in our own reading code that came back under that
+    name would therefore be evidence about the platform that nothing platform
+    ever produced, and it would be indistinguishable from the real thing.
+
+    So only two things become an unavailable reading: a call this adapter made
+    at its declared platform-call boundary, and an answer its own validators
+    refused. Anything else is a defect in this artifact, and it leaves the
+    adapter as it was thrown — for the dispatcher to report as
+    `ENGINE_EXCEPTION`, which is the code that means the engine itself broke
+    (MJ-022).
+    """
+    defect = "\nmuejejeAdapterCount = function () { throw new Error('defect'); };"
+    response = dispatch_v6(
+        _request(), prelude=platform_stub(THREE_MODELS) + defect,
+    )
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == "ENGINE_EXCEPTION"
+    assert response["result"] is None
+    assert "defect" not in json.dumps(response), (
+        "the thrown value is engine-internal and never reaches a consumer"
+    )

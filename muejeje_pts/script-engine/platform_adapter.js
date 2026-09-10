@@ -1,22 +1,47 @@
 /*
- * Muejeje runtime — the Cisco platform adapter. READ-ONLY.
+ * Muejeje runtime — the Cisco platform-call boundary. READ-ONLY.
  *
- * The only file in this artifact that reaches Packet Tracer. It is declared as
- * an adapter in the architecture gates, which is what makes naming `ipc` legal
- * here and a violation everywhere else (MJ-006, MJ-019). It adapts and nothing
- * more: it shapes no envelope, admits no request, dispatches nothing, and
- * reads no kernel state.
+ * The only file in this artifact that names `ipc`, and the only one that
+ * invokes a platform member at all. It is declared as an adapter in the
+ * architecture gates, which is what makes naming the platform legal here and a
+ * violation everywhere else (MJ-006, MJ-019). It adapts and nothing more: it
+ * shapes no envelope, admits no request, dispatches nothing, and reads no
+ * kernel state.
  *
- * NOTHING HERE MUTATES ANYTHING. Every call below is a documented getter on a
- * *descriptor* — a description of what a model can accept — so no call
- * instantiates a device, powers one, or touches a workspace. A descriptor is
- * not a runtime `Module`, and no field it returns establishes installed
- * hardware (MJ-014).
+ * EVERY PLATFORM CALL GOES THROUGH ONE FUNCTION. `muejejeAdapterCall` takes the
+ * member name as data and refuses any name outside the read-only allowlist
+ * below, so "what does this artifact do to Packet Tracer" is answered by one
+ * list rather than by reading every call site. Nothing here mutates anything:
+ * each admitted name is a documented getter, so no call instantiates a device,
+ * powers one, or touches a workspace. A descriptor is not a runtime `Module`,
+ * and no field it returns establishes installed hardware (MJ-014).
  *
- * Every API used here is named in Cisco's installed IpcAPI reference for
+ * WHOSE FAILURE WAS IT. Only two things become an unavailable reading: a call
+ * made at the boundary below, and an answer the validators below refused.
+ * Anything else that throws in a platform adapter is a defect in this
+ * artifact, and it is left to reach the dispatcher as `ENGINE_EXCEPTION` —
+ * reporting it as `PLATFORM_CALL_FAILED` would manufacture an observation
+ * about Packet Tracer that Packet Tracer never produced, and a consumer could
+ * not tell it from the real thing (MJ-022, MJ-031).
+ *
+ * WHAT IS READ THROUGH IT lives beside it, one adapter per subject, because a
+ * boundary and the things read across it are different responsibilities and
+ * this file is the one that must stay short enough to check in full (MJ-018,
+ * MJ-020). Those adapters name no platform object of their own: they are
+ * handed one and call it by name through `muejejeAdapterCall`.
+ *
+ * IT REPORTS OBSERVATIONS AND REACHES NO VERDICT. Whether an answer qualifies
+ * anything is decided in Python, from outside the artifact (MJ-011). And the
+ * module requests no privilege, so on a real target these calls are denied
+ * until a privilege is evidenced — which is reported as an unavailable reading
+ * rather than as a failure of the platform (MJ-032).
+ */
+
+/* The platform members this artifact may call, and the whole of what it may
+ * call. Every name is a getter named in Cisco's installed IpcAPI reference for
  * 9.0.1.0858, and none is guessed (`AGENTS.md` rule 6):
  *
- *   ipc.hardwareFactory()                  -> HardwareFactory
+ *   ipc.hardwareFactory()                  -> HardwareFactory  (class_i_p_c)
  *   HardwareFactory.devices()              -> DeviceFactory
  *   DeviceFactory.getAvailableDeviceCount()          -> int
  *   DeviceFactory.getAvailableDeviceAt(int)          -> DeviceDescriptor
@@ -26,19 +51,23 @@
  *   DeviceDescriptor.getSupportedModuleTypeCount()   -> int
  *   DeviceDescriptor.getSupportedModuleTypeAt(int)   -> ModuleType
  *
- * The enumeration is deliberately the *unqualified* pair — count and index —
- * because it needs no DeviceType argument. Asking for a type would mean
- * carrying a numeric Cisco enum table as the authority for which types exist,
- * and a mirrored constant is correct only until Packet Tracer changes
- * (MJ-014). The numbers this adapter reports are read back out of the
- * platform, never matched against a table of our own.
- *
- * IT REPORTS OBSERVATIONS AND REACHES NO VERDICT. Whether an answer qualifies
- * anything is decided in Python, from outside the artifact (MJ-011). And the
- * module requests no privilege, so on a real target these calls are denied
- * until a privilege is evidenced — which this reports as an unavailable
- * reading rather than as a failure of the platform (MJ-032).
- */
+ * An allowlist rather than a list of forbidden verbs: a name nobody thought to
+ * forbid is admitted by a blacklist and refused by this. The enumeration is
+ * deliberately the *unqualified* pair — count and index — because it needs no
+ * DeviceType argument. Asking by type would mean carrying a numeric Cisco enum
+ * table as the authority for which types exist, and a mirrored constant is
+ * correct only until Packet Tracer changes (MJ-014). */
+var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
+    hardwareFactory: true,
+    devices: true,
+    getAvailableDeviceCount: true,
+    getAvailableDeviceAt: true,
+    getModel: true,
+    getType: true,
+    isModelSupported: true,
+    getSupportedModuleTypeCount: true,
+    getSupportedModuleTypeAt: true
+};
 
 /* Bounds, and they are Muejeje's own. Nothing here has measured how many
  * models the factory offers or how many module types a descriptor lists, so
@@ -70,6 +99,56 @@ var MUEJEJE_PLATFORM_UNUSABLE = "PLATFORM_ANSWER_UNUSABLE";
 var MUEJEJE_PLATFORM_OBSERVED = "OBSERVED";
 var MUEJEJE_PLATFORM_UNAVAILABLE = "UNAVAILABLE";
 
+/* THE PLATFORM-CALL BOUNDARY. One member call, by name, with the reason it can
+ * fail decided here rather than by whoever wrote the call site.
+ *
+ * A name outside the allowlist throws a plain error on purpose: asking for a
+ * call this artifact does not admit is a defect in this artifact, so it must
+ * not come back looking like something Packet Tracer did. A receiver the
+ * platform did not give us is an unusable answer; a call that threw is a call
+ * that did not return, whatever the engine's reason was. */
+function muejejeAdapterCall(receiver, name) {
+    muejejeAdapterAdmitted(receiver, name);
+    try {
+        return receiver[name]();
+    } catch (platformError) {
+        throw MUEJEJE_PLATFORM_CALL_FAILED;
+    }
+}
+
+/* The same boundary for the indexed pair — `getAvailableDeviceAt(int)` and its
+ * kind. A separate function rather than an optional argument, so a call site
+ * that forgets the index cannot silently become the no-argument call. */
+function muejejeAdapterCallAt(receiver, name, index) {
+    muejejeAdapterAdmitted(receiver, name);
+    try {
+        return receiver[name](index);
+    } catch (platformError) {
+        throw MUEJEJE_PLATFORM_CALL_FAILED;
+    }
+}
+
+function muejejeAdapterAdmitted(receiver, name) {
+    if (!Object.prototype.hasOwnProperty.call(
+        MUEJEJE_PLATFORM_READ_ONLY_CALLS, name
+    )) {
+        throw new Error("muejeje: platform call outside the read-only boundary");
+    }
+    if (receiver === null || typeof receiver !== "object") {
+        throw MUEJEJE_PLATFORM_UNUSABLE;
+    }
+}
+
+/* The platform object, or null when there is none. Asking "is there a Packet
+ * Tracer here" is a platform question, so it is answered here rather than in
+ * every adapter that would otherwise have to name `ipc` to ask it. */
+function muejejeAdapterPlatform() {
+    if (typeof ipc === "undefined" || ipc === null) {
+        return null;
+    }
+    return ipc;
+}
+
 /* One result shape for every outcome, so a consumer parses one thing whether
  * the platform answered or not. */
 function muejejeAdapterUnavailable(reason, offset, limit) {
@@ -97,85 +176,21 @@ function muejejeAdapterWindow(offset, limit) {
     return {offset: start, limit: size};
 }
 
-/* The one entry point. It never throws: an unreadable platform is an
- * observation about the platform, not an exception for the caller. */
-function muejejeAdapterDeviceDescriptors(offset, limit) {
-    var window = muejejeAdapterWindow(offset, limit);
-    if (typeof ipc === "undefined" || ipc === null) {
-        return muejejeAdapterUnavailable(
-            MUEJEJE_PLATFORM_ABSENT, window.offset, window.limit
-        );
-    }
-    try {
-        return muejejeAdapterRead(window);
-    } catch (platformError) {
-        /* The thrown value is engine-internal and never reaches the result: a
-         * consumer that could read it would be depending on an internal
-         * (MJ-005). Only our own sentinel is distinguished. */
-        return muejejeAdapterUnavailable(
-            platformError === MUEJEJE_PLATFORM_UNUSABLE
-                ? MUEJEJE_PLATFORM_UNUSABLE
-                : MUEJEJE_PLATFORM_CALL_FAILED,
-            window.offset,
-            window.limit
-        );
-    }
-}
-
-function muejejeAdapterRead(window) {
-    var factory = ipc.hardwareFactory().devices();
-    if (!factory) {
-        throw MUEJEJE_PLATFORM_UNUSABLE;
-    }
-    var count = muejejeAdapterCount(factory.getAvailableDeviceCount());
-    var last = Math.min(count, window.offset + window.limit);
-    var descriptors = [];
-    for (var index = window.offset; index < last; index++) {
-        descriptors.push(
-            muejejeAdapterDescriptor(factory.getAvailableDeviceAt(index))
-        );
-    }
-    return {
-        resolution: MUEJEJE_PLATFORM_OBSERVED,
-        unavailable_reason: null,
-        available_count: count,
-        offset: window.offset,
-        limit: window.limit,
-        descriptors: descriptors,
-        window_truncated: count > last
-    };
-}
-
-function muejejeAdapterDescriptor(descriptor) {
-    if (!descriptor) {
-        throw MUEJEJE_PLATFORM_UNUSABLE;
-    }
-    var supported = muejejeAdapterModuleTypes(descriptor);
-    return {
-        model: muejejeAdapterModel(descriptor.getModel()),
-        device_type: muejejeAdapterWholeNumber(descriptor.getType()),
-        model_supported: muejejeAdapterFlag(descriptor.isModelSupported()),
-        supported_module_types: supported.types,
-        module_types_truncated: supported.truncated
-    };
-}
-
-/* The module types a model supports, read from the descriptor that knows.
+/* Which thrown values are a reading, and which are this artifact's own bug.
  *
- * This is the answer a numeric mirror was standing in for: the values come
- * back from Packet Tracer as Packet Tracer's own numbers, and nothing here
- * translates them (MJ-014). Naming them is a consumer's job, against the
- * platform's own documentation. */
-function muejejeAdapterModuleTypes(descriptor) {
-    var count = muejejeAdapterCount(descriptor.getSupportedModuleTypeCount());
-    var readable = Math.min(count, MUEJEJE_PLATFORM_LIMITS.MAX_MODULE_TYPES);
-    var types = [];
-    for (var index = 0; index < readable; index++) {
-        types.push(
-            muejejeAdapterWholeNumber(descriptor.getSupportedModuleTypeAt(index))
-        );
+ * The two sentinels are the only failures this adapter attributed to the
+ * platform: one at the call boundary, one at a validator. Anything else got
+ * here from our own code, so it is rethrown for the dispatcher to report as an
+ * engine exception. Swallowing it would publish a platform observation nobody
+ * observed (MJ-031). */
+function muejejeAdapterReading(thrown, window) {
+    if (
+        thrown !== MUEJEJE_PLATFORM_CALL_FAILED
+        && thrown !== MUEJEJE_PLATFORM_UNUSABLE
+    ) {
+        throw thrown;
     }
-    return {types: types, truncated: count > readable};
+    return muejejeAdapterUnavailable(thrown, window.offset, window.limit);
 }
 
 function muejejeAdapterCount(value) {

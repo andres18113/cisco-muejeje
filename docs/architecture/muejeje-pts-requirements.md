@@ -106,12 +106,12 @@ IpcAPI. Muejeje adapts to it; it does not extend or reinterpret it.
 **Rationale.** The platform is the one thing Muejeje cannot change. Naming it as
 the boundary keeps compatibility work in one place.
 **Verification.** All platform access in the owned artifact goes through one
-declared adapter, and every call it makes is named in Cisco's installed IpcAPI
-reference. A gate fails if any other packaged source names `ipc`; another
-compares the calls the adapter actually made, at runtime, against the
-documented set (MJ-031).
+declared call boundary, which admits only names present in Cisco's installed
+IpcAPI reference. A gate fails if any other packaged source names `ipc` or
+names a platform member at a call site; another compares the calls actually
+made, at runtime, against the documented set (MJ-031).
 **Status.** `ENFORCED` for the owned artifact's own platform access, which is
-one read-only adapter over documented getters; `BASELINED (deviation)` for the
+one read-only boundary over documented getters; `BASELINED (deviation)` for the
 legacy runtime consumers still use, where six PTBuilder globals sit between
 Muejeje and the IpcAPI (MJ-013).
 
@@ -448,7 +448,9 @@ A refusal names its class:
 `ENGINE_EXCEPTION` is reserved for the last row. A malformed request, a
 protocol mismatch, a validation failure and an exceeded bound are never
 reported as one: nothing went wrong inside the engine when a request was
-simply not admissible. Error messages are fixed strings and never echo a
+simply not admissible. It reads in the other direction too — a defect inside
+this artifact is *always* this code, and never a platform observation, which is
+the attribution rule MJ-031 states. Error messages are fixed strings and never echo a
 caller-supplied name or value; a message is diagnostic prose, and `code` is
 what a consumer branches on (MJ-030). The dispatcher never throws out of the
 engine.
@@ -699,40 +701,60 @@ mechanism.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 
-### MJ-031 — The platform adapter is one declared file, read-only, and cited
-**Requirement.** Muejeje reaches Packet Tracer from **one** packaged file,
-declared as an adapter by path in the architecture gates. Core, protocol,
-admission, dispatch, lifecycle and every operation stay platform-agnostic: an
-operation calls the adapter, and the adapter reads no kernel state, shapes no
-envelope and dispatches nothing (MJ-019).
+### MJ-031 — Platform access is one read-only, cited call boundary
+**Requirement.** Muejeje reaches Packet Tracer through **one boundary**: a
+single packaged file names `ipc`, and a single function in it makes every
+platform call this artifact makes, by member name, admitting only names on a
+declared read-only allowlist. The adapters that read a subject — device
+descriptors, chassis modules — are declared adapters beside it and call the
+platform only through that function; they name no platform object of their own.
+Core, protocol, admission, dispatch, lifecycle and every operation stay
+platform-agnostic: an operation calls an adapter, and an adapter reads no
+kernel state, shapes no envelope and dispatches nothing (MJ-019).
 
-**Four rules bound what the adapter may do.**
+**Four rules bound what may cross it.**
 
-1. **Documented or evidenced only.** Every platform call it makes is named in
+1. **Documented or evidenced only.** Every name on the allowlist is named in
    Cisco's installed IpcAPI reference for the pinned build, or is already
    evidenced against it. A guess earns a bare `Invalid arguments for IPC call
    "X"` that says nothing about why (`AGENTS.md` rule 6).
-2. **No mutation.** Every call is a getter on a *descriptor* — a description of
-   what a model can accept — so nothing it does instantiates a device, powers
-   one, or touches a workspace. A descriptor is not a runtime `Module`, and no
-   field it returns establishes installed hardware (MJ-014).
-3. **No numeric Cisco enum as authority.** The values it reports come back out
-   of the platform and are never matched against a table of ours. The
-   enumeration it uses — `getAvailableDeviceCount()` with
-   `getAvailableDeviceAt(int)` — takes no `DeviceType` argument for exactly
-   this reason, so no such table has to exist.
+2. **No mutation, proved positively.** The allowlist is the proof: it holds
+   only documented getters, and an adapter names no platform member at a call
+   site, so a call outside the list cannot be written — it is refused by the
+   boundary before a receiver is touched. A blacklist of mutating verbs is kept
+   as a second, cheaper line of defence over the allowlist itself, and is
+   deliberately not the first: a forbidden-verb list admits every name nobody
+   thought of, and once the member name is data it cannot see the call at all.
+3. **No numeric Cisco enum as authority.** The values reported come back out of
+   the platform and are never matched against a table of ours. Two gates, one
+   per spelling: no Cisco enum *identifier* appears in any packaged source, and
+   the only numeric literals an adapter carries are Muejeje's own declared
+   bounds. An official API is **not** banned by name — `getDescriptor` is
+   Cisco's, and forbidding the word would forbid the reference while leaving a
+   hand-written table of type numbers legal. What is forbidden is the mirror,
+   which is why the enumeration in use takes no `DeviceType` argument.
 4. **No consumer or topology assumption.** It reads the *factory*, which
-   describes what models exist. It never reads a workspace, a device instance,
-   a link or an address (MJ-002, MJ-004).
+   describes what models exist and what hardware each model can accept. It
+   never reads a workspace, a device instance, a link or an address (MJ-002,
+   MJ-004).
 
-**An unreadable platform is an observation, not a failure.** The adapter never
-throws out of the engine and never reports a V6 error for it: the request was
-admissible, and the answer is that no reading was obtained. Three reasons stay
-distinct, because a consumer acts differently on each — `PLATFORM_ABSENT`
-(there is no platform object here), `PLATFORM_CALL_FAILED` (it was asked and
-the call did not return) and `PLATFORM_ANSWER_UNUSABLE` (it answered, and the
-answer could not be attributed). **A denied privilege is one cause of the
-second, and the adapter does not claim to know which cause it was.**
+**An unreadable platform is an observation, not a failure.** No V6 error is
+reported for it: the request was admissible, and the answer is that no reading
+was obtained. Three reasons stay distinct, because a consumer acts differently
+on each — `PLATFORM_ABSENT` (there is no platform object here),
+`PLATFORM_CALL_FAILED` (it was asked and the call did not return) and
+`PLATFORM_ANSWER_UNUSABLE` (it answered, and the answer could not be
+attributed). **A denied privilege is one cause of the second, and the adapter
+does not claim to know which cause it was.**
+
+**Whose failure was it is part of the contract.** Exactly two things become an
+unavailable reading: a call made at the boundary, and an answer a declared
+validator refused. Anything else thrown inside an adapter is a defect in *this
+artifact*, and it is left to reach the dispatcher as `ENGINE_EXCEPTION`
+(MJ-022). Reporting it as `PLATFORM_CALL_FAILED` would manufacture an
+observation about Packet Tracer that Packet Tracer never produced — and on a
+target, where that reading is exactly what a missing privilege looks like, a
+consumer could not tell the two apart.
 
 **A capability with no evidenced privilege stays pending.** This module
 requests no privilege (MJ-025, MJ-032), so on a target these calls are denied
@@ -748,25 +770,30 @@ call would turn one unavailable platform into "this runtime has no
 capabilities" (MJ-028).
 **Rationale.** MJ-003 asks for behaviour selected from observed capabilities
 rather than from assumptions, and nothing could observe one until something
-could ask. Bounding that first reach to a single declared, read-only, cited
-file is what keeps the answer to "what does this artifact do to Packet Tracer"
-short enough to check.
-**Verification.** Three modules, one per responsibility.
-`tests/muejeje/test_platform_adapter.py` asserts the adapter is the only file
-naming `ipc`, that it names no kernel symbol, that no member call is shaped
-like a mutation, and that no Cisco enum name appears anywhere in the packaged
-sources — then compares the calls it *actually made*, recorded by a stub,
-against the documented set, in both directions.
-`tests/muejeje/test_platform_readings.py` drives all four readings, every field
-validator behind them, and asserts the adapter never throws out of the engine.
-`tests/muejeje/test_platform_descriptors.py` covers the operation: one result
+could ask. Bounding that reach to one cited, read-only call boundary is what
+keeps the answer to "what does this artifact do to Packet Tracer" short enough
+to check: it is a list, not a reading of every call site.
+**Verification.** Four modules, one per responsibility.
+`tests/muejeje/test_platform_adapter.py` asserts that one file names `ipc`,
+that only declared adapters reach the boundary, that no adapter names a
+platform member at a call site, that the allowlist equals the documented set,
+that no admitted name is shaped like a mutation, and that an adapter carries no
+number but its own bounds — then compares the calls actually made, recorded by
+a stub, against the documented set, in both directions, and drives the boundary
+refusing a name outside the allowlist without touching the receiver.
+`tests/muejeje/test_platform_readings.py` drives every reading, every field
+validator behind them, and that a defect inside an adapter reaches the caller
+as `ENGINE_EXCEPTION` rather than as a platform reading.
+`tests/muejeje/test_platform_descriptors.py` covers the operations: one result
 shape whether the platform answered or not, the window and its truncation
 marks, the declared argument rules, and no self-certified verdict.
-`tests/muejeje/test_layer_boundaries.py` checks the declaration itself.
-**Status.** `ENFORCED` for the boundary, the read-only rule and the adapter's
-own logic under Node; `PENDING_TARGET` for the capability itself. The
-`OBSERVED` branch has only ever been driven against a stub, no `.pts` has been
-built from these sources, and nothing here has reached `9.0.1.0858` (MJ-015).
+`tests/muejeje/test_source_root.py` gates the enum identifiers, and
+`tests/muejeje/test_layer_boundaries.py` checks the declarations themselves.
+**Status.** `ENFORCED` for the boundary, the read-only rule, the failure
+attribution and the adapters' own logic under Node; `PENDING_TARGET` for the
+capabilities themselves. The `OBSERVED` branch has only ever been driven
+against a stub, no `.pts` has been built from these sources, and nothing here
+has reached `9.0.1.0858` (MJ-015).
 
 ### MJ-032 — A declared privilege must be a privilege Cisco names
 **Requirement.** `build_options.privileges` may be empty, or may hold only

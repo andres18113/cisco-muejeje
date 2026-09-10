@@ -79,7 +79,7 @@ dispatch, then the lifecycle that may call all of it (`MJ-019`).
    privilege here would mean guessing which one the descriptor reading needs,
    and no evidence in this repository says (`MJ-032`). Record the denial; it is
    the observation this run is for.
-4. **Script Engine**: import the nine files in the order above. Import; do not
+4. **Script Engine**: import the engine files in the order above. Import; do not
    paste. Pasted source loses its newlines in the Builder Code Editor, and these
    files are ordinary multi-line JavaScript with comments.
 5. **Custom Interfaces**: import `index.html`. It is the only interface file, it

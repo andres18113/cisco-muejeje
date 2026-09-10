@@ -26,12 +26,13 @@ It is declared once, in `build_options.engine_script_order`:
 | 1 | `core.js` | constants and session state; depends on nothing |
 | 2 | `protocol_v6.js` | the response envelope and the failure taxonomy |
 | 3 | `validation_v6.js` | bounded request admission, and the bounds themselves |
-| 4 | `platform_adapter.js` | the **only** file that reaches Packet Tracer; read-only |
-| 5 | `platform_discovery.js` | the `platform.device_descriptors` operation |
-| 6 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
-| 7 | `runtime_identity.js` | the `runtime.identify` operation |
-| 8 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
-| 9 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+| 4 | `platform_adapter.js` | the **only** file that names `ipc`; the read-only call boundary |
+| 5 | `platform_device_adapter.js` | the device-descriptor reading, through that boundary |
+| 6 | `platform_discovery.js` | the `platform.device_descriptors` operation |
+| 7 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
+| 8 | `runtime_identity.js` | the `runtime.identify` operation |
+| 9 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| 10 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
 
 The arrows point one way — `lifecycle → dispatcher → operations → adapter →
 protocol + core` — and nothing points back. An operation is never implemented
@@ -82,16 +83,34 @@ establishes (`MJ-011`).
 
 `platform_adapter.js` is the one file that names `ipc`, and the architecture
 gates say so by path: naming the platform is legal there and a violation in
-every other packaged source (`MJ-006`, `MJ-019`). It is read-only by
-construction — every call is a documented getter on a *descriptor*, so nothing
-it does instantiates a device, powers one, or touches a workspace — and a gate
-fails on any member call shaped like a mutation.
+every other packaged source (`MJ-006`, `MJ-019`). Every platform call this
+artifact makes goes through one function in it, by member name, and that
+function admits only the names on a declared read-only allowlist. The adapters
+beside it read one subject each — device descriptors today — and name no
+platform object of their own.
+
+**The read-only proof is that list, not a list of forbidden verbs.** A
+blacklist admits every name nobody thought to forbid, and once the member name
+is data it cannot see the call at all. So the allowlist holds documented
+getters only, a gate holds it equal to what this repository can cite, another
+fails if any adapter names a platform member at a call site, and a third
+compares the calls that actually ran against the same set. The mutating-verb
+pattern stays as a second line of defence over the list itself.
+
+**A defect in here is never reported as something Packet Tracer did.** Only a
+call the boundary made and an answer a validator refused become an unavailable
+reading; anything else reaches the caller as `ENGINE_EXCEPTION` (`MJ-022`,
+`MJ-031`). On a target, `PLATFORM_CALL_FAILED` is what a missing privilege
+looks like — so a bug of ours wearing that name would be indistinguishable from
+real evidence.
 
 The numbers it reports are Packet Tracer's own, read back out of the platform.
 That is the point: a hand-maintained numeric mirror of a Cisco enum is correct
 only until Packet Tracer changes, and nothing here would notice (`MJ-014`). The
 enumeration it uses takes no `DeviceType` argument, so no such table has to
-exist at all.
+exist at all — and the gates forbid the mirror rather than the vocabulary: no
+Cisco enum identifier in any packaged source, and no numeric literal in an
+adapter but its own declared bounds.
 
 **The module still requests no privilege** (`privileges: []`). No privilege is
 evidenced as the one these calls need — the catalogue lives in `.pki` files

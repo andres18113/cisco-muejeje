@@ -45,6 +45,7 @@ ENGINE_SCRIPT_ORDER = [
     "muejeje_pts/script-engine/protocol_v6.js",
     "muejeje_pts/script-engine/validation_v6.js",
     "muejeje_pts/script-engine/platform_adapter.js",
+    "muejeje_pts/script-engine/platform_device_adapter.js",
     "muejeje_pts/script-engine/platform_discovery.js",
     "muejeje_pts/script-engine/runtime_capabilities.js",
     "muejeje_pts/script-engine/runtime_identity.js",

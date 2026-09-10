@@ -81,6 +81,23 @@ def js_function_lengths(path: Path) -> list[tuple[str, int]]:
     return lengths
 
 
+# A JavaScript comment, either spelling. The owned Script Engine sources are
+# plain ES5 with no string that contains a comment opener, which is the same
+# assumption the brace counter above already documents.
+JS_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
+
+
+def js_code_only(body: str) -> str:
+    """`body` with its comments removed, so a gate reads code and not prose.
+
+    A boundary gate that read the comments would fire on the explanation of
+    the boundary — every adapter header cites the platform calls it is allowed
+    to make — and a gate that fires on its own explanation teaches people to
+    delete the explanation rather than to keep the rule.
+    """
+    return JS_COMMENT.sub(" ", body)
+
+
 # Packaged assets, split by whether their bytes are text. An asset is not text
 # because it ships in the artifact: a `.png` is packaged and would raise on
 # `read_text`, so every gate that reads prose reads `packaged_text_bodies()`

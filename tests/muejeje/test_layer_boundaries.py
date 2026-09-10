@@ -55,11 +55,21 @@ TRANSPORT_SYMBOLS = (
 # every declaration is checked against the rules below.
 TRANSPORT_ADAPTER_FILES: tuple[str, ...] = ()
 IPC_ADAPTER_FILES: tuple[str, ...] = (
-    # The read-only device-descriptor adapter (MJ-031). Its own boundary — no
-    # mutation, no kernel state, no undocumented call — is gated in
-    # `test_platform_adapter`; the declaration here is what makes naming `ipc`
-    # legal in that one file and a violation in every other.
+    # The read-only platform-call boundary (MJ-031): the one file that names
+    # `ipc`, and the one function every platform call in this artifact goes
+    # through. What it may call — no mutation, no undocumented getter, no
+    # Cisco enum — is gated in `test_platform_adapter`; the declaration here is
+    # what makes naming `ipc` legal in that one file and a violation in every
+    # other.
     "muejeje_pts/script-engine/platform_adapter.js",
+)
+# Every declared platform adapter: the boundary above, and the subject adapters
+# that read one thing each *through* it. They name no platform object of their
+# own — which is why only the boundary needs the `ipc` exemption — but they are
+# still adapters, so the declaration rules below apply to all of them, and
+# `test_platform_adapter` holds each to the read-only allowlist.
+PLATFORM_ADAPTER_FILES: tuple[str, ...] = IPC_ADAPTER_FILES + (
+    "muejeje_pts/script-engine/platform_device_adapter.js",
 )
 
 # What a declared adapter must be. Without these, the layer gate could be
@@ -73,7 +83,9 @@ ADAPTER_MAY_NOT_NAME = (
     "MUEJEJE_V6_ERRORS", "MUEJEJE_CORE",
 )
 
-DECLARED_ADAPTERS = sorted(set(TRANSPORT_ADAPTER_FILES) | set(IPC_ADAPTER_FILES))
+DECLARED_ADAPTERS = sorted(
+    set(TRANSPORT_ADAPTER_FILES) | set(PLATFORM_ADAPTER_FILES)
+)
 
 
 def ptbuilder_patterns() -> list[tuple[str, re.Pattern[str]]]:
@@ -187,17 +199,13 @@ def test_the_ipc_gate_is_not_satisfied_by_renaming_the_object():
     assert layer_offenders({"core.js": prose}, ipc_patterns(), adapters=()) == []
 
 
-@pytest.mark.parametrize(
-    "logical", sorted(set(TRANSPORT_ADAPTER_FILES) | set(IPC_ADAPTER_FILES)),
-)
+@pytest.mark.parametrize("logical", DECLARED_ADAPTERS)
 def test_every_declared_adapter_is_a_file_that_ships_and_says_so(logical: str):
     inputs = set(repo_manifest()["artifact_inputs"])
     assert adapter_declaration_error(logical, inputs) is None
 
 
-@pytest.mark.parametrize(
-    "logical", sorted(set(TRANSPORT_ADAPTER_FILES) | set(IPC_ADAPTER_FILES)),
-)
+@pytest.mark.parametrize("logical", DECLARED_ADAPTERS)
 def test_a_declared_adapter_adapts_and_does_not_answer(logical: str):
     body = (REPO_ROOT / logical).read_text(encoding="utf-8")
     named = [symbol for symbol in ADAPTER_MAY_NOT_NAME if symbol in body]
@@ -217,6 +225,10 @@ def test_the_declared_adapter_registries_are_what_this_artifact_ships():
     """
     assert TRANSPORT_ADAPTER_FILES == ()
     assert IPC_ADAPTER_FILES == ("muejeje_pts/script-engine/platform_adapter.js",)
+    assert PLATFORM_ADAPTER_FILES == (
+        "muejeje_pts/script-engine/platform_adapter.js",
+        "muejeje_pts/script-engine/platform_device_adapter.js",
+    )
 
 
 def test_the_adapter_declaration_rule_refuses_a_kernel_file():
