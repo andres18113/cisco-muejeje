@@ -55,8 +55,14 @@ tests**. If you write a helper worth testing, put it in `shared/utils.py`.
    user-ACL'd `%LOCALAPPDATA%` dir a browser page can't reach.)
 4. **Don't validate in the models.** Validation belongs in `domain/rules/` and
    returns `ValidationResult`, so the use case decides whether to proceed.
-5. **A bug fix needs a test that fails without it.** Write the failing test
-   first; if it passes before your change, it isn't testing the bug.
+5. **Reproduce first when reproduction earns its cost; always leave a test
+   behind.** Write the failing test first when the behaviour is ambiguous or
+   non-obvious, when it sits on a critical boundary, or when the same defect
+   could plausibly come back — there, a test that passes before your change is
+   not testing the bug. An evident, deterministic defect in code, a document or
+   a config may be fixed directly. **New behaviour always needs tests**, and
+   every change — either route — is verified by the focused run, the affected
+   run, the full suite, and CI on the exact pushed SHA.
 6. **Never guess a PT API signature.** If a method isn't already used somewhere
    in this repo, confirm it against Cisco's reference before writing code on top
    of it — PT answers a wrong call with a bare `Invalid arguments for IPC call
