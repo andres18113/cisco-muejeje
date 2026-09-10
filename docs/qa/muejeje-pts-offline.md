@@ -73,14 +73,16 @@ Run on the rebaselined branch with the checkout-local interpreter, from the
 repository root, with worktree-local temporaries (per `AGENTS.md`):
 
 ```text
-.venv/Scripts/python.exe -m pytest tests/test_muejeje_build.py tests/test_muejeje_build_identity.py \
-  -q --basetemp=tmp/adr001-focused -o cache_dir=tmp/adr001-cache
-39 passed, 2 skipped in 40.71s; exit 0
+.venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/m0f-focused -o cache_dir=tmp/m0f-cache
+108 passed, 2 skipped in 53.58s; exit 0
 
-.venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py \
-  -q --basetemp=tmp/adr001-arch -o cache_dir=tmp/adr001-arch-cache
-12 passed in 4.30s; exit 0
+.venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q --basetemp=tmp/m0f-arch -o cache_dir=tmp/m0f-arch-cache
+12 passed in 2.03s; exit 0
 ```
+
+M0F split the two monolithic modules into `tests/muejeje/`. The ADR-001 run this
+replaced was `39 passed, 2 skipped` over `tests/test_muejeje_build.py` and
+`tests/test_muejeje_build_identity.py`, which no longer exist.
 
 The two skips are Windows symlink-creation privilege limitations. The hardlink
 alias, hidden-source/manifest, malformed-JSON and reference-input security checks

@@ -7,7 +7,12 @@
     "muejeje_pts/script-engine/lifecycle.js"
   ],
   "tooling_inputs": [
+    "src/packet_tracer_mcp/infrastructure/pts/__init__.py",
     "src/packet_tracer_mcp/infrastructure/pts/build.py",
+    "src/packet_tracer_mcp/infrastructure/pts/build_state.py",
+    "src/packet_tracer_mcp/infrastructure/pts/inventory.py",
+    "src/packet_tracer_mcp/infrastructure/pts/manifest.py",
+    "src/packet_tracer_mcp/infrastructure/pts/provenance.py",
     "tools/build_muejeje_pts.py"
   ],
   "reference_inputs": [],

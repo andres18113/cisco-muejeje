@@ -68,7 +68,7 @@ CP LIVE, PoE, Router0, voice, VLAN and topology concerns never enter the
 runtime, the build tooling or the provenance schema.
 **Rationale.** This is MJ-001 stated as an exclusion, so that a violation is
 recognisable rather than arguable.
-**Verification.** `tests/test_muejeje_source_root.py` fails if a consumer's
+**Verification.** `tests/muejeje/test_source_root.py` fails if a consumer's
 vocabulary appears in any packaged source under the owned root.
 **Status.** `ENFORCED`
 
@@ -164,8 +164,8 @@ document claims independence that the code has not reached.
 **Rationale.** PTBuilder is unlicensed; depending on it blocks distribution and
 makes the runtime unexplainable from its own sources.
 **Verification.** `reference_inputs: []` in the manifest, the regressions in
-`tests/test_muejeje_build.py`, and an architecture test that fails if any of the
-six globals appears in the owned sources.
+`tests/muejeje/test_inventory.py`, and an architecture test that fails if any of
+the six globals appears in the owned sources.
 **Status.** `ENFORCED` for the build inputs; `BASELINED (deviation)` for the
 runtime — `htmlWindow`, `runCode`, `configureIosDevice`, `allModuleTypes`,
 `addDevice` and `addLink` are still PTBuilder-supplied.
@@ -242,7 +242,7 @@ absence of automation.
 blocker, so every clean repository reported `BUILD_TOOLCHAIN_BLOCKED` and three
 different facts were indistinguishable.
 **Verification.** `classify_build_state()` and its precedence test; the
-`packaging_state` block; `tests/test_muejeje_build.py`.
+`packaging_state` block; `tests/muejeje/test_build_state.py`.
 **Status.** `ENFORCED`
 
 ### MJ-017 — An incomplete input inventory has no recipe id
@@ -251,8 +251,81 @@ artifact SHA-256 is measured externally and is never embedded in the artifact it
 describes. Byte-for-byte reproducibility is not claimed.
 **Rationale.** A recipe id over an incomplete inventory identifies nothing, and a
 self-embedded hash cannot be checked.
-**Verification.** `tests/test_muejeje_build_identity.py`; the recipe id is set
+**Verification.** `tests/muejeje/test_provenance.py`; the recipe id is set
 only in `PACKAGING_MANUAL_AVAILABLE`.
+**Status.** `ENFORCED`
+
+## Architecture and maintainability
+
+These apply to **Muejeje-owned code going forward** — the owned source root, the
+build auditor, its CLI and the Muejeje test area. They are not a claim about
+unrelated legacy code, which was written under no such budget and is out of
+scope until it is rewritten for another reason.
+
+### MJ-018 — Modular cohesion and single responsibility
+**Requirement.** Every owned module has one responsibility, named in its own
+docstring. The build auditor is split into a facade (`build.py`), a state model
+(`build_state.py`), a schema (`manifest.py`), an input inventory
+(`inventory.py`) and source/hash/recipe identity (`provenance.py`). The public
+API is the facade; splitting a module never changes it.
+**Rationale.** One 540-line `build.py` held the state machine, the schema, the
+path rules and every Git call, so no rule could be read, tested or changed
+without loading all of them. Splitting by responsibility is what makes a rule
+locatable.
+**Verification.** `tests/muejeje/test_architecture.py` pins the module set
+against the declared layers and fails on an undeclared module; the facade is
+asserted to hold no vocabulary of its own.
+**Status.** `ENFORCED`
+
+### MJ-019 — Dependency direction is inward and one-way
+**Requirement.** In the auditor, `build_state`, `manifest` and `provenance`
+depend on no sibling; `inventory` may depend on `build_state` and `provenance`;
+only `build` may depend on all of them. In the runtime, the direction is
+`lifecycle → dispatcher/operations → protocol + core`, and the V6 core depends
+on none of CP LIVE, WebView, HTTP, the File Bridge, PTBuilder, legacy `runCode`
+or arbitrary JavaScript execution. Cisco IPC access is an adapter concern and
+stays outside protocol, core and operation logic.
+**Rationale.** A cycle makes every module the whole system again, which is what
+the split was for. Naming the direction is what lets a violation be detected
+instead of argued.
+**Verification.** An import-graph test per auditor module; a source gate over
+the owned root for the forbidden runtime layers and for `ipc.*`.
+**Status.** `ENFORCED`
+
+### MJ-020 — Source and test complexity budgets
+**Requirement.** Owned files stay within a target and never cross a hard limit:
+
+| Type | Target | Hard limit |
+| --- | ---: | ---: |
+| Python module | 300 | 500 |
+| Python test module | 300 | 500 |
+| Script Engine JS | 250 | 400 |
+| function/method | 40 | 80 |
+
+Generated, minified, data and evidence files are excluded. A file over target
+carries a named justification in the gate itself. A hard-limit exception
+requires an explicit architectural justification, and moving the same oversized
+responsibility into another file does not satisfy it.
+**Rationale.** A budget nobody measures is a preference. These numbers are the
+point at which a reviewer stops holding a file in their head.
+**Verification.** `tests/muejeje/test_architecture.py` measures every owned
+Python module, test module and Script Engine file, and every function in them.
+Function length is measured as code lines with the docstring subtracted, so the
+budget constrains branching and never discourages an explanation.
+**Status.** `ENFORCED`
+
+### MJ-021 — Architecture fitness is a gate, not a review note
+**Requirement.** Every architectural rule Muejeje states about its own code is
+enforced by a test that fails when the rule is broken: complexity budgets,
+dependency direction, the absence of PTBuilder globals and consumer vocabulary,
+the absence of arbitrary JavaScript execution, exactly one `main()`, one
+`cleanUp()` and one `mcpDispatchV6`, the `ipc.*` boundary, and the separation of
+the test area by responsibility.
+**Rationale.** M0E's boundary held because a test failed when it was crossed.
+Rules that live only in a document are re-argued at every change.
+**Verification.** `tests/muejeje/test_architecture.py` and
+`tests/muejeje/test_source_root.py`; the retired monolithic test modules are
+asserted absent so the split cannot silently reverse.
 **Status.** `ENFORCED`
 
 ## Open decisions
