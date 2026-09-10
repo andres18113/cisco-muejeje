@@ -43,6 +43,7 @@ EXPECTED_ARTIFACT_INPUTS = (
     "muejeje_pts/script-engine/dispatcher_v6.js",
     "muejeje_pts/script-engine/lifecycle.js",
     "muejeje_pts/script-engine/protocol_v6.js",
+    "muejeje_pts/script-engine/runtime_capabilities.js",
     "muejeje_pts/script-engine/runtime_identity.js",
 )
 # The auditor. It ships nothing, but it decides how the artifact was inspected,

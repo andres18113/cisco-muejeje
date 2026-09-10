@@ -25,10 +25,13 @@ from tests.muejeje.support import (
 # The declared evaluation order. Packet Tracer evaluates the Script Engine files
 # in the order the Scripting Interface lists them, so this order *is* the
 # dependency direction: core and protocol first, then operations, then dispatch,
-# then the lifecycle that may call all of it (MJ-019).
+# then the lifecycle that may call all of it (MJ-019). Operations depend on
+# nothing but core and protocol, so they are ordered alphabetically among
+# themselves — a rule, rather than an accident nobody could re-derive.
 ENGINE_SCRIPT_ORDER = [
     "muejeje_pts/script-engine/core.js",
     "muejeje_pts/script-engine/protocol_v6.js",
+    "muejeje_pts/script-engine/runtime_capabilities.js",
     "muejeje_pts/script-engine/runtime_identity.js",
     "muejeje_pts/script-engine/dispatcher_v6.js",
     "muejeje_pts/script-engine/lifecycle.js",
@@ -47,7 +50,7 @@ requires_node = pytest.mark.skipif(
 # Structural: the layout, and who owns what.
 # ---------------------------------------------------------------------------
 
-def test_the_kernel_is_split_into_the_five_declared_files():
+def test_the_kernel_is_split_into_the_declared_files():
     on_disk = [relative(path) for path in engine_sources()]
     assert sorted(on_disk) == sorted(ENGINE_SCRIPT_ORDER)
 

@@ -25,6 +25,7 @@ var MUEJEJE_CORE = {
      * something behind it exists; the list is not a roadmap. */
     SUPPORTED_FEATURES: [
         "protocol.v6",
+        "runtime.operation_catalog",
         "runtime.session_id"
     ],
 
@@ -44,16 +45,24 @@ var MUEJEJE_CORE = {
     }
 };
 
-/* A per-session correlation id.
+/* A per-evaluation correlation token.
  *
  * Non-secret by construction, and deliberately so: it exists to let two
- * observations be attributed to the same Script Module session, and it is
+ * observations be attributed to the same Script Module evaluation, and it is
  * never authentication. It carries no privilege, grants nothing, and proves
  * nothing about who is calling. A caller that treats it as a credential has
  * misread the contract.
  *
- * It is stable for the life of one session because this file is evaluated
- * once, and it differs between sessions because both of its parts do. */
+ * It is generated exactly once — Packet Tracer evaluates this file once — and
+ * is therefore stable for the life of that evaluation, including across a
+ * cleanUp()/main() cycle, because restarting the module is not re-evaluating
+ * it.
+ *
+ * What it is not is globally unique. It is a clock reading and a random draw,
+ * and the engine guarantees neither: two evaluations may in principle produce
+ * the same token, and nothing here would detect it. Correlation is therefore
+ * scoped to one observation window; a consumer that needs identity wider than
+ * that carries its own and correlates on both. */
 function muejejeCoreNewSessionId() {
     var moment = Date.now().toString(36);
     var entropy = Math.floor(Math.random() * 4294967296).toString(36);

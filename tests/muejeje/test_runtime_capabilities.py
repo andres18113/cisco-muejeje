@@ -1,0 +1,189 @@
+"""`runtime.capabilities`: what this kernel admits, and only what it admits.
+
+The operation exists so a consumer can discover the contract instead of
+assuming it. That only works if the answer is measured from the kernel rather
+than written down beside it, so the assertions here compare the reported
+capabilities against the dispatcher and the core that produce them — and
+against `runtime.identify`, which must never disagree (MJ-008, MJ-025).
+
+The negative claims carry as much weight as the positive ones: nothing here
+may promise a transport, a platform call or an operation that does not exist,
+and nothing here may certify its own verification (MJ-011).
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.support import SCRIPT_ENGINE, engine_sources, relative
+
+CAPABILITIES = json.dumps({
+    "v": 6, "operation_rid": "rid-capabilities", "op": "runtime.capabilities",
+    "args": {},
+})
+IDENTIFY = json.dumps({
+    "v": 6, "operation_rid": "rid-identify", "op": "runtime.identify", "args": {},
+})
+
+RESULT_FIELDS = {
+    "runtime_session_id", "protocol_versions", "operations", "supported_features",
+}
+ADMITTED = ["runtime.capabilities", "runtime.identify"]
+
+requires_node = pytest.mark.skipif(
+    not node_available(), reason="Node is unavailable; structural gates still run",
+)
+
+
+def _result() -> dict:
+    return dispatch_v6(CAPABILITIES)["result"]
+
+
+# ---------------------------------------------------------------------------
+# Structural: read-only, IPC-free, and no reach into the dispatcher.
+# ---------------------------------------------------------------------------
+
+def test_the_operation_has_its_own_file_and_does_not_grow_the_dispatcher():
+    """A second operation is a second file, not a longer dispatcher (MJ-018)."""
+    body = (SCRIPT_ENGINE / "runtime_capabilities.js").read_text(encoding="utf-8")
+    assert "function muejejeRuntimeCapabilities(" in body
+    dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
+    assert "supported_features" not in dispatcher
+    assert "protocol_versions" not in dispatcher
+
+
+def test_the_operation_makes_no_platform_call_and_mutates_nothing():
+    body = (SCRIPT_ENGINE / "runtime_capabilities.js").read_text(encoding="utf-8")
+    assert "ipc." not in body, "runtime.capabilities is read-only and needs no privilege"
+    assert "MUEJEJE_CORE.session." not in body
+    assert "muejejeCoreMark" not in body
+
+
+def test_the_operation_does_not_reach_into_the_dispatcher():
+    """The whitelist has one owner; the operation is handed the catalogue."""
+    body = (SCRIPT_ENGINE / "runtime_capabilities.js").read_text(encoding="utf-8")
+    assert "muejejeV6OperationTable" not in body
+    assert "MUEJEJE_V6_DISPATCH" not in body
+
+
+def test_the_operation_catalogue_is_derived_where_the_whitelist_lives():
+    owners = [
+        relative(path) for path in engine_sources()
+        if "function muejejeV6OperationCatalog(" in path.read_text(encoding="utf-8")
+    ]
+    assert owners == ["muejeje_pts/script-engine/dispatcher_v6.js"], owners
+
+
+# ---------------------------------------------------------------------------
+# Executable: the reported capabilities.
+# ---------------------------------------------------------------------------
+
+@requires_node
+def test_the_result_carries_exactly_the_declared_fields():
+    assert set(_result()) == RESULT_FIELDS
+
+
+@requires_node
+def test_the_whitelist_admits_exactly_the_two_read_only_operations():
+    operations = _result()["operations"]
+
+    assert [entry["op"] for entry in operations] == ADMITTED
+    assert all(entry["read_only"] is True for entry in operations)
+    assert all(set(entry) == {"op", "read_only"} for entry in operations)
+
+
+@requires_node
+def test_the_reported_protocol_is_the_only_one_the_kernel_speaks():
+    assert _result()["protocol_versions"] == [6]
+
+
+@requires_node
+def test_the_two_read_only_operations_report_the_same_whitelist():
+    """One whitelist, two views of it. A disagreement is a second whitelist.
+
+    Both are asked inside a single evaluation, because that is the scope the
+    session token is defined over: two Node processes are two evaluations and
+    would differ there legitimately (MJ-023).
+    """
+    both = dispatch_v6(
+        CAPABILITIES,
+        prelude=f"var IDENTIFY = {json.dumps(IDENTIFY)};",
+        report=(
+            "{capabilities: JSON.parse(mcpDispatchV6(REQUEST)).result,"
+            " identity: JSON.parse(mcpDispatchV6(IDENTIFY)).result}"
+        ),
+    )
+    capabilities, identity = both["capabilities"], both["identity"]
+
+    assert [entry["op"] for entry in capabilities["operations"]] == identity["operations"]
+    assert capabilities["supported_features"] == identity["supported_features"]
+    assert capabilities["runtime_session_id"] == identity["runtime_session_id"]
+
+
+@requires_node
+def test_every_reported_feature_names_something_in_this_artifact():
+    """A capability report is a promise. Each entry names existing code.
+
+    The map is the point: a feature added to the list without code behind it
+    fails here, which is what stops the report from drifting into a roadmap.
+    """
+    evidence = {
+        "protocol.v6": ("protocol_v6.js", "muejejeV6ParseRequest"),
+        "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),
+        "runtime.session_id": ("core.js", "muejejeCoreNewSessionId"),
+    }
+    for feature in _result()["supported_features"]:
+        assert feature in evidence, f"{feature} names nothing in this artifact"
+        name, symbol = evidence[feature]
+        assert symbol in (SCRIPT_ENGINE / name).read_text(encoding="utf-8")
+
+
+@requires_node
+def test_the_report_promises_no_capability_the_kernel_does_not_have():
+    """Transport, platform access and mutation are absent, not pending."""
+    reported = json.dumps(_result()).lower()
+    for absent in (
+        "http", "bridge", "mailbox", "polling", "ipc", "transport", "batch",
+        "device", "topology", "write", "mutate", "planned", "roadmap",
+    ):
+        assert absent not in reported, f"the report mentions {absent}"
+
+
+@requires_node
+def test_the_runtime_certifies_no_verification_of_its_own():
+    reported = json.dumps(_result())
+    for verdict in ("VERIFIED", "QUALIFIED", "ATTESTED", "PASS"):
+        assert verdict not in reported, (
+            f"Python owns verification; the runtime observes: {verdict}"
+        )
+
+
+@requires_node
+def test_the_answer_shares_no_object_with_the_whitelist():
+    """A caller cannot reach the table through the reply it was handed."""
+    mutated = dispatch_v6(
+        CAPABILITIES,
+        report=(
+            "[JSON.parse(mcpDispatchV6(REQUEST)).result.operations.length,"
+            " muejejeV6OperationNames().length]"
+        ),
+        prelude=(
+            "var first = JSON.parse(mcpDispatchV6(REQUEST));"
+            " first.result.operations.push({op: 'device.add', read_only: false});"
+            " first.result.supported_features.push('transport.http');"
+        ),
+    )
+    assert mutated == [len(ADMITTED), len(ADMITTED)]
+
+
+@requires_node
+def test_the_operation_takes_no_arguments():
+    response = dispatch_v6(json.dumps({
+        "v": 6, "operation_rid": "rid-args", "op": "runtime.capabilities",
+        "args": {"verbose": True},
+    }))
+    assert response["ok"] is False
+    assert response["error"]["code"] == "INVALID_ARGS"

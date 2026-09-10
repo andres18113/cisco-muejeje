@@ -112,13 +112,15 @@ disappears.
 ### MJ-008 — V6 is typed, declarative, whitelisted and fail-closed
 **Requirement.** V6 operations are typed and declarative, admitted by an explicit
 whitelist, and fail closed on version, schema or correlation mismatch. The
-initial whitelist contains only read-only `runtime.identify`.
+whitelist admits `runtime.capabilities` and `runtime.identify`, both read-only.
 **Rationale.** A permissive dispatcher cannot bound what a consumer can cause.
 **Verification.** One negative test per rejection class, plus a gate that the
 dispatcher holds no operation implementation and the protocol module holds no
-whitelist. See MJ-022 for the taxonomy those tests pin.
-**Status.** `ENFORCED` — the whitelist admits `runtime.identify` alone, and
-every other name fails closed.
+whitelist. See MJ-022 for the taxonomy those tests pin. A document that names
+an operation the dispatcher does not admit — or omits one it does — fails
+`tests/muejeje/test_unobserved_claims.py`.
+**Status.** `ENFORCED` — the whitelist admits those two names, and every other
+name fails closed.
 
 ### MJ-009 — Raw JavaScript is V5 compatibility only
 **Requirement.** Arbitrary JavaScript execution is a legacy V5 surface. Migrated
@@ -370,17 +372,36 @@ rejection class and asserts the shared envelope shape across success and
 failure.
 **Status.** `ENFORCED`
 
-### MJ-023 — `runtime_session_id` is correlation evidence, never authentication
-**Requirement.** The runtime session id is non-secret, stable for one Script
-Module session, and different between sessions. It exists so two observations
-can be attributed to the same run. It grants nothing, proves nothing about who
-is calling, and the runtime never compares it against anything.
-**Rationale.** A stable per-session token is exactly the shape people mistake
-for a credential. Saying what it is not, in the contract and in the source, is
-what stops it from quietly becoming one.
+### MJ-023 — `runtime_session_id` is a correlation token, never authentication
+**Requirement.** `runtime_session_id` is a **non-secret correlation token
+generated once per Script Module evaluation**. It is stable for the life of
+that evaluation, including across a `cleanUp()`/`main()` cycle, because
+restarting the module is not re-evaluating it. It exists so two observations
+can be attributed to the same evaluation. It grants nothing, proves nothing
+about who is calling, and the runtime never compares it against anything.
+
+**No global uniqueness is claimed.** The token is a clock reading and a random
+draw; the Script Engine guarantees neither, so two evaluations may in principle
+produce the same value and nothing in the kernel would detect it. Correlation
+is scoped to one observation window, and a consumer needing identity wider than
+that carries its own and correlates on both.
+**Rationale.** A stable per-evaluation token is exactly the shape people mistake
+for a credential. Saying what it is not — in the contract and in the source —
+is what stops it from quietly becoming one. Claiming uniqueness would be a
+second mistake of the same kind: an unverifiable guarantee that consumers would
+build on.
 **Verification.** `tests/muejeje/test_runtime_identify.py` asserts stability
-within a session (including across a `main()`/`cleanUp()`/`main()` cycle),
-difference between sessions, and that no kernel source compares the id.
+within an evaluation (including across a `main()`/`cleanUp()`/`main()` cycle),
+that exactly one generation site exists and binds the token once, that
+regenerating does not rebind the session, and that no kernel source compares
+the id.
+
+> An earlier revision required the token to be "different between sessions" and
+> verified it by comparing two Node processes. Nothing in the kernel guarantees
+> that, so the gate was probabilistic: it could fail with nothing wrong, which
+> teaches a reader to re-run a red test rather than read it. Both the claim and
+> its assertion are withdrawn and replaced by what the kernel does guarantee.
+
 **Status.** `ENFORCED`
 
 ### MJ-024 — The runtime reports provenance as bound or explicitly unbound

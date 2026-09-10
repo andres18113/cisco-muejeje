@@ -81,8 +81,10 @@ def test_the_reported_protocol_and_operations_are_what_the_kernel_admits():
     result = _result()
 
     assert result["protocol_versions"] == [6]
-    assert result["operations"] == ["runtime.identify"]
-    assert result["supported_features"] == ["protocol.v6", "runtime.session_id"]
+    assert result["operations"] == ["runtime.capabilities", "runtime.identify"]
+    assert result["supported_features"] == [
+        "protocol.v6", "runtime.operation_catalog", "runtime.session_id",
+    ]
 
 
 @requires_node
@@ -90,6 +92,7 @@ def test_every_declared_feature_is_backed_by_kernel_source():
     """A feature list is a promise. Each entry names something that exists."""
     evidence = {
         "protocol.v6": ("protocol_v6.js", "muejejeV6ParseRequest"),
+        "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),
         "runtime.session_id": ("core.js", "muejejeCoreNewSessionId"),
     }
     for feature in _result()["supported_features"]:
@@ -140,12 +143,47 @@ def test_the_session_id_survives_a_restart_within_the_same_session():
     assert observed["reported"]["lifecycle"]["started"] is True
 
 
+def test_the_session_token_is_generated_exactly_once_per_evaluation():
+    """The scope of the token is the evaluation, and it is set there once.
+
+    An earlier test asserted that two evaluations produce *different* tokens.
+    Nothing in the kernel guarantees that — the token is a clock reading and a
+    random draw — so the assertion was probabilistic, and a gate that can fail
+    without anything being wrong teaches people to re-run it. What the kernel
+    does guarantee is asserted instead: one generation site, one assignment,
+    at evaluation time (MJ-023).
+    """
+    body = (SCRIPT_ENGINE / "core.js").read_text(encoding="utf-8")
+
+    assert body.count("MUEJEJE_CORE.session.id = ") == 1
+    assert body.count("function muejejeCoreNewSessionId(") == 1
+    for source in sorted(SCRIPT_ENGINE.glob("*.js")):
+        if source.name == "core.js":
+            continue
+        other = source.read_text(encoding="utf-8")
+        assert "muejejeCoreNewSessionId" not in other, (
+            f"{source.name} may not mint a second token for one evaluation"
+        )
+
+
 @requires_node
-def test_the_session_id_differs_between_sessions():
-    """Two Node processes are two evaluations, which are two sessions."""
-    first = _result()["runtime_session_id"]
-    second = _result()["runtime_session_id"]
-    assert first != second
+def test_regenerating_the_token_does_not_change_the_session():
+    """Calling the generator again mints a value; it never rebinds the session."""
+    observed = dispatch_v6(
+        IDENTIFY,
+        prelude=(
+            "var before = MUEJEJE_CORE.session.id;"
+            " var minted = muejejeCoreNewSessionId();"
+        ),
+        report=(
+            "{before: before, after: MUEJEJE_CORE.session.id,"
+            " minted_type: typeof minted,"
+            " reported: JSON.parse(mcpDispatchV6(REQUEST)).result.runtime_session_id}"
+        ),
+    )
+    assert observed["minted_type"] == "string"
+    assert observed["after"] == observed["before"]
+    assert observed["reported"] == observed["before"]
 
 
 @requires_node

@@ -91,36 +91,64 @@ Binding requirements carry stable IDs in
 [the requirements baseline](muejeje-pts-requirements.md); this document explains
 the governance, that one records what is decided and how each item is verified.
 
-## Runtime architecture (target)
+## Runtime architecture
 
+Stated in two halves, because an earlier revision of this section described the
+target as though it were the present and then closed by asserting that
+`mcpDispatchV6` did not exist — after it did. Both halves are needed: one says
+what a consumer may send today, the other says what is still unbuilt.
+
+**What exists.** One Script Module, six engine files, one dispatcher, two
+read-only operations, and no transport at all:
+
+```text
+consumer -> mcpDispatchV6(requestJson) -> V6 whitelist
+         -> runtime.identify | runtime.capabilities
+         -> one JSON envelope back
 ```
-Python/MCP -> Runtime Protocol -> explicit channel policy
-           -> HTTP webview | File Script Engine
-           -> one runtime kernel -> mcpDispatchV6(requestJson)
-           -> whitelisted typed handler -> documented ipc.*
-           -> structured result -> Python evidence/verdict
+
+Neither operation calls Packet Tracer: there is no `ipc.*` call anywhere in the
+kernel, so the module requests no privilege to start. The artifact contains no
+HTTP listener, no file mailbox and no polling loop, and the Custom Interface is
+a static page that calls nothing and therefore reports no module state.
+
+**What is not built.** The transport, the platform adapter and every mutating
+operation. The target shape, with each stage marked:
+
+```text
+Python/MCP -> Runtime Protocol -> explicit channel policy   (unbuilt)
+           -> HTTP webview | File Script Engine             (unbuilt)
+           -> one runtime kernel -> mcpDispatchV6(...)      (built)
+           -> whitelisted typed handler                     (built, read-only)
+           -> documented ipc.*                              (unbuilt)
+           -> structured result -> Python evidence/verdict  (built engine side)
 ```
 
 **`APPLIED != VERIFIED`, permanently.** An acknowledged mutation is not an
 observed effect. Every operation reports what was applied and what was
 independently read back, and the two are never collapsed.
 
-V6 principles, unchanged:
+V6 principles:
 
 - **One authoritative `mcpDispatchV6`.** No second dispatcher, no hidden retry,
-  no ambiguous fallback after an ambiguous execution.
-- **Typed, declarative, whitelisted, fail-closed.** The initial whitelist holds
-  only the read-only `runtime.identify`. Version, schema and correlation
-  mismatches fail closed.
-- V6 identity is `(operation_rid, op)`; only an explicit `NOT_V6` permits V5
-  compatibility.
+  no ambiguous fallback after an ambiguous execution. It lives in
+  `muejeje_pts/script-engine/dispatcher_v6.js` and a gate fails if a second one
+  appears.
+- **Typed, declarative, whitelisted, fail-closed.** The whitelist holds the
+  read-only `runtime.identify` and `runtime.capabilities`. Version, schema and
+  correlation mismatches fail closed.
+- V6 identity is `(operation_rid, op)`. A request that does not declare protocol
+  6 is refused as `PROTOCOL_MISMATCH` and never reinterpreted: V6 has no
+  compatibility escape into V5, and the marker that once described one is
+  withdrawn.
 - **Raw JS is legacy V5 compatibility only.** Migrated operations accept no
   arbitrary JS input.
 - `lwAddDevice` / `lwAddLink` may keep serving V5; they are **not** the V6 domain
   contract.
 
-`mcpDispatchV6` is not implemented. Nothing in this branch may be described as if
-it were.
+The kernel is verified offline, under Node, against our own JavaScript. It has
+never run inside Packet Tracer and no `.pts` has yet been built from these
+sources, so its live state is `NOT_YET_LIVE_VERIFIED` (`MJ-015`).
 
 ## PTBuilder independence
 
@@ -233,8 +261,10 @@ A path may not appear in two categories. `TODO-SRC-ROOT` and
 [the requirements baseline](muejeje-pts-requirements.md).
 
 The owned root being free of PTBuilder code does **not** make the runtime
-PTBuilder-free (`MJ-013`). It is empty of behaviour; the runtime consumers use
-today is still the legacy one.
+PTBuilder-free (`MJ-013`). The owned root now carries the V6 kernel and two
+read-only operations, but the runtime consumers actually use is still the
+legacy one, and independence is proven when a built artifact demonstrates it
+inside Packet Tracer — not before.
 
 ## Gates
 

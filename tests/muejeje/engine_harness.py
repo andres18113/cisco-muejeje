@@ -30,6 +30,7 @@ from tests.muejeje.support import REPO_ROOT, SCRIPT_ENGINE
 ENGINE_ORDER = (
     "core.js",
     "protocol_v6.js",
+    "runtime_capabilities.js",
     "runtime_identity.js",
     "dispatcher_v6.js",
     "lifecycle.js",

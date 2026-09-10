@@ -1,7 +1,12 @@
 <!-- Muejeje runtime — Custom Interface.
      Imported into the Custom Interfaces tab. Static on purpose: it describes
      the module and calls nothing. No polling, no bridge, no transport. The V6
-     kernel is reached by a consumer through mcpDispatchV6, not from here. -->
+     kernel is reached by a consumer through mcpDispatchV6, not from here.
+
+     Because it calls nothing, it observes nothing, and so it states nothing
+     about what the module is doing right now. This page renders identically
+     before and after main() runs, which is exactly why it may not report a
+     lifecycle: only runtime.identify reads the state main() recorded. -->
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
@@ -17,16 +22,21 @@
 </head>
 <body>
 <h1>Muejeje runtime</h1>
-<p>This Script Module is present and its lifecycle is running.</p>
+<p>The Custom Interface of the Muejeje Script Module. It is a static
+description: it reads nothing and calls nothing, so it reports no module
+state. Ask the module itself instead — <code>runtime.identify</code> answers
+with the lifecycle it recorded.</p>
 
 <h2>Runtime Protocol V6</h2>
 <p>The consumer-facing contract is Runtime Protocol V6. Its single entry point
 is <code>mcpDispatchV6(requestJson)</code>: a JSON string in, a JSON string
 out, one envelope for success and failure alike.</p>
-<p>One operation is admitted so far, <code>runtime.identify</code>, which is
-read-only and makes no platform call. Every other operation name fails closed.
-There is no fallback to an earlier protocol and no path that runs a
-caller's JavaScript.</p>
+<p>Two operations are admitted, both read-only and neither making any platform
+call: <code>runtime.identify</code>, which reports what the artifact can say
+about itself, and <code>runtime.capabilities</code>, which reports what this
+kernel admits right now. Every other operation name fails closed. There is no
+fallback to an earlier protocol and no path that runs a caller's
+JavaScript.</p>
 
 <h2>What this module does on its own</h2>
 <ul>

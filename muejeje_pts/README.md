@@ -25,14 +25,17 @@ It is declared once, in `build_options.engine_script_order`:
 | ---: | --- | --- |
 | 1 | `core.js` | constants and session state; depends on nothing |
 | 2 | `protocol_v6.js` | request validation and response envelopes |
-| 3 | `runtime_identity.js` | the `runtime.identify` operation |
-| 4 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
-| 5 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+| 3 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
+| 4 | `runtime_identity.js` | the `runtime.identify` operation |
+| 5 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| 6 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
 
 The arrows point one way — `lifecycle → dispatcher/operations → protocol +
 core` — and nothing points back. An operation is never implemented inside the
 dispatcher, and the dispatcher hands an operation what it needs rather than
-being read by it.
+being read by it. Operations depend on nothing but core and protocol, so among
+themselves they are ordered alphabetically: a rule, rather than an accident a
+later reader would have to reverse-engineer.
 
 The single entry point is `mcpDispatchV6(requestJson)`: a JSON string in, a
 JSON string out.
@@ -49,7 +52,19 @@ JSON string out.
 Failures use the same envelope with `ok: false`, `result: null` and an `error`
 naming its class (`MJ-022`). There is no fallback to an earlier protocol, no
 path that executes a caller's JavaScript, and no Cisco IPC call anywhere in the
-kernel — so the module implies no privilege to start (`TODO-PRIVILEGES`).
+kernel — so the module requests no privilege at all (`privileges: []`).
+
+Two operations are admitted, both read-only:
+
+| Operation | Answers |
+| --- | --- |
+| `runtime.identify` | *who is this* — name, version, session token, provenance, the lifecycle the module recorded |
+| `runtime.capabilities` | *what does it admit now* — session token, protocol versions, each whitelisted operation with its `read_only` flag, and the kernel features behind them |
+
+Both read the same whitelist, from the dispatcher that owns it, so the two can
+never describe different contracts. Neither reports anything it has not
+observed, and neither certifies its own verification: the engine cannot audit
+the engine, so Python decides what an answer establishes (`MJ-011`).
 
 ## Relationship to `EXTENSION/`
 

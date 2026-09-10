@@ -17,6 +17,13 @@ var MUEJEJE_V6_DISPATCH = {table: null};
 function muejejeV6OperationTable() {
     if (MUEJEJE_V6_DISPATCH.table === null) {
         MUEJEJE_V6_DISPATCH.table = {
+            "runtime.capabilities": {
+                read_only: true,
+                allowed_args: [],
+                handler: function (args, context) {
+                    return muejejeRuntimeCapabilities(args, context);
+                }
+            },
             "runtime.identify": {
                 read_only: true,
                 allowed_args: [],
@@ -39,6 +46,23 @@ function muejejeV6OperationNames() {
     }
     names.sort();
     return names;
+}
+
+/* The whitelist as data a caller may be told about: each admitted name with
+ * the one property that bounds what sending it can do. Derived here, where the
+ * whitelist lives, so no operation can publish a claim about admission that
+ * the dispatcher would not honour. */
+function muejejeV6OperationCatalog() {
+    var table = muejejeV6OperationTable();
+    var names = muejejeV6OperationNames();
+    var catalog = [];
+    for (var i = 0; i < names.length; i++) {
+        catalog.push({
+            op: names[i],
+            read_only: table[names[i]].read_only === true
+        });
+    }
+    return catalog;
 }
 
 /* The single V6 entry point. Takes a JSON string, returns a JSON string.
@@ -76,7 +100,10 @@ function mcpDispatchV6(requestJson) {
  * carried into the envelope: it is engine-internal, and a consumer that could
  * read it would be depending on an internal (MJ-005). */
 function muejejeV6Run(request, operation) {
-    var context = {operations: muejejeV6OperationNames()};
+    var context = {
+        operations: muejejeV6OperationNames(),
+        operation_catalog: muejejeV6OperationCatalog()
+    };
     try {
         return muejejeV6Ok(
             request.operation_rid, request.op,

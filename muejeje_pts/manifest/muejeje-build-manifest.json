@@ -1,13 +1,20 @@
 {
   "schema_version": 2,
-  "extension": {"name": "muejeje", "version": "0.1.0"},
-  "output": {"artifact": "muejeje.pts", "report": "muejeje.build.json"},
+  "extension": {
+    "name": "muejeje",
+    "version": "0.1.0"
+  },
+  "output": {
+    "artifact": "muejeje.pts",
+    "report": "muejeje.build.json"
+  },
   "artifact_inputs": [
     "muejeje_pts/interface/index.html",
     "muejeje_pts/script-engine/core.js",
     "muejeje_pts/script-engine/dispatcher_v6.js",
     "muejeje_pts/script-engine/lifecycle.js",
     "muejeje_pts/script-engine/protocol_v6.js",
+    "muejeje_pts/script-engine/runtime_capabilities.js",
     "muejeje_pts/script-engine/runtime_identity.js"
   ],
   "tooling_inputs": [
@@ -30,6 +37,7 @@
     "engine_script_order": [
       "muejeje_pts/script-engine/core.js",
       "muejeje_pts/script-engine/protocol_v6.js",
+      "muejeje_pts/script-engine/runtime_capabilities.js",
       "muejeje_pts/script-engine/runtime_identity.js",
       "muejeje_pts/script-engine/dispatcher_v6.js",
       "muejeje_pts/script-engine/lifecycle.js"
