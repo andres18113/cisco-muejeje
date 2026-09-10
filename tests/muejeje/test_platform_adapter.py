@@ -2,17 +2,21 @@
 
 `platform_adapter.js` is the declared platform adapter (MJ-006, MJ-019): the
 only packaged source that may name `ipc`, and the only one that does. This
-module gates what that permission costs — no mutation, no kernel state, no
-envelope, no dispatch, and no call this repository cannot cite — and it drives
-the readings the adapter reports when the platform will not answer.
+module gates what that permission costs: no mutation, no kernel state, no
+envelope, no dispatch, no Cisco enum mirror, and no call this repository cannot
+cite.
 
-**What runs here, and what it establishes.** The unavailable branches are real:
-under Node there is no platform object, so `PLATFORM_ABSENT` is the honest
-reading and this suite observes it. The refused and unusable branches are
-driven with a stub that misbehaves on purpose. All of it establishes what *our*
-adapter does; none of it establishes anything about `9.0.1.0858`, whose factory
-is a different implementation. No call below has ever reached the target, so
-the capability's live state is `PENDING_TARGET` (MJ-015, MJ-031).
+The last of those is the only one that needs to run. A grep over the source
+shows what is *written*; the call log shows what the adapter actually *asked
+for*, which is the half a reader cannot check by eye. It is compared against
+Cisco's documented getters in both directions, so a call with no reference
+behind it fails here rather than on a target as a bare `Invalid arguments for
+IPC call "X"` (`AGENTS.md` rule 6).
+
+What the adapter *reports* is `test_platform_readings`; the V6 surface of the
+operation in front of it is `test_platform_descriptors`. Nothing in any of the
+three has reached `9.0.1.0858`, so the capability's live state is
+`PENDING_TARGET` (MJ-015, MJ-031).
 """
 
 from __future__ import annotations
@@ -120,90 +124,6 @@ def test_the_adapter_carries_no_numeric_cisco_enum_mirror():
             f"{mirrored} would put a Cisco enum or a type-keyed lookup inside "
             "the artifact"
         )
-
-
-# ---------------------------------------------------------------------------
-# Executable: the readings when the platform will not answer.
-# ---------------------------------------------------------------------------
-
-@requires_node
-def test_no_platform_object_is_an_observation_not_a_failure():
-    """The honest reading under Node, and the one a denied module also needs.
-
-    `ok: true` on purpose: the operation succeeded in answering "there is no
-    platform to read here". A V6 failure would say the request was
-    inadmissible, which it was not.
-    """
-    response = dispatch_v6(_request())
-
-    assert response["ok"] is True
-    assert response["error"] is None
-    assert response["result"]["resolution"] == "UNAVAILABLE"
-    assert response["result"]["unavailable_reason"] == "PLATFORM_ABSENT"
-    assert response["result"]["available_count"] is None
-    assert response["result"]["descriptors"] == []
-
-
-@requires_node
-def test_a_refused_platform_call_is_reported_without_its_error():
-    """A denied privilege is one cause of this, and it is not named as one.
-
-    The adapter cannot tell a denied privilege from any other engine-side
-    refusal, so it reports that the call did not return and stops there. The
-    thrown value never reaches the result: a consumer that could read it would
-    be depending on an internal (MJ-005).
-    """
-    result = dispatch_v6(
-        _request(), prelude=platform_stub(THREE_MODELS, fail=True),
-    )["result"]
-
-    assert result["resolution"] == "UNAVAILABLE"
-    assert result["unavailable_reason"] == "PLATFORM_CALL_FAILED"
-    assert "refused this call" not in json.dumps(result)
-
-
-@requires_node
-@pytest.mark.parametrize("count", ["'many'", "-1", "1.5", "999999999"])
-def test_an_answer_that_cannot_be_attributed_is_its_own_reason(count: str):
-    """It answered, and the answer is unusable. Different from not answering.
-
-    Collapsing the two would leave a consumer unable to tell "Packet Tracer
-    would not talk to us" from "Packet Tracer said something we cannot read",
-    and those need different next steps.
-    """
-    result = dispatch_v6(
-        _request(), prelude=platform_stub(THREE_MODELS, count=count),
-    )["result"]
-
-    assert result["resolution"] == "UNAVAILABLE"
-    assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
-
-
-@requires_node
-def test_a_missing_descriptor_inside_the_window_is_unusable_not_empty():
-    """A hole is not an absence. Reporting fewer models would invent an answer."""
-    result = dispatch_v6(_request(), prelude=platform_stub("[]", count="3"))["result"]
-
-    assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
-
-
-@requires_node
-def test_the_adapter_never_throws_out_of_the_engine():
-    """Whatever the platform does, the caller gets a reading.
-
-    An uncaught error inside a Script Engine call is not something a consumer
-    can correlate, diagnose or retry, and in Packet Tracer it opens a modal.
-    """
-    for prelude in (
-        "",
-        platform_stub(THREE_MODELS, fail=True),
-        platform_stub(THREE_MODELS, count="'many'"),
-        "var ipc = null;",
-        "var ipc = {hardwareFactory: function () { return null; }};",
-    ):
-        response = dispatch_v6(_request(), prelude=prelude)
-        assert response["ok"] is True, prelude[:40]
-        assert response["result"]["resolution"] in {"OBSERVED", "UNAVAILABLE"}
 
 
 # ---------------------------------------------------------------------------

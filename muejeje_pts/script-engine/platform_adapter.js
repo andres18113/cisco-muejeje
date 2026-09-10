@@ -50,7 +50,8 @@ var MUEJEJE_PLATFORM_LIMITS = {
     MAX_WINDOW: 32,
     MAX_OFFSET: 4096,
     MAX_MODULE_TYPES: 64,
-    MAX_COUNT: 65536
+    MAX_COUNT: 65536,
+    MAX_MODEL_CHARS: 256
 };
 
 /* Why a reading is unavailable. Three different facts, kept apart because a
@@ -196,11 +197,12 @@ function muejejeAdapterWholeNumber(value) {
 
 /* An empty model is a real answer, not a malformed one: on 9.0.1 a chassis
  * root can report "". Requiring a name here discarded correct metadata once
- * already, so the only thing checked is that it is a bounded string. */
+ * already, so the only thing checked is that it is a bounded string — and the
+ * bound is a length of its own, not a count reused as one. */
 function muejejeAdapterModel(value) {
     if (
         typeof value !== "string"
-        || value.length > MUEJEJE_PLATFORM_LIMITS.MAX_COUNT
+        || value.length > MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     ) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }

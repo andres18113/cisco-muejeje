@@ -131,30 +131,33 @@ repository root, with worktree-local temporaries (per `AGENTS.md`):
 
 ```text
 .venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/m1-focused -o cache_dir=tmp/m1-focused-cache
-342 passed, 2 skipped in 114.88s; exit 0
+353 passed, 2 skipped in 106.37s; exit 0
 
 .venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q --basetemp=tmp/m1-arch -o cache_dir=tmp/m1-arch-cache
 12 passed in 2.24s; exit 0
 
 .venv/Scripts/python.exe -m pytest -q
-4787 passed, 3 skipped in 317.36s; exit 0
+4798 passed, 3 skipped in 329.53s; exit 0
 ```
 
 M0F split the two monolithic modules into `tests/muejeje/`. The ADR-001 run this
 replaced was `39 passed, 2 skipped` over `tests/test_muejeje_build.py` and
 `tests/test_muejeje_build_identity.py`, which no longer exist. The muejeje area
 grew from `155 passed` to `214 passed` with `runtime.capabilities` and the
-layer-aware fitness gates, and from `214` to `342` with the kernel hardening
+layer-aware fitness gates, and from `214` to `353` with the kernel hardening
 and the first M2 slice: bounded V6 admission, the V6 compatibility contract,
 the privilege-evidence rule, the future-safe architecture gates, and the
 read-only platform adapter with `platform.device_descriptors`.
 
-Four test modules were split out along the way, each because its predecessor
-crossed the 300-line budget rather than because anyone chose to: `measure`
-out of `support`, `test_layer_boundaries` out of `test_source_root`,
+Five test modules were split out along the way, each because its predecessor
+crossed the 300-line budget rather than because anyone chose to: `measure` out
+of `support`, `test_layer_boundaries` out of `test_source_root`,
 `test_capability_claims` out of `test_unobserved_claims`, and
-`test_platform_adapter` out of `test_platform_descriptors`. That is `MJ-020`
-doing what it is for.
+`test_platform_adapter` and then `test_platform_readings` out of
+`test_platform_descriptors`. `validation_v6.js` came out of `protocol_v6.js`
+for the same reason. That is `MJ-020` doing what it is for: the budget forced
+each split at the point a file stopped being readable in one sitting, and both
+exception tables in the fitness gate are still empty.
 
 The two skips are Windows symlink-creation privilege limitations. The hardlink
 alias, hidden-source/manifest, malformed-JSON and reference-input security checks

@@ -751,17 +751,18 @@ rather than from assumptions, and nothing could observe one until something
 could ask. Bounding that first reach to a single declared, read-only, cited
 file is what keeps the answer to "what does this artifact do to Packet Tracer"
 short enough to check.
-**Verification.** `tests/muejeje/test_platform_adapter.py` asserts the adapter
-is the only file naming `ipc`, that it names no kernel symbol, that no member
-call is shaped like a mutation (in both directions), and that no Cisco enum
-name appears anywhere in the packaged sources. It drives every unavailable
-reading, asserts the adapter never throws out of the engine, and compares the
-calls it *actually made* — recorded by a stub — against the documented set, in
-both directions. `tests/muejeje/test_platform_descriptors.py` covers the
-operation: one result shape whether the platform answered or not, the window
-and its truncation marks, the declared argument rules, and no self-certified
-verdict. `tests/muejeje/test_layer_boundaries.py` checks the declaration
-itself.
+**Verification.** Three modules, one per responsibility.
+`tests/muejeje/test_platform_adapter.py` asserts the adapter is the only file
+naming `ipc`, that it names no kernel symbol, that no member call is shaped
+like a mutation, and that no Cisco enum name appears anywhere in the packaged
+sources — then compares the calls it *actually made*, recorded by a stub,
+against the documented set, in both directions.
+`tests/muejeje/test_platform_readings.py` drives all four readings, every field
+validator behind them, and asserts the adapter never throws out of the engine.
+`tests/muejeje/test_platform_descriptors.py` covers the operation: one result
+shape whether the platform answered or not, the window and its truncation
+marks, the declared argument rules, and no self-certified verdict.
+`tests/muejeje/test_layer_boundaries.py` checks the declaration itself.
 **Status.** `ENFORCED` for the boundary, the read-only rule and the adapter's
 own logic under Node; `PENDING_TARGET` for the capability itself. The
 `OBSERVED` branch has only ever been driven against a stub, no `.pts` has been
