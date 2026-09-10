@@ -73,11 +73,14 @@ Run on the rebaselined branch with the checkout-local interpreter, from the
 repository root, with worktree-local temporaries (per `AGENTS.md`):
 
 ```text
-.venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/m0f-focused -o cache_dir=tmp/m0f-cache
-108 passed, 2 skipped in 53.58s; exit 0
+.venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/v6-focused -o cache_dir=tmp/v6-cache
+155 passed, 2 skipped in 73.73s; exit 0
 
 .venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q --basetemp=tmp/m0f-arch -o cache_dir=tmp/m0f-arch-cache
 12 passed in 2.03s; exit 0
+
+.venv/Scripts/python.exe -m pytest -q
+4600 passed, 3 skipped in 320.07s; exit 0
 ```
 
 M0F split the two monolithic modules into `tests/muejeje/`. The ADR-001 run this
@@ -87,6 +90,27 @@ replaced was `39 passed, 2 skipped` over `tests/test_muejeje_build.py` and
 The two skips are Windows symlink-creation privilege limitations. The hardlink
 alias, hidden-source/manifest, malformed-JSON and reference-input security checks
 all executed.
+
+## What the V6 kernel run does and does not establish
+
+The V6 kernel checks in `tests/muejeje/` come in two kinds, and conflating them
+would be the same error this document was corrected for.
+
+| | Establishes | Does not establish |
+| --- | --- | --- |
+| `STRUCTURAL_VERIFIED` — always runs | the source layout, who owns `mcpDispatchV6`, `main()` and `cleanUp()`, the absence of `eval`/`new Function`/`ipc.*`, the declared `engine_script_order` | any behaviour |
+| `RUNTIME_VERIFIED` — Node, skipped when absent | what *our* JavaScript does: the envelope, the whitelist, each rejection class, the session id, the identify result | anything about Packet Tracer |
+
+Node is a different Script Engine implementation from Packet Tracer's. A green
+Node run is evidence about the kernel's own logic and is never evidence about
+`9.0.1.0858` (`MJ-015`, `AGENTS.md` rule 6). No `.pts` has been built from these
+sources and the kernel has never run inside Packet Tracer, so its live state is
+`NOT_YET_LIVE_VERIFIED`.
+
+Node is optional and guarded. The suite already drives Node this way in
+`tests/test_e95_serial_physical_product_slice.py`, so this adds no undeclared
+dependency: with Node absent the structural gates still run and the executable
+ones skip.
 
 To reproduce the real-checkout report from a clean tree:
 
