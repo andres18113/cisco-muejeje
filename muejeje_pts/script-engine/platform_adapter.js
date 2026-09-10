@@ -30,10 +30,11 @@
  * Those adapters name no platform object of their own.
  *
  * IT REACHES NO VERDICT. Whether an answer qualifies anything is decided in
- * Python, from outside the artifact (MJ-011). The module requests no
- * privilege, so on a target these calls are denied until one is evidenced —
- * reported as an unavailable reading, never as a failure of the platform
- * (MJ-032).
+ * Python, from outside the artifact (MJ-011). The module requests no privilege,
+ * because no evidence names one these calls need; what a target actually does
+ * with them is unknown until a target does it, and this artifact predicts
+ * neither an answer nor a refusal. Whatever happens is reported as a reading
+ * with its reason (MJ-032).
  */
 
 /* The platform members this artifact may call, and the whole of what it may

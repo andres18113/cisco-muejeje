@@ -134,9 +134,10 @@ every name nobody thought of; and a defect inside an adapter is reported as
 `ENGINE_EXCEPTION`, never as a platform reading.
 
 **The module still requests no privilege.** No privilege is evidenced as the
-one a descriptor reading needs, so naming one would be a guess (`MJ-032`). On a
-target the call is therefore denied, and the operation reports an unavailable
-reading with its reason rather than a claim about the platform. The artifact
+one a descriptor reading needs, so naming one would be a guess (`MJ-032`). What
+a target does with an unprivileged call is equally unevidenced, and is not
+predicted here: the operation reports whichever reading comes back, with its
+reason, rather than a claim about the platform. The artifact
 contains no HTTP listener, no file mailbox and no polling loop, and the Custom
 Interface is a static page that calls nothing and therefore reports no module
 state.

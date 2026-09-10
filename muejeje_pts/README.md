@@ -128,12 +128,16 @@ adapter but its own declared bounds.
 
 **The module still requests no privilege** (`privileges: []`). No privilege is
 evidenced as the one these calls need — the catalogue lives in `.pki` files
-Cisco does not install — and an invented name would be denied on the target
-rather than refused here (`MJ-032`). So on a real Packet Tracer the platform
-call is denied until that evidence exists, and
-both platform operations report an unavailable reading with its reason instead
-of pretending otherwise. Nothing in this tree has ever run inside
-Packet Tracer, so the capability's target state is pending, not proven.
+Cisco does not install — and a name nobody can cite is refused at audit time
+rather than shipped to find out (`MJ-032`).
+
+**What a real Packet Tracer then does is unknown, and this tree does not guess
+it.** Whether an unprivileged Script Module may make these calls, and which
+privilege (if any) each one needs, are questions only a target run answers. The
+operations report whichever reading comes back — an answer, or an unavailable
+one with its reason — and nothing here predicts which. Nothing in this tree has
+ever run inside Packet Tracer, so both capabilities' target state is pending,
+not proven.
 
 ## Relationship to `EXTENSION/`
 

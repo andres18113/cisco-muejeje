@@ -18,8 +18,9 @@
  * Python decides what an observation establishes (MJ-011).
  *
  * A reading may be unavailable, and that is an answer. This module requests no
- * privilege, so on a target the platform call is denied until one is
- * evidenced; the operation reports that as an unavailable reading with its
+ * privilege, because nothing evidences which privilege the call needs — and
+ * what a target does with an unprivileged call is not something this artifact
+ * knows in advance. Whatever comes back is reported as a reading with its
  * reason, and never as a claim about what the platform does or does not have
  * (MJ-032).
  */

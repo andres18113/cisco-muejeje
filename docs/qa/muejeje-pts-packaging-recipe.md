@@ -72,14 +72,14 @@ lifecycle that may call all of it (`MJ-019`).
    privilege unselected. *"The security privileges indicate which IPC calls this
    Script Module can make. Calls to unselected privileges will be denied"*.
 
-   **This is a deliberate, and consequential, choice.** The two runtime
-   operations make no IPC call, so denying everything changes nothing they do.
-   `platform.device_descriptors` *does* make one, and with nothing selected it
-   will be denied — which the operation reports as an unavailable reading with
-   its reason, not as an answer about Packet Tracer (`MJ-031`). Selecting a
-   privilege here would mean guessing which one the descriptor reading needs,
-   and no evidence in this repository says (`MJ-032`). Record the denial; it is
-   the observation this run is for.
+   **This is a deliberate, and consequential, choice.** The `runtime.*`
+   operations make no IPC call, so nothing selected here changes what they do.
+   The `platform.*` ones do make calls, and **what happens to them with nothing
+   selected is exactly what this run is for**. Selecting a privilege would mean
+   guessing which one the reading needs, and no evidence in this repository
+   says (`MJ-032`); predicting the outcome would be the same guess in the other
+   direction. Record whichever reading comes back — that observation is the
+   point of the run.
 4. **Script Engine**: import the engine files in the order above. Import; do not
    paste. Pasted source loses its newlines in the Builder Code Editor, and these
    files are ordinary multi-line JavaScript with comments.
@@ -126,8 +126,9 @@ No topology is created, opened or modified; no device, link or configuration is
 touched; no transport, bridge or HTTP endpoint is implemented or contacted.
 Every admitted operation is read-only. The `runtime.*` ones make no platform
 call at all; the `platform.*` ones make documented getter calls on the hardware
-*factory*, which describes what models exist and instantiates nothing — and
-with no privilege selected they are expected to be denied outright.
+*factory*, which describes what models exist and instantiates nothing. What a
+module carrying no privilege gets back from them is unknown until this run
+answers it.
 
 One call per admitted operation, each on one line. Anything **pasted** into
 the Builder Code Editor loses its newlines, so a pasted snippet must be a
@@ -157,8 +158,9 @@ outcome is a result worth recording verbatim**:
 
 | `result.resolution` | `unavailable_reason` | What it establishes |
 | --- | --- | --- |
-| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the module asked and the call did not return. With no privilege selected this is the expected reading, and it does not distinguish a denied privilege from any other refusal — the runtime cannot tell, and does not guess (`MJ-031`) |
+| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It does not distinguish a denied privilege from any other refusal — the runtime cannot tell, and does not guess (`MJ-031`) |
 | `UNAVAILABLE` | `PLATFORM_ABSENT` | there was no `ipc` object in the Script Engine at all. That would be a fact about the engine, not about privileges, and it needs recording as such |
+| `UNAVAILABLE` | `PLATFORM_MEMBER_ABSENT` | the object was there and did not offer the member. Nothing was called, so this is a fact about the interface rather than about permission — record which member |
 | `UNAVAILABLE` | `PLATFORM_ANSWER_UNUSABLE` | Packet Tracer answered and the answer could not be attributed. Record the whole envelope: this is the interesting failure |
 | `OBSERVED` | `null` | the factory answered. Record `available_count` and every descriptor and chassis node verbatim — this is the first real target evidence for `MJ-014`'s descriptor path from inside the artifact |
 

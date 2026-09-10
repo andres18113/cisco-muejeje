@@ -577,7 +577,7 @@ validated rather than merely present:
 | `startup` | `on_startup` | the module must be able to answer `runtime.identify` without a human opening anything first. It is safe to start unconditionally precisely because it initiates nothing: no transport, no polling, no platform call |
 | `custom_interface_order` | `[muejeje_pts/interface/index.html]` | one static page, the only interface file that ships |
 | `engine_script_order` | core → protocol → admission → operations (alphabetical) → dispatch → lifecycle | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019) |
-| `privileges` | `[]` | nothing this module calls has an *evidenced* privilege requirement, and an invented name would be denied on the target rather than refused here (`MJ-032`). An empty set is a decision, not an omission |
+| `privileges` | `[]` | nothing this module calls has an *evidenced* privilege requirement, and a name nobody can cite is refused at audit time rather than shipped to find out (`MJ-032`). An empty set is a decision, not an omission; what a target does with it is a separate unknown |
 
 An option is **unresolved** when it is `null` — nobody has decided, which is not
 a defect — and **invalid** when it carries a value the platform could not
@@ -812,11 +812,15 @@ operation defaults an argument nobody sent, so such a value came from our own
 code — clamping it would read a *different* window, or a different model, and
 report the result as an observation about Packet Tracer.
 
-**A capability with no evidenced privilege stays pending.** This module
-requests no privilege (MJ-025, MJ-032), so on a target these calls are denied
-until one is evidenced. That is reported as an unavailable reading with its
-reason — never as a claim about what Packet Tracer does or does not offer, and
-never as a reason to guess a privilege name.
+**A capability with no evidenced privilege stays pending, and its target
+outcome stays unpredicted.** This module requests no privilege (MJ-025,
+MJ-032). Which privilege each call needs, and what a target does when a Script
+Module makes it without one, are two separate unknowns, and this repository has
+measured neither. So nothing here says a target run *will* be refused: the
+capability is `PENDING_TARGET` because no reading exists, and the first run
+records whichever reading comes back — an answer, or an unavailable one with
+its reason. Predicting the refusal would be the same defect as predicting the
+answer: a claim about `9.0.1.0858` with nothing behind it (MJ-015).
 
 **`runtime.capabilities` may name a capability only once it exists.** The
 operation being admitted, and the kernel feature behind it, are facts about
@@ -865,9 +869,16 @@ evidence: asking for nothing cannot ask for the wrong thing (MJ-025).
 **Why a wrong name is worse than a missing one.** Cisco is explicit that *"the
 security privileges indicate which IPC calls this Script Module can make. Calls
 to unselected privileges will be denied"*. A misspelled or invented privilege
-therefore passes packaging, ships inside the artifact, and fails on the target
-as a denied IPC call — in the one place this repository cannot observe. The
-audit is the last point at which the name can still be refused.
+therefore passes packaging and ships inside the artifact, and whatever it then
+does happens in the one place this repository cannot observe. The audit is the
+last point at which the name can still be refused, which is why it is refused
+there rather than shipped to find out.
+
+**This is a rule about the name, not a prediction about the run.** Cisco's
+sentence says what an unselected privilege means for a call that needs it; it
+does not say which privilege any of these calls need, and nothing here has
+measured that. So the empty set is justified by the absence of evidence for any
+name, and never by a forecast of what the target will answer.
 
 **The evidenced set is a measurement, not a catalogue.** Privileges are declared
 in `.pki` files, which are **not installed**. The installed IpcAPI reference
@@ -1010,7 +1021,7 @@ Not requirements. Each needs a decision before it can become one.
 | **TODO-V6-SHAPE** | **RESOLVED for the kernel.** The envelope is `{v, operation_rid, op, args}` in and `{v, operation_rid, op, ok, result, error}` out, both as JSON strings, through the single entry point `mcpDispatchV6`. Operations are whitelisted by name, each admitted argument carries the rule its value must satisfy (MJ-029), and the failure taxonomy is MJ-022. Adding an operation extends the table, not the envelope; which operations the table holds is MJ-008, and it is not restated here, because a whitelist written down twice is one that will disagree with itself. |
 | **TODO-MODULE-ID** | **RESOLVED** by `MJ-025`: `io.github.andres18113.muejeje.runtime`. Hierarchical and reverse-DNS shaped, rooted in a namespace the publisher controls. Stability across rebuilds is a property of the manifest, which is committed and hashed into recipe identity. Packet Tracer's own acceptance of the representation still needs target evidence (`MJ-015`). |
 | **TODO-STARTUP** | **RESOLVED** by `MJ-025`: `on_startup`. The module must answer `runtime.identify` without a human opening anything, and starting it unconditionally is safe precisely because it initiates nothing — no transport, no polling, no platform call. Revisit if and when a channel that *does* initiate is added. |
-| **TODO-PRIVILEGES** | **RESOLVED** by `MJ-025` and `MJ-032`: `[]`. The `.pki` privilege catalogue is still not installed, and this resolution deliberately does not need it: an empty set requires no catalogue to justify. What a non-empty set would require is now decided rather than left open — only identifiers Cisco names, refused at audit time otherwise (`MJ-032`) — because an invented privilege is denied on the target where nothing here can see it. A capability whose privilege cannot be evidenced stays unsupported (`MJ-031`). |
+| **TODO-PRIVILEGES** | **RESOLVED** by `MJ-025` and `MJ-032`: `[]`. The `.pki` privilege catalogue is still not installed, and this resolution deliberately does not need it: an empty set requires no catalogue to justify. What a non-empty set would require is now decided rather than left open — only identifiers Cisco names, refused at audit time otherwise (`MJ-032`). Which privilege a given call needs, and what a target does without it, both stay open; a capability whose privilege cannot be evidenced stays `PENDING_TARGET` rather than predicted either way (`MJ-031`). |
 | **TODO-RECIPE-SCOPE** | **RESOLVED.** Manifest `schema_version: 2` splits inputs into `artifact_inputs` (bytes packaged into the `.pts`, required to live under the owned root), `tooling_inputs` (the auditor — ships nothing, still part of recipe identity) and `reference_inputs` (empty). A path may not appear in two categories. |
 
 ## Related documents

@@ -303,8 +303,8 @@ evidenced against the pinned build, from the artifact that uses them. Nothing
 about a successful V6 execution answers that question, and it would still not
 answer it if the `.pts` were built and both platform-free operations replied
 perfectly: `runtime.identify` and `runtime.capabilities` make no platform call,
-so they can succeed on a target with every privilege denied and every factory
-API missing.
+so they can succeed on a target where every privilege is refused and every
+factory API is missing.
 
 The fifteen calls the boundary admits, and what each is actually backed by:
 
@@ -354,14 +354,21 @@ to observe first: the enumeration is how Muejeje reaches every one of the
 twelve. Until that happens, both platform operations are code with a contract
 and no target reading, which is what `PENDING_TARGET` means.
 
-**And the expected first reading is a denial.** The module requests no
-privilege, because no evidence says which privilege these calls need
-(`MJ-032`), so the first target run should report `PLATFORM_CALL_FAILED` from
-both platform operations — an observation worth recording, and still not
-qualification of any API. It is also the reading that made the attribution rule
-worth fixing: a bug inside an adapter used to come back under that same name,
-and on a target nothing would have distinguished it from the denial
-(`MJ-022`, `MJ-031`).
+**And what the first reading will be is not something this record predicts.**
+The module requests no privilege, because no evidence says which privilege
+these calls need (`MJ-032`). Whether a Script Module carrying none may make
+them is a second unknown, and this repository has measured neither — so an
+earlier revision of this file, which said the first run "should report
+`PLATFORM_CALL_FAILED`", was making a claim about `9.0.1.0858` with nothing
+behind it, and it is withdrawn rather than restated. The run records whichever
+reading comes back, and every reading is worth recording: an answer, a member
+the object does not offer, a call that did not return, or an answer that could
+not be attributed.
+
+That attribution is also why the boundary was corrected before this line was
+written. A bug inside an adapter used to come back as `PLATFORM_CALL_FAILED`,
+and so did a member that was never called — on a target, neither would have
+been distinguishable from a refusal (`MJ-022`, `MJ-031`).
 
 What was checked, and what each check found:
 
