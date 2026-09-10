@@ -285,3 +285,13 @@ def test_empty_observed_identity_cannot_inherit_requested_identity():
 def test_incomplete_output_cannot_report_an_off_row_as_a_negative():
     _, observed = _observe(_result(complete=False), ("FastEthernet0/7",))
     assert observed.ports[0].delivery is PoEInlineDelivery.UNOBSERVABLE
+
+
+def test_malformed_present_target_row_refuses_instead_of_reporting_absence():
+    from tests.test_poe_inline_parser import _HEAD
+    malformed = "Fa0/1     auto   on         BAD     IP Phone 7960       3     15.4\n"
+    output = _MEASURED_NEVER.replace(_HEAD, _HEAD + malformed, 1)
+    _, observed = _observe(_result(output))
+    assert observed.status is PoEInlineObservationStatus.UNOBSERVABLE
+    assert observed.refusal_reason
+    assert observed.ports[0].delivery is PoEInlineDelivery.UNOBSERVABLE

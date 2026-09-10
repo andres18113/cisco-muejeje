@@ -29,6 +29,8 @@ Tres cosas medidas que un parser escrito de memoria habria roto:
 
 from __future__ import annotations
 
+import pytest
+
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     PoEInlineDelivery,
     classify_poe_inline_delivery,
@@ -231,4 +233,22 @@ def test_an_incomplete_capture_that_shows_the_powered_row_still_delivers():
 def test_an_unparsable_capture_is_unobservable_rather_than_negative():
     assert classify_poe_inline_delivery(
         "Invalid input detected at '^' marker.", "Fa0/1", capture_complete=True,
+    ) is PoEInlineDelivery.UNOBSERVABLE
+
+
+@pytest.mark.parametrize("row", [
+    "Fa0/1     auto   on         BAD     IP Phone 7960       3     15.4\n",
+    "Fa0/1     auto   on         10.0    IP Phone 7960       3     BAD \n",
+    "Fa0/1     auto   on         nan     IP Phone 7960       3     15.4\n",
+    "Fa0/1     auto   on         inf     IP Phone 7960       3     15.4\n",
+    "Fa0/1     auto   on         -1.0    IP Phone 7960       3     15.4\n",
+    "Fa0/1 auto on 10.0 IP Phone 7960 3 15.4\n",
+    "Fa0/1\n",
+    "Fa0/1?    auto   on         10.0    IP Phone 7960       3     15.4\n",
+    "Fa0/1     auto   on         10.0    IP Phone 7960       3     15.4 garbage\n",
+])
+def test_unconsumed_or_malformed_interface_row_is_never_absence(row):
+    output = _MEASURED_NEVER.replace(_HEAD, _HEAD + row, 1)
+    assert classify_poe_inline_delivery(
+        output, "FastEthernet0/1", capture_complete=True,
     ) is PoEInlineDelivery.UNOBSERVABLE

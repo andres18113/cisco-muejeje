@@ -239,6 +239,8 @@ def _gate(identity: str, result: IosCommandResult) -> str | None:
     if observed != identity:
         return "The capture was attributed to another device."
     table = parse_show_power_inline(result.output)
+    if table.unparsed_lines:
+        return "The inline-power table carries malformed or unconsumed rows."
     if not table.rows:
         return "The output carries no inline-power table."
     keys = [canonical_interface_name(row.interface) for row in table.rows]

@@ -8,7 +8,7 @@ No Packet Tracer file operation is authorized or executed by this runner.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -64,6 +64,9 @@ from poe_inline_calibration_live import PoEInlineMode
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "andres18113/cisco-muejeje"
 BRANCH = "feature/runtime-ripv2"
+# 100-character path component budget: 6 prefix + 68 caller metadata +
+# 1 separator + 16 UTC timestamp + 1 separator + 8 random hex characters.
+QUALIFICATION_ID_MAX_LENGTH = 68
 
 
 def source_baseline(plan: PoEModelQualificationPlan) -> dict:
@@ -114,17 +117,77 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--execute", action="store_true", required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--qualification-id", required=True)
+    parser.add_argument("--qualification-id", required=True, help="Exact safe ID, at most 68 characters.")
     args = parser.parse_args(argv)
-    if args.qualification_id != safe_name_component(args.qualification_id):
-        raise ValueError("qualification-id must be an exact safe name component")
+    _validate_qualification_id(args.qualification_id)
     governed_plan(args.model)
     return args
 
 
+def _validate_qualification_id(qualification_id: str) -> None:
+    if (qualification_id != safe_name_component(qualification_id)
+            or len(qualification_id) > QUALIFICATION_ID_MAX_LENGTH):
+        raise ValueError("qualification-id must be an exact safe name component of at most 68 characters")
+
+
+def qualification_run_id(qualification_id: str) -> str:
+    """Preserve the full uniqueness suffix; never sanitize/truncate a run ID."""
+    _validate_qualification_id(qualification_id)
+    run_id = ("poe3b-" + qualification_id + "-"
+              + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + token_hex(4))
+    if run_id != safe_name_component(run_id):
+        raise ValueError("Complete run identity does not fit one exact safe component")
+    return run_id
+
+
+@dataclass(frozen=True)
+class ArtifactReservation:
+    run_id: str
+    directory: Path
+    directory_identity: tuple[int, int]
+
+
+def _artifact_directory(run_id: str) -> Path:
+    if run_id != safe_name_component(run_id):
+        raise ValueError("Artifact run identity must be exact and untruncated")
+    return resolve_within(ROOT,
+        Path("docs/reference/cp-scale/canonical-live-evidence") / safe_name_component(run_id))
+
+
+def reserve_artifacts(qualification_id: str) -> ArtifactReservation:
+    """Exclusively reserve the exact destination before any PT mutation.
+
+    An empty directory does not dirty the frozen Git source. This is a local
+    evidence-directory operation, never a Packet Tracer workspace operation.
+    """
+    run_id = qualification_run_id(qualification_id)
+    directory = _artifact_directory(run_id)
+    directory.mkdir(parents=True, exist_ok=False)
+    identity = directory.stat()
+    return ArtifactReservation(run_id, directory, (identity.st_dev, identity.st_ino))
+
+
+def validate_artifact_reservation(artifacts: ArtifactReservation | None,
+                                  expected_run_id: str | None = None) -> Path:
+    """Require the same exclusively created directory before mutation or save."""
+    if not isinstance(artifacts, ArtifactReservation):
+        raise ValueError("Artifact destination has not been reserved")
+    if expected_run_id is not None and artifacts.run_id != expected_run_id:
+        raise ValueError("Artifact reservation belongs to a different run")
+    if (artifacts.directory != _artifact_directory(artifacts.run_id)
+            or artifacts.directory.is_symlink() or not artifacts.directory.is_dir()):
+        raise ValueError("Artifact reservation path changed or disappeared")
+    identity = artifacts.directory.stat()
+    if (identity.st_dev, identity.st_ino) != artifacts.directory_identity:
+        raise ValueError("Artifact reservation directory was replaced")
+    return artifacts.directory
+
+
 def create_fixture(exp: Experiment, plan: PoEModelQualificationPlan,
-                   attempted: list[str], created: list[str]) -> dict:
+                   attempted: list[str], created: list[str], *,
+                   artifacts: ArtifactReservation) -> dict:
     """Create exactly the governed scope, tracking attempts before each mutation."""
+    validate_artifact_reservation(artifacts)
     attempted.append(exp.switch)
     switch = exp.fixture.create_device(plan.candidate_model, exp.switch,
         tuple(b.switch_port for b in plan.bindings), arm="candidate")
@@ -280,8 +343,10 @@ def ephemeral_safety_for(baseline: dict, restoration: dict, safety: dict,
 def persist_qualification(*, plan: PoEModelQualificationPlan,
                           scope: PoEPseMultiPortDeliveryScope, baseline: dict,
                           restoration: dict, safety: dict, problems: list[str],
+                          artifacts: ArtifactReservation,
                           store: CapabilitySnapshotStore) -> tuple[CapabilitySnapshot, Path]:
     """Release a controlled result only beyond cleanup, safety and schema gates."""
+    validate_artifact_reservation(artifacts, scope.experiment_id)
     attempted = restoration.get("attempted", [])
     created = restoration.get("created", [])
     deleted = restoration.get("deleted", [])
@@ -362,8 +427,8 @@ def main() -> int:
         loaded_namespaces=[n for n in ("packet_tracer_mcp", "src.packet_tracer_mcp")
                            if n in sys.modules],
     )
-    run_id = ("poe3b-" + args.qualification_id + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-              + "-" + token_hex(4))
+    artifacts = reserve_artifacts(args.qualification_id)
+    run_id = artifacts.run_id
     started = utc()
 
     exp = Experiment(run_id, switch_ports=tuple(b.switch_port for b in plan.bindings), endpoint_role="PH")
@@ -399,7 +464,7 @@ def main() -> int:
         print("LIVE OPEN " + run_id + " source=" + baseline["local_head"], flush=True)
         creation_started = True
 
-        fixture = create_fixture(exp, plan, attempted, created)
+        fixture = create_fixture(exp, plan, attempted, created, artifacts=artifacts)
         baseline["boot"] = exp.executor.wait_until_ready(
             exp.switch, timeout_seconds=150).model_dump(mode="json")
 
@@ -478,7 +543,7 @@ def main() -> int:
             dimensions = encode_poe_pse_multi_port_dimensions(scope)
             snapshot, snapshot_path = persist_qualification(
                 plan=plan, scope=scope, baseline=baseline, restoration=restoration,
-                safety=safety, problems=problems,
+                safety=safety, problems=problems, artifacts=artifacts,
                 store=CapabilitySnapshotStore(resolve_within(ROOT, Path("data") / "capabilities")))
             admitted_safety = snapshot.session.results[0].context.live_session_safety
         except Exception as exc:
@@ -500,9 +565,7 @@ def main() -> int:
         problems=problems,
     )
 
-    directory = resolve_within(
-        ROOT, Path("docs/reference/cp-scale/canonical-live-evidence") / safe_name_component(run_id))
-    directory.mkdir(parents=True, exist_ok=False)
+    directory = validate_artifact_reservation(artifacts, run_id)
     for name, content in raw_files.items():
         resolve_within(directory, safe_name_component(name)).write_bytes(content)
     path = resolve_within(directory, "evidence.json")

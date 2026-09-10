@@ -1276,6 +1276,8 @@ class PoEInlineTable:
     summary_available_watts: float | None = None
     summary_used_watts: float | None = None
     summary_remaining_watts: float | None = None
+    # A row that could not be consumed is not evidence of an absent port.
+    unparsed_lines: tuple[str, ...] = ()
 
     def row_for(self, interface: str) -> PoEInlineRow | None:
         wanted = canonical_interface_name(interface)
@@ -1320,21 +1322,28 @@ def parse_show_power_inline(value: str) -> PoEInlineTable:
         return PoEInlineTable()
 
     rows: list[PoEInlineRow] = []
+    unparsed_lines: list[str] = []
     for line in lines[rule_index + 1:]:
         # El unico ajuste permitido es el espacio que agrega la costura del
         # pager: se quita para volver a la forma canonica de columnas.
         candidate = line.lstrip(" ")
         if not candidate.strip():
             continue
+        if re.fullmatch(r"[A-Za-z0-9_.-]+[>#]\s*", candidate):
+            continue
         fields = [candidate[begin:end].strip() for begin, end in spans]
-        if not _POE_INLINE_INTERFACE.fullmatch(fields[0]):
-            # Prompts de cierre y cualquier cola que no sea una fila.
+        if (not _POE_INLINE_INTERFACE.fullmatch(fields[0])
+                or not all(fields)
+                or candidate[len(_POE_INLINE_RULE):].strip()
+                or any(index < len(candidate) and not candidate[index].isspace()
+                       for index, character in enumerate(_POE_INLINE_RULE)
+                       if character != "-")
+                or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", fields[3])
+                or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", fields[6])):
+            unparsed_lines.append(line)
             continue
-        try:
-            power = float(fields[3])
-            maximum = float(fields[6])
-        except ValueError:
-            continue
+        power = float(fields[3])
+        maximum = float(fields[6])
         rows.append(PoEInlineRow(
             interface=fields[0],
             admin=fields[1],
@@ -1348,6 +1357,7 @@ def parse_show_power_inline(value: str) -> PoEInlineTable:
     summary = _POE_INLINE_SUMMARY.search(normalized)
     return PoEInlineTable(
         rows=tuple(rows),
+        unparsed_lines=tuple(unparsed_lines),
         summary_available_watts=(
             float(summary.group("available")) if summary else None
         ),
@@ -1379,7 +1389,7 @@ def classify_poe_inline_delivery(
     evidence on its own.
     """
     table = parse_show_power_inline(output)
-    if not table.rows:
+    if not table.rows or table.unparsed_lines:
         return PoEInlineDelivery.UNOBSERVABLE
     row = table.row_for(interface)
     if row is None:

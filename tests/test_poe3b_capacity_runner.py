@@ -12,13 +12,14 @@ import pytest
 
 
 @pytest.fixture
-def runner(monkeypatch):
+def runner(monkeypatch, tmp_path):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "tools"))
     module = importlib.import_module("poe3a_pse_live")
     experiment = importlib.import_module("poe2_ap_live")
     # The actual constructor opens the machine mailbox. Replace before constructing.
     monkeypatch.setattr(experiment, "FileBridge", lambda: SimpleNamespace(send=None))
     monkeypatch.setattr(experiment.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(module, "ROOT", tmp_path)
     return module
 
 
@@ -89,7 +90,8 @@ def test_fixture_has_one_phone_and_link_per_governed_binding(runner, model, coun
     exp = SimpleNamespace(switch="SW", endpoint="PH", fixture=SimpleNamespace(
         create_device=create, create_link=link))
     created = []
-    runner.create_fixture(exp, plan, attempted, created)
+    runner.create_fixture(exp, plan, attempted, created,
+                          artifacts=runner.reserve_artifacts("offline"))
     assert len(made) == count + 1 and len(links) == count
     assert made[0] == (model, "SW", tuple(b.switch_port for b in plan.bindings))
     assert all(m[0] == "7960" and m[2] == ("Switch",) for m in made[1:])
@@ -147,9 +149,10 @@ def persist_inputs(runner):
     baseline, restoration, final = facts()
     names = ["SW"] + ["PH" + str(i) for i in range(21)]
     restoration.update(attempted=names, created=names, deleted=list(reversed(names)))
-    scope = runner.pse_scope_for(plan=plan, run_id="offline", observed_at="2026-09-09T18:00:00Z",
+    artifacts = runner.reserve_artifacts("offline")
+    scope = runner.pse_scope_for(plan=plan, run_id=artifacts.run_id, observed_at="2026-09-09T18:00:00Z",
         captures=typed_captures(runner, plan), gates=tuple(sorted(runner.COMPLETENESS_KEYS)))
-    return dict(plan=plan, scope=scope, baseline=baseline, restoration=restoration,
+    return dict(plan=plan, scope=scope, artifacts=artifacts, baseline=baseline, restoration=restoration,
                 safety=final, problems=[])
 
 
@@ -354,5 +357,112 @@ def test_partial_fixture_tracks_created_identity_before_link_failure(runner):
         create_device=lambda model, *args, **kwargs: SimpleNamespace(model=model),
         create_link=link))
     with pytest.raises(RuntimeError, match="link failure"):
-        runner.create_fixture(exp, plan, attempted, created)
+        runner.create_fixture(exp, plan, attempted, created,
+                              artifacts=runner.reserve_artifacts("offline"))
     assert attempted == created == ["SW", "PH-1"]
+
+
+@pytest.mark.parametrize("malformed", [False, True])
+def test_real_observer_malformed_never_row_cannot_cross_persistence(runner, malformed):
+    # The sole fake is the external IOS transport result. Both observer reads,
+    # Experiment.capture, typed translation, validators and snapshot builder run.
+    ios = importlib.import_module(runner.parse_show_power_inline.__module__)
+    observer_module = importlib.import_module(
+        "packet_tracer_mcp.infrastructure.execution.poe_inline_observer")
+    inputs = persist_inputs(runner)
+    plan = inputs["plan"]
+    exp = runner.Experiment("offline-observer", switch_ports=tuple(b.switch_port for b in plan.bindings))
+    exp.switch = "SW"
+    captures, problems, saved = [], [], []
+    for label in ("AUTO_1", "NEVER", "AUTO_2"):
+        raw = measured_capture(runner, plan, label).observation["raw_output"]
+        if malformed and label == "NEVER":
+            bad = "Fa0/1     auto   on         BAD     IP Phone 7960       3     15.4\n"
+            raw = raw.replace("Fa0/24", bad + "Fa0/24", 1)
+        dispatch = ios.IosCommandResult(
+            device_name="SW", query_id=ios.IosQualificationQueryId.SHOW_POWER_INLINE,
+            executed=True, output=raw, output_complete=True,
+            session_state=ios.IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=True, device_identity_provenance="confirmed_unique",
+            observed_device_name="SW", dispatch_classification="dispatched",
+            echo_observed="show power inline", expected_prompt="SW#",
+            pager_continuation="not_encountered", pager_pages_captured=1,
+            truncated_by_pager=False)
+        exp.observer = observer_module.GovernedPoEInlineObserver(
+            SimpleNamespace(qualify=lambda *args: dispatch))
+        acquired = exp.capture(label)
+        try:
+            captures.append(runner.pse_capture(plan, label, acquired, exp.switch))
+        except ValueError as exc:
+            problems.append(str(exc))
+    inputs["scope"] = replace(inputs["scope"], captures=tuple(captures))
+    inputs["problems"] = problems
+    store = SimpleNamespace(save_runtime=lambda snapshot: saved.append(snapshot) or Path("spy.json"))
+    if malformed:
+        with pytest.raises(ValueError):
+            runner.persist_qualification(**inputs, store=store)
+        assert saved == []
+    else:
+        runner.persist_qualification(**inputs, store=store)
+        assert len(saved) == 1
+
+
+@pytest.mark.parametrize("length", [69, 99, 100, 101])
+def test_qualification_metadata_cannot_displace_unique_run_suffix(runner, length):
+    with pytest.raises(ValueError):
+        runner.parse_args(["--execute", "--model", "3560-24PS", "--qualification-id", "x" * length])
+
+
+def test_boundary_length_run_names_keep_timestamp_nonce_and_final_id_character(runner, monkeypatch):
+    monkeypatch.setattr(runner, "token_hex", lambda size: "1234abcd")
+    names = []
+    for suffix in ("a", "b"):
+        identifier = "x" * 67 + suffix
+        runner.parse_args(["--execute", "--model", "3560-24PS", "--qualification-id", identifier])
+        run_id = runner.qualification_run_id(identifier)
+        assert len(run_id) == 100
+        assert run_id == runner.safe_name_component(run_id)
+        assert run_id.startswith("poe3b-" + identifier + "-")
+        assert run_id.endswith("Z-1234abcd")
+        names.append(run_id)
+    assert names[0] != names[1]
+    monkeypatch.setattr(runner, "token_hex", lambda size: "8765dcba")
+    retry = runner.qualification_run_id("x" * 67 + "a")
+    assert retry != names[0] and retry.endswith("Z-8765dcba")
+
+
+def test_artifact_destination_is_reserved_exclusively_before_any_fixture_mutation(runner, monkeypatch):
+    monkeypatch.setattr(runner, "qualification_run_id", lambda _: "poe3b-fixed-identity")
+    first = runner.reserve_artifacts("offline")
+    assert first.directory.is_dir()
+    assert first.directory.name == first.run_id
+    with pytest.raises(FileExistsError):
+        runner.reserve_artifacts("offline")
+    assert list(first.directory.iterdir()) == []
+    # A caller cannot skip reservation merely by calling the fixture builder.
+    def forbidden(*args, **kwargs):
+        pytest.fail("Fixture mutation preceded destination safety")
+    exp = SimpleNamespace(switch="SW", endpoint="PH", fixture=SimpleNamespace(create_device=forbidden))
+    with pytest.raises(ValueError):
+        runner.create_fixture(exp, runner.governed_plan("3560-24PS"), [], [], artifacts=None)
+
+
+@pytest.mark.parametrize("failure", ["missing", "removed", "scope_mismatch", "replacement"])
+def test_snapshot_persistence_requires_original_exact_artifact_reservation(runner, monkeypatch, failure):
+    inputs = persist_inputs(runner)
+    artifacts = inputs["artifacts"]
+    if failure == "missing":
+        inputs["artifacts"] = None
+    elif failure == "removed":
+        artifacts.directory.rmdir()
+    elif failure == "scope_mismatch":
+        inputs["scope"] = replace(inputs["scope"], experiment_id="different-run")
+    else:
+        # Move the original empty directory to preserve its inode and replace it.
+        artifacts.directory.rename(artifacts.directory.with_name("previous-reservation"))
+        artifacts.directory.mkdir()
+    def forbidden(*args, **kwargs):
+        pytest.fail("Positive result/persistence preceded destination safety")
+    monkeypatch.setattr(runner, "CapabilityProbeResult", forbidden)
+    with pytest.raises(ValueError):
+        runner.persist_qualification(**inputs, store=SimpleNamespace(save_runtime=forbidden))
