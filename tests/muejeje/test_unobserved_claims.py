@@ -30,6 +30,7 @@ from tests.muejeje.support import (
 DESCRIBING_DOCUMENTS = (
     "docs/architecture/muejeje-pts-requirements.md",
     "docs/architecture/muejeje-runtime-operating-model.md",
+    "docs/qa/muejeje-pts-packaging-recipe.md",
     "muejeje_pts/README.md",
     "muejeje_pts/interface/index.html",
 )

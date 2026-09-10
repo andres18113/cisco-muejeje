@@ -162,21 +162,42 @@ def test_the_runtime_certifies_no_verification_of_its_own():
 
 
 @requires_node
-def test_the_answer_shares_no_object_with_the_whitelist():
-    """A caller cannot reach the table through the reply it was handed."""
-    mutated = dispatch_v6(
+def test_the_answer_carries_copies_of_the_kernel_state_it_reports():
+    """Mutating a reply must not reach the constants it was built from.
+
+    Asserted *in-engine*, on the handler's own return value, because across
+    the Script Engine boundary the reply is JSON and copying is implicit — a
+    test that mutated the parsed envelope would pass no matter what the
+    handler did. The reachable target is `MUEJEJE_CORE`: a handler that
+    returned its arrays instead of `slice(0)` copies would let one caller's
+    reply permanently extend the kernel's feature list.
+    """
+    observed = dispatch_v6(
         CAPABILITIES,
-        report=(
-            "[JSON.parse(mcpDispatchV6(REQUEST)).result.operations.length,"
-            " muejejeV6OperationNames().length]"
-        ),
         prelude=(
-            "var first = JSON.parse(mcpDispatchV6(REQUEST));"
-            " first.result.operations.push({op: 'device.add', read_only: false});"
-            " first.result.supported_features.push('transport.http');"
+            "var context = {operations: muejejeV6OperationNames(),"
+            " operation_catalog: muejejeV6OperationCatalog()};"
+            " var direct = muejejeRuntimeCapabilities({}, context);"
+            " direct.supported_features.push('transport.http');"
+            " direct.protocol_versions.push(5);"
+            " direct.operations.push({op: 'device.add', read_only: false});"
+            " var identity = muejejeRuntimeIdentify({}, context);"
+            " identity.supported_features.push('transport.http');"
+            " identity.protocol_versions.push(5);"
+        ),
+        report=(
+            "{features: MUEJEJE_CORE.SUPPORTED_FEATURES.length,"
+            " protocols: MUEJEJE_CORE.PROTOCOL_VERSIONS.length,"
+            " admitted: muejejeV6OperationNames().length,"
+            " reported: JSON.parse(mcpDispatchV6(REQUEST)).result}"
         ),
     )
-    assert mutated == [len(ADMITTED), len(ADMITTED)]
+
+    assert observed["features"] == 3
+    assert observed["protocols"] == 1
+    assert observed["admitted"] == len(ADMITTED)
+    assert [entry["op"] for entry in observed["reported"]["operations"]] == ADMITTED
+    assert observed["reported"]["protocol_versions"] == [6]
 
 
 @requires_node

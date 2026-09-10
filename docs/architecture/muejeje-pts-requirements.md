@@ -292,16 +292,19 @@ scope until it is rewritten for another reason.
 ### MJ-018 — Modular cohesion and single responsibility
 **Requirement.** Every owned module has one responsibility, named in its own
 docstring. The build auditor is split into a facade (`build.py`), a state model
-(`build_state.py`), a schema (`manifest.py`), an input inventory
-(`inventory.py`) and source/hash/recipe identity (`provenance.py`). The public
-API is the facade; splitting a module never changes it.
+(`build_state.py`), a schema (`manifest.py`), an inventory of the inputs this
+repository declares (`inventory.py`), the untracked pinned material it does not
+own (`references.py`) and source/hash/recipe identity (`provenance.py`). The
+public API is the facade; splitting a module never changes it.
 **Rationale.** One 540-line `build.py` held the state machine, the schema, the
 path rules and every Git call, so no rule could be read, tested or changed
 without loading all of them. Splitting by responsibility is what makes a rule
-locatable.
-**Verification.** `tests/muejeje/test_architecture.py` pins the module set
+locatable — and the budget in MJ-020 is what forces the split to happen when a
+module grows, rather than being argued about.
+**Verification.** `tests/muejeje/test_auditor_layers.py` pins the module set
 against the declared layers and fails on an undeclared module; the facade is
-asserted to hold no vocabulary of its own.
+asserted to hold no vocabulary of its own; every auditor module must be a
+declared tooling input, so no rule can move outside recipe identity.
 **Status.** `ENFORCED`
 
 ### MJ-019 — Dependency direction is inward and one-way
@@ -356,15 +359,25 @@ budget constrains branching and never discourages an explanation.
 ### MJ-021 — Architecture fitness is a gate, not a review note
 **Requirement.** Every architectural rule Muejeje states about its own code is
 enforced by a test that fails when the rule is broken: complexity budgets,
-dependency direction, the absence of PTBuilder globals and consumer vocabulary,
-the absence of arbitrary JavaScript execution, exactly one `main()`, one
-`cleanUp()` and one `mcpDispatchV6`, the `ipc.*` boundary, and the separation of
-the test area by responsibility.
+dependency direction, the absence of PTBuilder globals and of a consumer's
+identifiers, the absence of arbitrary JavaScript execution and of a hard-coded
+endpoint, exactly one `main()`, one `cleanUp()` and one `mcpDispatchV6`, the
+transport and `ipc.*` boundaries, the agreement between what a document claims
+and what the dispatcher admits, and the separation of the test area by
+responsibility.
+
+**A gate must be able to fail.** Where a rule distinguishes two cases — a
+kernel file from a declared adapter, a consumer's identifier from the
+platform's vocabulary, one spelling of an import from another — the gate is
+asserted on synthetic inputs in both directions. Otherwise a gate that has
+quietly stopped checking anything is indistinguishable from a rule nobody has
+broken yet.
 **Rationale.** M0E's boundary held because a test failed when it was crossed.
 Rules that live only in a document are re-argued at every change.
-**Verification.** `tests/muejeje/test_architecture.py` and
-`tests/muejeje/test_source_root.py`; the retired monolithic test modules are
-asserted absent so the split cannot silently reverse.
+**Verification.** `tests/muejeje/test_architecture.py`,
+`test_auditor_layers.py`, `test_source_root.py` and `test_unobserved_claims.py`;
+the retired monolithic test modules are asserted absent so the split cannot
+silently reverse.
 **Status.** `ENFORCED`
 
 ## Runtime Protocol V6 contract

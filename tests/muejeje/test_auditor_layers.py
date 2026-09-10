@@ -2,9 +2,10 @@
 
 `build_state`, `manifest` and `provenance` depend on no sibling; `inventory`
 may depend on the first two; `references` may depend on those three; only
-`build` may depend on all of them (MJ-018, MJ-019). A direction rule is only a rule if it holds however an import is
-spelled, so the gate reads relative and absolute forms of the same dependency
-alike.
+`build` may depend on all of them (MJ-018, MJ-019).
+
+A direction rule is only a rule if it holds however an import is spelled, so
+the gate resolves relative and absolute forms of the same dependency alike.
 """
 
 from __future__ import annotations

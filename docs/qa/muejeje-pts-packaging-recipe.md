@@ -113,6 +113,29 @@ touched; no transport, bridge or HTTP endpoint is implemented or contacted. Both
 operations are read-only and make no platform call, so a qualification run
 changes nothing in Packet Tracer beyond starting and stopping a module.
 
+The two calls, each on one line. Anything **pasted** into the Builder Code
+Editor loses its newlines, so a pasted snippet must be a single line and carry
+no `//` comment; the compiled engine files are imported rather than pasted and
+are unaffected.
+
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-identify","op":"runtime.identify","args":{}}')
+```
+
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-capabilities","op":"runtime.capabilities","args":{}}')
+```
+
+Each returns a JSON **string** carrying
+`{v, operation_rid, op, ok, result, error}`, with the `operation_rid` echoed
+back unchanged and `error: null` on success.
+
+*Which* surface issues those calls is the operator's choice — the module editor
+has a Debug part, and a consumer could call in another way. This repository has
+no recorded evidence of the Debug part's exact behaviour, so no steps for it are
+written here; a guessed UI step is the same defect as a guessed API signature
+(`AGENTS.md` rule 6).
+
 Record the two envelopes verbatim. Until that has happened on the pinned build,
 the kernel's live state is `NOT_YET_LIVE_VERIFIED`: a green Node run establishes
 what our JavaScript does and nothing about Packet Tracer's engine, which is a

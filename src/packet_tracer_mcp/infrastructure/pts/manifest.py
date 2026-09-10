@@ -163,8 +163,8 @@ def _path_list_error(value: Any) -> str | None:
     if not value:
         return "must name at least one file"
     for item in value:
-        parts = PurePosixPath(item).parts
-        if "\\" in item or PurePosixPath(item).is_absolute() or ".." in parts:
+        candidate = PurePosixPath(item)
+        if "\\" in item or candidate.is_absolute() or ".." in candidate.parts:
             return f"must be a relative POSIX path: {item}"
     return None
 

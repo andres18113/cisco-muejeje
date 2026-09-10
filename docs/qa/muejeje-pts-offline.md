@@ -25,6 +25,41 @@ The current, evidence-marked audit of record is
 | Packager | the in-app Scripting Interface — the only demonstrated one |
 | Automation | none demonstrated: `BUILD_TOOLCHAIN_AUTOMATION_UNPROVEN` |
 
+## Packaging readiness
+
+Measured on the clean committed tree at `ed6195e`, with the pinned builder given
+explicitly:
+
+```text
+.venv/Scripts/python.exe tools/build_muejeje_pts.py --check --builder 'C:/Program Files/Cisco Packet Tracer 9.0.1/bin/PacketTracer.exe'
+PACKAGING_MANUAL_AVAILABLE; exit 0
+```
+
+| Field | Value |
+| --- | --- |
+| `status` | `PACKAGING_MANUAL_AVAILABLE` |
+| `build_recipe_id` | `89647e0156f2149e2bef4a0835816a9b13862e7129db88d108869f0b87611cbb` |
+| `source.commit` | `ed6195ef25efe0e7d732c57414e1f53108811a06`, `clean: true` |
+| `inputs.reference` | `[]` |
+| `packaging_state.recipe_complete` | `true` |
+| `packaging_state.unresolved_build_options` | `[]` |
+| `packaging_state.manual_blockers` | `[]` |
+| `packaging_state.automation` | `BUILD_AUTOMATION_UNPROVEN` |
+| `builder.actual_sha256` | matches the pinned hash |
+| `artifact_sha256` | `null` — no artifact exists yet |
+
+The two standing blockers are `compiler_command` and `content_validation`, both
+automation prerequisites. Neither stops a human from packaging, which is exactly
+the distinction the five-state model exists to keep (`MJ-016`).
+
+**The recipe id above is a measurement, not a constant.** Source commit and tree
+are part of recipe identity, so the id changes with *every* commit — including a
+commit that only edits this file. That is the design working: an id that
+survived a change to its inputs would identify the wrong build. Read it as "at
+`ed6195e`, the audit reported this", and measure again at the commit you
+actually package from — which is what step 2 of
+[the packaging recipe](muejeje-pts-packaging-recipe.md) does.
+
 Cisco's installed `help/default/` pages were read for the audit and **not** copied
 into this repository. Their SHA-256 values, and what each one establishes, are
 recorded in the v2 preflight inventory (eight pages, including three that the
@@ -73,23 +108,42 @@ Run on the rebaselined branch with the checkout-local interpreter, from the
 repository root, with worktree-local temporaries (per `AGENTS.md`):
 
 ```text
-.venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/v6-focused -o cache_dir=tmp/v6-cache
-155 passed, 2 skipped in 73.73s; exit 0
+.venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/m1-focused -o cache_dir=tmp/m1-focused-cache
+214 passed, 2 skipped in 134.44s; exit 0
 
-.venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q --basetemp=tmp/m0f-arch -o cache_dir=tmp/m0f-arch-cache
-12 passed in 2.03s; exit 0
+.venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q --basetemp=tmp/m1-arch -o cache_dir=tmp/m1-arch-cache
+12 passed in 3.51s; exit 0
 
 .venv/Scripts/python.exe -m pytest -q
-4600 passed, 3 skipped in 320.07s; exit 0
+4659 passed, 3 skipped in 305.63s; exit 0
 ```
 
 M0F split the two monolithic modules into `tests/muejeje/`. The ADR-001 run this
 replaced was `39 passed, 2 skipped` over `tests/test_muejeje_build.py` and
-`tests/test_muejeje_build_identity.py`, which no longer exist.
+`tests/test_muejeje_build_identity.py`, which no longer exist. The muejeje area
+grew from `155 passed` to `214 passed` with `runtime.capabilities`, the
+build-option value gates, the layer-aware fitness gates and the claim gates.
 
 The two skips are Windows symlink-creation privilege limitations. The hardlink
 alias, hidden-source/manifest, malformed-JSON and reference-input security checks
 all executed.
+
+### The full run needs a short `--basetemp`
+
+Run the whole suite with pytest's **default** temporary directory, as above. A
+worktree-local `--basetemp` inside this checkout fails
+`tests/test_cp_scale_live_governed_root.py::test_real_entry_rejects_checkout_a_with_interpreter_and_package_b_before_wrong_tree_writes`
+with `git clone … returned non-zero exit status 128`: that test clones the
+checkout into the temporary directory, and a deep base path pushes the cloned
+`docs/reference/cp-scale/**` paths past the Windows path limit.
+
+Measured both ways on the same tree: `--basetemp=tmp/m1-gov` fails in 1.2s, the
+default temporary directory passes in 8.5s. It is a path-length limit in the
+harness, not a defect in what is being tested — recorded here because the
+failure names `git clone` and reads like a repository problem.
+
+The focused runs above keep their worktree-local temporaries: none of them
+clones the checkout.
 
 ## What the V6 kernel run does and does not establish
 
@@ -98,8 +152,8 @@ would be the same error this document was corrected for.
 
 | | Establishes | Does not establish |
 | --- | --- | --- |
-| `STRUCTURAL_VERIFIED` — always runs | the source layout, who owns `mcpDispatchV6`, `main()` and `cleanUp()`, the absence of `eval`/`new Function`/`ipc.*`, the declared `engine_script_order` | any behaviour |
-| `RUNTIME_VERIFIED` — Node, skipped when absent | what *our* JavaScript does: the envelope, the whitelist, each rejection class, the session id, the identify result | anything about Packet Tracer |
+| `STRUCTURAL_VERIFIED` — always runs | the source layout, who owns `mcpDispatchV6`, `main()` and `cleanUp()`, the absence of `eval`/`new Function`/`ipc.*`, the declared `engine_script_order`, and that no document claims an operation the dispatcher does not admit | any behaviour |
+| `RUNTIME_VERIFIED` — Node, skipped when absent | what *our* JavaScript does: the envelope, the whitelist, each rejection class, the session token, and both read-only results — `runtime.identify` and `runtime.capabilities` | anything about Packet Tracer |
 
 Node is a different Script Engine implementation from Packet Tracer's. A green
 Node run is evidence about the kernel's own logic and is never evidence about
@@ -121,10 +175,49 @@ To reproduce the real-checkout report from a clean tree:
 `dist/muejeje.build.json` is ignored, machine-local audit output — not an
 installable artifact and not a runtime verdict.
 
+## Target packaging and qualification — not performed
+
+**No `.pts` was built, imported or started, and no operation was driven inside
+Packet Tracer.** Both target gates stay open, and the reason is a capability
+limit, not an unresolved decision:
+
+| Gate | State | Why |
+| --- | --- | --- |
+| `OFFICIAL_PACKAGING_PROVED` | `PENDING_GUI` | packaging is a native GUI procedure and no agent-operable path to it exists here |
+| `TARGET_API_BASELINED` | `PENDING_TARGET` | nothing has been imported or started on the target build |
+| `V6_KERNEL_VERIFIED` | `NOT_YET_LIVE_VERIFIED` | Node establishes our JavaScript; it establishes nothing about PT's engine |
+
+What was checked, and what each check found:
+
+- Packet Tracer `9.0.1.0858` **is installed**, and `bin/PacketTracer.exe` hashes
+  to the pinned SHA-256. The audit verified this, not a person reading a version
+  dialog.
+- A `PacketTracer` process **was running**, with a main window, at the time of
+  this record.
+- The only packager is the in-app Scripting Interface. There is **no CLI and no
+  documented programmatic packaging entry point** — recorded in the v2 preflight
+  inventory, and the reason `automation` stays `BUILD_AUTOMATION_UNPROVEN`.
+- Driving that GUI would mean synthesising native window automation against a
+  running instance holding a user's session. That is not a demonstrated path;
+  it is one that would have to be invented, and inventing it is precisely what
+  turns "unproven" into an unfalsifiable claim.
+
+So the remaining action is **one manual procedure**, already written down in
+full: [the packaging recipe](muejeje-pts-packaging-recipe.md). Its
+preconditions are met at `ed6195e` — clean tree, `PACKAGING_MANUAL_AVAILABLE`,
+recipe id `89647e01…`, verified builder — so a person can start at its step 1.
+
+When that run happens, it records: source commit and tree, the recipe id, the
+externally measured artifact SHA-256, the Packet Tracer build, and the two
+response envelopes verbatim. Only then do `OFFICIAL_PACKAGING_PROVED` and
+`TARGET_API_BASELINED` change, and only from that evidence — never from a clean
+offline report.
+
 ## Scope
 
 This is **validator** qualification only. It establishes nothing about a
 candidate `.pts`, its content, or its runtime behaviour. No `.pts` was built or
-installed, Packet Tracer was not launched, and no LIVE operation was performed.
+installed, no Script Module was imported or started, and no LIVE operation was
+performed.
 
 `LIVE: NO_LIVE_THIS_SESSION`
