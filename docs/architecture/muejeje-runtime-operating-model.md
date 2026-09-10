@@ -136,9 +136,13 @@ document claims the runtime is already PTBuilder-free. Per-symbol evidence, owne
 alternatives and the ADRs they need are in the v2 preflight inventory.
 
 Numeric Cisco enum tables (`PT_DEVICE_TYPE`, `PT_CONNECT_TYPE`,
-`ModuleSpec.module_type`) are working mirrors, **not** a source of truth;
-`allModuleTypes` must ultimately resolve through Cisco runtime discovery and
-descriptors.
+`ModuleSpec.module_type`) are working mirrors, **not** a source of truth.
+`allModuleTypes` must ultimately resolve through the hardware factory's
+**descriptor** API — `DeviceDescriptor.isModuleTypeSupported(...)` and
+`ModuleDescriptor.getType()`, reached via
+`ipc.hardwareFactory().devices().getDescriptor(...)`. A descriptor is not a
+runtime `Module`, and the runtime module surface exposes neither. See `MJ-014`
+for the evidenced distinction.
 
 ## Identity and provenance
 
@@ -146,7 +150,9 @@ Runtime identity reports name, version, source SHA, build recipe, session,
 protocols, features and operations.
 
 Recipe identity covers source commit/tree, the manifest, builder
-identity/version/hash/options, and every own and reference input hash. The
+identity/version/hash/options, and every artifact, tooling and reference input
+hash. Tooling ships nothing into the artifact but still decides how it was
+inspected, so it belongs to identity. The
 external build manifest binds a recipe to a completed artifact's SHA-256; the
 artifact hash is **never** embedded inside the artifact it describes. An
 incomplete input inventory has no valid complete recipe ID — the tool returns
@@ -200,12 +206,35 @@ from a clean report.
 ignored `dist/muejeje.pts` and `dist/muejeje.build.json`; no existing `.pts` is
 ever replaced automatically.
 
-**Open: the source root.** The manifest's `own_inputs` are today the legacy
-`EXTENSION/**` tree — the same sources that produce the existing published *MCP
-Control Center* `.pts`, including the `main.js` that carries the six PTBuilder
-globals. An owned artifact sharing a source root with the legacy extension
-cannot evolve independently of it. Assessed, not migrated: see `TODO-SRC-ROOT`
-and `TODO-RECIPE-SCOPE` in [the requirements baseline](muejeje-pts-requirements.md).
+**The owned source root.** `muejeje_pts/` is what `muejeje.pts` is made of:
+
+| Path | Role |
+| --- | --- |
+| `muejeje_pts/script-engine/` | Script Engine files, evaluated in listed order, then `main()` |
+| `muejeje_pts/interface/` | Custom Interface files |
+| `muejeje_pts/manifest/` | the build manifest — build metadata, not packaged |
+
+`EXTENSION/**` is the legacy *MCP Control Center* extension. It is untouched, it
+keeps serving the existing published `.pts`, and it is **not** a Muejeje input:
+Muejeje's completeness check sweeps the owned root alone. The legacy `main.js`
+was not copied — its six PTBuilder globals are what the owned artifact must not
+inherit.
+
+Build inputs are three categories, not one (`schema_version: 2`):
+
+| Category | Contains | In the recipe? |
+| --- | --- | --- |
+| `artifact_inputs` | only bytes packaged into the `.pts`; must live under the owned root | yes |
+| `tooling_inputs` | the auditor (`build.py`, the CLI) — ships nothing, but decides how the artifact was inspected | yes |
+| `reference_inputs` | empty; any future entry stays untracked, ignored and hash-pinned | yes |
+
+A path may not appear in two categories. `TODO-SRC-ROOT` and
+`TODO-RECIPE-SCOPE` are resolved by this; see
+[the requirements baseline](muejeje-pts-requirements.md).
+
+The owned root being free of PTBuilder code does **not** make the runtime
+PTBuilder-free (`MJ-013`). It is empty of behaviour; the runtime consumers use
+today is still the legacy one.
 
 ## Gates
 

@@ -38,9 +38,10 @@ Consumers / MCP / projects
 no logic specific to any consumer project, deployment or customer.
 **Rationale.** A runtime that encodes one consumer's assumptions cannot serve a
 second one, and its behaviour stops being explainable from its own contract.
-**Verification.** Review of every change for consumer names or consumer-shaped
-concepts; the operating model's consumer rule.
-**Status.** `BASELINED`
+**Verification.** The artifact has its own source root, `muejeje_pts/`, and an
+architecture test pins that nothing else is packaged into it.
+**Status.** `ENFORCED` for the source boundary; `BASELINED` for behaviour, which
+does not exist yet.
 
 ### MJ-002 — Topology agnostic
 **Requirement.** Muejeje makes no assumption about device counts, models, roles,
@@ -67,8 +68,9 @@ CP LIVE, PoE, Router0, voice, VLAN and topology concerns never enter the
 runtime, the build tooling or the provenance schema.
 **Rationale.** This is MJ-001 stated as an exclusion, so that a violation is
 recognisable rather than arguable.
-**Verification.** Review; the contamination check applied to build inputs.
-**Status.** `ENFORCED` — build inputs and `pts/` are free of these terms.
+**Verification.** `tests/test_muejeje_source_root.py` fails if a consumer's
+vocabulary appears in any packaged source under the owned root.
+**Status.** `ENFORCED`
 
 ## Contract boundaries
 
@@ -161,23 +163,60 @@ the owned artifact. Its attribution stays while any dependency remains, and no
 document claims independence that the code has not reached.
 **Rationale.** PTBuilder is unlicensed; depending on it blocks distribution and
 makes the runtime unexplainable from its own sources.
-**Verification.** `reference_inputs: []` in the manifest and the regressions in
-`tests/test_muejeje_build.py`; a runtime check once the six globals are replaced.
-**Status.** `ENFORCED` for the build; `BASELINED (deviation)` for the runtime —
-`htmlWindow`, `runCode`, `configureIosDevice`, `allModuleTypes`, `addDevice` and
-`addLink` are still PTBuilder-supplied.
+**Verification.** `reference_inputs: []` in the manifest, the regressions in
+`tests/test_muejeje_build.py`, and an architecture test that fails if any of the
+six globals appears in the owned sources.
+**Status.** `ENFORCED` for the build inputs; `BASELINED (deviation)` for the
+runtime — `htmlWindow`, `runCode`, `configureIosDevice`, `allModuleTypes`,
+`addDevice` and `addLink` are still PTBuilder-supplied.
+
+> An owned source root that contains no PTBuilder code does **not** satisfy this
+> requirement. The owned tree is empty of behaviour; the runtime that consumers
+> actually use is still the legacy one. Independence is proven when a built
+> artifact runs and demonstrates it, not before.
 
 ### MJ-014 — No numeric Cisco enum table is a source of truth
 **Requirement.** Hand-maintained numeric tables mirroring Cisco enums are working
-copies. Authoritative values come from Cisco runtime discovery or descriptors.
+copies. Authoritative values come from the Packet Tracer hardware factory's
+descriptor API.
 **Rationale.** A mirrored constant is correct only until Packet Tracer changes,
 and nothing in the repository would notice.
-**Verification.** Enum values reconciled against runtime descriptors; the mirror
+
+**The two APIs are different, and only one answers this question.** Both are
+evidenced in this repository against Packet Tracer `9.0.1.0858`; neither is
+guessed (`AGENTS.md` rule 6).
+
+| | Runtime `Module` | `ModuleDescriptor` |
+| --- | --- | --- |
+| Reached from | `ipc.network().getDevice(name)` → `Device.getRootModule()` | `ipc.hardwareFactory().devices().getDescriptor(DeviceType, model)` → `DeviceDescriptor.getRootModule()` |
+| Describes | hardware installed in an instantiated device on the workspace | what a model *can* accept, without instantiating or powering anything |
+| Observed getters | `getModuleCount()`, `getModuleAt(i)`, `getSlotTypeAt(i)`, `getModuleNameAsString()`, `getModuleNumber()`, `getPortCount()` | `getModel()`, `getType()`, `isHotSwappable()`, `getSlotCount()`, `getSlotTypeAt(i)`, `getModuleCount()`, `getModuleAt(j)` |
+| Module-type support | not exposed here | `DeviceDescriptor.isModuleTypeSupported(int)` |
+
+So the authoritative lookup for a module type is
+`DeviceDescriptor.isModuleTypeSupported(...)` together with
+`ModuleDescriptor.getType()` — **`isModuleTypeSupported` is a descriptor method,
+not a method on a runtime device**, and the runtime `Module` surface evidenced
+here exposes no `getType()` at all. A descriptor is not a runtime `Module`, and
+no descriptor field establishes installed hardware or power delivery.
+
+**Evidence.** `infrastructure/execution/poe_delivery_runtime.py`
+(`observe_factory_structure`) drives the descriptor path and names the API in its
+docstring; `infrastructure/execution/probe_runtime.py` and
+`packet_tracer_physical_runtime.py` drive the runtime path;
+`docs/reference/cp-scale/ROUTER0_POE_FACTORY_STRUCTURE_20260907.md` records the
+LIVE observation against `9.0.1.0858`.
+
+**Verification.** Enum values reconciled against the descriptor API; each mirror
 marked as a mirror at its definition.
 **Status.** `BASELINED (deviation)` — `PT_DEVICE_TYPE` (33 entries),
-`PT_CONNECT_TYPE` (16) and `ModuleSpec.module_type` (151) are mirrors in use.
-`allModuleTypes` in particular must move to descriptor lookup
-(`module.getType()`, `device.isModuleTypeSupported(int)`).
+`PT_CONNECT_TYPE` (16) and `ModuleSpec.module_type` (151) are mirrors in use, and
+`allModuleTypes` is still PTBuilder's table.
+
+> An earlier revision of this requirement cited
+> `device.isModuleTypeSupported(int)` and `module.getType()`, attributing both to
+> the runtime device/module surface. That was wrong on both counts and is
+> corrected above.
 
 ### MJ-015 — Packet Tracer 9.x claims require target-build evidence
 **Requirement.** No statement about Packet Tracer 9.x behaviour is made without
@@ -222,13 +261,19 @@ Not requirements. Each needs a decision before it can become one.
 
 | TODO | Question | Blocks |
 | --- | --- | --- |
-| **TODO-SRC-ROOT** | Does the owned artifact keep `EXTENSION/**` as its permanent source root? The manifest's `own_inputs` are today the legacy *MCP Control Center* extension's sources — the same tree that produces the existing published `.pts`, and whose `main.js` carries the six PTBuilder globals. An owned artifact sharing a source root with the legacy extension cannot evolve independently. **Assessed in M0D; no migration performed.** | MJ-001, MJ-013; the engine/interface file orders |
-| **TODO-RECIPE-SCOPE** | `own_inputs` also lists `src/…/pts/build.py` and `tools/build_muejeje_pts.py`, which are the *auditor*, not artifact content. Should the recipe separate artifact inputs from tooling identity? | MJ-017 |
+| **TODO-MANIFEST-HOME** | The manifest now lives at `muejeje_pts/manifest/`. Its path is pinned in `build.py`; if the owned root is ever renamed, that pin moves with it. | — |
 | **TODO-MODULE-ID** | The Script Module ID and its stability across rebuilds. | `build_options.module_id` |
 | **TODO-STARTUP** | `On Startup` vs `On Demand`. The file channel only runs while the module runs. | `build_options.startup` |
 | **TODO-PRIVILEGES** | The requested IPC privilege set. The privilege catalogue lives in `.pki` files that are not installed. | `build_options.privileges` |
 | **TODO-SIGNING** | Publisher signing (PKCS#12) and key custody. | reproducibility |
 | **TODO-V6-SHAPE** | The V6 schema itself. Explicitly out of scope until the runtime kernel task. | MJ-005, MJ-007, MJ-008 |
+
+### Resolved
+
+| TODO | Resolution |
+| --- | --- |
+| **TODO-SRC-ROOT** | **RESOLVED.** `muejeje_pts/` is the owned source root: `script-engine/`, `interface/`, `manifest/`. `EXTENSION/**` stays untouched, keeps serving the existing published `.pts`, and is no longer any part of Muejeje's inventory — the completeness check now sweeps the owned root alone. The legacy `main.js` was not copied. |
+| **TODO-RECIPE-SCOPE** | **RESOLVED.** Manifest `schema_version: 2` splits inputs into `artifact_inputs` (bytes packaged into the `.pts`, required to live under the owned root), `tooling_inputs` (the auditor — ships nothing, still part of recipe identity) and `reference_inputs` (empty). A path may not appear in two categories. |
 
 ## Related documents
 

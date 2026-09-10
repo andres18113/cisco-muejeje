@@ -28,7 +28,8 @@ def test_recipe_id_is_canonical_and_rejects_nan():
 
 @pytest.mark.parametrize("field", [
     "source_commit", "source_tree", "manifest", "build_options",
-    "builder_version", "builder_hash", "own_inputs", "reference_inputs",
+    "builder_version", "builder_hash", "artifact_inputs", "tooling_inputs",
+    "reference_inputs",
 ])
 def test_recipe_identity_changes_for_every_evidence_dimension(field: str):
     build = _build_api()
@@ -37,7 +38,8 @@ def test_recipe_identity_changes_for_every_evidence_dimension(field: str):
         "manifest": {"sha256": "c"},
         "build_options": {"module_id": "m"},
         "builder": {"version": "1", "sha256": "d"},
-        "own_inputs": [{"path": "own", "sha256": "e"}],
+        "artifact_inputs": [{"path": "artifact", "sha256": "e"}],
+        "tooling_inputs": [{"path": "tooling", "sha256": "f"}],
         "reference_inputs": [{"path": "ref", "sha256": "f"}],
     }
     changed = json.loads(json.dumps(recipe))
