@@ -14,8 +14,11 @@ import re
 
 import pytest
 
+from tests.muejeje import engine_harness
 from tests.muejeje.engine_harness import dispatch_v6, node_available
 from tests.muejeje.support import (
+    MUEJEJE_TESTS,
+    REPO_ROOT,
     SCRIPT_ENGINE,
     engine_sources,
     relative,
@@ -61,6 +64,23 @@ def test_engine_script_order_is_the_declared_dependency_order():
         "core and protocol first, then operations, then dispatch, then lifecycle"
     )
     assert set(order) == {relative(path) for path in engine_sources()}
+
+
+def test_the_node_harness_derives_its_evaluation_order_from_the_manifest():
+    """The order is declared once. A second copy is one that will disagree.
+
+    The harness used to list the engine files itself, so a manifest reorder
+    would leave every offline run evaluating a different module from the one
+    the recipe describes — and every gate in this module would still pass,
+    because they all read the manifest. Naming no file is what makes the
+    duplication impossible rather than merely absent today.
+    """
+    declared = repo_manifest()["build_options"]["engine_script_order"]
+    assert engine_harness.engine_order() == [REPO_ROOT / item for item in declared]
+
+    harness = (MUEJEJE_TESTS / "engine_harness.py").read_text(encoding="utf-8")
+    named = [path.name for path in engine_harness.engine_order() if path.name in harness]
+    assert named == [], f"the harness names an engine file itself: {named}"
 
 
 def test_mcp_dispatch_v6_is_implemented_exactly_once_by_the_dispatcher():

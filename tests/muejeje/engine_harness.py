@@ -11,9 +11,10 @@ establishes nothing about Packet Tracer, whose Script Engine is a different
 implementation, so a green run here is `RUNTIME_VERIFIED` for the kernel's own
 logic and never evidence about `9.0.1.0858` (MJ-015, `AGENTS.md` rule 6).
 
-The engine files are concatenated in the declared `engine_script_order` and run
-as one Node module, which is the closest offline analogue of how Packet Tracer
-evaluates them: sequentially, into one shared scope, before anything is called.
+The engine files are concatenated in the manifest's `engine_script_order` and
+run as one Node module, which is the closest offline analogue of how Packet
+Tracer evaluates them: sequentially, into one shared scope, before anything is
+called.
 """
 
 from __future__ import annotations
@@ -25,16 +26,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from tests.muejeje.support import REPO_ROOT, SCRIPT_ENGINE
+from tests.muejeje.support import REPO_ROOT, repo_manifest
 
-ENGINE_ORDER = (
-    "core.js",
-    "protocol_v6.js",
-    "runtime_capabilities.js",
-    "runtime_identity.js",
-    "dispatcher_v6.js",
-    "lifecycle.js",
-)
 DEFAULT_REPORT = "JSON.parse(mcpDispatchV6(REQUEST))"
 
 
@@ -42,9 +35,24 @@ def node_available() -> bool:
     return shutil.which("node") is not None
 
 
+def engine_order() -> list[Path]:
+    """The declared evaluation order, read from the manifest that declares it.
+
+    The harness names no engine file of its own. Evaluation order is a build
+    fact decided in one place — `build_options.engine_script_order` — so a
+    harness carrying its own copy would keep evaluating yesterday's module
+    after a reorder, and every offline claim would then be about a module
+    nobody packages.
+    """
+    return [
+        REPO_ROOT / logical
+        for logical in repo_manifest()["build_options"]["engine_script_order"]
+    ]
+
+
 def engine_bundle() -> str:
     return "\n".join(
-        (SCRIPT_ENGINE / name).read_text(encoding="utf-8") for name in ENGINE_ORDER
+        path.read_text(encoding="utf-8") for path in engine_order()
     )
 
 
