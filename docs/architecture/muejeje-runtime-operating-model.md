@@ -104,9 +104,11 @@ target as though it were the present and then closed by asserting that
 `mcpDispatchV6` did not exist — after it did. Both halves are needed: one says
 what a consumer may send today, the other says what is still unbuilt.
 
-**What exists.** One Script Module, nine engine files, one dispatcher, three
-read-only operations, one declared read-only platform adapter, and no transport
-at all:
+**What exists.** One Script Module, the engine files
+`build_options.engine_script_order` lists, one dispatcher, read-only operations
+only, one declared read-only platform-call boundary, and no transport at all.
+The complete list of operations is the catalogue in `muejeje_pts/README.md`
+(`MJ-008`); this is the shape, not a second copy of it:
 
 ```text
 consumer -> mcpDispatchV6(requestJson) -> bounded V6 admission -> V6 whitelist
@@ -120,12 +122,15 @@ name and the shape and values of the arguments are all checked against limits
 this runtime declares for itself, before any handler runs. **Those limits are
 Muejeje's, not Packet Tracer's** (`MJ-029`).
 
-The two runtime operations call Packet Tracer not at all. The third does, from
-the one file declared as the platform adapter — the only packaged source that
-may name `ipc`, and the only one that does (`MJ-031`). It is read-only: every
-call is a documented getter on a *descriptor*, so nothing it does instantiates
-a device, powers one or touches a workspace, and a gate fails on any member
-call shaped like a mutation.
+The two runtime operations call Packet Tracer not at all. The platform ones
+do, through the one file declared as the platform-call boundary — the only
+packaged source that may name `ipc`, and the only one that does (`MJ-031`).
+Every call goes through one function there, by member name, and that function
+admits only names on a declared read-only allowlist of documented getters, so
+nothing it does instantiates a device, powers one or touches a workspace. The
+allowlist is the proof rather than a list of forbidden verbs, which admits
+every name nobody thought of; and a defect inside an adapter is reported as
+`ENGINE_EXCEPTION`, never as a platform reading.
 
 **The module still requests no privilege.** No privilege is evidenced as the
 one a descriptor reading needs, so naming one would be a guess (`MJ-032`). On a
@@ -144,7 +149,7 @@ Python/MCP -> Runtime Protocol -> explicit channel policy   (unbuilt)
            -> HTTP webview | File Script Engine             (unbuilt)
            -> one runtime kernel -> mcpDispatchV6(...)      (built)
            -> whitelisted typed handler                     (built, read-only)
-           -> documented ipc.* through one adapter          (built, read-only,
+           -> documented ipc.* through one call boundary    (built, read-only,
                                                              PENDING_TARGET)
            -> structured result -> Python evidence/verdict  (built engine side)
 ```
@@ -159,10 +164,11 @@ V6 principles:
   no ambiguous fallback after an ambiguous execution. It lives in
   `muejeje_pts/script-engine/dispatcher_v6.js` and a gate fails if a second one
   appears.
-- **Typed, declarative, whitelisted, fail-closed.** The whitelist holds the
-  read-only `runtime.identify`, `runtime.capabilities` and
-  `platform.device_descriptors`. Version, schema and correlation mismatches
-  fail closed, and so does an operation name in a namespace nobody declared.
+- **Typed, declarative, whitelisted, fail-closed.** The whitelist is
+  `dispatcher_v6.js`, every name it holds is read-only, and the catalogue that
+  enumerates them for a reader is `muejeje_pts/README.md` (`MJ-008`). Version,
+  schema and correlation mismatches fail closed, and so does an operation name
+  in a namespace nobody declared.
 - **Additive change, and nothing else.** A result may gain a field; nothing may
   lose one, be renamed, or keep its name while meaning something else
   (`MJ-030`).
@@ -299,8 +305,8 @@ A path may not appear in two categories. `TODO-SRC-ROOT` and
 [the requirements baseline](muejeje-pts-requirements.md).
 
 The owned root being free of PTBuilder code does **not** make the runtime
-PTBuilder-free (`MJ-013`). The owned root now carries the V6 kernel, three
-read-only operations and one read-only platform adapter, but the runtime
+PTBuilder-free (`MJ-013`). The owned root now carries the V6 kernel, its
+read-only operations and the read-only platform boundary, but the runtime
 consumers actually use is still the legacy one, and independence is proven when
 a built artifact demonstrates it inside Packet Tracer — not before.
 

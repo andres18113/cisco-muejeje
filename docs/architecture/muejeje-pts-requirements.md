@@ -271,8 +271,14 @@ LIVE observation against `9.0.1.0858`.
 **Verification.** Enum values reconciled against the descriptor API; each mirror
 marked as a mirror at its definition. In the owned artifact,
 `platform.device_descriptors` reads `DeviceType` and the supported `ModuleType`
-values back out of the descriptor API and reports them untranslated, and a gate
-fails if any Cisco enum name appears in the packaged sources at all (MJ-031).
+values back out of the descriptor API and reports them untranslated. Two gates,
+one per spelling a mirror can take: `tests/muejeje/test_source_root.py` fails if
+a Cisco enum *identifier* appears in any packaged source, and
+`tests/muejeje/test_platform_adapter.py` fails if an adapter carries any numeric
+literal but its own declared bounds. Cisco's own API names are deliberately not
+on either list — `getDescriptor` is one, and forbidding the word would forbid
+the reference while leaving a hand-written table of type numbers legal
+(MJ-031).
 **Status.** `ENFORCED` for the owned artifact, which carries no mirror and
 enumerates the factory without one — its enumeration takes no `DeviceType`
 argument, so no table has to exist for it to work;

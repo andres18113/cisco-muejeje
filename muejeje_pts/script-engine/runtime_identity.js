@@ -3,7 +3,10 @@
  *
  * Read-only. It reports what this artifact can truthfully say about itself and
  * asserts nothing about Packet Tracer, so it performs no Cisco IPC call and
- * the module needs no privilege to answer it (TODO-PRIVILEGES).
+ * the module needs no privilege to answer it. The module requests none
+ * (MJ-025), which is a decision rather than an omission: nothing it calls has
+ * an evidenced privilege requirement, and an invented name would be denied on
+ * the target rather than refused at build time (MJ-032).
  *
  * The operation list is handed in by the dispatcher rather than read from it.
  * The whitelist has one owner, and the arrow still points from dispatch to

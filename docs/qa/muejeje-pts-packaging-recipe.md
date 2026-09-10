@@ -114,21 +114,26 @@ The artifact is exercised, never used to change anything. Import the saved
 `.pts` on the pinned build, start it, and drive only:
 
 - the module lifecycle — start, then stop;
-- `mcpDispatchV6` with `runtime.identify`;
-- `mcpDispatchV6` with `runtime.capabilities`;
-- `mcpDispatchV6` with `platform.device_descriptors`.
+- `mcpDispatchV6` once per operation `runtime.capabilities` reports, starting
+  with `runtime.identify` and `runtime.capabilities` themselves.
+
+Driving the list the runtime reports, rather than a list copied into this
+document, is what keeps this procedure current when an operation is added
+(`MJ-008`). The calls below are the ones admitted at the time of writing.
 
 No topology is created, opened or modified; no device, link or configuration is
-touched; no transport, bridge or HTTP endpoint is implemented or contacted. All
-three operations are read-only. The first two make no platform call at all; the
-third makes documented getter calls on the hardware *factory*, which describes
-what models exist and instantiates nothing — and with no privilege selected it
-is expected to be denied outright.
+touched; no transport, bridge or HTTP endpoint is implemented or contacted.
+Every admitted operation is read-only. The `runtime.*` ones make no platform
+call at all; the `platform.*` ones make documented getter calls on the hardware
+*factory*, which describes what models exist and instantiates nothing — and
+with no privilege selected they are expected to be denied outright.
 
-The two calls, each on one line. Anything **pasted** into the Builder Code
-Editor loses its newlines, so a pasted snippet must be a single line and carry
-no `//` comment; the compiled engine files are imported rather than pasted and
-are unaffected.
+One call per admitted operation, each on one line. Anything **pasted** into
+the Builder Code Editor loses its newlines, so a pasted snippet must be a
+single line and carry no `//` comment; the compiled engine files are imported
+rather than pasted and are unaffected. `runtime.capabilities` answers with the
+whole whitelist, so a run that starts with it needs no list from this document
+to know what else to drive.
 
 ```javascript
 mcpDispatchV6('{"v":6,"operation_rid":"qual-identify","op":"runtime.identify","args":{}}')
@@ -142,8 +147,8 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-capabilities","op":"runtime.capabili
 mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_descriptors","args":{"offset":0,"limit":4}}')
 ```
 
-The third call is the one that reaches Packet Tracer, and **either outcome is a
-result worth recording verbatim**:
+The `platform.*` calls are the ones that reach Packet Tracer, and **either
+outcome is a result worth recording verbatim**:
 
 | `result.resolution` | `unavailable_reason` | What it establishes |
 | --- | --- | --- |
@@ -159,9 +164,9 @@ Each returns a JSON **string** carrying
 `{v, operation_rid, op, ok, result, error}`, with the `operation_rid` echoed
 back unchanged and `error: null` on success.
 
-**Record both envelopes from one start.** Cisco documents that every engine
+**Record every envelope from one start.** Cisco documents that every engine
 file is evaluated when the module starts, so a stop and a start is a new
-evaluation and the `runtime_session_id` will differ (`MJ-023`). Two envelopes
+evaluation and the `runtime_session_id` will differ (`MJ-023`). Envelopes
 carrying the same token were observed in the same evaluation; two carrying
 different tokens say the module was restarted between them, which is a
 different observation and must be written down as one.
@@ -172,7 +177,7 @@ no recorded evidence of the Debug part's exact behaviour, so no steps for it are
 written here; a guessed UI step is the same defect as a guessed API signature
 (`AGENTS.md` rule 6).
 
-Record the two envelopes verbatim. Until that has happened on the pinned build,
+Record every envelope verbatim. Until that has happened on the pinned build,
 the kernel's live state is `NOT_YET_LIVE_VERIFIED`: a green Node run establishes
 what our JavaScript does and nothing about Packet Tracer's engine, which is a
 different implementation (`MJ-015`).

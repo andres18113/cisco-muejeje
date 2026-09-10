@@ -6,10 +6,17 @@
  * call and the module needs no privilege to serve it.
  *
  * Everything reported here exists in this artifact. Nothing here is a roadmap:
- * a transport, a platform adapter and every mutating operation are all absent,
- * and the honest way to say so is to leave them out of the answer rather than
- * to list them as pending. A capability report that names what is coming is a
- * report a consumer cannot act on.
+ * a transport and every mutating operation are absent, and the honest way to
+ * say so is to leave them out of the answer rather than to list them as
+ * pending. A capability report that names what is coming is a report a
+ * consumer cannot act on.
+ *
+ * A platform adapter *does* exist now, and that changes nothing here. Which
+ * operations are admitted, and which kernel features stand behind them, are
+ * facts about this artifact and are reported; whether Packet Tracer answers
+ * one of them is not, and is never folded in. Discovery that depended on a
+ * platform call would turn one unavailable platform into "this runtime has no
+ * capabilities" (MJ-028, MJ-031).
  *
  * It also reaches no verdict. A verification outcome is not something this
  * runtime may certify about itself — the engine cannot audit the engine — so
