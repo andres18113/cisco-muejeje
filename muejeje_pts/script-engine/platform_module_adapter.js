@@ -29,10 +29,12 @@
  */
 
 /* One result shape for every outcome, so a consumer parses one thing whether
- * the platform answered or not. */
-function muejejeAdapterModuleUnavailable(reason, deviceIndex) {
+ * the platform answered or not. It starts as an unavailable reading with
+ * nothing in it: a field is filled in only once something was actually read,
+ * so an answer this adapter never obtained cannot be left looking like one. */
+function muejejeAdapterModuleReading(resolution, reason, deviceIndex) {
     return {
-        resolution: MUEJEJE_PLATFORM_UNAVAILABLE,
+        resolution: resolution,
         unavailable_reason: reason,
         device_index: deviceIndex,
         available_count: null,
@@ -44,6 +46,12 @@ function muejejeAdapterModuleUnavailable(reason, deviceIndex) {
         nodes_truncated: false,
         depth_truncated: false
     };
+}
+
+function muejejeAdapterModuleUnavailable(reason, deviceIndex) {
+    return muejejeAdapterModuleReading(
+        MUEJEJE_PLATFORM_UNAVAILABLE, reason, deviceIndex
+    );
 }
 
 /* The caller's index, bounded again here: V6 admission already checked it, and
@@ -88,8 +96,9 @@ function muejejeAdapterModuleRead(platform, index) {
     var count = muejejeReadingCount(
         muejejeAdapterCall(factory, "getAvailableDeviceCount")
     );
-    var reading = muejejeAdapterModuleUnavailable(null, index);
-    reading.resolution = MUEJEJE_PLATFORM_OBSERVED;
+    var reading = muejejeAdapterModuleReading(
+        MUEJEJE_PLATFORM_OBSERVED, null, index
+    );
     reading.available_count = count;
     if (index >= count) {
         return reading;
