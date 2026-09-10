@@ -26,6 +26,73 @@ _EXPECTED_OPTIONS = (
     "privileges",
 )
 _HEX_DIGITS = frozenset("0123456789abcdef")
+_AUTOMATION_PREREQUISITES = ("compiler_command", "content_validation")
+
+# Five states, five different facts. The earlier model collapsed the last three
+# into BUILD_TOOLCHAIN_BLOCKED, so "a human can package this in the Scripting
+# Interface", "nobody has demonstrated an automated packager" and "we have not
+# decided the module id yet" all read as the same failure.
+BUILD_SOURCE_INVALID = "BUILD_SOURCE_INVALID"
+BUILD_INPUT_INVALID = "BUILD_INPUT_INVALID"
+BUILD_TOOLCHAIN_BLOCKED = "BUILD_TOOLCHAIN_BLOCKED"
+BUILD_AUTOMATION_UNPROVEN = "BUILD_AUTOMATION_UNPROVEN"
+PACKAGING_MANUAL_AVAILABLE = "PACKAGING_MANUAL_AVAILABLE"
+PACKAGING_MANUAL_UNAVAILABLE = "PACKAGING_MANUAL_UNAVAILABLE"
+
+BUILD_STATES = (
+    BUILD_SOURCE_INVALID,
+    BUILD_INPUT_INVALID,
+    BUILD_TOOLCHAIN_BLOCKED,
+    BUILD_AUTOMATION_UNPROVEN,
+    PACKAGING_MANUAL_AVAILABLE,
+)
+
+
+def classify_build_state(
+    *,
+    source_unidentifiable: bool,
+    input_invalid: bool,
+    source_dirty: bool,
+    toolchain_unusable: bool,
+    recipe_complete: bool,
+) -> str:
+    """Reduce the five independent axes to one dominant state.
+
+    Precedence runs from the fact that invalidates every downstream claim to the
+    fact that invalidates none of them. Note that a *malformed manifest* outranks
+    a *dirty tree*: a manifest we cannot read tells us nothing, while a dirty
+    tree we can still describe precisely. That ordering predates this function
+    and is preserved deliberately.
+
+    ``BUILD_SOURCE_INVALID`` (``source_unidentifiable``)
+        Git could not identify the source at all, so no recipe describes
+        anything.
+    ``BUILD_INPUT_INVALID``
+        The manifest or an input violates the contract.
+    ``BUILD_SOURCE_INVALID`` (``source_dirty``)
+        The source is readable but not pinned: uncommitted or differing from
+        HEAD, so a recipe built from it would not identify what it hashed.
+    ``BUILD_TOOLCHAIN_BLOCKED``
+        A genuine inability to build: no usable Packet Tracer, or a declared
+        input that is not there. **Not** the mere absence of automation.
+    ``BUILD_AUTOMATION_UNPROVEN``
+        Nothing is broken; the recipe is not fully specified yet, and no
+        automated packaging path has been demonstrated.
+    ``PACKAGING_MANUAL_AVAILABLE``
+        A human can package this recipe in the Scripting Interface right now.
+        Automation is still unproven; ``packaging_state`` says so separately.
+    """
+    if source_unidentifiable:
+        return BUILD_SOURCE_INVALID
+    if input_invalid:
+        return BUILD_INPUT_INVALID
+    if source_dirty:
+        return BUILD_SOURCE_INVALID
+    if toolchain_unusable:
+        return BUILD_TOOLCHAIN_BLOCKED
+    if not recipe_complete:
+        return BUILD_AUTOMATION_UNPROVEN
+    return PACKAGING_MANUAL_AVAILABLE
 
 
 def recipe_id(recipe: dict[str, Any]) -> str:
@@ -99,6 +166,28 @@ def _logical_path(root: Path, value: Any) -> tuple[str | None, Path | None, str 
     return logical.as_posix(), resolved, None
 
 
+def _packaging_state(
+    *,
+    manual: str,
+    manual_blockers: list[str],
+    recipe_complete: bool,
+    unresolved_build_options: list[str],
+    unresolved_automation_prerequisites: list[str],
+) -> dict[str, Any]:
+    return {
+        "manual": manual,
+        "manual_blockers": manual_blockers,
+        # No automated packaging path has been demonstrated for the Scripting
+        # Interface. This stays UNPROVEN until evidence says otherwise; it is
+        # never inferred from a clean report.
+        "automation": BUILD_AUTOMATION_UNPROVEN,
+        "automation_evidence": None,
+        "recipe_complete": recipe_complete,
+        "unresolved_build_options": unresolved_build_options,
+        "unresolved_automation_prerequisites": unresolved_automation_prerequisites,
+    }
+
+
 def _base_report(status: str, blockers: list[str]) -> dict[str, Any]:
     return {
         "status": status,
@@ -106,6 +195,13 @@ def _base_report(status: str, blockers: list[str]) -> dict[str, Any]:
         "source": {"commit": None, "tree": None, "clean": False},
         "inputs": {"own": [], "reference": []},
         "builder": None,
+        "packaging_state": _packaging_state(
+            manual=PACKAGING_MANUAL_UNAVAILABLE,
+            manual_blockers=[],
+            recipe_complete=False,
+            unresolved_build_options=list(_EXPECTED_OPTIONS),
+            unresolved_automation_prerequisites=list(_AUTOMATION_PREREQUISITES),
+        ),
         "recipe": None,
         "build_recipe_id": None,
         "artifact_sha256": None,
@@ -121,8 +217,12 @@ def inspect_build(
     """Inspect a Git checkout and aggregate all available build blockers."""
     root = Path(root).resolve()
     blockers: list[str] = []
+    # Blockers that stop a *human* from packaging in the Scripting Interface:
+    # no usable Packet Tracer, or a declared input that is not on disk. Tracked
+    # explicitly rather than recovered from blocker prose.
+    manual_blockers: list[str] = []
     git_failed = False
-    report = _base_report("BUILD_INPUT_INVALID", blockers)
+    report = _base_report(BUILD_INPUT_INVALID, blockers)
     try:
         manifest_file = Path(manifest_path).resolve()
         if manifest_file != resolve_within(root, "EXTENSION", "manifest", "muejeje-build-manifest.json"):
@@ -214,6 +314,7 @@ def inspect_build(
             blockers.append(f"own input is not tracked: {logical}")
         if not path.is_file():
             blockers.append(f"missing own input: {logical}")
+            manual_blockers.append(f"missing own input: {logical}")
             continue
         try:
             actual_hash = _hash_file(path, max_bytes=_MAX_INPUT_BYTES)
@@ -270,6 +371,7 @@ def inspect_build(
             pin = None
         if not path.is_file():
             blockers.append(f"missing reference input: {logical}")
+            manual_blockers.append(f"missing reference input: {logical}")
             reference_evidence.append({"path": logical, "expected_sha256": pin, "actual_sha256": None})
             continue
         try:
@@ -290,8 +392,10 @@ def inspect_build(
     }
     if builder != expected_builder:
         blockers.append("invalid builder identity")
+        manual_blockers.append("invalid builder identity")
     if builder_path is None:
         blockers.append("missing explicit builder path")
+        manual_blockers.append("missing explicit builder path")
     else:
         try:
             actual_builder = artifact_sha256(Path(builder_path))
@@ -299,41 +403,67 @@ def inspect_build(
                 report["builder"]["actual_sha256"] = actual_builder
             if isinstance(builder, dict) and actual_builder != builder.get("sha256"):
                 blockers.append("builder SHA-256 mismatch")
+                manual_blockers.append("builder SHA-256 mismatch")
         except (OSError, ValueError) as exc:
             blockers.append(f"invalid builder file: {exc}")
+            manual_blockers.append(f"invalid builder file: {exc}")
 
     options = manifest.get("build_options")
     if not isinstance(options, dict) or set(options) != set(_EXPECTED_OPTIONS):
         blockers.append("invalid build_options shape")
         options = options if isinstance(options, dict) else {}
+    unresolved_options: list[str] = []
     for name in _EXPECTED_OPTIONS:
         if options.get(name) is None:
+            unresolved_options.append(name)
             blockers.append(f"unresolved build option: {name}")
 
     packaging = manifest.get("packaging")
     if not isinstance(packaging, dict) or packaging.get("status") != "unresolved":
         blockers.append("packaging status must remain unresolved without an adapter")
-    for name in ("compiler_command", "content_validation"):
+    unresolved_automation: list[str] = []
+    for name in _AUTOMATION_PREREQUISITES:
         if not isinstance(packaging, dict) or packaging.get(name) is None:
+            unresolved_automation.append(name)
             blockers.append(f"unresolved packaging prerequisite: {name}")
-    blockers.append("no compile adapter is implemented for Packet Tracer GUI packaging")
+    # The absence of an automated packager is a standing fact about Packet
+    # Tracer, not a defect in this repository, so it is reported in
+    # packaging_state rather than appended unconditionally to every run's
+    # blockers — which is what made BUILD_TOOLCHAIN_BLOCKED inescapable.
 
     input_invalid = any(
         marker in blocker.lower()
         for blocker in blockers
         for marker in ("invalid", "unsafe", "noncanonical", "tracked extension", "must be untracked", "must be tracked", "not tracked", "mismatch", "omitted")
     )
-    report["status"] = (
-        "BUILD_SOURCE_INVALID" if git_failed
-        else "BUILD_INPUT_INVALID" if input_invalid or any(
-            marker in blocker.lower()
-            for blocker in blockers
-            for marker in ("own_inputs must", "reference_inputs must", "must be ignored")
-        )
-        else "BUILD_SOURCE_INVALID" if any(
-            marker in b.lower() for b in blockers for marker in ("dirty", "differ from head")
-        )
-        else "BUILD_TOOLCHAIN_BLOCKED"
+    input_invalid = input_invalid or any(
+        marker in blocker.lower()
+        for blocker in blockers
+        for marker in ("own_inputs must", "reference_inputs must", "must be ignored")
+    )
+    source_dirty = any(
+        marker in b.lower() for b in blockers for marker in ("dirty", "differ from head")
+    )
+    toolchain_unusable = bool(manual_blockers)
+    recipe_complete = not unresolved_options
+
+    report["status"] = classify_build_state(
+        source_unidentifiable=git_failed,
+        input_invalid=input_invalid,
+        source_dirty=source_dirty,
+        toolchain_unusable=toolchain_unusable,
+        recipe_complete=recipe_complete,
+    )
+    report["packaging_state"] = _packaging_state(
+        manual=(
+            PACKAGING_MANUAL_UNAVAILABLE
+            if git_failed or input_invalid or source_dirty or toolchain_unusable
+            else PACKAGING_MANUAL_AVAILABLE
+        ),
+        manual_blockers=manual_blockers,
+        recipe_complete=recipe_complete,
+        unresolved_build_options=unresolved_options,
+        unresolved_automation_prerequisites=unresolved_automation,
     )
     manifest_hash = _hash_file(manifest_file, max_bytes=_MAX_MANIFEST_BYTES)
     report["recipe"] = {
@@ -347,4 +477,13 @@ def inspect_build(
         "build_options": options,
         "packaging": packaging,
     }
+    # A complete input inventory earns a recipe id; an incomplete one never
+    # does. The artifact hash stays external and is never derived from here.
+    if report["status"] == PACKAGING_MANUAL_AVAILABLE:
+        try:
+            report["build_recipe_id"] = recipe_id(report["recipe"])
+        except (TypeError, ValueError) as exc:
+            blockers.append(f"invalid recipe for identity: {exc}")
+            report["status"] = BUILD_INPUT_INVALID
+            report["packaging_state"]["manual"] = PACKAGING_MANUAL_UNAVAILABLE
     return report
