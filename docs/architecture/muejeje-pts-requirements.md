@@ -845,11 +845,20 @@ decides which happened:
 > A result may gain a field. Nothing may lose one, be renamed, or keep its name
 > while meaning something else.
 
+**The rule reaches every level of a published answer.** A consumer reads
+`descriptors[0].model` exactly as it reads `available_count`, so a rename
+inside a nested object breaks a reader in the same way — and a gate that reads
+only top-level names cannot see it. That was measured, not supposed: renaming
+`descriptors[].model_supported` passed the whole compatibility gate before it
+walked results. So nested shapes are frozen by the path that reaches them, and
+the *set of paths* is held equal rather than as a subset: a published nested
+object nobody froze is one nothing is holding still.
+
 **Compatible — no protocol version change:**
 
 | Change | Why a consumer survives it |
 | --- | --- |
-| a new field in an operation's `result` | a consumer that does not read it cannot see it |
+| a new field in an operation's `result`, at any level | a consumer that does not read it cannot see it |
 | a new operation name in the whitelist | nobody was sending it |
 | a new argument an operation accepts | nobody was supplying it, and omitting it must keep the old behaviour |
 | different `error.message` prose | the message is diagnostic; `error.code` is the contract |
@@ -860,7 +869,7 @@ decides which happened:
 
 | Change | What breaks |
 | --- | --- |
-| removing or renaming any envelope or result field | a field access |
+| removing or renaming any envelope or result field, nested ones included | a field access |
 | changing a field's type or meaning under the same name | a reader that still parses, and is now wrong |
 | adding or removing an `error.code` | an exhaustive reader of the taxonomy |
 | adding a required request field | every existing caller, at once |
@@ -878,13 +887,16 @@ the safe answer becomes "change nothing" — which is how a contract stops being
 usable. Writing down what is additive is what makes the runtime free to grow;
 writing down what is breaking is what stops that freedom from being read as
 permission to reshape a published answer.
-**Verification.** `tests/muejeje/test_v6_compatibility.py` asserts the envelope
-and the error taxonomy **equal** to what the kernel declares, and each
+**Verification.** Two modules, one per half.
+`tests/muejeje/test_v6_compatibility.py` asserts the envelope and the error
+taxonomy **equal** to what the kernel declares, that every admitted operation
+answers in that envelope, that a read-only operation stays read-only, and that
+this rule is stated here. `tests/muejeje/test_v6_result_shapes.py` asserts each
 operation's published result fields as a **subset** of what it answers — so an
-added field passes and a removed or renamed one fails. It asserts that measure
-in both directions on synthetic field sets, that every admitted operation
-declares a frozen result shape, that a read-only operation stays read-only, and
-that this rule is stated here.
+added field passes and a removed or renamed one fails — walks every nested
+object a result publishes and holds the set of those paths equal, drives a
+platform operation against a stub so an empty list cannot hide a shape, and
+asserts both measures in both directions on synthetic results.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 

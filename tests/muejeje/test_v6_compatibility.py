@@ -7,12 +7,15 @@ one sentence, and this module is that sentence as a gate (MJ-030):
     A result may gain a field. Nothing may lose one, be renamed, or keep its
     name while meaning something else.
 
-That is why the two kinds of set below are asserted differently. The envelope
-and the error taxonomy are asserted **equal** to what the kernel declares: a
-consumer's parser is total over those, so adding to them breaks an exhaustive
-reader exactly as removing from them breaks a field access. Each operation's
-required result fields are asserted as a **subset** of what it answers: a new
-field is invisible to a consumer that does not read it.
+That is why the envelope and the error taxonomy are asserted **equal** to what
+the kernel declares: a consumer's parser is total over those, so adding to them
+breaks an exhaustive reader exactly as removing from them breaks a field
+access.
+
+What each operation *answers* is the other half of the same rule, and it is
+`test_v6_result_shapes` — split out when this module crossed its own line
+budget (MJ-020). A result there may gain a field and may never lose one, at the
+top level and inside every published nested object.
 
 None of this is a claim about Packet Tracer. It is a claim about the contract
 we publish, checked against the kernel that implements it under Node (MJ-015).
@@ -37,24 +40,6 @@ ERROR_CODES = {
     "UNKNOWN_OPERATION", "INVALID_ARGS", "ENGINE_EXCEPTION",
 }
 
-# Per operation, the result fields a consumer may already be reading. An
-# operation may answer with more; it may never answer with fewer.
-REQUIRED_RESULT_FIELDS = {
-    "platform.device_descriptors": {
-        "resolution", "unavailable_reason", "available_count", "offset",
-        "limit", "descriptors", "window_truncated",
-    },
-    "runtime.identify": {
-        "extension_name", "extension_version", "protocol_versions",
-        "operations", "supported_features", "runtime_session_id",
-        "provenance", "lifecycle",
-    },
-    "runtime.capabilities": {
-        "runtime_session_id", "protocol_versions", "operations",
-        "supported_features",
-    },
-}
-
 # An operation published as read-only may never become mutating under the same
 # name. A consumer decides whether it may call something from this flag, so
 # changing it is changing what the name means, not extending it. A mutating
@@ -70,39 +55,10 @@ requires_node = pytest.mark.skipif(
 )
 
 
-def missing_fields(frozen: set[str], observed: set[str]) -> set[str]:
-    """The frozen fields `observed` no longer carries. Empty means compatible.
-
-    This is the whole compatibility test for a result: a field that appeared is
-    not in `frozen`, so it cannot show up here, while a field that was removed
-    or renamed leaves its old name behind and does.
-    """
-    return frozen - observed
-
-
 def _request(op: str) -> str:
     return json.dumps({
         "v": 6, "operation_rid": f"rid-compat-{op}", "op": op, "args": {},
     })
-
-
-# ---------------------------------------------------------------------------
-# The gate can tell an addition from a removal.
-# ---------------------------------------------------------------------------
-
-def test_the_compatibility_measure_admits_additions_and_catches_the_rest():
-    """Asserted on synthetic field sets, in every direction that matters.
-
-    A gate that reported "different" would fail on a compatible change and
-    teach the next reader to edit the frozen set to make it pass, which is
-    exactly how a breaking change gets waved through.
-    """
-    frozen = {"model", "device_type"}
-
-    assert missing_fields(frozen, {"model", "device_type"}) == set()
-    assert missing_fields(frozen, {"model", "device_type", "slot_types"}) == set()
-    assert missing_fields(frozen, {"model"}) == {"device_type"}
-    assert missing_fields(frozen, {"model", "deviceType"}) == {"device_type"}
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +75,15 @@ def test_the_request_envelope_carries_exactly_the_published_fields():
 
 @requires_node
 def test_the_response_envelope_carries_exactly_the_published_fields():
-    for op in sorted(REQUIRED_RESULT_FIELDS):
+    """Every admitted operation, read from the dispatcher that admits them.
+
+    Against the whitelist rather than a list here, so an operation added
+    without a thought for the envelope is answered by this gate rather than by
+    a consumer's parser.
+    """
+    from tests.muejeje.test_capability_claims import admitted_operations
+
+    for op in sorted(admitted_operations()):
         assert set(dispatch_v6(_request(op))) == RESPONSE_FIELDS
 
 
@@ -144,32 +108,6 @@ def test_an_error_carries_exactly_a_code_and_a_message():
 
     assert set(failed["error"]) == ERROR_FIELDS
     assert failed["error"]["code"] in ERROR_CODES
-
-
-# ---------------------------------------------------------------------------
-# A result may grow. It may not shrink, rename, or change meaning.
-# ---------------------------------------------------------------------------
-
-@requires_node
-@pytest.mark.parametrize("op", sorted(REQUIRED_RESULT_FIELDS))
-def test_a_result_still_carries_every_field_already_published(op: str):
-    observed = set(dispatch_v6(_request(op))["result"])
-
-    assert missing_fields(REQUIRED_RESULT_FIELDS[op], observed) == set(), (
-        f"{op} dropped or renamed a published field; that needs a new protocol "
-        "version, not a new field list"
-    )
-
-
-def test_every_admitted_operation_publishes_a_frozen_result_shape():
-    """An operation with no frozen shape is one nothing is holding still.
-
-    Adding an operation therefore means declaring what its result promises, in
-    the same commit — not later, once a consumer has started reading it.
-    """
-    from tests.muejeje.test_capability_claims import admitted_operations
-
-    assert set(REQUIRED_RESULT_FIELDS) == admitted_operations()
 
 
 @requires_node
