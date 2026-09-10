@@ -46,7 +46,9 @@ Consumers / MCP / projects
 - **Northbound (V6)** is a contract Muejeje **owns**. Consumers depend on it and
   on nothing else — not on internals, not on the transport, not on Packet Tracer
   specifics. Muejeje decides when it changes, and changing it is a consumer-
-  visible event.
+  visible event. *Which* changes are consumer-visible is not a judgement call:
+  a result may gain a field, and nothing may lose one, be renamed, or keep its
+  name while meaning something else (`MJ-030`).
 - **Southbound (IpcAPI)** is a contract Muejeje **does not own**. Muejeje adapts
   to it, never extends or reinterprets it, and every claim about its behaviour
   needs target-build evidence.

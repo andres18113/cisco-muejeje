@@ -638,6 +638,57 @@ mechanism.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 
+### MJ-030 — Compatible V6 evolution is additive, and everything else is breaking
+**Requirement.** V6 is the contract Muejeje owns (MJ-005), so *changing the
+runtime* and *breaking a consumer* must be distinguishable events. One rule
+decides which happened:
+
+> A result may gain a field. Nothing may lose one, be renamed, or keep its name
+> while meaning something else.
+
+**Compatible — no protocol version change:**
+
+| Change | Why a consumer survives it |
+| --- | --- |
+| a new field in an operation's `result` | a consumer that does not read it cannot see it |
+| a new operation name in the whitelist | nobody was sending it |
+| a new argument an operation accepts | nobody was supplying it, and omitting it must keep the old behaviour |
+| different `error.message` prose | the message is diagnostic; `error.code` is the contract |
+| a new kernel feature in `supported_features` | the list is discovered, not enumerated by the consumer |
+| a stricter *internal* bound that no admitted request crossed | nothing that was accepted is refused |
+
+**Breaking — needs a new protocol version:**
+
+| Change | What breaks |
+| --- | --- |
+| removing or renaming any envelope or result field | a field access |
+| changing a field's type or meaning under the same name | a reader that still parses, and is now wrong |
+| adding or removing an `error.code` | an exhaustive reader of the taxonomy |
+| adding a required request field | every existing caller, at once |
+| making an operation published as `read_only` mutate | the decision a consumer made from that flag |
+| narrowing what an existing request may carry | callers that were within the old bound |
+
+`error.message` is deliberately outside the contract: a fixed diagnostic string
+that never echoes caller input (MJ-022), free to improve.
+
+**A new protocol version is a new number, never a reinterpretation.** V6 has no
+compatibility escape and never guesses at a neighbouring version's meaning
+(MJ-008); a V7 would be admitted as V7 or refused as `PROTOCOL_MISMATCH`.
+**Rationale.** Without this rule, every edit to a result is a negotiation, and
+the safe answer becomes "change nothing" — which is how a contract stops being
+usable. Writing down what is additive is what makes the runtime free to grow;
+writing down what is breaking is what stops that freedom from being read as
+permission to reshape a published answer.
+**Verification.** `tests/muejeje/test_v6_compatibility.py` asserts the envelope
+and the error taxonomy **equal** to what the kernel declares, and each
+operation's published result fields as a **subset** of what it answers — so an
+added field passes and a removed or renamed one fails. It asserts that measure
+in both directions on synthetic field sets, that every admitted operation
+declares a frozen result shape, that a read-only operation stays read-only, and
+that this rule is stated here.
+**Status.** `ENFORCED` for the kernel's own logic under Node;
+`NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
+
 ## Open decisions
 
 Not requirements. Each needs a decision before it can become one.
