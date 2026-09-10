@@ -1,23 +1,24 @@
-"""Every reading the platform adapter can report, and what it refuses.
+"""Every reading the device adapter can report, and what it refuses.
 
 A reading is what `platform.device_descriptors` comes back with, and there are
-four of them: the factory answered, there was no platform object, the call did
-not return, or it answered something that could not be attributed. They stay
-four distinct facts because a consumer acts differently on each — and because
-collapsing them would leave "Packet Tracer would not talk to us"
-indistinguishable from "Packet Tracer said something we cannot read" (MJ-031).
+five: the factory answered, there was no platform object, the object did not
+offer the member, the call did not return, or it answered something that could
+not be attributed. They stay distinct because a consumer acts differently on
+each — collapsing them would leave "Packet Tracer would not talk to us"
+indistinguishable from "Packet Tracer is not the interface we were written
+against" (MJ-031).
 
-**None of them is a V6 failure.** The request was admissible; the answer is
-that no reading was obtained. And **none of them names a cause the adapter
-cannot see**: a denied privilege is one cause of a call that did not return,
-and the adapter reports the symptom rather than guessing the cause.
+**None of them is a V6 failure**, and **none names a cause the adapter cannot
+see**: it reports the symptom rather than guessing at a privilege. The reverse
+also holds, and is asserted here: an argument this adapter would not accept, or
+a bug inside it, is *ours* — refused or reported as `ENGINE_EXCEPTION`, never
+dressed up as something Packet Tracer did.
 
 **What runs here, and what it establishes.** `PLATFORM_ABSENT` is real — under
-Node there is no platform object, so that is the honest reading and this suite
-observes it. The other three are driven with a stub that answers well, badly,
-or by throwing. All of it establishes what *our* adapter does; none of it
-establishes anything about `9.0.1.0858`, whose hardware factory is a different
-implementation, so the capability's live state is `PENDING_TARGET` (MJ-015).
+Node there is no platform object. The others are driven with a stub that
+answers well, badly, partially, or by throwing. All of it establishes what
+*our* adapter does; none of it establishes anything about `9.0.1.0858`, so the
+capability's live state is `PENDING_TARGET` (MJ-015).
 
 Split out of `test_platform_adapter` when that module crossed its own line
 budget: what the adapter is *allowed to be* and what it *reports* are two
@@ -202,6 +203,69 @@ def test_whatever_the_platform_does_the_caller_still_gets_a_reading():
         response = dispatch_v6(_request(), prelude=prelude)
         assert response["ok"] is True, prelude[:40]
         assert response["result"]["resolution"] in {"OBSERVED", "UNAVAILABLE"}
+
+
+@requires_node
+def test_a_member_the_platform_does_not_offer_is_absent_not_a_failed_call():
+    """Nothing was called, so nothing failed.
+
+    `PLATFORM_CALL_FAILED` says the member was reached and did not return; a
+    member that is not there says the interface is not the one this artifact
+    was written against. Reporting the second as the first invents a refusal
+    nobody performed (MJ-031).
+    """
+    no_devices_member = "var ipc = {hardwareFactory: function () { return {}; }};"
+    result = dispatch_v6(_request(), prelude=no_devices_member)["result"]
+
+    assert result["resolution"] == "UNAVAILABLE"
+    assert result["unavailable_reason"] == "PLATFORM_MEMBER_ABSENT"
+    assert result["descriptors"] == []
+
+
+@requires_node
+@pytest.mark.parametrize(("offset", "limit"), [
+    ("-1", "4"), ("0", "0"), ("0", "33"), ("5000", "4"), ("'0'", "4"),
+    ("1.5", "4"), ("0", "null"),
+])
+def test_an_argument_this_adapter_would_not_accept_is_a_defect_not_a_clamp(
+    offset: str, limit: str,
+):
+    """The window is checked, never clamped.
+
+    A value outside these bounds cannot have come from a caller: V6 admission
+    refuses that, and the operation defaults an argument nobody sent. So it
+    came from our own code, and reading a *different* window and reporting the
+    result would answer a question nobody asked — as an observation about
+    Packet Tracer, which is the failure mode this whole boundary exists for.
+    """
+    observed = dispatch_v6(
+        _request(),
+        prelude=platform_stub(THREE_MODELS),
+        report=(
+            "(function () {"
+            f"  try {{ return {{read: muejejeAdapterDeviceDescriptors({offset}, {limit})}}; }}"
+            "  catch (thrown) { return {refused: String(thrown)}; }"
+            "}())"
+        ),
+    )
+
+    assert "read" not in observed, "a bad argument was answered instead of refused"
+    assert "PLATFORM_" not in observed["refused"], (
+        "an argument defect is ours, and never a platform reading"
+    )
+
+
+@requires_node
+def test_the_window_this_operation_asks_for_is_still_answered():
+    """The other direction: the check is a bound, not a wall."""
+    observed = dispatch_v6(
+        _request(),
+        prelude=platform_stub(THREE_MODELS),
+        report="muejejeAdapterDeviceDescriptors(0, 32)",
+    )
+
+    assert observed["resolution"] == "OBSERVED"
+    assert observed["offset"] == 0 and observed["limit"] == 32
 
 
 @requires_node

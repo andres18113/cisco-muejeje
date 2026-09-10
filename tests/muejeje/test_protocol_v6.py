@@ -1,10 +1,15 @@
 """The Runtime Protocol V6 envelope, whitelist and failure taxonomy.
 
-Structural claims about the source layout, plus executable claims driven
-through Node when it is available. Node establishes what *our* JavaScript does;
-it establishes nothing about Packet Tracer, whose engine is a different one
-(MJ-015). A Node-verified kernel is `V6_KERNEL_RUNTIME = VERIFIED` for our
-logic and still `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858`.
+Executable claims, driven through Node when it is available: what a valid
+request answers with, what each rejection class is called, that the entry point
+answers even when the engine itself breaks, and that `ENGINE_EXCEPTION` means
+only that.
+
+Where the kernel lives and who owns what is `test_kernel_layout`. Node
+establishes what *our* JavaScript does; it establishes nothing about Packet
+Tracer, whose engine is a different one (MJ-015). A Node-verified kernel is
+`V6_KERNEL_RUNTIME = VERIFIED` for our logic and still
+`NOT_YET_LIVE_VERIFIED` against `9.0.1.0858`.
 """
 
 from __future__ import annotations
@@ -27,36 +32,6 @@ from tests.muejeje.support import (
     repo_manifest,
 )
 
-# The declared evaluation order, written down exactly once. Packet Tracer
-# evaluates the Script Engine files in the order the Scripting Interface lists
-# them, so this order *is* the dependency direction: core, the protocol
-# envelope, the admission that refuses with that envelope, what a platform
-# reading is, the call boundary, the adapters that read through it, then
-# operations, then dispatch, then the lifecycle that may call all of it
-# (MJ-019).
-# Operations depend on nothing but core and protocol, so they are ordered
-# alphabetically among themselves — a rule, rather than an accident nobody
-# could re-derive.
-#
-# This list is the expectation; the manifest is the source every other reader
-# derives from. One written-down copy is what makes a reorder a visible edit
-# here instead of a silent drift everywhere.
-ENGINE_SCRIPT_ORDER = [
-    "muejeje_pts/script-engine/core.js",
-    "muejeje_pts/script-engine/protocol_v6.js",
-    "muejeje_pts/script-engine/validation_v6.js",
-    "muejeje_pts/script-engine/platform_reading.js",
-    "muejeje_pts/script-engine/platform_adapter.js",
-    "muejeje_pts/script-engine/platform_device_adapter.js",
-    "muejeje_pts/script-engine/platform_module_adapter.js",
-    "muejeje_pts/script-engine/platform_discovery.js",
-    "muejeje_pts/script-engine/platform_modules.js",
-    "muejeje_pts/script-engine/runtime_capabilities.js",
-    "muejeje_pts/script-engine/runtime_identity.js",
-    "muejeje_pts/script-engine/dispatcher_v6.js",
-    "muejeje_pts/script-engine/lifecycle.js",
-]
-
 VALID_REQUEST = {
     "v": 6, "operation_rid": "rid-123", "op": "runtime.identify", "args": {},
 }
@@ -66,96 +41,35 @@ requires_node = pytest.mark.skipif(
 )
 
 
-# ---------------------------------------------------------------------------
-# Structural: the layout, and who owns what.
-# ---------------------------------------------------------------------------
+@pytest.mark.skipif(
+    not node_available(), reason="Node is unavailable; structural gates still run",
+)
+@pytest.mark.parametrize("broken", [
+    "muejejeV6ParseRequest", "muejejeV6OperationTable", "muejejeV6ArgsError",
+    "muejejeV6Encode",
+])
+def test_the_entry_point_answers_even_when_the_engine_itself_breaks(broken: str):
+    """Never throwing is enforced here, not assumed of everything called.
 
-def test_the_kernel_is_split_into_the_declared_files():
-    on_disk = [relative(path) for path in engine_sources()]
-    assert sorted(on_disk) == sorted(ENGINE_SCRIPT_ORDER)
-
-
-def test_engine_script_order_is_the_declared_dependency_order():
-    order = repo_manifest()["build_options"]["engine_script_order"]
-    assert order == ENGINE_SCRIPT_ORDER, (
-        "core and protocol first, then operations, then dispatch, then lifecycle"
-    )
-    assert set(order) == {relative(path) for path in engine_sources()}
-
-
-def test_the_node_harness_derives_its_evaluation_order_from_the_manifest():
-    """The order is declared once. A second copy is one that will disagree.
-
-    The harness used to list the engine files itself, so a manifest reorder
-    would leave every offline run evaluating a different module from the one
-    the recipe describes — and every gate in this module would still pass,
-    because they all read the manifest. Naming no file is what makes the
-    duplication impossible rather than merely absent today.
+    Admission, the whitelist lookup, the argument rules and the encoder are
+    ordinary code and can fail the way ordinary code does. An uncaught error
+    inside a Script Engine call is not something a consumer can correlate,
+    diagnose or retry, so each of those is broken in turn and the entry point
+    still has to answer with an envelope — `ENGINE_EXCEPTION`, which is what
+    "the engine itself broke" means, and never a code that would send a
+    consumer looking at its own request (MJ-022).
     """
-    declared = repo_manifest()["build_options"]["engine_script_order"]
-    assert engine_harness.engine_order() == [REPO_ROOT / item for item in declared]
-
-    harness = (MUEJEJE_TESTS / "engine_harness.py").read_text(encoding="utf-8")
-    named = [path.name for path in engine_harness.engine_order() if path.name in harness]
-    assert named == [], f"the harness names an engine file itself: {named}"
-
-
-def test_mcp_dispatch_v6_is_implemented_exactly_once_by_the_dispatcher():
-    pattern = re.compile(r"^function\s+mcpDispatchV6\s*\(", re.MULTILINE)
-    owners = [
-        relative(path) for path in engine_sources()
-        if pattern.search(path.read_text(encoding="utf-8"))
-    ]
-    assert owners == ["muejeje_pts/script-engine/dispatcher_v6.js"], owners
-
-
-def test_the_dispatcher_holds_no_operation_implementation():
-    body = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
-    for owned_by_the_operation in (
-        "extension_name", "extension_version", "supported_features",
-    ):
-        assert owned_by_the_operation not in body, (
-            "the dispatcher whitelists and dispatches; it never implements an "
-            f"operation: {owned_by_the_operation}"
-        )
-
-
-def test_the_protocol_module_holds_no_operation_and_no_whitelist():
-    body = (SCRIPT_ENGINE / "protocol_v6.js").read_text(encoding="utf-8")
-    assert "runtime.identify" not in body, (
-        "protocol_v6 shapes envelopes; which operations exist is dispatch"
+    response = dispatch_v6(
+        json.dumps(VALID_REQUEST),
+        prelude=f"{broken} = function () {{ throw new Error('engine defect'); }};",
+        report="JSON.parse(mcpDispatchV6(REQUEST))",
     )
 
+    assert response["ok"] is False
+    assert response["error"]["code"] == "ENGINE_EXCEPTION"
+    assert response["result"] is None
+    assert "engine defect" not in json.dumps(response)
 
-def test_the_protocol_module_shapes_answers_and_reads_no_request():
-    """The envelope and the admission that uses it are two responsibilities.
-
-    `protocol_v6.js` used to hold both, and the bounded admission rules would
-    have pushed it past its budget — which is the budget working (MJ-020).
-    Reading a request is now `validation_v6.js`, and the split is asserted so
-    the two cannot quietly merge back.
-    """
-    body = (SCRIPT_ENGINE / "protocol_v6.js").read_text(encoding="utf-8")
-    for owned_by_admission in ("JSON.parse", "MUEJEJE_V6_LIMITS", "muejejeV6ParseRequest"):
-        assert owned_by_admission not in body, owned_by_admission
-
-
-def test_core_is_constants_and_session_state_only():
-    body = (SCRIPT_ENGINE / "core.js").read_text(encoding="utf-8")
-    for owned_elsewhere in ("mcpDispatchV6", "JSON.parse", "runtime.identify"):
-        assert owned_elsewhere not in body, owned_elsewhere
-
-
-def test_no_v5_fallback_survives_anywhere_in_the_kernel():
-    for path in engine_sources():
-        body = path.read_text(encoding="utf-8")
-        assert "mcpDispatch(" not in body, relative(path)
-        assert '"v": 5' not in body and '"v":5' not in body, relative(path)
-
-
-# ---------------------------------------------------------------------------
-# Executable: the contract itself.
-# ---------------------------------------------------------------------------
 
 @requires_node
 def test_a_valid_request_returns_a_successful_envelope():
@@ -277,6 +191,27 @@ def test_an_internal_handler_failure_is_the_only_engine_exception():
 
 
 @requires_node
+def test_the_last_resort_envelope_is_the_one_the_kernel_would_have_shaped():
+    """The single hard-coded envelope in this artifact, held to the contract.
+
+    It exists so the engine can still answer when the *encoder* is what broke,
+    which means it cannot be built by the encoder. That makes it a second copy
+    of the envelope shape, and a second copy is only safe while something
+    compares it with the first — so this parses the literal and asserts it is
+    exactly what `muejejeV6Fail` produces for the same failure, field for field.
+    """
+    observed = dispatch_v6(
+        json.dumps(VALID_REQUEST),
+        report=(
+            "{literal: JSON.parse(MUEJEJE_V6_ENGINE_FAILURE),"
+            " shaped: muejejeV6Fail(null, null,"
+            "   MUEJEJE_V6_ERRORS.ENGINE_EXCEPTION, MUEJEJE_V6_ENGINE_MESSAGE)}"
+        ),
+    )
+
+    assert observed["literal"] == observed["shaped"]
+
+
 def test_the_dispatcher_returns_a_json_string_not_an_object():
     """`mcpDispatchV6` is called across the Script Engine boundary."""
     kind = dispatch_v6(

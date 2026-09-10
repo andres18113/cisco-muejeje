@@ -95,8 +95,11 @@ var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
  * A name outside the allowlist throws a plain error on purpose: asking for a
  * call this artifact does not admit is a defect in this artifact, so it must
  * not come back looking like something Packet Tracer did. A receiver the
- * platform did not give us is an unusable answer; a call that threw is a call
- * that did not return, whatever the engine's reason was. */
+ * platform did not give us is an unusable answer. A member that is not there
+ * is reported as absent rather than as a failed call, because nothing was
+ * called: "this object does not offer that member" and "the call did not
+ * return" are different observations with different next steps, and collapsing
+ * them would invent a refusal nobody performed. */
 function muejejeAdapterCall(receiver, name) {
     muejejeAdapterAdmitted(receiver, name);
     try {
@@ -126,6 +129,9 @@ function muejejeAdapterAdmitted(receiver, name) {
     }
     if (receiver === null || typeof receiver !== "object") {
         throw MUEJEJE_PLATFORM_UNUSABLE;
+    }
+    if (typeof receiver[name] !== "function") {
+        throw MUEJEJE_PLATFORM_MEMBER_ABSENT;
     }
 }
 

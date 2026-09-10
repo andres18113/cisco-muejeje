@@ -59,6 +59,32 @@ function muejejeV6Fail(rid, op, code, message) {
     });
 }
 
+/* The one answer that needs nothing else to work.
+ *
+ * A fixed string, so the engine can still say "I broke" when the thing that
+ * broke is the encoder. It is deliberately a second copy of the envelope
+ * shape — the only one in this artifact — and a gate asserts it parses to
+ * exactly what `muejejeV6Fail` builds for the same failure, so the copy cannot
+ * drift away from the contract it stands in for. */
+var MUEJEJE_V6_ENGINE_MESSAGE = "the engine failed before an answer could be shaped";
+var MUEJEJE_V6_ENGINE_FAILURE = '{"v":6,"operation_rid":null,"op":null,"ok":false,"result":null,"error":{"code":"ENGINE_EXCEPTION","message":"the engine failed before an answer could be shaped"}}';
+
+/* The last resort, shaped the normal way when the normal way still works.
+ *
+ * It carries no correlation id: a failure this general may have happened
+ * before the request was readable, and correlating an answer to a request
+ * nobody made is worse than not correlating it at all. */
+function muejejeV6EngineFailure() {
+    try {
+        return muejejeV6Encode(muejejeV6Fail(
+            null, null, MUEJEJE_V6_ERRORS.ENGINE_EXCEPTION,
+            MUEJEJE_V6_ENGINE_MESSAGE
+        ));
+    } catch (shapingError) {
+        return MUEJEJE_V6_ENGINE_FAILURE;
+    }
+}
+
 /* The response leaves the engine as a string, symmetrically with the request.
  *
  * A handler that returns something unencodable would otherwise throw out of

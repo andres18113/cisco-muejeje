@@ -478,6 +478,15 @@ A refusal names its class:
 | `INVALID_ARGS` | a whitelisted operation given arguments it does not support |
 | `ENGINE_EXCEPTION` | the operation handler itself failed |
 
+**The entry point never throws, and that is enforced rather than assumed.**
+Admission, the whitelist lookup, the argument rules and the encoder are ordinary
+code that can fail the way ordinary code does, so the whole of dispatch runs
+behind one boundary and any unexpected failure inside it becomes an
+`ENGINE_EXCEPTION` envelope. The last-resort answer is a fixed string, because
+the encoder is one of the things that may have broken; it is the only hard-coded
+envelope in the artifact, and a gate holds it equal to what the kernel would
+have shaped.
+
 `ENGINE_EXCEPTION` is reserved for the last row. A malformed request, a
 protocol mismatch, a validation failure and an exceeded bound are never
 reported as one: nothing went wrong inside the engine when a request was
@@ -775,21 +784,33 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
 
 **An unreadable platform is an observation, not a failure.** No V6 error is
 reported for it: the request was admissible, and the answer is that no reading
-was obtained. Three reasons stay distinct, because a consumer acts differently
-on each — `PLATFORM_ABSENT` (there is no platform object here),
-`PLATFORM_CALL_FAILED` (it was asked and the call did not return) and
-`PLATFORM_ANSWER_UNUSABLE` (it answered, and the answer could not be
-attributed). **A denied privilege is one cause of the second, and the adapter
-does not claim to know which cause it was.**
+was obtained. Four reasons stay distinct, because a consumer acts differently on
+each:
+
+| Reason | What was observed |
+| --- | --- |
+| `PLATFORM_ABSENT` | there is no platform object here at all |
+| `PLATFORM_MEMBER_ABSENT` | the object is here and does not offer the member — **nothing was called** |
+| `PLATFORM_CALL_FAILED` | the member was called and the call did not return |
+| `PLATFORM_ANSWER_UNUSABLE` | it answered, and the answer could not be attributed |
+
+**A member that is not there is not a failed call**, and the boundary checks
+before it invokes. Nothing was called, so nothing was refused: that reading says
+the interface is not the one this artifact was written against, which is a
+different next step from a call that was reached and did not return. Collapsing
+them would invent a refusal nobody performed. **The adapter never names what
+made a call fail** — it cannot see that, and it does not guess.
 
 **Whose failure was it is part of the contract.** Exactly two things become an
-unavailable reading: a call made at the boundary, and an answer a declared
-validator refused. Anything else thrown inside an adapter is a defect in *this
-artifact*, and it is left to reach the dispatcher as `ENGINE_EXCEPTION`
-(MJ-022). Reporting it as `PLATFORM_CALL_FAILED` would manufacture an
-observation about Packet Tracer that Packet Tracer never produced — and on a
-target, where that reading is exactly what a missing privilege looks like, a
-consumer could not tell the two apart.
+unavailable reading: something the boundary observed about the platform, and an
+answer a declared validator refused. Anything else thrown inside an adapter is a
+defect in *this artifact* and reaches the dispatcher as `ENGINE_EXCEPTION`
+(MJ-022). That cuts both ways, and the second direction is easy to miss: **an
+argument outside an adapter's own declared bounds is a defect too.** V6
+admission has already refused anything outside an operation's rule and an
+operation defaults an argument nobody sent, so such a value came from our own
+code — clamping it would read a *different* window, or a different model, and
+report the result as an observation about Packet Tracer.
 
 **A capability with no evidenced privilege stays pending.** This module
 requests no privilege (MJ-025, MJ-032), so on a target these calls are denied

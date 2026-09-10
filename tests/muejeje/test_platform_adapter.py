@@ -8,22 +8,22 @@ those permissions cost: no mutation, no kernel state, no envelope, no dispatch,
 no Cisco enum mirror, and no call this repository cannot cite.
 
 **The read-only proof is an allowlist, not a list of forbidden verbs.** A
-blacklist of mutating prefixes admits every name nobody thought to forbid, and
-it cannot see a call at all once the member name is data. So the boundary
-carries the set of calls this artifact may make, the gates here hold that set
-equal to Cisco's documented getters in both directions, and no adapter names a
-platform member at a call site. The verb pattern stays as a second, cheaper
-line of defence over the allowlist itself.
+blacklist admits every name nobody thought to forbid, and once the member name
+is data it cannot see the call at all. So the boundary carries the set of calls
+this artifact may make, the gates here hold that set equal to Cisco's documented
+getters in both directions, and no adapter names a platform member at a call
+site; the verb pattern stays as a second line of defence. What actually ran is
+the half a reader cannot check by eye, so the recorded call log is compared
+against the same set — per operation, and as a union.
 
-The half a reader cannot check by eye is what actually ran, so the recorded
-call log is compared against the same set — per operation, and as a union, so
-neither an uncited call nor an admitted one nothing reaches goes unnoticed.
+That an adapter shapes no envelope and reads no kernel state is checked once,
+over every declared adapter, in `test_platform_declarations`; it used to be
+checked twice, and two copies of a rule are two rules waiting to disagree.
 
 What an adapter *reports* is `test_platform_readings` and
 `test_platform_module_walk`; the V6 surface in front of it is
 `test_platform_descriptors` and `test_platform_modules`. Nothing in any of them
-has reached `9.0.1.0858`, so both capabilities are `PENDING_TARGET` (MJ-015,
-MJ-031).
+has reached `9.0.1.0858` (MJ-015, MJ-031).
 """
 
 from __future__ import annotations
@@ -167,17 +167,6 @@ def test_no_adapter_names_a_platform_member_at_a_call_site(name: str):
     ) == set()
 
 
-@pytest.mark.parametrize("name", sorted(_adapter_names()))
-def test_an_adapter_reads_no_kernel_state_and_answers_no_request(name: str):
-    """It adapts. Shaping an answer and reading core belong to the kernel."""
-    body = _body(name)
-    for owned_elsewhere in (
-        "MUEJEJE_CORE", "MUEJEJE_V6_ERRORS", "muejejeV6Ok", "muejejeV6Fail",
-        "mcpDispatchV6", "muejejeV6OperationTable",
-    ):
-        assert owned_elsewhere not in body, owned_elsewhere
-
-
 # ---------------------------------------------------------------------------
 # Structural: the allowlist is the read-only proof.
 #
@@ -270,7 +259,8 @@ def test_the_call_log_would_notice_an_undocumented_call():
 def test_a_call_outside_the_allowlist_never_reaches_the_platform():
     """Refused by name, before the receiver is touched — and refused as a
     *defect*, since a bug of ours wearing `PLATFORM_CALL_FAILED` would be an
-    observation about Packet Tracer that Packet Tracer never produced."""
+    observation Packet Tracer never produced. An admitted member that is
+    missing is the opposite case, and is a reading."""
     probe = "\n".join([
         "function attempt(name) {",
         "  var touched = false;",
@@ -287,7 +277,10 @@ def test_a_call_outside_the_allowlist_never_reaches_the_platform():
     ])
     observed = dispatch_v6(
         _request(), prelude=probe,
-        report="{denied: attempt('setModel'), admitted: attempt('getModel')}",
+        report=(
+            "{denied: attempt('setModel'), admitted: attempt('getModel'),"
+            " missing: attempt('getType')}"
+        ),
     )
 
     assert observed["denied"]["touched"] is False
@@ -298,3 +291,6 @@ def test_a_call_outside_the_allowlist_never_reaches_the_platform():
     assert observed["admitted"] == {
         "answer": "read", "refused": None, "touched": True,
     }
+    assert observed["missing"]["refused"] == "PLATFORM_MEMBER_ABSENT", (
+        "a member that is not there was never called, so nothing failed"
+    )

@@ -47,16 +47,21 @@ var MUEJEJE_PLATFORM_LIMITS = {
     MAX_SLOTS: 64
 };
 
-/* Why a reading is unavailable. Three different facts, kept apart because a
+/* Why a reading is unavailable. Four different facts, kept apart because a
  * consumer acts differently on each.
  *
- * ABSENT       there is no platform object here at all.
- * CALL_FAILED  the platform was asked and the call did not return. A denied
- *              privilege is one cause; so is any other engine-side refusal,
- *              and this adapter cannot tell which, so it does not say.
- * UNUSABLE     the platform answered, and the answer could not be attributed:
- *              a count that is not a whole number, a missing descriptor. */
+ * ABSENT         there is no platform object here at all.
+ * MEMBER_ABSENT  the object is here and does not offer the member. Nothing was
+ *                called, so nothing failed: this says the interface is not the
+ *                one this artifact was written against, which is a different
+ *                next step from a call that was refused.
+ * CALL_FAILED    the member was called and the call did not return. What made
+ *                it fail is not something this adapter can see, so it does not
+ *                say — and in particular it does not name a privilege.
+ * UNUSABLE       the platform answered, and the answer could not be attributed:
+ *                a count that is not a whole number, a missing descriptor. */
 var MUEJEJE_PLATFORM_ABSENT = "PLATFORM_ABSENT";
+var MUEJEJE_PLATFORM_MEMBER_ABSENT = "PLATFORM_MEMBER_ABSENT";
 var MUEJEJE_PLATFORM_CALL_FAILED = "PLATFORM_CALL_FAILED";
 var MUEJEJE_PLATFORM_UNUSABLE = "PLATFORM_ANSWER_UNUSABLE";
 
@@ -65,19 +70,39 @@ var MUEJEJE_PLATFORM_UNAVAILABLE = "UNAVAILABLE";
 
 /* Which thrown values are a reading, and which are this artifact's own bug.
  *
- * The two sentinels are the only failures an adapter attributed to the
- * platform: one raised at the call boundary, one raised by a validator below.
+ * These three sentinels are the only failures an adapter attributed to the
+ * platform: two raised at the call boundary, one raised by a validator below.
  * Anything else got there from our own code, so it is rethrown for the
  * dispatcher to report as an engine exception. Swallowing it would publish a
  * platform observation nobody observed (MJ-031). */
 function muejejeReadingReason(thrown) {
     if (
-        thrown !== MUEJEJE_PLATFORM_CALL_FAILED
+        thrown !== MUEJEJE_PLATFORM_MEMBER_ABSENT
+        && thrown !== MUEJEJE_PLATFORM_CALL_FAILED
         && thrown !== MUEJEJE_PLATFORM_UNUSABLE
     ) {
         throw thrown;
     }
     return thrown;
+}
+
+/* An argument this artifact handed one of its own adapters.
+ *
+ * It is neither a platform answer nor a caller's input: V6 admission has
+ * already refused anything outside the rule an operation declares, and an
+ * operation supplies its own default for an argument nobody sent. So a value
+ * outside these bounds reached here from our own code, and the honest thing to
+ * do with it is fail. Clamping it would answer a different question from the
+ * one asked and then report the answer as an observation — the same class of
+ * mistake as reporting our own bug as a platform failure (MJ-022, MJ-031). */
+function muejejeReadingArgument(value, min, max) {
+    if (
+        typeof value !== "number" || value % 1 !== 0
+        || value < min || value > max
+    ) {
+        throw new Error("muejeje: adapter argument outside its declared bounds");
+    }
+    return value;
 }
 
 function muejejeReadingCount(value) {

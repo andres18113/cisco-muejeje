@@ -32,17 +32,22 @@ function muejejeAdapterUnavailable(reason, offset, limit) {
     };
 }
 
-/* Clamp the requested window. The caller's arguments were already bounded by
- * V6 admission, and they are bounded again here: what this adapter will do in
- * one call is its own decision, not the caller's. */
+/* The requested window, checked rather than clamped.
+ *
+ * It used to be clamped, and that was wrong in a way worth naming: an argument
+ * outside these bounds cannot come from a caller — V6 admission refuses that,
+ * and the operation defaults an argument nobody sent — so it can only come
+ * from our own code. Silently reading a different window and reporting the
+ * result as an observation would answer a question nobody asked. */
 function muejejeAdapterWindow(offset, limit) {
-    var start = typeof offset === "number" && offset % 1 === 0 && offset > 0
-        ? Math.min(offset, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET)
-        : 0;
-    var size = typeof limit === "number" && limit % 1 === 0 && limit > 0
-        ? Math.min(limit, MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW)
-        : MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW;
-    return {offset: start, limit: size};
+    return {
+        offset: muejejeReadingArgument(
+            offset, 0, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+        ),
+        limit: muejejeReadingArgument(
+            limit, 1, MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW
+        )
+    };
 }
 
 /* The one entry point. An unreadable platform is an observation about the

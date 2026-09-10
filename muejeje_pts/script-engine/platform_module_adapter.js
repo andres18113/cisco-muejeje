@@ -54,16 +54,13 @@ function muejejeAdapterModuleUnavailable(reason, deviceIndex) {
     );
 }
 
-/* The caller's index, bounded again here: V6 admission already checked it, and
- * what this adapter will do in one call is still its own decision. */
+/* The index, checked rather than defaulted. An index outside these bounds
+ * reached this adapter from our own code, and reading device 0 instead would
+ * report an observation about a model nobody asked about. */
 function muejejeAdapterDeviceIndex(deviceIndex) {
-    if (
-        typeof deviceIndex !== "number" || deviceIndex % 1 !== 0
-        || deviceIndex < 0
-    ) {
-        return 0;
-    }
-    return Math.min(deviceIndex, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET);
+    return muejejeReadingArgument(
+        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+    );
 }
 
 /* The one entry point. An unreadable platform is an observation about the

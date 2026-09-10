@@ -87,32 +87,50 @@ function muejejeV6OperationCatalog() {
 
 /* The single V6 entry point. Takes a JSON string, returns a JSON string.
  *
- * It never throws: every outcome the engine can reach is an envelope, because
- * an uncaught error inside a Script Engine call is not something a consumer
- * can correlate, diagnose or retry. */
+ * It never throws, and that is enforced here rather than assumed of everything
+ * it calls. Admission, the whitelist lookup and the argument rules are ordinary
+ * code and can fail the way ordinary code does; an uncaught error inside a
+ * Script Engine call is not something a consumer can correlate, diagnose or
+ * retry, and in Packet Tracer an uncaught one opens a modal. So the
+ * whole of dispatch runs behind one boundary and every outcome the engine can
+ * reach is an envelope (MJ-022).
+ *
+ * The last-resort envelope is `protocol_v6.js`'s: shaping an answer is that
+ * file's responsibility, including the answer that says nothing else worked. */
 function mcpDispatchV6(requestJson) {
+    try {
+        return muejejeV6Encode(muejejeV6Dispatch(requestJson));
+    } catch (engineError) {
+        return muejejeV6EngineFailure();
+    }
+}
+
+/* Admission, then the whitelist, then the operation's own argument rules. Each
+ * refusal is an envelope; none of them is an engine exception, because nothing
+ * went wrong inside the engine when a request was simply not admissible. */
+function muejejeV6Dispatch(requestJson) {
     var parsed = muejejeV6ParseRequest(requestJson);
     if (!parsed.ok) {
-        return muejejeV6Encode(parsed.envelope);
+        return parsed.envelope;
     }
     var request = parsed.request;
     var table = muejejeV6OperationTable();
     if (!Object.prototype.hasOwnProperty.call(table, request.op)) {
-        return muejejeV6Encode(muejejeV6Fail(
+        return muejejeV6Fail(
             request.operation_rid, request.op,
             MUEJEJE_V6_ERRORS.UNKNOWN_OPERATION,
             "operation is not admitted by the V6 whitelist"
-        ));
+        );
     }
     var operation = table[request.op];
     var argsError = muejejeV6ArgsError(request.args, operation.args);
     if (argsError !== null) {
-        return muejejeV6Encode(muejejeV6Fail(
+        return muejejeV6Fail(
             request.operation_rid, request.op,
             MUEJEJE_V6_ERRORS.INVALID_ARGS, argsError
-        ));
+        );
     }
-    return muejejeV6Encode(muejejeV6Run(request, operation));
+    return muejejeV6Run(request, operation);
 }
 
 /* The handler runs behind one boundary, and its failure is the only thing in
