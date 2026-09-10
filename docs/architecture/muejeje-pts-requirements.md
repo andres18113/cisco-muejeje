@@ -64,12 +64,25 @@ rule 6 ("never guess a PT API signature").
 
 ### MJ-004 — Consumer-specific logic stays outside Muejeje
 **Requirement.** Scenario, project and integration logic lives in the consumer.
-CP LIVE, PoE, Router0, voice, VLAN and topology concerns never enter the
-runtime, the build tooling or the provenance schema.
+What never enters the runtime, the build tooling or the provenance schema is a
+consumer's **identifiers** — the project a scenario belongs to, one topology's
+device names, a fixed address — and any behaviour that assumes them.
+
+**Generic networking vocabulary is not a consumer identifier.** DHCP, VLAN,
+OSPF, PoE, EIGRP, voice and RIPv2 are Packet Tracer's domain, not any one
+consumer's. Excluding them would forbid the runtime from ever describing the
+platform it adapts to, which is a different requirement from this one and not a
+desirable one.
 **Rationale.** This is MJ-001 stated as an exclusion, so that a violation is
-recognisable rather than arguable.
-**Verification.** `tests/muejeje/test_source_root.py` fails if a consumer's
-vocabulary appears in any packaged source under the owned root.
+recognisable rather than arguable. Drawing the line at identifiers rather than
+at subject matter is what keeps it recognisable: "does this name a specific
+project, device or endpoint" has an answer, where "does this sound
+scenario-ish" does not.
+**Verification.** `tests/muejeje/test_source_root.py` fails if a project
+identifier, a topology device name or a dotted-quad address appears in any
+packaged source, and asserts in the same module that generic networking
+vocabulary is *not* rejected — both directions, so neither half can invert
+unnoticed.
 **Status.** `ENFORCED`
 
 ## Contract boundaries
@@ -82,9 +95,9 @@ on Packet Tracer specifics.
 makes Muejeje's own internals free to change.
 **Verification.** The V6 envelope and its conformance tests
 (`tests/muejeje/test_protocol_v6.py`).
-**Status.** `ENFORCED` for the envelope and for `runtime.identify`; `BASELINED`
-for every operation not yet migrated to V6 — consumers still reach the legacy
-runtime for those.
+**Status.** `ENFORCED` for the envelope and for the two read-only operations,
+`runtime.identify` and `runtime.capabilities`; `BASELINED` for every operation
+not yet migrated to V6 — consumers still reach the legacy runtime for those.
 
 ### MJ-006 — Packet Tracer and its IpcAPI are the platform boundary
 **Requirement.** The southbound compatibility contract is Packet Tracer and its
@@ -294,16 +307,28 @@ asserted to hold no vocabulary of its own.
 ### MJ-019 — Dependency direction is inward and one-way
 **Requirement.** In the auditor, `build_state`, `manifest` and `provenance`
 depend on no sibling; `inventory` may depend on `build_state` and `provenance`;
-only `build` may depend on all of them. In the runtime, the direction is
-`lifecycle → dispatcher/operations → protocol + core`, and the V6 core depends
-on none of CP LIVE, WebView, HTTP, the File Bridge, PTBuilder, legacy `runCode`
-or arbitrary JavaScript execution. Cisco IPC access is an adapter concern and
-stays outside protocol, core and operation logic.
+`references` may depend on those three; only `build` may depend on all of them.
+In the runtime, the direction is `lifecycle → dispatcher/operations → protocol +
+core`, and the V6 core depends on none of CP LIVE, WebView, HTTP, the File
+Bridge, PTBuilder, legacy `runCode` or arbitrary JavaScript execution. Cisco IPC
+access is an adapter concern and stays outside protocol, core and operation
+logic.
+
+**The runtime gate is layer-aware.** Core, protocol, dispatch, lifecycle and
+operations may never name a transport or the platform. A *declared* adapter
+may, because naming the layer it adapts is what an adapter is for. Adapters are
+declared by path in the gate itself, both registries are empty today, and
+adding one is therefore a visible edit rather than a relaxation of the rule.
 **Rationale.** A cycle makes every module the whole system again, which is what
 the split was for. Naming the direction is what lets a violation be detected
-instead of argued.
-**Verification.** An import-graph test per auditor module; a source gate over
-the owned root for the forbidden runtime layers and for `ipc.*`.
+instead of argued. A blanket ban with no notion of an adapter would have to be
+deleted or ignored the first time a transport arrives, and either outcome loses
+the core boundary it was protecting.
+**Verification.** An import-graph test per auditor module, which resolves every
+spelling of an import — relative and absolute — to the sibling it names, so the
+rule cannot be satisfied by rephrasing. A layer gate over the owned root for
+transport symbols and for `ipc.*`, asserted on synthetic sources to report a
+core file and not a declared adapter.
 **Status.** `ENFORCED`
 
 ### MJ-020 — Source and test complexity budgets
@@ -418,6 +443,121 @@ runtime.
 shape and fails if any kernel source mentions `ARTIFACT_SHA256`.
 **Status.** `ENFORCED`
 
+### MJ-025 — The Script Module packaging identity is baselined
+**Requirement.** The module's packaging identity is decided, and every value is
+validated rather than merely present:
+
+| Option | Value | Why this one |
+| --- | --- | --- |
+| `module_id` | `io.github.andres18113.muejeje.runtime` | hierarchical and reverse-DNS shaped, rooted in a namespace the publisher demonstrably controls, so a second publisher's module cannot collide with this one |
+| `startup` | `on_startup` | the module must be able to answer `runtime.identify` without a human opening anything first. It is safe to start unconditionally precisely because it initiates nothing: no transport, no polling, no platform call |
+| `custom_interface_order` | `[muejeje_pts/interface/index.html]` | one static page, the only interface file that ships |
+| `engine_script_order` | core → protocol → operations (alphabetical) → dispatch → lifecycle | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019) |
+| `privileges` | `[]` | no operation makes a Cisco IPC call, so the module needs nothing. An empty set is a decision, not an omission |
+
+An option is **unresolved** when it is `null` — nobody has decided, which is not
+a defect — and **invalid** when it carries a value the platform could not
+accept. Those are different facts and stay different states (MJ-016). The two
+file orders must additionally name exactly the declared artifact inputs of
+their kind: an order pointing at a file that ships in no artifact describes a
+build nobody can perform.
+**Rationale.** `TODO-MODULE-ID`, `TODO-STARTUP` and `TODO-PRIVILEGES` blocked a
+complete recipe, and a recipe that is never complete has no id, so nothing
+downstream can be identified. Deciding them is what makes packaging reachable.
+Validating them is what stops a decided-but-unusable value — `startup:
+"whenever"` — from earning a recipe id.
+**Verification.** `tests/muejeje/test_manifest.py` drives one case per invalid
+shape per option and asserts `BUILD_INPUT_INVALID` with no recipe id;
+`tests/muejeje/test_build_state.py` asserts that the resolved manifest with the
+pinned builder reaches `PACKAGING_MANUAL_AVAILABLE` with a recipe id.
+**Status.** `ENFORCED` for the values and their validation; `BASELINED` for
+`module_id` acceptance by Packet Tracer itself, which needs target evidence
+(MJ-015). If target evidence shows the representation is invalid, the nearest
+official-compliant hierarchical form replaces it and the reason is recorded
+here.
+
+### MJ-026 — The transport and security contract, before any transport exists
+**Requirement.** No transport is implemented. These terms are baselined now so
+that the first one cannot be built with them left open:
+
+```text
+TOKEN_LOADED != HTTP_TOKEN_VALID
+HTTP reachability != authentication
+secrets never enter V6, logs or evidence; fingerprints may
+no automatic port scanning and no port fallback
+kernel and domain stay auth-agnostic and transport-agnostic
+HTTP default: 127.0.0.1:18123
+```
+
+- **`TOKEN_LOADED != HTTP_TOKEN_VALID`.** That a token was read from disk says
+  nothing about whether a peer accepted it. They are separate observations and
+  are recorded separately.
+- **Reachability is not authentication.** A socket that accepts a connection has
+  proved a socket exists. Nothing more may be inferred from it.
+- **Secrets never enter V6, logs or evidence.** A fingerprint — a truncated
+  digest that identifies *which* secret without carrying it — may, because
+  evidence needs to distinguish two tokens without ever holding one.
+- **No scanning, no fallback.** A runtime that searches for a port turns a
+  configuration error into a silent connection to something else. The default
+  is a single loopback endpoint; anything else is configured explicitly.
+- **The kernel stays agnostic.** No `mcpDispatchV6` path, operation or envelope
+  field is aware of a transport or of authentication. A transport is an adapter
+  that carries envelopes; it never changes what an envelope means.
+**Rationale.** Every one of these is easier to state before a transport exists
+than to retrofit into one. The default endpoint is written here rather than in
+the kernel for the same reason: an address in the kernel is a topology
+assumption (MJ-002).
+**Verification.** `tests/muejeje/test_source_root.py` fails if a packaged source
+names a transport symbol or hard-codes a dotted-quad address, and the adapter
+registries that would permit one are declared empty. The rest is `BASELINED`
+until a transport exists to test.
+**Status.** `BASELINED`; the kernel-side exclusions are `ENFORCED`.
+
+### MJ-027 — Batch and scale semantics
+**Requirement.** When batch execution exists it will be **bounded batches with
+per-item correlation and per-item outcome**. No implicit atomicity, no implicit
+rollback, and no ambiguous retry: a batch is not a transaction, and a partially
+applied batch reports exactly which items were applied and which were not.
+Python owns chunking, checkpoints and backpressure, because Python owns the
+evidence and the verdict (MJ-011).
+
+**~360 endpoints is an integration and scale target, never a runtime topology
+assumption.** The runtime never sizes itself to it, pre-allocates for it, or
+behaves differently above or below it. It is a statement about what an
+integration must eventually handle, not a property of the runtime (MJ-002).
+**Rationale.** An unbounded batch has no reportable failure mode: it either
+finishes or leaves an unknown prefix applied. Implicit atomicity would be a
+promise Packet Tracer cannot keep, and a retry over an ambiguous outcome
+converts one unknown into an unattributable one (MJ-012).
+**Verification.** Nothing yet — no batch operation exists. This is the contract
+the first one must satisfy.
+**Status.** `BASELINED`
+
+### MJ-028 — `runtime.capabilities` reports only what exists
+**Requirement.** `runtime.capabilities` is read-only, makes no platform call,
+and reports the runtime session token, the supported protocol versions, each
+admitted operation with its `read_only` flag, and the kernel features behind
+them. It reports **no roadmap**: a capability that does not exist is absent from
+the answer, never listed as planned or pending. It reaches **no verification
+verdict** about itself — the engine cannot audit the engine, so Python decides
+what an observation establishes (MJ-011).
+
+The whitelist has one owner. Both operations receive it from the dispatcher, so
+`runtime.identify`'s operation names and `runtime.capabilities`' operation
+descriptors can never describe different contracts.
+**Rationale.** A consumer that must discover the contract can only do so from an
+answer that is complete and current. A capability list that names future work is
+worse than none: it cannot be acted on, and it fails at the moment of use rather
+than at the moment of discovery.
+**Verification.** `tests/muejeje/test_runtime_capabilities.py` pins the result
+shape, asserts the reported whitelist equals the dispatcher's, asserts every
+reported feature names a symbol that exists in a kernel source, asserts the
+reply mentions no transport, platform or mutation concept, and asserts no
+self-certified verdict. `tests/muejeje/test_unobserved_claims.py` fails if a
+document names an operation the dispatcher does not admit, or omits one it does.
+**Status.** `ENFORCED` for the kernel's own logic under Node;
+`NOT_YET_LIVE_VERIFIED` against Packet Tracer `9.0.1.0858` (MJ-015).
+
 ## Open decisions
 
 Not requirements. Each needs a decision before it can become one.
@@ -425,9 +565,6 @@ Not requirements. Each needs a decision before it can become one.
 | TODO | Question | Blocks |
 | --- | --- | --- |
 | **TODO-MANIFEST-HOME** | The manifest now lives at `muejeje_pts/manifest/`. Its path is pinned in `infrastructure/pts/manifest.py`; if the owned root is ever renamed, that pin moves with it. | — |
-| **TODO-MODULE-ID** | The Script Module ID and its stability across rebuilds. | `build_options.module_id` |
-| **TODO-STARTUP** | `On Startup` vs `On Demand`. The file channel only runs while the module runs. | `build_options.startup` |
-| **TODO-PRIVILEGES** | The requested IPC privilege set. The privilege catalogue lives in `.pki` files that are not installed. | `build_options.privileges` |
 | **TODO-SIGNING** | Publisher signing (PKCS#12) and key custody. | reproducibility |
 
 ### Resolved
@@ -436,11 +573,16 @@ Not requirements. Each needs a decision before it can become one.
 | --- | --- |
 | **TODO-SRC-ROOT** | **RESOLVED.** `muejeje_pts/` is the owned source root: `script-engine/`, `interface/`, `manifest/`. `EXTENSION/**` stays untouched, keeps serving the existing published `.pts`, and is no longer any part of Muejeje's inventory — the completeness check now sweeps the owned root alone. The legacy `main.js` was not copied. |
 | **TODO-V6-SHAPE** | **RESOLVED for the kernel.** The envelope is `{v, operation_rid, op, args}` in and `{v, operation_rid, op, ok, result, error}` out, both as JSON strings, through the single entry point `mcpDispatchV6`. Operations are whitelisted by name with a per-operation argument whitelist, and the failure taxonomy is MJ-022. The whitelist admits `runtime.identify` alone; adding an operation extends the table, not the envelope. |
+| **TODO-MODULE-ID** | **RESOLVED** by `MJ-025`: `io.github.andres18113.muejeje.runtime`. Hierarchical and reverse-DNS shaped, rooted in a namespace the publisher controls. Stability across rebuilds is a property of the manifest, which is committed and hashed into recipe identity. Packet Tracer's own acceptance of the representation still needs target evidence (`MJ-015`). |
+| **TODO-STARTUP** | **RESOLVED** by `MJ-025`: `on_startup`. The module must answer `runtime.identify` without a human opening anything, and starting it unconditionally is safe precisely because it initiates nothing — no transport, no polling, no platform call. Revisit if and when a channel that *does* initiate is added. |
+| **TODO-PRIVILEGES** | **RESOLVED** by `MJ-025`: `[]`. No operation makes a Cisco IPC call, so the module requests nothing. The `.pki` privilege catalogue is still not installed, and this resolution deliberately does not need it: an empty set requires no catalogue to justify. The first operation that needs the platform reopens this with evidence for the one privilege it needs. |
 | **TODO-RECIPE-SCOPE** | **RESOLVED.** Manifest `schema_version: 2` splits inputs into `artifact_inputs` (bytes packaged into the `.pts`, required to live under the owned root), `tooling_inputs` (the auditor — ships nothing, still part of recipe identity) and `reference_inputs` (empty). A path may not appear in two categories. |
 
 ## Related documents
 
 - [Operating model](muejeje-runtime-operating-model.md) — governance and boundaries.
+- [Packaging recipe](../qa/muejeje-pts-packaging-recipe.md) — the complete
+  Scripting Interface procedure, its preconditions and what a run must record.
 - [v2 preflight inventory](../qa/muejeje-pts-v2-preflight-inventory.md) — the
   per-symbol evidence behind MJ-012, MJ-013 and MJ-014.
 - [ADR-001](../qa/muejeje-pts-adr-001-branch-realignment.md) and its

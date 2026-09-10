@@ -7,11 +7,12 @@ Three input categories, three different meanings:
 ``tooling``
     the auditor. Ships nothing, still decides how the artifact was inspected,
     so it belongs to recipe identity.
-``reference``
-    untracked, ignored, hash-pinned material. Empty today (MJ-013).
+The third category, `reference` — untracked, ignored, hash-pinned material this
+repository does not own — lives in `references`, because "our declared inputs"
+and "somebody else's bytes we checked against" are answered by different rules.
 
-The builder binary is measured here too: it is a declared input with a pinned
-hash, even though it is neither packaged nor tracked.
+The builder binary is measured here: it is a declared input with a pinned hash,
+even though it is neither packaged nor tracked.
 """
 
 from __future__ import annotations
@@ -25,7 +26,6 @@ from .provenance import (
     MAX_INPUT_BYTES,
     artifact_sha256,
     hash_file,
-    path_is_ignored,
     working_blob_matches_head,
 )
 
@@ -33,6 +33,11 @@ from .provenance import (
 # nothing else does. EXTENSION/** is the legacy MCP Control Center extension: it
 # keeps serving its own product and is not Muejeje artifact content.
 OWNED_SOURCE_ROOT = "muejeje_pts/"
+# The two kinds of packaged input, each with its own declared order in
+# `build_options`: engine files evaluate in order, interface files are imported
+# into the Custom Interfaces tab.
+ENGINE_SOURCE_ROOT = "muejeje_pts/script-engine/"
+INTERFACE_SOURCE_ROOT = "muejeje_pts/interface/"
 PACKAGED_SUFFIXES = frozenset(
     {".js", ".html", ".htm", ".css", ".png", ".gif", ".jpg", ".svg"}
 )
@@ -57,6 +62,7 @@ EXPECTED_TOOLING_INPUTS = (
     "src/packet_tracer_mcp/infrastructure/pts/inventory.py",
     "src/packet_tracer_mcp/infrastructure/pts/manifest.py",
     "src/packet_tracer_mcp/infrastructure/pts/provenance.py",
+    "src/packet_tracer_mcp/infrastructure/pts/references.py",
     "tools/build_muejeje_pts.py",
 )
 EXPECTED_BUILDER = {
@@ -64,7 +70,6 @@ EXPECTED_BUILDER = {
     "kind": "packet-tracer-scripting-interface",
     "sha256": "843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1",
 }
-_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 def logical_path(root: Path, value: Any) -> tuple[str | None, Path | None, str | None]:
@@ -157,6 +162,32 @@ def _measure_one(
         findings.block(f"invalid {label} input {logical}: {exc}")
 
 
+def check_declared_orders(options: dict[str, Any], *, findings: Findings) -> None:
+    """The two file orders must name exactly the artifact inputs of their kind.
+
+    `manifest` decides whether an order is a well-formed list of paths; this
+    decides whether those paths are files that actually ship. An order naming a
+    file no artifact contains describes a build nobody can perform, and one
+    omitting a file that does ship would leave it unevaluated in the module.
+    """
+    for name, prefix in (
+        ("engine_script_order", ENGINE_SOURCE_ROOT),
+        ("custom_interface_order", INTERFACE_SOURCE_ROOT),
+    ):
+        declared = options.get(name)
+        if not isinstance(declared, list):
+            continue  # Shape is the manifest's answer, already blocked there.
+        expected = {
+            logical for logical in EXPECTED_ARTIFACT_INPUTS
+            if logical.startswith(prefix)
+        }
+        if set(declared) != expected:
+            findings.block(
+                f"invalid build option {name}: must name exactly the declared "
+                f"artifact inputs under {prefix}"
+            )
+
+
 def sweep_owned_sources(tracked: frozenset[str]) -> list[str]:
     """Tracked packageable sources under the owned root that nobody declared.
 
@@ -169,93 +200,6 @@ def sweep_owned_sources(tracked: frozenset[str]) -> list[str]:
         and Path(item).suffix.lower() in PACKAGED_SUFFIXES
     }
     return sorted(tracked_assets - set(EXPECTED_ARTIFACT_INPUTS))
-
-
-def measure_reference_inputs(
-    root: Path,
-    manifest: dict[str, Any],
-    *,
-    tracked: frozenset[str],
-    findings: Findings,
-) -> list[dict[str, Any]]:
-    """Hash the untracked, ignored, pinned reference inventory (empty today)."""
-    values = manifest.get("reference_inputs")
-    if not isinstance(values, list):
-        findings.block("reference_inputs must be a list")
-        values = []
-    evidence: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for item in values:
-        entry = _reference_entry(
-            root, item, tracked=tracked, findings=findings, seen=seen,
-        )
-        if entry is not None:
-            evidence.append(entry)
-    return evidence
-
-
-def _reference_entry(
-    root: Path,
-    item: Any,
-    *,
-    tracked: frozenset[str],
-    findings: Findings,
-    seen: set[str],
-) -> dict[str, Any] | None:
-    if not isinstance(item, dict) or set(item) != {"path", "sha256"}:
-        findings.block("invalid reference input entry")
-        return None
-    logical, path, error = logical_path(root, item.get("path"))
-    if error:
-        findings.block(error)
-        return None
-    assert logical is not None and path is not None
-    if logical in seen:
-        findings.block(f"invalid duplicate reference input path: {logical}")
-        return None
-    seen.add(logical)
-    _check_reference_location(root, logical, tracked=tracked, findings=findings)
-    pin = _reference_pin(item.get("sha256"), logical, findings)
-    if not path.is_file():
-        findings.block_manual(f"missing reference input: {logical}")
-        return {"path": logical, "expected_sha256": pin, "actual_sha256": None}
-    try:
-        actual = hash_file(path, max_bytes=MAX_INPUT_BYTES)
-    except (OSError, ValueError) as exc:
-        findings.block(f"invalid reference input {logical}: {exc}")
-        return None
-    if pin is not None and actual != pin:
-        findings.block(f"reference SHA-256 mismatch: {logical}")
-    return {"path": logical, "expected_sha256": pin, "actual_sha256": actual}
-
-
-def _check_reference_location(
-    root: Path,
-    logical: str,
-    *,
-    tracked: frozenset[str],
-    findings: Findings,
-) -> None:
-    """A reference must be untracked and ignored: it is somebody else's bytes."""
-    if logical in tracked:
-        findings.block(f"reference input must be untracked: {logical}")
-    try:
-        ignored = path_is_ignored(root, logical)
-    except ValueError as exc:
-        # Git could not be asked, so "ignored" is unknown. Unknown fails closed.
-        findings.block(str(exc))
-        ignored = False
-    if not ignored:
-        findings.block(f"reference input must be ignored: {logical}")
-
-
-def _reference_pin(pin: Any, logical: str, findings: Findings) -> str | None:
-    if not isinstance(pin, str) or len(pin) != 64 or any(
-        ch not in _HEX_DIGITS for ch in pin
-    ):
-        findings.block(f"missing SHA-256 pin: {logical}")
-        return None
-    return pin
 
 
 def check_builder(

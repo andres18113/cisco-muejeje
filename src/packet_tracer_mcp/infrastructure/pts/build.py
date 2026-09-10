@@ -9,6 +9,8 @@ own. The rules live where they belong —
     the schema-2 document and its declarative fields.
 ``inventory``
     which paths may be declared, and what those files are.
+``references``
+    the untracked, ignored, hash-pinned material we do not own.
 ``provenance``
     Git identity, file hashes and recipe identity.
 
@@ -23,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import inventory, manifest as manifest_schema
+from . import inventory, manifest as manifest_schema, references
 from .build_state import (
     BUILD_AUTOMATION_UNPROVEN,
     BUILD_INPUT_INVALID,
@@ -83,6 +85,7 @@ def inspect_build(
         manifest, builder_path, findings=findings,
     )
     declared = _check_declared_fields(manifest, findings)
+    inventory.check_declared_orders(declared.options, findings=findings)
 
     _finalise(report, findings, git_failed=git_failed, declared=declared)
     _attach_recipe(
@@ -218,7 +221,7 @@ def _collect_inputs(
         findings.block(
             f"tracked owned source omitted from artifact_inputs: {logical}"
         )
-    report["inputs"]["reference"] = inventory.measure_reference_inputs(
+    report["inputs"]["reference"] = references.measure_reference_inputs(
         root, manifest, tracked=tracked, findings=findings,
     )
 

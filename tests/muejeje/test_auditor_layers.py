@@ -1,8 +1,8 @@
 """The auditor's modular cohesion and its dependency direction.
 
 `build_state`, `manifest` and `provenance` depend on no sibling; `inventory`
-may depend on the first two; only `build` may depend on all of them (MJ-018,
-MJ-019). A direction rule is only a rule if it holds however an import is
+may depend on the first two; `references` may depend on those three; only
+`build` may depend on all of them (MJ-018, MJ-019). A direction rule is only a rule if it holds however an import is
 spelled, so the gate reads relative and absolute forms of the same dependency
 alike.
 """
@@ -27,7 +27,10 @@ LAYERS: dict[str, frozenset[str]] = {
     "provenance": frozenset(),
     "manifest": frozenset(),
     "inventory": frozenset({"build_state", "provenance"}),
-    "build": frozenset({"build_state", "provenance", "manifest", "inventory"}),
+    "references": frozenset({"build_state", "provenance", "inventory"}),
+    "build": frozenset({
+        "build_state", "provenance", "manifest", "inventory", "references",
+    }),
     "__init__": frozenset({"build"}),
 }
 

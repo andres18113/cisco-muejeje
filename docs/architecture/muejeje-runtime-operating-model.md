@@ -66,9 +66,13 @@ Consequences, stated so they cannot be quietly reversed:
 - **A CP LIVE SHA may be recorded as integration evidence, never as the runtime
   contract.** Write it next to what it evidences ("integration observed against
   CP LIVE `<sha>`"), never as a version, prerequisite or watermark.
-- **No scenario behaviour enters Muejeje.** Nothing CP-LIVE-, PoE-, Router0-,
-  voice-, VLAN- or topology-specific belongs in the runtime, the build tooling or
-  the provenance schema. Scenario knowledge lives in the consumer.
+- **No scenario behaviour enters Muejeje.** No consumer's identifiers — a
+  project name, one topology's device names, a fixed address — and no behaviour
+  that assumes them belongs in the runtime, the build tooling or the provenance
+  schema. Scenario knowledge lives in the consumer. Generic networking
+  vocabulary is a different thing and is not excluded: DHCP, VLAN, OSPF and PoE
+  are Packet Tracer's domain, and a runtime that may not name them could not
+  describe the platform it adapts to (`MJ-004`).
 - Re-parenting the branch onto the baseline was a one-time ancestry fix. It
   created no ongoing subordination and no obligation to re-sync.
 
@@ -211,7 +215,10 @@ Packaging is the Scripting Interface (Extensions → Scripting → New PT Script
 Module → import engine and Custom Interface files → Save). Engine files evaluate
 in listed order, then `main()`; `cleanUp()` runs on stop; `#include` resolves one
 level and is expanded at save. `.pts` is an encrypted container, so content
-validation is behavioural only.
+validation is behavioural only. The complete procedure — preconditions, the
+resolved recipe, the steps and what a run must record — is
+[the packaging recipe](../qa/muejeje-pts-packaging-recipe.md). PTBuilder and
+community or offline packagers are not used.
 
 **Build state is five facts, not one.** The audit tool reports exactly one
 dominant state and keeps the axes readable in a `packaging_state` block:

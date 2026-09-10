@@ -24,6 +24,7 @@
     "src/packet_tracer_mcp/infrastructure/pts/inventory.py",
     "src/packet_tracer_mcp/infrastructure/pts/manifest.py",
     "src/packet_tracer_mcp/infrastructure/pts/provenance.py",
+    "src/packet_tracer_mcp/infrastructure/pts/references.py",
     "tools/build_muejeje_pts.py"
   ],
   "reference_inputs": [],
@@ -42,10 +43,12 @@
       "muejeje_pts/script-engine/dispatcher_v6.js",
       "muejeje_pts/script-engine/lifecycle.js"
     ],
-    "custom_interface_order": null,
-    "module_id": null,
-    "startup": null,
-    "privileges": null
+    "custom_interface_order": [
+      "muejeje_pts/interface/index.html"
+    ],
+    "module_id": "io.github.andres18113.muejeje.runtime",
+    "startup": "on_startup",
+    "privileges": []
   },
   "packaging": {
     "status": "unresolved",

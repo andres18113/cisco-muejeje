@@ -37,15 +37,26 @@ TOOLING_INPUTS = [
     "src/packet_tracer_mcp/infrastructure/pts/inventory.py",
     "src/packet_tracer_mcp/infrastructure/pts/manifest.py",
     "src/packet_tracer_mcp/infrastructure/pts/provenance.py",
+    "src/packet_tracer_mcp/infrastructure/pts/references.py",
     "tools/build_muejeje_pts.py",
 ]
 
+# The baselined packaging recipe (MJ-025). The synthetic repository declares
+# the same artifact inputs as this one, so these are the values the real
+# manifest carries; `test_declared_inputs` pins the two together.
 RESOLVED_OPTIONS = {
-    "engine_script_order": ["muejeje_pts/script-engine/lifecycle.js"],
+    "engine_script_order": [
+        "muejeje_pts/script-engine/core.js",
+        "muejeje_pts/script-engine/protocol_v6.js",
+        "muejeje_pts/script-engine/runtime_capabilities.js",
+        "muejeje_pts/script-engine/runtime_identity.js",
+        "muejeje_pts/script-engine/dispatcher_v6.js",
+        "muejeje_pts/script-engine/lifecycle.js",
+    ],
     "custom_interface_order": ["muejeje_pts/interface/index.html"],
-    "module_id": "com.muejeje.runtime",
+    "module_id": "io.github.andres18113.muejeje.runtime",
     "startup": "on_startup",
-    "privileges": ["PrivGetNetwork"],
+    "privileges": [],
 }
 
 
