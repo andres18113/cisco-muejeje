@@ -3,7 +3,8 @@
 These are the M0F gates. They apply to Muejeje-owned code **going forward** —
 the owned source root, the build auditor, its CLI and this test area — and
 deliberately not to unrelated legacy code, which was written under no such
-budget (MJ-018, MJ-019, MJ-020, MJ-021).
+budget (MJ-020, MJ-021). Modular cohesion and dependency direction are the
+same family of gate and live in `test_auditor_layers`.
 
 Two budgets per file type: a *target* every file is expected to meet, and a
 *hard limit* nothing may cross. A file over target needs a named justification
@@ -51,17 +52,6 @@ RETIRED_TEST_MODULES = (
     "tests/test_muejeje_build_identity.py",
     "tests/test_muejeje_source_root.py",
 )
-
-# Allowed intra-package imports, innermost layer first. A module may import from
-# the layers below it and never from a layer at or above its own.
-LAYERS: dict[str, frozenset[str]] = {
-    "build_state": frozenset(),
-    "provenance": frozenset(),
-    "manifest": frozenset(),
-    "inventory": frozenset({"build_state", "provenance"}),
-    "build": frozenset({"build_state", "provenance", "manifest", "inventory"}),
-    "__init__": frozenset({"build"}),
-}
 
 
 def owned_python_modules() -> list[Path]:
@@ -172,61 +162,6 @@ def test_the_function_budget_measures_branching_not_explaining():
 
     assert physical > FUNCTION_TARGET, "the case this gate exists for is gone"
     assert measured <= FUNCTION_TARGET
-
-
-# ---------------------------------------------------------------------------
-# Modular cohesion and dependency direction.
-# ---------------------------------------------------------------------------
-
-def test_the_auditor_is_split_into_the_layers_it_declares():
-    on_disk = {path.stem for path in PTS_PACKAGE.glob("*.py")}
-    assert on_disk == set(LAYERS), (
-        "every auditor module is a declared layer, and every declared layer "
-        f"exists: {on_disk ^ set(LAYERS)}"
-    )
-
-
-@pytest.mark.parametrize("module", sorted(LAYERS))
-def test_auditor_imports_only_flow_inward(module: str):
-    path = PTS_PACKAGE / f"{module}.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    siblings = set(LAYERS)
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.level == 1:
-            if node.module in siblings:
-                imported.add(node.module)
-            imported.update(
-                alias.name for alias in node.names if alias.name in siblings
-            )
-    forbidden = imported - LAYERS[module]
-    assert not forbidden, (
-        f"{module} may import {sorted(LAYERS[module])}; it reaches for {sorted(forbidden)}"
-    )
-
-
-def test_the_facade_holds_no_rule_of_its_own():
-    """`build.py` orchestrates. The vocabulary lives in the layers below it."""
-    body = (PTS_PACKAGE / "build.py").read_text(encoding="utf-8")
-    for owned_elsewhere in (
-        "PACKAGING_MANUAL_UNAVAILABLE =",
-        "OWNED_SOURCE_ROOT =",
-        "EXPECTED_ARTIFACT_INPUTS =",
-        "SCHEMA_VERSION =",
-        "hashlib",
-        "subprocess",
-    ):
-        assert owned_elsewhere not in body, owned_elsewhere
-
-
-def test_every_auditor_module_is_declared_as_a_tooling_input():
-    """A module nobody declared would change the audit outside recipe identity."""
-    from src.packet_tracer_mcp.infrastructure.pts import inventory
-
-    on_disk = {relative(path) for path in owned_python_modules()}
-    assert on_disk == set(inventory.EXPECTED_TOOLING_INPUTS), (
-        f"undeclared auditor modules: {sorted(on_disk ^ set(inventory.EXPECTED_TOOLING_INPUTS))}"
-    )
 
 
 # ---------------------------------------------------------------------------
