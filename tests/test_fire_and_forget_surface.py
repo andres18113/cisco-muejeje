@@ -266,6 +266,10 @@ def test_the_typed_configuration_channel_is_the_only_mutation_runtime():
         "infrastructure/execution/enterprise_control_plane_runtime.py",
         "infrastructure/execution/enterprise_security_runtime.py",
         "infrastructure/execution/enterprise_voice_runtime.py",
+        # Closed POE-3B session: caller supplies a typed mode and exact ports;
+        # this owner privately composes the same mutation primitive and proves
+        # effect only through the independent power-inline readback.
+        "infrastructure/execution/poe3b_session.py",
         "infrastructure/execution/probe_runtime.py",
     ], f"Apareció otro dueño del canal de mutación: {owners}"
 

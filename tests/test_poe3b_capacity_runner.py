@@ -15,12 +15,17 @@ import pytest
 def runner(monkeypatch, tmp_path):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "tools"))
     module = importlib.import_module("poe3a_pse_live")
-    experiment = importlib.import_module("poe2_ap_live")
-    # The actual constructor opens the machine mailbox. Replace before constructing.
-    monkeypatch.setattr(experiment, "FileBridge", lambda: SimpleNamespace(send=None))
-    monkeypatch.setattr(experiment.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(module, "ROOT", tmp_path)
     return module
+
+
+def empty_file_ledger(runner):
+    session = runner.PacketTracerPoE3BSession(
+        "offline-ledger",
+        switch_ports=("FastEthernet0/1",),
+        transport=SimpleNamespace(),
+    )
+    return session.file_operation_ledger()
 
 
 @pytest.mark.parametrize("argv", [[], ["--execute"], ["--model", "3560-24PS"],
@@ -48,36 +53,49 @@ def test_plan_is_derived_with_exact_count_and_order(runner, model, count, first,
 
 def test_experiment_applies_ordered_ports_and_observes_whole_tuple_twice(runner):
     ports = ("FastEthernet0/2", "FastEthernet0/1")
-    exp = runner.Experiment("offline", switch_ports=ports)
-    assert exp.switch_port == ports[0]
     configured, observed = [], []
-    exp.config = SimpleNamespace(configure_ios=lambda device, payload: configured.append(payload) or True)
-    exp.bridge = SimpleNamespace(collect_completed=lambda: None, _pending={})
     class Done(Exception):
         pass
-    def observe(device, requested):
+    def observe(device, requested, label):
         observed.append(requested)
         if len(observed) == 2:
             raise Done
         return SimpleNamespace(command_result=None)
-    exp.observer = SimpleNamespace(observe_poe_inline_status=observe)
-    exp.apply(runner.PoEInlineMode.NEVER)
-    assert [p.split("interface ")[1].splitlines()[0] for p in configured] == list(ports)
+    transport = SimpleNamespace(
+        apply_inline_mode=lambda device, requested, mode: configured.append(
+            (device, requested, mode)
+        ),
+        capture_inline_status=observe,
+    )
+    session = runner.PacketTracerPoE3BSession(
+        "offline", switch_ports=ports, transport=transport,
+    )
+    session.apply_inline_mode(runner.PoEInlineMode.NEVER)
+    assert configured == [
+        (session.switch_name, ports, runner.PoEInlineMode.NEVER),
+    ]
     with pytest.raises(Done):
-        exp.capture("NEVER")
+        session.capture_inline_status("NEVER")
+        session.capture_inline_status("NEVER")
     assert observed == [ports, ports]
 
 
-@pytest.mark.parametrize("ports", [(), ("FastEthernet0/1", "FastEthernet0/1")])
+@pytest.mark.parametrize("ports", [
+    (),
+    ("FastEthernet0/1", "FastEthernet0/1"),
+    ("FastEthernet0/1\nwrite memory",),
+])
 def test_experiment_rejects_empty_or_duplicate_ports(runner, ports):
     with pytest.raises(ValueError):
-        runner.Experiment("offline", switch_ports=ports)
+        runner.PacketTracerPoE3BSession(
+            "offline", switch_ports=ports, transport=SimpleNamespace(),
+        )
 
 
 @pytest.mark.parametrize("model,count", [("3560-24PS", 21), ("3650-24PS", 11)])
 def test_fixture_has_one_phone_and_link_per_governed_binding(runner, model, count):
     plan = runner.governed_plan(model)
-    made, links, attempted = [], [], []
+    made, links = [], []
     class Device(SimpleNamespace):
         def model_dump(self, **kwargs):
             return vars(self)
@@ -87,17 +105,22 @@ def test_fixture_has_one_phone_and_link_per_governed_binding(runner, model, coun
     def link(switch, port, phone, endpoint_port):
         links.append((port, endpoint_port))
         return Device(port=port)
-    exp = SimpleNamespace(switch="SW", endpoint="PH", fixture=SimpleNamespace(
-        create_device=create, create_link=link))
-    created = []
-    runner.create_fixture(exp, plan, attempted, created,
-                          artifacts=runner.reserve_artifacts("offline"))
+    transport = SimpleNamespace(create_device=create, create_link=link)
+    session = runner.PacketTracerPoE3BSession(
+        "offline",
+        switch_ports=tuple(binding.switch_port for binding in plan.bindings),
+        endpoint_role="PH",
+        transport=transport,
+    )
+    session.create_fixture(plan.candidate_model, plan.bindings)
     assert len(made) == count + 1 and len(links) == count
-    assert made[0] == (model, "SW", tuple(b.switch_port for b in plan.bindings))
+    assert made[0] == (
+        model, session.switch_name, tuple(b.switch_port for b in plan.bindings),
+    )
     assert all(m[0] == "7960" and m[2] == ("Switch",) for m in made[1:])
-    assert attempted == [m[1] for m in made]
-    assert created == attempted
-    assert len(set(attempted)) == count + 1
+    assert session.attempted_device_names == tuple(m[1] for m in made)
+    assert session.created_device_names == session.attempted_device_names
+    assert len(set(session.attempted_device_names)) == count + 1
     assert links == [(b.switch_port, "Switch") for b in plan.bindings]
 
 
@@ -122,21 +145,31 @@ def facts():
 
 def test_ephemeral_evidence_carries_acquired_facts_and_explicit_file_ledgers(runner):
     baseline, restoration, final = facts()
-    file_operations = runner.ephemeral_file_operation_guard()
+    file_operation_ledger = empty_file_ledger(runner)
     evidence = runner.ephemeral_safety_for(
-        baseline, restoration, final, [], file_operations=file_operations,
+        baseline,
+        restoration,
+        final,
+        [],
+        file_operation_ledger=file_operation_ledger,
     )
     assert runner.validate_live_session_positive_admission(evidence).is_valid
     assert evidence.authorized_file_operations == ()
     assert evidence.attempted_file_operations == ()
-    assert evidence.executed_file_operations == ()
     assert evidence.denied_file_operations == ()
+    assert evidence.invoked_file_operations == ()
+    assert evidence.completed_file_operations == ()
+    assert evidence.indeterminate_file_operations == ()
     assert evidence.packet_tracer_pids_before == evidence.packet_tracer_pids_after == (42,)
     assert evidence.source_tree_before == "c" * 40
     assert not any("canonical" in key or "disposable" in key for key in evidence.model_dump())
     final["processes"] = [dict(Name="PacketTracer.exe", ProcessId=99)]
     changed = runner.ephemeral_safety_for(
-        baseline, restoration, final, [], file_operations=file_operations,
+        baseline,
+        restoration,
+        final,
+        [],
+        file_operation_ledger=file_operation_ledger,
     )
     assert changed.packet_tracer_pids_after == (99,)
     assert not runner.validate_live_session_positive_admission(changed).is_valid
@@ -146,11 +179,15 @@ def test_ephemeral_save_attempt_uses_governed_boundary_and_blocks_admission(
     runner,
 ) -> None:
     baseline, restoration, final = facts()
-    file_operations = runner.ephemeral_file_operation_guard()
+    session = runner.PacketTracerPoE3BSession(
+        "offline-save-attempt",
+        switch_ports=("FastEthernet0/1",),
+        transport=SimpleNamespace(),
+    )
     dispatched: list[str] = []
 
-    with pytest.raises(runner.PacketTracerFileOperationDenied):
-        file_operations.attempt(
+    with pytest.raises(RuntimeError, match="file operation denied"):
+        session.attempt_workspace_file_operation(
             "save",
             lambda: dispatched.append("save reached Packet Tracer"),
         )
@@ -160,19 +197,23 @@ def test_ephemeral_save_attempt_uses_governed_boundary_and_blocks_admission(
         restoration,
         final,
         [],
-        file_operations=file_operations,
+        file_operation_ledger=session.file_operation_ledger(),
     )
-    ledger = file_operations.snapshot()
+    ledger = session.file_operation_ledger()
 
     assert ledger.authorized_operations == ()
     assert ledger.attempted_operations == ("save",)
     assert ledger.denied_operations == ("save",)
-    assert ledger.executed_operations == ()
+    assert ledger.invoked_operations == ()
+    assert ledger.completed_operations == ()
+    assert ledger.indeterminate_operations == ()
     assert dispatched == []
     assert evidence.authorized_file_operations == ledger.authorized_operations
     assert evidence.attempted_file_operations == ("save",)
-    assert evidence.executed_file_operations == ledger.executed_operations
     assert evidence.denied_file_operations == ("save",)
+    assert evidence.invoked_file_operations == ()
+    assert evidence.completed_file_operations == ()
+    assert evidence.indeterminate_file_operations == ()
     assert evidence.positive_claim_allowed is False
     assert not runner.validate_live_session_positive_admission(evidence).is_valid
 
@@ -186,7 +227,7 @@ def test_transport_failure_with_same_pid_is_unhealthy_but_not_a_crash(runner) ->
         restoration,
         final,
         [],
-        file_operations=runner.ephemeral_file_operation_guard(),
+        file_operation_ledger=empty_file_ledger(runner),
     )
 
     assert evidence.runtime_healthy is False
@@ -219,7 +260,7 @@ def test_crash_state_comes_only_from_process_continuity(
         restoration,
         final,
         [],
-        file_operations=runner.ephemeral_file_operation_guard(),
+        file_operation_ledger=empty_file_ledger(runner),
     )
 
     assert evidence.runtime_healthy is False
@@ -245,7 +286,7 @@ def persist_inputs(runner):
         captures=typed_captures(runner, plan), gates=tuple(sorted(runner.COMPLETENESS_KEYS)))
     return dict(plan=plan, scope=scope, artifacts=artifacts, baseline=baseline, restoration=restoration,
                 safety=final, problems=[],
-                file_operations=runner.ephemeral_file_operation_guard())
+                file_operation_ledger=empty_file_ledger(runner))
 
 
 @pytest.mark.parametrize("area,key", [
@@ -272,18 +313,18 @@ def test_missing_boundary_never_constructs_positive_result_or_saves(runner, monk
         runner.persist_qualification(**inputs, store=SimpleNamespace(save_runtime=forbidden))
 
 
-def test_persistence_requires_the_observed_file_operation_guard(
+def test_persistence_requires_the_observed_file_operation_ledger(
     runner,
     monkeypatch,
 ) -> None:
     inputs = persist_inputs(runner)
-    inputs["file_operations"] = None
+    inputs["file_operation_ledger"] = None
 
     def forbidden(*args, **kwargs):
-        pytest.fail("Missing PT-file guard crossed the persistence boundary")
+        pytest.fail("Missing PT-file ledger crossed the persistence boundary")
 
     monkeypatch.setattr(runner, "CapabilityProbeResult", forbidden)
-    with pytest.raises(ValueError, match="file-operation guard"):
+    with pytest.raises(ValueError, match="file-operation ledger"):
         runner.persist_qualification(
             **inputs,
             store=SimpleNamespace(save_runtime=forbidden),
@@ -347,8 +388,10 @@ def test_snapshot_saved_only_after_both_validators_accept(runner, monkeypatch):
     assert probe.observed_value == 21
     assert probe.evidence_source is runner.EvidenceSource.CONTROLLED_PROBE
     assert probe.context.live_session_safety.attempted_file_operations == ()
-    assert probe.context.live_session_safety.executed_file_operations == ()
     assert probe.context.live_session_safety.denied_file_operations == ()
+    assert probe.context.live_session_safety.invoked_file_operations == ()
+    assert probe.context.live_session_safety.completed_file_operations == ()
+    assert probe.context.live_session_safety.indeterminate_file_operations == ()
     assert probe.evidence() is not None
 
 
@@ -377,8 +420,12 @@ def measured_capture(runner, plan, label="AUTO_1"):
         capture_complete=True, device_identity_provenance="confirmed_unique",
         observed_device_name="SW", switch_identity="SW", fresh_output_observed=True,
         status="observed", refusal_reason="")
-    return SimpleNamespace(observation=observation, repeat_observation=deepcopy(observation),
-        expected_prompt="SW#", stable=True, raw_sha256=hashlib.sha256(raw.encode()).hexdigest(),
+    class Capture(SimpleNamespace):
+        def model_dump(self, **kwargs):
+            return dict(vars(self))
+    return Capture(observation=observation, repeat_observation=deepcopy(observation),
+        expected_prompt="SW#", stable=True, raw_file=label.lower() + ".txt",
+        raw_sha256=hashlib.sha256(raw.encode()).hexdigest(),
         table_completeness={key: True for key in runner.COMPLETENESS_KEYS})
 
 
@@ -435,17 +482,37 @@ def test_missing_environment_measurement_cannot_save(runner, area, key):
 
 
 def test_cleanup_attempts_every_identity_even_after_a_deletion_failure(runner):
-    attempted = ["SW", "PH1", "PH2", "PH3"]
-    calls, problems = [], []
+    plan = runner.governed_plan("3560-24PS")
+    bindings = plan.bindings[:3]
+    calls = []
+    class Device(SimpleNamespace):
+        def model_dump(self, **kwargs):
+            return dict(vars(self))
+    transport = SimpleNamespace(
+        create_device=lambda model, name, ports, **kwargs: Device(
+            model=model, name=name,
+        ),
+        create_link=lambda *args: Device(linked=True),
+    )
+    session = runner.PacketTracerPoE3BSession(
+        "offline-cleanup",
+        switch_ports=tuple(binding.switch_port for binding in bindings),
+        transport=transport,
+    )
+    session.create_fixture(plan.candidate_model, bindings)
+    switch, phone1, phone2, phone3 = session.attempted_device_names
     def delete(name):
         calls.append(name)
-        if name == "PH2":
+        if name == phone2:
             raise RuntimeError("controlled failure")
-        return name != "PH1"
-    exp = SimpleNamespace(fixture=SimpleNamespace(delete_device=delete))
-    deleted = runner.cleanup_fixture(exp, attempted, problems)
-    assert calls == ["PH3", "PH2", "PH1", "SW"]
-    assert deleted == ["PH3", "SW"] and len(problems) == 2
+        return name != phone1
+    transport.delete_device = delete
+
+    cleanup = session.cleanup_fixture()
+
+    assert calls == [phone3, phone2, phone1, switch]
+    assert cleanup.deleted == (phone3, switch)
+    assert len(cleanup.problems) == 2
 
 
 def test_both_wrong_build_measurements_never_save(runner):
@@ -459,30 +526,49 @@ def test_both_wrong_build_measurements_never_save(runner):
 
 
 def test_partial_fixture_tracks_created_identity_before_link_failure(runner):
-    attempted, created = [], []
     plan = runner.governed_plan("3560-24PS")
+    class Device(SimpleNamespace):
+        def model_dump(self, **kwargs):
+            return dict(vars(self))
     def link(*args):
         raise RuntimeError("link failure")
-    exp = SimpleNamespace(switch="SW", endpoint="PH", fixture=SimpleNamespace(
-        create_device=lambda model, *args, **kwargs: SimpleNamespace(model=model),
-        create_link=link))
+    session = runner.PacketTracerPoE3BSession(
+        "offline-partial",
+        switch_ports=tuple(binding.switch_port for binding in plan.bindings),
+        transport=SimpleNamespace(
+            create_device=lambda model, name, *args, **kwargs: Device(
+                model=model, name=name,
+            ),
+            create_link=link,
+        ),
+    )
     with pytest.raises(RuntimeError, match="link failure"):
-        runner.create_fixture(exp, plan, attempted, created,
-                              artifacts=runner.reserve_artifacts("offline"))
-    assert attempted == created == ["SW", "PH-1"]
+        session.create_fixture(plan.candidate_model, plan.bindings)
+    assert session.attempted_device_names == session.created_device_names
+    assert session.attempted_device_names == (
+        session.switch_name,
+        session.endpoint_prefix + "-1",
+    )
 
 
 @pytest.mark.parametrize("malformed", [False, True])
 def test_real_observer_malformed_never_row_cannot_cross_persistence(runner, malformed):
     # The sole fake is the external IOS transport result. Both observer reads,
-    # Experiment.capture, typed translation, validators and snapshot builder run.
+    # session capture, typed translation, validators and snapshot builder run.
     ios = importlib.import_module(runner.parse_show_power_inline.__module__)
     observer_module = importlib.import_module(
         "packet_tracer_mcp.infrastructure.execution.poe_inline_observer")
+    session_module = importlib.import_module(
+        "packet_tracer_mcp.infrastructure.execution.poe3b_session")
     inputs = persist_inputs(runner)
     plan = inputs["plan"]
-    exp = runner.Experiment("offline-observer", switch_ports=tuple(b.switch_port for b in plan.bindings))
-    exp.switch = "SW"
+    transport = session_module.PacketTracerPoE3BLiveTransport(
+        bridge=SimpleNamespace(
+            send=lambda script: True,
+            send_and_wait=lambda script, timeout: None,
+        ),
+        sleeper=lambda seconds: None,
+    )
     captures, problems, saved = [], [], []
     for label in ("AUTO_1", "NEVER", "AUTO_2"):
         raw = measured_capture(runner, plan, label).observation["raw_output"]
@@ -498,11 +584,13 @@ def test_real_observer_malformed_never_row_cannot_cross_persistence(runner, malf
             echo_observed="show power inline", expected_prompt="SW#",
             pager_continuation="not_encountered", pager_pages_captured=1,
             truncated_by_pager=False)
-        exp.observer = observer_module.GovernedPoEInlineObserver(
-            SimpleNamespace(qualify=lambda *args: dispatch))
-        acquired = exp.capture(label)
+        transport._observer = observer_module.GovernedPoEInlineObserver(
+            SimpleNamespace(qualify=lambda *args, dispatch=dispatch: dispatch))
+        acquired = transport.capture_inline_status(
+            "SW", tuple(binding.switch_port for binding in plan.bindings), label,
+        )
         try:
-            captures.append(runner.pse_capture(plan, label, acquired, exp.switch))
+            captures.append(runner.pse_capture(plan, label, acquired, "SW"))
         except ValueError as exc:
             problems.append(str(exc))
     inputs["scope"] = replace(inputs["scope"], captures=tuple(captures))
@@ -549,12 +637,25 @@ def test_artifact_destination_is_reserved_exclusively_before_any_fixture_mutatio
     with pytest.raises(FileExistsError):
         runner.reserve_artifacts("offline")
     assert list(first.directory.iterdir()) == []
-    # A caller cannot skip reservation merely by calling the fixture builder.
+    # A caller cannot enter the bounded session without an exact reservation.
+    plan = runner.governed_plan("3560-24PS")
     def forbidden(*args, **kwargs):
         pytest.fail("Fixture mutation preceded destination safety")
-    exp = SimpleNamespace(switch="SW", endpoint="PH", fixture=SimpleNamespace(create_device=forbidden))
+    session = runner.PacketTracerPoE3BSession(
+        "offline-unreserved",
+        switch_ports=tuple(binding.switch_port for binding in plan.bindings),
+        transport=SimpleNamespace(bridge_healthy=forbidden),
+    )
     with pytest.raises(ValueError):
-        runner.create_fixture(exp, runner.governed_plan("3560-24PS"), [], [], artifacts=None)
+        runner.execute_governed_qualification(
+            session=session,
+            plan=plan,
+            baseline=facts()[0],
+            artifacts=None,
+            store=SimpleNamespace(save_runtime=forbidden),
+            process_probe=forbidden,
+            source_state_probe=forbidden,
+        )
 
 
 @pytest.mark.parametrize("failure", ["missing", "removed", "scope_mismatch", "replacement"])
@@ -576,3 +677,153 @@ def test_snapshot_persistence_requires_original_exact_artifact_reservation(runne
     monkeypatch.setattr(runner, "CapabilityProbeResult", forbidden)
     with pytest.raises(ValueError):
         runner.persist_qualification(**inputs, store=SimpleNamespace(save_runtime=forbidden))
+
+
+def test_runner_cycle_uses_only_the_instrumented_bounded_session_transport(
+    runner,
+) -> None:
+    plan = runner.governed_plan("3560-24PS")
+    baseline, _restoration, _final = facts()
+    artifacts = runner.reserve_artifacts("offline-e2e")
+    saved = []
+
+    class Dump(SimpleNamespace):
+        def model_dump(self, **kwargs):
+            return dict(vars(self))
+
+    class InstrumentedPoE3BTransport:
+        def __init__(self):
+            self.calls = []
+
+        def record(self, operation):
+            self.calls.append(operation)
+
+        def bridge_healthy(self):
+            self.record(runner.PoE3BSessionOperation.TRANSPORT_HEALTH)
+            return True
+
+        def mailbox_entries(self):
+            self.record(runner.PoE3BSessionOperation.MAILBOX_OBSERVATION)
+            return ()
+
+        def start_control_bridge(self):
+            self.record(runner.PoE3BSessionOperation.CONTROL_BRIDGE_START)
+            return dict(
+                authenticated_status=200,
+                unauthenticated_status=401,
+                active_pt_transport="instrumented_session_transport",
+            )
+
+        def stop_control_bridge(self):
+            self.record(runner.PoE3BSessionOperation.CONTROL_BRIDGE_STOP)
+
+        def environment(self):
+            self.record(runner.PoE3BSessionOperation.ENVIRONMENT_OBSERVATION)
+            return dict(
+                devices=0,
+                links=0,
+                saved_filename="",
+                simulation_mode=False,
+                pt_version=plan.packet_tracer_build,
+            )
+
+        def inventory_fingerprint(self):
+            self.record(runner.PoE3BSessionOperation.INVENTORY_OBSERVATION)
+            return "a" * 64 + "|"
+
+        def device_names(self):
+            self.record(runner.PoE3BSessionOperation.DEVICE_NAMES_OBSERVATION)
+            return frozenset()
+
+        def create_device(self, model, name, required_ports, *, arm):
+            self.record(runner.PoE3BSessionOperation.FIXTURE_DEVICE_CREATE)
+            return Dump(name=name, model=model, observed_ports=list(required_ports))
+
+        def create_link(self, switch, switch_port, endpoint, endpoint_port):
+            self.record(runner.PoE3BSessionOperation.FIXTURE_LINK_CREATE)
+            return Dump(
+                first=dict(device_name=switch.name, port=switch_port),
+                second=dict(device_name=endpoint.name, port=endpoint_port),
+            )
+
+        def wait_until_ready(self, switch_name, *, timeout_seconds):
+            self.record(runner.PoE3BSessionOperation.DEVICE_READINESS)
+            return Dump(state="operational_ready", attempts=1)
+
+        def apply_inline_mode(self, switch_name, switch_ports, mode):
+            self.record(runner.PoE3BSessionOperation.INLINE_MODE_APPLY)
+
+        def capture_inline_status(self, switch_name, switch_ports, label):
+            self.record(runner.PoE3BSessionOperation.INLINE_CAPTURE)
+            capture = measured_capture(runner, plan, label)
+            for observation in (
+                capture.observation, capture.repeat_observation,
+            ):
+                observation["switch_identity"] = switch_name
+                observation["observed_device_name"] = switch_name
+                observation["command_result"]["observed_device_name"] = switch_name
+            capture.table_completeness = runner.completeness(
+                capture.observation,
+                capture.expected_prompt,
+                capture.stable,
+                switch_name,
+            )
+            return capture
+
+        def delete_device(self, name):
+            self.record(runner.PoE3BSessionOperation.FIXTURE_DEVICE_DELETE)
+            return True
+
+        def retire_session_residue(self, preexisting):
+            self.record(runner.PoE3BSessionOperation.RESIDUE_RETIRE)
+            return ()
+
+        def wait_for_inventory_fingerprint(self, expected):
+            self.record(runner.PoE3BSessionOperation.INVENTORY_RESTORATION)
+            return expected
+
+        def collect_completed(self):
+            self.record(runner.PoE3BSessionOperation.IPC_DRAIN)
+
+        def transport_problems(self):
+            self.record(runner.PoE3BSessionOperation.TRANSPORT_PROBLEMS)
+            return ()
+
+    transport = InstrumentedPoE3BTransport()
+    session = runner.PacketTracerPoE3BSession(
+        artifacts.run_id,
+        switch_ports=tuple(binding.switch_port for binding in plan.bindings),
+        endpoint_role="PH",
+        transport=transport,
+    )
+    source = dict(
+        source_branch="feature/runtime-ripv2",
+        source_head="b" * 40,
+        source_tree="c" * 40,
+        worktree_clean=True,
+    )
+    execution = runner.execute_governed_qualification(
+        session=session,
+        plan=plan,
+        baseline=baseline,
+        artifacts=artifacts,
+        store=SimpleNamespace(
+            save_runtime=lambda snapshot: saved.append(snapshot)
+            or Path("synthetic-snapshot.json"),
+        ),
+        process_probe=lambda: [dict(Name="PacketTracer.exe", ProcessId=42)],
+        source_state_probe=lambda: dict(source),
+    )
+
+    observed = tuple(record.operation for record in session.dispatches)
+    assert execution.problems == []
+    assert execution.snapshot_path == Path("synthetic-snapshot.json")
+    assert saved == [execution.snapshot]
+    assert observed == tuple(transport.calls)
+    assert runner.PoE3BSessionOperation.WORKSPACE_FILE_OPERATION not in observed
+    assert observed.count(runner.PoE3BSessionOperation.FIXTURE_DEVICE_CREATE) == 22
+    assert observed.count(runner.PoE3BSessionOperation.FIXTURE_LINK_CREATE) == 21
+    assert observed.count(runner.PoE3BSessionOperation.INLINE_MODE_APPLY) == 4
+    assert observed.count(runner.PoE3BSessionOperation.INLINE_CAPTURE) == 4
+    assert observed.count(runner.PoE3BSessionOperation.FIXTURE_DEVICE_DELETE) == 22
+    assert execution.file_operation_ledger.ephemeral_safe

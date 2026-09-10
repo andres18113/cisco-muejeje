@@ -3,18 +3,21 @@
 Only model and qualification identity are caller supplied. The ordered binding
 set comes from the Router0 capacity plan. Positive schema-3 runtime evidence is
 persisted only after cleanup, ephemeral safety admission and schema decoding.
-No Packet Tracer file operation is authorized or executed by this runner.
+All Packet Tracer access crosses one bounded session; its workspace-file policy
+is empty and its observed ledger must remain empty.
 """
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
-from secrets import token_hex, token_urlsafe
+from secrets import token_hex
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -46,10 +49,11 @@ from packet_tracer_mcp.domain.enterprise.services.poe_pse_multiport_claims impor
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
-from packet_tracer_mcp.infrastructure.execution.live_bridge import PTCommandBridge
-from packet_tracer_mcp.infrastructure.execution.pt_file_operations import (
-    PacketTracerFileOperationDenied,
-    PacketTracerFileOperationGuard,
+from packet_tracer_mcp.infrastructure.execution.poe3b_session import (
+    PacketTracerFileOperationLedger,
+    PacketTracerPoE3BSession,
+    PoE3BSessionOperation,
+    PoEInlineMode,
 )
 from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
     BUILD, START_HEAD, COMPLETENESS_KEYS, completeness,
@@ -60,17 +64,58 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
 )
 from packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
 
-from poe2_ap_live import (
-    Experiment, authenticated_status, command, prove_processes, utc,
-)
-from poe_inline_calibration_live import PoEInlineMode
-
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "andres18113/cisco-muejeje"
 BRANCH = "feature/runtime-ripv2"
+UPSTREAM = "cisco/feature/runtime-ripv2"
 # 100-character path component budget: 6 prefix + 68 caller metadata +
 # 1 separator + 16 UTC timestamp + 1 separator + 8 random hex characters.
 QUALIFICATION_ID_MAX_LENGTH = 68
+
+
+def utc() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def command(*args: str) -> str:
+    return subprocess.run(
+        args,
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    ).stdout.strip()
+
+
+def processes() -> list[dict]:
+    script = (
+        "Get-CimInstance Win32_Process | Where-Object { $_.Name -match "
+        "'^(python|pythonw|pytest|PacketTracer)\\.exe$' } | Select-Object "
+        "ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine | "
+        "ConvertTo-Json -Compress"
+    )
+    raw = command("powershell.exe", "-NoProfile", "-Command", script)
+    result = json.loads(raw) if raw else []
+    return result if isinstance(result, list) else [result]
+
+
+def prove_processes() -> list[dict]:
+    result = processes()
+    allowed = {os.getpid(), os.getppid()}
+    foreign = [
+        process for process in result
+        if process["Name"].lower() != "packettracer.exe"
+        and process["ProcessId"] not in allowed
+    ]
+    if foreign:
+        raise RuntimeError("Foreign Python/test process: " + json.dumps(foreign))
+    packet_tracer = [
+        process for process in result if process["Name"] == "PacketTracer.exe"
+    ]
+    if len(packet_tracer) != 1:
+        raise RuntimeError("Exactly one PacketTracer.exe process is required")
+    return result
 
 
 def source_baseline(plan: PoEModelQualificationPlan) -> dict:
@@ -80,6 +125,12 @@ def source_baseline(plan: PoEModelQualificationPlan) -> dict:
     if command("git", "status", "--porcelain"):
         raise RuntimeError("Worktree must be clean")
     sha = command("git", "rev-parse", "HEAD")
+    upstream = command(
+        "git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}",
+    )
+    upstream_sha = command("git", "rev-parse", "@{upstream}")
+    if upstream != UPSTREAM or upstream_sha != sha:
+        raise RuntimeError("HEAD and the authorized upstream differ")
     command("git", "merge-base", "--is-ancestor", START_HEAD, sha)
     remote = json.loads(command(
         "gh", "api", "repos/" + REPO + "/git/ref/heads/" + BRANCH,
@@ -90,7 +141,13 @@ def source_baseline(plan: PoEModelQualificationPlan) -> dict:
         "gh", "run", "list", "--repo", REPO, "--commit", sha,
         "--json", "databaseId,name,headSha,status,conclusion,url",
     ))
-    run = next(r for r in runs if r["name"] == "tests" and r["headSha"] == sha)
+    run = next(
+        record for record in runs
+        if record["name"] == "tests"
+        and record["headSha"] == sha
+        and record["status"] == "completed"
+        and record["conclusion"] == "success"
+    )
     jobs = json.loads(command(
         "gh", "api",
         "repos/" + REPO + "/actions/runs/" + str(run["databaseId"]) + "/jobs",
@@ -107,7 +164,7 @@ def source_baseline(plan: PoEModelQualificationPlan) -> dict:
               for job in jobs],
         strict_e5_manual_allowlist=True, qualification_plan=plan.model_dump(mode="json"),
         source_branch=branch, source_tree=command("git", "rev-parse", "HEAD^{tree}"),
-        worktree_clean=True,
+        upstream=upstream, upstream_head=upstream_sha, worktree_clean=True,
         initial_START_HEAD_verified=True,
     )
 
@@ -186,45 +243,6 @@ def validate_artifact_reservation(artifacts: ArtifactReservation | None,
     return artifacts.directory
 
 
-def create_fixture(exp: Experiment, plan: PoEModelQualificationPlan,
-                   attempted: list[str], created: list[str], *,
-                   artifacts: ArtifactReservation) -> dict:
-    """Create exactly the governed scope, tracking attempts before each mutation."""
-    validate_artifact_reservation(artifacts)
-    attempted.append(exp.switch)
-    switch = exp.fixture.create_device(plan.candidate_model, exp.switch,
-        tuple(b.switch_port for b in plan.bindings), arm="candidate")
-    created.append(exp.switch)
-    if switch.model != plan.candidate_model:
-        raise RuntimeError("Fixture switch model readback mismatch")
-    endpoints, links = [], []
-    for index, binding in enumerate(plan.bindings, start=1):
-        name = exp.endpoint + "-" + str(index)
-        attempted.append(name)
-        phone = exp.fixture.create_device(binding.endpoint_model, name,
-            (binding.endpoint_port,), arm="candidate")
-        created.append(name)
-        if phone.model != binding.endpoint_model:
-            raise RuntimeError("Fixture endpoint model readback mismatch")
-        link = exp.fixture.create_link(switch, binding.switch_port, phone, binding.endpoint_port)
-        endpoints.append(phone.model_dump(mode="json"))
-        links.append(link.model_dump(mode="json"))
-    return dict(switch=switch.model_dump(mode="json"), endpoints=endpoints, links=links)
-
-
-def cleanup_fixture(exp: Experiment, attempted: list[str], problems: list[str]) -> list[str]:
-    deleted = []
-    for name in reversed(attempted):
-        try:
-            if exp.fixture.delete_device(name):
-                deleted.append(name)
-            else:
-                problems.append("Cleanup did not verify deletion: " + name)
-        except Exception as exc:
-            problems.append("Cleanup " + name + ": " + str(exc))
-    return deleted
-
-
 def pse_capture(plan: PoEModelQualificationPlan, label: str, capture,
                 switch_name: str) -> PoEPseMultiPortCapture:
     """Check both complete captures before translating every ordered binding."""
@@ -272,12 +290,6 @@ def pse_capture(plan: PoEModelQualificationPlan, label: str, capture,
 _MODE_BY_LABEL = {"AUTO_1": "auto", "NEVER": "never", "AUTO_2": "auto"}
 
 
-def ephemeral_file_operation_guard() -> PacketTracerFileOperationGuard:
-    """Create the PT-file boundary used for one governed ephemeral session."""
-
-    return PacketTracerFileOperationGuard.ephemeral()
-
-
 def _crash_state_from_process_continuity(
     before: tuple[int, ...] | None,
     after: tuple[int, ...] | None,
@@ -319,12 +331,12 @@ def ephemeral_safety_for(
     safety: dict,
     problems: list[str],
     *,
-    file_operations: PacketTracerFileOperationGuard,
+    file_operation_ledger: PacketTracerFileOperationLedger,
 ) -> EphemeralUntitledWorkspaceSafetyEvidence:
     """Project acquired fields only; missing measurements stay unproven."""
-    if not isinstance(file_operations, PacketTracerFileOperationGuard):
-        raise ValueError("Observed Packet Tracer file-operation guard is required")
-    file_ledger = file_operations.snapshot()
+    if not isinstance(file_operation_ledger, PacketTracerFileOperationLedger):
+        raise ValueError("Observed Packet Tracer file-operation ledger is required")
+    file_ledger = file_operation_ledger
     initial, final = baseline.get("environment", {}), restoration.get("environment_after", {})
     def pids(facts):
         processes = facts.get("processes")
@@ -364,8 +376,10 @@ def ephemeral_safety_for(
         initial_saved_filename=initial.get("saved_filename"), final_saved_filename=final.get("saved_filename"),
         authorized_file_operations=file_ledger.authorized_operations,
         attempted_file_operations=file_ledger.attempted_operations,
-        executed_file_operations=file_ledger.executed_operations,
         denied_file_operations=file_ledger.denied_operations,
+        invoked_file_operations=file_ledger.invoked_operations,
+        completed_file_operations=file_ledger.completed_operations,
+        indeterminate_file_operations=file_ledger.indeterminate_operations,
         initial_inventory_fingerprint=baseline.get("inventory_fingerprint", ""),
         final_inventory_fingerprint=restoration.get("inventory_fingerprint_after", ""),
         fixture_removed=restoration.get("fixture_removed"),
@@ -387,7 +401,7 @@ def ephemeral_safety_for(
 def persist_qualification(*, plan: PoEModelQualificationPlan,
                           scope: PoEPseMultiPortDeliveryScope, baseline: dict,
                           restoration: dict, safety: dict, problems: list[str],
-                          file_operations: PacketTracerFileOperationGuard,
+                          file_operation_ledger: PacketTracerFileOperationLedger,
                           artifacts: ArtifactReservation,
                           store: CapabilitySnapshotStore) -> tuple[CapabilitySnapshot, Path]:
     """Release a controlled result only beyond cleanup, safety and schema gates."""
@@ -416,7 +430,7 @@ def persist_qualification(*, plan: PoEModelQualificationPlan,
         restoration,
         safety,
         problems,
-        file_operations=file_operations,
+        file_operation_ledger=file_operation_ledger,
     )
     validation = validate_live_session_positive_admission(evidence)
     if not validation.is_valid:
@@ -464,175 +478,333 @@ def persist_qualification(*, plan: PoEModelQualificationPlan,
     return snapshot, path
 
 
+@dataclass
+class GovernedQualificationExecution:
+    fixture_evidence: dict
+    captures: list
+    pse_captures: list[PoEPseMultiPortCapture]
+    problems: list[str]
+    restoration: dict
+    safety: dict
+    raw_files: dict[str, bytes]
+    completed_at_utc: str
+    file_operation_ledger: PacketTracerFileOperationLedger
+    scope: PoEPseMultiPortDeliveryScope | None = None
+    dimensions: dict[str, str] | None = None
+    snapshot: CapabilitySnapshot | None = None
+    snapshot_path: Path | None = None
+
+
+def current_source_state() -> dict:
+    return {
+        "source_branch": command("git", "branch", "--show-current"),
+        "source_head": command("git", "rev-parse", "HEAD"),
+        "source_tree": command("git", "rev-parse", "HEAD^{tree}"),
+        "worktree_clean": not command("git", "status", "--porcelain"),
+    }
+
+
+def _require_frozen_source(baseline: dict, observed: dict) -> None:
+    if (
+        observed.get("source_branch") != baseline.get("source_branch")
+        or observed.get("source_head") != baseline.get("local_head")
+        or observed.get("source_tree") != baseline.get("source_tree")
+        or observed.get("worktree_clean") is not True
+    ):
+        raise RuntimeError("Frozen LIVE source changed")
+
+
+def execute_governed_qualification(
+    *,
+    session: PacketTracerPoE3BSession,
+    plan: PoEModelQualificationPlan,
+    baseline: dict,
+    artifacts: ArtifactReservation,
+    store,
+    process_probe: Callable[[], list[dict]] = prove_processes,
+    source_state_probe: Callable[[], dict] = current_source_state,
+) -> GovernedQualificationExecution:
+    """Run one bounded qualification; never retry a failed or ambiguous run."""
+
+    validate_artifact_reservation(artifacts)
+    if tuple(binding.switch_port for binding in plan.bindings) != session.switch_ports:
+        raise ValueError("Session ports differ from the governed qualification plan")
+    if (
+        session.dispatches
+        or session.attempted_device_names
+        or session.created_device_names
+    ):
+        raise ValueError("The governed Packet Tracer session is not fresh")
+    if not session.file_operation_ledger().ephemeral_safe:
+        raise ValueError("EPHEMERAL file-operation boundary was not initially clean")
+
+    captures = []
+    pse_captures: list[PoEPseMultiPortCapture] = []
+    problems: list[str] = []
+    fixture: dict = {}
+    restoration: dict = {}
+    safety: dict = {}
+    raw_files: dict[str, bytes] = {}
+    deleted: list[str] = []
+    opening: str | None = None
+    preexisting: frozenset[str] | None = None
+    creation_started = False
+    try:
+        baseline["bridge_healthy"] = session.bridge_healthy()
+        baseline["mailbox_entries"] = session.mailbox_entries()
+        if baseline["bridge_healthy"] is not True:
+            raise RuntimeError("File bridge heartbeat stale")
+        if baseline["mailbox_entries"] != ():
+            raise RuntimeError("Foreign mailbox residue")
+        baseline["fresh_authenticated_bridge"] = session.start_control_bridge()
+        environment = session.environment()
+        if (
+            environment.get("pt_version") != plan.packet_tracer_build
+            or environment.get("simulation_mode") is not False
+        ):
+            raise RuntimeError("Wrong Packet Tracer build or mode")
+        if (
+            environment.get("devices") != 0
+            or environment.get("links") != 0
+            or environment.get("saved_filename") != ""
+        ):
+            raise RuntimeError("Requires an empty, untitled semantic baseline")
+        baseline["environment"] = environment
+        opening = session.inventory_fingerprint()
+        preexisting = session.device_names()
+        baseline["inventory_fingerprint"] = opening
+        baseline["devices"] = sorted(preexisting)
+        process_probe()
+        print(
+            "LIVE OPEN " + artifacts.run_id + " source=" + baseline["local_head"],
+            flush=True,
+        )
+        creation_started = True
+        fixture = session.create_fixture(plan.candidate_model, plan.bindings)
+        baseline["boot"] = session.wait_until_ready(
+            timeout_seconds=150,
+        ).model_dump(mode="json")
+
+        for label, mode in (
+            ("AUTO_1", PoEInlineMode.AUTO),
+            ("NEVER", PoEInlineMode.NEVER),
+            ("AUTO_2", PoEInlineMode.AUTO),
+        ):
+            process_probe()
+            _require_frozen_source(baseline, source_state_probe())
+            session.apply_inline_mode(mode)
+            capture = session.capture_inline_status(label)
+            captures.append(capture)
+            raw_files[capture.raw_file] = capture.observation["raw_output"].encode()
+            if not all(capture.table_completeness.values()):
+                raise RuntimeError(
+                    label + " did not satisfy every completeness gate"
+                )
+            pse_captures.append(
+                pse_capture(plan, label, capture, session.switch_name)
+            )
+            print(
+                label + " captured; ports=" + str(capture.observation["ports"])
+                + "; completeness=True",
+                flush=True,
+            )
+    except Exception as exc:
+        problems.append(type(exc).__name__ + ": " + str(exc))
+    finally:
+        if creation_started:
+            try:
+                session.apply_inline_mode(PoEInlineMode.AUTO)
+                restored = session.capture_inline_status("RESTORE")
+                raw_files[restored.raw_file] = restored.observation[
+                    "raw_output"
+                ].encode()
+                restoration["fresh_readback"] = restored.model_dump(mode="json")
+                restore_capture = pse_capture(
+                    plan, "AUTO_2", restored, session.switch_name,
+                )
+                restoration["power_inline_auto_proven"] = all(
+                    row.row_present for row in restore_capture.binding_captures
+                )
+            except Exception as exc:
+                problems.append("Restoration readback: " + str(exc))
+
+            cleanup = session.cleanup_fixture()
+            deleted.extend(cleanup.deleted)
+            problems.extend(cleanup.problems)
+            try:
+                assert opening is not None and preexisting is not None
+                restoration["residue_retired"] = list(
+                    session.retire_session_residue(preexisting)
+                )
+                restoration["inventory_fingerprint_after"] = (
+                    session.wait_for_inventory_fingerprint(opening)
+                )
+                restoration["inventory_restored"] = (
+                    restoration["inventory_fingerprint_after"] == opening
+                )
+                restoration["fixture_removed"] = (
+                    session.device_names() == preexisting
+                )
+                closing = session.environment()
+                restoration["environment_after"] = closing
+                restoration["realtime_restored"] = (
+                    closing.get("simulation_mode") is False
+                )
+                session.collect_completed()
+                final_processes = process_probe()
+                source_state = source_state_probe()
+                safety = {
+                    "mailbox_entries": session.mailbox_entries(),
+                    "bridge_healthy": session.bridge_healthy(),
+                    "processes": final_processes,
+                    "transport_problems": list(session.transport_problems()),
+                    **source_state,
+                }
+            except Exception as exc:
+                problems.append("Safety finalization: " + str(exc))
+        try:
+            session.stop_control_bridge()
+        except Exception as exc:
+            problems.append("Control bridge shutdown: " + str(exc))
+
+    restoration.update(
+        attempted=list(session.attempted_device_names),
+        created=list(session.created_device_names),
+        deleted=deleted,
+    )
+    completed = utc()
+    print("LIVE CLOSED; persisting after cleanup", flush=True)
+    execution = GovernedQualificationExecution(
+        fixture_evidence=fixture,
+        captures=captures,
+        pse_captures=pse_captures,
+        problems=problems,
+        restoration=restoration,
+        safety=safety,
+        raw_files=raw_files,
+        completed_at_utc=completed,
+        file_operation_ledger=session.file_operation_ledger(),
+    )
+    if len(pse_captures) == 3 and not problems:
+        execution.scope = pse_scope_for(
+            plan=plan,
+            run_id=artifacts.run_id,
+            observed_at=completed,
+            captures=tuple(pse_captures),
+            gates=tuple(sorted(captures[0].table_completeness)),
+        )
+        try:
+            execution.dimensions = encode_poe_pse_multi_port_dimensions(
+                execution.scope,
+            )
+            execution.snapshot, execution.snapshot_path = persist_qualification(
+                plan=plan,
+                scope=execution.scope,
+                baseline=baseline,
+                restoration=restoration,
+                safety=safety,
+                problems=problems,
+                artifacts=artifacts,
+                file_operation_ledger=execution.file_operation_ledger,
+                store=store,
+            )
+        except Exception as exc:
+            problems.append("Qualification not persisted: " + str(exc))
+    return execution
+
+
 def main() -> int:
     args = parse_args()
     isolation = ImportIsolationPreflight(ROOT).ensure_isolated()
     if not isolation.isolated:
         raise RuntimeError(isolation.render())
     plan = governed_plan(args.model)
-    file_operations = ephemeral_file_operation_guard()
     baseline = source_baseline(plan)
     baseline["processes"] = prove_processes()
-    baseline["import_isolation"] = dict(
-        result=isolation.render(), executable=sys.executable,
-        production_file=packet_tracer_mcp.__file__,
-        loaded_namespaces=[n for n in ("packet_tracer_mcp", "src.packet_tracer_mcp")
-                           if n in sys.modules],
-    )
+    baseline["import_isolation"] = {
+        "result": isolation.render(),
+        "executable": sys.executable,
+        "production_file": packet_tracer_mcp.__file__,
+        "loaded_namespaces": [
+            name for name in ("packet_tracer_mcp", "src.packet_tracer_mcp")
+            if name in sys.modules
+        ],
+    }
     artifacts = reserve_artifacts(args.qualification_id)
-    run_id = artifacts.run_id
     started = utc()
-
-    exp = Experiment(run_id, switch_ports=tuple(b.switch_port for b in plan.bindings), endpoint_role="PH")
-    baseline["bridge_healthy"] = exp.bridge.pt_alive()
-    if not baseline["bridge_healthy"]:
-        raise RuntimeError("File bridge heartbeat stale")
-    baseline["mailbox_entries"] = tuple(sorted(p.name for pattern in ("req_*.js", "res_*.txt")
-        for p in exp.bridge.dir.glob(pattern)))
-    if baseline["mailbox_entries"]:
-        raise RuntimeError("Foreign mailbox residue")
-    os.environ["PT_MCP_BRIDGE_TOKEN"] = token_urlsafe(32)
-    http = PTCommandBridge(port=54321, token=os.environ["PT_MCP_BRIDGE_TOKEN"])
-    http.start()
-
-    captures, pse_captures, problems = [], [], []
-    fixture, restoration, safety, raw_files = {}, {}, {}, {}
-    attempted, created, deleted = [], [], []
-    opening = preexisting = env = None
-    creation_started = False
-    try:
-        baseline["fresh_authenticated_bridge"] = authenticated_status(http)
-        env = exp.environment()
-        if env.get("pt_version") != BUILD or env.get("simulation_mode") is not False:
-            raise RuntimeError("Wrong PT build or mode")
-        if env.get("devices") != 0 or env.get("links") != 0 or env.get("saved_filename") != "":
-            raise RuntimeError("Requires an empty, untitled semantic baseline")
-        baseline["environment"] = env
-        opening = exp.fixture.inventory_fingerprint()
-        preexisting = exp.names()
-        baseline["inventory_fingerprint"] = opening
-        baseline["devices"] = sorted(preexisting)
-        prove_processes()
-        print("LIVE OPEN " + run_id + " source=" + baseline["local_head"], flush=True)
-        creation_started = True
-
-        fixture = create_fixture(exp, plan, attempted, created, artifacts=artifacts)
-        baseline["boot"] = exp.executor.wait_until_ready(
-            exp.switch, timeout_seconds=150).model_dump(mode="json")
-
-        for label, mode in (("AUTO_1", PoEInlineMode.AUTO),
-                            ("NEVER", PoEInlineMode.NEVER),
-                            ("AUTO_2", PoEInlineMode.AUTO)):
-            prove_processes()
-            if (command("git", "status", "--porcelain")
-                    or command("git", "rev-parse", "HEAD") != baseline["local_head"]):
-                raise RuntimeError("Frozen LIVE source changed")
-            exp.apply(mode)
-            capture = exp.capture(label)
-            captures.append(capture)
-            raw_files[capture.raw_file] = capture.observation["raw_output"].encode()
-            if not all(capture.table_completeness.values()):
-                raise RuntimeError(label + " did not satisfy every completeness gate")
-            pse_captures.append(pse_capture(plan, label, capture, exp.switch))
-            print(label + " captured; ports=" + str(capture.observation["ports"])
-                  + "; completeness=True", flush=True)
-    except Exception as exc:
-        problems.append(type(exc).__name__ + ": " + str(exc))
-    finally:
-        if creation_started:
-            try:
-                exp.apply(PoEInlineMode.AUTO)
-                restored = exp.capture("RESTORE")
-                raw_files[restored.raw_file] = restored.observation["raw_output"].encode()
-                restoration["fresh_readback"] = restored.model_dump(mode="json")
-                # RESTORE uses the same complete multi-port readback checks.
-                restore_capture = pse_capture(plan, "AUTO_2", restored, exp.switch)
-                restoration["power_inline_auto_proven"] = all(
-                    row.row_present for row in restore_capture.binding_captures)
-            except Exception as exc:
-                problems.append("Restoration readback: " + str(exc))
-            deleted.extend(cleanup_fixture(exp, attempted, problems))
-            try:
-                restoration["residue_retired"] = list(
-                    exp.fixture.retire_session_residue(preexisting))
-                restoration["inventory_fingerprint_after"] = (
-                    exp.fixture.wait_for_inventory_fingerprint(opening))
-                restoration["inventory_restored"] = (
-                    restoration["inventory_fingerprint_after"] == opening)
-                restoration["fixture_removed"] = exp.names() == preexisting
-                closing = exp.environment()
-                restoration["environment_after"] = closing
-                restoration["realtime_restored"] = closing.get("simulation_mode") is False
-                exp.bridge.collect_completed()
-                mailbox_entries = tuple(sorted(p.name for pattern in ("req_*.js", "res_*.txt")
-                    for p in exp.bridge.dir.glob(pattern)))
-                final_processes = prove_processes()
-                safety = dict(
-                    mailbox_entries=mailbox_entries, bridge_healthy=exp.bridge.pt_alive(),
-                    processes=final_processes, transport_problems=list(exp.transport_problems),
-                    source_branch=command("git", "branch", "--show-current"),
-                    source_head=command("git", "rev-parse", "HEAD"),
-                    source_tree=command("git", "rev-parse", "HEAD^{tree}"),
-                    worktree_clean=not command("git", "status", "--porcelain"),
-                )
-            except Exception as exc:
-                problems.append("Safety finalization: " + str(exc))
-        http.stop()
-    restoration.update(attempted=attempted, created=created, deleted=deleted)
-    completed = utc()
-    print("LIVE CLOSED; persisting after cleanup", flush=True)
-
-    scope = dimensions = snapshot_path = None
-    admitted_safety = None
-    if len(pse_captures) == 3 and not problems:
-        scope = pse_scope_for(
-            plan=plan, run_id=run_id, observed_at=completed,
-            captures=tuple(pse_captures),
-            gates=tuple(sorted(captures[0].table_completeness)),
-        )
-        try:
-            dimensions = encode_poe_pse_multi_port_dimensions(scope)
-            snapshot, snapshot_path = persist_qualification(
-                plan=plan, scope=scope, baseline=baseline, restoration=restoration,
-                safety=safety, problems=problems, artifacts=artifacts,
-                file_operations=file_operations,
-                store=CapabilitySnapshotStore(resolve_within(ROOT, Path("data") / "capabilities")))
-            admitted_safety = snapshot.session.results[0].context.live_session_safety
-        except Exception as exc:
-            problems.append("Qualification not persisted: " + str(exc))
-
-    bundle = dict(
-        schema_version=1, kind="poe3b-pse-capacity-qualification", experiment_id=run_id,
-        started_at_utc=started, completed_at_utc=completed, START_HEAD=START_HEAD,
-        frozen_live_sha=baseline["local_head"], packet_tracer_build=BUILD,
-        qualification_id=args.qualification_id, qualification_plan=plan.model_dump(mode="json"),
-        productive=snapshot_path is not None,
-        integration_result="PERSISTED" if snapshot_path is not None else "NOT_ADMITTED",
-        runtime_snapshot_path=str(snapshot_path) if snapshot_path is not None else None,
-        live_session_safety=admitted_safety.model_dump(mode="json") if admitted_safety is not None else None,
-        baseline=baseline, fixture=fixture,
-        captures=[c.model_dump(mode="json") for c in captures],
-        pse_scope=(asdict(scope) if scope is not None else None),
-        pse_dimensions=dimensions, restoration=restoration, safety=safety,
-        file_operation_ledger=asdict(file_operations.snapshot()),
-        problems=problems,
+    session = PacketTracerPoE3BSession(
+        artifacts.run_id,
+        switch_ports=tuple(binding.switch_port for binding in plan.bindings),
+        endpoint_role="PH",
     )
-
-    directory = validate_artifact_reservation(artifacts, run_id)
-    for name, content in raw_files.items():
+    execution = execute_governed_qualification(
+        session=session,
+        plan=plan,
+        baseline=baseline,
+        artifacts=artifacts,
+        store=CapabilitySnapshotStore(
+            resolve_within(ROOT, Path("data") / "capabilities"),
+        ),
+    )
+    admitted_safety = (
+        execution.snapshot.session.results[0].context.live_session_safety
+        if execution.snapshot is not None
+        else None
+    )
+    bundle = {
+        "schema_version": 1,
+        "kind": "poe3b-pse-capacity-qualification",
+        "experiment_id": artifacts.run_id,
+        "started_at_utc": started,
+        "completed_at_utc": execution.completed_at_utc,
+        "START_HEAD": START_HEAD,
+        "frozen_live_sha": baseline["local_head"],
+        "packet_tracer_build": BUILD,
+        "qualification_id": args.qualification_id,
+        "qualification_plan": plan.model_dump(mode="json"),
+        "productive": execution.snapshot_path is not None,
+        "integration_result": (
+            "PERSISTED" if execution.snapshot_path is not None else "NOT_ADMITTED"
+        ),
+        "runtime_snapshot_path": (
+            str(execution.snapshot_path)
+            if execution.snapshot_path is not None
+            else None
+        ),
+        "live_session_safety": (
+            admitted_safety.model_dump(mode="json")
+            if admitted_safety is not None
+            else None
+        ),
+        "baseline": baseline,
+        "fixture": execution.fixture_evidence,
+        "captures": [capture.model_dump(mode="json") for capture in execution.captures],
+        "pse_scope": asdict(execution.scope) if execution.scope is not None else None,
+        "pse_dimensions": execution.dimensions,
+        "restoration": execution.restoration,
+        "safety": execution.safety,
+        "file_operation_ledger": asdict(execution.file_operation_ledger),
+        "session_dispatches": [asdict(record) for record in session.dispatches],
+        "problems": execution.problems,
+    }
+    directory = validate_artifact_reservation(artifacts, artifacts.run_id)
+    for name, content in execution.raw_files.items():
         resolve_within(directory, safe_name_component(name)).write_bytes(content)
-    path = resolve_within(directory, "evidence.json")
-    path.write_bytes((json.dumps(bundle, indent=2, sort_keys=True) + "\n").encode())
-
-    print(json.dumps(dict(
-        bundle=str(directory), qualification_plan=plan.model_dump(mode="json"),
-        measured=[asdict(c) for c in pse_captures],
-        pse_contract_accepts_the_measurement=dimensions is not None,
-        integration_result=bundle["integration_result"],
-        restoration=restoration.get("inventory_restored"),
-        safety=safety, problems=problems,
-    ), indent=2))
-    return 0 if not problems else 2
+    evidence_path = resolve_within(directory, "evidence.json")
+    evidence_path.write_bytes(
+        (json.dumps(bundle, indent=2, sort_keys=True) + "\n").encode()
+    )
+    print(json.dumps({
+        "bundle": str(directory),
+        "qualification_plan": plan.model_dump(mode="json"),
+        "measured": [asdict(capture) for capture in execution.pse_captures],
+        "pse_contract_accepts_the_measurement": execution.dimensions is not None,
+        "integration_result": bundle["integration_result"],
+        "restoration": execution.restoration.get("inventory_restored"),
+        "safety": execution.safety,
+        "problems": execution.problems,
+    }, indent=2))
+    return 0 if not execution.problems else 2
 
 
 if __name__ == "__main__":

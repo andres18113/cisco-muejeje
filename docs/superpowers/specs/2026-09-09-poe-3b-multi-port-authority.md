@@ -43,8 +43,9 @@ An ephemeral positive admission requires all of these raw facts:
 
 1. Initial and final semantic workspaces contain zero devices and zero links.
 2. `saved_filename` is exactly empty before and after.
-3. Authorized and executed Packet Tracer file-operation ledgers are explicitly
-   present and empty.
+3. The session-owned Packet Tracer workspace-file ledger explicitly records
+   policy, attempts, denials, callback invocation, observed completion and
+   indeterminate results; every collection is present and empty.
 4. Initial and final inventory fingerprints are present, exact non-blank
    identities in the existing semantic format, and equal.
 5. The fixture is completely removed.
@@ -120,6 +121,12 @@ from acquired facts, and produces schema 3. A positive runtime snapshot may be
 persisted only after the schema decoder and LIVE safety validator both accept
 the completed run. Persistence happens after cleanup and does not count as a
 Packet Tracer workspace save.
+
+The runner reaches Packet Tracer only through `PacketTracerPoE3BSession`. The
+session privately composes the existing IPC, fixture, IOS and observer runtimes;
+the runner has no raw JavaScript or generic transport surface. Its EPHEMERAL
+workspace-file policy is empty, and any attempted, denied, invoked, completed or
+indeterminate workspace-file operation blocks positive admission.
 
 The historical POE-3A evidence bundle and all prior snapshots remain unchanged.
 

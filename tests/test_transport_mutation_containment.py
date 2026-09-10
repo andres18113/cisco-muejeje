@@ -132,6 +132,19 @@ CONTAINED_MUTATION_FAMILIES = {
             "authorize its exact bindings"
         ),
     },
+    "poe3b_capacity_session": {
+        "owner": "infrastructure/execution/poe3b_session.py",
+        "containment": (
+            "one typed POE-3B session owns the IPC and runtime composition; "
+            "device identities are recorded before mutation, cleanup covers "
+            "every attempt, and its EPHEMERAL workspace-file policy is empty"
+        ),
+        "ceiling": (
+            "dispatch is not effect; only complete AUTO/NEVER/AUTO read-back "
+            "plus exact cleanup, session safety and schema admission may "
+            "authorize the observed simultaneous bindings"
+        ),
+    },
     "shared_dispatch": {
         "owner": "infrastructure/execution/configuration_runtime.py",
         "containment": (
@@ -214,6 +227,15 @@ _ORCHESTRATION_CALLS = {
 # Both application slices require runtime mediation. CP-SCALE was extracted
 # from tools in M2; it is not a new transport dispatcher or an exempt family.
 _ORCHESTRATION_LAYER = ("application/use_cases/", "application/cp_scale_live/")
+
+# These are runtimes whose bounded contract is itself a composition boundary,
+# rather than application policy. Each must also be a named containment family
+# above; adding a generic orchestrator here would still fail the ownership and
+# mutation-family sweeps.
+_COMPOSITE_RUNTIME_FAMILIES = {
+    "infrastructure/execution/probe_runtime.py",
+    "infrastructure/execution/poe3b_session.py",
+}
 
 
 def _docstrings(tree: ast.AST) -> set[int]:
@@ -410,9 +432,10 @@ def test_an_orchestrator_outside_both_application_roots_is_rejected(tmp_path, mo
 
 
 def test_an_orchestrator_never_counts_as_its_own_containment_family():
-    assert not (_owners() & set(_modules_orchestrating_mutations())) - {
-        "infrastructure/execution/probe_runtime.py",
-    }
+    assert not (
+        _owners() & set(_modules_orchestrating_mutations())
+    ) - _COMPOSITE_RUNTIME_FAMILIES
+    assert _COMPOSITE_RUNTIME_FAMILIES <= _owners()
 
 
 # ===================== ninguna mutación se reintenta a ciegas =============

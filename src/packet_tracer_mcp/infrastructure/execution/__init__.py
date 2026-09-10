@@ -31,6 +31,15 @@ from .pt_file_operations import (
     PacketTracerFileOperationDenied,
     PacketTracerFileOperationGuard,
     PacketTracerFileOperationLedger,
+    PacketTracerFileOperationResult,
+)
+from .poe3b_session import (
+    PacketTracerPoE3BSession,
+    PoE3BCleanupResult,
+    PoE3BSessionDispatch,
+    PoE3BSessionOperation,
+    PoE3BSessionTransport,
+    PoEInlineMode,
 )
 from .import_isolation_preflight import (
     ImportIsolationPreflight,
