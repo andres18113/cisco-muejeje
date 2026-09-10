@@ -50,6 +50,9 @@ from packet_tracer_mcp.domain.enterprise.services.poe_pse_multiport_claims impor
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
+from packet_tracer_mcp.infrastructure.execution.source_preflight import (
+    GitSourceReader,
+)
 from packet_tracer_mcp.infrastructure.execution.poe3b_session import (
     PacketTracerFileOperationLedger,
     PacketTracerPoE3BSession,
@@ -60,6 +63,9 @@ from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
     BUILD, START_HEAD, COMPLETENESS_KEYS, completeness,
 )
 from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
+from packet_tracer_mcp.infrastructure.persistence.canonical_evidence import (
+    publish_canonical_evidence,
+)
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_power_inline, classify_poe_inline_delivery,
 )
@@ -166,16 +172,15 @@ def packet_tracer_primary_pids(processes: list[dict]) -> tuple[int, ...]:
 
 
 def source_baseline(plan: PoEModelQualificationPlan) -> dict:
-    branch = command("git", "branch", "--show-current")
+    source = current_source_state()
+    branch = source["source_branch"]
     if branch != BRANCH:
         raise RuntimeError("Wrong branch")
-    if command("git", "status", "--porcelain"):
+    if source["worktree_clean"] is not True:
         raise RuntimeError("Worktree must be clean")
-    sha = command("git", "rev-parse", "HEAD")
-    upstream = command(
-        "git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}",
-    )
-    upstream_sha = command("git", "rev-parse", "@{upstream}")
+    sha = source["source_head"]
+    upstream = source["upstream"]
+    upstream_sha = source["upstream_head"]
     if upstream != UPSTREAM or upstream_sha != sha:
         raise RuntimeError("HEAD and the authorized upstream differ")
     command("git", "merge-base", "--is-ancestor", START_HEAD, sha)
@@ -210,7 +215,7 @@ def source_baseline(plan: PoEModelQualificationPlan) -> dict:
         jobs=[{k: job[k] for k in ("name", "conclusion", "head_sha", "html_url")}
               for job in jobs],
         strict_e5_manual_allowlist=True, qualification_plan=plan.model_dump(mode="json"),
-        source_branch=branch, source_tree=command("git", "rev-parse", "HEAD^{tree}"),
+        source_branch=branch, source_tree=source["source_tree"],
         upstream=upstream, upstream_head=upstream_sha, worktree_clean=True,
         initial_START_HEAD_verified=True,
     )
@@ -458,13 +463,12 @@ def ephemeral_safety_for(
     )
 
 
-def persist_qualification(*, plan: PoEModelQualificationPlan,
-                          scope: PoEPseMultiPortDeliveryScope, baseline: dict,
-                          restoration: dict, safety: dict, problems: list[str],
-                          file_operation_ledger: PacketTracerFileOperationLedger,
-                          artifacts: ArtifactReservation,
-                          store: CapabilitySnapshotStore) -> tuple[CapabilitySnapshot, Path]:
-    """Release a controlled result only beyond cleanup, safety and schema gates."""
+def build_qualification_snapshot(*, plan: PoEModelQualificationPlan,
+                                 scope: PoEPseMultiPortDeliveryScope, baseline: dict,
+                                 restoration: dict, safety: dict, problems: list[str],
+                                 file_operation_ledger: PacketTracerFileOperationLedger,
+                                 artifacts: ArtifactReservation) -> CapabilitySnapshot:
+    """Validate every gate and build a still non-authoritative snapshot."""
     validate_artifact_reservation(artifacts, scope.experiment_id)
     attempted = restoration.get("attempted", [])
     created = restoration.get("created", [])
@@ -533,9 +537,7 @@ def persist_qualification(*, plan: PoEModelQualificationPlan,
             packet_tracer_version=plan.packet_tracer_build, created_devices=created,
             mutations=mutations, cleanup_status=CleanupStatus.CLEAN),
             results=[result], cleanup_deleted=deleted, cleanup_failed=[]))
-    # This writes evidence JSON to the repository store, not a PT workspace.
-    path = store.save_runtime(snapshot)
-    return snapshot, path
+    return snapshot
 
 
 @dataclass
@@ -556,12 +558,7 @@ class GovernedQualificationExecution:
 
 
 def current_source_state() -> dict:
-    return {
-        "source_branch": command("git", "branch", "--show-current"),
-        "source_head": command("git", "rev-parse", "HEAD"),
-        "source_tree": command("git", "rev-parse", "HEAD^{tree}"),
-        "worktree_clean": not command("git", "status", "--porcelain"),
-    }
+    return GitSourceReader().read(ROOT).live_state()
 
 
 def _require_frozen_source(baseline: dict, observed: dict) -> None:
@@ -569,6 +566,8 @@ def _require_frozen_source(baseline: dict, observed: dict) -> None:
         observed.get("source_branch") != baseline.get("source_branch")
         or observed.get("source_head") != baseline.get("local_head")
         or observed.get("source_tree") != baseline.get("source_tree")
+        or observed.get("upstream") != baseline.get("upstream")
+        or observed.get("upstream_head") != baseline.get("upstream_head")
         or observed.get("worktree_clean") is not True
     ):
         raise RuntimeError("Frozen LIVE source changed")
@@ -580,7 +579,6 @@ def execute_governed_qualification(
     plan: PoEModelQualificationPlan,
     baseline: dict,
     artifacts: ArtifactReservation,
-    store,
     process_probe: Callable[[], list[dict]] = prove_processes,
     source_state_probe: Callable[[], dict] = current_source_state,
 ) -> GovernedQualificationExecution:
@@ -635,6 +633,7 @@ def execute_governed_qualification(
         baseline["inventory_fingerprint"] = opening
         baseline["devices"] = sorted(preexisting)
         process_probe()
+        _require_frozen_source(baseline, source_state_probe())
         print(
             "LIVE OPEN " + artifacts.run_id + " source=" + baseline["local_head"],
             flush=True,
@@ -757,7 +756,7 @@ def execute_governed_qualification(
             execution.dimensions = encode_poe_pse_multi_port_dimensions(
                 execution.scope,
             )
-            execution.snapshot, execution.snapshot_path = persist_qualification(
+            execution.snapshot = build_qualification_snapshot(
                 plan=plan,
                 scope=execution.scope,
                 baseline=baseline,
@@ -766,10 +765,9 @@ def execute_governed_qualification(
                 problems=problems,
                 artifacts=artifacts,
                 file_operation_ledger=execution.file_operation_ledger,
-                store=store,
             )
         except Exception as exc:
-            problems.append("Qualification not persisted: " + str(exc))
+            problems.append("Qualification snapshot rejected: " + str(exc))
     return execution
 
 
@@ -802,10 +800,18 @@ def main() -> int:
         plan=plan,
         baseline=baseline,
         artifacts=artifacts,
-        store=CapabilitySnapshotStore(
-            resolve_within(ROOT, Path("data") / "capabilities"),
-        ),
     )
+    store = CapabilitySnapshotStore(
+        resolve_within(ROOT, Path("data") / "capabilities"),
+    )
+    staged = None
+    if execution.snapshot is not None:
+        try:
+            staged = store.stage_runtime(execution.snapshot)
+        except Exception as exc:
+            execution.problems.append(
+                "Qualification not staged: " + type(exc).__name__ + ": " + str(exc)
+            )
     admitted_safety = (
         execution.snapshot.session.results[0].context.live_session_safety
         if execution.snapshot is not None
@@ -822,13 +828,13 @@ def main() -> int:
         "packet_tracer_build": BUILD,
         "qualification_id": args.qualification_id,
         "qualification_plan": plan.model_dump(mode="json"),
-        "productive": execution.snapshot_path is not None,
+        "productive": staged is not None,
         "integration_result": (
-            "PERSISTED" if execution.snapshot_path is not None else "NOT_ADMITTED"
+            "PERSISTED" if staged is not None else "NOT_ADMITTED"
         ),
         "runtime_snapshot_path": (
-            str(execution.snapshot_path)
-            if execution.snapshot_path is not None
+            str(staged.target)
+            if staged is not None
             else None
         ),
         "live_session_safety": (
@@ -848,12 +854,13 @@ def main() -> int:
         "problems": execution.problems,
     }
     directory = validate_artifact_reservation(artifacts, artifacts.run_id)
-    for name, content in execution.raw_files.items():
-        resolve_within(directory, safe_name_component(name)).write_bytes(content)
-    evidence_path = resolve_within(directory, "evidence.json")
-    evidence_path.write_bytes(
-        (json.dumps(bundle, indent=2, sort_keys=True) + "\n").encode()
+    publish_canonical_evidence(
+        directory,
+        raw_files=execution.raw_files,
+        evidence=bundle,
     )
+    if staged is not None:
+        execution.snapshot_path = store.promote_runtime(staged)
     print(json.dumps({
         "bundle": str(directory),
         "qualification_plan": plan.model_dump(mode="json"),

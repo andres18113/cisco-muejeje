@@ -229,6 +229,11 @@ class FileBridge:
             retired += 1
         return retired
 
+    def has_pending_requests(self) -> bool:
+        """Report only whether this bridge still owns unretired sends."""
+
+        return bool(self._pending)
+
     def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
         """Encola un comando y espera su res_<name>.txt.
 

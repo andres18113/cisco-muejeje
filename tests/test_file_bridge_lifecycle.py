@@ -286,6 +286,7 @@ def test_a_fire_and_forget_request_is_also_retired_from_the_mailbox(bridge):
     archivo, un `configureIosDevice` se reaplica en cada tick.
     """
     assert bridge.send("configureIosDevice('R1','...')")
+    assert bridge.has_pending_requests()
 
     pending = _requests(bridge)
     assert len(pending) == 1
@@ -297,6 +298,7 @@ def test_a_fire_and_forget_request_is_also_retired_from_the_mailbox(bridge):
 
     assert _requests(bridge) == []
     assert _responses(bridge) == []
+    assert not bridge.has_pending_requests()
 
 
 # -- F. limpieza acotada --------------------------------------------------

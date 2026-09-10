@@ -470,7 +470,7 @@ class PacketTracerPoE3BLiveTransport:
                 raise RuntimeError("Inline power mode was not queued.")
             self._sleeper(6.0)
             self._bridge.collect_completed()
-            if self._bridge._pending:
+            if self._bridge.has_pending_requests():
                 raise RuntimeError("Inline power mode dispatch is still pending.")
 
     def capture_inline_status(

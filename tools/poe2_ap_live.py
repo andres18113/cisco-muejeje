@@ -169,7 +169,7 @@ class Experiment:
                 raise RuntimeError("Mode was not queued")
             time.sleep(6)
             self.bridge.collect_completed()
-            if self.bridge._pending:
+            if self.bridge.has_pending_requests():
                 raise RuntimeError("Mode dispatch still pending")
 
     def capture(self, label: str) -> PoE2Capture:

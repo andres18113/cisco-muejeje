@@ -247,10 +247,11 @@ def test_the_experiment_configures_and_observes_only_its_own_port(monkeypatch):
             raise _Sentinel
 
     class _Bridge:
-        _pending: dict = {}
-
         def collect_completed(self):
             return None
+
+        def has_pending_requests(self):
+            return False
 
     experiment.config = _Config()
     experiment.observer = _Observer()
@@ -386,7 +387,7 @@ def _runner(monkeypatch):
 def test_the_live_producer_builds_a_scope_of_the_current_schema(monkeypatch):
     """A producer pinned to a literal version silently outlives its contract."""
     runner = _runner(monkeypatch)
-    from tests.test_poe3b_capacity_runner import typed_captures
+    from tests.poe3b_capacity_runner_helpers import typed_captures
     plan = runner.governed_plan(SWITCH)
     built = runner.pse_scope_for(
         plan=plan, run_id="poe3b-producer-fixture",
@@ -411,7 +412,7 @@ def test_the_live_producer_tracks_the_contract_rather_than_a_literal(monkeypatch
     "schema_version=" cannot tell the two apart. Bumping the PSE contract can.
     """
     runner = _runner(monkeypatch)
-    from tests.test_poe3b_capacity_runner import typed_captures
+    from tests.poe3b_capacity_runner_helpers import typed_captures
     plan = runner.governed_plan(SWITCH)
     monkeypatch.setattr(runner, "PSE_MULTI_PORT_SCHEMA_VERSION", 10)
     moved = runner.pse_scope_for(

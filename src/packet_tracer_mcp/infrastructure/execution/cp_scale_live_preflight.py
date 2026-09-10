@@ -7,7 +7,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from ...application.cp_scale_live.admission import (
     CPScaleImportIsolationObservation,
@@ -23,13 +23,10 @@ from .import_isolation_preflight import (
     TEST_NAMESPACE,
     ImportIsolationPreflight,
 )
+from .source_preflight import GitOutput, GitSourceReader
 
 
 CommandRunner = Callable[..., Any]
-
-
-class GitOutput(Protocol):
-    def __call__(self, root: Path, *arguments: str) -> str: ...
 
 
 class PythonRuntimeEvidenceReader:
@@ -82,107 +79,21 @@ class GitCPScaleRepositoryReader:
     """Read branch, cleanliness, pushed HEAD and source tree without mutation."""
 
     def __init__(self, *, git_output: GitOutput | None = None) -> None:
-        self._git_output = git_output or _git_output
+        self._reader = GitSourceReader(git_output=git_output)
 
     def read(self, governed_root: Path) -> CPScaleRepositoryObservation:
-        branch = ""
-        upstream = ""
-        head = ""
-        error = ""
-        try:
-            branch = self._git_output(governed_root, "branch", "--show-current")
-            upstream = self._git_output(
-                governed_root,
-                "rev-parse",
-                "--abbrev-ref",
-                "@{upstream}",
-            )
-            head = self._git_output(governed_root, "rev-parse", "HEAD")
-        except (OSError, subprocess.CalledProcessError) as exc:
-            branch = ""
-            upstream = ""
-            head = ""
-            error = str(exc)
-
-        dirty: bool | None
-        dirty_error = ""
-        try:
-            dirty = bool(self._git_output(governed_root, "status", "--porcelain"))
-        except (OSError, subprocess.CalledProcessError) as exc:
-            dirty = None
-            dirty_error = str(exc)
-
-        upstream_head = ""
-        upstream_head_error = ""
-        try:
-            upstream_head = self._git_output(
-                governed_root,
-                "rev-parse",
-                "@{upstream}",
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            upstream_head_error = str(exc)
-
-        source_tree = ""
-        source_tree_error = ""
-        if head:
-            try:
-                source_tree = self._git_output(
-                    governed_root,
-                    "rev-parse",
-                    f"{head}^{{tree}}",
-                )
-            except (OSError, subprocess.CalledProcessError) as exc:
-                source_tree_error = str(exc)
-        else:
-            source_tree_error = "Repository HEAD was unavailable for tree capture."
-
-        if head:
-            try:
-                final_head = self._git_output(
-                    governed_root,
-                    "rev-parse",
-                    "HEAD",
-                )
-                if final_head != head:
-                    source_tree_error = (
-                        "HEAD changed during repository inspection: "
-                        f"captured {head!r}; observed {final_head!r}."
-                    )
-            except (OSError, subprocess.CalledProcessError) as exc:
-                source_tree_error = (
-                    "Repository HEAD could not be revalidated: " + str(exc)
-                )
-
-        if upstream_head:
-            try:
-                final_upstream_head = self._git_output(
-                    governed_root,
-                    "rev-parse",
-                    "@{upstream}",
-                )
-                if final_upstream_head != upstream_head:
-                    upstream_head_error = (
-                        "upstream changed during repository inspection: "
-                        f"captured {upstream_head!r}; "
-                        f"observed {final_upstream_head!r}."
-                    )
-            except (OSError, subprocess.CalledProcessError) as exc:
-                upstream_head_error = (
-                    "Repository upstream could not be revalidated: " + str(exc)
-                )
-
+        observed = self._reader.read(governed_root)
         return CPScaleRepositoryObservation(
-            branch=branch,
-            upstream=upstream,
-            head=head,
-            upstream_head=upstream_head,
-            source_tree=source_tree,
-            dirty=dirty,
-            error=error,
-            dirty_error=dirty_error,
-            upstream_head_error=upstream_head_error,
-            source_tree_error=source_tree_error,
+            branch=observed.branch,
+            upstream=observed.upstream,
+            head=observed.head,
+            upstream_head=observed.upstream_head,
+            source_tree=observed.source_tree,
+            dirty=observed.dirty,
+            error=observed.error,
+            dirty_error=observed.dirty_error,
+            upstream_head_error=observed.upstream_head_error,
+            source_tree_error=observed.source_tree_error,
         )
 
 
@@ -227,17 +138,6 @@ class PowerShellPacketTracerProcessReader:
                     f"{type(exc).__name__}: {exc}"
                 ),
             )
-
-
-def _git_output(root: Path, *arguments: str) -> str:
-    completed = subprocess.run(
-        ["git", *arguments],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return completed.stdout.strip()
 
 
 def _process_record(row: Mapping[str, object]) -> CPScaleProcessRecord:

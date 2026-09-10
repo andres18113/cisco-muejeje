@@ -30,6 +30,9 @@ class _Bridge:
     def collect_completed(self) -> int:
         return 0
 
+    def has_pending_requests(self) -> bool:
+        return bool(self._pending)
+
 
 def test_live_transport_builds_only_closed_inline_payloads_for_ordered_ports() -> None:
     bridge = _Bridge()

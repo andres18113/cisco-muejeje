@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic_core import SchemaError
@@ -18,6 +20,17 @@ from ...shared.utils import resolve_within, safe_name_component
 
 
 DEFAULT_BASE_DIR = Path("data") / "capabilities"
+
+
+@dataclass(frozen=True)
+class StagedRuntimeSnapshot:
+    """Validated runtime payload that is not yet enumerable authority."""
+
+    store_root: Path
+    target: Path
+    stable_hash: str
+    payload: str
+    payload_sha256: str
 
 
 class UnusableCapabilitySnapshotError(RuntimeError):
@@ -51,7 +64,40 @@ class CapabilitySnapshotStore:
         self.base_dir = Path(base_dir) if base_dir is not None else Path(DEFAULT_BASE_DIR)
 
     def save_runtime(self, snapshot: CapabilitySnapshot) -> Path:
-        return self._save("runtime", snapshot)
+        return self.promote_runtime(self.stage_runtime(snapshot))
+
+    def stage_runtime(self, snapshot: CapabilitySnapshot) -> StagedRuntimeSnapshot:
+        """Validate and serialize a snapshot without publishing it to runtime/."""
+
+        payload = snapshot.model_dump_json(indent=2)
+        validated = CapabilitySnapshot.model_validate_json(payload)
+        target = self._target("runtime", validated)
+        return StagedRuntimeSnapshot(
+            store_root=self.base_dir.resolve(),
+            target=target,
+            stable_hash=validated.stable_hash(),
+            payload=payload,
+            payload_sha256=hashlib.sha256(payload.encode()).hexdigest(),
+        )
+
+    def promote_runtime(self, staged: StagedRuntimeSnapshot) -> Path:
+        """Atomically make one validated stage enumerable runtime authority."""
+
+        if not isinstance(staged, StagedRuntimeSnapshot):
+            raise TypeError("Runtime promotion requires a staged snapshot")
+        if staged.store_root != self.base_dir.resolve():
+            raise ValueError("Staged snapshot belongs to a different store")
+        snapshot = CapabilitySnapshot.model_validate_json(staged.payload)
+        expected_hash = snapshot.stable_hash()
+        expected_target = self._target("runtime", snapshot)
+        if (
+            staged.stable_hash != expected_hash
+            or staged.target != expected_target
+            or staged.payload_sha256
+            != hashlib.sha256(staged.payload.encode()).hexdigest()
+        ):
+            raise ValueError("Staged snapshot identity changed before promotion")
+        return self._write_atomic(expected_target, staged.payload)
 
     def save_verified(self, snapshot: CapabilitySnapshot) -> Path:
         return self._save("verified", snapshot)
@@ -125,10 +171,19 @@ class CapabilitySnapshotStore:
         return None
 
     def _save(self, scope: str, snapshot: CapabilitySnapshot) -> Path:
+        return self._write_atomic(
+            self._target(scope, snapshot),
+            snapshot.model_dump_json(indent=2),
+        )
+
+    def _target(self, scope: str, snapshot: CapabilitySnapshot) -> Path:
         version = safe_name_component(snapshot.packet_tracer_version or "unknown", "unknown")
         target_dir = resolve_within(self.base_dir, scope, version)
+        return resolve_within(target_dir, f"{snapshot.stable_hash()}.json")
+
+    def _write_atomic(self, target: Path, payload: str) -> Path:
+        target_dir = target.parent
         target_dir.mkdir(parents=True, exist_ok=True)
-        target = resolve_within(target_dir, f"{snapshot.stable_hash()}.json")
         # The temporary must belong to this writer, and that has to be the OS
         # refusing to hand out a name twice rather than a random suffix being
         # unlikely to repeat. `stable_hash` ignores session_id and started_at,
@@ -144,7 +199,7 @@ class CapabilitySnapshotStore:
             # Default newline handling, matching the previous `write_text`, so
             # stored bytes are unchanged on every platform.
             with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                stream.write(snapshot.model_dump_json(indent=2))
+                stream.write(payload)
             temporary.replace(target)
         except BaseException:
             temporary.unlink(missing_ok=True)
