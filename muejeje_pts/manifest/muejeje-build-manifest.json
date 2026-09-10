@@ -1,13 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "extension": {"name": "muejeje", "version": "0.1.0"},
   "output": {"artifact": "muejeje.pts", "report": "muejeje.build.json"},
-  "own_inputs": [
-    "EXTENSION/script-engine/main.js",
-    "EXTENSION/webview/bootstrap.bundle.min.js",
-    "EXTENSION/webview/bootstrap.min.css",
-    "EXTENSION/webview/index.html",
-    "EXTENSION/webview/interface.js",
+  "artifact_inputs": [
+    "muejeje_pts/interface/index.html",
+    "muejeje_pts/script-engine/lifecycle.js"
+  ],
+  "tooling_inputs": [
     "src/packet_tracer_mcp/infrastructure/pts/build.py",
     "tools/build_muejeje_pts.py"
   ],

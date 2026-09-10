@@ -16,7 +16,7 @@ def main() -> int:
     parser.add_argument("--builder", type=Path)
     args = parser.parse_args()
     root = Path.cwd().resolve()
-    manifest = resolve_within(root, "EXTENSION", "manifest", "muejeje-build-manifest.json")
+    manifest = resolve_within(root, "muejeje_pts", "manifest", "muejeje-build-manifest.json")
     report = inspect_build(root, manifest, builder_path=args.builder)
     try:
         dist_leaf = root / "dist"

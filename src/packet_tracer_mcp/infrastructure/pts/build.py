@@ -12,12 +12,21 @@ from ...shared.utils import resolve_within, safe_name_component
 
 _MAX_MANIFEST_BYTES = 256 * 1024
 _MAX_INPUT_BYTES = 64 * 1024 * 1024
-_EXPECTED_OWN_INPUTS = (
-    "EXTENSION/script-engine/main.js",
-    "EXTENSION/webview/bootstrap.bundle.min.js",
-    "EXTENSION/webview/bootstrap.min.css",
-    "EXTENSION/webview/index.html",
-    "EXTENSION/webview/interface.js",
+# The owned source root. Everything packaged into muejeje.pts lives here, and
+# nothing else does. EXTENSION/** is the legacy MCP Control Center extension: it
+# keeps serving its own product and is not Muejeje artifact content.
+_OWNED_SOURCE_ROOT = "muejeje_pts/"
+_PACKAGED_SUFFIXES = frozenset(
+    {".js", ".html", ".htm", ".css", ".png", ".gif", ".jpg", ".svg"}
+)
+# Bytes that ship inside the artifact.
+_EXPECTED_ARTIFACT_INPUTS = (
+    "muejeje_pts/interface/index.html",
+    "muejeje_pts/script-engine/lifecycle.js",
+)
+# The auditor. It ships nothing, but it decides how the artifact was inspected,
+# so it belongs to recipe identity and never to artifact content.
+_EXPECTED_TOOLING_INPUTS = (
     "src/packet_tracer_mcp/infrastructure/pts/build.py",
     "tools/build_muejeje_pts.py",
 )
@@ -193,7 +202,7 @@ def _base_report(status: str, blockers: list[str]) -> dict[str, Any]:
         "status": status,
         "blockers": blockers,
         "source": {"commit": None, "tree": None, "clean": False},
-        "inputs": {"own": [], "reference": []},
+        "inputs": {"artifact": [], "tooling": [], "reference": []},
         "builder": None,
         "packaging_state": _packaging_state(
             manual=PACKAGING_MANUAL_UNAVAILABLE,
@@ -225,7 +234,7 @@ def inspect_build(
     report = _base_report(BUILD_INPUT_INVALID, blockers)
     try:
         manifest_file = Path(manifest_path).resolve()
-        if manifest_file != resolve_within(root, "EXTENSION", "manifest", "muejeje-build-manifest.json"):
+        if manifest_file != resolve_within(root, "muejeje_pts", "manifest", "muejeje-build-manifest.json"):
             raise ValueError("manifest path must be the fixed repository manifest")
         if manifest_file.stat().st_size > _MAX_MANIFEST_BYTES:
             raise ValueError("manifest exceeds size limit")
@@ -245,14 +254,14 @@ def inspect_build(
     if (
         not isinstance(manifest, dict)
         or type(manifest.get("schema_version")) is not int
-        or manifest.get("schema_version") != 1
+        or manifest.get("schema_version") != 2
     ):
-        blockers.append("invalid manifest schema_version: expected 1")
+        blockers.append("invalid manifest schema_version: expected 2")
         return report
 
     required_sections = {
-        "extension", "output", "own_inputs", "reference_inputs", "builder",
-        "build_options", "packaging",
+        "extension", "output", "artifact_inputs", "tooling_inputs",
+        "reference_inputs", "builder", "build_options", "packaging",
     }
     expected_top_level = required_sections | {"schema_version"}
     if set(manifest) != expected_top_level:
@@ -288,7 +297,7 @@ def inspect_build(
         tracked = set()
         git_failed = True
 
-    manifest_logical = "EXTENSION/manifest/muejeje-build-manifest.json"
+    manifest_logical = "muejeje_pts/manifest/muejeje-build-manifest.json"
     if manifest_logical not in tracked:
         blockers.append("manifest must be tracked")
     else:
@@ -299,40 +308,73 @@ def inspect_build(
         except ValueError as exc:
             blockers.append(f"invalid manifest Git identity: {exc}")
 
-    own_values = manifest.get("own_inputs")
-    if not isinstance(own_values, list) or own_values != list(_EXPECTED_OWN_INPUTS):
-        blockers.append("own_inputs must equal the complete ordered own input inventory")
-        own_values = own_values if isinstance(own_values, list) else []
-    own_evidence: list[dict[str, str]] = []
-    for value in own_values:
-        logical, path, error = _logical_path(root, value)
-        if error:
-            blockers.append(error)
-            continue
-        assert logical is not None and path is not None
-        if logical not in tracked:
-            blockers.append(f"own input is not tracked: {logical}")
-        if not path.is_file():
-            blockers.append(f"missing own input: {logical}")
-            manual_blockers.append(f"missing own input: {logical}")
-            continue
-        try:
-            actual_hash = _hash_file(path, max_bytes=_MAX_INPUT_BYTES)
-            own_evidence.append({"path": logical, "sha256": actual_hash})
-            if logical in tracked and not _working_blob_matches_head(root, logical):
-                blockers.append(f"own input bytes differ from HEAD: {logical}")
-                report["source"]["clean"] = False
-        except (OSError, ValueError) as exc:
-            blockers.append(f"invalid own input {logical}: {exc}")
-    report["inputs"]["own"] = own_evidence
+    def _measure(
+        section: str, label: str, expected: tuple[str, ...],
+    ) -> tuple[list[dict[str, str]], set[str]]:
+        values = manifest.get(section)
+        if not isinstance(values, list) or values != list(expected):
+            blockers.append(
+                f"{section} must equal the complete ordered {label} inventory"
+            )
+            values = values if isinstance(values, list) else []
+        evidence: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for value in values:
+            logical, path, error = _logical_path(root, value)
+            if error:
+                blockers.append(error)
+                continue
+            assert logical is not None and path is not None
+            seen.add(logical)
+            if section == "artifact_inputs" and not logical.startswith(_OWNED_SOURCE_ROOT):
+                blockers.append(
+                    "artifact input must live under the owned source root "
+                    f"{_OWNED_SOURCE_ROOT}: {logical}"
+                )
+            if logical not in tracked:
+                blockers.append(f"{label} input is not tracked: {logical}")
+            if not path.is_file():
+                blockers.append(f"missing {label} input: {logical}")
+                manual_blockers.append(f"missing {label} input: {logical}")
+                continue
+            try:
+                actual_hash = _hash_file(path, max_bytes=_MAX_INPUT_BYTES)
+                evidence.append({"path": logical, "sha256": actual_hash})
+                if logical in tracked and not _working_blob_matches_head(root, logical):
+                    blockers.append(f"{label} input bytes differ from HEAD: {logical}")
+                    report["source"]["clean"] = False
+            except (OSError, ValueError) as exc:
+                blockers.append(f"invalid {label} input {logical}: {exc}")
+        return evidence, seen
 
+    artifact_evidence, artifact_paths = _measure(
+        "artifact_inputs", "artifact", _EXPECTED_ARTIFACT_INPUTS,
+    )
+    tooling_evidence, tooling_paths = _measure(
+        "tooling_inputs", "tooling", _EXPECTED_TOOLING_INPUTS,
+    )
+    report["inputs"]["artifact"] = artifact_evidence
+    report["inputs"]["tooling"] = tooling_evidence
+
+    # A path cannot both ship inside the artifact and decide how it was audited.
+    for logical in sorted(artifact_paths & tooling_paths):
+        blockers.append(
+            f"invalid input {logical}: a path may not be both artifact content "
+            "and tooling"
+        )
+
+    # Completeness is measured over the owned source root only. The legacy
+    # EXTENSION tree belongs to another product and is deliberately not swept in.
     tracked_assets = {
         item for item in tracked
-        if item.startswith("EXTENSION/") and Path(item).suffix.lower() in {".js", ".html", ".css"}
+        if item.startswith(_OWNED_SOURCE_ROOT)
+        and Path(item).suffix.lower() in _PACKAGED_SUFFIXES
     }
-    unexpected = sorted(tracked_assets - set(_EXPECTED_OWN_INPUTS))
+    unexpected = sorted(tracked_assets - set(_EXPECTED_ARTIFACT_INPUTS))
     for logical in unexpected:
-        blockers.append(f"tracked EXTENSION asset omitted from own_inputs: {logical}")
+        blockers.append(
+            f"tracked owned source omitted from artifact_inputs: {logical}"
+        )
 
     reference_values = manifest.get("reference_inputs")
     if not isinstance(reference_values, list):
@@ -434,12 +476,20 @@ def inspect_build(
     input_invalid = any(
         marker in blocker.lower()
         for blocker in blockers
-        for marker in ("invalid", "unsafe", "noncanonical", "tracked extension", "must be untracked", "must be tracked", "not tracked", "mismatch", "omitted")
+        for marker in (
+            "invalid", "unsafe", "noncanonical", "tracked owned source",
+            "must be untracked", "must be tracked", "not tracked",
+            "mismatch", "omitted",
+        )
     )
     input_invalid = input_invalid or any(
         marker in blocker.lower()
         for blocker in blockers
-        for marker in ("own_inputs must", "reference_inputs must", "must be ignored")
+        for marker in (
+            "artifact_inputs must", "tooling_inputs must",
+            "reference_inputs must", "must be ignored",
+            "must live under the owned source root",
+        )
     )
     source_dirty = any(
         marker in b.lower() for b in blockers for marker in ("dirty", "differ from head")
@@ -471,7 +521,8 @@ def inspect_build(
         "manifest": {"sha256": manifest_hash},
         "extension": extension,
         "output": output,
-        "own_inputs": own_evidence,
+        "artifact_inputs": artifact_evidence,
+        "tooling_inputs": tooling_evidence,
         "reference_inputs": reference_evidence,
         "builder": report["builder"],
         "build_options": options,

@@ -25,17 +25,16 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def _manifest() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "extension": {"name": "muejeje", "version": "0.1.0"},
         "output": {
             "artifact": "muejeje.pts", "report": "muejeje.build.json",
         },
-        "own_inputs": [
-            "EXTENSION/script-engine/main.js",
-            "EXTENSION/webview/bootstrap.bundle.min.js",
-            "EXTENSION/webview/bootstrap.min.css",
-            "EXTENSION/webview/index.html",
-            "EXTENSION/webview/interface.js",
+        "artifact_inputs": [
+            "muejeje_pts/interface/index.html",
+            "muejeje_pts/script-engine/lifecycle.js",
+        ],
+        "tooling_inputs": [
             "src/packet_tracer_mcp/infrastructure/pts/build.py",
             "tools/build_muejeje_pts.py",
         ],
@@ -58,8 +57,11 @@ def _manifest() -> dict[str, object]:
 
 def make_repo(tmp_path: Path) -> tuple[Path, Path]:
     root = tmp_path / "source"
-    manifest_path = root / "EXTENSION/manifest/muejeje-build-manifest.json"
-    for logical in _manifest()["own_inputs"]:  # type: ignore[index]
+    manifest_path = root / "muejeje_pts/manifest/muejeje-build-manifest.json"
+    declared = (
+        _manifest()["artifact_inputs"] + _manifest()["tooling_inputs"]  # type: ignore[operator]
+    )
+    for logical in declared:
         path = root / logical
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"own:{logical}\n", encoding="utf-8")
@@ -141,34 +143,34 @@ def test_noncanonical_json_values_are_invalid(tmp_path: Path, bad_value: object)
     assert any("manifest" in blocker.lower() for blocker in report["blockers"])
 
 
-def test_dirty_source_and_omitted_or_unexpected_own_assets_are_invalid(tmp_path: Path):
+def test_dirty_source_and_omitted_or_unexpected_owned_assets_are_invalid(tmp_path: Path):
     root, manifest_path = make_repo(tmp_path)
-    (root / "EXTENSION/webview/index.html").write_text("dirty", encoding="utf-8")
+    (root / "muejeje_pts/interface/index.html").write_text("dirty", encoding="utf-8")
     report = _build_api().inspect_build(root, manifest_path)
     assert report["status"] == "BUILD_SOURCE_INVALID"
     assert any("dirty" in blocker.lower() for blocker in report["blockers"])
 
-    _git(root, "checkout", "--", "EXTENSION/webview/index.html")
-    extra = root / "EXTENSION/webview/extra.css"
+    _git(root, "checkout", "--", "muejeje_pts/interface/index.html")
+    extra = root / "muejeje_pts/interface/extra.css"
     extra.write_text("extra", encoding="utf-8")
-    _git(root, "add", "-f", "EXTENSION/webview/extra.css")
+    _git(root, "add", "-f", "muejeje_pts/interface/extra.css")
     _git(root, "commit", "-qm", "extra tracked asset")
     report = _build_api().inspect_build(root, manifest_path)
     assert report["status"] == "BUILD_INPUT_INVALID"
     assert any("extra.css" in blocker for blocker in report["blockers"])
 
 
-def test_missing_and_omitted_own_inputs_are_reported(tmp_path: Path):
+def test_missing_and_omitted_artifact_inputs_are_reported(tmp_path: Path):
     root, manifest_path = make_repo(tmp_path)
-    missing = root / "EXTENSION/webview/index.html"
+    missing = root / "muejeje_pts/interface/index.html"
     missing.unlink()
     report = _build_api().inspect_build(root, manifest_path)
     assert report["build_recipe_id"] is None
-    assert any("missing own input" in blocker and "index.html" in blocker for blocker in report["blockers"])
+    assert any("missing artifact input" in blocker and "index.html" in blocker for blocker in report["blockers"])
 
     _git(root, "checkout", "--", str(missing.relative_to(root)))
     manifest = _manifest()
-    manifest["own_inputs"].remove("EXTENSION/webview/index.html")  # type: ignore[union-attr]
+    manifest["artifact_inputs"].remove("muejeje_pts/interface/index.html")  # type: ignore[union-attr]
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     report = _build_api().inspect_build(root, manifest_path)
     assert report["status"] == "BUILD_INPUT_INVALID"
@@ -286,7 +288,7 @@ def test_manifest_must_be_tracked_and_own_bytes_must_match_head(tmp_path: Path):
     assert any("manifest" in blocker and "tracked" in blocker for blocker in report["blockers"])
 
     _git(root, "add", str(manifest_path.relative_to(root)))
-    own = root / "EXTENSION/webview/interface.js"
+    own = root / "muejeje_pts/script-engine/lifecycle.js"
     _git(root, "update-index", "--assume-unchanged", str(own.relative_to(root)))
     own.write_text("hidden dirty bytes", encoding="utf-8")
     try:
@@ -295,7 +297,7 @@ def test_manifest_must_be_tracked_and_own_bytes_must_match_head(tmp_path: Path):
         _git(root, "update-index", "--no-assume-unchanged", str(own.relative_to(root)))
     assert report["status"] == "BUILD_SOURCE_INVALID"
     assert report["source"]["clean"] is False
-    assert any("HEAD" in blocker and "interface.js" in blocker for blocker in report["blockers"])
+    assert any("HEAD" in blocker and "lifecycle.js" in blocker for blocker in report["blockers"])
 
 
 def test_manifest_bytes_must_match_head_even_when_assume_unchanged(tmp_path: Path):
@@ -363,7 +365,7 @@ def test_non_git_source_is_source_invalid(tmp_path: Path):
 def test_unsafe_input_and_output_paths_are_rejected(tmp_path: Path):
     root, manifest_path = make_repo(tmp_path)
     manifest = _manifest()
-    manifest["own_inputs"][0] = "../secret.js"  # type: ignore[index]
+    manifest["artifact_inputs"][0] = "../secret.js"  # type: ignore[index]
     manifest["output"]["report"] = "../report.json"  # type: ignore[index]
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
@@ -460,13 +462,8 @@ INSTALLED_BUILDER = Path(
 )
 
 RESOLVED_OPTIONS = {
-    "engine_script_order": ["EXTENSION/script-engine/main.js"],
-    "custom_interface_order": [
-        "EXTENSION/webview/index.html",
-        "EXTENSION/webview/interface.js",
-        "EXTENSION/webview/bootstrap.min.css",
-        "EXTENSION/webview/bootstrap.bundle.min.js",
-    ],
+    "engine_script_order": ["muejeje_pts/script-engine/lifecycle.js"],
+    "custom_interface_order": ["muejeje_pts/interface/index.html"],
     "module_id": "com.muejeje.runtime",
     "startup": "on_startup",
     "privileges": ["PrivGetNetwork"],
@@ -606,3 +603,113 @@ def test_resolved_options_with_a_verified_builder_report_manual_packaging(tmp_pa
     assert report["artifact_sha256"] is None
     # Automation stays unproven even when a human could package this now.
     assert report["packaging_state"]["automation"] == "BUILD_AUTOMATION_UNPROVEN"
+
+
+# ---------------------------------------------------------------------------
+# M0E: artifact content, build tooling and references are three categories.
+#
+# The v1 manifest put muejeje_pts sources and the auditor itself in one
+# own_inputs list, so "what ships inside the .pts" and "what decides how it was
+# audited" were indistinguishable. Both belong to recipe identity; only one
+# belongs to the artifact.
+# ---------------------------------------------------------------------------
+
+LEGACY_ASSET = "EXTENSION/script-engine/main.js"
+
+
+def test_report_separates_artifact_from_tooling_inputs(tmp_path: Path):
+    root, manifest_path = make_repo(tmp_path)
+    report = _build_api().inspect_build(root, manifest_path)
+
+    artifact = [entry["path"] for entry in report["inputs"]["artifact"]]
+    tooling = [entry["path"] for entry in report["inputs"]["tooling"]]
+
+    assert artifact == list(_manifest()["artifact_inputs"])  # type: ignore[arg-type]
+    assert tooling == list(_manifest()["tooling_inputs"])  # type: ignore[arg-type]
+    assert set(artifact).isdisjoint(tooling)
+    assert all(path.startswith("muejeje_pts/") for path in artifact)
+    assert not any(path.startswith("muejeje_pts/") for path in tooling)
+
+
+def test_tooling_inputs_participate_in_recipe_identity(tmp_path: Path):
+    """Changing the auditor changes the recipe, even though it ships nothing."""
+    root, manifest_path = make_repo(tmp_path)
+    build = _build_api()
+    before = build.inspect_build(root, manifest_path)["recipe"]
+
+    tooling = root / "tools/build_muejeje_pts.py"
+    tooling.write_text("own:tools/build_muejeje_pts.py\n# audited differently\n", encoding="utf-8")
+    _git(root, "add", "tools/build_muejeje_pts.py")
+    _git(root, "commit", "-qm", "tooling changed")
+    after = build.inspect_build(root, manifest_path)["recipe"]
+
+    assert before["tooling_inputs"] != after["tooling_inputs"]
+    assert before["artifact_inputs"] == after["artifact_inputs"]
+    assert build.recipe_id(before) != build.recipe_id(after)
+
+
+def test_artifact_and_tooling_inputs_may_not_overlap(tmp_path: Path):
+    root, manifest_path = make_repo(tmp_path)
+    manifest = _manifest()
+    manifest["tooling_inputs"].append(  # type: ignore[union-attr]
+        "muejeje_pts/script-engine/lifecycle.js"
+    )
+    _commit_manifest(root, manifest_path, manifest)
+
+    report = _build_api().inspect_build(root, manifest_path)
+    assert report["status"] == "BUILD_INPUT_INVALID"
+    assert any(
+        "may not be both artifact content and tooling" in blocker
+        for blocker in report["blockers"]
+    )
+
+
+def test_legacy_extension_asset_is_rejected_as_artifact_content(tmp_path: Path):
+    root, manifest_path = make_repo(tmp_path)
+    legacy = root / LEGACY_ASSET
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text("legacy\n", encoding="utf-8")
+    manifest = _manifest()
+    manifest["artifact_inputs"].append(LEGACY_ASSET)  # type: ignore[union-attr]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    _git(root, "add", LEGACY_ASSET, "muejeje_pts/manifest/muejeje-build-manifest.json")
+    _git(root, "commit", "-qm", "legacy asset")
+
+    report = _build_api().inspect_build(root, manifest_path)
+    assert report["status"] == "BUILD_INPUT_INVALID"
+    assert any(
+        "artifact input must live under the owned source root" in blocker
+        and LEGACY_ASSET in blocker
+        for blocker in report["blockers"]
+    )
+
+
+def test_legacy_extension_assets_are_not_swept_into_the_inventory(tmp_path: Path):
+    """The v1 model required every tracked EXTENSION asset to be declared. The
+    legacy extension now serves its own product and is none of Muejeje's."""
+    root, manifest_path = make_repo(tmp_path)
+    legacy = root / "EXTENSION/webview/legacy-only.js"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text("legacy only\n", encoding="utf-8")
+    _git(root, "add", "EXTENSION/webview/legacy-only.js")
+    _git(root, "commit", "-qm", "legacy-only asset")
+
+    report = _build_api().inspect_build(root, manifest_path)
+    assert not any("legacy-only.js" in blocker for blocker in report["blockers"])
+    assert not any(
+        entry["path"] == "EXTENSION/webview/legacy-only.js"
+        for entry in report["inputs"]["artifact"] + report["inputs"]["tooling"]
+    )
+
+
+def test_untracked_artifact_input_is_still_rejected(tmp_path: Path):
+    """A path-safety regression that must survive the recategorisation."""
+    root, manifest_path = make_repo(tmp_path)
+    _git(root, "rm", "--cached", "-q", "muejeje_pts/script-engine/lifecycle.js")
+    _git(root, "commit", "-qm", "untrack an artifact input")
+
+    report = _build_api().inspect_build(root, manifest_path)
+    assert any(
+        "not tracked" in blocker and "lifecycle.js" in blocker
+        for blocker in report["blockers"]
+    )
