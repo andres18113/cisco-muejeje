@@ -290,6 +290,33 @@ limit, not an unresolved decision:
 | `V6_KERNEL_VERIFIED` | `NOT_YET_LIVE_VERIFIED` | Node establishes our JavaScript; it establishes nothing about PT's engine |
 | `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | every platform and network capability has only ever been driven against a stub |
 
+### Milestone states, and what they are not
+
+`MJ-033` separates *implementation progress* from *Core Readiness*, and this is
+where the second one is measured. A milestone may be implemented while an
+earlier one waits on target evidence; none of them is `DONE` until it is
+`CORE_READY`.
+
+```text
+M0B = NOT_COMPLETE
+M0C = NOT_COMPLETE
+M1_CORE_READY = NO
+M2_CORE_READY = NO
+```
+
+| State | What is still missing |
+| --- | --- |
+| `M0B` | credential and transport API qualification. No transport exists, so `MJ-026`'s terms are baselined rather than exercised and there is nothing to qualify a credential against |
+| `M0C` | batch and auth-boundary semantics. `MJ-027` is the contract the first batch operation must satisfy and no batch operation exists; the auth boundary is in the same position |
+| `M1_CORE_READY` | target evidence. The V6 kernel is verified under Node and has never run inside Packet Tracer (`MJ-015`) |
+| `M2_CORE_READY` | target evidence, and packaging. Every platform and network capability is `PENDING_TARGET`, no `.pts` has been built from these sources, and `OFFICIAL_PACKAGING_PROVED` is `PENDING_GUI` |
+
+**A green run on this page does not move any of them.** The suite establishes
+what this repository's own code does; three of these four gates are waiting on a
+target, and the fourth is waiting on work that has not been written. M3 being
+under way changes none of them either — that is `MJ-033` working as intended,
+not a milestone being skipped.
+
 ### A green V6 run is not IpcAPI qualification
 
 `TARGET_API_BASELINED` asks whether the **platform APIs Muejeje uses** are

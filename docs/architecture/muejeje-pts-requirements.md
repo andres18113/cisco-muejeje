@@ -1099,6 +1099,115 @@ asserts each measure in both directions on synthetic results.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 
+## Milestones and release
+
+### MJ-033 — Milestone Core Readiness
+**Requirement.** M1–M6 may progress in implementation while earlier milestones
+are still waiting on target evidence. Implementation order is not blocked by
+evidence order — a capability whose code is complete and whose target reading
+does not exist yet is a normal state, not a stalled one (MJ-015).
+
+**But no milestone is `DONE` until it is `CORE_READY`.** Those are two different
+claims, and collapsing them is what lets a milestone be reported finished while
+something it promised is still missing. Core Readiness requires, at minimum, all
+of:
+
+| Gate | What it asks |
+| --- | --- |
+| complete intended scope | everything the milestone said it would do, not the part that was easy |
+| coherent, stable contract | one vocabulary, no self-contradiction, nothing a consumer must guess (MJ-005, MJ-029) |
+| no known P0/P1 defect | no open defect of that severity, whether or not anyone has filed it |
+| bounded behaviour | every input, walk and window bounded, and every bound Muejeje's own (MJ-029) |
+| correct failure attribution | our defect never wears the platform's name, and no reading names a cause nothing observed (MJ-022, MJ-031) |
+| preserved architecture boundaries | one `mcpDispatchV6`, platform access only through the declared boundary, dependency direction inward (MJ-007, MJ-019) |
+| genericity | no consumer, project or topology assumption anywhere in the artifact (MJ-001, MJ-002, MJ-004) |
+| compatibility assessment | what changed, and whether it was additive or breaking, decided by the rule rather than by judgement (MJ-030) |
+| maintainability gates | complexity budgets met, or an exception named and justified (MJ-020, MJ-021) |
+| applicable tests | every new behaviour tested, and every gate the milestone claims actually asserting it |
+| exact-SHA CI | CI green on the exact pushed commit, not on "the branch" |
+| target evidence | for every Packet-Tracer-dependent claim the milestone makes (MJ-015) |
+
+**The list is a floor, not a ceiling.** "At minimum" is load-bearing: a
+milestone that satisfies all twelve and still has a known reason not to be
+trusted is not `CORE_READY`, and the reason is written down rather than argued
+away.
+
+**Target evidence gates the verdict, not the work.** A milestone whose code,
+tests and CI are complete and whose only outstanding gate is a target reading is
+reported exactly that way — implementation complete, `CORE_READY = NO`, with the
+missing gate named. What it is never reported as is `DONE`.
+
+**Current state, and it is a measurement rather than a plan:**
+
+```text
+M0B = NOT_COMPLETE
+M0C = NOT_COMPLETE
+M1_CORE_READY = NO
+M2_CORE_READY = NO
+```
+
+- **M0B** is not complete: it still includes credential and transport API
+  qualification. No transport exists, and MJ-026's terms are `BASELINED` rather
+  than exercised — there is nothing yet to qualify a credential against.
+- **M0C** is not complete: it still includes batch and auth-boundary semantics.
+  MJ-027 is the contract the first batch operation must satisfy, and no batch
+  operation exists; the auth boundary is in the same position under MJ-026.
+- **M1** is not `CORE_READY`: the V6 kernel is verified under Node and has never
+  run inside Packet Tracer, so its Packet-Tracer-dependent claims have no target
+  evidence (MJ-015).
+- **M2** is not `CORE_READY`: every platform capability is `PENDING_TARGET` for
+  the same reason, no `.pts` has been built from these sources, and
+  `OFFICIAL_PACKAGING_PROVED` is still `PENDING_GUI`.
+
+Each stays at that value until its own gates are satisfied. None of them moves
+because a later milestone started, because the test suite is green, or because
+the work looks finished from inside the repository.
+**Rationale.** The failure this prevents is a milestone marked `DONE` on the
+strength of a green offline run. `APPLIED != VERIFIED` already says a change
+being made is not a change being proved (MJ-010); this says the same thing about
+a milestone, and names the gates so "done" cannot be re-argued each time. Letting
+implementation run ahead of evidence is deliberate: the alternative is a line
+that stops dead whenever a target is unavailable, which would make the evidence
+rule expensive enough that somebody eventually weakens it.
+**Verification.** The states above are recorded here and in the offline audit,
+which is where each gate's evidence lives. Nothing automated asserts them yet: a
+gate that read this table would be checking that a document agrees with itself.
+**Status.** `BASELINED`.
+
+### MJ-034 — Zero-change artifact cutover
+**Requirement.** The release-qualified `muejeje.pts` must eventually be able to
+replace the legacy artifact **without changes to existing production code,
+tests, domain, application or integration code**. If adopting Muejeje requires
+editing a consumer, the cutover has not been achieved — it has been traded for a
+migration, which is the thing this requirement exists to refuse.
+
+**Legacy compatibility is a facade, and it lives outside the generic V6 core.**
+Whatever the legacy artifact's callers depend on — its shapes, its names, its
+accidents — is adapted in a compatibility layer that sits outside the kernel.
+None of it enters V6, the operations, or the platform adapters. A kernel that
+carried one consumer's legacy shape would have stopped being a generic runtime
+the moment it did (MJ-001, MJ-004), and the facade is what lets the cutover be
+compatible without the core being compromised.
+
+**CP LIVE remains a consumer, never a kernel dependency.** It exercises Muejeje;
+it does not define it. A CP LIVE SHA may be recorded as integration evidence,
+never as a version, prerequisite or watermark.
+
+**This is not claimed to be achieved.** Nothing here has been packaged, no
+`.pts` has been built from these sources, no compatibility facade exists, and no
+consumer has been cut over. The requirement states the target and the shape of
+an acceptable solution; it records no progress toward it.
+**Rationale.** "Replace the artifact, then fix the callers" is how a runtime
+acquires a consumer's assumptions permanently: the edits land in the core
+because that is where they are cheapest, and the generic runtime quietly becomes
+one project's. Naming the facade as the only legal home for legacy shape decides
+that in advance, while there is still nothing to move.
+**Verification.** Nothing yet, and deliberately so — there is no facade, no
+built artifact and no cutover to verify. The architecture gates already keep the
+core generic (MJ-001, MJ-019), which is the half of this that can be enforced
+before the other half exists.
+**Status.** `BASELINED`.
+
 ## Open decisions
 
 Not requirements. Each needs a decision before it can become one.
