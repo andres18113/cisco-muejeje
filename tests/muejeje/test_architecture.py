@@ -42,7 +42,7 @@ FUNCTION_TARGET, FUNCTION_HARD = 40, 80
 TARGET_EXCEPTIONS: dict[str, str] = {}
 # "path::function" -> why this function may exceed the target.
 FUNCTION_EXCEPTIONS: dict[str, str] = {
-    "muejeje_pts/script-engine/dispatcher_v6.js::muejejeV6OperationTable": (
+    "muejeje_pts/script-engine/210_dispatcher_v6.js::muejejeV6OperationTable": (
         "the V6 whitelist, and it is a declaration rather than logic: no "
         "branch, no loop, one entry per admitted operation, so its length is "
         "the number of operations and not the amount a reader must follow. "

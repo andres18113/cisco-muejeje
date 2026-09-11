@@ -6,7 +6,7 @@
  * reports what it read without deciding what any of it establishes (MJ-011).
  *
  * It names no platform object. Every call goes through `muejejeAdapterCall` in
- * `platform_adapter.js`, which admits only the read-only getters on that list.
+ * `060_platform_adapter.js`, which admits only the read-only getters on that list.
  *
  * ONE OBSERVATION, NOT A JOIN. Everything reported comes from a single reading
  * of a single device: the count, the device at the requested position, and each

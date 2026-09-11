@@ -64,7 +64,7 @@ def _observed(**args) -> dict:
 
 def test_the_operation_names_no_platform_symbol_of_its_own():
     """Operation -> adapter -> boundary -> platform, never a shortcut (MJ-019)."""
-    body = (SCRIPT_ENGINE / "platform_support.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "180_platform_support.js").read_text(encoding="utf-8")
 
     assert "muejejeAdapterModuleTypeSupport(" in body
     assert "ipc" not in body
@@ -80,8 +80,8 @@ def test_the_support_reading_did_not_grow_inside_the_chassis_walk():
     the two. Folding this into it would have made one file answer two
     questions, which is the split this budget exists to force.
     """
-    walk = (SCRIPT_ENGINE / "platform_module_adapter.js").read_text(encoding="utf-8")
-    support = (SCRIPT_ENGINE / "platform_support_adapter.js").read_text(
+    walk = (SCRIPT_ENGINE / "110_platform_module_adapter.js").read_text(encoding="utf-8")
+    support = (SCRIPT_ENGINE / "120_platform_support_adapter.js").read_text(
         encoding="utf-8",
     )
 
@@ -91,8 +91,8 @@ def test_the_support_reading_did_not_grow_inside_the_chassis_walk():
 
 
 def test_the_operation_declares_its_own_argument_rules():
-    body = (SCRIPT_ENGINE / "platform_support.js").read_text(encoding="utf-8")
-    dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "180_platform_support.js").read_text(encoding="utf-8")
+    dispatcher = (SCRIPT_ENGINE / "210_dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_PLATFORM_SUPPORT_ARGS = {" in body
     assert "MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MIN" in body

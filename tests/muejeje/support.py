@@ -62,26 +62,26 @@ TOOLING_INPUTS = [
 # nobody was checking (MJ-028).
 FEATURE_EVIDENCE = {
     "network.device_reading": (
-        "network_adapter.js", "muejejeAdapterDeviceInventory",
+        "070_network_adapter.js", "muejejeAdapterDeviceInventory",
     ),
     "network.identity_reading": (
-        "network_identity_adapter.js", "muejejeAdapterDeviceIdentity",
+        "080_network_identity_adapter.js", "muejejeAdapterDeviceIdentity",
     ),
     "network.port_reading": (
-        "network_ports_adapter.js", "muejejeAdapterDevicePorts",
+        "090_network_ports_adapter.js", "muejejeAdapterDevicePorts",
     ),
     "platform.descriptor_discovery": (
-        "platform_device_adapter.js", "muejejeAdapterDeviceDescriptors",
+        "100_platform_device_adapter.js", "muejejeAdapterDeviceDescriptors",
     ),
     "platform.module_discovery": (
-        "platform_module_adapter.js", "muejejeAdapterModuleDescriptors",
+        "110_platform_module_adapter.js", "muejejeAdapterModuleDescriptors",
     ),
     "platform.support_lookup": (
-        "platform_support_adapter.js", "muejejeAdapterModuleTypeSupport",
+        "120_platform_support_adapter.js", "muejejeAdapterModuleTypeSupport",
     ),
-    "protocol.v6": ("validation_v6.js", "muejejeV6ParseRequest"),
-    "runtime.operation_catalog": ("dispatcher_v6.js", "muejejeV6OperationCatalog"),
-    "runtime.session_id": ("core.js", "muejejeCoreNewSessionId"),
+    "protocol.v6": ("030_validation_v6.js", "muejejeV6ParseRequest"),
+    "runtime.operation_catalog": ("210_dispatcher_v6.js", "muejejeV6OperationCatalog"),
+    "runtime.session_id": ("010_core.js", "muejejeCoreNewSessionId"),
 }
 
 

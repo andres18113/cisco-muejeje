@@ -11,8 +11,11 @@ nothing compared either with the artifact (MJ-008, MJ-025).
 So every part of it that restates the artifact is read back and compared:
 
 * the Script Engine files, in the order `build_options.engine_script_order`
-  declares them. That order *is* the dependency direction, so a partial or
-  reordered list packages a module that fails on its first call (MJ-019);
+  declares them. That order *is* the dependency direction: a partial list
+  packages a module missing part of its kernel, and a reordered one is what a
+  person would hold Packet Tracer's own listing against (MJ-019);
+* the check of that listing, because the file names — not the order they were
+  imported in — decide what Packet Tracer lists and evaluates;
 * the Custom Interface files;
 * every `mcpDispatchV6(...)` call it tells a person to paste, driven through
   the kernel it will be pasted into: each must be admitted, and together they
@@ -69,6 +72,27 @@ def test_the_recipe_imports_every_engine_file_in_the_declared_order():
     assert ORDERED_ENGINE_FILE.findall(_recipe()) == _declared_engine_files()
 
 
+def test_the_recipe_has_the_run_check_the_order_packet_tracer_lists():
+    """Import order decides nothing; the listing is what gets evaluated.
+
+    On `9.0.1.0858` the Scripting Interface lists engine files by name, whatever
+    order they were imported in. An earlier revision told a person to import the
+    files "in the order above" and never to look at the result, so a run could
+    have recorded an evaluation order nobody saw. The recipe has the listing
+    compared with the declared order and written down, stops the run when they
+    differ, and forbids the renamed copies that made the exploratory run work:
+    those are files no recipe declares.
+    """
+    collapsed = _collapsed_recipe()
+
+    assert (
+        "compare the list it shows with the list above, entry by entry, and "
+        "record it" in collapsed
+    )
+    assert "If they differ, stop" in collapsed
+    assert "no file is renamed or copied" in collapsed
+
+
 def test_the_recipe_imports_every_declared_custom_interface():
     recipe = _recipe()
     for logical in repo_manifest()["build_options"]["custom_interface_order"]:
@@ -101,10 +125,10 @@ def test_the_qualification_calls_ask_every_admitted_operation():
 
 def test_the_recipe_readers_find_a_list_and_notice_a_short_one():
     """Guards the gates above from passing because a parser matched nothing."""
-    text = "1. `core.js`\n2. `lifecycle.js`\n3. **Save** the module\n"
+    text = "1. `010_core.js`\n2. `220_lifecycle.js`\n3. **Save** the module\n"
     call = "mcpDispatchV6('{\"v\":6,\"op\":\"runtime.identify\"}')"
 
-    assert ORDERED_ENGINE_FILE.findall(text) == ["core.js", "lifecycle.js"]
+    assert ORDERED_ENGINE_FILE.findall(text) == ["010_core.js", "220_lifecycle.js"]
     assert ORDERED_ENGINE_FILE.findall(text) != _declared_engine_files()
     assert QUALIFICATION_CALL.findall(call) == ['{"v":6,"op":"runtime.identify"}']
 

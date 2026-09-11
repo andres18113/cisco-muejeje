@@ -1,6 +1,6 @@
 """What the platform-call boundary refuses, and what it hands back.
 
-`platform_adapter.js` makes every platform call this artifact makes, and a call
+`060_platform_adapter.js` makes every platform call this artifact makes, and a call
 is an interface member (MJ-031). This module drives the boundary itself, with
 synthetic receivers, because the adapters above it are all well-behaved — and a
 refusal no caller ever triggers is a refusal nobody has seen work.
@@ -37,7 +37,7 @@ from tests.muejeje.engine_harness import dispatch_v6, node_available
 from tests.muejeje.measure import js_code_only
 from tests.muejeje.support import SCRIPT_ENGINE
 
-BOUNDARY = "platform_adapter.js"
+BOUNDARY = "060_platform_adapter.js"
 # What decides which interface a platform object is. Only the boundary may name
 # either, or an adapter could assert a receiver's interface instead of the
 # boundary deriving it from the member that produced the object.

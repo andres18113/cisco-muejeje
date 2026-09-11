@@ -19,32 +19,36 @@ extensions the build manifest declares as artifact inputs are.
 
 Packet Tracer evaluates the Script Engine files in the order the Scripting
 Interface lists them, so that order **is** the dependency direction (`MJ-019`).
-It is declared once, in `build_options.engine_script_order`:
+It is declared once, in `build_options.engine_script_order`, and the file names
+spell it: the Scripting Interface lists engine files by name, and no control to
+reorder them has been observed. Each name starts with its place — a three-digit
+prefix in steps of ten, so a file can be inserted without renaming the kernel —
+and the build audit refuses a declared order the names do not sort in:
 
-| Order | File | Responsibility |
-| ---: | --- | --- |
-| 1 | `core.js` | constants and session state; depends on nothing |
-| 2 | `protocol_v6.js` | the response envelope and the failure taxonomy |
-| 3 | `validation_v6.js` | bounded envelope admission, and the bounds themselves |
-| 4 | `arguments_v6.js` | an operation's own argument rules, against what it declares |
-| 5 | `platform_reading.js` | what a platform reading is: its bounds, its words, its value rules |
-| 6 | `platform_adapter.js` | the **only** file that names `ipc`; the read-only call boundary |
-| 7 | `network_adapter.js` | the workspace device inventory, through that boundary |
-| 8 | `network_identity_adapter.js` | one workspace device's identity, in one reading |
-| 9 | `network_ports_adapter.js` | one workspace device's ports beside its identity, in one reading |
-| 10 | `platform_device_adapter.js` | the device-descriptor reading, through that boundary |
-| 11 | `platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
-| 12 | `platform_support_adapter.js` | the module-type support reading, through that boundary |
-| 13 | `network_identity.js` | the `network.device_identity` operation |
-| 14 | `network_inventory.js` | the `network.device_inventory` operation |
-| 15 | `network_ports.js` | the `network.device_ports` operation |
-| 16 | `platform_discovery.js` | the `platform.device_descriptors` operation |
-| 17 | `platform_modules.js` | the `platform.module_descriptors` operation |
-| 18 | `platform_support.js` | the `platform.module_type_support` operation |
-| 19 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
-| 20 | `runtime_identity.js` | the `runtime.identify` operation |
-| 21 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
-| 22 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+| File | Responsibility |
+| --- | --- |
+| `010_core.js` | constants and session state; depends on nothing |
+| `020_protocol_v6.js` | the response envelope and the failure taxonomy |
+| `030_validation_v6.js` | bounded envelope admission, and the bounds themselves |
+| `040_arguments_v6.js` | an operation's own argument rules, against what it declares |
+| `050_platform_reading.js` | what a platform reading is: its bounds, its words, its value rules |
+| `060_platform_adapter.js` | the **only** file that names `ipc`; the read-only call boundary |
+| `070_network_adapter.js` | the workspace device inventory, through that boundary |
+| `080_network_identity_adapter.js` | one workspace device's identity, in one reading |
+| `090_network_ports_adapter.js` | one workspace device's ports beside its identity, in one reading |
+| `100_platform_device_adapter.js` | the device-descriptor reading, through that boundary |
+| `110_platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
+| `120_platform_support_adapter.js` | the module-type support reading, through that boundary |
+| `130_network_identity.js` | the `network.device_identity` operation |
+| `140_network_inventory.js` | the `network.device_inventory` operation |
+| `150_network_ports.js` | the `network.device_ports` operation |
+| `160_platform_discovery.js` | the `platform.device_descriptors` operation |
+| `170_platform_modules.js` | the `platform.module_descriptors` operation |
+| `180_platform_support.js` | the `platform.module_type_support` operation |
+| `190_runtime_capabilities.js` | the `runtime.capabilities` operation |
+| `200_runtime_identity.js` | the `runtime.identify` operation |
+| `210_dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| `220_lifecycle.js` | `main()` and `cleanUp()`, nothing else |
 
 The arrows point one way — `lifecycle → dispatcher → operations → adapter →
 protocol + core` — and nothing points back. An operation is never implemented
@@ -54,7 +58,7 @@ themselves they are ordered alphabetically: a rule, rather than an accident a
 later reader would have to reverse-engineer.
 
 Shaping an answer and deciding whether a request deserves one are two
-responsibilities, so they are two files. `validation_v6.js` owns every bound V6
+responsibilities, so they are two files. `030_validation_v6.js` owns every bound V6
 applies to an incoming request — its length, its correlation id, its operation
 name, and the shape and values of its arguments. **Those bounds are Muejeje's
 own and none of them is a Packet Tracer limit** (`MJ-029`): nothing here has
@@ -77,7 +81,7 @@ Failures use the same envelope with `ok: false`, `result: null` and an `error`
 naming its class (`MJ-022`). There is no fallback to an earlier protocol and no
 path that executes a caller's JavaScript.
 
-**This table is the catalogue.** The whitelist lives in `dispatcher_v6.js` and
+**This table is the catalogue.** The whitelist lives in `210_dispatcher_v6.js` and
 is written out for a reader here, in one place: five documents each carrying a
 copy is five that a new operation puts out of step, so every other document
 names whichever operations it has a reason to name and a gate holds this one
@@ -156,7 +160,7 @@ answer establishes (`MJ-011`).
 
 ## The platform boundary
 
-`platform_adapter.js` is the one file that names `ipc`, and the architecture
+`060_platform_adapter.js` is the one file that names `ipc`, and the architecture
 gates say so by path: naming the platform is legal there and a violation in
 every other packaged source (`MJ-006`, `MJ-019`). Every platform call this
 artifact makes goes through it, by **interface member** — `Device.getModel` and

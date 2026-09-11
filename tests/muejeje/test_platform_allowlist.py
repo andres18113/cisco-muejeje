@@ -1,6 +1,6 @@
 """What this artifact may call on Packet Tracer, and what it actually called.
 
-The read-only allowlist in `platform_adapter.js` is the whole of what this
+The read-only allowlist in `060_platform_adapter.js` is the whole of what this
 artifact may ask the platform for, one entry per interface member. This module
 holds it to three things: every entry is one this repository can cite, every
 entry is one an adapter's source actually spells out, and every entry is one an
@@ -48,7 +48,7 @@ from tests.muejeje.test_platform_declarations import (
     PLATFORM_ADAPTER_FILES,
 )
 
-BOUNDARY = "platform_adapter.js"
+BOUNDARY = "060_platform_adapter.js"
 
 # Every interface member the boundary may admit, as Cisco's installed IpcAPI
 # reference for 9.0.1.0858 documents it. An undocumented call is a guess, and

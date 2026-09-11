@@ -13,7 +13,10 @@ defect in this repository (`MJ-016`).
 Every UI element named below is quoted from Cisco's installed `help/default/`
 pages and recorded, with its source page, in
 [the v2 preflight inventory](muejeje-pts-v2-preflight-inventory.md). Nothing here
-is inferred from a screenshot or from memory (`AGENTS.md` rule 6).
+is inferred from a screenshot or from memory (`AGENTS.md` rule 6). The one
+behaviour this procedure depends on that no installed page documents — how the
+Scripting Interface orders the engine files it lists — is marked, where it is
+used, as observed on the target build, with the run that observed it.
 
 ## Preconditions
 
@@ -53,30 +56,30 @@ here: the manifest is the source, this table is the reading of it.
 | Privileges | none selected |
 | Signing | none (`TODO-SIGNING` is open; an unsigned module is what this recipe produces) |
 | Custom Interfaces | `muejeje_pts/interface/index.html` |
-| Script Engine files | every file below, **in this order**, all from `muejeje_pts/script-engine/` |
+| Script Engine files | every file below, all from `muejeje_pts/script-engine/`, and listed by Packet Tracer **in this order** |
 
-1. `core.js`
-2. `protocol_v6.js`
-3. `validation_v6.js`
-4. `arguments_v6.js`
-5. `platform_reading.js`
-6. `platform_adapter.js`
-7. `network_adapter.js`
-8. `network_identity_adapter.js`
-9. `network_ports_adapter.js`
-10. `platform_device_adapter.js`
-11. `platform_module_adapter.js`
-12. `platform_support_adapter.js`
-13. `network_identity.js`
-14. `network_inventory.js`
-15. `network_ports.js`
-16. `platform_discovery.js`
-17. `platform_modules.js`
-18. `platform_support.js`
-19. `runtime_capabilities.js`
-20. `runtime_identity.js`
-21. `dispatcher_v6.js`
-22. `lifecycle.js`
+1. `010_core.js`
+2. `020_protocol_v6.js`
+3. `030_validation_v6.js`
+4. `040_arguments_v6.js`
+5. `050_platform_reading.js`
+6. `060_platform_adapter.js`
+7. `070_network_adapter.js`
+8. `080_network_identity_adapter.js`
+9. `090_network_ports_adapter.js`
+10. `100_platform_device_adapter.js`
+11. `110_platform_module_adapter.js`
+12. `120_platform_support_adapter.js`
+13. `130_network_identity.js`
+14. `140_network_inventory.js`
+15. `150_network_ports.js`
+16. `160_platform_discovery.js`
+17. `170_platform_modules.js`
+18. `180_platform_support.js`
+19. `190_runtime_capabilities.js`
+20. `200_runtime_identity.js`
+21. `210_dispatcher_v6.js`
+22. `220_lifecycle.js`
 
 This list is a reading of `build_options.engine_script_order`, and a gate holds
 it equal to that declaration. An earlier revision named nine of these files
@@ -91,6 +94,20 @@ that refuses with it, then what a platform reading is, then the call boundary
 and the adapters that read through it, then operations — alphabetically among
 themselves, since no operation depends on another — then dispatch, then the
 lifecycle that may call all of it (`MJ-019`).
+
+**The file names carry that order, because the Scripting Interface lists by
+name.** Observed on `9.0.1.0858` by an exploratory run at `ed3a0b0`, which was
+not an official artifact: the engine files imported one at a time in dependency
+order were listed alphabetically instead, and no control to reorder them was
+observed; copies of the same bytes renamed with a two-digit prefix were listed
+in prefix order, and the kernel ran. So a module is evaluated in the order its
+file names sort in, whatever order they were imported in. Each name here starts
+with a three-digit prefix, in steps of ten so a file can be inserted without
+renaming the kernel, and no two files share one — how Packet Tracer collates the
+rest of a name was never measured, so nothing is left for it to decide. The
+audit refuses a declared order the names do not sort in, with no recipe id and
+no `PACKAGING_MANUAL_AVAILABLE`, rather than leave the difference to be found in
+the GUI.
 
 ## Steps
 
@@ -109,9 +126,15 @@ lifecycle that may call all of it (`MJ-019`).
    says (`MJ-032`); predicting the outcome would be the same guess in the other
    direction. Record whichever reading comes back — that observation is the
    point of the run.
-4. **Script Engine**: import the engine files in the order above. Import; do not
-   paste. Pasted source loses its newlines in the Builder Code Editor, and these
-   files are ordinary multi-line JavaScript with comments.
+4. **Script Engine**: import every engine file above, under the name it has in
+   the tree. Import; do not paste. Pasted source loses its newlines in the
+   Builder Code Editor, and these files are ordinary multi-line JavaScript with
+   comments. The order they are imported in decides nothing, because the
+   Scripting Interface lists them by name, and no file is renamed or copied to
+   change that: an alias would be a file the recipe never declared.
+   **Then compare the list it shows with the list above, entry by entry, and
+   record it.** If they differ, stop — the module would evaluate in an order
+   nobody declared, and nothing it answered would be evidence about this recipe.
 5. **Custom Interfaces**: import `index.html`. It is the only interface file, it
    references no external resource, and it loads no script.
 6. **Data Store**: leave empty. *"Data store files … are not saved to the pts
@@ -170,7 +193,7 @@ Script Module editor of that name. A statement entered there is evaluated **in
 that module's Script Engine** — the engine the saved artifact's files were
 evaluated into when the module started — which is what makes a reading taken
 there a reading *of the artifact* rather than of a second interpreter standing
-in for it. `mcpDispatchV6` resolves there because `dispatcher_v6.js` defined it
+in for it. `mcpDispatchV6` resolves there because `210_dispatcher_v6.js` defined it
 there, in that evaluation.
 
 Open it on the module under test, the one added from the saved

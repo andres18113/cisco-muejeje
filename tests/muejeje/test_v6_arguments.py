@@ -3,7 +3,7 @@
 `test_v6_admission` covers the envelope: what a caller's string may be at all,
 and the bounds every request is held to. This module covers the other half of
 admission — the rules a *particular* operation declares for the arguments it
-names, which is what `arguments_v6.js` owns (MJ-029).
+names, which is what `040_arguments_v6.js` owns (MJ-029).
 
 Driven on a synthetic operation, so the mechanism is tested before an operation
 depends on it: whitelisting an argument by name says nothing about its value,

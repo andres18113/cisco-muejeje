@@ -72,7 +72,7 @@ def _observed(**args) -> dict:
 
 def test_the_operation_reads_the_workspace_only_through_its_adapter():
     """The arrow points operation -> adapter -> boundary, and never back."""
-    operation = (SCRIPT_ENGINE / "network_identity.js").read_text(encoding="utf-8")
+    operation = (SCRIPT_ENGINE / "130_network_identity.js").read_text(encoding="utf-8")
 
     assert "muejejeAdapterDeviceIdentity" in operation
     assert "ipc" not in operation.replace("muejeje", "")
@@ -82,8 +82,8 @@ def test_the_operation_reads_the_workspace_only_through_its_adapter():
 
 
 def test_the_operation_declares_its_own_argument_rule():
-    body = (SCRIPT_ENGINE / "network_identity.js").read_text(encoding="utf-8")
-    dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "130_network_identity.js").read_text(encoding="utf-8")
+    dispatcher = (SCRIPT_ENGINE / "210_dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_NETWORK_IDENTITY_ARGS = {" in body
     assert "MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX" in body
@@ -100,7 +100,7 @@ def test_the_reading_correlates_nothing_to_the_hardware_factory():
     result a consumer would reasonably trust (MJ-002, MJ-015).
     """
     adapter = (
-        SCRIPT_ENGINE / "network_identity_adapter.js"
+        SCRIPT_ENGINE / "080_network_identity_adapter.js"
     ).read_text(encoding="utf-8")
     code = adapter.split("*/")[-1]
 

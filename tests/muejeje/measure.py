@@ -21,7 +21,7 @@ from pathlib import Path
 
 from tests.muejeje.support import REPO_ROOT, SCRIPT_ENGINE, SOURCE_ROOT
 
-PLATFORM_BOUNDS_FILE = "platform_reading.js"
+PLATFORM_BOUNDS_FILE = "050_platform_reading.js"
 PLATFORM_BOUNDS_BLOCK = "MUEJEJE_PLATFORM_LIMITS = {"
 
 

@@ -4,7 +4,7 @@
  * One envelope shape and one code per cause, and nothing else. This file does
  * not read a request, does not decide whether one is admissible, does not know
  * which operations exist, and never calls a handler: it shapes the answer.
- * Whether a request may be answered at all is `validation_v6.js`.
+ * Whether a request may be answered at all is `030_validation_v6.js`.
  *
  * The whole surface is JSON in, JSON out. There is no code path that executes
  * a caller's JavaScript, because there is no code path that treats a caller's

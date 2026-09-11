@@ -170,10 +170,10 @@ V6 principles:
 
 - **One authoritative `mcpDispatchV6`.** No second dispatcher, no hidden retry,
   no ambiguous fallback after an ambiguous execution. It lives in
-  `muejeje_pts/script-engine/dispatcher_v6.js` and a gate fails if a second one
+  `muejeje_pts/script-engine/210_dispatcher_v6.js` and a gate fails if a second one
   appears.
 - **Typed, declarative, whitelisted, fail-closed.** The whitelist is
-  `dispatcher_v6.js`, every name it holds is read-only, and the catalogue that
+  `210_dispatcher_v6.js`, every name it holds is read-only, and the catalogue that
   enumerates them for a reader is `muejeje_pts/README.md` (`MJ-008`). Version,
   schema and correlation mismatches fail closed, and so does an operation name
   in a namespace nobody declared.
@@ -259,7 +259,10 @@ tests never substitute for it.
 Packaging is the Scripting Interface (Extensions → Scripting → New PT Script
 Module → import engine and Custom Interface files → Save). Engine files evaluate
 in listed order, then `main()`; `cleanUp()` runs on stop; `#include` resolves one
-level and is expanded at save. `.pts` is an encrypted container, so content
+level and is expanded at save. The Scripting Interface lists engine files by
+name — observed on the target build, recorded in the packaging recipe — so the
+file names carry the evaluation order, and the audit refuses a declared order
+they do not sort in. `.pts` is an encrypted container, so content
 validation is behavioural only. The complete procedure — preconditions, the
 resolved recipe, the steps and what a run must record — is
 [the packaging recipe](../qa/muejeje-pts-packaging-recipe.md). PTBuilder and
@@ -290,7 +293,7 @@ ever replaced automatically.
 
 | Path | Role |
 | --- | --- |
-| `muejeje_pts/script-engine/` | Script Engine files, evaluated in listed order, then `main()` |
+| `muejeje_pts/script-engine/` | Script Engine files, listed and evaluated in file-name order, then `main()` |
 | `muejeje_pts/interface/` | Custom Interface files |
 | `muejeje_pts/manifest/` | the build manifest — build metadata, not packaged |
 

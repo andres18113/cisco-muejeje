@@ -155,11 +155,11 @@ def test_cisco_documents_that_a_module_start_evaluates_the_engine(sentence: str)
 def test_the_withdrawn_claim_gate_reads_the_kernel_sources_too():
     """Guards the gate above from passing because it swept no source.
 
-    The claim it was added for lived in a `core.js` comment, not in a
+    The claim it was added for lived in a `010_core.js` comment, not in a
     document, so a gate that reads only documents would have reported the
     tree clean while the artifact itself still carried the claim.
     """
-    assert "muejeje_pts/script-engine/core.js" in DESCRIBING_SOURCES
+    assert "muejeje_pts/script-engine/010_core.js" in DESCRIBING_SOURCES
     assert len(DESCRIBING_SOURCES) == len(list(SCRIPT_ENGINE.glob("*.js")))
 
 # ---------------------------------------------------------------------------

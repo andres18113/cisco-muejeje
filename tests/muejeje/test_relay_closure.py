@@ -251,11 +251,11 @@ def test_a_window_may_start_at_the_end_of_the_domain_and_not_past_it(op: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(("operation", "bounds"), [
-    ("platform_discovery.js", ("EXACT_INTEGER_MAX",)),
-    ("platform_modules.js", ("EXACT_INTEGER_MAX",)),
-    ("platform_support.js", ("EXACT_INTEGER_MIN", "EXACT_INTEGER_MAX")),
-    ("network_inventory.js", ("EXACT_INTEGER_MAX",)),
-    ("network_identity.js", ("EXACT_INTEGER_MAX",)),
+    ("160_platform_discovery.js", ("EXACT_INTEGER_MAX",)),
+    ("170_platform_modules.js", ("EXACT_INTEGER_MAX",)),
+    ("180_platform_support.js", ("EXACT_INTEGER_MIN", "EXACT_INTEGER_MAX")),
+    ("140_network_inventory.js", ("EXACT_INTEGER_MAX",)),
+    ("130_network_identity.js", ("EXACT_INTEGER_MAX",)),
 ])
 def test_every_consumer_names_the_one_fidelity_declaration(
     operation: str, bounds: tuple[str, ...],
@@ -268,8 +268,8 @@ def test_every_consumer_names_the_one_fidelity_declaration(
 
 
 @pytest.mark.parametrize("producer", [
-    "platform_device_adapter.js", "platform_module_adapter.js",
-    "platform_support_adapter.js", "network_identity_adapter.js",
+    "100_platform_device_adapter.js", "110_platform_module_adapter.js",
+    "120_platform_support_adapter.js", "080_network_identity_adapter.js",
 ])
 def test_every_producer_reads_a_platform_value_through_the_domain_validator(
     producer: str,
@@ -279,7 +279,7 @@ def test_every_producer_reads_a_platform_value_through_the_domain_validator(
 
 
 def test_the_validators_name_the_declaration_the_consumers_name():
-    reading = js_code_only(_body("platform_reading.js"))
+    reading = js_code_only(_body("050_platform_reading.js"))
 
     for bound in FIDELITY_BOUNDS:
         assert f"MUEJEJE_PLATFORM_LIMITS.{bound}" in reading, bound
@@ -293,7 +293,7 @@ def test_every_declared_bound_limits_work_or_fidelity_and_nothing_else():
     The last ones — 4096 on an index, 65536 on a count — made a large enough
     topology unreadable rather than paged.
     """
-    block = _body("platform_reading.js").split("MUEJEJE_PLATFORM_LIMITS = {")[1]
+    block = _body("050_platform_reading.js").split("MUEJEJE_PLATFORM_LIMITS = {")[1]
     declared = set(DECLARED_BOUND.findall(js_code_only(block.split("};")[0])))
 
     assert declared == WORK_BOUNDS | FIDELITY_BOUNDS

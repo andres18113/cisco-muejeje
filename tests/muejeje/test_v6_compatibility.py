@@ -70,7 +70,7 @@ def _request(op: str) -> str:
 
 def test_the_request_envelope_carries_exactly_the_published_fields():
     """Adding a required request field would refuse every existing caller."""
-    body = (SCRIPT_ENGINE / "validation_v6.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "030_validation_v6.js").read_text(encoding="utf-8")
     declared = body.split("MUEJEJE_V6_ENVELOPE_FIELDS = ")[1].split(";")[0]
 
     assert set(json.loads(declared)) == REQUEST_FIELDS

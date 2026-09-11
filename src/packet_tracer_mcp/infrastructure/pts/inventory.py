@@ -17,6 +17,7 @@ even though it is neither packaged nor tracked.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -41,31 +42,44 @@ INTERFACE_SOURCE_ROOT = "muejeje_pts/interface/"
 PACKAGED_SUFFIXES = frozenset(
     {".js", ".html", ".htm", ".css", ".png", ".gif", ".jpg", ".svg"}
 )
+# How an engine file's name carries the order it is evaluated in.
+#
+# Cisco documents that script files are evaluated "in the same order as listed
+# in the Scripting Interface", and on 9.0.1.0858 that list is ordered by file
+# name: files imported one at a time in dependency order were listed
+# alphabetically instead, and no control to reorder them was observed (an
+# exploratory run, recorded in the packaging recipe). So a module evaluates in
+# the order its file names spell, whatever order a manifest declares.
+#
+# How Packet Tracer collates the rest of a name was not measured, so the order
+# lives entirely in a prefix every collation reads alike: three digits and an
+# underscore, never shared by two files.
+ENGINE_ORDER_PREFIX = re.compile(r"^\d{3}_[a-z0-9_]+\.js$")
 # Bytes that ship inside the artifact.
 EXPECTED_ARTIFACT_INPUTS = (
     "muejeje_pts/interface/index.html",
-    "muejeje_pts/script-engine/arguments_v6.js",
-    "muejeje_pts/script-engine/core.js",
-    "muejeje_pts/script-engine/dispatcher_v6.js",
-    "muejeje_pts/script-engine/lifecycle.js",
-    "muejeje_pts/script-engine/network_adapter.js",
-    "muejeje_pts/script-engine/network_identity.js",
-    "muejeje_pts/script-engine/network_identity_adapter.js",
-    "muejeje_pts/script-engine/network_inventory.js",
-    "muejeje_pts/script-engine/network_ports.js",
-    "muejeje_pts/script-engine/network_ports_adapter.js",
-    "muejeje_pts/script-engine/platform_adapter.js",
-    "muejeje_pts/script-engine/platform_device_adapter.js",
-    "muejeje_pts/script-engine/platform_discovery.js",
-    "muejeje_pts/script-engine/platform_module_adapter.js",
-    "muejeje_pts/script-engine/platform_modules.js",
-    "muejeje_pts/script-engine/platform_reading.js",
-    "muejeje_pts/script-engine/platform_support.js",
-    "muejeje_pts/script-engine/platform_support_adapter.js",
-    "muejeje_pts/script-engine/protocol_v6.js",
-    "muejeje_pts/script-engine/runtime_capabilities.js",
-    "muejeje_pts/script-engine/runtime_identity.js",
-    "muejeje_pts/script-engine/validation_v6.js",
+    "muejeje_pts/script-engine/010_core.js",
+    "muejeje_pts/script-engine/020_protocol_v6.js",
+    "muejeje_pts/script-engine/030_validation_v6.js",
+    "muejeje_pts/script-engine/040_arguments_v6.js",
+    "muejeje_pts/script-engine/050_platform_reading.js",
+    "muejeje_pts/script-engine/060_platform_adapter.js",
+    "muejeje_pts/script-engine/070_network_adapter.js",
+    "muejeje_pts/script-engine/080_network_identity_adapter.js",
+    "muejeje_pts/script-engine/090_network_ports_adapter.js",
+    "muejeje_pts/script-engine/100_platform_device_adapter.js",
+    "muejeje_pts/script-engine/110_platform_module_adapter.js",
+    "muejeje_pts/script-engine/120_platform_support_adapter.js",
+    "muejeje_pts/script-engine/130_network_identity.js",
+    "muejeje_pts/script-engine/140_network_inventory.js",
+    "muejeje_pts/script-engine/150_network_ports.js",
+    "muejeje_pts/script-engine/160_platform_discovery.js",
+    "muejeje_pts/script-engine/170_platform_modules.js",
+    "muejeje_pts/script-engine/180_platform_support.js",
+    "muejeje_pts/script-engine/190_runtime_capabilities.js",
+    "muejeje_pts/script-engine/200_runtime_identity.js",
+    "muejeje_pts/script-engine/210_dispatcher_v6.js",
+    "muejeje_pts/script-engine/220_lifecycle.js",
 )
 # The auditor. It ships nothing, but it decides how the artifact was inspected,
 # so it belongs to recipe identity and never to artifact content. Every module
@@ -185,13 +199,17 @@ def check_declared_orders(options: dict[str, Any], *, findings: Findings) -> Non
     decides whether those paths are files that actually ship. An order naming a
     file no artifact contains describes a build nobody can perform, and one
     omitting a file that does ship would leave it unevaluated in the module.
+    The engine order must also be the one the Scripting Interface lists, or the
+    recipe describes an evaluation order no module can be packaged in.
     """
     for name, prefix in (
         ("engine_script_order", ENGINE_SOURCE_ROOT),
         ("custom_interface_order", INTERFACE_SOURCE_ROOT),
     ):
         declared = options.get(name)
-        if not isinstance(declared, list):
+        if not isinstance(declared, list) or not all(
+            isinstance(item, str) for item in declared
+        ):
             continue  # Shape is the manifest's answer, already blocked there.
         expected = {
             logical for logical in EXPECTED_ARTIFACT_INPUTS
@@ -202,6 +220,32 @@ def check_declared_orders(options: dict[str, Any], *, findings: Findings) -> Non
                 f"invalid build option {name}: must name exactly the declared "
                 f"artifact inputs under {prefix}"
             )
+        listing = engine_listing_error(declared) if name == "engine_script_order" else None
+        if listing is not None:
+            findings.block(f"invalid build option {name}: {listing}")
+
+
+def engine_listing_error(order: list[str]) -> str | None:
+    """Why the Scripting Interface would not list `order` as declared, or None.
+
+    Every name carries an order prefix, no two share one, and the names already
+    sort in the declared order. With unique fixed-width prefixes, sorting the
+    names is sorting the prefixes, so no unmeasured collation rule decides it.
+    """
+    names = [PurePosixPath(item).name for item in order]
+    unprefixed = [name for name in names if not ENGINE_ORDER_PREFIX.match(name)]
+    if unprefixed:
+        return (
+            "must name every file with a three-digit order prefix: "
+            + ", ".join(unprefixed)
+        )
+    prefixes = [name[:3] for name in names]
+    shared = sorted({prefix for prefix in prefixes if prefixes.count(prefix) > 1})
+    if shared:
+        return "must not give two files one order prefix: " + ", ".join(shared)
+    if names != sorted(names):
+        return "must be the order its file names list in"
+    return None
 
 
 def sweep_owned_sources(tracked: frozenset[str]) -> list[str]:

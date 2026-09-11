@@ -1,6 +1,6 @@
 """The files that reach Packet Tracer, and what they are allowed to be.
 
-`platform_adapter.js` is the declared platform-call boundary (MJ-006, MJ-019):
+`060_platform_adapter.js` is the declared platform-call boundary (MJ-006, MJ-019):
 the only packaged source that names `ipc`, and the only one that invokes a
 platform member at all. The subject adapters beside it are handed a platform
 object and call it by name *through* that boundary. This module gates what
@@ -37,7 +37,7 @@ from tests.muejeje.test_platform_declarations import (
     PLATFORM_SOURCE_FILES,
 )
 
-BOUNDARY = "platform_adapter.js"
+BOUNDARY = "060_platform_adapter.js"
 
 # A member call in JavaScript source, by the name it invokes.
 MEMBER_CALL = re.compile(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(")

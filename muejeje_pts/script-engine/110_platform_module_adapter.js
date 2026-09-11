@@ -7,7 +7,7 @@
  * deciding what any of it establishes (MJ-011).
  *
  * It names no platform object. Every call goes through `muejejeAdapterCall` in
- * `platform_adapter.js`, which admits only the read-only getters on that list.
+ * `060_platform_adapter.js`, which admits only the read-only getters on that list.
  *
  * A DESCRIPTOR IS NOT INSTALLED HARDWARE. `DeviceDescriptor.getRootModule()`
  * describes what a model can accept; it instantiates nothing, powers nothing,

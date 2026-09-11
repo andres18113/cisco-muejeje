@@ -8,7 +8,7 @@
  * not a statement about installed hardware (MJ-014).
  *
  * It names no platform object. Every call goes through `muejejeAdapterCall` in
- * `platform_adapter.js`, which admits only the read-only getters on that list.
+ * `060_platform_adapter.js`, which admits only the read-only getters on that list.
  *
  * THE TYPE VALUE COMES FROM THE CALLER, AND IS NEVER TRANSLATED. This artifact
  * carries no table of Cisco's module types, so it has no opinion about which

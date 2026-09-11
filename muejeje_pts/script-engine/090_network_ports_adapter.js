@@ -8,7 +8,7 @@
  * of it establishes (MJ-011).
  *
  * It names no platform object. Every call goes through the boundary in
- * `platform_adapter.js`, which admits only the read-only interface members on
+ * `060_platform_adapter.js`, which admits only the read-only interface members on
  * its list.
  *
  * ONE OBSERVATION, SO THE PORTS ARE ATTRIBUTABLE. A workspace changes between

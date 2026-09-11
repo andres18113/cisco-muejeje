@@ -76,8 +76,8 @@ def _one_device(spec: str) -> str:
 
 def test_the_operation_reads_the_workspace_only_through_its_adapter():
     """Operation -> adapter -> boundary; the dispatcher holds no bound (MJ-019)."""
-    body = (SCRIPT_ENGINE / "network_ports.js").read_text(encoding="utf-8")
-    dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "150_network_ports.js").read_text(encoding="utf-8")
+    dispatcher = (SCRIPT_ENGINE / "210_dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "muejejeAdapterDevicePorts(" in body
     assert "muejejeAdapterCall" not in body and "ipc" not in js_code_only(body)
@@ -95,7 +95,7 @@ def test_the_reading_follows_no_link_reads_no_state_and_joins_no_factory():
     reaches for. A link is topology, and a factory join is a relationship
     nobody observed (MJ-002, MJ-031).
     """
-    adapter = (SCRIPT_ENGINE / "network_ports_adapter.js").read_text(encoding="utf-8")
+    adapter = (SCRIPT_ENGINE / "090_network_ports_adapter.js").read_text(encoding="utf-8")
     code = js_code_only(adapter)
 
     for unowned in (

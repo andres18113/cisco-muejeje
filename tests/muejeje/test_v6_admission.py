@@ -58,11 +58,11 @@ def test_the_bounds_are_declared_in_exactly_one_kernel_file():
         relative(path) for path in engine_sources()
         if "MUEJEJE_V6_LIMITS = {" in path.read_text(encoding="utf-8")
     ]
-    assert owners == ["muejeje_pts/script-engine/validation_v6.js"], owners
+    assert owners == ["muejeje_pts/script-engine/030_validation_v6.js"], owners
 
 
 def test_the_validation_module_holds_no_operation_and_no_whitelist():
-    body = (SCRIPT_ENGINE / "validation_v6.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "030_validation_v6.js").read_text(encoding="utf-8")
     assert "runtime.identify" not in body, (
         "admission validates envelopes; which operations exist is dispatch"
     )

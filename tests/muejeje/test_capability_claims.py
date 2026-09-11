@@ -104,13 +104,13 @@ def _document(logical: str) -> str:
 
 def admitted_operations() -> set[str]:
     """The whitelist, read from the dispatcher that owns it."""
-    body = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "210_dispatcher_v6.js").read_text(encoding="utf-8")
     return set(ADMITTED_OPERATION.findall(body))
 
 
 def declared_features() -> set[str]:
     """The kernel feature list, read from the core that declares it."""
-    body = (SCRIPT_ENGINE / "core.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "010_core.js").read_text(encoding="utf-8")
     listed = body.split("SUPPORTED_FEATURES: [")[1].split("]")[0]
     return set(DECLARED_FEATURE.findall(listed))
 

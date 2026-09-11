@@ -2,7 +2,7 @@
  * Muejeje runtime — bounded V6 request admission.
  *
  * Decides whether a caller's string may be answered at all, and refuses it
- * with the envelope `protocol_v6.js` shapes when it may not. It knows nothing
+ * with the envelope `020_protocol_v6.js` shapes when it may not. It knows nothing
  * about which operations exist: it is handed an operation's argument rules by
  * the dispatcher and never reads the whitelist itself (MJ-019).
  *

@@ -1,7 +1,7 @@
 /*
  * Muejeje runtime — an operation's own arguments.
  *
- * `validation_v6.js` decides whether a caller's string is a V6 envelope at all
+ * `030_validation_v6.js` decides whether a caller's string is a V6 envelope at all
  * and bounds what that envelope may carry. This file decides whether the
  * arguments inside it are the ones a *particular* operation admits, against the
  * rules that operation declares for itself — and, once they are admitted,
@@ -11,7 +11,7 @@
  * it is for (MJ-018, MJ-020): an envelope rule holds for every request, while
  * an argument rule belongs to one operation and grows with the whitelist.
  *
- * It knows no more about operations than `validation_v6.js` does: the rules
+ * It knows no more about operations than `030_validation_v6.js` does: the rules
  * arrive as data from the dispatcher, and nothing here reads the whitelist
  * (MJ-019). Refusals here are `INVALID_ARGS`; the envelope's own refusals stay
  * `INVALID_REQUEST`, because a bound on the envelope and a rule of an

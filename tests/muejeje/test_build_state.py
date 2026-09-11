@@ -197,3 +197,40 @@ def test_resolved_options_with_a_verified_builder_report_manual_packaging(tmp_pa
     assert report["artifact_sha256"] is None
     # Automation stays unproven even when a human could package this now.
     assert report["packaging_state"]["automation"] == "BUILD_AUTOMATION_UNPROVEN"
+
+
+@pytest.mark.skipif(
+    not INSTALLED_BUILDER.is_file(),
+    reason="the pinned Packet Tracer build is not installed on this machine",
+)
+def test_an_engine_order_its_file_names_do_not_list_in_is_never_packageable(
+    tmp_path: Path,
+):
+    """The one invariant, with every other fact left packageable.
+
+    The same checkout reaches `PACKAGING_MANUAL_AVAILABLE` first, so what the
+    second audit refuses can only be the order: the last two engine files
+    swapped, both still declared, both names still valid. Packet Tracer would
+    list and evaluate them in name order regardless, so a recipe id over that
+    manifest would identify a module nobody can package (MJ-016, MJ-025).
+    """
+    build = build_api()
+    root, manifest_path = make_repo(tmp_path)
+    manifest = manifest_document()
+    manifest["build_options"] = resolved_options()
+    commit_manifest(root, manifest_path, manifest)
+    before = build.inspect_build(root, manifest_path, builder_path=INSTALLED_BUILDER)
+    assert before["status"] == "PACKAGING_MANUAL_AVAILABLE", before["blockers"]
+
+    order = manifest["build_options"]["engine_script_order"]
+    order[-2], order[-1] = order[-1], order[-2]
+    commit_manifest(root, manifest_path, manifest)
+    report = build.inspect_build(root, manifest_path, builder_path=INSTALLED_BUILDER)
+
+    assert report["status"] == "BUILD_INPUT_INVALID"
+    assert report["packaging_state"]["manual"] == "PACKAGING_MANUAL_UNAVAILABLE"
+    assert report["build_recipe_id"] is None
+    assert any(
+        "engine_script_order" in blocker and "file names list in" in blocker
+        for blocker in report["blockers"]
+    ), report["blockers"]

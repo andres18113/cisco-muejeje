@@ -24,7 +24,7 @@
  * what an allowlist is for (MJ-031).
  *
  * It names no platform object: every call goes through `muejejeAdapterCall` in
- * `platform_adapter.js`.
+ * `060_platform_adapter.js`.
  */
 
 /* One result shape for every outcome, so a consumer parses one thing whether

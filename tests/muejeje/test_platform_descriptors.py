@@ -70,7 +70,7 @@ def _observed(**args) -> dict:
 
 def test_the_operation_names_no_platform_symbol_of_its_own():
     """Operation -> adapter -> platform, and never a shortcut (MJ-019)."""
-    body = (SCRIPT_ENGINE / "platform_discovery.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "160_platform_discovery.js").read_text(encoding="utf-8")
 
     assert "muejejeAdapterDeviceDescriptors(" in body
     assert "ipc" not in body, "only the declared adapter reaches the platform"
@@ -85,8 +85,8 @@ def test_the_operation_declares_its_own_argument_rules():
     and the one a caller is held to would eventually not be the one the
     adapter honours.
     """
-    body = (SCRIPT_ENGINE / "platform_discovery.js").read_text(encoding="utf-8")
-    dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "160_platform_discovery.js").read_text(encoding="utf-8")
+    dispatcher = (SCRIPT_ENGINE / "210_dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_PLATFORM_DESCRIPTOR_ARGS = {" in body
     assert "MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW" in body

@@ -7,7 +7,7 @@
  * what any of it establishes (MJ-011).
  *
  * It names no platform object. Every call it makes goes through
- * `muejejeAdapterCall` in `platform_adapter.js`, which admits only the
+ * `muejejeAdapterCall` in `060_platform_adapter.js`, which admits only the
  * read-only getters on that list, so this file cannot reach past what the
  * boundary admits even by accident.
  *

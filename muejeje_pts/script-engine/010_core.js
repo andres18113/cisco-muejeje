@@ -8,7 +8,8 @@
  *
  * Cisco documents that "when the Script Module starts, all script files are
  * executed (evaluated) in the Script Engine in the same order as listed in the
- * Scripting Interface", and this file is listed first. The session identity
+ * Scripting Interface", and that interface lists engine files by name, which
+ * puts this one first. The session identity
  * below is therefore established exactly once per engine evaluation — which is
  * once per module start, not once per install (MJ-023).
  */

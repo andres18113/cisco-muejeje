@@ -110,7 +110,7 @@ function muejejeV6OperationCatalog() {
  * whole of dispatch runs behind one boundary and every outcome the engine can
  * reach is an envelope (MJ-022).
  *
- * The last-resort envelope is `protocol_v6.js`'s: shaping an answer is that
+ * The last-resort envelope is `020_protocol_v6.js`'s: shaping an answer is that
  * file's responsibility, including the answer that says nothing else worked. */
 function mcpDispatchV6(requestJson) {
     try {

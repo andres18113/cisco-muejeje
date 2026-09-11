@@ -120,9 +120,9 @@ def test_source_identity_reports_commit_tree_and_cleanliness(tmp_path: Path):
     identity = provenance.inspect_source(root.resolve())
     assert len(identity.commit) == 40 and len(identity.tree) == 40
     assert identity.clean is True
-    assert "muejeje_pts/script-engine/lifecycle.js" in identity.tracked
+    assert "muejeje_pts/script-engine/220_lifecycle.js" in identity.tracked
 
-    (root / "muejeje_pts/script-engine/lifecycle.js").write_text("x", encoding="utf-8")
+    (root / "muejeje_pts/script-engine/220_lifecycle.js").write_text("x", encoding="utf-8")
     assert provenance.inspect_source(root.resolve()).clean is False
 
 

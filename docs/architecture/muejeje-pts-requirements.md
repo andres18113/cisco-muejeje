@@ -140,9 +140,9 @@ entry point, no shadow path.
 evidence stops being attributable.
 **Verification.** Two gates: `tests/muejeje/test_source_root.py` fails if a
 second `mcpDispatchV6` appears anywhere in the owned tree, and
-`tests/muejeje/test_protocol_v6.py` fails if the one in `dispatcher_v6.js`
+`tests/muejeje/test_protocol_v6.py` fails if the one in `210_dispatcher_v6.js`
 disappears.
-**Status.** `ENFORCED` — one dispatcher, in `dispatcher_v6.js`.
+**Status.** `ENFORCED` — one dispatcher, in `210_dispatcher_v6.js`.
 
 ### MJ-008 — V6 is typed, declarative, whitelisted and fail-closed
 **Requirement.** V6 operations are typed and declarative, admitted by an explicit
@@ -150,7 +150,7 @@ whitelist, and fail closed on version, schema or correlation mismatch. Every
 admitted operation is read-only today.
 
 **The whitelist is declared once and enumerated once.** It lives in
-`dispatcher_v6.js`, which is the only thing that decides what may be sent, and
+`210_dispatcher_v6.js`, which is the only thing that decides what may be sent, and
 it is written out for a reader in exactly one document — the artifact's own
 `muejeje_pts/README.md`, the authoritative catalogue, which a gate holds
 complete. Every other document names whichever operations it has a reason to
@@ -286,7 +286,7 @@ docstring; `infrastructure/execution/probe_runtime.py` and
 LIVE observation against `9.0.1.0858`.
 
 **The owned artifact now walks the descriptor column of that table**, in
-`platform_module_adapter.js`: `getRootModule()` and the `ModuleDescriptor`
+`110_platform_module_adapter.js`: `getRootModule()` and the `ModuleDescriptor`
 getters beside it, reached from a descriptor the factory enumeration handed
 back rather than from `getDescriptor(DeviceType, model)`. Asking by type would
 need a table of type numbers to ask with, which is what this requirement
@@ -592,7 +592,7 @@ validated rather than merely present:
 | `module_id` | `io.github.andres18113.muejeje.runtime` | hierarchical and reverse-DNS shaped, rooted in a namespace the publisher demonstrably controls, so a second publisher's module cannot collide with this one |
 | `startup` | `on_startup` | the module must be able to answer `runtime.identify` without a human opening anything first. It is safe to start unconditionally precisely because it initiates nothing: no transport, no polling, no platform call |
 | `custom_interface_order` | `[muejeje_pts/interface/index.html]` | one static page, the only interface file that ships |
-| `engine_script_order` | core → protocol → admission → operations (alphabetical) → dispatch → lifecycle | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019) |
+| `engine_script_order` | core → protocol → admission → platform reading → boundary and adapters → operations (alphabetical) → dispatch → lifecycle, `010_core.js` to `220_lifecycle.js` | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019); it lists engine files by name, so every name carries its place as a unique three-digit prefix |
 | `privileges` | `[]` | nothing this module calls has an *evidenced* privilege requirement, and a name nobody can cite is refused at audit time rather than shipped to find out (`MJ-032`). An empty set is a decision, not an omission; what a target does with it is a separate unknown |
 
 An option is **unresolved** when it is `null` — nobody has decided, which is not
@@ -601,6 +601,16 @@ accept. Those are different facts and stay different states (MJ-016). The two
 file orders must additionally name exactly the declared artifact inputs of
 their kind: an order pointing at a file that ships in no artifact describes a
 build nobody can perform.
+
+**The engine order must be the order its file names sort in.** On `9.0.1.0858`
+the Scripting Interface lists engine files by name whatever order they were
+imported in, and no control to reorder them was observed (an exploratory run at
+`ed3a0b0`, recorded in the packaging recipe), so a module evaluates in name
+order. A declared order the names do not spell is therefore one no module can
+be evaluated in, and it is invalid input: no recipe id, and never
+`PACKAGING_MANUAL_AVAILABLE`. Every name carries a three-digit prefix, in steps
+of ten, and no two share one — how Packet Tracer collates the rest of a name
+was never measured, so the prefix alone decides.
 **Rationale.** `TODO-MODULE-ID`, `TODO-STARTUP` and `TODO-PRIVILEGES` blocked a
 complete recipe, and a recipe that is never complete has no id, so nothing
 downstream can be identified. Deciding them is what makes packaging reachable.
@@ -609,7 +619,11 @@ Validating them is what stops a decided-but-unusable value — `startup:
 **Verification.** `tests/muejeje/test_manifest.py` drives one case per invalid
 shape per option and asserts `BUILD_INPUT_INVALID` with no recipe id;
 `tests/muejeje/test_build_state.py` asserts that the resolved manifest with the
-pinned builder reaches `PACKAGING_MANUAL_AVAILABLE` with a recipe id.
+pinned builder reaches `PACKAGING_MANUAL_AVAILABLE` with a recipe id, and that
+the same checkout with two engine files swapped does not. `test_manifest.py`
+also drives an engine order out of name order, a name with no prefix and two
+names sharing one; `tests/muejeje/test_kernel_layout.py` holds the real names to
+the declared order, and the Node harness to the manifest where no name agrees.
 **Status.** `ENFORCED` for the values and their validation; `BASELINED` for
 `module_id` acceptance by Packet Tracer itself, which needs target evidence
 (MJ-015). If target evidence shows the representation is invalid, the nearest

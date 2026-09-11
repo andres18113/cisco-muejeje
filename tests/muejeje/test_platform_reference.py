@@ -96,7 +96,7 @@ requires_installed_reference = pytest.mark.skipif(
 
 
 def _allowlist_block() -> str:
-    body = (SCRIPT_ENGINE / "platform_adapter.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "060_platform_adapter.js").read_text(encoding="utf-8")
     return body.split("MUEJEJE_PLATFORM_READ_ONLY_CALLS = {")[1].split("};")[0]
 
 

@@ -2,7 +2,7 @@
 
 An exemption from a layer gate is only as good as the declaration behind it, so
 the declarations live here with the rules that check them. A registry that
-could be pointed at `core.js` would be a switch for turning the boundaries off
+could be pointed at `010_core.js` would be a switch for turning the boundaries off
 (MJ-019, MJ-021, MJ-031).
 
 Three registries, three different claims: which files may name `ipc`, which are
@@ -35,26 +35,26 @@ IPC_ADAPTER_FILES: tuple[str, ...] = (
     # `ipc`, and the one function every platform call goes through. What it may
     # call is gated in `test_platform_adapter`; the declaration here is what
     # makes naming `ipc` legal in that one file and a violation in every other.
-    "muejeje_pts/script-engine/platform_adapter.js",
+    "muejeje_pts/script-engine/060_platform_adapter.js",
 )
 # Every declared platform adapter: the boundary, and the subject adapters that
 # read one thing each *through* it. They name no platform object of their own —
 # which is why only the boundary needs the `ipc` exemption — but the
 # declaration rules below apply to all of them.
 PLATFORM_ADAPTER_FILES: tuple[str, ...] = IPC_ADAPTER_FILES + (
-    "muejeje_pts/script-engine/network_adapter.js",
-    "muejeje_pts/script-engine/network_identity_adapter.js",
-    "muejeje_pts/script-engine/network_ports_adapter.js",
-    "muejeje_pts/script-engine/platform_device_adapter.js",
-    "muejeje_pts/script-engine/platform_module_adapter.js",
-    "muejeje_pts/script-engine/platform_support_adapter.js",
+    "muejeje_pts/script-engine/070_network_adapter.js",
+    "muejeje_pts/script-engine/080_network_identity_adapter.js",
+    "muejeje_pts/script-engine/090_network_ports_adapter.js",
+    "muejeje_pts/script-engine/100_platform_device_adapter.js",
+    "muejeje_pts/script-engine/110_platform_module_adapter.js",
+    "muejeje_pts/script-engine/120_platform_support_adapter.js",
 )
 # Every packaged source that carries platform vocabulary: the adapters, and the
 # file that declares what a platform reading *is*. That file names no platform
 # object, so it needs no exemption; it is declared because the enum-mirror gate
 # reads this set rather than only the adapters (MJ-014, MJ-029).
 PLATFORM_SOURCE_FILES: tuple[str, ...] = PLATFORM_ADAPTER_FILES + (
-    "muejeje_pts/script-engine/platform_reading.js",
+    "muejeje_pts/script-engine/050_platform_reading.js",
 )
 # The vocabulary a platform reading is made of: what an outcome is called, why
 # one was unavailable, and which calls the boundary admits. Naming any of it is
@@ -75,7 +75,7 @@ READING_VOCABULARY = (
 PLATFORM_BOUNDS = "MUEJEJE_PLATFORM_LIMITS"
 
 # What a declared adapter must be. Without these, the layer gate could be
-# silenced by declaring `core.js` an adapter, which is the one way a boundary
+# silenced by declaring `010_core.js` an adapter, which is the one way a boundary
 # like this fails without anybody noticing.
 ADAPTER_SUFFIX = "_adapter.js"
 # An adapter adapts. It does not answer a request, shape an envelope, or decide
@@ -136,15 +136,15 @@ def test_the_declared_adapter_registries_are_what_this_artifact_ships():
     transport exists for one to adapt (MJ-026).
     """
     assert TRANSPORT_ADAPTER_FILES == ()
-    assert IPC_ADAPTER_FILES == ("muejeje_pts/script-engine/platform_adapter.js",)
+    assert IPC_ADAPTER_FILES == ("muejeje_pts/script-engine/060_platform_adapter.js",)
     assert PLATFORM_ADAPTER_FILES == (
-        "muejeje_pts/script-engine/platform_adapter.js",
-        "muejeje_pts/script-engine/network_adapter.js",
-        "muejeje_pts/script-engine/network_identity_adapter.js",
-        "muejeje_pts/script-engine/network_ports_adapter.js",
-        "muejeje_pts/script-engine/platform_device_adapter.js",
-        "muejeje_pts/script-engine/platform_module_adapter.js",
-        "muejeje_pts/script-engine/platform_support_adapter.js",
+        "muejeje_pts/script-engine/060_platform_adapter.js",
+        "muejeje_pts/script-engine/070_network_adapter.js",
+        "muejeje_pts/script-engine/080_network_identity_adapter.js",
+        "muejeje_pts/script-engine/090_network_ports_adapter.js",
+        "muejeje_pts/script-engine/100_platform_device_adapter.js",
+        "muejeje_pts/script-engine/110_platform_module_adapter.js",
+        "muejeje_pts/script-engine/120_platform_support_adapter.js",
     )
     assert set(PLATFORM_ADAPTER_FILES) < set(PLATFORM_SOURCE_FILES)
 
@@ -177,24 +177,24 @@ def test_the_vocabulary_of_a_reading_stays_inside_the_platform_sources():
 def test_the_reading_vocabulary_gate_tells_a_bound_from_a_reading():
     """Asserted on synthetic sources, so the exception cannot become a hole."""
     rule = {"platform_x.js": "var A = {max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW};"}
-    reading = {"core.js": "return {resolution: MUEJEJE_PLATFORM_OBSERVED};"}
+    reading = {"010_core.js": "return {resolution: MUEJEJE_PLATFORM_OBSERVED};"}
     patterns = [literal_pattern(name) for name in READING_VOCABULARY]
 
     assert layer_offenders(rule, patterns, adapters=()) == []
     assert layer_offenders(reading, patterns, adapters=()) == [
-        "core.js: MUEJEJE_PLATFORM_OBSERVED"
+        "010_core.js: MUEJEJE_PLATFORM_OBSERVED"
     ]
 
 
 def test_the_adapter_declaration_rule_refuses_a_kernel_file():
     """Asserted in every direction, so the exemption cannot become a switch.
 
-    Declaring `core.js` an adapter would silence the layer gates for the one
+    Declaring `010_core.js` an adapter would silence the layer gates for the one
     file they exist to protect, so the declaration is checked rather than
     trusted. Each reason is exercised here because the registries themselves
     are empty, and a check nobody has run is a check nobody can rely on.
     """
-    shipped = "muejeje_pts/script-engine/core.js"
+    shipped = "muejeje_pts/script-engine/010_core.js"
     missing = "muejeje_pts/script-engine/absent_adapter.js"
     inputs = {shipped, missing}
 

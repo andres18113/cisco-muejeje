@@ -44,7 +44,7 @@ def test_report_separates_artifact_from_tooling_inputs(tmp_path: Path):
 def test_artifact_and_tooling_inputs_may_not_overlap(tmp_path: Path):
     root, manifest_path = make_repo(tmp_path)
     manifest = manifest_document()
-    manifest["tooling_inputs"].append("muejeje_pts/script-engine/lifecycle.js")
+    manifest["tooling_inputs"].append("muejeje_pts/script-engine/220_lifecycle.js")
     commit_manifest(root, manifest_path, manifest)
 
     report = build_api().inspect_build(root, manifest_path)
@@ -95,12 +95,12 @@ def test_dirty_source_and_unexpected_owned_assets_are_invalid(tmp_path: Path):
 def test_untracked_artifact_input_is_still_rejected(tmp_path: Path):
     """A path-safety regression that must survive the recategorisation."""
     root, manifest_path = make_repo(tmp_path)
-    git(root, "rm", "--cached", "-q", "muejeje_pts/script-engine/lifecycle.js")
+    git(root, "rm", "--cached", "-q", "muejeje_pts/script-engine/220_lifecycle.js")
     git(root, "commit", "-qm", "untrack an artifact input")
 
     report = build_api().inspect_build(root, manifest_path)
     assert any(
-        "not tracked" in blocker and "lifecycle.js" in blocker
+        "not tracked" in blocker and "220_lifecycle.js" in blocker
         for blocker in report["blockers"]
     )
 

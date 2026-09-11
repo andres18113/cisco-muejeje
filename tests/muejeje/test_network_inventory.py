@@ -66,7 +66,7 @@ def _observed(devices: str | None = None, **args) -> dict:
 
 def test_the_operation_names_no_platform_symbol_of_its_own():
     """Operation -> adapter -> boundary -> platform, never a shortcut (MJ-019)."""
-    body = (SCRIPT_ENGINE / "network_inventory.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "140_network_inventory.js").read_text(encoding="utf-8")
 
     assert "muejejeAdapterDeviceInventory(" in body
     assert "ipc" not in body
@@ -75,8 +75,8 @@ def test_the_operation_names_no_platform_symbol_of_its_own():
 
 
 def test_the_operation_declares_its_own_argument_rules():
-    body = (SCRIPT_ENGINE / "network_inventory.js").read_text(encoding="utf-8")
-    dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "140_network_inventory.js").read_text(encoding="utf-8")
+    dispatcher = (SCRIPT_ENGINE / "210_dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_NETWORK_INVENTORY_ARGS = {" in body
     assert "MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_WINDOW" in body
@@ -92,7 +92,7 @@ def test_the_workspace_reading_reads_no_topology_of_any_kind():
     boundary would refuse them anyway — none is on the allowlist — so this
     gate is about intent: the file does not reach for them (MJ-002, MJ-004).
     """
-    body = (SCRIPT_ENGINE / "network_adapter.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "070_network_adapter.js").read_text(encoding="utf-8")
 
     for unowned in ("getLink", "getPort", "getIpAddress", "getConfig"):
         assert unowned not in body, unowned

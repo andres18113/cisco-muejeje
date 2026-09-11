@@ -72,7 +72,7 @@ def test_manifest_must_be_tracked_and_own_bytes_must_match_head(tmp_path: Path):
     )
 
     git(root, "add", str(manifest_path.relative_to(root)))
-    own = root / "muejeje_pts/script-engine/lifecycle.js"
+    own = root / "muejeje_pts/script-engine/220_lifecycle.js"
     git(root, "update-index", "--assume-unchanged", str(own.relative_to(root)))
     own.write_text("hidden dirty bytes", encoding="utf-8")
     try:
@@ -81,7 +81,7 @@ def test_manifest_must_be_tracked_and_own_bytes_must_match_head(tmp_path: Path):
         git(root, "update-index", "--no-assume-unchanged", str(own.relative_to(root)))
     assert report["status"] == "BUILD_SOURCE_INVALID"
     assert report["source"]["clean"] is False
-    assert any("HEAD" in blocker and "lifecycle.js" in blocker for blocker in report["blockers"])
+    assert any("HEAD" in blocker and "220_lifecycle.js" in blocker for blocker in report["blockers"])
 
 
 def test_manifest_bytes_must_match_head_even_when_assume_unchanged(tmp_path: Path):
@@ -144,6 +144,19 @@ def test_report_symlink_escape_is_rejected(tmp_path: Path):
 # Build options carry values, not just non-null placeholders.
 # ---------------------------------------------------------------------------
 
+def _engine_order_swapped() -> list[str]:
+    """Every file declared, every name valid, and two out of their listed order."""
+    order = list(resolved_options()["engine_script_order"])
+    order[0], order[1] = order[1], order[0]
+    return order
+
+
+def _engine_order_renaming_the_first(name: str) -> list[str]:
+    order = list(resolved_options()["engine_script_order"])
+    order[0] = f"{order[0].rsplit('/', 1)[0]}/{name}"
+    return order
+
+
 INVALID_OPTIONS = [
     ("module_id", "muejeje", "hierarchical"),
     ("module_id", "IO.GitHub.Muejeje.Runtime", "lowercase"),
@@ -165,8 +178,16 @@ INVALID_OPTIONS = [
     ("privileges", ["PrivOne", "PrivOne"], "must not repeat"),
     ("privileges", ["PrivMadeUp"], "no evidence"),
     ("privileges", ["PrivGetNetwork", "PrivInvented"], "no evidence"),
-    ("engine_script_order", ["muejeje_pts/script-engine/core.js"],
+    ("engine_script_order", ["muejeje_pts/script-engine/010_core.js"],
      "declared artifact inputs"),
+    # Packet Tracer lists engine files by name, and evaluates them as listed.
+    ("engine_script_order", _engine_order_swapped(), "order its file names list in"),
+    ("engine_script_order", _engine_order_renaming_the_first("kernel.js"),
+     "three-digit order prefix"),
+    ("engine_script_order", _engine_order_renaming_the_first("020_core.js"),
+     "one order prefix"),
+    # Unhashable, so a rule that indexed the order by name would crash on it.
+    ("engine_script_order", [{}], "non-empty strings"),
 ]
 
 

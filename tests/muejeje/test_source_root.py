@@ -175,10 +175,10 @@ def test_owned_sources_mirror_no_cisco_enum_identifier():
     )
     assert not offenders, f"a Cisco enum inside the artifact: {offenders}"
 
-    mirror = {"core.js": "var TYPES = {eRouter: 1, eSwitch: 2};"}
+    mirror = {"010_core.js": "var TYPES = {eRouter: 1, eSwitch: 2};"}
     patterns = [literal_pattern(name) for name in CISCO_ENUM_IDENTIFIERS]
     assert sorted(layer_offenders(mirror, patterns, adapters=())) == [
-        "core.js: eRouter", "core.js: eSwitch",
+        "010_core.js: eRouter", "010_core.js: eSwitch",
     ]
 
 
@@ -220,8 +220,8 @@ def test_exactly_one_lifecycle_entry_point_exists(symbol: str):
     owners = [
         name for name, body in _engine_bodies().items() if pattern.search(body)
     ]
-    assert owners == ["muejeje_pts/script-engine/lifecycle.js"], (
-        f"{symbol}() must be declared exactly once, by lifecycle.js: {owners}"
+    assert owners == ["muejeje_pts/script-engine/220_lifecycle.js"], (
+        f"{symbol}() must be declared exactly once, by 220_lifecycle.js: {owners}"
     )
 
 
@@ -235,14 +235,14 @@ def test_no_second_dispatcher_can_ever_appear():
     owners = [
         name for name, body in _engine_bodies().items() if pattern.search(body)
     ]
-    assert owners in ([], ["muejeje_pts/script-engine/dispatcher_v6.js"]), (
+    assert owners in ([], ["muejeje_pts/script-engine/210_dispatcher_v6.js"]), (
         f"exactly one mcpDispatchV6, owned by the dispatcher: {owners}"
     )
 
 
 def test_lifecycle_owns_no_dispatch_and_no_operation():
-    body = (SOURCE_ROOT / "script-engine/lifecycle.js").read_text(encoding="utf-8")
+    body = (SOURCE_ROOT / "script-engine/220_lifecycle.js").read_text(encoding="utf-8")
     for forbidden in ("mcpDispatchV6", "runtime.identify", "JSON.parse"):
         assert forbidden not in body, (
-            f"lifecycle.js owns main()/cleanUp() only; {forbidden} belongs elsewhere"
+            f"220_lifecycle.js owns main()/cleanUp() only; {forbidden} belongs elsewhere"
         )

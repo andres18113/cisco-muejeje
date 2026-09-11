@@ -61,15 +61,15 @@ def _result() -> dict:
 
 def test_the_operation_has_its_own_file_and_does_not_grow_the_dispatcher():
     """A second operation is a second file, not a longer dispatcher (MJ-018)."""
-    body = (SCRIPT_ENGINE / "runtime_capabilities.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "190_runtime_capabilities.js").read_text(encoding="utf-8")
     assert "function muejejeRuntimeCapabilities(" in body
-    dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
+    dispatcher = (SCRIPT_ENGINE / "210_dispatcher_v6.js").read_text(encoding="utf-8")
     assert "supported_features" not in dispatcher
     assert "protocol_versions" not in dispatcher
 
 
 def test_the_operation_makes_no_platform_call_and_mutates_nothing():
-    body = (SCRIPT_ENGINE / "runtime_capabilities.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "190_runtime_capabilities.js").read_text(encoding="utf-8")
     assert "ipc." not in body, "runtime.capabilities is read-only and needs no privilege"
     assert "MUEJEJE_CORE.session." not in body
     assert "muejejeCoreMark" not in body
@@ -77,7 +77,7 @@ def test_the_operation_makes_no_platform_call_and_mutates_nothing():
 
 def test_the_operation_does_not_reach_into_the_dispatcher():
     """The whitelist has one owner; the operation is handed the catalogue."""
-    body = (SCRIPT_ENGINE / "runtime_capabilities.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "190_runtime_capabilities.js").read_text(encoding="utf-8")
     assert "muejejeV6OperationTable" not in body
     assert "MUEJEJE_V6_DISPATCH" not in body
 
@@ -87,7 +87,7 @@ def test_the_operation_catalogue_is_derived_where_the_whitelist_lives():
         relative(path) for path in engine_sources()
         if "function muejejeV6OperationCatalog(" in path.read_text(encoding="utf-8")
     ]
-    assert owners == ["muejeje_pts/script-engine/dispatcher_v6.js"], owners
+    assert owners == ["muejeje_pts/script-engine/210_dispatcher_v6.js"], owners
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ def test_the_report_makes_no_platform_call_and_carries_no_observation():
     report would make discovery depend on a platform call and turn one
     unavailable platform into "this runtime has no capabilities" (MJ-028).
     """
-    body = (SCRIPT_ENGINE / "runtime_capabilities.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "190_runtime_capabilities.js").read_text(encoding="utf-8")
     assert "muejejeAdapter" not in body
     assert "MUEJEJE_PLATFORM" not in body
 

@@ -37,7 +37,7 @@ def _result() -> dict:
 # ---------------------------------------------------------------------------
 
 def test_the_operation_makes_no_platform_call_and_mutates_nothing():
-    body = (SCRIPT_ENGINE / "runtime_identity.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "200_runtime_identity.js").read_text(encoding="utf-8")
     assert "ipc." not in body, "runtime.identify is read-only and needs no privilege"
     # It reads core; it never writes to it.
     assert "MUEJEJE_CORE.session." not in body
@@ -46,7 +46,7 @@ def test_the_operation_makes_no_platform_call_and_mutates_nothing():
 
 def test_the_operation_does_not_reach_into_the_dispatcher():
     """The whitelist has one owner; the operation is handed the list."""
-    body = (SCRIPT_ENGINE / "runtime_identity.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "200_runtime_identity.js").read_text(encoding="utf-8")
     assert "muejejeV6OperationTable" not in body
     assert "MUEJEJE_V6_DISPATCH" not in body
 
@@ -170,12 +170,12 @@ def test_the_session_token_is_generated_exactly_once_per_evaluation():
     does guarantee is asserted instead: one generation site, one assignment,
     at evaluation time (MJ-023).
     """
-    body = (SCRIPT_ENGINE / "core.js").read_text(encoding="utf-8")
+    body = (SCRIPT_ENGINE / "010_core.js").read_text(encoding="utf-8")
 
     assert body.count("MUEJEJE_CORE.session.id = ") == 1
     assert body.count("function muejejeCoreNewSessionId(") == 1
     for source in sorted(SCRIPT_ENGINE.glob("*.js")):
-        if source.name == "core.js":
+        if source.name == "010_core.js":
             continue
         other = source.read_text(encoding="utf-8")
         assert "muejejeCoreNewSessionId" not in other, (
