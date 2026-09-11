@@ -30,19 +30,20 @@
  * `limit` is bounded by the adapter's own window ceiling rather than by a
  * second number written down here: two copies of a bound are two bounds.
  *
- * `offset` is bounded by the factory addressing ceiling — the same declaration
- * the operations that consume a `device_index` name — so every index this
- * operation publishes is one they admit (MJ-029). */
+ * `offset` is bounded only by the exact-integer limit — the same declaration
+ * the operations that consume a `device_index` name — so a consumer may page
+ * as far as the factory goes, and every index this operation publishes is one
+ * they admit (MJ-029). */
 var MUEJEJE_PLATFORM_DESCRIPTOR_ARGS = {
     offset: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
+        max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     },
     limit: {
         kind: "integer",
         min: 1,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW
+        max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW
     }
 };
 
@@ -52,7 +53,7 @@ var MUEJEJE_PLATFORM_DESCRIPTOR_ARGS = {
 function muejejePlatformDeviceDescriptors(args, context) {
     return muejejeAdapterDeviceDescriptors(
         muejejePlatformArgument(args, "offset", 0),
-        muejejePlatformArgument(args, "limit", MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW)
+        muejejePlatformArgument(args, "limit", MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW)
     );
 }
 

@@ -85,9 +85,9 @@ def test_the_operation_declares_its_own_argument_rule():
     dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_NETWORK_IDENTITY_ARGS = {" in body
-    assert "MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX" in body
     assert "MUEJEJE_NETWORK_IDENTITY_ARGS" in dispatcher
-    assert "MAX_WORKSPACE_INDEX" not in dispatcher, "the dispatcher holds no bound"
+    assert "EXACT_INTEGER_MAX" not in dispatcher, "the dispatcher holds no bound"
 
 
 def test_the_reading_correlates_nothing_to_the_hardware_factory():
@@ -245,7 +245,7 @@ def test_every_identity_field_is_checked_before_it_is_reported(
 
 
 @requires_node
-@pytest.mark.parametrize("index", ["-1", "5000", "'0'", "1.5", "null"])
+@pytest.mark.parametrize("index", ["-1", "9007199254740992", "'0'", "1.5", "null"])
 def test_an_index_this_adapter_would_not_accept_is_a_defect_not_a_clamp(
     index: str,
 ):
@@ -272,7 +272,7 @@ def test_an_index_this_adapter_would_not_accept_is_a_defect_not_a_clamp(
 
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"device_index": -1}, {"device_index": 5000}, {"device_index": "0"},
+    {"device_index": -1}, {"device_index": 9007199254740992}, {"device_index": "0"},
     {"device_index": 1.5}, {"name": "a"},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):

@@ -174,7 +174,7 @@ def test_the_vocabulary_of_a_reading_stays_inside_the_platform_sources():
 
 def test_the_reading_vocabulary_gate_tells_a_bound_from_a_reading():
     """Asserted on synthetic sources, so the exception cannot become a hole."""
-    rule = {"platform_x.js": "var A = {max: MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW};"}
+    rule = {"platform_x.js": "var A = {max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW};"}
     reading = {"core.js": "return {resolution: MUEJEJE_PLATFORM_OBSERVED};"}
     patterns = [literal_pattern(name) for name in READING_VOCABULARY]
 

@@ -8,13 +8,27 @@
  * so that readings of different subjects cannot quietly come to mean different
  * things.
  *
- * EVERY BOUND HERE IS MUEJEJE'S OWN. None of them is a Packet Tracer limit:
- * nothing in this repository has measured how many models the factory offers
- * or how large a chassis descriptor can be, so a number presented as the
- * platform's would be a claim about `9.0.1.0858` with no evidence behind it
- * (MJ-015). Each is a limit on what one call will do, and a read past one is
- * reported as truncated, so an omitted tail stays visibly absent and can never
- * be read as an observed absence (MJ-029).
+ * THREE DIFFERENT THINGS LIMIT A READING, AND ONLY TWO OF THEM ARE OURS.
+ *
+ *   work per request   how much one call does: how many entries one window
+ *                      carries, how far one walk goes, how long one string
+ *                      may be. Muejeje's own, and a reading that stops at one
+ *                      says so, so an omitted tail stays visibly absent and is
+ *                      never read as an observed absence.
+ *   numeric fidelity   which numbers this runtime can carry and hand back
+ *                      unchanged. Muejeje's own too — a fact about how a JSON
+ *                      number travels, not about Packet Tracer — and not a
+ *                      work bound: a request costs the same at position three
+ *                      as at position three trillion.
+ *   capacity           how many models, devices or ports exist. Only the
+ *                      platform answers that, nothing here bounds it, and a
+ *                      consumer pages through it one window at a time.
+ *
+ * Nothing in this repository has measured a Packet Tracer limit, so no number
+ * here is presented as one (MJ-015, MJ-029). An earlier revision capped every
+ * index at 4096 and refused any count above 65536. Neither bounded work — the
+ * window already did — and together they made a large enough workspace
+ * unreadable rather than paged.
  *
  * A VALIDATOR REFUSING AN ANSWER IS A READING; a validator throwing for any
  * other reason is not. The distinction is `muejejeReadingReason` below, and it
@@ -22,36 +36,15 @@
  * Tracer's name (MJ-022, MJ-031).
  */
 
-/* Bounds, and they are Muejeje's own. Nothing here has measured how many
- * models the factory offers or how many module types a descriptor lists, so
- * each number is a limit on what this adapter will do in one call and never a
- * claim about the platform (MJ-029). A read past a bound is reported as
- * truncated, so an omitted tail stays visibly absent and can never be read as
- * an observed absence. */
 var MUEJEJE_PLATFORM_LIMITS = {
-    MAX_WINDOW: 32,
-    /* The highest index in each enumeration this artifact will address. Two
-     * numbers rather than one, because a model in the hardware factory and a
-     * device on the workspace are two enumerations of two different subjects,
-     * and a single shared ceiling would silently tie them together.
-     *
-     * Each bounds how far one request may reach. Neither is a claim about how
-     * many models a factory offers or how many devices a workspace holds — the
-     * platform answers that, and a reading that stops short of the count says
-     * so rather than dropping the tail (MJ-029).
-     *
-     * THEY ARE ALSO THE PUBLISHED ADDRESSING DOMAINS, which is the whole of
-     * relay closure for an index. A reading never publishes an index above its
-     * subject's ceiling, and every operation that consumes an index of that
-     * subject admits exactly this range. Bounding only the *first* index of a
-     * window is what broke that once: a window at the ceiling published
-     * `offset + limit - 1` above it, and the operations consuming those
-     * indexes then refused values this runtime had just handed out. */
-    MAX_FACTORY_INDEX: 4096,
-    MAX_WORKSPACE_INDEX: 4096,
+    /* WORK PER REQUEST: how many entries one reading of each enumeration
+     * carries. More entries past a window are reported, and a consumer asks
+     * for the next window; none of these says how many models a factory
+     * offers or how many devices a workspace holds. */
+    MAX_FACTORY_WINDOW: 32,
+    MAX_WORKSPACE_WINDOW: 64,
     MAX_MODULE_TYPES: 64,
-    MAX_COUNT: 65536,
-    MAX_MODEL_CHARS: 256,
+    MAX_SLOTS: 64,
     /* A chassis descriptor is a tree, and a tree has no bound this repository
      * has measured either. These two are what one call will walk. They are
      * not small: this repository's own recorded factory survey against
@@ -62,34 +55,27 @@ var MUEJEJE_PLATFORM_LIMITS = {
      * omit is still marked. */
     MAX_MODULE_NODES: 512,
     MAX_MODULE_DEPTH: 12,
-    MAX_SLOTS: 64,
-    /* THE `ModuleType` VALUE DOMAIN — one domain, for every producer and every
-     * consumer of a type value in this artifact.
+    /* How long a model or a name in one reading may be. Devices are named
+     * however somebody named them and no ceiling on a name has been measured;
+     * this bounds the size of an answer, and the caller says which. */
+    MAX_MODEL_CHARS: 256,
+    MAX_NAME_CHARS: 256,
+    /* NUMERIC FIDELITY: one domain for every number this artifact publishes
+     * or admits back — an index, a count, a DeviceType, a ModuleType.
      *
-     * It used to be a ceiling of 65535 on what a *request* could ask about,
-     * while the readings published whatever whole number the platform
-     * answered. That is two domains, and the runtime could emit a type and
-     * then refuse the very same value: a consumer relaying a published type
-     * back was told its argument was invalid, having done nothing but read a
-     * reading this artifact produced.
+     * It is the range in which a whole number is still exactly the number
+     * that was sent. Past it, a JSON number no longer round-trips — one past
+     * the end is indistinguishable from two past it — so what came back would
+     * not be what went out, and a consumer relaying a value could not tell.
+     * Indexes and counts take the non-negative half; platform values take
+     * both, because the platform is the authority on their sign.
      *
-     * So the domain is not a guess at where Cisco's enum stops — nothing here
-     * has measured that, and a number presented as the platform's would be a
-     * claim about `9.0.1.0858` with nothing behind it (MJ-015). It is the
-     * range in which a whole number *is still the number the platform gave*:
-     * past it, a JSON value no longer round-trips exactly, so what came back
-     * would not be what went out. That is a property of how this runtime
-     * carries a value, which is Muejeje's to decide (MJ-029), and it bounds no
-     * work: the cost of one request does not depend on a type's magnitude.
-     * How *many* types one reading lists is bounded above, and separately. */
-    MODULE_TYPE_MIN: -9007199254740991,
-    MODULE_TYPE_MAX: 9007199254740991,
-    /* A workspace has as many devices as somebody put on it, and this
-     * repository has measured no ceiling on either the count or a device's
-     * name. Both numbers bound what one reading will do, and a window past the
-     * first is reported as truncated rather than silently dropped (MJ-029). */
-    MAX_DEVICE_WINDOW: 64,
-    MAX_NAME_CHARS: 256
+     * RELAY CLOSURE turns on this being one declaration (MJ-029). A value a
+     * reading publishes is held to it here, and every operation that admits
+     * such a value back names the same two bounds, so this runtime can never
+     * emit a number it then refuses. */
+    EXACT_INTEGER_MIN: -9007199254740991,
+    EXACT_INTEGER_MAX: 9007199254740991
 };
 
 /* Why a reading is unavailable. Four different facts, kept apart because a
@@ -116,10 +102,10 @@ var MUEJEJE_PLATFORM_UNAVAILABLE = "UNAVAILABLE";
 /* Which thrown values are a reading, and which are this artifact's own bug.
  *
  * These three sentinels are the only failures an adapter attributed to the
- * platform: two raised at the call boundary, one raised by a validator below.
- * Anything else got there from our own code, so it is rethrown for the
- * dispatcher to report as an engine exception. Swallowing it would publish a
- * platform observation nobody observed (MJ-031). */
+ * platform: raised at the call boundary, or by a validator below. Anything
+ * else got there from our own code, so it is rethrown for the dispatcher to
+ * report as an engine exception. Swallowing it would publish a platform
+ * observation nobody observed (MJ-031). */
 function muejejeReadingReason(thrown) {
     if (
         thrown !== MUEJEJE_PLATFORM_MEMBER_ABSENT
@@ -150,41 +136,38 @@ function muejejeReadingArgument(value, min, max) {
     return value;
 }
 
+/* A count the platform answered: a whole number this runtime can carry
+ * exactly, and nothing more is asked of it. How large it is belongs to the
+ * platform; a reading that stops short of it says so rather than refusing it. */
 function muejejeReadingCount(value) {
     if (
         typeof value !== "number" || value % 1 !== 0 || value < 0
-        || value > MUEJEJE_PLATFORM_LIMITS.MAX_COUNT
+        || value > MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     ) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
     return value;
 }
 
-function muejejeReadingWholeNumber(value) {
-    if (typeof value !== "number" || value % 1 !== 0) {
-        throw MUEJEJE_PLATFORM_UNUSABLE;
-    }
-    return value;
-}
-
-/* A `ModuleType` the platform answered, held to the one published domain.
+/* A number the platform answered in its own vocabulary — a DeviceType, a
+ * ModuleType, a slot type — held to the one published domain, and never
+ * translated: naming a value is a consumer's job, against Cisco's
+ * documentation (MJ-014).
  *
- * RELAY CLOSURE. This is the producing half of it: every type value this
- * artifact publishes — a descriptor's supported list, a chassis module's own
- * type, a slot type — comes through here, and the operation that consumes a
- * type admits exactly the same domain. A producer that validated its own way
- * would be a second domain, and the two would drift apart the first time
- * either was edited.
+ * RELAY CLOSURE. This is the producing half of it: every such value this
+ * artifact publishes comes through here, and an operation that admits one back
+ * names the same bounds. A producer that validated its own way would be a
+ * second domain, and the two would drift apart the first time either was
+ * edited.
  *
  * A value outside it is `PLATFORM_ANSWER_UNUSABLE` and not a refusal: the
  * platform answered, and the answer is one this runtime cannot carry back
- * unchanged, so it cannot be attributed. Reporting it anyway would publish a
- * number nobody could relay. */
-function muejejeReadingModuleType(value) {
+ * unchanged, so it cannot be attributed. */
+function muejejeReadingExactInteger(value) {
     if (
         typeof value !== "number" || value % 1 !== 0
-        || value < MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MIN
-        || value > MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MAX
+        || value < MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MIN
+        || value > MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     ) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }

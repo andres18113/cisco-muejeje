@@ -42,7 +42,7 @@ OPERATION = "platform.device_descriptors"
 # than a ceiling on work. Named here so a second one cannot arrive unnoticed —
 # a bound that stops being a limit on what one call does is a bound whose
 # reason has to be restated.
-SIGNED_VALUE_BOUNDS = {"MODULE_TYPE_MIN"}
+SIGNED_VALUE_BOUNDS = {"EXACT_INTEGER_MIN"}
 
 THREE_MODELS = (
     "[{model: '2960-24TT', type: 1, supported: true, module_types: [18]},"
@@ -127,8 +127,8 @@ def test_every_adapter_bound_is_a_usable_whole_number():
     was written to refuse.
 
     A ceiling on work is positive; the floor of a *value* domain need not be.
-    `MODULE_TYPE_MIN` is the one bound that is legitimately negative, because a
-    type value is the platform's and the platform is the authority on its sign.
+    `EXACT_INTEGER_MIN` is the one bound that is legitimately negative, because
+    a platform value's sign is the platform's to decide.
     Requiring it to be positive would be the local ceiling that broke relay
     closure, in another spelling (MJ-029, `test_relay_closure`).
     """
@@ -139,13 +139,13 @@ def test_every_adapter_bound_is_a_usable_whole_number():
         assert isinstance(bound, int), f"{name}: {bound!r}"
         if name not in SIGNED_VALUE_BOUNDS:
             assert bound > 0, f"{name}: {bound!r}"
-    assert limits["MODULE_TYPE_MIN"] < 0 < limits["MODULE_TYPE_MAX"], (
-        "the published type domain must admit what the platform may answer"
+    assert limits["EXACT_INTEGER_MIN"] == -limits["EXACT_INTEGER_MAX"] < 0, (
+        "the published value domain must admit what the platform may answer"
     )
 
 @requires_node
 @pytest.mark.parametrize(("offset", "limit"), [
-    ("-1", "4"), ("0", "0"), ("0", "33"), ("5000", "4"), ("'0'", "4"),
+    ("-1", "4"), ("0", "0"), ("0", "33"), ("9007199254740992", "4"), ("'0'", "4"),
     ("1.5", "4"), ("0", "null"),
 ])
 def test_an_argument_this_adapter_would_not_accept_is_a_defect_not_a_clamp(
@@ -186,3 +186,48 @@ def test_the_window_this_operation_asks_for_is_still_answered():
 
     assert observed["resolution"] == "OBSERVED"
     assert observed["offset"] == 0 and observed["limit"] == 32
+
+
+@requires_node
+def test_the_fidelity_bound_is_where_a_whole_number_stops_round_tripping():
+    """Neither a guess at Cisco's enums nor a work bound: the last exact integer.
+
+    One past it is indistinguishable from two past it, so a number there would
+    not come back as the number that went out — which is the whole reason the
+    bound exists, asserted in the engine rather than assumed (MJ-029).
+    """
+    observed = dispatch_v6(_request(), report=(
+        "(function () { var top = MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX;"
+        " return {safe: top === Number.MAX_SAFE_INTEGER,"
+        " symmetric: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MIN === -top,"
+        " lost_above: top + 1 === top + 2}; }())"
+    ))
+
+    assert observed == {"safe": True, "symmetric": True, "lost_above": True}
+
+
+@requires_node
+@pytest.mark.parametrize(("count", "readable"), [
+    ("65537", True), ("9007199254740991", True),
+    ("9007199254740992", False), ("1e300", False),
+])
+def test_a_count_is_refused_for_what_it_cannot_carry_and_never_for_its_size(
+    count: str, readable: bool,
+):
+    """How many models exist is the platform's answer, and a window pages it.
+
+    `65537` was unreadable once, under a count ceiling that bounded no work.
+    What is still refused is a count this runtime could not hand back exactly.
+    """
+    result = dispatch_v6(
+        _request(), prelude=platform_stub(THREE_MODELS, count=count, dense=True),
+    )["result"]
+
+    if readable:
+        assert result["resolution"] == "OBSERVED"
+        assert result["available_count"] == int(count)
+        assert len(result["descriptors"]) == 32
+        assert result["window_truncated"] is True
+    else:
+        assert result["resolution"] == "UNAVAILABLE"
+        assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"

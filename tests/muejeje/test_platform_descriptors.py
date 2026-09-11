@@ -31,7 +31,7 @@ OPERATION = "platform.device_descriptors"
 
 RESULT_FIELDS = {
     "resolution", "unavailable_reason", "available_count", "offset", "limit",
-    "max_device_index", "descriptors", "window_truncated",
+    "descriptors", "window_truncated",
 }
 # `device_index` is the index each model was read at, reported rather than
 # counted off from `offset`: it is the value a consumer sends back to ask
@@ -88,9 +88,9 @@ def test_the_operation_declares_its_own_argument_rules():
     dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_PLATFORM_DESCRIPTOR_ARGS = {" in body
-    assert "MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW" in body
     assert "MUEJEJE_PLATFORM_DESCRIPTOR_ARGS" in dispatcher
-    assert "MAX_WINDOW" not in dispatcher, "the dispatcher holds no platform bound"
+    assert "MAX_FACTORY_WINDOW" not in dispatcher, "the dispatcher holds no platform bound"
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +188,27 @@ def test_an_offset_past_the_end_reports_the_count_and_no_descriptor():
 
 
 @requires_node
+def test_a_factory_longer_than_any_window_is_paged_rather_than_capped():
+    """The window bounds the work, and nothing caps how far a consumer pages.
+
+    An earlier revision refused any offset past 4096 and any count past 65536,
+    so a factory that long was unreadable rather than merely long. Neither
+    number bounded work: reading model 59,990 costs what reading model 0 does.
+    """
+    result = dispatch_v6(
+        _request(offset=59990, limit=32),
+        prelude=platform_stub(THREE_MODELS, count="60000", dense=True),
+    )["result"]
+
+    assert result["resolution"] == "OBSERVED"
+    assert result["available_count"] == 60000
+    assert [entry["device_index"] for entry in result["descriptors"]] == list(
+        range(59990, 60000)
+    )
+    assert result["window_truncated"] is False
+
+
+@requires_node
 def test_more_module_types_than_the_adapter_reads_are_marked_truncated():
     many = ", ".join(str(value) for value in range(80))
     result = dispatch_v6(
@@ -213,7 +234,7 @@ def test_both_arguments_are_optional_and_default_to_the_first_window():
 
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"limit": 0}, {"limit": 33}, {"offset": -1}, {"offset": 5000},
+    {"limit": 0}, {"limit": 33}, {"offset": -1}, {"offset": 9007199254740992},
     {"limit": "8"}, {"limit": 1.5}, {"page": 1},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):

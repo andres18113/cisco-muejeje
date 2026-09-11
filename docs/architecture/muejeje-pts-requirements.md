@@ -754,35 +754,47 @@ unrecognised kind bounds nothing, so it admits nothing.
 > admissible by every operation that claims to consume it.
 
 Some values a reading reports exist *to be sent back*: a factory index that
-addresses a model, a `ModuleType` that asks whether a model accepts it. For
-those, a producer's domain and a consumer's domain are not two decisions. A
-value this runtime emits and then refuses is a contract that contradicts
-itself, and the consumer cannot discover it by reading either operation — it
-did nothing but relay an answer this artifact produced.
+addresses a model, a workspace index that addresses a device, a `ModuleType`
+that asks whether a model accepts it. For those, a producer's domain and a
+consumer's domain are not two decisions. A value this runtime emits and then
+refuses is a contract that contradicts itself, and the consumer cannot discover
+it by reading either operation — it did nothing but relay an answer this
+artifact produced.
 
 So a relayed value has **one** declared domain, named by the reading that
 publishes it and by every rule that admits it, and a consuming rule may never
-narrow it. Two consequences follow, and both were defects before they were
-rules:
+narrow it. An index a reading exposes is also *reported*, not inferred: a
+consumer that has to count `offset + i` to learn what to send back is deriving a
+reusable input, and two consumers will derive it differently.
 
-- **A window bounds its last index, not only its first.** Bounding `offset`
-  alone let a window at the addressing ceiling publish `offset + limit - 1`
-  above it, which the consuming operations then refused.
-- **An index a reading exposes is reported, not inferred.** A consumer that has
-  to count `offset + i` to learn what to send back is deriving a reusable
-  input, and two consumers will derive it differently. The addressable ceiling
-  is reported for the same reason: `available_count` is the platform's answer
-  about how many models exist, never a statement about which of them this
-  runtime will address.
+**Three things limit a request, and they are kept apart:**
+
+| Limit | Owner | Decides | Bounded by |
+| --- | --- | --- | --- |
+| work per request | Muejeje | how much one call does | the window, the walk and the string length — each reported as truncation when reached |
+| numeric fidelity | Muejeje | which numbers travel and come back unchanged | the exact-integer range, `±(2^53 − 1)`: indexes and counts take its non-negative half, platform values both halves |
+| capacity | Packet Tracer | how many models, devices or ports exist | nothing here: the platform's own count, read in the same observation |
+
+**An address is bounded by fidelity, never by a ceiling.** Reading position
+three trillion costs what reading position three costs, so an index ceiling
+bounds no work; it only decides which of the platform's own positions this
+runtime refuses to look at. An earlier revision capped every index at 4096 and
+refused any count above 65536, which made a large enough workspace unreadable
+rather than paged, and it then had to report the ceiling beside the count so a
+consumer could find where addressing stopped. All three are withdrawn. An index
+below `available_count` is always addressable, so the count is the whole
+answer; the window alone bounds what one request does; and a consumer reaches
+any position, in a topology of any size, one bounded window at a time. A count
+or a value outside the exact-integer range is `PLATFORM_ANSWER_UNUSABLE` — it
+could not be carried back unchanged — and never a verdict about its size.
 
 **Closure is not the absence of bounds.** Execution stays bounded, and every
-bound stays Muejeje's own: how many entries one window carries, how far one
-walk goes, how long a string may be. What closure forbids is an incompatible
-*pair* of domains. It also forbids dressing a value domain up as a resource
-bound — a ceiling on a `ModuleType` bounded no work at all, since the cost of
-a request does not depend on a type's magnitude; it only decided which
-platform-produced values this runtime would accept back, which is not a
-decision this runtime is entitled to make (MJ-014).
+bound stays Muejeje's own. What closure forbids is an incompatible *pair* of
+domains, and dressing a value domain up as a resource bound: a ceiling on a
+`ModuleType` bounded no work at all, since the cost of a request does not depend
+on a type's magnitude, and only decided which platform-produced values this
+runtime would accept back — which is not a decision this runtime is entitled to
+make (MJ-014). An index ceiling was the same mistake, made about addresses.
 
 **An argument is required only where no default would be honest.** Most
 arguments have one — an offset starts at the origin of an enumeration, a window
@@ -804,14 +816,20 @@ both directions — refused past it, admitted at it — asserts that the limits 
 declared in exactly one kernel file, and asserts that no bound is ever reported
 as `ENGINE_EXCEPTION`. The per-operation argument rules are driven on a
 synthetic operation, so the first operation to declare one inherits a tested
-mechanism. `tests/muejeje/test_relay_closure.py` drives closure itself, end to
-end and in both halves: it reads a value out of a reading, sends that same
+mechanism. `tests/muejeje/test_relay_closure.py` drives closure itself, end
+to end and in both halves: it reads a value out of a reading, sends that same
 value back to the operation that consumes it, and fails if the runtime refuses
-its own output — for a `ModuleType` at both ends of the published domain, and
-for a factory index at the addressing ceiling. It also holds the structure
-that makes closure hold by construction rather than by two numbers that happen
-to agree: one definition site per domain, named by the producer and by every
-consumer.
+its own output — for a `ModuleType` published at each end of the exact-integer
+range, and for the last factory and workspace index that can exist, published
+from a stub reporting the largest count this runtime carries and then read back.
+Just past either end of the value range it asserts that both halves agree: the
+reading cannot publish the value and the operation does not admit it. It holds
+the structure that makes closure hold by construction rather than by two
+numbers that happen to agree — one fidelity declaration, named by every
+producer and every consumer — and holds the declared bounds to two kinds, work
+and fidelity, so a ceiling on an address cannot return unnoticed.
+`tests/muejeje/test_network_inventory.py` and `test_platform_descriptors.py`
+page past where the withdrawn ceilings stood.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 
@@ -939,9 +957,9 @@ this" without either side carrying a table of what the types are (MJ-014).
 consumer relays among them — the factory index and the `ModuleType` — are
 published by one operation and admitted by the others, so each has a single
 declared domain and no consuming rule narrows it (MJ-029). The index a
-model was read at is reported on the model itself, and the highest index this
-runtime will address is reported beside the count, so neither has to be
-derived from `offset` or guessed at from `available_count`.
+model was read at is reported on the model itself, so it never has to be
+derived from `offset`, and every index below `available_count` can be sent
+back, so the count is all a consumer needs to page the whole factory.
 
 **`runtime.capabilities` may name a capability only once it exists.** The
 operation being admitted, and the kernel feature behind it, are facts about
@@ -1117,6 +1135,7 @@ one is a new protocol version.
 | --- | --- |
 | `nodes[].slot_index` → `nodes[].module_index` | `getModuleAt(i)` indexes a module enumeration; nothing evidenced it as a slot position, and `getSlotCount()`/`getSlotTypeAt()` are a separate enumeration this repository has never observed to correspond with it |
 | `nodes[].children_present` withdrawn | it counted "bays that hold a module", which required reading a `null` from `getModuleAt` as an empty bay — a semantic no target evidence supports |
+| `max_device_index` withdrawn from `platform.device_descriptors` and `network.device_inventory` | it reported an addressing ceiling of 4096 that bounded no work (MJ-029). With every index admitted up to the exact-integer limit, any index below `available_count` is addressable, so the field could only ever repeat a constant the count already implies |
 
 **A new protocol version is a new number, never a reinterpretation.** V6 has no
 compatibility escape and never guesses at a neighbouring version's meaning

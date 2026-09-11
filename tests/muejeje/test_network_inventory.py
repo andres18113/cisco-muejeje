@@ -36,7 +36,7 @@ OPERATION = "network.device_inventory"
 
 RESULT_FIELDS = {
     "resolution", "unavailable_reason", "available_count", "offset", "limit",
-    "max_device_index", "devices", "window_truncated",
+    "devices", "window_truncated",
 }
 DEVICE_FIELDS = {"index", "name"}
 
@@ -78,9 +78,9 @@ def test_the_operation_declares_its_own_argument_rules():
     dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_NETWORK_INVENTORY_ARGS = {" in body
-    assert "MUEJEJE_PLATFORM_LIMITS.MAX_DEVICE_WINDOW" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_WINDOW" in body
     assert "MUEJEJE_NETWORK_INVENTORY_ARGS" in dispatcher
-    assert "MAX_DEVICE_WINDOW" not in dispatcher, "the dispatcher holds no bound"
+    assert "MAX_WORKSPACE_WINDOW" not in dispatcher, "the dispatcher holds no bound"
 
 
 def test_the_workspace_reading_reads_no_topology_of_any_kind():
@@ -172,6 +172,31 @@ def test_an_offset_past_the_end_reports_the_count_and_no_device():
 
 
 @requires_node
+def test_a_workspace_larger_than_any_window_is_paged_rather_than_capped():
+    """A million devices is a count to page through, not an unreadable answer.
+
+    Topology size is the platform's to decide (MJ-002). The window decides how
+    much one request does, and every position below the count stays reachable
+    one window at a time; a ceiling on the position would bound no work and
+    would only decide which devices this runtime refuses to look at.
+    """
+    prelude = platform_stub(CHASSIS_MODELS, device_count="1000000", dense=True)
+    middle = dispatch_v6(_request(offset=500000), prelude=prelude)["result"]
+    tail = dispatch_v6(_request(offset=999990), prelude=prelude)["result"]
+
+    assert middle["resolution"] == "OBSERVED"
+    assert middle["available_count"] == 1000000
+    assert [device["index"] for device in middle["devices"]] == list(
+        range(500000, 500064)
+    )
+    assert middle["window_truncated"] is True
+    assert [device["index"] for device in tail["devices"]] == list(
+        range(999990, 1000000)
+    )
+    assert tail["window_truncated"] is False
+
+
+@requires_node
 def test_both_arguments_are_optional_and_default_to_the_first_window():
     result = _observed()
 
@@ -237,7 +262,7 @@ def test_an_unreadable_workspace_is_an_observation_with_its_reason(
 
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"limit": 0}, {"limit": 65}, {"offset": -1}, {"offset": 5000},
+    {"limit": 0}, {"limit": 65}, {"offset": -1}, {"offset": 9007199254740992},
     {"limit": "8"}, {"limit": 1.5}, {"page": 1},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):

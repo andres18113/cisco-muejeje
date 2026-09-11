@@ -32,7 +32,7 @@
  * Declared here, by the operation it belongs to, and handed to the dispatcher —
  * which owns *which* operations exist, not what each one's arguments mean.
  *
- * It is bounded by the workspace addressing ceiling rather than by a second
+ * It is bounded by the exact-integer limit rather than by a second
  * number written down here: two copies of a bound are two bounds, and an index
  * `network.device_inventory` publishes has to be one this operation admits
  * (MJ-029). */
@@ -40,7 +40,7 @@ var MUEJEJE_NETWORK_IDENTITY_ARGS = {
     device_index: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX
+        max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     }
 };
 

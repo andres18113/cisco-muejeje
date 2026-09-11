@@ -36,7 +36,6 @@ function muejejeAdapterInventoryUnavailable(reason, offset, limit) {
         available_count: null,
         offset: offset,
         limit: limit,
-        max_device_index: MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX,
         devices: [],
         window_truncated: false
     };
@@ -47,10 +46,10 @@ function muejejeAdapterInventoryUnavailable(reason, offset, limit) {
 function muejejeAdapterInventoryWindow(offset, limit) {
     return {
         offset: muejejeReadingArgument(
-            offset, 0, MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX
+            offset, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
         ),
         limit: muejejeReadingArgument(
-            limit, 1, MUEJEJE_PLATFORM_LIMITS.MAX_DEVICE_WINDOW
+            limit, 1, MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_WINDOW
         )
     };
 }
@@ -74,15 +73,15 @@ function muejejeAdapterDeviceInventory(offset, limit) {
     }
 }
 
+/* The window bounds what one reading does, and nothing else here does: a
+ * workspace larger than any window is read one window at a time, and every
+ * position below the count can be asked about (MJ-002, MJ-029). */
 function muejejeAdapterInventoryRead(platform, window) {
     var network = muejejeAdapterCall(platform, "IPC.network");
     var count = muejejeReadingCount(
         muejejeAdapterCall(network, "Network.getDeviceCount")
     );
-    var last = Math.min(
-        count, window.offset + window.limit,
-        MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX + 1
-    );
+    var last = Math.min(count, window.offset + window.limit);
     var devices = [];
     for (var index = window.offset; index < last; index++) {
         devices.push(muejejeAdapterInventoryEntry(network, index));
@@ -93,7 +92,6 @@ function muejejeAdapterInventoryRead(platform, window) {
         available_count: count,
         offset: window.offset,
         limit: window.limit,
-        max_device_index: MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX,
         devices: devices,
         window_truncated: count > last
     };

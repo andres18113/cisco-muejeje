@@ -27,7 +27,6 @@ function muejejeAdapterUnavailable(reason, offset, limit) {
         available_count: null,
         offset: offset,
         limit: limit,
-        max_device_index: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX,
         descriptors: [],
         window_truncated: false
     };
@@ -43,10 +42,10 @@ function muejejeAdapterUnavailable(reason, offset, limit) {
 function muejejeAdapterWindow(offset, limit) {
     return {
         offset: muejejeReadingArgument(
-            offset, 0, MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
+            offset, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
         ),
         limit: muejejeReadingArgument(
-            limit, 1, MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW
+            limit, 1, MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW
         )
     };
 }
@@ -74,17 +73,17 @@ function muejejeAdapterDeviceDescriptors(offset, limit) {
     }
 }
 
-/* RELAY CLOSURE FOR AN INDEX. The window stops at the highest factory index
- * this runtime addresses, not merely at `offset + limit`: bounding the first
- * index of a window and not its last let a window at the ceiling publish
- * indexes above it, and `platform.module_descriptors` and
- * `platform.module_type_support` would then refuse an index this very
- * operation had just handed out (MJ-029).
+/* RELAY CLOSURE FOR AN INDEX. Every index this reading publishes is below the
+ * count the platform answered, and that count is an exact integer, so every
+ * one is an index `platform.module_descriptors` and
+ * `platform.module_type_support` admit: they name the same exact-integer
+ * bound (MJ-029). The window alone bounds the work, and nothing here caps how
+ * far into the factory a consumer may page.
  *
- * The ceiling is reported rather than left to be inferred from a count. A
- * consumer paging the factory has to know where the addressable range ends,
- * and `available_count` is the platform's answer about how many models exist —
- * not a statement about which of them this runtime will address. */
+ * An earlier revision also stopped the window at a factory ceiling of 4096
+ * and reported that ceiling beside the count. The ceiling bounded no work,
+ * and with it gone `available_count` is the whole answer: every index below
+ * it can be asked about. */
 function muejejeAdapterRead(platform, window) {
     var factory = muejejeAdapterCall(
         muejejeAdapterCall(platform, "IPC.hardwareFactory"), "HardwareFactory.devices"
@@ -92,10 +91,7 @@ function muejejeAdapterRead(platform, window) {
     var count = muejejeReadingCount(
         muejejeAdapterCall(factory, "DeviceFactory.getAvailableDeviceCount")
     );
-    var last = Math.min(
-        count, window.offset + window.limit,
-        MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX + 1
-    );
+    var last = Math.min(count, window.offset + window.limit);
     var descriptors = [];
     for (var index = window.offset; index < last; index++) {
         descriptors.push(muejejeAdapterDescriptor(
@@ -109,7 +105,6 @@ function muejejeAdapterRead(platform, window) {
         available_count: count,
         offset: window.offset,
         limit: window.limit,
-        max_device_index: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX,
         descriptors: descriptors,
         window_truncated: count > last
     };
@@ -132,7 +127,7 @@ function muejejeAdapterDescriptor(descriptor, index) {
             muejejeAdapterCall(descriptor, "DeviceDescriptor.getModel"),
             MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
         ),
-        device_type: muejejeReadingWholeNumber(
+        device_type: muejejeReadingExactInteger(
             muejejeAdapterCall(descriptor, "DeviceDescriptor.getType")
         ),
         model_supported: muejejeReadingFlag(
@@ -156,7 +151,7 @@ function muejejeAdapterModuleTypes(descriptor) {
     var readable = Math.min(count, MUEJEJE_PLATFORM_LIMITS.MAX_MODULE_TYPES);
     var types = [];
     for (var index = 0; index < readable; index++) {
-        types.push(muejejeReadingModuleType(
+        types.push(muejejeReadingExactInteger(
             muejejeAdapterCallWith(descriptor, "DeviceDescriptor.getSupportedModuleTypeAt", index)
         ));
     }

@@ -18,18 +18,20 @@
  * (MJ-011).
  */
 
-/* Both arguments are optional, and bounded by the adapter's own ceilings rather
- * than by a second set of numbers here: two copies of a bound are two bounds. */
+/* Both arguments are optional, and bounded by the adapter's own declarations
+ * rather than by a second set of numbers here: two copies of a bound are two
+ * bounds. `offset` is bounded only by the exact-integer limit, so a workspace
+ * of any size is paged one window at a time (MJ-029). */
 var MUEJEJE_NETWORK_INVENTORY_ARGS = {
     offset: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX
+        max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     },
     limit: {
         kind: "integer",
         min: 1,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_DEVICE_WINDOW
+        max: MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_WINDOW
     }
 };
 
@@ -39,7 +41,7 @@ function muejejeNetworkDeviceInventory(args, context) {
     return muejejeAdapterDeviceInventory(
         muejejeNetworkArgument(args, "offset", 0),
         muejejeNetworkArgument(
-            args, "limit", MUEJEJE_PLATFORM_LIMITS.MAX_DEVICE_WINDOW
+            args, "limit", MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_WINDOW
         )
     );
 }

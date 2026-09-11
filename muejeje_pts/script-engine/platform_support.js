@@ -33,13 +33,13 @@ var MUEJEJE_PLATFORM_SUPPORT_ARGS = {
     device_index: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
+        max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     },
     module_type: {
         kind: "integer",
         required: true,
-        min: MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MIN,
-        max: MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MAX
+        min: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MIN,
+        max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     }
 };
 

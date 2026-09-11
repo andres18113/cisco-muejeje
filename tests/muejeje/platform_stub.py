@@ -202,13 +202,18 @@ IDENTITY_DEVICES = (
     "[{name: 'a', model: 'PT-Router', device_type: 1},"
     " {name: 'b', model: '', device_type: 7}]"
 )
+# The last whole number JSON carries exactly. Written out rather than read
+# from the kernel, so a fixture cannot move with the bound it exists to test;
+# `test_relay_closure` holds the two equal.
+EXACT_INTEGER_END = 9007199254740991
 EXTREME_ROOT = (
-    "{model: 'root', module_type: -1, hot_swappable: false,"
-    " slot_types: [0, 70000], modules: []}"
+    f"{{model: 'root', module_type: -{EXACT_INTEGER_END}, hot_swappable: false,"
+    f" slot_types: [0, {EXACT_INTEGER_END}], modules: []}}"
 )
 EXTREME_MODELS = (
     "[{model: 'wide', type: 1, supported: true,"
-    f" module_types: [-1, 0, 70000], root: {EXTREME_ROOT}}}]"
+    f" module_types: [-{EXACT_INTEGER_END}, 0, {EXACT_INTEGER_END}],"
+    f" root: {EXTREME_ROOT}}}]"
 )
 
 

@@ -4,24 +4,26 @@
     admissible by every operation that claims to consume it.
 
 The runtime hands a consumer values whose *only* documented use is to be sent
-back — a factory index that addresses a model, a `ModuleType` that asks whether
-a model accepts it. A value published by one operation and refused by the one
-that consumes it is a contract that contradicts itself: the consumer did
-nothing wrong, and no amount of reading the two operations separately would
-have told it so.
+back — a factory index that addresses a model, a workspace index that addresses
+a device, a `ModuleType` that asks whether a model accepts it. A value published
+by one operation and refused by the one that consumes it is a contract that
+contradicts itself: the consumer did nothing wrong, and no amount of reading the
+two operations separately would have told it so.
 
-Two closures, and each one broke differently before this module existed. The
-`ModuleType` relay published whatever whole number the platform answered while
-the consuming operation admitted `0..65535`; the index relays let a window at
-its addressing ceiling publish positions above it, because a window's *first*
-index was bounded and its last was not. MJ-029 states the rule and why a value
-domain is not a resource bound; this module drives it.
+**One domain, and it is fidelity rather than a ceiling.** Every index, count
+and platform value is held to the exact-integer range — the whole numbers a
+JSON value carries unchanged — by the reading that publishes it and by every
+rule that admits it back, named from one declaration (MJ-029). Execution stays
+bounded by the window, the walk and the string length, and none of those is an
+address domain. Earlier domains broke closure twice: a `ModuleType` relay that
+published any whole number while its consumer admitted `0..65535`, and index
+relays under a ceiling of 4096 that a window at the ceiling could step past.
 
-**A bound is not the enemy; an incompatible pair of bounds is.** Execution
-stays bounded by Muejeje's own limits — how many entries one window carries,
-how far one walk goes, how long a string may be. What closure forbids is a
-*producer domain* and a *consumer domain* that disagree, so each domain is
-declared once and both ends name that declaration.
+**Each test exercises the extreme it names.** A test that says it drives the end
+of a domain publishes a value *at* that end and sends that same value back —
+never a value merely outside some older, narrower bound. Where the platform
+decides where an enumeration ends, the stub reports the largest count this
+runtime can carry, so the last index published is the last that can exist.
 
 Nothing here is a claim about Packet Tracer. It is a claim about the contract
 this artifact publishes, driven against a stub under Node (MJ-015).
@@ -30,19 +32,34 @@ this artifact publishes, driven against a stub under Node (MJ-015).
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
-from tests.muejeje.platform_stub import EXTREME_MODELS, platform_stub
 from tests.muejeje.measure import declared_platform_bound, js_code_only
+from tests.muejeje.platform_stub import (
+    EXACT_INTEGER_END,
+    EXTREME_MODELS,
+    IDENTITY_DEVICES,
+    platform_stub,
+)
 from tests.muejeje.support import SCRIPT_ENGINE
 
-# A factory reporting far more models than this runtime addresses, so the
-# ceiling under test is Muejeje's own and not the stub's. It stays inside
-# `MAX_COUNT`, which bounds what count a reading will accept at all: a stub
-# that tripped *that* bound would be testing a different refusal.
-WIDE_FACTORY = 60000
+EXACT_MAX = declared_platform_bound("EXACT_INTEGER_MAX")
+EXACT_MIN = declared_platform_bound("EXACT_INTEGER_MIN")
+# The last index that can exist: one below the largest count this runtime carries.
+LAST_INDEX = EXACT_MAX - 1
+
+# Every bound the platform readings declare, by what it limits. A ceiling on an
+# address or a count is the third kind, and the one this module keeps out.
+WORK_BOUNDS = {
+    "MAX_FACTORY_WINDOW", "MAX_WORKSPACE_WINDOW", "MAX_MODULE_TYPES",
+    "MAX_SLOTS", "MAX_MODULE_NODES", "MAX_MODULE_DEPTH",
+    "MAX_MODEL_CHARS", "MAX_NAME_CHARS",
+}
+FIDELITY_BOUNDS = {"EXACT_INTEGER_MIN", "EXACT_INTEGER_MAX"}
+DECLARED_BOUND = re.compile(r"^\s*([A-Z][A-Z_]*):", re.MULTILINE)
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",
@@ -61,6 +78,19 @@ def _result(op: str, args: dict, prelude: str) -> dict:
 
 def _body(name: str) -> str:
     return (SCRIPT_ENGINE / name).read_text(encoding="utf-8")
+
+
+def _widest_factory() -> str:
+    """A factory reporting the largest count this runtime carries."""
+    return platform_stub(EXTREME_MODELS, count=str(EXACT_MAX), dense=True)
+
+
+def _widest_workspace() -> str:
+    """A workspace of that size, whose devices answer identity too."""
+    return platform_stub(
+        EXTREME_MODELS, devices=IDENTITY_DEVICES,
+        device_count=str(EXACT_MAX), dense=True,
+    )
 
 
 def published_module_types(prelude: str) -> set[int]:
@@ -85,25 +115,22 @@ def published_module_types(prelude: str) -> set[int]:
 # A published ModuleType is one the consuming operation admits.
 # ---------------------------------------------------------------------------
 
-@requires_node
-def test_the_producers_publish_the_extreme_types_this_gate_needs():
-    """Guards the closure gate below from passing because nothing was read.
+def test_the_fixture_ends_are_the_declared_domain_ends():
+    """Written out in the fixture, so it cannot silently follow a moved bound."""
+    assert EXACT_INTEGER_END == EXACT_MAX == -EXACT_MIN
 
-    A stub whose types all sat inside the old ceiling would make the closure
-    check vacuous, so what the producers actually published is asserted first.
-    """
+
+@requires_node
+def test_the_producers_publish_both_ends_of_the_value_domain():
+    """Guards the relay below from passing because nothing extreme was read."""
     published = published_module_types(platform_stub(EXTREME_MODELS))
 
-    assert {-1, 0, 70000} <= published, (
-        f"the producers did not publish the values under test: {sorted(published)}"
-    )
+    assert {EXACT_MIN, 0, EXACT_MAX} <= published, sorted(published)
 
 
 @requires_node
-@pytest.mark.parametrize("module_type", [-1, 0, 70000])
-def test_a_published_module_type_is_admitted_by_the_operation_that_consumes_it(
-    module_type: int,
-):
+@pytest.mark.parametrize("module_type", [EXACT_MIN, 0, EXACT_MAX])
+def test_a_module_type_published_at_either_end_is_admitted_back(module_type: int):
     """The relay, driven end to end: publish a type, then send it back.
 
     `INVALID_ARGS` here means the runtime refused its own output. That is not
@@ -115,180 +142,157 @@ def test_a_published_module_type_is_admitted_by_the_operation_that_consumes_it(
 
     response = _result(
         "platform.module_type_support",
-        {"device_index": 0, "module_type": module_type},
-        prelude,
+        {"device_index": 0, "module_type": module_type}, prelude,
     )
 
-    assert response["ok"] is True, (
-        f"the runtime published module type {module_type} and then refused it: "
-        f"{response['error']}"
-    )
+    assert response["ok"] is True, response["error"]
     assert response["result"]["module_type"] == module_type
     assert response["result"]["resolution"] == "OBSERVED"
 
 
+@requires_node
+@pytest.mark.parametrize("beyond", [EXACT_MIN - 1, EXACT_MAX + 1])
+def test_just_past_either_end_neither_half_carries_the_value(beyond: int):
+    """Both halves agree at the edge: not published, and not admitted."""
+    produced = _result(
+        "platform.device_descriptors", {},
+        platform_stub(
+            f"[{{model: 'm', type: 1, supported: true, module_types: [{beyond}]}}]"
+        ),
+    )["result"]
+    consumed = _result(
+        "platform.module_type_support",
+        {"device_index": 0, "module_type": beyond}, platform_stub(EXTREME_MODELS),
+    )
+
+    assert produced["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
+    assert consumed["error"]["code"] == "INVALID_ARGS"
+
+
 # ---------------------------------------------------------------------------
-# A published index is one the consuming operations admit.
+# A published index is one the consuming operations admit, and read.
 # ---------------------------------------------------------------------------
 
 @requires_node
-def test_no_reading_publishes_a_factory_index_above_the_addressable_ceiling():
-    """A window's *last* index is bounded, not only its first.
-
-    Bounding `offset` alone let a window whose offset sat at the ceiling
-    publish `offset + limit - 1` above it — indexes the consuming operations
-    would then refuse.
-    """
+def test_the_last_factory_index_that_can_exist_is_published():
+    """A window at the far end of the widest factory publishes exactly that index."""
     result = _result(
-        "platform.device_descriptors",
-        {"offset": declared_platform_bound("MAX_FACTORY_INDEX"), "limit": 8},
-        platform_stub(EXTREME_MODELS, count=str(WIDE_FACTORY), dense=True),
+        "platform.device_descriptors", {"offset": LAST_INDEX, "limit": 32},
+        _widest_factory(),
     )["result"]
-    ceiling = declared_platform_bound("MAX_FACTORY_INDEX")
 
     assert result["resolution"] == "OBSERVED"
-    assert [d["device_index"] for d in result["descriptors"] if
-            d["device_index"] > ceiling] == [], (
-        "descriptor discovery published an index past its own ceiling"
-    )
-    assert result["max_device_index"] == ceiling, (
-        "a consumer must be told where the addressable range ends rather than "
-        "inferring it from a count"
-    )
-    assert result["window_truncated"] is True
+    assert result["available_count"] == EXACT_MAX
+    assert [d["device_index"] for d in result["descriptors"]] == [LAST_INDEX]
+    assert result["window_truncated"] is False
 
 
 @requires_node
 @pytest.mark.parametrize(
     "op", ["platform.module_descriptors", "platform.module_type_support"],
 )
-def test_every_index_descriptor_discovery_publishes_is_one_a_consumer_may_send(
-    op: str,
+@pytest.mark.parametrize("index", [0, LAST_INDEX])
+def test_every_factory_index_discovery_publishes_is_read_by_its_consumers(
+    op: str, index: int,
 ):
-    """Both ends of the addressable range, against both consuming operations.
+    """Admitted *and* read: the model at that index is the one that answers."""
+    args = {"device_index": index}
+    if op == "platform.module_type_support":
+        args["module_type"] = 0
+    response = _result(op, args, _widest_factory())
 
-    The ceiling is the case that mattered: it is the index a paging consumer
-    reaches last, and it was the one an unbounded window could publish while
-    the consumer refused it.
-    """
-    prelude = platform_stub(EXTREME_MODELS, count=str(WIDE_FACTORY), dense=True)
-    ceiling = declared_platform_bound("MAX_FACTORY_INDEX")
-    published = [
-        entry["device_index"]
-        for entry in _result(
-            "platform.device_descriptors",
-            {"offset": ceiling, "limit": 1}, prelude,
-        )["result"]["descriptors"]
-    ]
+    assert response["ok"] is True, response["error"]
+    assert response["result"]["resolution"] == "OBSERVED"
+    assert response["result"]["descriptor_present"] is True
+    assert response["result"]["device_index"] == index
 
-    assert published == [ceiling], published
-    for index in [0, ceiling]:
-        args = {"device_index": index}
-        if op == "platform.module_type_support":
-            args["module_type"] = 0
-        response = _result(op, args, prelude)
-        assert response["ok"] is True, (
-            f"{op} refused factory index {index}, which discovery publishes: "
-            f"{response['error']}"
+
+@requires_node
+def test_the_last_workspace_index_that_can_exist_is_published_and_read_back():
+    """The same closure on the other enumeration, at the same end."""
+    prelude = _widest_workspace()
+    inventory = _result(
+        "network.device_inventory", {"offset": LAST_INDEX, "limit": 8}, prelude,
+    )["result"]
+
+    assert inventory["resolution"] == "OBSERVED"
+    assert [d["index"] for d in inventory["devices"]] == [LAST_INDEX]
+    for index in [0, LAST_INDEX]:
+        response = _result(
+            "network.device_identity", {"device_index": index}, prelude,
         )
+        assert response["ok"] is True, response["error"]
+        assert response["result"]["resolution"] == "OBSERVED"
+        assert response["result"]["device_present"] is True
         assert response["result"]["device_index"] == index
 
 
 @requires_node
-def test_every_index_the_workspace_inventory_publishes_is_one_a_consumer_may_send():
-    """The same closure on the other enumeration.
-
-    `network.device_inventory` publishes a position for each device it lists,
-    and `network.device_identity` consumes exactly that. The ceiling is again
-    the case that matters: it is the position a paging consumer reaches last.
-    """
-    prelude = platform_stub(
-        EXTREME_MODELS, devices="[{name: 'a'}]",
-        device_count=str(WIDE_FACTORY), dense=True,
-    )
-    ceiling = declared_platform_bound("MAX_WORKSPACE_INDEX")
-    inventory = _result(
-        "network.device_inventory", {"offset": ceiling, "limit": 8}, prelude,
-    )["result"]
-
-    assert inventory["resolution"] == "OBSERVED"
-    assert [d["index"] for d in inventory["devices"]] == [ceiling], (
-        "the inventory published a position past its own addressing ceiling"
-    )
-    assert inventory["max_device_index"] == ceiling
-    for index in [0, ceiling]:
-        response = _result(
-            "network.device_identity", {"device_index": index}, prelude,
-        )
-        assert response["ok"] is True, (
-            f"network.device_identity refused workspace index {index}, which "
-            f"the inventory publishes: {response['error']}"
-        )
-        assert response["result"]["device_index"] == index
-
-
-# ---------------------------------------------------------------------------
-# Structural: one domain, named by both ends.
-# ---------------------------------------------------------------------------
-
-def test_the_module_type_domain_has_one_definition_and_two_named_ends():
-    """Closure by construction, not by two numbers that happen to agree.
-
-    A producer and a consumer that each wrote their own bound would be one
-    edit away from disagreeing again, and the disagreement would look exactly
-    like a working contract until a consumer relayed a value across it.
-    """
-    domain = ("MODULE_TYPE_MIN", "MODULE_TYPE_MAX")
-    consumer = _body("platform_support.js")
-    adapter = _body("platform_support_adapter.js")
-
-    for bound in domain:
-        assert f"MUEJEJE_PLATFORM_LIMITS.{bound}" in consumer, (
-            f"the operation that consumes a ModuleType must name {bound}"
-        )
-        assert f"MUEJEJE_PLATFORM_LIMITS.{bound}" in adapter
-    assert declared_platform_bound("MODULE_TYPE_MIN") < 0 < declared_platform_bound(
-        "MODULE_TYPE_MAX",
-    ), "the platform is the authority on which type values exist, not this list"
-
-
 @pytest.mark.parametrize(
-    "producer",
-    ["platform_device_adapter.js", "platform_module_adapter.js"],
+    "op", ["platform.device_descriptors", "network.device_inventory"],
 )
-def test_every_producer_reads_a_module_type_through_the_domain_validator(
+def test_a_window_may_start_at_the_end_of_the_domain_and_not_past_it(op: str):
+    """The admitted end is answered as an empty window; one past it is refused."""
+    factory = op.startswith("platform")
+    stub = _widest_factory() if factory else _widest_workspace()
+    at_end = _result(op, {"offset": EXACT_MAX}, stub)
+    past_end = _result(op, {"offset": EXACT_MAX + 1}, stub)
+
+    assert at_end["ok"] is True
+    assert at_end["result"]["descriptors" if factory else "devices"] == []
+    assert at_end["result"]["window_truncated"] is False
+    assert past_end["error"]["code"] == "INVALID_ARGS"
+
+
+# ---------------------------------------------------------------------------
+# Structural: one domain, named by both ends, and no ceiling on an address.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(("operation", "bounds"), [
+    ("platform_discovery.js", ("EXACT_INTEGER_MAX",)),
+    ("platform_modules.js", ("EXACT_INTEGER_MAX",)),
+    ("platform_support.js", ("EXACT_INTEGER_MIN", "EXACT_INTEGER_MAX")),
+    ("network_inventory.js", ("EXACT_INTEGER_MAX",)),
+    ("network_identity.js", ("EXACT_INTEGER_MAX",)),
+])
+def test_every_consumer_names_the_one_fidelity_declaration(
+    operation: str, bounds: tuple[str, ...],
+):
+    """Closure by construction, not by two numbers that happen to agree."""
+    for bound in bounds:
+        assert f"MUEJEJE_PLATFORM_LIMITS.{bound}" in _body(operation), (
+            f"{operation} admits a published value; it must name {bound}"
+        )
+
+
+@pytest.mark.parametrize("producer", [
+    "platform_device_adapter.js", "platform_module_adapter.js",
+    "platform_support_adapter.js", "network_identity_adapter.js",
+])
+def test_every_producer_reads_a_platform_value_through_the_domain_validator(
     producer: str,
 ):
-    """A producer that validated a type its own way is a second domain.
+    """A producer that validated a value its own way would be a second domain."""
+    assert "muejejeReadingExactInteger" in js_code_only(_body(producer))
 
-    `muejejeReadingWholeNumber` is deliberately *not* enough here: it admits
-    values the consumer cannot be given, which is exactly how the two ends
-    drifted apart. A `ModuleType` goes through the validator that knows the
-    published domain.
+
+def test_the_validators_name_the_declaration_the_consumers_name():
+    reading = js_code_only(_body("platform_reading.js"))
+
+    for bound in FIDELITY_BOUNDS:
+        assert f"MUEJEJE_PLATFORM_LIMITS.{bound}" in reading, bound
+
+
+def test_every_declared_bound_limits_work_or_fidelity_and_nothing_else():
+    """A ceiling on an address or a count is a third kind, and bounds no work.
+
+    Reading position three trillion costs what reading position three costs, so
+    such a ceiling only decides which positions this runtime refuses to look at.
+    The last ones — 4096 on an index, 65536 on a count — made a large enough
+    topology unreadable rather than paged.
     """
-    code = js_code_only(_body(producer))
+    block = _body("platform_reading.js").split("MUEJEJE_PLATFORM_LIMITS = {")[1]
+    declared = set(DECLARED_BOUND.findall(js_code_only(block.split("};")[0])))
 
-    assert "muejejeReadingModuleType" in code, (
-        f"{producer} publishes a ModuleType; it must read one through the "
-        "validator that holds the published domain"
-    )
-
-
-def test_the_addressing_domains_are_declared_per_subject_and_named_by_both_ends():
-    """A factory index and a workspace index are two enumerations.
-
-    They are declared separately because they are different subjects, and each
-    one is named by the reading that publishes it and by every operation that
-    consumes it — so neither can be widened on one side alone.
-    """
-    factory = "MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX"
-    workspace = "MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX"
-
-    for logical in ("platform_discovery.js", "platform_modules.js",
-                    "platform_support.js"):
-        assert factory in _body(logical), f"{logical} must bound a factory index"
-    assert workspace in _body("network_inventory.js")
-    assert workspace in _body("network_identity.js")
-    assert "MAX_OFFSET" not in _body("platform_reading.js"), (
-        "one offset bound for two enumerations is how the domains drifted"
-    )
+    assert declared == WORK_BOUNDS | FIDELITY_BOUNDS
+    assert WORK_BOUNDS.isdisjoint(FIDELITY_BOUNDS)

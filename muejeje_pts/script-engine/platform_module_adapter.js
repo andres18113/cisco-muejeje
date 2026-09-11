@@ -59,7 +59,7 @@ function muejejeAdapterModuleUnavailable(reason, deviceIndex) {
  * report an observation about a model nobody asked about. */
 function muejejeAdapterDeviceIndex(deviceIndex) {
     return muejejeReadingArgument(
-        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
+        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     );
 }
 
@@ -114,7 +114,7 @@ function muejejeAdapterModuleTree(reading, descriptor) {
         muejejeAdapterCall(descriptor, "DeviceDescriptor.getModel"),
         MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
-    reading.device_type = muejejeReadingWholeNumber(
+    reading.device_type = muejejeReadingExactInteger(
         muejejeAdapterCall(descriptor, "DeviceDescriptor.getType")
     );
     var root = muejejeAdapterCall(descriptor, "DeviceDescriptor.getRootModule");
@@ -164,7 +164,7 @@ function muejejeAdapterModuleNode(item, index) {
             muejejeAdapterCall(item.descriptor, "ModuleDescriptor.getModel"),
             MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
         ),
-        module_type: muejejeReadingModuleType(
+        module_type: muejejeReadingExactInteger(
             muejejeAdapterCall(item.descriptor, "ModuleDescriptor.getType")
         ),
         hot_swappable: muejejeReadingFlag(
@@ -194,7 +194,7 @@ function muejejeAdapterSlotTypes(descriptor) {
     var readable = Math.min(count, MUEJEJE_PLATFORM_LIMITS.MAX_SLOTS);
     var types = [];
     for (var index = 0; index < readable; index++) {
-        types.push(muejejeReadingModuleType(
+        types.push(muejejeReadingExactInteger(
             muejejeAdapterCallWith(descriptor, "ModuleDescriptor.getSlotTypeAt", index)
         ));
     }

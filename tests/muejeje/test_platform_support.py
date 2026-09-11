@@ -94,10 +94,10 @@ def test_the_operation_declares_its_own_argument_rules():
     dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_PLATFORM_SUPPORT_ARGS = {" in body
-    assert "MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MIN" in body
-    assert "MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MAX" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MIN" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX" in body
     assert "MUEJEJE_PLATFORM_SUPPORT_ARGS" in dispatcher
-    assert "MODULE_TYPE_" not in dispatcher, "the dispatcher holds no bound"
+    assert "EXACT_INTEGER_" not in dispatcher, "the dispatcher holds no bound"
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +211,7 @@ BEYOND_TYPE_DOMAIN = 9007199254740992
     {"module_type": BEYOND_TYPE_DOMAIN}, {"module_type": -BEYOND_TYPE_DOMAIN},
     {"module_type": "6"},
     {"module_type": 1.5}, {"module_type": 6, "device_index": -1},
-    {"module_type": 6, "device_index": 5000}, {"module_type": 6, "model": "x"},
+    {"module_type": 6, "device_index": 9007199254740992}, {"module_type": 6, "model": "x"},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):
     response = dispatch_v6(_request(**args))

@@ -52,15 +52,15 @@ function muejejeAdapterSupportUnavailable(reason, deviceIndex, type) {
  * adapter's own bounds is a defect in this artifact, and fails as one. */
 function muejejeAdapterModuleTypeSupport(deviceIndex, moduleType) {
     var index = muejejeReadingArgument(
-        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
+        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     );
     /* The consuming half of relay closure: the domain a type is admitted in is
      * the domain the readings publish, named from the same declaration. A
      * ceiling of its own here would refuse values this artifact hands out. */
     var type = muejejeReadingArgument(
         moduleType,
-        MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MIN,
-        MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MAX
+        MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MIN,
+        MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     );
     var platform = muejejeAdapterPlatform();
     if (platform === null) {
@@ -110,7 +110,7 @@ function muejejeAdapterSupportAsk(reading, descriptor, type) {
         muejejeAdapterCall(descriptor, "DeviceDescriptor.getModel"),
         MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
-    reading.device_type = muejejeReadingWholeNumber(
+    reading.device_type = muejejeReadingExactInteger(
         muejejeAdapterCall(descriptor, "DeviceDescriptor.getType")
     );
     reading.module_type_supported = muejejeReadingFlag(

@@ -96,7 +96,7 @@ def test_a_refused_platform_call_is_reported_without_its_error():
 
 
 @requires_node
-@pytest.mark.parametrize("count", ["'many'", "-1", "1.5", "999999999"])
+@pytest.mark.parametrize("count", ["'many'", "-1", "1.5", "9007199254740992"])
 def test_an_answer_that_cannot_be_attributed_is_its_own_reason(count: str):
     """It answered, and the answer is unusable. Different from not answering.
 

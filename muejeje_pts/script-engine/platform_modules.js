@@ -29,7 +29,7 @@
  * Declared here, by the operation they belong to, and handed to the dispatcher
  * — which owns *which* operations exist, not what each one's arguments mean.
  *
- * `device_index` is bounded by the factory addressing ceiling rather than by a
+ * `device_index` is bounded by the exact-integer limit rather than by a
  * second number written down here: two copies of a bound are two bounds, and
  * an index `platform.device_descriptors` publishes has to be one this
  * operation admits (MJ-029). */
@@ -37,7 +37,7 @@ var MUEJEJE_PLATFORM_MODULE_ARGS = {
     device_index: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
+        max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     }
 };
 

@@ -84,9 +84,9 @@ FEATURE_EVIDENCE = {
 
 # Per operation, the result fields a consumer may already be reading. An
 # operation may answer with more; it may never answer with fewer.
-# `max_device_index` and `descriptors[].device_index` are frozen for the reason
-# they were added: they are a reading's *reusable input*, and relay closure
-# turns on them being reported rather than derived (`test_relay_closure`).
+# `descriptors[].device_index` is frozen for the reason it was added: it is a
+# reading's *reusable input*, and relay closure turns on it being reported
+# rather than derived (`test_relay_closure`).
 REQUIRED_RESULT_FIELDS = {
     "network.device_identity": {
         "resolution", "unavailable_reason", "device_index", "available_count",
@@ -94,11 +94,11 @@ REQUIRED_RESULT_FIELDS = {
     },
     "network.device_inventory": {
         "resolution", "unavailable_reason", "available_count", "offset",
-        "limit", "max_device_index", "devices", "window_truncated",
+        "limit", "devices", "window_truncated",
     },
     "platform.device_descriptors": {
         "resolution", "unavailable_reason", "available_count", "offset",
-        "limit", "max_device_index", "descriptors", "window_truncated",
+        "limit", "descriptors", "window_truncated",
     },
     "platform.module_descriptors": {
         "resolution", "unavailable_reason", "device_index", "available_count",

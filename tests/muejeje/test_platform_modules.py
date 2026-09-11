@@ -79,9 +79,9 @@ def test_the_operation_declares_its_own_argument_rules():
     dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_PLATFORM_MODULE_ARGS = {" in body
-    assert "MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX" in body
     assert "MUEJEJE_PLATFORM_MODULE_ARGS" in dispatcher
-    assert "MAX_FACTORY_INDEX" not in dispatcher, (
+    assert "EXACT_INTEGER_MAX" not in dispatcher, (
         "the dispatcher holds no platform bound"
     )
 
@@ -209,7 +209,7 @@ def test_an_index_past_the_end_is_an_answer_not_an_unreadable_platform():
 
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"device_index": -1}, {"device_index": 5000}, {"device_index": "0"},
+    {"device_index": -1}, {"device_index": 9007199254740992}, {"device_index": "0"},
     {"device_index": 1.5}, {"model": "2960-24TT"}, {"offset": 0},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):

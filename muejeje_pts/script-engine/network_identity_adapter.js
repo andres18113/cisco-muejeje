@@ -74,12 +74,12 @@ function muejejeAdapterIdentityUnavailable(reason, deviceIndex) {
  * platform, not an exception for the caller; an index outside this adapter's
  * own bounds is a defect in this artifact, and fails as one.
  *
- * The bound is the workspace addressing ceiling — the same declaration
- * `network.device_inventory` bounds its window by — so every index that
- * operation publishes is one this one admits (MJ-029). */
+ * The bound is the exact-integer limit every published index is held to — the
+ * same declaration `network.device_inventory` names for its window — so every
+ * index that operation publishes is one this one admits (MJ-029). */
 function muejejeAdapterDeviceIdentity(deviceIndex) {
     var index = muejejeReadingArgument(
-        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX
+        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     );
     var platform = muejejeAdapterPlatform();
     if (platform === null) {
@@ -140,7 +140,7 @@ function muejejeAdapterIdentityFacts(reading, device) {
         muejejeAdapterCall(device, "Device.getModel"),
         MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
-    reading.device_type = muejejeReadingWholeNumber(
+    reading.device_type = muejejeReadingExactInteger(
         muejejeAdapterCall(device, "Device.getType")
     );
     return reading;
