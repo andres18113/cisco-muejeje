@@ -31,6 +31,13 @@ from ...domain.enterprise.models.poe_delivery import (
 )
 from .configuration_runtime import PacketTracerConfigurationRuntime
 from .file_bridge import FileBridge
+from .factory_module_preparation import (
+    FactoryModuleInstallation,
+    FactoryModuleObservation,
+    FactoryModuleVerification,
+    PacketTracerFactoryModulePreparer,
+)
+from ..catalog.factory_modules import factory_module_requirement_for
 from .ios_terminal import ControlledIosExecutor
 from .live_bridge import PTCommandBridge
 from .poe2_evidence import BUILD, completeness
@@ -65,6 +72,9 @@ class PoE3BSessionOperation(str, Enum):
     DEVICE_NAMES_OBSERVATION = "device_names_observation"
     FIXTURE_DEVICE_CREATE = "fixture_device_create"
     FIXTURE_LINK_CREATE = "fixture_link_create"
+    OBSERVE_MODULE_SLOTS = "observe_module_slots"
+    INSTALL_FACTORY_MODULE = "install_factory_module"
+    VERIFY_FACTORY_MODULE = "verify_factory_module"
     DEVICE_READINESS = "device_readiness"
     INLINE_MODE_APPLY = "inline_mode_apply"
     INLINE_CAPTURE = "inline_capture"
@@ -110,6 +120,17 @@ class PoE3BSessionTransport(Protocol):
         endpoint: PoEDeliveryDeviceIdentity,
         endpoint_port: str,
     ) -> PoEDeliveryLinkIdentity: ...
+    def observe_factory_module(
+        self, device_name: str, device_model: str,
+    ) -> FactoryModuleObservation: ...
+    def install_factory_module(
+        self, observation: FactoryModuleObservation,
+    ) -> FactoryModuleInstallation: ...
+    def verify_factory_module(
+        self,
+        before: FactoryModuleObservation,
+        installation: FactoryModuleInstallation,
+    ) -> FactoryModuleVerification: ...
     def wait_until_ready(
         self, switch_name: str, *, timeout_seconds: float,
     ) -> DeviceInitializationResult: ...
@@ -167,6 +188,10 @@ class PacketTracerPoE3BSession:
         self._dispatches: list[PoE3BSessionDispatch] = []
         self._attempted: list[str] = []
         self._created: list[str] = []
+        self._switch: PoEDeliveryDeviceIdentity | None = None
+        self._switch_model = ""
+        self._factory_observation: FactoryModuleObservation | None = None
+        self._factory_installation: FactoryModuleInstallation | None = None
 
     @property
     def dispatches(self) -> tuple[PoE3BSessionDispatch, ...]:
@@ -249,6 +274,18 @@ class PacketTracerPoE3BSession:
             or len(set(bindings)) != len(bindings)
         ):
             raise ValueError("Fixture bindings differ from the governed session ports.")
+        switch = self.create_switch(switch_model)
+        fixture = self.create_fixture_endpoints(bindings)
+        return {
+            "switch": _model_dump(switch),
+            **fixture,
+        }
+
+    def create_switch(self, switch_model: str) -> PoEDeliveryDeviceIdentity:
+        """Create and retain only the disposable candidate switch."""
+
+        if self._switch is not None:
+            raise RuntimeError("The fixture switch was already created.")
         self._attempted.append(self.switch_name)
         switch = self._call(
             PoE3BSessionOperation.FIXTURE_DEVICE_CREATE,
@@ -262,6 +299,25 @@ class PacketTracerPoE3BSession:
         self._created.append(self.switch_name)
         if switch.model != switch_model:
             raise RuntimeError("Fixture switch model readback mismatch")
+        self._switch = switch
+        self._switch_model = switch_model
+        return switch
+
+    def create_fixture_endpoints(
+        self,
+        bindings: tuple[PoEAuthorizedBinding, ...],
+    ) -> dict:
+        """Create the phones and links only after any factory gate has passed."""
+
+        if self._switch is None:
+            raise RuntimeError("The fixture switch has not been created.")
+        if (
+            not isinstance(bindings, tuple)
+            or not bindings
+            or tuple(binding.switch_port for binding in bindings) != self.switch_ports
+            or len(set(bindings)) != len(bindings)
+        ):
+            raise ValueError("Fixture bindings differ from the governed session ports.")
 
         endpoints = []
         links = []
@@ -283,7 +339,7 @@ class PacketTracerPoE3BSession:
             link = self._call(
                 PoE3BSessionOperation.FIXTURE_LINK_CREATE,
                 lambda binding=binding, endpoint=endpoint: self._transport.create_link(
-                    switch,
+                    self._switch,
                     binding.switch_port,
                     endpoint,
                     binding.endpoint_port,
@@ -292,10 +348,50 @@ class PacketTracerPoE3BSession:
             endpoints.append(_model_dump(endpoint))
             links.append(_model_dump(link))
         return {
-            "switch": _model_dump(switch),
             "endpoints": endpoints,
             "links": links,
         }
+
+    def factory_module_required(self, switch_model: str) -> bool:
+        """Expose only whether the exact policy requires the bounded sequence."""
+
+        return factory_module_requirement_for(switch_model, BUILD) is not None
+
+    def observe_factory_module(self) -> FactoryModuleObservation:
+        if self._switch is None:
+            raise RuntimeError("Factory observation requires the created switch.")
+        observation = self._call(
+            PoE3BSessionOperation.OBSERVE_MODULE_SLOTS,
+            lambda: self._transport.observe_factory_module(
+                self.switch_name,
+                self._switch_model,
+            ),
+        )
+        self._factory_observation = observation
+        return observation
+
+    def install_factory_module(self) -> FactoryModuleInstallation:
+        if self._factory_observation is None:
+            raise RuntimeError("Factory installation requires slot observation.")
+        installation = self._call(
+            PoE3BSessionOperation.INSTALL_FACTORY_MODULE,
+            lambda: self._transport.install_factory_module(
+                self._factory_observation,
+            ),
+        )
+        self._factory_installation = installation
+        return installation
+
+    def verify_factory_module(self) -> FactoryModuleVerification:
+        if self._factory_observation is None or self._factory_installation is None:
+            raise RuntimeError("Factory verification requires the one installation attempt.")
+        return self._call(
+            PoE3BSessionOperation.VERIFY_FACTORY_MODULE,
+            lambda: self._transport.verify_factory_module(
+                self._factory_observation,
+                self._factory_installation,
+            ),
+        )
 
     def wait_until_ready(
         self, *, timeout_seconds: float,
@@ -394,6 +490,10 @@ class PacketTracerPoE3BLiveTransport:
         self._fixture = PacketTracerPoEDeliveryFixtureRuntime(
             self._send_and_wait, BUILD,
         )
+        self._factory_modules = PacketTracerFactoryModulePreparer(
+            self._send_and_wait,
+            BUILD,
+        )
         self._executor = ControlledIosExecutor(self._send_and_wait)
         self._observer = GovernedPoEInlineObserver(self._executor)
         self._configuration = PacketTracerConfigurationRuntime(self._bridge.send)
@@ -451,6 +551,32 @@ class PacketTracerPoE3BLiveTransport:
     ) -> PoEDeliveryLinkIdentity:
         return self._fixture.create_link(
             switch, switch_port, endpoint, endpoint_port,
+        )
+
+    def observe_factory_module(
+        self,
+        device_name: str,
+        device_model: str,
+    ) -> FactoryModuleObservation:
+        return self._factory_modules.observe_required_module(
+            device_name,
+            device_model,
+        )
+
+    def install_factory_module(
+        self,
+        observation: FactoryModuleObservation,
+    ) -> FactoryModuleInstallation:
+        return self._factory_modules.install_required_module(observation)
+
+    def verify_factory_module(
+        self,
+        before: FactoryModuleObservation,
+        installation: FactoryModuleInstallation,
+    ) -> FactoryModuleVerification:
+        return self._factory_modules.verify_required_module(
+            before,
+            installation,
         )
 
     def wait_until_ready(

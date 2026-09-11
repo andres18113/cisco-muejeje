@@ -1199,8 +1199,6 @@ _POE_INLINE_SUMMARY = re.compile(
     r"Used:\s*(?P<used>[\d.]+)\(w\)\s+"
     r"Remaining:\s*(?P<remaining>[\d.]+)\(w\)"
 )
-_POE_INLINE_INTERFACE = re.compile(r"^[A-Za-z]{2}\d+(/\d+)*$")
-
 #: PT abrevia la interfaz en esta tabla (`Fa0/1`), y el resto del repositorio --
 #: el catalogo, el fixture, y el propio `interface FastEthernet0/1` con el que
 #: se muta -- usa el nombre largo. Comparar textualmente devuelve "fila ausente"
@@ -1222,6 +1220,18 @@ _INTERFACE_SPEED_ALIASES = {
     "ethernet": "ethernet",
 }
 _INTERFACE_SPLIT = re.compile(r"^([A-Za-z]+)(.*)$")
+_POE_INLINE_INTERFACE = re.compile(
+    r"^(?:"
+    + "|".join(
+        re.escape(prefix)
+        for prefix in sorted(
+            _INTERFACE_SPEED_ALIASES,
+            key=lambda item: (-len(item), item),
+        )
+    )
+    + r")\d+(?:/\d+)*$",
+    re.IGNORECASE,
+)
 
 
 def canonical_interface_name(value: str) -> str:
@@ -1279,12 +1289,18 @@ class PoEInlineTable:
     # A row that could not be consumed is not evidence of an absent port.
     unparsed_lines: tuple[str, ...] = ()
 
-    def row_for(self, interface: str) -> PoEInlineRow | None:
+    def rows_for(self, interface: str) -> tuple[PoEInlineRow, ...]:
+        """Return every canonical match so duplicate evidence stays visible."""
+
         wanted = canonical_interface_name(interface)
-        for row in self.rows:
-            if canonical_interface_name(row.interface) == wanted:
-                return row
-        return None
+        return tuple(
+            row for row in self.rows
+            if canonical_interface_name(row.interface) == wanted
+        )
+
+    def row_for(self, interface: str) -> PoEInlineRow | None:
+        matches = self.rows_for(interface)
+        return matches[0] if len(matches) == 1 else None
 
 
 def parse_show_power_inline(value: str) -> PoEInlineTable:
@@ -1391,13 +1407,16 @@ def classify_poe_inline_delivery(
     table = parse_show_power_inline(output)
     if not table.rows or table.unparsed_lines:
         return PoEInlineDelivery.UNOBSERVABLE
-    row = table.row_for(interface)
-    if row is None:
+    matches = table.rows_for(interface)
+    if len(matches) > 1:
+        return PoEInlineDelivery.UNOBSERVABLE
+    if not matches:
         return (
             PoEInlineDelivery.NOT_DELIVERING
             if capture_complete
             else PoEInlineDelivery.UNOBSERVABLE
         )
+    row = matches[0]
     if row.oper.casefold() == "on" and row.power_watts > 0.0:
         return PoEInlineDelivery.DELIVERING
     return PoEInlineDelivery.NOT_DELIVERING

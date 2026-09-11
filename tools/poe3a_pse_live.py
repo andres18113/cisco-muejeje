@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -68,6 +68,9 @@ from packet_tracer_mcp.infrastructure.persistence.canonical_evidence import (
 )
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_power_inline, classify_poe_inline_delivery,
+)
+from packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
+    classify_factory_power_hypothesis,
 )
 from packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
 
@@ -551,6 +554,8 @@ class GovernedQualificationExecution:
     raw_files: dict[str, bytes]
     completed_at_utc: str
     file_operation_ledger: PacketTracerFileOperationLedger
+    factory_preparation: dict = field(default_factory=dict)
+    psu_hypothesis: dict | None = None
     scope: PoEPseMultiPortDeliveryScope | None = None
     dimensions: dict[str, str] | None = None
     snapshot: CapabilitySnapshot | None = None
@@ -571,6 +576,51 @@ def _require_frozen_source(baseline: dict, observed: dict) -> None:
         or observed.get("worktree_clean") is not True
     ):
         raise RuntimeError("Frozen LIVE source changed")
+
+
+def _stable_power_table(capture, switch_name: str):
+    """Decode a repeated complete no-load power observation or refuse it."""
+
+    if (
+        not capture.stable
+        or capture.observation.get("raw_output")
+        != capture.repeat_observation.get("raw_output")
+    ):
+        raise ValueError("Factory power capture is not stable")
+    output = capture.observation.get("raw_output", "")
+    for observation in (capture.observation, capture.repeat_observation):
+        gates = completeness(
+            observation,
+            capture.expected_prompt,
+            capture.stable,
+            switch_name,
+        )
+        if (
+            set(gates) != COMPLETENESS_KEYS
+            or not all(gates.values())
+            or observation.get("status") != "observed"
+            or observation.get("refusal_reason")
+            or observation.get("raw_output") != output
+            or observation.get("command_result", {}).get("output") != output
+        ):
+            raise ValueError("Factory power capture is incomplete or refused")
+        if any(
+            port.get("delivery") != "not_delivering"
+            for port in observation.get("ports", [])
+        ):
+            raise ValueError("Factory power capture was not taken before endpoint creation")
+    if hashlib.sha256(output.encode()).hexdigest() != capture.raw_sha256:
+        raise ValueError("Factory power capture hash disagrees with its raw output")
+    table = parse_show_power_inline(output)
+    if (
+        not table.rows
+        or table.unparsed_lines
+        or table.summary_available_watts is None
+        or table.summary_used_watts is None
+        or table.summary_remaining_watts is None
+    ):
+        raise ValueError("Factory power table is malformed or lacks its summary")
+    return table
 
 
 def execute_governed_qualification(
@@ -603,6 +653,8 @@ def execute_governed_qualification(
     restoration: dict = {}
     safety: dict = {}
     raw_files: dict[str, bytes] = {}
+    factory_preparation: dict = {}
+    psu_hypothesis: dict | None = None
     deleted: list[str] = []
     opening: str | None = None
     preexisting: frozenset[str] | None = None
@@ -639,10 +691,75 @@ def execute_governed_qualification(
             flush=True,
         )
         creation_started = True
-        fixture = session.create_fixture(plan.candidate_model, plan.bindings)
-        baseline["boot"] = session.wait_until_ready(
-            timeout_seconds=150,
-        ).model_dump(mode="json")
+        if session.factory_module_required(plan.candidate_model):
+            switch = session.create_switch(plan.candidate_model)
+            fixture = {
+                "switch": switch.model_dump(mode="json"),
+                "endpoints": [],
+                "links": [],
+            }
+            baseline["boot_before_factory"] = session.wait_until_ready(
+                timeout_seconds=150,
+            ).model_dump(mode="json")
+            before_modules = session.observe_factory_module()
+            before_power_capture = session.capture_inline_status("PSU_BEFORE")
+            raw_files[before_power_capture.raw_file] = (
+                before_power_capture.observation["raw_output"].encode()
+            )
+            before_power = _stable_power_table(
+                before_power_capture,
+                session.switch_name,
+            )
+            factory_preparation["before"] = asdict(before_modules)
+            factory_preparation["power_before"] = (
+                before_power_capture.model_dump(mode="json")
+            )
+            if (
+                not before_modules.target_determined
+                or before_modules.already_prepared
+            ):
+                raise RuntimeError(
+                    "Factory module target is not one new deterministic insertion: "
+                    + before_modules.message
+                )
+            installation = session.install_factory_module()
+            verification = session.verify_factory_module()
+            factory_preparation["installation"] = asdict(installation)
+            factory_preparation["verification"] = asdict(verification)
+            if not verification.verified:
+                raise RuntimeError(
+                    "Factory module effect was not independently verified: "
+                    + verification.message
+                )
+            baseline["boot_after_factory"] = session.wait_until_ready(
+                timeout_seconds=150,
+            ).model_dump(mode="json")
+            after_power_capture = session.capture_inline_status("PSU_AFTER")
+            raw_files[after_power_capture.raw_file] = (
+                after_power_capture.observation["raw_output"].encode()
+            )
+            after_power = _stable_power_table(
+                after_power_capture,
+                session.switch_name,
+            )
+            hypothesis = classify_factory_power_hypothesis(
+                verification,
+                before=before_power,
+                after=after_power,
+            )
+            psu_hypothesis = asdict(hypothesis)
+            factory_preparation["power_after"] = (
+                after_power_capture.model_dump(mode="json")
+            )
+            if not hypothesis.confirmed:
+                raise RuntimeError(hypothesis.message)
+            fixture.update(session.create_fixture_endpoints(plan.bindings))
+            baseline["boot"] = baseline["boot_after_factory"]
+        else:
+            fixture = session.create_fixture(plan.candidate_model, plan.bindings)
+            baseline["boot"] = session.wait_until_ready(
+                timeout_seconds=150,
+            ).model_dump(mode="json")
 
         for label, mode in (
             ("AUTO_1", PoEInlineMode.AUTO),
@@ -743,6 +860,8 @@ def execute_governed_qualification(
         raw_files=raw_files,
         completed_at_utc=completed,
         file_operation_ledger=session.file_operation_ledger(),
+        factory_preparation=factory_preparation,
+        psu_hypothesis=psu_hypothesis,
     )
     if len(pse_captures) == 3 and not problems:
         execution.scope = pse_scope_for(
@@ -828,15 +947,15 @@ def main() -> int:
         "packet_tracer_build": BUILD,
         "qualification_id": args.qualification_id,
         "qualification_plan": plan.model_dump(mode="json"),
-        "productive": staged is not None,
+        # A validated in-memory stage is deliberately not authority. This first
+        # durable manifest records only facts that are already true; promotion
+        # happens after publication and a second atomic manifest publication may
+        # then record the resulting enumerable path.
+        "productive": False,
         "integration_result": (
-            "PERSISTED" if staged is not None else "NOT_ADMITTED"
+            "MEASUREMENT_PUBLISHED" if staged is not None else "NOT_ADMITTED"
         ),
-        "runtime_snapshot_path": (
-            str(staged.target)
-            if staged is not None
-            else None
-        ),
+        "runtime_snapshot_path": None,
         "live_session_safety": (
             admitted_safety.model_dump(mode="json")
             if admitted_safety is not None
@@ -844,6 +963,8 @@ def main() -> int:
         ),
         "baseline": baseline,
         "fixture": execution.fixture_evidence,
+        "factory_preparation": execution.factory_preparation,
+        "psu_hypothesis": execution.psu_hypothesis,
         "captures": [capture.model_dump(mode="json") for capture in execution.captures],
         "pse_scope": asdict(execution.scope) if execution.scope is not None else None,
         "pse_dimensions": execution.dimensions,
@@ -861,6 +982,14 @@ def main() -> int:
     )
     if staged is not None:
         execution.snapshot_path = store.promote_runtime(staged)
+        bundle["productive"] = True
+        bundle["integration_result"] = "PERSISTED"
+        bundle["runtime_snapshot_path"] = str(execution.snapshot_path)
+        publish_canonical_evidence(
+            directory,
+            raw_files={},
+            evidence=bundle,
+        )
     print(json.dumps({
         "bundle": str(directory),
         "qualification_plan": plan.model_dump(mode="json"),

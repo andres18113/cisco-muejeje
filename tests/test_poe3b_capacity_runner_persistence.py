@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -453,6 +454,90 @@ def test_evidence_publication_failure_leaves_no_new_runtime_authority(
     with pytest.raises(OSError):
         runner.main()
 
+    store = runner.CapabilitySnapshotStore(
+        runner.resolve_within(runner.ROOT, Path("data") / "capabilities"),
+    )
+    assert store.list_runtime(inputs["plan"].packet_tracer_build) == []
+
+
+def test_promotion_failure_after_evidence_publication_never_claims_persisted(
+    runner,
+    monkeypatch,
+) -> None:
+    """A validated stage is not authority and the bundle must say exactly that."""
+
+    inputs = qualification_inputs(runner)
+    snapshot = runner.build_qualification_snapshot(**inputs)
+    artifacts = inputs["artifacts"]
+    execution = runner.GovernedQualificationExecution(
+        fixture_evidence={},
+        captures=[],
+        pse_captures=list(inputs["scope"].captures),
+        problems=[],
+        restoration=inputs["restoration"],
+        safety=inputs["safety"],
+        raw_files={"auto_1.txt": b"measured"},
+        completed_at_utc="2026-09-10T18:00:00Z",
+        file_operation_ledger=inputs["file_operation_ledger"],
+        scope=inputs["scope"],
+        dimensions=runner.encode_poe_pse_multi_port_dimensions(inputs["scope"]),
+        snapshot=snapshot,
+    )
+
+    monkeypatch.setattr(
+        runner,
+        "parse_args",
+        lambda: SimpleNamespace(model="3560-24PS", qualification_id="offline"),
+    )
+    isolation = SimpleNamespace(isolated=True, render=lambda: "ISOLATED")
+    monkeypatch.setattr(
+        runner,
+        "ImportIsolationPreflight",
+        lambda _root: SimpleNamespace(ensure_isolated=lambda: isolation),
+    )
+    monkeypatch.setattr(runner, "governed_plan", lambda _model: inputs["plan"])
+    monkeypatch.setattr(
+        runner,
+        "source_baseline",
+        lambda _plan: inputs["baseline"],
+    )
+    monkeypatch.setattr(runner, "prove_processes", packet_tracer_processes)
+    monkeypatch.setattr(runner, "reserve_artifacts", lambda _identity: artifacts)
+    monkeypatch.setattr(
+        runner,
+        "PacketTracerPoE3BSession",
+        lambda *_args, **_kwargs: SimpleNamespace(dispatches=[]),
+    )
+    monkeypatch.setattr(
+        runner,
+        "execute_governed_qualification",
+        lambda **_kwargs: execution,
+    )
+
+    def fail_after_publication(_store, _staged):
+        evidence_path = artifacts.directory / "evidence.json"
+        assert evidence_path.is_file()
+        published = json.loads(evidence_path.read_text(encoding="utf-8"))
+        assert published["productive"] is False
+        assert published["integration_result"] == "MEASUREMENT_PUBLISHED"
+        assert published["runtime_snapshot_path"] is None
+        raise OSError("synthetic promotion failure")
+
+    monkeypatch.setattr(
+        runner.CapabilitySnapshotStore,
+        "promote_runtime",
+        fail_after_publication,
+    )
+
+    with pytest.raises(OSError, match="synthetic promotion failure"):
+        runner.main()
+
+    bundle = json.loads(
+        (artifacts.directory / "evidence.json").read_text(encoding="utf-8")
+    )
+    assert bundle["productive"] is False
+    assert bundle["integration_result"] != "PERSISTED"
+    assert bundle["runtime_snapshot_path"] is None
     store = runner.CapabilitySnapshotStore(
         runner.resolve_within(runner.ROOT, Path("data") / "capabilities"),
     )

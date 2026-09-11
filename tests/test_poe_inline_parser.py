@@ -29,6 +29,8 @@ Tres cosas medidas que un parser escrito de memoria habria roto:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
@@ -60,6 +62,13 @@ _POWERED_ROW = (
 #: deja el terminal listo. Ninguno es una fila, y el parser no puede leerlos
 #: como si lo fueran.
 _TAIL = "Switch#\nSwitch#\n"
+
+_POE3B_3650_AUTO_1 = (
+    Path(__file__).resolve().parents[1]
+    / "docs/reference/cp-scale/canonical-live-evidence"
+    / "poe3b-router0-b-3650-11-20260910T234609Z-8c86e3b4"
+    / "auto_1.txt"
+)
 
 #: `power inline auto`: 24 filas, `Fa0/18` en la costura del pager.
 _MEASURED_AUTO = (
@@ -185,6 +194,60 @@ def test_the_classifier_accepts_the_governed_name_too():
     assert classify_poe_inline_delivery(
         _MEASURED_NEVER, "FastEthernet0/1", capture_complete=True,
     ) is PoEInlineDelivery.NOT_DELIVERING
+
+
+def test_real_3650_bundle_correlates_gig_and_classifies_power_deny() -> None:
+    """The versioned B refusal is the regression input, not a reconstructed row."""
+
+    raw = _POE3B_3650_AUTO_1.read_text(encoding="utf-8")
+    table = parse_show_power_inline(raw)
+
+    row = table.row_for("GigabitEthernet1/0/2")
+    assert row is not None
+    assert row.interface == "Gig1/0/2"
+    assert row.oper == "power-deny"
+    assert row.power_watts == 0.0
+    assert classify_poe_inline_delivery(
+        raw, "GigabitEthernet1/0/2", capture_complete=True,
+    ) is PoEInlineDelivery.NOT_DELIVERING
+
+
+def test_real_3650_bundle_keeps_the_pager_seam_row() -> None:
+    raw = _POE3B_3650_AUTO_1.read_text(encoding="utf-8")
+    table = parse_show_power_inline(raw)
+
+    assert table.row_for("GigabitEthernet1/0/18") is not None
+    assert table.row_for("GigabitEthernet1/0/18").interface == "Gig1/0/18"
+    assert len(table.rows) == 24
+
+
+def test_real_3650_unknown_prefix_remains_fail_closed() -> None:
+    raw = _POE3B_3650_AUTO_1.read_text(encoding="utf-8")
+    unknown = raw.replace(
+        "Gig1/0/2  auto   power-deny",
+        "Xx1/0/2   auto   power-deny",
+        1,
+    )
+
+    table = parse_show_power_inline(unknown)
+    assert "Xx1/0/2" not in {row.interface for row in table.rows}
+    assert table.unparsed_lines
+    assert classify_poe_inline_delivery(
+        unknown, "Xx1/0/2", capture_complete=True,
+    ) is PoEInlineDelivery.UNOBSERVABLE
+
+
+def test_real_3650_duplicate_canonical_row_remains_fail_closed() -> None:
+    raw = _POE3B_3650_AUTO_1.read_text(encoding="utf-8")
+    row = next(
+        line for line in raw.splitlines()
+        if line.startswith("Gig1/0/2 ")
+    )
+    ambiguous = raw.replace("Switch#", row + "\nSwitch#", 1)
+
+    assert classify_poe_inline_delivery(
+        ambiguous, "GigabitEthernet1/0/2", capture_complete=True,
+    ) is PoEInlineDelivery.UNOBSERVABLE
 
 
 # -- la regla tipada --------------------------------------------------------

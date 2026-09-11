@@ -74,3 +74,52 @@ def test_failed_bounded_transport_call_remains_observed() -> None:
     assert tuple(record.operation for record in session.dispatches) == (
         PoE3BSessionOperation.TRANSPORT_HEALTH,
     )
+
+
+def test_factory_surface_uses_only_the_three_typed_operations() -> None:
+    class Device(SimpleNamespace):
+        def model_dump(self, **_kwargs):
+            return dict(vars(self))
+
+    before = SimpleNamespace(target_determined=True)
+    installation = SimpleNamespace(attempted=True)
+    verification = SimpleNamespace(verified=True)
+    calls = []
+    transport = SimpleNamespace(
+        create_device=lambda model, name, ports, **_kwargs: Device(
+            model=model,
+            name=name,
+            observed_ports=list(ports),
+        ),
+        observe_factory_module=lambda name, model: (
+            calls.append(("observe", name, model)) or before
+        ),
+        install_factory_module=lambda observed: (
+            calls.append(("install", observed)) or installation
+        ),
+        verify_factory_module=lambda observed, attempted: (
+            calls.append(("verify", observed, attempted)) or verification
+        ),
+    )
+    session = PacketTracerPoE3BSession(
+        "offline-factory",
+        switch_ports=("GigabitEthernet1/0/2",),
+        transport=transport,
+    )
+    session.create_switch("3650-24PS")
+
+    assert session.factory_module_required("3650-24PS")
+    assert not session.factory_module_required("3560-24PS")
+    assert session.observe_factory_module() is before
+    assert session.install_factory_module() is installation
+    assert session.verify_factory_module() is verification
+    assert calls == [
+        ("observe", session.switch_name, "3650-24PS"),
+        ("install", before),
+        ("verify", before, installation),
+    ]
+    assert tuple(record.operation for record in session.dispatches)[-3:] == (
+        PoE3BSessionOperation.OBSERVE_MODULE_SLOTS,
+        PoE3BSessionOperation.INSTALL_FACTORY_MODULE,
+        PoE3BSessionOperation.VERIFY_FACTORY_MODULE,
+    )

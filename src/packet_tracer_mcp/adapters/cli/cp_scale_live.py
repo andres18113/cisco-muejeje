@@ -79,6 +79,9 @@ from packet_tracer_mcp.infrastructure.execution.cp_scale_live_preflight import (
     PythonRuntimeEvidenceReader,
 )
 from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
+from packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
+    PacketTracerFactoryModulePreparer,
+)
 from packet_tracer_mcp.infrastructure.execution.live_bridge import (
     PacketTracerHttpTransport,
 )
@@ -224,7 +227,10 @@ def build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path) -> CP
     def session_factory() -> PacketTracerCPScaleSession:
         return PacketTracerCPScaleSession(transport_factory=PacketTracerHttpTransport,
             physical_factory=lambda transport: PacketTracerPhysicalTopologyRuntime(transport.send_and_wait,
-                mutation_timeout_seconds=30.0, observation_timeout_seconds=12.0), runtime_factory=runtimes)
+                mutation_timeout_seconds=30.0, observation_timeout_seconds=12.0,
+                factory_module_preparer=PacketTracerFactoryModulePreparer(
+                    transport.send_and_wait, request.packet_tracer_version,
+                )), runtime_factory=runtimes)
 
     def stage_factory(session, resources):
         return build_stage_executor(physical=session.physical, configuration_runtime=resources.configuration,

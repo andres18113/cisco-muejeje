@@ -40,6 +40,10 @@ from ..generator.ptbuilder_generator import (
     generate_link_command,
     generate_module_command,
 )
+from .factory_module_preparation import (
+    FactoryModulePreparationResult,
+    PacketTracerFactoryModulePreparer,
+)
 from .topology_observation import (
     LinkEndpoint,
     LinkExpectation,
@@ -88,10 +92,15 @@ class PacketTracerPhysicalTopologyRuntime:
         *,
         mutation_timeout_seconds: float = 5.0,
         observation_timeout_seconds: float = 4.0,
+        factory_module_preparer: PacketTracerFactoryModulePreparer | None = None,
     ) -> None:
         self._send_and_wait = send_and_wait
         self._mutation_timeout_seconds = max(0.1, mutation_timeout_seconds)
         self._observation_timeout_seconds = max(0.1, observation_timeout_seconds)
+        self._factory_module_preparer = factory_module_preparer
+        self._factory_module_preparations: dict[
+            str, FactoryModulePreparationResult,
+        ] = {}
         self._module_baselines: dict[str, _ModuleRuntimeState] = {}
         self._owned_device_attempts: set[str] = set()
         self._owned_new_devices: set[str] = set()
@@ -106,6 +115,19 @@ class PacketTracerPhysicalTopologyRuntime:
                     PhysicalObjectKind.DEVICE,
                     f"Existing device {device.name!r} has model "
                     f"{observation.model!r}, expected {device.model!r}.",
+                )
+            preparation_error = self._prepare_owned_factory_modules(device)
+            if preparation_error:
+                return PhysicalMutationResult(
+                    target_id=target_id,
+                    target_kind=PhysicalObjectKind.DEVICE,
+                    disposition=MutationDisposition.FAILED,
+                    inverse_available=device.name in self._owned_new_devices,
+                    inverse_action_id=(
+                        f"remove-device:{target_id}"
+                        if device.name in self._owned_new_devices else ""
+                    ),
+                    message=preparation_error,
                 )
             return PhysicalMutationResult(
                 target_id=target_id,
@@ -138,6 +160,17 @@ class PacketTracerPhysicalTopologyRuntime:
                 f"Packet Tracer rejected creation of {device.name!r}: {ack_message}",
             )
         self._owned_new_devices.add(device.name)
+        preparation_error = self._prepare_owned_factory_modules(device)
+        if preparation_error:
+            return PhysicalMutationResult(
+                target_id=target_id,
+                target_kind=PhysicalObjectKind.DEVICE,
+                disposition=MutationDisposition.FAILED,
+                applied=True,
+                inverse_available=True,
+                inverse_action_id=f"remove-device:{target_id}",
+                message=preparation_error,
+            )
         return PhysicalMutationResult(
             target_id=target_id,
             target_kind=PhysicalObjectKind.DEVICE,
@@ -147,6 +180,32 @@ class PacketTracerPhysicalTopologyRuntime:
             inverse_action_id=f"remove-device:{target_id}",
             message="Device creation acknowledged; independent read-back required.",
         )
+
+    def _prepare_owned_factory_modules(self, device: DevicePlan) -> str:
+        """Gate only devices created by this runtime; retries remain one-shot."""
+
+        if (
+            self._factory_module_preparer is None
+            or device.name not in self._owned_new_devices
+        ):
+            return ""
+        try:
+            preparation = self._factory_module_preparer.prepare_required_modules(
+                device.name,
+                device.model,
+            )
+        except Exception as exc:
+            return (
+                "Required factory preparation failed closed: "
+                + type(exc).__name__ + ": " + str(exc)
+            )
+        self._factory_module_preparations[device.name] = preparation
+        if getattr(preparation, "ready", None) is not True:
+            return (
+                "Device was created but required factory preparation failed closed: "
+                + str(getattr(preparation, "message", "unverified preparation"))
+            )
+        return ""
 
     def observe_device(self, device: DevicePlan) -> PhysicalDeviceObservation:
         target_id = _device_id(device)
