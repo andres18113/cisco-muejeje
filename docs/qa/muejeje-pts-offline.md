@@ -31,7 +31,7 @@ Two measurements, on two machines, and they say different things because the
 machines differ — not because the repository changed under them.
 
 **With the pinned builder installed**, recomputed on the clean committed tree at
-`d14692d`:
+`deb13b2`:
 
 ```text
 .venv/Scripts/python.exe tools/build_muejeje_pts.py --check --builder 'C:/Program Files/Cisco Packet Tracer 9.0.1/bin/PacketTracer.exe'
@@ -41,10 +41,10 @@ PACKAGING_MANUAL_AVAILABLE; exit 0
 | Field | Value |
 | --- | --- |
 | `status` | `PACKAGING_MANUAL_AVAILABLE` |
-| `build_recipe_id` | `bbe6a2d53b38224e3973735af3df56324d2b864aedb114934201633a046bf8ab` |
-| `source.commit` | `d14692d0a1aa04602053c5c1d8b6e5c90634579f`, `clean: true` |
-| `source.tree` | `67f1a8e3ca4616c242e1a859ce3ca09a801a152d` |
-| `inputs.artifact` | 23 files, all under `muejeje_pts/` |
+| `build_recipe_id` | `568a863532ba0e2aea130ad5e556b6ab74a0c0505a7944af0f4055f9ec5801d1` |
+| `source.commit` | `deb13b2d5935793811c3b8b6f2b569b16ea63ba3`, `clean: true` |
+| `source.tree` | `59f9e47fb677b09522d0f090fd452547563de910` |
+| `inputs.artifact` | 23 files, all under `muejeje_pts/`; the engine files run `010_core.js` to `220_lifecycle.js` |
 | `inputs.tooling` | 8 files, the whole auditor |
 | `inputs.reference` | `[]` |
 | `packaging_state.recipe_complete` | `true` |
@@ -54,8 +54,19 @@ PACKAGING_MANUAL_AVAILABLE; exit 0
 | `builder.actual_sha256` | matches the pinned hash |
 | `artifact_sha256` | `null` — no artifact exists yet |
 
+**Clean means nothing untracked is left in the checkout either.** The audit
+counts every line of `git status --porcelain --untracked-files=all`, so an
+untracked, unignored file of any kind reads as a dirty source — and the
+blocker it reports, `dirty tracked source`, names no file. The first run of
+this measurement hit exactly that: an agent integration had left a cache
+directory, `.atl/`, in the checkout, and the audit reported
+`BUILD_SOURCE_INVALID` with no recipe id until the directory was excluded in the
+repository's local `info/exclude` — not in the tracked `.gitignore`. The rule is
+right, because a recipe has to describe a state someone can name; it is
+recorded because nothing in the refusal says where to look.
+
 **Without it**, on the Linux container this line was developed in, at
-`bd7250e` — the commit before the one you are reading:
+`bd7250e`, an earlier commit on this line:
 
 ```text
 .venv/bin/python tools/build_muejeje_pts.py --check
@@ -99,7 +110,7 @@ does exactly that.
 
 **The recipe id is a measurement, not a constant**, and that is the design
 working: an id that survived a change to its inputs would identify the wrong
-build. Read it as "at `d14692d`, on that machine, the audit reported this".
+build. Read it as "at `deb13b2`, on that machine, the audit reported this".
 
 **It also depends on the line endings of the checkout it was measured in.** The
 audit hashes the *working* bytes of each declared input, and the Windows
@@ -162,25 +173,26 @@ review rather than a hypothetical:
 Two environments have run this suite, and the record keeps them apart: a
 measurement is only comparable with another taken the same way.
 
-**Windows, with Packet Tracer `9.0.1.0858` installed**, at `d14692d` — the
+**Windows, with Packet Tracer `9.0.1.0858` installed**, at `deb13b2` — the
 machine that has the target build, and the one this line was measured on
 (checkout-local `.venv`, Python 3.12.10, pytest 9.1.1, Node v24.19.0):
 
 ```text
-.venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/fin1 -o cache_dir=tmp/fin1-cache
-738 passed, 2 skipped in 168.18s; exit 0
+.venv/Scripts/python.exe -m pytest tests/muejeje -q -p no:cacheprovider
+761 passed, 2 skipped in 286.10s; exit 0
 
-.venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q --basetemp=tmp/fin2 -o cache_dir=tmp/fin2-cache
-12 passed in 3.05s; exit 0
+.venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q -p no:cacheprovider
+12 passed in 5.00s; exit 0
 
-.venv/Scripts/python.exe -m pytest -q
-5183 passed, 3 skipped, 4 warnings in 391.66s; exit 0
+.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
+5206 passed, 3 skipped, 4 warnings in 497.47s; exit 0
 ```
 
 Node drove the kernel checks. The earlier Windows readings — `353 passed` at
-`fc9e460` and `555 passed` at `96976de` — are superseded rather than kept beside
-this one: each measured a different tree on the same machine, which is exactly
-the comparison this record separates environments to prevent.
+`fc9e460`, `555 passed` at `96976de` and `738 passed` at `d14692d` — are
+superseded rather than kept beside this one: each measured a different tree on
+the same machine, which is exactly the comparison this record separates
+environments to prevent.
 
 **Linux, with Packet Tracer absent**, at `bd7250e` — the container this line was
 developed in, checkout-local `.venv` (Python 3.11.15, pytest 9.1.1), Node
@@ -217,9 +229,12 @@ the layer-aware fitness gates, to `353` with the kernel hardening and the first
 M2 slice, to `409` with the platform-call boundary and the chassis reading, to
 `496` with `platform.module_type_support` and the first workspace reading, and
 to `555` with relay closure, three attribution corrections and the first M3
-capability, and to `738` with this line: a platform boundary enforced per
-interface member, exact-integer addressing in named domains, and
-`network.device_ports`.
+capability, to `738` with a platform boundary enforced per interface member,
+exact-integer addressing in named domains and `network.device_ports`, to `748`
+with the pinned link evidence and the qualification entry point, and to `761`
+with this line: engine files named for the order Packet Tracer lists them, the
+audit gate that holds the manifest to that order, and the refusal, restart and
+diagnostics steps of the official run.
 
 Eighteen test modules have been split out along the way, each because its
 predecessor crossed the 300-line budget rather than because anyone chose to —
@@ -252,8 +267,8 @@ default temporary directory passes in 8.5s. It is a path-length limit in the
 harness, not a defect in what is being tested — recorded here because the
 failure names `git clone` and reads like a repository problem.
 
-The focused runs above keep their worktree-local temporaries: none of them
-clones the checkout.
+The focused runs above could keep worktree-local temporaries, since none of
+them clones the checkout; this record ran them with the default one as well.
 
 ## What the V6 kernel run does and does not establish
 
@@ -615,8 +630,8 @@ What was checked, and what each check found:
 - Packet Tracer `9.0.1.0858` **is installed**, and `bin/PacketTracer.exe` hashes
   to the pinned SHA-256. The audit verified this, not a person reading a version
   dialog.
-- A `PacketTracer` process **was running**, with a main window, at the time of
-  this record.
+- Two `PacketTracer` processes **were running** at the time of this record; the
+  session that wrote it neither drove nor inspected them.
 - The only packager is the in-app Scripting Interface. There is **no CLI and no
   documented programmatic packaging entry point** — recorded in the v2 preflight
   inventory, and the reason `automation` stays `BUILD_AUTOMATION_UNPROVEN`.
@@ -627,31 +642,37 @@ What was checked, and what each check found:
 
 So the remaining action is **one manual procedure**, already written down in
 full: [the packaging recipe](muejeje-pts-packaging-recipe.md). Its
-preconditions are met at `d14692d` — clean tree, `PACKAGING_MANUAL_AVAILABLE`,
-recipe id `bbe6a2d5…`, verified builder — so a person can start at its step 1.
+preconditions are met at `deb13b2` — clean tree, `PACKAGING_MANUAL_AVAILABLE`,
+recipe id `568a8635…`, verified builder — so a person can start at its step 1,
+from the renamed files and with no alias.
 
 When that run happens, it records: source commit and tree, the recipe id, the
-externally measured artifact SHA-256, the Packet Tracer build, and every
-response envelope verbatim — including whichever `resolution` and
-`unavailable_reason` each platform reading came back with. Only then do
-`OFFICIAL_PACKAGING_PROVED`, `TARGET_API_BASELINED` and
-`CAPABILITY_RESOLUTION_VERIFIED` change, and only from that evidence — never
-from a clean offline report, and never from the operations that make no
-platform call.
+externally measured artifact SHA-256, the Packet Tracer build, the Script
+Engine listing as Packet Tracer showed it, and every response envelope verbatim
+with whatever Packet Tracer printed beside it — including whichever
+`resolution` and `unavailable_reason` each platform reading came back with.
+Only then do the target gates change, each only as far as that evidence goes:
+`OFFICIAL_PACKAGING_PROVED` and `V6_KERNEL_VERIFIED` from the saved artifact
+loading and its kernel answering; `TARGET_API_BASELINED` and
+`CAPABILITY_RESOLUTION_VERIFIED` only from platform readings that answered.
+Never from a clean offline report, never from the operations that make no
+platform call, and never from a call Packet Tracer denied.
 
-**No exact-HEAD `.pts` exists.** Checked at `d14692d` on the Windows machine
+**No exact-HEAD `.pts` exists.** Checked at `deb13b2` on the Windows machine
 that has the target build: `dist/` holds only the ignored `muejeje.build.json`,
-and no `muejeje*.pts` exists anywhere in the checkout.
+and no `muejeje*.pts` exists anywhere in the checkout, the exploratory module's
+included.
 
 `Cisco Packet Tracer 9.0.1\extensions\` holds **no Muejeje entry**, re-checked
-at `d14692d` — and it is
+at `deb13b2` — and it is
 not empty, which is what an earlier revision of this file recorded. It carries
 Cisco's own eleven bundled extension directories and six `.pts` files
 (`ActivitySequencer`, `Clear Terminal Agent`, `Marvel`, `PcSoftware`,
-`PTINTERNAL`, `resource`). "Empty" was the wrong measurement of the right fact,
-and the right fact is that nothing of ours is installed there. Nothing has been
-packaged from these sources, and `OFFICIAL_PACKAGING_PROVED` stays `PENDING_GUI`
-rather than being softened into anything else.
+`PTINTERNAL`, `resource`), and the user profile's own `extensions\` is empty.
+"Empty" was the wrong measurement of the right fact, and the right fact is that
+nothing of ours is installed there. No governed module has been packaged from
+these sources, and `OFFICIAL_PACKAGING_PROVED` stays `PENDING_GUI` rather than
+being softened into anything else.
 
 ## Scope
 
