@@ -59,6 +59,12 @@ RETIRED_CLAIMS = (
      "Cisco documents the opposite: a module start evaluates every engine file"),
     (r"including across a [`']?cleanUp\(\)",
      "the session token spans one evaluation, and a restart is a new one"),
+    (r"runtime_session_id`? (?:will|must|should) differ",
+     "a new evaluation generates a new token; the kernel guarantees no "
+     "uniqueness and could not detect a collision (MJ-023)"),
+    (r"different tokens (?:say|mean|show|prove)\b",
+     "token inequality establishes nothing, so no step reads one evaluation "
+     "or a restart out of it (MJ-023)"),
 )
 
 # Sources that describe the runtime in prose, the way a document does. A

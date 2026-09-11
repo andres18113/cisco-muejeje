@@ -140,8 +140,9 @@ artifact and is never embedded in it (`MJ-017`).
 
 ## Read-only qualification
 
-The artifact is exercised, never used to change anything. Import the saved
-`.pts` on the pinned build, start it, and drive only:
+The artifact is exercised, never used to change anything. Add the saved `.pts`
+on the pinned build — *"Add/remove in Extensions->Scripting->Configure PT Script
+Modules..."* — start it, and drive only:
 
 - the module lifecycle — start, then stop;
 - `mcpDispatchV6` once per operation `runtime.capabilities` reports, starting
@@ -162,8 +163,29 @@ call at all; the `platform.*` ones make documented getter calls on the hardware
 instance holds, and change nothing on it. What a module carrying no privilege
 gets back from them is unknown until this run answers it.
 
-One call per admitted operation, each on one line. Anything **pasted** into
-the Builder Code Editor loses its newlines, so a pasted snippet must be a
+### Where the statements are entered
+
+The qualification entry point is the module's **Debug Dialog**, the part of the
+Script Module editor of that name. A statement entered there is evaluated **in
+that module's Script Engine** — the engine the saved artifact's files were
+evaluated into when the module started — which is what makes a reading taken
+there a reading *of the artifact* rather than of a second interpreter standing
+in for it. `mcpDispatchV6` resolves there because `dispatcher_v6.js` defined it
+there, in that evaluation.
+
+Open it on the module under test, the one added from the saved
+`dist/muejeje.pts`, and enter one call at a time, copying the whole answer back
+before entering the next. Nothing else is used to issue a call: a reading taken
+anywhere but this module's engine is evidence about that other surface.
+
+Record, beside the run, the installed help page that documents the dialog, its
+SHA-256, and the sentence in which it words this behaviour. This repository has
+never read that page, so the citation is captured **by** the run rather than
+asserted ahead of it, and a later revision pins the sentence the way
+`tests/muejeje/test_unobserved_claims.py` pins the Script Engine lifecycle ones.
+
+One call per admitted operation, each on one line. Anything **pasted** into a
+Packet Tracer code editor loses its newlines, so a pasted statement must be a
 single line and carry no `//` comment; the compiled engine files are imported
 rather than pasted and are unaffected. `runtime.capabilities` answers with the
 whole whitelist, so a run that starts with it needs no list from this document
@@ -228,16 +250,16 @@ back unchanged and `error: null` on success.
 
 **Record every envelope from one start.** Cisco documents that every engine
 file is evaluated when the module starts, so a stop and a start is a new
-evaluation and the `runtime_session_id` will differ (`MJ-023`). Envelopes
-carrying the same token were observed in the same evaluation; two carrying
-different tokens say the module was restarted between them, which is a
-different observation and must be written down as one.
+evaluation, and that evaluation generates a new correlation token (`MJ-023`).
+Envelopes carrying the same token were observed in the same evaluation.
 
-*Which* surface issues those calls is the operator's choice — the module editor
-has a Debug part, and a consumer could call in another way. This repository has
-no recorded evidence of the Debug part's exact behaviour, so no steps for it are
-written here; a guessed UI step is the same defect as a guessed API signature
-(`AGENTS.md` rule 6).
+**Nothing here requires two evaluations to produce different tokens, and no
+step compares them.** The token is a clock reading and a random draw, so the
+kernel guarantees no uniqueness and could not detect a collision if one
+happened: two tokens being unequal is not a uniqueness result, and it is not
+what tells one evaluation from another. The operator's own record of when the
+module was stopped and started is what does, and it is written down beside the
+envelopes rather than derived from them.
 
 Record every envelope verbatim. Until that has happened on the pinned build,
 the kernel's live state is `NOT_YET_LIVE_VERIFIED`: a green Node run establishes

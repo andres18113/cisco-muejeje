@@ -16,7 +16,9 @@ So every part of it that restates the artifact is read back and compared:
 * the Custom Interface files;
 * every `mcpDispatchV6(...)` call it tells a person to paste, driven through
   the kernel it will be pasted into: each must be admitted, and together they
-  must ask every operation the dispatcher admits.
+  must ask every operation the dispatcher admits;
+* the surface those calls are entered on, which decides what the run is
+  evidence *about*.
 
 Driving those calls under Node establishes that this kernel admits them, and
 nothing about what Packet Tracer will answer (MJ-015).
@@ -48,6 +50,11 @@ requires_node = pytest.mark.skipif(
 
 def _recipe() -> str:
     return (REPO_ROOT / RECIPE).read_text(encoding="utf-8")
+
+
+def _collapsed_recipe() -> str:
+    """The recipe as one line, so a sentence is found however it was wrapped."""
+    return re.sub(r"\s+", " ", _recipe())
 
 
 def _declared_engine_files() -> list[str]:
@@ -100,3 +107,36 @@ def test_the_recipe_readers_find_a_list_and_notice_a_short_one():
     assert ORDERED_ENGINE_FILE.findall(text) == ["core.js", "lifecycle.js"]
     assert ORDERED_ENGINE_FILE.findall(text) != _declared_engine_files()
     assert QUALIFICATION_CALL.findall(call) == ['{"v":6,"op":"runtime.identify"}']
+
+
+def test_the_recipe_names_the_debug_dialog_as_the_qualification_entry_point():
+    """Which engine evaluated the statement is what the run is evidence about.
+
+    An earlier revision left the surface to the operator: the editor "has a
+    Debug part, and a consumer could call in another way", and no step named
+    either. A run following it could have recorded an answer from anything,
+    and the record would not have said from what — so the reading would not
+    have been attributable to the saved artifact at all (MJ-015).
+
+    The Debug Dialog is the entry point because a statement entered there is
+    evaluated in that module's Script Engine, which is the engine the saved
+    artifact's files were evaluated into when the module started.
+    """
+    collapsed = _collapsed_recipe()
+
+    assert "Debug Dialog" in collapsed
+    assert "evaluated **in that module's Script Engine**" in collapsed
+
+
+def test_the_recipe_has_the_run_capture_the_citation_it_cannot_assert():
+    """This repository has never read the page that documents the dialog.
+
+    `AGENTS.md` rule 6 forbids writing a step from memory, and every other UI
+    element in this document is quoted from an installed page. The dialog's
+    own sentence is not quotable here yet, so the recipe requires the run to
+    bring it back — page, hash and wording — rather than asserting it first.
+    """
+    collapsed = _collapsed_recipe()
+
+    assert "the installed help page that documents the dialog, its SHA-256" in collapsed
+    assert "captured **by** the run rather than asserted ahead of it" in collapsed
