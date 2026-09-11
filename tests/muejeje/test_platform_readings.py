@@ -21,8 +21,10 @@ answers well, badly, partially, or by throwing. All of it establishes what
 capability's live state is `PENDING_TARGET` (MJ-015).
 
 Split out of `test_platform_adapter` when that module crossed its own line
-budget: what the adapter is *allowed to be* and what it *reports* are two
-responsibilities (MJ-018, MJ-020).
+budget, and split again when it crossed its own: what the adapter is *allowed
+to be*, *which* reading it comes back with, and the *value rules* each reported
+field is held to are three responsibilities. The value rules are
+`test_platform_reading_values` (MJ-018, MJ-020).
 """
 
 from __future__ import annotations
@@ -114,79 +116,6 @@ def test_a_missing_descriptor_inside_the_window_is_unusable_not_empty():
 
 
 @requires_node
-@pytest.mark.parametrize(("field", "value"), [
-    ("model", "7"),
-    ("model", "null"),
-    ("model", "'x'.repeat(257)"),
-    ("type", "'1'"),
-    ("type", "1.5"),
-    ("type", "null"),
-    ("supported", "'true'"),
-    ("supported", "1"),
-    ("module_types", "['18']"),
-])
-def test_every_field_of_a_descriptor_is_checked_before_it_is_reported(
-    field: str, value: str,
-):
-    """One malformed field makes the whole reading unusable, not partial.
-
-    Each of these is a branch in the adapter's own validators, and each was
-    written before anything drove it. A validator nothing exercises is a
-    validator that can be silently inverted — and the failure would surface as
-    a plausible-looking descriptor carrying a value nobody checked.
-
-    A partial descriptor is deliberately not an option: reporting three fields
-    of a model and dropping the fourth would look like an answer about the
-    platform rather than about our inability to read it.
-    """
-    spec = {
-        "model": "'2960-24TT'", "type": "1",
-        "supported": "true", "module_types": "[18]",
-    }
-    spec[field] = value
-    inner = ", ".join(f"{name}: {literal}" for name, literal in spec.items())
-
-    result = dispatch_v6(_request(), prelude=platform_stub(f"[{{{inner}}}]"))["result"]
-
-    assert result["resolution"] == "UNAVAILABLE"
-    assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
-    assert result["descriptors"] == []
-
-
-@requires_node
-def test_a_model_name_at_its_bound_is_still_a_readable_answer():
-    """The other side of the length bound, so it is a bound and not a wall.
-
-    The bound is a length of its own — Muejeje's, like every other number in
-    the adapter (MJ-029) — rather than the node-count ceiling reused as one.
-    """
-    result = dispatch_v6(
-        _request(),
-        prelude=platform_stub(
-            "[{model: 'x'.repeat(256), type: 1, supported: true, module_types: [18]}]"
-        ),
-    )["result"]
-
-    assert result["resolution"] == "OBSERVED"
-    assert len(result["descriptors"][0]["model"]) == 256
-
-
-@requires_node
-def test_every_adapter_bound_is_a_positive_whole_number():
-    """The bounds are ours, and each one has to be a usable number.
-
-    Asserted the same way as the V6 admission limits, because a bound that is
-    `undefined` compares false against everything and silently admits what it
-    was written to refuse.
-    """
-    limits = dispatch_v6(_request(), report="MUEJEJE_PLATFORM_LIMITS")
-
-    assert limits, "the adapter declares no bound at all"
-    for name, bound in limits.items():
-        assert isinstance(bound, int) and bound > 0, f"{name}: {bound!r}"
-
-
-@requires_node
 def test_whatever_the_platform_does_the_caller_still_gets_a_reading():
     """Every platform-shaped outcome is an answer, not an exception.
 
@@ -220,52 +149,6 @@ def test_a_member_the_platform_does_not_offer_is_absent_not_a_failed_call():
     assert result["resolution"] == "UNAVAILABLE"
     assert result["unavailable_reason"] == "PLATFORM_MEMBER_ABSENT"
     assert result["descriptors"] == []
-
-
-@requires_node
-@pytest.mark.parametrize(("offset", "limit"), [
-    ("-1", "4"), ("0", "0"), ("0", "33"), ("5000", "4"), ("'0'", "4"),
-    ("1.5", "4"), ("0", "null"),
-])
-def test_an_argument_this_adapter_would_not_accept_is_a_defect_not_a_clamp(
-    offset: str, limit: str,
-):
-    """The window is checked, never clamped.
-
-    A value outside these bounds cannot have come from a caller: V6 admission
-    refuses that, and the operation defaults an argument nobody sent. So it
-    came from our own code, and reading a *different* window and reporting the
-    result would answer a question nobody asked — as an observation about
-    Packet Tracer, which is the failure mode this whole boundary exists for.
-    """
-    observed = dispatch_v6(
-        _request(),
-        prelude=platform_stub(THREE_MODELS),
-        report=(
-            "(function () {"
-            f"  try {{ return {{read: muejejeAdapterDeviceDescriptors({offset}, {limit})}}; }}"
-            "  catch (thrown) { return {refused: String(thrown)}; }"
-            "}())"
-        ),
-    )
-
-    assert "read" not in observed, "a bad argument was answered instead of refused"
-    assert "PLATFORM_" not in observed["refused"], (
-        "an argument defect is ours, and never a platform reading"
-    )
-
-
-@requires_node
-def test_the_window_this_operation_asks_for_is_still_answered():
-    """The other direction: the check is a bound, not a wall."""
-    observed = dispatch_v6(
-        _request(),
-        prelude=platform_stub(THREE_MODELS),
-        report="muejejeAdapterDeviceDescriptors(0, 32)",
-    )
-
-    assert observed["resolution"] == "OBSERVED"
-    assert observed["offset"] == 0 and observed["limit"] == 32
 
 
 @requires_node

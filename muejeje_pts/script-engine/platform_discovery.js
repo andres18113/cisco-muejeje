@@ -28,12 +28,16 @@
  * — which owns *which* operations exist, not what each one's arguments mean.
  *
  * `limit` is bounded by the adapter's own window ceiling rather than by a
- * second number written down here: two copies of a bound are two bounds. */
+ * second number written down here: two copies of a bound are two bounds.
+ *
+ * `offset` is bounded by the factory addressing ceiling — the same declaration
+ * the operations that consume a `device_index` name — so every index this
+ * operation publishes is one they admit (MJ-029). */
 var MUEJEJE_PLATFORM_DESCRIPTOR_ARGS = {
     offset: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+        max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
     },
     limit: {
         kind: "integer",

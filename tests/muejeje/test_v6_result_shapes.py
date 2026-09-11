@@ -7,16 +7,15 @@ module holds the other half of MJ-030, which is about what an operation
     A result may gain a field. Nothing may lose one, be renamed, or keep its
     name while meaning something else.
 
-Two measures, because the rule is asymmetric. Required fields are asserted as a
-**subset** of what an operation answers, so an added field passes and a removed
-or renamed one fails. The set of nested *paths* is asserted **equal**, because
-a published nested object nobody froze is one nothing is holding still.
+Two measures, because the rule is asymmetric. Required fields and nested paths
+are both asserted as a **floor** of what an operation answers, so an added
+field or a new nested object passes and a removed or renamed one fails.
 
 **A result is not only its top-level names.** A consumer reads
 `descriptors[0].model` exactly as it reads `available_count`, so a rename
-inside a nested object breaks a reader the same way — and only a gate that
-walks the whole answer can see it. Measured before this module existed:
-renaming `descriptors[].model_supported` left every compatibility check green.
+inside a nested object breaks a reader the same way, and only a gate that walks
+the whole answer sees it: renaming `descriptors[].model_supported` once left
+every compatibility check green.
 
 Split out of `test_v6_compatibility` when that module crossed its own line
 budget. The envelope a consumer parses and the answers it reads are two
@@ -42,14 +41,17 @@ from tests.muejeje.engine_harness import (
 
 # Per operation, the result fields a consumer may already be reading. An
 # operation may answer with more; it may never answer with fewer.
+# `max_device_index` and `descriptors[].device_index` are frozen for the reason
+# they were added: they are a reading's *reusable input*, and relay closure
+# turns on them being reported rather than derived (`test_relay_closure`).
 REQUIRED_RESULT_FIELDS = {
     "network.device_inventory": {
         "resolution", "unavailable_reason", "available_count", "offset",
-        "limit", "devices", "window_truncated",
+        "limit", "max_device_index", "devices", "window_truncated",
     },
     "platform.device_descriptors": {
         "resolution", "unavailable_reason", "available_count", "offset",
-        "limit", "descriptors", "window_truncated",
+        "limit", "max_device_index", "descriptors", "window_truncated",
     },
     "platform.module_descriptors": {
         "resolution", "unavailable_reason", "device_index", "available_count",
@@ -88,8 +90,9 @@ REQUIRED_NESTED_FIELDS = {
     },
     "platform.device_descriptors": {
         "descriptors[]": {
-            "model": str, "device_type": int, "model_supported": bool,
-            "supported_module_types": list, "module_types_truncated": bool,
+            "device_index": int, "model": str, "device_type": int,
+            "model_supported": bool, "supported_module_types": list,
+            "module_types_truncated": bool,
         },
     },
     "platform.module_descriptors": {
@@ -119,16 +122,14 @@ REQUIRED_NESTED_FIELDS = {
     },
 }
 
-# What each operation has to be asked against for its published shape to be
-# visible at all. A platform operation answers an empty list when there is no
+# Which operations have to be asked against a platform for their published
+# shape to be visible at all. One answers an empty list when there is no
 # platform, and an empty list publishes no nested object, so the reading a
 # consumer actually parses is the one driven here.
-PRELUDE = {
-    "network.device_inventory": platform_stub(CHASSIS_MODELS),
-    "platform.device_descriptors": platform_stub(CHASSIS_MODELS),
-    "platform.module_descriptors": platform_stub(CHASSIS_MODELS),
-    "platform.module_type_support": platform_stub(CHASSIS_MODELS),
-}
+NEEDS_PLATFORM = frozenset({
+    "network.device_inventory", "platform.device_descriptors",
+    "platform.module_descriptors", "platform.module_type_support",
+})
 # An operation whose arguments are not all optional needs them supplied before
 # it will answer at all, and a shape gate has to see the answer.
 REQUIRED_ARGS = {"platform.module_type_support": {"module_type": 6}}
@@ -139,11 +140,9 @@ requires_node = pytest.mark.skipif(
 
 
 def missing_fields(frozen: set[str], observed: set[str]) -> set[str]:
-    """The frozen fields `observed` no longer carries. Empty means compatible.
+    """The frozen names `observed` no longer carries. Empty means compatible.
 
-    This is the whole compatibility test for a result: a field that appeared is
-    not in `frozen`, so it cannot show up here, while a field that was removed
-    or renamed leaves its old name behind and does.
+    The asymmetry is `broken_fields`' below, by names alone.
     """
     return frozen - observed
 
@@ -156,7 +155,8 @@ def _request(op: str) -> str:
 
 
 def _answer(op: str) -> dict:
-    return dispatch_v6(_request(op), prelude=PRELUDE.get(op, ""))
+    stub = platform_stub(CHASSIS_MODELS) if op in NEEDS_PLATFORM else ""
+    return dispatch_v6(_request(op), prelude=stub)
 
 
 def nested_shapes(result: dict) -> dict[str, list[dict]]:

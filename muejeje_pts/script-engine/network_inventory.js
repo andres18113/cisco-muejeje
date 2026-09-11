@@ -24,7 +24,7 @@ var MUEJEJE_NETWORK_INVENTORY_ARGS = {
     offset: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+        max: MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX
     },
     limit: {
         kind: "integer",

@@ -746,6 +746,42 @@ the second would send a consumer looking for an operation.
 **An argument rule the kernel cannot read refuses the argument.** A rule of an
 unrecognised kind bounds nothing, so it admits nothing.
 
+**Relay closure: a bound may not refuse what this runtime published.**
+
+> Any value or identifier Muejeje publishes as reusable input must be
+> admissible by every operation that claims to consume it.
+
+Some values a reading reports exist *to be sent back*: a factory index that
+addresses a model, a `ModuleType` that asks whether a model accepts it. For
+those, a producer's domain and a consumer's domain are not two decisions. A
+value this runtime emits and then refuses is a contract that contradicts
+itself, and the consumer cannot discover it by reading either operation — it
+did nothing but relay an answer this artifact produced.
+
+So a relayed value has **one** declared domain, named by the reading that
+publishes it and by every rule that admits it, and a consuming rule may never
+narrow it. Two consequences follow, and both were defects before they were
+rules:
+
+- **A window bounds its last index, not only its first.** Bounding `offset`
+  alone let a window at the addressing ceiling publish `offset + limit - 1`
+  above it, which the consuming operations then refused.
+- **An index a reading exposes is reported, not inferred.** A consumer that has
+  to count `offset + i` to learn what to send back is deriving a reusable
+  input, and two consumers will derive it differently. The addressable ceiling
+  is reported for the same reason: `available_count` is the platform's answer
+  about how many models exist, never a statement about which of them this
+  runtime will address.
+
+**Closure is not the absence of bounds.** Execution stays bounded, and every
+bound stays Muejeje's own: how many entries one window carries, how far one
+walk goes, how long a string may be. What closure forbids is an incompatible
+*pair* of domains. It also forbids dressing a value domain up as a resource
+bound — a ceiling on a `ModuleType` bounded no work at all, since the cost of
+a request does not depend on a type's magnitude; it only decided which
+platform-produced values this runtime would accept back, which is not a
+decision this runtime is entitled to make (MJ-014).
+
 **An argument is required only where no default would be honest.** Most
 arguments have one — an offset starts at the origin of an enumeration, a window
 at its ceiling — and an omitted one is a default rather than a refusal. But
@@ -766,7 +802,14 @@ both directions — refused past it, admitted at it — asserts that the limits 
 declared in exactly one kernel file, and asserts that no bound is ever reported
 as `ENGINE_EXCEPTION`. The per-operation argument rules are driven on a
 synthetic operation, so the first operation to declare one inherits a tested
-mechanism.
+mechanism. `tests/muejeje/test_relay_closure.py` drives closure itself, end to
+end and in both halves: it reads a value out of a reading, sends that same
+value back to the operation that consumes it, and fails if the runtime refuses
+its own output — for a `ModuleType` at both ends of the published domain, and
+for a factory index at the addressing ceiling. It also holds the structure
+that makes closure hold by construction rather than by two numbers that happen
+to agree: one definition site per domain, named by the producer and by every
+consumer.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 
@@ -864,6 +907,14 @@ descriptor's own supported-type list, or from a module in its chassis. Passing a
 number the platform produced back to the platform is not a mirror; it is the
 opposite of one, and it is what lets a consumer ask "does this model accept
 this" without either side carrying a table of what the types are (MJ-014).
+
+**Composition is what makes relay closure binding here.** Both values a
+consumer relays among them — the factory index and the `ModuleType` — are
+published by one operation and admitted by the others, so each has a single
+declared domain and no consuming rule narrows it (MJ-029). The index a
+model was read at is reported on the model itself, and the highest index this
+runtime will address is reported beside the count, so neither has to be
+derived from `offset` or guessed at from `available_count`.
 
 **`runtime.capabilities` may name a capability only once it exists.** The
 operation being admitted, and the kernel feature behind it, are facts about

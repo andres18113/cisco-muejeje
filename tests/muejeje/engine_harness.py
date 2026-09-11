@@ -156,31 +156,41 @@ def _device_descriptor_js() -> list[str]:
     ]
 
 
-def _network_js() -> list[str]:
+def _network_js(dense: bool, reported: str) -> list[str]:
     """`Network` and the devices it enumerates, as this repository drives them.
 
     A workspace, not a catalogue: the names are neutral on purpose, because a
     stub carrying one topology's device names would be a consumer's identifiers
-    living in the test area (MJ-004).
+    living in the test area (MJ-004). `dense` cycles the list so the workspace
+    answers at every index, exactly as the factory does.
     """
+    pick = "DEVICES[index % DEVICES.length]" if dense else "DEVICES[index]"
     return [
         "function workspaceDevice(spec) {",
         "  return {getName: function () { log('getName'); return spec.name; }};",
         "}",
         "var NETWORK = {",
         "  getDeviceCount: function () {",
-        "    log('getDeviceCount'); return DEVICES.length;",
+        f"    log('getDeviceCount'); return {reported};",
         "  },",
         "  getDeviceAt: function (index) {",
         "    log('getDeviceAt');",
-        "    return DEVICES[index] ? workspaceDevice(DEVICES[index]) : null;",
+        f"    var spec = {pick};",
+        "    return spec ? workspaceDevice(spec) : null;",
         "  }",
         "};",
     ]
 
 
-def _factory_js(reported: str, refuses: str) -> list[str]:
-    """The factory enumeration, and the platform object that answers for it."""
+def _factory_js(reported: str, refuses: str, dense: bool) -> list[str]:
+    """The factory enumeration, and the platform object that answers for it.
+
+    `dense` makes it answer at *every* index by cycling the models, which is
+    how a reading at the runtime's own addressing ceiling is driven: with a
+    literal array the ceiling under test would be the stub's length rather
+    than Muejeje's declared bound.
+    """
+    pick = "MODELS[index % MODELS.length]" if dense else "MODELS[index]"
     return [
         "var FACTORY = {",
         "  getAvailableDeviceCount: function () {",
@@ -188,7 +198,8 @@ def _factory_js(reported: str, refuses: str) -> list[str]:
         "  },",
         "  getAvailableDeviceAt: function (index) {",
         "    log('getAvailableDeviceAt');",
-        "    return MODELS[index] ? descriptor(MODELS[index]) : null;",
+        f"    var spec = {pick};",
+        "    return spec ? descriptor(spec) : null;",
         "  }",
         "};",
         "var ipc = {hardwareFactory: function () {",
@@ -207,6 +218,8 @@ def platform_stub(
     count: str | None = None,
     fail: bool = False,
     devices: str = "[{name: 'n1'}, {name: 'n2'}, {name: 'n3'}]",
+    device_count: str | None = None,
+    dense: bool = False,
 ) -> str:
     """A platform stub built from the documented getters, plus a call log.
 
@@ -227,7 +240,12 @@ def platform_stub(
     delivered; `fail` makes the first factory call throw, which is how a refused
     call is delivered. `devices` is the workspace `Network` enumerates, as
     `{name}` objects — a `null` entry is a device the platform will not hand
-    over.
+    over, and `device_count` overrides what `getDeviceCount()` answers.
+
+    `dense` makes both enumerations answer at *every* index by cycling their
+    lists. It exists so a reading can be driven at the runtime's own addressing
+    ceiling: with a literal array, the ceiling under test would be the stub's
+    length rather than Muejeje's declared bound.
     """
     return "\n".join([
         f"var MODELS = {models};",
@@ -236,9 +254,11 @@ def platform_stub(
         "function log(name) { CALLS.push(name); }",
         *_module_descriptor_js(),
         *_device_descriptor_js(),
-        *_network_js(),
+        *_network_js(
+            dense, "DEVICES.length" if device_count is None else device_count,
+        ),
         *_factory_js("MODELS.length" if count is None else count,
-                     "true" if fail else "false"),
+                     "true" if fail else "false", dense),
     ])
 
 

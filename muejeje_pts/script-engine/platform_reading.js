@@ -30,7 +30,25 @@
  * an observed absence. */
 var MUEJEJE_PLATFORM_LIMITS = {
     MAX_WINDOW: 32,
-    MAX_OFFSET: 4096,
+    /* The highest index in each enumeration this artifact will address. Two
+     * numbers rather than one, because a model in the hardware factory and a
+     * device on the workspace are two enumerations of two different subjects,
+     * and a single shared ceiling would silently tie them together.
+     *
+     * Each bounds how far one request may reach. Neither is a claim about how
+     * many models a factory offers or how many devices a workspace holds — the
+     * platform answers that, and a reading that stops short of the count says
+     * so rather than dropping the tail (MJ-029).
+     *
+     * THEY ARE ALSO THE PUBLISHED ADDRESSING DOMAINS, which is the whole of
+     * relay closure for an index. A reading never publishes an index above its
+     * subject's ceiling, and every operation that consumes an index of that
+     * subject admits exactly this range. Bounding only the *first* index of a
+     * window is what broke that once: a window at the ceiling published
+     * `offset + limit - 1` above it, and the operations consuming those
+     * indexes then refused values this runtime had just handed out. */
+    MAX_FACTORY_INDEX: 4096,
+    MAX_WORKSPACE_INDEX: 4096,
     MAX_MODULE_TYPES: 64,
     MAX_COUNT: 65536,
     MAX_MODEL_CHARS: 256,
@@ -45,12 +63,27 @@ var MUEJEJE_PLATFORM_LIMITS = {
     MAX_MODULE_NODES: 512,
     MAX_MODULE_DEPTH: 12,
     MAX_SLOTS: 64,
-    /* The largest module-type value this artifact will pass to the platform.
-     * It is not a claim that Packet Tracer's enum stops here — nothing has
-     * measured that, and the values this artifact reports come back out of the
-     * platform in the first place. It bounds what one request may ask about,
-     * which is a decision this runtime is entitled to make (MJ-029). */
-    MAX_MODULE_TYPE: 65535,
+    /* THE `ModuleType` VALUE DOMAIN — one domain, for every producer and every
+     * consumer of a type value in this artifact.
+     *
+     * It used to be a ceiling of 65535 on what a *request* could ask about,
+     * while the readings published whatever whole number the platform
+     * answered. That is two domains, and the runtime could emit a type and
+     * then refuse the very same value: a consumer relaying a published type
+     * back was told its argument was invalid, having done nothing but read a
+     * reading this artifact produced.
+     *
+     * So the domain is not a guess at where Cisco's enum stops — nothing here
+     * has measured that, and a number presented as the platform's would be a
+     * claim about `9.0.1.0858` with nothing behind it (MJ-015). It is the
+     * range in which a whole number *is still the number the platform gave*:
+     * past it, a JSON value no longer round-trips exactly, so what came back
+     * would not be what went out. That is a property of how this runtime
+     * carries a value, which is Muejeje's to decide (MJ-029), and it bounds no
+     * work: the cost of one request does not depend on a type's magnitude.
+     * How *many* types one reading lists is bounded above, and separately. */
+    MODULE_TYPE_MIN: -9007199254740991,
+    MODULE_TYPE_MAX: 9007199254740991,
     /* A workspace has as many devices as somebody put on it, and this
      * repository has measured no ceiling on either the count or a device's
      * name. Both numbers bound what one reading will do, and a window past the
@@ -129,6 +162,30 @@ function muejejeReadingCount(value) {
 
 function muejejeReadingWholeNumber(value) {
     if (typeof value !== "number" || value % 1 !== 0) {
+        throw MUEJEJE_PLATFORM_UNUSABLE;
+    }
+    return value;
+}
+
+/* A `ModuleType` the platform answered, held to the one published domain.
+ *
+ * RELAY CLOSURE. This is the producing half of it: every type value this
+ * artifact publishes — a descriptor's supported list, a chassis module's own
+ * type, a slot type — comes through here, and the operation that consumes a
+ * type admits exactly the same domain. A producer that validated its own way
+ * would be a second domain, and the two would drift apart the first time
+ * either was edited.
+ *
+ * A value outside it is `PLATFORM_ANSWER_UNUSABLE` and not a refusal: the
+ * platform answered, and the answer is one this runtime cannot carry back
+ * unchanged, so it cannot be attributed. Reporting it anyway would publish a
+ * number nobody could relay. */
+function muejejeReadingModuleType(value) {
+    if (
+        typeof value !== "number" || value % 1 !== 0
+        || value < MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MIN
+        || value > MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MAX
+    ) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
     return value;

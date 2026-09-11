@@ -83,9 +83,11 @@ def test_the_operation_declares_its_own_argument_rules():
     dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_PLATFORM_MODULE_ARGS = {" in body
-    assert "MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX" in body
     assert "MUEJEJE_PLATFORM_MODULE_ARGS" in dispatcher
-    assert "MAX_OFFSET" not in dispatcher, "the dispatcher holds no platform bound"
+    assert "MAX_FACTORY_INDEX" not in dispatcher, (
+        "the dispatcher holds no platform bound"
+    )
 
 
 # ---------------------------------------------------------------------------

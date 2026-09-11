@@ -30,11 +30,15 @@ OPERATION = "platform.device_descriptors"
 
 RESULT_FIELDS = {
     "resolution", "unavailable_reason", "available_count", "offset", "limit",
-    "descriptors", "window_truncated",
+    "max_device_index", "descriptors", "window_truncated",
 }
+# `device_index` is the index each model was read at, reported rather than
+# counted off from `offset`: it is the value a consumer sends back to ask
+# about this model, and a reusable input a reader has to derive is one two
+# readers will derive differently.
 DESCRIPTOR_FIELDS = {
-    "model", "device_type", "model_supported", "supported_module_types",
-    "module_types_truncated",
+    "device_index", "model", "device_type", "model_supported",
+    "supported_module_types", "module_types_truncated",
 }
 
 THREE_MODELS = (

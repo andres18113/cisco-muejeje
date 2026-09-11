@@ -52,10 +52,15 @@ function muejejeAdapterSupportUnavailable(reason, deviceIndex, type) {
  * adapter's own bounds is a defect in this artifact, and fails as one. */
 function muejejeAdapterModuleTypeSupport(deviceIndex, moduleType) {
     var index = muejejeReadingArgument(
-        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
     );
+    /* The consuming half of relay closure: the domain a type is admitted in is
+     * the domain the readings publish, named from the same declaration. A
+     * ceiling of its own here would refuse values this artifact hands out. */
     var type = muejejeReadingArgument(
-        moduleType, 0, MUEJEJE_PLATFORM_LIMITS.MAX_MODULE_TYPE
+        moduleType,
+        MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MIN,
+        MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MAX
     );
     var platform = muejejeAdapterPlatform();
     if (platform === null) {
@@ -88,7 +93,7 @@ function muejejeAdapterSupportRead(platform, index, type) {
         return reading;
     }
     return muejejeAdapterSupportAsk(
-        reading, muejejeAdapterCallAt(factory, "getAvailableDeviceAt", index),
+        reading, muejejeAdapterCallWith(factory, "getAvailableDeviceAt", index),
         type
     );
 }
@@ -109,7 +114,7 @@ function muejejeAdapterSupportAsk(reading, descriptor, type) {
         muejejeAdapterCall(descriptor, "getType")
     );
     reading.module_type_supported = muejejeReadingFlag(
-        muejejeAdapterCallAt(descriptor, "isModuleTypeSupported", type)
+        muejejeAdapterCallWith(descriptor, "isModuleTypeSupported", type)
     );
     return reading;
 }

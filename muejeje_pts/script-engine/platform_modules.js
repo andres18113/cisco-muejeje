@@ -29,13 +29,15 @@
  * Declared here, by the operation they belong to, and handed to the dispatcher
  * — which owns *which* operations exist, not what each one's arguments mean.
  *
- * `device_index` is bounded by the adapter's own offset ceiling rather than by
- * a second number written down here: two copies of a bound are two bounds. */
+ * `device_index` is bounded by the factory addressing ceiling rather than by a
+ * second number written down here: two copies of a bound are two bounds, and
+ * an index `platform.device_descriptors` publishes has to be one this
+ * operation admits (MJ-029). */
 var MUEJEJE_PLATFORM_MODULE_ARGS = {
     device_index: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+        max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
     }
 };
 

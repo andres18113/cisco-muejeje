@@ -98,9 +98,10 @@ def test_the_operation_declares_its_own_argument_rules():
     dispatcher = (SCRIPT_ENGINE / "dispatcher_v6.js").read_text(encoding="utf-8")
 
     assert "MUEJEJE_PLATFORM_SUPPORT_ARGS = {" in body
-    assert "MUEJEJE_PLATFORM_LIMITS.MAX_MODULE_TYPE" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MIN" in body
+    assert "MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MAX" in body
     assert "MUEJEJE_PLATFORM_SUPPORT_ARGS" in dispatcher
-    assert "MAX_MODULE_TYPE" not in dispatcher, "the dispatcher holds no bound"
+    assert "MODULE_TYPE_" not in dispatcher, "the dispatcher holds no bound"
 
 
 # ---------------------------------------------------------------------------
@@ -201,9 +202,18 @@ def test_the_device_index_still_defaults_to_the_first_model():
     assert result["model"] == "AccessPoint-PT"
 
 
+# Past the published `ModuleType` domain in either direction. The old cases
+# here were `-1` and `65536`, and both were wrong: the readings publish those
+# values, so refusing them meant refusing this artifact's own output. What is
+# still refused is a magnitude that no longer round-trips — past it the value
+# handed back would not be the value sent (`test_relay_closure`).
+BEYOND_TYPE_DOMAIN = 9007199254740992
+
+
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"module_type": -1}, {"module_type": 65536}, {"module_type": "6"},
+    {"module_type": BEYOND_TYPE_DOMAIN}, {"module_type": -BEYOND_TYPE_DOMAIN},
+    {"module_type": "6"},
     {"module_type": 1.5}, {"module_type": 6, "device_index": -1},
     {"module_type": 6, "device_index": 5000}, {"module_type": 6, "model": "x"},
 ])
@@ -212,6 +222,22 @@ def test_an_argument_outside_its_declared_rule_is_refused(args: dict):
 
     assert response["ok"] is False
     assert response["error"]["code"] == "INVALID_ARGS"
+
+
+@requires_node
+@pytest.mark.parametrize("module_type", [-1, 0, 65536])
+def test_a_type_value_the_readings_publish_is_not_refused_here(module_type: int):
+    """The pair the old rule got wrong, pinned so it cannot come back.
+
+    `-1` and `65536` are values `platform.device_descriptors` and
+    `platform.module_descriptors` will publish if the platform answers them, so
+    this operation admitting them is not leniency — it is the contract not
+    contradicting itself (`test_relay_closure` drives the whole relay).
+    """
+    response = dispatch_v6(_request(module_type=module_type))
+
+    assert response["ok"] is True
+    assert response["result"]["module_type"] == module_type
 
 
 @requires_node

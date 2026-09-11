@@ -59,7 +59,7 @@ function muejejeAdapterModuleUnavailable(reason, deviceIndex) {
  * report an observation about a model nobody asked about. */
 function muejejeAdapterDeviceIndex(deviceIndex) {
     return muejejeReadingArgument(
-        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
     );
 }
 
@@ -101,7 +101,7 @@ function muejejeAdapterModuleRead(platform, index) {
         return reading;
     }
     return muejejeAdapterModuleTree(
-        reading, muejejeAdapterCallAt(factory, "getAvailableDeviceAt", index)
+        reading, muejejeAdapterCallWith(factory, "getAvailableDeviceAt", index)
     );
 }
 
@@ -164,7 +164,7 @@ function muejejeAdapterModuleNode(item, index) {
             muejejeAdapterCall(item.descriptor, "getModel"),
             MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
         ),
-        module_type: muejejeReadingWholeNumber(
+        module_type: muejejeReadingModuleType(
             muejejeAdapterCall(item.descriptor, "getType")
         ),
         hot_swappable: muejejeReadingFlag(
@@ -194,8 +194,8 @@ function muejejeAdapterSlotTypes(descriptor) {
     var readable = Math.min(count, MUEJEJE_PLATFORM_LIMITS.MAX_SLOTS);
     var types = [];
     for (var index = 0; index < readable; index++) {
-        types.push(muejejeReadingWholeNumber(
-            muejejeAdapterCallAt(descriptor, "getSlotTypeAt", index)
+        types.push(muejejeReadingModuleType(
+            muejejeAdapterCallWith(descriptor, "getSlotTypeAt", index)
         ));
     }
     return {types: types, truncated: count > readable};
@@ -234,7 +234,7 @@ function muejejeAdapterQueueChildren(reading, item, node, pending) {
  * observed. If a target run shows a null is ordinary there, this becomes a
  * reported position with that evidence behind it — not before (MJ-015). */
 function muejejeAdapterQueueChild(item, node, pending, position) {
-    var child = muejejeAdapterCallAt(item.descriptor, "getModuleAt", position);
+    var child = muejejeAdapterCallWith(item.descriptor, "getModuleAt", position);
     if (!child) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }

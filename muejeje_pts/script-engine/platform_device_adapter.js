@@ -27,6 +27,7 @@ function muejejeAdapterUnavailable(reason, offset, limit) {
         available_count: null,
         offset: offset,
         limit: limit,
+        max_device_index: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX,
         descriptors: [],
         window_truncated: false
     };
@@ -42,7 +43,7 @@ function muejejeAdapterUnavailable(reason, offset, limit) {
 function muejejeAdapterWindow(offset, limit) {
     return {
         offset: muejejeReadingArgument(
-            offset, 0, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+            offset, 0, MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
         ),
         limit: muejejeReadingArgument(
             limit, 1, MUEJEJE_PLATFORM_LIMITS.MAX_WINDOW
@@ -73,6 +74,17 @@ function muejejeAdapterDeviceDescriptors(offset, limit) {
     }
 }
 
+/* RELAY CLOSURE FOR AN INDEX. The window stops at the highest factory index
+ * this runtime addresses, not merely at `offset + limit`: bounding the first
+ * index of a window and not its last let a window at the ceiling publish
+ * indexes above it, and `platform.module_descriptors` and
+ * `platform.module_type_support` would then refuse an index this very
+ * operation had just handed out (MJ-029).
+ *
+ * The ceiling is reported rather than left to be inferred from a count. A
+ * consumer paging the factory has to know where the addressable range ends,
+ * and `available_count` is the platform's answer about how many models exist —
+ * not a statement about which of them this runtime will address. */
 function muejejeAdapterRead(platform, window) {
     var factory = muejejeAdapterCall(
         muejejeAdapterCall(platform, "hardwareFactory"), "devices"
@@ -80,11 +92,15 @@ function muejejeAdapterRead(platform, window) {
     var count = muejejeReadingCount(
         muejejeAdapterCall(factory, "getAvailableDeviceCount")
     );
-    var last = Math.min(count, window.offset + window.limit);
+    var last = Math.min(
+        count, window.offset + window.limit,
+        MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX + 1
+    );
     var descriptors = [];
     for (var index = window.offset; index < last; index++) {
         descriptors.push(muejejeAdapterDescriptor(
-            muejejeAdapterCallAt(factory, "getAvailableDeviceAt", index)
+            muejejeAdapterCallWith(factory, "getAvailableDeviceAt", index),
+            index
         ));
     }
     return {
@@ -93,14 +109,25 @@ function muejejeAdapterRead(platform, window) {
         available_count: count,
         offset: window.offset,
         limit: window.limit,
+        max_device_index: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX,
         descriptors: descriptors,
         window_truncated: count > last
     };
 }
 
-function muejejeAdapterDescriptor(descriptor) {
+/* One model, and the index it was read at.
+ *
+ * The index is reported explicitly rather than left to be counted off from
+ * `offset`: it is the value a consumer sends back to ask about this model, and
+ * a reusable input a reader has to derive is one two readers will derive
+ * differently. */
+function muejejeAdapterDescriptor(descriptor, index) {
+    if (!descriptor) {
+        throw MUEJEJE_PLATFORM_UNUSABLE;
+    }
     var supported = muejejeAdapterModuleTypes(descriptor);
     return {
+        device_index: index,
         model: muejejeReadingText(
             muejejeAdapterCall(descriptor, "getModel"),
             MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
@@ -129,8 +156,8 @@ function muejejeAdapterModuleTypes(descriptor) {
     var readable = Math.min(count, MUEJEJE_PLATFORM_LIMITS.MAX_MODULE_TYPES);
     var types = [];
     for (var index = 0; index < readable; index++) {
-        types.push(muejejeReadingWholeNumber(
-            muejejeAdapterCallAt(descriptor, "getSupportedModuleTypeAt", index)
+        types.push(muejejeReadingModuleType(
+            muejejeAdapterCallWith(descriptor, "getSupportedModuleTypeAt", index)
         ));
     }
     return {types: types, truncated: count > readable};

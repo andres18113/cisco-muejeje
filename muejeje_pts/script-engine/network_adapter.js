@@ -36,6 +36,7 @@ function muejejeAdapterInventoryUnavailable(reason, offset, limit) {
         available_count: null,
         offset: offset,
         limit: limit,
+        max_device_index: MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX,
         devices: [],
         window_truncated: false
     };
@@ -46,7 +47,7 @@ function muejejeAdapterInventoryUnavailable(reason, offset, limit) {
 function muejejeAdapterInventoryWindow(offset, limit) {
     return {
         offset: muejejeReadingArgument(
-            offset, 0, MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+            offset, 0, MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX
         ),
         limit: muejejeReadingArgument(
             limit, 1, MUEJEJE_PLATFORM_LIMITS.MAX_DEVICE_WINDOW
@@ -78,7 +79,10 @@ function muejejeAdapterInventoryRead(platform, window) {
     var count = muejejeReadingCount(
         muejejeAdapterCall(network, "getDeviceCount")
     );
-    var last = Math.min(count, window.offset + window.limit);
+    var last = Math.min(
+        count, window.offset + window.limit,
+        MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX + 1
+    );
     var devices = [];
     for (var index = window.offset; index < last; index++) {
         devices.push(muejejeAdapterInventoryEntry(network, index));
@@ -89,6 +93,7 @@ function muejejeAdapterInventoryRead(platform, window) {
         available_count: count,
         offset: window.offset,
         limit: window.limit,
+        max_device_index: MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_INDEX,
         devices: devices,
         window_truncated: count > last
     };
@@ -102,7 +107,7 @@ function muejejeAdapterInventoryRead(platform, window) {
  * not hand over is an answer that cannot be attributed, exactly as a missing
  * descriptor inside the device count is. */
 function muejejeAdapterInventoryEntry(network, index) {
-    var device = muejejeAdapterCallAt(network, "getDeviceAt", index);
+    var device = muejejeAdapterCallWith(network, "getDeviceAt", index);
     if (!device) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }

@@ -40,7 +40,7 @@ OPERATION = "network.device_inventory"
 
 RESULT_FIELDS = {
     "resolution", "unavailable_reason", "available_count", "offset", "limit",
-    "devices", "window_truncated",
+    "max_device_index", "devices", "window_truncated",
 }
 DEVICE_FIELDS = {"index", "name"}
 

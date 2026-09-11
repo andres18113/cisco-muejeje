@@ -85,7 +85,7 @@ Six operations are admitted, all read-only:
 | --- | --- |
 | `runtime.identify` | *who is this* — name, version, session token, provenance, the lifecycle the module recorded |
 | `runtime.capabilities` | *what does it admit now* — session token, protocol versions, each whitelisted operation with its `read_only` flag, and the kernel features behind them |
-| `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the DeviceType and the module types the platform reports for it, or a reason the reading was unavailable |
+| `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the index it was read at, the DeviceType and the module types the platform reports for it, plus the highest index this runtime will address, or a reason the reading was unavailable |
 | `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a factory index, node by node, each with the index it was read at, its type, its slot types and its hot-swap flag, or a reason the reading was unavailable |
 | `platform.module_type_support` | *does this model accept this module type* — the descriptor's own answer for one type value, with the model and DeviceType read back beside it, or a reason the reading was unavailable |
 | `network.device_inventory` | *what does this Packet Tracer currently hold* — a bounded window over the devices on the workspace, each with the index it was read at and the name the platform gave it, or a reason the reading was unavailable |
@@ -97,6 +97,14 @@ two ask about the model at one of those indexes — its chassis, or whether it
 accepts a module type the platform itself named. None of them needs a
 DeviceType, a module-type table or a catalogue of model names to be useful,
 which is what keeps them free of a Cisco enum mirror (`MJ-014`).
+
+**What one operation publishes, the next one admits.** A factory index and a
+`ModuleType` are values a consumer relays among them, so each has one declared
+domain and no consuming rule narrows it: this runtime never hands out
+a value it will then refuse (`MJ-029`). Both are reported rather than left to
+be derived — a model carries the index it was read at, and a window reports the
+highest index this runtime will address, because `available_count` says how
+many models the platform has and not which of them can be asked about.
 
 `network.*` is the second namespace, and the difference from `platform.*` is
 worth knowing: the factory describes what a *model* can be, and never changes

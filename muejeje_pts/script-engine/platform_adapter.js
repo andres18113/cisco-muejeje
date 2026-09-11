@@ -127,13 +127,20 @@ function muejejeAdapterCall(receiver, name) {
     }
 }
 
-/* The same boundary for the indexed pair — `getAvailableDeviceAt(int)` and its
- * kind. A separate function rather than an optional argument, so a call site
- * that forgets the index cannot silently become the no-argument call. */
-function muejejeAdapterCallAt(receiver, name, index) {
+/* The same boundary for a member that takes one argument. A separate function
+ * rather than an optional parameter, so a call site that forgets the argument
+ * cannot silently become the no-argument call.
+ *
+ * The argument is named `argument` and not `index` because it is not always
+ * one: `getAvailableDeviceAt(int)` and `getSlotTypeAt(int)` are addressed by
+ * position, while `isModuleTypeSupported(ModuleType)` is handed a *value* the
+ * platform itself produced. Calling that value an index would say the type
+ * space is an enumeration this artifact walks, which is the numeric-mirror
+ * reading MJ-014 exists to prevent. */
+function muejejeAdapterCallWith(receiver, name, argument) {
     muejejeAdapterAdmitted(receiver, name);
     try {
-        return receiver[name](index);
+        return receiver[name](argument);
     } catch (platformError) {
         throw MUEJEJE_PLATFORM_CALL_FAILED;
     }

@@ -20,19 +20,26 @@
  */
 
 /* The arguments this operation admits, and the rule each value must satisfy.
- * Both are bounded by the adapter's own ceilings rather than by a second set of
- * numbers written down here: two copies of a bound are two bounds. */
+ * Both are bounded by the declared domains rather than by a second set of
+ * numbers written down here: two copies of a bound are two bounds.
+ *
+ * RELAY CLOSURE. Both arguments are values this artifact *publishes*.
+ * `device_index` is what `platform.device_descriptors` reports for a model;
+ * `module_type` is what that operation and `platform.module_descriptors`
+ * report as a type. So each rule names the domain those readings publish in,
+ * and cannot narrow it: a bound of its own here would refuse a value a
+ * consumer read out of a reading this same artifact produced (MJ-029). */
 var MUEJEJE_PLATFORM_SUPPORT_ARGS = {
     device_index: {
         kind: "integer",
         min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_OFFSET
+        max: MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_INDEX
     },
     module_type: {
         kind: "integer",
         required: true,
-        min: 0,
-        max: MUEJEJE_PLATFORM_LIMITS.MAX_MODULE_TYPE
+        min: MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MIN,
+        max: MUEJEJE_PLATFORM_LIMITS.MODULE_TYPE_MAX
     }
 };
 
@@ -40,12 +47,27 @@ var MUEJEJE_PLATFORM_SUPPORT_ARGS = {
  * for the chassis reading. `module_type` is *required*, and no default would be
  * honest: every value in that space is a different question, and picking one
  * would answer a question the caller did not ask. Admission refuses a request
- * that omits it, so a value is always present here. */
+ * that omits it, so a value is always present here — which is why it is read
+ * with no fallback rather than with one nothing can reach. */
 function muejejePlatformModuleTypeSupport(args, context) {
     return muejejeAdapterModuleTypeSupport(
         muejejePlatformSupportArgument(args, "device_index", 0),
-        muejejePlatformSupportArgument(args, "module_type", 0)
+        muejejePlatformSupportRequired(args, "module_type")
     );
+}
+
+/* An argument with no default, read without one.
+ *
+ * A fallback here would be a lie in the shape of a constant: admission has
+ * already refused a request that omits a required argument, so this is never
+ * reached for a caller's request — and if it ever were, answering for type `0`
+ * would report a reading about a question nobody asked. That is a defect in
+ * this artifact, and it fails as one (MJ-022, MJ-031). */
+function muejejePlatformSupportRequired(args, name) {
+    if (!muejejePlatformSupplied(args, name)) {
+        throw new Error("muejeje: a required argument reached the operation absent");
+    }
+    return args[name];
 }
 
 function muejejePlatformSupplied(args, name) {
