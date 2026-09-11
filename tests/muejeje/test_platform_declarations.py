@@ -57,8 +57,14 @@ PLATFORM_SOURCE_FILES: tuple[str, ...] = PLATFORM_ADAPTER_FILES + (
 # The vocabulary a platform reading is made of: what an outcome is called, why
 # one was unavailable, and which calls the boundary admits. Naming any of it is
 # answering for the platform, which is what a declared platform source is for.
+#
+# All four unavailable reasons, not three. `MEMBER_ABSENT` was missing from this
+# sweep, so the one word that says "nothing was called" could have been named
+# from a kernel file with no gate watching — and that is the reason a reader is
+# most likely to reach for when inventing a reading.
 READING_VOCABULARY = (
-    "MUEJEJE_PLATFORM_ABSENT", "MUEJEJE_PLATFORM_CALL_FAILED",
+    "MUEJEJE_PLATFORM_ABSENT", "MUEJEJE_PLATFORM_MEMBER_ABSENT",
+    "MUEJEJE_PLATFORM_CALL_FAILED",
     "MUEJEJE_PLATFORM_UNUSABLE", "MUEJEJE_PLATFORM_OBSERVED",
     "MUEJEJE_PLATFORM_UNAVAILABLE", "MUEJEJE_PLATFORM_READ_ONLY_CALLS",
 )

@@ -74,12 +74,16 @@ def test_no_platform_object_is_an_observation_not_a_failure():
 
 @requires_node
 def test_a_refused_platform_call_is_reported_without_its_error():
-    """A denied privilege is one cause of this, and it is not named as one.
+    """The call did not return, and nothing here says why.
 
-    The adapter cannot tell a denied privilege from any other engine-side
-    refusal, so it reports that the call did not return and stops there. The
-    thrown value never reaches the result: a consumer that could read it would
-    be depending on an internal (MJ-005).
+    What made a platform call fail is not something the adapter can see, so it
+    reports the symptom and stops. In particular it names no privilege: which
+    privilege any of these calls needs, and what a target does with a Script
+    Module that has none, are two things this repository has not measured, so
+    a reading that named one would be a claim about `9.0.1.0858` with nothing
+    behind it (MJ-015, MJ-032). The thrown value never reaches the result
+    either: a consumer that could read it would be depending on an internal
+    (MJ-005).
     """
     result = dispatch_v6(
         _request(), prelude=platform_stub(THREE_MODELS, fail=True),
@@ -157,10 +161,10 @@ def test_a_defect_in_this_artifact_is_never_reported_as_a_platform_failure():
 
     `PLATFORM_CALL_FAILED` is an *observation about Packet Tracer* — the
     module asked and the call did not return — and a consumer may record it as
-    one, on a target, as the reading that says a privilege is missing
-    (MJ-031, MJ-032). A bug in our own reading code that came back under that
-    name would therefore be evidence about the platform that nothing platform
-    ever produced, and it would be indistinguishable from the real thing.
+    one, on a target, as target evidence about this build (MJ-031). A bug in
+    our own reading code that came back under that name would therefore be
+    evidence about the platform that nothing platform ever produced, and it
+    would be indistinguishable from the real thing.
 
     So only two things become an unavailable reading: a call this adapter made
     at its declared platform-call boundary, and an answer its own validators

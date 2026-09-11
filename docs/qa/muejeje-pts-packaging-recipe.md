@@ -171,7 +171,7 @@ outcome is a result worth recording verbatim**:
 
 | `result.resolution` | `unavailable_reason` | What it establishes |
 | --- | --- | --- |
-| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It does not distinguish a denied privilege from any other refusal — the runtime cannot tell, and does not guess (`MJ-031`) |
+| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It says nothing about *why* — the runtime cannot see that, and does not guess. In particular it is not a privilege reading: which privilege these calls need, and what a target does without one, are both unmeasured here (`MJ-031`, `MJ-032`) |
 | `UNAVAILABLE` | `PLATFORM_ABSENT` | there was no `ipc` object in the Script Engine at all. That would be a fact about the engine, not about privileges, and it needs recording as such |
 | `UNAVAILABLE` | `PLATFORM_MEMBER_ABSENT` | the object was there and did not offer the member. Nothing was called, so this is a fact about the interface rather than about permission — record which member |
 | `UNAVAILABLE` | `PLATFORM_ANSWER_UNUSABLE` | Packet Tracer answered and the answer could not be attributed. Record the whole envelope: this is the interesting failure |

@@ -199,7 +199,7 @@ def test_an_index_past_the_end_is_an_answer_not_an_unreadable_platform():
     """The factory said how many models it offers, and offers none there.
 
     Reporting that as an unavailable reading would send a consumer looking for
-    a privilege problem that is not there.
+    a platform fault that nothing had.
     """
     result = _observed(device_index=9)
 

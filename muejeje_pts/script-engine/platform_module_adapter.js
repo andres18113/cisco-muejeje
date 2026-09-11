@@ -85,7 +85,7 @@ function muejejeAdapterModuleDescriptors(deviceIndex) {
 
 /* An index past the end is an answer, not a failure: the factory said how many
  * models it offers, and it offers none there. Reporting that as an unreadable
- * platform would send a consumer looking for a privilege problem. */
+ * platform would send a consumer looking for a fault that nothing had. */
 function muejejeAdapterModuleRead(platform, index) {
     var factory = muejejeAdapterCall(
         muejejeAdapterCall(platform, "hardwareFactory"), "devices"

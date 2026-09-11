@@ -20,9 +20,8 @@
  * Anything else that throws in a platform adapter is a defect in this
  * artifact, and it is left to reach the dispatcher as `ENGINE_EXCEPTION` —
  * reporting it as `PLATFORM_CALL_FAILED` would manufacture an observation
- * about Packet Tracer that Packet Tracer never produced, and on a target,
- * where that reading is what a missing privilege looks like, a consumer could
- * not tell the two apart (MJ-022).
+ * about Packet Tracer that Packet Tracer never produced, and a consumer
+ * recording target evidence could not tell the two apart (MJ-022).
  *
  * WHAT IS READ THROUGH IT lives beside it, one adapter per subject: a boundary
  * and the things read across it are different responsibilities, and this file
