@@ -24,7 +24,7 @@ from urllib.request import Request, urlopen
 
 from ...domain.enterprise.models.capabilities import PoEAuthorizedBinding
 from ...domain.enterprise.models.discovery import DeviceInitializationResult
-from ...domain.enterprise.models.poe2 import PoE2Capture
+from ...domain.enterprise.models.poe_capacity import PoE3BCapture
 from ...domain.enterprise.models.poe_delivery import (
     PoEDeliveryDeviceIdentity,
     PoEDeliveryLinkIdentity,
@@ -139,7 +139,7 @@ class PoE3BSessionTransport(Protocol):
     ) -> None: ...
     def capture_inline_status(
         self, switch_name: str, switch_ports: tuple[str, ...], label: str,
-    ) -> PoE2Capture: ...
+    ) -> PoE3BCapture: ...
     def delete_device(self, name: str) -> bool: ...
     def retire_session_residue(
         self, preexisting: frozenset[str],
@@ -413,7 +413,7 @@ class PacketTracerPoE3BSession:
             ),
         )
 
-    def capture_inline_status(self, label: str) -> PoE2Capture:
+    def capture_inline_status(self, label: str) -> PoE3BCapture:
         return self._call(
             PoE3BSessionOperation.INLINE_CAPTURE,
             lambda: self._transport.capture_inline_status(
@@ -601,7 +601,7 @@ class PacketTracerPoE3BLiveTransport:
 
     def capture_inline_status(
         self, switch_name: str, switch_ports: tuple[str, ...], label: str,
-    ) -> PoE2Capture:
+    ) -> PoE3BCapture:
         started = _utc()
         first = self._observer.observe_poe_inline_status(
             switch_name, switch_ports,
@@ -614,7 +614,7 @@ class PacketTracerPoE3BLiveTransport:
         first_payload = _serialize_observation(first)
         second_payload = _serialize_observation(second)
         stable = first.raw_output == second.raw_output
-        return PoE2Capture(
+        return PoE3BCapture(
             label=label,
             started_at_utc=started,
             completed_at_utc=_utc(),

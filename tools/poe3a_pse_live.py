@@ -702,6 +702,7 @@ def execute_governed_qualification(
                 timeout_seconds=150,
             ).model_dump(mode="json")
             before_modules = session.observe_factory_module()
+            factory_preparation["before"] = asdict(before_modules)
             before_power_capture = session.capture_inline_status("PSU_BEFORE")
             raw_files[before_power_capture.raw_file] = (
                 before_power_capture.observation["raw_output"].encode()
@@ -710,7 +711,6 @@ def execute_governed_qualification(
                 before_power_capture,
                 session.switch_name,
             )
-            factory_preparation["before"] = asdict(before_modules)
             factory_preparation["power_before"] = (
                 before_power_capture.model_dump(mode="json")
             )

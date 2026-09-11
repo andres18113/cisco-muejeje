@@ -457,11 +457,12 @@ def test_runner_cycle_uses_only_the_instrumented_bounded_session_transport(
 
 class _Instrumented3650Transport:
     def __init__(self, runner, plan, *, target_determined=True,
-                 after_available=390.0) -> None:
+                 after_available=390.0, capture_error_label=None) -> None:
         self.runner = runner
         self.plan = plan
         self.target_determined = target_determined
         self.after_available = after_available
+        self.capture_error_label = capture_error_label
         self.calls = []
         self.names: set[str] = set()
         self.factory = None
@@ -555,6 +556,8 @@ class _Instrumented3650Transport:
 
     def capture_inline_status(self, switch_name, switch_ports, label):
         self.record(self.runner.PoE3BSessionOperation.INLINE_CAPTURE)
+        if label == self.capture_error_label:
+            raise ValueError("synthetic typed capture refusal")
         available = (
             0.0 if label == "PSU_BEFORE"
             else self.after_available if label == "PSU_AFTER"
@@ -594,7 +597,7 @@ class _Instrumented3650Transport:
 
 
 def _execute_3650(runner, tmp_identity, *, target_determined=True,
-                  after_available=390.0):
+                  after_available=390.0, capture_error_label=None):
     plan = runner.governed_plan("3650-24PS")
     baseline, _restoration, _final = facts()
     artifacts = runner.reserve_artifacts(tmp_identity)
@@ -603,6 +606,7 @@ def _execute_3650(runner, tmp_identity, *, target_determined=True,
         plan,
         target_determined=target_determined,
         after_available=after_available,
+        capture_error_label=capture_error_label,
     )
     session = runner.PacketTracerPoE3BSession(
         artifacts.run_id,
@@ -701,3 +705,22 @@ def test_3650_wrong_power_delta_stops_after_one_install_and_before_phones(
     assert observed.count(
         runner.PoE3BSessionOperation.FIXTURE_DEVICE_CREATE,
     ) == 1
+
+
+def test_3650_preserves_the_acquired_slot_observation_if_power_capture_refuses(
+    runner,
+) -> None:
+    """Moving persistence after capture would lose the causal pre-mutation fact."""
+
+    execution, session, _transport = _execute_3650(
+        runner,
+        "offline-3650-capture-refusal",
+        capture_error_label="PSU_BEFORE",
+    )
+
+    observed = tuple(record.operation for record in session.dispatches)
+    assert execution.snapshot is None
+    assert execution.factory_preparation["before"]["target_determined"] is True
+    assert execution.factory_preparation["before"]["target_slot"] == "2/4"
+    assert "power_before" not in execution.factory_preparation
+    assert runner.PoE3BSessionOperation.INSTALL_FACTORY_MODULE not in observed

@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import replace
 import importlib
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -201,3 +202,63 @@ def test_real_observer_malformed_never_row_cannot_cross_persistence(
     else:
         snapshot = runner.build_qualification_snapshot(**inputs)
         assert snapshot.session.results[0].verified is True
+
+
+@pytest.mark.parametrize("label", ["PSU_BEFORE", "PSU_AFTER"])
+def test_live_transport_accepts_the_closed_factory_power_capture_labels(
+    runner,
+    label,
+) -> None:
+    """Removing either PoE-3B label must fail at the real capture boundary."""
+
+    ios = importlib.import_module(runner.parse_show_power_inline.__module__)
+    observer_module = importlib.import_module(
+        "packet_tracer_mcp.infrastructure.execution.poe_inline_observer"
+    )
+    session_module = importlib.import_module(
+        "packet_tracer_mcp.infrastructure.execution.poe3b_session"
+    )
+    plan = runner.governed_plan("3650-24PS")
+    raw = (
+        Path(__file__).resolve().parents[1]
+        / "docs/reference/cp-scale/canonical-live-evidence"
+        / "poe3b-router0-b-3650-11-20260910T234609Z-8c86e3b4"
+        / "auto_1.txt"
+    ).read_text(encoding="utf-8")
+    dispatch = ios.IosCommandResult(
+        device_name="SW",
+        query_id=ios.IosQualificationQueryId.SHOW_POWER_INLINE,
+        executed=True,
+        output=raw,
+        output_complete=True,
+        session_state=ios.IosSessionState.EXEC_PROMPT_READY,
+        fresh_output_observed=True,
+        device_identity_provenance="confirmed_unique",
+        observed_device_name="SW",
+        dispatch_classification="dispatched",
+        echo_observed="show power inline",
+        expected_prompt="Switch#",
+        pager_continuation="continued",
+        pager_pages_captured=2,
+        truncated_by_pager=False,
+    )
+    transport = session_module.PacketTracerPoE3BLiveTransport(
+        bridge=SimpleNamespace(
+            send=lambda script: True,
+            send_and_wait=lambda script, timeout: None,
+        ),
+        sleeper=lambda seconds: None,
+    )
+    transport._observer = observer_module.GovernedPoEInlineObserver(
+        SimpleNamespace(qualify=lambda *args: dispatch)
+    )
+
+    acquired = transport.capture_inline_status(
+        "SW",
+        tuple(binding.switch_port for binding in plan.bindings),
+        label,
+    )
+
+    assert acquired.label == label
+    assert acquired.raw_file == label.lower() + ".txt"
+    assert acquired.stable is True

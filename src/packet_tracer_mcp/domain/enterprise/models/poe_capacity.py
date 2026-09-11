@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from .capabilities import PoEAuthorizedBinding
+from .poe2 import PoE2Capture
+
+
+class PoE3BCapture(PoE2Capture):
+    """Closed capture vocabulary for capacity plus its causal PSU boundary."""
+
+    label: Literal[
+        "PSU_BEFORE", "PSU_AFTER", "AUTO_1", "NEVER", "AUTO_2", "RESTORE",
+    ]
 
 
 class PoEModelQualificationPlan(BaseModel):

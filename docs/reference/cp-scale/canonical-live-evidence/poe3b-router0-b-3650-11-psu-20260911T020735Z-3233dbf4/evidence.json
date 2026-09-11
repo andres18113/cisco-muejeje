@@ -1,0 +1,826 @@
+{
+  "START_HEAD": "580a64586e51cfb813fc2af48de5bb9a99f535af",
+  "baseline": {
+    "actions_run": {
+      "conclusion": "success",
+      "databaseId": 34550509691,
+      "headSha": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+      "name": "tests",
+      "status": "completed",
+      "url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34550509691"
+    },
+    "boot_before_factory": {
+      "attempts": 1,
+      "booting": false,
+      "command_prompt": false,
+      "components_seen": [],
+      "configuration_channel": false,
+      "elapsed_ms": 312,
+      "failure_reason": "",
+      "power": null,
+      "state": "operational_ready",
+      "terminal_available": true,
+      "terminal_kind": "ios_command_line"
+    },
+    "bridge_healthy": true,
+    "devices": [],
+    "environment": {
+      "devices": 0,
+      "found": true,
+      "links": 0,
+      "pt_version": "9.0.1.0858",
+      "saved_filename": "",
+      "simulation_mode": false
+    },
+    "fresh_authenticated_bridge": {
+      "active_pt_transport": "file_bridge_user_acl",
+      "authenticated_status": 200,
+      "pid": 28332,
+      "token_fingerprint": "993646fca56770f5",
+      "unauthenticated_status": 401,
+      "webview_http_connection_claimed": false
+    },
+    "import_isolation": {
+      "executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+      "loaded_namespaces": [
+        "packet_tracer_mcp"
+      ],
+      "production_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py",
+      "result": "ISOLATED: Aislamiento de import verificado. (C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\src\\packet_tracer_mcp\\__init__.py)"
+    },
+    "initial_START_HEAD_verified": true,
+    "inventory_fingerprint": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "jobs": [
+      {
+        "conclusion": "success",
+        "head_sha": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34550509691/job/103112232512",
+        "name": "pytest (windows-latest, 3.11)"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34550509691/job/103112232732",
+        "name": "pytest (windows-latest, 3.13)"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34550509691/job/103112232798",
+        "name": "pytest (ubuntu-latest, 3.13)"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+        "html_url": "https://github.com/andres18113/cisco-muejeje/actions/runs/34550509691/job/103112232869",
+        "name": "pytest (ubuntu-latest, 3.11)"
+      }
+    ],
+    "local_head": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+    "mailbox_entries": [],
+    "processes": [
+      {
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" ",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "Name": "PacketTracer.exe",
+        "ParentProcessId": 61140,
+        "ProcessId": 24796
+      },
+      {
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\"  --progress-bar-server",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "Name": "PacketTracer.exe",
+        "ParentProcessId": 24796,
+        "ProcessId": 53640
+      },
+      {
+        "CommandLine": "\"C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe\" tools\\poe3a_pse_live.py --execute --model 3650-24PS --qualification-id router0-b-3650-11-psu",
+        "ExecutablePath": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+        "Name": "python.exe",
+        "ParentProcessId": 25204,
+        "ProcessId": 39308
+      },
+      {
+        "CommandLine": "\"C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" tools\\poe3a_pse_live.py --execute --model 3650-24PS --qualification-id router0-b-3650-11-psu",
+        "ExecutablePath": "C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "Name": "python.exe",
+        "ParentProcessId": 39308,
+        "ProcessId": 28332
+      }
+    ],
+    "qualification_plan": {
+      "bindings": [
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/2"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/3"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/5"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/6"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/7"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/8"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/9"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/10"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/11"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/12"
+        },
+        {
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "switch_port": "GigabitEthernet1/0/13"
+        }
+      ],
+      "candidate_model": "3650-24PS",
+      "packet_tracer_build": "9.0.1.0858",
+      "simultaneous_active_ports": 11
+    },
+    "remote_head": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+    "source_branch": "feature/runtime-ripv2",
+    "source_tree": "d79ede032325d294b7342794e9ffcd0b9adb69c1",
+    "strict_e5_manual_allowlist": true,
+    "upstream": "cisco/feature/runtime-ripv2",
+    "upstream_head": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+    "verified_at_utc": "2026-09-11T02:07:35.448954Z",
+    "worktree_clean": true
+  },
+  "captures": [],
+  "completed_at_utc": "2026-09-11T02:09:06.845250Z",
+  "experiment_id": "poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4",
+  "factory_preparation": {},
+  "file_operation_ledger": {
+    "attempted_operations": [],
+    "authorized_operations": [],
+    "completed_operations": [],
+    "denied_operations": [],
+    "indeterminate_operations": [],
+    "invoked_operations": []
+  },
+  "fixture": {
+    "endpoints": [],
+    "links": [],
+    "switch": {
+      "model": "3650-24PS",
+      "name": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4",
+      "observed_ports": [
+        "GigabitEthernet1/0/2",
+        "GigabitEthernet1/0/3",
+        "GigabitEthernet1/0/5",
+        "GigabitEthernet1/0/6",
+        "GigabitEthernet1/0/7",
+        "GigabitEthernet1/0/8",
+        "GigabitEthernet1/0/9",
+        "GigabitEthernet1/0/10",
+        "GigabitEthernet1/0/11",
+        "GigabitEthernet1/0/12",
+        "GigabitEthernet1/0/13"
+      ]
+    }
+  },
+  "frozen_live_sha": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+  "integration_result": "NOT_ADMITTED",
+  "kind": "poe3b-pse-capacity-qualification",
+  "live_session_safety": null,
+  "packet_tracer_build": "9.0.1.0858",
+  "problems": [
+    "ValidationError: 1 validation error for PoE2Capture\nlabel\n  Input should be 'AUTO_1', 'NEVER', 'AUTO_2' or 'RESTORE' [type=literal_error, input_value='PSU_BEFORE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error"
+  ],
+  "productive": false,
+  "pse_dimensions": null,
+  "pse_scope": null,
+  "psu_hypothesis": null,
+  "qualification_id": "router0-b-3650-11-psu",
+  "qualification_plan": {
+    "bindings": [
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/2"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/3"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/5"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/6"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/7"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/8"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/9"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/10"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/11"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/12"
+      },
+      {
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch",
+        "switch_port": "GigabitEthernet1/0/13"
+      }
+    ],
+    "candidate_model": "3650-24PS",
+    "packet_tracer_build": "9.0.1.0858",
+    "simultaneous_active_ports": 11
+  },
+  "restoration": {
+    "attempted": [
+      "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4"
+    ],
+    "created": [
+      "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4"
+    ],
+    "deleted": [
+      "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4"
+    ],
+    "environment_after": {
+      "devices": 0,
+      "found": true,
+      "links": 0,
+      "pt_version": "9.0.1.0858",
+      "saved_filename": "",
+      "simulation_mode": false
+    },
+    "fixture_removed": true,
+    "fresh_readback": {
+      "completed_at_utc": "2026-09-11T02:09:04.194955Z",
+      "expected_prompt": "Switch#",
+      "label": "RESTORE",
+      "observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 1421,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4",
+          "output": "show power inline\nAvailable:0.0(w)  Used:0.0(w)  Remaining:0.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nGig1/0/1  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/2  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/3  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/4  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/5  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/6  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/7  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/8  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/9  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/10 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/11 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/12 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/13 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/14 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/15 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/16 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/17 auto   off        0.0     n/a                 n/a   30.0\n Gig1/0/18 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/19 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/20 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/21 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/22 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/23 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/24 auto   off        0.0     n/a                 n/a   30.0\nSwitch#\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "completed",
+          "pager_pages_captured": 2,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "rolled_suffix_anchor"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4",
+        "ports": [
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/2",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/2",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/3",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/3",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/5",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/5",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/6",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/6",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/7",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/7",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/8",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/8",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/9",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/9",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/10",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/10",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/11",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/11",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/12",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/12",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/13",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/13",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:0.0(w)  Used:0.0(w)  Remaining:0.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nGig1/0/1  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/2  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/3  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/4  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/5  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/6  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/7  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/8  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/9  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/10 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/11 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/12 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/13 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/14 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/15 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/16 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/17 auto   off        0.0     n/a                 n/a   30.0\n Gig1/0/18 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/19 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/20 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/21 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/22 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/23 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/24 auto   off        0.0     n/a                 n/a   30.0\nSwitch#\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 0.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4"
+      },
+      "raw_file": "restore.txt",
+      "raw_sha256": "36eefd3b83622f8167a5c4bd147be6034f41ae293df7d47332a2dfc45dfacf78",
+      "repeat_observation": {
+        "capture_complete": true,
+        "command_result": {
+          "device_identity_evidence": "session_transcript_continuity",
+          "device_identity_provenance": "confirmed_unique",
+          "device_name": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4",
+          "dispatch_attempts": 1,
+          "dispatch_classification": "dispatched",
+          "duration_ms": 2530,
+          "echo_observed": "show power inline",
+          "executed": true,
+          "expected_prompt": "Switch#",
+          "failure_reason": "",
+          "fresh_output_observed": true,
+          "observed_device_name": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4",
+          "output": "show power inline\nAvailable:0.0(w)  Used:0.0(w)  Remaining:0.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nGig1/0/1  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/2  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/3  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/4  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/5  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/6  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/7  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/8  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/9  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/10 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/11 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/12 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/13 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/14 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/15 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/16 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/17 auto   off        0.0     n/a                 n/a   30.0\n Gig1/0/18 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/19 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/20 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/21 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/22 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/23 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/24 auto   off        0.0     n/a                 n/a   30.0\nSwitch#\nSwitch#",
+          "output_complete": true,
+          "pager_continuation": "completed",
+          "pager_pages_captured": 2,
+          "query_id": "qualification_show_power_inline",
+          "session_state": "exec_prompt_ready",
+          "truncated_by_pager": false,
+          "window_strategy": "prefix_delta"
+        },
+        "device_identity_provenance": "confirmed_unique",
+        "fresh_output_observed": true,
+        "observed_device_name": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4",
+        "ports": [
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/2",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/2",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/3",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/3",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/5",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/5",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/6",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/6",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/7",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/7",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/8",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/8",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/9",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/9",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/10",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/10",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/11",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/11",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/12",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/12",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          },
+          {
+            "delivery": "not_delivering",
+            "port": "GigabitEthernet1/0/13",
+            "row": {
+              "admin": "auto",
+              "device": "n/a",
+              "interface": "Gig1/0/13",
+              "max_watts": 30.0,
+              "oper": "off",
+              "power_class": "n/a",
+              "power_watts": 0.0
+            }
+          }
+        ],
+        "raw_output": "show power inline\nAvailable:0.0(w)  Used:0.0(w)  Remaining:0.0(w)\n\nInterface Admin  Oper       Power   Device              Class Max\n                            (Watts)\n--------- ------ ---------- ------- ------------------- ----- ----\nGig1/0/1  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/2  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/3  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/4  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/5  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/6  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/7  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/8  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/9  auto   off        0.0     n/a                 n/a   30.0\nGig1/0/10 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/11 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/12 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/13 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/14 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/15 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/16 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/17 auto   off        0.0     n/a                 n/a   30.0\n Gig1/0/18 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/19 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/20 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/21 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/22 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/23 auto   off        0.0     n/a                 n/a   30.0\nGig1/0/24 auto   off        0.0     n/a                 n/a   30.0\nSwitch#\nSwitch#",
+        "refusal_reason": "",
+        "status": "observed",
+        "summary_used_watts": 0.0,
+        "switch_identity": "MCP-POE3B-SW-poe3b-router0-b-3650-11-psu-20260911T020735Z-3233dbf4"
+      },
+      "stable": true,
+      "started_at_utc": "2026-09-11T02:08:55.580186Z",
+      "table_completeness": {
+        "all_pagers_traversed": true,
+        "attributable": true,
+        "dispatch_integrity_valid": true,
+        "expected_privileged_prompt_reached": true,
+        "fresh": true,
+        "no_pending_continuation": true,
+        "observer_complete": true,
+        "stable": true
+      }
+    },
+    "inventory_fingerprint_after": "6dcf441925b41cd5b1aa575f810a273ab617588f8ce8746627214dd48298f6ea|",
+    "inventory_restored": true,
+    "power_inline_auto_proven": true,
+    "realtime_restored": true,
+    "residue_retired": [
+      "Power Distribution Device0"
+    ]
+  },
+  "runtime_snapshot_path": null,
+  "safety": {
+    "bridge_healthy": true,
+    "mailbox_entries": [],
+    "processes": [
+      {
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" ",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "Name": "PacketTracer.exe",
+        "ParentProcessId": 61140,
+        "ProcessId": 24796
+      },
+      {
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\"  --progress-bar-server",
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "Name": "PacketTracer.exe",
+        "ParentProcessId": 24796,
+        "ProcessId": 53640
+      },
+      {
+        "CommandLine": "\"C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe\" tools\\poe3a_pse_live.py --execute --model 3650-24PS --qualification-id router0-b-3650-11-psu",
+        "ExecutablePath": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\cplive-ripv2\\.venv\\Scripts\\python.exe",
+        "Name": "python.exe",
+        "ParentProcessId": 25204,
+        "ProcessId": 39308
+      },
+      {
+        "CommandLine": "\"C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" tools\\poe3a_pse_live.py --execute --model 3650-24PS --qualification-id router0-b-3650-11-psu",
+        "ExecutablePath": "C:\\Users\\Andres\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "Name": "python.exe",
+        "ParentProcessId": 39308,
+        "ProcessId": 28332
+      }
+    ],
+    "source_branch": "feature/runtime-ripv2",
+    "source_head": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+    "source_tree": "d79ede032325d294b7342794e9ffcd0b9adb69c1",
+    "transport_problems": [],
+    "upstream": "cisco/feature/runtime-ripv2",
+    "upstream_head": "e302f58b37926d7c8080892a555e26cc4a283cf7",
+    "worktree_clean": true
+  },
+  "schema_version": 1,
+  "session_dispatches": [
+    {
+      "operation": "transport_health",
+      "sequence": 1
+    },
+    {
+      "operation": "mailbox_observation",
+      "sequence": 2
+    },
+    {
+      "operation": "control_bridge_start",
+      "sequence": 3
+    },
+    {
+      "operation": "environment_observation",
+      "sequence": 4
+    },
+    {
+      "operation": "inventory_observation",
+      "sequence": 5
+    },
+    {
+      "operation": "device_names_observation",
+      "sequence": 6
+    },
+    {
+      "operation": "fixture_device_create",
+      "sequence": 7
+    },
+    {
+      "operation": "device_readiness",
+      "sequence": 8
+    },
+    {
+      "operation": "observe_module_slots",
+      "sequence": 9
+    },
+    {
+      "operation": "inline_capture",
+      "sequence": 10
+    },
+    {
+      "operation": "inline_mode_apply",
+      "sequence": 11
+    },
+    {
+      "operation": "inline_capture",
+      "sequence": 12
+    },
+    {
+      "operation": "fixture_device_delete",
+      "sequence": 13
+    },
+    {
+      "operation": "residue_retire",
+      "sequence": 14
+    },
+    {
+      "operation": "inventory_restoration",
+      "sequence": 15
+    },
+    {
+      "operation": "device_names_observation",
+      "sequence": 16
+    },
+    {
+      "operation": "environment_observation",
+      "sequence": 17
+    },
+    {
+      "operation": "ipc_drain",
+      "sequence": 18
+    },
+    {
+      "operation": "mailbox_observation",
+      "sequence": 19
+    },
+    {
+      "operation": "transport_health",
+      "sequence": 20
+    },
+    {
+      "operation": "transport_problems",
+      "sequence": 21
+    },
+    {
+      "operation": "control_bridge_stop",
+      "sequence": 22
+    }
+  ],
+  "started_at_utc": "2026-09-11T02:07:35.857722Z"
+}
