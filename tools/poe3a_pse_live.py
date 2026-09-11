@@ -65,6 +65,7 @@ from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
 from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 from packet_tracer_mcp.infrastructure.persistence.canonical_evidence import (
     publish_canonical_evidence,
+    publish_runtime_promotion_receipt,
 )
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_power_inline, classify_poe_inline_delivery,
@@ -723,17 +724,24 @@ def execute_governed_qualification(
                     + before_modules.message
                 )
             installation = session.install_factory_module()
-            verification = session.verify_factory_module()
+            # The one addModuleAt attempt is already irreversible and never
+            # replays. Record it before any later step can raise, so a boot
+            # timeout or a failed readback cannot erase the evidence that the
+            # mutation was dispatched.
             factory_preparation["installation"] = asdict(installation)
-            factory_preparation["verification"] = asdict(verification)
-            if not verification.verified:
-                raise RuntimeError(
-                    "Factory module effect was not independently verified: "
-                    + verification.message
-                )
             baseline["boot_after_factory"] = session.wait_until_ready(
                 timeout_seconds=150,
             ).model_dump(mode="json")
+            verification = session.verify_factory_module()
+            factory_preparation["verification"] = asdict(verification)
+            if (
+                not verification.inventory_coherent
+                or verification.installed_identity_matches is False
+            ):
+                raise RuntimeError(
+                    "Factory module inventory effect was not coherent: "
+                    + verification.message
+                )
             after_power_capture = session.capture_inline_status("PSU_AFTER")
             raw_files[after_power_capture.raw_file] = (
                 after_power_capture.observation["raw_output"].encode()
@@ -947,15 +955,16 @@ def main() -> int:
         "packet_tracer_build": BUILD,
         "qualification_id": args.qualification_id,
         "qualification_plan": plan.model_dump(mode="json"),
-        # A validated in-memory stage is deliberately not authority. This first
-        # durable manifest records only facts that are already true; promotion
-        # happens after publication and a second atomic manifest publication may
-        # then record the resulting enumerable path.
-        "productive": False,
-        "integration_result": (
-            "MEASUREMENT_PUBLISHED" if staged is not None else "NOT_ADMITTED"
+        # The evidence bundle is immutable measurement fact. A validated stage
+        # is named by content but is not authority; only promote_runtime creates
+        # runtime authority, with separate hash-linked receipt metadata.
+        "runtime_candidate": (
+            {
+                "stable_hash": staged.stable_hash,
+                "payload_sha256": staged.payload_sha256,
+            }
+            if staged is not None else None
         ),
-        "runtime_snapshot_path": None,
         "live_session_safety": (
             admitted_safety.model_dump(mode="json")
             if admitted_safety is not None
@@ -975,27 +984,39 @@ def main() -> int:
         "problems": execution.problems,
     }
     directory = validate_artifact_reservation(artifacts, artifacts.run_id)
-    publish_canonical_evidence(
+    evidence_path = publish_canonical_evidence(
         directory,
         raw_files=execution.raw_files,
         evidence=bundle,
     )
+    integration_result = "NOT_ADMITTED"
     if staged is not None:
         execution.snapshot_path = store.promote_runtime(staged)
-        bundle["productive"] = True
-        bundle["integration_result"] = "PERSISTED"
-        bundle["runtime_snapshot_path"] = str(execution.snapshot_path)
-        publish_canonical_evidence(
-            directory,
-            raw_files={},
-            evidence=bundle,
-        )
+        integration_result = "PERSISTED"
+        try:
+            publish_runtime_promotion_receipt(
+                directory,
+                evidence_path=evidence_path,
+                runtime_snapshot_path=execution.snapshot_path,
+                runtime_payload_sha256=staged.payload_sha256,
+            )
+        except OSError:
+            # Authority already began at promote_runtime and cannot be undone
+            # by a receipt failure. Say so before re-raising, so the operator
+            # knows the snapshot is live even though its metadata is missing.
+            print(
+                "RUNTIME AUTHORITY ALREADY PROMOTED WITHOUT RECEIPT: "
+                + str(execution.snapshot_path),
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
     print(json.dumps({
         "bundle": str(directory),
         "qualification_plan": plan.model_dump(mode="json"),
         "measured": [asdict(capture) for capture in execution.pse_captures],
         "pse_contract_accepts_the_measurement": execution.dimensions is not None,
-        "integration_result": bundle["integration_result"],
+        "integration_result": integration_result,
         "restoration": execution.restoration.get("inventory_restored"),
         "safety": execution.safety,
         "problems": execution.problems,

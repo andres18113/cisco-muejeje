@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -460,11 +461,11 @@ def test_evidence_publication_failure_leaves_no_new_runtime_authority(
     assert store.list_runtime(inputs["plan"].packet_tracer_build) == []
 
 
-def test_promotion_failure_after_evidence_publication_never_claims_persisted(
+def test_promotion_failure_leaves_immutable_measurement_without_authority_receipt(
     runner,
     monkeypatch,
 ) -> None:
-    """A validated stage is not authority and the bundle must say exactly that."""
+    """The measurement bundle contains facts, not mutable promotion state."""
 
     inputs = qualification_inputs(runner)
     snapshot = runner.build_qualification_snapshot(**inputs)
@@ -518,9 +519,11 @@ def test_promotion_failure_after_evidence_publication_never_claims_persisted(
         evidence_path = artifacts.directory / "evidence.json"
         assert evidence_path.is_file()
         published = json.loads(evidence_path.read_text(encoding="utf-8"))
-        assert published["productive"] is False
-        assert published["integration_result"] == "MEASUREMENT_PUBLISHED"
-        assert published["runtime_snapshot_path"] is None
+        assert "productive" not in published
+        assert "integration_result" not in published
+        assert "runtime_snapshot_path" not in published
+        assert published["runtime_candidate"]["payload_sha256"]
+        assert not (artifacts.directory / "promotion.json").exists()
         raise OSError("synthetic promotion failure")
 
     monkeypatch.setattr(
@@ -535,10 +538,168 @@ def test_promotion_failure_after_evidence_publication_never_claims_persisted(
     bundle = json.loads(
         (artifacts.directory / "evidence.json").read_text(encoding="utf-8")
     )
-    assert bundle["productive"] is False
-    assert bundle["integration_result"] != "PERSISTED"
-    assert bundle["runtime_snapshot_path"] is None
+    assert "productive" not in bundle
+    assert "integration_result" not in bundle
+    assert "runtime_snapshot_path" not in bundle
+    assert bundle["runtime_candidate"]["payload_sha256"]
+    assert not (artifacts.directory / "promotion.json").exists()
     store = runner.CapabilitySnapshotStore(
         runner.resolve_within(runner.ROOT, Path("data") / "capabilities"),
     )
     assert store.list_runtime(inputs["plan"].packet_tracer_build) == []
+
+
+def test_promotion_succeeds_without_rewriting_measurement_bundle(
+    runner,
+    monkeypatch,
+) -> None:
+    """A post-promotion evidence rewrite cannot contradict runtime authority."""
+
+    inputs = qualification_inputs(runner)
+    snapshot = runner.build_qualification_snapshot(**inputs)
+    artifacts = inputs["artifacts"]
+    execution = runner.GovernedQualificationExecution(
+        fixture_evidence={},
+        captures=[],
+        pse_captures=list(inputs["scope"].captures),
+        problems=[],
+        restoration=inputs["restoration"],
+        safety=inputs["safety"],
+        raw_files={"auto_1.txt": b"measured"},
+        completed_at_utc="2026-09-10T18:00:00Z",
+        file_operation_ledger=inputs["file_operation_ledger"],
+        scope=inputs["scope"],
+        dimensions=runner.encode_poe_pse_multi_port_dimensions(inputs["scope"]),
+        snapshot=snapshot,
+    )
+    monkeypatch.setattr(
+        runner,
+        "parse_args",
+        lambda: SimpleNamespace(model="3560-24PS", qualification_id="offline"),
+    )
+    isolation = SimpleNamespace(isolated=True, render=lambda: "ISOLATED")
+    monkeypatch.setattr(
+        runner,
+        "ImportIsolationPreflight",
+        lambda _root: SimpleNamespace(ensure_isolated=lambda: isolation),
+    )
+    monkeypatch.setattr(runner, "governed_plan", lambda _model: inputs["plan"])
+    monkeypatch.setattr(runner, "source_baseline", lambda _plan: inputs["baseline"])
+    monkeypatch.setattr(runner, "prove_processes", packet_tracer_processes)
+    monkeypatch.setattr(runner, "reserve_artifacts", lambda _identity: artifacts)
+    monkeypatch.setattr(
+        runner,
+        "PacketTracerPoE3BSession",
+        lambda *_args, **_kwargs: SimpleNamespace(dispatches=[]),
+    )
+    monkeypatch.setattr(
+        runner,
+        "execute_governed_qualification",
+        lambda **_kwargs: execution,
+    )
+    original_publish = runner.publish_canonical_evidence
+    publish_calls = 0
+
+    def publish_once(*args, **kwargs):
+        nonlocal publish_calls
+        publish_calls += 1
+        if publish_calls > 1:
+            raise OSError("synthetic posterior evidence write failure")
+        return original_publish(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "publish_canonical_evidence", publish_once)
+
+    assert runner.main() == 0
+
+    assert publish_calls == 1
+    evidence_path = artifacts.directory / "evidence.json"
+    evidence_bytes = evidence_path.read_bytes()
+    bundle = json.loads(evidence_bytes)
+    assert "productive" not in bundle
+    assert "integration_result" not in bundle
+    assert "runtime_snapshot_path" not in bundle
+    receipt = json.loads(
+        (artifacts.directory / "promotion.json").read_text(encoding="utf-8")
+    )
+    assert receipt["evidence_sha256"] == hashlib.sha256(evidence_bytes).hexdigest()
+    assert receipt["runtime_payload_sha256"] == bundle["runtime_candidate"][
+        "payload_sha256"
+    ]
+    assert Path(receipt["runtime_snapshot_path"]).is_file()
+    store = runner.CapabilitySnapshotStore(
+        runner.resolve_within(runner.ROOT, Path("data") / "capabilities"),
+    )
+    assert store.list_runtime(inputs["plan"].packet_tracer_build) == [snapshot]
+
+
+def test_receipt_write_failure_after_promotion_cannot_contradict_authority(
+    runner,
+    monkeypatch,
+) -> None:
+    inputs = qualification_inputs(runner)
+    snapshot = runner.build_qualification_snapshot(**inputs)
+    artifacts = inputs["artifacts"]
+    execution = runner.GovernedQualificationExecution(
+        fixture_evidence={},
+        captures=[],
+        pse_captures=list(inputs["scope"].captures),
+        problems=[],
+        restoration=inputs["restoration"],
+        safety=inputs["safety"],
+        raw_files={"auto_1.txt": b"measured"},
+        completed_at_utc="2026-09-10T18:00:00Z",
+        file_operation_ledger=inputs["file_operation_ledger"],
+        scope=inputs["scope"],
+        dimensions=runner.encode_poe_pse_multi_port_dimensions(inputs["scope"]),
+        snapshot=snapshot,
+    )
+    monkeypatch.setattr(
+        runner,
+        "parse_args",
+        lambda: SimpleNamespace(model="3560-24PS", qualification_id="offline"),
+    )
+    isolation = SimpleNamespace(isolated=True, render=lambda: "ISOLATED")
+    monkeypatch.setattr(
+        runner,
+        "ImportIsolationPreflight",
+        lambda _root: SimpleNamespace(ensure_isolated=lambda: isolation),
+    )
+    monkeypatch.setattr(runner, "governed_plan", lambda _model: inputs["plan"])
+    monkeypatch.setattr(runner, "source_baseline", lambda _plan: inputs["baseline"])
+    monkeypatch.setattr(runner, "prove_processes", packet_tracer_processes)
+    monkeypatch.setattr(runner, "reserve_artifacts", lambda _identity: artifacts)
+    monkeypatch.setattr(
+        runner,
+        "PacketTracerPoE3BSession",
+        lambda *_args, **_kwargs: SimpleNamespace(dispatches=[]),
+    )
+    monkeypatch.setattr(
+        runner,
+        "execute_governed_qualification",
+        lambda **_kwargs: execution,
+    )
+
+    def fail_receipt(*_args, runtime_snapshot_path, **_kwargs):
+        assert Path(runtime_snapshot_path).is_file()
+        raise OSError("synthetic post-promotion receipt failure")
+
+    monkeypatch.setattr(
+        runner,
+        "publish_runtime_promotion_receipt",
+        fail_receipt,
+    )
+
+    with pytest.raises(OSError, match="post-promotion receipt failure"):
+        runner.main()
+
+    bundle = json.loads(
+        (artifacts.directory / "evidence.json").read_text(encoding="utf-8")
+    )
+    assert "productive" not in bundle
+    assert "integration_result" not in bundle
+    assert "runtime_snapshot_path" not in bundle
+    assert not (artifacts.directory / "promotion.json").exists()
+    store = runner.CapabilitySnapshotStore(
+        runner.resolve_within(runner.ROOT, Path("data") / "capabilities"),
+    )
+    assert store.list_runtime(inputs["plan"].packet_tracer_build) == [snapshot]

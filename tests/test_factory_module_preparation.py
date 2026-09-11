@@ -1,4 +1,4 @@
-"""Factory-module policy, discovery, one-shot mutation and product wiring."""
+"""Factory-module policy, index-native discovery, mutation and wiring."""
 
 from __future__ import annotations
 
@@ -35,86 +35,127 @@ from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runti
 
 
 BUILD = "9.0.1.0858"
+REAL_NULL_ABORT = '{"found":false,"error":"Error: missing module"}'
 
 
-def _node(
-    path: str,
-    number: int,
-    module_type: int,
+def _descriptor(
+    model: str,
+    slots: tuple[int, ...],
     *,
-    slots: tuple[int, ...] = (),
-    children: tuple[dict, ...] = (),
-    model: str = "",
-    descriptor_observed: bool = True,
+    model_observed: bool = True,
+    physical_views: tuple[tuple[int, bool], ...] = (),
 ) -> dict:
     return {
-        "slot_path": path,
-        "module_number": number,
-        "module_type": module_type,
-        "descriptor_model": model,
-        "descriptor_model_observed": descriptor_observed,
+        "model": model,
+        "model_observed": model_observed,
+        "slot_count": len(slots),
         "slots": [
-            {"index": index, "module_type": value}
-            for index, value in enumerate(slots)
+            {"index": index, "module_type": module_type}
+            for index, module_type in enumerate(slots)
         ],
-        "children": list(children),
+        "physical_views": [
+            {"index": index, "slot_num": slot_num, "module_added": added}
+            for index, (slot_num, added) in enumerate(physical_views)
+        ],
     }
 
 
-def _runtime_observation(*, installed: bool = False, ambiguous: bool = False,
-                         unknown_other_bay: bool = False,
-                         blank_other_bay: bool = False) -> str:
-    bay_children: list[dict] = [
-        _node("2/0", 0, 30, model="GLC-T"),
-    ]
-    if installed:
-        bay_children.append(
-            _node("2/4", 4, 4, model="AC-POWER-SUPPLY"),
-        )
-    if not ambiguous:
-        bay_children.append(
-            _node(
-                "2/5",
-                5,
-                4,
-                model=(
-                    "" if unknown_other_bay or blank_other_bay
-                    else "POWER-COVER-PLATE"
-                ),
-                descriptor_observed=not unknown_other_bay,
-            ),
-        )
-    root = _node(
-        "",
-        -1,
-        18,
-        slots=(18, 18, 18),
-        children=(
-            _node("0", 0, 18),
-            _node(
-                "1",
-                1,
-                18,
-                slots=(32, 32),
-                children=(
-                    _node("1/0", 0, 32, model="C3650-BUILTIN"),
-                    _node("1/1", 1, 32, model="C3650-SFP-BUILTIN"),
-                ),
-            ),
-            _node(
-                "2",
-                2,
-                18,
-                slots=(30, 30, 30, 30, 4, 4),
-                children=tuple(bay_children),
-            ),
+def _module(
+    slots: tuple[int, ...] = (),
+    entries: tuple[dict, ...] = (),
+    *,
+    model: str = "",
+    model_observed: bool = True,
+    physical_views: tuple[tuple[int, bool], ...] = (),
+) -> dict:
+    return {
+        "descriptor": _descriptor(
+            model,
+            slots,
+            model_observed=model_observed,
+            physical_views=physical_views,
         ),
+        "slot_count": len(slots),
+        "slots": [
+            {"index": index, "module_type": module_type}
+            for index, module_type in enumerate(slots)
+        ],
+        "module_count": len(entries),
+        "module_entries": list(entries),
+    }
+
+
+def _present(index: int, module: dict) -> dict:
+    return {"index": index, "state": "present", "module": module}
+
+
+def _unknown(index: int, reason: str = "null") -> dict:
+    return {"index": index, "state": "unknown", "reason": reason}
+
+
+def _runtime_observation(
+    *,
+    installed: bool = False,
+    multiple: bool = False,
+    sparse_noncompatible: bool = False,
+    occupied: bool = False,
+    unknown_compatible: bool = False,
+    installed_identity_observed: bool = True,
+) -> str:
+    if multiple:
+        slots = (4, 4)
+        entries: tuple[dict, ...] = ()
+    elif installed:
+        slots = (18, 4)
+        entries = (
+            _present(0, _module(model="BUILTIN")),
+            _present(1, _module(
+                model="AC-POWER-SUPPLY",
+                model_observed=installed_identity_observed,
+            )),
+        )
+    elif occupied or unknown_compatible:
+        slots = (4,)
+        if unknown_compatible:
+            entries = (_unknown(0),)
+        else:
+            entries = (_present(0, _module(model="OTHER-MODULE")),)
+    else:
+        slots = (18, 4)
+        entries = (
+            _unknown(0)
+            if sparse_noncompatible
+            else _present(0, _module(model="BUILTIN")),
+        )
+    root = _module(
+        slots,
+        entries,
+        model="CHASSIS",
+        physical_views=tuple((index, False) for index in range(len(slots))),
     )
     return json.dumps({
         "found": True,
         "name": "SW",
         "model": "3650-24PS",
+        "supported_modules_raw": ["AC-POWER-SUPPLY"],
+        "device_descriptor_root": _descriptor("CHASSIS", slots),
         "root": root,
+    })
+
+
+def _installation_response(*, native_ack: bool | None = True) -> str:
+    return json.dumps({
+        "attempted": True,
+        "requested_identity": "AC-POWER-SUPPLY",
+        "native_ack": native_ack,
+        "power_was_on": True,
+        "power_restored": True,
+        "target": {
+            "container_ordinal": 0,
+            "index": 1,
+            "module_type": 4,
+        },
+        "error": "",
     })
 
 
@@ -139,6 +180,7 @@ def test_exact_build_model_policy_requires_one_3650_supply_and_leaves_3560() -> 
     assert requirement.module_model == "AC-POWER-SUPPLY"
     assert requirement.module_type == 4
     assert requirement.required_count == 1
+    assert requirement.expected_available_watts_before == 0.0
     assert requirement.expected_available_watts == 390.0
     assert factory_module_requirement_for("3560-24PS", BUILD) is None
 
@@ -146,7 +188,7 @@ def test_exact_build_model_policy_requires_one_3650_supply_and_leaves_3560() -> 
         factory_module_requirement_for("3650-24PS", "9.0.1.9999")
 
 
-def test_read_only_discovery_uses_the_documented_runtime_surface() -> None:
+def test_resolver_selects_one_compatible_index_without_any_slot_path() -> None:
     transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
@@ -154,30 +196,73 @@ def test_read_only_discovery_uses_the_documented_runtime_surface() -> None:
 
     assert observation.observed
     assert observation.target_determined
-    assert observation.target_slot == "2/4"
-    assert observation.candidate_slots == ("2/4",)
+    assert observation.target_container_ordinal == 0
+    assert observation.target_index == 1
+    assert len(observation.candidate_targets) == 1
+    assert observation.candidate_targets[0].index == 1
     assert not observation.already_prepared
-    script = transport.scripts[0]
-    for method in (
-        "getRootModule", "getSlotCount", "getSlotTypeAt", "getModuleAt",
-        "getModuleCount", "getModuleNumber", "getSlotPath", "getModuleType",
-        "getDescriptor", "getModel",
-    ):
-        assert method in script
-    assert ".addModule(" not in script
-    assert preparer.operations == (FactoryModuleOperation.OBSERVE_MODULE_SLOTS,)
+    assert observation.supported_modules_raw == ["AC-POWER-SUPPLY"]
+    assert observation.descriptor_evidence_observed
+    assert all(not hasattr(slot, "slot_path") for slot in observation.slots)
+    assert "getSlotPath" not in transport.scripts[0]
+    assert "getModuleNumber" not in transport.scripts[0]
+
+
+def test_sparse_null_module_entry_is_unknown_and_does_not_abort_other_slots() -> None:
+    transport = _Replies(_runtime_observation(sparse_noncompatible=True))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+
+    assert observation.observed
+    assert observation.target_determined
+    assert observation.target_index == 1
+    assert len(observation.sparse_entries) == 1
+    assert observation.sparse_entries[0].container_ordinal == 0
+    assert observation.sparse_entries[0].module_index == 0
+    assert observation.slots[0].state.value == "unknown"
+    assert observation.slots[1].state.value == "empty"
+
+
+def test_physical_view_flags_are_recorded_but_do_not_select_authority() -> None:
+    payload = json.loads(_runtime_observation())
+    payload["root"]["descriptor"]["physical_views"][1]["module_added"] = True
+    transport = _Replies(json.dumps(payload))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+
+    assert observation.target_determined
+    assert observation.target_index == 1
+    assert observation.slots[1].state.value == "empty"
+    diagnostic = observation.slots[1].container_descriptor
+    assert diagnostic is not None
+    assert diagnostic.physical_views[1].slot_num == 1
+    assert diagnostic.physical_views[1].module_added is True
+
+
+def test_real_null_abort_regression_is_retained_as_raw_negative_evidence() -> None:
+    transport = _Replies(REAL_NULL_ABORT)
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+
+    assert not observation.observed
+    assert not observation.target_determined
+    assert observation.raw_response == REAL_NULL_ABORT
+    assert "exact device" in observation.message
 
 
 @pytest.mark.parametrize(
     "raw,reason",
     [
-        (_runtime_observation(ambiguous=True), "indistinguishable"),
-        (_runtime_observation(unknown_other_bay=True), "descriptor"),
-        (_runtime_observation(blank_other_bay=True), "descriptor"),
+        (_runtime_observation(multiple=True), "indistinguishable"),
+        (_runtime_observation(occupied=True), "occupied"),
+        (_runtime_observation(unknown_compatible=True), "unknown"),
         ("{not-json", "malformed"),
     ],
 )
-def test_ambiguous_or_malformed_slot_discovery_stops_before_mutation(
+def test_non_unique_occupied_unknown_or_malformed_compatible_slots_refuse_mutation(
     raw: str,
     reason: str,
 ) -> None:
@@ -191,33 +276,143 @@ def test_ambiguous_or_malformed_slot_discovery_stops_before_mutation(
     with pytest.raises(RuntimeError):
         preparer.install_required_module(observation)
     assert len(transport.scripts) == 1
-    assert all(".addModule(" not in script for script in transport.scripts)
+    assert all(".addModuleAt(" not in script for script in transport.scripts)
 
 
-def test_one_empty_type_four_slot_without_an_observed_path_scheme_is_refused() -> None:
-    payload = json.loads(_runtime_observation(ambiguous=True))
-    bays = payload["root"]["children"][2]
-    bays["slots"] = [{"index": 0, "module_type": 4}]
-    bays["children"] = []
+def _dual_bay(entries: tuple[dict, ...]) -> str:
+    """Two compatible PSU-type bays, the real dual-supply 3650 shape."""
+
+    root = _module((4, 4), entries, model="CHASSIS")
+    return json.dumps({
+        "found": True,
+        "name": "SW",
+        "model": "3650-24PS",
+        "supported_modules_raw": ["AC-POWER-SUPPLY"],
+        "device_descriptor_root": _descriptor("CHASSIS", (4, 4)),
+        "root": root,
+    })
+
+
+def test_dual_bay_with_one_empty_index_still_resolves_one_target() -> None:
+    """A second compatible bay does not make the single empty index ambiguous."""
+
+    transport = _Replies(_dual_bay((_present(0, _module(model="COVER-PLATE")),)))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+
+    assert observation.observed
+    assert observation.target_determined
+    assert not observation.already_prepared
+    assert observation.target_container_ordinal == 0
+    assert observation.target_index == 1
+    assert len(observation.candidate_targets) == 1
+
+
+def test_dual_bay_already_holding_the_required_module_is_already_prepared() -> None:
+    transport = _Replies(_dual_bay((
+        _present(0, _module(model="AC-POWER-SUPPLY")),
+    )))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+
+    assert observation.already_prepared
+    assert observation.target_determined
+    assert observation.target_index == 0
+    assert len(observation.installed_targets) == 1
+    with pytest.raises(RuntimeError, match="already present"):
+        preparer.install_required_module(observation)
+    assert len(transport.scripts) == 1
+
+
+def test_dual_bay_with_two_empty_indexes_refuses_as_indistinguishable() -> None:
+    transport = _Replies(_dual_bay(()))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+
+    assert observation.observed
+    assert not observation.target_determined
+    assert "indistinguishable" in observation.message
+    with pytest.raises(RuntimeError):
+        preparer.install_required_module(observation)
+
+
+def test_dual_bay_with_an_unreadable_compatible_index_refuses() -> None:
+    """An unknown bay could already hold the required module; never insert."""
+
+    for entries in (
+        (_unknown(0),),
+        (_present(0, _module(model="", model_observed=False)),),
+    ):
+        transport = _Replies(_dual_bay(entries))
+        preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+        observation = preparer.observe_required_module("SW", "3650-24PS")
+
+        assert observation.observed
+        assert not observation.target_determined
+        assert not observation.already_prepared
+        assert "unknown" in observation.message
+        with pytest.raises(RuntimeError):
+            preparer.install_required_module(observation)
+        assert all(".addModuleAt(" not in s for s in transport.scripts)
+
+
+def test_malformed_module_and_slot_types_fail_closed() -> None:
+    payload = json.loads(_runtime_observation())
+    payload["root"]["slots"][1]["module_type"] = "4"
     transport = _Replies(json.dumps(payload))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
     observation = preparer.observe_required_module("SW", "3650-24PS")
 
     assert not observation.target_determined
-    assert "slot-path mapping" in observation.message
-    assert ".addModule(" not in transport.scripts[0]
+    assert "wrongly typed" in observation.message
 
 
-def test_installation_is_one_shot_and_true_requires_independent_verification() -> None:
+@pytest.mark.parametrize("absent", ["null", "missing"])
+def test_unobservable_device_descriptor_root_is_diagnostic_absence_only(
+    absent: str,
+) -> None:
+    """PT may not expose the descriptor root; that never aborts the tree."""
+
+    payload = json.loads(_runtime_observation())
+    if absent == "null":
+        payload["device_descriptor_root"] = None
+    else:
+        payload.pop("device_descriptor_root")
+    transport = _Replies(json.dumps(payload))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+
+    assert observation.observed
+    assert observation.target_determined
+    assert observation.target_container_ordinal == 0
+    assert observation.target_index == 1
+    assert observation.device_descriptor_root is None
+    assert not observation.descriptor_evidence_observed
+
+
+def test_present_but_malformed_device_descriptor_root_still_fails_closed() -> None:
+    payload = json.loads(_runtime_observation())
+    payload["device_descriptor_root"]["slots"][0]["module_type"] = "18"
+    transport = _Replies(json.dumps(payload))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+
+    assert not observation.observed
+    assert not observation.target_determined
+    assert "wrongly typed" in observation.message
+
+
+def test_installation_is_one_shot_and_native_true_requires_readback() -> None:
     transport = _Replies(
         _runtime_observation(),
-        json.dumps({
-            "attempted": True,
-            "native_accepted": True,
-            "power_was_on": True,
-            "power_restored": True,
-        }),
+        _installation_response(),
         _runtime_observation(installed=True),
     )
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
@@ -225,30 +420,39 @@ def test_installation_is_one_shot_and_true_requires_independent_verification() -
 
     installation = preparer.install_required_module(before)
 
-    assert installation.attempted
-    assert installation.native_accepted is True
+    assert installation.requested_identity == "AC-POWER-SUPPLY"
+    assert installation.native_ack is True
     assert not hasattr(installation, "verified")
     verification = preparer.verify_required_module(before, installation)
+    assert verification.slot_container_effect
+    assert verification.inventory_coherent
+    assert verification.installed_identity_observed == "AC-POWER-SUPPLY"
+    assert verification.installed_identity_matches is True
     assert verification.verified
-    assert verification.caused_effect
-    assert verification.after.already_prepared
-    assert verification.after.installed_slots == ("2/4",)
-    assert sum(".addModule(" in script for script in transport.scripts) == 1
-    assert preparer.operations == (
-        FactoryModuleOperation.OBSERVE_MODULE_SLOTS,
-        FactoryModuleOperation.INSTALL_FACTORY_MODULE,
-        FactoryModuleOperation.VERIFY_FACTORY_MODULE,
-    )
+    assert sum(".addModuleAt(" in script for script in transport.scripts) == 1
+    assert all(".addModule(" not in script for script in transport.scripts)
 
     with pytest.raises(RuntimeError, match="already attempted"):
         preparer.install_required_module(before)
-    assert sum(".addModule(" in script for script in transport.scripts) == 1
+    assert sum(".addModuleAt(" in script for script in transport.scripts) == 1
 
 
-def test_lost_install_result_is_never_replayed_but_can_be_read_back() -> None:
+@pytest.mark.parametrize(
+    "raw,native_ack",
+    [
+        (_installation_response(native_ack=False), False),
+        (None, None),
+        ("{malformed", None),
+    ],
+    ids=["native-false", "timeout", "malformed"],
+)
+def test_non_acceptance_is_never_replayed_but_readback_is_preserved(
+    raw: str | None,
+    native_ack: bool | None,
+) -> None:
     transport = _Replies(
         _runtime_observation(),
-        None,
+        raw,
         _runtime_observation(installed=True),
     )
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
@@ -257,20 +461,16 @@ def test_lost_install_result_is_never_replayed_but_can_be_read_back() -> None:
     installation = preparer.install_required_module(before)
     verification = preparer.verify_required_module(before, installation)
 
-    assert installation.acknowledged is None
-    assert verification.verified
-    assert sum(".addModule(" in script for script in transport.scripts) == 1
+    assert installation.native_ack is native_ack
+    assert verification.slot_container_effect
+    assert verification.installed_identity_matches is True
+    assert sum(".addModuleAt(" in script for script in transport.scripts) == 1
 
 
-def test_native_true_without_the_required_after_state_is_not_verified() -> None:
+def test_native_true_without_slot_container_effect_is_not_verified() -> None:
     transport = _Replies(
         _runtime_observation(),
-        json.dumps({
-            "attempted": True,
-            "native_accepted": True,
-            "power_was_on": True,
-            "power_restored": True,
-        }),
+        _installation_response(),
         _runtime_observation(),
     )
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
@@ -279,10 +479,32 @@ def test_native_true_without_the_required_after_state_is_not_verified() -> None:
     installation = preparer.install_required_module(before)
     verification = preparer.verify_required_module(before, installation)
 
-    assert installation.native_accepted is True
+    assert installation.native_ack is True
+    assert not verification.slot_container_effect
     assert not verification.verified
-    assert not verification.caused_effect
-    assert sum(".addModule(" in script for script in transport.scripts) == 1
+    assert sum(".addModuleAt(" in script for script in transport.scripts) == 1
+
+
+def test_unobservable_post_install_identity_is_explicit_not_invented() -> None:
+    transport = _Replies(
+        _runtime_observation(),
+        _installation_response(),
+        _runtime_observation(
+            installed=True,
+            installed_identity_observed=False,
+        ),
+    )
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    before = preparer.observe_required_module("SW", "3650-24PS")
+
+    installation = preparer.install_required_module(before)
+    verification = preparer.verify_required_module(before, installation)
+
+    assert verification.slot_container_effect
+    assert verification.inventory_coherent
+    assert verification.installed_identity_observed is None
+    assert verification.installed_identity_matches is None
+    assert not verification.verified
 
 
 def test_3560_preparation_is_an_exact_noop_without_transport_access() -> None:
@@ -298,15 +520,10 @@ def test_3560_preparation_is_an_exact_noop_without_transport_access() -> None:
     assert preparer.operations == ()
 
 
-def test_power_hypothesis_requires_the_verified_caused_effect_and_exact_delta() -> None:
+def test_power_hypothesis_requires_inventory_effect_and_exact_delta() -> None:
     transport = _Replies(
         _runtime_observation(),
-        json.dumps({
-            "attempted": True,
-            "native_accepted": True,
-            "power_was_on": True,
-            "power_restored": True,
-        }),
+        _installation_response(),
         _runtime_observation(installed=True),
     )
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
@@ -330,6 +547,7 @@ def test_power_hypothesis_requires_the_verified_caused_effect_and_exact_delta() 
         after=after_power,
     )
 
+    assert result.power_effect
     assert result.confirmed
     assert result.available_delta_watts == 390.0
     assert not classify_factory_power_hypothesis(
@@ -412,32 +630,48 @@ def _run_node(source: str) -> str:
     return result.stdout.strip()
 
 
-def _node_module_factory() -> str:
+def _node_descriptor_factory() -> str:
     return (
-        "function makeModule(path,number,type,slots,children,model){return {"
-        "getSlotPath:function(){return path;},"
-        "getModuleNumber:function(){return number;},"
-        "getModuleType:function(){return type;},"
-        "getDescriptor:function(){return {getModel:function(){return model;}};},"
+        "function makeDescriptor(model,slots,views){return {"
+        "getModel:function(){return model;},"
         "getSlotCount:function(){return slots.length;},"
         "getSlotTypeAt:function(i){return slots[i];},"
-        "getModuleCount:function(){return children.length;},"
-        "getModuleAt:function(i){return children[i];}};}"
+        "getModulePhysicalViewCount:function(){return views.length;},"
+        "getModulePhysicalViewAt:function(i){return views[i];}};}"
+        "function makeView(slot,added){return {"
+        "getSlotNum:function(){return slot;},"
+        "getModuleAdded:function(){return added;}};}"
     )
 
 
-def test_observation_javascript_executes_and_serializes_an_injected_name() -> None:
+def _node_module_factory() -> str:
+    return (
+        "function makeModule(slots,entries,model){return {"
+        "getDescriptor:function(){return makeDescriptor(model,slots,"
+        "slots.map(function(_,i){return makeView(i,false);}));},"
+        "getSlotCount:function(){return slots.length;},"
+        "getSlotTypeAt:function(i){return slots[i];},"
+        "getModuleCount:function(){return entries.length;},"
+        "getModuleAt:function(i){return entries[i];},"
+        "addModuleAt:function(model,index){return false;}};}"
+    )
+
+
+def test_observation_javascript_uses_official_indexed_api_and_tolerates_null() -> None:
     name = 'SW";global.injected=true;//'
     script = factory_module_runtime._observe_module_slots_js(name)
     source = (
         "const assert=require('assert');let reported='';global.injected=false;"
+        + _node_descriptor_factory()
         + _node_module_factory()
-        + "const cover=makeModule('2/5',5,4,[],[],'POWER-COVER-PLATE');"
-        "const bays=makeModule('2',2,18,[30,30,30,30,4,4],[cover],'');"
-        "const root=makeModule('',-1,18,[18,18,18],["
-        "makeModule('0',0,18,[],[],''),makeModule('1',1,18,[],[],''),bays],'');"
+        + "const root=makeModule([18,4],[null],'CHASSIS');"
+        "const deviceDescriptor={getRootModule:function(){return "
+        "makeDescriptor('CHASSIS',[18,4],[]);}};"
         "const device={getName:function(){return " + json.dumps(name) + ";},"
-        "getModel:function(){return '3650-24PS';},getRootModule:function(){return root;}};"
+        "getModel:function(){return '3650-24PS';},"
+        "getRootModule:function(){return root;},"
+        "getDescriptor:function(){return deviceDescriptor;},"
+        "getSupportedModule:function(){return ['AC-POWER-SUPPLY'];}};"
         "global.ipc={network:function(){return {getDevice:function(value){"
         "assert.equal(value," + json.dumps(name) + ");return device;}};}};"
         "global.reportResult=function(value){reported=value;};"
@@ -448,11 +682,23 @@ def test_observation_javascript_executes_and_serializes_an_injected_name() -> No
     payload = json.loads(_run_node(source))
 
     assert payload["found"] is True
-    assert payload["name"] == name
-    assert payload["root"]["children"][2]["slots"][4]["module_type"] == 4
+    assert payload["root"]["module_entries"][0]["state"] == "unknown"
+    assert payload["root"]["module_entries"][0]["reason"] == "null"
+    assert payload["supported_modules_raw"] == ["AC-POWER-SUPPLY"]
+    assert payload["device_descriptor_root"]["slots"][1]["module_type"] == 4
+    for method in (
+        "getSlotCount", "getSlotTypeAt", "getModuleCount", "getModuleAt",
+        "getDescriptor", "getRootModule", "getSupportedModule",
+        "getModulePhysicalViewCount", "getModulePhysicalViewAt",
+        "getSlotNum", "getModuleAdded",
+    ):
+        assert method in script
+    assert "getSlotPath" not in script
+    assert "getModuleNumber" not in script
+    assert ".addModuleAt(" not in script
 
 
-def test_install_javascript_power_cycles_and_calls_native_add_once() -> None:
+def test_install_javascript_rediscovers_target_and_calls_add_module_at_once() -> None:
     before_transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(before_transport, BUILD)
     observation = preparer.observe_required_module("SW", "3650-24PS")
@@ -463,30 +709,144 @@ def test_install_javascript_power_cycles_and_calls_native_add_once() -> None:
     )
     source = (
         "const assert=require('assert');let reported='',calls=0,power=true,powers=[];"
+        + _node_descriptor_factory()
         + _node_module_factory()
-        + "const cover=makeModule('2/5',5,4,[],[],'POWER-COVER-PLATE');"
-        "const children=[cover];const bays=makeModule('2',2,18,[30,30,30,30,4,4],children,'');"
-        "const root=makeModule('',-1,18,[18,18,18],["
-        "makeModule('0',0,18,[],[],''),makeModule('1',1,18,[],[],''),bays],'');"
+        + "const entries=[makeModule([],[],'BUILTIN')];"
+        "const root=makeModule([18,4],entries,'CHASSIS');"
+        "root.addModuleAt=function(model,index){calls++;"
+        "assert.equal(model,'AC-POWER-SUPPLY');assert.equal(index,1);"
+        "entries.push(makeModule([],[],'AC-POWER-SUPPLY'));return true;};"
         "const device={getModel:function(){return '3650-24PS';},"
         "getRootModule:function(){return root;},getPower:function(){return power;},"
-        "setPower:function(value){power=value;powers.push(value);},skipBoot:function(){},"
-        "addModule:function(slot,type,model){calls++;assert.equal(slot,'2/4');"
-        "assert.equal(type,4);assert.equal(model,'AC-POWER-SUPPLY');"
-        "children.push(makeModule('2/4',4,4,[],[],'AC-POWER-SUPPLY'));return true;}};"
+        "setPower:function(value){power=value;powers.push(value);},skipBoot:function(){}};"
         "global.ipc={network:function(){return {getDevice:function(value){"
         "assert.equal(value,'SW');return device;}};}};"
         "global.reportResult=function(value){reported=value;};"
         + script
-        + "assert.equal(calls,1);assert.deepEqual(powers,[false,true]);console.log(reported);"
+        + "assert.equal(calls,1);assert.deepEqual(powers,[false,true]);"
+        "console.log(reported);"
     )
 
     payload = json.loads(_run_node(source))
 
     assert payload == {
         "attempted": True,
-        "native_accepted": True,
+        "requested_identity": "AC-POWER-SUPPLY",
+        "native_ack": True,
         "power_was_on": True,
         "power_restored": True,
+        "target": {"container_ordinal": 0, "index": 1, "module_type": 4},
         "error": "",
     }
+    assert script.count(".addModuleAt(") == 1
+    assert ".addModule(" not in script
+    assert "var __index=1" not in script
+
+
+def test_install_javascript_rederives_the_same_dual_bay_target_in_node() -> None:
+    """The JS revalidation must agree with Python on the dual-bay rule."""
+
+    transport = _Replies(_dual_bay((_present(0, _module(model="COVER-PLATE")),)))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+    assert observation.target_determined and observation.target_index == 1
+    requirement = factory_module_requirement_for("3650-24PS", BUILD)
+    script = factory_module_runtime._install_factory_module_js(
+        observation,
+        requirement,
+    )
+    source = (
+        "const assert=require('assert');let reported='',calls=0,power=true,powers=[];"
+        + _node_descriptor_factory()
+        + _node_module_factory()
+        + "const entries=[makeModule([],[],'COVER-PLATE')];"
+        "const root=makeModule([4,4],entries,'CHASSIS');"
+        "root.addModuleAt=function(model,index){calls++;"
+        "assert.equal(model,'AC-POWER-SUPPLY');assert.equal(index,1);"
+        "entries.push(makeModule([],[],'AC-POWER-SUPPLY'));return true;};"
+        "const device={getModel:function(){return '3650-24PS';},"
+        "getRootModule:function(){return root;},getPower:function(){return power;},"
+        "setPower:function(value){power=value;powers.push(value);},skipBoot:function(){}};"
+        "global.ipc={network:function(){return {getDevice:function(){return device;}};}};"
+        "global.reportResult=function(value){reported=value;};"
+        + script
+        + "assert.equal(calls,1);assert.deepEqual(powers,[false,true]);"
+        "console.log(reported);"
+    )
+
+    payload = json.loads(_run_node(source))
+
+    assert payload["attempted"] is True
+    assert payload["native_ack"] is True
+    assert payload["target"] == {
+        "container_ordinal": 0, "index": 1, "module_type": 4,
+    }
+    assert script.count(".addModuleAt(") == 1
+
+
+def test_install_javascript_refuses_a_second_bay_that_became_unreadable() -> None:
+    """If the sibling bay turns unknown before mutating, never insert."""
+
+    transport = _Replies(_dual_bay((_present(0, _module(model="COVER-PLATE")),)))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+    requirement = factory_module_requirement_for("3650-24PS", BUILD)
+    script = factory_module_runtime._install_factory_module_js(
+        observation,
+        requirement,
+    )
+    source = (
+        "let reported='',calls=0,power=true;"
+        + _node_descriptor_factory()
+        + _node_module_factory()
+        # getModuleAt(0) now returns null: unknown occupancy, not empty.
+        + "const entries=[null];"
+        "const root=makeModule([4,4],entries,'CHASSIS');"
+        "root.addModuleAt=function(){calls++;return true;};"
+        "const device={getModel:function(){return '3650-24PS';},"
+        "getRootModule:function(){return root;},getPower:function(){return power;},"
+        "setPower:function(value){power=value;},skipBoot:function(){}};"
+        "global.ipc={network:function(){return {getDevice:function(){return device;}};}};"
+        "global.reportResult=function(value){reported=value;};"
+        + script
+        + "console.log(JSON.stringify({calls:calls,result:JSON.parse(reported)}));"
+    )
+
+    payload = json.loads(_run_node(source))
+
+    assert payload["calls"] == 0
+    assert payload["result"]["attempted"] is False
+    assert payload["result"]["error"] == "installation precondition changed"
+
+
+def test_install_javascript_refuses_when_the_observed_inventory_changed() -> None:
+    before_transport = _Replies(_runtime_observation())
+    preparer = PacketTracerFactoryModulePreparer(before_transport, BUILD)
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+    requirement = factory_module_requirement_for("3650-24PS", BUILD)
+    script = factory_module_runtime._install_factory_module_js(
+        observation,
+        requirement,
+    )
+    source = (
+        "let reported='',calls=0,power=true;"
+        + _node_descriptor_factory()
+        + _node_module_factory()
+        + "const entries=[makeModule([],[],'CHANGED')];"
+        "const root=makeModule([18,4],entries,'CHASSIS');"
+        "root.addModuleAt=function(){calls++;return true;};"
+        "const device={getModel:function(){return '3650-24PS';},"
+        "getRootModule:function(){return root;},getPower:function(){return power;},"
+        "setPower:function(value){power=value;},skipBoot:function(){}};"
+        "global.ipc={network:function(){return {getDevice:function(){return device;}};}};"
+        "global.reportResult=function(value){reported=value;};"
+        + script
+        + "console.log(JSON.stringify({calls:calls,result:JSON.parse(reported)}));"
+    )
+
+    payload = json.loads(_run_node(source))
+
+    assert payload["calls"] == 0
+    assert payload["result"]["attempted"] is False
+    assert payload["result"]["native_ack"] is None
+    assert payload["result"]["error"] == "installation precondition changed"

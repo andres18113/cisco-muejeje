@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -43,6 +44,50 @@ def publish_canonical_evidence(
     evidence_path = resolve_within(root, "evidence.json")
     _write_durable(evidence_path, manifest)
     return evidence_path
+
+
+def publish_runtime_promotion_receipt(
+    directory: Path,
+    *,
+    evidence_path: Path,
+    runtime_snapshot_path: Path,
+    runtime_payload_sha256: str,
+) -> Path:
+    """Atomically link completed runtime authority to immutable evidence.
+
+    The receipt is intentionally separate from ``evidence.json``. Runtime
+    authority begins when the snapshot promotion completes; a receipt failure
+    can therefore leave missing metadata, but can never rewrite measured facts
+    or contradict the already-enumerable authority.
+    """
+
+    root = Path(directory)
+    exact_evidence = resolve_within(root, "evidence.json")
+    if Path(evidence_path).resolve() != exact_evidence.resolve():
+        raise ValueError("Promotion receipt requires the canonical evidence path")
+    if (
+        type(runtime_payload_sha256) is not str
+        or len(runtime_payload_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in runtime_payload_sha256)
+    ):
+        raise ValueError("Promotion receipt requires an exact payload SHA-256")
+    evidence_bytes = exact_evidence.read_bytes()
+    snapshot = Path(runtime_snapshot_path)
+    snapshot_bytes = snapshot.read_bytes()
+    receipt = {
+        "schema_version": 1,
+        "kind": "runtime-promotion-receipt",
+        "evidence_sha256": hashlib.sha256(evidence_bytes).hexdigest(),
+        "runtime_payload_sha256": runtime_payload_sha256,
+        "runtime_snapshot_file_sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+        "runtime_snapshot_path": str(snapshot),
+    }
+    target = resolve_within(root, "promotion.json")
+    _write_durable(
+        target,
+        (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode(),
+    )
+    return target
 
 
 def _write_durable(target: Path, content: bytes) -> None:

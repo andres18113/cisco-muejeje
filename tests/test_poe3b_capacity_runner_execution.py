@@ -26,16 +26,20 @@ def _factory_types():
 
 def _factory_results(device_name="SW", *, target_determined=True, verified=True):
     factory = _factory_types()
+    target = factory.FactoryModuleTarget(
+        container_ordinal=0,
+        index=1,
+        module_type=4,
+    )
     empty = factory.FactoryModuleSlotObservation(
-        container_path="2", index=4, slot_path="2/4",
-        slot_path_determined=True, module_type=4,
-        occupied=False,
+        container_ordinal=0,
+        index=1,
+        module_type=4,
+        state=factory.FactoryModuleSlotState.EMPTY,
     )
     installed = replace(
         empty,
-        occupied=True,
-        installed_module_number=4,
-        installed_module_type=4,
+        state=factory.FactoryModuleSlotState.OCCUPIED,
         descriptor_model="AC-POWER-SUPPLY",
         descriptor_model_observed=True,
     )
@@ -48,10 +52,9 @@ def _factory_results(device_name="SW", *, target_determined=True, verified=True)
         required_module_type=4,
         observed=True,
         slots=(empty,),
-        candidate_slots=(("2/4",) if target_determined else ("2/4", "2/5")),
-        target_slot=("2/4" if target_determined else None),
-        target_parent_path=("2" if target_determined else None),
-        target_index=(4 if target_determined else None),
+        candidate_targets=((target,) if target_determined else (target, replace(target, index=2))),
+        target_container_ordinal=(0 if target_determined else None),
+        target_index=(1 if target_determined else None),
         target_determined=target_determined,
         message=("deterministic" if target_determined else "indistinguishable"),
     )
@@ -60,18 +63,19 @@ def _factory_results(device_name="SW", *, target_determined=True, verified=True)
         device_name=device_name,
         device_model="3650-24PS",
         packet_tracer_build="9.0.1.0858",
-        target_slot="2/4",
+        requested_identity="AC-POWER-SUPPLY",
+        target=target,
         attempted=True,
         acknowledged=True,
-        native_accepted=True,
+        native_ack=True,
         power_was_on=True,
         power_restored=True,
     )
     after = replace(
         before,
         slots=(installed,),
-        candidate_slots=(),
-        installed_slots=("2/4",),
+        candidate_targets=(),
+        installed_targets=(target,),
         already_prepared=True,
     )
     verification = factory.FactoryModuleVerification(
@@ -86,7 +90,10 @@ def _factory_results(device_name="SW", *, target_determined=True, verified=True)
         before=before,
         installation=installation,
         after=after,
-        caused_effect=verified,
+        slot_container_effect=verified,
+        inventory_coherent=verified,
+        installed_identity_observed=("AC-POWER-SUPPLY" if verified else None),
+        installed_identity_matches=(True if verified else None),
         verified=verified,
         message="verified" if verified else "not verified",
     )
@@ -457,15 +464,18 @@ def test_runner_cycle_uses_only_the_instrumented_bounded_session_transport(
 
 class _Instrumented3650Transport:
     def __init__(self, runner, plan, *, target_determined=True,
-                 after_available=390.0, capture_error_label=None) -> None:
+                 after_available=390.0, capture_error_label=None,
+                 readiness_error_after_install=False) -> None:
         self.runner = runner
         self.plan = plan
         self.target_determined = target_determined
         self.after_available = after_available
         self.capture_error_label = capture_error_label
+        self.readiness_error_after_install = readiness_error_after_install
         self.calls = []
         self.names: set[str] = set()
         self.factory = None
+        self.installed = False
 
     def record(self, operation):
         self.calls.append(operation)
@@ -524,6 +534,8 @@ class _Instrumented3650Transport:
 
     def wait_until_ready(self, switch_name, *, timeout_seconds):
         self.record(self.runner.PoE3BSessionOperation.DEVICE_READINESS)
+        if self.installed and self.readiness_error_after_install:
+            raise TimeoutError("device never reported ready after the mutation")
 
         class Dump(SimpleNamespace):
             def model_dump(self, **_kwargs):
@@ -542,6 +554,7 @@ class _Instrumented3650Transport:
     def install_factory_module(self, observation):
         self.record(self.runner.PoE3BSessionOperation.INSTALL_FACTORY_MODULE)
         assert self.factory is not None and observation is self.factory[0]
+        self.installed = True
         return self.factory[1]
 
     def verify_factory_module(self, observation, installation):
@@ -597,7 +610,8 @@ class _Instrumented3650Transport:
 
 
 def _execute_3650(runner, tmp_identity, *, target_determined=True,
-                  after_available=390.0, capture_error_label=None):
+                  after_available=390.0, capture_error_label=None,
+                  readiness_error_after_install=False):
     plan = runner.governed_plan("3650-24PS")
     baseline, _restoration, _final = facts()
     artifacts = runner.reserve_artifacts(tmp_identity)
@@ -607,6 +621,7 @@ def _execute_3650(runner, tmp_identity, *, target_determined=True,
         target_determined=target_determined,
         after_available=after_available,
         capture_error_label=capture_error_label,
+        readiness_error_after_install=readiness_error_after_install,
     )
     session = runner.PacketTracerPoE3BSession(
         artifacts.run_id,
@@ -646,6 +661,14 @@ def test_3650_confirms_factory_power_delta_before_creating_any_phone(
         runner.PoE3BSessionOperation.FIXTURE_DEVICE_CREATE,
         install_index + 1,
     )
+    readiness_index = observed.index(
+        runner.PoE3BSessionOperation.DEVICE_READINESS,
+        install_index + 1,
+    )
+    verification_index = observed.index(
+        runner.PoE3BSessionOperation.VERIFY_FACTORY_MODULE,
+        install_index + 1,
+    )
     after_capture_index = observed.index(
         runner.PoE3BSessionOperation.INLINE_CAPTURE,
         install_index + 1,
@@ -656,7 +679,8 @@ def test_3650_confirms_factory_power_delta_before_creating_any_phone(
     assert execution.psu_hypothesis["available_before_watts"] == 0.0
     assert execution.psu_hypothesis["available_after_watts"] == 390.0
     assert execution.psu_hypothesis["available_delta_watts"] == 390.0
-    assert after_capture_index < first_phone_index
+    assert install_index < readiness_index < verification_index
+    assert verification_index < after_capture_index < first_phone_index
     assert observed.count(
         runner.PoE3BSessionOperation.INSTALL_FACTORY_MODULE,
     ) == 1
@@ -665,6 +689,32 @@ def test_3650_confirms_factory_power_delta_before_creating_any_phone(
     ) == 12
     assert observed == tuple(transport.calls)
     assert set(execution.raw_files) >= {"psu_before.txt", "psu_after.txt"}
+
+
+def test_3650_retains_the_irreversible_mutation_record_when_boot_fails(
+    runner,
+) -> None:
+    """A post-mutation boot failure must never erase the PSU attempt."""
+
+    execution, session, _transport = _execute_3650(
+        runner,
+        "offline-3650-boot-timeout",
+        readiness_error_after_install=True,
+    )
+
+    observed = tuple(record.operation for record in session.dispatches)
+    assert observed.count(
+        runner.PoE3BSessionOperation.INSTALL_FACTORY_MODULE,
+    ) == 1
+    assert runner.PoE3BSessionOperation.VERIFY_FACTORY_MODULE not in observed
+    assert any("TimeoutError" in problem for problem in execution.problems)
+    # The attempt that actually reached Packet Tracer stays enumerable.
+    installation = execution.factory_preparation.get("installation")
+    assert installation is not None
+    assert installation["attempted"] is True
+    assert installation["requested_identity"] == "AC-POWER-SUPPLY"
+    assert "verification" not in execution.factory_preparation
+    assert execution.snapshot is None
 
 
 def test_3650_ambiguous_target_stops_before_module_or_phone_mutation(
@@ -721,6 +771,6 @@ def test_3650_preserves_the_acquired_slot_observation_if_power_capture_refuses(
     observed = tuple(record.operation for record in session.dispatches)
     assert execution.snapshot is None
     assert execution.factory_preparation["before"]["target_determined"] is True
-    assert execution.factory_preparation["before"]["target_slot"] == "2/4"
+    assert execution.factory_preparation["before"]["target_index"] == 1
     assert "power_before" not in execution.factory_preparation
     assert runner.PoE3BSessionOperation.INSTALL_FACTORY_MODULE not in observed
