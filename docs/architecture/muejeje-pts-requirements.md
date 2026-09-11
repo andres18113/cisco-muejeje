@@ -1023,6 +1023,10 @@ and keeps the readings it can report distinct.
 interface's installed page — member, arity and what it hands over — with each
 page hash-pinned, and holds the evidence table in the offline audit to one row
 per entry citing that page.
+`tests/muejeje/test_workspace_links_blocked.py` holds the allowlist to admitting
+no member that reads a link, and re-derives from the installed pages why none
+is admitted: every documented route to a link hands over the base `Link`, no
+member hands over a `Cable`, and no page documents `getClassName()`.
 `tests/muejeje/test_platform_readings.py` drives every device reading, every
 field validator behind them, and that a defect inside an adapter reaches the
 caller as `ENGINE_EXCEPTION` rather than as a platform reading;
@@ -1262,11 +1266,15 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
   `OFFICIAL_PACKAGING_PROVED` is still `PENDING_GUI`.
 - **M3** is not `CORE_READY`: its read-only topology scope is incomplete. The
   workspace inventory, one device's identity and one device's ports are
-  implemented; the workspace's links are not, because Cisco documents link
-  endpoints only on `Cable` and `Antenna` while `Network.getLinkAt(int)` hands
-  over a `Link`, and nothing installed documents how to tell which one it is
-  without a table of connection-type numbers (MJ-014). Every workspace
-  capability is also `PENDING_TARGET` (MJ-015, MJ-031).
+  implemented; the workspace's links are not. Every documented route to a link
+  — `Network.getLinkAt(int)`, or `getLink()` on a port — hands over the base
+  `Link`, which documents only its connection type; endpoints are documented
+  only on the derived `Cable` and `Antenna`, which no documented member hands
+  over from a `Link`; and nothing installed says which one a handed-over `Link`
+  is. The `CONNECT_TYPES` list names no interface, and matching a value against
+  a table of ours would be a mirror (MJ-014). Reading links waits on target
+  evidence of what a Script Module is handed. Every workspace capability is
+  also `PENDING_TARGET` (MJ-015, MJ-031).
 - **The zero-change cutover** is `NOT_ACHIEVED` (MJ-034): nothing is packaged
   or release-qualified, and no compatibility facade exists outside the V6
   core.

@@ -116,7 +116,9 @@ recorded in the v2 preflight inventory (eight pages, including three that the
 original audit missed). The IpcAPI class pages every admitted platform member
 is documented on are pinned separately, by hash, in
 `tests/muejeje/test_platform_reference.py`, which re-reads each one on a
-machine that has the target build.
+machine that has the target build. The three pages the unread links rest on —
+`Link`, `Cable` and `Antenna` — are pinned the same way in
+`tests/muejeje/test_workspace_links_blocked.py`.
 
 ## What the tool does, and does not do
 
@@ -351,19 +353,37 @@ another (`MJ-031`). Its three members are documented and called by legacy code;
 none has a Muejeje reading.
 
 **Where M3 stops, and the reason is in Cisco's reference.** The workspace's
-links are the next read-only topology subject. `Network.getLinkCount()` and
-`Network.getLinkAt(int)` are documented, but the second hands over a `Link`, and
-the `Link` page documents only `getConnectionType()`. A link's endpoints are
-documented on its two derived classes: `Cable.getPort1()` and `Cable.getPort2()`
-for a cable, `Antenna.getPort()` for a wireless link. Reading an endpoint
-therefore means deciding which of the two a handed-over `Link` is, and nothing
-installed documents a way to ask. `getClassName()`, which the legacy runtime
-probes, appears on no installed IpcAPI page; telling `Cable` from `Antenna` by
-`CONNECT_TYPES` would need a table of connection-type numbers, which is a Cisco
-enum mirror (`MJ-014`); and probing members with `typeof`, as legacy code does,
-would be guessing an interface — the one thing the qualified boundary exists to
-refuse. The slice is blocked on target evidence of how a Script Module can
-identify a link's interface, not on work this repository could do offline.
+links are the next read-only topology subject, and every documented route to
+one hands over the base interface. `Network.getLinkAt(int)` answers a `Link`,
+and so does `getLink()` on `Port` and on every other interface that documents
+it; across every installed class page, no other member hands over a `Link`. The
+`Link` page documents one member, `getConnectionType()`. A link's endpoints are
+documented only on the two interfaces derived from it: `Cable.getPort1()` and
+`Cable.getPort2()` for a cable, `Antenna.getPort()` for a wireless link. No
+installed member hands over a `Cable`, and the only one that hands over an
+`Antenna`, `Antenna.getReceiverAt(int)`, is asked of an `Antenna` already held.
+
+Reading an endpoint therefore means deciding which derived interface a
+handed-over `Link` is, and nothing installed documents a way to decide it.
+`getClassName()`, which the legacy runtime probes, appears on no installed
+IpcAPI page. The `Link` page lists the `CONNECT_TYPES` values but not which
+interface carries each, so a table from connection type to interface would be a
+Cisco enum mirror (`MJ-014`) and an inference nobody documented. Probing members
+with `typeof`, as legacy code does, would be guessing an interface. The boundary
+refuses that by construction as well: a handle carries the interface its member
+documents, so even an admitted `Cable` member would be refused on a `Link`.
+
+The port side does not get round it. `Port.getRemotePortName()` is documented
+only as the name of the remote port: a name with no device attached, which could
+be attributed only by matching names across devices — the join `MJ-031` forbids
+— and nothing documents what an unlinked or wireless port answers.
+
+So the slice is blocked on target evidence: from an artifact running inside
+`9.0.1.0858`, which interface a Script Module is actually handed for a workspace
+link. It is not blocked on work this repository could do offline.
+`tests/muejeje/test_workspace_links_blocked.py` re-derives each fact above from
+the installed pages, with the three link pages hash-pinned, and holds the
+allowlist to admitting no member that reads a link.
 
 ### A green V6 run is not IpcAPI qualification
 
