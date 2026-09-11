@@ -53,7 +53,34 @@ here: the manifest is the source, this table is the reading of it.
 | Privileges | none selected |
 | Signing | none (`TODO-SIGNING` is open; an unsigned module is what this recipe produces) |
 | Custom Interfaces | `muejeje_pts/interface/index.html` |
-| Script Engine files, **in this order** | `core.js`, `protocol_v6.js`, `validation_v6.js`, `platform_adapter.js`, `platform_discovery.js`, `runtime_capabilities.js`, `runtime_identity.js`, `dispatcher_v6.js`, `lifecycle.js` |
+| Script Engine files | every file below, **in this order**, all from `muejeje_pts/script-engine/` |
+
+1. `core.js`
+2. `protocol_v6.js`
+3. `validation_v6.js`
+4. `arguments_v6.js`
+5. `platform_reading.js`
+6. `platform_adapter.js`
+7. `network_adapter.js`
+8. `network_identity_adapter.js`
+9. `platform_device_adapter.js`
+10. `platform_module_adapter.js`
+11. `platform_support_adapter.js`
+12. `network_identity.js`
+13. `network_inventory.js`
+14. `platform_discovery.js`
+15. `platform_modules.js`
+16. `platform_support.js`
+17. `runtime_capabilities.js`
+18. `runtime_identity.js`
+19. `dispatcher_v6.js`
+20. `lifecycle.js`
+
+This list is a reading of `build_options.engine_script_order`, and a gate holds
+it equal to that declaration. An earlier revision named nine of these files
+long after the kernel had split, so a module packaged by following it would
+have been missing its admission rules, its reading vocabulary and every
+platform adapter — and nothing noticed, because nothing compared the two.
 
 The engine order is the dependency direction, because *"all script files are
 executed (evaluated) in the Script Engine in the same order as listed in the
@@ -74,8 +101,8 @@ lifecycle that may call all of it (`MJ-019`).
 
    **This is a deliberate, and consequential, choice.** The `runtime.*`
    operations make no IPC call, so nothing selected here changes what they do.
-   The `platform.*` ones do make calls, and **what happens to them with nothing
-   selected is exactly what this run is for**. Selecting a privilege would mean
+   The `platform.*` and `network.*` ones do make calls, and **what happens to
+   them with nothing selected is exactly what this run is for**. Selecting a privilege would mean
    guessing which one the reading needs, and no evidence in this repository
    says (`MJ-032`); predicting the outcome would be the same guess in the other
    direction. Record whichever reading comes back — that observation is the
@@ -120,15 +147,18 @@ The artifact is exercised, never used to change anything. Import the saved
 
 Driving the list the runtime reports, rather than a list copied into this
 document, is what keeps this procedure current when an operation is added
-(`MJ-008`). The calls below are the ones admitted at the time of writing.
+(`MJ-008`). The calls below cover every operation admitted today, and a gate
+drives each one through the kernel and holds the set complete — an earlier
+revision omitted one, and nothing noticed.
 
 No topology is created, opened or modified; no device, link or configuration is
 touched; no transport, bridge or HTTP endpoint is implemented or contacted.
 Every admitted operation is read-only. The `runtime.*` ones make no platform
 call at all; the `platform.*` ones make documented getter calls on the hardware
-*factory*, which describes what models exist and instantiates nothing. What a
-module carrying no privilege gets back from them is unknown until this run
-answers it.
+*factory*, which describes what models exist and instantiates nothing; the
+`network.*` ones make documented getter calls on the *workspace* the running
+instance holds, and change nothing on it. What a module carrying no privilege
+gets back from them is unknown until this run answers it.
 
 One call per admitted operation, each on one line. Anything **pasted** into
 the Builder Code Editor loses its newlines, so a pasted snippet must be a
@@ -161,13 +191,18 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-support","op":"platform.module_type_
 mcpDispatchV6('{"v":6,"operation_rid":"qual-inventory","op":"network.device_inventory","args":{"offset":0,"limit":8}}')
 ```
 
-The last one reads the **workspace**, so what it reports depends on what the
-running instance holds — an empty workspace answering `available_count: 0` is a
-reading, not a failure. Record the workspace's state alongside it, because the
-same call on a different session is a different observation (`MJ-002`).
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-identity","op":"network.device_identity","args":{"device_index":0}}')
+```
 
-The `platform.*` calls are the ones that reach Packet Tracer, and **either
-outcome is a result worth recording verbatim**:
+The last two read the **workspace**, so what they report depends on what the
+running instance holds — an empty workspace answering `available_count: 0`, or
+a position answering `device_present: false`, is a reading, not a failure.
+Record the workspace's state alongside them, because the same call on a
+different session is a different observation (`MJ-002`).
+
+The `platform.*` and `network.*` calls are the ones that reach Packet Tracer,
+and **every outcome is a result worth recording verbatim**:
 
 | `result.resolution` | `unavailable_reason` | What it establishes |
 | --- | --- | --- |
@@ -175,10 +210,10 @@ outcome is a result worth recording verbatim**:
 | `UNAVAILABLE` | `PLATFORM_ABSENT` | there was no `ipc` object in the Script Engine at all. That would be a fact about the engine, not about privileges, and it needs recording as such |
 | `UNAVAILABLE` | `PLATFORM_MEMBER_ABSENT` | the object was there and did not offer the member. Nothing was called, so this is a fact about the interface rather than about permission — record which member |
 | `UNAVAILABLE` | `PLATFORM_ANSWER_UNUSABLE` | Packet Tracer answered and the answer could not be attributed. Record the whole envelope: this is the interesting failure |
-| `OBSERVED` | `null` | the factory answered. Record `available_count` and every descriptor and chassis node verbatim — this is the first real target evidence for `MJ-014`'s descriptor path from inside the artifact |
+| `OBSERVED` | `null` | the platform answered. Record the whole result verbatim — every descriptor, chassis node and workspace device it carries. For a `platform.*` reading this is the first real target evidence for `MJ-014`'s descriptor path from inside the artifact |
 
-None of the four is a verdict. Python decides what the run established, from
-the recorded envelopes, outside the artifact (`MJ-011`).
+None of these readings is a verdict. Python decides what the run established,
+from the recorded envelopes, outside the artifact (`MJ-011`).
 
 Each returns a JSON **string** carrying
 `{v, operation_rid, op, ok, result, error}`, with the `operation_rid` echoed
