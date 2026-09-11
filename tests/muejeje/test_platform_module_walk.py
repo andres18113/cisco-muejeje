@@ -28,12 +28,8 @@ import json
 
 import pytest
 
-from tests.muejeje.engine_harness import (
-    CHASSIS_MODELS,
-    dispatch_v6,
-    node_available,
-    platform_stub,
-)
+from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.platform_stub import CHASSIS_MODELS, platform_stub
 
 OPERATION = "platform.module_descriptors"
 

@@ -49,6 +49,8 @@ EXPECTED_ARTIFACT_INPUTS = (
     "muejeje_pts/script-engine/dispatcher_v6.js",
     "muejeje_pts/script-engine/lifecycle.js",
     "muejeje_pts/script-engine/network_adapter.js",
+    "muejeje_pts/script-engine/network_identity.js",
+    "muejeje_pts/script-engine/network_identity_adapter.js",
     "muejeje_pts/script-engine/network_inventory.js",
     "muejeje_pts/script-engine/platform_adapter.js",
     "muejeje_pts/script-engine/platform_device_adapter.js",

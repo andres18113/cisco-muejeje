@@ -51,14 +51,27 @@
  *   ipc.network()                          -> Network            (class_i_p_c)
  *   Network.getDeviceCount()                         -> int
  *   Network.getDeviceAt(int)                         -> Device
- *   Device.getName()                                 -> string
+ *   Device.getName()                                 -> string     (class_device)
+ *   Device.getModel()                                -> string     (class_device)
+ *   Device.getType()                                 -> DeviceType (class_device)
  *
- * The `Network` and `Device` getters are evidenced against 9.0.1.0858 by this
- * repository's own live channel, which enumerates a workspace this way and
- * reads names from it. `Network` also offers members that create a device or a
- * link, and none of them is on this list: an allowlist is what makes
- * "read-only" a property of the boundary rather than a promise about call
- * sites.
+ * `Network.getDeviceCount`, `Network.getDeviceAt`, `Device.getName` and
+ * `Device.getModel` are additionally evidenced against 9.0.1.0858 by this
+ * repository's own live channel, which enumerates a workspace exactly this way
+ * and reads both strings off it. `Device.getType` is documented and unmeasured
+ * — which is the standing this list records, not a reason to guess at it.
+ * `Network` also offers members that create a device or a link, and `Device`
+ * offers members that move, power and rename one; none of them is on this
+ * list. An allowlist is what makes "read-only" a property of the boundary
+ * rather than a promise about call sites.
+ *
+ * `Device` further documents `getDescriptor()`, `getSerialNumber()`,
+ * `getPower()` and `getUpTime()`. None is admitted: each is a further subject
+ * with its own bounds and its own evidence, and no operation needs one yet.
+ * `getDescriptor()` in particular is the only documented way to relate a
+ * workspace device to a factory descriptor, so it is named here to record that
+ * the relation has an API — and that nothing in this artifact manufactures one
+ * without it (MJ-002, MJ-015).
  *   DeviceDescriptor.getSupportedModuleTypeCount()   -> int
  *   DeviceDescriptor.getSupportedModuleTypeAt(int)   -> ModuleType
  *   DeviceDescriptor.getRootModule()                 -> ModuleDescriptor

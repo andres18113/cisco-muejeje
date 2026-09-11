@@ -43,6 +43,7 @@ IPC_ADAPTER_FILES: tuple[str, ...] = (
 # declaration rules below apply to all of them.
 PLATFORM_ADAPTER_FILES: tuple[str, ...] = IPC_ADAPTER_FILES + (
     "muejeje_pts/script-engine/network_adapter.js",
+    "muejeje_pts/script-engine/network_identity_adapter.js",
     "muejeje_pts/script-engine/platform_device_adapter.js",
     "muejeje_pts/script-engine/platform_module_adapter.js",
     "muejeje_pts/script-engine/platform_support_adapter.js",
@@ -138,6 +139,7 @@ def test_the_declared_adapter_registries_are_what_this_artifact_ships():
     assert PLATFORM_ADAPTER_FILES == (
         "muejeje_pts/script-engine/platform_adapter.js",
         "muejeje_pts/script-engine/network_adapter.js",
+        "muejeje_pts/script-engine/network_identity_adapter.js",
         "muejeje_pts/script-engine/platform_device_adapter.js",
         "muejeje_pts/script-engine/platform_module_adapter.js",
         "muejeje_pts/script-engine/platform_support_adapter.js",

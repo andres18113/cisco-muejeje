@@ -858,6 +858,19 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
    evidence and its own bounds, and none has an operation that needs it yet.
    Nothing anywhere reads or writes a device instance's state.
 
+   **A workspace reading is one observation, and never a join.**
+   `network.device_identity` reports what one device *is* — its name, model and
+   DeviceType — and every one of those facts is read off that one device in
+   that one reading. A workspace index is the position the platform handed the
+   device over at, in that reading: it is not stable identity, and it is not a
+   factory index. Nothing relates a workspace device to a factory descriptor,
+   and in particular nothing infers the relation from an index, from an equal
+   or similar name, or from a model string. Cisco documents
+   `Device.getDescriptor()`, which would answer it from the device itself with
+   no matching of ours involved; it is a further subject with its own bounds
+   and its own evidence, named here so that the relation having an API is on
+   record and so that nothing manufactures one without it (MJ-002, MJ-015).
+
 **An unreadable platform is an observation, not a failure.** No V6 error is
 reported for it: the request was admissible, and the answer is that no reading
 was obtained. Four reasons stay distinct, because a consumer acts differently on
@@ -945,16 +958,21 @@ walk, including each bound and the subtree it marks.
 `tests/muejeje/test_platform_support.py` cover the platform operations: one
 result shape whether the platform answered or not, the window or chassis it reports,
 the declared argument rules, and no self-certified verdict.
+`tests/muejeje/test_network_inventory.py` and
+`tests/muejeje/test_network_identity.py` do the same for the workspace ones,
+and the second additionally asserts that its adapter names no factory symbol at
+all — the positive form of "nothing is correlated".
 `tests/muejeje/test_source_root.py` gates the enum identifiers, and
 `tests/muejeje/test_platform_declarations.py` checks the declarations
 themselves — which files may name `ipc`, which are adapters, and which may
 shape a reading at all.
 **Status.** `ENFORCED` for the boundary, the read-only rule, the failure
-attribution and the adapters' own logic under Node; `PENDING_TARGET` for both
-capabilities — `platform.device_descriptors` and `platform.module_descriptors`.
-Their `OBSERVED` branches have only ever been driven against a stub, no `.pts`
-has been built from these sources, and nothing here has reached `9.0.1.0858`
-(MJ-015).
+attribution and the adapters' own logic under Node; `PENDING_TARGET` for every
+capability that reaches the platform — `platform.device_descriptors`,
+`platform.module_descriptors`, `platform.module_type_support`,
+`network.device_inventory` and `network.device_identity`. Their `OBSERVED`
+branches have only ever been driven against a stub, no `.pts` has been built
+from these sources, and nothing here has reached `9.0.1.0858` (MJ-015).
 
 ### MJ-032 — A declared privilege must be a privilege Cisco names
 **Requirement.** `build_options.privileges` may be empty, or may hold only

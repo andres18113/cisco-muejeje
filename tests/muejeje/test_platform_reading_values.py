@@ -33,7 +33,8 @@ import json
 
 import pytest
 
-from tests.muejeje.engine_harness import dispatch_v6, node_available, platform_stub
+from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.platform_stub import platform_stub
 
 OPERATION = "platform.device_descriptors"
 

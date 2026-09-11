@@ -27,12 +27,8 @@ import re
 
 import pytest
 
-from tests.muejeje.engine_harness import (
-    ACCESS_POINT_ROOT,
-    dispatch_v6,
-    node_available,
-    platform_stub,
-)
+from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.platform_stub import ACCESS_POINT_ROOT, platform_stub
 from tests.muejeje.measure import js_code_only
 from tests.muejeje.support import SCRIPT_ENGINE
 from tests.muejeje.test_platform_declarations import (

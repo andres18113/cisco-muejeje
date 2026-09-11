@@ -21,6 +21,25 @@ from pathlib import Path
 
 from tests.muejeje.support import REPO_ROOT, SCRIPT_ENGINE, SOURCE_ROOT
 
+PLATFORM_BOUNDS_FILE = "platform_reading.js"
+PLATFORM_BOUNDS_BLOCK = "MUEJEJE_PLATFORM_LIMITS = {"
+
+
+def declared_platform_bound(name: str) -> int:
+    """One declared platform bound, read from the file that defines them.
+
+    A gate that wrote the number down itself would pass while the artifact
+    used a different one, which is the whole failure mode a declared bound
+    exists to prevent (MJ-029).
+    """
+    body = (SCRIPT_ENGINE / PLATFORM_BOUNDS_FILE).read_text(encoding="utf-8")
+    block = js_code_only(body.split(PLATFORM_BOUNDS_BLOCK)[1].split("};")[0])
+    for line in block.splitlines():
+        if line.strip().startswith(f"{name}:"):
+            return int(line.split(":")[1].strip().rstrip(","))
+    raise AssertionError(f"{name} is not a declared platform bound")
+
+
 def source_lines(path: Path) -> int:
     """Physical lines. The budget is about how much file a reader must hold."""
     return len(path.read_text(encoding="utf-8").splitlines())

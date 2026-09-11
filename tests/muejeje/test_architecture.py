@@ -41,16 +41,29 @@ FUNCTION_TARGET, FUNCTION_HARD = 40, 80
 # path -> why this file may exceed its target. Empty: nothing needs one.
 TARGET_EXCEPTIONS: dict[str, str] = {}
 # "path::function" -> why this function may exceed the target.
-FUNCTION_EXCEPTIONS: dict[str, str] = {}
+FUNCTION_EXCEPTIONS: dict[str, str] = {
+    "muejeje_pts/script-engine/dispatcher_v6.js::muejejeV6OperationTable": (
+        "the V6 whitelist, and it is a declaration rather than logic: no "
+        "branch, no loop, one entry per admitted operation, so its length is "
+        "the number of operations and not the amount a reader must follow. "
+        "Splitting it would split the whitelist, which is the one thing that "
+        "has to be readable in a single place (MJ-008) — and the table is "
+        "already the only place a reader can see the whole of what this "
+        "runtime admits."
+    ),
+}
 
 # Modules in the test area that carry fixtures, measurement or a harness
 # rather than claims. Everything else there must be a test module.
 #
-# `measure.py` was split out of `support.py` when that module crossed its own
-# line budget: building a fixture and measuring a file are two
-# responsibilities, and the budget is what forced the split instead of letting
-# it be argued about (MJ-018, MJ-020).
-SUPPORT_MODULES = {"support.py", "measure.py", "engine_harness.py"}
+# `measure.py` was split out of `support.py`, and `platform_stub.py` out of
+# `engine_harness.py`, each when its predecessor crossed its own line budget.
+# Building a fixture, measuring a file, running the kernel and building a
+# platform for it to talk to are four responsibilities, and the budget is what
+# forced each split instead of letting it be argued about (MJ-018, MJ-020).
+SUPPORT_MODULES = {
+    "support.py", "measure.py", "engine_harness.py", "platform_stub.py",
+}
 
 # The monolith M0F broke up. Its absence is part of the gate: moving the same
 # oversized responsibility into a new file is not a fix.
@@ -121,7 +134,26 @@ def test_target_exception_table_carries_no_stale_entry():
         )
 
 
-def _function_offenders(limit: int, *, honour_exceptions: bool) -> list[str]:
+def test_the_function_exception_table_carries_no_stale_entry():
+    """An exception that no longer applies is a claim nobody is checking.
+
+    The same rule the file-level table is held to. Without it, a function that
+    shrank back under the target would keep a standing permission to grow, and
+    the next reader would have no way to tell an argued exception from an
+    inherited one.
+    """
+    measured = dict(_function_offenders(0, honour_exceptions=False, keys_only=True))
+    for key, justification in FUNCTION_EXCEPTIONS.items():
+        assert justification.strip(), key
+        assert key in measured, f"{key} no longer exists; drop the exception"
+        assert measured[key] > FUNCTION_TARGET, (
+            f"{key} now meets the target; drop the exception"
+        )
+
+
+def _function_offenders(
+    limit: int, *, honour_exceptions: bool, keys_only: bool = False,
+) -> list[str]:
     offenders: list[str] = []
     measured: list[tuple[Path, list[tuple[str, int]]]] = [
         (path, python_function_lengths(path))
@@ -133,7 +165,9 @@ def _function_offenders(limit: int, *, honour_exceptions: bool) -> list[str]:
             key = f"{relative(path)}::{name}"
             if honour_exceptions and FUNCTION_EXCEPTIONS.get(key, "").strip():
                 continue
-            if span > limit:
+            if keys_only:
+                offenders.append((key, span))
+            elif span > limit:
                 offenders.append(f"{key}: {span} > {limit}")
     return offenders
 

@@ -10,22 +10,18 @@ that consumes it is a contract that contradicts itself: the consumer did
 nothing wrong, and no amount of reading the two operations separately would
 have told it so.
 
-Two closures, and each one broke differently before this module existed:
-
-* **`ModuleType`.** Descriptor discovery and the chassis walk published
-  whatever whole number the platform answered, while
-  `platform.module_type_support` admitted `0..65535`. The runtime emitted a
-  platform-produced type and then refused that same value against a local
-  bound the platform had never heard of.
-* **Factory and workspace indexes.** A window could publish an index above the
-  ceiling the consuming operations admitted, because the window's *first*
-  index was bounded and its last was not.
+Two closures, and each one broke differently before this module existed. The
+`ModuleType` relay published whatever whole number the platform answered while
+the consuming operation admitted `0..65535`; the index relays let a window at
+its addressing ceiling publish positions above it, because a window's *first*
+index was bounded and its last was not. MJ-029 states the rule and why a value
+domain is not a resource bound; this module drives it.
 
 **A bound is not the enemy; an incompatible pair of bounds is.** Execution
-stays bounded by Muejeje's own resource limits (MJ-029) — how many entries one
-window carries, how far one walk goes, how long a string may be. What closure
-forbids is a *producer domain* and a *consumer domain* that disagree, so the
-domains are declared once and both ends name the same declaration.
+stays bounded by Muejeje's own limits — how many entries one window carries,
+how far one walk goes, how long a string may be. What closure forbids is a
+*producer domain* and a *consumer domain* that disagree, so each domain is
+declared once and both ends name that declaration.
 
 Nothing here is a claim about Packet Tracer. It is a claim about the contract
 this artifact publishes, driven against a stub under Node (MJ-015).
@@ -37,23 +33,10 @@ import json
 
 import pytest
 
-from tests.muejeje.engine_harness import dispatch_v6, node_available, platform_stub
-from tests.muejeje.measure import js_code_only
+from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.platform_stub import EXTREME_MODELS, platform_stub
+from tests.muejeje.measure import declared_platform_bound, js_code_only
 from tests.muejeje.support import SCRIPT_ENGINE
-
-# A model whose supported types sit at both ends of the published domain and
-# outside the ceiling an earlier revision imposed, plus a chassis whose own
-# type and slot types do the same. Every one of these is a value the platform
-# is the only authority on, so publishing one and then refusing it is the
-# defect this module exists to catch.
-EXTREME_ROOT = (
-    "{model: 'root', module_type: -1, hot_swappable: false,"
-    " slot_types: [0, 70000], modules: []}"
-)
-EXTREME_MODELS = (
-    "[{model: 'wide', type: 1, supported: true,"
-    f" module_types: [-1, 0, 70000], root: {EXTREME_ROOT}}}]"
-)
 
 # A factory reporting far more models than this runtime addresses, so the
 # ceiling under test is Muejeje's own and not the stub's. It stays inside
@@ -158,10 +141,10 @@ def test_no_reading_publishes_a_factory_index_above_the_addressable_ceiling():
     """
     result = _result(
         "platform.device_descriptors",
-        {"offset": _declared_bound("MAX_FACTORY_INDEX"), "limit": 8},
+        {"offset": declared_platform_bound("MAX_FACTORY_INDEX"), "limit": 8},
         platform_stub(EXTREME_MODELS, count=str(WIDE_FACTORY), dense=True),
     )["result"]
-    ceiling = _declared_bound("MAX_FACTORY_INDEX")
+    ceiling = declared_platform_bound("MAX_FACTORY_INDEX")
 
     assert result["resolution"] == "OBSERVED"
     assert [d["device_index"] for d in result["descriptors"] if
@@ -189,7 +172,7 @@ def test_every_index_descriptor_discovery_publishes_is_one_a_consumer_may_send(
     the consumer refused it.
     """
     prelude = platform_stub(EXTREME_MODELS, count=str(WIDE_FACTORY), dense=True)
-    ceiling = _declared_bound("MAX_FACTORY_INDEX")
+    ceiling = declared_platform_bound("MAX_FACTORY_INDEX")
     published = [
         entry["device_index"]
         for entry in _result(
@@ -211,20 +194,42 @@ def test_every_index_descriptor_discovery_publishes_is_one_a_consumer_may_send(
         assert response["result"]["device_index"] == index
 
 
+@requires_node
+def test_every_index_the_workspace_inventory_publishes_is_one_a_consumer_may_send():
+    """The same closure on the other enumeration.
+
+    `network.device_inventory` publishes a position for each device it lists,
+    and `network.device_identity` consumes exactly that. The ceiling is again
+    the case that matters: it is the position a paging consumer reaches last.
+    """
+    prelude = platform_stub(
+        EXTREME_MODELS, devices="[{name: 'a'}]",
+        device_count=str(WIDE_FACTORY), dense=True,
+    )
+    ceiling = declared_platform_bound("MAX_WORKSPACE_INDEX")
+    inventory = _result(
+        "network.device_inventory", {"offset": ceiling, "limit": 8}, prelude,
+    )["result"]
+
+    assert inventory["resolution"] == "OBSERVED"
+    assert [d["index"] for d in inventory["devices"]] == [ceiling], (
+        "the inventory published a position past its own addressing ceiling"
+    )
+    assert inventory["max_device_index"] == ceiling
+    for index in [0, ceiling]:
+        response = _result(
+            "network.device_identity", {"device_index": index}, prelude,
+        )
+        assert response["ok"] is True, (
+            f"network.device_identity refused workspace index {index}, which "
+            f"the inventory publishes: {response['error']}"
+        )
+        assert response["result"]["device_index"] == index
+
+
 # ---------------------------------------------------------------------------
 # Structural: one domain, named by both ends.
 # ---------------------------------------------------------------------------
-
-def _declared_bound(name: str) -> int:
-    """A declared bound, read from the one file that defines them."""
-    block = _body("platform_reading.js").split(
-        "MUEJEJE_PLATFORM_LIMITS = {",
-    )[1].split("};")[0]
-    for line in js_code_only(block).splitlines():
-        if line.strip().startswith(f"{name}:"):
-            return int(line.split(":")[1].strip().rstrip(","))
-    raise AssertionError(f"{name} is not a declared platform bound")
-
 
 def test_the_module_type_domain_has_one_definition_and_two_named_ends():
     """Closure by construction, not by two numbers that happen to agree.
@@ -242,7 +247,7 @@ def test_the_module_type_domain_has_one_definition_and_two_named_ends():
             f"the operation that consumes a ModuleType must name {bound}"
         )
         assert f"MUEJEJE_PLATFORM_LIMITS.{bound}" in adapter
-    assert _declared_bound("MODULE_TYPE_MIN") < 0 < _declared_bound(
+    assert declared_platform_bound("MODULE_TYPE_MIN") < 0 < declared_platform_bound(
         "MODULE_TYPE_MAX",
     ), "the platform is the authority on which type values exist, not this list"
 
@@ -283,6 +288,7 @@ def test_the_addressing_domains_are_declared_per_subject_and_named_by_both_ends(
                     "platform_support.js"):
         assert factory in _body(logical), f"{logical} must bound a factory index"
     assert workspace in _body("network_inventory.js")
+    assert workspace in _body("network_identity.js")
     assert "MAX_OFFSET" not in _body("platform_reading.js"), (
         "one offset bound for two enumerations is how the domains drifted"
     )

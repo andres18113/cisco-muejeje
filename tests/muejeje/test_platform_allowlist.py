@@ -30,12 +30,8 @@ import re
 
 import pytest
 
-from tests.muejeje.engine_harness import (
-    ACCESS_POINT_ROOT,
-    dispatch_v6,
-    node_available,
-    platform_stub,
-)
+from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.platform_stub import ACCESS_POINT_ROOT, platform_stub
 from tests.muejeje.support import SCRIPT_ENGINE
 
 BOUNDARY = "platform_adapter.js"

@@ -20,6 +20,11 @@ var MUEJEJE_V6_DISPATCH = {table: null};
 function muejejeV6OperationTable() {
     if (MUEJEJE_V6_DISPATCH.table === null) {
         MUEJEJE_V6_DISPATCH.table = {
+            "network.device_identity": {
+                read_only: true,
+                args: MUEJEJE_NETWORK_IDENTITY_ARGS,
+                handler: muejejeNetworkDeviceIdentity
+            },
             "network.device_inventory": {
                 read_only: true,
                 args: MUEJEJE_NETWORK_INVENTORY_ARGS,

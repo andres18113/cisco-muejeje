@@ -20,7 +20,9 @@ every compatibility check green.
 Split out of `test_v6_compatibility` when that module crossed its own line
 budget. The envelope a consumer parses and the answers it reads are two
 claims, and the budget is what forced the split rather than letting it be
-argued about (MJ-018, MJ-020).
+argued about (MJ-018, MJ-020). The frozen shapes themselves are declared data
+and live with the rest of it in `support`, because they grow with every new
+operation while these gates do not.
 
 None of this is a claim about Packet Tracer. It is a claim about the contract
 we publish, checked against the kernel that implements it under Node (MJ-015).
@@ -32,101 +34,16 @@ import json
 
 import pytest
 
-from tests.muejeje.engine_harness import (
-    CHASSIS_MODELS,
-    dispatch_v6,
-    node_available,
-    platform_stub,
-)
-
-# Per operation, the result fields a consumer may already be reading. An
-# operation may answer with more; it may never answer with fewer.
-# `max_device_index` and `descriptors[].device_index` are frozen for the reason
-# they were added: they are a reading's *reusable input*, and relay closure
-# turns on them being reported rather than derived (`test_relay_closure`).
-REQUIRED_RESULT_FIELDS = {
-    "network.device_inventory": {
-        "resolution", "unavailable_reason", "available_count", "offset",
-        "limit", "max_device_index", "devices", "window_truncated",
-    },
-    "platform.device_descriptors": {
-        "resolution", "unavailable_reason", "available_count", "offset",
-        "limit", "max_device_index", "descriptors", "window_truncated",
-    },
-    "platform.module_descriptors": {
-        "resolution", "unavailable_reason", "device_index", "available_count",
-        "descriptor_present", "model", "device_type", "root_present", "nodes",
-        "nodes_truncated", "depth_truncated",
-    },
-    "platform.module_type_support": {
-        "resolution", "unavailable_reason", "device_index", "module_type",
-        "available_count", "descriptor_present", "model", "device_type",
-        "module_type_supported",
-    },
-    "runtime.identify": {
-        "extension_name", "extension_version", "protocol_versions",
-        "operations", "supported_features", "runtime_session_id",
-        "provenance", "lifecycle",
-    },
-    "runtime.capabilities": {
-        "runtime_session_id", "protocol_versions", "operations",
-        "supported_features",
-    },
-}
-
-# The nested objects inside those results, by the path that reaches them, with
-# the type each published field carries. `descriptors[]` means "every object in
-# that list"; a tuple of types means the field may be any of them, which is how
-# a nullable one is written down.
-#
-# Fields and types, not just names, because "keeps its name while meaning
-# something else" is the half of MJ-030 a name-only reader cannot see. Paths
-# are a *floor*: a result may publish a nested object nobody froze — that is
-# additive, and a consumer not reading it cannot see it — but it may never stop
-# publishing one that is frozen here.
-REQUIRED_NESTED_FIELDS = {
-    "network.device_inventory": {
-        "devices[]": {"index": int, "name": str},
-    },
-    "platform.device_descriptors": {
-        "descriptors[]": {
-            "device_index": int, "model": str, "device_type": int,
-            "model_supported": bool, "supported_module_types": list,
-            "module_types_truncated": bool,
-        },
-    },
-    "platform.module_descriptors": {
-        "nodes[]": {
-            "index": int, "parent_index": (int, type(None)), "depth": int,
-            "module_index": (int, type(None)), "model": str,
-            "module_type": int, "hot_swappable": bool, "slot_types": list,
-            "slot_types_truncated": bool, "module_count": int,
-            "children_truncated": bool,
-        },
-    },
-    # No nested object of its own: one flag, and the identity that attributes
-    # it. Frozen as empty on purpose — a nested object added later is additive.
-    "platform.module_type_support": {},
-    "runtime.identify": {
-        "provenance": {
-            "state": str, "source_sha": type(None),
-            "build_recipe_id": type(None),
-        },
-        "lifecycle": {
-            "started": bool, "started_at": (int, type(None)),
-            "stopped_at": (int, type(None)), "start_count": int,
-        },
-    },
-    "runtime.capabilities": {
-        "operations[]": {"op": str, "read_only": bool},
-    },
-}
+from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.platform_stub import CHASSIS_MODELS, platform_stub
+from tests.muejeje.support import REQUIRED_NESTED_FIELDS, REQUIRED_RESULT_FIELDS
 
 # Which operations have to be asked against a platform for their published
 # shape to be visible at all. One answers an empty list when there is no
 # platform, and an empty list publishes no nested object, so the reading a
 # consumer actually parses is the one driven here.
 NEEDS_PLATFORM = frozenset({
+    "network.device_identity",
     "network.device_inventory", "platform.device_descriptors",
     "platform.module_descriptors", "platform.module_type_support",
 })

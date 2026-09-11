@@ -30,17 +30,19 @@ It is declared once, in `build_options.engine_script_order`:
 | 5 | `platform_reading.js` | what a platform reading is: its bounds, its words, its value rules |
 | 6 | `platform_adapter.js` | the **only** file that names `ipc`; the read-only call boundary |
 | 7 | `network_adapter.js` | the workspace device inventory, through that boundary |
-| 8 | `platform_device_adapter.js` | the device-descriptor reading, through that boundary |
-| 9 | `platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
-| 10 | `platform_support_adapter.js` | the module-type support reading, through that boundary |
-| 11 | `network_inventory.js` | the `network.device_inventory` operation |
-| 12 | `platform_discovery.js` | the `platform.device_descriptors` operation |
-| 13 | `platform_modules.js` | the `platform.module_descriptors` operation |
-| 14 | `platform_support.js` | the `platform.module_type_support` operation |
-| 15 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
-| 16 | `runtime_identity.js` | the `runtime.identify` operation |
-| 17 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
-| 18 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+| 8 | `network_identity_adapter.js` | one workspace device's identity, in one reading |
+| 9 | `platform_device_adapter.js` | the device-descriptor reading, through that boundary |
+| 10 | `platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
+| 11 | `platform_support_adapter.js` | the module-type support reading, through that boundary |
+| 12 | `network_identity.js` | the `network.device_identity` operation |
+| 13 | `network_inventory.js` | the `network.device_inventory` operation |
+| 14 | `platform_discovery.js` | the `platform.device_descriptors` operation |
+| 15 | `platform_modules.js` | the `platform.module_descriptors` operation |
+| 16 | `platform_support.js` | the `platform.module_type_support` operation |
+| 17 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
+| 18 | `runtime_identity.js` | the `runtime.identify` operation |
+| 19 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| 20 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
 
 The arrows point one way — `lifecycle → dispatcher → operations → adapter →
 protocol + core` — and nothing points back. An operation is never implemented
@@ -79,7 +81,7 @@ copy is five that a new operation puts out of step, so every other document
 names whichever operations it has a reason to name and a gate holds this one
 complete (`MJ-008`).
 
-Six operations are admitted, all read-only:
+Seven operations are admitted, all read-only:
 
 | Operation | Answers |
 | --- | --- |
@@ -89,6 +91,7 @@ Six operations are admitted, all read-only:
 | `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a factory index, node by node, each with the index it was read at, its type, its slot types and its hot-swap flag, or a reason the reading was unavailable |
 | `platform.module_type_support` | *does this model accept this module type* — the descriptor's own answer for one type value, with the model and DeviceType read back beside it, or a reason the reading was unavailable |
 | `network.device_inventory` | *what does this Packet Tracer currently hold* — a bounded window over the devices on the workspace, each with the index it was read at and the name the platform gave it, or a reason the reading was unavailable |
+| `network.device_identity` | *what is the device at this position* — the name, model and DeviceType the platform reports for one workspace device, all read in that same observation, or a reason the reading was unavailable |
 
 The two runtime operations read the same whitelist, from the dispatcher that
 owns it, so they can never describe different contracts. The platform ones
@@ -113,7 +116,16 @@ two readings may legitimately differ with nothing wrong. The inventory reports
 what is there and assumes nothing about it — no count, no naming scheme, no
 role, no link, no address (`MJ-002`).
 
-None of the six reports anything it has not observed, and none certifies its
+`network.device_identity` is one reading of one device, and deliberately not a
+join. A workspace position is where the platform handed a device over in *that*
+observation — it is not stable identity, and it is not a factory index. Nothing
+relates a workspace device to a factory descriptor: not by index, not by name,
+not by model string. Cisco does document `Device.getDescriptor()`, which would
+answer that properly from the device itself, and it is a further subject with
+its own bounds and its own evidence rather than a field this reading may grow
+(`MJ-002`, `MJ-015`).
+
+None of the seven reports anything it has not observed, and none certifies its
 own verification: the engine cannot audit the engine, so Python decides what an
 answer establishes (`MJ-011`).
 
@@ -125,8 +137,8 @@ every other packaged source (`MJ-006`, `MJ-019`). Every platform call this
 artifact makes goes through one function in it, by member name, and that
 function admits only the names on a declared read-only allowlist. The adapters
 beside it read one subject each — the device factory, the chassis of one model,
-whether one model accepts one module type, and the devices on the workspace —
-and name no platform object of their own.
+whether one model accepts one module type, the devices on the workspace, and
+the identity of one of them — and name no platform object of their own.
 
 **The read-only proof is that list, not a list of forbidden verbs.** A
 blacklist admits every name nobody thought to forbid, and once the member name

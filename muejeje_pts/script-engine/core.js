@@ -27,6 +27,7 @@ var MUEJEJE_CORE = {
      * something behind it exists; the list is not a roadmap. */
     SUPPORTED_FEATURES: [
         "network.device_reading",
+        "network.identity_reading",
         "platform.descriptor_discovery",
         "platform.module_discovery",
         "platform.support_lookup",
