@@ -275,13 +275,15 @@ implementation: it proves our adapters read a well-formed answer correctly and
 refuse a malformed one, and it proves they asked for nothing outside the
 documented set — which is a claim about *our code*, checked by comparing the
 recorded call log against that set, in both directions. It is not evidence that
-Packet Tracer answers those calls, that it answers them with these shapes, or
-that a module with `privileges: []` may make them at all.
+Packet Tracer answers those calls or that it answers them with these shapes —
+and a module with `privileges: []` has since been observed not to be allowed the
+root ones at all (see *The exploratory run at `ed3a0b0`*).
 
 Node is a different Script Engine implementation from Packet Tracer's. A green
 Node run is evidence about the kernel's own logic and is never evidence about
-`9.0.1.0858` (`MJ-015`, `AGENTS.md` rule 6). No `.pts` has been built from these
-sources and the kernel has never run inside Packet Tracer, so its live state is
+`9.0.1.0858` (`MJ-015`, `AGENTS.md` rule 6). No governed `.pts` has been built
+from these sources, and the kernel's source has run inside Packet Tracer only in
+the exploratory module recorded below, so its live state is
 `NOT_YET_LIVE_VERIFIED`.
 
 Node is optional and guarded. The suite already drives Node this way in
@@ -298,18 +300,107 @@ To reproduce the real-checkout report from a clean tree:
 `dist/muejeje.build.json` is ignored, machine-local audit output — not an
 installable artifact and not a runtime verdict.
 
-## Target packaging and qualification — not performed
+## Target packaging and qualification
 
-**No `.pts` was built, imported or started, and no operation was driven inside
-Packet Tracer.** Both target gates stay open, and the reason is a capability
-limit, not an unresolved decision:
+**No governed `.pts` has been packaged, imported or started.** One module has
+been packaged from these sources and run on the target build, by hand, and it
+was exploratory: its engine files carried names no recipe declared. It is
+recorded below as evidence about Packet Tracer, and it promotes no gate:
 
 | Gate | State | Why |
 | --- | --- | --- |
-| `OFFICIAL_PACKAGING_PROVED` | `PENDING_GUI` | packaging is a native GUI procedure and no agent-operable path to it exists here |
-| `TARGET_API_BASELINED` | `PENDING_TARGET` | nothing has been imported or started on the target build |
-| `V6_KERNEL_VERIFIED` | `NOT_YET_LIVE_VERIFIED` | Node establishes our JavaScript; it establishes nothing about PT's engine |
-| `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | every platform and network capability has only ever been driven against a stub |
+| `OFFICIAL_PACKAGING_PROVED` | `PENDING_GUI` | packaging is a native GUI procedure no agent here operates, and the only module packaged so far was not the recipe's |
+| `TARGET_API_BASELINED` | `PENDING_TARGET` | no platform member has answered a Muejeje module; the exploratory module's root calls were denied |
+| `V6_KERNEL_VERIFIED` | `NOT_YET_LIVE_VERIFIED` | Node establishes our JavaScript, and the exploratory module is not a governed artifact; the gate waits on the saved `dist/muejeje.pts` |
+| `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | every platform and workspace capability was denied at its root call in the exploratory run, and none has answered |
+
+### The exploratory run at `ed3a0b0` — evidence, not an artifact
+
+Performed by hand on Packet Tracer `9.0.1.0858`, following the recipe as it then
+stood until its import step, where the listing order made it impossible to
+follow, and reported back verbatim. No privilege was changed at any point.
+
+| Record | Value |
+| --- | --- |
+| candidate | `ed3a0b04a5dbdd2ecd5c12cf45ad4c6f7887d50d`, tree `c3487252ed95225dd150879f482223c864e7847e` |
+| build audit | `PACKAGING_MANUAL_AVAILABLE`, `source.clean: true`, 23 artifact inputs, `reference_inputs: []` |
+| `build_recipe_id` | `d1f91b68639eed883a26d337532a339cde1348438c3ed8a6ca8a541fd9bb41a6` |
+| Packet Tracer | `9.0.1.0858`, `PacketTracer.exe` SHA-256 `843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1` |
+| module | the recipe's 22 engine files, byte for byte, imported as copies named `01_core.js` to `22_lifecycle.js`; saved as an experimental `.pts` and added as a Script Module |
+| privileges | none selected, and none selected later |
+| entry point | the module's Debug Dialog |
+| workspace | a `2960-24TT` (`Switch0`) and a `PC-PT` (`PC0`): no link, no configuration, not saved |
+
+**Why it qualifies nothing.** A recipe describes the files a module is packaged
+from, names included, and this module's names were not the recipe's. Its
+answers are evidence about Packet Tracer and about the kernel's source, not
+about any artifact a recipe id identifies, so no gate on this page moves
+because of them.
+
+**What it observed.**
+
+1. **Listing order.** The 22 files as `ed3a0b0` named them, imported one at a
+   time in dependency order, were listed alphabetically — `arguments_v6.js`,
+   `core.js`, `dispatcher_v6.js`, `lifecycle.js`, … — and no control to reorder
+   them was observed. The prefixed copies were listed `01` to `22`.
+2. **The entry point.** The Debug Dialog is documented on
+   `scriptModules_scriptingInterface.htm`, SHA-256
+   `4bc04309b184ec2f28f8de95762a899a523ae849e462c6c6e4a2069b2d8d1517`, the bytes
+   the v2 preflight inventory already pins: *"Each Script Module has its own
+   debug dialog that accesses only the Script Module. Statements can be entered
+   into the input field, and they will be evaluated in the script engine."*
+3. **The kernel.** `typeof mcpDispatchV6` answered `function`.
+   `runtime.identify` came back `ok: true` with `extension_name: muejeje`,
+   `extension_version: 0.1.0`, `protocol_versions: [6]` and
+   `lifecycle.started: true`; `runtime.capabilities` came back `ok: true` with
+   all eight admitted operations, each `read_only: true`. Malformed JSON was
+   refused `MALFORMED_REQUEST`, `v: 5` `PROTOCOL_MISMATCH`, an envelope with no
+   `args` `INVALID_REQUEST`, an unknown operation `UNKNOWN_OPERATION`, and an
+   argument from the other address domain `INVALID_ARGS`. After an explicit
+   stop and start, `runtime.identify` came back `ok: true` again; the
+   operator's record of the stop and the start, not the two tokens, is what
+   separates the evaluations (`MJ-023`).
+4. **The platform and the workspace.** `platform.device_descriptors`,
+   `platform.module_descriptors` and `platform.module_type_support` each came
+   back `UNAVAILABLE` with `PLATFORM_CALL_FAILED`, and for each Packet Tracer
+   printed:
+
+   ```text
+   IPC Call ERROR: IPC - ExApp or Script Module does not have the necessary privilege for IPC call "hardwareFactory"
+   ```
+
+   `network.device_inventory`, `network.device_identity` and
+   `network.device_ports` each came back the same way, and for each Packet
+   Tracer printed:
+
+   ```text
+   IPC Call ERROR: IPC - ExApp or Script Module does not have the necessary privilege for IPC call "network"
+   ```
+
+   The workspace readings were repeated with the two devices in place, without
+   restarting the module, and came back the same, with the same diagnostic.
+
+**What it establishes, and what it does not.**
+
+- **Packet Tracer lists engine files by name.** The packaging contract assumed
+  import order and was wrong. It is corrected: every engine file's name now
+  carries its place, and the audit refuses a declared order the names do not
+  sort in.
+- **`privileges: []` is target-observed to deny `IPC.hardwareFactory()` and
+  `IPC.network()`** on `9.0.1.0858` — the root calls the `platform.*` and the
+  `network.*` readings go through. For those two calls, in that run, Packet
+  Tracer's diagnostic names the cause.
+- **Which privilege either call needs is still unevidenced.** The diagnostic
+  names an IPC call, never a privilege identifier, and nothing installed maps
+  one to the other. `EVIDENCED_PRIVILEGES` is unchanged, and the manifest still
+  declares `[]` (`MJ-032`).
+- **`PLATFORM_CALL_FAILED` is still not a privilege reading.** It says a member
+  was called and did not return. Here a diagnostic printed beside it gave the
+  reason; for another call, another build or another module the reason may
+  differ, and only a recorded diagnostic attributes one (`MJ-022`, `MJ-031`).
+- **The kernel's source ran inside Packet Tracer, and that verifies no
+  artifact.** `V6_KERNEL_VERIFIED` is about the saved `dist/muejeje.pts` a
+  recipe id identifies, and that artifact has not run.
 
 ### Milestone states, and what they are not
 
@@ -329,19 +420,28 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 
 | State | What is still missing |
 | --- | --- |
-| `M0B` | credential and transport API qualification. No transport exists, so `MJ-026`'s terms are baselined rather than exercised and there is nothing to qualify a credential against |
+| `M0B` | IPC privilege qualification first, then credential and transport API qualification. A module carrying no privilege was denied both root IPC calls, so no target API it reaches can be qualified until the privilege it needs is evidenced; and no transport exists, so `MJ-026`'s terms are baselined rather than exercised |
 | `M0C` | batch and auth-boundary semantics. `MJ-027` is the contract the first batch operation must satisfy and no batch operation exists; the auth boundary is in the same position |
-| `M1_CORE_READY` | target evidence. The V6 kernel is verified under Node and has never run inside Packet Tracer (`MJ-015`) |
-| `M2_CORE_READY` | target evidence, and packaging. Every platform and network capability is `PENDING_TARGET`, no `.pts` has been built from these sources, and `OFFICIAL_PACKAGING_PROVED` is `PENDING_GUI` |
-| `M3_CORE_READY` | complete intended scope, and target evidence. The workspace inventory, one device's identity and one device's ports are implemented; the workspace's links are not (see below), and every workspace capability is `PENDING_TARGET` |
-| `ZERO_CHANGE_CUTOVER` | a release-qualified artifact, and a compatibility facade outside the V6 core (`MJ-034`). Nothing has been packaged or qualified, no facade exists, and no consumer has been cut over |
+| `M1_CORE_READY` | target evidence from a governed artifact. The V6 kernel is verified under Node, and its source has run inside Packet Tracer only in the exploratory module (`MJ-015`) |
+| `M2_CORE_READY` | privilege, target evidence and packaging. Every platform capability is `PENDING_TARGET`: with `privileges: []` its root call, `IPC.hardwareFactory()`, was denied, and which privilege it needs is unevidenced. No governed `.pts` exists, and `OFFICIAL_PACKAGING_PROVED` is `PENDING_GUI` |
+| `M3_CORE_READY` | complete intended scope, privilege and target evidence. The workspace inventory, one device's identity and one device's ports are implemented; the workspace's links are not (see below); and every workspace capability is `PENDING_TARGET`, its root call `IPC.network()` denied the same way |
+| `ZERO_CHANGE_CUTOVER` | a release-qualified artifact, and a compatibility facade outside the V6 core (`MJ-034`). No governed artifact has been packaged or qualified, no facade exists, and no consumer has been cut over |
 
-**A green run on this page does not move any of them.** The suite establishes
-what this repository's own code does. `M0B` and `M0C` wait on work that has not
-been written; `M1`, `M2` and `M3` wait on a target reading, and `M3` on
-unfinished scope as well; the cutover waits on all of it. This line hardened the
-contract and added a capability and changed none of these states — which is
-`MJ-033` working as intended, not a milestone being skipped.
+**Neither a green run nor the exploratory one moves any of them.** The suite
+establishes what this repository's own code does, and the exploratory module
+was not a governed artifact. `M0C` waits on work that has not been written;
+`M1` waits on a governed artifact's target reading; `M0B`, `M2` and `M3` wait on
+privilege first, and `M3` on unfinished scope as well; the cutover waits on all
+of it. This line corrected the packaging contract and recorded the exploratory
+run, and changed none of these states — which is `MJ-033` working as intended,
+not a milestone being skipped.
+
+**The next task for `M0B`, `M2` and `M3` is controlled privilege qualification,
+not more implementation.** It is its own declared run, changing exactly one
+thing: a privilege set whose identifiers are evidenced (`MJ-032`), in a recipe
+that declares it, with Packet Tracer's diagnostics recorded beside every
+envelope. Nothing here yet says which identifier any call needs, and finding
+that evidence is the first half of the task.
 
 **Where M3 stands.** `network.device_ports` is implemented and tested. The
 contract question the previous revision of this record left open — re-report the
@@ -489,20 +589,21 @@ enumeration and addresses a model by its index in it. So those runs establish
 that this descriptor path answers on this build — which is why it was chosen —
 and nothing about whether *this artifact* may walk it.
 
-Until a target run happens, every `platform.*` and `network.*` operation is
-code with a contract and no target reading, which is what `PENDING_TARGET`
-means.
+Until a governed artifact's run answers, every `platform.*` and `network.*`
+operation is code with a contract and no target answer, which is what
+`PENDING_TARGET` means.
 
-**And what the first reading will be is not something this record predicts.**
-The module requests no privilege, because no evidence says which privilege
-these calls need (`MJ-032`). Whether a Script Module carrying none may make
-them is a second unknown, and this repository has measured neither — so an
-earlier revision of this file, which said the first run "should report
-`PLATFORM_CALL_FAILED`", was making a claim about `9.0.1.0858` with nothing
-behind it, and it is withdrawn rather than restated. The run records whichever
-reading comes back, and every reading is worth recording: an answer, a member
-the object does not offer, a call that did not return, or an answer that could
-not be attributed.
+**What the first reading was, and what it still does not say.** The module
+requests no privilege, because no evidence says which privilege these calls
+need (`MJ-032`). An earlier revision of this file said the first run "should
+report `PLATFORM_CALL_FAILED`"; that was a claim about `9.0.1.0858` with nothing
+behind it, and it stays withdrawn even though the exploratory run then came
+back that way. What made that run evidence is what was recorded beside each
+envelope: Packet Tracer's own diagnostic, naming a missing privilege for
+`IPC.hardwareFactory()` and `IPC.network()`. Which privilege those calls need is
+still unmeasured, and a run records whichever reading comes back — an answer, a
+member the object does not offer, a call that did not return, or an answer that
+could not be attributed — with whatever Packet Tracer printed beside it.
 
 That attribution is also why the boundary was corrected before this line was
 written. A bug inside an adapter used to come back as `PLATFORM_CALL_FAILED`,
@@ -555,13 +656,16 @@ rather than being softened into anything else.
 ## Scope
 
 This is **validator** qualification only. It establishes nothing about a
-candidate `.pts`, its content, or its runtime behaviour. No `.pts` was built or
-installed, no Script Module was imported or started, and no LIVE operation was
-performed.
+candidate `.pts`, its content, or its runtime behaviour. No governed `.pts` was
+built or installed from these sources, and no governed Script Module was
+imported or started. The one LIVE run on record is the exploratory one above,
+performed by hand and recorded as evidence about Packet Tracer; this session
+performed none.
 
-The platform surface added in this line does not change that. Its only
-executions have been under Node — against no platform object, and against a
-stub — and neither is a Packet Tracer reading.
+The platform surface's only executions inside Packet Tracer were that run's,
+and all six of its operations were denied at their root call. Everywhere else
+it has run under Node — against no platform object, and against a stub — and
+neither is a Packet Tracer reading.
 
 ```text
 KERNEL_BOUNDARIES              = HARDENED
@@ -581,7 +685,18 @@ M3_READ_ONLY_TOPOLOGY          = STARTED
 CAPABILITY_RESOLUTION_VERIFIED = PENDING_TARGET
 OFFICIAL_PACKAGING_PROVED      = PENDING_GUI
 TARGET_API_BASELINED           = PENDING_TARGET
+ENGINE_ORDER                   = CARRIED_BY_FILE_NAMES
+EMPTY_PRIVILEGES_ROOT_IPC      = TARGET_OBSERVED_DENIED
+REQUIRED_PRIVILEGE_IDENTIFIERS = UNEVIDENCED
 ```
+
+`ENGINE_ORDER = CARRIED_BY_FILE_NAMES` is this line's packaging correction:
+Packet Tracer lists engine files by name, so the names spell the declared order
+and the audit refuses any other. `EMPTY_PRIVILEGES_ROOT_IPC =
+TARGET_OBSERVED_DENIED` records the exploratory run's diagnostics for
+`IPC.hardwareFactory()` and `IPC.network()` and nothing wider, and
+`REQUIRED_PRIVILEGE_IDENTIFIERS = UNEVIDENCED` is why the manifest still
+declares `[]`.
 
 `IMPLEMENTED` and `COMPLETE` are statements about this repository — the
 operations exist, are admitted, are bounded and are tested offline — and
@@ -612,9 +727,11 @@ fidelity, so a topology of any size is paged rather than capped, and every
 address names its domain — `factory_index`, `workspace_index` and `port_index`,
 with their offsets — while the index that selects a subject is required.
 
-Every capability stays `PENDING_TARGET` until an artifact built from these
-sources answers inside `9.0.1.0858`. No offline or Node result is promoted into
-that evidence, and nothing here predicts what a target will answer — including
-whether a module carrying `privileges: []` is allowed to ask (MJ-015, MJ-032).
+Every capability stays `PENDING_TARGET` until a governed artifact built from
+these sources answers inside `9.0.1.0858`. No offline, Node or exploratory result
+is promoted into that evidence. Whether a module carrying `privileges: []` is
+allowed to make the two root calls is no longer unknown — it was denied them —
+and which privilege would allow them still is (MJ-015, MJ-032).
 
-`LIVE: NO_LIVE_THIS_SESSION`
+`LIVE: NO_LIVE_THIS_SESSION` — the exploratory run above was performed by hand,
+outside the session that wrote this record.

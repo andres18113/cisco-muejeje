@@ -17,7 +17,8 @@ not installed; the generated reference leaks three identifiers through event
 declarations, and those are the three this repository can point at. A name
 absent from the set is *unevidenced here* — never "nonexistent". Which
 privilege any particular IPC call requires is a separate unknown, recorded in
-the v2 preflight inventory and still open.
+the v2 preflight inventory and still open — even for the two root calls a
+module carrying none was observed to be denied.
 """
 
 from __future__ import annotations
@@ -159,10 +160,14 @@ def test_the_installed_reference_names_no_privilege_this_repository_missed():
 def test_this_repository_requests_no_privilege(tmp_path: Path):
     """`privileges: []` is what the manifest declares, and it is resolved.
 
-    The kernel makes no platform call from any admitted operation, so it asks
-    for nothing. The first operation that needs the platform reopens this with
-    evidence for the one privilege it needs — and until that evidence exists,
-    the honest state is an unsupported capability rather than a guessed name.
+    Six admitted operations reach the platform, and on `9.0.1.0858` a module
+    asking for nothing had their root calls — `IPC.hardwareFactory()` and
+    `IPC.network()` — denied (an exploratory run, recorded in the offline
+    audit). That evidences that those calls need *a* privilege, and nothing
+    about which: Packet Tracer's diagnostic names the IPC call, never an
+    identifier. So the set stays empty rather than guessed, the evidenced
+    identifiers stay the three recorded above, and those capabilities stay
+    pending until an identifier is evidenced for a call (MJ-031, MJ-032).
     """
     assert resolved_options()["privileges"] == []
 

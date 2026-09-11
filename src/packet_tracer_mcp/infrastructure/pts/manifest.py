@@ -65,6 +65,12 @@ MAX_OPTION_ITEMS = 64
 # and re-derived there against the installed build. A name absent from this
 # tuple is unevidenced *here* — never "nonexistent". Which privilege any given
 # IPC call requires is a separate open question.
+#
+# What an empty list is refused is no longer open for two calls: on 9.0.1.0858
+# a module with none selected was denied IPC.hardwareFactory() and IPC.network()
+# (an exploratory run, recorded in docs/qa/muejeje-pts-offline.md). Packet
+# Tracer's diagnostic names the IPC call and no privilege, so it adds nothing to
+# this tuple.
 EVIDENCED_PRIVILEGES = ("PrivActivityWizard", "PrivApplication", "PrivGetNetwork")
 
 

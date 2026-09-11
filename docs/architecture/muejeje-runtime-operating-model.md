@@ -138,10 +138,13 @@ every name nobody thought of; and a defect inside an adapter is reported as
 `ENGINE_EXCEPTION`, never as a platform reading.
 
 **The module still requests no privilege.** No privilege is evidenced as the
-one a descriptor reading needs, so naming one would be a guess (`MJ-032`). What
-a target does with an unprivileged call is equally unevidenced, and is not
-predicted here: the operation reports whichever reading comes back, with its
-reason, rather than a claim about the platform. The artifact
+one a platform or workspace reading needs, so naming one would be a guess
+(`MJ-032`). What a target does with an unprivileged call is no longer
+unevidenced for the two root calls: an exploratory run on `9.0.1.0858` had
+`IPC.hardwareFactory()` and `IPC.network()` denied, with Packet Tracer's own
+diagnostic naming the missing privilege. The operation still reports only the
+reading that comes back — `PLATFORM_CALL_FAILED` names no cause — and the
+diagnostic recorded beside it is what attributes one. The artifact
 contains no HTTP listener, no file mailbox and no polling loop, and the Custom
 Interface is a static page that calls nothing and therefore reports no module
 state.
@@ -189,8 +192,9 @@ V6 principles:
 - `lwAddDevice` / `lwAddLink` may keep serving V5; they are **not** the V6 domain
   contract.
 
-The kernel is verified offline, under Node, against our own JavaScript. It has
-never run inside Packet Tracer and no `.pts` has yet been built from these
+The kernel is verified offline, under Node, against our own JavaScript. Its
+source has run inside Packet Tracer only in an exploratory module whose file
+names were not the recipe's, and no governed `.pts` has been built from these
 sources, so its live state is `NOT_YET_LIVE_VERIFIED` (`MJ-015`).
 
 ## PTBuilder independence

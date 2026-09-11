@@ -78,13 +78,13 @@ def test_a_refused_platform_call_is_reported_without_its_error():
     """The call did not return, and nothing here says why.
 
     What made a platform call fail is not something the adapter can see, so it
-    reports the symptom and stops. In particular it names no privilege: which
-    privilege any of these calls needs, and what a target does with a Script
-    Module that has none, are two things this repository has not measured, so
-    a reading that named one would be a claim about `9.0.1.0858` with nothing
-    behind it (MJ-015, MJ-032). The thrown value never reaches the result
-    either: a consumer that could read it would be depending on an internal
-    (MJ-005).
+    reports the symptom and stops. In particular it names no privilege. On
+    `9.0.1.0858` a module carrying none was denied its root calls, and what
+    said so was Packet Tracer's own diagnostic printed beside the reading —
+    never the reading. Which privilege any of these calls needs is unmeasured,
+    so a reading that named one would be a claim no envelope could support
+    (MJ-015, MJ-032). The thrown value never reaches the result either: a
+    consumer that could read it would be depending on an internal (MJ-005).
     """
     result = dispatch_v6(
         _request(), prelude=platform_stub(THREE_MODELS, fail=True),

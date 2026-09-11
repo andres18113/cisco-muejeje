@@ -249,8 +249,9 @@ runtime — `htmlWindow`, `runCode`, `configureIosDevice`, `allModuleTypes`,
 > An owned source root that contains no PTBuilder code does **not** satisfy this
 > requirement, and neither does a V6 kernel that runs under Node. The owned tree
 > now has behaviour — the kernel and `runtime.identify` — but the runtime that
-> consumers actually use is still the legacy one, and no `.pts` has been built
-> from these sources. Independence is proven when a built artifact runs in
+> consumers actually use is still the legacy one, and no governed `.pts` has
+> been built from these sources — the one module packaged from them was
+> exploratory. Independence is proven when a built artifact runs in
 > Packet Tracer and demonstrates it, not before.
 
 ### MJ-014 — No numeric Cisco enum table is a source of truth
@@ -593,7 +594,7 @@ validated rather than merely present:
 | `startup` | `on_startup` | the module must be able to answer `runtime.identify` without a human opening anything first. It is safe to start unconditionally precisely because it initiates nothing: no transport, no polling, no platform call |
 | `custom_interface_order` | `[muejeje_pts/interface/index.html]` | one static page, the only interface file that ships |
 | `engine_script_order` | core → protocol → admission → platform reading → boundary and adapters → operations (alphabetical) → dispatch → lifecycle, `010_core.js` to `220_lifecycle.js` | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019); it lists engine files by name, so every name carries its place as a unique three-digit prefix |
-| `privileges` | `[]` | nothing this module calls has an *evidenced* privilege requirement, and a name nobody can cite is refused at audit time rather than shipped to find out (`MJ-032`). An empty set is a decision, not an omission; what a target does with it is a separate unknown |
+| `privileges` | `[]` | nothing this module calls has an *evidenced* privilege requirement, and a name nobody can cite is refused at audit time rather than shipped to find out (`MJ-032`). An empty set is a decision, not an omission. On `9.0.1.0858` it was observed to deny `IPC.hardwareFactory()` and `IPC.network()` (an exploratory run), so those calls need some privilege; which one is unevidenced, and the set stays empty rather than guessed |
 
 An option is **unresolved** when it is `null` — nobody has decided, which is not
 a defect — and **invalid** when it carries a value the platform could not
@@ -981,15 +982,20 @@ operation defaults an argument nobody sent, so such a value came from our own
 code — clamping it would read a *different* window, or a different model, and
 report the result as an observation about Packet Tracer.
 
-**A capability with no evidenced privilege stays pending, and its target
-outcome stays unpredicted.** This module requests no privilege (MJ-025,
-MJ-032). Which privilege each call needs, and what a target does when a Script
-Module makes it without one, are two separate unknowns, and this repository has
-measured neither. So nothing here says a target run *will* be refused: the
-capability is `PENDING_TARGET` because no reading exists, and the first run
-records whichever reading comes back — an answer, or an unavailable one with
-its reason. Predicting the refusal would be the same defect as predicting the
-answer: a claim about `9.0.1.0858` with nothing behind it (MJ-015).
+**A capability with no evidenced privilege stays pending, and a target reading
+is attributed only by what the target printed.** This module requests no
+privilege (MJ-025, MJ-032). An exploratory run on `9.0.1.0858` observed what a
+Script Module carrying none gets: `IPC.hardwareFactory()` and `IPC.network()`
+were denied, every `platform.*` and `network.*` reading came back
+`PLATFORM_CALL_FAILED`, and for each Packet Tracer printed that the module
+*"does not have the necessary privilege for IPC call"* `hardwareFactory` or
+`network`. That diagnostic, recorded beside the envelope, is what attributes
+those failures; the reading names no cause, and never will. Which privilege
+each call needs is still unmeasured, so the capabilities stay `PENDING_TARGET`,
+and `PLATFORM_CALL_FAILED` from any other call, build or module is not read as
+a denied privilege unless a diagnostic says so. An earlier revision refused to
+predict that first reading, and was right to: a prediction that came true would
+still have been a claim with nothing behind it (MJ-015).
 
 **A capability may compose with another without owning its vocabulary.**
 `platform.device_descriptors` reports which models the factory offers and at
@@ -1068,8 +1074,9 @@ capability that reaches the platform — `platform.device_descriptors`,
 `platform.module_descriptors`, `platform.module_type_support`,
 `network.device_inventory`, `network.device_identity` and
 `network.device_ports`. Their `OBSERVED`
-branches have only ever been driven against a stub, no `.pts` has been built
-from these sources, and nothing here has reached `9.0.1.0858` (MJ-015).
+branches have only ever been driven against a stub, no governed `.pts` has been
+built from these sources, and the only target run — exploratory — was denied at
+each capability's root call (MJ-015).
 
 ### MJ-032 — A declared privilege must be a privilege Cisco names
 **Requirement.** `build_options.privileges` may be empty, or may hold only
@@ -1100,11 +1107,16 @@ evidence. Sweeping the whole installed reference in both directions is what
 keeps it a measurement: a future build that generates more of the declarations
 into HTML fails the gate rather than being missed.
 
-**Which privilege a given IPC call requires is a separate unknown.** It is
-recorded as open in the v2 preflight inventory, and MJ-031 is the case that
-depends on it: the read-only descriptor capability ships with its code in place
-and its target resolution pending, because the honest answer to "which
-privilege does this need" is that nobody here knows yet.
+**Which privilege a given IPC call requires is still unevidenced, and now known
+to matter.** An empty set was observed to deny `IPC.hardwareFactory()` and
+`IPC.network()` on `9.0.1.0858` (an exploratory run, recorded in the offline
+audit), so the read-only capabilities of MJ-031 cannot answer without some
+privilege. Packet Tracer's diagnostic names the IPC call, not a privilege
+identifier, and nothing installed maps one to the other. The empty set
+therefore stays the declared value until an identifier is evidenced for a call:
+choosing one of the three names above because it reads like the right one
+would be the guess this requirement exists to refuse, and a run that selected
+one would be a different recipe, declared as such.
 **Rationale.** This is `AGENTS.md` rule 6 — never guess a PT API signature —
 applied to the one field whose wrong value is invisible until the target runs.
 The shape rules run before the evidence rule, so a typo is still reported as a
@@ -1171,7 +1183,7 @@ that never echoes caller input (MJ-022), free to improve.
 
 **A published shape is externally frozen once it is release-qualified — not
 before.** V6's guarantees are made to consumers of a *released* artifact, and
-nothing here has been released: no `.pts` has been built from these sources,
+nothing here has been released: no governed `.pts` has been built from these sources,
 every platform capability is `PENDING_TARGET` (MJ-031), and the only readers of
 these results are this repository's own tests. While that holds, a result field
 that turns out to misdescribe what the platform actually said is **corrected**
@@ -1268,16 +1280,21 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 
 - **M0B** is not complete: it still includes credential and transport API
   qualification. No transport exists, and MJ-026's terms are `BASELINED` rather
-  than exercised — there is nothing yet to qualify a credential against.
+  than exercised — there is nothing yet to qualify a credential against. Before
+  any of it comes IPC privilege: a module carrying none was denied both root IPC
+  calls on the target, so no API it reaches can be qualified until the privilege
+  it needs is evidenced.
 - **M0C** is not complete: it still includes batch and auth-boundary semantics.
   MJ-027 is the contract the first batch operation must satisfy, and no batch
   operation exists; the auth boundary is in the same position under MJ-026.
-- **M1** is not `CORE_READY`: the V6 kernel is verified under Node and has never
-  run inside Packet Tracer, so its Packet-Tracer-dependent claims have no target
-  evidence (MJ-015).
-- **M2** is not `CORE_READY`: every platform capability is `PENDING_TARGET` for
-  the same reason, no `.pts` has been built from these sources, and
-  `OFFICIAL_PACKAGING_PROVED` is still `PENDING_GUI`.
+- **M1** is not `CORE_READY`: the V6 kernel is verified under Node, and its
+  source has run inside Packet Tracer only in an exploratory module whose file
+  names were not its recipe's, so its Packet-Tracer-dependent claims have no
+  evidence from a governed artifact (MJ-015).
+- **M2** is not `CORE_READY`: every platform capability is `PENDING_TARGET`.
+  With `privileges: []` the exploratory run had `IPC.hardwareFactory()` denied,
+  and which privilege it needs is unevidenced; no governed `.pts` has been built
+  from these sources, and `OFFICIAL_PACKAGING_PROVED` is still `PENDING_GUI`.
 - **M3** is not `CORE_READY`: its read-only topology scope is incomplete. The
   workspace inventory, one device's identity and one device's ports are
   implemented; the workspace's links are not. Every documented route to a link
@@ -1288,10 +1305,18 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
   is. The `CONNECT_TYPES` list names no interface, and matching a value against
   a table of ours would be a mirror (MJ-014). Reading links waits on target
   evidence of what a Script Module is handed. Every workspace capability is
-  also `PENDING_TARGET` (MJ-015, MJ-031).
-- **The zero-change cutover** is `NOT_ACHIEVED` (MJ-034): nothing is packaged
-  or release-qualified, and no compatibility facade exists outside the V6
-  core.
+  also `PENDING_TARGET`, its root call `IPC.network()` denied the same way
+  (MJ-015, MJ-031).
+- **The zero-change cutover** is `NOT_ACHIEVED` (MJ-034): no governed artifact
+  is packaged or release-qualified, and no compatibility facade exists outside
+  the V6 core.
+
+**The next task for M0B, M2 and M3 is controlled privilege qualification, not
+more implementation**: its own declared run, changing exactly one thing — a
+privilege set whose identifiers are evidenced (MJ-032), in a recipe that
+declares it — with Packet Tracer's diagnostics recorded beside every envelope.
+None of them is marked `CORE_READY`, or complete, on the strength of a call
+that was denied.
 
 Each stays at that value until its own gates are satisfied. None of them moves
 because a later milestone started, because the test suite is green, or because
@@ -1327,8 +1352,9 @@ compatible without the core being compromised.
 it does not define it. A CP LIVE SHA may be recorded as integration evidence,
 never as a version, prerequisite or watermark.
 
-**This is not claimed to be achieved.** Nothing here has been packaged, no
-`.pts` has been built from these sources, no compatibility facade exists, and no
+**This is not claimed to be achieved.** No governed artifact has been packaged
+— the one module built from these sources was exploratory — no compatibility
+facade exists, and no
 consumer has been cut over. The requirement states the target and the shape of
 an acceptable solution; it records no progress toward it, and its state is
 `ZERO_CHANGE_CUTOVER = NOT_ACHIEVED`, recorded beside the milestone states
@@ -1361,7 +1387,7 @@ Not requirements. Each needs a decision before it can become one.
 | **TODO-V6-SHAPE** | **RESOLVED for the kernel.** The envelope is `{v, operation_rid, op, args}` in and `{v, operation_rid, op, ok, result, error}` out, both as JSON strings, through the single entry point `mcpDispatchV6`. Operations are whitelisted by name, each admitted argument carries the rule its value must satisfy (MJ-029), and the failure taxonomy is MJ-022. Adding an operation extends the table, not the envelope; which operations the table holds is MJ-008, and it is not restated here, because a whitelist written down twice is one that will disagree with itself. |
 | **TODO-MODULE-ID** | **RESOLVED** by `MJ-025`: `io.github.andres18113.muejeje.runtime`. Hierarchical and reverse-DNS shaped, rooted in a namespace the publisher controls. Stability across rebuilds is a property of the manifest, which is committed and hashed into recipe identity. Packet Tracer's own acceptance of the representation still needs target evidence (`MJ-015`). |
 | **TODO-STARTUP** | **RESOLVED** by `MJ-025`: `on_startup`. The module must answer `runtime.identify` without a human opening anything, and starting it unconditionally is safe precisely because it initiates nothing — no transport, no polling, no platform call. Revisit if and when a channel that *does* initiate is added. |
-| **TODO-PRIVILEGES** | **RESOLVED** by `MJ-025` and `MJ-032`: `[]`. The `.pki` privilege catalogue is still not installed, and this resolution deliberately does not need it: an empty set requires no catalogue to justify. What a non-empty set would require is now decided rather than left open — only identifiers Cisco names, refused at audit time otherwise (`MJ-032`). Which privilege a given call needs, and what a target does without it, both stay open; a capability whose privilege cannot be evidenced stays `PENDING_TARGET` rather than predicted either way (`MJ-031`). |
+| **TODO-PRIVILEGES** | **RESOLVED** by `MJ-025` and `MJ-032`: `[]`. The `.pki` privilege catalogue is still not installed, and this resolution deliberately does not need it: an empty set requires no catalogue to justify. What a non-empty set would require is now decided rather than left open — only identifiers Cisco names, refused at audit time otherwise (`MJ-032`). What a target does without one is now observed for the two root calls — denied, on `9.0.1.0858`, in an exploratory run — and which privilege each needs stays open; a capability whose privilege cannot be evidenced stays `PENDING_TARGET` rather than guessed (`MJ-031`). |
 | **TODO-RECIPE-SCOPE** | **RESOLVED.** Manifest `schema_version: 2` splits inputs into `artifact_inputs` (bytes packaged into the `.pts`, required to live under the owned root), `tooling_inputs` (the auditor — ships nothing, still part of recipe identity) and `reference_inputs` (empty). A path may not appear in two categories. |
 
 ## Related documents

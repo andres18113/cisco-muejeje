@@ -120,12 +120,13 @@ the GUI.
 
    **This is a deliberate, and consequential, choice.** The `runtime.*`
    operations make no IPC call, so nothing selected here changes what they do.
-   The `platform.*` and `network.*` ones do make calls, and **what happens to
-   them with nothing selected is exactly what this run is for**. Selecting a privilege would mean
-   guessing which one the reading needs, and no evidence in this repository
-   says (`MJ-032`); predicting the outcome would be the same guess in the other
-   direction. Record whichever reading comes back — that observation is the
-   point of the run.
+   The `platform.*` and `network.*` ones do, and on this build a module with
+   nothing selected was observed to be denied their root calls,
+   `IPC.hardwareFactory()` and `IPC.network()` (an exploratory run, recorded in
+   the offline audit). The set still stays empty: which privilege those calls
+   need is not evidenced (`MJ-032`), and selecting one would be a guess — and a
+   different recipe, because `privileges` is a build option and so part of the
+   recipe id. **Never change the privileges during a run.**
 4. **Script Engine**: import every engine file above, under the name it has in
    the tree. Import; do not paste. Pasted source loses its newlines in the
    Builder Code Editor, and these files are ordinary multi-line JavaScript with
@@ -160,16 +161,21 @@ artifact and is never embedded in it (`MJ-017`).
 | artifact SHA-256 | the command above |
 | Packet Tracer build | `9.0.1.0858`, and its `PacketTracer.exe` hash |
 | observed responses | the read-only exercise below |
+| Script Engine listing | step 4, as Packet Tracer showed it |
+| Packet Tracer diagnostics | beside each envelope, verbatim — see below |
 
 ## Read-only qualification
 
 The artifact is exercised, never used to change anything. Add the saved `.pts`
 on the pinned build — *"Add/remove in Extensions->Scripting->Configure PT Script
-Modules..."* — start it, and drive only:
+Modules..."* — start it, and drive only, in this order:
 
-- the module lifecycle — start, then stop;
-- `mcpDispatchV6` once per operation `runtime.capabilities` reports, starting
-  with `runtime.identify` and `runtime.capabilities` themselves.
+1. `typeof mcpDispatchV6`, which must answer `function`;
+2. `runtime.identify`, then `runtime.capabilities`;
+3. one request per refusal class, from the table below;
+4. an explicit **stop** of the module and a **start**, each recorded by the
+   operator as it happens, then `runtime.identify` again;
+5. every other operation `runtime.capabilities` reported, once each.
 
 Driving the list the runtime reports, rather than a list copied into this
 document, is what keeps this procedure current when an operation is added
@@ -177,14 +183,18 @@ document, is what keeps this procedure current when an operation is added
 drives each one through the kernel and holds the set complete — an earlier
 revision omitted one, and nothing noticed.
 
-No topology is created, opened or modified; no device, link or configuration is
-touched; no transport, bridge or HTTP endpoint is implemented or contacted.
-Every admitted operation is read-only. The `runtime.*` ones make no platform
-call at all; the `platform.*` ones make documented getter calls on the hardware
-*factory*, which describes what models exist and instantiates nothing; the
-`network.*` ones make documented getter calls on the *workspace* the running
-instance holds, and change nothing on it. What a module carrying no privilege
-gets back from them is unknown until this run answers it.
+The module creates, opens and modifies nothing, and neither does this
+procedure: no device, link or configuration is touched, and no transport, bridge
+or HTTP endpoint is implemented or contacted. The workspace readings may be
+taken on a minimal disposable workspace the operator prepares beforehand, and
+never on a topology that holds anyone's real work. Every admitted operation is
+read-only. The `runtime.*` ones make no platform call at all; the `platform.*`
+ones make documented getter calls on the hardware *factory*, which describes
+what models exist and instantiates nothing; the `network.*` ones make
+documented getter calls on the *workspace* the running instance holds, and
+change nothing on it. A module carrying no privilege was denied the root call
+of both on this build, in the exploratory run; what the governed artifact gets
+back is what this run records.
 
 ### Where the statements are entered
 
@@ -201,18 +211,27 @@ Open it on the module under test, the one added from the saved
 before entering the next. Nothing else is used to issue a call: a reading taken
 anywhere but this module's engine is evidence about that other surface.
 
-Record, beside the run, the installed help page that documents the dialog, its
-SHA-256, and the sentence in which it words this behaviour. This repository has
-never read that page, so the citation is captured **by** the run rather than
-asserted ahead of it, and a later revision pins the sentence the way
-`tests/muejeje/test_unobserved_claims.py` pins the Script Engine lifecycle ones.
+Cisco documents the dialog on `scriptModules_scriptingInterface.htm`, a page the
+v2 preflight inventory already pins by hash for other rows, and the exploratory
+run brought its sentence back: *"Each Script Module has its own debug dialog
+that accesses only the Script Module. Statements can be entered into the input
+field, and they will be evaluated in the script engine."*
+`tests/muejeje/test_unobserved_claims.py` re-reads that sentence from the
+installed page, as it does the Script Engine lifecycle ones, so a build that
+words it differently fails there rather than here.
 
-One call per admitted operation, each on one line. Anything **pasted** into a
-Packet Tracer code editor loses its newlines, so a pasted statement must be a
-single line and carry no `//` comment; the compiled engine files are imported
-rather than pasted and are unaffected. `runtime.capabilities` answers with the
-whole whitelist, so a run that starts with it needs no list from this document
-to know what else to drive.
+One statement at a time, each on one line. Anything **pasted** into a Packet
+Tracer code editor loses its newlines, so a pasted statement must be a single
+line and carry no `//` comment; the compiled engine files are imported rather
+than pasted and are unaffected. `runtime.capabilities` answers with the whole
+whitelist, so a run that starts with it needs no list from this document to
+know what else to drive.
+
+**First, that the dispatcher is there, and who it is.**
+
+```javascript
+typeof mcpDispatchV6
+```
 
 ```javascript
 mcpDispatchV6('{"v":6,"operation_rid":"qual-identify","op":"runtime.identify","args":{}}')
@@ -221,6 +240,30 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-identify","op":"runtime.identify","a
 ```javascript
 mcpDispatchV6('{"v":6,"operation_rid":"qual-capabilities","op":"runtime.capabilities","args":{}}')
 ```
+
+**Then one refusal per class a request can provoke.** Each must come back
+`ok: false` with exactly this `error.code`, and none of them reaches the
+platform. A gate drives each through the kernel and holds the table to every
+class; `ENGINE_EXCEPTION` is absent on purpose, because no request can provoke
+it.
+
+| Statement | `error.code` |
+| --- | --- |
+| `mcpDispatchV6('{not json')` | `MALFORMED_REQUEST` |
+| `mcpDispatchV6('{"v":5,"operation_rid":"qual-refuse-protocol","op":"runtime.identify","args":{}}')` | `PROTOCOL_MISMATCH` |
+| `mcpDispatchV6('{"v":6,"operation_rid":"qual-refuse-envelope","op":"runtime.identify"}')` | `INVALID_REQUEST` |
+| `mcpDispatchV6('{"v":6,"operation_rid":"qual-refuse-operation","op":"runtime.unadmitted","args":{}}')` | `UNKNOWN_OPERATION` |
+| `mcpDispatchV6('{"v":6,"operation_rid":"qual-refuse-domain","op":"network.device_identity","args":{"factory_index":0}}')` | `INVALID_ARGS` |
+
+**Then stop the module, start it again, and ask who it is.** Record when each
+happened: that record, and nothing the answers carry, is what separates the two
+evaluations.
+
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-identify-restart","op":"runtime.identify","args":{}}')
+```
+
+**Then every other admitted operation.**
 
 ```javascript
 mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_descriptors","args":{"factory_offset":0,"limit":4}}')
@@ -253,12 +296,34 @@ position answering `device_present: false`, or a device answering
 Record the workspace's state alongside them, because the same call on a
 different session is a different observation (`MJ-002`).
 
+### What Packet Tracer prints beside an answer
+
+**Record, beside every envelope, whatever Packet Tracer printed while that
+statement ran** — verbatim, with where it appeared, and "nothing" when it
+printed nothing. The runtime cannot see that output and never reports it, so an
+envelope alone cannot say why a call did not return; a diagnostic recorded
+beside it can, for that call. The exploratory run saw this for every
+`platform.*` reading:
+
+```text
+IPC Call ERROR: IPC - ExApp or Script Module does not have the necessary privilege for IPC call "hardwareFactory"
+```
+
+and the same with `"network"` for every `network.*` reading.
+
+**If the diagnostics report a missing privilege again, record them and stop
+there.** Every statement above is still entered once, because a denied reading
+is still a reading, and none is entered twice. Do not select a privilege and
+ask again: a module with a privilege selected is a different recipe, so its
+answers would belong to an artifact this run did not package. Which privilege
+to select is a separate, controlled qualification, declared as its own recipe.
+
 The `platform.*` and `network.*` calls are the ones that reach Packet Tracer,
 and **every outcome is a result worth recording verbatim**:
 
 | `result.resolution` | `unavailable_reason` | What it establishes |
 | --- | --- | --- |
-| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It says nothing about *why* — the runtime cannot see that, and does not guess. In particular it is not a privilege reading: which privilege these calls need, and what a target does without one, are both unmeasured here (`MJ-031`, `MJ-032`) |
+| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It says nothing about *why* — the runtime cannot see that, and does not guess — so it is not a privilege reading by itself: only a diagnostic recorded beside it attributes a cause, and only for that call. The exploratory run's did, for `IPC.hardwareFactory()` and `IPC.network()` with no privilege selected; which privilege they need is still unmeasured (`MJ-031`, `MJ-032`) |
 | `UNAVAILABLE` | `PLATFORM_ABSENT` | there was no `ipc` object in the Script Engine at all. That would be a fact about the engine, not about privileges, and it needs recording as such |
 | `UNAVAILABLE` | `PLATFORM_MEMBER_ABSENT` | the object was there and did not offer the member. Nothing was called, so this is a fact about the interface rather than about permission — record which member |
 | `UNAVAILABLE` | `PLATFORM_ANSWER_UNUSABLE` | Packet Tracer answered and the answer could not be attributed. Record the whole envelope: this is the interesting failure |
@@ -271,10 +336,12 @@ Each returns a JSON **string** carrying
 `{v, operation_rid, op, ok, result, error}`, with the `operation_rid` echoed
 back unchanged and `error: null` on success.
 
-**Record every envelope from one start.** Cisco documents that every engine
-file is evaluated when the module starts, so a stop and a start is a new
+**Record which start every envelope came from.** Cisco documents that every
+engine file is evaluated when the module starts, so a stop and a start is a new
 evaluation, and that evaluation generates a new correlation token (`MJ-023`).
-Envelopes carrying the same token were observed in the same evaluation.
+Envelopes carrying the same token were observed in the same evaluation, and the
+stop and start in step 4 is the one point where this run moves from one
+evaluation to the next.
 
 **Nothing here requires two evaluations to produce different tokens, and no
 step compares them.** The token is a clock reading and a random draw, so the
@@ -284,10 +351,11 @@ what tells one evaluation from another. The operator's own record of when the
 module was stopped and started is what does, and it is written down beside the
 envelopes rather than derived from them.
 
-Record every envelope verbatim. Until that has happened on the pinned build,
-the kernel's live state is `NOT_YET_LIVE_VERIFIED`: a green Node run establishes
-what our JavaScript does and nothing about Packet Tracer's engine, which is a
-different implementation (`MJ-015`).
+Record every envelope verbatim. Until that has happened for the saved governed
+artifact on the pinned build, the kernel's live state is
+`NOT_YET_LIVE_VERIFIED`: a green Node run establishes what our JavaScript does
+and nothing about Packet Tracer's engine, which is a different implementation,
+and the exploratory run's module was not this recipe's (`MJ-015`).
 
 **Python decides what the run establishes.** The runtime reports observations
 and certifies nothing about itself (`MJ-011`), so a qualification verdict is

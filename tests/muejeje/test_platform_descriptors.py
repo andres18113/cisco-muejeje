@@ -13,8 +13,9 @@ argument rules it declares.
 
 **The `OBSERVED` branch is driven against a stub.** It establishes what our
 operation does with a well-formed answer and **nothing** about `9.0.1.0858`.
-No `.pts` has been built from these sources and nothing here has reached the
-target, so this capability's live state is `PENDING_TARGET` (MJ-015, MJ-031).
+No governed `.pts` has been built from these sources, and the one exploratory
+target run had this operation's root call denied, so this capability's live
+state is `PENDING_TARGET` (MJ-015, MJ-031).
 """
 
 from __future__ import annotations

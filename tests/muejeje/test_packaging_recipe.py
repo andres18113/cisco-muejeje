@@ -20,6 +20,9 @@ So every part of it that restates the artifact is read back and compared:
 * every `mcpDispatchV6(...)` call it tells a person to paste, driven through
   the kernel it will be pasted into: each must be admitted, and together they
   must ask every operation the dispatcher admits;
+* every refusal it tells a person to provoke, driven the same way: each must
+  come back with the code the recipe names, and together they must cover every
+  class a request can reach;
 * the surface those calls are entered on, which decides what the run is
   evidence *about*.
 
@@ -35,16 +38,27 @@ import re
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
-from tests.muejeje.support import REPO_ROOT, repo_manifest
+from tests.muejeje.support import REPO_ROOT, SCRIPT_ENGINE, repo_manifest
 from tests.muejeje.test_capability_claims import admitted_operations
+from tests.muejeje.test_unobserved_claims import (
+    CISCO_DEBUG_DIALOG_SENTENCE,
+    CISCO_SCRIPTING_INTERFACE_PAGE,
+)
 
 RECIPE = "docs/qa/muejeje-pts-packaging-recipe.md"
 
 # One engine file per numbered step and nothing else on the line: how the
 # recipe writes an import order a person follows one file at a time.
 ORDERED_ENGINE_FILE = re.compile(r"^\d+\.\s+`([a-z0-9_]+\.js)`\s*$", re.MULTILINE)
-# A call the recipe tells a person to paste, and the request it sends.
+# A block of statements the recipe tells a person to paste.
+PASTED_BLOCK = re.compile(r"^```javascript\n(.*?)\n```", re.MULTILINE | re.DOTALL)
+# A call in one of those blocks, and the request it sends.
 QUALIFICATION_CALL = re.compile(r"mcpDispatchV6\('(\{[^'\n]*\})'\)")
+# A refusal the recipe tells a person to provoke, and the code it must come back
+# with. A table row rather than a block, so the two kinds of step cannot mix.
+REFUSAL_ROW = re.compile(
+    r"^\| `mcpDispatchV6\('([^'\n]*)'\)` \| `([A-Z_]+)` \|$", re.MULTILINE,
+)
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",
@@ -65,6 +79,22 @@ def _declared_engine_files() -> list[str]:
         logical.rsplit("/", 1)[-1]
         for logical in repo_manifest()["build_options"]["engine_script_order"]
     ]
+
+
+def _admitted_calls() -> list[str]:
+    """The calls in pasted blocks, in the order the recipe drives them."""
+    return [
+        call for block in PASTED_BLOCK.findall(_recipe())
+        for call in QUALIFICATION_CALL.findall(block)
+    ]
+
+
+def _request_refusal_codes() -> list[str]:
+    """Every failure code a request can provoke: the taxonomy but the engine's own."""
+    body = (SCRIPT_ENGINE / "020_protocol_v6.js").read_text(encoding="utf-8")
+    taxonomy = body.split("var MUEJEJE_V6_ERRORS = {")[1].split("};")[0]
+    codes = re.findall(r'^\s+([A-Z_]+): "', taxonomy, re.MULTILINE)
+    return sorted(code for code in codes if code != "ENGINE_EXCEPTION")
 
 
 def test_the_recipe_imports_every_engine_file_in_the_declared_order():
@@ -108,7 +138,7 @@ def test_every_qualification_call_is_one_the_kernel_admits():
     refusal: it would mean the recipe sends something this artifact does not
     accept, and the run would record our mistake as its observation.
     """
-    calls = QUALIFICATION_CALL.findall(_recipe())
+    calls = _admitted_calls()
 
     assert calls, "the recipe names no qualification call"
     for call in calls:
@@ -118,19 +148,58 @@ def test_every_qualification_call_is_one_the_kernel_admits():
 
 def test_the_qualification_calls_ask_every_admitted_operation():
     """The run exists to record every operation's first target answer."""
-    asked = {json.loads(call)["op"] for call in QUALIFICATION_CALL.findall(_recipe())}
+    asked = {json.loads(call)["op"] for call in _admitted_calls()}
 
     assert asked == admitted_operations()
+
+
+def test_the_refusal_table_covers_every_class_a_request_can_provoke():
+    """One row per class, no class twice, and none the kernel does not define."""
+    rows = REFUSAL_ROW.findall(_recipe())
+
+    assert sorted(code for _, code in rows) == _request_refusal_codes()
+
+
+@requires_node
+def test_every_refusal_the_recipe_provokes_comes_back_with_its_code():
+    """A row is evidence only if this kernel refuses it for that reason too.
+
+    A request this kernel refused for a different reason would have the run
+    record Packet Tracer's engine disagreeing with Node, when the disagreement
+    was the recipe's (MJ-015, MJ-022).
+    """
+    for request, code in REFUSAL_ROW.findall(_recipe()):
+        response = dispatch_v6(request)
+        assert response["ok"] is False, request
+        assert response["error"]["code"] == code, (request, response["error"])
+
+
+def test_the_recipe_restarts_the_module_before_the_readings():
+    """A stop and a start, recorded by the operator, then who it is again.
+
+    The operator's record, not the answers, separates the two evaluations
+    (MJ-023), and the platform and workspace readings come after it, so every
+    one of them belongs to the second evaluation.
+    """
+    rids = [json.loads(call)["operation_rid"] for call in _admitted_calls()]
+
+    assert rids.index("qual-capabilities") < rids.index("qual-identify-restart")
+    assert rids.index("qual-identify-restart") < rids.index("qual-descriptors")
+    assert "Record when each happened" in _collapsed_recipe()
 
 
 def test_the_recipe_readers_find_a_list_and_notice_a_short_one():
     """Guards the gates above from passing because a parser matched nothing."""
     text = "1. `010_core.js`\n2. `220_lifecycle.js`\n3. **Save** the module\n"
     call = "mcpDispatchV6('{\"v\":6,\"op\":\"runtime.identify\"}')"
+    pasted = f"```javascript\n{call}\n```\n"
+    refusal = "| `mcpDispatchV6('{not json')` | `MALFORMED_REQUEST` |\n"
 
     assert ORDERED_ENGINE_FILE.findall(text) == ["010_core.js", "220_lifecycle.js"]
     assert ORDERED_ENGINE_FILE.findall(text) != _declared_engine_files()
     assert QUALIFICATION_CALL.findall(call) == ['{"v":6,"op":"runtime.identify"}']
+    assert PASTED_BLOCK.findall(pasted + refusal) == [call]
+    assert REFUSAL_ROW.findall(pasted + refusal) == [("{not json", "MALFORMED_REQUEST")]
 
 
 def test_the_recipe_names_the_debug_dialog_as_the_qualification_entry_point():
@@ -152,15 +221,35 @@ def test_the_recipe_names_the_debug_dialog_as_the_qualification_entry_point():
     assert "evaluated **in that module's Script Engine**" in collapsed
 
 
-def test_the_recipe_has_the_run_capture_the_citation_it_cannot_assert():
-    """This repository has never read the page that documents the dialog.
+def test_the_recipe_quotes_the_page_that_documents_the_dialog():
+    """The citation the run was asked to bring back is quoted, not deferred.
 
-    `AGENTS.md` rule 6 forbids writing a step from memory, and every other UI
-    element in this document is quoted from an installed page. The dialog's
-    own sentence is not quotable here yet, so the recipe requires the run to
-    bring it back — page, hash and wording — rather than asserting it first.
+    `AGENTS.md` rule 6 forbids writing a step from memory. An earlier revision
+    had the run bring the dialog's sentence back rather than assert it; the
+    exploratory run did, from a page the v2 preflight inventory already pins,
+    and `test_unobserved_claims` re-reads it from the installed page. This holds
+    the recipe to quoting exactly that sentence, from exactly that page.
     """
     collapsed = _collapsed_recipe()
 
-    assert "the installed help page that documents the dialog, its SHA-256" in collapsed
-    assert "captured **by** the run rather than asserted ahead of it" in collapsed
+    assert f"`{CISCO_SCRIPTING_INTERFACE_PAGE}`" in collapsed
+    assert CISCO_DEBUG_DIALOG_SENTENCE in collapsed
+
+
+def test_the_recipe_records_diagnostics_and_stops_a_run_denied_again():
+    """A reading names no cause; what Packet Tracer printed beside it can.
+
+    The exploratory run's only attribution came from a diagnostic printed beside
+    each envelope, so the recipe requires recording one for every statement.
+    It stops a run that is denied again rather than letting a privilege be
+    selected mid-run, which would make its answers a different recipe's
+    (MJ-031, MJ-032).
+    """
+    collapsed = _collapsed_recipe()
+
+    assert "Record, beside every envelope, whatever Packet Tracer printed" in collapsed
+    assert (
+        "If the diagnostics report a missing privilege again, record them and "
+        "stop there." in collapsed
+    )
+    assert "Never change the privileges during a run." in collapsed

@@ -203,13 +203,14 @@ evidenced as the one these calls need — the catalogue lives in `.pki` files
 Cisco does not install — and a name nobody can cite is refused at audit time
 rather than shipped to find out (`MJ-032`).
 
-**What a real Packet Tracer then does is unknown, and this tree does not guess
-it.** Whether an unprivileged Script Module may make these calls, and which
-privilege (if any) each one needs, are questions only a target run answers. The
-operations report whichever reading comes back — an answer, or an unavailable
-one with its reason — and nothing here predicts which. Nothing in this tree has
-ever run inside Packet Tracer, so both capabilities' target state is pending,
-not proven.
+**What a real Packet Tracer did is recorded, and not generalised.** An
+exploratory module built from these sources, under file names the recipe did
+not declare, ran on `9.0.1.0858`. Every `platform.*` and `network.*` reading
+came back `PLATFORM_CALL_FAILED`, and Packet Tracer printed that the module
+lacked the privilege for the root call — `hardwareFactory` or `network`. The
+reading names no cause, and still does not; the printed diagnostic did. Which
+privilege each call needs is unevidenced, so these capabilities' target state
+is pending, not proven, and no governed artifact has run at all.
 
 ## Relationship to `EXTENSION/`
 
@@ -230,6 +231,8 @@ transport: no HTTP, no file mailbox, no polling. The platform surface reads and
 nothing else, and each part of it grew from an operation that actually needed
 it — never ahead of one.
 
-The kernel is verified offline. It has never run inside Packet Tracer, and no
-`.pts` has been built from these sources. See
-[the requirements baseline](../docs/architecture/muejeje-pts-requirements.md).
+The kernel is verified offline. No governed `.pts` has been built from these
+sources; the kernel's source has run inside Packet Tracer only in the
+exploratory module recorded in
+[the offline audit](../docs/qa/muejeje-pts-offline.md), which qualifies nothing.
+See [the requirements baseline](../docs/architecture/muejeje-pts-requirements.md).

@@ -65,6 +65,12 @@ RETIRED_CLAIMS = (
     (r"different tokens (?:say|mean|show|prove)\b",
      "token inequality establishes nothing, so no step reads one evaluation "
      "or a restart out of it (MJ-023)"),
+    (r"never\s+(?:been\s+)?run\s+inside\s+Packet\s+Tracer",
+     "an exploratory module ran the kernel's source inside 9.0.1.0858; what "
+     "has not run is a governed artifact (MJ-015)"),
+    (r"\bno\s+`?\.pts`?\s+has\s+(?:yet\s+)?been\s+built",
+     "a module was packaged from these sources, exploratorily; what does not "
+     "exist is a governed artifact (MJ-015)"),
 )
 
 # Sources that describe the runtime in prose, the way a document does. A
@@ -88,6 +94,16 @@ CISCO_LIFECYCLE_SENTENCES = (
     "As long as the Script Module is running, the Script Engine is running.",
     "Changes made to the Script Engine after it has started DO NOT take effect"
     " until it has been stopped and started again.",
+)
+# What it says about the Debug Dialog, the surface the packaging recipe's
+# qualification statements are entered on. The page is hash-pinned in the v2
+# preflight inventory as `4bc04309...`; this sentence was brought back from it
+# by the exploratory run, and is re-read below rather than believed.
+CISCO_SCRIPTING_INTERFACE_PAGE = "scriptModules_scriptingInterface.htm"
+CISCO_DEBUG_DIALOG_SENTENCE = (
+    "Each Script Module has its own debug dialog that accesses only the Script"
+    " Module. Statements can be entered into the input field, and they will be"
+    " evaluated in the script engine."
 )
 
 # Present-tense liveness. A static page cannot know any of these.
@@ -150,6 +166,27 @@ def test_cisco_documents_that_a_module_start_evaluates_the_engine(sentence: str)
     collapsed = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
 
     assert sentence in collapsed, CISCO_SCRIPT_ENGINE_PAGE
+
+
+@pytest.mark.skipif(
+    not INSTALLED_HELP.is_dir(),
+    reason="the target build is not installed; its documentation cannot be read",
+)
+def test_cisco_documents_that_the_debug_dialog_evaluates_in_the_module_engine():
+    """What makes a qualification statement a reading of the artifact.
+
+    The recipe enters every statement in the module's Debug Dialog because a
+    statement there is evaluated in that module's engine. That was written
+    before any citation for it existed, and the run was asked to bring one
+    back; this is it, read from the installed page, so a build that words it
+    differently fails here (MJ-015, `AGENTS.md` rule 6).
+    """
+    page = (INSTALLED_HELP / CISCO_SCRIPTING_INTERFACE_PAGE).read_text(
+        encoding="utf-8", errors="replace",
+    )
+    collapsed = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
+
+    assert CISCO_DEBUG_DIALOG_SENTENCE in collapsed, CISCO_SCRIPTING_INTERFACE_PAGE
 
 
 def test_the_withdrawn_claim_gate_reads_the_kernel_sources_too():
