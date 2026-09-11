@@ -120,10 +120,12 @@ artifact do to Packet Tracer" stays one list — and that list is what keeps the
 workspace read-only, since the same `Network` interface offers members that
 create a device or a link and none of them is on it.
 **Verification.** All platform access in the owned artifact goes through one
-declared call boundary, which admits only names present in Cisco's installed
-IpcAPI reference or already evidenced against the pinned build. A gate fails if any other packaged source names `ipc` or
-names a platform member at a call site; another compares the calls actually
-made, at runtime, against the documented set (MJ-031).
+declared call boundary, which admits only interface members documented on
+their own interface's page of Cisco's installed IpcAPI reference, or already
+evidenced against the pinned build. A gate fails if any other packaged source
+names `ipc` or names a platform member at a call site; another compares the
+calls actually made, at runtime and per interface, against the documented set
+(MJ-031).
 **Status.** `ENFORCED` for the owned artifact's own platform access, which is
 one read-only boundary over documented getters; `BASELINED (deviation)` for the
 legacy runtime consumers still use, where six PTBuilder globals sit between
@@ -815,9 +817,11 @@ consumer.
 
 ### MJ-031 — Platform access is one read-only, cited call boundary
 **Requirement.** Muejeje reaches Packet Tracer through **one boundary**: a
-single packaged file names `ipc`, and a single function in it makes every
-platform call this artifact makes, by member name, admitting only names on a
-declared read-only allowlist. The adapters that read a subject — device
+single packaged file names `ipc`, and one pair of functions in it makes every
+platform call this artifact makes, by **interface member** — `Interface.member`
+— admitting only members on a declared read-only allowlist, and only on a
+platform object that boundary itself handed out as that interface. The adapters
+that read a subject — device
 descriptors, chassis modules — are declared adapters beside it and call the
 platform only through that function; they name no platform object of their own.
 Core, protocol, admission, dispatch, lifecycle and every operation stay
@@ -826,14 +830,24 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
 
 **Four rules bound what may cross it.**
 
-1. **Documented or evidenced only.** Every name on the allowlist is named in
-   Cisco's installed IpcAPI reference for the pinned build, or is already
-   evidenced against it. A guess earns a bare `Invalid arguments for IPC call
+1. **Documented or evidenced only, per interface.** Every entry on the
+   allowlist is a member documented on its own interface's page of Cisco's
+   installed IpcAPI reference for the pinned build — with that arity, handing
+   over that interface — or is already evidenced against it. A citation never
+   transfers between interfaces: `getType` on `Device`, `DeviceDescriptor` and
+   `ModuleDescriptor` is three signatures with three standings, and
+   `getRootModule` hands over installed hardware on `Device` and a descriptor
+   on `DeviceDescriptor`. A guess earns a bare `Invalid arguments for IPC call
    "X"` that says nothing about why (`AGENTS.md` rule 6).
 2. **No mutation, proved positively.** The allowlist is the proof: it holds
    only documented getters, and an adapter names no platform member at a call
    site, so a call outside the list cannot be written — it is refused by the
-   boundary before a receiver is touched. A blacklist of mutating verbs is kept
+   boundary before a receiver is touched. So is an admitted member asked of an
+   object that is a different interface, and a call with the wrong number of
+   arguments: a name admitted on one interface is never admitted on another,
+   and every receiver's interface is decided by the boundary from the member
+   that produced it, never asserted by an adapter. A blacklist of mutating
+   verbs is kept
    as a second, cheaper line of defence over the allowlist itself, and is
    deliberately not the first: a forbidden-verb list admits every name nobody
    thought of, and once the member name is data it cannot see the call at all.
@@ -943,11 +957,20 @@ to check: it is a list, not a reading of every call site.
 **Verification.** One module per responsibility.
 `tests/muejeje/test_platform_adapter.py` asserts that one file names `ipc`,
 that only declared adapters reach the boundary, that no adapter names a
-platform member at a call site, that the allowlist equals the documented set,
-that no admitted name is shaped like a mutation, and that an adapter carries no
-number but its own bounds — then compares the calls actually made, recorded by
-a stub, against the documented set, in both directions, and drives the boundary
-refusing a name outside the allowlist without touching the receiver.
+platform member at a call site, and that an adapter carries no number but its
+own bounds. `tests/muejeje/test_platform_allowlist.py` holds the allowlist equal
+to the documented set of interface members, refuses a mutation-shaped entry,
+requires every call site to spell one admitted `Interface.member`, and compares
+the calls actually made — recorded by a stub that logs the interface each call
+landed on — against that set, per operation and as a union.
+`tests/muejeje/test_platform_boundary.py` drives the boundary refusing a member
+outside the allowlist, an admitted member asked of another interface, the wrong
+arity and a receiver it never handed out, each without touching the receiver,
+and keeps the readings it can report distinct.
+`tests/muejeje/test_platform_reference.py` re-derives every entry from its own
+interface's installed page — member, arity and what it hands over — with each
+page hash-pinned, and holds the evidence table in the offline audit to one row
+per entry citing that page.
 `tests/muejeje/test_platform_readings.py` drives every device reading, every
 field validator behind them, and that a defect inside an adapter reaches the
 caller as `ENGINE_EXCEPTION` rather than as a platform reading;

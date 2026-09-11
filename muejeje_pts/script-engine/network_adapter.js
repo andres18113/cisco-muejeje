@@ -75,9 +75,9 @@ function muejejeAdapterDeviceInventory(offset, limit) {
 }
 
 function muejejeAdapterInventoryRead(platform, window) {
-    var network = muejejeAdapterCall(platform, "network");
+    var network = muejejeAdapterCall(platform, "IPC.network");
     var count = muejejeReadingCount(
-        muejejeAdapterCall(network, "getDeviceCount")
+        muejejeAdapterCall(network, "Network.getDeviceCount")
     );
     var last = Math.min(
         count, window.offset + window.limit,
@@ -107,14 +107,14 @@ function muejejeAdapterInventoryRead(platform, window) {
  * not hand over is an answer that cannot be attributed, exactly as a missing
  * descriptor inside the device count is. */
 function muejejeAdapterInventoryEntry(network, index) {
-    var device = muejejeAdapterCallWith(network, "getDeviceAt", index);
+    var device = muejejeAdapterCallWith(network, "Network.getDeviceAt", index);
     if (!device) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
     return {
         index: index,
         name: muejejeReadingText(
-            muejejeAdapterCall(device, "getName"),
+            muejejeAdapterCall(device, "Device.getName"),
             MUEJEJE_PLATFORM_LIMITS.MAX_NAME_CHARS
         )
     };

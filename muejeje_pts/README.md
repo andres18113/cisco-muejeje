@@ -134,8 +134,10 @@ answer establishes (`MJ-011`).
 `platform_adapter.js` is the one file that names `ipc`, and the architecture
 gates say so by path: naming the platform is legal there and a violation in
 every other packaged source (`MJ-006`, `MJ-019`). Every platform call this
-artifact makes goes through one function in it, by member name, and that
-function admits only the names on a declared read-only allowlist. The adapters
+artifact makes goes through it, by **interface member** — `Device.getModel` and
+`DeviceDescriptor.getModel` are two entries, not one name — and it admits only
+the members on a declared read-only allowlist, asked of a platform object it
+handed out itself as that interface. The adapters
 beside it read one subject each — the device factory, the chassis of one model,
 whether one model accepts one module type, the devices on the workspace, and
 the identity of one of them — and name no platform object of their own.
@@ -143,10 +145,12 @@ the identity of one of them — and name no platform object of their own.
 **The read-only proof is that list, not a list of forbidden verbs.** A
 blacklist admits every name nobody thought to forbid, and once the member name
 is data it cannot see the call at all. So the allowlist holds documented
-getters only, a gate holds it equal to what this repository can cite, another
-fails if any adapter names a platform member at a call site, and a third
-compares the calls that actually ran against the same set. The mutating-verb
-pattern stays as a second line of defence over the list itself.
+getters only, a gate holds it equal to what this repository can cite and
+re-reads each entry off its own interface's installed page, another fails if
+any adapter names a platform member at a call site or leaves one unspelled, and
+a third compares the calls that actually ran, interface by interface, against
+the same set. The mutating-verb pattern stays as a second line of defence over
+the list itself.
 
 **A defect in here is never reported as something Packet Tracer did.** Only
 something the boundary observed about the platform, and an answer a validator

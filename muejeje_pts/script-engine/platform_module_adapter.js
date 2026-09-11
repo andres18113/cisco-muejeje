@@ -88,10 +88,10 @@ function muejejeAdapterModuleDescriptors(deviceIndex) {
  * platform would send a consumer looking for a fault that nothing had. */
 function muejejeAdapterModuleRead(platform, index) {
     var factory = muejejeAdapterCall(
-        muejejeAdapterCall(platform, "hardwareFactory"), "devices"
+        muejejeAdapterCall(platform, "IPC.hardwareFactory"), "HardwareFactory.devices"
     );
     var count = muejejeReadingCount(
-        muejejeAdapterCall(factory, "getAvailableDeviceCount")
+        muejejeAdapterCall(factory, "DeviceFactory.getAvailableDeviceCount")
     );
     var reading = muejejeAdapterModuleReading(
         MUEJEJE_PLATFORM_OBSERVED, null, index
@@ -101,7 +101,7 @@ function muejejeAdapterModuleRead(platform, index) {
         return reading;
     }
     return muejejeAdapterModuleTree(
-        reading, muejejeAdapterCallWith(factory, "getAvailableDeviceAt", index)
+        reading, muejejeAdapterCallWith(factory, "DeviceFactory.getAvailableDeviceAt", index)
     );
 }
 
@@ -111,13 +111,13 @@ function muejejeAdapterModuleTree(reading, descriptor) {
     }
     reading.descriptor_present = true;
     reading.model = muejejeReadingText(
-        muejejeAdapterCall(descriptor, "getModel"),
+        muejejeAdapterCall(descriptor, "DeviceDescriptor.getModel"),
         MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
     reading.device_type = muejejeReadingWholeNumber(
-        muejejeAdapterCall(descriptor, "getType")
+        muejejeAdapterCall(descriptor, "DeviceDescriptor.getType")
     );
-    var root = muejejeAdapterCall(descriptor, "getRootModule");
+    var root = muejejeAdapterCall(descriptor, "DeviceDescriptor.getRootModule");
     if (!root) {
         return reading;
     }
@@ -161,19 +161,19 @@ function muejejeAdapterModuleNode(item, index) {
         depth: item.depth,
         module_index: item.position,
         model: muejejeReadingText(
-            muejejeAdapterCall(item.descriptor, "getModel"),
+            muejejeAdapterCall(item.descriptor, "ModuleDescriptor.getModel"),
             MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
         ),
         module_type: muejejeReadingModuleType(
-            muejejeAdapterCall(item.descriptor, "getType")
+            muejejeAdapterCall(item.descriptor, "ModuleDescriptor.getType")
         ),
         hot_swappable: muejejeReadingFlag(
-            muejejeAdapterCall(item.descriptor, "isHotSwappable")
+            muejejeAdapterCall(item.descriptor, "ModuleDescriptor.isHotSwappable")
         ),
         slot_types: slots.types,
         slot_types_truncated: slots.truncated,
         module_count: muejejeReadingCount(
-            muejejeAdapterCall(item.descriptor, "getModuleCount")
+            muejejeAdapterCall(item.descriptor, "ModuleDescriptor.getModuleCount")
         ),
         children_truncated: false
     };
@@ -189,13 +189,13 @@ function muejejeAdapterModuleNode(item, index) {
  * other. */
 function muejejeAdapterSlotTypes(descriptor) {
     var count = muejejeReadingCount(
-        muejejeAdapterCall(descriptor, "getSlotCount")
+        muejejeAdapterCall(descriptor, "ModuleDescriptor.getSlotCount")
     );
     var readable = Math.min(count, MUEJEJE_PLATFORM_LIMITS.MAX_SLOTS);
     var types = [];
     for (var index = 0; index < readable; index++) {
         types.push(muejejeReadingModuleType(
-            muejejeAdapterCallWith(descriptor, "getSlotTypeAt", index)
+            muejejeAdapterCallWith(descriptor, "ModuleDescriptor.getSlotTypeAt", index)
         ));
     }
     return {types: types, truncated: count > readable};
@@ -234,7 +234,7 @@ function muejejeAdapterQueueChildren(reading, item, node, pending) {
  * observed. If a target run shows a null is ordinary there, this becomes a
  * reported position with that evidence behind it — not before (MJ-015). */
 function muejejeAdapterQueueChild(item, node, pending, position) {
-    var child = muejejeAdapterCallWith(item.descriptor, "getModuleAt", position);
+    var child = muejejeAdapterCallWith(item.descriptor, "ModuleDescriptor.getModuleAt", position);
     if (!child) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }

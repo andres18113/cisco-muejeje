@@ -81,19 +81,19 @@ function muejejeAdapterModuleTypeSupport(deviceIndex, moduleType) {
  * models it offers, and it offers none there. */
 function muejejeAdapterSupportRead(platform, index, type) {
     var factory = muejejeAdapterCall(
-        muejejeAdapterCall(platform, "hardwareFactory"), "devices"
+        muejejeAdapterCall(platform, "IPC.hardwareFactory"), "HardwareFactory.devices"
     );
     var reading = muejejeAdapterSupportReading(
         MUEJEJE_PLATFORM_OBSERVED, null, index, type
     );
     reading.available_count = muejejeReadingCount(
-        muejejeAdapterCall(factory, "getAvailableDeviceCount")
+        muejejeAdapterCall(factory, "DeviceFactory.getAvailableDeviceCount")
     );
     if (index >= reading.available_count) {
         return reading;
     }
     return muejejeAdapterSupportAsk(
-        reading, muejejeAdapterCallWith(factory, "getAvailableDeviceAt", index),
+        reading, muejejeAdapterCallWith(factory, "DeviceFactory.getAvailableDeviceAt", index),
         type
     );
 }
@@ -107,14 +107,14 @@ function muejejeAdapterSupportAsk(reading, descriptor, type) {
     }
     reading.descriptor_present = true;
     reading.model = muejejeReadingText(
-        muejejeAdapterCall(descriptor, "getModel"),
+        muejejeAdapterCall(descriptor, "DeviceDescriptor.getModel"),
         MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
     reading.device_type = muejejeReadingWholeNumber(
-        muejejeAdapterCall(descriptor, "getType")
+        muejejeAdapterCall(descriptor, "DeviceDescriptor.getType")
     );
     reading.module_type_supported = muejejeReadingFlag(
-        muejejeAdapterCallWith(descriptor, "isModuleTypeSupported", type)
+        muejejeAdapterCallWith(descriptor, "DeviceDescriptor.isModuleTypeSupported", type)
     );
     return reading;
 }

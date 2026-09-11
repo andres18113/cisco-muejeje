@@ -87,10 +87,10 @@ function muejejeAdapterDeviceDescriptors(offset, limit) {
  * not a statement about which of them this runtime will address. */
 function muejejeAdapterRead(platform, window) {
     var factory = muejejeAdapterCall(
-        muejejeAdapterCall(platform, "hardwareFactory"), "devices"
+        muejejeAdapterCall(platform, "IPC.hardwareFactory"), "HardwareFactory.devices"
     );
     var count = muejejeReadingCount(
-        muejejeAdapterCall(factory, "getAvailableDeviceCount")
+        muejejeAdapterCall(factory, "DeviceFactory.getAvailableDeviceCount")
     );
     var last = Math.min(
         count, window.offset + window.limit,
@@ -99,7 +99,7 @@ function muejejeAdapterRead(platform, window) {
     var descriptors = [];
     for (var index = window.offset; index < last; index++) {
         descriptors.push(muejejeAdapterDescriptor(
-            muejejeAdapterCallWith(factory, "getAvailableDeviceAt", index),
+            muejejeAdapterCallWith(factory, "DeviceFactory.getAvailableDeviceAt", index),
             index
         ));
     }
@@ -129,14 +129,14 @@ function muejejeAdapterDescriptor(descriptor, index) {
     return {
         device_index: index,
         model: muejejeReadingText(
-            muejejeAdapterCall(descriptor, "getModel"),
+            muejejeAdapterCall(descriptor, "DeviceDescriptor.getModel"),
             MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
         ),
         device_type: muejejeReadingWholeNumber(
-            muejejeAdapterCall(descriptor, "getType")
+            muejejeAdapterCall(descriptor, "DeviceDescriptor.getType")
         ),
         model_supported: muejejeReadingFlag(
-            muejejeAdapterCall(descriptor, "isModelSupported")
+            muejejeAdapterCall(descriptor, "DeviceDescriptor.isModelSupported")
         ),
         supported_module_types: supported.types,
         module_types_truncated: supported.truncated
@@ -151,13 +151,13 @@ function muejejeAdapterDescriptor(descriptor, index) {
  * platform's own documentation. */
 function muejejeAdapterModuleTypes(descriptor) {
     var count = muejejeReadingCount(
-        muejejeAdapterCall(descriptor, "getSupportedModuleTypeCount")
+        muejejeAdapterCall(descriptor, "DeviceDescriptor.getSupportedModuleTypeCount")
     );
     var readable = Math.min(count, MUEJEJE_PLATFORM_LIMITS.MAX_MODULE_TYPES);
     var types = [];
     for (var index = 0; index < readable; index++) {
         types.push(muejejeReadingModuleType(
-            muejejeAdapterCallWith(descriptor, "getSupportedModuleTypeAt", index)
+            muejejeAdapterCallWith(descriptor, "DeviceDescriptor.getSupportedModuleTypeAt", index)
         ));
     }
     return {types: types, truncated: count > readable};

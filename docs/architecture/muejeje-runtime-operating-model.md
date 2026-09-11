@@ -128,9 +128,11 @@ The two runtime operations call Packet Tracer not at all. The `platform.*` and
 `network.*` ones do, through the one file declared as the platform-call
 boundary — the only
 packaged source that may name `ipc`, and the only one that does (`MJ-031`).
-Every call goes through one function there, by member name, and that function
-admits only names on a declared read-only allowlist of documented getters, so
-nothing it does instantiates a device, powers one or touches a workspace. The
+Every call goes through it by interface member (`Interface.member`), and it
+admits only members on a declared read-only allowlist of documented getters,
+asked of a platform object it handed out as that interface — so a name admitted
+on one interface is never admitted on another, and nothing it does instantiates
+a device, powers one or touches a workspace. The
 allowlist is the proof rather than a list of forbidden verbs, which admits
 every name nobody thought of; and a defect inside an adapter is reported as
 `ENGINE_EXCEPTION`, never as a platform reading.

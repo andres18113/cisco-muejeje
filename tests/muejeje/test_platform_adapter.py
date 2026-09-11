@@ -43,9 +43,10 @@ BOUNDARY = "platform_adapter.js"
 MEMBER_CALL = re.compile(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(")
 # The member calls an adapter is allowed to make in its own code: JavaScript's
 # own, and nothing else. Every platform call goes through `muejejeAdapterCall`,
-# which takes the member name as data, so a platform getter written at a call
-# site is an adapter reaching past its own boundary.
-LANGUAGE_MEMBER_CALLS = {"call", "min", "push"}
+# which takes the qualified member as data, so a platform getter written at a
+# call site is an adapter reaching past its own boundary. `split` is how the
+# boundary reads `Interface.member` apart.
+LANGUAGE_MEMBER_CALLS = {"call", "min", "push", "split"}
 
 # Three models, the first of them carrying a chassis, so one stub drives both
 # platform operations and the whole allowlist is reachable from it.

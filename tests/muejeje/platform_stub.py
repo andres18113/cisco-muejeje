@@ -4,8 +4,14 @@ A **stub**, and it stays one. It establishes what an adapter does with an answer
 of a given shape and nothing whatever about Packet Tracer, whose engine and
 hardware factory are a different implementation (MJ-015). The call log is what
 stops it from quietly becoming evidence about the platform: a caller compares
-the recorded calls against Cisco's documented getters, so an undocumented call
+the recorded calls against Cisco's documented members, so an undocumented call
 fails here rather than on a target (`AGENTS.md` rule 6).
+
+**Every object logs the interface it plays, not only the member.** A call is an
+interface member (MJ-031): `getModel` on a workspace device and `getModel` on a
+factory descriptor are two contracts with two citations, and a log of bare
+names would let one stand in for the other. So every entry is written
+`Interface.member`, by the object that implements that interface.
 
 Every fixture lives here rather than in the modules that use it, so two test
 modules cannot drift into describing two different chassis or two different
@@ -46,24 +52,28 @@ def _module_descriptor_js() -> list[str]:
     return [
         "function moduleDescriptor(node) {",
         "  return {",
-        "    getModel: function () { log('getModel'); return node.model; },",
-        "    getType: function () { log('getType'); return node.module_type; },",
+        "    getModel: function () {",
+        "      log('ModuleDescriptor.getModel'); return node.model;",
+        "    },",
+        "    getType: function () {",
+        "      log('ModuleDescriptor.getType'); return node.module_type;",
+        "    },",
         "    isHotSwappable: function () {",
-        "      log('isHotSwappable'); return node.hot_swappable;",
+        "      log('ModuleDescriptor.isHotSwappable'); return node.hot_swappable;",
         "    },",
         "    getSlotCount: function () {",
-        "      log('getSlotCount'); return node.slot_types.length;",
+        "      log('ModuleDescriptor.getSlotCount'); return node.slot_types.length;",
         "    },",
         "    getSlotTypeAt: function (index) {",
-        "      log('getSlotTypeAt'); return node.slot_types[index];",
+        "      log('ModuleDescriptor.getSlotTypeAt'); return node.slot_types[index];",
         "    },",
         "    getModuleCount: function () {",
-        "      log('getModuleCount');",
+        "      log('ModuleDescriptor.getModuleCount');",
         "      return node.module_count === undefined",
         "        ? node.modules.length : node.module_count;",
         "    },",
         "    getModuleAt: function (index) {",
-        "      log('getModuleAt');",
+        "      log('ModuleDescriptor.getModuleAt');",
         "      return node.modules[index]",
         "        ? moduleDescriptor(node.modules[index]) : null;",
         "    }",
@@ -78,23 +88,29 @@ def _device_descriptor_js() -> list[str]:
         "function descriptor(spec) {",
         "  return {",
         "    getRootModule: function () {",
-        "      log('getRootModule');",
+        "      log('DeviceDescriptor.getRootModule');",
         "      return spec.root ? moduleDescriptor(spec.root) : null;",
         "    },",
-        "    getModel: function () { log('getModel'); return spec.model; },",
-        "    getType: function () { log('getType'); return spec.type; },",
+        "    getModel: function () {",
+        "      log('DeviceDescriptor.getModel'); return spec.model;",
+        "    },",
+        "    getType: function () {",
+        "      log('DeviceDescriptor.getType'); return spec.type;",
+        "    },",
         "    isModelSupported: function () {",
-        "      log('isModelSupported'); return spec.supported;",
+        "      log('DeviceDescriptor.isModelSupported'); return spec.supported;",
         "    },",
         "    isModuleTypeSupported: function (type) {",
-        "      log('isModuleTypeSupported');",
+        "      log('DeviceDescriptor.isModuleTypeSupported');",
         "      return spec.module_types.indexOf(type) !== -1;",
         "    },",
         "    getSupportedModuleTypeCount: function () {",
-        "      log('getSupportedModuleTypeCount'); return spec.module_types.length;",
+        "      log('DeviceDescriptor.getSupportedModuleTypeCount');",
+        "      return spec.module_types.length;",
         "    },",
         "    getSupportedModuleTypeAt: function (index) {",
-        "      log('getSupportedModuleTypeAt'); return spec.module_types[index];",
+        "      log('DeviceDescriptor.getSupportedModuleTypeAt');",
+        "      return spec.module_types[index];",
         "    }",
         "  };",
         "}",
@@ -108,18 +124,35 @@ def _network_js(dense: bool, reported: str) -> list[str]:
     stub carrying one topology's device names would be a consumer's identifiers
     living in the test area (MJ-004). `dense` cycles the list so the workspace
     answers at every index, exactly as the factory does.
+
+    A device offers a getter only when its spec carries the field, so a
+    fixture never answers a question nobody put to it: an inventory device is
+    a name, and an identity device also has a model and a DeviceType.
     """
     pick = "DEVICES[index % DEVICES.length]" if dense else "DEVICES[index]"
     return [
         "function workspaceDevice(spec) {",
-        "  return {getName: function () { log('getName'); return spec.name; }};",
+        "  var device = {getName: function () {",
+        "    log('Device.getName'); return spec.name;",
+        "  }};",
+        "  if ('model' in spec) {",
+        "    device.getModel = function () {",
+        "      log('Device.getModel'); return spec.model;",
+        "    };",
+        "  }",
+        "  if ('device_type' in spec) {",
+        "    device.getType = function () {",
+        "      log('Device.getType'); return spec.device_type;",
+        "    };",
+        "  }",
+        "  return device;",
         "}",
         "var NETWORK = {",
         "  getDeviceCount: function () {",
-        f"    log('getDeviceCount'); return {reported};",
+        f"    log('Network.getDeviceCount'); return {reported};",
         "  },",
         "  getDeviceAt: function (index) {",
-        "    log('getDeviceAt');",
+        "    log('Network.getDeviceAt');",
         f"    var spec = {pick};",
         "    return spec ? workspaceDevice(spec) : null;",
         "  }",
@@ -131,29 +164,31 @@ def _factory_js(reported: str, refuses: str, dense: bool) -> list[str]:
     """The factory enumeration, and the platform object that answers for it.
 
     `dense` makes it answer at *every* index by cycling the models, which is
-    how a reading at the runtime's own addressing ceiling is driven: with a
-    literal array the ceiling under test would be the stub's length rather
-    than Muejeje's declared bound.
+    how a reading at the far end of an address domain is driven: with a literal
+    array the index under test would be bounded by the stub's length rather
+    than by what Muejeje admits.
     """
     pick = "MODELS[index % MODELS.length]" if dense else "MODELS[index]"
     return [
         "var FACTORY = {",
         "  getAvailableDeviceCount: function () {",
-        f"    log('getAvailableDeviceCount'); return {reported};",
+        f"    log('DeviceFactory.getAvailableDeviceCount'); return {reported};",
         "  },",
         "  getAvailableDeviceAt: function (index) {",
-        "    log('getAvailableDeviceAt');",
+        "    log('DeviceFactory.getAvailableDeviceAt');",
         f"    var spec = {pick};",
         "    return spec ? descriptor(spec) : null;",
         "  }",
         "};",
         "var ipc = {hardwareFactory: function () {",
-        "  log('hardwareFactory');",
+        "  log('IPC.hardwareFactory');",
         f"  if ({refuses}) {{",
         "    throw new Error('the platform refused this call');",
         "  }",
-        "  return {devices: function () { log('devices'); return FACTORY; }};",
-        "}, network: function () { log('network'); return NETWORK; }};",
+        "  return {devices: function () {",
+        "    log('HardwareFactory.devices'); return FACTORY;",
+        "  }};",
+        "}, network: function () { log('IPC.network'); return NETWORK; }};",
     ]
 
 
@@ -180,20 +215,12 @@ EXTREME_MODELS = (
 def identity_stub(**kwargs) -> str:
     """The workspace stub, whose devices answer the identity getters too.
 
-    `_network_js` gives a device `getName` alone, because that is all the
-    inventory reads. A device *identity* reading also asks for the model and
-    the DeviceType, so the stub grows those two here rather than in the shared
-    builder: a fixture that always answered them would make the inventory look
-    as though it had asked.
+    A device offers only the getters its spec has fields for, so these answer
+    a model and a DeviceType because `IDENTITY_DEVICES` carries both — and an
+    inventory fixture, which carries only names, still cannot look as though
+    it had been asked for them.
     """
-    return platform_stub(CHASSIS_MODELS, devices=IDENTITY_DEVICES, **kwargs).replace(
-        "return {getName: function () { log('getName'); return spec.name; }};",
-        "return {"
-        "getName: function () { log('getName'); return spec.name; },"
-        "getModel: function () { log('getModel'); return spec.model; },"
-        "getType: function () { log('getType'); return spec.device_type; }"
-        "};",
-    )
+    return platform_stub(CHASSIS_MODELS, devices=IDENTITY_DEVICES, **kwargs)
 
 
 def platform_stub(
@@ -211,25 +238,26 @@ def platform_stub(
     a well-formed answer and nothing whatever about Packet Tracer, whose engine
     and hardware factory are a different implementation (MJ-015). The call log
     is what stops it from quietly becoming evidence about the platform — the
-    caller compares the recorded calls against Cisco's documented getters, so
-    an undocumented call fails here rather than on a target.
+    caller compares the recorded `Interface.member` calls against Cisco's
+    documented members, so an undocumented call fails here rather than on a
+    target.
 
     `models` is a JavaScript array literal of
     `{model, type, supported, module_types}` objects, each optionally carrying
     `root`: a chassis-module tree of
     `{model, module_type, hot_swappable, slot_types, modules}` nodes, where a
     `null` entry in `modules` makes `getModuleAt` answer nothing at that index,
-    and `module_count` overrides what `getModuleCount()` answers. `count` overrides what
-    `getAvailableDeviceCount()` answers, which is how an unusable answer is
-    delivered; `fail` makes the first factory call throw, which is how a refused
-    call is delivered. `devices` is the workspace `Network` enumerates, as
-    `{name}` objects — a `null` entry is a device the platform will not hand
-    over, and `device_count` overrides what `getDeviceCount()` answers.
+    and `module_count` overrides what `getModuleCount()` answers. `count`
+    overrides what `getAvailableDeviceCount()` answers, which is how an
+    unusable answer is delivered; `fail` makes the first factory call throw,
+    which is how a refused call is delivered. `devices` is the workspace
+    `Network` enumerates, as `{name, model?, device_type?}` objects — a device
+    offers a getter only for a field it carries, a `null` entry is a device the
+    platform will not hand over, and `device_count` overrides what
+    `getDeviceCount()` answers.
 
     `dense` makes both enumerations answer at *every* index by cycling their
-    lists. It exists so a reading can be driven at the runtime's own addressing
-    ceiling: with a literal array, the ceiling under test would be the stub's
-    length rather than Muejeje's declared bound.
+    lists, so a reading can be driven at the far end of an address domain.
     """
     return "\n".join([
         f"var MODELS = {models};",

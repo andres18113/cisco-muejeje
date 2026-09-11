@@ -103,18 +103,18 @@ function muejejeAdapterDeviceIdentity(deviceIndex) {
  * same observation rather than assumed from an earlier one, which is what makes
  * "past the end" a statement about this reading. */
 function muejejeAdapterIdentityRead(platform, index) {
-    var network = muejejeAdapterCall(platform, "network");
+    var network = muejejeAdapterCall(platform, "IPC.network");
     var reading = muejejeAdapterIdentityReading(
         MUEJEJE_PLATFORM_OBSERVED, null, index
     );
     reading.available_count = muejejeReadingCount(
-        muejejeAdapterCall(network, "getDeviceCount")
+        muejejeAdapterCall(network, "Network.getDeviceCount")
     );
     if (index >= reading.available_count) {
         return reading;
     }
     return muejejeAdapterIdentityFacts(
-        reading, muejejeAdapterCallWith(network, "getDeviceAt", index)
+        reading, muejejeAdapterCallWith(network, "Network.getDeviceAt", index)
     );
 }
 
@@ -133,15 +133,15 @@ function muejejeAdapterIdentityFacts(reading, device) {
     }
     reading.device_present = true;
     reading.name = muejejeReadingText(
-        muejejeAdapterCall(device, "getName"),
+        muejejeAdapterCall(device, "Device.getName"),
         MUEJEJE_PLATFORM_LIMITS.MAX_NAME_CHARS
     );
     reading.model = muejejeReadingText(
-        muejejeAdapterCall(device, "getModel"),
+        muejejeAdapterCall(device, "Device.getModel"),
         MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
     reading.device_type = muejejeReadingWholeNumber(
-        muejejeAdapterCall(device, "getType")
+        muejejeAdapterCall(device, "Device.getType")
     );
     return reading;
 }

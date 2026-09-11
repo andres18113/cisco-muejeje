@@ -351,59 +351,85 @@ perfectly: `runtime.identify` and `runtime.capabilities` make no platform call,
 so they can succeed on a target where every privilege is refused and every
 factory API is missing.
 
-The boundary admits **twenty member names**. They reach more interfaces
-than that, because one name serves several — so the table below has
-22 rows, one per interface member, which is the granularity the
-evidence actually has:
+The boundary admits **interface members, not names** (`MJ-031`): one allowlist
+entry per member, called only on a platform object the boundary itself handed
+out as that interface. The table below has one row per entry and cites the page
+that member is documented on, and a gate holds both — every entry has exactly
+one row, and every row cites its own interface's page. An earlier revision of
+this table carried two fewer rows than the boundary had entries and cited
+`IPC.hardwareFactory()` to the `HardwareFactory` page; nothing compared the
+table with the allowlist, so neither was noticed.
 
-| Call | Cisco reference | Target-evidenced against `9.0.1.0858` |
+The third column says whether a **legacy channel** has observed the member on
+`9.0.1.0858`, and through what. It is not Muejeje's evidence, and no row of it
+is a Muejeje target reading — every one of those is still `PENDING_TARGET`.
+
+| Interface member | Cisco reference | Observed on `9.0.1.0858` through a legacy channel |
 | --- | --- | --- |
-| `ipc.hardwareFactory()` | `class_hardware_factory.html` | **yes** — the CP-SCALE factory surveys |
-| `HardwareFactory.devices()` | `class_hardware_factory.html` | **yes** — same surveys |
-| `DeviceDescriptor.getModel()` | `class_device_descriptor.html` | **yes** — same surveys |
-| `DeviceDescriptor.getType()` | `class_device_descriptor.html` | **yes** — same surveys |
-| `DeviceDescriptor.getRootModule()` | `class_device_descriptor.html` | **yes** — same surveys |
-| `ModuleDescriptor.getModel()` | `class_module_descriptor.html` | **yes** — same surveys |
-| `ModuleDescriptor.getType()` | `class_module_descriptor.html` | **yes** — same surveys |
-| `ModuleDescriptor.isHotSwappable()` | `class_module_descriptor.html` | **yes** — same surveys |
-| `ModuleDescriptor.getSlotCount()` | `class_module_descriptor.html` | **yes** — same surveys |
-| `ModuleDescriptor.getSlotTypeAt(int)` | `class_module_descriptor.html` | **yes** — same surveys |
-| `ModuleDescriptor.getModuleCount()` | `class_module_descriptor.html` | **yes** — same surveys |
-| `ModuleDescriptor.getModuleAt(int)` | `class_module_descriptor.html` | **yes** — same surveys |
+| `IPC.hardwareFactory()` | `class_i_p_c.html` | **yes** — factory-structure record |
+| `HardwareFactory.devices()` | `class_hardware_factory.html` | **yes** — factory-structure record |
 | `DeviceFactory.getAvailableDeviceCount()` | `class_device_factory.html` | **no** — documented only |
 | `DeviceFactory.getAvailableDeviceAt(int)` | `class_device_factory.html` | **no** — documented only |
+| `DeviceDescriptor.getModel()` | `class_device_descriptor.html` | **yes** — factory-structure record |
+| `DeviceDescriptor.getType()` | `class_device_descriptor.html` | **yes** — factory-structure record |
 | `DeviceDescriptor.isModelSupported()` | `class_device_descriptor.html` | **no** — documented only |
-| `DeviceDescriptor.isModuleTypeSupported(ModuleType)` | `class_device_descriptor.html` | **yes** — the CP-SCALE factory surveys |
-| `ipc.network()` | `class_i_p_c.html` | **yes** — this repository's live channel drives it |
-| `Network.getDeviceCount()` | `class_network.html` | **yes** — same channel |
-| `Network.getDeviceAt(int)` | `class_network.html` | **yes** — same channel |
-| `Device.getName()` | `class_device.html` | **yes** — same channel |
-| `Device.getModel()` | `class_device.html` | **yes** — same channel |
+| `DeviceDescriptor.isModuleTypeSupported(ModuleType)` | `class_device_descriptor.html` | **yes** — factory-structure record |
+| `DeviceDescriptor.getSupportedModuleTypeCount()` | `class_device_descriptor.html` | **no** — documented only |
+| `DeviceDescriptor.getSupportedModuleTypeAt(int)` | `class_device_descriptor.html` | **no** — documented only |
+| `DeviceDescriptor.getRootModule()` | `class_device_descriptor.html` | **yes** — factory-structure record |
+| `ModuleDescriptor.getModel()` | `class_module_descriptor.html` | **yes** — factory-structure record |
+| `ModuleDescriptor.getType()` | `class_module_descriptor.html` | **yes** — factory-structure record |
+| `ModuleDescriptor.isHotSwappable()` | `class_module_descriptor.html` | **yes** — factory-structure record |
+| `ModuleDescriptor.getSlotCount()` | `class_module_descriptor.html` | **yes** — factory-structure record |
+| `ModuleDescriptor.getSlotTypeAt(int)` | `class_module_descriptor.html` | **yes** — factory-structure record |
+| `ModuleDescriptor.getModuleCount()` | `class_module_descriptor.html` | **yes** — factory-structure record |
+| `ModuleDescriptor.getModuleAt(int)` | `class_module_descriptor.html` | **yes** — factory-structure record |
+| `IPC.network()` | `class_i_p_c.html` | legacy code only — no per-member record cited |
+| `Network.getDeviceCount()` | `class_network.html` | legacy code only — no per-member record cited |
+| `Network.getDeviceAt(int)` | `class_network.html` | legacy code only — no per-member record cited |
+| `Device.getName()` | `class_device.html` | legacy code only — no per-member record cited |
+| `Device.getModel()` | `class_device.html` | legacy code only — no per-member record cited |
 | `Device.getType()` | `class_device.html` | **no** — documented only |
 
-`getModel` and `getType` are members of both descriptor interfaces *and* of
-`Device`; the allowlist carries one entry per name, so `network.device_identity`
-added no entry to it. The standing is per interface and not per name, which is
-why `Device.getModel()` is evidenced and `Device.getType()` is not: the live
-channel reads a model off a workspace device and has never read its type there.
-The `getType` this repository has driven is `DeviceDescriptor`'s, reached
-through `getDescriptor(DeviceType, string)` — a different method on a different
-interface, and not evidence about this one.
-
-`Device` also documents `getDescriptor()`, `getSerialNumber()`, `getPower()`
-and `getUpTime()`, and none is admitted. `getDescriptor()` is the only
-documented way to relate a workspace device to a factory descriptor; it is
-recorded here so that the relation having an API is on record, and so that the
-absence of a correlation field in `network.device_identity` reads as a decision
-rather than an oversight (`MJ-031`).
-
-The 18 "yes" rows are evidenced by
-[the factory-structure record](../reference/cp-scale/ROUTER0_POE_FACTORY_STRUCTURE_20260907.md)
-— runs `factory-survey-9f967ef6` and `factory-survey-102006c6`, read-only, zero
-mutations, against `9.0.1.0858`. That record carries whole chassis trees read
-through exactly these getters: an `AccessPoint-PT` root reporting `model: ""`
+**"yes" means a recorded run.** Every "yes" row is a member the read-only
+factory survey calls — `observe_factory_structure` in
+`infrastructure/execution/poe_delivery_runtime.py` — in runs
+`factory-survey-9f967ef6` and `factory-survey-102006c6`, zero mutations, whose
+outputs are committed under `docs/reference/cp-scale/canonical-live-evidence/`
+as `factory-structure-20260907T003018Z-cf89481fa3ea-observed.json` (recording
+`packet_tracer_build: 9.0.1.0858`) and
+`factory-structure-20260907T005226Z-86c75f1c304c-accesspoint-family.json`, and
+summarised in
+[the factory-structure record](../reference/cp-scale/ROUTER0_POE_FACTORY_STRUCTURE_20260907.md):
+whole chassis trees, among them an `AccessPoint-PT` root reporting `model: ""`
 with slot types `[6, 18]` and two child modules, and a `3650-24PS` with three
 non-removable root slots.
+
+**"legacy code only" is weaker, and says so.** The legacy runtime's workspace
+inventories — `inventory_fingerprint` in
+`infrastructure/execution/probe_runtime.py`, and the live safety gate's
+`_workspace_observation_js` in `packet_tracer_physical_runtime.py` — call these
+members. An earlier revision recorded them as "yes — this repository's live
+channel drives it", which was a claim about code standing in for a recorded
+observation. No record here ties each of these members to a run on
+`9.0.1.0858`, so none of them is recorded as observed.
+
+**"no" rows are documented and unmeasured**: the factory enumeration pair, the
+per-model support flag, the supported-type pair and `Device.getType()`. The
+enumeration pair is what a target run has to observe first, because it is how
+this artifact reaches every descriptor member beneath it. The `getType` this
+repository has driven is `DeviceDescriptor`'s — a different member of a
+different interface, and no evidence about `Device`'s, which is exactly the
+distinction a per-member table exists to keep.
+
+`Device` also documents `getDescriptor()`, `getRootModule()`,
+`getSerialNumber()`, `getPower()` and `getUpTime()`, and none is admitted.
+`getDescriptor()` is the only documented way to relate a workspace device to a
+factory descriptor; it is recorded here so that the relation having an API is
+on record, and so that the absence of a correlation field in
+`network.device_identity` reads as a decision rather than an oversight
+(`MJ-031`). `getRootModule()` on `Device` hands over installed hardware, and is
+not the descriptor member of the same name the boundary admits.
 
 **Those runs are not Muejeje's evidence**, and the distinction is the whole
 point of this section. They were driven from the legacy channel, in a context
@@ -416,20 +442,9 @@ enumeration and addresses a model by its index in it. So those runs establish
 that this descriptor path answers on this build — which is why it was chosen —
 and nothing about whether *this artifact* may walk it.
 
-The four "no" rows are documented and unmeasured: the factory enumeration pair,
-the per-model support flag, and `Device.getType()`. The first three are what a
-target run has to observe first, because the enumeration is how this artifact
-reaches every descriptor getter beneath it; the fourth is the one call
-`network.device_identity` makes that nothing here has driven on a workspace
-device.
-
-The workspace rows carry the same standing as the descriptor ones and no more:
-this repository's own live channel enumerates a workspace that way against
-`9.0.1.0858`, which says the API answers there and nothing about whether *this
-artifact* may call it. Until a target run happens, every `platform.*` and
-`network.*` operation is code with a contract and no target reading, which is
-what `PENDING_TARGET` means — and that now includes all five of them, the two
-workspace readings among them.
+Until a target run happens, every `platform.*` and `network.*` operation is
+code with a contract and no target reading, which is what `PENDING_TARGET`
+means.
 
 **And what the first reading will be is not something this record predicts.**
 The module requests no privilege, because no evidence says which privilege
