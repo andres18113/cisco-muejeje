@@ -6,8 +6,8 @@
  * the declared adapters. It names no platform symbol itself: the arrow points
  * operation -> adapter -> boundary -> platform, and never back (MJ-019).
  *
- * The model is addressed by its index in the factory enumeration, which is
- * what `platform.device_descriptors` reports. That keeps the pair generic: no
+ * The model is addressed by its `factory_index`, which is what
+ * `platform.device_descriptors` reports. That keeps the pair generic: no
  * DeviceType argument, so no numeric Cisco enum table has to exist, and no
  * model name, so no catalogue of somebody's hardware does either (MJ-002,
  * MJ-014). The identity actually read is reported back, so a consumer can tell
@@ -25,41 +25,31 @@
  * (MJ-032).
  */
 
-/* The arguments this operation admits, and the rule each value must satisfy.
- * Declared here, by the operation they belong to, and handed to the dispatcher
+/* The argument this operation admits, and the rule its value must satisfy.
+ * Declared here, by the operation it belongs to, and handed to the dispatcher
  * — which owns *which* operations exist, not what each one's arguments mean.
  *
- * `device_index` is bounded by the exact-integer limit rather than by a
- * second number written down here: two copies of a bound are two bounds, and
- * an index `platform.device_descriptors` publishes has to be one this
- * operation admits (MJ-029). */
+ * `factory_index` is bounded by the exact-integer limit rather than by a second
+ * number written down here: two copies of a bound are two bounds, and an index
+ * `platform.device_descriptors` publishes has to be one this operation admits
+ * (MJ-029). It is named for its domain, so a `workspace_index` read off the
+ * workspace cannot be sent here by the name it was published under.
+ *
+ * It is REQUIRED. Every index is a different model, so no default could be
+ * honest: an earlier revision read the model at position 0 when none was named,
+ * and reported that chassis as the answer to a question nobody asked. Admission
+ * refuses a request that omits it, and nothing is read. */
 var MUEJEJE_PLATFORM_MODULE_ARGS = {
-    device_index: {
+    factory_index: {
         kind: "integer",
+        required: true,
         min: 0,
         max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     }
 };
 
-/* The argument is optional, and an omitted one is the first descriptor the
- * factory offers rather than a refusal: index 0 is the origin of an
- * enumeration, not a device anybody chose. Which model that turned out to be
- * is in the answer. */
 function muejejePlatformModuleDescriptors(args, context) {
     return muejejeAdapterModuleDescriptors(
-        muejejePlatformModuleArgument(args, "device_index", 0)
+        muejejeV6RequiredArgument(args, "factory_index")
     );
-}
-
-/* V6 admission has already checked every supplied argument against the rule
- * above, so a value present here is within its bounds. This only decides
- * whether it was supplied at all. */
-function muejejePlatformModuleArgument(args, name, fallback) {
-    if (
-        args === null || typeof args !== "object"
-        || !Object.prototype.hasOwnProperty.call(args, name)
-    ) {
-        return fallback;
-    }
-    return args[name];
 }

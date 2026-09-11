@@ -34,7 +34,7 @@ from tests.muejeje.support import SCRIPT_ENGINE
 OPERATION = "platform.module_descriptors"
 
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "device_index", "available_count",
+    "resolution", "unavailable_reason", "factory_index", "available_count",
     "descriptor_present", "model", "device_type", "root_present", "nodes",
     "nodes_truncated", "depth_truncated",
 }
@@ -56,6 +56,7 @@ def _request(**args) -> str:
 
 
 def _observed(models: str = CHASSIS_MODELS, **args) -> dict:
+    args.setdefault("factory_index", 0)
     return dispatch_v6(_request(**args), prelude=platform_stub(models))["result"]
 
 
@@ -92,7 +93,7 @@ def test_the_operation_declares_its_own_argument_rules():
 
 @requires_node
 def test_the_result_shape_is_the_same_whether_the_platform_answered():
-    absent = dispatch_v6(_request())["result"]
+    absent = dispatch_v6(_request(factory_index=0))["result"]
 
     assert set(absent) == set(_observed()) == RESULT_FIELDS
     assert absent["resolution"] == "UNAVAILABLE"
@@ -181,7 +182,7 @@ def test_a_missing_module_inside_the_reported_count_is_unusable():
 @requires_node
 def test_a_model_with_no_root_module_is_observed_rather_than_unreadable():
     """`getRootModule()` answering nothing is what the platform said."""
-    result = _observed(device_index=1)
+    result = _observed(factory_index=1)
 
     assert result["resolution"] == "OBSERVED"
     assert result["descriptor_present"] is True
@@ -197,11 +198,11 @@ def test_an_index_past_the_end_is_an_answer_not_an_unreadable_platform():
     Reporting that as an unavailable reading would send a consumer looking for
     a platform fault that nothing had.
     """
-    result = _observed(device_index=9)
+    result = _observed(factory_index=9)
 
     assert result["resolution"] == "OBSERVED"
     assert result["available_count"] == 2
-    assert result["device_index"] == 9
+    assert result["factory_index"] == 9
     assert result["descriptor_present"] is False
     assert result["model"] is None
     assert result["nodes"] == []
@@ -209,8 +210,9 @@ def test_an_index_past_the_end_is_an_answer_not_an_unreadable_platform():
 
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"device_index": -1}, {"device_index": 9007199254740992}, {"device_index": "0"},
-    {"device_index": 1.5}, {"model": "2960-24TT"}, {"offset": 0},
+    {"factory_index": -1}, {"factory_index": 9007199254740992},
+    {"factory_index": "0"}, {"factory_index": 1.5}, {},
+    {"factory_index": 0, "model": "2960-24TT"}, {"device_index": 0},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):
     response = dispatch_v6(_request(**args))

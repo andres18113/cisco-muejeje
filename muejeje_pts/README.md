@@ -87,11 +87,11 @@ Seven operations are admitted, all read-only:
 | --- | --- |
 | `runtime.identify` | *who is this* — name, version, session token, provenance, the lifecycle the module recorded |
 | `runtime.capabilities` | *what does it admit now* — session token, protocol versions, each whitelisted operation with its `read_only` flag, and the kernel features behind them |
-| `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the index it was read at, the DeviceType and the module types the platform reports for it, or a reason the reading was unavailable |
-| `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a factory index, node by node, each with the index it was read at, its type, its slot types and its hot-swap flag, or a reason the reading was unavailable |
-| `platform.module_type_support` | *does this model accept this module type* — the descriptor's own answer for one type value, with the model and DeviceType read back beside it, or a reason the reading was unavailable |
-| `network.device_inventory` | *what does this Packet Tracer currently hold* — a bounded window over the devices on the workspace, each with the index it was read at and the name the platform gave it, or a reason the reading was unavailable |
-| `network.device_identity` | *what is the device at this position* — the name, model and DeviceType the platform reports for one workspace device, all read in that same observation, or a reason the reading was unavailable |
+| `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the `factory_index` it was read at, the DeviceType and the module types the platform reports for it, or a reason the reading was unavailable |
+| `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a `factory_index`, node by node, each with where it sits in the chassis, its type, its slot types and its hot-swap flag, or a reason the reading was unavailable |
+| `platform.module_type_support` | *does this model accept this module type* — for the model at a `factory_index`, the descriptor's own answer for one type value, with the model and DeviceType read back beside it, or a reason the reading was unavailable |
+| `network.device_inventory` | *what does this Packet Tracer currently hold* — a bounded window over the devices on the workspace, each with the `workspace_index` it was read at and the name the platform gave it, or a reason the reading was unavailable |
+| `network.device_identity` | *what is the device at this position* — the name, model and DeviceType the platform reports for the device at a `workspace_index`, all read in that same observation, or a reason the reading was unavailable |
 
 The two runtime operations read the same whitelist, from the dispatcher that
 owns it, so they can never describe different contracts. The platform ones
@@ -109,6 +109,16 @@ fidelity, not a ceiling — any whole number JSON carries exactly — so every
 index below `available_count` can be sent back, and a topology of any size is
 read one bounded window at a time. Each index is reported where it was read,
 never left to be derived from an offset.
+
+**Two address domains, and neither answers for the other.** A position in the
+factory and a position on the workspace are numbers of the same shape in two
+different enumerations, so every argument and field that carries one says
+which: `factory_index` and `factory_offset`, `workspace_index` and
+`workspace_offset`. A value relayed by the name it was published under reaches
+the domain it came from; sent to the other, it is refused as `INVALID_ARGS`
+rather than read as a different subject. An operation about one model or one
+device also requires the index that selects it — nothing is ever read "by
+default" at position 0 (`MJ-029`).
 
 `network.*` is the second namespace, and the difference from `platform.*` is
 worth knowing: the factory describes what a *model* can be, and never changes

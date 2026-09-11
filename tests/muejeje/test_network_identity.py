@@ -43,7 +43,7 @@ from tests.muejeje.support import SCRIPT_ENGINE
 OPERATION = "network.device_identity"
 
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "device_index", "available_count",
+    "resolution", "unavailable_reason", "workspace_index", "available_count",
     "device_present", "name", "model", "device_type",
 }
 # Every identity fact, so a test can assert the whole set is absent at once
@@ -62,6 +62,7 @@ def _request(**args) -> str:
 
 
 def _observed(**args) -> dict:
+    args.setdefault("workspace_index", 0)
     return dispatch_v6(_request(**args), prelude=identity_stub())["result"]
 
 
@@ -117,7 +118,7 @@ def test_the_reading_correlates_nothing_to_the_hardware_factory():
 
 @requires_node
 def test_the_result_shape_is_the_same_whether_the_platform_answered():
-    absent = dispatch_v6(_request())["result"]
+    absent = dispatch_v6(_request(workspace_index=0))["result"]
 
     assert set(absent) == set(_observed()) == RESULT_FIELDS
     assert absent["resolution"] == "UNAVAILABLE"
@@ -129,11 +130,11 @@ def test_the_result_shape_is_the_same_whether_the_platform_answered():
 
 @requires_node
 def test_one_device_answers_with_the_identity_read_in_that_same_reading():
-    result = _observed(device_index=1)
+    result = _observed(workspace_index=1)
 
     assert result["resolution"] == "OBSERVED"
     assert result["unavailable_reason"] is None
-    assert result["device_index"] == 1
+    assert result["workspace_index"] == 1
     assert result["available_count"] == 2
     assert result["device_present"] is True
     assert result["name"] == "b"
@@ -142,21 +143,27 @@ def test_one_device_answers_with_the_identity_read_in_that_same_reading():
 
 
 @requires_node
-def test_the_index_defaults_to_the_origin_of_the_enumeration():
-    """An omitted argument is a default, never a refusal: a consumer reading a
-    workspace for the first time has no position to ask about yet."""
-    result = _observed()
+def test_a_request_that_names_no_position_is_refused_and_reads_nothing():
+    """Every position holds a different device, so no default could be honest.
 
-    assert result["device_index"] == 0
-    assert result["name"] == "a"
-    assert result["model"] == "PT-Router"
+    An earlier revision read position 0 when none was named and reported that
+    device as the answer (MJ-029). `test_address_domains` holds the same rule
+    for every operation about one subject.
+    """
+    observed = dispatch_v6(
+        _request(), prelude=identity_stub(),
+        report="{response: JSON.parse(mcpDispatchV6(REQUEST)), calls: CALLS}",
+    )
+
+    assert observed["response"]["error"]["code"] == "INVALID_ARGS"
+    assert observed["calls"] == []
 
 
 @requires_node
 def test_an_empty_model_is_an_answer_and_not_a_malformed_one():
     """Measured on 9.0.1 for a chassis root, and the same rule applies here:
     requiring a non-empty string discarded correct metadata once already."""
-    result = _observed(device_index=1)
+    result = _observed(workspace_index=1)
 
     assert result["resolution"] == "OBSERVED"
     assert result["model"] == ""
@@ -169,11 +176,11 @@ def test_an_index_past_the_end_is_an_answer_not_an_unreadable_platform():
     Reporting that as unavailable would send a consumer looking for a platform
     fault that nothing had.
     """
-    result = _observed(device_index=9)
+    result = _observed(workspace_index=9)
 
     assert result["resolution"] == "OBSERVED"
     assert result["available_count"] == 2
-    assert result["device_index"] == 9
+    assert result["workspace_index"] == 9
     assert result["device_present"] is False
     assert [result[field] for field in IDENTITY_FIELDS] == [None] * 3
 
@@ -191,7 +198,7 @@ def test_an_index_past_the_end_is_an_answer_not_an_unreadable_platform():
 def test_an_unreadable_platform_is_an_observation_with_its_reason(
     prelude: str, reason: str,
 ):
-    response = dispatch_v6(_request(), prelude=prelude)
+    response = dispatch_v6(_request(workspace_index=0), prelude=prelude)
 
     assert response["ok"] is True, "an unreadable platform is an answer"
     assert response["result"]["unavailable_reason"] == reason
@@ -205,7 +212,7 @@ def test_a_device_the_platform_will_not_hand_over_cannot_be_attributed():
     a position its own count claims it does.
     """
     result = dispatch_v6(
-        _request(device_index=2), prelude=identity_stub(device_count="3"),
+        _request(workspace_index=2), prelude=identity_stub(device_count="3"),
     )["result"]
 
     assert result["resolution"] == "UNAVAILABLE"
@@ -237,7 +244,7 @@ def test_every_identity_field_is_checked_before_it_is_reported(
     prelude = identity_stub().replace(f"var DEVICES = {IDENTITY_DEVICES};",
                               f"var DEVICES = [{{{inner}}}];")
 
-    result = dispatch_v6(_request(), prelude=prelude)["result"]
+    result = dispatch_v6(_request(workspace_index=0), prelude=prelude)["result"]
 
     assert result["resolution"] == "UNAVAILABLE"
     assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
@@ -272,8 +279,9 @@ def test_an_index_this_adapter_would_not_accept_is_a_defect_not_a_clamp(
 
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"device_index": -1}, {"device_index": 9007199254740992}, {"device_index": "0"},
-    {"device_index": 1.5}, {"name": "a"},
+    {"workspace_index": -1}, {"workspace_index": 9007199254740992},
+    {"workspace_index": "0"}, {"workspace_index": 1.5},
+    {"workspace_index": 0, "name": "a"}, {"device_index": 0},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):
     """Including `name`: addressing a device by name is not this contract."""

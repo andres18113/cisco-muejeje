@@ -51,11 +51,11 @@
  * the platform answered or not. It starts with every identity field empty: a
  * field is filled in only once it was actually read, in this reading, so a fact
  * this adapter never obtained cannot be left looking like one. */
-function muejejeAdapterIdentityReading(resolution, reason, deviceIndex) {
+function muejejeAdapterIdentityReading(resolution, reason, workspaceIndex) {
     return {
         resolution: resolution,
         unavailable_reason: reason,
-        device_index: deviceIndex,
+        workspace_index: workspaceIndex,
         available_count: null,
         device_present: false,
         name: null,
@@ -64,9 +64,9 @@ function muejejeAdapterIdentityReading(resolution, reason, deviceIndex) {
     };
 }
 
-function muejejeAdapterIdentityUnavailable(reason, deviceIndex) {
+function muejejeAdapterIdentityUnavailable(reason, workspaceIndex) {
     return muejejeAdapterIdentityReading(
-        MUEJEJE_PLATFORM_UNAVAILABLE, reason, deviceIndex
+        MUEJEJE_PLATFORM_UNAVAILABLE, reason, workspaceIndex
     );
 }
 
@@ -77,9 +77,9 @@ function muejejeAdapterIdentityUnavailable(reason, deviceIndex) {
  * The bound is the exact-integer limit every published index is held to — the
  * same declaration `network.device_inventory` names for its window — so every
  * index that operation publishes is one this one admits (MJ-029). */
-function muejejeAdapterDeviceIdentity(deviceIndex) {
+function muejejeAdapterDeviceIdentity(workspaceIndex) {
     var index = muejejeReadingArgument(
-        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
+        workspaceIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     );
     var platform = muejejeAdapterPlatform();
     if (platform === null) {

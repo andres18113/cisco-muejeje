@@ -34,7 +34,7 @@ function muejejeAdapterInventoryUnavailable(reason, offset, limit) {
         resolution: MUEJEJE_PLATFORM_UNAVAILABLE,
         unavailable_reason: reason,
         available_count: null,
-        offset: offset,
+        workspace_offset: offset,
         limit: limit,
         devices: [],
         window_truncated: false
@@ -90,14 +90,15 @@ function muejejeAdapterInventoryRead(platform, window) {
         resolution: MUEJEJE_PLATFORM_OBSERVED,
         unavailable_reason: null,
         available_count: count,
-        offset: window.offset,
+        workspace_offset: window.offset,
         limit: window.limit,
         devices: devices,
         window_truncated: count > last
     };
 }
 
-/* One device: the index it was read at, and the name the platform gave for it.
+/* One device: the `workspace_index` it was read at, and the name the platform
+ * gave for it.
  *
  * The index is not an identity — a workspace can change between readings, and
  * nothing here claims otherwise — so it is reported as what it is: where this
@@ -110,7 +111,7 @@ function muejejeAdapterInventoryEntry(network, index) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
     return {
-        index: index,
+        workspace_index: index,
         name: muejejeReadingText(
             muejejeAdapterCall(device, "Device.getName"),
             MUEJEJE_PLATFORM_LIMITS.MAX_NAME_CHARS

@@ -49,7 +49,11 @@ NEEDS_PLATFORM = frozenset({
 })
 # An operation whose arguments are not all optional needs them supplied before
 # it will answer at all, and a shape gate has to see the answer.
-REQUIRED_ARGS = {"platform.module_type_support": {"module_type": 6}}
+REQUIRED_ARGS = {
+    "network.device_identity": {"workspace_index": 0},
+    "platform.module_descriptors": {"factory_index": 0},
+    "platform.module_type_support": {"factory_index": 0, "module_type": 6},
+}
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",

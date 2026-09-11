@@ -34,7 +34,7 @@ from tests.muejeje.support import SCRIPT_ENGINE
 OPERATION = "platform.module_type_support"
 
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "device_index", "module_type",
+    "resolution", "unavailable_reason", "factory_index", "module_type",
     "available_count", "descriptor_present", "model", "device_type",
     "module_type_supported",
 }
@@ -51,6 +51,7 @@ def _request(**args) -> str:
 
 
 def _observed(**args) -> dict:
+    args.setdefault("factory_index", 0)
     args.setdefault("module_type", 6)
     return dispatch_v6(
         _request(**args), prelude=platform_stub(CHASSIS_MODELS),
@@ -106,7 +107,7 @@ def test_the_operation_declares_its_own_argument_rules():
 
 @requires_node
 def test_the_result_shape_is_the_same_whether_the_platform_answered():
-    absent = dispatch_v6(_request(module_type=6))["result"]
+    absent = dispatch_v6(_request(factory_index=0, module_type=6))["result"]
 
     assert set(absent) == set(_observed()) == RESULT_FIELDS
     assert absent["resolution"] == "UNAVAILABLE"
@@ -131,18 +132,18 @@ def test_the_platform_answers_for_the_type_it_was_asked_about(
 @requires_node
 def test_the_answer_carries_the_identity_it_is_an_answer_about():
     """A flag with no model beside it is a fact nobody can place (MJ-010)."""
-    result = _observed(device_index=0)
+    result = _observed(factory_index=0)
 
     assert result["descriptor_present"] is True
     assert result["model"] == "AccessPoint-PT"
     assert result["device_type"] == 7
-    assert result["device_index"] == 0
+    assert result["factory_index"] == 0
     assert result["available_count"] == 2
 
 
 @requires_node
 def test_an_index_past_the_end_is_an_answer_not_an_unreadable_platform():
-    result = _observed(device_index=9)
+    result = _observed(factory_index=9)
 
     assert result["resolution"] == "OBSERVED"
     assert result["available_count"] == 2
@@ -182,7 +183,7 @@ def test_the_type_is_required_because_no_default_would_be_honest():
     a request this operation does not support — and never a reading, because
     nothing was read (MJ-022).
     """
-    response = dispatch_v6(_request(device_index=0))
+    response = dispatch_v6(_request(factory_index=0))
 
     assert response["ok"] is False
     assert response["error"]["code"] == "INVALID_ARGS"
@@ -190,12 +191,18 @@ def test_the_type_is_required_because_no_default_would_be_honest():
 
 
 @requires_node
-def test_the_device_index_still_defaults_to_the_first_model():
-    """The other argument does have an honest default: the enumeration origin."""
-    result = _observed()
+def test_the_model_is_required_too_because_every_index_is_another_model():
+    """It once defaulted to the first model, answering for one nobody named.
 
-    assert result["device_index"] == 0
-    assert result["model"] == "AccessPoint-PT"
+    Admission refuses the omission and the platform is never asked (MJ-029).
+    """
+    observed = dispatch_v6(
+        _request(module_type=6), prelude=platform_stub(CHASSIS_MODELS),
+        report="{response: JSON.parse(mcpDispatchV6(REQUEST)), calls: CALLS}",
+    )
+
+    assert observed["response"]["error"]["code"] == "INVALID_ARGS"
+    assert observed["calls"] == []
 
 
 # Past the published `ModuleType` domain in either direction. The old cases
@@ -208,10 +215,14 @@ BEYOND_TYPE_DOMAIN = 9007199254740992
 
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"module_type": BEYOND_TYPE_DOMAIN}, {"module_type": -BEYOND_TYPE_DOMAIN},
-    {"module_type": "6"},
-    {"module_type": 1.5}, {"module_type": 6, "device_index": -1},
-    {"module_type": 6, "device_index": 9007199254740992}, {"module_type": 6, "model": "x"},
+    {"factory_index": 0, "module_type": BEYOND_TYPE_DOMAIN},
+    {"factory_index": 0, "module_type": -BEYOND_TYPE_DOMAIN},
+    {"factory_index": 0, "module_type": "6"},
+    {"factory_index": 0, "module_type": 1.5},
+    {"module_type": 6, "factory_index": -1},
+    {"module_type": 6, "factory_index": 9007199254740992},
+    {"factory_index": 0, "module_type": 6, "model": "x"},
+    {"module_type": 6, "device_index": 0},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):
     response = dispatch_v6(_request(**args))
@@ -230,7 +241,7 @@ def test_a_type_value_the_readings_publish_is_not_refused_here(module_type: int)
     this operation admitting them is not leniency — it is the contract not
     contradicting itself (`test_relay_closure` drives the whole relay).
     """
-    response = dispatch_v6(_request(module_type=module_type))
+    response = dispatch_v6(_request(factory_index=0, module_type=module_type))
 
     assert response["ok"] is True
     assert response["result"]["module_type"] == module_type
@@ -245,7 +256,7 @@ def test_a_type_value_the_readings_publish_is_not_refused_here(module_type: int)
 def test_an_unreadable_platform_is_an_observation_with_its_reason(
     prelude: str, reason: str,
 ):
-    response = dispatch_v6(_request(module_type=6), prelude=prelude)
+    response = dispatch_v6(_request(factory_index=0, module_type=6), prelude=prelude)
 
     assert response["ok"] is True
     assert response["result"]["unavailable_reason"] == reason
@@ -257,7 +268,9 @@ def test_an_answer_that_is_not_a_flag_cannot_be_attributed():
     lying = platform_stub(CHASSIS_MODELS).replace(
         "return spec.module_types.indexOf(type) !== -1;", "return 'yes';",
     )
-    result = dispatch_v6(_request(module_type=6), prelude=lying)["result"]
+    result = dispatch_v6(
+        _request(factory_index=0, module_type=6), prelude=lying,
+    )["result"]
 
     assert result["resolution"] == "UNAVAILABLE"
     assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"

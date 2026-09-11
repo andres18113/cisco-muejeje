@@ -20,10 +20,14 @@
 
 /* Both arguments are optional, and bounded by the adapter's own declarations
  * rather than by a second set of numbers here: two copies of a bound are two
- * bounds. `offset` is bounded only by the exact-integer limit, so a workspace
- * of any size is paged one window at a time (MJ-029). */
+ * bounds. `workspace_offset` is bounded only by the exact-integer limit, so a
+ * workspace of any size is paged one window at a time (MJ-029).
+ *
+ * `workspace_offset` names the enumeration it addresses, so a position read
+ * from the factory cannot be sent here by the name it was published under, and
+ * a workspace position cannot be sent to the factory. */
 var MUEJEJE_NETWORK_INVENTORY_ARGS = {
-    offset: {
+    workspace_offset: {
         kind: "integer",
         min: 0,
         max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
@@ -35,26 +39,14 @@ var MUEJEJE_NETWORK_INVENTORY_ARGS = {
     }
 };
 
-/* An omitted argument is a default, never a refusal: a consumer reading a
- * workspace for the first time has no count to page from yet. */
+/* An omitted argument is a default, never a refusal, and each default is the
+ * origin of what is read: a consumer reading a workspace for the first time
+ * has no count to page from yet (MJ-029). */
 function muejejeNetworkDeviceInventory(args, context) {
     return muejejeAdapterDeviceInventory(
-        muejejeNetworkArgument(args, "offset", 0),
-        muejejeNetworkArgument(
+        muejejeV6OptionalArgument(args, "workspace_offset", 0),
+        muejejeV6OptionalArgument(
             args, "limit", MUEJEJE_PLATFORM_LIMITS.MAX_WORKSPACE_WINDOW
         )
     );
-}
-
-/* V6 admission has already checked every supplied argument against the rule
- * above, so a value present here is within its bounds. This only decides
- * whether it was supplied at all. */
-function muejejeNetworkArgument(args, name, fallback) {
-    if (
-        args === null || typeof args !== "object"
-        || !Object.prototype.hasOwnProperty.call(args, name)
-    ) {
-        return fallback;
-    }
-    return args[name];
 }

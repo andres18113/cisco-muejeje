@@ -176,23 +176,23 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-capabilities","op":"runtime.capabili
 ```
 
 ```javascript
-mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_descriptors","args":{"offset":0,"limit":4}}')
+mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_descriptors","args":{"factory_offset":0,"limit":4}}')
 ```
 
 ```javascript
-mcpDispatchV6('{"v":6,"operation_rid":"qual-modules","op":"platform.module_descriptors","args":{"device_index":0}}')
+mcpDispatchV6('{"v":6,"operation_rid":"qual-modules","op":"platform.module_descriptors","args":{"factory_index":0}}')
 ```
 
 ```javascript
-mcpDispatchV6('{"v":6,"operation_rid":"qual-support","op":"platform.module_type_support","args":{"device_index":0,"module_type":18}}')
+mcpDispatchV6('{"v":6,"operation_rid":"qual-support","op":"platform.module_type_support","args":{"factory_index":0,"module_type":18}}')
 ```
 
 ```javascript
-mcpDispatchV6('{"v":6,"operation_rid":"qual-inventory","op":"network.device_inventory","args":{"offset":0,"limit":8}}')
+mcpDispatchV6('{"v":6,"operation_rid":"qual-inventory","op":"network.device_inventory","args":{"workspace_offset":0,"limit":8}}')
 ```
 
 ```javascript
-mcpDispatchV6('{"v":6,"operation_rid":"qual-identity","op":"network.device_identity","args":{"device_index":0}}')
+mcpDispatchV6('{"v":6,"operation_rid":"qual-identity","op":"network.device_identity","args":{"workspace_index":0}}')
 ```
 
 The last two read the **workspace**, so what they report depends on what the

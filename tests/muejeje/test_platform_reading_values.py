@@ -185,7 +185,7 @@ def test_the_window_this_operation_asks_for_is_still_answered():
     )
 
     assert observed["resolution"] == "OBSERVED"
-    assert observed["offset"] == 0 and observed["limit"] == 32
+    assert observed["factory_offset"] == 0 and observed["limit"] == 32
 
 
 @requires_node

@@ -27,15 +27,18 @@
  * Declared here, by the operation they belong to, and handed to the dispatcher
  * — which owns *which* operations exist, not what each one's arguments mean.
  *
- * `limit` is bounded by the adapter's own window ceiling rather than by a
- * second number written down here: two copies of a bound are two bounds.
+ * `factory_offset` names the enumeration it addresses. A window over the
+ * factory and a window over the workspace start at positions in two different
+ * domains, and an argument called `offset` in both let a position read from
+ * one be sent to the other with nothing to refuse it (MJ-029).
  *
- * `offset` is bounded only by the exact-integer limit — the same declaration
- * the operations that consume a `device_index` name — so a consumer may page
- * as far as the factory goes, and every index this operation publishes is one
- * they admit (MJ-029). */
+ * `limit` is bounded by the adapter's own window rather than by a second number
+ * written down here: two copies of a bound are two bounds. `factory_offset` is
+ * bounded only by the exact-integer limit — the same declaration the operations
+ * that consume a `factory_index` name — so a consumer may page as far as the
+ * factory goes, and every index this operation publishes is one they admit. */
 var MUEJEJE_PLATFORM_DESCRIPTOR_ARGS = {
-    offset: {
+    factory_offset: {
         kind: "integer",
         min: 0,
         max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
@@ -47,25 +50,15 @@ var MUEJEJE_PLATFORM_DESCRIPTOR_ARGS = {
     }
 };
 
-/* Both arguments are optional. An omitted one is a default, never a refusal:
- * a consumer discovering the platform for the first time has no reason to know
- * how many models there are before it asks. */
+/* Both arguments are optional, and each default is the origin of what is read:
+ * the start of the factory, and a window at its widest. That is honest here in
+ * a way it is not for an index — a first window over an enumeration *is* the
+ * question a consumer discovering the platform is asking (MJ-029). */
 function muejejePlatformDeviceDescriptors(args, context) {
     return muejejeAdapterDeviceDescriptors(
-        muejejePlatformArgument(args, "offset", 0),
-        muejejePlatformArgument(args, "limit", MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW)
+        muejejeV6OptionalArgument(args, "factory_offset", 0),
+        muejejeV6OptionalArgument(
+            args, "limit", MUEJEJE_PLATFORM_LIMITS.MAX_FACTORY_WINDOW
+        )
     );
-}
-
-/* V6 admission has already checked every supplied argument against the rule
- * above, so a value present here is within its bounds. This only decides
- * whether it was supplied at all. */
-function muejejePlatformArgument(args, name, fallback) {
-    if (
-        args === null || typeof args !== "object"
-        || !Object.prototype.hasOwnProperty.call(args, name)
-    ) {
-        return fallback;
-    }
-    return args[name];
 }

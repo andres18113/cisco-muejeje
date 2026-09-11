@@ -30,15 +30,16 @@ from tests.muejeje.support import SCRIPT_ENGINE
 OPERATION = "platform.device_descriptors"
 
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "available_count", "offset", "limit",
+    "resolution", "unavailable_reason", "available_count", "factory_offset",
+    "limit",
     "descriptors", "window_truncated",
 }
-# `device_index` is the index each model was read at, reported rather than
-# counted off from `offset`: it is the value a consumer sends back to ask
+# `factory_index` is the index each model was read at, reported rather than
+# counted off from `factory_offset`: it is the value a consumer sends back to ask
 # about this model, and a reusable input a reader has to derive is one two
 # readers will derive differently.
 DESCRIPTOR_FIELDS = {
-    "device_index", "model", "device_type", "model_supported",
+    "factory_index", "model", "device_type", "model_supported",
     "supported_module_types", "module_types_truncated",
 }
 
@@ -168,9 +169,9 @@ def test_the_operation_reaches_no_verdict_about_what_it_read():
 @requires_node
 def test_the_window_is_reported_back_and_a_tail_is_marked_truncated():
     """An omitted tail stays visibly absent; it never reads as an absence."""
-    result = _observed(offset=0, limit=2)
+    result = _observed(factory_offset=0, limit=2)
 
-    assert result["offset"] == 0
+    assert result["factory_offset"] == 0
     assert result["limit"] == 2
     assert result["available_count"] == 3
     assert result["window_truncated"] is True
@@ -179,7 +180,7 @@ def test_the_window_is_reported_back_and_a_tail_is_marked_truncated():
 
 @requires_node
 def test_an_offset_past_the_end_reports_the_count_and_no_descriptor():
-    result = _observed(offset=9)
+    result = _observed(factory_offset=9)
 
     assert result["resolution"] == "OBSERVED"
     assert result["available_count"] == 3
@@ -196,13 +197,13 @@ def test_a_factory_longer_than_any_window_is_paged_rather_than_capped():
     number bounded work: reading model 59,990 costs what reading model 0 does.
     """
     result = dispatch_v6(
-        _request(offset=59990, limit=32),
+        _request(factory_offset=59990, limit=32),
         prelude=platform_stub(THREE_MODELS, count="60000", dense=True),
     )["result"]
 
     assert result["resolution"] == "OBSERVED"
     assert result["available_count"] == 60000
-    assert [entry["device_index"] for entry in result["descriptors"]] == list(
+    assert [entry["factory_index"] for entry in result["descriptors"]] == list(
         range(59990, 60000)
     )
     assert result["window_truncated"] is False
@@ -228,13 +229,14 @@ def test_both_arguments_are_optional_and_default_to_the_first_window():
     """A consumer discovering the platform has no count to page from yet."""
     result = _observed()
 
-    assert result["offset"] == 0
+    assert result["factory_offset"] == 0
     assert result["limit"] == 32
 
 
 @requires_node
 @pytest.mark.parametrize("args", [
-    {"limit": 0}, {"limit": 33}, {"offset": -1}, {"offset": 9007199254740992},
+    {"limit": 0}, {"limit": 33}, {"factory_offset": -1},
+    {"factory_offset": 9007199254740992}, {"offset": 0},
     {"limit": "8"}, {"limit": 1.5}, {"page": 1},
 ])
 def test_an_argument_outside_its_declared_rule_is_refused(args: dict):

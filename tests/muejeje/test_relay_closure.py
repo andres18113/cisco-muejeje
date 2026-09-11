@@ -99,7 +99,7 @@ def published_module_types(prelude: str) -> set[int]:
         "platform.device_descriptors", {}, prelude,
     )["result"]["descriptors"]
     nodes = _result(
-        "platform.module_descriptors", {"device_index": 0}, prelude,
+        "platform.module_descriptors", {"factory_index": 0}, prelude,
     )["result"]["nodes"]
 
     published: set[int] = set()
@@ -142,7 +142,7 @@ def test_a_module_type_published_at_either_end_is_admitted_back(module_type: int
 
     response = _result(
         "platform.module_type_support",
-        {"device_index": 0, "module_type": module_type}, prelude,
+        {"factory_index": 0, "module_type": module_type}, prelude,
     )
 
     assert response["ok"] is True, response["error"]
@@ -162,7 +162,7 @@ def test_just_past_either_end_neither_half_carries_the_value(beyond: int):
     )["result"]
     consumed = _result(
         "platform.module_type_support",
-        {"device_index": 0, "module_type": beyond}, platform_stub(EXTREME_MODELS),
+        {"factory_index": 0, "module_type": beyond}, platform_stub(EXTREME_MODELS),
     )
 
     assert produced["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
@@ -177,13 +177,13 @@ def test_just_past_either_end_neither_half_carries_the_value(beyond: int):
 def test_the_last_factory_index_that_can_exist_is_published():
     """A window at the far end of the widest factory publishes exactly that index."""
     result = _result(
-        "platform.device_descriptors", {"offset": LAST_INDEX, "limit": 32},
+        "platform.device_descriptors", {"factory_offset": LAST_INDEX, "limit": 32},
         _widest_factory(),
     )["result"]
 
     assert result["resolution"] == "OBSERVED"
     assert result["available_count"] == EXACT_MAX
-    assert [d["device_index"] for d in result["descriptors"]] == [LAST_INDEX]
+    assert [d["factory_index"] for d in result["descriptors"]] == [LAST_INDEX]
     assert result["window_truncated"] is False
 
 
@@ -196,7 +196,7 @@ def test_every_factory_index_discovery_publishes_is_read_by_its_consumers(
     op: str, index: int,
 ):
     """Admitted *and* read: the model at that index is the one that answers."""
-    args = {"device_index": index}
+    args = {"factory_index": index}
     if op == "platform.module_type_support":
         args["module_type"] = 0
     response = _result(op, args, _widest_factory())
@@ -204,7 +204,7 @@ def test_every_factory_index_discovery_publishes_is_read_by_its_consumers(
     assert response["ok"] is True, response["error"]
     assert response["result"]["resolution"] == "OBSERVED"
     assert response["result"]["descriptor_present"] is True
-    assert response["result"]["device_index"] == index
+    assert response["result"]["factory_index"] == index
 
 
 @requires_node
@@ -212,19 +212,20 @@ def test_the_last_workspace_index_that_can_exist_is_published_and_read_back():
     """The same closure on the other enumeration, at the same end."""
     prelude = _widest_workspace()
     inventory = _result(
-        "network.device_inventory", {"offset": LAST_INDEX, "limit": 8}, prelude,
+        "network.device_inventory", {"workspace_offset": LAST_INDEX, "limit": 8},
+        prelude,
     )["result"]
 
     assert inventory["resolution"] == "OBSERVED"
-    assert [d["index"] for d in inventory["devices"]] == [LAST_INDEX]
+    assert [d["workspace_index"] for d in inventory["devices"]] == [LAST_INDEX]
     for index in [0, LAST_INDEX]:
         response = _result(
-            "network.device_identity", {"device_index": index}, prelude,
+            "network.device_identity", {"workspace_index": index}, prelude,
         )
         assert response["ok"] is True, response["error"]
         assert response["result"]["resolution"] == "OBSERVED"
         assert response["result"]["device_present"] is True
-        assert response["result"]["device_index"] == index
+        assert response["result"]["workspace_index"] == index
 
 
 @requires_node
@@ -235,8 +236,9 @@ def test_a_window_may_start_at_the_end_of_the_domain_and_not_past_it(op: str):
     """The admitted end is answered as an empty window; one past it is refused."""
     factory = op.startswith("platform")
     stub = _widest_factory() if factory else _widest_workspace()
-    at_end = _result(op, {"offset": EXACT_MAX}, stub)
-    past_end = _result(op, {"offset": EXACT_MAX + 1}, stub)
+    start = "factory_offset" if factory else "workspace_offset"
+    at_end = _result(op, {start: EXACT_MAX}, stub)
+    past_end = _result(op, {start: EXACT_MAX + 1}, stub)
 
     assert at_end["ok"] is True
     assert at_end["result"]["descriptors" if factory else "devices"] == []

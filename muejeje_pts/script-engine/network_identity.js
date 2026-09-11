@@ -12,11 +12,11 @@
  * of a workspace with the hardware factory — the two are different subjects,
  * and nothing here relates them (MJ-031).
  *
- * THE ARGUMENT IS A POSITION, NOT A NAME AND NOT AN IDENTITY. `device_index` is
- * where to look in this reading. It is not stable across readings — a workspace
- * changes, and a consumer that stored an index is addressing whatever occupies
- * that position later — which is exactly why the identity facts come back
- * beside it: they are how a consumer tells what actually answered.
+ * THE ARGUMENT IS A POSITION, NOT A NAME AND NOT AN IDENTITY. `workspace_index`
+ * is where to look in this reading. It is not stable across readings — a
+ * workspace changes, and a consumer that stored an index is addressing whatever
+ * occupies that position later — which is exactly why the identity facts come
+ * back beside it: they are how a consumer tells what actually answered.
  *
  * Addressing by position rather than by name is also what keeps it generic. An
  * operation that took a device name would work only for a consumer that already
@@ -32,37 +32,27 @@
  * Declared here, by the operation it belongs to, and handed to the dispatcher —
  * which owns *which* operations exist, not what each one's arguments mean.
  *
- * It is bounded by the exact-integer limit rather than by a second
- * number written down here: two copies of a bound are two bounds, and an index
+ * It is bounded by the exact-integer limit rather than by a second number
+ * written down here: two copies of a bound are two bounds, and an index
  * `network.device_inventory` publishes has to be one this operation admits
- * (MJ-029). */
+ * (MJ-029). It is named for its domain, so a `factory_index` cannot be sent here
+ * by the name it was published under.
+ *
+ * It is REQUIRED. Every position holds a different device, so no default could
+ * be honest: an earlier revision read position 0 when none was named and
+ * reported whatever device stood there as the answer to a question nobody
+ * asked. Admission refuses a request that omits it, and nothing is read. */
 var MUEJEJE_NETWORK_IDENTITY_ARGS = {
-    device_index: {
+    workspace_index: {
         kind: "integer",
+        required: true,
         min: 0,
         max: MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     }
 };
 
-/* The argument is optional, and an omitted one is the first position the
- * workspace enumerates rather than a refusal: index 0 is the origin of an
- * enumeration, not a device anybody chose. Which device that turned out to be
- * is in the answer, which is the whole reason the identity facts are there. */
 function muejejeNetworkDeviceIdentity(args, context) {
     return muejejeAdapterDeviceIdentity(
-        muejejeNetworkIdentityArgument(args, "device_index", 0)
+        muejejeV6RequiredArgument(args, "workspace_index")
     );
-}
-
-/* V6 admission has already checked every supplied argument against the rule
- * above, so a value present here is within its bounds. This only decides
- * whether it was supplied at all. */
-function muejejeNetworkIdentityArgument(args, name, fallback) {
-    if (
-        args === null || typeof args !== "object"
-        || !Object.prototype.hasOwnProperty.call(args, name)
-    ) {
-        return fallback;
-    }
-    return args[name];
 }

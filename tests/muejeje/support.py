@@ -84,29 +84,29 @@ FEATURE_EVIDENCE = {
 
 # Per operation, the result fields a consumer may already be reading. An
 # operation may answer with more; it may never answer with fewer.
-# `descriptors[].device_index` is frozen for the reason it was added: it is a
+# `descriptors[].factory_index` is frozen for the reason it was added: it is a
 # reading's *reusable input*, and relay closure turns on it being reported
 # rather than derived (`test_relay_closure`).
 REQUIRED_RESULT_FIELDS = {
     "network.device_identity": {
-        "resolution", "unavailable_reason", "device_index", "available_count",
+        "resolution", "unavailable_reason", "workspace_index", "available_count",
         "device_present", "name", "model", "device_type",
     },
     "network.device_inventory": {
-        "resolution", "unavailable_reason", "available_count", "offset",
+        "resolution", "unavailable_reason", "available_count", "workspace_offset",
         "limit", "devices", "window_truncated",
     },
     "platform.device_descriptors": {
-        "resolution", "unavailable_reason", "available_count", "offset",
+        "resolution", "unavailable_reason", "available_count", "factory_offset",
         "limit", "descriptors", "window_truncated",
     },
     "platform.module_descriptors": {
-        "resolution", "unavailable_reason", "device_index", "available_count",
+        "resolution", "unavailable_reason", "factory_index", "available_count",
         "descriptor_present", "model", "device_type", "root_present", "nodes",
         "nodes_truncated", "depth_truncated",
     },
     "platform.module_type_support": {
-        "resolution", "unavailable_reason", "device_index", "module_type",
+        "resolution", "unavailable_reason", "factory_index", "module_type",
         "available_count", "descriptor_present", "model", "device_type",
         "module_type_supported",
     },
@@ -136,11 +136,11 @@ REQUIRED_NESTED_FIELDS = {
     # purpose — a nested object added later is additive.
     "network.device_identity": {},
     "network.device_inventory": {
-        "devices[]": {"index": int, "name": str},
+        "devices[]": {"workspace_index": int, "name": str},
     },
     "platform.device_descriptors": {
         "descriptors[]": {
-            "device_index": int, "model": str, "device_type": int,
+            "factory_index": int, "model": str, "device_type": int,
             "model_supported": bool, "supported_module_types": list,
             "module_types_truncated": bool,
         },

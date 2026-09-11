@@ -27,11 +27,11 @@
 /* One result shape for every outcome, so a consumer parses one thing whether
  * the platform answered or not. A field is filled in only once something was
  * actually read. */
-function muejejeAdapterSupportReading(resolution, reason, deviceIndex, type) {
+function muejejeAdapterSupportReading(resolution, reason, factoryIndex, type) {
     return {
         resolution: resolution,
         unavailable_reason: reason,
-        device_index: deviceIndex,
+        factory_index: factoryIndex,
         module_type: type,
         available_count: null,
         descriptor_present: false,
@@ -41,18 +41,18 @@ function muejejeAdapterSupportReading(resolution, reason, deviceIndex, type) {
     };
 }
 
-function muejejeAdapterSupportUnavailable(reason, deviceIndex, type) {
+function muejejeAdapterSupportUnavailable(reason, factoryIndex, type) {
     return muejejeAdapterSupportReading(
-        MUEJEJE_PLATFORM_UNAVAILABLE, reason, deviceIndex, type
+        MUEJEJE_PLATFORM_UNAVAILABLE, reason, factoryIndex, type
     );
 }
 
 /* The one entry point. An unreadable platform is an observation about the
  * platform, not an exception for the caller; an argument outside this
  * adapter's own bounds is a defect in this artifact, and fails as one. */
-function muejejeAdapterModuleTypeSupport(deviceIndex, moduleType) {
+function muejejeAdapterModuleTypeSupport(factoryIndex, moduleType) {
     var index = muejejeReadingArgument(
-        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
+        factoryIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     );
     /* The consuming half of relay closure: the domain a type is admitted in is
      * the domain the readings publish, named from the same declaration. A

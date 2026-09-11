@@ -25,7 +25,7 @@ function muejejeAdapterUnavailable(reason, offset, limit) {
         resolution: MUEJEJE_PLATFORM_UNAVAILABLE,
         unavailable_reason: reason,
         available_count: null,
-        offset: offset,
+        factory_offset: offset,
         limit: limit,
         descriptors: [],
         window_truncated: false
@@ -103,26 +103,27 @@ function muejejeAdapterRead(platform, window) {
         resolution: MUEJEJE_PLATFORM_OBSERVED,
         unavailable_reason: null,
         available_count: count,
-        offset: window.offset,
+        factory_offset: window.offset,
         limit: window.limit,
         descriptors: descriptors,
         window_truncated: count > last
     };
 }
 
-/* One model, and the index it was read at.
+/* One model, and the `factory_index` it was read at.
  *
- * The index is reported explicitly rather than left to be counted off from
- * `offset`: it is the value a consumer sends back to ask about this model, and
- * a reusable input a reader has to derive is one two readers will derive
- * differently. */
+ * The index is reported explicitly rather than left to be counted off from the
+ * window's start: it is the value a consumer sends back to ask about this
+ * model, and a reusable input a reader has to derive is one two readers will
+ * derive differently. Its name says which enumeration it indexes, so it cannot
+ * be relayed to a workspace operation by the name it is published under. */
 function muejejeAdapterDescriptor(descriptor, index) {
     if (!descriptor) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
     var supported = muejejeAdapterModuleTypes(descriptor);
     return {
-        device_index: index,
+        factory_index: index,
         model: muejejeReadingText(
             muejejeAdapterCall(descriptor, "DeviceDescriptor.getModel"),
             MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS

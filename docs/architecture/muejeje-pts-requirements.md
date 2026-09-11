@@ -796,15 +796,28 @@ on a type's magnitude, and only decided which platform-produced values this
 runtime would accept back — which is not a decision this runtime is entitled to
 make (MJ-014). An index ceiling was the same mistake, made about addresses.
 
-**An argument is required only where no default would be honest.** Most
-arguments have one — an offset starts at the origin of an enumeration, a window
-at its ceiling — and an omitted one is a default rather than a refusal. But
-where every value in a space is a *different question*, defaulting answers a
-question the caller did not ask and reports the answer as an observation, which
-is the failure this contract exists to prevent. `module_type` is the first such
-argument. Its absence is `INVALID_ARGS` — the code that already means "a
-whitelisted operation given arguments it does not support" — and never a
-reading, because nothing was read.
+**An argument is required only where no default would be honest.** A window
+has honest defaults — its start is the origin of its enumeration and its size is
+the widest this runtime reads — because a first window over an enumeration *is*
+the question a consumer who knows nothing yet is asking. But where every value
+in a space is a *different question*, defaulting answers a question the caller
+did not ask and reports the answer as an observation, which is the failure this
+contract exists to prevent. `module_type` was the first such argument. The index
+that selects the one model or device a reading is about is another —
+`factory_index`, `workspace_index` — and an earlier revision defaulted each to
+0, reporting whatever occupied that position as the answer. Every operation
+about one subject now requires it. Its absence is `INVALID_ARGS` — the code that
+already means "a whitelisted operation given arguments it does not support" —
+and never a reading, because nothing was read.
+
+**An address names its domain.** A position in the hardware factory and a
+position on the workspace are numbers of the same shape in two enumerations of
+two subjects, so every argument and field that carries one says which:
+`factory_index` and `factory_offset`, `workspace_index` and `workspace_offset`.
+One name for both — `device_index`, `offset` — let a workspace position relayed
+by the name it was published under be admitted as a factory position, with
+nothing to refuse it. A value relayed by its own name now reaches only its own
+domain, and the other domain refuses it as `INVALID_ARGS`.
 **Rationale.** Unbounded input hands the cost of a refusal to whoever sent it:
 a caller could make the engine parse any length of JSON, correlate against any
 length of id, and walk any depth of argument structure before a single check
@@ -830,6 +843,10 @@ producer and every consumer — and holds the declared bounds to two kinds, work
 and fidelity, so a ceiling on an address cannot return unnoticed.
 `tests/muejeje/test_network_inventory.py` and `test_platform_descriptors.py`
 page past where the withdrawn ceilings stood.
+`tests/muejeje/test_address_domains.py` holds every address argument and
+published address to a name that says its domain, refuses an address sent to
+the other domain and both retired names, and drives every operation about one
+subject refusing a request that names none — without reading anything.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against `9.0.1.0858` (MJ-015).
 
@@ -893,9 +910,10 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
    **A workspace reading is one observation, and never a join.**
    `network.device_identity` reports what one device *is* — its name, model and
    DeviceType — and every one of those facts is read off that one device in
-   that one reading. A workspace index is the position the platform handed the
-   device over at, in that reading: it is not stable identity, and it is not a
-   factory index. Nothing relates a workspace device to a factory descriptor,
+   that one reading. A `workspace_index` is the position the platform handed
+   the device over at, in that reading: it is not stable identity, and it is not
+   a `factory_index` — they are different arguments, so neither can be sent
+   where the other is expected. Nothing relates a workspace device to a factory descriptor,
    and in particular nothing infers the relation from an index, from an equal
    or similar name, or from a model string. Cisco documents
    `Device.getDescriptor()`, which would answer it from the device itself with
@@ -958,7 +976,7 @@ consumer relays among them — the factory index and the `ModuleType` — are
 published by one operation and admitted by the others, so each has a single
 declared domain and no consuming rule narrows it (MJ-029). The index a
 model was read at is reported on the model itself, so it never has to be
-derived from `offset`, and every index below `available_count` can be sent
+derived from `factory_offset`, and every index below `available_count` can be sent
 back, so the count is all a consumer needs to page the whole factory.
 
 **`runtime.capabilities` may name a capability only once it exists.** The
@@ -1136,6 +1154,8 @@ one is a new protocol version.
 | `nodes[].slot_index` → `nodes[].module_index` | `getModuleAt(i)` indexes a module enumeration; nothing evidenced it as a slot position, and `getSlotCount()`/`getSlotTypeAt()` are a separate enumeration this repository has never observed to correspond with it |
 | `nodes[].children_present` withdrawn | it counted "bays that hold a module", which required reading a `null` from `getModuleAt` as an empty bay — a semantic no target evidence supports |
 | `max_device_index` withdrawn from `platform.device_descriptors` and `network.device_inventory` | it reported an addressing ceiling of 4096 that bounded no work (MJ-029). With every index admitted up to the exact-integer limit, any index below `available_count` is addressable, so the field could only ever repeat a constant the count already implies |
+| `device_index` split into `factory_index` (`platform.module_descriptors`, `platform.module_type_support`, `descriptors[]`) and `workspace_index` (`network.device_identity`); `offset` into `factory_offset` and `workspace_offset`; `devices[].index` renamed `devices[].workspace_index` | one name carried positions from two enumerations of two subjects, so a workspace position relayed by the name it was published under was admitted as a factory position with nothing to refuse it (MJ-029) |
+| `factory_index` and `workspace_index` required by the operations about one model or one device | each defaulted to 0 and answered about whatever occupied the first position when the caller had selected none — a question nobody asked, reported as an observation (MJ-029) |
 
 **A new protocol version is a new number, never a reinterpretation.** V6 has no
 compatibility escape and never guesses at a neighbouring version's meaning

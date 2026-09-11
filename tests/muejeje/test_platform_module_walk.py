@@ -45,6 +45,7 @@ def _request(**args) -> str:
 
 
 def _observed(models: str = CHASSIS_MODELS, **args) -> dict:
+    args.setdefault("factory_index", 0)
     return dispatch_v6(_request(**args), prelude=platform_stub(models))["result"]
 
 
@@ -156,7 +157,7 @@ def test_more_slot_types_than_the_adapter_reads_are_marked_truncated():
 def test_no_platform_object_is_an_observation_not_a_failure(
     prelude: str, reason: str,
 ):
-    response = dispatch_v6(_request(), prelude=prelude)
+    response = dispatch_v6(_request(factory_index=0), prelude=prelude)
 
     assert response["ok"] is True
     assert response["result"]["unavailable_reason"] == reason
@@ -165,7 +166,7 @@ def test_no_platform_object_is_an_observation_not_a_failure(
 @requires_node
 def test_a_refused_platform_call_is_reported_without_its_error():
     result = dispatch_v6(
-        _request(), prelude=platform_stub(CHASSIS_MODELS, fail=True),
+        _request(factory_index=0), prelude=platform_stub(CHASSIS_MODELS, fail=True),
     )["result"]
 
     assert result["unavailable_reason"] == "PLATFORM_CALL_FAILED"
@@ -202,7 +203,7 @@ def test_every_field_of_a_node_is_checked_before_it_is_reported(models: str):
 @requires_node
 def test_a_missing_descriptor_inside_the_count_is_unusable_not_empty():
     result = dispatch_v6(
-        _request(), prelude=platform_stub("[]", count="3"),
+        _request(factory_index=0), prelude=platform_stub("[]", count="3"),
     )["result"]
 
     assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"

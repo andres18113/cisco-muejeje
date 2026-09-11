@@ -78,7 +78,11 @@ CALL_DRIVERS = (
     "network.device_identity",
 )
 # An operation that requires an argument answers nothing without it.
-REQUIRED_ARGS = {"platform.module_type_support": {"module_type": 6}}
+REQUIRED_ARGS = {
+    "network.device_identity": {"workspace_index": 0},
+    "platform.module_descriptors": {"factory_index": 0},
+    "platform.module_type_support": {"factory_index": 0, "module_type": 6},
+}
 
 # An entry of the read-only allowlist, as the boundary declares it.
 ALLOWLIST_ENTRY = re.compile(r'"([A-Za-z]+\.[A-Za-z]+)":\s*\{')

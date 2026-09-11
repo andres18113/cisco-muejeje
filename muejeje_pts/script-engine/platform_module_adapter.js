@@ -32,11 +32,11 @@
  * the platform answered or not. It starts as an unavailable reading with
  * nothing in it: a field is filled in only once something was actually read,
  * so an answer this adapter never obtained cannot be left looking like one. */
-function muejejeAdapterModuleReading(resolution, reason, deviceIndex) {
+function muejejeAdapterModuleReading(resolution, reason, factoryIndex) {
     return {
         resolution: resolution,
         unavailable_reason: reason,
-        device_index: deviceIndex,
+        factory_index: factoryIndex,
         available_count: null,
         descriptor_present: false,
         model: null,
@@ -48,25 +48,25 @@ function muejejeAdapterModuleReading(resolution, reason, deviceIndex) {
     };
 }
 
-function muejejeAdapterModuleUnavailable(reason, deviceIndex) {
+function muejejeAdapterModuleUnavailable(reason, factoryIndex) {
     return muejejeAdapterModuleReading(
-        MUEJEJE_PLATFORM_UNAVAILABLE, reason, deviceIndex
+        MUEJEJE_PLATFORM_UNAVAILABLE, reason, factoryIndex
     );
 }
 
 /* The index, checked rather than defaulted. An index outside these bounds
  * reached this adapter from our own code, and reading device 0 instead would
  * report an observation about a model nobody asked about. */
-function muejejeAdapterDeviceIndex(deviceIndex) {
+function muejejeAdapterFactoryIndex(factoryIndex) {
     return muejejeReadingArgument(
-        deviceIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
+        factoryIndex, 0, MUEJEJE_PLATFORM_LIMITS.EXACT_INTEGER_MAX
     );
 }
 
 /* The one entry point. An unreadable platform is an observation about the
  * platform, not an exception for the caller. */
-function muejejeAdapterModuleDescriptors(deviceIndex) {
-    var index = muejejeAdapterDeviceIndex(deviceIndex);
+function muejejeAdapterModuleDescriptors(factoryIndex) {
+    var index = muejejeAdapterFactoryIndex(factoryIndex);
     var platform = muejejeAdapterPlatform();
     if (platform === null) {
         return muejejeAdapterModuleUnavailable(MUEJEJE_PLATFORM_ABSENT, index);
