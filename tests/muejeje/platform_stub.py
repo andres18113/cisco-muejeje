@@ -15,11 +15,9 @@ names would let one stand in for the other. So every entry is written
 
 Every fixture lives here rather than in the modules that use it, so two test
 modules cannot drift into describing two different chassis or two different
-workspaces — and so a shape read from a recording stays one shape.
-
-Split out of `engine_harness` when that module crossed its own line budget:
-running the kernel and building a platform for it to talk to are two
-responsibilities (MJ-018, MJ-020).
+workspaces — and so a shape read from a recording stays one shape. Split out of
+`engine_harness` at its line budget: running the kernel and building a platform
+for it to talk to are two responsibilities (MJ-018, MJ-020).
 """
 
 from __future__ import annotations
@@ -117,20 +115,19 @@ def _device_descriptor_js() -> list[str]:
     ]
 
 
-def _network_js(dense: bool, reported: str) -> list[str]:
-    """`Network` and the devices it enumerates, as this repository drives them.
+def _workspace_device_js() -> list[str]:
+    """A workspace device, offering a getter only for a field its spec carries.
 
-    A workspace, not a catalogue: the names are neutral on purpose, because a
-    stub carrying one topology's device names would be a consumer's identifiers
-    living in the test area (MJ-004). `dense` cycles the list so the workspace
-    answers at every index, exactly as the factory does.
-
-    A device offers a getter only when its spec carries the field, so a
-    fixture never answers a question nobody put to it: an inventory device is
-    a name, and an identity device also has a model and a DeviceType.
+    So a fixture never answers a question nobody put to it: an inventory device
+    is a name; an identity device also has a model and a DeviceType; a port
+    device carries `ports`, where `port_count` overrides `getPortCount()`, a
+    `null` entry is a port the platform will not hand over, and `dense_ports`
+    cycles the list so a device can have as many ports as a test needs.
     """
-    pick = "DEVICES[index % DEVICES.length]" if dense else "DEVICES[index]"
     return [
+        "function workspacePort(spec) {",
+        "  return {getName: function () { log('Port.getName'); return spec.name; }};",
+        "}",
         "function workspaceDevice(spec) {",
         "  var device = {getName: function () {",
         "    log('Device.getName'); return spec.name;",
@@ -145,8 +142,34 @@ def _network_js(dense: bool, reported: str) -> list[str]:
         "      log('Device.getType'); return spec.device_type;",
         "    };",
         "  }",
+        "  if ('ports' in spec) {",
+        "    device.getPortCount = function () {",
+        "      log('Device.getPortCount');",
+        "      return 'port_count' in spec ? spec.port_count : spec.ports.length;",
+        "    };",
+        "    device.getPortAt = function (index) {",
+        "      log('Device.getPortAt');",
+        "      var port = spec.dense_ports",
+        "        ? spec.ports[index % spec.ports.length] : spec.ports[index];",
+        "      return port ? workspacePort(port) : null;",
+        "    };",
+        "  }",
         "  return device;",
         "}",
+    ]
+
+
+def _network_js(dense: bool, reported: str) -> list[str]:
+    """`Network` and the devices it enumerates, as this repository drives them.
+
+    A workspace, not a catalogue: the names are neutral on purpose, because a
+    stub carrying one topology's device names would be a consumer's identifiers
+    living in the test area (MJ-004). `dense` cycles the list so the workspace
+    answers at every index, exactly as the factory does.
+    """
+    pick = "DEVICES[index % DEVICES.length]" if dense else "DEVICES[index]"
+    return [
+        *_workspace_device_js(),
         "var NETWORK = {",
         "  getDeviceCount: function () {",
         f"    log('Network.getDeviceCount'); return {reported};",
@@ -161,13 +184,7 @@ def _network_js(dense: bool, reported: str) -> list[str]:
 
 
 def _factory_js(reported: str, refuses: str, dense: bool) -> list[str]:
-    """The factory enumeration, and the platform object that answers for it.
-
-    `dense` makes it answer at *every* index by cycling the models, which is
-    how a reading at the far end of an address domain is driven: with a literal
-    array the index under test would be bounded by the stub's length rather
-    than by what Muejeje admits.
-    """
+    """The factory enumeration, and the platform object that answers for it."""
     pick = "MODELS[index % MODELS.length]" if dense else "MODELS[index]"
     return [
         "var FACTORY = {",
@@ -201,6 +218,13 @@ def _factory_js(reported: str, refuses: str, dense: bool) -> list[str]:
 IDENTITY_DEVICES = (
     "[{name: 'a', model: 'PT-Router', device_type: 1},"
     " {name: 'b', model: '', device_type: 7}]"
+)
+# The same workspace with ports: named ones and an unnamed one on the first
+# device, and none on the second, so an empty port list is a reading too.
+PORT_DEVICES = (
+    "[{name: 'a', model: 'PT-Router', device_type: 1,"
+    " ports: [{name: 'port-0'}, {name: 'port-1'}, {name: ''}]},"
+    " {name: 'b', model: '', device_type: 7, ports: []}]"
 )
 # The last whole number JSON carries exactly. Written out rather than read
 # from the kernel, so a fixture cannot move with the bound it exists to test;
@@ -239,14 +263,6 @@ def platform_stub(
 ) -> str:
     """A platform stub built from the documented getters, plus a call log.
 
-    It is a *stub*, and it stays one: it establishes what an adapter does with
-    a well-formed answer and nothing whatever about Packet Tracer, whose engine
-    and hardware factory are a different implementation (MJ-015). The call log
-    is what stops it from quietly becoming evidence about the platform — the
-    caller compares the recorded `Interface.member` calls against Cisco's
-    documented members, so an undocumented call fails here rather than on a
-    target.
-
     `models` is a JavaScript array literal of
     `{model, type, supported, module_types}` objects, each optionally carrying
     `root`: a chassis-module tree of
@@ -256,7 +272,7 @@ def platform_stub(
     overrides what `getAvailableDeviceCount()` answers, which is how an
     unusable answer is delivered; `fail` makes the first factory call throw,
     which is how a refused call is delivered. `devices` is the workspace
-    `Network` enumerates, as `{name, model?, device_type?}` objects — a device
+    `Network` enumerates, as `{name, model?, device_type?, ports?}` objects — a device
     offers a getter only for a field it carries, a `null` entry is a device the
     platform will not hand over, and `device_count` overrides what
     `getDeviceCount()` answers.

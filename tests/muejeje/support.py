@@ -67,6 +67,9 @@ FEATURE_EVIDENCE = {
     "network.identity_reading": (
         "network_identity_adapter.js", "muejejeAdapterDeviceIdentity",
     ),
+    "network.port_reading": (
+        "network_ports_adapter.js", "muejejeAdapterDevicePorts",
+    ),
     "platform.descriptor_discovery": (
         "platform_device_adapter.js", "muejejeAdapterDeviceDescriptors",
     ),
@@ -95,6 +98,11 @@ REQUIRED_RESULT_FIELDS = {
     "network.device_inventory": {
         "resolution", "unavailable_reason", "available_count", "workspace_offset",
         "limit", "devices", "window_truncated",
+    },
+    "network.device_ports": {
+        "resolution", "unavailable_reason", "workspace_index", "available_count",
+        "device_present", "name", "model", "port_offset", "limit", "port_count",
+        "ports", "window_truncated",
     },
     "platform.device_descriptors": {
         "resolution", "unavailable_reason", "available_count", "factory_offset",
@@ -137,6 +145,9 @@ REQUIRED_NESTED_FIELDS = {
     "network.device_identity": {},
     "network.device_inventory": {
         "devices[]": {"workspace_index": int, "name": str},
+    },
+    "network.device_ports": {
+        "ports[]": {"port_index": int, "name": str},
     },
     "platform.device_descriptors": {
         "descriptors[]": {

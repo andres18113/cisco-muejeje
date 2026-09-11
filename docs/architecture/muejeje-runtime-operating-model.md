@@ -147,8 +147,9 @@ Interface is a static page that calls nothing and therefore reports no module
 state.
 
 **What is not built.** The transport, every mutating operation, and every
-reading beyond the hardware factory and the workspace *inventory* — nothing
-reads a device instance's state, a link, an address or a port. The target
+reading beyond the hardware factory, the workspace inventory, one device's
+identity and that device's port names — nothing reads a device instance's
+state, a link, an address or a port's state. The target
 shape, with each stage marked:
 
 ```text

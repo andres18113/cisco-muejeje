@@ -43,6 +43,7 @@ var MUEJEJE_PLATFORM_LIMITS = {
      * offers or how many devices a workspace holds. */
     MAX_FACTORY_WINDOW: 32,
     MAX_WORKSPACE_WINDOW: 64,
+    MAX_PORT_WINDOW: 64,
     MAX_MODULE_TYPES: 64,
     MAX_SLOTS: 64,
     /* A chassis descriptor is a tree, and a tree has no bound this repository
@@ -55,9 +56,9 @@ var MUEJEJE_PLATFORM_LIMITS = {
      * omit is still marked. */
     MAX_MODULE_NODES: 512,
     MAX_MODULE_DEPTH: 12,
-    /* How long a model or a name in one reading may be. Devices are named
-     * however somebody named them and no ceiling on a name has been measured;
-     * this bounds the size of an answer, and the caller says which. */
+    /* How long a model or a name — a device's or a port's — in one reading
+     * may be. No ceiling on either has been measured; this bounds the size of
+     * an answer, and the caller says which bound applies. */
     MAX_MODEL_CHARS: 256,
     MAX_NAME_CHARS: 256,
     /* NUMERIC FIDELITY: one domain for every number this artifact publishes

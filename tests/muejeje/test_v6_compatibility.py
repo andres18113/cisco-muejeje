@@ -45,7 +45,8 @@ ERROR_CODES = {
 # changing it is changing what the name means, not extending it. A mutating
 # operation is a new name (MJ-008).
 READ_ONLY_OPERATIONS = {
-    "network.device_inventory", "platform.device_descriptors",
+    "network.device_identity", "network.device_inventory",
+    "network.device_ports", "platform.device_descriptors",
     "platform.module_descriptors", "platform.module_type_support",
     "runtime.capabilities", "runtime.identify",
 }

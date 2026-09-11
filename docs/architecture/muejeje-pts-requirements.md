@@ -903,9 +903,12 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
    Reading an inventory is not assuming a topology, which is what MJ-002
    forbids: no expected count, no naming scheme, no role, no ordering that
    outlives a reading. What is still unread is unread on purpose — a link, an
-   address, a port and a configuration are each a further subject with its own
-   evidence and its own bounds, and none has an operation that needs it yet.
-   Nothing anywhere reads or writes a device instance's state.
+   address, a port's state and a configuration are each a further subject with
+   its own evidence and its own bounds, and none has an operation that needs
+   it yet. A port's *name* is read, by `network.device_ports`, and nothing else
+   about it: no link is followed from it, no address or up/down state is read,
+   and the name is never parsed into a slot or a kind. Nothing anywhere reads
+   or writes a device instance's state.
 
    **A workspace reading is one observation, and never a join.**
    `network.device_identity` reports what one device *is* — its name, model and
@@ -920,6 +923,19 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
    no matching of ours involved; it is a further subject with its own bounds
    and its own evidence, named here so that the relation having an API is on
    record and so that nothing manufactures one without it (MJ-002, MJ-015).
+
+   **A port reading carries the identity that attributes it.**
+   `network.device_ports` selects one device by `workspace_index`, reads its
+   name and model, and reads that same device's ports, after a single
+   hand-over, in one call. A consumer never joins an identity read at one
+   moment with ports read at another, because a workspace position is not an
+   identity and the two moments need not describe the same device.
+   Re-reporting the name and model is snapshot consistency, not duplication.
+   The DeviceType is not re-read: it attributes nothing a port needs, and
+   `Device.getType()` has the least standing of the three identity getters.
+   Ports are read one bounded window at a time from `port_offset`, each
+   `port_index` is a position in that reading, and a window that stops short
+   of `port_count` says so.
 
 **An unreadable platform is an observation, not a failure.** No V6 error is
 reported for it: the request was admissible, and the answer is that no reading
@@ -1017,10 +1033,13 @@ walk, including each bound and the subtree it marks.
 `tests/muejeje/test_platform_support.py` cover the platform operations: one
 result shape whether the platform answered or not, the window or chassis it reports,
 the declared argument rules, and no self-certified verdict.
-`tests/muejeje/test_network_inventory.py` and
-`tests/muejeje/test_network_identity.py` do the same for the workspace ones,
-and the second additionally asserts that its adapter names no factory symbol at
-all — the positive form of "nothing is correlated".
+`tests/muejeje/test_network_inventory.py`,
+`tests/muejeje/test_network_identity.py`, `test_network_ports.py` and
+`test_network_port_values.py` do the same for the workspace ones. The identity
+and port modules additionally assert that their adapters name no factory symbol
+at all — the positive form of "nothing is correlated" — and the port modules
+that one hand-over serves the identity and the ports alike, even on a workspace
+that hands over a different device each time it is asked.
 `tests/muejeje/test_source_root.py` gates the enum identifiers, and
 `tests/muejeje/test_platform_declarations.py` checks the declarations
 themselves — which files may name `ipc`, which are adapters, and which may
@@ -1029,7 +1048,8 @@ shape a reading at all.
 attribution and the adapters' own logic under Node; `PENDING_TARGET` for every
 capability that reaches the platform — `platform.device_descriptors`,
 `platform.module_descriptors`, `platform.module_type_support`,
-`network.device_inventory` and `network.device_identity`. Their `OBSERVED`
+`network.device_inventory`, `network.device_identity` and
+`network.device_ports`. Their `OBSERVED`
 branches have only ever been driven against a stub, no `.pts` has been built
 from these sources, and nothing here has reached `9.0.1.0858` (MJ-015).
 

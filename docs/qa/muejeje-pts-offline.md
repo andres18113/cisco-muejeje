@@ -390,6 +390,9 @@ is a Muejeje target reading — every one of those is still `PENDING_TARGET`.
 | `Device.getName()` | `class_device.html` | legacy code only — no per-member record cited |
 | `Device.getModel()` | `class_device.html` | legacy code only — no per-member record cited |
 | `Device.getType()` | `class_device.html` | **no** — documented only |
+| `Device.getPortCount()` | `class_device.html` | legacy code only — no per-member record cited |
+| `Device.getPortAt(int)` | `class_device.html` | legacy code only — no per-member record cited |
+| `Port.getName()` | `class_port.html` | legacy code only — no per-member record cited |
 
 **"yes" means a recorded run.** Every "yes" row is a member the read-only
 factory survey calls — `observe_factory_structure` in

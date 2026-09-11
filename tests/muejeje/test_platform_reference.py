@@ -8,7 +8,7 @@ it hands over an object — and holds the evidence table a reader relies on to o
 row per entry, each citing that same page.
 
 **A citation belongs to one interface.** `getType` is documented on `Device`,
-`DeviceDescriptor` and `ModuleDescriptor`; `getRootModule` on `Device` hands
+`DeviceDescriptor`, `ModuleDescriptor` and `Port`; `getRootModule` on `Device` hands
 over a runtime `Module`, and on `DeviceDescriptor` a `ModuleDescriptor`. A check
 that looked a name up anywhere in the reference would let one interface's page
 vouch for another's member — the error the qualified boundary exists to remove,
@@ -61,6 +61,10 @@ INTERFACE_PAGES = {
     "Device": (
         "class_device.html",
         "d8396d07a02115974ff330a32e1b90dbe9847d8f62ebb7079c5039513b559621",
+    ),
+    "Port": (
+        "class_port.html",
+        "62107e5a8ea9f4a2019df76974563fe9e7cabe40b786da600a916ecd8f87d1c1",
     ),
 }
 # What a member answers when it answers a value rather than a platform object,
@@ -186,6 +190,8 @@ def test_one_interfaces_page_never_vouches_for_anothers_member():
     assert descriptor["getRootModule"] == {("ModuleDescriptor", 0)}
     assert "Device.getRootModule" not in admitted_entries()
     assert admitted_entries()["DeviceDescriptor.getRootModule"] == (0, "ModuleDescriptor")
+    assert documented_members(_page("Port"))["getType"] == {("PortType", 0)}
+    assert "Port.getType" not in admitted_entries()
 
 
 def test_the_evidence_table_has_one_row_per_entry_citing_its_own_page():

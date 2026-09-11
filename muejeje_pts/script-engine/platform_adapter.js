@@ -9,7 +9,7 @@
  * kernel state.
  *
  * A CALL IS AN INTERFACE MEMBER, NEVER A BARE NAME. `getType` is a member of
- * `Device`, `DeviceDescriptor` and `ModuleDescriptor`, and `getRootModule`
+ * `Device`, `DeviceDescriptor`, `ModuleDescriptor` and `Port`, and `getRootModule`
  * hands over a runtime `Module` on `Device` but a `ModuleDescriptor` on
  * `DeviceDescriptor`. Each is its own signature with its own evidence, so each
  * is admitted — or not — on its own. A call site names the member it means as
@@ -59,8 +59,9 @@
  * next receiver is, since the object itself cannot be asked.
  *
  * Every entry is a documented getter. `Network` also offers members that
- * create a device or a link, and `Device` members that move, power and rename
- * one; none of them is here. An allowlist rather than a list of forbidden
+ * create a device or a link, `Device` members that move, power and rename one,
+ * and `Port` members that set its bandwidth, duplex, clock rate and addresses;
+ * none of them is here. An allowlist rather than a list of forbidden
  * verbs: a name nobody thought to forbid is admitted by a blacklist and refused
  * by this. The factory is enumerated by the unqualified pair, count and index,
  * because it needs no DeviceType argument — asking by type would mean carrying
@@ -71,10 +72,12 @@
  * relate a workspace device to a factory descriptor, named here so that the
  * relation having an API is on record and nothing manufactures one without it;
  * `Device.getRootModule()`, which hands over installed hardware rather than a
- * description of it; and `Device.getSerialNumber()`, `getPower()` and
- * `getUpTime()` (MJ-002, MJ-014, MJ-015). Which entries have answered on the
- * target build, and through which channel, is the evidence table in
- * `docs/qa/muejeje-pts-offline.md` — not a claim this list makes. */
+ * description of it; `Device.getSerialNumber()`, `getPower()` and
+ * `getUpTime()`; and on `Port`, `getLink()` and `getOwnerDevice()`, which
+ * follow a link to whatever is at its other end, `getType()`, `isPortUp()`
+ * and its address getters (MJ-002, MJ-014, MJ-015). Which entries have
+ * answered on the target build, and through which channel, is the evidence
+ * table in `docs/qa/muejeje-pts-offline.md` — not a claim this list makes. */
 var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
     "IPC.hardwareFactory": {arity: 0, hands_over: "HardwareFactory"},
     "IPC.network": {arity: 0, hands_over: "Network"},
@@ -99,7 +102,10 @@ var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
     "Network.getDeviceAt": {arity: 1, hands_over: "Device"},
     "Device.getName": {arity: 0, hands_over: null},
     "Device.getModel": {arity: 0, hands_over: null},
-    "Device.getType": {arity: 0, hands_over: null}
+    "Device.getType": {arity: 0, hands_over: null},
+    "Device.getPortCount": {arity: 0, hands_over: null},
+    "Device.getPortAt": {arity: 1, hands_over: "Port"},
+    "Port.getName": {arity: 0, hands_over: null}
 };
 
 /* The mark this boundary puts on every platform object it hands out.

@@ -115,6 +115,8 @@ def test_a_member_asked_of_its_own_interface_is_answered(receiver: str, member: 
     ("DeviceDescriptor", "Device.getType"),
     ("ModuleDescriptor", "DeviceDescriptor.getType"),
     ("Network", "DeviceFactory.getAvailableDeviceCount"),
+    ("Port", "Device.getName"),
+    ("Device", "Port.getName"),
 ])
 def test_a_member_admitted_on_one_interface_is_refused_on_another(
     receiver: str, member: str,

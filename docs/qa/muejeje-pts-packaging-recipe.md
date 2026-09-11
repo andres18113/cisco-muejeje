@@ -63,18 +63,20 @@ here: the manifest is the source, this table is the reading of it.
 6. `platform_adapter.js`
 7. `network_adapter.js`
 8. `network_identity_adapter.js`
-9. `platform_device_adapter.js`
-10. `platform_module_adapter.js`
-11. `platform_support_adapter.js`
-12. `network_identity.js`
-13. `network_inventory.js`
-14. `platform_discovery.js`
-15. `platform_modules.js`
-16. `platform_support.js`
-17. `runtime_capabilities.js`
-18. `runtime_identity.js`
-19. `dispatcher_v6.js`
-20. `lifecycle.js`
+9. `network_ports_adapter.js`
+10. `platform_device_adapter.js`
+11. `platform_module_adapter.js`
+12. `platform_support_adapter.js`
+13. `network_identity.js`
+14. `network_inventory.js`
+15. `network_ports.js`
+16. `platform_discovery.js`
+17. `platform_modules.js`
+18. `platform_support.js`
+19. `runtime_capabilities.js`
+20. `runtime_identity.js`
+21. `dispatcher_v6.js`
+22. `lifecycle.js`
 
 This list is a reading of `build_options.engine_script_order`, and a gate holds
 it equal to that declaration. An earlier revision named nine of these files
@@ -195,9 +197,14 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-inventory","op":"network.device_inve
 mcpDispatchV6('{"v":6,"operation_rid":"qual-identity","op":"network.device_identity","args":{"workspace_index":0}}')
 ```
 
-The last two read the **workspace**, so what they report depends on what the
-running instance holds — an empty workspace answering `available_count: 0`, or
-a position answering `device_present: false`, is a reading, not a failure.
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-ports","op":"network.device_ports","args":{"workspace_index":0,"limit":8}}')
+```
+
+The last three read the **workspace**, so what they report depends on what the
+running instance holds — an empty workspace answering `available_count: 0`, a
+position answering `device_present: false`, or a device answering
+`port_count: 0`, is a reading, not a failure.
 Record the workspace's state alongside them, because the same call on a
 different session is a different observation (`MJ-002`).
 

@@ -35,7 +35,7 @@ import json
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
-from tests.muejeje.platform_stub import CHASSIS_MODELS, platform_stub
+from tests.muejeje.platform_stub import CHASSIS_MODELS, PORT_DEVICES, platform_stub
 from tests.muejeje.support import REQUIRED_NESTED_FIELDS, REQUIRED_RESULT_FIELDS
 
 # Which operations have to be asked against a platform for their published
@@ -43,7 +43,7 @@ from tests.muejeje.support import REQUIRED_NESTED_FIELDS, REQUIRED_RESULT_FIELDS
 # platform, and an empty list publishes no nested object, so the reading a
 # consumer actually parses is the one driven here.
 NEEDS_PLATFORM = frozenset({
-    "network.device_identity",
+    "network.device_identity", "network.device_ports",
     "network.device_inventory", "platform.device_descriptors",
     "platform.module_descriptors", "platform.module_type_support",
 })
@@ -51,6 +51,7 @@ NEEDS_PLATFORM = frozenset({
 # it will answer at all, and a shape gate has to see the answer.
 REQUIRED_ARGS = {
     "network.device_identity": {"workspace_index": 0},
+    "network.device_ports": {"workspace_index": 0},
     "platform.module_descriptors": {"factory_index": 0},
     "platform.module_type_support": {"factory_index": 0, "module_type": 6},
 }
@@ -76,7 +77,10 @@ def _request(op: str) -> str:
 
 
 def _answer(op: str) -> dict:
-    stub = platform_stub(CHASSIS_MODELS) if op in NEEDS_PLATFORM else ""
+    stub = (
+        platform_stub(CHASSIS_MODELS, devices=PORT_DEVICES)
+        if op in NEEDS_PLATFORM else ""
+    )
     return dispatch_v6(_request(op), prelude=stub)
 
 

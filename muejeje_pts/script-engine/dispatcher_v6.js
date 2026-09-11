@@ -30,6 +30,11 @@ function muejejeV6OperationTable() {
                 args: MUEJEJE_NETWORK_INVENTORY_ARGS,
                 handler: muejejeNetworkDeviceInventory
             },
+            "network.device_ports": {
+                read_only: true,
+                args: MUEJEJE_NETWORK_PORTS_ARGS,
+                handler: muejejeNetworkDevicePorts
+            },
             "platform.device_descriptors": {
                 read_only: true,
                 /* The operation declares what its own arguments mean; this

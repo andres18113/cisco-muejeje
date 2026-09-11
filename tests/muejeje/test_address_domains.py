@@ -34,12 +34,13 @@ import pytest
 from tests.muejeje.engine_harness import dispatch_v6, node_available
 from tests.muejeje.platform_stub import (
     CHASSIS_MODELS,
-    IDENTITY_DEVICES,
+    PORT_DEVICES,
     platform_stub,
 )
 
-# The domain every address of an operation's namespace belongs to.
-DOMAINS = {"platform": "factory", "network": "workspace"}
+# The domains an address in each namespace may belong to. A port position is
+# inside one workspace device, so it lives in that namespace under its own name.
+DOMAINS = {"platform": ("factory",), "network": ("workspace", "port")}
 # A field or argument name that carries a position.
 ADDRESS_NAME = re.compile(r"(?:^|_)(?:index|offset)$")
 # Positions *inside* one reading rather than addresses into an enumeration: a
@@ -54,6 +55,7 @@ SINGLE_SUBJECT = {
     "platform.module_descriptors": ("factory_index", {}),
     "platform.module_type_support": ("factory_index", {"module_type": 6}),
     "network.device_identity": ("workspace_index", {}),
+    "network.device_ports": ("workspace_index", {}),
 }
 # Every window over an enumeration: the argument its start is, and the list.
 WINDOWS = {
@@ -74,7 +76,7 @@ def _request(op: str, args: dict) -> str:
 
 
 def _stub() -> str:
-    return platform_stub(CHASSIS_MODELS, devices=IDENTITY_DEVICES)
+    return platform_stub(CHASSIS_MODELS, devices=PORT_DEVICES)
 
 
 def _admitted_args(op: str) -> dict:
@@ -85,8 +87,8 @@ def _admitted_args(op: str) -> dict:
     return {selector: 0, **others}
 
 
-def _domain(op: str) -> str:
-    return DOMAINS[op.split(".")[0]]
+def _prefixes(op: str) -> tuple[str, ...]:
+    return tuple(f"{domain}_" for domain in DOMAINS[op.split(".")[0]])
 
 
 def published_paths(result: dict) -> set[str]:
@@ -121,7 +123,7 @@ def test_every_address_argument_names_its_domain():
     for op, names in declared.items():
         for name in names:
             if ADDRESS_NAME.search(name):
-                assert name.startswith(f"{_domain(op)}_"), (op, name)
+                assert name.startswith(_prefixes(op)), (op, name)
 
 
 @requires_node
@@ -133,7 +135,7 @@ def test_every_published_address_names_its_domain(op: str):
     for path in published_paths(result) - READING_LOCAL_POSITIONS:
         name = path.rsplit(".", 1)[-1]
         if ADDRESS_NAME.search(name):
-            assert name.startswith(f"{_domain(op)}_"), (op, path)
+            assert name.startswith(_prefixes(op)), (op, path)
 
 
 @requires_node
@@ -143,6 +145,7 @@ def test_every_published_address_names_its_domain(op: str):
     ("platform.device_descriptors", {"workspace_offset": 0}),
     ("network.device_identity", {"factory_index": 0}),
     ("network.device_inventory", {"factory_offset": 0}),
+    ("network.device_ports", {"factory_index": 0}),
 ])
 def test_an_address_from_the_other_domain_is_refused(op: str, foreign: dict):
     """Relayed by the name it was published under, it reaches only its own domain."""

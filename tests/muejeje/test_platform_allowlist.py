@@ -39,7 +39,7 @@ from tests.muejeje.engine_harness import dispatch_v6, node_available
 from tests.muejeje.measure import js_code_only
 from tests.muejeje.platform_stub import (
     ACCESS_POINT_ROOT,
-    IDENTITY_DEVICES,
+    PORT_DEVICES,
     platform_stub,
 )
 from tests.muejeje.support import REPO_ROOT, SCRIPT_ENGINE
@@ -68,6 +68,7 @@ DOCUMENTED_CALLS = {
     "ModuleDescriptor.getModuleAt",
     "Network.getDeviceCount", "Network.getDeviceAt",
     "Device.getName", "Device.getModel", "Device.getType",
+    "Device.getPortCount", "Device.getPortAt", "Port.getName",
 }
 # Which operation exercises which part of that list. No single call reaches all
 # of it, so the log is compared per operation and as a union: an entry nobody
@@ -75,11 +76,12 @@ DOCUMENTED_CALLS = {
 CALL_DRIVERS = (
     "platform.device_descriptors", "platform.module_descriptors",
     "platform.module_type_support", "network.device_inventory",
-    "network.device_identity",
+    "network.device_identity", "network.device_ports",
 )
 # An operation that requires an argument answers nothing without it.
 REQUIRED_ARGS = {
     "network.device_identity": {"workspace_index": 0},
+    "network.device_ports": {"workspace_index": 0},
     "platform.module_descriptors": {"factory_index": 0},
     "platform.module_type_support": {"factory_index": 0, "module_type": 6},
 }
@@ -115,8 +117,8 @@ def _request(op: str = CALL_DRIVERS[0]) -> str:
 
 
 def _stub() -> str:
-    """The factory above, and a workspace whose devices answer identity too."""
-    return platform_stub(THREE_MODELS, devices=IDENTITY_DEVICES)
+    """The factory above, and a workspace whose devices answer identity and ports."""
+    return platform_stub(THREE_MODELS, devices=PORT_DEVICES)
 
 
 def admitted_calls() -> set[str]:

@@ -31,18 +31,20 @@ It is declared once, in `build_options.engine_script_order`:
 | 6 | `platform_adapter.js` | the **only** file that names `ipc`; the read-only call boundary |
 | 7 | `network_adapter.js` | the workspace device inventory, through that boundary |
 | 8 | `network_identity_adapter.js` | one workspace device's identity, in one reading |
-| 9 | `platform_device_adapter.js` | the device-descriptor reading, through that boundary |
-| 10 | `platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
-| 11 | `platform_support_adapter.js` | the module-type support reading, through that boundary |
-| 12 | `network_identity.js` | the `network.device_identity` operation |
-| 13 | `network_inventory.js` | the `network.device_inventory` operation |
-| 14 | `platform_discovery.js` | the `platform.device_descriptors` operation |
-| 15 | `platform_modules.js` | the `platform.module_descriptors` operation |
-| 16 | `platform_support.js` | the `platform.module_type_support` operation |
-| 17 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
-| 18 | `runtime_identity.js` | the `runtime.identify` operation |
-| 19 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
-| 20 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
+| 9 | `network_ports_adapter.js` | one workspace device's ports beside its identity, in one reading |
+| 10 | `platform_device_adapter.js` | the device-descriptor reading, through that boundary |
+| 11 | `platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
+| 12 | `platform_support_adapter.js` | the module-type support reading, through that boundary |
+| 13 | `network_identity.js` | the `network.device_identity` operation |
+| 14 | `network_inventory.js` | the `network.device_inventory` operation |
+| 15 | `network_ports.js` | the `network.device_ports` operation |
+| 16 | `platform_discovery.js` | the `platform.device_descriptors` operation |
+| 17 | `platform_modules.js` | the `platform.module_descriptors` operation |
+| 18 | `platform_support.js` | the `platform.module_type_support` operation |
+| 19 | `runtime_capabilities.js` | the `runtime.capabilities` operation |
+| 20 | `runtime_identity.js` | the `runtime.identify` operation |
+| 21 | `dispatcher_v6.js` | the whitelist and `mcpDispatchV6` |
+| 22 | `lifecycle.js` | `main()` and `cleanUp()`, nothing else |
 
 The arrows point one way — `lifecycle → dispatcher → operations → adapter →
 protocol + core` — and nothing points back. An operation is never implemented
@@ -81,7 +83,7 @@ copy is five that a new operation puts out of step, so every other document
 names whichever operations it has a reason to name and a gate holds this one
 complete (`MJ-008`).
 
-Seven operations are admitted, all read-only:
+Eight operations are admitted, all read-only:
 
 | Operation | Answers |
 | --- | --- |
@@ -92,6 +94,7 @@ Seven operations are admitted, all read-only:
 | `platform.module_type_support` | *does this model accept this module type* — for the model at a `factory_index`, the descriptor's own answer for one type value, with the model and DeviceType read back beside it, or a reason the reading was unavailable |
 | `network.device_inventory` | *what does this Packet Tracer currently hold* — a bounded window over the devices on the workspace, each with the `workspace_index` it was read at and the name the platform gave it, or a reason the reading was unavailable |
 | `network.device_identity` | *what is the device at this position* — the name, model and DeviceType the platform reports for the device at a `workspace_index`, all read in that same observation, or a reason the reading was unavailable |
+| `network.device_ports` | *what ports does the device at this position have* — the name and model of the device at a `workspace_index` and a bounded window of its ports, each with the `port_index` it was read at and the name the platform gave it, all from that one device in one observation, or a reason the reading was unavailable |
 
 The two runtime operations read the same whitelist, from the dispatcher that
 owns it, so they can never describe different contracts. The platform ones
@@ -136,7 +139,18 @@ answer that properly from the device itself, and it is a further subject with
 its own bounds and its own evidence rather than a field this reading may grow
 (`MJ-002`, `MJ-015`).
 
-None of the seven reports anything it has not observed, and none certifies its
+`network.device_ports` is the same kind of reading one step further, and it
+re-reports the identity on purpose. It selects the device at a
+`workspace_index`, reads its name and model, and reads that same device's ports
+in the same call, after one hand-over — so the ports are attributable without a
+consumer combining an identity read at one moment with ports read at another,
+which on a changing workspace would describe a device that never existed. Ports
+come one bounded window at a time from `port_offset`; each carries the
+`port_index` it was read at and the name the platform gave it, and nothing more:
+no link, no address, no state, and no parsing of the name (`MJ-002`, `MJ-029`,
+`MJ-031`).
+
+None of the eight reports anything it has not observed, and none certifies its
 own verification: the engine cannot audit the engine, so Python decides what an
 answer establishes (`MJ-011`).
 
@@ -150,8 +164,8 @@ artifact makes goes through it, by **interface member** — `Device.getModel` an
 the members on a declared read-only allowlist, asked of a platform object it
 handed out itself as that interface. The adapters
 beside it read one subject each — the device factory, the chassis of one model,
-whether one model accepts one module type, the devices on the workspace, and
-the identity of one of them — and name no platform object of their own.
+whether one model accepts one module type, the devices on the workspace, the
+identity of one of them, and one device's ports beside that identity — and name no platform object of their own.
 
 **The read-only proof is that list, not a list of forbidden verbs.** A
 blacklist admits every name nobody thought to forbid, and once the member name

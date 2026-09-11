@@ -36,8 +36,9 @@ out, one envelope for success and failure alike.</p>
 carries no copy of that list, because a copy is a list that goes out of date
 where nobody is looking. <code>runtime.identify</code> reports what the
 artifact can say about itself, and neither of those asks Packet Tracer
-anything. The <code>platform</code> operations do ask: they report what this
-Packet Tracer offers, or the reason a reading was unavailable. Every other
+anything. The <code>platform</code> and <code>network</code> operations do
+ask: they report what this Packet Tracer offers or holds, or the reason a
+reading was unavailable. Every other
 operation name fails closed. There is no fallback to an earlier protocol and no
 path that runs a caller's JavaScript.</p>
 
@@ -51,7 +52,7 @@ path that runs a caller's JavaScript.</p>
 <h2>Privileges</h2>
 <p>The module requests none. Cisco's security privileges decide which IPC calls
 a Script Module may make, and no privilege this repository has evidence for is
-known to be the one a descriptor reading needs — so naming one would be a
+known to be the one a platform reading needs — so naming one would be a
 guess. A reading Packet Tracer declines therefore comes back marked
 unavailable, with its reason, rather than as an answer about what Packet Tracer
 offers.</p>
