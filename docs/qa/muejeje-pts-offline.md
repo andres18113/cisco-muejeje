@@ -23,7 +23,7 @@ The current, evidence-marked audit of record is
 | Builder | Cisco Packet Tracer `9.0.1.0858` |
 | `bin/PacketTracer.exe` SHA-256 | `843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1` |
 | Packager | the in-app Scripting Interface — the only demonstrated one |
-| Automation | none demonstrated: `BUILD_TOOLCHAIN_AUTOMATION_UNPROVEN` |
+| Automation | none demonstrated: `BUILD_AUTOMATION_UNPROVEN` |
 
 ## Packaging readiness
 
@@ -31,7 +31,7 @@ Two measurements, on two machines, and they say different things because the
 machines differ — not because the repository changed under them.
 
 **With the pinned builder installed**, recomputed on the clean committed tree at
-`96976de`:
+`d14692d`:
 
 ```text
 .venv/Scripts/python.exe tools/build_muejeje_pts.py --check --builder 'C:/Program Files/Cisco Packet Tracer 9.0.1/bin/PacketTracer.exe'
@@ -41,10 +41,10 @@ PACKAGING_MANUAL_AVAILABLE; exit 0
 | Field | Value |
 | --- | --- |
 | `status` | `PACKAGING_MANUAL_AVAILABLE` |
-| `build_recipe_id` | `c4b5f3476ac1887dbad5d09195ebeb85eddba69613cf8f2d1fbf0837a5c1c1a4` |
-| `source.commit` | `96976deb616c563b1dac45d75bbaf17e5a9f69e1`, `clean: true` |
-| `source.tree` | `c0bff45aa6a1647dbf7cd589b9002d927b3680c9` |
-| `inputs.artifact` | 21 files, all under `muejeje_pts/` |
+| `build_recipe_id` | `bbe6a2d53b38224e3973735af3df56324d2b864aedb114934201633a046bf8ab` |
+| `source.commit` | `d14692d0a1aa04602053c5c1d8b6e5c90634579f`, `clean: true` |
+| `source.tree` | `67f1a8e3ca4616c242e1a859ce3ca09a801a152d` |
+| `inputs.artifact` | 23 files, all under `muejeje_pts/` |
 | `inputs.tooling` | 8 files, the whole auditor |
 | `inputs.reference` | `[]` |
 | `packaging_state.recipe_complete` | `true` |
@@ -99,7 +99,7 @@ does exactly that.
 
 **The recipe id is a measurement, not a constant**, and that is the design
 working: an id that survived a change to its inputs would identify the wrong
-build. Read it as "at `96976de`, on that machine, the audit reported this".
+build. Read it as "at `d14692d`, on that machine, the audit reported this".
 
 **It also depends on the line endings of the checkout it was measured in.** The
 audit hashes the *working* bytes of each declared input, and the Windows
@@ -113,7 +113,10 @@ a mismatch between two machines otherwise reads like a tampered input.
 Cisco's installed `help/default/` pages were read for the audit and **not** copied
 into this repository. Their SHA-256 values, and what each one establishes, are
 recorded in the v2 preflight inventory (eight pages, including three that the
-original audit missed).
+original audit missed). The IpcAPI class pages every admitted platform member
+is documented on are pinned separately, by hash, in
+`tests/muejeje/test_platform_reference.py`, which re-reads each one on a
+machine that has the target build.
 
 ## What the tool does, and does not do
 
@@ -157,24 +160,25 @@ review rather than a hypothetical:
 Two environments have run this suite, and the record keeps them apart: a
 measurement is only comparable with another taken the same way.
 
-**Windows, with Packet Tracer `9.0.1.0858` installed**, at `96976de` — the
-machine that has the target build, and the one this line was measured on:
+**Windows, with Packet Tracer `9.0.1.0858` installed**, at `d14692d` — the
+machine that has the target build, and the one this line was measured on
+(checkout-local `.venv`, Python 3.12.10, pytest 9.1.1, Node v24.19.0):
 
 ```text
 .venv/Scripts/python.exe -m pytest tests/muejeje -q --basetemp=tmp/fin1 -o cache_dir=tmp/fin1-cache
-555 passed, 2 skipped in 157.23s; exit 0
+738 passed, 2 skipped in 168.18s; exit 0
 
 .venv/Scripts/python.exe -m pytest tests/test_worktree_isolation.py tests/test_e95_architecture_boundaries.py -q --basetemp=tmp/fin2 -o cache_dir=tmp/fin2-cache
-12 passed in 1.98s; exit 0
+12 passed in 3.05s; exit 0
 
 .venv/Scripts/python.exe -m pytest -q
-5000 passed, 3 skipped in 371.52s; exit 0
+5183 passed, 3 skipped, 4 warnings in 391.66s; exit 0
 ```
 
-Node v24.19.0 drove the kernel checks. The earlier Windows reading at `fc9e460`
-(`353 passed`) is superseded rather than kept beside this one: it measured a
-different tree on the same machine, which is exactly the comparison this record
-separates environments to prevent.
+Node drove the kernel checks. The earlier Windows readings — `353 passed` at
+`fc9e460` and `555 passed` at `96976de` — are superseded rather than kept beside
+this one: each measured a different tree on the same machine, which is exactly
+the comparison this record separates environments to prevent.
 
 **Linux, with Packet Tracer absent**, at `bd7250e` — the container this line was
 developed in, checkout-local `.venv` (Python 3.11.15, pytest 9.1.1), Node
@@ -210,13 +214,15 @@ The muejeje area grew from `155 passed` to `214` with `runtime.capabilities` and
 the layer-aware fitness gates, to `353` with the kernel hardening and the first
 M2 slice, to `409` with the platform-call boundary and the chassis reading, to
 `496` with `platform.module_type_support` and the first workspace reading, and
-to `555` with this line: relay closure, three attribution corrections, and the
-first M3 capability.
+to `555` with relay closure, three attribution corrections and the first M3
+capability, and to `738` with this line: a platform boundary enforced per
+interface member, exact-integer addressing in named domains, and
+`network.device_ports`.
 
-Seventeen test modules have been split out along the way, each because its
+Eighteen test modules have been split out along the way, each because its
 predecessor crossed the 300-line budget rather than because anyone chose to —
-most recently `test_platform_reading_values` out of `test_platform_readings`,
-and `platform_stub` out of `engine_harness`. The artifact split the same way and
+most recently `test_network_port_values` out of `test_network_ports`, and
+before it `test_platform_reading_values` out of `test_platform_readings`. The artifact split the same way and
 for the same reason: `validation_v6.js` and then `arguments_v6.js` out of
 `protocol_v6.js`, and `platform_reading.js` plus one adapter per subject out of
 `platform_adapter.js`. That is `MJ-020` doing what it is for — the budget forced
@@ -258,8 +264,9 @@ would be the same error this document was corrected for.
 | `RUNTIME_VERIFIED` — Node, skipped when absent | what *our* JavaScript does: the envelope, every bound, each rejection class, the session token, and the two platform-free results — `runtime.identify` and `runtime.capabilities` | anything about Packet Tracer |
 | `STUB_DRIVEN` — Node, skipped when absent | what the *platform adapters* do with a well-formed answer, with an unusable one, with a call that throws, and with no platform object at all; where a bounded walk stops and what it marks; which methods were actually called; and that a defect inside an adapter comes back as `ENGINE_EXCEPTION` rather than as a platform reading | anything about Packet Tracer's hardware factory, or about whether these calls are permitted there |
 
-**The third row is the one to be careful with.** Both platform operations were
-driven against a stub that answers with Cisco's documented getter names, and
+**The third row is the one to be careful with.** Every platform and network
+operation was driven against a stub that answers with Cisco's documented
+getter names, logging the interface each call landed on, and
 whose chassis shape was copied from a reading this repository actually recorded
 against `9.0.1.0858`. A stub written from a recording is still not the
 implementation: it proves our adapters read a well-formed answer correctly and
@@ -314,6 +321,8 @@ M0B = NOT_COMPLETE
 M0C = NOT_COMPLETE
 M1_CORE_READY = NO
 M2_CORE_READY = NO
+M3_CORE_READY = NO
+ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 ```
 
 | State | What is still missing |
@@ -322,24 +331,39 @@ M2_CORE_READY = NO
 | `M0C` | batch and auth-boundary semantics. `MJ-027` is the contract the first batch operation must satisfy and no batch operation exists; the auth boundary is in the same position |
 | `M1_CORE_READY` | target evidence. The V6 kernel is verified under Node and has never run inside Packet Tracer (`MJ-015`) |
 | `M2_CORE_READY` | target evidence, and packaging. Every platform and network capability is `PENDING_TARGET`, no `.pts` has been built from these sources, and `OFFICIAL_PACKAGING_PROVED` is `PENDING_GUI` |
+| `M3_CORE_READY` | complete intended scope, and target evidence. The workspace inventory, one device's identity and one device's ports are implemented; the workspace's links are not (see below), and every workspace capability is `PENDING_TARGET` |
+| `ZERO_CHANGE_CUTOVER` | a release-qualified artifact, and a compatibility facade outside the V6 core (`MJ-034`). Nothing has been packaged or qualified, no facade exists, and no consumer has been cut over |
 
 **A green run on this page does not move any of them.** The suite establishes
-what this repository's own code does; three of these four gates are waiting on a
-target, and the fourth is waiting on work that has not been written. M3 being
-under way changes none of them either — that is `MJ-033` working as intended,
-not a milestone being skipped.
+what this repository's own code does. `M0B` and `M0C` wait on work that has not
+been written; `M1`, `M2` and `M3` wait on a target reading, and `M3` on
+unfinished scope as well; the cutover waits on all of it. This line hardened the
+contract and added a capability and changed none of these states — which is
+`MJ-033` working as intended, not a milestone being skipped.
 
-**Where M3 stopped, and why.** `network.device_identity` is implemented and
-tested; the next read-only slice is not started. The candidate is a device's
-ports — `Device.getPortCount()`, `Device.getPortAt(int)` and `Port.getName()`
-are all documented for `9.0.1.0858` and all driven by this repository's live
-channel, so the *APIs* clear the bar. What does not clear it is a contract
-question nobody has answered: a port reading addressed by workspace position
-describes whatever device occupied that position in that reading, so either it
-re-reports the device identity beside the ports — duplicating
-`network.device_identity` — or a consumer correlates two readings, which is the
-correlation this line has just refused to manufacture. `MJ-030` freezes whichever
-shape ships, so the decision is taken before the slice, not inside it.
+**Where M3 stands.** `network.device_ports` is implemented and tested. The
+contract question the previous revision of this record left open — re-report the
+device identity beside the ports, or make a consumer correlate two readings — is
+decided for snapshot consistency: the port reading selects the device once,
+reads its name, its model and its ports off that one hand-over, and reports them
+together, so no consumer joins an identity from one moment with ports from
+another (`MJ-031`). Its three members are documented and called by legacy code;
+none has a Muejeje reading.
+
+**Where M3 stops, and the reason is in Cisco's reference.** The workspace's
+links are the next read-only topology subject. `Network.getLinkCount()` and
+`Network.getLinkAt(int)` are documented, but the second hands over a `Link`, and
+the `Link` page documents only `getConnectionType()`. A link's endpoints are
+documented on its two derived classes: `Cable.getPort1()` and `Cable.getPort2()`
+for a cable, `Antenna.getPort()` for a wireless link. Reading an endpoint
+therefore means deciding which of the two a handed-over `Link` is, and nothing
+installed documents a way to ask. `getClassName()`, which the legacy runtime
+probes, appears on no installed IpcAPI page; telling `Cable` from `Antenna` by
+`CONNECT_TYPES` would need a table of connection-type numbers, which is a Cisco
+enum mirror (`MJ-014`); and probing members with `typeof`, as legacy code does,
+would be guessing an interface — the one thing the qualified boundary exists to
+refuse. The slice is blocked on target evidence of how a Script Module can
+identify a link's interface, not on work this repository could do offline.
 
 ### A green V6 run is not IpcAPI qualification
 
@@ -482,8 +506,8 @@ What was checked, and what each check found:
 
 So the remaining action is **one manual procedure**, already written down in
 full: [the packaging recipe](muejeje-pts-packaging-recipe.md). Its
-preconditions are met at `96976de` — clean tree, `PACKAGING_MANUAL_AVAILABLE`,
-recipe id `c4b5f347…`, verified builder — so a person can start at its step 1.
+preconditions are met at `d14692d` — clean tree, `PACKAGING_MANUAL_AVAILABLE`,
+recipe id `bbe6a2d5…`, verified builder — so a person can start at its step 1.
 
 When that run happens, it records: source commit and tree, the recipe id, the
 externally measured artifact SHA-256, the Packet Tracer build, and every
@@ -494,11 +518,12 @@ response envelope verbatim — including whichever `resolution` and
 from a clean offline report, and never from the operations that make no
 platform call.
 
-**No exact-HEAD `.pts` exists.** Checked at `96976de` on the Windows machine
+**No exact-HEAD `.pts` exists.** Checked at `d14692d` on the Windows machine
 that has the target build: `dist/` holds only the ignored `muejeje.build.json`,
 and no `muejeje*.pts` exists anywhere in the checkout.
 
-`Cisco Packet Tracer 9.0.1\extensions\` holds **no Muejeje entry** — and it is
+`Cisco Packet Tracer 9.0.1\extensions\` holds **no Muejeje entry**, re-checked
+at `d14692d` — and it is
 not empty, which is what an earlier revision of this file recorded. It carries
 Cisco's own eleven bundled extension directories and six `.pts` files
 (`ActivitySequencer`, `Clear Terminal Agent`, `Marvel`, `PcSoftware`,
@@ -520,12 +545,18 @@ stub — and neither is a Packet Tracer reading.
 
 ```text
 KERNEL_BOUNDARIES              = HARDENED
+PLATFORM_BOUNDARY              = INTERFACE_MEMBER_ENFORCED
+ADDRESSING                     = EXACT_INTEGER_NAMED_DOMAINS
 V6_CONTRACT                    = CONSISTENT
 M1_OFFLINE                     = COMPLETE
 M2_DEVICE_DISCOVERY            = IMPLEMENTED
 M2_MODULE_DISCOVERY            = IMPLEMENTED
 M2_MODULE_TYPE_SUPPORT         = IMPLEMENTED
 M2_OFFLINE                     = COMPLETE
+M3_DEVICE_INVENTORY            = IMPLEMENTED
+M3_DEVICE_IDENTITY             = IMPLEMENTED
+M3_DEVICE_PORTS                = IMPLEMENTED
+M3_WORKSPACE_LINKS             = BLOCKED
 M3_READ_ONLY_TOPOLOGY          = STARTED
 CAPABILITY_RESOLUTION_VERIFIED = PENDING_TARGET
 OFFICIAL_PACKAGING_PROVED      = PENDING_GUI
@@ -536,18 +567,30 @@ TARGET_API_BASELINED           = PENDING_TARGET
 operations exist, are admitted, are bounded and are tested offline — and
 deliberately not about Packet Tracer. `M2_OFFLINE = COMPLETE` says the three
 descriptor readings this milestone set out to build are built and gated; it
-says nothing about whether any of them answers on a target. `M3_READ_ONLY_TOPOLOGY
-= STARTED` is the first workspace reading, and the smallest one: an inventory,
-with links, addresses and ports deliberately unread.
+says nothing about whether any of them answers on a target.
+`M3_READ_ONLY_TOPOLOGY = STARTED` is three workspace readings — an inventory, one
+device's identity, and one device's ports beside that identity — with addresses
+and every piece of device state deliberately unread, and links `BLOCKED` for the
+reason recorded above.
 
-`KERNEL_BOUNDARIES = HARDENED` covers what this line corrected: an argument
-outside an adapter's bounds is a defect rather than a clamp, a member that is
-not there is not a failed call, and the entry point answers with an envelope
-even when admission or the encoder is what broke. `V6_CONTRACT = CONSISTENT`
-covers the other half: a nested path is a floor rather than a fixed set, fields
-are held with their types, and a published shape is externally frozen only once
-a version is release-qualified — which is why two mis-modelled chassis fields
-were corrected here rather than carried.
+`KERNEL_BOUNDARIES = HARDENED` covers the previous line's corrections: an
+argument outside an adapter's bounds is a defect rather than a clamp, a member
+that is not there is not a failed call, and the entry point answers with an
+envelope even when admission or the encoder is what broke. `V6_CONTRACT =
+CONSISTENT` covers the other half: a nested path is a floor rather than a fixed
+set, fields are held with their types, and a published shape is externally
+frozen only once a version is release-qualified — which is why this line's
+shape corrections were made rather than carried, each recorded under `MJ-030`.
+
+`PLATFORM_BOUNDARY = INTERFACE_MEMBER_ENFORCED` is this line's first correction.
+A platform call is an `Interface.member` with its documented arity; every
+platform object the boundary hands out carries the interface its member
+documents; and a member admitted on one interface is refused on another before
+anything is touched. `ADDRESSING = EXACT_INTEGER_NAMED_DOMAINS` is the second:
+work is bounded by windows and walks and an address only by exact-integer
+fidelity, so a topology of any size is paged rather than capped, and every
+address names its domain — `factory_index`, `workspace_index` and `port_index`,
+with their offsets — while the index that selects a subject is required.
 
 Every capability stays `PENDING_TARGET` until an artifact built from these
 sources answers inside `9.0.1.0858`. No offline or Node result is promoted into

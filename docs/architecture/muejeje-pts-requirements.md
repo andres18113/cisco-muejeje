@@ -1244,6 +1244,8 @@ M0B = NOT_COMPLETE
 M0C = NOT_COMPLETE
 M1_CORE_READY = NO
 M2_CORE_READY = NO
+M3_CORE_READY = NO
+ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 ```
 
 - **M0B** is not complete: it still includes credential and transport API
@@ -1258,6 +1260,16 @@ M2_CORE_READY = NO
 - **M2** is not `CORE_READY`: every platform capability is `PENDING_TARGET` for
   the same reason, no `.pts` has been built from these sources, and
   `OFFICIAL_PACKAGING_PROVED` is still `PENDING_GUI`.
+- **M3** is not `CORE_READY`: its read-only topology scope is incomplete. The
+  workspace inventory, one device's identity and one device's ports are
+  implemented; the workspace's links are not, because Cisco documents link
+  endpoints only on `Cable` and `Antenna` while `Network.getLinkAt(int)` hands
+  over a `Link`, and nothing installed documents how to tell which one it is
+  without a table of connection-type numbers (MJ-014). Every workspace
+  capability is also `PENDING_TARGET` (MJ-015, MJ-031).
+- **The zero-change cutover** is `NOT_ACHIEVED` (MJ-034): nothing is packaged
+  or release-qualified, and no compatibility facade exists outside the V6
+  core.
 
 Each stays at that value until its own gates are satisfied. None of them moves
 because a later milestone started, because the test suite is green, or because
@@ -1296,7 +1308,9 @@ never as a version, prerequisite or watermark.
 **This is not claimed to be achieved.** Nothing here has been packaged, no
 `.pts` has been built from these sources, no compatibility facade exists, and no
 consumer has been cut over. The requirement states the target and the shape of
-an acceptable solution; it records no progress toward it.
+an acceptable solution; it records no progress toward it, and its state is
+`ZERO_CHANGE_CUTOVER = NOT_ACHIEVED`, recorded beside the milestone states
+under MJ-033.
 **Rationale.** "Replace the artifact, then fix the callers" is how a runtime
 acquires a consumer's assumptions permanently: the edits land in the core
 because that is where they are cheapest, and the generic runtime quietly becomes
