@@ -48,6 +48,7 @@ TOOLING_INPUTS = [
     "src/packet_tracer_mcp/infrastructure/pts/build_state.py",
     "src/packet_tracer_mcp/infrastructure/pts/inventory.py",
     "src/packet_tracer_mcp/infrastructure/pts/manifest.py",
+    "src/packet_tracer_mcp/infrastructure/pts/privileges.py",
     "src/packet_tracer_mcp/infrastructure/pts/provenance.py",
     "src/packet_tracer_mcp/infrastructure/pts/references.py",
     "tools/build_muejeje_pts.py",

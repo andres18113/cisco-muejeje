@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...shared.utils import resolve_within
+from .privileges import evidence_error
 
 SCHEMA_VERSION = 2
 MAX_MANIFEST_BYTES = 256 * 1024
@@ -49,29 +50,10 @@ MODULE_ID_MIN_SEGMENTS = 3
 # A declared list is a hand-written inventory, not a generated one.
 MAX_OPTION_ITEMS = 64
 
-# Privilege identifiers this repository has evidence for.
-#
-# Privileges decide which IPC calls a Script Module may make, and Cisco is
-# explicit that "calls to unselected privileges will be denied" — so a wrong
-# name is not caught at packaging time, it is caught on the target as a denied
-# call, where nothing here can see it. A non-empty list may therefore hold only
-# names Cisco itself names (MJ-032). An empty list needs no evidence: asking
-# for nothing cannot ask for the wrong thing.
-#
-# The set is small because the privilege catalogue lives in `.pki` files that
-# are **not installed**. These three are the identifiers the installed IpcAPI
-# reference leaks through its event declarations; each one, with the page and
-# page hash it was read from, is recorded in `tests/muejeje/test_privileges.py`
-# and re-derived there against the installed build. A name absent from this
-# tuple is unevidenced *here* — never "nonexistent". Which privilege any given
-# IPC call requires is a separate open question.
-#
-# What an empty list is refused is no longer open for two calls: on 9.0.1.0858
-# a module with none selected was denied IPC.hardwareFactory() and IPC.network()
-# (an exploratory run, recorded in docs/qa/muejeje-pts-offline.md). Packet
-# Tracer's diagnostic names the IPC call and no privilege, so it adds nothing to
-# this tuple.
-EVIDENCED_PRIVILEGES = ("PrivActivityWizard", "PrivApplication", "PrivGetNetwork")
+# Which privilege identifiers may be declared, and on what evidence, is
+# `privileges` — a namespace of its own, because three different things have
+# been called "a privilege" here and only one of them belongs in this document.
+# This module owns the *shape* of the field and nothing about its meaning.
 
 
 def _reject_non_finite(value: str) -> Any:
@@ -211,23 +193,18 @@ def _startup_error(value: Any) -> str | None:
 
 
 def _privileges_error(value: Any) -> str | None:
-    """A bounded list of privilege names Cisco names, or an empty one.
+    """A bounded list of evidenced serialized privilege tokens, or an empty one.
 
     The shape rules run first, so a typo is reported as a typo rather than as
-    a missing privilege catalogue. Only the unevidenced names are named back:
-    a reason listing the valid ones alongside them would read as if all of
-    them were at fault.
+    a missing privilege catalogue. Which names are admissible, and why a given
+    one is not, is `privileges`: only the faulty names are reported back, since
+    a reason listing the valid ones alongside them would read as if all of them
+    were at fault.
     """
     reason = _string_list_error(value)
     if reason is not None:
         return reason
-    unevidenced = sorted(set(value) - set(EVIDENCED_PRIVILEGES))
-    if unevidenced:
-        return (
-            "must name only privileges Cisco documents; this repository has no "
-            f"evidence for {', '.join(unevidenced)}"
-        )
-    return None
+    return evidence_error(value)
 
 
 _OPTION_VALIDATORS = {

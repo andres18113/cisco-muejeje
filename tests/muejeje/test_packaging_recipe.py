@@ -236,20 +236,55 @@ def test_the_recipe_quotes_the_page_that_documents_the_dialog():
     assert CISCO_DEBUG_DIALOG_SENTENCE in collapsed
 
 
-def test_the_recipe_records_diagnostics_and_stops_a_run_denied_again():
+def test_the_recipe_records_diagnostics_and_never_widens_privilege_mid_run():
     """A reading names no cause; what Packet Tracer printed beside it can.
 
-    The exploratory run's only attribution came from a diagnostic printed beside
-    each envelope, so the recipe requires recording one for every statement.
-    It stops a run that is denied again rather than letting a privilege be
-    selected mid-run, which would make its answers a different recipe's
-    (MJ-031, MJ-032).
+    The only attribution either run has had came from a diagnostic printed
+    beside each envelope, so the recipe requires recording one for every
+    statement. A denial is not answered by selecting another privilege: that
+    would make the rest of the run a different recipe's evidence (MJ-031,
+    MJ-032).
     """
     collapsed = _collapsed_recipe()
 
     assert "Record, beside every envelope, whatever Packet Tracer printed" in collapsed
     assert (
-        "If the diagnostics report a missing privilege again, record them and "
-        "stop there." in collapsed
+        "If a root call is denied for privilege again, record the diagnostic "
+        "and keep going through the rest of the list." in collapsed
     )
     assert "Never change the privileges during a run." in collapsed
+
+
+def test_the_recipe_declares_the_minimum_privilege_and_has_it_read_back():
+    """The one field this line changed, held to the manifest that declares it.
+
+    A recipe that named a privilege the manifest does not — or that let the
+    operator start importing before checking the selection — would package a
+    module whose privilege set nobody confirmed, and its answers would belong
+    to an artifact no recipe id identifies.
+    """
+    collapsed = _collapsed_recipe()
+    declared = repo_manifest()["build_options"]["privileges"]
+
+    assert declared == ["GET_NETWORK_INFO"]
+    assert "| Privileges | `GET_NETWORK_INFO`, and nothing else |" in collapsed
+    assert "Then read the selection back and record it" in collapsed
+    assert "Every other privilege must be unselected." in collapsed
+
+
+def test_the_recipe_keeps_a_root_denial_apart_from_a_descendant_failure():
+    """Two different results, and a run that merges them evidences neither.
+
+    If a root call now answers, the rest of that surface is exercised in the
+    same run; a call that then fails is a fact about that `Interface.member`.
+    Recording it as "the privilege is still wrong" would hide a working root
+    behind a broken descendant.
+    """
+    collapsed = _collapsed_recipe()
+
+    assert (
+        "If a root call now succeeds, continue through every operation below "
+        "it in the same run." in collapsed
+    )
+    assert "not about the root privilege" in collapsed
+    assert "contradiction between the binary evidence" in collapsed

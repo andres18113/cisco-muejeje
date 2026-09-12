@@ -173,11 +173,15 @@ INVALID_OPTIONS = [
     ("custom_interface_order", ["muejeje_pts/interface/nowhere.html"],
      "declared artifact inputs"),
     ("custom_interface_order", [7], "non-empty strings"),
-    ("privileges", "PrivGetNetwork", "must be a list"),
+    ("privileges", "GET_NETWORK_INFO", "must be a list"),
     ("privileges", [""], "non-empty strings"),
-    ("privileges", ["PrivOne", "PrivOne"], "must not repeat"),
-    ("privileges", ["PrivMadeUp"], "no evidence"),
-    ("privileges", ["PrivGetNetwork", "PrivInvented"], "no evidence"),
+    ("privileges", ["GET_NETWORK_INFO", "GET_NETWORK_INFO"], "must not repeat"),
+    ("privileges", ["GET_EVERYTHING"], "no evidence"),
+    # A token the binary really carries, that no evidenced call requires.
+    ("privileges", ["GET_NETWORK_INFO", "CHANGE_NETWORK_INFO"],
+     "no call this module makes is evidenced to require it"),
+    # The API namespace, which never substitutes for the serialized one.
+    ("privileges", ["PrivGetNetwork"], "not IpcAPI symbols"),
     ("engine_script_order", ["muejeje_pts/script-engine/010_core.js"],
      "declared artifact inputs"),
     # Packet Tracer lists engine files by name, and evaluates them as listed.
@@ -237,10 +241,16 @@ def test_an_unset_option_is_unresolved_rather_than_invalid(tmp_path: Path):
 
 
 def test_an_empty_privilege_set_is_a_decision_not_an_omission(tmp_path: Path):
-    """`privileges: []` is resolved: the module asks for nothing (MJ-025)."""
+    """`privileges: []` is resolved: a module may ask for nothing (MJ-025).
+
+    This repository no longer declares it — the minimum evidenced set is
+    `["GET_NETWORK_INFO"]` — but an empty list stays a *resolved* value rather
+    than an unset one, because "asks for nothing" and "nobody has decided" are
+    different facts and the audit must keep reporting them differently.
+    """
     root, manifest_path = make_repo(tmp_path)
     manifest = manifest_document()
-    manifest["build_options"] = resolved_options()
+    manifest["build_options"] = resolved_options() | {"privileges": []}
     commit_manifest(root, manifest_path, manifest)
 
     report = build_api().inspect_build(root, manifest_path)

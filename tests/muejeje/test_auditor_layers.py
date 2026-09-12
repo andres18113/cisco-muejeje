@@ -1,8 +1,14 @@
 """The auditor's modular cohesion and its dependency direction.
 
-`build_state`, `manifest` and `provenance` depend on no sibling; `inventory`
-may depend on the first two; `references` may depend on those three; only
-`build` may depend on all of them (MJ-018, MJ-019).
+`build_state`, `privileges` and `provenance` depend on no sibling; `manifest`
+may depend on `privileges`; `inventory` may depend on `build_state` and
+`provenance`; `references` may depend on those three; only `build` may depend
+on all of them (MJ-018, MJ-019).
+
+`privileges` sits at the bottom on purpose. It is the authority on which
+privilege identifiers exist and which may be declared, and an authority that
+could reach back up into the document schema would be deciding shape and
+meaning in one place.
 
 A direction rule is only a rule if it holds however an import is spelled, so
 the gate resolves relative and absolute forms of the same dependency alike.
@@ -27,12 +33,14 @@ from tests.muejeje.support import (
 # the layers below it and never from a layer at or above its own.
 LAYERS: dict[str, frozenset[str]] = {
     "build_state": frozenset(),
+    "privileges": frozenset(),
     "provenance": frozenset(),
-    "manifest": frozenset(),
+    "manifest": frozenset({"privileges"}),
     "inventory": frozenset({"build_state", "provenance"}),
     "references": frozenset({"build_state", "provenance", "inventory"}),
     "build": frozenset({
-        "build_state", "provenance", "manifest", "inventory", "references",
+        "build_state", "privileges", "provenance", "manifest", "inventory",
+        "references",
     }),
     "__init__": frozenset({"build"}),
 }

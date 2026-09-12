@@ -53,7 +53,7 @@ here: the manifest is the source, this table is the reading of it.
 | --- | --- |
 | Module ID | `io.github.andres18113.muejeje.runtime` |
 | Startup | `On Startup` |
-| Privileges | none selected |
+| Privileges | `GET_NETWORK_INFO`, and nothing else |
 | Signing | none (`TODO-SIGNING` is open; an unsigned module is what this recipe produces) |
 | Custom Interfaces | `muejeje_pts/interface/index.html` |
 | Script Engine files | every file below, all from `muejeje_pts/script-engine/`, and listed by Packet Tracer **in this order** |
@@ -114,19 +114,30 @@ the GUI.
 1. Open Packet Tracer `9.0.1.0858`.
 2. **Extensions → Scripting → New PT Script Module**. The editor opens with six
    parts: Info, General, Script Engine, Custom Interfaces, Data Store, Debug.
-3. **General**: set the Module ID, set Startup to `On Startup`, and leave every
-   privilege unselected. *"The security privileges indicate which IPC calls this
-   Script Module can make. Calls to unselected privileges will be denied"*.
+3. **General**: set the Module ID, set Startup to `On Startup`, and select
+   **`GET_NETWORK_INFO`, and no other privilege**. *"The security privileges
+   indicate which IPC calls this Script Module can make. Calls to unselected
+   privileges will be denied"*.
+
+   **Then read the selection back and record it**, before importing anything.
+   Every other privilege must be unselected. If the module shows more than
+   `GET_NETWORK_INFO` selected, stop: a module carrying a wider set is a
+   different recipe, and nothing it answered would be evidence about this one.
 
    **This is a deliberate, and consequential, choice.** The `runtime.*`
    operations make no IPC call, so nothing selected here changes what they do.
-   The `platform.*` and `network.*` ones do, and on this build a module with
-   nothing selected was observed to be denied their root calls,
-   `IPC.hardwareFactory()` and `IPC.network()` (an exploratory run, recorded in
-   the offline audit). The set still stays empty: which privilege those calls
-   need is not evidenced (`MJ-032`), and selecting one would be a guess — and a
-   different recipe, because `privileges` is a build option and so part of the
-   recipe id. **Never change the privileges during a run.**
+   The `platform.*` and `network.*` ones do, through exactly two root calls —
+   `IPC.hardwareFactory()` and `IPC.network()` — and the pinned
+   `PacketTracer.exe` is where the requirement was read: both require privilege
+   index 1, and index 1 serializes as `GET_NETWORK_INFO`. That evidence, the
+   whole privilege map and what it does *not* establish are recorded in
+   [the privilege map](muejeje-pts-privilege-map.md).
+
+   **Least privilege is the rule, not the starting point.** Nothing else is
+   selected, because no other call this module makes is evidenced to require
+   anything else — and a privilege is a build option, so a wider set is a
+   different recipe id identifying a different artifact.
+   **Never change the privileges during a run.**
 4. **Script Engine**: import every engine file above, under the name it has in
    the tree. Import; do not paste. Pasted source loses its newlines in the
    Builder Code Editor, and these files are ordinary multi-line JavaScript with
@@ -192,9 +203,9 @@ read-only. The `runtime.*` ones make no platform call at all; the `platform.*`
 ones make documented getter calls on the hardware *factory*, which describes
 what models exist and instantiates nothing; the `network.*` ones make
 documented getter calls on the *workspace* the running instance holds, and
-change nothing on it. A module carrying no privilege was denied the root call
-of both on this build, in the exploratory run; what the governed artifact gets
-back is what this run records.
+change nothing on it. A governed artifact carrying no privilege was denied the
+root call of both on this build, in the official LIVE run; what an artifact
+carrying `GET_NETWORK_INFO` gets back is what this run records.
 
 ### Where the statements are entered
 
@@ -311,19 +322,27 @@ IPC Call ERROR: IPC - ExApp or Script Module does not have the necessary privile
 
 and the same with `"network"` for every `network.*` reading.
 
-**If the diagnostics report a missing privilege again, record them and stop
-there.** Every statement above is still entered once, because a denied reading
-is still a reading, and none is entered twice. Do not select a privilege and
-ask again: a module with a privilege selected is a different recipe, so its
-answers would belong to an artifact this run did not package. Which privilege
-to select is a separate, controlled qualification, declared as its own recipe.
+**If a root call is denied for privilege again, record the diagnostic and keep
+going through the rest of the list.** Every statement above is still entered
+once, because a denied reading is still a reading, and none is entered twice.
+Do not select another privilege and ask again: a module with a wider set is a
+different recipe, so its answers would belong to an artifact this run did not
+package. A root still denied while carrying `GET_NETWORK_INFO` is a
+**contradiction between the binary evidence and the artifact's behaviour** — it
+is recorded and investigated, never answered by adding privileges
+(`MJ-032`, and [the privilege map](muejeje-pts-privilege-map.md)).
+
+**If a root call now succeeds, continue through every operation below it in the
+same run.** A deeper call that then fails is a fact about that
+`Interface.member`, not about the root privilege: record which member was
+reached, and keep the root result and the descendant result apart.
 
 The `platform.*` and `network.*` calls are the ones that reach Packet Tracer,
 and **every outcome is a result worth recording verbatim**:
 
 | `result.resolution` | `unavailable_reason` | What it establishes |
 | --- | --- | --- |
-| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It says nothing about *why* — the runtime cannot see that, and does not guess — so it is not a privilege reading by itself: only a diagnostic recorded beside it attributes a cause, and only for that call. The exploratory run's did, for `IPC.hardwareFactory()` and `IPC.network()` with no privilege selected; which privilege they need is still unmeasured (`MJ-031`, `MJ-032`) |
+| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It says nothing about *why* — the runtime cannot see that, and does not guess — so it is not a privilege reading by itself: only a diagnostic recorded beside it attributes a cause, and only for that call. The exploratory and the official `privileges: []` runs both did, for `IPC.hardwareFactory()` and `IPC.network()`; whether `GET_NETWORK_INFO` lifts that is what this run measures, and which member a *deeper* failure reached is recorded separately (`MJ-031`, `MJ-032`) |
 | `UNAVAILABLE` | `PLATFORM_ABSENT` | there was no `ipc` object in the Script Engine at all. That would be a fact about the engine, not about privileges, and it needs recording as such |
 | `UNAVAILABLE` | `PLATFORM_MEMBER_ABSENT` | the object was there and did not offer the member. Nothing was called, so this is a fact about the interface rather than about permission — record which member |
 | `UNAVAILABLE` | `PLATFORM_ANSWER_UNUSABLE` | Packet Tracer answered and the answer could not be attributed. Record the whole envelope: this is the interesting failure |

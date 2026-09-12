@@ -667,11 +667,15 @@ Each is stated as an open question, never as an assumption.
    rule is known (listed order, then `main()`); our list is not decided.
 2. **The Module ID.** Cisco recommends `com.yourcompany.…`; none is chosen and
    `build_options.module_id` is `null`.
-3. **The exact privilege set.** Privileges gate IPC calls by name. The full
-   privilege catalogue lives in `.pki` files that are **not installed**. Which
-   privileges `ipc.systemFileManager()`, `ipc.network()`,
-   `ipc.appWindow().getMenuBar()`, `getCommandLine()` and
-   `getLogicalWorkspace().addDevice/createLink` require is **unknown**.
+3. **The exact privilege set** — *partly answered, for two calls only.*
+   Privileges gate IPC calls, and the `.pki` catalogue is still **not
+   installed**; the pinned `PacketTracer.exe` was read instead, and it maps
+   `ipc.hardwareFactory()` and `ipc.network()` to privilege index 1, which
+   serializes as `GET_NETWORK_INFO`
+   ([the privilege map](muejeje-pts-privilege-map.md)). Which privileges
+   `ipc.systemFileManager()`, `ipc.appWindow().getMenuBar()`,
+   `getCommandLine()` and `getLogicalWorkspace().addDevice/createLink` require
+   is still **unknown**, and is not inferred from the token names.
 4. **Whether the owned `ModuleSpec.module_type` integers equal PT's.** The
    catalog docstring says the numbers are *"que PTBuilder usa internamente"*.
    `device.isModuleTypeSupported(int)` exists to settle it, but that needs LIVE.

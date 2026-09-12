@@ -17,8 +17,10 @@ for this to work (MJ-002, MJ-014). What answered is reported back.
 **The `OBSERVED` branch is driven against a stub.** The stub answers with the
 shapes this repository's own factory surveys recorded against `9.0.1.0858`, and
 that is still a claim about our code: nothing here establishes that Packet
-Tracer answers these calls from a Script Module carrying `privileges: []`, so
-the capability's live state is `PENDING_TARGET` (MJ-015, MJ-031).
+Tracer answers these calls from a Script Module at all — one carrying
+`privileges: []` was denied their root, and one carrying `GET_NETWORK_INFO` has
+not been run — so the capability's live state is `PENDING_TARGET` (MJ-015,
+MJ-031).
 """
 
 from __future__ import annotations

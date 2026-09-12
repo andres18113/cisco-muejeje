@@ -330,7 +330,8 @@ Tracer, promoting nothing.
 | `V6_KERNEL_VERIFIED` | `PASS` | that saved artifact's own engine answered: `mcpDispatchV6` present, identify and capabilities, all five refusal classes, and identify again across a stop and a start |
 | `TARGET_API_BASELINED` | `PENDING_TARGET` | no platform member has answered. Both root calls were denied for insufficient privilege, which is a fact about privilege and not a reading of the API |
 | `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | every platform and workspace capability was denied at its root call, and none has answered |
-| `REQUIRED_PRIVILEGE_IDENTIFIERS` | `UNEVIDENCED` | Packet Tracer's diagnostic names the IPC call and never a privilege identifier, and nothing installed maps one to the other. The manifest declares `[]` (`MJ-032`) |
+| `GET_NETWORK_INFO_BINARY_EVIDENCE` | `PASS` | both root calls require privilege index 1 in the pinned binary, and index 1 serializes as `GET_NETWORK_INFO` ([the privilege map](muejeje-pts-privilege-map.md)) |
+| `GET_NETWORK_INFO_LIVE_VERIFIED` | `PENDING` | no artifact declaring that privilege has been run. The binary says what the calls require; only a run says what the target then does |
 
 ### The official LIVE run at `d37ba37` — the governed artifact
 
@@ -377,10 +378,12 @@ still not a privilege reading by itself — the diagnostic printed beside it is
 what attributed the cause, for those two calls, in that run (`MJ-022`,
 `MJ-031`).
 
-**Its manifest configuration stands.** `privileges: []` is the right
-declaration while no identifier is evidenced for either call (`MJ-032`).
-Whatever supersedes it is a different recipe id and needs its own run; this
-record is what that run is measured against.
+**Its manifest configuration is superseded.** `privileges: []` was the right
+declaration while no identifier was evidenced for either call. Target-binary
+evidence has since established that both require privilege index 1 and that
+index 1 serializes as `GET_NETWORK_INFO`, so the governed manifest now declares
+that one token and nothing else. That is a different recipe id, and it needs
+its own run — this record is what it is measured against.
 
 ### The exploratory run at `ed3a0b0` — evidence, not an artifact
 
@@ -458,10 +461,11 @@ because of them.
   `IPC.network()`** on `9.0.1.0858` — the root calls the `platform.*` and the
   `network.*` readings go through. For those two calls, in that run, Packet
   Tracer's diagnostic names the cause.
-- **Which privilege either call needs is still unevidenced.** The diagnostic
-  names an IPC call, never a privilege identifier, and nothing installed maps
-  one to the other, which is why the manifest declares `[]` through both runs
-  (`MJ-032`).
+- **Which privilege either call needs was unevidenced when this run happened.**
+  The diagnostic names an IPC call, never a privilege identifier, and nothing
+  *installed* maps one to the other — which is why the manifest declared `[]`
+  through both runs. The pinned binary has since been read, and it does map
+  them: [the privilege map](muejeje-pts-privilege-map.md) (`MJ-032`).
 - **`PLATFORM_CALL_FAILED` is still not a privilege reading.** It says a member
   was called and did not return. Here a diagnostic printed beside it gave the
   reason; for another call, another build or another module the reason may
@@ -495,23 +499,26 @@ platform was, which is why no other milestone moved with it.
 
 | State | What is still missing |
 | --- | --- |
-| `M0B` | IPC privilege qualification first, then credential and transport API qualification. The governed artifact carrying no privilege was denied both root IPC calls, so no API reached through them is baselined until the privilege each needs is evidenced. No transport exists, so `MJ-026`'s terms are baselined rather than exercised |
+| `M0B` | IPC privilege qualification first, then credential and transport API qualification. The governed artifact carrying no privilege was denied both root IPC calls; the privilege each needs is now evidenced from the binary but not yet verified on the target, so no API reached through them is baselined. No transport exists, so `MJ-026`'s terms are baselined rather than exercised |
 | `M0C` | batch and auth-boundary semantics. `MJ-027` is the contract the first batch operation must satisfy and no batch operation exists; the auth boundary is in the same position |
-| `M2_CORE_READY` | privilege and target evidence. Every platform capability is `PENDING_TARGET`: with `privileges: []` its root call, `IPC.hardwareFactory()`, was denied, and which privilege it needs is unevidenced |
+| `M2_CORE_READY` | target evidence. Every platform capability is `PENDING_TARGET`: with `privileges: []` its root call, `IPC.hardwareFactory()`, was denied. `GET_NETWORK_INFO` is now evidenced as what that call requires, and an artifact declaring it has not yet been run |
 | `M3_CORE_READY` | complete intended scope and target evidence. The workspace inventory, one device's identity and one device's ports are implemented; the workspace's links are not (see below); and every workspace capability is `PENDING_TARGET`, its root call `IPC.network()` denied the same way |
 | `ZERO_CHANGE_CUTOVER` | a release-qualified artifact, and a compatibility facade outside the V6 core (`MJ-034`). One artifact is now packaged and kernel-qualified, no version is release-qualified, no facade exists, and no consumer has been cut over |
 
-**A green offline run still moves none of them.** The suite establishes what
-this repository's own code does. `M0C` waits on work that has not been written;
-`M2` and `M3` wait on platform readings that answer, and `M3` on unfinished
-scope as well; the cutover waits on all of it.
+**A green offline run still moves none of them, and neither does binary
+evidence.** The suite establishes what this repository's own code does; reading
+a requirement out of `PacketTracer.exe` establishes what the target *requires*,
+not what it then does. `M0C` waits on work that has not been written; `M2` and
+`M3` wait on platform readings that answer, and `M3` on unfinished scope as
+well; the cutover waits on all of it.
 
-**The next task for `M0B`, `M2` and `M3` is controlled privilege qualification,
-not more implementation.** It is its own declared run, changing exactly one
-thing: a privilege set whose identifiers are evidenced (`MJ-032`), in a recipe
-that declares it, with Packet Tracer's diagnostics recorded beside every
-envelope. Nothing here yet says which identifier either call needs, and finding
-that evidence is the first half of the task.
+**The next task for `M0B`, `M2` and `M3` is the minimum-privilege
+qualification, not more implementation.** Its recipe is declared: exactly one
+privilege, `GET_NETWORK_INFO`, evidenced from the pinned binary for both root
+calls, with Packet Tracer's diagnostics recorded beside every envelope. The
+half that was missing — which identifier either call needs — is now recorded in
+[the privilege map](muejeje-pts-privilege-map.md); the half that remains is
+what the target does with it.
 
 **Where M3 stands.** `network.device_ports` is implemented and tested. The
 contract question the previous revision of this record left open — re-report the
@@ -711,7 +718,7 @@ saved artifact loading and its kernel answering, which the `d37ba37` run did;
 `TARGET_API_BASELINED` and `CAPABILITY_RESOLUTION_VERIFIED` only from platform
 readings that answered, and none has. Never from a clean offline report, never
 from the operations that make no platform call, never from a call Packet Tracer
-denied.
+denied, and never from a requirement read out of the binary.
 
 **The `.pts` of record is the `d37ba37` artifact**, SHA-256
 `6951c066ec158d57855dfd739619482cd05f40e007f5c28fb5fcc66e58a12146`, 48185
@@ -736,7 +743,8 @@ nothing about a candidate `.pts`, its content, or its runtime behaviour. What
 is established about an artifact comes from the two LIVE runs recorded above —
 the official one at `d37ba37` and the earlier exploratory one — each performed
 by hand, outside the sessions that wrote this record. **This session performed
-no LIVE run**; it recorded the official one, which is offline work.
+no LIVE run**; it governed binary evidence and changed the declared privilege
+set, which is offline work.
 
 The platform surface's only executions inside Packet Tracer were those two
 runs', and every one of its six operations was denied at its root call in both.
@@ -769,7 +777,8 @@ M3_CORE_READY                    = NO
 ZERO_CHANGE_CUTOVER              = NOT_ACHIEVED
 ENGINE_ORDER                     = CARRIED_BY_FILE_NAMES
 EMPTY_PRIVILEGES_ROOT_IPC        = TARGET_OBSERVED_DENIED
-REQUIRED_PRIVILEGE_IDENTIFIERS   = UNEVIDENCED
+GET_NETWORK_INFO_BINARY_EVIDENCE = PASS
+GET_NETWORK_INFO_LIVE_VERIFIED   = PENDING
 ```
 
 `ENGINE_ORDER = CARRIED_BY_FILE_NAMES` was the previous line's packaging
@@ -781,9 +790,15 @@ refuses any other.
 for `IPC.hardwareFactory()` and `IPC.network()` in both runs, and nothing
 wider.
 
-`REQUIRED_PRIVILEGE_IDENTIFIERS = UNEVIDENCED` is why the manifest still
-declares `[]`: Packet Tracer's diagnostic names the IPC call and never an
-identifier, and nothing installed maps one to the other.
+`GET_NETWORK_INFO_BINARY_EVIDENCE = PASS` is this line's change, and it is a
+reading of the pinned `PacketTracer.exe` rather than of a run: both root calls
+require privilege index 1, and index 1 serializes as `GET_NETWORK_INFO`. The
+full map, the call descriptors and what none of it establishes are in
+[the privilege map](muejeje-pts-privilege-map.md), which keeps the binary
+mapping, the call requirement and the no-privilege denial as three separate
+facts. `GET_NETWORK_INFO_LIVE_VERIFIED = PENDING` is the half a binary cannot
+answer: no artifact declaring that privilege has been run, so nothing yet says
+the target lets either call through.
 
 `IMPLEMENTED` and `COMPLETE` are statements about this repository — the
 operations exist, are admitted, are bounded and are tested offline — and
@@ -815,10 +830,13 @@ address names its domain — `factory_index`, `workspace_index` and `port_index`
 with their offsets — while the index that selects a subject is required.
 
 Every capability stays `PENDING_TARGET` until a governed artifact built from
-these sources *answers* inside `9.0.1.0858`. No offline, Node or
-exploratory result is promoted into that evidence. Whether a module carrying
+these sources *answers* inside `9.0.1.0858`. No offline, Node, exploratory or
+binary-reading result is promoted into that evidence. Whether a module carrying
 `privileges: []` may make the two root calls is no longer unknown — it was
-denied them — and which privilege would allow them still is (MJ-015, MJ-032).
+denied them. Which privilege the target requires for them is no longer unknown
+either — the binary says `GET_NETWORK_INFO`. Whether declaring it makes either
+call answer is the one thing still unmeasured, and only a run can measure it
+(MJ-015, MJ-032).
 
 `LIVE: NO_LIVE_THIS_SESSION` — both runs above were performed by hand, outside
 the sessions that wrote this record.

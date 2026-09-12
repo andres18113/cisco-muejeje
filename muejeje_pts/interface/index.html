@@ -50,12 +50,13 @@ path that runs a caller's JavaScript.</p>
 </ul>
 
 <h2>Privileges</h2>
-<p>The module requests none. Cisco's security privileges decide which IPC calls
-a Script Module may make, and no privilege this repository has evidence for is
-known to be the one a platform reading needs — so naming one would be a
-guess. A reading Packet Tracer declines therefore comes back marked
-unavailable, with its reason, rather than as an answer about what Packet Tracer
-offers.</p>
+<p>The module requests one: <code>GET_NETWORK_INFO</code>. Cisco's security
+privileges decide which IPC calls a Script Module may make, and this is the
+serialized privilege the pinned Packet Tracer binary requires for the two calls
+the whole read-only surface goes through. Nothing else is requested, because no
+other call this module makes is evidenced to need anything else. A reading
+Packet Tracer declines still comes back marked unavailable, with its reason,
+rather than as an answer about what Packet Tracer offers.</p>
 
 <p>Module state lives in the script engine as
 <code>muejejeLifecycleState()</code>, and the same facts are reported through

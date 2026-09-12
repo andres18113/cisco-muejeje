@@ -198,19 +198,23 @@ exist at all — and the gates forbid the mirror rather than the vocabulary: no
 Cisco enum identifier in any packaged source, and no numeric literal in an
 adapter but its own declared bounds.
 
-**The module still requests no privilege** (`privileges: []`). No privilege is
-evidenced as the one these calls need — the catalogue lives in `.pki` files
-Cisco does not install — and a name nobody can cite is refused at audit time
-rather than shipped to find out (`MJ-032`).
+**The module requests exactly one privilege** (`privileges:
+["GET_NETWORK_INFO"]`). The pinned `PacketTracer.exe` requires privilege index
+1 for both `IPC.hardwareFactory()` and `IPC.network()` — the two calls the
+whole read-only surface roots on — and index 1 serializes as
+`GET_NETWORK_INFO`. Nothing else is requested: least privilege is a hard rule,
+and a name nobody can cite for a call this module makes is refused at audit
+time rather than shipped to find out (`MJ-032`).
 
-**What a real Packet Tracer did is recorded, and not generalised.** An
-exploratory module built from these sources, under file names the recipe did
-not declare, ran on `9.0.1.0858`. Every `platform.*` and `network.*` reading
-came back `PLATFORM_CALL_FAILED`, and Packet Tracer printed that the module
-lacked the privilege for the root call — `hardwareFactory` or `network`. The
-reading names no cause, and still does not; the printed diagnostic did. Which
-privilege each call needs is unevidenced, so these capabilities' target state
-is pending, not proven, and no governed artifact has run at all.
+**What a real Packet Tracer did is recorded, and not generalised.** The
+governed artifact at `d37ba37`, carrying `privileges: []`, ran on `9.0.1.0858`.
+Its kernel answered — identify, capabilities, every refusal class, and a stop
+and a start — and every `platform.*` and `network.*` reading came back
+`PLATFORM_CALL_FAILED`, with Packet Tracer printing that the module lacked the
+privilege for the root call, `hardwareFactory` or `network`. The reading names
+no cause, and still does not; the printed diagnostic did. Which privilege those
+calls need is now evidenced from the binary; whether declaring it makes them
+answer is not, so these capabilities' target state is pending, not proven.
 
 ## Relationship to `EXTENSION/`
 
