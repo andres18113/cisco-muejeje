@@ -49,7 +49,11 @@ class _Replies:
 def _observed() -> tuple[PacketTracerFactoryModulePreparer, _Replies, object]:
     transport = _Replies(runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    before = preparer.observe_required_module(DEVICE_NAME, DEVICE_MODEL)
+    before = preparer.observe_required_module(
+        DEVICE_NAME,
+        DEVICE_MODEL,
+        fresh_owned=True,
+    )
     return preparer, transport, before
 
 
@@ -87,28 +91,21 @@ def test_a_target_that_disagrees_on_any_dimension_never_replays(
     assert sum(".addModuleAt(" in script for script in transport.scripts) == 1
 
 
-def test_a_reply_that_reports_no_target_is_still_an_acknowledgement() -> None:
-    """Production accepts a reply that declines to name a target."""
+def test_an_attempted_reply_without_the_selected_target_fails_closed() -> None:
+    """A native acknowledgement without its exact target is insufficient evidence."""
 
     preparer, transport, before = _observed()
     transport.queue(installation_response(before, target_override=None))
 
     installation = preparer.install_required_module(before)
 
-    assert installation.native_ack is True
+    assert installation.native_ack is None
     assert installation.target is None
+    assert "malformed" in installation.message
 
 
-def test_a_corrupt_target_is_currently_read_as_no_target_at_all() -> None:
-    """Characterisation, not endorsement.
-
-    A target that disagrees fails closed, but a target that is structurally
-    corrupt is swallowed by the same `except ValueError` that allows an absent
-    one, so it acknowledges instead. The mutation cannot be misplaced by this -
-    verification still re-reads the inventory against the target production
-    selected - but the reply is weaker evidence than the disagreement path
-    treats it as, and the two paths are inconsistent with each other.
-    """
+def test_a_structurally_corrupt_target_fails_closed() -> None:
+    """Treating corrupt evidence like an absent optional target is a bug."""
 
     preparer, transport, before = _observed()
     transport.queue(
@@ -117,5 +114,6 @@ def test_a_corrupt_target_is_currently_read_as_no_target_at_all() -> None:
 
     installation = preparer.install_required_module(before)
 
-    assert installation.native_ack is True
+    assert installation.native_ack is None
     assert installation.target is None
+    assert "malformed" in installation.message

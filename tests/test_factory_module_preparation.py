@@ -110,7 +110,9 @@ def test_resolver_selects_one_compatible_index_without_any_slot_path() -> None:
     transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
 
     assert observation.observed
     assert observation.target_determined
@@ -131,35 +133,19 @@ def test_sparse_null_module_entry_is_unknown_and_does_not_abort_other_slots() ->
     transport = _Replies(_runtime_observation(sparse_noncompatible=True))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
 
     assert observation.observed
     assert observation.target_determined
     assert observation.target is not None
     assert observation.target.slot_index == 1
-    assert len(observation.sparse_entries) == 1
+    assert len(observation.sparse_entries) == 2
     assert observation.sparse_entries[0].container_navigation_path == ()
     assert observation.sparse_entries[0].collection_index == 0
     assert observation.slots[0].state.value == "empty"
     assert observation.slots[1].state.value == "empty"
-
-
-def test_physical_view_true_is_authoritative_even_without_observed_identity() -> None:
-    # No module is retrievable, so nothing but the physical view can speak for
-    # the bay. It still counts as occupied, and the identity stays unobserved.
-    payload = json.loads(_runtime_observation(sparse_noncompatible=True))
-    payload["root"]["descriptor"]["physical_views"][1]["module_added"] = True
-    transport = _Replies(json.dumps(payload))
-    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-
-    observation = preparer.observe_required_module("SW", "3650-24PS")
-
-    assert not observation.target_determined
-    assert observation.slots[1].state.value == "occupied_unknown_identity"
-    diagnostic = observation.slots[1].container_descriptor
-    assert diagnostic is not None
-    assert diagnostic.physical_views[1].slot_num == 1
-    assert diagnostic.physical_views[1].module_added is True
 
 
 def test_real_null_abort_regression_is_retained_as_raw_negative_evidence() -> None:
@@ -177,9 +163,9 @@ def test_real_null_abort_regression_is_retained_as_raw_negative_evidence() -> No
 @pytest.mark.parametrize(
     "raw,reason",
     [
-        (_runtime_observation(multiple=True), "preexisting"),
-        (_runtime_observation(occupied=True), "occupied"),
-        (_runtime_observation(unknown_compatible=True), "unknown"),
+        (_runtime_observation(multiple=True), "fresh-owned"),
+        (_runtime_observation(occupied=True), "fresh-owned"),
+        (_runtime_observation(unknown_compatible=True), "fresh-owned"),
         ("{not-json", "malformed"),
     ],
 )
@@ -206,7 +192,9 @@ def test_dual_bay_with_one_empty_index_still_resolves_one_target() -> None:
     transport = _Replies(_dual_bay((_present(0, _module(model="COVER-PLATE")),)))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
 
     assert observation.observed
     assert observation.target_determined
@@ -223,7 +211,9 @@ def test_dual_bay_already_holding_the_required_module_is_already_prepared() -> N
     )))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
 
     assert observation.already_prepared
     assert observation.target_determined
@@ -243,7 +233,7 @@ def test_dual_bay_with_two_empty_indexes_refuses_as_indistinguishable() -> None:
 
     assert observation.observed
     assert not observation.target_determined
-    assert "preexisting" in observation.message.casefold()
+    assert "fresh-owned" in observation.message.casefold()
     with pytest.raises(RuntimeError):
         preparer.install_required_module(observation)
 
@@ -257,7 +247,9 @@ def test_dual_bay_with_an_unreadable_compatible_index_refuses() -> None:
         transport = _Replies(_dual_bay(entries))
         preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
-        observation = preparer.observe_required_module("SW", "3650-24PS")
+        observation = preparer.observe_required_module(
+            "SW", "3650-24PS", fresh_owned=True,
+        )
 
         assert observation.observed
         assert not observation.target_determined
@@ -274,7 +266,9 @@ def test_malformed_module_and_slot_types_fail_closed() -> None:
     transport = _Replies(json.dumps(payload))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
 
     assert not observation.target_determined
     assert "wrongly typed" in observation.message
@@ -294,7 +288,7 @@ def test_unobservable_device_descriptor_root_is_diagnostic_absence_only(
     transport = _Replies(json.dumps(payload))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
 
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
 
     assert observation.observed
     assert observation.target_determined
@@ -363,7 +357,9 @@ def test_non_acceptance_is_never_replayed_but_readback_is_preserved(
 ) -> None:
     transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    before = preparer.observe_required_module("SW", "3650-24PS")
+    before = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
     transport.queue(reply(before), _runtime_observation(installed=True))
 
     installation = preparer.install_required_module(before)
@@ -379,7 +375,9 @@ def test_non_acceptance_is_never_replayed_but_readback_is_preserved(
 def test_native_true_without_slot_container_effect_is_not_verified() -> None:
     transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    before = preparer.observe_required_module("SW", "3650-24PS")
+    before = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
     transport.queue(_installation_response(before), _runtime_observation())
 
     installation = preparer.install_required_module(before)
@@ -415,7 +413,7 @@ def test_unobservable_post_install_identity_is_explicit_not_invented() -> None:
     assert verification.occupancy_effect_verified
     assert not verification.identity_observed
     assert verification.identity_matches is None
-    assert verification.factory_requirement_verified
+    assert not verification.factory_requirement_verified
 
 
 def test_3560_preparation_is_an_exact_noop_without_transport_access() -> None:
@@ -434,7 +432,9 @@ def test_3560_preparation_is_an_exact_noop_without_transport_access() -> None:
 def test_power_hypothesis_requires_inventory_effect_and_exact_delta() -> None:
     transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    before = preparer.observe_required_module("SW", "3650-24PS")
+    before = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
     transport.queue(
         _installation_response(before),
         _runtime_observation(installed=True),
@@ -616,7 +616,9 @@ def test_observation_javascript_uses_official_indexed_api_and_tolerates_null() -
 def test_install_javascript_rediscovers_target_and_calls_add_module_at_once() -> None:
     before_transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(before_transport, BUILD)
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
     requirement = factory_module_requirement_for("3650-24PS", BUILD)
     script = factory_module_runtime._install_factory_module_js(
         observation,
@@ -626,11 +628,11 @@ def test_install_javascript_rediscovers_target_and_calls_add_module_at_once() ->
         "const assert=require('assert');let reported='',calls=0,power=true,powers=[];"
         + _node_descriptor_factory()
         + _node_module_factory()
-        + "const entries=[makeModule([],[],'BUILTIN')];"
+        + "const entries=[makeModule([],[],'BUILTIN'),null];"
         "const root=makeModule([18,4],entries,'CHASSIS');"
         "root.addModuleAt=function(model,index){calls++;"
         "assert.equal(model,'AC-POWER-SUPPLY');assert.equal(index,1);"
-        "entries.push(makeModule([],[],'AC-POWER-SUPPLY'));return true;};"
+        "entries[index]=makeModule([],[],'AC-POWER-SUPPLY');return true;};"
         "const device={getModel:function(){return '3650-24PS';},"
         "getRootModule:function(){return root;},getPower:function(){return power;},"
         "getSupportedModule:function(){return ['AC-POWER-SUPPLY'];},"
@@ -665,7 +667,9 @@ def test_install_javascript_rederives_the_same_dual_bay_target_in_node() -> None
 
     transport = _Replies(_dual_bay((_present(0, _module(model="COVER-PLATE")),)))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
     assert observation.target_determined
     assert observation.target is not None and observation.target.slot_index == 1
     requirement = factory_module_requirement_for("3650-24PS", BUILD)
@@ -677,12 +681,12 @@ def test_install_javascript_rederives_the_same_dual_bay_target_in_node() -> None
         "const assert=require('assert');let reported='',calls=0,power=true,powers=[];"
         + _node_descriptor_factory()
         + _node_module_factory()
-        + "const entries=[makeModule([],[],'COVER-PLATE')];"
+        + "const entries=[makeModule([],[],'COVER-PLATE'),null];"
         "const root=makeModule([4,4],entries,'CHASSIS',"
         "[makeView(0,true),makeView(1,false)]);"
         "root.addModuleAt=function(model,index){calls++;"
         "assert.equal(model,'AC-POWER-SUPPLY');assert.equal(index,1);"
-        "entries.push(makeModule([],[],'AC-POWER-SUPPLY'));return true;};"
+        "entries[index]=makeModule([],[],'AC-POWER-SUPPLY');return true;};"
         "const device={getModel:function(){return '3650-24PS';},"
         "getRootModule:function(){return root;},getPower:function(){return power;},"
         "getSupportedModule:function(){return ['AC-POWER-SUPPLY'];},"
@@ -707,7 +711,9 @@ def test_install_javascript_refuses_a_second_bay_that_became_unreadable() -> Non
 
     transport = _Replies(_dual_bay((_present(0, _module(model="COVER-PLATE")),)))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
     requirement = factory_module_requirement_for("3650-24PS", BUILD)
     script = factory_module_runtime._install_factory_module_js(
         observation,
@@ -718,7 +724,7 @@ def test_install_javascript_refuses_a_second_bay_that_became_unreadable() -> Non
         + _node_descriptor_factory()
         + _node_module_factory()
         # getModuleAt(0) now returns null: unknown occupancy, not empty.
-        + "const entries=[null];"
+        + "const entries=[null,null];"
         "const root=makeModule([4,4],entries,'CHASSIS');"
         "root.addModuleAt=function(){calls++;return true;};"
         "const device={getModel:function(){return '3650-24PS';},"
@@ -738,8 +744,8 @@ def test_install_javascript_refuses_a_second_bay_that_became_unreadable() -> Non
     # The sibling bay turning unknown moves the evidence, not the target bay,
     # so the fingerprint is what refuses here.
     assert payload["result"]["error"] == (
-        "installation precondition changed: inventory or PhysicalView "
-        "evidence changed since observation (stable across two reads)"
+        "installation precondition changed: authoritative inventory changed "
+        "since observation (stable across two reads)"
     )
     assert payload["result"]["observed_guard"] != observation.inventory_fingerprint
 
@@ -747,7 +753,9 @@ def test_install_javascript_refuses_a_second_bay_that_became_unreadable() -> Non
 def test_install_javascript_refuses_when_the_observed_inventory_changed() -> None:
     before_transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(before_transport, BUILD)
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
     requirement = factory_module_requirement_for("3650-24PS", BUILD)
     script = factory_module_runtime._install_factory_module_js(
         observation,
@@ -757,7 +765,7 @@ def test_install_javascript_refuses_when_the_observed_inventory_changed() -> Non
         "let reported='',calls=0,power=true;"
         + _node_descriptor_factory()
         + _node_module_factory()
-        + "const entries=[makeModule([],[],'CHANGED')];"
+        + "const entries=[makeModule([],[],'CHANGED'),null];"
         "const root=makeModule([18,4],entries,'CHASSIS');"
         "root.addModuleAt=function(){calls++;return true;};"
         "const device={getModel:function(){return '3650-24PS';},"
@@ -776,33 +784,11 @@ def test_install_javascript_refuses_when_the_observed_inventory_changed() -> Non
     assert payload["result"]["attempted"] is False
     assert payload["result"]["native_ack"] is None
     assert payload["result"]["error"] == (
-        "installation precondition changed: inventory or PhysicalView "
-        "evidence changed since observation (stable across two reads)"
+        "installation precondition changed: authoritative inventory changed "
+        "since observation (stable across two reads)"
     )
     assert payload["result"]["observed_guard"]
     assert payload["result"]["observed_guard"] != observation.inventory_fingerprint
-
-
-def test_collection_index_is_not_treated_as_the_physical_slot_index() -> None:
-    raw = _physical_authority_observation(
-        slots=(18, 18, 18, 18, 4),
-        views=((4, True), (0, False), (1, False), (2, False), (3, False)),
-        entries=(_present(0, _module(model="AC-POWER-SUPPLY")),),
-    )
-    preparer = PacketTracerFactoryModulePreparer(_Replies(raw), BUILD)
-
-    observation = preparer.observe_required_module(
-        "SW", "3650-24PS", fresh_owned=True,
-    )
-
-    compatible = next(slot for slot in observation.slots if slot.index == 4)
-    assert compatible.container_navigation_path == ()
-    assert compatible.state is FactoryModuleSlotState.OCCUPIED
-    assert compatible.descriptor_model == "AC-POWER-SUPPLY"
-    assert observation.already_prepared
-    assert observation.target is not None
-    assert observation.target.container_navigation_path == ()
-    assert observation.target.slot_index == 4
 
 
 def test_live_687ba57_false_physical_views_make_runtime_unknown_bays_empty() -> None:
@@ -837,51 +823,6 @@ def test_live_687ba57_false_physical_views_make_runtime_unknown_bays_empty() -> 
     assert observation.target.slot_index == 4
 
 
-def test_physical_view_true_is_never_selected_as_empty() -> None:
-    raw = _physical_authority_observation(
-        slots=(4,), views=((0, True),), entries=(_unknown(0),),
-    )
-    preparer = PacketTracerFactoryModulePreparer(_Replies(raw), BUILD)
-
-    observation = preparer.observe_required_module(
-        "SW", "3650-24PS", fresh_owned=True,
-    )
-
-    assert observation.slots[0].state is FactoryModuleSlotState.OCCUPIED_UNKNOWN_IDENTITY
-    assert not observation.target_determined
-
-
-@pytest.mark.parametrize(
-    "malformation",
-    ["missing", "duplicate", "wrong-type", "out-of-range", "error"],
-)
-def test_duplicate_or_malformed_physical_view_is_unknown(malformation: str) -> None:
-    raw = json.loads(_physical_authority_observation(
-        slots=(4,), views=((0, False),), entries=(_unknown(0),),
-    ))
-    if malformation == "missing":
-        raw["root"]["descriptor"].pop("physical_views")
-    elif malformation == "duplicate":
-        raw["root"]["descriptor"]["physical_views"].append({
-            "index": 1, "slot_num": 0, "module_added": False, "error": "",
-        })
-    elif malformation == "wrong-type":
-        raw["root"]["descriptor"]["physical_views"][0]["module_added"] = 0
-    elif malformation == "out-of-range":
-        raw["root"]["descriptor"]["physical_views"][0]["slot_num"] = 9
-    else:
-        raw["root"]["descriptor"]["physical_views"][0]["error"] = "IPC failure"
-    preparer = PacketTracerFactoryModulePreparer(_Replies(json.dumps(raw)), BUILD)
-
-    observation = preparer.observe_required_module(
-        "SW", "3650-24PS", fresh_owned=True,
-    )
-
-    assert observation.observed
-    assert observation.slots[0].state is FactoryModuleSlotState.UNKNOWN
-    assert not observation.target_determined
-
-
 def test_two_empty_type_four_bays_choose_the_minimum_observed_slot() -> None:
     raw = _physical_authority_observation(
         slots=(4, 4),
@@ -897,27 +838,6 @@ def test_two_empty_type_four_bays_choose_the_minimum_observed_slot() -> None:
     assert [target.slot_index for target in observation.candidate_targets] == [0, 1]
     assert observation.target is not None
     assert observation.target.slot_index == 0
-
-
-def test_contradictory_runtime_and_physical_view_refuses_mutation() -> None:
-    raw = _physical_authority_observation(
-        slots=(18, 18, 18, 18, 4),
-        views=((4, False), (0, False), (1, False), (2, False), (3, False)),
-        entries=(_present(0, _module(model="AC-POWER-SUPPLY")),),
-    )
-    transport = _Replies(raw)
-    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-
-    observation = preparer.observe_required_module(
-        "SW", "3650-24PS", fresh_owned=True,
-    )
-
-    compatible = next(slot for slot in observation.slots if slot.index == 4)
-    assert compatible.state is FactoryModuleSlotState.CONTRADICTORY
-    assert not observation.target_determined
-    with pytest.raises(RuntimeError):
-        preparer.install_required_module(observation)
-    assert all(".addModuleAt(" not in script for script in transport.scripts)
 
 
 def test_navigation_identity_survives_unrelated_traversal_growth() -> None:
@@ -958,7 +878,7 @@ def test_navigation_identity_survives_unrelated_traversal_growth() -> None:
     )
     assert after_target.state is FactoryModuleSlotState.OCCUPIED_UNKNOWN_IDENTITY
     assert verification.occupancy_effect_verified
-    assert verification.factory_requirement_verified
+    assert not verification.factory_requirement_verified
 
 
 def test_fresh_owned_policy_does_not_weaken_preexisting_authority() -> None:
@@ -981,7 +901,7 @@ def test_fresh_owned_policy_does_not_weaken_preexisting_authority() -> None:
     assert fresh_observation.target is not None
     assert fresh_observation.target.slot_index == 0
     assert not existing_observation.target_determined
-    assert "preexisting" in existing_observation.message.casefold()
+    assert "fresh-owned" in existing_observation.message.casefold()
 
 
 def test_native_false_allows_one_bounded_preobserved_fallback_only_after_no_effect() -> None:
@@ -1069,7 +989,7 @@ def test_nonboolean_add_module_result_stays_ambiguous(
         "let reported='',power=true;"
         + _node_descriptor_factory()
         + _node_module_factory()
-        + "const entries=[makeModule([],[],'BUILTIN')];"
+        + "const entries=[makeModule([],[],'BUILTIN'),null];"
         "const root=makeModule([18,4],entries,'CHASSIS');"
         "root.addModuleAt=function(){return " + native_result + ";};"
         "const device={getModel:function(){return '3650-24PS';},"
@@ -1093,7 +1013,7 @@ def test_known_required_module_plus_unknown_compatible_identity_is_not_ready() -
         views=((0, True), (1, True)),
         entries=(
             _present(0, _module(model="AC-POWER-SUPPLY")),
-            _unknown(1),
+            _unknown(1, "IPC failure"),
         ),
     )
     preparer = PacketTracerFactoryModulePreparer(_Replies(raw), BUILD)
@@ -1201,7 +1121,7 @@ def test_live_687ba57_builtins_under_not_added_views_are_not_contradictions() ->
     builtin_bays = observation.container_slots((1,))
     assert [slot.module_type for slot in builtin_bays] == [32, 32]
     assert all(
-        slot.state is FactoryModuleSlotState.EMPTY for slot in builtin_bays
+        slot.state is FactoryModuleSlotState.OCCUPIED for slot in builtin_bays
     )
     assert observation.contradictory_slots == ()
     assert observation.target_determined
@@ -1292,75 +1212,6 @@ def test_fresh_owned_authority_refuses_truthiness(truthy: object) -> None:
     assert transport.scripts == []
 
 
-def test_undecidable_neighbour_bay_blocks_its_whole_container() -> None:
-    """A container is the blast radius of addModuleAt, not one bay of it."""
-
-    raw = json.loads(_physical_authority_observation(
-        slots=(30, 4), views=((0, False), (1, False)), entries=(),
-    ))
-    # Slot 0 loses its physical view, so the container's occupancy surface is
-    # incomplete and the compatible bay beside it cannot be trusted either.
-    raw["root"]["descriptor"]["physical_views"] = [
-        {"index": 0, "slot_num": 1, "module_added": False, "error": ""},
-    ]
-    transport = _Replies(json.dumps(raw))
-    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-
-    observation = preparer.observe_required_module(
-        "SW", "3650-24PS", fresh_owned=True,
-    )
-
-    assert observation.observed
-    assert observation.slots[0].state is FactoryModuleSlotState.UNKNOWN
-    assert observation.slots[1].state is FactoryModuleSlotState.EMPTY
-    assert not observation.target_determined
-    assert "undecidable" in observation.message
-    with pytest.raises(RuntimeError):
-        preparer.install_required_module(observation)
-    assert all(".addModuleAt(" not in script for script in transport.scripts)
-
-
-def test_fallback_guard_compares_the_module_collection_not_only_occupancy() -> None:
-    """Derived occupancy alone let the module collection move unnoticed."""
-
-    def payload(entries: tuple[dict, ...]) -> str:
-        return observation_envelope(_module(
-            (4, 4), entries, model="CHASSIS",
-            physical_views=((0, False), (1, False)),
-        ))
-
-    before_raw = payload((_unknown(0), _unknown(1)))
-    # The same two empty bays, but Packet Tracer now enumerates one module
-    # fewer and explains the survivor differently. Occupancy is untouched.
-    moved_raw = payload((_unknown(0, "Error: missing module"),))
-    transport = _Replies(before_raw)
-    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    before = preparer.observe_required_module(
-        "SW", "3650-24PS", fresh_owned=True,
-    )
-    transport.queue(
-        _installation_response(before, native_ack=False), moved_raw,
-    )
-    rejected = preparer.install_required_module(before)
-    assert rejected.native_ack is False
-
-    moved = factory_module_runtime._parse_observation(
-        moved_raw,
-        "SW",
-        factory_module_requirement_for("3650-24PS", BUILD),
-        fresh_owned=True,
-    )
-    assert [slot.state for slot in moved.slots] == [
-        slot.state for slot in before.slots
-    ]
-    with pytest.raises(RuntimeError, match="inventory changed"):
-        preparer.install_fallback_after_false(
-            before, rejected, observed_available_watts=0.0,
-        )
-    assert sum(".addModuleAt(" in script for script in transport.scripts) == 1
-
-
-
 def test_install_javascript_names_the_target_bay_that_stopped_being_empty() -> None:
     """A refusal must say which precondition moved, not just that one did.
 
@@ -1371,7 +1222,7 @@ def test_install_javascript_names_the_target_bay_that_stopped_being_empty() -> N
 
     transport = _Replies(_dual_bay((_present(0, _module(model="COVER-PLATE")),)))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
     requirement = factory_module_requirement_for("3650-24PS", BUILD)
     script = factory_module_runtime._install_factory_module_js(
         observation, requirement,
@@ -1380,11 +1231,11 @@ def test_install_javascript_names_the_target_bay_that_stopped_being_empty() -> N
         "let reported='',calls=0,power=true;"
         + _node_descriptor_factory()
         + _node_module_factory()
-        # Both bays now report an added module, so the target bay is occupied
-        # and its occupant cannot be identified.
+        # The target collection entry now exposes another module.
         + "const views=[makeView(0,true),makeView(1,true)];"
         "const child=makeModule([],[],'COVER-PLATE',[]);"
-        "const root=makeModule([4,4],[child],'CHASSIS',views);"
+        "const other=makeModule([],[],'OTHER-MODULE',[]);"
+        "const root=makeModule([4,4],[child,other],'CHASSIS',views);"
         "root.addModuleAt=function(){calls++;return true;};"
         "const device={getModel:function(){return '3650-24PS';},"
         "getRootModule:function(){return root;},getPower:function(){return power;},"
@@ -1403,7 +1254,7 @@ def test_install_javascript_names_the_target_bay_that_stopped_being_empty() -> N
     assert payload["result"]["native_ack"] is None
     assert payload["result"]["error"] == (
         "installation precondition changed: target slot is no longer empty: "
-        "occupied_unknown_identity"
+        "occupied"
     )
 
 
@@ -1464,7 +1315,7 @@ def test_install_reads_the_supported_inventory_after_the_module_tree() -> None:
 
     transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
     requirement = factory_module_requirement_for("3650-24PS", BUILD)
     script = factory_module_runtime._install_factory_module_js(
         observation, requirement,
@@ -1481,7 +1332,7 @@ def test_install_reads_the_supported_inventory_after_the_module_tree() -> None:
         "getModuleAt:function(i){return entries[i];},"
         "addModuleAt:function(m,i){calls++;return true;}};}"
         "const child=makeModule([],[],'BUILTIN');"
-        "const root=makeModule([18,4],[child],'CHASSIS');"
+        "const root=makeModule([18,4],[child,null],'CHASSIS');"
         "const device={getModel:function(){return '3650-24PS';},"
         "getRootModule:function(){order.push('tree');walked=true;return root;},"
         # The inventory only answers once the module tree has been walked.
@@ -1522,7 +1373,7 @@ def test_a_host_supported_inventory_still_offers_the_identity() -> None:
 
     transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
     requirement = factory_module_requirement_for("3650-24PS", BUILD)
     script = factory_module_runtime._install_factory_module_js(
         observation, requirement,
@@ -1532,7 +1383,7 @@ def test_a_host_supported_inventory_still_offers_the_identity() -> None:
         + _node_descriptor_factory()
         + _node_module_factory()
         + "const child=makeModule([],[],'BUILTIN');"
-        "const root=makeModule([18,4],[child],'CHASSIS');"
+        "const root=makeModule([18,4],[child,null],'CHASSIS');"
         "root.addModuleAt=function(m,i){calls++;return true;};"
         # A host list proxy: indexable with a length, elements are String
         # objects rather than primitives, and Array.isArray rejects it.
@@ -1566,7 +1417,7 @@ def test_a_supported_inventory_without_the_identity_still_refuses() -> None:
 
     transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    observation = preparer.observe_required_module("SW", "3650-24PS")
+    observation = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
     requirement = factory_module_requirement_for("3650-24PS", BUILD)
     script = factory_module_runtime._install_factory_module_js(
         observation, requirement,
@@ -1576,7 +1427,7 @@ def test_a_supported_inventory_without_the_identity_still_refuses() -> None:
         + _node_descriptor_factory()
         + _node_module_factory()
         + "const child=makeModule([],[],'BUILTIN');"
-        "const root=makeModule([18,4],[child],'CHASSIS');"
+        "const root=makeModule([18,4],[child,null],'CHASSIS');"
         "root.addModuleAt=function(m,i){calls++;return true;};"
         "const device={getModel:function(){return '3650-24PS';},"
         "getRootModule:function(){return root;},"

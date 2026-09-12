@@ -32,7 +32,7 @@ WIRE_FORMAT_OWNER = TESTS / "support" / "factory_module_cases.py"
 
 # The legacy hotspot, and the size it measured when the ratchet was set.
 HOTSPOT = TESTS / "test_factory_module_preparation.py"
-HOTSPOT_LINE_CEILING = 1601
+HOTSPOT_LINE_CEILING = 1452
 
 # Key sets that identify one factory-module wire shape. A dict literal whose
 # keys cover any of these is that shape, whatever the variable is called.

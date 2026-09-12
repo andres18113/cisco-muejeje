@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from ..catalog.factory_modules import (
     FactoryModuleRequirement,
     factory_module_requirement_for,
+    uses_exact_indexed_factory_authority,
 )
 from .factory_module_contracts import (
     FactoryModuleDescriptorEvidence,
@@ -26,12 +27,14 @@ from .factory_module_contracts import (
 )
 from .factory_module_runtime import (
     _install_factory_module_js,
-    _inventory_effect,
     _observation_guard,
     _observe_module_slots_js,
     _parse_installation,
+)
+from .factory_module_occupancy import (
     _parse_observation,
 )
+from .factory_module_verification import _inventory_effect
 
 if TYPE_CHECKING:
     from .ios_terminal import PoEInlineTable
@@ -383,6 +386,19 @@ def classify_factory_power_hypothesis(
             - verification.expected_available_watts_before
         )
     )
+    active_requirement = factory_module_requirement_for(
+        verification.device_model,
+        verification.packet_tracer_build,
+    )
+    exact_identity_required = (
+        active_requirement is not None
+        and uses_exact_indexed_factory_authority(active_requirement)
+    )
+    identity_sufficient = (
+        verification.identity_matches is True
+        if exact_identity_required
+        else verification.identity_matches is not False
+    )
     confirmed = (
         isinstance(verification, FactoryModuleVerification)
         and verification.installation.requested_identity
@@ -391,7 +407,7 @@ def classify_factory_power_hypothesis(
         and verification.installation.native_ack is True
         and verification.occupancy_effect_verified
         and verification.inventory_coherent
-        and verification.identity_matches is not False
+        and identity_sufficient
         and verification.factory_requirement_verified
         and power_effect_verified
     )

@@ -790,12 +790,9 @@ def execute_governed_qualification(
             ).model_dump(mode="json")
             verification = session.verify_factory_module()
             factory_preparation["verification"] = asdict(verification)
-            if (
-                not verification.inventory_coherent
-                or verification.installed_identity_matches is False
-            ):
+            if not verification.factory_requirement_verified:
                 raise RuntimeError(
-                    "Factory module inventory effect was not coherent: "
+                    "Factory module structural verification failed: "
                     + verification.message
                 )
             after_power_capture = session.capture_inline_status("PSU_AFTER")

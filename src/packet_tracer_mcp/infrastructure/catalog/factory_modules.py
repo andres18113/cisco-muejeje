@@ -50,3 +50,16 @@ def factory_module_requirement_for(
             + _C3650_REQUIREMENT.packet_tracer_build
         )
     return _C3650_REQUIREMENT
+
+
+def uses_exact_indexed_factory_authority(
+    requirement: FactoryModuleRequirement,
+) -> bool:
+    """Whether the one measured indexed factory-mutation contract applies.
+
+    Equality with the closed requirement deliberately binds every dimension,
+    including build and expected power. This must not become a model-wide or
+    Packet-Tracer-wide claim about ``getModuleAt`` indexing.
+    """
+
+    return requirement == _C3650_REQUIREMENT

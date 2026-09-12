@@ -470,14 +470,17 @@ def test_runner_cycle_uses_only_the_instrumented_bounded_session_transport(
 class _Instrumented3650Transport:
     def __init__(self, runner, plan, *, target_determined=True,
                  after_available=390.0, capture_error_label=None,
-                 readiness_error_after_install=False) -> None:
+                 readiness_error_after_install=False,
+                 identity_observed=True) -> None:
         self.runner = runner
         self.plan = plan
         self.target_determined = target_determined
         self.after_available = after_available
         self.capture_error_label = capture_error_label
         self.readiness_error_after_install = readiness_error_after_install
+        self.identity_observed = identity_observed
         self.calls = []
+        self.capture_labels = []
         self.names: set[str] = set()
         self.factory = None
         self.installed = False
@@ -554,6 +557,19 @@ class _Instrumented3650Transport:
             device_name,
             target_determined=self.target_determined,
         )
+        if not self.identity_observed:
+            self.factory = (
+                self.factory[0],
+                self.factory[1],
+                replace(
+                    self.factory[2],
+                    identity_observed=False,
+                    observed_identity=None,
+                    identity_matches=None,
+                    factory_requirement_verified=False,
+                    message="exact post identity is not observable",
+                ),
+            )
         return self.factory[0]
 
     def install_factory_module(self, observation):
@@ -574,6 +590,7 @@ class _Instrumented3650Transport:
 
     def capture_inline_status(self, switch_name, switch_ports, label):
         self.record(self.runner.PoE3BSessionOperation.INLINE_CAPTURE)
+        self.capture_labels.append(label)
         if label == self.capture_error_label:
             raise ValueError("synthetic typed capture refusal")
         available = (
@@ -615,8 +632,9 @@ class _Instrumented3650Transport:
 
 
 def _execute_3650(runner, tmp_identity, *, target_determined=True,
-                  after_available=390.0, capture_error_label=None,
-                  readiness_error_after_install=False):
+                   after_available=390.0, capture_error_label=None,
+                   readiness_error_after_install=False,
+                   identity_observed=True):
     plan = runner.governed_plan("3650-24PS")
     baseline, _restoration, _final = facts()
     artifacts = runner.reserve_artifacts(tmp_identity)
@@ -627,6 +645,7 @@ def _execute_3650(runner, tmp_identity, *, target_determined=True,
         after_available=after_available,
         capture_error_label=capture_error_label,
         readiness_error_after_install=readiness_error_after_install,
+        identity_observed=identity_observed,
     )
     session = runner.PacketTracerPoE3BSession(
         artifacts.run_id,
@@ -757,6 +776,28 @@ def test_3650_wrong_power_delta_stops_after_one_install_and_before_phones(
     assert observed.count(
         runner.PoE3BSessionOperation.INSTALL_FACTORY_MODULE,
     ) == 1
+    assert observed.count(
+        runner.PoE3BSessionOperation.FIXTURE_DEVICE_CREATE,
+    ) == 1
+
+
+def test_3650_unobservable_post_identity_stops_before_the_power_after_read(
+    runner,
+) -> None:
+    """Structural verification must pass before the 0-to-390 W qualification."""
+
+    execution, session, transport = _execute_3650(
+        runner,
+        "offline-3650-unobservable-identity",
+        identity_observed=False,
+    )
+
+    observed = tuple(record.operation for record in session.dispatches)
+    assert execution.snapshot is None
+    assert execution.psu_hypothesis is None
+    assert any("not observable" in problem for problem in execution.problems)
+    assert "PSU_AFTER" not in transport.capture_labels
+    assert "RESTORE" in transport.capture_labels
     assert observed.count(
         runner.PoE3BSessionOperation.FIXTURE_DEVICE_CREATE,
     ) == 1

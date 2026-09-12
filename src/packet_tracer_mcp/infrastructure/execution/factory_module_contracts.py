@@ -16,7 +16,7 @@ class FactoryModuleOperation(str, Enum):
 
 
 class FactoryModuleSlotState(str, Enum):
-    """What the two official occupancy surfaces establish about one slot."""
+    """What the active model/build authority establishes about one slot."""
 
     EMPTY = "empty"
     OCCUPIED = "occupied"
@@ -172,6 +172,7 @@ class FactoryModuleVerification:
     observed_identity: str | None
     identity_matches: bool | None
     factory_requirement_verified: bool
+    diagnostic_inconsistent_with_runtime: bool = False
     message: str = ""
 
     @property

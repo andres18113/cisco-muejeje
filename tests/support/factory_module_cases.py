@@ -155,14 +155,15 @@ def runtime_observation(
 
     if multiple:
         slots = (4, 4)
-        entries: tuple[dict, ...] = ()
+        entries: tuple[dict, ...] = (unknown(0), unknown(1))
     elif installed:
         # One added bay and one retrievable module: the only shape in which
         # Packet Tracer's two surfaces pin an identity to a slot. A second
         # retrievable child would leave the occupant of the added bay a guess.
         slots = (18, 4)
         entries = (
-            present(0, module(
+            present(0, module(model="BUILTIN")),
+            present(1, module(
                 model=REQUIRED_IDENTITY,
                 model_observed=installed_identity_observed,
             )),
@@ -170,7 +171,7 @@ def runtime_observation(
     elif occupied or unknown_compatible:
         slots = (4,)
         entries = (
-            (unknown(0),)
+            (unknown(0, "IPC failure"),)
             if unknown_compatible
             else (present(0, module(model="OTHER-MODULE")),)
         )
@@ -180,6 +181,7 @@ def runtime_observation(
             unknown(0)
             if sparse_noncompatible
             else present(0, module(model="BUILTIN")),
+            unknown(1),
         )
     physical_views = tuple((index, False) for index in range(len(slots)))
     if installed or occupied:
@@ -224,10 +226,12 @@ def physical_authority_observation(
 def dual_bay(entries: tuple[dict, ...]) -> str:
     """Two compatible PSU-type bays, the real dual-supply 3650 shape."""
 
+    by_index = {entry["index"]: entry for entry in entries}
+    indexed_entries = tuple(by_index.get(index, unknown(index)) for index in range(2))
     return observation_envelope(
         module(
             (REQUIRED_MODULE_TYPE, REQUIRED_MODULE_TYPE),
-            entries,
+            indexed_entries,
             model="CHASSIS",
             physical_views=((0, bool(entries)), (1, False)),
         ),
