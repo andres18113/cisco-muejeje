@@ -1111,7 +1111,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                     expectation, fields, "fresh_show_spanning_tree",
                     "Fresh parser-backed STP instances were compared by VLAN.",
                 )
-                retryable = bool(
+                topology_transitional = bool(
                     not all_vlans_present
                     or any(
                         port.state.casefold() in {"lis", "lrn"}
@@ -1119,7 +1119,16 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                         for port in item.interfaces
                     )
                 )
-                state = "parser_backed_instances"
+                source_provenance_pending = bool(
+                    fields.get("source_device_name")
+                    is FieldVerificationStatus.UNOBSERVABLE
+                )
+                retryable = topology_transitional or source_provenance_pending
+                state = (
+                    "source_device_unattributed"
+                    if source_provenance_pending and not topology_transitional
+                    else "parser_backed_instances"
+                )
             if (
                 result.status is ActionExecutionStatus.VERIFIED
                 or not retryable
