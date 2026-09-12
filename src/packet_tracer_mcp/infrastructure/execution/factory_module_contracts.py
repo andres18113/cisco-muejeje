@@ -16,11 +16,13 @@ class FactoryModuleOperation(str, Enum):
 
 
 class FactoryModuleSlotState(str, Enum):
-    """What the indexed runtime API established about one slot."""
+    """What the two official occupancy surfaces establish about one slot."""
 
     EMPTY = "empty"
     OCCUPIED = "occupied"
+    OCCUPIED_UNKNOWN_IDENTITY = "occupied_unknown_identity"
     UNKNOWN = "unknown"
+    CONTRADICTORY = "contradictory"
 
 
 @dataclass(frozen=True)
@@ -43,23 +45,23 @@ class FactoryModuleDescriptorEvidence:
 
 @dataclass(frozen=True)
 class FactoryModuleTarget:
-    """A container/index selected by observation, never by a caller."""
+    """A collection-navigation path and physical slot selected by policy."""
 
-    container_ordinal: int
-    index: int
+    container_navigation_path: tuple[int, ...]
+    slot_index: int
     module_type: int
 
 
 @dataclass(frozen=True)
 class FactoryModuleSparseEntry:
-    container_ordinal: int
-    module_index: int
+    container_navigation_path: tuple[int, ...]
+    collection_index: int
     reason: str
 
 
 @dataclass(frozen=True)
 class FactoryModuleSlotObservation:
-    container_ordinal: int
+    container_navigation_path: tuple[int, ...]
     index: int
     module_type: int
     state: FactoryModuleSlotState
@@ -78,28 +80,43 @@ class FactoryModuleObservation:
     required_module_model: str
     required_module_type: int
     observed: bool
+    fresh_owned: bool = False
     slots: tuple[FactoryModuleSlotObservation, ...] = ()
     sparse_entries: tuple[FactoryModuleSparseEntry, ...] = ()
     candidate_targets: tuple[FactoryModuleTarget, ...] = ()
     installed_targets: tuple[FactoryModuleTarget, ...] = ()
-    target_container_ordinal: int | None = None
-    target_index: int | None = None
+    selected_target: FactoryModuleTarget | None = None
     target_determined: bool = False
     already_prepared: bool = False
+    supported_module_verified: bool = False
     supported_modules_raw: Any = None
     device_descriptor_root: FactoryModuleDescriptorEvidence | None = None
     descriptor_evidence_observed: bool = False
+    inventory_fingerprint: str = ""
     message: str = ""
     raw_response: str = ""
 
     @property
     def target(self) -> FactoryModuleTarget | None:
-        if self.target_container_ordinal is None or self.target_index is None:
-            return None
-        return FactoryModuleTarget(
-            self.target_container_ordinal,
-            self.target_index,
-            self.required_module_type,
+        return self.selected_target
+
+    @property
+    def contradictory_slots(self) -> tuple[FactoryModuleSlotObservation, ...]:
+        """Every contradiction observed device-wide, whether or not it blocks."""
+
+        return tuple(
+            slot
+            for slot in self.slots
+            if slot.state is FactoryModuleSlotState.CONTRADICTORY
+        )
+
+    def container_slots(
+        self, navigation_path: tuple[int, ...],
+    ) -> tuple[FactoryModuleSlotObservation, ...]:
+        return tuple(
+            slot
+            for slot in self.slots
+            if slot.container_navigation_path == navigation_path
         )
 
 
@@ -114,6 +131,8 @@ class FactoryModuleInstallation:
     attempted: bool
     acknowledged: bool | None
     native_ack: bool | None
+    prior_rejected_targets: tuple[FactoryModuleTarget, ...] = ()
+    prior_rejection_no_effect_verified: bool = False
     power_was_on: bool | None = None
     power_restored: bool | None = None
     message: str = ""
@@ -133,12 +152,31 @@ class FactoryModuleVerification:
     before: FactoryModuleObservation
     installation: FactoryModuleInstallation
     after: FactoryModuleObservation
-    slot_container_effect: bool
+    occupancy_effect_verified: bool
     inventory_coherent: bool
-    installed_identity_observed: str | None
-    installed_identity_matches: bool | None
-    verified: bool
+    identity_observed: bool
+    observed_identity: str | None
+    identity_matches: bool | None
+    factory_requirement_verified: bool
     message: str = ""
+
+    @property
+    def slot_container_effect(self) -> bool:
+        """Compatibility spelling for persisted evidence readers."""
+
+        return self.occupancy_effect_verified
+
+    @property
+    def installed_identity_observed(self) -> str | None:
+        return self.observed_identity
+
+    @property
+    def installed_identity_matches(self) -> bool | None:
+        return self.identity_matches
+
+    @property
+    def verified(self) -> bool:
+        return self.factory_requirement_verified
 
 
 @dataclass(frozen=True)
@@ -159,9 +197,12 @@ class FactoryPowerHypothesisResult:
     confirmed: bool
     requested_identity: str
     native_ack: bool | None
-    slot_container_effect: bool
-    installed_identity_observed: str | None
-    power_effect: bool
+    occupancy_effect_verified: bool
+    identity_observed: bool
+    observed_identity: str | None
+    identity_matches: bool | None
+    factory_requirement_verified: bool
+    power_effect_verified: bool
     available_before_watts: float | None
     used_before_watts: float | None
     remaining_before_watts: float | None
@@ -170,3 +211,15 @@ class FactoryPowerHypothesisResult:
     remaining_after_watts: float | None
     available_delta_watts: float | None
     message: str
+
+    @property
+    def slot_container_effect(self) -> bool:
+        return self.occupancy_effect_verified
+
+    @property
+    def power_effect(self) -> bool:
+        return self.power_effect_verified
+
+    @property
+    def installed_identity_observed(self) -> str | None:
+        return self.observed_identity

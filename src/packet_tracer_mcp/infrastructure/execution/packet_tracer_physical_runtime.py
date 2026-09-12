@@ -193,6 +193,7 @@ class PacketTracerPhysicalTopologyRuntime:
             preparation = self._factory_module_preparer.prepare_required_modules(
                 device.name,
                 device.model,
+                fresh_owned=True,
             )
         except Exception as exc:
             return (

@@ -563,6 +563,25 @@ class GovernedQualificationExecution:
     snapshot_path: Path | None = None
 
 
+def _record_raw(raw_files: dict[str, bytes], capture) -> None:
+    """Persist one capture's raw bytes without ever replacing another's.
+
+    Raw files are named after the capture label, so two captures sharing a
+    label would silently collapse into one and destroy the earlier reading.
+    Raw output is the only unnormalised record of what the switch actually
+    printed, so a collision is a defect to surface, not to overwrite.
+    """
+
+    payload = capture.observation["raw_output"].encode()
+    existing = raw_files.get(capture.raw_file)
+    if existing is not None and existing != payload:
+        raise RuntimeError(
+            "Raw capture " + capture.raw_file
+            + " would overwrite different earlier evidence"
+        )
+    raw_files[capture.raw_file] = payload
+
+
 def current_source_state() -> dict:
     return GitSourceReader().read(ROOT).live_state()
 
@@ -705,9 +724,7 @@ def execute_governed_qualification(
             before_modules = session.observe_factory_module()
             factory_preparation["before"] = asdict(before_modules)
             before_power_capture = session.capture_inline_status("PSU_BEFORE")
-            raw_files[before_power_capture.raw_file] = (
-                before_power_capture.observation["raw_output"].encode()
-            )
+            _record_raw(raw_files, before_power_capture)
             before_power = _stable_power_table(
                 before_power_capture,
                 session.switch_name,
@@ -729,6 +746,37 @@ def execute_governed_qualification(
             # timeout or a failed readback cannot erase the evidence that the
             # mutation was dispatched.
             factory_preparation["installation"] = asdict(installation)
+            if installation.native_ack is None:
+                raise RuntimeError(
+                    "Factory module mutation result is indeterminate; stopping without replay."
+                )
+            if installation.native_ack is False:
+                baseline["boot_after_factory_false"] = session.wait_until_ready(
+                    timeout_seconds=150,
+                ).model_dump(mode="json")
+                # A distinct label: the raw file is named after it, and the
+                # original PSU_BEFORE bytes are the only record of what the
+                # switch reported before any mutation was dispatched.
+                fallback_power_capture = session.capture_inline_status(
+                    "PSU_AFTER_NATIVE_FALSE",
+                )
+                _record_raw(raw_files, fallback_power_capture)
+                fallback_power = _stable_power_table(
+                    fallback_power_capture,
+                    session.switch_name,
+                )
+                factory_preparation["power_after_false"] = (
+                    fallback_power_capture.model_dump(mode="json")
+                )
+                factory_preparation["installation_initial"] = asdict(installation)
+                installation = session.install_factory_module_fallback(
+                    fallback_power.summary_available_watts,
+                )
+                factory_preparation["installation"] = asdict(installation)
+                if installation.native_ack is None:
+                    raise RuntimeError(
+                        "Factory fallback result is indeterminate; stopping without replay."
+                    )
             baseline["boot_after_factory"] = session.wait_until_ready(
                 timeout_seconds=150,
             ).model_dump(mode="json")
@@ -743,9 +791,7 @@ def execute_governed_qualification(
                     + verification.message
                 )
             after_power_capture = session.capture_inline_status("PSU_AFTER")
-            raw_files[after_power_capture.raw_file] = (
-                after_power_capture.observation["raw_output"].encode()
-            )
+            _record_raw(raw_files, after_power_capture)
             after_power = _stable_power_table(
                 after_power_capture,
                 session.switch_name,
@@ -779,7 +825,7 @@ def execute_governed_qualification(
             session.apply_inline_mode(mode)
             capture = session.capture_inline_status(label)
             captures.append(capture)
-            raw_files[capture.raw_file] = capture.observation["raw_output"].encode()
+            _record_raw(raw_files, capture)
             if not all(capture.table_completeness.values()):
                 raise RuntimeError(
                     label + " did not satisfy every completeness gate"
@@ -799,9 +845,7 @@ def execute_governed_qualification(
             try:
                 session.apply_inline_mode(PoEInlineMode.AUTO)
                 restored = session.capture_inline_status("RESTORE")
-                raw_files[restored.raw_file] = restored.observation[
-                    "raw_output"
-                ].encode()
+                _record_raw(raw_files, restored)
                 restoration["fresh_readback"] = restored.model_dump(mode="json")
                 restore_capture = pse_capture(
                     plan, "AUTO_2", restored, session.switch_name,

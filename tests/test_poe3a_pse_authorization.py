@@ -521,3 +521,57 @@ def test_the_capacity_runner_has_no_caller_command_or_binding_escape_hatch(monke
     with pytest.raises(SystemExit):
         runner.parse_args(["--execute", "--model", "3560-24PS", "--qualification-id", "offline",
                            option, "arbitrary"])
+
+
+
+def _raw_capture(label: str, raw_output: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        raw_file=label.lower() + ".txt",
+        observation={"raw_output": raw_output},
+    )
+
+
+def test_a_second_capture_never_overwrites_earlier_raw_evidence(monkeypatch):
+    """Raw output is the only unnormalised record of what the switch printed.
+
+    The raw file is named after the capture label, so re-capturing under a
+    label already used would silently replace the earlier bytes and destroy
+    the pre-mutation reading the run is audited against.
+    """
+
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "tools"))
+    runner = importlib.import_module("poe3a_pse_live")
+
+    raw_files: dict[str, bytes] = {}
+    runner._record_raw(raw_files, _raw_capture("PSU_BEFORE", "Available: 0.0"))
+    assert raw_files["psu_before.txt"] == b"Available: 0.0"
+
+    # Re-recording the identical bytes is a no-op, never a silent loss.
+    runner._record_raw(raw_files, _raw_capture("PSU_BEFORE", "Available: 0.0"))
+    assert raw_files["psu_before.txt"] == b"Available: 0.0"
+
+    with pytest.raises(RuntimeError, match="overwrite different earlier evidence"):
+        runner._record_raw(raw_files, _raw_capture("PSU_BEFORE", "Available: 390.0"))
+    assert raw_files["psu_before.txt"] == b"Available: 0.0"
+
+
+def test_the_post_false_power_recapture_uses_its_own_label(monkeypatch):
+    """The fallback re-read must not be filed under the pre-mutation label."""
+
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "tools"))
+    runner = importlib.import_module("poe3a_pse_live")
+    source = Path(runner.__file__).read_text(encoding="utf-8")
+
+    marker = 'fallback_power_capture = session.capture_inline_status('
+    assert marker in source
+    tail = source.split(marker, 1)[1].split(")", 1)[0]
+    assert '"PSU_BEFORE"' not in tail
+    assert "PSU_AFTER_NATIVE_FALSE" in tail

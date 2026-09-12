@@ -83,6 +83,7 @@ def test_factory_surface_uses_only_the_three_typed_operations() -> None:
 
     before = SimpleNamespace(target_determined=True)
     installation = SimpleNamespace(attempted=True)
+    fallback = SimpleNamespace(attempted=True)
     verification = SimpleNamespace(verified=True)
     calls = []
     transport = SimpleNamespace(
@@ -96,6 +97,9 @@ def test_factory_surface_uses_only_the_three_typed_operations() -> None:
         ),
         install_factory_module=lambda observed: (
             calls.append(("install", observed)) or installation
+        ),
+        install_factory_module_fallback=lambda observed, rejected, available: (
+            calls.append(("fallback", observed, rejected, available)) or fallback
         ),
         verify_factory_module=lambda observed, attempted: (
             calls.append(("verify", observed, attempted)) or verification
@@ -112,14 +116,17 @@ def test_factory_surface_uses_only_the_three_typed_operations() -> None:
     assert not session.factory_module_required("3560-24PS")
     assert session.observe_factory_module() is before
     assert session.install_factory_module() is installation
+    assert session.install_factory_module_fallback(0.0) is fallback
     assert session.verify_factory_module() is verification
     assert calls == [
         ("observe", session.switch_name, "3650-24PS"),
         ("install", before),
-        ("verify", before, installation),
+        ("fallback", before, installation, 0.0),
+        ("verify", before, fallback),
     ]
-    assert tuple(record.operation for record in session.dispatches)[-3:] == (
+    assert tuple(record.operation for record in session.dispatches)[-4:] == (
         PoE3BSessionOperation.OBSERVE_MODULE_SLOTS,
+        PoE3BSessionOperation.INSTALL_FACTORY_MODULE,
         PoE3BSessionOperation.INSTALL_FACTORY_MODULE,
         PoE3BSessionOperation.VERIFY_FACTORY_MODULE,
     )

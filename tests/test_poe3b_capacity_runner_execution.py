@@ -27,12 +27,12 @@ def _factory_types():
 def _factory_results(device_name="SW", *, target_determined=True, verified=True):
     factory = _factory_types()
     target = factory.FactoryModuleTarget(
-        container_ordinal=0,
-        index=1,
+        container_navigation_path=(),
+        slot_index=1,
         module_type=4,
     )
     empty = factory.FactoryModuleSlotObservation(
-        container_ordinal=0,
+        container_navigation_path=(),
         index=1,
         module_type=4,
         state=factory.FactoryModuleSlotState.EMPTY,
@@ -51,10 +51,14 @@ def _factory_results(device_name="SW", *, target_determined=True, verified=True)
         required_module_model="AC-POWER-SUPPLY",
         required_module_type=4,
         observed=True,
+        fresh_owned=True,
         slots=(empty,),
-        candidate_targets=((target,) if target_determined else (target, replace(target, index=2))),
-        target_container_ordinal=(0 if target_determined else None),
-        target_index=(1 if target_determined else None),
+        candidate_targets=(
+            (target,)
+            if target_determined
+            else (target, replace(target, slot_index=2))
+        ),
+        selected_target=(target if target_determined else None),
         target_determined=target_determined,
         message=("deterministic" if target_determined else "indistinguishable"),
     )
@@ -90,11 +94,12 @@ def _factory_results(device_name="SW", *, target_determined=True, verified=True)
         before=before,
         installation=installation,
         after=after,
-        slot_container_effect=verified,
+        occupancy_effect_verified=verified,
         inventory_coherent=verified,
-        installed_identity_observed=("AC-POWER-SUPPLY" if verified else None),
-        installed_identity_matches=(True if verified else None),
-        verified=verified,
+        identity_observed=verified,
+        observed_identity=("AC-POWER-SUPPLY" if verified else None),
+        identity_matches=(True if verified else None),
+        factory_requirement_verified=verified,
         message="verified" if verified else "not verified",
     )
     return before, installation, verification
@@ -771,6 +776,6 @@ def test_3650_preserves_the_acquired_slot_observation_if_power_capture_refuses(
     observed = tuple(record.operation for record in session.dispatches)
     assert execution.snapshot is None
     assert execution.factory_preparation["before"]["target_determined"] is True
-    assert execution.factory_preparation["before"]["target_index"] == 1
+    assert execution.factory_preparation["before"]["selected_target"]["slot_index"] == 1
     assert "power_before" not in execution.factory_preparation
     assert runner.PoE3BSessionOperation.INSTALL_FACTORY_MODULE not in observed

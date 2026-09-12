@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ..catalog.factory_modules import (
@@ -26,6 +27,7 @@ from .factory_module_contracts import (
 from .factory_module_runtime import (
     _install_factory_module_js,
     _inventory_effect,
+    _observation_guard,
     _observe_module_slots_js,
     _parse_installation,
     _parse_observation,
@@ -60,6 +62,7 @@ class PacketTracerFactoryModulePreparer:
         self._operations: list[FactoryModuleOperation] = []
         self._observations: dict[str, FactoryModuleObservation] = {}
         self._attempted: set[str] = set()
+        self._fallback_consumed: set[str] = set()
         self._installations: dict[str, FactoryModuleInstallation] = {}
 
     @property
@@ -70,10 +73,17 @@ class PacketTracerFactoryModulePreparer:
         self,
         device_name: str,
         device_model: str,
+        *,
+        fresh_owned: bool = False,
     ) -> FactoryModuleObservation:
+        _validate_fresh_owned(fresh_owned)
         requirement = self._require_policy(device_name, device_model)
         self._operations.append(FactoryModuleOperation.OBSERVE_MODULE_SLOTS)
-        observation = self._read_observation(device_name, requirement)
+        observation = self._read_observation(
+            device_name,
+            requirement,
+            fresh_owned=fresh_owned,
+        )
         self._observations[device_name] = observation
         return observation
 
@@ -110,6 +120,99 @@ class PacketTracerFactoryModulePreparer:
         self._installations[observation.device_name] = installation
         return installation
 
+    def install_fallback_after_false(
+        self,
+        before: FactoryModuleObservation,
+        rejected: FactoryModuleInstallation,
+        *,
+        observed_available_watts: float | None,
+    ) -> FactoryModuleInstallation:
+        """Try the next preobserved empty bay after a proven no-effect ``false``."""
+
+        if (
+            not isinstance(before, FactoryModuleObservation)
+            or not isinstance(rejected, FactoryModuleInstallation)
+            or self._observations.get(before.device_name) != before
+            or self._installations.get(before.device_name) != rejected
+        ):
+            raise RuntimeError("Factory fallback inputs are stale or foreign")
+        if before.device_name in self._fallback_consumed:
+            raise RuntimeError("Factory module fallback was already consumed")
+        if (
+            not before.fresh_owned
+            or rejected.native_ack is not False
+            or not rejected.attempted
+            or rejected.power_was_on is not True
+            or rejected.power_restored is not True
+            or rejected.target != before.target
+        ):
+            raise RuntimeError("Factory fallback requires one exact native false")
+        requirement = self._require_policy(before.device_name, before.device_model)
+        if (
+            type(observed_available_watts) not in {int, float}
+            or observed_available_watts != requirement.expected_available_watts_before
+        ):
+            raise RuntimeError("Factory fallback requires fresh Available 0 W evidence")
+
+        self._fallback_consumed.add(before.device_name)
+        current = self._read_observation(
+            before.device_name,
+            requirement,
+            fresh_owned=True,
+        )
+        if (
+            not current.observed
+            or not current.supported_module_verified
+            or _observation_guard(current) != _observation_guard(before)
+        ):
+            raise RuntimeError(
+                "Factory fallback refused because inventory changed after native false"
+            )
+        ordered = sorted(
+            before.candidate_targets,
+            key=lambda item: (item.slot_index, item.container_navigation_path),
+        )
+        try:
+            rejected_index = ordered.index(rejected.target)
+        except ValueError as exc:
+            raise RuntimeError("Factory fallback target was not preobserved") from exc
+        if rejected_index + 1 >= len(ordered):
+            raise RuntimeError("Factory fallback has no next preobserved empty slot")
+        fallback_target = ordered[rejected_index + 1]
+        current_slots = {
+            (slot.container_navigation_path, slot.index): slot
+            for slot in current.slots
+        }
+        fallback_slot = current_slots.get((
+            fallback_target.container_navigation_path,
+            fallback_target.slot_index,
+        ))
+        if (
+            fallback_slot is None
+            or fallback_slot.state is not FactoryModuleSlotState.EMPTY
+        ):
+            raise RuntimeError("Factory fallback target is no longer EMPTY")
+
+        fallback_observation = replace(
+            current,
+            selected_target=fallback_target,
+            target_determined=True,
+        )
+        self._operations.append(FactoryModuleOperation.INSTALL_FACTORY_MODULE)
+        raw = self._send_and_wait(
+            _install_factory_module_js(fallback_observation, requirement),
+            self._mutation_timeout_seconds,
+        )
+        installation = _parse_installation(
+            raw,
+            fallback_observation,
+            requirement,
+            prior_rejected_targets=(rejected.target,),
+            prior_rejection_no_effect_verified=True,
+        )
+        self._installations[before.device_name] = installation
+        return installation
+
     def verify_required_module(
         self,
         before: FactoryModuleObservation,
@@ -128,7 +231,11 @@ class PacketTracerFactoryModulePreparer:
 
         requirement = self._require_policy(before.device_name, before.device_model)
         self._operations.append(FactoryModuleOperation.VERIFY_FACTORY_MODULE)
-        after = self._read_observation(before.device_name, requirement)
+        after = self._read_observation(
+            before.device_name,
+            requirement,
+            fresh_owned=before.fresh_owned,
+        )
         effect = _inventory_effect(before, installation, after, requirement)
         return FactoryModuleVerification(
             operation=FactoryModuleOperation.VERIFY_FACTORY_MODULE,
@@ -149,10 +256,13 @@ class PacketTracerFactoryModulePreparer:
         self,
         device_name: str,
         device_model: str,
+        *,
+        fresh_owned: bool = False,
     ) -> FactoryModulePreparationResult:
         """Satisfy the exact policy or return a closed refusal; never retry."""
 
         _validate_device_identity(device_name, device_model)
+        _validate_fresh_owned(fresh_owned)
         requirement = factory_module_requirement_for(
             device_model,
             self.packet_tracer_build,
@@ -167,7 +277,11 @@ class PacketTracerFactoryModulePreparer:
                 message="No factory module is required by the exact policy.",
             )
 
-        observation = self.observe_required_module(device_name, device_model)
+        observation = self.observe_required_module(
+            device_name,
+            device_model,
+            fresh_owned=fresh_owned,
+        )
         if observation.already_prepared:
             return FactoryModulePreparationResult(
                 device_name=device_name,
@@ -220,12 +334,19 @@ class PacketTracerFactoryModulePreparer:
         self,
         device_name: str,
         requirement: FactoryModuleRequirement,
+        *,
+        fresh_owned: bool,
     ) -> FactoryModuleObservation:
         raw = self._send_and_wait(
             _observe_module_slots_js(device_name),
             self._observation_timeout_seconds,
         )
-        return _parse_observation(raw, device_name, requirement)
+        return _parse_observation(
+            raw,
+            device_name,
+            requirement,
+            fresh_owned=fresh_owned,
+        )
 
 
 def classify_factory_power_hypothesis(
@@ -249,7 +370,7 @@ def classify_factory_power_hypothesis(
         if values[0] is not None and values[3] is not None
         else None
     )
-    power_effect = (
+    power_effect_verified = (
         all(value is not None for value in values)
         and values[0] == verification.expected_available_watts_before
         and values[1] == 0.0
@@ -267,19 +388,23 @@ def classify_factory_power_hypothesis(
         and verification.installation.requested_identity
         == verification.required_module_model
         and verification.installation.attempted
-        and verification.installation.native_ack is not False
-        and verification.slot_container_effect
+        and verification.installation.native_ack is True
+        and verification.occupancy_effect_verified
         and verification.inventory_coherent
-        and verification.installed_identity_matches is not False
-        and power_effect
+        and verification.identity_matches is not False
+        and verification.factory_requirement_verified
+        and power_effect_verified
     )
     return FactoryPowerHypothesisResult(
         confirmed=confirmed,
         requested_identity=verification.installation.requested_identity,
         native_ack=verification.installation.native_ack,
-        slot_container_effect=verification.slot_container_effect,
-        installed_identity_observed=verification.installed_identity_observed,
-        power_effect=power_effect,
+        occupancy_effect_verified=verification.occupancy_effect_verified,
+        identity_observed=verification.identity_observed,
+        observed_identity=verification.observed_identity,
+        identity_matches=verification.identity_matches,
+        factory_requirement_verified=verification.factory_requirement_verified,
+        power_effect_verified=power_effect_verified,
         available_before_watts=values[0],
         used_before_watts=values[1],
         remaining_before_watts=values[2],
@@ -293,6 +418,18 @@ def classify_factory_power_hypothesis(
             else "Factory-module power hypothesis was not established."
         ),
     )
+
+
+def _validate_fresh_owned(fresh_owned: object) -> None:
+    """Refuse truthiness where an authority decision is being made.
+
+    Fresh-owned authority is what permits selecting one of several empty
+    compatible bays. Accepting any truthy value would let a stray ``1`` or a
+    ``"no"`` string buy that relaxation for a device that never earned it.
+    """
+
+    if type(fresh_owned) is not bool:
+        raise TypeError("fresh_owned authority requires an exact boolean")
 
 
 def _validate_device_identity(device_name: str, device_model: str) -> None:

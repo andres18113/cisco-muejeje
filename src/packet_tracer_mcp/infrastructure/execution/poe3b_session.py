@@ -126,6 +126,12 @@ class PoE3BSessionTransport(Protocol):
     def install_factory_module(
         self, observation: FactoryModuleObservation,
     ) -> FactoryModuleInstallation: ...
+    def install_factory_module_fallback(
+        self,
+        before: FactoryModuleObservation,
+        rejected: FactoryModuleInstallation,
+        observed_available_watts: float | None,
+    ) -> FactoryModuleInstallation: ...
     def verify_factory_module(
         self,
         before: FactoryModuleObservation,
@@ -382,6 +388,23 @@ class PacketTracerPoE3BSession:
         self._factory_installation = installation
         return installation
 
+    def install_factory_module_fallback(
+        self,
+        observed_available_watts: float | None,
+    ) -> FactoryModuleInstallation:
+        if self._factory_observation is None or self._factory_installation is None:
+            raise RuntimeError("Factory fallback requires the rejected installation.")
+        installation = self._call(
+            PoE3BSessionOperation.INSTALL_FACTORY_MODULE,
+            lambda: self._transport.install_factory_module_fallback(
+                self._factory_observation,
+                self._factory_installation,
+                observed_available_watts,
+            ),
+        )
+        self._factory_installation = installation
+        return installation
+
     def verify_factory_module(self) -> FactoryModuleVerification:
         if self._factory_observation is None or self._factory_installation is None:
             raise RuntimeError("Factory verification requires the one installation attempt.")
@@ -561,6 +584,7 @@ class PacketTracerPoE3BLiveTransport:
         return self._factory_modules.observe_required_module(
             device_name,
             device_model,
+            fresh_owned=True,
         )
 
     def install_factory_module(
@@ -568,6 +592,18 @@ class PacketTracerPoE3BLiveTransport:
         observation: FactoryModuleObservation,
     ) -> FactoryModuleInstallation:
         return self._factory_modules.install_required_module(observation)
+
+    def install_factory_module_fallback(
+        self,
+        before: FactoryModuleObservation,
+        rejected: FactoryModuleInstallation,
+        observed_available_watts: float | None,
+    ) -> FactoryModuleInstallation:
+        return self._factory_modules.install_fallback_after_false(
+            before,
+            rejected,
+            observed_available_watts=observed_available_watts,
+        )
 
     def verify_factory_module(
         self,
