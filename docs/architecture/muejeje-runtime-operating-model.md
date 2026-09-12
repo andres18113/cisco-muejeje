@@ -192,10 +192,13 @@ V6 principles:
 - `lwAddDevice` / `lwAddLink` may keep serving V5; they are **not** the V6 domain
   contract.
 
-The kernel is verified offline, under Node, against our own JavaScript. Its
-source has run inside Packet Tracer only in an exploratory module whose file
-names were not the recipe's, and no governed `.pts` has been built from these
-sources, so its live state is `NOT_YET_LIVE_VERIFIED` (`MJ-015`).
+The kernel is verified offline, under Node, against our own JavaScript, and it
+has also answered inside Packet Tracer: the governed artifact at `d37ba37` was
+packaged from these sources, loaded and started on `9.0.1.0858`, and answered
+identify, capabilities, every refusal class and a stop-and-start from its own
+engine — `V6_KERNEL_VERIFIED = PASS`. That is a verdict about the kernel and
+about that artifact, and none about the platform: every platform call the same
+run made was denied for insufficient privilege (`MJ-015`).
 
 ## PTBuilder independence
 

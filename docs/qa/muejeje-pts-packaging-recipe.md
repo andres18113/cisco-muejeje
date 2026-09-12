@@ -370,11 +370,13 @@ what tells one evaluation from another. The operator's own record of when the
 module was stopped and started is what does, and it is written down beside the
 envelopes rather than derived from them.
 
-Record every envelope verbatim. Until that has happened for the saved governed
-artifact on the pinned build, the kernel's live state is
-`NOT_YET_LIVE_VERIFIED`: a green Node run establishes what our JavaScript does
-and nothing about Packet Tracer's engine, which is a different implementation,
-and the exploratory run's module was not this recipe's (`MJ-015`).
+Record every envelope verbatim. **The kernel's live state belongs to an
+artifact, not to the sources**: a green Node run establishes what our
+JavaScript does and nothing about Packet Tracer's engine, which is a different
+implementation (`MJ-015`). It was established once, for the artifact the
+`d37ba37` run saved — `V6_KERNEL_VERIFIED = PASS` — and each new recipe id
+identifies a different artifact, whose own kernel is unverified until this
+exercise has been driven through it.
 
 **Python decides what the run establishes.** The runtime reports observations
 and certifies nothing about itself (`MJ-011`), so a qualification verdict is

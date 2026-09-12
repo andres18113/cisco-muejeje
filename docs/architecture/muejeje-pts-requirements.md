@@ -248,11 +248,12 @@ runtime — `htmlWindow`, `runCode`, `configureIosDevice`, `allModuleTypes`,
 
 > An owned source root that contains no PTBuilder code does **not** satisfy this
 > requirement, and neither does a V6 kernel that runs under Node. The owned tree
-> now has behaviour — the kernel and `runtime.identify` — but the runtime that
-> consumers actually use is still the legacy one, and no governed `.pts` has
-> been built from these sources — the one module packaged from them was
-> exploratory. Independence is proven when a built artifact runs in
-> Packet Tracer and demonstrates it, not before.
+> now has behaviour — the kernel and `runtime.identify` — and a governed
+> artifact built from it has run in Packet Tracer and answered. What it has not
+> done is serve a consumer: the runtime consumers actually use is still the
+> legacy one, and every platform call the governed artifact made was denied.
+> Independence is proven when a built artifact reaches the platform and
+> demonstrates it, not before.
 
 ### MJ-014 — No numeric Cisco enum table is a source of truth
 **Requirement.** Hand-maintained numeric tables mirroring Cisco enums are working
@@ -1074,9 +1075,9 @@ capability that reaches the platform — `platform.device_descriptors`,
 `platform.module_descriptors`, `platform.module_type_support`,
 `network.device_inventory`, `network.device_identity` and
 `network.device_ports`. Their `OBSERVED`
-branches have only ever been driven against a stub, no governed `.pts` has been
-built from these sources, and the only target run — exploratory — was denied at
-each capability's root call (MJ-015).
+branches have only ever been driven against a stub, and both target runs — the
+official one at `d37ba37` and the earlier exploratory one — were denied at each
+capability's root call (MJ-015).
 
 ### MJ-032 — A declared privilege must be a serialized token an evidenced call requires
 **Requirement.** `build_options.privileges` may be empty, or may hold only
@@ -1205,9 +1206,10 @@ that never echoes caller input (MJ-022), free to improve.
 
 **A published shape is externally frozen once it is release-qualified — not
 before.** V6's guarantees are made to consumers of a *released* artifact, and
-nothing here has been released: no governed `.pts` has been built from these sources,
-every platform capability is `PENDING_TARGET` (MJ-031), and the only readers of
-these results are this repository's own tests. While that holds, a result field
+nothing here has been released: one governed `.pts` is packaged and
+kernel-qualified and no version is release-qualified, every platform capability
+is `PENDING_TARGET` (MJ-031), and the only readers of these results are this
+repository's own tests. While that holds, a result field
 that turns out to misdescribe what the platform actually said is **corrected**
 rather than carried forward, and the correction is recorded here with the
 evidence that forced it. Preserving a known mistake because a gate froze it
@@ -1421,6 +1423,11 @@ Not requirements. Each needs a decision before it can become one.
 - [Operating model](muejeje-runtime-operating-model.md) — governance and boundaries.
 - [Packaging recipe](../qa/muejeje-pts-packaging-recipe.md) — the complete
   Scripting Interface procedure, its preconditions and what a run must record.
+- [Privilege map](../qa/muejeje-pts-privilege-map.md) — the three privilege
+  namespaces, the binary map and the call descriptors behind MJ-032, tied to
+  the pinned `PacketTracer.exe` SHA-256.
+- [Minimum-privilege LIVE runbook](../qa/muejeje-pts-privilege-live-runbook.md)
+  — what the next manual run changes, and how each outcome is read.
 - [v2 preflight inventory](../qa/muejeje-pts-v2-preflight-inventory.md) — the
   per-symbol evidence behind MJ-012, MJ-013 and MJ-014.
 - [ADR-001](../qa/muejeje-pts-adr-001-branch-realignment.md) and its

@@ -235,8 +235,10 @@ transport: no HTTP, no file mailbox, no polling. The platform surface reads and
 nothing else, and each part of it grew from an operation that actually needed
 it — never ahead of one.
 
-The kernel is verified offline. No governed `.pts` has been built from these
-sources; the kernel's source has run inside Packet Tracer only in the
-exploratory module recorded in
-[the offline audit](../docs/qa/muejeje-pts-offline.md), which qualifies nothing.
+The kernel is verified offline, and it has also answered inside Packet Tracer:
+the governed artifact at `d37ba37` was packaged from these sources, loaded and
+started on `9.0.1.0858`, and answered from its own engine —
+`V6_KERNEL_VERIFIED = PASS`, recorded in
+[the offline audit](../docs/qa/muejeje-pts-offline.md). Every platform call the
+same run made was denied, so that verdict covers the kernel and nothing wider.
 See [the requirements baseline](../docs/architecture/muejeje-pts-requirements.md).
