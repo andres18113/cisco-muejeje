@@ -101,6 +101,24 @@ RETIRED_CLAIMS = (
     (r"reported\s+back\s+verbatim",
      "neither run preserved its envelopes; both records keep the "
      "operator-reported observations (MJ-011, MJ-015)"),
+
+    # Two claims that described the artifact as reading less than it does, and
+    # one that predicted a position the runtime refuses to promise.
+    (r"[Nn]othing\s+(?:anywhere\s+)?reads\s+(?:or\s+writes\s+)?a\s+device"
+     r"\s+instance",
+     "a workspace device instance is read: name, model, DeviceType, port "
+     "count and port names. What is unread is mutable operational and "
+     "configuration state (MJ-031)"),
+    (r"every\s+piece\s+of\s+device\s+state\s+deliberately\s+unread",
+     "identity and structural metadata are read off the instance; only "
+     "mutable operational and configuration state is unread (MJ-031)"),
+    (r"workspace_index\s+\d\s*:",
+     "a workspace index is the position one reading handed a device over at, "
+     "never identity or placement order, so no document predicts one "
+     "(MJ-002, MJ-029)"),
+    (r"live-transcript-<build_recipe_id>",
+     "the raw transcript is named by the artifact SHA-256 it is evidence "
+     "about; a recipe id names intended bytes, not the ones that ran"),
 )
 
 # Sources that describe the runtime in prose, the way a document does. A

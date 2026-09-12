@@ -935,8 +935,22 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
    its own evidence and its own bounds, and none has an operation that needs
    it yet. A port's *name* is read, by `network.device_ports`, and nothing else
    about it: no link is followed from it, no address or up/down state is read,
-   and the name is never parsed into a slot or a kind. Nothing anywhere reads
-   or writes a device instance's state.
+   and the name is never parsed into a slot or a kind.
+
+   **Where the line actually falls, on a device instance.** This artifact does
+   read a workspace device *instance*: `Device.getName()`, `getModel()`,
+   `getType()`, `getPortCount()` and `getPortAt()` are asked of the very device
+   `Network.getDeviceAt()` handed over, and `Port.getName()` of its ports. What
+   it reads there is **identity and structural metadata** — what the device is
+   and how many ports it presents. What it does not read, and does not write,
+   is **mutable operational and configuration state**: an address, a port's
+   up/down or link state, a running or startup configuration, power, uptime, a
+   serial number, or anything else a session changes. `Device.getPower()`,
+   `getUpTime()`, `getSerialNumber()`, `getDescriptor()` and `getRootModule()`
+   are documented and none is admitted. An earlier revision denied that this
+   artifact touches a device instance at all, which was wrong in the direction
+   that matters: it described the artifact as reading less than it does, and a
+   boundary stated too favourably is not a boundary.
 
    **A workspace reading is one observation, and never a join.**
    `network.device_identity` reports what one device *is* — its name, model and
@@ -1340,6 +1354,28 @@ M3_CORE_READY = NO
 ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 ```
 
+**A milestone state and a candidate state are different subjects.** The
+milestone states above were established by the governed artifact at `d37ba37`,
+which was packaged, loaded and driven. The current candidate is a different
+recipe id identifying different bytes, and it has been neither packaged nor
+run — so it holds none of that artifact's verdicts, and they are written
+separately rather than inherited:
+
+```text
+LAST_QUALIFIED_ARTIFACT (d37ba37)
+  OFFICIAL_PACKAGING_PROVED = PASS
+  V6_KERNEL_VERIFIED        = PASS
+
+CURRENT_CANDIDATE
+  PACKAGED              = PENDING
+  V6_LIVE_VERIFIED      = PENDING
+  GET_NETWORK_INFO_LIVE = PENDING
+```
+
+`M1_CORE_READY = YES` stays exactly where the previous artifact's evidence put
+it. A candidate-specific state moves only from that candidate's own run, read
+out of that run's own transcript (MJ-011, MJ-015).
+
 - **M0B** is not complete: it still includes credential and transport API
   qualification. No transport exists, and MJ-026's terms are `BASELINED` rather
   than exercised — there is nothing yet to qualify a credential against. Before
@@ -1385,12 +1421,15 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 more implementation**: its own declared run, changing exactly one thing — the
 privilege set, from `[]` to the one token evidenced for both root calls
 (MJ-032) — with Packet Tracer's diagnostics recorded beside every envelope.
-Two conditions make it capable of establishing anything: a **disposable
+Three conditions make it capable of establishing anything: a **disposable
 workspace holding two devices**, so a `network.*` root that answers actually
 exercises the members beneath it instead of qualifying them on an empty
-workspace; and a **single raw transcript**, preserved unnormalized, so the
-field-level evidence the previous run could not supply exists this time. Both
-are declared in
+workspace; **every address read out of the reading that reported it**, since a
+`workspace_index` is a position in one observation and never an identity, so a
+predicted one would record our assumption as the target's answer; and a
+**single raw transcript**, named by the artifact's own SHA-256 and preserved
+unnormalized, so the field-level evidence the previous run could not supply
+exists this time. All three are declared in
 [the minimum-privilege LIVE runbook](../qa/muejeje-pts-privilege-live-runbook.md).
 None of them is marked `CORE_READY`, or complete, on the strength of a call
 that was denied, of a requirement read out of a binary, or of a root that

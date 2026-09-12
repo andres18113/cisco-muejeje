@@ -159,9 +159,15 @@ module state.
 
 **What is not built.** The transport, every mutating operation, and every
 reading beyond the hardware factory, the workspace inventory, one device's
-identity and that device's port names — nothing reads a device instance's
-state, a link, an address or a port's state. The target
-shape, with each stage marked:
+identity and that device's port names.
+
+**On a workspace device this artifact reads identity and structural metadata**
+— the name, the model, the DeviceType, the port count and each port's name,
+asked of the device instance the platform handed over. It reads and writes no
+**mutable operational or configuration state**: no address, no link, no port
+up/down state, no running or startup configuration, no power, uptime or serial
+number. Those members are documented and none is admitted. The target shape,
+with each stage marked:
 
 ```text
 Python/MCP -> Runtime Protocol -> explicit channel policy   (unbuilt)

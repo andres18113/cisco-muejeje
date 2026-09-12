@@ -324,15 +324,39 @@ Two runs exist in total: that one, and an earlier *exploratory* module whose
 engine files carried names no recipe declared — kept as evidence about Packet
 Tracer, promoting nothing.
 
+**Every row below names the artifact it is about.** A verdict belongs to the
+bytes that produced it: `d37ba37` was packaged, loaded and driven, and the
+current candidate is a different recipe id identifying different bytes that
+have been neither packaged nor run. Reading the first artifact's `PASS` as the
+second's would let a run that never happened look like one that did, so the two
+are separated here and stay separated.
+
+```text
+LAST_QUALIFIED_ARTIFACT (d37ba37)
+  OFFICIAL_PACKAGING_PROVED = PASS
+  V6_KERNEL_VERIFIED        = PASS
+
+CURRENT_CANDIDATE
+  PACKAGED              = PENDING
+  V6_LIVE_VERIFIED      = PENDING
+  GET_NETWORK_INFO_LIVE = PENDING
+```
+
+`M1_CORE_READY = YES` is the milestone state the **previous** governed artifact
+established, and it stays there. No candidate-specific state moves until the
+candidate produces its own evidence, out of its own transcript.
+
 | Gate | State | Why |
 | --- | --- | --- |
-| `OFFICIAL_PACKAGING_PROVED` | `PASS` | the recipe produced a saved `dist/muejeje.pts` that Packet Tracer loaded and started, and the artifact was measured externally |
-| `V6_KERNEL_VERIFIED` | `PASS` | that saved artifact's own engine answered: `mcpDispatchV6` present, identify and capabilities, all five refusal classes, and identify again across a stop and a start |
+| `OFFICIAL_PACKAGING_PROVED` | `PASS` **for `d37ba37`** | the recipe produced a saved `dist/muejeje.pts` that Packet Tracer loaded and started, and the artifact was measured externally |
+| `V6_KERNEL_VERIFIED` | `PASS` **for `d37ba37`** | that saved artifact's own engine answered: `mcpDispatchV6` present, identify and capabilities, all five refusal classes, and identify again across a stop and a start |
 | `TARGET_API_BASELINED` | `PENDING_TARGET` | no platform member has answered. Both root calls were denied for insufficient privilege, which is a fact about privilege and not a reading of the API |
 | `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | every platform and workspace capability was denied at its root call, and none has answered |
 | `GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED` | `PASS` | both root calls require privilege index 1 in the pinned binary, and index 1 serializes as `GET_NETWORK_INFO`. Recorded, against a pinned SHA-256 ([the privilege map](muejeje-pts-privilege-map.md)) |
 | `BINARY_MAP_REPRODUCIBILITY` | `PENDING` | that reading was supplied from outside this repository and nothing here re-derives it: no function, address or symbol came with it, so no reader of this checkout can reproduce a row |
 | `GET_NETWORK_INFO_LIVE_VERIFIED` | `PENDING` | no artifact declaring that privilege has been run. The binary evidence says what the calls require; only a run says what the target then does |
+| `CURRENT_CANDIDATE_PACKAGED` | `PENDING` | the candidate's recipe reaches `PACKAGING_MANUAL_AVAILABLE`, and no `.pts` has been saved from it |
+| `CURRENT_CANDIDATE_V6_LIVE_VERIFIED` | `PENDING` | the kernel verdict belongs to the artifact that ran. This candidate has not run, so it inherits nothing from `d37ba37` |
 
 ### The official LIVE run at `d37ba37` — the governed artifact
 
@@ -821,9 +845,15 @@ EMPTY_PRIVILEGES_ROOT_IPC        = TARGET_OBSERVED_DENIED
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
 GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+
+CURRENT_CANDIDATE_PACKAGED                = PENDING
+CURRENT_CANDIDATE_V6_LIVE_VERIFIED        = PENDING
+
 OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT       = NOT_CAPTURED
 NEXT_LIVE_RUN_RAW_TRANSCRIPT              = REQUIRED
+NEXT_LIVE_RUN_TRANSCRIPT_IDENTITY         = ARTIFACT_SHA256
 NEXT_LIVE_RUN_WORKSPACE_FIXTURE           = REQUIRED_TWO_DEVICES
+NEXT_LIVE_RUN_ADDRESSES                   = OBSERVED_NOT_PREDICTED
 ```
 
 `ENGINE_ORDER = CARRIED_BY_FILE_NAMES` was the previous line's packaging
@@ -856,11 +886,19 @@ no artifact declaring that privilege has been run, so nothing yet says the
 target lets either call through.
 
 `OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED` is why that run is read
-narrowly. `NEXT_LIVE_RUN_RAW_TRANSCRIPT = REQUIRED` and
-`NEXT_LIVE_RUN_WORKSPACE_FIXTURE = REQUIRED_TWO_DEVICES` are the two conditions
-the next run carries so that it can establish what this one could not: one
-unnormalized transcript, and a workspace with something in it for an answering
-`IPC.network()` to actually walk.
+narrowly. The four `NEXT_LIVE_RUN_*` states are the conditions the next run
+carries so that it can establish what this one could not: one unnormalized
+transcript, named by the **artifact** SHA-256 rather than by a recipe id,
+because evidence is about the bytes that ran; a workspace with something in it
+for an answering `IPC.network()` to actually walk; and every address read out
+of the reading that reported it, never predicted here. A position is where the
+platform handed a subject over in one reading, and this record makes no claim
+about where anything sits.
+
+`CURRENT_CANDIDATE_PACKAGED` and `CURRENT_CANDIDATE_V6_LIVE_VERIFIED` are
+`PENDING` for the same reason every candidate-specific state is: they are
+questions about bytes nobody has built or run yet, and the previous artifact
+cannot answer them.
 
 `IMPLEMENTED` and `COMPLETE` are statements about this repository — the
 operations exist, are admitted, are bounded and are tested offline — and
@@ -868,9 +906,14 @@ deliberately not about Packet Tracer. `M2_OFFLINE = COMPLETE` says the three
 descriptor readings this milestone set out to build are built and gated; it
 says nothing about whether any of them answers on a target.
 `M3_READ_ONLY_TOPOLOGY = STARTED` is three workspace readings — an inventory, one
-device's identity, and one device's ports beside that identity — with addresses
-and every piece of device state deliberately unread, and links `BLOCKED` for the
-reason recorded above.
+device's identity, and one device's ports beside that identity. They read a
+device instance's **identity and structural metadata**: its name, its model,
+its DeviceType, its port count and each port's name. They read no **mutable
+operational or configuration state** — no address, no link, no port up/down
+state, no configuration, power, uptime or serial number — and write nothing at
+all; links are `BLOCKED` for the reason recorded above. An earlier revision of
+this line said every piece of device state was unread, which described the
+artifact as reading less than it does.
 
 `KERNEL_BOUNDARIES = HARDENED` covers the previous line's corrections: an
 argument outside an adapter's bounds is a defect rather than a clamp, a member

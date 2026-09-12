@@ -15,6 +15,11 @@ qualified nothing beneath it.
 
 Both of those are now preconditions of the next run, and these gates hold the
 document to them.
+
+How the run must *obtain and preserve* its evidence — addresses read out of a
+reading instead of predicted here, and one transcript named by the artifact it
+is about — is `test_live_evidence`, split out when this module reached its line
+budget. Declaring a run and capturing it are different work (MJ-018, MJ-020).
 """
 
 from __future__ import annotations
@@ -27,12 +32,13 @@ RUNBOOK = "docs/qa/muejeje-pts-privilege-live-runbook.md"
 # claim, and read back from the document, so the two cannot drift — a runbook
 # that promoted a milestone the repository has not is how a denied call becomes
 # a qualification (MJ-033).
-EXPECTED_ENTRY_STATE = """OFFICIAL_PACKAGING_PROVED = PASS
-V6_KERNEL_VERIFIED        = PASS
-M1_CORE_READY             = YES
+EXPECTED_ENTRY_STATE = """M1_CORE_READY = YES
 
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
+
+CURRENT_CANDIDATE_PACKAGED                = PENDING
+CURRENT_CANDIDATE_V6_LIVE_VERIFIED        = PENDING
 GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
 
 M0B_TARGET_API_BASELINED = NOT_COMPLETE
@@ -40,15 +46,32 @@ M2_CORE_READY            = NO
 M3_CORE_READY            = NO
 ZERO_CHANGE_CUTOVER      = NOT_ACHIEVED"""
 
+# The two artifacts the run has to keep apart: the one whose verdicts exist,
+# and the one being built. Written as the block the runbook must carry.
+ARTIFACT_SPLIT = """LAST_QUALIFIED_ARTIFACT (d37ba37)
+  OFFICIAL_PACKAGING_PROVED = PASS
+  V6_KERNEL_VERIFIED        = PASS
+
+CURRENT_CANDIDATE
+  PACKAGED              = PENDING
+  V6_LIVE_VERIFIED      = PENDING
+  GET_NETWORK_INFO_LIVE = PENDING"""
+
 # The disposable fixture the run is taken over. Two devices, because one that
 # answers is what makes the members below the root actually run; no cable and
 # no configuration, because nothing below a link or an address is admitted; not
 # saved, because the run touches nobody's work (MJ-002).
-WORKSPACE_FIXTURE = """workspace_index 0: 2960-24TT, name Switch0
-workspace_index 1: PC-PT, name PC0
+#
+# What it deliberately does **not** say is where either device sits. A
+# `workspace_index` is the position the platform handed a device over at in one
+# reading; it is not identity and not placement order, so a fixture that
+# assigned one would be declaring a workspace ordering the runtime refuses to
+# promise.
+WORKSPACE_FIXTURE = """2960-24TT named Switch0
+PC-PT named PC0
 no cable
 no configuration
-topology not saved"""
+not saved"""
 
 # The members a `network.*` root that answers has to reach over that fixture.
 # An empty workspace reaches none of them: `available_count: 0` is a valid
@@ -64,13 +87,6 @@ EXERCISED_MEMBERS = (
     "Port.getName",
 )
 
-# What the single raw evidence file records for every statement entered.
-TRANSCRIPT_FIELDS = (
-    "statement / RID",
-    "returned value",
-    "Packet Tracer output",
-    "module start",
-)
 
 
 def runbook_body() -> str:
@@ -232,66 +248,40 @@ def test_the_runbook_names_the_members_the_fixture_makes_reachable():
 
 
 # ---------------------------------------------------------------------------
-# The run must leave evidence somebody else can read: one raw transcript.
+# A verdict about one artifact is not a verdict about another.
 # ---------------------------------------------------------------------------
 
-def test_the_runbook_requires_one_raw_transcript_file():
-    """The correction the previous official run forces.
+def test_the_runbook_keeps_the_qualified_artifact_apart_from_this_candidate():
+    """`d37ba37` was packaged and driven. This candidate has been neither.
 
-    That run preserved the operator's observations and not its envelopes, so it
-    established packaging, execution, lifecycle and the denial diagnostics —
-    and no result shape at all, because there was nothing field-level to check.
-    One file, written as the run happens, is what makes the next one different.
+    The two share a source line and nothing else that matters here: a different
+    privilege set is a different recipe id identifying different bytes. Letting
+    the first artifact's `PASS` stand in for the second would make a run that
+    never happened look like one that did, which is the one thing a
+    qualification record must never do (MJ-015, MJ-033).
     """
+    body = runbook_body()
+
+    assert ARTIFACT_SPLIT in body
+    assert "M1_CORE_READY = YES" in body
+
     prose = runbook_prose()
-
-    assert "docs/qa/muejeje-pts-live-transcript-<build_recipe_id>.md" in prose
-    assert "**This run produces a single raw evidence file**" in prose
-
-
-def test_the_transcript_records_all_four_things_per_statement():
-    """A row that is missing one of them cannot be read back.
-
-    Without the statement nobody knows what was asked; without the exact
-    returned value there is no result shape; without the diagnostic a failure
-    has no attribution; without the module start two evaluations merge into one
-    (MJ-023).
-    """
-    prose = runbook_prose()
-
-    missing = [field for field in TRANSCRIPT_FIELDS if f"| {field} |" not in prose]
-    assert not missing, missing
-    assert "or the word `none`" in prose, (
-        "a statement Packet Tracer printed nothing for is recorded as such, "
-        "never left blank"
-    )
-
-
-def test_the_transcript_is_preserved_rather_than_tidied():
-    """A rewritten envelope is a paraphrase of the target.
-
-    Normalizing is the quiet way a summary replaces evidence: nothing about a
-    pretty-printed result looks like a claim, and the field-level facts the run
-    exists to capture are exactly what reformatting loses.
-    """
-    prose = runbook_prose()
-
+    assert "is the milestone state the **previous** governed artifact" in prose
     assert (
-        "**The transcript is preserved without normalizing or rewriting its "
-        "envelopes.**" in prose
+        "This run moves no candidate-specific state until the candidate itself "
+        "produces the evidence for it" in prose
     )
-    assert "no field reordering" in prose
 
 
-def test_the_summary_interprets_the_transcript_and_never_replaces_it():
-    """Python decides what a run established, from evidence it did not write.
+def test_the_entry_state_carries_no_candidate_verdict():
+    """Guards the gate above from passing on a block that still promotes.
 
-    The QA record may interpret the transcript afterwards; if the two ever
-    disagree the transcript is what happened, because it is the only one of the
-    two that was written while the target was answering (MJ-011).
+    If `OFFICIAL_PACKAGING_PROVED = PASS` ever reappears unqualified in the
+    entry state, a reader starts the run believing this artifact is already
+    packaged.
     """
-    prose = runbook_prose()
+    entry = EXPECTED_ENTRY_STATE
 
-    assert "interprets the transcript **afterwards** and cites it" in prose
-    assert "where the two disagree, the transcript is what happened" in prose
-    assert "no envelope is reconstructed" in prose
+    assert "OFFICIAL_PACKAGING_PROVED" not in entry
+    assert "V6_KERNEL_VERIFIED        = PASS" not in entry
+    assert "CURRENT_CANDIDATE_PACKAGED                = PENDING" in entry

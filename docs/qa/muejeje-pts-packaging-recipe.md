@@ -281,6 +281,23 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-identify-restart","op":"runtime.iden
 
 **Then every other admitted operation.**
 
+**Three of these take an address, and every address is a placeholder.**
+`factory_index`, `module_type` and `workspace_index` are written below only so
+each statement is a complete, admissible request — a gate drives every one of
+them through the kernel, and it cannot drive a blank. **Each is replaced,
+before the statement is entered, by a value the preceding reading actually
+reported**: a `factory_index` and a `module_type` the platform published in
+`platform.device_descriptors` or `platform.module_descriptors`, and a
+`workspace_index` that `network.device_inventory` reported for the device the
+run means to read. A workspace position is where the platform handed a device
+over in one reading and never an identity, so entering the number below
+unchanged would record an answer about a position nobody observed. The
+substitution rules, and what to do when the two disagree, are in
+[the minimum-privilege LIVE runbook](muejeje-pts-privilege-live-runbook.md).
+
+The order below is therefore load-bearing: the reading that publishes an
+address is driven before the statements that send it back.
+
 ```javascript
 mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_descriptors","args":{"factory_offset":0,"limit":4}}')
 ```
@@ -311,6 +328,12 @@ position answering `device_present: false`, or a device answering
 `port_count: 0`, is a reading, not a failure.
 Record the workspace's state alongside them, because the same call on a
 different session is a different observation (`MJ-002`).
+
+**The last two must re-report the device they were meant to reach.** They read
+`name` and `model` off the same hand-over they read everything else from, so
+an identity that does not match the one the inventory published at that
+position says the workspace moved between observations — record it, and
+qualify nothing below that root.
 
 ### What Packet Tracer prints beside an answer
 
