@@ -41,18 +41,21 @@ execute from the PC runtime terminals; they neither query IOS routes on a PC nor
 borrow a router identity. Their scope is exactly one representative pair, not
 all hosts, VLANs or throughput.
 
-## Deterministic plan delta from `bd097d67b59c491c8aa1a905a10ec48ec079021b`
+## Productive plan delta from `bd097d67b59c491c8aa1a905a10ec48ec079021b`
+
+Both sides below use the same persisted real A+B capability store. This keeps
+capability provenance fixed while comparing only the base and candidate code.
 
 | Plan | Before | After |
 | --- | --- | --- |
-| Router0 E4 | `a7ef1872f9ea329a356e89f4546e9edc30130afe8bb1bdadb4bb8bc40030a6f5` | unchanged |
-| Router0 E5 | `a39005deea51c03318680de0e4ae4d36b2c7c15a047f536020fc2a454f2347ce` | unchanged |
-| Router0 E9 | `b3c9f909ea4812ba35327a26f84ef5f1cd3e2469645f16d284451039b5e93f40` | `ca76501c76b601c2b0463c3bbd2e73479f38c61ec5c9a6ebde04ee977c81227f` |
-| Router0 Voice | `e7c9251ef3aa3ebde11e572f83d6f536ddcfb59be6fe1e53f594b857db93694a` | unchanged |
-| Full E4 | `599119ec8280e1f7e582a37c540eebcae5dca373b59a77611f60a9340795ef65` | unchanged |
-| Full E5 | `b1f351333b205ab8377c01112ce366d690d07e05c0ffeb418dee103257181247` | unchanged |
-| Full E9 | `db9a3551276727cfaa9c5cb43535f5f295bdcbc4eb52ee459b3a615937a3a054` | `f94c7552e678b68fbfef9855995f291fc2e1207fb70ec00da2339033dee1c99a` |
-| Full Voice | `411478e7435b1e0a288417a5459e004b973f5b21c488c0e7a4f9ac8d2e5f07db` | unchanged |
+| Router0 E4 | `9ea98a4d81bc7e1f19cbb538707569fadbfcb80c4c30bde796b9c3da53f22e67` | unchanged |
+| Router0 E5 | `f1edc433281325320d1501b01112aa4b11c9605c70d6ba099bc1200b12bd71a0` | unchanged |
+| Router0 E9 | `32a88649cfcb9ab13f1e2766c0c073cabd4ee238bbca141ec6b9d22ee235ff91` | `90eba13a9e288dc803dafb81e639295d0bc0e7de086cb0677fc642fff6f5f5a9` |
+| Router0 Voice | `11b24dd089457b0768b21262bb4c769659bc12919e42621b3c8b49ebcc17d4ce` | unchanged |
+| Full E4 | `065d06cfe9374c2be9ec80e711913be7339333ed42854359ca640bb8e303c150` | unchanged |
+| Full E5 | `9917322f7fcdc9cb6013ef046e7546803fe4ebc4ddd6c6ac63fff005600c1473` | unchanged |
+| Full E9 | `b5464bf601de18daa1c85ff1ca224bfbcd97360f596823d0b825572b35769e76` | `15f4347ad11a38864257f42d5dbaab4798add281a11b4602d660703e4954946e` |
+| Full Voice | `de3bbb6b350bc27cdfec309e0e9da3ca9583d69704ecda2e8cf23e8447ab1c44` | unchanged |
 
 Observed DHCP addresses belong only to run evidence. They never rewrite these
 plans, expectation IDs or hashes. Historical `baseline-v3` is unchanged.
