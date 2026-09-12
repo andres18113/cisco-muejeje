@@ -1,7 +1,21 @@
-"""Factory-module policy, index-native discovery, mutation and wiring."""
+"""Factory-module policy, index-native discovery, mutation and wiring.
+
+This module is a declared legacy hotspot. It is large because it grew with
+the behaviour it characterises, and `test_factory_module_test_architecture`
+holds a ratchet on its size: it may shrink, not grow. New factory-module
+behaviour belongs in a focal module named for the responsibility it covers,
+not appended here.
+
+The factory-module wire format is not written here either. It is built by
+`tests/support/factory_module_cases.py`, so an installation response takes
+its target from the observation production actually resolved rather than
+restating it. A test that needs the two to disagree asks for that with
+`foreign_target`, `target_override` or `malformed_target`.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import inspect
 import json
 from pathlib import Path
@@ -19,11 +33,11 @@ from src.packet_tracer_mcp.infrastructure.catalog.factory_modules import (
     factory_module_requirement_for,
 )
 from src.packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
-    FactoryModuleOperation,
     PacketTracerFactoryModulePreparer,
     classify_factory_power_hypothesis,
 )
 from src.packet_tracer_mcp.infrastructure.execution.factory_module_contracts import (
+    FactoryModuleObservation,
     FactoryModuleSlotState,
 )
 from src.packet_tracer_mcp.infrastructure.execution import (
@@ -36,147 +50,37 @@ from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runti
     PacketTracerPhysicalTopologyRuntime,
 )
 
-
-BUILD = "9.0.1.0858"
-REAL_NULL_ABORT = '{"found":false,"error":"Error: missing module"}'
-
-
-def _descriptor(
-    model: str,
-    slots: tuple[int, ...],
-    *,
-    model_observed: bool = True,
-    physical_views: tuple[tuple[int, bool], ...] = (),
-) -> dict:
-    return {
-        "model": model,
-        "model_observed": model_observed,
-        "slot_count": len(slots),
-        "slots": [
-            {"index": index, "module_type": module_type}
-            for index, module_type in enumerate(slots)
-        ],
-        "physical_views": [
-            {"index": index, "slot_num": slot_num, "module_added": added}
-            for index, (slot_num, added) in enumerate(physical_views)
-        ],
-    }
-
-
-def _module(
-    slots: tuple[int, ...] = (),
-    entries: tuple[dict, ...] = (),
-    *,
-    model: str = "",
-    model_observed: bool = True,
-    physical_views: tuple[tuple[int, bool], ...] = (),
-) -> dict:
-    return {
-        "descriptor": _descriptor(
-            model,
-            slots,
-            model_observed=model_observed,
-            physical_views=physical_views,
-        ),
-        "slot_count": len(slots),
-        "slots": [
-            {"index": index, "module_type": module_type}
-            for index, module_type in enumerate(slots)
-        ],
-        "module_count": len(entries),
-        "module_entries": list(entries),
-    }
-
-
-def _present(index: int, module: dict) -> dict:
-    return {"index": index, "state": "present", "module": module}
-
-
-def _unknown(index: int, reason: str = "null") -> dict:
-    return {"index": index, "state": "unknown", "reason": reason}
-
-
-def _runtime_observation(
-    *,
-    installed: bool = False,
-    multiple: bool = False,
-    sparse_noncompatible: bool = False,
-    occupied: bool = False,
-    unknown_compatible: bool = False,
-    installed_identity_observed: bool = True,
-) -> str:
-    if multiple:
-        slots = (4, 4)
-        entries: tuple[dict, ...] = ()
-    elif installed:
-        # One added bay and one retrievable module: the only shape in which
-        # Packet Tracer's two surfaces pin an identity to a slot. A second
-        # retrievable child would leave the occupant of the added bay a guess,
-        # which is what the measured build actually reports.
-        slots = (18, 4)
-        entries = (
-            _present(0, _module(
-                model="AC-POWER-SUPPLY",
-                model_observed=installed_identity_observed,
-            )),
-        )
-    elif occupied or unknown_compatible:
-        slots = (4,)
-        if unknown_compatible:
-            entries = (_unknown(0),)
-        else:
-            entries = (_present(0, _module(model="OTHER-MODULE")),)
-    else:
-        slots = (18, 4)
-        entries = (
-            _unknown(0)
-            if sparse_noncompatible
-            else _present(0, _module(model="BUILTIN")),
-        )
-    physical_views = tuple((index, False) for index in range(len(slots)))
-    if installed or occupied:
-        compatible_index = slots.index(4)
-        physical_views = tuple(
-            (index, index == compatible_index) for index in range(len(slots))
-        )
-    elif unknown_compatible:
-        physical_views = ()
-    root = _module(
-        slots,
-        entries,
-        model="CHASSIS",
-        physical_views=physical_views,
-    )
-    return json.dumps({
-        "found": True,
-        "name": "SW",
-        "model": "3650-24PS",
-        "supported_modules_raw": ["AC-POWER-SUPPLY"],
-        "device_descriptor_root": _descriptor("CHASSIS", slots),
-        "root": root,
-    })
-
-
-def _installation_response(*, native_ack: bool | None = True) -> str:
-    return json.dumps({
-        "attempted": True,
-        "requested_identity": "AC-POWER-SUPPLY",
-        "native_ack": native_ack,
-        "power_was_on": True,
-        "power_restored": True,
-        "target": {
-            "container_navigation_path": [],
-            "slot_index": 1,
-            "module_type": 4,
-        },
-        "error": "",
-    })
+from tests.support.factory_module_cases import (
+    BUILD,
+    REAL_NULL_ABORT,
+    descriptor as _descriptor,
+    dual_bay as _dual_bay,
+    installation_response as _installation_response,
+    module as _module,
+    observation_envelope,
+    physical_authority_observation as _physical_authority_observation,
+    present as _present,
+    refusal_response,
+    runtime_observation as _runtime_observation,
+    target_payload,
+    unknown as _unknown,
+)
 
 
 class _Replies:
+    """Scripted Packet Tracer replies, in dispatch order.
+
+    Replies may be queued after construction so a test can derive one
+    from an observation it has already made, rather than restating the
+    identity production resolved.
+    """
+
     def __init__(self, *replies: str | None) -> None:
         self.replies = list(replies)
         self.scripts: list[str] = []
+
+    def queue(self, *replies: str | None) -> None:
+        self.replies.extend(replies)
 
     def __call__(self, script: str, _timeout: float) -> str | None:
         self.scripts.append(script)
@@ -294,25 +198,6 @@ def test_non_unique_occupied_unknown_or_malformed_compatible_slots_refuse_mutati
         preparer.install_required_module(observation)
     assert len(transport.scripts) == 1
     assert all(".addModuleAt(" not in script for script in transport.scripts)
-
-
-def _dual_bay(entries: tuple[dict, ...]) -> str:
-    """Two compatible PSU-type bays, the real dual-supply 3650 shape."""
-
-    root = _module(
-        (4, 4),
-        entries,
-        model="CHASSIS",
-        physical_views=((0, bool(entries)), (1, False)),
-    )
-    return json.dumps({
-        "found": True,
-        "name": "SW",
-        "model": "3650-24PS",
-        "supported_modules_raw": ["AC-POWER-SUPPLY"],
-        "device_descriptor_root": _descriptor("CHASSIS", (4, 4)),
-        "root": root,
-    })
 
 
 def test_dual_bay_with_one_empty_index_still_resolves_one_target() -> None:
@@ -434,14 +319,14 @@ def test_present_but_malformed_device_descriptor_root_still_fails_closed() -> No
 
 
 def test_installation_is_one_shot_and_native_true_requires_readback() -> None:
-    transport = _Replies(
-        _runtime_observation(),
-        _installation_response(),
-        _runtime_observation(installed=True),
-    )
+    transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module(
         "SW", "3650-24PS", fresh_owned=True,
+    )
+    transport.queue(
+        _installation_response(before),
+        _runtime_observation(installed=True),
     )
 
     installation = preparer.install_required_module(before)
@@ -464,25 +349,22 @@ def test_installation_is_one_shot_and_native_true_requires_readback() -> None:
 
 
 @pytest.mark.parametrize(
-    "raw,native_ack",
+    "reply,native_ack",
     [
-        (_installation_response(native_ack=False), False),
-        (None, None),
-        ("{malformed", None),
+        (lambda before: _installation_response(before, native_ack=False), False),
+        (lambda before: None, None),
+        (lambda before: "{malformed", None),
     ],
     ids=["native-false", "timeout", "malformed"],
 )
 def test_non_acceptance_is_never_replayed_but_readback_is_preserved(
-    raw: str | None,
+    reply: Callable[[FactoryModuleObservation], str | None],
     native_ack: bool | None,
 ) -> None:
-    transport = _Replies(
-        _runtime_observation(),
-        raw,
-        _runtime_observation(installed=True),
-    )
+    transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module("SW", "3650-24PS")
+    transport.queue(reply(before), _runtime_observation(installed=True))
 
     installation = preparer.install_required_module(before)
     verification = preparer.verify_required_module(before, installation)
@@ -495,13 +377,10 @@ def test_non_acceptance_is_never_replayed_but_readback_is_preserved(
 
 
 def test_native_true_without_slot_container_effect_is_not_verified() -> None:
-    transport = _Replies(
-        _runtime_observation(),
-        _installation_response(),
-        _runtime_observation(),
-    )
+    transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module("SW", "3650-24PS")
+    transport.queue(_installation_response(before), _runtime_observation())
 
     installation = preparer.install_required_module(before)
     verification = preparer.verify_required_module(before, installation)
@@ -513,17 +392,17 @@ def test_native_true_without_slot_container_effect_is_not_verified() -> None:
 
 
 def test_unobservable_post_install_identity_is_explicit_not_invented() -> None:
-    transport = _Replies(
-        _runtime_observation(),
-        _installation_response(),
+    transport = _Replies(_runtime_observation())
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    before = preparer.observe_required_module(
+        "SW", "3650-24PS", fresh_owned=True,
+    )
+    transport.queue(
+        _installation_response(before),
         _runtime_observation(
             installed=True,
             installed_identity_observed=False,
         ),
-    )
-    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
-    before = preparer.observe_required_module(
-        "SW", "3650-24PS", fresh_owned=True,
     )
 
     installation = preparer.install_required_module(before)
@@ -553,13 +432,13 @@ def test_3560_preparation_is_an_exact_noop_without_transport_access() -> None:
 
 
 def test_power_hypothesis_requires_inventory_effect_and_exact_delta() -> None:
-    transport = _Replies(
-        _runtime_observation(),
-        _installation_response(),
-        _runtime_observation(installed=True),
-    )
+    transport = _Replies(_runtime_observation())
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module("SW", "3650-24PS")
+    transport.queue(
+        _installation_response(before),
+        _runtime_observation(installed=True),
+    )
     installation = preparer.install_required_module(before)
     verification = preparer.verify_required_module(before, installation)
     before_power = PoEInlineTable(
@@ -772,9 +651,7 @@ def test_install_javascript_rediscovers_target_and_calls_add_module_at_once() ->
         "native_ack": True,
         "power_was_on": True,
         "power_restored": True,
-        "target": {
-            "container_navigation_path": [], "slot_index": 1, "module_type": 4,
-        },
+        "target": target_payload(observation.target),
         "error": "",
         "observed_guard": observation.inventory_fingerprint,
     }
@@ -821,9 +698,7 @@ def test_install_javascript_rederives_the_same_dual_bay_target_in_node() -> None
 
     assert payload["attempted"] is True
     assert payload["native_ack"] is True
-    assert payload["target"] == {
-        "container_navigation_path": [], "slot_index": 1, "module_type": 4,
-    }
+    assert payload["target"] == target_payload(observation.target)
     assert script.count(".addModuleAt(") == 1
 
 
@@ -908,34 +783,6 @@ def test_install_javascript_refuses_when_the_observed_inventory_changed() -> Non
     assert payload["result"]["observed_guard"] != observation.inventory_fingerprint
 
 
-def _physical_authority_observation(
-    *,
-    slots: tuple[int, ...],
-    views: tuple[tuple[int, object], ...],
-    entries: tuple[dict, ...],
-) -> str:
-    root = _module(slots, entries, model="CHASSIS")
-    root["descriptor"]["physical_views"] = [
-        {
-            "index": index,
-            "slot_num": slot_num,
-            "module_added": module_added,
-            "error": "",
-        }
-        for index, (slot_num, module_added) in enumerate(views)
-    ]
-    return json.dumps({
-        "found": True,
-        "name": "SW",
-        "model": "3650-24PS",
-        "supported_modules_raw": [
-            "AC-POWER-SUPPLY:../art/PhysicalView/3650Power.pngAC Power Supply",
-        ],
-        "device_descriptor_root": None,
-        "root": root,
-    })
-
-
 def test_collection_index_is_not_treated_as_the_physical_slot_index() -> None:
     raw = _physical_authority_observation(
         slots=(18, 18, 18, 18, 4),
@@ -973,14 +820,9 @@ def test_live_687ba57_false_physical_views_make_runtime_unknown_bays_empty() -> 
         ),
         physical_views=((0, False), (1, False), (2, False)),
     )
-    raw = json.dumps({
-        "found": True,
-        "name": "SW",
-        "model": "3650-24PS",
-        "supported_modules_raw": ["AC-POWER-SUPPLY:measured-live-687ba57"],
-        "device_descriptor_root": None,
-        "root": root,
-    })
+    raw = observation_envelope(
+        root, supported=("AC-POWER-SUPPLY:measured-live-687ba57",),
+    )
     preparer = PacketTracerFactoryModulePreparer(_Replies(raw), BUILD)
 
     observation = preparer.observe_required_module(
@@ -1099,33 +941,11 @@ def test_navigation_identity_survives_unrelated_traversal_growth() -> None:
         (_present(0, _module()), _present(1, grown_sibling), _present(2, occupied_power)),
         physical_views=((0, False), (1, False), (2, False)),
     )
-    envelope = lambda root: json.dumps({
-        "found": True,
-        "name": "SW",
-        "model": "3650-24PS",
-        "supported_modules_raw": ["AC-POWER-SUPPLY"],
-        "device_descriptor_root": None,
-        "root": root,
-    })
-    transport = _Replies(
-        envelope(before_root),
-        json.dumps({
-            "attempted": True,
-            "requested_identity": "AC-POWER-SUPPLY",
-            "native_ack": True,
-            "power_was_on": True,
-            "power_restored": True,
-            "target": {
-                "container_navigation_path": [2],
-                "slot_index": 0,
-                "module_type": 4,
-            },
-            "error": "",
-        }),
-        envelope(after_root),
-    )
+    envelope = observation_envelope
+    transport = _Replies(envelope(before_root))
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
+    transport.queue(_installation_response(before), envelope(after_root))
 
     installation = preparer.install_required_module(before)
     verification = preparer.verify_required_module(before, installation)
@@ -1170,38 +990,17 @@ def test_native_false_allows_one_bounded_preobserved_fallback_only_after_no_effe
         views=((0, False), (1, False)),
         entries=(_unknown(0), _unknown(1)),
     )
-    transport = _Replies(
-        before_raw,
-        json.dumps({
-            "attempted": True,
-            "requested_identity": "AC-POWER-SUPPLY",
-            "native_ack": False,
-            "power_was_on": True,
-            "power_restored": True,
-            "target": {
-                "container_navigation_path": [],
-                "slot_index": 0,
-                "module_type": 4,
-            },
-            "error": "",
-        }),
-        before_raw,
-        json.dumps({
-            "attempted": True,
-            "requested_identity": "AC-POWER-SUPPLY",
-            "native_ack": True,
-            "power_was_on": True,
-            "power_restored": True,
-            "target": {
-                "container_navigation_path": [],
-                "slot_index": 1,
-                "module_type": 4,
-            },
-            "error": "",
-        }),
-    )
+    transport = _Replies(before_raw)
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
+    # The rejection answers the selected bay; the fallback answers the next
+    # bay the same observation preobserved, never a restated index.
+    first_bay, second_bay = before.candidate_targets
+    transport.queue(
+        _installation_response(first_bay, native_ack=False),
+        before_raw,
+        _installation_response(second_bay),
+    )
     rejected = preparer.install_required_module(before)
 
     fallback = preparer.install_fallback_after_false(
@@ -1236,22 +1035,10 @@ def test_native_false_fallback_requires_fresh_zero_available_power(
     )
     transport = _Replies(
         raw,
-        json.dumps({
-            "attempted": True,
-            "requested_identity": "AC-POWER-SUPPLY",
-            "native_ack": False,
-            "power_was_on": True,
-            "power_restored": True,
-            "target": {
-                "container_navigation_path": [],
-                "slot_index": 0,
-                "module_type": 4,
-            },
-            "error": "",
-        }),
     )
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
+    transport.queue(_installation_response(before, native_ack=False))
     rejected = preparer.install_required_module(before)
 
     with pytest.raises(RuntimeError, match="Available"):
@@ -1332,25 +1119,12 @@ def test_post_inventory_rejects_a_new_compatible_slot_outside_the_target() -> No
             _unknown(1),
         ),
     )
-    installation_raw = json.dumps({
-        "attempted": True,
-        "requested_identity": "AC-POWER-SUPPLY",
-        "native_ack": True,
-        "power_was_on": True,
-        "power_restored": True,
-        "target": {
-            "container_navigation_path": [],
-            "slot_index": 0,
-            "module_type": 4,
-        },
-        "error": "",
-    })
-    preparer = PacketTracerFactoryModulePreparer(
-        _Replies(before_raw, installation_raw, after_raw), BUILD,
-    )
+    transport = _Replies(before_raw)
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module(
         "SW", "3650-24PS", fresh_owned=True,
     )
+    transport.queue(_installation_response(before), after_raw)
 
     installation = preparer.install_required_module(before)
     verification = preparer.verify_required_module(before, installation)
@@ -1501,11 +1275,7 @@ def test_live_687ba57_javascript_rederives_the_measured_target_in_node() -> None
     assert result["powers"] == [False, True]
     assert result["reported"]["native_ack"] is True
     assert result["reported"]["error"] == ""
-    assert result["reported"]["target"] == {
-        "container_navigation_path": [2],
-        "slot_index": 4,
-        "module_type": 4,
-    }
+    assert result["reported"]["target"] == target_payload(observation.target)
 
 
 @pytest.mark.parametrize("truthy", ["no", 1, [0]])
@@ -1554,40 +1324,22 @@ def test_fallback_guard_compares_the_module_collection_not_only_occupancy() -> N
     """Derived occupancy alone let the module collection move unnoticed."""
 
     def payload(entries: tuple[dict, ...]) -> str:
-        root = _module(
+        return observation_envelope(_module(
             (4, 4), entries, model="CHASSIS",
             physical_views=((0, False), (1, False)),
-        )
-        return json.dumps({
-            "found": True,
-            "name": "SW",
-            "model": "3650-24PS",
-            "supported_modules_raw": ["AC-POWER-SUPPLY"],
-            "device_descriptor_root": None,
-            "root": root,
-        })
+        ))
 
     before_raw = payload((_unknown(0), _unknown(1)))
     # The same two empty bays, but Packet Tracer now enumerates one module
     # fewer and explains the survivor differently. Occupancy is untouched.
     moved_raw = payload((_unknown(0, "Error: missing module"),))
-    rejection_raw = json.dumps({
-        "attempted": True,
-        "requested_identity": "AC-POWER-SUPPLY",
-        "native_ack": False,
-        "power_was_on": True,
-        "power_restored": True,
-        "target": {
-            "container_navigation_path": [],
-            "slot_index": 0,
-            "module_type": 4,
-        },
-        "error": "",
-    })
-    transport = _Replies(before_raw, rejection_raw, moved_raw)
+    transport = _Replies(before_raw)
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module(
         "SW", "3650-24PS", fresh_owned=True,
+    )
+    transport.queue(
+        _installation_response(before, native_ack=False), moved_raw,
     )
     rejected = preparer.install_required_module(before)
     assert rejected.native_ack is False
@@ -1662,16 +1414,10 @@ def test_a_precondition_refusal_is_not_an_indeterminate_mutation() -> None:
     a later rerun; conflating the two turned a clean refusal into a dead end.
     """
 
-    refusal = json.dumps({
-        "attempted": False,
-        "requested_identity": "AC-POWER-SUPPLY",
-        "native_ack": None,
-        "power_was_on": None,
-        "power_restored": None,
-        "target": None,
-        "error": "installation precondition changed: target slot is no longer empty",
-        "observed_guard": "[[[],\"\",false,[4],0,[],[],[]]]",
-    })
+    drifted_guard = '[[[],"",false,[4],0,[],[],[]]]'
+    refusal = refusal_response(
+        "target slot is no longer empty", observed_guard=drifted_guard,
+    )
     transport = _Replies(_runtime_observation(), refusal)
     preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
     before = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
@@ -1685,7 +1431,7 @@ def test_a_precondition_refusal_is_not_an_indeterminate_mutation() -> None:
     assert "no longer empty" in installation.message
     # Both sides of the comparison are retained so the drift is auditable.
     assert installation.expected_guard == before.inventory_fingerprint
-    assert installation.observed_guard == "[[[],\"\",false,[4],0,[],[],[]]]"
+    assert installation.observed_guard == drifted_guard
 
     # A timeout stays indeterminate: the mutation may have reached PT.
     timeout_transport = _Replies(_runtime_observation(), None)
