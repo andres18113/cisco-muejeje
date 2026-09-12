@@ -776,6 +776,7 @@ def test_install_javascript_rediscovers_target_and_calls_add_module_at_once() ->
             "container_navigation_path": [], "slot_index": 1, "module_type": 4,
         },
         "error": "",
+        "observed_guard": observation.inventory_fingerprint,
     }
     assert script.count(".addModuleAt(") == 1
     assert ".addModule(" not in script
@@ -859,7 +860,13 @@ def test_install_javascript_refuses_a_second_bay_that_became_unreadable() -> Non
 
     assert payload["calls"] == 0
     assert payload["result"]["attempted"] is False
-    assert payload["result"]["error"] == "installation precondition changed"
+    # The sibling bay turning unknown moves the evidence, not the target bay,
+    # so the fingerprint is what refuses here.
+    assert payload["result"]["error"] == (
+        "installation precondition changed: inventory or PhysicalView "
+        "evidence changed since observation (stable across two reads)"
+    )
+    assert payload["result"]["observed_guard"] != observation.inventory_fingerprint
 
 
 def test_install_javascript_refuses_when_the_observed_inventory_changed() -> None:
@@ -893,7 +900,12 @@ def test_install_javascript_refuses_when_the_observed_inventory_changed() -> Non
     assert payload["calls"] == 0
     assert payload["result"]["attempted"] is False
     assert payload["result"]["native_ack"] is None
-    assert payload["result"]["error"] == "installation precondition changed"
+    assert payload["result"]["error"] == (
+        "installation precondition changed: inventory or PhysicalView "
+        "evidence changed since observation (stable across two reads)"
+    )
+    assert payload["result"]["observed_guard"]
+    assert payload["result"]["observed_guard"] != observation.inventory_fingerprint
 
 
 def _physical_authority_observation(
@@ -1594,3 +1606,95 @@ def test_fallback_guard_compares_the_module_collection_not_only_occupancy() -> N
             before, rejected, observed_available_watts=0.0,
         )
     assert sum(".addModuleAt(" in script for script in transport.scripts) == 1
+
+
+
+def test_install_javascript_names_the_target_bay_that_stopped_being_empty() -> None:
+    """A refusal must say which precondition moved, not just that one did.
+
+    The occupancy of the target bay is checked before the whole-inventory
+    fingerprint, so the most specific cause is the one reported. Without it a
+    live refusal is indistinguishable from any other drift.
+    """
+
+    transport = _Replies(_dual_bay((_present(0, _module(model="COVER-PLATE")),)))
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+    requirement = factory_module_requirement_for("3650-24PS", BUILD)
+    script = factory_module_runtime._install_factory_module_js(
+        observation, requirement,
+    )
+    source = (
+        "let reported='',calls=0,power=true;"
+        + _node_descriptor_factory()
+        + _node_module_factory()
+        # Both bays now report an added module, so the target bay is occupied
+        # and its occupant cannot be identified.
+        + "const views=[makeView(0,true),makeView(1,true)];"
+        "const child=makeModule([],[],'COVER-PLATE',[]);"
+        "const root=makeModule([4,4],[child],'CHASSIS',views);"
+        "root.addModuleAt=function(){calls++;return true;};"
+        "const device={getModel:function(){return '3650-24PS';},"
+        "getRootModule:function(){return root;},getPower:function(){return power;},"
+        "getSupportedModule:function(){return ['AC-POWER-SUPPLY'];},"
+        "setPower:function(value){power=value;},skipBoot:function(){}};"
+        "global.ipc={network:function(){return {getDevice:function(){return device;}};}};"
+        "global.reportResult=function(value){reported=value;};"
+        + script
+        + "console.log(JSON.stringify({calls:calls,result:JSON.parse(reported)}));"
+    )
+
+    payload = json.loads(_run_node(source))
+
+    assert payload["calls"] == 0
+    assert payload["result"]["attempted"] is False
+    assert payload["result"]["native_ack"] is None
+    assert payload["result"]["error"] == (
+        "installation precondition changed: target slot is no longer empty: "
+        "occupied_unknown_identity"
+    )
+
+
+def test_a_precondition_refusal_is_not_an_indeterminate_mutation() -> None:
+    """attempted=False means addModuleAt never ran, so nothing is ambiguous.
+
+    The live runner stops either way, but only an indeterminate result forbids
+    a later rerun; conflating the two turned a clean refusal into a dead end.
+    """
+
+    refusal = json.dumps({
+        "attempted": False,
+        "requested_identity": "AC-POWER-SUPPLY",
+        "native_ack": None,
+        "power_was_on": None,
+        "power_restored": None,
+        "target": None,
+        "error": "installation precondition changed: target slot is no longer empty",
+        "observed_guard": "[[[],\"\",false,[4],0,[],[],[]]]",
+    })
+    transport = _Replies(_runtime_observation(), refusal)
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    before = preparer.observe_required_module("SW", "3650-24PS", fresh_owned=True)
+
+    installation = preparer.install_required_module(before)
+
+    assert installation.attempted is False
+    assert installation.native_ack is None
+    assert installation.refused_before_mutating
+    assert installation.power_was_on is None
+    assert "no longer empty" in installation.message
+    # Both sides of the comparison are retained so the drift is auditable.
+    assert installation.expected_guard == before.inventory_fingerprint
+    assert installation.observed_guard == "[[[],\"\",false,[4],0,[],[],[]]]"
+
+    # A timeout stays indeterminate: the mutation may have reached PT.
+    timeout_transport = _Replies(_runtime_observation(), None)
+    timeout_preparer = PacketTracerFactoryModulePreparer(timeout_transport, BUILD)
+    timed = timeout_preparer.install_required_module(
+        timeout_preparer.observe_required_module(
+            "SW", "3650-24PS", fresh_owned=True,
+        ),
+    )
+    assert timed.attempted is True
+    assert timed.native_ack is None
+    assert not timed.refused_before_mutating

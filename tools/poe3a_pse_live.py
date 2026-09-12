@@ -746,6 +746,14 @@ def execute_governed_qualification(
             # timeout or a failed readback cannot erase the evidence that the
             # mutation was dispatched.
             factory_preparation["installation"] = asdict(installation)
+            if installation.refused_before_mutating:
+                # addModuleAt was never issued, so nothing is ambiguous. The
+                # run still stops - the module is required - but the refusal
+                # names the precondition and carries the evidence that moved.
+                raise RuntimeError(
+                    "Factory module installation refused before mutating: "
+                    + installation.message
+                )
             if installation.native_ack is None:
                 raise RuntimeError(
                     "Factory module mutation result is indeterminate; stopping without replay."

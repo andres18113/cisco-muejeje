@@ -135,8 +135,21 @@ class FactoryModuleInstallation:
     prior_rejection_no_effect_verified: bool = False
     power_was_on: bool | None = None
     power_restored: bool | None = None
+    expected_guard: str = ""
+    observed_guard: str = ""
     message: str = ""
     raw_response: str = ""
+
+    @property
+    def refused_before_mutating(self) -> bool:
+        """A precondition refusal left Packet Tracer untouched.
+
+        Distinct from an indeterminate result: no ``addModuleAt`` was issued,
+        so nothing is ambiguous and the one attempt was never spent on the
+        device itself.
+        """
+
+        return self.attempted is False and self.native_ack is None
 
 
 @dataclass(frozen=True)

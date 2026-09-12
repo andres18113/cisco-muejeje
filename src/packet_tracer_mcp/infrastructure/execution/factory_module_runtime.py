@@ -600,6 +600,7 @@ def _parse_installation(
         target=None,
         prior_rejected_targets=prior_rejected_targets,
         prior_rejection_no_effect_verified=prior_rejection_no_effect_verified,
+        expected_guard=_observation_guard(observation),
         raw_response=raw or "",
     )
     try:
@@ -639,6 +640,7 @@ def _parse_installation(
             native_ack=None,
             message="Factory module result was malformed; mutation will not replay.",
         )
+    observed_guard = payload.get("observed_guard")
     return FactoryModuleInstallation(
         **{**base, "target": target},
         attempted=attempted,
@@ -646,6 +648,7 @@ def _parse_installation(
         native_ack=native_ack,
         power_was_on=power_was_on,
         power_restored=power_restored,
+        observed_guard=(observed_guard if type(observed_guard) is str else ""),
         message=str(payload.get("error") or "Factory module mutation returned."),
     )
 
@@ -906,12 +909,14 @@ def _install_factory_module_js(
     return (
         "try{var __d=ipc.network().getDevice(" + name + "),__model=" + module_model
         + ",__type=" + module_type + ",__path=" + expected_path + ";"
-        "function __result(__attempted,__ack,__powerWasOn,__powerRestored,__target,__error){"
+        "function __result(__attempted,__ack,__powerWasOn,__powerRestored,__target,__error,"
+        "__observedGuard){"
         "reportResult(JSON.stringify({attempted:__attempted,requested_identity:__model,"
         "native_ack:__ack,power_was_on:__powerWasOn,power_restored:__powerRestored,"
-        "target:__target,error:__error}));}if(!__d){__result(false,null,null,null,null,"
-        "'device missing');}else if(String(__d.getModel())!==" + device_model + "){"
-        "__result(false,null,null,null,null,'device model changed');}else{" + helpers
+        "target:__target,error:__error,observed_guard:(__observedGuard||'')}));}"
+        "if(!__d){__result(false,null,null,null,null,"
+        "'device missing','');}else if(String(__d.getModel())!==" + device_model + "){"
+        "__result(false,null,null,null,null,'device model changed','');}else{" + helpers
         + "var __supportedRaw=null;try{__supportedRaw=__d.getSupportedModule();}catch(__se){}"
         "var __state={containers:{}},__root=__module(__d.getRootModule(),[],__state),"
         "__currentFacts=__facts(__root,__model),__pathKey=JSON.stringify(__path),"
@@ -921,10 +926,26 @@ def _install_factory_module_js(
         "var __nodeSlots=__oneNode[7];for(var __g=0;__g<__nodeSlots.length;__g++){"
         "if(__nodeSlots[__g][0]===" + expected_index + "){__targetFact=__nodeSlots[__g];"
         "break;}}break;}"
-        "if(!__targetContainer||!__targetFact||JSON.stringify(__currentFacts)!=="
-        + expected_guard + "||__targetFact[1]!==__type||__targetFact[2]!=='empty'||"
-        "!__hasSupportedModule(__supportedRaw,__model)){"
-        "__result(false,null,null,null,null,'installation precondition changed');}else{"
+        "var __observedGuard=JSON.stringify(__currentFacts),__why='';"
+        "if(!__targetContainer){__why='container navigation path is unreachable';}"
+        "else if(!__targetFact){__why='target slot index is absent';}"
+        "else if(__targetFact[1]!==__type){__why='target slot module type changed';}"
+        "else if(__targetFact[2]!=='empty'){__why='target slot is no longer empty: '"
+        "+__targetFact[2];}"
+        "else if(!__hasSupportedModule(__supportedRaw,__model)){"
+        "__why='supported module inventory no longer offers the identity';}"
+        "else if(__observedGuard!==" + expected_guard + "){"
+        "__why='inventory or PhysicalView evidence changed since observation';"
+        # Read the surface a second time. Equal reads mean it changed once and
+        # settled; unequal reads mean the surface itself is not stable, which
+        # is a different defect and must not be mistaken for a real change.
+        "var __repeatState={containers:{}};try{var __repeat=__facts("
+        "__module(__d.getRootModule(),[],__repeatState),__model);"
+        "__why+=(JSON.stringify(__repeat)===__observedGuard"
+        "?' (stable across two reads)':' (unstable across two reads)');}"
+        "catch(__re){__why+=' (repeat read failed: '+String(__re)+')';}}"
+        "if(__why){__result(false,null,null,null,null,"
+        "'installation precondition changed: '+__why,__observedGuard);}else{"
         "var __target={container_navigation_path:__path,slot_index:"
         + expected_index + ",module_type:__type};var __hasPower="
         "typeof __d.getPower==='function'&&typeof __d.setPower==='function';"
@@ -940,8 +961,9 @@ def _install_factory_module_js(
         "if(typeof __d.skipBoot==='function'){__d.skipBoot();}__powerRestored=true;}"
         "catch(__powerError){__powerRestored=false;__error+=(__error?' | ':'')"
         "+String(__powerError);}}else if(__hasPower){__powerRestored=true;}}"
-        "__result(__attempted,__ack,__powerWasOn,__powerRestored,__target,__error);}}}"
+        "__result(__attempted,__ack,__powerWasOn,__powerRestored,__target,__error,"
+        "__observedGuard);}}}"
         "catch(__e){reportResult(JSON.stringify({attempted:false,requested_identity:"
         + module_model + ",native_ack:null,power_was_on:null,power_restored:null,"
-        "target:null,error:String(__e)}));}"
+        "target:null,error:String(__e),observed_guard:''}));}"
     )
