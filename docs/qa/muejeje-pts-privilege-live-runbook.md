@@ -14,9 +14,16 @@ its results are read under.
 
 | | Qualified artifact | This run |
 | --- | --- | --- |
-| source | `d37ba37786107ed8128d17d589d889ee1fe9b16f` | the new candidate |
+| source | `d37ba37786107ed8128d17d589d889ee1fe9b16f` | the candidate checked out, read back from `report.source` |
+| recipe id | `7d5e710723151a67e2df84dcb11d43b31ad7a89cba8ae2410cdf987689d216bb` | read back from `report.build_recipe_id` |
+| artifact | `6951c066ec158d57855dfd739619482cd05f40e007f5c28fb5fcc66e58a12146`, 48185 bytes | measured after saving |
 | privileges | `[]` | **`GET_NETWORK_INFO`, and nothing else** |
 | everything else | — | unchanged except where governed source and recipe evolution requires |
+
+The right-hand column is **read from the audit, never typed from here**: a
+recipe id written into the document that describes the commit it lives in
+cannot be correct, and one copied forward from a previous line is worse than
+absent. Run the audit, and record what it reports.
 
 The privilege set is the point of the run. Everything else differs only where
 the governed source and the recipe force it: the privilege model moved into its
