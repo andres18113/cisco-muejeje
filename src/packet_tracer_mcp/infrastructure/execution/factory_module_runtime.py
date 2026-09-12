@@ -917,9 +917,14 @@ def _install_factory_module_js(
         "if(!__d){__result(false,null,null,null,null,"
         "'device missing','');}else if(String(__d.getModel())!==" + device_model + "){"
         "__result(false,null,null,null,null,'device model changed','');}else{" + helpers
-        + "var __supportedRaw=null;try{__supportedRaw=__d.getSupportedModule();}catch(__se){}"
-        "var __state={containers:{}},__root=__module(__d.getRootModule(),[],__state),"
-        "__currentFacts=__facts(__root,__model),__pathKey=JSON.stringify(__path),"
+        # getSupportedModule is read after the module tree, exactly as the
+        # observation reads it. Measured on build 9.0.1.0858 the order is not
+        # cosmetic: asking first returned an inventory without the identity the
+        # same device had just offered, and the pre-mutation check refused a
+        # target whose tree evidence was byte-identical to the observation.
+        + "var __state={containers:{}},__root=__module(__d.getRootModule(),[],__state),"
+        "__supportedRaw=null;try{__supportedRaw=__d.getSupportedModule();}catch(__se){}"
+        "var __currentFacts=__facts(__root,__model),__pathKey=JSON.stringify(__path),"
         "__targetContainer=__state.containers[__pathKey],__targetFact=null;"
         "for(var __f=0;__f<__currentFacts.length;__f++){var __oneNode="
         "__currentFacts[__f];if(JSON.stringify(__oneNode[0])!==__pathKey){continue;}"

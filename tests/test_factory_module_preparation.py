@@ -1698,3 +1698,59 @@ def test_a_precondition_refusal_is_not_an_indeterminate_mutation() -> None:
     assert timed.attempted is True
     assert timed.native_ack is None
     assert not timed.refused_before_mutating
+
+
+
+def test_install_reads_the_supported_inventory_after_the_module_tree() -> None:
+    """Measured on 9.0.1.0858: the order of these two reads is not cosmetic.
+
+    LIVE run poe3b-router0-b-3650-11-psu-named-refusal-20260912T042203Z-d123acfd
+    refused with "supported module inventory no longer offers the identity"
+    while the whole-inventory fingerprint was byte-identical to the
+    observation. The observation reads getSupportedModule after walking
+    getRootModule; the mutation read it first, and got an inventory without
+    the identity the same device had just offered. The fake below reproduces
+    that: the supported list is empty until the module tree has been walked.
+    """
+
+    transport = _Replies(_runtime_observation())
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+    requirement = factory_module_requirement_for("3650-24PS", BUILD)
+    script = factory_module_runtime._install_factory_module_js(
+        observation, requirement,
+    )
+    source = (
+        "let reported='',calls=0,power=true,walked=false,order=[];"
+        + _node_descriptor_factory()
+        + "function makeModule(slots,entries,model,views){return {"
+        "getDescriptor:function(){return makeDescriptor(model,slots,"
+        "views||slots.map(function(_,i){return makeView(i,false);}));},"
+        "getSlotCount:function(){return slots.length;},"
+        "getSlotTypeAt:function(i){return slots[i];},"
+        "getModuleCount:function(){return entries.length;},"
+        "getModuleAt:function(i){return entries[i];},"
+        "addModuleAt:function(m,i){calls++;return true;}};}"
+        "const child=makeModule([],[],'BUILTIN');"
+        "const root=makeModule([18,4],[child],'CHASSIS');"
+        "const device={getModel:function(){return '3650-24PS';},"
+        "getRootModule:function(){order.push('tree');walked=true;return root;},"
+        # The inventory only answers once the module tree has been walked.
+        "getSupportedModule:function(){order.push('supported');"
+        "return walked?['AC-POWER-SUPPLY']:[];},"
+        "getPower:function(){return power;},"
+        "setPower:function(value){power=value;},skipBoot:function(){}};"
+        "global.ipc={network:function(){return {getDevice:function(){return device;}};}};"
+        "global.reportResult=function(value){reported=value;};"
+        + script
+        + "console.log(JSON.stringify({calls:calls,order:order,"
+        "result:JSON.parse(reported)}));"
+    )
+
+    payload = json.loads(_run_node(source))
+
+    assert payload["order"][0] == "tree"
+    assert "supported" in payload["order"]
+    assert payload["result"]["error"] == ""
+    assert payload["result"]["native_ack"] is True
+    assert payload["calls"] == 1
