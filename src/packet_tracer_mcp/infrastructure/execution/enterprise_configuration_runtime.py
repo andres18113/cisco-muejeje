@@ -929,6 +929,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         sample_round = 0
         learning_boundary_stp: dict[str, dict[str, object]] = {}
         learning_extension_observation_active = False
+        learning_extension_expectation_ids: frozenset[str] = frozenset()
 
         def inspect() -> dict[str, object]:
             nonlocal sample_round
@@ -1041,7 +1042,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "failure_reason": "",
                 "continuation_authorized": bool(
                     complete
-                    or pending_learning_progress_target_ms() is not None
+                    or (
+                        learning_extension_observation_active
+                        and learning_extension_cohort_continuation_authorized()
+                    )
+                    or (
+                        not learning_extension_observation_active
+                        and pending_learning_progress_target_ms() is not None
+                    )
                 ),
             }
 
@@ -1060,6 +1068,78 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     self._observe_pvst_boundary(device_name)
                 )
 
+        def expectation_learning_progress_target_ms(
+            expectation: VerificationExpectation,
+        ) -> float | None:
+            observed = latest.get(expectation.id, {})
+            fields = observed.get("fields")
+            if not isinstance(fields, dict):
+                return None
+            if any(
+                fields.get(name) is not FieldVerificationStatus.VERIFIED
+                for name in (
+                    "interface",
+                    "status",
+                    "allowed_vlans",
+                    "active_vlans",
+                )
+            ):
+                return None
+            if (
+                fields.get("forwarding_vlans")
+                is not FieldVerificationStatus.FAILED
+            ):
+                return None
+            correlated = learning_boundary_stp.get(expectation.device_name)
+            if (
+                not isinstance(correlated, dict)
+                or correlated.get("authoritative") is not True
+                or correlated.get("device_name") != expectation.device_name
+            ):
+                return None
+            instances = {
+                item.get("vlan_id"): item
+                for item in correlated.get("instances", [])
+                if isinstance(item, dict)
+            }
+            progress_targets: set[float] = set()
+            expected_interface = str(
+                expectation.expected.get("interface") or ""
+            )
+            for vlan_id in {
+                int(item)
+                for item in expectation.expected.get("allowed_vlans", [])
+            }:
+                instance = instances.get(vlan_id)
+                if (
+                    not isinstance(instance, dict)
+                    or instance.get("authoritative") is not True
+                ):
+                    return None
+                progress_target = pvst_learning_progress_target_ms(
+                    instance.get("forward_delay_seconds"),
+                )
+                if progress_target is None:
+                    return None
+                progress_targets.add(progress_target)
+                port = next((
+                    item for item in instance.get("ports", [])
+                    if isinstance(item, dict)
+                    and self._same_interface(
+                        str(item.get("interface") or ""),
+                        expected_interface,
+                    )
+                ), None)
+                if (
+                    port is None
+                    or port.get("row_present") is not True
+                    or str(port.get("state") or "").upper() != "LRN"
+                ):
+                    return None
+            if len(progress_targets) != 1:
+                return None
+            return next(iter(progress_targets))
+
         def pending_learning_progress_target_ms() -> float | None:
             pending = False
             progress_targets: set[float] = set()
@@ -1068,77 +1148,28 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 if self._trunk_observation_verified(observed):
                     continue
                 pending = True
-                fields = observed.get("fields")
-                if not isinstance(fields, dict):
-                    return None
-                if any(
-                    fields.get(name) is not FieldVerificationStatus.VERIFIED
-                    for name in (
-                        "interface",
-                        "status",
-                        "allowed_vlans",
-                        "active_vlans",
-                    )
-                ):
-                    return None
-                if (
-                    fields.get("forwarding_vlans")
-                    is not FieldVerificationStatus.FAILED
-                ):
-                    return None
-                correlated = learning_boundary_stp.get(
-                    expectation.device_name,
+                progress_target = expectation_learning_progress_target_ms(
+                    expectation,
                 )
-                if (
-                    not isinstance(correlated, dict)
-                    or correlated.get("authoritative") is not True
-                    or correlated.get("device_name")
-                    != expectation.device_name
-                ):
+                if progress_target is None:
                     return None
-                instances = {
-                    item.get("vlan_id"): item
-                    for item in correlated.get("instances", [])
-                    if isinstance(item, dict)
-                }
-                expected_interface = str(
-                    expectation.expected.get("interface") or ""
-                )
-                for vlan_id in {
-                    int(item)
-                    for item in expectation.expected.get(
-                        "allowed_vlans", []
-                    )
-                }:
-                    instance = instances.get(vlan_id)
-                    if (
-                        not isinstance(instance, dict)
-                        or instance.get("authoritative") is not True
-                    ):
-                        return None
-                    progress_target = pvst_learning_progress_target_ms(
-                        instance.get("forward_delay_seconds"),
-                    )
-                    if progress_target is None:
-                        return None
-                    progress_targets.add(progress_target)
-                    port = next((
-                        item for item in instance.get("ports", [])
-                        if isinstance(item, dict)
-                        and self._same_interface(
-                            str(item.get("interface") or ""),
-                            expected_interface,
-                        )
-                    ), None)
-                    if (
-                        port is None
-                        or port.get("row_present") is not True
-                        or str(port.get("state") or "").upper() != "LRN"
-                    ):
-                        return None
+                progress_targets.add(progress_target)
             if not pending or len(progress_targets) != 1:
                 return None
             return next(iter(progress_targets))
+
+        def learning_extension_cohort_continuation_authorized() -> bool:
+            if not learning_extension_expectation_ids:
+                return False
+            for expectation in ordered:
+                if expectation.id not in learning_extension_expectation_ids:
+                    continue
+                observed = latest.get(expectation.id, {})
+                if self._trunk_observation_verified(observed):
+                    continue
+                if expectation_learning_progress_target_ms(expectation) is None:
+                    return False
+            return True
 
         initial_convergence = StateConvergenceWaiter(
             inspect,
@@ -1165,6 +1196,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     learning_boundary_refresh_error = (
                         f"{type(exc).__name__}: {exc}"
                     )
+        candidate_expectation_ids = frozenset(
+            expectation.id
+            for expectation in ordered
+            if not self._trunk_observation_verified(
+                latest.get(expectation.id, {}),
+            )
+        )
         learning_extension_target = (
             pending_learning_progress_target_ms()
             if (
@@ -1174,6 +1212,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
             ) else None
         )
         learning_extension_candidate = learning_extension_target is not None
+        if learning_extension_candidate:
+            learning_extension_expectation_ids = candidate_expectation_ids
         extension_convergence: SimulationTimeConvergenceResult | None = None
         if learning_extension_target is not None:
             learning_extension_observation_active = True
@@ -1211,6 +1251,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "initial_sample_rounds": initial_convergence.attempts,
                 "learning_extension_candidate": (
                     learning_extension_candidate
+                ),
+                "learning_extension_expectation_ids": sorted(
+                    learning_extension_expectation_ids
                 ),
                 **self._pvst_learning_extension.evidence(
                     extension_convergence,
