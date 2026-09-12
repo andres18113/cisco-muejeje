@@ -42,6 +42,11 @@ from ..generator.control_plane_renderer import (
     PacketTracerControlPlaneRenderer,
 )
 from .configuration_runtime import PacketTracerConfigurationRuntime
+from .endpoint_address_observer import PacketTracerEndpointAddressObserver
+from .forwarding_probe import (
+    ForwardingProbeExecutor,
+    forwarding_probe_evidence,
+)
 from .ios_terminal import (
     ControlledIosExecutor,
     DeviceIdentityProvenance,
@@ -659,6 +664,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         renderer: PacketTracerControlPlaneRenderer | None = None,
         fault_renderer: PacketTracerControlPlaneFaultRenderer | None = None,
         ping_executor: _PingExecutor | None = None,
+        endpoint_address_observer=None,
         ios_executor: ControlledIosExecutor | None = None,
         # Medido: un ping totalmente perdido tarda 25.0 s desde un PC. Con
         # 12 s, un destino que de verdad es inalcanzable no llegaba a
@@ -754,6 +760,11 @@ class PacketTracerEnterpriseControlPlaneRuntime:
             interval_seconds=convergence_interval_seconds,
             clock=clock,
             sleeper=sleeper,
+        )
+        self._forwarding_probe = ForwardingProbeExecutor(
+            endpoint_address_observer
+            or PacketTracerEndpointAddressObserver(send_and_wait),
+            self._ping,
         )
         self._failure = FailureScenarioExecutor(
             self._configuration,
@@ -894,6 +905,8 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 ControlPlaneExecutionStage.OBSERVED,
                 "No live-fixture-backed registered query observes this state.",
             )
+        if expectation.forwarding_endpoint is not None:
+            return self._observe_selected_reachability(expectation, action)
         destination = str(expectation.expected.get("destination_ipv4") or "")
         source = str(expectation.expected.get("source_device_name") or "")
         if not source:
@@ -1004,6 +1017,107 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 attempts=attempts,
                 final_status=status,
                 last_observable_state=f"reachable={observed.reachable}",
+            ),
+        )
+
+    def _observe_selected_reachability(
+        self,
+        expectation: ControlPlaneVerificationExpectation,
+        action: ControlPlaneAction,
+    ) -> RuntimeControlPlaneVerification:
+        """Bind one selected endpoint around every bounded router-origin ping."""
+
+        target = expectation.forwarding_runtime_endpoint
+        if target is None:
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.BEHAVIOR,
+                "The forwarding selection has no DeploymentManifest runtime binding.",
+            )
+        source = str(expectation.expected.get("source_device_name") or "")
+        if not source:
+            source = self._device_names_by_id.get(expectation.device_id, "")
+        if not source and action.device_id == expectation.device_id:
+            source = action.device_name
+        expected = expectation.expected.get("reachable")
+        if not source or not isinstance(expected, bool):
+            return self._unobservable(
+                expectation,
+                ControlPlaneExecutionStage.BEHAVIOR,
+                "The selected forwarding source or typed reachability value is unavailable.",
+            )
+
+        deadline = self._clock() + self._reach_timeout
+        probes = []
+        while True:
+            probe = self._forwarding_probe.probe_once(
+                source_device_name=source,
+                destination_endpoint=target,
+                expected_reachable=expected,
+            )
+            probes.append(probe)
+            if (
+                probe.verified
+                or not probe.retryable_reachability_mismatch
+                or len(probes) >= self._reach_attempts
+                or self._clock() + self._reach_interval >= deadline
+            ):
+                break
+            self._sleep(self._reach_interval)
+
+        final = probes[-1]
+        fields = self._unobservable_fields(expectation)
+        fields["endpoint_binding"] = (
+            FieldVerificationStatus.VERIFIED
+            if final.destination_binding is not None
+            and final.bindings_stable
+            else FieldVerificationStatus.FAILED
+            if final.status is ActionExecutionStatus.FAILED
+            else FieldVerificationStatus.UNOBSERVABLE
+        )
+        if final.communication_observed and final.ping is not None:
+            fields["reachable"] = self._field(final.ping.reachable is expected)
+        if "source_device_name" in fields and final.ping is not None:
+            fields["source_device_name"] = self._field(
+                final.ping.observed_device_name == source
+                and final.ping.device_identity_provenance == "confirmed_unique"
+            )
+        if "protocol" in fields:
+            applied_protocol = self._applied_protocol(action)
+            if applied_protocol:
+                fields["protocol"] = self._field(
+                    applied_protocol == expectation.expected.get("protocol")
+                )
+        status = self._aggregate_status(fields)
+        resolved = (
+            forwarding_probe_evidence(final)["destination_binding"]
+            if final.destination_binding is not None else None
+        )
+        return RuntimeControlPlaneVerification(
+            expectation_id=expectation.id,
+            stage=ControlPlaneExecutionStage.BEHAVIOR,
+            status=status,
+            evidence_method="typed_endpoint_binding_and_ping_current_window",
+            fresh_evidence=bool(
+                final.communication_observed
+                and final.ping is not None
+                and final.ping.fresh_output_observed
+            ),
+            fields=fields,
+            message=final.message,
+            convergence=ConvergenceReport(
+                attempts=len(probes),
+                final_status=status,
+                last_observable_state=(
+                    f"reachable={final.ping.reachable}"
+                    if final.communication_observed and final.ping is not None
+                    else final.status.value
+                ),
+                details={
+                    "selected_endpoint_id": target.selection.endpoint_device_id,
+                    "resolved_binding": resolved,
+                    "attempts": [forwarding_probe_evidence(item) for item in probes],
+                },
             ),
         )
 

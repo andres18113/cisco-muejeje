@@ -541,26 +541,16 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
                 "5373539f0b1f"
             ),
         },
-        "post_ledger_retained_runs": [
-            {
-                "run_identity": (
-                    "canonical-cp-scale-voice-20260902T215118136599Z-"
-                    "aa94ce992c6b"
-                ),
-                "cleanup_evidence_role": "router0_attempt1_cleanup",
-                "invalid_live_attempt": False,
-                "provenance": "HASH_PINNED_ARCHIVE_AND_GOVERNED_STATE",
-            },
-            {
-                "run_identity": (
-                    "canonical-cp-scale-voice-20260903T002846400677Z-"
-                    "6c6db5556689"
-                ),
-                "cleanup_evidence_role": "router0_attempt2_cleanup",
-                "invalid_live_attempt": False,
-                "provenance": "HASH_PINNED_ARCHIVE_AND_GOVERNED_STATE",
-            },
-        ],
+        "post_ledger_failed_run_bundles": {
+            "path": "docs/reference/cp-scale/router0_failed_run_bundles.json",
+            "sha256": (
+                "b969c5b4c2c29fb50ab27548b35023ff"
+                "146502bbef6a258ec033dd36d448281d"
+            ),
+            "run_count": 3,
+            "classification": "FAILED",
+            "successful_closure": False,
+        },
     }
     assert state["unresolved_debt"] == []
 

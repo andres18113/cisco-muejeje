@@ -18,9 +18,15 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationActionType,
     ConfigurationIssueSeverity,
     ConfigurationPlan,
+    SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
+from ...domain.enterprise.models.forwarding import (
+    ForwardingEndpointSelection,
+    ForwardingWorkloadPolicy,
+)
 from ...domain.enterprise.models.roles import DeviceRole
+from ...domain.enterprise.models.segments import SegmentRole
 from ...domain.enterprise.models.voice_plan import (
     GeneratePhoneConfigurationFiles,
     VoicePlan,
@@ -36,7 +42,9 @@ from ...domain.enterprise.services.configuration_compiler import (
 )
 from ...domain.enterprise.services.control_plane_compiler import (
     control_plane_plan_semantic_hash,
-    representative_static_endpoint_for_routing_device,
+)
+from ...domain.enterprise.services.forwarding_target import (
+    select_forwarding_workload,
 )
 from ...domain.enterprise.services.enterprise_designer import EnterpriseDesigner
 from ...domain.enterprise.services.reference_hardware_planner import (
@@ -98,6 +106,30 @@ _CORE_CONFIGURATION_TYPES = frozenset((
     ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE,
     ConfigurationActionType.CONFIGURE_SUBINTERFACE,
 ))
+_CP_SCALE_FORWARDING_POLICY_ID = "cp-scale-wired-data-workload"
+_CP_SCALE_FORWARDING_POLICY_VERSION = "1"
+
+
+def cp_scale_forwarding_target_policy(enterprise) -> ForwardingWorkloadPolicy:
+    """Build the explicit CP-SCALE-only representative PC policy from E1."""
+
+    segments = tuple(
+        (
+            site.site_id,
+            tuple(sorted(
+                segment.name
+                for segment in site.segments
+                if segment.role is SegmentRole.DATA
+            )),
+        )
+        for site in sorted(enterprise.sites, key=lambda item: item.site_id)
+    )
+    return ForwardingWorkloadPolicy(
+        id=_CP_SCALE_FORWARDING_POLICY_ID,
+        version=_CP_SCALE_FORWARDING_POLICY_VERSION,
+        eligible_endpoint_roles=(DeviceRole.USER_PC.value,),
+        eligible_segment_ids_by_site=segments,
+    )
 
 
 @dataclass(frozen=True)
@@ -237,6 +269,32 @@ class CPScaleSiteForwardingCheck:
 
 
 @dataclass(frozen=True)
+class CPScaleSelectedSiteForwardingCheck(CPScaleSiteForwardingCheck):
+    """New plan-bound check; DHCP remains unbound until fresh LIVE evidence."""
+
+    destination_ipv4: str | None
+    destination_selection: ForwardingEndpointSelection
+
+
+@dataclass(frozen=True)
+class CPScaleUserCommunicationCheck:
+    """One representative PC-origin direction, distinct from E9 router probes."""
+
+    id: str
+    direction: str
+    authority: str
+    scope: str
+    source_site_id: str
+    destination_site_id: str
+    source_endpoint: ForwardingEndpointSelection
+    destination_endpoint: ForwardingEndpointSelection
+    target_policy_id: str
+    target_policy_version: str
+    source_topology_hash: str
+    source_configuration_hash: str
+
+
+@dataclass(frozen=True)
 class CPScaleCanonicalStageProjection:
     """Exact typed plans for one cumulative LIVE construction boundary."""
 
@@ -250,6 +308,7 @@ class CPScaleCanonicalStageProjection:
     #: not the full topology's. None where the stage carries no phone yet.
     voice: VoicePlan | None = None
     branch_forwarding_checks: tuple[CPScaleSiteForwardingCheck, ...] = ()
+    branch_user_forwarding_checks: tuple[CPScaleUserCommunicationCheck, ...] = ()
 
 
 _CANONICAL_STAGE_ORDER = {
@@ -402,6 +461,7 @@ def compose_cp_scale_canonical(
             else packet_tracer_control_plane_capabilities(packet_tracer_version)
         ),
         traffic_flows=enterprise.traffic_flows,
+        forwarding_target_policy=cp_scale_forwarding_target_policy(enterprise),
     )
     if not control.is_valid or control.plan is None:
         return EnterpriseReferenceComposition(
@@ -536,13 +596,17 @@ def project_cp_scale_canonical_stage(
         voice=_compile_stage_voice(composition, topology, configuration, stage),
     )
     if stage is CPScaleCanonicalStage.ROUTER0_BRANCH:
+        branch_checks = derive_cp_scale_site_forwarding_checks(
+            composition,
+            projection,
+            source_site_id=LARGE,
+            destination_site_id=MULTILAYER,
+        )
         projection = replace(
             projection,
-            branch_forwarding_checks=derive_cp_scale_site_forwarding_checks(
-                composition,
-                projection,
-                source_site_id=LARGE,
-                destination_site_id=MULTILAYER,
+            branch_forwarding_checks=branch_checks,
+            branch_user_forwarding_checks=derive_cp_scale_user_forwarding_checks(
+                branch_checks,
             ),
         )
     return projection
@@ -868,7 +932,7 @@ def derive_cp_scale_site_forwarding_checks(
     source_site_id: str,
     destination_site_id: str,
 ) -> tuple[CPScaleSiteForwardingCheck, ...]:
-    """Derive bidirectional site probes from E4 and static E5 endpoints.
+    """Derive bidirectional site probes from one explicit workload policy.
 
     E4 authorizes each direction separately, and the check says which one it
     got: a direction with its own declared traffic flow is
@@ -877,9 +941,9 @@ def derive_cp_scale_site_forwarding_checks(
     that flow. Both are observed; only one of them is a declared intent.
 
     The projected E4 topology identifies each site's edge router. The
-    control-plane compiler's deterministic endpoint selector chooses one
-    projected E5 static endpoint in each destination site. No address is
-    selected by convention or copied into this runtime contract.
+    E9 selection is reused when it already covers the destination; the reverse
+    direction calls the same pure selector and the same policy. DHCP addresses
+    remain absent until execution evidence binds them.
     """
 
     if composition.enterprise is None:
@@ -953,52 +1017,43 @@ def derive_cp_scale_site_forwarding_checks(
             )
         edge_by_site[site_id] = candidates[0]
 
-    routing_actions = {
-        item.device_id: item for item in projection.control_plane.actions
-        if isinstance(item, ConfigureRipv2)
-    }
-    l3_by_device: dict[str, list[object]] = defaultdict(list)
-    static_endpoints_by_segment: dict[
-        str, list[SetEndpointStaticAddress]
-    ] = defaultdict(list)
-    for action in projection.configuration.actions:
-        if action.action_type in {
-            ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE,
-            ConfigurationActionType.CONFIGURE_SUBINTERFACE,
-            ConfigurationActionType.CONFIGURE_SVI,
-        }:
-            l3_by_device[action.device_id].append(action)
-        elif isinstance(action, SetEndpointStaticAddress):
-            static_endpoints_by_segment[action.segment_id].append(action)
-
-    destination_by_site: dict[str, SetEndpointStaticAddress] = {}
+    policy = cp_scale_forwarding_target_policy(composition.enterprise)
+    destination_by_site: dict[str, ForwardingEndpointSelection] = {}
     device_by_id = {item.id: item for item in projection.topology.devices}
-    linked_device_ids = {
-        identifier
-        for link in projection.topology.links
-        for identifier in (link.device_a_id, link.device_b_id)
-    }
-    for site_id, router in edge_by_site.items():
-        destination = representative_static_endpoint_for_routing_device(
-            router.id,
-            routing_actions,
-            l3_by_device,
-            static_endpoints_by_segment,
+    e9_selections = [
+        item.forwarding_endpoint
+        for item in projection.control_plane.verification_expectations
+        if item.forwarding_endpoint is not None
+        and item.forwarding_endpoint.policy_id == policy.id
+    ]
+    if any(
+        item.policy_version != policy.version
+        or item.source_topology_hash != projection.topology.physical_identity_hash
+        or item.source_configuration_hash != projection.configuration.semantic_hash
+        for item in e9_selections
+    ):
+        raise ValueError(
+            "Canonical site forwarding E9 selection provenance is stale."
         )
-        if destination is None:
+    for site_id, router in edge_by_site.items():
+        matches = [item for item in e9_selections if item.site_id == site_id]
+        if len(matches) > 1:
             raise ValueError(
-                "Canonical site forwarding requires a representative static "
-                f"E5 endpoint for {site_id!r}; router fallback is forbidden."
+                "Canonical site forwarding has ambiguous E9 workload selections "
+                f"for {site_id!r}."
             )
-        endpoint = device_by_id.get(destination.device_id)
-        if (
-            endpoint is None
-            or endpoint.site_id != site_id
-            or destination.device_id not in linked_device_ids
-        ):
+        destination = matches[0] if matches else select_forwarding_workload(
+            projection.topology,
+            projection.configuration,
+            policy=policy,
+            site_id=site_id,
+            routing_device_id=router.id,
+        )
+        endpoint = device_by_id.get(destination.endpoint_device_id)
+        if endpoint is None or endpoint.site_id != site_id:
             raise ValueError(
-                "Canonical site forwarding representative endpoint is not "
-                f"present and linked in projected E4: {destination.device_id!r}."
+                "Canonical site forwarding selected endpoint is not present in "
+                f"projected E4: {destination.endpoint_device_id!r}."
             )
         destination_by_site[site_id] = destination
 
@@ -1028,8 +1083,8 @@ def derive_cp_scale_site_forwarding_checks(
     ):
         source_device = edge_by_site[from_site]
         destination_router = edge_by_site[to_site]
-        action = destination_by_site[to_site]
-        destination_device = device_by_id[action.device_id]
+        selection = destination_by_site[to_site]
+        destination_device = device_by_id[selection.endpoint_device_id]
         direction = f"{from_site}-to-{to_site}"
         authority, flow_id = authority_by_direction[(from_site, to_site)]
         declared = (
@@ -1038,9 +1093,10 @@ def derive_cp_scale_site_forwarding_checks(
             else ""
         )
         reverse_of = "" if declared else flow_id
-        checks.append(CPScaleSiteForwardingCheck(
+        checks.append(CPScaleSelectedSiteForwardingCheck(
             id=(
-                f"forwarding/{authority.value}/{flow_id}/{direction}/{action.id}"
+                f"forwarding/{authority.value}/{flow_id}/{direction}/"
+                f"{selection.configuration_action_id}"
             ),
             direction=direction,
             authority=authority,
@@ -1050,14 +1106,15 @@ def derive_cp_scale_site_forwarding_checks(
             destination_site_id=to_site,
             source_device_id=source_device.id,
             source_device_name=source_device.name,
-            destination_device_id=destination_device.id,
+            destination_device_id=selection.endpoint_device_id,
             destination_device_name=destination_device.name,
             destination_router_id=destination_router.id,
-            destination_action_id=action.id,
-            destination_segment_id=action.segment_id,
-            destination_ipv4=action.ipv4,
+            destination_action_id=selection.configuration_action_id,
+            destination_segment_id=selection.segment_id,
+            destination_ipv4=selection.planned_ipv4,
             source_topology_hash=projection.topology.physical_identity_hash,
             source_configuration_hash=projection.configuration.semantic_hash,
+            destination_selection=selection,
         ))
     if len({item.id for item in checks}) != len(checks):
         raise ValueError("Canonical site forwarding produced duplicate check IDs.")
@@ -1073,6 +1130,67 @@ def derive_cp_scale_site_forwarding_checks(
             "Canonical site forwarding check must name exactly one E4 flow "
             "identity that matches its declared authority."
         )
+    return tuple(checks)
+
+
+def derive_cp_scale_user_forwarding_checks(
+    site_checks: tuple[CPScaleSiteForwardingCheck, ...],
+) -> tuple[CPScaleUserCommunicationCheck, ...]:
+    """Use the exact two selected workloads for opposite PC-origin probes."""
+
+    selected = [
+        item
+        for item in site_checks
+        if isinstance(item, CPScaleSelectedSiteForwardingCheck)
+    ]
+    if len(selected) != 2 or len({item.destination_site_id for item in selected}) != 2:
+        raise ValueError(
+            "Representative user communication requires two distinct selected sites."
+        )
+    by_site = {
+        item.destination_site_id: item.destination_selection for item in selected
+    }
+    policy_identities = {
+        (item.policy_id, item.policy_version) for item in by_site.values()
+    }
+    topology_hashes = {item.source_topology_hash for item in by_site.values()}
+    configuration_hashes = {
+        item.source_configuration_hash for item in by_site.values()
+    }
+    if (
+        len(policy_identities) != 1
+        or len(topology_hashes) != 1
+        or len(configuration_hashes) != 1
+    ):
+        raise ValueError(
+            "Representative user communication selections do not share one policy and plan provenance."
+        )
+    policy_id, policy_version = next(iter(policy_identities))
+    checks = []
+    for source_site_id, destination_site_id in (
+        (LARGE, MULTILAYER),
+        (MULTILAYER, LARGE),
+    ):
+        source = by_site[source_site_id]
+        destination = by_site[destination_site_id]
+        direction = f"{source_site_id}-pc-to-{destination_site_id}-pc"
+        checks.append(CPScaleUserCommunicationCheck(
+            id=(
+                f"user-forwarding/{policy_id}/{direction}/"
+                f"{source.configuration_action_id}/{destination.configuration_action_id}"
+            ),
+            direction=direction,
+            authority="authorized-router0-representative-user-pair",
+            scope="one-selected-wired-data-workload-per-site",
+            source_site_id=source_site_id,
+            destination_site_id=destination_site_id,
+            source_endpoint=source,
+            destination_endpoint=destination,
+            target_policy_id=policy_id,
+            target_policy_version=policy_version,
+            source_topology_hash=next(iter(topology_hashes)),
+            source_configuration_hash=next(iter(configuration_hashes)),
+        ))
     return tuple(checks)
 
 
@@ -1233,6 +1351,10 @@ def _project_stage_control_plane(
                 if item.source_site_id in _active_lan_sites(stage)
                 and item.destination_site_id in _active_lan_sites(stage)
             ]
+            if composition.enterprise is not None else None
+        ),
+        forwarding_target_policy=(
+            cp_scale_forwarding_target_policy(composition.enterprise)
             if composition.enterprise is not None else None
         ),
     )

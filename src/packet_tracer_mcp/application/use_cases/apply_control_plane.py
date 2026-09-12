@@ -71,6 +71,9 @@ from ...domain.enterprise.services.configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
 )
+from ...domain.enterprise.services.forwarding_target import (
+    resolve_forwarding_runtime_endpoint,
+)
 
 
 _OBSERVED_KINDS = {
@@ -309,6 +312,7 @@ class ControlPlaneApplicator:
                         identifier: target.device_name
                         for identifier, target in semantic_targets.items()
                     },
+                    deployment_manifest,
                 )
             except DeploymentIdentityError as exc:
                 return self._failure(
@@ -551,6 +555,10 @@ class ControlPlaneApplicator:
                 identifiers.add(expectation.device_id)
             if expectation.peer_device_id:
                 identifiers.add(expectation.peer_device_id)
+            if expectation.forwarding_endpoint is not None:
+                identifiers.add(
+                    expectation.forwarding_endpoint.endpoint_device_id,
+                )
         for scenario in plan.failure_scenarios:
             identifiers.update(filter(None, (
                 scenario.device_a_id,
@@ -566,6 +574,7 @@ class ControlPlaneApplicator:
     def _runtime_plan(
         plan: ControlPlanePlan,
         deployed_names: dict[str, str],
+        deployment_manifest: DeploymentManifest | None = None,
     ) -> ControlPlanePlan:
         # La atribucion de una observacion viva vuelve por el NOMBRE del device
         # que ejecuto. Si el manifiesto ata dos devices semanticos al mismo
@@ -606,7 +615,31 @@ class ControlPlaneApplicator:
                 expected["source_device_name"] = resolve(
                     item.device_id, f"Control-plane expectation {item.id}",
                 )
-            expectations.append(item.model_copy(update={"expected": expected}))
+            runtime_endpoint = None
+            if item.forwarding_endpoint is not None:
+                if (
+                    item.forwarding_endpoint.source_topology_hash
+                    != plan.source_topology_hash
+                    or item.forwarding_endpoint.source_configuration_hash
+                    != plan.source_configuration_hash
+                ):
+                    raise DeploymentIdentityError(
+                        f"Control-plane expectation {item.id!r} forwarding "
+                        "selection provenance does not match its E9 plan."
+                    )
+                if deployment_manifest is None:
+                    raise DeploymentIdentityError(
+                        f"Control-plane expectation {item.id!r} has a forwarding "
+                        "selection but no DeploymentManifest."
+                    )
+                runtime_endpoint = resolve_forwarding_runtime_endpoint(
+                    item.forwarding_endpoint,
+                    deployment_manifest,
+                )
+            expectations.append(item.model_copy(update={
+                "expected": expected,
+                "forwarding_runtime_endpoint": runtime_endpoint,
+            }))
         scenarios = [
             item.model_copy(update={
                 "target_device_name": resolve(

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection, CPScaleSiteForwardingCheck
+from ..use_cases.compose_cp_scale_canonical import (
+    CPScaleCanonicalStageProjection,
+    CPScaleSiteForwardingCheck,
+    CPScaleUserCommunicationCheck,
+)
 from ..use_cases.observe_serial_orientation import SerialOrientationResult
 from ...domain.enterprise.models.deployment import DeploymentManifest
 from ...domain.enterprise.models.physical_deployment import PhysicalWorkspaceObservation
@@ -12,7 +16,7 @@ from ...domain.models.plans import TopologyPlan
 from .contracts import (
     CPScaleDiagnosticRecord, CPScaleDiagnosticRequest, CPScaleDhcpStatisticsTarget,
     CPScaleObservationRecord, CPScaleCoreForwardingObservation, CPScaleRealtimeState,
-    CPScaleSiteForwardingObservation,
+    CPScaleSiteForwardingObservation, CPScaleUserForwardingObservation,
 )
 
 
@@ -31,7 +35,8 @@ class CPScaleRequiredObservations(Protocol):
         baseline: CPScaleObservationRecord,
     ) -> dict[str, object]: ...
     def core_forwarding(self, checks: dict[str, str]) -> tuple[CPScaleCoreForwardingObservation, ...]: ...
-    def site_forwarding(self, checks: tuple[CPScaleSiteForwardingCheck, ...]) -> tuple[CPScaleSiteForwardingObservation, ...]: ...
+    def site_forwarding(self, checks: tuple[CPScaleSiteForwardingCheck, ...], manifest: DeploymentManifest | None = None) -> tuple[CPScaleSiteForwardingObservation, ...]: ...
+    def user_forwarding(self, checks: tuple[CPScaleUserCommunicationCheck, ...], manifest: DeploymentManifest) -> tuple[CPScaleUserForwardingObservation, ...]: ...
     def workspace(self) -> PhysicalWorkspaceObservation: ...
 
 

@@ -50,10 +50,37 @@ class CPScaleCompletion:
         covered = bool(checks and len(checks) == len(observations)
             and len({check.id for check in checks}) == len(checks)
             and all(item.check is check and item.verified for check, item in zip(checks, observations)))
+        projected_user_checks = (
+            getattr(latest.projection, "branch_user_forwarding_checks", None)
+            if latest else None
+        )
+        user_checks = latest.report.user_forwarding_checks if latest else ()
+        user_observations = forwarding.user if forwarding else ()
+        # ``None`` is the explicit historical projection compatibility path.
+        # Current canonical projections always expose the field and therefore
+        # must carry the required pair; an empty current contract fails closed.
+        user_covered = bool(
+            projected_user_checks is None
+            or (
+                projected_user_checks
+                and user_checks == projected_user_checks
+                and len(user_checks) == len(user_observations)
+                and len({check.id for check in user_checks}) == len(user_checks)
+                and all(
+                    item.check is check and item.verified
+                    for check, item in zip(user_checks, user_observations)
+                )
+            )
+        )
         if (target.target is not CPScaleCanonicalTarget.ROUTER0_BRANCH
             or latest is None or latest.stage is not CPScaleCanonicalStage.ROUTER0_BRANCH
             or latest.outcome != "verified" or forwarding is None or forwarding.site_verified is not True
-            or latest.report.workspace_verified is not True or not covered):
+            or latest.report.workspace_verified is not True or not covered
+            or (
+                projected_user_checks is not None
+                and forwarding.user_verified is not True
+            )
+            or not user_covered):
             return CPScaleRouter0Review(None, "Router0 terminal closure lacks verified stage, forwarding, or double workspace evidence.")
         audits = tuple(item.result.replay_audit if item.result else None for item in stages)
         missing = tuple(item.projection.stage.value for item, audit in zip(stages, audits)

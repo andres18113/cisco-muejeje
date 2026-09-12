@@ -12,6 +12,7 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     CPScaleForwardingAuthority,
     canonical_cp_scale_target_contract,
     canonical_stage_transition_contract,
+    cp_scale_forwarding_target_policy,
     derive_cp_scale_site_forwarding_checks,
     project_cp_scale_canonical_delta,
     project_cp_scale_canonical_stage,
@@ -23,7 +24,11 @@ from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
+    SetEndpointDhcp,
     SetEndpointStaticAddress,
+)
+from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
+    ControlPlaneApplicator,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
@@ -45,6 +50,18 @@ from src.packet_tracer_mcp.domain.enterprise.models.execution import (
 from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
 from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     VoiceApplicationResult,
+)
+from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+    configuration_plan_semantic_hash,
+)
+from src.packet_tracer_mcp.domain.enterprise.services.control_plane_compiler import (
+    control_plane_plan_semantic_hash,
+)
+from src.packet_tracer_mcp.domain.enterprise.services.forwarding_target import (
+    select_forwarding_workload,
+)
+from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+    stamp_topology_hashes,
 )
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical,
@@ -201,7 +218,9 @@ def test_floor3_to_router0_is_incremental_with_a_disjoint_scope(composition):
     )
 
 
-def test_large_multilayer_forwarding_is_derived_from_e4_and_e5(composition):
+def test_large_multilayer_forwarding_selects_wired_data_workloads_before_ping(
+    composition,
+):
     projection = project_cp_scale_canonical_stage(
         composition, CPScaleCanonicalStage.ROUTER0_BRANCH,
     )
@@ -232,10 +251,11 @@ def test_large_multilayer_forwarding_is_derived_from_e4_and_e5(composition):
     destinations = {
         action.id: action
         for action in projection.configuration.actions
-        if isinstance(action, SetEndpointStaticAddress)
+        if isinstance(action, (SetEndpointDhcp, SetEndpointStaticAddress))
     }
     assert all(
-        item.destination_ipv4 == destinations[item.destination_action_id].ipv4
+        isinstance(destinations[item.destination_action_id], SetEndpointDhcp)
+        and item.destination_ipv4 is None
         and item.destination_segment_id
         == destinations[item.destination_action_id].segment_id
         and item.destination_device_id
@@ -243,11 +263,97 @@ def test_large_multilayer_forwarding_is_derived_from_e4_and_e5(composition):
         for item in checks
     )
     assert {
-        (item.direction, item.destination_ipv4) for item in checks
+        (
+            item.direction,
+            item.destination_device_id,
+            item.destination_action_id,
+        )
+        for item in checks
     } == {
-        ("large-branch-to-multilayer-branch", "172.18.30.2"),
-        ("multilayer-branch-to-large-branch", "172.16.30.2"),
+        (
+            "large-branch-to-multilayer-branch",
+            "endpoint/multilayer-branch/multilayer-campus/access/mls3/"
+            "user_pc/001",
+            "cfg/endpoint-dhcp/7aa53dd36126b328",
+        ),
+        (
+            "multilayer-branch-to-large-branch",
+            "endpoint/large-branch/campus/floor-1/zone-a/user_pc/001",
+            "cfg/endpoint-dhcp/bb26ab0512f89bb0",
+        ),
     }
+    e9_flow = next(
+        item
+        for item in projection.control_plane.verification_expectations
+        if item.source_traffic_flow_id == "flow/large-to-multilayer"
+    )
+    forward = next(
+        item
+        for item in checks
+        if item.direction == "large-branch-to-multilayer-branch"
+    )
+    assert e9_flow.forwarding_endpoint == forward.destination_selection
+    assert "destination_ipv4" not in e9_flow.expected
+    assert e9_flow.forwarding_endpoint.network == "172.18.10.0"
+    assert e9_flow.forwarding_endpoint.prefix_length == 24
+    assert e9_flow.forwarding_endpoint.endpoint_interface == "FastEthernet0"
+    assert e9_flow.forwarding_endpoint.link_id == "link/phone_passthrough/cdee58ed177a"
+    assert e9_flow.forwarding_endpoint.endpoint_device_id in (
+        ControlPlaneApplicator._semantic_device_ids(projection.control_plane)
+    )
+    route_expectations = {
+        item.id: item
+        for item in projection.control_plane.verification_expectations
+        if item.kind.value == "route_present"
+    }
+    required_routes = [
+        route_expectations[item.reference_id]
+        for item in e9_flow.verification_prerequisites
+        if item.reference_id in route_expectations
+    ]
+    assert len(required_routes) == 1
+    assert required_routes[0].expected["network"] == "172.18.10.0"
+    assert required_routes[0].expected["prefix_length"] == 24
+    selected_foundations = [
+        item
+        for item in projection.control_plane.foundational_requirements
+        if item.source_id == e9_flow.forwarding_endpoint.configuration_action_id
+    ]
+    assert len(selected_foundations) == 1
+    assert selected_foundations[0].kind == "endpoint_address"
+    assert selected_foundations[0].source_hash == projection.configuration.semantic_hash
+
+    user_checks = projection.branch_user_forwarding_checks
+    assert len(user_checks) == 2
+    assert {
+        (
+            item.direction,
+            item.source_endpoint.endpoint_device_id,
+            item.destination_endpoint.endpoint_device_id,
+        )
+        for item in user_checks
+    } == {
+        (
+            "large-branch-pc-to-multilayer-branch-pc",
+            "endpoint/large-branch/campus/floor-1/zone-a/user_pc/001",
+            "endpoint/multilayer-branch/multilayer-campus/access/mls3/"
+            "user_pc/001",
+        ),
+        (
+            "multilayer-branch-pc-to-large-branch-pc",
+            "endpoint/multilayer-branch/multilayer-campus/access/mls3/"
+            "user_pc/001",
+            "endpoint/large-branch/campus/floor-1/zone-a/user_pc/001",
+        ),
+    }
+    selected_by_site = {
+        item.destination_site_id: item.destination_selection for item in checks
+    }
+    assert all(
+        item.source_endpoint == selected_by_site[item.source_site_id]
+        and item.destination_endpoint == selected_by_site[item.destination_site_id]
+        for item in user_checks
+    )
 
 
 def test_only_the_declared_direction_is_attributed_to_the_e4_flow(composition):
@@ -362,7 +468,7 @@ def test_forwarding_fails_closed_on_ambiguous_reverse_declarations(composition):
         )
 
 
-def test_forwarding_destination_changes_when_the_typed_e5_gateway_changes(
+def test_unrelated_static_address_changes_do_not_reselect_the_data_workload(
     composition,
 ):
     configuration = composition.configuration.model_copy(deep=True)
@@ -385,9 +491,11 @@ def test_forwarding_destination_changes_when_the_typed_e5_gateway_changes(
         item for item in changed_projection.branch_forwarding_checks
         if item.direction == "large-branch-to-multilayer-branch"
     )
-    assert derived.destination_action_id == multilayer[0].id
-    assert derived.destination_ipv4 == second_ipv4
-    assert derived.destination_ipv4 != first_ipv4
+    assert derived.destination_action_id == "cfg/endpoint-dhcp/7aa53dd36126b328"
+    assert derived.destination_device_id == (
+        "endpoint/multilayer-branch/multilayer-campus/access/mls3/user_pc/001"
+    )
+    assert derived.destination_ipv4 is None
     assert (
         derived.source_configuration_hash
         == changed_projection.configuration.semantic_hash
@@ -414,18 +522,15 @@ def test_site_forwarding_fails_closed_without_its_e4_flow(composition):
         )
 
 
-def test_site_forwarding_fails_closed_without_a_static_destination(composition):
+def test_site_forwarding_fails_closed_without_the_selected_e5_action(composition):
     configuration = composition.configuration.model_copy(deep=True)
     configuration.actions = [
         item for item in configuration.actions
-        if not (
-            isinstance(item, SetEndpointStaticAddress)
-            and item.site_id == "multilayer-branch"
-        )
+        if item.id != "cfg/endpoint-dhcp/7aa53dd36126b328"
     ]
     changed_composition = replace(composition, configuration=configuration)
 
-    with pytest.raises(ValueError, match="representative static"):
+    with pytest.raises(ValueError, match="exactly one is required"):
         project_cp_scale_canonical_stage(
             changed_composition, CPScaleCanonicalStage.ROUTER0_BRANCH,
         )
@@ -433,12 +538,8 @@ def test_site_forwarding_fails_closed_without_a_static_destination(composition):
 
 def test_site_forwarding_fails_closed_when_destination_is_not_linked(composition):
     topology = composition.topology.model_copy(deep=True)
-    representative_id = min(
-        (
-            item.device_id for item in composition.configuration.actions
-            if isinstance(item, SetEndpointStaticAddress)
-            and item.site_id == "multilayer-branch"
-        ),
+    representative_id = (
+        "endpoint/multilayer-branch/multilayer-campus/access/mls3/user_pc/001"
     )
     topology.links = [
         item for item in topology.links
@@ -446,9 +547,64 @@ def test_site_forwarding_fails_closed_when_destination_is_not_linked(composition
     ]
     changed_composition = replace(composition, topology=topology)
 
-    with pytest.raises(ValueError, match="present and linked"):
+    with pytest.raises(ValueError, match="exact projected links"):
         project_cp_scale_canonical_stage(
             changed_composition, CPScaleCanonicalStage.ROUTER0_BRANCH,
+        )
+
+
+def test_selector_rejects_ambiguous_e5_action_for_an_eligible_pc(composition):
+    projection = project_cp_scale_canonical_stage(
+        composition,
+        CPScaleCanonicalStage.ROUTER0_BRANCH,
+    )
+    configuration = projection.configuration.model_copy(deep=True)
+    selected = next(
+        item
+        for item in configuration.actions
+        if item.id == "cfg/endpoint-dhcp/7aa53dd36126b328"
+    )
+    configuration.actions.append(selected.model_copy(update={
+        "id": "cfg/endpoint-dhcp/duplicate-selection",
+    }))
+    configuration.semantic_hash = configuration_plan_semantic_hash(configuration)
+
+    with pytest.raises(ValueError, match="2 E5 addressing actions"):
+        select_forwarding_workload(
+            projection.topology,
+            configuration,
+            policy=cp_scale_forwarding_target_policy(composition.enterprise),
+            site_id="multilayer-branch",
+            routing_device_id="r-edge-multilayer-branch-01",
+        )
+
+
+def test_selector_rejects_two_links_on_the_selected_exact_interface(composition):
+    projection = project_cp_scale_canonical_stage(
+        composition,
+        CPScaleCanonicalStage.ROUTER0_BRANCH,
+    )
+    topology = projection.topology.model_copy(deep=True)
+    selected_link = next(
+        item
+        for item in topology.links
+        if item.id == "link/phone_passthrough/cdee58ed177a"
+    )
+    topology.links.append(selected_link.model_copy(update={
+        "id": "link/phone_passthrough/duplicate",
+    }))
+    stamp_topology_hashes(topology)
+    configuration = projection.configuration.model_copy(deep=True)
+    configuration.source_topology_hash = topology.physical_identity_hash
+    configuration.semantic_hash = configuration_plan_semantic_hash(configuration)
+
+    with pytest.raises(ValueError, match="2 exact projected links"):
+        select_forwarding_workload(
+            topology,
+            configuration,
+            policy=cp_scale_forwarding_target_policy(composition.enterprise),
+            site_id="multilayer-branch",
+            routing_device_id="r-edge-multilayer-branch-01",
         )
 
 
@@ -493,6 +649,32 @@ def test_site_forwarding_rejects_stale_plan_provenance(
         derive_cp_scale_site_forwarding_checks(
             composition,
             changed_projection,
+            source_site_id="large-branch",
+            destination_site_id="multilayer-branch",
+        )
+
+
+def test_site_forwarding_rejects_stale_nested_selection_provenance(composition):
+    projection = project_cp_scale_canonical_stage(
+        composition,
+        CPScaleCanonicalStage.ROUTER0_BRANCH,
+    )
+    control = projection.control_plane.model_copy(deep=True)
+    flow = next(
+        item
+        for item in control.verification_expectations
+        if item.source_traffic_flow_id == "flow/large-to-multilayer"
+    )
+    flow.forwarding_endpoint = replace(
+        flow.forwarding_endpoint,
+        source_configuration_hash="stale-selection-configuration",
+    )
+    control.semantic_hash = control_plane_plan_semantic_hash(control)
+
+    with pytest.raises(ValueError, match="selection provenance"):
+        derive_cp_scale_site_forwarding_checks(
+            composition,
+            replace(projection, control_plane=control),
             source_site_id="large-branch",
             destination_site_id="multilayer-branch",
         )

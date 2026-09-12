@@ -1,0 +1,93 @@
+"""Immutable Router0 attempts are failures, not successful evidence closure."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+INDEX = (
+    ROOT
+    / "docs"
+    / "reference"
+    / "cp-scale"
+    / "router0_failed_run_bundles.json"
+)
+STATE = ROOT / "docs" / "reference" / "cp-scale" / "current_state.json"
+
+
+EXPECTED = {
+    "canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b": {
+        "executed_sha": "aa94ce992c6bbcd45e44f4aca097f446b28e2ca4",
+        "failed_stage": "floor2",
+        "failure_sha256": "8cf8f3346a5ec058875839c22c4ea0647f965be9fe0a9b918742812e382a966c",
+        "cleanup_sha256": "12ada64f65f8e49503b93e0a2772f7611f2ad26a3a8ddd0d6556c16bf5ba6191",
+    },
+    "canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689": {
+        "executed_sha": "6c6db55566890f1d9ca9cc06bfc13ae24505e793",
+        "failed_stage": "floor3",
+        "failure_sha256": "a5b06fea51243887153cbcd48038036c5b3b3b2ca040b20210c8d592717c100a",
+        "cleanup_sha256": "f8c0fff1bcee2d6b2418074ae11e16e578e8fa313f9c9d10028d57e235150219",
+    },
+    "canonical-cp-scale-voice-20260912T165448035171Z-3bb959fc20ac": {
+        "executed_sha": "3bb959fc20acb027deae304e1ab28fc1cf40de56",
+        "failed_stage": "floor2",
+        "failure_sha256": "5df3e6618eff2e39e9b530c3ab2fc2973c49080100d9c8f025fc03a9e9593a9e",
+        "cleanup_sha256": "794f8d59e316b62f3394439cf19710949682efcef2e810c9555801156ec55d58",
+    },
+}
+
+
+def test_router0_bundle_index_pins_original_bytes_and_failure_identity():
+    index = json.loads(INDEX.read_text(encoding="utf-8"))
+
+    assert index["schema"] == "cp-scale-router0-failed-run-bundles-v1"
+    assert index["classification"] == "FAILED"
+    assert index["publication_is_success_authority"] is False
+    assert index["router0_successful_closure"] is False
+    assert {item["run_identity"] for item in index["runs"]} == set(EXPECTED)
+    for item in index["runs"]:
+        expected = EXPECTED[item["run_identity"]]
+        assert item["classification"] == "FAILED"
+        assert item["executed_sha"] == expected["executed_sha"]
+        assert item["failed_stage"] == expected["failed_stage"]
+        artifacts = {artifact["phase"]: artifact for artifact in item["artifacts"]}
+        assert artifacts["failure-precleanup"]["sha256"] == expected["failure_sha256"]
+        assert artifacts["cleanup"]["sha256"] == expected["cleanup_sha256"]
+        for artifact in artifacts.values():
+            raw = (ROOT / artifact["path"]).read_bytes()
+            assert hashlib.sha256(raw).hexdigest() == artifact["sha256"]
+        failure = json.loads(
+            (ROOT / artifacts["failure-precleanup"]["path"]).read_text(
+                encoding="utf-8",
+            )
+        )
+        cleanup = json.loads(
+            (ROOT / artifacts["cleanup"]["path"]).read_text(encoding="utf-8")
+        )
+        assert failure["run_identity"] == item["run_identity"]
+        assert failure["failure"] == item["failure"]
+        assert cleanup["source_head"] == item["executed_sha"]
+        assert cleanup["run_identity"] == item["run_identity"]
+        assert cleanup["cleanup"]["verified"] is True
+        assert cleanup["cleanup"]["second"]["semantic_device_count"] == 0
+        assert cleanup["cleanup"]["second"]["link_count"] == 0
+        assert cleanup["cleanup_realtime"]["verified"] is True
+
+
+def test_current_state_points_to_the_complete_failed_bundle_index():
+    state = json.loads(STATE.read_text(encoding="utf-8"))
+    pointer = state["last_live_state"]["run_accounting"][
+        "post_ledger_failed_run_bundles"
+    ]
+    raw = INDEX.read_bytes()
+
+    assert pointer == {
+        "path": "docs/reference/cp-scale/router0_failed_run_bundles.json",
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "run_count": 3,
+        "classification": "FAILED",
+        "successful_closure": False,
+    }

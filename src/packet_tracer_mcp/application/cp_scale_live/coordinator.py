@@ -348,7 +348,13 @@ class CPScaleLiveCoordinator:
                     request.packet_tracer_version, continuity.stage,
                     statistics_target if decision.floor1_statistics else None,
                     continuity.dhcp_baseline if decision.floor1_statistics else None,
-                    boundaries, projection.branch_forwarding_checks if decision.site_forwarding else ()))
+                    boundaries,
+                    projection.branch_forwarding_checks if decision.site_forwarding else (),
+                    (
+                        getattr(projection, "branch_user_forwarding_checks", ())
+                        if decision.site_forwarding else ()
+                    ),
+                ))
                 errors = stage_secondary_failures(acquired)
                 progress = replace(progress, active_stage=replace(progress.active_stage, result=acquired))
                 terminal = replace(terminal, secondary_failures=terminal.secondary_failures + errors)

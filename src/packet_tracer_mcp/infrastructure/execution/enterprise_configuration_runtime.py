@@ -41,6 +41,7 @@ from ...domain.enterprise.models.discovery import DeviceInitializationState
 from ..generator.configuration_renderer import PacketTracerIosRenderer
 from .configuration_runtime import PacketTracerConfigurationRuntime
 from .device_lifecycle import StateConvergenceWaiter
+from .endpoint_address_observer import PacketTracerEndpointAddressObserver
 from .ios_terminal import (
     ControlledIosExecutor,
     DeviceIdentityProvenance,
@@ -225,10 +226,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
         simulation_time_observer: (
             Callable[[], SimulationStateObservation] | None
         ) = None,
+        endpoint_address_observer=None,
     ) -> None:
         self._query_inventory = query_inventory
         self._send = send
         self._send_and_wait = send_and_wait
+        self._endpoint_addresses = (
+            endpoint_address_observer
+            or PacketTracerEndpointAddressObserver(send_and_wait)
+        )
         self._configuration = PacketTracerConfigurationRuntime(send)
         self._ios = ControlledIosExecutor(send_and_wait)
         self._renderer = PacketTracerIosRenderer()
@@ -2166,35 +2172,31 @@ class PacketTracerEnterpriseConfigurationRuntime:
         the same as having looked and seen the opposite.
         """
         expected = expectation.expected
-        name = json.dumps(expectation.device_name)
         interface = str(expected.get("interface") or "")
         if not interface:
             return self._unobservable(
                 expectation,
                 message="The expectation names no addressed interface to read.",
             )
-        wanted = json.dumps(interface)
-
         def inspect() -> dict:
-            js = "".join((
-                "try{var d=ipc.network().getDevice(", name, ");",
-                "var want=", wanted, ";var p=null;",
-                "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
-                "if(c&&typeof c.getName==='function'&&String(c.getName())===want){p=c;break;}}}",
-                "var able=!!p&&typeof p.getIpAddress==='function';",
-                "var ip=able?String(p.getIpAddress()):'';",
-                "var mask=able?String(p.getSubnetMask()):'';",
-                # PT 9.0.1 evidence confirms only IP/mask getters. Gateway and DNS
-                # remain deliberately unobservable until Cisco API evidence exists.
-                "reportResult(JSON.stringify({found:!!d,port_found:!!p,interface:want,",
-                # Whether this port has an address channel at all is a separate
-                # fact from whether the address on it matches, and it has to
-                # survive: `configuration_channel` is overwritten below with the
-                # match, and an overwritten flag cannot say "unreadable".
-                "address_channel:able,ipv4:ip,netmask:mask,gateway:null,dns:null}));",
-                "}catch(e){reportResult('ERROR:'+e);}",
-            ))
-            observed = self._json_result(js, 3.0)
+            read = self._endpoint_addresses.observe(
+                expectation.device_name,
+                interface,
+            )
+            observed = {
+                "found": read.device_found,
+                "port_found": read.port_found,
+                "interface": read.interface,
+                "address_channel": read.address_channel,
+                "ipv4": read.ipv4,
+                "netmask": read.netmask,
+                # PT 9.0.1 evidence confirms only IP/mask getters. Gateway and
+                # DNS remain deliberately unobservable.
+                "gateway": None,
+                "dns": None,
+                "fresh_evidence": read.fresh_evidence,
+                "failure_reason": read.failure_reason,
+            }
             observed["configuration_channel"] = self._endpoint_matches(expected, observed)
             return observed
 

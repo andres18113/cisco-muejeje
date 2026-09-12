@@ -53,6 +53,10 @@ from ..models.control_plane import (
     control_plane_action_type_counts,
 )
 from ..models.link_performance import TrafficFlowIntent
+from ..models.forwarding import (
+    ForwardingEndpointSelection,
+    ForwardingWorkloadPolicy,
+)
 from ..models.security_plan import SecurityCapabilityStatus, SecurityPlan
 from ..models.failure_domain import (
     FailureDomain,
@@ -71,6 +75,7 @@ from .failure_domain_analyzer import (
     FailureDomainAnalyzer,
     build_failure_domain_catalog,
 )
+from .forwarding_target import select_forwarding_workload
 
 
 _L3_ACTIONS = (ConfigureRoutedInterface, ConfigureSvi, ConfigureSubinterface)
@@ -219,6 +224,7 @@ class ControlPlaneCompiler:
         capabilities: dict[str, ControlPlaneCapabilityProfile] | None = None,
         failure_domains: Iterable[FailureDomain] = (),
         traffic_flows: Iterable[TrafficFlowIntent] = (),
+        forwarding_target_policy: ForwardingWorkloadPolicy | None = None,
     ) -> ControlPlaneCompileResult:
         issues: list[ConfigurationIssue] = []
         capabilities = capabilities or {}
@@ -273,6 +279,7 @@ class ControlPlaneCompiler:
         routing_actions, routing_expectations = self._compile_routing(
             intent, topology, configuration, devices, names_to_ids, links,
             foundations, issues, tuple(traffic_flows),
+            forwarding_target_policy,
         )
         actions.extend(routing_actions)
         expectations.extend(routing_expectations)
@@ -1237,6 +1244,7 @@ class ControlPlaneCompiler:
         foundations: dict[str, ControlPlaneFoundationRequirement],
         issues: list[ConfigurationIssue],
         traffic_flows: tuple[TrafficFlowIntent, ...] = (),
+        forwarding_target_policy: ForwardingWorkloadPolicy | None = None,
     ) -> tuple[list[ControlPlaneAction], list[ControlPlaneVerificationExpectation]]:
         policies = [*intent.routing_domains]
         if intent.routing is not None and intent.routing.id not in {item.id for item in policies}:
@@ -1248,6 +1256,7 @@ class ControlPlaneCompiler:
             domain_actions, domain_expectations = self._compile_routing_domain(
                 policy, topology, configuration, devices, names_to_ids, links,
                 foundations, issues, traffic_flows,
+                forwarding_target_policy,
             )
             for action in domain_actions:
                 if action.device_id in used_devices:
@@ -1273,8 +1282,8 @@ class ControlPlaneCompiler:
         foundations: dict[str, ControlPlaneFoundationRequirement],
         issues: list[ConfigurationIssue],
         traffic_flows: tuple[TrafficFlowIntent, ...] = (),
+        forwarding_target_policy: ForwardingWorkloadPolicy | None = None,
     ) -> tuple[list[ControlPlaneAction], list[ControlPlaneVerificationExpectation]]:
-        del topology
         # Indices para atribuir comportamiento a flujos declarados. Quedan
         # vacios y sin efecto cuando el intent no trae `traffic_flows`.
         #
@@ -1531,9 +1540,11 @@ class ControlPlaneCompiler:
             # antes -- configuración y rutas aprendidas, ninguna alcanzabilidad.
             if traffic_flows:
                 expectations.extend(self._rip_flow_behavior_expectations(
-                    traffic_flows, devices, links, action_by_device,
+                    traffic_flows, topology, configuration, devices, links,
+                    action_by_device,
                     l3_by_device, static_endpoints_by_segment,
-                    routes_by_device, rip_peer_by_route, issues,
+                    routes_by_device, rip_peer_by_route, foundations, issues,
+                    forwarding_target_policy,
                 ))
             return actions, expectations
         for action in actions:
@@ -1693,6 +1704,8 @@ class ControlPlaneCompiler:
     @staticmethod
     def _rip_flow_behavior_expectations(
         traffic_flows,
+        topology: TopologyPlan,
+        configuration: ConfigurationPlan,
         devices: dict[str, DevicePlan],
         links: dict[str, LinkPlan],
         action_by_device: dict[str, object],
@@ -1700,12 +1713,14 @@ class ControlPlaneCompiler:
         static_endpoints_by_segment: dict[str, list[SetEndpointStaticAddress]],
         routes_by_device: dict[str, list[tuple[str, str, int]]],
         rip_peer_by_route: dict[str, tuple[str, object]],
+        foundations: dict[str, ControlPlaneFoundationRequirement],
         issues: list[ConfigurationIssue],
+        forwarding_target_policy: ForwardingWorkloadPolicy | None,
     ) -> list[ControlPlaneVerificationExpectation]:
         """Una expectativa de alcance por flujo declarado, resuelta por semántica.
 
-            flujo -> router del sitio origen -> IP de destino en el sitio destino
-                  -> la expectativa ROUTE_PRESENT DE ESE PREFIJO en ESE router
+            flujo -> router del sitio origen -> destino E5 del sitio remoto
+                  -> red planificada -> ROUTE_PRESENT -> binding LIVE -> ping
 
         No se cuelga de todas las rutas del router de origen: una ruta que este
         flujo no usa no es prerequisito suyo. Si el flujo declara un camino
@@ -1736,11 +1751,36 @@ class ControlPlaneCompiler:
                 ))
                 continue
             source_id, target_id = sources[0], targets[0]
-            destination = _destination_address_for(
-                target_id, action_by_device, l3_by_device,
-                static_endpoints_by_segment,
-            )
-            if destination is None:
+            selected_endpoint: ForwardingEndpointSelection | None = None
+            destination: str | None = None
+            if forwarding_target_policy is not None:
+                try:
+                    selected_endpoint = select_forwarding_workload(
+                        topology,
+                        configuration,
+                        policy=forwarding_target_policy,
+                        site_id=flow.destination_site_id,
+                        routing_device_id=target_id,
+                    )
+                except ValueError as exc:
+                    issues.append(_error(
+                        ConfigurationIssueCode.CONTROL_PLANE_INTENT_INVALID,
+                        f"Traffic flow {flow.id!r} forwarding target is invalid: {exc}",
+                        flow.id,
+                    ))
+                    continue
+                ControlPlaneCompiler._foundation(
+                    foundations,
+                    "endpoint_address",
+                    selected_endpoint.configuration_action_id,
+                    configuration.semantic_hash,
+                )
+            else:
+                destination = _destination_address_for(
+                    target_id, action_by_device, l3_by_device,
+                    static_endpoints_by_segment,
+                )
+            if destination is None and selected_endpoint is None:
                 issues.append(_error(
                     ConfigurationIssueCode.CONTROL_PLANE_INTENT_INVALID,
                     f"Traffic flow {flow.id!r} has no compiled L3 identity at "
@@ -1761,8 +1801,16 @@ class ControlPlaneCompiler:
             prerequisites: list[VerificationPrerequisite] = []
             missing: list[str] = []
             for device_id in required:
-                match = _route_for_destination(
-                    routes_by_device.get(device_id, ()), destination,
+                match = (
+                    _route_for_network(
+                        routes_by_device.get(device_id, ()),
+                        selected_endpoint.network,
+                        selected_endpoint.prefix_length,
+                    )
+                    if selected_endpoint is not None
+                    else _route_for_destination(
+                        routes_by_device.get(device_id, ()), destination or "",
+                    )
                 )
                 if match is None:
                     missing.append(device_id)
@@ -1776,14 +1824,22 @@ class ControlPlaneCompiler:
                 issues.append(_error(
                     ConfigurationIssueCode.CONTROL_PLANE_INTENT_INVALID,
                     f"Traffic flow {flow.id!r} has no compiled route to "
-                    f"{destination} on {', '.join(sorted(missing))}.",
+                    f"{selected_endpoint.network + '/' + str(selected_endpoint.prefix_length) if selected_endpoint is not None else destination} "
+                    f"on {', '.join(sorted(missing))}.",
                     flow.id,
                 ))
                 continue
 
             source_action = action_by_device[source_id]
             emitted.append(ControlPlaneVerificationExpectation(
-                id=_stable_id("verify-flow-reachability", flow.id, destination),
+                id=_stable_id(
+                    "verify-flow-reachability",
+                    flow.id,
+                    (
+                        selected_endpoint.configuration_action_id
+                        if selected_endpoint is not None else destination
+                    ),
+                ),
                 kind=ControlPlaneVerificationKind.END_TO_END_REACHABILITY,
                 action_id=source_action.id,
                 device_id=source_id,
@@ -1791,10 +1847,15 @@ class ControlPlaneCompiler:
                 # Procedencia, no afirmacion observable: ver
                 # ControlPlaneVerificationExpectation.source_traffic_flow_id.
                 source_traffic_flow_id=flow.id,
+                forwarding_endpoint=selected_endpoint,
                 required_capability=
                     ControlPlaneCapabilityDimension.ROUTING_BEHAVIOR,
                 expected={
-                    "destination_ipv4": destination,
+                    **(
+                        {}
+                        if selected_endpoint is not None
+                        else {"destination_ipv4": destination or ""}
+                    ),
                     "reachable": True,
                     "protocol": DynamicRoutingProtocol.RIPV2.value,
                 },
@@ -2347,6 +2408,32 @@ def _route_for_destination(
         except ValueError:
             continue
         if address not in candidate:
+            continue
+        if best is None or candidate.prefixlen > best[0]:
+            best = (candidate.prefixlen, expectation_id)
+    return None if best is None else best[1]
+
+
+def _route_for_network(
+    routes: "Iterable[tuple[str, str, int]]",
+    network: str,
+    prefix_length: int,
+) -> str | None:
+    """Return the most-specific compiled route covering the selected E5 LAN."""
+
+    try:
+        target = ipaddress.ip_network(f"{network}/{prefix_length}", strict=True)
+    except ValueError:
+        return None
+    best: tuple[int, str] | None = None
+    for expectation_id, candidate_network, candidate_prefix in routes:
+        try:
+            candidate = ipaddress.ip_network(
+                f"{candidate_network}/{candidate_prefix}", strict=False,
+            )
+        except ValueError:
+            continue
+        if not target.subnet_of(candidate):
             continue
         if best is None or candidate.prefixlen > best[0]:
             best = (candidate.prefixlen, expectation_id)

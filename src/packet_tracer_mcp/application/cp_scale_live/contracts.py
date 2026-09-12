@@ -15,14 +15,15 @@ from .process_identity import packet_tracer_version_path_error
 
 from ..use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage, CPScaleCanonicalStageProjection,
-    CPScaleSiteForwardingCheck,
+    CPScaleSiteForwardingCheck, CPScaleUserCommunicationCheck,
 )
 from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
 from ..use_cases.observe_serial_orientation import SerialOrientationResult
 from ..use_cases.qualify_cp_scale_live import CanonicalMutationReplayAudit, CPScaleCanonicalVoiceEvidence
 from ...domain.enterprise.models.configuration_runtime import (
-    ActionApplicationResult, ConfigurationApplicationResult,
+    ActionApplicationResult, ActionExecutionStatus, ConfigurationApplicationResult,
 )
+from ...domain.enterprise.models.forwarding import ForwardingEndpointBinding
 from ...domain.enterprise.models.configuration import ConfigurationPhase
 from ...domain.enterprise.models.control_plane_runtime import ControlPlaneApplicationResult
 from ...domain.enterprise.models.deployment import DeploymentManifest, EnvironmentFingerprint
@@ -153,6 +154,7 @@ class CPScaleStageExecutionInput:
     dhcp_statistics_baseline: CPScaleObservationRecord | None = None
     network_boundaries: tuple[CPScaleObservationRecord, ...] = ()
     site_forwarding_checks: tuple[CPScaleSiteForwardingCheck, ...] = ()
+    user_forwarding_checks: tuple[CPScaleUserCommunicationCheck, ...] = ()
 
     @property
     def configuration_attempt_limit(self) -> int:
@@ -252,6 +254,28 @@ class CPScaleSiteForwardingObservation:
 
 
 @dataclass(frozen=True)
+class CPScaleSelectedSiteForwardingObservation(CPScaleSiteForwardingObservation):
+    status: ActionExecutionStatus
+    destination_binding: ForwardingEndpointBinding | None = None
+    probes: tuple[object, ...] = ()
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class CPScaleUserForwardingObservation:
+    """A PC-origin measurement with both endpoint bindings kept distinct."""
+
+    check: CPScaleUserCommunicationCheck
+    attempts: tuple[TypedPingResult, ...]
+    status: ActionExecutionStatus
+    verified: bool
+    source_binding: ForwardingEndpointBinding | None = None
+    destination_binding: ForwardingEndpointBinding | None = None
+    probes: tuple[object, ...] = ()
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class CPScaleForwardingResult:
     core_verified: bool
     core: tuple[CPScaleCoreForwardingObservation, ...]
@@ -259,10 +283,17 @@ class CPScaleForwardingResult:
     site_verified: bool | None = None
     first_failure: str = ""
     error: str = ""
+    user: tuple[CPScaleUserForwardingObservation, ...] = ()
+    user_verified: bool | None = None
+    user_first_failure: str = ""
 
     @property
     def verified(self) -> bool:
-        return self.core_verified and self.site_verified is not False
+        return (
+            self.core_verified
+            and self.site_verified is not False
+            and self.user_verified is not False
+        )
 
 
 @dataclass(frozen=True)
@@ -281,6 +312,7 @@ class CPScaleStageReport:
     workspace_second: PhysicalWorkspaceObservation | None
     workspace_verified: bool | None
     site_forwarding_checks: tuple[CPScaleSiteForwardingCheck, ...]
+    user_forwarding_checks: tuple[CPScaleUserCommunicationCheck, ...] = ()
 
 
 @dataclass(frozen=True)

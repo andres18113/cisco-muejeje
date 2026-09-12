@@ -391,6 +391,8 @@ class CPScaleStageExecutor:
                 scope, configuration_report, voice, tuple(lifecycle), window, canonical_voice,
                 canonical_voice_error, forwarded,
                 reconciled.first if reconciled else None, workspace,
-                reconciled.verified if reconciled else None, request.site_forwarding_checks,
+                reconciled.verified if reconciled else None,
+                request.site_forwarding_checks,
+                request.user_forwarding_checks,
             ),
         )

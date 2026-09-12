@@ -16,6 +16,7 @@ from ...application.use_cases.compose_cp_scale_canonical import CPScaleCanonical
 from ...domain.enterprise.models.configuration import VerificationKind
 from ...domain.enterprise.models.configuration_runtime import ActionExecutionStatus
 from ...domain.models.typed_ping import TypedPingResult
+from ...infrastructure.execution.forwarding_probe import forwarding_probe_evidence
 from ...shared.utils import serialize_typed_ping_evidence
 
 
@@ -223,6 +224,7 @@ def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
     voice_mutation_ids = scope.voice
     retained_voice_ids = scope.retained_voice
     site_forwarding_checks = report.site_forwarding_checks
+    user_forwarding_checks = report.user_forwarding_checks
     evidence = {
         "stage": projection.stage.value,
         "plan": {
@@ -272,6 +274,9 @@ def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
             ),
             "branch_forwarding_checks": [
                 asdict(item) for item in site_forwarding_checks
+            ],
+            "branch_user_forwarding_checks": [
+                asdict(item) for item in user_forwarding_checks
             ],
         },
         "physical": result.deployment.model_dump(mode="json"),
@@ -353,12 +358,55 @@ def stage_result_evidence(result: CPScaleLiveStageResult) -> dict[str, object]:
         evidence["core_forwarding_verified"] = forwarded.core_verified
         if forwarded.site_verified is not None:
             evidence["site_forwarding"] = [
-                {"check": asdict(item.check), "result": _forwarding_attempt_evidence(item.attempts),
-                 "verified": item.verified and bool(item.attempts)}
+                {
+                    "check": asdict(item.check),
+                    "result": _forwarding_attempt_evidence(item.attempts),
+                    "attempts": [
+                        serialize_typed_ping_evidence(attempt)
+                        for attempt in item.attempts
+                    ],
+                    "resolved_binding": (
+                        asdict(item.destination_binding)
+                        if getattr(item, "destination_binding", None) else None
+                    ),
+                    "binding_probes": [
+                        forwarding_probe_evidence(probe)
+                        for probe in getattr(item, "probes", ())
+                    ],
+                    "verified": item.verified and bool(item.attempts),
+                }
                 for item in forwarded.site
             ]
             evidence["site_forwarding_verified"] = forwarded.site_verified
             evidence["site_forwarding_first_failure"] = forwarded.first_failure
+        if forwarded.user_verified is not None:
+            evidence["user_forwarding"] = [
+                {
+                    "check": asdict(item.check),
+                    "status": item.status.value,
+                    "attempts": [
+                        serialize_typed_ping_evidence(attempt)
+                        for attempt in item.attempts
+                    ],
+                    "source_binding": (
+                        asdict(item.source_binding) if item.source_binding else None
+                    ),
+                    "destination_binding": (
+                        asdict(item.destination_binding)
+                        if item.destination_binding else None
+                    ),
+                    "binding_probes": [
+                        forwarding_probe_evidence(probe) for probe in item.probes
+                    ],
+                    "verified": item.verified and bool(item.attempts),
+                    "error": item.error,
+                }
+                for item in forwarded.user
+            ]
+            evidence["user_forwarding_verified"] = forwarded.user_verified
+            evidence["user_forwarding_first_failure"] = (
+                forwarded.user_first_failure
+            )
     if report.workspace_first is not None:
         evidence["workspace_first"] = report.workspace_first.compact_summary()
         evidence["workspace_second"] = report.workspace_second.compact_summary() if report.workspace_second is not None else None

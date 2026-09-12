@@ -12,6 +12,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigureAccessPort,
     VerificationKind,
 )
+from ...domain.enterprise.models.configuration_runtime import ActionExecutionStatus
 from ...infrastructure.execution.command_dispatch import (
     DispatchClassification,
     is_command_corrupted,
@@ -31,6 +32,10 @@ from ...infrastructure.execution.ios_terminal import (
 from ...infrastructure.execution.typed_ping import (
     TypedPingExecutor,
 )
+from ...infrastructure.execution.endpoint_address_observer import (
+    PacketTracerEndpointAddressObserver,
+)
+from ...infrastructure.execution.forwarding_probe import ForwardingProbeExecutor
 from ...shared.utils import (
     same_interface_name,
     serialize_typed_ping_evidence,
@@ -38,7 +43,12 @@ from ...shared.utils import (
 from ...application.use_cases.observe_serial_orientation import (
     SerialOrientationObserver, inherit_verified_serial_orientation,
 )
-from ...application.cp_scale_live.contracts import CPScaleCoreForwardingObservation, CPScaleSiteForwardingObservation
+from ...application.cp_scale_live.contracts import (
+    CPScaleCoreForwardingObservation,
+    CPScaleSelectedSiteForwardingObservation,
+    CPScaleSiteForwardingObservation,
+    CPScaleUserForwardingObservation,
+)
 from ...application.cp_scale_live.forwarding_stage import core_forwarding_verified, site_forwarding_verified
 from ..execution.serial_orientation_runtime import PacketTracerSerialOrientationRuntime
 from ..execution.simulation_trace_runtime import SimulationTraceRuntime
@@ -49,9 +59,17 @@ from ...application.cp_scale_live.contracts import (
     CPScaleObservationRecord,
     CPScaleRealtimeState,
 )
-from ...application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection, CPScaleSiteForwardingCheck
+from ...application.use_cases.compose_cp_scale_canonical import (
+    CPScaleCanonicalStageProjection,
+    CPScaleSelectedSiteForwardingCheck,
+    CPScaleSiteForwardingCheck,
+    CPScaleUserCommunicationCheck,
+)
 from ...application.use_cases.observe_serial_orientation import SerialOrientationResult
 from ...domain.enterprise.models.deployment import DeploymentManifest
+from ...domain.enterprise.services.forwarding_target import (
+    resolve_forwarding_runtime_endpoint,
+)
 from ...domain.enterprise.models.physical_deployment import PhysicalWorkspaceObservation
 from ...domain.models.plans import TopologyPlan
 
@@ -66,6 +84,13 @@ class PacketTracerCPScaleObservations:
         self.simulation = SimulationTraceRuntime(transport.send_and_wait)
         self.ping = TypedPingExecutor(
             transport.send_and_wait, timeout_seconds=30.0, measurement_attempts=3,
+        )
+        self.endpoint_addresses = PacketTracerEndpointAddressObserver(
+            transport.send_and_wait,
+        )
+        self.forwarding_probe = ForwardingProbeExecutor(
+            self.endpoint_addresses,
+            self.ping,
         )
 
     def network_state(self, projection: CPScaleCanonicalStageProjection, *, boundary: str) -> dict[str, object]:
@@ -119,8 +144,28 @@ class PacketTracerCPScaleObservations:
     def core_forwarding(self, checks: dict[str, str]) -> tuple[CPScaleCoreForwardingObservation, ...]:
         return _observe_core_forwarding(self.ping, checks)
 
-    def site_forwarding(self, checks: tuple[CPScaleSiteForwardingCheck, ...]) -> tuple[CPScaleSiteForwardingObservation, ...]:
-        return _observe_site_forwarding(self.ping, checks)
+    def site_forwarding(
+        self,
+        checks: tuple[CPScaleSiteForwardingCheck, ...],
+        manifest: DeploymentManifest | None = None,
+    ) -> tuple[CPScaleSiteForwardingObservation, ...]:
+        return _observe_site_forwarding(
+            self.ping,
+            checks,
+            forwarding_probe=getattr(self, "forwarding_probe", None),
+            manifest=manifest,
+        )
+
+    def user_forwarding(
+        self,
+        checks: tuple[CPScaleUserCommunicationCheck, ...],
+        manifest: DeploymentManifest,
+    ) -> tuple[CPScaleUserForwardingObservation, ...]:
+        return _observe_user_forwarding(
+            self.forwarding_probe,
+            checks,
+            manifest,
+        )
 
     def workspace(self) -> PhysicalWorkspaceObservation:
         return self.physical.observe_workspace()
@@ -212,9 +257,63 @@ def _wait_for_core_forwarding(
 def _observe_site_forwarding(
     ping: TypedPingExecutor, checks, *,
     attempts: int = 4, interval_seconds: float = 5.0,
+    forwarding_probe: ForwardingProbeExecutor | None = None,
+    manifest: DeploymentManifest | None = None,
 ) -> tuple[CPScaleSiteForwardingObservation, ...]:
     observations = []
     for check in checks:
+        if isinstance(check, CPScaleSelectedSiteForwardingCheck):
+            if forwarding_probe is None or manifest is None:
+                observations.append(CPScaleSelectedSiteForwardingObservation(
+                    check,
+                    (),
+                    False,
+                    ActionExecutionStatus.UNOBSERVABLE,
+                    error=(
+                        "Selected forwarding requires an endpoint observer and "
+                        "DeploymentManifest."
+                    ),
+                ))
+                continue
+            try:
+                destination = resolve_forwarding_runtime_endpoint(
+                    check.destination_selection,
+                    manifest,
+                )
+            except ValueError as exc:
+                observations.append(CPScaleSelectedSiteForwardingObservation(
+                    check,
+                    (),
+                    False,
+                    ActionExecutionStatus.FAILED,
+                    error=str(exc),
+                ))
+                continue
+            probes = [forwarding_probe.probe_once(
+                source_device_name=check.source_device_name,
+                destination_endpoint=destination,
+            )]
+            for _ in range(attempts - 1):
+                if not probes[-1].retryable_reachability_mismatch:
+                    break
+                time.sleep(interval_seconds)
+                probes.append(forwarding_probe.probe_once(
+                    source_device_name=check.source_device_name,
+                    destination_endpoint=destination,
+                ))
+            final = probes[-1]
+            observations.append(CPScaleSelectedSiteForwardingObservation(
+                check=check,
+                attempts=tuple(
+                    item.ping for item in probes if item.ping is not None
+                ),
+                verified=final.verified,
+                status=final.status,
+                destination_binding=final.destination_binding,
+                probes=tuple(probes),
+                error=final.message if not final.verified else "",
+            ))
+            continue
         results = [ping.ping(check.source_device_name, check.destination_ipv4)]
         for _ in range(attempts - 1):
             if core_forwarding_verified(results[-1]):
@@ -238,6 +337,66 @@ def _wait_for_site_forwarding(
         {"check": asdict(item.check), "result": serialize_typed_ping_evidence(item.attempts[-1]), "verified": item.verified}
         for item in observations
     ], failure
+
+
+def _observe_user_forwarding(
+    probe: ForwardingProbeExecutor,
+    checks: tuple[CPScaleUserCommunicationCheck, ...],
+    manifest: DeploymentManifest,
+    *,
+    attempts: int = 4,
+    interval_seconds: float = 5.0,
+) -> tuple[CPScaleUserForwardingObservation, ...]:
+    """Run fixed PC identities; only a fresh negative ping may use the window."""
+
+    observations = []
+    for check in checks:
+        try:
+            source = resolve_forwarding_runtime_endpoint(
+                check.source_endpoint,
+                manifest,
+            )
+            destination = resolve_forwarding_runtime_endpoint(
+                check.destination_endpoint,
+                manifest,
+            )
+        except ValueError as exc:
+            observations.append(CPScaleUserForwardingObservation(
+                check=check,
+                attempts=(),
+                status=ActionExecutionStatus.FAILED,
+                verified=False,
+                error=str(exc),
+            ))
+            continue
+        probes = [probe.probe_once(
+            source_device_name=source.runtime_device_name,
+            source_endpoint=source,
+            destination_endpoint=destination,
+        )]
+        for _ in range(attempts - 1):
+            if not probes[-1].retryable_reachability_mismatch:
+                break
+            time.sleep(interval_seconds)
+            probes.append(probe.probe_once(
+                source_device_name=source.runtime_device_name,
+                source_endpoint=source,
+                destination_endpoint=destination,
+            ))
+        final = probes[-1]
+        observations.append(CPScaleUserForwardingObservation(
+            check=check,
+            attempts=tuple(
+                item.ping for item in probes if item.ping is not None
+            ),
+            status=final.status,
+            verified=final.verified,
+            source_binding=final.source_binding,
+            destination_binding=final.destination_binding,
+            probes=tuple(probes),
+            error=final.message if not final.verified else "",
+        ))
+    return tuple(observations)
 
 
 def _dhcp_server_binding_evidence(

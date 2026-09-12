@@ -18,6 +18,7 @@ from .failure_domain import (
     FailureDomainIndependenceResult,
     FailureDomainType,
 )
+from .forwarding import ForwardingEndpointSelection, ForwardingRuntimeEndpoint
 
 
 class StpMode(str, Enum):
@@ -361,6 +362,18 @@ class ControlPlaneVerificationExpectation(BaseModel):
     #: propiedad del device". La etiqueta se conserva y sigue auditable; lo que
     #: cambia es donde se declara, no cuanto se reclama.
     source_traffic_flow_id: str = ""
+    #: Opt-in target identity. Historical expectations omit this field from
+    #: serialization, preserving their plan identity byte for byte.
+    forwarding_endpoint: ForwardingEndpointSelection | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    #: Manifest correspondence exists only in the execution copy of the plan.
+    forwarding_runtime_endpoint: ForwardingRuntimeEndpoint | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
     required_capability: ControlPlaneCapabilityDimension
     expected: dict[
         str,

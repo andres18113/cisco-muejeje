@@ -6,6 +6,10 @@ the small set of keys still projected into `handoff.md` for compatibility.
 
 Supporting records:
 
+- [Router0 failed run bundles](router0_failed_run_bundles.json) canonically
+  indexes the three post-ledger executions by complete run identity, executed
+  SHA, immutable artifact hashes and verified cleanup. Every entry is
+  `FAILED`; publication supplies neither success authority nor Router0 closure.
 - [Operator runbook for the one governed observation](ROUTER0_POE_OPERATOR_RUNBOOK.md)
   is the mechanical form of the only remaining step that needs a person:
   which episode to run first and why, the gates the harness enforces, the

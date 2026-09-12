@@ -1,0 +1,93 @@
+{
+  "schema": "cp-scale-router0-failed-run-bundles-v1",
+  "classification": "FAILED",
+  "publication_is_success_authority": false,
+  "router0_successful_closure": false,
+  "measurement_policy": "Original artifacts are immutable; this index copies only execution identity, terminal failure text, hashes, and cleanup facts.",
+  "runs": [
+    {
+      "run_identity": "canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b",
+      "executed_sha": "aa94ce992c6bbcd45e44f4aca097f446b28e2ca4",
+      "requested_target_field": null,
+      "failed_stage": "floor2",
+      "classification": "FAILED",
+      "failure": "CanonicalLiveFailure: Voice at 'floor2' did not close: Deferred Voice signalling failed: Configuration verification 'cfg/verify/7c4718f69e82919a' is partial; only fresh VERIFIED evidence is allowed outside the governed ceilings.",
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b-failure-precleanup.json",
+          "sha256": "8cf8f3346a5ec058875839c22c4ea0647f965be9fe0a9b918742812e382a966c"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260902T215118136599Z-aa94ce992c6b-cleanup.json",
+          "sha256": "12ada64f65f8e49503b93e0a2772f7611f2ad26a3a8ddd0d6556c16bf5ba6191"
+        }
+      ],
+      "cleanup": {
+        "verified": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "realtime_verified": true
+      },
+      "successful_closure": false,
+      "evidence_authority": "FAILED_RUN_ONLY"
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689",
+      "executed_sha": "6c6db55566890f1d9ca9cc06bfc13ae24505e793",
+      "requested_target_field": null,
+      "failed_stage": "floor3",
+      "classification": "FAILED",
+      "failure": "CanonicalLiveFailure: Voice at 'floor3' did not close: Deferred Voice signalling failed: Configuration verification 'cfg/verify/ec22aad11a60f574' is partial; only fresh VERIFIED evidence is allowed outside the governed ceilings.",
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689-failure-precleanup.json",
+          "sha256": "a5b06fea51243887153cbcd48038036c5b3b3b2ca040b20210c8d592717c100a"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260903T002846400677Z-6c6db5556689-cleanup.json",
+          "sha256": "f8c0fff1bcee2d6b2418074ae11e16e578e8fa313f9c9d10028d57e235150219"
+        }
+      ],
+      "cleanup": {
+        "verified": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "realtime_verified": true
+      },
+      "successful_closure": false,
+      "evidence_authority": "FAILED_RUN_ONLY"
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260912T165448035171Z-3bb959fc20ac",
+      "executed_sha": "3bb959fc20acb027deae304e1ab28fc1cf40de56",
+      "requested_target_field": "router0-branch",
+      "failed_stage": "floor2",
+      "classification": "FAILED",
+      "failure": "CanonicalLiveFailure: Configuration at 'floor2' contradicted the plan: Configuration read-back contradicted the plan for: cfg/verify/07cc893d436a01af, cfg/verify/3fddeb23504ebbc3, cfg/verify/506997bfeb712df8, cfg/verify/9d1f41b443862b38, cfg/verify/a5a13a7e12eb7f2e, cfg/verify/e3a93eaca47434b8. An observed contradiction is not an unobserved field, and it discredits this run's model of the device.",
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260912T165448035171Z-3bb959fc20ac-failure-precleanup.json",
+          "sha256": "5df3e6618eff2e39e9b530c3ab2fc2973c49080100d9c8f025fc03a9e9593a9e"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260912T165448035171Z-3bb959fc20ac-cleanup.json",
+          "sha256": "794f8d59e316b62f3394439cf19710949682efcef2e810c9555801156ec55d58"
+        }
+      ],
+      "cleanup": {
+        "verified": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "realtime_verified": true
+      },
+      "successful_closure": false,
+      "evidence_authority": "FAILED_RUN_ONLY"
+    }
+  ]
+}

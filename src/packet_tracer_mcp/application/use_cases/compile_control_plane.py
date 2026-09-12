@@ -11,6 +11,7 @@ from ...domain.enterprise.models.control_plane import (
     ControlPlaneIntent,
 )
 from ...domain.enterprise.models.link_performance import TrafficFlowIntent
+from ...domain.enterprise.models.forwarding import ForwardingWorkloadPolicy
 from ...domain.enterprise.models.security_plan import SecurityPlan
 from ...domain.enterprise.models.failure_domain import FailureDomain
 from ...domain.enterprise.services.control_plane_compiler import ControlPlaneCompiler
@@ -26,6 +27,7 @@ def compile_enterprise_control_plane(
     capabilities: dict[str, ControlPlaneCapabilityProfile] | None = None,
     failure_domains: Iterable[FailureDomain] = (),
     traffic_flows: Iterable[TrafficFlowIntent] = (),
+    forwarding_target_policy: ForwardingWorkloadPolicy | None = None,
 ) -> ControlPlaneCompileResult:
     """Compila el plano de control; con flujos declarados, atribuye conducta.
 
@@ -33,6 +35,8 @@ def compile_enterprise_control_plane(
     byte a byte el de antes. Con flujos, la verificacion de comportamiento deja
     de ser el producto cartesiano de pares de routers y pasa a ser lo que el
     intent pidio, con el prerequisito de ruta resuelto por prefijo de destino.
+    Una politica de workload tambien es opt-in; no se aplica a escenarios que
+    no la suministren de forma explicita.
     """
     return ControlPlaneCompiler().compile(
         intent,
@@ -42,4 +46,5 @@ def compile_enterprise_control_plane(
         capabilities=capabilities,
         failure_domains=failure_domains,
         traffic_flows=traffic_flows,
+        forwarding_target_policy=forwarding_target_policy,
     )

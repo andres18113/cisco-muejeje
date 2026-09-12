@@ -421,6 +421,8 @@ def test_a_flow_depends_only_on_the_route_to_its_own_destination_prefix():
         item for item in compiled.plan.verification_expectations
         if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
     )
+    assert behavior.forwarding_endpoint is None
+    assert "forwarding_endpoint" not in behavior.model_dump(mode="json")
     destination = ipaddress.ip_address(behavior.expected["destination_ipv4"])
     routes = {
         item.id: item for item in compiled.plan.verification_expectations
