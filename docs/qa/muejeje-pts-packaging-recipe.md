@@ -32,7 +32,9 @@ All four, in order. Each one is checkable before Packet Tracer is opened.
    ```
 
    `dist/muejeje.build.json` must report `status: PACKAGING_MANUAL_AVAILABLE`, a
-   non-null `build_recipe_id`, and `reference_inputs: []`.
+   non-null `build_recipe_id`, and `reference_inputs: []`. No bytecode cache
+   has to be purged first: the audit compiles its own code from source into a
+   directory of its own, outside the checkout, and reads no `__pycache__` in it.
 3. **The builder is the pinned build.** Packet Tracer `9.0.1.0858`, with
    `bin/PacketTracer.exe` SHA-256
    `843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1`. The audit

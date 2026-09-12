@@ -41,10 +41,13 @@ states the privilege the module now requests, and four engine sources —
 `170_platform_modules.js` and `200_runtime_identity.js` — carry corrected
 comments that used to deny the privilege the manifest declares. The privilege
 model also moved into its own auditor module, a declared tooling input and
-therefore part of the recipe id. **No executable V6 behaviour changed**: every
-changed engine line is a comment, and the dispatcher, the operations, the
-adapters and every bound are unchanged. No capability, transport, link
-operation, mutation or M4 work is in this artifact.
+therefore part of the recipe id. The audit's entry point changed too — it now
+compiles the auditor it runs from source, into bytecode of its own, on every
+invocation — and it is a declared tooling input as well, so that change moves
+the recipe id and touches no artifact input. **No executable V6 behaviour
+changed**: every changed engine line is a comment, and the dispatcher, the
+operations, the adapters and every bound are unchanged. No capability,
+transport, link operation, mutation or M4 work is in this artifact.
 
 **No `.pts` exists for this candidate yet**, so nothing here says what its bytes
 are. The saved artifact gets its own SHA-256, measured outside it after saving.

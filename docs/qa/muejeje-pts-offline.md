@@ -146,6 +146,21 @@ repository and writes a fixed `dist/muejeje.build.json`. **It does not compile.*
 - `artifact_sha256()` measures existing bytes without asserting they form a valid
   Packet Tracer module.
 - Recipe and artifact IDs stay `null` while any prerequisite is unresolved.
+- **The audit compiles the auditor it runs.** Before any project module is
+  imported, the entry point points `sys.pycache_prefix` at a directory created
+  for that one invocation, outside the checkout, and removes it when the
+  invocation ends. Every auditor module is then compiled from its source into
+  that directory, and no `__pycache__` in the tree is read or written. Ordinary
+  imports do not guarantee this: Python executes a timestamp-based `.pyc`
+  whenever it records the source's mtime and size, and a worktree on this line
+  that had been moved kept such an entry in front of different code. `-B` is not
+  the mechanism, because it stops writes and still reads. **No cache has to be
+  purged before an audit.** The run refuses, with no report, if the entry point
+  was imported with `-m` instead of run by path, if the directory would be
+  inside the checkout, or if an auditor module was loaded before isolation or
+  not compiled from its source into that directory. The directory is never
+  reported and is not part of recipe identity; the entry point itself is a
+  declared tooling input, so a change to it changes the recipe id.
 
 Path containment uses `safe_name_component()` + `resolve_within()`; the CLI
 rejects report destinations that are symlinks or carry multiple hard links before
@@ -167,6 +182,7 @@ review rather than a hypothetical:
 | Noncanonical reference path | classified as invalid input, not silently normalized |
 | Duplicate reference path | rejected rather than hashed twice |
 | Malformed builder metadata | reported as an invalid input, not ignored |
+| Stale adjacent bytecode | a `build_state` cache compiled from a forged classifier, recording the current source's size and mtime, makes ordinary imports issue `PACKAGING_MANUAL_AVAILABLE` and a recipe id; the entry point reports what the current source decides, leaves the cache in place, and compiles into its own directory outside every checkout on each invocation. Code it did not compile — loaded before isolation, or from bytecode with no source — is refused |
 
 ## Current offline result
 
@@ -269,6 +285,23 @@ failure names `git clone` and reads like a repository problem.
 
 The focused runs above could keep worktree-local temporaries, since none of
 them clones the checkout; this record ran them with the default one as well.
+
+### A local runner's result is operational evidence, not a gate
+
+On the Windows machine this line is developed on, the suite is also run through
+a coordination runner kept under the repository's Git directory,
+`.git/agent-coordination/run_pytest_isolated.py`, which gives each run its own
+temporary and bytecode directories. **That runner is machine-local: it is not
+tracked, it is in no commit, and nothing this repository verifies depends on
+it.** A result it produced is operational evidence about one run on one
+machine. It is not a repository-governed verification gate, and citing it does
+not make it one, because no reader of a clean checkout can inspect the runner
+that produced it.
+
+What the repository governs about stale bytecode is in the tree: the audit's
+own isolation, and `tests/muejeje/test_audit_bytecode_isolation.py`, which
+reproduces the failure against it. The independent evidence for a candidate is
+CI on the exact pushed SHA, which starts from a clean checkout.
 
 ## What the V6 kernel run does and does not establish
 
