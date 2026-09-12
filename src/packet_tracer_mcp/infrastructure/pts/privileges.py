@@ -129,7 +129,7 @@ REQUIRED_PRIVILEGES = tuple(sorted({
 # declarations. They are **documentation symbols**, kept so the gate can refuse
 # them by name and say why, and they are not a privilege namespace. Where each
 # was read from, with the page hash it was read in, is in
-# `tests/muejeje/test_privileges.py`.
+# `tests/muejeje/test_privilege_evidence.py`.
 IPC_API_SYMBOLS = ("PrivActivityWizard", "PrivApplication", "PrivGetNetwork")
 
 

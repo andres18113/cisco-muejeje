@@ -232,7 +232,7 @@ v2 preflight inventory already pins by hash for other rows, and the exploratory
 run brought its sentence back: *"Each Script Module has its own debug dialog
 that accesses only the Script Module. Statements can be entered into the input
 field, and they will be evaluated in the script engine."*
-`tests/muejeje/test_unobserved_claims.py` re-reads that sentence from the
+`tests/muejeje/test_cisco_reference.py` re-reads that sentence from the
 installed page, as it does the Script Engine lifecycle ones, so a build that
 words it differently fails there rather than here.
 

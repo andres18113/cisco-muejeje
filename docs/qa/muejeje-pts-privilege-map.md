@@ -64,8 +64,8 @@ validator changes afterwards — never the other way round.
 The IpcAPI symbols this repository can point at are `PrivActivityWizard`,
 `PrivApplication` and `PrivGetNetwork`, each read out of the installed
 reference and re-derived, page by page and hash by hash, in
-`tests/muejeje/test_privileges.py`. They are kept so the gate can name them
-when it refuses one. They are **not** a privilege namespace.
+`tests/muejeje/test_privilege_evidence.py`. They are kept so the gate can name
+them when it refuses one. They are **not** a privilege namespace.
 
 ## Fact 1 — the binary privilege map
 

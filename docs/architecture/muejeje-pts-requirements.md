@@ -550,9 +550,10 @@ build on, and so would claiming a lifetime the platform does not give it.
 **Verification.** `tests/muejeje/test_runtime_identify.py` asserts stability
 across calls within one evaluation, that exactly one generation site exists and
 binds the token once, that regenerating does not rebind the session, and that
-no kernel source compares the id. `tests/muejeje/test_unobserved_claims.py`
-quotes the three sentences above out of the installed page and fails if any
-source or document restates the withdrawn lifetime.
+no kernel source compares the id. `tests/muejeje/test_cisco_reference.py`
+quotes the three sentences above out of the installed page, and
+`tests/muejeje/test_unobserved_claims.py` fails if any source or document
+restates the withdrawn lifetime.
 
 > **Two claims here were wrong and are withdrawn, not restated.**
 >
@@ -1175,13 +1176,19 @@ the wrong namespace, a real-but-unrequired token refused, the admissible set
 derived from the call descriptors rather than written down, and the shape rules
 reported first. It also holds the privilege set to being part of the recipe
 id, so a different set is a different artifact.
-`tests/muejeje/test_privilege_evidence.py` is the measurement half: the binary
-map pinned to the manifest's builder hash, the QA record carrying the same map
-and call descriptors, reproduction marked `PENDING` rather than invented, and
-the IpcAPI symbols re-derived in both directions from the installed reference —
-including that it names no serialized token, which is the mapping the validator
-refuses to assume. `tests/muejeje/test_manifest.py` asserts
-`BUILD_INPUT_INVALID` with no recipe id for every refused entry.
+`tests/muejeje/test_privilege_evidence.py` is the evidence half: the binary map
+pinned to the manifest's builder hash, the QA record carrying the same map and
+call descriptors, reproducibility marked `PENDING` rather than invented, the
+three evidence strengths held apart in the code and in every authoritative
+record, and the IpcAPI symbols re-derived in both directions from the installed
+reference — including that it names no serialized token, which is the mapping
+the validator refuses to assume.
+`tests/muejeje/test_live_runbook.py` holds the next manual run to what would
+make it non-vacuous: the two-device disposable workspace, the members that
+fixture makes reachable, the refusal to qualify a descendant on an empty
+workspace, and the single unnormalized transcript.
+`tests/muejeje/test_manifest.py` asserts `BUILD_INPUT_INVALID` with no recipe id
+for every refused entry.
 **Status.** `ENFORCED` for the rule and its evidence; `BASELINED` for the
 representation Packet Tracer accepts in a saved module, which needs target
 evidence (MJ-015) exactly as `module_id` does.
