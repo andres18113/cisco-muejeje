@@ -199,12 +199,22 @@ Cisco enum identifier in any packaged source, and no numeric literal in an
 adapter but its own declared bounds.
 
 **The module requests exactly one privilege** (`privileges:
-["GET_NETWORK_INFO"]`). The pinned `PacketTracer.exe` requires privilege index
-1 for both `IPC.hardwareFactory()` and `IPC.network()` — the two calls the
-whole read-only surface roots on — and index 1 serializes as
-`GET_NETWORK_INFO`. Nothing else is requested: least privilege is a hard rule,
-and a name nobody can cite for a call this module makes is refused at audit
-time rather than shipped to find out (`MJ-032`).
+["GET_NETWORK_INFO"]`). A recorded reading of the pinned `PacketTracer.exe`
+says privilege index 1 is required for both `IPC.hardwareFactory()` and
+`IPC.network()` — the two calls the whole read-only surface roots on — and that
+index 1 serializes as `GET_NETWORK_INFO`. Nothing else is requested: least
+privilege is a hard rule, and a name nobody can cite for a call this module
+makes is refused at audit time rather than shipped to find out (`MJ-032`).
+
+That reading was **supplied from outside this repository and nothing here
+re-derives it**, so it is recorded evidence and not reproducible evidence, and
+it is not a statement about what the target does. Three states, kept apart:
+
+```text
+GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
+BINARY_MAP_REPRODUCIBILITY                = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+```
 
 **What a real Packet Tracer did is recorded, and not generalised.** The
 governed artifact at `d37ba37`, carrying `privileges: []`, ran on `9.0.1.0858`.

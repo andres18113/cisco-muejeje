@@ -14,7 +14,9 @@ does: nothing about a comment looks like a claim (MJ-021).
 
 What the runtime *admits* is the other half of the rule, and it lives in
 `test_capability_claims` — split out when this module crossed its own line
-budget (MJ-020).
+budget (MJ-020). Cisco's own installed sentences, which are what settles a
+withdrawn claim *about Packet Tracer*, moved to `test_cisco_reference` the same
+way: deleting our text and re-reading Cisco's are different work.
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ from tests.muejeje.measure import (
     relative,
 )
 from tests.muejeje.support import (
-    INSTALLED_HELP,
     REPO_ROOT,
     SCRIPT_ENGINE,
     SOURCE_ROOT,
@@ -42,6 +43,9 @@ DESCRIBING_DOCUMENTS = (
     "docs/architecture/muejeje-pts-requirements.md",
     "docs/architecture/muejeje-runtime-operating-model.md",
     "docs/qa/muejeje-pts-packaging-recipe.md",
+    "docs/qa/muejeje-pts-privilege-live-runbook.md",
+    "docs/qa/muejeje-pts-privilege-map.md",
+    "docs/qa/muejeje-pts-offline.md",
     "muejeje_pts/README.md",
     "muejeje_pts/interface/index.html",
 )
@@ -71,6 +75,32 @@ RETIRED_CLAIMS = (
     (r"\bno\s+`?\.pts`?\s+has\s+(?:yet\s+)?been\s+built",
      "a module was packaged from these sources, exploratorily; what does not "
      "exist is a governed artifact (MJ-015)"),
+
+    # The privilege line. Each was true while `privileges: []` was declared and
+    # false once a call descriptor was recorded for both root calls. Present
+    # tense on purpose: a statement scoped to the `[]` artifact or run stays.
+    (r"module\s+(?:still\s+)?requests\s+no\s+privilege",
+     "the governed manifest declares exactly GET_NETWORK_INFO (MJ-025)"),
+    (r"module\s+requests\s+none\b",
+     "the module requests one token, and which one is recorded (MJ-032)"),
+    (r"nothing\s+evidences\s+which\s+privilege"
+     r"|no\s+evidence\s+(?:says|names)\s+which\s+privilege"
+     r"|nothing\s+it\s+calls\s+has\s+an\s+evidenced\s+privilege",
+     "both root calls have a recorded requirement: index 1 (MJ-032)"),
+    (r"[Ww]hich\s+privilege[\s\S]{0,120}?\bis\s+still\s+unmeasured",
+     "the requirement is recorded; whether it works is unmeasured (MJ-032)"),
+    (r"[Tt]he\s+empty\s+set\s+is\s+justified"
+     r"|[Nn]o\s+privilege\s+is\s+evidenced",
+     "the justified set is what the recorded descriptors compose to (MJ-032)"),
+
+    # One word for three evidence strengths is how supplied, unreproducible
+    # evidence reads as a measurement made here.
+    (r"GET_NETWORK_INFO_BINARY_EVIDENCE(?!_RECORDED)",
+     "three states, each able to hold alone: _RECORDED, "
+     "BINARY_MAP_REPRODUCIBILITY, GET_NETWORK_INFO_LIVE_VERIFIED (MJ-032)"),
+    (r"reported\s+back\s+verbatim",
+     "neither run preserved its envelopes; both records keep the "
+     "operator-reported observations (MJ-011, MJ-015)"),
 )
 
 # Sources that describe the runtime in prose, the way a document does. A
@@ -79,31 +109,6 @@ RETIRED_CLAIMS = (
 # claim. Engine sources are always JavaScript, so reading them as text is safe.
 DESCRIBING_SOURCES = tuple(
     relative(path) for path in sorted(SCRIPT_ENGINE.glob("*.js"))
-)
-
-# What Cisco's installed reference says about the Script Engine lifecycle.
-# Quoted, not paraphrased: the claim these sentences correct was a claim about
-# Packet Tracer, so only Packet Tracer's own documentation can settle it
-# (MJ-015, `AGENTS.md` rule 6). The page is hash-pinned in the v2 preflight
-# inventory as `d22cafa8...`.
-CISCO_SCRIPT_ENGINE_PAGE = "scriptModules_scriptEngine.htm"
-CISCO_LIFECYCLE_SENTENCES = (
-    "When the Script Module starts, all script files are executed (evaluated)"
-    " in the Script Engine in the same order as listed in the Scripting"
-    " Interface.",
-    "As long as the Script Module is running, the Script Engine is running.",
-    "Changes made to the Script Engine after it has started DO NOT take effect"
-    " until it has been stopped and started again.",
-)
-# What it says about the Debug Dialog, the surface the packaging recipe's
-# qualification statements are entered on. The page is hash-pinned in the v2
-# preflight inventory as `4bc04309...`; this sentence was brought back from it
-# by the exploratory run, and is re-read below rather than believed.
-CISCO_SCRIPTING_INTERFACE_PAGE = "scriptModules_scriptingInterface.htm"
-CISCO_DEBUG_DIALOG_SENTENCE = (
-    "Each Script Module has its own debug dialog that accesses only the Script"
-    " Module. Statements can be entered into the input field, and they will be"
-    " evaluated in the script engine."
 )
 
 # Present-tense liveness. A static page cannot know any of these.
@@ -138,55 +143,6 @@ def test_nothing_that_describes_the_runtime_repeats_a_withdrawn_claim(logical: s
         if found is not None
     ]
     assert not offenders, offenders
-
-
-@pytest.mark.skipif(
-    not INSTALLED_HELP.is_dir(),
-    reason="the target build is not installed; its documentation cannot be read",
-)
-@pytest.mark.parametrize("sentence", CISCO_LIFECYCLE_SENTENCES)
-def test_cisco_documents_that_a_module_start_evaluates_the_engine(sentence: str):
-    """The evidence behind the correction, read from the installed reference.
-
-    An earlier revision claimed the session token survived a module restart,
-    "because restarting the module is not re-evaluating it". Cisco's page says
-    the opposite in three places: every engine file is evaluated when the
-    module *starts*, the engine lives exactly as long as the module runs, and
-    an engine change needs a stop and a start to take effect. So a restart is
-    a new evaluation and a new token, and the withdrawn claim was a statement
-    about Packet Tracer that Packet Tracer's own documentation contradicts.
-
-    Quoting it here is what keeps the correction checkable: if a future
-    installed build words this differently, this gate fails and the
-    requirement is re-read against the new wording rather than assumed.
-    """
-    page = (INSTALLED_HELP / CISCO_SCRIPT_ENGINE_PAGE).read_text(
-        encoding="utf-8", errors="replace",
-    )
-    collapsed = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
-
-    assert sentence in collapsed, CISCO_SCRIPT_ENGINE_PAGE
-
-
-@pytest.mark.skipif(
-    not INSTALLED_HELP.is_dir(),
-    reason="the target build is not installed; its documentation cannot be read",
-)
-def test_cisco_documents_that_the_debug_dialog_evaluates_in_the_module_engine():
-    """What makes a qualification statement a reading of the artifact.
-
-    The recipe enters every statement in the module's Debug Dialog because a
-    statement there is evaluated in that module's engine. That was written
-    before any citation for it existed, and the run was asked to bring one
-    back; this is it, read from the installed page, so a build that words it
-    differently fails here (MJ-015, `AGENTS.md` rule 6).
-    """
-    page = (INSTALLED_HELP / CISCO_SCRIPTING_INTERFACE_PAGE).read_text(
-        encoding="utf-8", errors="replace",
-    )
-    collapsed = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
-
-    assert CISCO_DEBUG_DIALOG_SENTENCE in collapsed, CISCO_SCRIPTING_INTERFACE_PAGE
 
 
 def test_the_withdrawn_claim_gate_reads_the_kernel_sources_too():

@@ -22,7 +22,9 @@ nobody evidenced a use for is refused exactly like an invented one.
 That the evidence was *measured* — the binary map pinned to one
 `PacketTracer.exe`, the QA record carrying the same map, the IpcAPI symbols
 re-read from Cisco's installed bytes — is `test_privilege_evidence`, split out
-of here when this module crossed its line budget (MJ-020).
+of here when this module crossed its line budget (MJ-020). The runbook that
+declares the next manual run is `test_live_runbook`, split out the same way
+when the run acquired a workspace fixture and a transcript to be held to.
 """
 
 from __future__ import annotations
@@ -207,87 +209,3 @@ def test_changing_the_privilege_set_changes_the_recipe_identity(tmp_path: Path):
     without = build.recipe_id(build.inspect_build(root, manifest_path)["recipe"])
 
     assert governed != without
-
-
-
-
-# ---------------------------------------------------------------------------
-# The runbook that declares the next manual run.
-# ---------------------------------------------------------------------------
-
-RUNBOOK = "docs/qa/muejeje-pts-privilege-live-runbook.md"
-
-# The state a person must find before starting the run. Written here as the
-# claim, and read back from the document, so the two cannot drift — a runbook
-# that promoted a milestone the repository has not is how a denied call becomes
-# a qualification (MJ-033).
-EXPECTED_ENTRY_STATE = """OFFICIAL_PACKAGING_PROVED = PASS
-V6_KERNEL_VERIFIED        = PASS
-M1_CORE_READY             = YES
-
-GET_NETWORK_INFO_BINARY_EVIDENCE = PASS
-GET_NETWORK_INFO_LIVE_VERIFIED   = PENDING
-
-M0B_TARGET_API_BASELINED = NOT_COMPLETE
-M2_CORE_READY            = NO
-M3_CORE_READY            = NO
-ZERO_CHANGE_CUTOVER      = NOT_ACHIEVED"""
-
-
-def runbook_body() -> str:
-    from tests.muejeje.support import REPO_ROOT
-    return (REPO_ROOT / RUNBOOK).read_text(encoding="utf-8")
-
-
-def runbook_prose() -> str:
-    """The runbook with its line wrapping collapsed.
-
-    A sentence gate that matched the wrapping would fail on a reflow that
-    changed nothing, and teach the next reader to stop reflowing.
-    """
-    return " ".join(runbook_body().split())
-
-
-def test_the_runbook_declares_the_privilege_set_the_manifest_does():
-    """The one field the run exists to change, read from the manifest.
-
-    A runbook naming a set the manifest does not declare would have a person
-    package an artifact no recipe id identifies.
-    """
-    body = runbook_body()
-
-    assert repo_manifest()["build_options"]["privileges"] == ["GET_NETWORK_INFO"]
-    assert "**`GET_NETWORK_INFO`, and nothing else**" in body
-    assert (
-        "Confirm on the module itself that only `GET_NETWORK_INFO` is selected"
-        in runbook_prose()
-    )
-
-
-def test_the_runbook_drives_the_whole_qualification_not_just_the_roots():
-    prose = runbook_prose()
-
-    assert "the whole existing qualification" in prose
-    assert (
-        "continue through all the platform and network operations in the same "
-        "run" in prose
-    )
-
-
-def test_the_runbook_keeps_root_and_descendant_qualification_apart():
-    prose = runbook_prose()
-
-    assert "It does **not** invalidate the root result" in prose
-    assert "record the exact `Interface.member` that was reached" in prose
-
-
-def test_the_runbook_forbids_widening_privilege_on_a_denial():
-    prose = runbook_prose()
-
-    assert "**Do not add privileges.**" in prose
-    assert "**No privilege is changed mid-artifact.**" in prose
-    assert "contradiction" in prose
-
-
-def test_the_runbook_states_the_entry_state_this_repository_actually_holds():
-    assert EXPECTED_ENTRY_STATE in runbook_body()

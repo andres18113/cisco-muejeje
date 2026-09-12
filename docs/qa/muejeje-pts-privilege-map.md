@@ -13,6 +13,39 @@ That hash is the same pin the build manifest's `builder` carries, and a gate
 holds the two equal. A different build needs this page re-derived against it
 rather than assumed to still hold (`AGENTS.md` rule 6).
 
+## Where this evidence came from, and how strong that makes it
+
+**The binary readings on this page were supplied from outside this repository.**
+They are a reverse-engineering of the pinned `PacketTracer.exe` that this
+checkout received; nothing in it performs that reading. No test, tool or
+procedure here opens the binary and recovers the map or the call descriptors,
+and no function, address or symbol was supplied with them — so nobody reading
+this repository can re-derive a single row.
+
+That is why the strength of the evidence is written as three states rather than
+as one word:
+
+```text
+GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
+BINARY_MAP_REPRODUCIBILITY                = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+```
+
+`RECORDED` says the mapping and the descriptors are written down, against a
+pinned binary, in a form a later reader can check against a re-derivation.
+`REPRODUCIBILITY` says whether such a re-derivation is possible from what is
+here; it is not, and it stays `PENDING` until the addresses are recorded.
+`LIVE_VERIFIED` is the target's own answer, and no run has asked it yet.
+
+**The production decision is still made on this evidence, deliberately.** The
+governed manifest declares exactly the token these readings name, and the next
+official LIVE run selects exactly that token — so the run tests the evidence
+independently rather than inheriting it. A root still denied while carrying
+`GET_NETWORK_INFO` is a contradiction between this page and the target, and it
+is recorded here as one. Acting on an unreproducible reading that a run will
+test is a different thing from recording it as though this repository had
+measured it, and only the second is forbidden.
+
 ## Three namespaces, and why they are not aliases
 
 | Namespace | Example | What it is |
@@ -36,8 +69,8 @@ when it refuses one. They are **not** a privilege namespace.
 
 ## Fact 1 — the binary privilege map
 
-The serialized token each internal index carries, observed in the pinned
-`PacketTracer.exe`:
+The serialized token each internal index carries, as the supplied reading of
+the pinned `PacketTracer.exe` states it:
 
 | Index | Serialized token |
 | --- | --- |
@@ -66,20 +99,25 @@ may ask for**, and the two are different claims.
 the privilege a mutation would want; `IPC` reads like the privilege any IPC
 call would want. Neither reading is evidence, and neither appears in fact 2.
 
-### Reproduction — `PENDING`
+### Reproducibility — `PENDING`
 
 **The exact functions, addresses and symbols these mappings were read at are
 not recorded here, because they were not supplied.** That is a gap in this
 record and it is marked as one rather than filled in: an invented offset would
 make the claim unfalsifiable, which is worse than an admitted gap. Recording
-them means editing this section and `BINARY_MAP_REPRODUCTION` in
+them means editing this section and `BINARY_MAP_REPRODUCIBILITY` in
 `src/packet_tracer_mcp/infrastructure/pts/privileges.py` together, and a gate
 holds the two in step.
+
+Until they are, fact 1 and fact 2 are **recorded** evidence and not
+**reproducible** evidence, and no sentence on this page or anywhere else may
+present them as a measurement this repository performed.
 
 ## Fact 2 — the call descriptors
 
 Which privilege index a call requires, for the calls this repository has
-target-binary evidence for:
+recorded target-binary evidence for — supplied, like fact 1, rather than
+re-derived here:
 
 | Call | Required privilege index |
 | --- | --- |
@@ -103,8 +141,11 @@ manifest declares is derived from exactly that composition:
 
 The official LIVE run of the governed artifact at source
 `d37ba37786107ed8128d17d589d889ee1fe9b16f`, carrying `privileges: []`, was
-denied both calls by Packet Tracer for insufficient privilege. It is recorded
-in full in [the offline audit](muejeje-pts-offline.md).
+denied both calls by Packet Tracer for insufficient privilege. What that run
+preserved is the operator's reported observations — the diagnostic text and
+which readings came back unavailable — and not its raw envelopes; the record,
+and the limits that puts on it, are in
+[the offline audit](muejeje-pts-offline.md).
 
 ## The three facts are not one fact
 
@@ -125,8 +166,9 @@ call succeed on the target: that is `GET_NETWORK_INFO_LIVE_VERIFIED`, and it is
 `PENDING` until a governed artifact declaring it has been run.
 
 ```text
-GET_NETWORK_INFO_BINARY_EVIDENCE = PASS
-GET_NETWORK_INFO_LIVE_VERIFIED   = PENDING
+GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
+BINARY_MAP_REPRODUCIBILITY                = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
 ```
 
 If a run with `GET_NETWORK_INFO` selected is still denied at either root, that

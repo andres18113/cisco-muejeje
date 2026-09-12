@@ -330,14 +330,37 @@ Tracer, promoting nothing.
 | `V6_KERNEL_VERIFIED` | `PASS` | that saved artifact's own engine answered: `mcpDispatchV6` present, identify and capabilities, all five refusal classes, and identify again across a stop and a start |
 | `TARGET_API_BASELINED` | `PENDING_TARGET` | no platform member has answered. Both root calls were denied for insufficient privilege, which is a fact about privilege and not a reading of the API |
 | `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | every platform and workspace capability was denied at its root call, and none has answered |
-| `GET_NETWORK_INFO_BINARY_EVIDENCE` | `PASS` | both root calls require privilege index 1 in the pinned binary, and index 1 serializes as `GET_NETWORK_INFO` ([the privilege map](muejeje-pts-privilege-map.md)) |
-| `GET_NETWORK_INFO_LIVE_VERIFIED` | `PENDING` | no artifact declaring that privilege has been run. The binary says what the calls require; only a run says what the target then does |
+| `GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED` | `PASS` | both root calls require privilege index 1 in the pinned binary, and index 1 serializes as `GET_NETWORK_INFO`. Recorded, against a pinned SHA-256 ([the privilege map](muejeje-pts-privilege-map.md)) |
+| `BINARY_MAP_REPRODUCIBILITY` | `PENDING` | that reading was supplied from outside this repository and nothing here re-derives it: no function, address or symbol came with it, so no reader of this checkout can reproduce a row |
+| `GET_NETWORK_INFO_LIVE_VERIFIED` | `PENDING` | no artifact declaring that privilege has been run. The binary evidence says what the calls require; only a run says what the target then does |
 
 ### The official LIVE run at `d37ba37` — the governed artifact
 
 Performed by hand on Packet Tracer `9.0.1.0858`, following
-[the packaging recipe](muejeje-pts-packaging-recipe.md) from step 1, and
-reported back verbatim. No privilege was changed at any point.
+[the packaging recipe](muejeje-pts-packaging-recipe.md) from step 1. No
+privilege was changed at any point.
+
+**What this record preserves is the operator-reported observations, not the
+run's raw envelopes.** An earlier revision of this section said the run was
+reported back "verbatim"; it was not, and no raw transcript was captured, so
+none is attached and none is reconstructed here — writing JSON nobody recorded
+would manufacture the very evidence this page exists to keep honest. What the
+operator reported is which statement was entered, whether it came back `ok` or
+unavailable, and what Packet Tracer printed beside it; that summary is below
+and is the whole of what this run establishes.
+
+```text
+OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED
+```
+
+**So this run is not field-level LIVE verification of any result shape.** It
+establishes official packaging, kernel execution, the lifecycle across a stop
+and a start, the observed rejection classes, and the privilege denial
+diagnostics — each of which the operator observed and reported. It does not
+establish that any envelope carried the fields V6 specifies, because no
+envelope was preserved to check. The next official run fixes that by requiring
+one raw transcript
+([the minimum-privilege LIVE runbook](muejeje-pts-privilege-live-runbook.md)).
 
 | Record | Value |
 | --- | --- |
@@ -347,6 +370,7 @@ reported back verbatim. No privilege was changed at any point.
 | Packet Tracer | `9.0.1.0858`, `PacketTracer.exe` SHA-256 `843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1` |
 | privileges | `[]` — none selected, and none selected later |
 | entry point | the module's Debug Dialog |
+| raw transcript | **not captured** — this record preserves the operator-reported observations |
 
 **What it established.**
 
@@ -358,19 +382,23 @@ reported back verbatim. No privilege was changed at any point.
    Script Module on the pinned build and started, which is what
    `OFFICIAL_PACKAGING_PROVED` is about: a recipe id now identifies an artifact
    that exists, whose bytes are measured, and which Packet Tracer accepted.
-3. **The V6 kernel answered from inside it.** `typeof mcpDispatchV6` answered
-   `function`; `runtime.identify` and `runtime.capabilities` came back
-   `ok: true`; each of the five refusal classes — `MALFORMED_REQUEST`,
-   `PROTOCOL_MISMATCH`, `INVALID_REQUEST`, `UNKNOWN_OPERATION`, `INVALID_ARGS` —
-   came back with its own code; and after an explicit stop and start,
-   `runtime.identify` answered again. That is `V6_KERNEL_VERIFIED`, and it is
-   about *this* artifact rather than about a Node run or an exploratory module.
+3. **The V6 kernel answered from inside it.** The operator reported that
+   `typeof mcpDispatchV6` answered `function`; that `runtime.identify` and
+   `runtime.capabilities` came back `ok: true`; that each of the five refusal
+   classes — `MALFORMED_REQUEST`, `PROTOCOL_MISMATCH`, `INVALID_REQUEST`,
+   `UNKNOWN_OPERATION`, `INVALID_ARGS` — came back with its own code; and that
+   after an explicit stop and start, `runtime.identify` answered again. That is
+   `V6_KERNEL_VERIFIED`, and it is about *this* artifact rather than about a
+   Node run or an exploratory module. It is a verdict about **which operations
+   answered and with which code**, which is what the operator reported; no
+   envelope was preserved, so no field beyond those is target-evidenced.
 4. **The kernel stayed healthy through the denials.** Every `platform.*` and
-   `network.*` reading came back as a well-formed envelope reporting
-   `UNAVAILABLE` / `PLATFORM_CALL_FAILED`, and Packet Tracer printed beside each
-   that the module lacked the necessary privilege for IPC call
-   `"hardwareFactory"` or `"network"`. A denied call did not damage the engine:
-   the runtime operations kept answering afterwards.
+   `network.*` reading was reported as an envelope carrying `UNAVAILABLE` /
+   `PLATFORM_CALL_FAILED`, and Packet Tracer printed beside each that the
+   module lacked the necessary privilege for IPC call `"hardwareFactory"` or
+   `"network"`. A denied call did not damage the engine: the runtime operations
+   kept answering afterwards. Those two field values are what the operator
+   read back; the rest of each envelope was not preserved and is not claimed.
 
 **What it did not establish.** No platform member answered, so nothing about
 Cisco's API was baselined and no capability resolved. `PLATFORM_CALL_FAILED` is
@@ -389,7 +417,12 @@ its own run — this record is what it is measured against.
 
 Performed by hand on Packet Tracer `9.0.1.0858`, following the recipe as it then
 stood until its import step, where the listing order made it impossible to
-follow, and reported back verbatim. No privilege was changed at any point.
+follow. No privilege was changed at any point. As with the official run, what
+is preserved is the operator-reported observations — including the two
+diagnostics below, reported as printed — and not a raw transcript:
+`EXPLORATORY_RUN_ED3A0B0_RAW_TRANSCRIPT = NOT_CAPTURED`. The field values it
+reports are read as what the operator observed, and never as a verified result
+shape.
 
 | Record | Value |
 | --- | --- |
@@ -670,17 +703,19 @@ Until a governed artifact's run answers, every `platform.*` and `network.*`
 operation is code with a contract and no target answer, which is what
 `PENDING_TARGET` means.
 
-**What the first reading was, and what it still does not say.** The module
-requests no privilege, because no evidence says which privilege these calls
-need (`MJ-032`). An earlier revision of this file said the first run "should
-report `PLATFORM_CALL_FAILED`"; that was a claim about `9.0.1.0858` with nothing
-behind it, and it stays withdrawn even though the exploratory run then came
-back that way. What made that run evidence is what was recorded beside each
-envelope: Packet Tracer's own diagnostic, naming a missing privilege for
-`IPC.hardwareFactory()` and `IPC.network()`. Which privilege those calls need is
-still unmeasured, and a run records whichever reading comes back — an answer, a
-member the object does not offer, a call that did not return, or an answer that
-could not be attributed — with whatever Packet Tracer printed beside it.
+**What the first reading was, and what it still does not say.** Both runs above
+were made by a module declaring `privileges: []`; the governed manifest now
+declares `GET_NETWORK_INFO`, which is what the recorded binary evidence says
+both root calls require (`MJ-032`). An earlier revision of this file said the
+first run "should report `PLATFORM_CALL_FAILED`"; that was a claim about
+`9.0.1.0858` with nothing behind it, and it stays withdrawn even though the
+exploratory run then came back that way. What made that run evidence is what
+the operator recorded beside each reading: Packet Tracer's own diagnostic,
+naming a missing privilege for `IPC.hardwareFactory()` and `IPC.network()`.
+Whether declaring the evidenced token makes either call answer is unmeasured,
+and a run records whichever reading comes back — an answer, a member the object
+does not offer, a call that did not return, or an answer that could not be
+attributed — with whatever Packet Tracer printed beside it.
 
 That attribution is also why the boundary was corrected before this line was
 written. A bug inside an adapter used to come back as `PLATFORM_CALL_FAILED`,
@@ -709,10 +744,14 @@ each new recipe id, which is what a changed privilege set produces.
 
 Each run records: source commit and tree, the recipe id, the externally
 measured artifact SHA-256, the Packet Tracer build, the privilege selection
-read back from the module, the Script Engine listing as Packet Tracer showed
-it, and every response envelope verbatim with whatever Packet Tracer printed
-beside it — including whichever `resolution` and `unavailable_reason` each
-platform reading came back with. The target gates change only as far as that
+read back from the module, the workspace the instance held, the Script Engine
+listing as Packet Tracer showed it, and every response envelope with whatever
+Packet Tracer printed beside it — including whichever `resolution` and
+`unavailable_reason` each platform reading came back with. From the next run
+onwards those envelopes go into **one raw transcript file, unnormalized**, and
+this page interprets that file rather than standing in for it; a summary is
+what a run establishes only as far as the transcript behind it goes, which is
+why the two runs above establish no result shape. The target gates change only as far as that
 evidence goes: `OFFICIAL_PACKAGING_PROVED` and `V6_KERNEL_VERIFIED` from the
 saved artifact loading and its kernel answering, which the `d37ba37` run did;
 `TARGET_API_BASELINED` and `CAPABILITY_RESOLUTION_VERIFIED` only from platform
@@ -742,9 +781,11 @@ This page's *offline* half is **validator** qualification only: it establishes
 nothing about a candidate `.pts`, its content, or its runtime behaviour. What
 is established about an artifact comes from the two LIVE runs recorded above —
 the official one at `d37ba37` and the earlier exploratory one — each performed
-by hand, outside the sessions that wrote this record. **This session performed
-no LIVE run**; it governed binary evidence and changed the declared privilege
-set, which is offline work.
+by hand, outside the sessions that wrote this record, and each preserving the
+operator-reported observations rather than raw envelopes. **This session
+performed no LIVE run**; it corrected what this repository asserts about the
+privilege evidence and declared what the next run must capture, both of which
+are offline work.
 
 The platform surface's only executions inside Packet Tracer were those two
 runs', and every one of its six operations was denied at its root call in both.
@@ -777,8 +818,12 @@ M3_CORE_READY                    = NO
 ZERO_CHANGE_CUTOVER              = NOT_ACHIEVED
 ENGINE_ORDER                     = CARRIED_BY_FILE_NAMES
 EMPTY_PRIVILEGES_ROOT_IPC        = TARGET_OBSERVED_DENIED
-GET_NETWORK_INFO_BINARY_EVIDENCE = PASS
-GET_NETWORK_INFO_LIVE_VERIFIED   = PENDING
+GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
+BINARY_MAP_REPRODUCIBILITY                = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT       = NOT_CAPTURED
+NEXT_LIVE_RUN_RAW_TRANSCRIPT              = REQUIRED
+NEXT_LIVE_RUN_WORKSPACE_FIXTURE           = REQUIRED_TWO_DEVICES
 ```
 
 `ENGINE_ORDER = CARRIED_BY_FILE_NAMES` was the previous line's packaging
@@ -790,15 +835,32 @@ refuses any other.
 for `IPC.hardwareFactory()` and `IPC.network()` in both runs, and nothing
 wider.
 
-`GET_NETWORK_INFO_BINARY_EVIDENCE = PASS` is this line's change, and it is a
-reading of the pinned `PacketTracer.exe` rather than of a run: both root calls
-require privilege index 1, and index 1 serializes as `GET_NETWORK_INFO`. The
-full map, the call descriptors and what none of it establishes are in
+`GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS` is a reading of the pinned
+`PacketTracer.exe` rather than of a run: both root calls require privilege
+index 1, and index 1 serializes as `GET_NETWORK_INFO`. The full map, the call
+descriptors and what none of it establishes are in
 [the privilege map](muejeje-pts-privilege-map.md), which keeps the binary
 mapping, the call requirement and the no-privilege denial as three separate
-facts. `GET_NETWORK_INFO_LIVE_VERIFIED = PENDING` is the half a binary cannot
-answer: no artifact declaring that privilege has been run, so nothing yet says
-the target lets either call through.
+facts.
+
+`BINARY_MAP_REPRODUCIBILITY = PENDING` is the strength of that reading, kept
+apart from its existence. It was supplied from outside this repository; nothing
+here opens the binary and recovers a row, and no function, address or symbol
+came with it. Recorded evidence and reproducible evidence are different states,
+and this record does not let the first be read as the second. The governed
+manifest still declares the token that reading names, because the next run
+selects exactly it and therefore tests the reading instead of inheriting it.
+
+`GET_NETWORK_INFO_LIVE_VERIFIED = PENDING` is the half a binary cannot answer:
+no artifact declaring that privilege has been run, so nothing yet says the
+target lets either call through.
+
+`OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED` is why that run is read
+narrowly. `NEXT_LIVE_RUN_RAW_TRANSCRIPT = REQUIRED` and
+`NEXT_LIVE_RUN_WORKSPACE_FIXTURE = REQUIRED_TWO_DEVICES` are the two conditions
+the next run carries so that it can establish what this one could not: one
+unnormalized transcript, and a workspace with something in it for an answering
+`IPC.network()` to actually walk.
 
 `IMPLEMENTED` and `COMPLETE` are statements about this repository — the
 operations exist, are admitted, are bounded and are tested offline — and

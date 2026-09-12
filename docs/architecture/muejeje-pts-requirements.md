@@ -295,7 +295,8 @@ need a table of type numbers to ask with, which is what this requirement
 forbids; asking by index needs nothing. **Those legacy runs are not this
 artifact's evidence** (MJ-015): they were driven from another channel with its
 own privileges, so they establish that the getters answer on this build, and
-nothing about whether a Script Module carrying `privileges: []` may call them.
+nothing about whether this Script Module, carrying the one privilege it
+declares, may call them.
 
 **Verification.** Enum values reconciled against the descriptor API; each mirror
 marked as a mirror at its definition. In the owned artifact,
@@ -729,6 +730,16 @@ exist" the same question.
 **Status.** `ENFORCED` for the kernel's own logic under Node;
 `NOT_YET_LIVE_VERIFIED` against Packet Tracer `9.0.1.0858` (MJ-015).
 
+**What the official run at `d37ba37` establishes here, exactly.** The operator
+reported that `runtime.capabilities` answered `ok: true` from inside the
+governed artifact, and that is what `V6_KERNEL_VERIFIED` rests on for this
+operation: it was admitted, it ran, and it replied without reaching the
+platform. Its complete envelope was **not** preserved — the record keeps the
+operator's observations rather than the raw JSON — so nothing target-side
+establishes the *fields* this requirement specifies. The result shape stays
+verified under Node only, and a run whose raw transcript is preserved is what
+would change that (MJ-015).
+
 ### MJ-029 — V6 input is bounded, and every bound is Muejeje's own
 **Requirement.** Nothing a caller sends is unbounded. V6 bounds the request
 string before parsing it, the correlation id, the operation name, and both the
@@ -983,20 +994,25 @@ operation defaults an argument nobody sent, so such a value came from our own
 code — clamping it would read a *different* window, or a different model, and
 report the result as an observation about Packet Tracer.
 
-**A capability with no evidenced privilege stays pending, and a target reading
-is attributed only by what the target printed.** This module requests no
-privilege (MJ-025, MJ-032). An exploratory run on `9.0.1.0858` observed what a
-Script Module carrying none gets: `IPC.hardwareFactory()` and `IPC.network()`
-were denied, every `platform.*` and `network.*` reading came back
-`PLATFORM_CALL_FAILED`, and for each Packet Tracer printed that the module
-*"does not have the necessary privilege for IPC call"* `hardwareFactory` or
-`network`. That diagnostic, recorded beside the envelope, is what attributes
-those failures; the reading names no cause, and never will. Which privilege
-each call needs is still unmeasured, so the capabilities stay `PENDING_TARGET`,
-and `PLATFORM_CALL_FAILED` from any other call, build or module is not read as
-a denied privilege unless a diagnostic says so. An earlier revision refused to
-predict that first reading, and was right to: a prediction that came true would
-still have been a claim with nothing behind it (MJ-015).
+**A capability stays pending until the target answers, and a target reading is
+attributed only by what the target printed.** This module declares exactly one
+privilege, `GET_NETWORK_INFO` (MJ-025, MJ-032). That is what the recorded
+target-binary evidence says both root calls require, and it is not a reading of
+the target: no artifact declaring it has been run, so every platform and
+workspace capability stays `PENDING_TARGET` exactly as before.
+
+Two runs on `9.0.1.0858` — the official one at `d37ba37` and an earlier
+exploratory one — observed instead what a Script Module carrying **no**
+privilege gets: `IPC.hardwareFactory()` and `IPC.network()` were denied, every
+`platform.*` and `network.*` reading came back `PLATFORM_CALL_FAILED`, and for
+each Packet Tracer printed that the module *"does not have the necessary
+privilege for IPC call"* `hardwareFactory` or `network`. That diagnostic,
+reported beside the reading, is what attributes those failures; the reading
+names no cause, and never will. `PLATFORM_CALL_FAILED` from any other call,
+build or module is not read as a denied privilege unless a diagnostic says so.
+An earlier revision refused to predict that first reading, and was right to: a
+prediction that came true would still have been a claim with nothing behind it
+(MJ-015).
 
 **A capability may compose with another without owning its vocabulary.**
 `platform.device_descriptors` reports which models the factory offers and at
@@ -1095,9 +1111,12 @@ there rather than shipped to find out.
 
 **This is a rule about the name, not a prediction about the run.** Cisco's
 sentence says what an unselected privilege means for a call that needs it; it
-does not say which privilege any of these calls need, and nothing here has
-measured that. So the empty set is justified by the absence of evidence for any
-name, and never by a forecast of what the target will answer.
+says nothing about whether a name this repository can evidence will be honoured.
+So a declared set is justified by the evidence behind each name in it, and never
+by a forecast of what the target will answer. While no name was evidenced, the
+justified set was the empty one, and the manifest declared it through both
+target runs; a call descriptor has since been recorded for both roots, and the
+justified set is now the single token that descriptor composes to.
 
 **Three namespaces, and they are not aliases.** An *internal privilege index*
 is an integer the binary compares a call against. A *serialized token* —
@@ -1127,11 +1146,23 @@ target's behaviour under `privileges: []` (both roots denied, official LIVE run
 at `d37ba37`) are three claims, each able to be true while another is wrong.
 Collapsed into one they would assert something no single observation supports.
 In particular, that the binary requires `GET_NETWORK_INFO` is **not** evidence
-that selecting it makes either call answer: `GET_NETWORK_INFO_BINARY_EVIDENCE`
-is `PASS` and `GET_NETWORK_INFO_LIVE_VERIFIED` is `PENDING`. A root still
-denied while carrying it is a contradiction to investigate, never a reason to
-add privileges. All of it is recorded, with the binary's SHA-256, in
-`docs/qa/muejeje-pts-privilege-map.md`; reproduction detail that was not
+that selecting it makes either call answer. Nor is it a measurement this
+repository performed: the readings were supplied from outside it, nothing here
+re-derives them, and no address or symbol came with them. Three states, because
+each can hold while another does not:
+
+```text
+GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
+BINARY_MAP_REPRODUCIBILITY                = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+```
+
+Declaring the token on `RECORDED` evidence alone is deliberate and is not a
+promotion of it: the next official LIVE run selects exactly that token, so the
+run tests the reading rather than inheriting it. A root still denied while
+carrying it is a contradiction to investigate, never a reason to add
+privileges. All of it is recorded, with the binary's SHA-256, in
+`docs/qa/muejeje-pts-privilege-map.md`; reproducibility detail that was not
 supplied is marked `PENDING` there rather than invented.
 **Rationale.** This is `AGENTS.md` rule 6 — never guess a PT API signature —
 applied to the one field whose wrong value is invisible until the target runs.
@@ -1318,7 +1349,10 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
   refusal classes, and identify again across a stop and a start.
   `OFFICIAL_PACKAGING_PROVED` and `V6_KERNEL_VERIFIED` are both `PASS` on that
   evidence, and on nothing wider: the same run's platform calls were all denied
-  (MJ-015).
+  (MJ-015). That evidence is the operator's reported observations, not a
+  preserved raw transcript, so it establishes that each operation was admitted
+  and replied and **not** the field-level shape of any reply — those stay
+  verified under Node alone.
 - **M2** is not `CORE_READY`: every platform capability is `PENDING_TARGET`.
   The official run carried `privileges: []` and had `IPC.hardwareFactory()`
   denied. `GET_NETWORK_INFO` is now evidenced as what that call requires, the
@@ -1344,8 +1378,16 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 more implementation**: its own declared run, changing exactly one thing — the
 privilege set, from `[]` to the one token evidenced for both root calls
 (MJ-032) — with Packet Tracer's diagnostics recorded beside every envelope.
+Two conditions make it capable of establishing anything: a **disposable
+workspace holding two devices**, so a `network.*` root that answers actually
+exercises the members beneath it instead of qualifying them on an empty
+workspace; and a **single raw transcript**, preserved unnormalized, so the
+field-level evidence the previous run could not supply exists this time. Both
+are declared in
+[the minimum-privilege LIVE runbook](../qa/muejeje-pts-privilege-live-runbook.md).
 None of them is marked `CORE_READY`, or complete, on the strength of a call
-that was denied, or of a requirement read out of a binary.
+that was denied, of a requirement read out of a binary, or of a root that
+answered over an empty workspace.
 
 Each stays at that value until its own gates are satisfied. None of them moves
 because a later milestone started, because the test suite is green, or because

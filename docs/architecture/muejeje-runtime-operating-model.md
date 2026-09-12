@@ -137,17 +137,25 @@ allowlist is the proof rather than a list of forbidden verbs, which admits
 every name nobody thought of; and a defect inside an adapter is reported as
 `ENGINE_EXCEPTION`, never as a platform reading.
 
-**The module still requests no privilege.** No privilege is evidenced as the
-one a platform or workspace reading needs, so naming one would be a guess
-(`MJ-032`). What a target does with an unprivileged call is no longer
-unevidenced for the two root calls: an exploratory run on `9.0.1.0858` had
+**The module requests exactly one privilege, `GET_NETWORK_INFO`.** It is the
+minimum evidenced set and not a starting point: a recorded reading of the
+pinned `PacketTracer.exe` says `IPC.hardwareFactory()` and `IPC.network()` —
+the two calls the whole read-only surface roots on — both require privilege
+index 1, and that index serializes as that token. Nothing else is declared,
+because no other call this module makes is evidenced to need anything
+(`MJ-032`). That reading was supplied from outside this repository and nothing
+here re-derives it, so it is `RECORDED` and not reproducible, and it is not a
+statement about what the target then does.
+
+Both target runs so far carried `privileges: []`, and both had
 `IPC.hardwareFactory()` and `IPC.network()` denied, with Packet Tracer's own
-diagnostic naming the missing privilege. The operation still reports only the
-reading that comes back — `PLATFORM_CALL_FAILED` names no cause — and the
-diagnostic recorded beside it is what attributes one. The artifact
-contains no HTTP listener, no file mailbox and no polling loop, and the Custom
-Interface is a static page that calls nothing and therefore reports no module
-state.
+diagnostic naming the missing privilege. Whether the declared token lifts that
+is unmeasured until a governed artifact carrying it is run. The operation still
+reports only the reading that comes back — `PLATFORM_CALL_FAILED` names no
+cause — and the diagnostic recorded beside it is what attributes one. The
+artifact contains no HTTP listener, no file mailbox and no polling loop, and the
+Custom Interface is a static page that calls nothing and therefore reports no
+module state.
 
 **What is not built.** The transport, every mutating operation, and every
 reading beyond the hardware factory, the workspace inventory, one device's

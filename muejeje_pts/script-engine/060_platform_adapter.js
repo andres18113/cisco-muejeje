@@ -37,11 +37,12 @@
  * Those adapters name no platform object of their own.
  *
  * IT REACHES NO VERDICT. Whether an answer qualifies anything is decided in
- * Python, from outside the artifact (MJ-011). The module requests no privilege,
- * because no evidence names one these calls need; what a target actually does
- * with them is unknown until a target does it, and this artifact predicts
- * neither an answer nor a refusal. Whatever happens is reported as a reading
- * with its reason (MJ-032).
+ * Python, from outside the artifact (MJ-011). The module declares one
+ * privilege, GET_NETWORK_INFO, which is what a recorded reading of the pinned
+ * binary says both root calls require; what a target actually does with them
+ * is unknown until a target does it, and this artifact predicts neither an
+ * answer nor a refusal. Whatever happens is reported as a reading with its
+ * reason (MJ-032).
  */
 
 /* The platform members this artifact may call, and the whole of what it may

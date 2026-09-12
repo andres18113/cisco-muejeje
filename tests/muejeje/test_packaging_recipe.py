@@ -40,7 +40,7 @@ import pytest
 from tests.muejeje.engine_harness import dispatch_v6, node_available
 from tests.muejeje.support import REPO_ROOT, SCRIPT_ENGINE, repo_manifest
 from tests.muejeje.test_capability_claims import admitted_operations
-from tests.muejeje.test_unobserved_claims import (
+from tests.muejeje.test_cisco_reference import (
     CISCO_DEBUG_DIALOG_SENTENCE,
     CISCO_SCRIPTING_INTERFACE_PAGE,
 )
@@ -227,7 +227,7 @@ def test_the_recipe_quotes_the_page_that_documents_the_dialog():
     `AGENTS.md` rule 6 forbids writing a step from memory. An earlier revision
     had the run bring the dialog's sentence back rather than assert it; the
     exploratory run did, from a page the v2 preflight inventory already pins,
-    and `test_unobserved_claims` re-reads it from the installed page. This holds
+    and `test_cisco_reference` re-reads it from the installed page. This holds
     the recipe to quoting exactly that sentence, from exactly that page.
     """
     collapsed = _collapsed_recipe()

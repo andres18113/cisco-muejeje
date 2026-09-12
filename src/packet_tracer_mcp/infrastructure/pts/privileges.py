@@ -22,6 +22,20 @@ Declaring the wrong token is invisible until the target runs: Cisco is explicit
 that *"the security privileges indicate which IPC calls this Script Module can
 make. Calls to unselected privileges will be denied"*. The audit is the last
 point at which a name can still be refused.
+
+**The binary evidence below was supplied from outside this repository**, as a
+reading of the pinned `PacketTracer.exe`. Nothing here re-derives it: no test,
+tool or procedure in this checkout reads that binary and recovers the map or
+the call descriptors, and no function, address or symbol was supplied with
+them. So *recorded* and *reproducible* are two different states, and they are
+tracked as two constants rather than as one word. Recording an externally
+supplied reading as if this repository had measured it is the same failure as
+inventing an offset, one step later.
+
+It is still what the production decision is made on, and that is deliberate:
+the next official LIVE run selects exactly the token this evidence names and
+therefore tests it independently. A run that is denied at either root
+contradicts the evidence and is recorded as a contradiction (MJ-032).
 """
 
 from __future__ import annotations
@@ -32,10 +46,32 @@ from typing import Any, Iterable
 # as in the manifest's `builder` so the map cannot outlive the binary it
 # describes: a gate holds the two equal, and a different build needs the map
 # re-derived rather than assumed to still hold (`AGENTS.md` rule 6).
+#
+# Who read it is part of the record. `EXTERNALLY_SUPPLIED` says this repository
+# received the reading rather than performing it, which is why the strength of
+# the evidence is three states below and not one.
 BINARY_EVIDENCE_VERSION = "9.0.1.0858"
 BINARY_EVIDENCE_SHA256 = (
     "843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1"
 )
+BINARY_EVIDENCE_PROVENANCE = "EXTERNALLY_SUPPLIED"
+
+# How strong the privilege evidence is, in the three senses that can differ.
+# They are separate constants because each can hold while another does not, and
+# a single word for all three would let the weakest be read as the strongest.
+#
+#   RECORDED         the map and the call descriptors are written down here and
+#                    in the QA record, against a pinned binary. PASS.
+#   REPRODUCIBILITY  whether anything in this repository can re-derive them from
+#                    that binary. Nothing can, and no function, address or
+#                    symbol was supplied, so this is PENDING and stays PENDING
+#                    until one is recorded.
+#   LIVE_VERIFIED    whether selecting the token makes either root call answer
+#                    on the target. Only a run can say, and none has been made
+#                    with it selected. PENDING.
+BINARY_EVIDENCE_RECORDED = "PASS"
+BINARY_MAP_REPRODUCIBILITY = "PENDING"
+GET_NETWORK_INFO_LIVE_VERIFIED = "PENDING"
 
 # The serialized privilege tokens, by internal index, as observed in that
 # binary. Recorded as the evidence stated it, index 0 included: the binary's
@@ -60,13 +96,6 @@ SERIALIZED_BY_INDEX = (
     "IPC",                  # 10
     "APPLICATION",          # 11
 )
-
-# How the map was reproduced — the function, address or symbol each mapping was
-# read at — is **not recorded, because it was not supplied**. That is a gap in
-# the record and it is marked as one: an invented offset would make the claim
-# unfalsifiable, which is worse than an admitted gap. Recording the addresses
-# means changing this constant and the QA record together.
-BINARY_MAP_REPRODUCTION = "PENDING"
 
 # Which privilege index a call requires, one entry per call this repository has
 # target-binary evidence for. These two are the root calls the whole read-only

@@ -9,6 +9,14 @@ bytes (MJ-018, MJ-020, MJ-032).
 
 This module owns the measured constants, and `test_privileges` imports the ones
 it names in a refusal. Two copies of them could disagree.
+
+**Not all of it was measured here, and that is the point of the last section.**
+The IpcAPI symbols are re-derived from Cisco's installed bytes by this module.
+The binary map and the call descriptors are not: they were supplied from
+outside this repository, nothing here re-derives them, and no address or symbol
+came with them. So they are *recorded* evidence and not *reproducible*
+evidence, and the gates below hold the code and the QA record to saying so —
+three states, never one word (MJ-032).
 """
 
 from __future__ import annotations
@@ -60,6 +68,15 @@ def record_body() -> str:
     return (REPO_ROOT / PRIVILEGE_RECORD).read_text(encoding="utf-8")
 
 
+def record_prose() -> str:
+    """The record with its line wrapping collapsed.
+
+    A sentence gate that matched the wrapping would fail on a reflow that
+    changed nothing, and teach the next reader to stop reflowing.
+    """
+    return " ".join(record_body().split())
+
+
 requires_installed_reference = pytest.mark.skipif(
     not (INSTALLED_HELP / API_REFERENCE).is_dir(),
     reason="the target build is not installed; its reference cannot be read",
@@ -92,15 +109,76 @@ def test_the_qa_record_and_the_code_carry_the_same_evidence():
     assert recorded_calls == module.ROOT_CALL_PRIVILEGE_INDEX
 
 
-def test_reproduction_detail_is_marked_pending_rather_than_invented():
+def test_reproducibility_is_marked_pending_rather_than_invented():
     """An admitted gap beats a fabricated offset.
 
     No function, address or symbol was supplied with this evidence, so none is
     written down. Inventing one would make the mapping unfalsifiable, which is
     the failure mode `AGENTS.md` rule 6 exists to prevent.
     """
-    assert privileges().BINARY_MAP_REPRODUCTION == "PENDING"
-    assert "### Reproduction — `PENDING`" in record_body()
+    assert privileges().BINARY_MAP_REPRODUCIBILITY == "PENDING"
+    assert "### Reproducibility — `PENDING`" in record_body()
+
+
+# ---------------------------------------------------------------------------
+# Evidence strength: three states, because each can hold while another does not.
+# ---------------------------------------------------------------------------
+
+EVIDENCE_STATES = """GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
+BINARY_MAP_REPRODUCIBILITY                = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING"""
+
+
+def test_recorded_reproducible_and_live_verified_are_three_states():
+    """Externally supplied evidence may be recorded and still be unreproducible.
+
+    One word for all three is how a reading this repository received gets read
+    as one it performed. The binary map is written down against a pinned
+    SHA-256 — `RECORDED` — and nothing here can re-derive a row of it, so
+    `REPRODUCIBILITY` is `PENDING`; whether the target honours the token is a
+    third question again, and only a run asks it.
+    """
+    module = privileges()
+
+    assert module.BINARY_EVIDENCE_RECORDED == "PASS"
+    assert module.BINARY_MAP_REPRODUCIBILITY == "PENDING"
+    assert module.GET_NETWORK_INFO_LIVE_VERIFIED == "PENDING"
+    assert len({
+        module.BINARY_EVIDENCE_RECORDED,
+        module.BINARY_MAP_REPRODUCIBILITY,
+    }) == 2, "a recorded reading and a reproducible one are different states"
+
+
+def test_the_provenance_of_the_binary_evidence_is_recorded_as_external():
+    """Who read the binary is part of the evidence, not a detail.
+
+    `EXTERNALLY_SUPPLIED` is what makes `BINARY_MAP_REPRODUCIBILITY = PENDING`
+    a statement rather than an accident: this repository received the reading,
+    so nobody here can be asked to reproduce it.
+    """
+    assert privileges().BINARY_EVIDENCE_PROVENANCE == "EXTERNALLY_SUPPLIED"
+
+    prose = record_prose()
+    assert "supplied from outside this repository" in prose
+    assert "nothing in it performs that reading" in prose
+
+
+@pytest.mark.parametrize("logical", [
+    PRIVILEGE_RECORD,
+    "docs/qa/muejeje-pts-offline.md",
+    "docs/architecture/muejeje-pts-requirements.md",
+    "docs/qa/muejeje-pts-privilege-live-runbook.md",
+])
+def test_every_authoritative_record_carries_the_three_states(logical: str):
+    """One current truth, in every document that states the evidence.
+
+    A page that carried only the strongest of the three would let a reader take
+    a recorded reading for a reproducible one, or for a target result.
+    """
+    body = (REPO_ROOT / logical).read_text(encoding="utf-8")
+
+    for state in EVIDENCE_STATES.splitlines():
+        assert state in body, f"{logical} is missing: {state}"
 
 
 def test_the_record_keeps_the_three_facts_apart():
@@ -112,10 +190,23 @@ def test_the_record_keeps_the_three_facts_apart():
     """
     body = record_body()
 
-    assert "GET_NETWORK_INFO_BINARY_EVIDENCE = PASS" in body
-    assert "GET_NETWORK_INFO_LIVE_VERIFIED   = PENDING" in body
+    assert EVIDENCE_STATES in body
     for heading in ("## Fact 1", "## Fact 2", "## Fact 3"):
         assert heading in body, heading
+
+
+def test_the_record_says_the_manifest_may_act_on_recorded_evidence():
+    """Acting on it and over-stating it are different things.
+
+    The production decision is made on a reading nobody here can reproduce, and
+    that is defensible for exactly one reason: the next official LIVE run
+    selects the token this reading names and therefore tests it. The record has
+    to say so, or the declaration reads as evidence being promoted.
+    """
+    prose = record_prose()
+
+    assert "the next official LIVE run selects exactly that token" in prose
+    assert "tests the evidence independently rather than inheriting it" in prose
 
 
 

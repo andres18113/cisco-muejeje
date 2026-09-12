@@ -17,12 +17,12 @@
  * whether anything is qualified by it — the engine cannot audit the engine, so
  * Python decides what an observation establishes (MJ-011).
  *
- * A reading may be unavailable, and that is an answer. This module requests no
- * privilege, because nothing evidences which privilege the call needs — and
- * what a target does with an unprivileged call is not something this artifact
- * knows in advance. Whatever comes back is reported as a reading with its
- * reason, and never as a claim about what the platform does or does not have
- * (MJ-032).
+ * A reading may be unavailable, and that is an answer. This module declares
+ * the one privilege a recorded reading of the pinned binary says this call's
+ * root requires — and what a target then does with the call is not something
+ * this artifact knows in advance. Whatever comes back is reported as a reading
+ * with its reason, and never as a claim about what the platform does or does
+ * not have (MJ-032).
  */
 
 /* The argument this operation admits, and the rule its value must satisfy.

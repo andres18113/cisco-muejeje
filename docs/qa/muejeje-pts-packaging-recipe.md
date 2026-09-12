@@ -196,9 +196,14 @@ revision omitted one, and nothing noticed.
 
 The module creates, opens and modifies nothing, and neither does this
 procedure: no device, link or configuration is touched, and no transport, bridge
-or HTTP endpoint is implemented or contacted. The workspace readings may be
-taken on a minimal disposable workspace the operator prepares beforehand, and
-never on a topology that holds anyone's real work. Every admitted operation is
+or HTTP endpoint is implemented or contacted. The workspace readings are taken
+on a disposable workspace the operator prepares beforehand, and never on a
+topology that holds anyone's real work. **A run declares which workspace it was
+taken over, and that workspace decides what the run can establish**: on an empty
+one an answering `network.*` root reaches no member below it, so nothing beneath
+it is observed. The next declared run requires a specific two-device fixture for
+exactly that reason —
+[the minimum-privilege LIVE runbook](muejeje-pts-privilege-live-runbook.md). Every admitted operation is
 read-only. The `runtime.*` ones make no platform call at all; the `platform.*`
 ones make documented getter calls on the hardware *factory*, which describes
 what models exist and instantiates nothing; the `network.*` ones make
@@ -370,8 +375,12 @@ what tells one evaluation from another. The operator's own record of when the
 module was stopped and started is what does, and it is written down beside the
 envelopes rather than derived from them.
 
-Record every envelope verbatim. **The kernel's live state belongs to an
-artifact, not to the sources**: a green Node run establishes what our
+Record every envelope verbatim, into the run's own raw transcript file — one
+file, written as the run happens, preserved without normalizing or rewriting
+what came back, and interpreted by the QA record afterwards rather than replaced
+by it. The `d37ba37` run kept a summary instead, which is why it establishes
+packaging, execution, lifecycle and the denial diagnostics and no result shape
+at all. **The kernel's live state belongs to an artifact, not to the sources**: a green Node run establishes what our
 JavaScript does and nothing about Packet Tracer's engine, which is a different
 implementation (`MJ-015`). It was established once, for the artifact the
 `d37ba37` run saved — `V6_KERNEL_VERIFIED = PASS` — and each new recipe id
