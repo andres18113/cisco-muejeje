@@ -1,0 +1,8 @@
+{
+  "evidence_sha256": "4c73d5257206d17194df8eb3971ff4db1477857b95971ca535d701aab2039986",
+  "kind": "runtime-promotion-receipt",
+  "runtime_payload_sha256": "926393814538a61804683e5ef1743ab09e319c8fbcef78caa4e88d573816cae2",
+  "runtime_snapshot_file_sha256": "dda060009951894f538a96fdcdd020af86abf2c3d935611a0b2f604f07af8be5",
+  "runtime_snapshot_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\data\\capabilities\\runtime\\9.0.1.0858\\db9dcff4aea13d0209a360056733eba52465c4308a80d9fb3a34fd82260c784c.json",
+  "schema_version": 1
+}

@@ -1,0 +1,20 @@
+show power inline
+Available:390.0(w)  Used:110.0(w)  Remaining:280.0(w)
+
+Interface Admin  Oper       Power   Device              Class Max
+                            (Watts)
+--------- ------ ---------- ------- ------------------- ----- ----
+Gig1/0/1  auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/4  auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/14 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/15 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/16 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/17 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/18 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/19 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/20 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/21 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/22 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/23 auto   off        0.0     n/a                 n/a   30.0
+Gig1/0/24 auto   off        0.0     n/a                 n/a   30.0
+Switch#
