@@ -1053,15 +1053,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 ),
             }
 
-        def capture_learning_boundary() -> None:
+        def capture_learning_boundary(
+            expectation_ids: frozenset[str],
+        ) -> None:
             if self._trunk_transition_observer is None:
                 return
             pending_devices = sorted({
                 expectation.device_name
                 for expectation in ordered
-                if not self._trunk_observation_verified(
-                    latest.get(expectation.id, {}),
-                )
+                if expectation.id in expectation_ids
             })
             for device_name in pending_devices:
                 learning_boundary_stp[device_name] = (
@@ -1140,10 +1140,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 return None
             return next(iter(progress_targets))
 
-        def pending_learning_progress_target_ms() -> float | None:
+        def learning_progress_target_ms(
+            expectation_ids: frozenset[str],
+        ) -> float | None:
             pending = False
             progress_targets: set[float] = set()
             for expectation in ordered:
+                if expectation.id not in expectation_ids:
+                    continue
                 observed = latest.get(expectation.id, {})
                 if self._trunk_observation_verified(observed):
                     continue
@@ -1157,6 +1161,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
             if not pending or len(progress_targets) != 1:
                 return None
             return next(iter(progress_targets))
+
+        def pending_learning_progress_target_ms() -> float | None:
+            return learning_progress_target_ms(frozenset(
+                expectation.id
+                for expectation in ordered
+                if not self._trunk_observation_verified(
+                    latest.get(expectation.id, {}),
+                )
+            ))
 
         def learning_extension_cohort_continuation_authorized() -> bool:
             if not learning_extension_expectation_ids:
@@ -1179,8 +1192,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
         learning_boundary_refresh_performed = False
         learning_boundary_refresh_complete = False
         learning_boundary_refresh_error = ""
+        learning_boundary_expectation_ids = frozenset(
+            expectation.id
+            for expectation in ordered
+            if not self._trunk_observation_verified(
+                latest.get(expectation.id, {}),
+            )
+        )
         if not initial_convergence.configuration_channel:
-            capture_learning_boundary()
+            capture_learning_boundary(learning_boundary_expectation_ids)
             if learning_boundary_stp:
                 learning_boundary_refresh_performed = True
                 try:
@@ -1197,14 +1217,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         f"{type(exc).__name__}: {exc}"
                     )
         candidate_expectation_ids = frozenset(
-            expectation.id
-            for expectation in ordered
-            if not self._trunk_observation_verified(
-                latest.get(expectation.id, {}),
-            )
+            identifier
+            for identifier in learning_boundary_expectation_ids
+            if not self._trunk_observation_verified(latest.get(identifier, {}))
         )
         learning_extension_target = (
-            pending_learning_progress_target_ms()
+            learning_progress_target_ms(candidate_expectation_ids)
             if (
                 not initial_convergence.configuration_channel
                 and not learning_boundary_refresh_complete
@@ -1254,6 +1272,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 ),
                 "learning_extension_expectation_ids": sorted(
                     learning_extension_expectation_ids
+                ),
+                "learning_boundary_expectation_ids": sorted(
+                    learning_boundary_expectation_ids
                 ),
                 **self._pvst_learning_extension.evidence(
                     extension_convergence,

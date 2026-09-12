@@ -101,6 +101,29 @@ def _trunk_result(output: str) -> IosCommandResult:
     )
 
 
+def _stp_observation(states: dict[str, str]) -> dict[str, object]:
+    return {
+        "authoritative": True,
+        "device_name": "SW",
+        "instances": [
+            {
+                "authoritative": True,
+                "vlan_id": vlan,
+                "forward_delay_seconds": 15,
+                "ports": [
+                    {
+                        "interface": interface,
+                        "row_present": True,
+                        "state": state,
+                    }
+                    for interface, state in states.items()
+                ],
+            }
+            for vlan in VLANS
+        ],
+    }
+
+
 def test_old_fwd_row_flicker_does_not_revoke_an_earned_lrn_extension() -> None:
     """Only the boundary LRN cohort decides continuation of its one window.
 
@@ -119,27 +142,7 @@ def test_old_fwd_row_flicker_does_not_revoke_an_earned_lrn_extension() -> None:
     ))
 
     def stp(_device_name: str) -> dict[str, object]:
-        states = next(stp_states)
-        return {
-            "authoritative": True,
-            "device_name": "SW",
-            "instances": [
-                {
-                    "authoritative": True,
-                    "vlan_id": vlan,
-                    "forward_delay_seconds": 15,
-                    "ports": [
-                        {
-                            "interface": interface,
-                            "row_present": True,
-                            "state": state,
-                        }
-                        for interface, state in states.items()
-                    ],
-                }
-                for vlan in VLANS
-            ],
-        }
+        return _stp_observation(next(stp_states))
 
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
@@ -181,3 +184,47 @@ def test_old_fwd_row_flicker_does_not_revoke_an_earned_lrn_extension() -> None:
     assert details["learning_extension_authorized"] is True
     assert details["learning_extension_stop_reason"] == "converged"
     assert details["learning_extension_simulation_progress_ms"] == 1_000
+
+
+def test_old_fwd_row_flicker_cannot_join_the_fresh_boundary_cohort() -> None:
+    """The refresh may shrink the captured LRN cohort, never grow it.
+
+    LIVE Router0 ``...T182313631883Z-83fa738dee54`` captured every new
+    Floor3 trunk as exact LRN.  Both old Switch4 trunks were already FWD at
+    the end of the ordinary window, then their CLI rows flickered absent only
+    in the post-capture refresh.  That later flicker must not retroactively
+    enter the captured pending set and veto its one governed extension.
+    """
+
+    old = _expectation("old", "GigabitEthernet0/1")
+    new = _expectation("new", "GigabitEthernet0/2")
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=lambda _device_name: _stp_observation({
+            "GigabitEthernet0/1": "FWD",
+            "GigabitEthernet0/2": "LRN",
+        }),
+        simulation_time_observer=_simulation_clock(0, 0),
+    )
+    runtime._ios = _SequenceIos([
+        _trunk_result(_trunk_output(old_present=True, new_forwarding=False)),
+        _trunk_result(_trunk_output(old_present=False, new_forwarding=False)),
+        _trunk_result(_trunk_output(old_present=True, new_forwarding=True)),
+    ])
+
+    results = runtime.verify([old, new])
+
+    assert [item.status for item in results] == [
+        ActionExecutionStatus.VERIFIED,
+        ActionExecutionStatus.VERIFIED,
+    ]
+    details = results[0].convergence.details
+    assert details["learning_extension_candidate"] is True
+    assert details["learning_extension_expectation_ids"] == [new.id]
+    assert details["learning_extension_authorized"] is True
+    assert details["learning_extension_stop_reason"] == "converged"
