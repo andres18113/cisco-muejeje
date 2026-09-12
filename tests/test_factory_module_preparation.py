@@ -1702,15 +1702,18 @@ def test_a_precondition_refusal_is_not_an_indeterminate_mutation() -> None:
 
 
 def test_install_reads_the_supported_inventory_after_the_module_tree() -> None:
-    """Measured on 9.0.1.0858: the order of these two reads is not cosmetic.
+    """The mutation reads the two surfaces in the observation's order.
 
-    LIVE run poe3b-router0-b-3650-11-psu-named-refusal-20260912T042203Z-d123acfd
-    refused with "supported module inventory no longer offers the identity"
-    while the whole-inventory fingerprint was byte-identical to the
-    observation. The observation reads getSupportedModule after walking
-    getRootModule; the mutation read it first, and got an inventory without
-    the identity the same device had just offered. The fake below reproduces
-    that: the supported list is empty until the module tree has been walked.
+    This order was first changed while chasing the refusal in LIVE run
+    ...-named-refusal-20260912T042203Z-d123acfd, on the theory that asking
+    getSupportedModule before walking getRootModule was what emptied the
+    inventory. Run ...-ordered-reads-20260912T043835Z-9c26ba00 refused
+    identically with the order corrected, so the order was never the cause -
+    see test_a_host_supported_inventory_still_offers_the_identity for what
+    was. The invariant is kept on its own merit: a re-derivation that claims
+    to reproduce the observation should read what the observation read, in
+    the order it read it. The fake below would expose a regression either
+    way, since its inventory is empty until the tree has been walked.
     """
 
     transport = _Replies(_runtime_observation())
@@ -1754,3 +1757,99 @@ def test_install_reads_the_supported_inventory_after_the_module_tree() -> None:
     assert payload["result"]["error"] == ""
     assert payload["result"]["native_ack"] is True
     assert payload["calls"] == 1
+
+
+
+def test_a_host_supported_inventory_still_offers_the_identity() -> None:
+    """The supported inventory crosses IPC and need not be a native Array.
+
+    LIVE runs ...-named-refusal-20260912T042203Z-d123acfd and
+    ...-ordered-reads-20260912T043835Z-9c26ba00 both refused with "supported
+    module inventory no longer offers the identity" while the whole-inventory
+    fingerprint was byte-identical to the observation, and while the same
+    device had just reported five supported modules led by AC-POWER-SUPPLY.
+    Python only ever sees the JSON round-trip of that value, which is an array
+    of strings. The raw value handed to JavaScript is a host list proxy:
+    Array.isArray is false and its elements are not native strings, so a check
+    written against a native Array refuses an identity that is plainly there.
+    """
+
+    transport = _Replies(_runtime_observation())
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+    requirement = factory_module_requirement_for("3650-24PS", BUILD)
+    script = factory_module_runtime._install_factory_module_js(
+        observation, requirement,
+    )
+    source = (
+        "let reported='',calls=0,power=true;"
+        + _node_descriptor_factory()
+        + _node_module_factory()
+        + "const child=makeModule([],[],'BUILTIN');"
+        "const root=makeModule([18,4],[child],'CHASSIS');"
+        "root.addModuleAt=function(m,i){calls++;return true;};"
+        # A host list proxy: indexable with a length, elements are String
+        # objects rather than primitives, and Array.isArray rejects it.
+        "function hostList(values){const o={length:values.length};"
+        "values.forEach(function(v,i){o[i]=new String(v);});return o;}"
+        "const supported=hostList(['AC-POWER-SUPPLY:../art/3650Power.png',"
+        "'POWER-COVER-PLATE:../art/blank.png']);"
+        "const device={getModel:function(){return '3650-24PS';},"
+        "getRootModule:function(){return root;},"
+        "getSupportedModule:function(){return supported;},"
+        "getPower:function(){return power;},"
+        "setPower:function(value){power=value;},skipBoot:function(){}};"
+        "global.ipc={network:function(){return {getDevice:function(){return device;}};}};"
+        "global.reportResult=function(value){reported=value;};"
+        + script
+        + "console.log(JSON.stringify({calls:calls,"
+        "isArray:Array.isArray(supported),result:JSON.parse(reported)}));"
+    )
+
+    payload = json.loads(_run_node(source))
+
+    # The fake is only meaningful while it is genuinely not a native Array.
+    assert payload["isArray"] is False
+    assert payload["result"]["error"] == ""
+    assert payload["result"]["native_ack"] is True
+    assert payload["calls"] == 1
+
+
+def test_a_supported_inventory_without_the_identity_still_refuses() -> None:
+    """Tolerating a host list must not tolerate a missing identity."""
+
+    transport = _Replies(_runtime_observation())
+    preparer = PacketTracerFactoryModulePreparer(transport, BUILD)
+    observation = preparer.observe_required_module("SW", "3650-24PS")
+    requirement = factory_module_requirement_for("3650-24PS", BUILD)
+    script = factory_module_runtime._install_factory_module_js(
+        observation, requirement,
+    )
+    source = (
+        "let reported='',calls=0,power=true;"
+        + _node_descriptor_factory()
+        + _node_module_factory()
+        + "const child=makeModule([],[],'BUILTIN');"
+        "const root=makeModule([18,4],[child],'CHASSIS');"
+        "root.addModuleAt=function(m,i){calls++;return true;};"
+        "const device={getModel:function(){return '3650-24PS';},"
+        "getRootModule:function(){return root;},"
+        # An identity that only shares a prefix must not satisfy the check.
+        "getSupportedModule:function(){return ['AC-POWER-SUPPLY-XL:x'];},"
+        "getPower:function(){return power;},"
+        "setPower:function(value){power=value;},skipBoot:function(){}};"
+        "global.ipc={network:function(){return {getDevice:function(){return device;}};}};"
+        "global.reportResult=function(value){reported=value;};"
+        + script
+        + "console.log(JSON.stringify({calls:calls,result:JSON.parse(reported)}));"
+    )
+
+    payload = json.loads(_run_node(source))
+
+    assert payload["calls"] == 0
+    assert payload["result"]["attempted"] is False
+    assert "supported module inventory no longer offers the identity" in (
+        payload["result"]["error"]
+    )
+    assert "isArray=true" in payload["result"]["error"]
+    assert "matches=false" in payload["result"]["error"]

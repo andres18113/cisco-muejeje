@@ -104,6 +104,11 @@ def _parse_observation(
         "sparse_entries": sparse,
         "inventory_fingerprint": fingerprint,
         "supported_modules_raw": payload.get("supported_modules_raw"),
+        "supported_diagnostic": (
+            payload["supported_diagnostic"]
+            if type(payload.get("supported_diagnostic")) is str
+            else ""
+        ),
         "supported_module_verified": _supports_required_module(
             payload.get("supported_modules_raw"), requirement.module_model,
         ),
@@ -863,26 +868,52 @@ def _module_observation_js_helpers() -> str:
         "__viewsOut,__slotStates]);for(var __j=0;__j<__node.module_entries.length;"
         "__j++){var __childEntry=__node.module_entries[__j];if(__childEntry.state==='present'){"
         "__walk(__childEntry.module);}}}__walk(__root);return __all;}"
-        "function __hasSupportedModule(__raw,__model){if(!Array.isArray(__raw)){return false;}"
-        "for(var __s=0;__s<__raw.length;__s++){if(typeof __raw[__s]!=='string'){"
-        "return false;}if(__raw[__s]===__model||__raw[__s].indexOf(__model+':')===0){"
+        # The supported inventory crosses the IPC boundary. Python only ever
+        # sees its JSON round-trip, which is an array of strings; the raw value
+        # handed to JavaScript may be a host list proxy, for which
+        # Array.isArray is false and elements are not native strings. Requiring
+        # a native Array here made the mutation refuse an identity the very
+        # same device had just offered the observation. Accept any indexable
+        # value with an integer length, coerce each element, and still require
+        # the exact identity - the fact Python establishes, established here.
+        "function __supportedList(__raw){if(__raw===null||typeof __raw==='undefined'){"
+        "return null;}var __len=__raw.length;if(typeof __len!=='number'||!isFinite(__len)"
+        "||__len<0||Math.floor(__len)!==__len){return null;}var __out=[];"
+        "for(var __i=0;__i<__len;__i++){var __item=__raw[__i];"
+        "if(__item===null||typeof __item==='undefined'){return null;}"
+        "__out.push(String(__item));}return __out;}"
+        "function __hasSupportedModule(__raw,__model){var __list=__supportedList(__raw);"
+        "if(__list===null){return false;}for(var __s=0;__s<__list.length;__s++){"
+        "if(__list[__s]===__model||__list[__s].indexOf(__model+':')===0){"
         "return true;}}return false;}"
+        "function __supportedDiagnostic(__raw,__model){var __list=__supportedList(__raw);"
+        "return 'typeof='+(typeof __raw)+' isArray='+Array.isArray(__raw)"
+        "+' indexable='+(__list!==null)+' length='+(__list===null?'n/a':__list.length)"
+        "+' matches='+__hasSupportedModule(__raw,__model);}"
     )
 
 
-def _observe_module_slots_js(device_name: str) -> str:
+def _observe_module_slots_js(device_name: str, required_model: str = "") -> str:
     name = json.dumps(device_name, ensure_ascii=False)
+    model = json.dumps(required_model, ensure_ascii=False)
     helpers = _module_observation_js_helpers()
     return (
         "try{var __d=ipc.network().getDevice(" + name + ");"
         "if(!__d){reportResult(JSON.stringify({found:false}));}else{" + helpers
         + "var __state={containers:{}};var __root=__module(__d.getRootModule(),[],__state);"
-        "var __supported=null;try{__supported=__d.getSupportedModule();}catch(__se){}"
+        # The JavaScript view of the supported inventory is recorded alongside
+        # its JSON round-trip, because only the round-trip reaches Python and
+        # the two disagreed on a live device.
+        "var __supported=null,__supportedDiag='unavailable';"
+        "try{__supported=__d.getSupportedModule();"
+        "__supportedDiag=__supportedDiagnostic(__supported," + model + ");}"
+        "catch(__se){__supportedDiag='threw: '+String(__se);}"
         "var __deviceDescriptorRoot=null;try{var __dd=__d.getDescriptor();"
         "if(__dd&&typeof __dd.getRootModule==='function'){"
         "__deviceDescriptorRoot=__descriptor(__dd.getRootModule());}}catch(__dde){}"
         "reportResult(JSON.stringify({found:true,name:String(__d.getName()),"
         "model:String(__d.getModel()),supported_modules_raw:__supported,"
+        "supported_diagnostic:__supportedDiag,"
         "device_descriptor_root:__deviceDescriptorRoot,root:__root}));}}"
         "catch(__e){reportResult(JSON.stringify({found:false,error:String(__e)}));}"
     )
@@ -938,7 +969,8 @@ def _install_factory_module_js(
         "else if(__targetFact[2]!=='empty'){__why='target slot is no longer empty: '"
         "+__targetFact[2];}"
         "else if(!__hasSupportedModule(__supportedRaw,__model)){"
-        "__why='supported module inventory no longer offers the identity';}"
+        "__why='supported module inventory no longer offers the identity ['"
+        "+__supportedDiagnostic(__supportedRaw,__model)+']';}"
         "else if(__observedGuard!==" + expected_guard + "){"
         "__why='inventory or PhysicalView evidence changed since observation';"
         # Read the surface a second time. Equal reads mean it changed once and

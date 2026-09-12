@@ -90,6 +90,7 @@ class FactoryModuleObservation:
     already_prepared: bool = False
     supported_module_verified: bool = False
     supported_modules_raw: Any = None
+    supported_diagnostic: str = ""
     device_descriptor_root: FactoryModuleDescriptorEvidence | None = None
     descriptor_evidence_observed: bool = False
     inventory_fingerprint: str = ""

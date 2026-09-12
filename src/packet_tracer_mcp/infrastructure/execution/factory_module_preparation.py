@@ -338,7 +338,7 @@ class PacketTracerFactoryModulePreparer:
         fresh_owned: bool,
     ) -> FactoryModuleObservation:
         raw = self._send_and_wait(
-            _observe_module_slots_js(device_name),
+            _observe_module_slots_js(device_name, requirement.module_model),
             self._observation_timeout_seconds,
         )
         return _parse_observation(
