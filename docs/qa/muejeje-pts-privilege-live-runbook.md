@@ -19,8 +19,9 @@ its results are read under.
 | artifact | `6951c066ec158d57855dfd739619482cd05f40e007f5c28fb5fcc66e58a12146`, 48185 bytes | measured after saving |
 | privileges | `[]` | **`GET_NETWORK_INFO`, and nothing else** |
 | workspace | not declared, and not recorded | **the two-device fixture below, required before qualification** |
-| addresses | typed into the procedure | **read out of the reading that reports them** |
-| raw evidence | not captured — the record keeps the operator-reported observations | **one raw transcript, named by the artifact SHA-256, required** |
+| observed relay inputs | typed into the procedure | **read out of the reading that published them** |
+| qualification accounting | every operation entered once | **every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`** |
+| raw evidence | not captured — the record keeps the operator-reported observations | **one append-only transcript per execution, named by artifact SHA-256 and run id** |
 | everything else | — | unchanged except where governed source and recipe evolution requires |
 
 The right-hand column is **read from the audit, never typed from here**: a
@@ -28,21 +29,27 @@ recipe id written into the document that describes the commit it lives in
 cannot be correct, and one copied forward from a previous line is worse than
 absent. Run the audit, and record what it reports.
 
-The privilege set is the point of the run; the workspace, the observed
-addresses and the transcript are what make the run capable of establishing
-anything, and none of them changes what is packaged. Everything else differs
-only where the governed source and the recipe force it. **The packaged bytes
-are not otherwise unchanged**, and saying so would be wrong: besides the
-manifest field, the interface page states the privilege the module now
-requests, and four engine sources — `060_platform_adapter.js`,
-`160_platform_discovery.js`, `170_platform_modules.js` and
-`200_runtime_identity.js` — carry corrected comments that used to deny the
-privilege the manifest declares. The privilege model also moved into its own
-auditor module, a declared tooling input and therefore part of the recipe id. **No
-executable V6 behaviour changed**: the comments are comments, and the
-dispatcher, the operations, the adapters and every bound are byte-identical in
-effect to the artifact already qualified. No capability, transport, link
+The privilege set is the point of the run; the workspace, the observed relay
+inputs, the accounting and the transcript are what make the run capable of
+establishing anything, and none of them changes what is packaged. Everything
+else differs only where the governed source and the recipe force it.
+
+**The declared artifact inputs differ from the qualified artifact's in more than
+the manifest field**, and saying otherwise would be wrong: the interface page
+states the privilege the module now requests, and four engine sources —
+`060_platform_adapter.js`, `160_platform_discovery.js`,
+`170_platform_modules.js` and `200_runtime_identity.js` — carry corrected
+comments that used to deny the privilege the manifest declares. The privilege
+model also moved into its own auditor module, a declared tooling input and
+therefore part of the recipe id. **No executable V6 behaviour changed**: every
+changed engine line is a comment, and the dispatcher, the operations, the
+adapters and every bound are unchanged. No capability, transport, link
 operation, mutation or M4 work is in this artifact.
+
+**No `.pts` exists for this candidate yet**, so nothing here says what its bytes
+are. The saved artifact gets its own SHA-256, measured outside it after saving.
+A statement about declared inputs is a statement about what goes into the
+build, never about what came out of it.
 
 ## Before packaging
 
@@ -108,75 +115,182 @@ factory describes what models exist and instantiates nothing — so the fixture
 changes nothing for them, and their members are qualified the same way, each by
 its own answer.
 
-## Every address comes from a reading, never from this page
+## Every relay input comes from a reading, never from this page
 
-Three of the qualification statements take an address: a `factory_index`, a
-`workspace_index`, and a `module_type`. **None of those values is typed from
-this document.** Each is read out of the reading that reports it, in this run,
-and entered into the next statement — so what the run exercises is what the
-target actually offered, and not what a fixture happened to produce once.
+Three qualification statements carry an **observed relay input**: a value one
+reading published, sent back by a later statement. The three are not one kind
+of thing, and the difference is kept:
+
+| Relay input | What it is | Published by |
+| --- | --- | --- |
+| `factory_index` | a **factory address** — a position in the factory enumeration | `platform.device_descriptors` |
+| `workspace_index` | a **workspace address** — the position one workspace reading handed a device over at | `network.device_inventory` |
+| `module_type` | an **opaque platform-produced value** — relayed as the platform emitted it, and never interpreted | `platform.device_descriptors` (`supported_module_types`) or `platform.module_descriptors` (a chassis node's `module_type`) |
+
+The two addresses keep their named domains (`MJ-029`): a factory address is
+never sent where a workspace address is expected, and the kernel refuses one
+sent the wrong way. **A `module_type` is not an address at all** — it names no
+position, and nothing in this run reads a meaning into it (`MJ-014`).
+
+**None of these values is typed from this document.** Each is read out of the
+reading that published it, in this run, and relayed into the next statement —
+so what the run exercises is what the target offered, not what a fixture
+happened to produce once.
 
 The literal values in the recipe's blocks are **placeholders**. They are there
-so the statement is a complete, admissible request that a gate can drive
-through the kernel; they are replaced before the statement is entered, and a
-placeholder entered unchanged makes the answer evidence about a position nobody
-observed.
+so each statement is a complete, admissible request a gate can drive through
+the kernel. **A placeholder is never entered.** A dependent statement is entered
+only with the relay input this run observed; one whose input was not observed
+is not entered at all, and is accounted for as
+`NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` (see *Qualification accounting*).
 
 ### The workspace chain
 
-1. **`network.device_inventory` runs first** of the three `network.*` readings,
-   and its envelope goes into the transcript exactly as it came back.
-2. In that envelope, find the entry whose `name` is `Switch0`, and take **the
-   `workspace_index` it reports**. That number is the address for the rest of
-   the chain.
-3. Enter `network.device_identity` with that observed address.
-4. Enter `network.device_ports` with **that same observed address**.
-5. Both must come back re-reporting the device they were meant to reach:
+1. **`network.device_inventory` runs first** of the three `network.*` readings.
+   Its envelope is appended to the transcript body exactly as it came back, and
+   that observation is the **provenance anchor** for every workspace address
+   used later in the run.
+2. In that envelope's bounded window, find the entry whose `name` is `Switch0`,
+   and take **the `workspace_index` it reports**. That is the workspace address
+   for the rest of the chain.
+3. **If the inventory published none** — it did not answer `OBSERVED`, or no
+   entry in its window is named `Switch0` — neither dependent statement is
+   entered: `network.device_identity` and `network.device_ports` are both
+   `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`, with the reason. No further window
+   is requested to look for the device. A workspace with no `Switch0` means
+   precondition 6 was not met, and the transcript says so.
+4. Otherwise enter `network.device_identity` with that observed workspace
+   address.
+5. Enter `network.device_ports` with **that same observed workspace address**.
+6. Both must come back re-reporting the device they were meant to reach:
    `name` `Switch0` and `model` `2960-24TT`. Both operations read the identity
    off the same hand-over they read the rest from, so this is a check the
    answers can actually support.
-6. **If the identity they re-report is not that device, the workspace moved
-   between observations.** Record `WORKSPACE_ATTRIBUTION_UNSTABLE`, with all
-   three envelopes, and **qualify no descendant member**: an address that
-   pointed at two different devices in one run cannot attribute any reading
-   taken through it.
-7. If the inventory reports no entry named `Switch0`, precondition 6 was not
-   met. Record that, and qualify no descendant member — the run is a privilege
-   result over a workspace this declaration did not describe.
 
 A position is never carried across runs, and never written into this document
 as a fact. It is the position the platform handed a device over at, in the one
 reading that says so.
 
+### What an unstable attribution invalidates, and what it does not
+
+If `network.device_identity` or `network.device_ports` re-reports a device other
+than the one the inventory published at that position, record
+`WORKSPACE_ATTRIBUTION_UNSTABLE` with all three envelopes. Two different things
+are at stake, and the finding is about only one of them:
+
+```text
+member/API observation         what one call answered, in the reading that made it
+cross-observation continuity   that readings taken through one address describe one device
+```
+
+**The finding invalidates continuity, and only continuity.** The cross-reading
+`Switch0` chain is not qualified: nothing is concluded about `Switch0` by
+joining the inventory, the identity and the ports readings, because the address
+did not hold one device across them.
+
+**It does not erase what each call answered.** The inventory's
+`Network.getDeviceCount`, `Network.getDeviceAt` and `Device.getName` remain
+observations from the inventory. The identity reading's `Device.getName`,
+`Device.getModel` and `Device.getType` remain observations of whatever device
+that reading was handed, and the ports reading's members likewise. Each member
+is characterized from the reading that called it, and a later reading that
+found another device at the same position does not unmake an answer that was
+given.
+
 ### The factory chain
 
-The same rule, one subject over: an index this repository sends is an index the
-platform published.
+The same rule, one subject over: every factory address sent is one the platform
+published, and every `module_type` sent is one the platform emitted.
 
 1. **`platform.device_descriptors` runs first** of the three `platform.*`
-   readings, bounded by the window the recipe declares, and its envelope goes
-   into the transcript as it came back.
-2. Take a `factory_index` **that reading actually reported** — the first
-   descriptor in the window — and enter `platform.module_descriptors` with it.
-   Its answer re-reports `model`, which must equal the `model` the descriptor
-   at that index carried.
-3. For `platform.module_type_support`, use a `module_type` **the platform
-   itself emitted in this run**: a value in that descriptor's
-   `supported_module_types`, or the `module_type` of a node in the chassis
-   `platform.module_descriptors` just reported. Enter it with the same observed
-   `factory_index`.
-4. **No module type is taken from this page, from Cisco's documentation or from
-   a previous run.** A number chosen that way would make the answer evidence
+   readings, bounded by the window the recipe declares, and its envelope is
+   appended to the transcript body as it came back.
+2. **Choose the factory address inside that window, preferring evidence.** Take
+   the first descriptor in the returned window whose `supported_module_types` is
+   non-empty — that choice lets `platform.module_type_support` run on vocabulary
+   this target produced. If no descriptor in the window emitted one, take the
+   first descriptor in the window. The choice is made among what the reading
+   already returned: **no further window is requested to search for a better
+   descriptor.**
+3. **If the reading published no descriptor** — it did not answer `OBSERVED`,
+   or its window is empty — neither dependent statement is entered:
+   `platform.module_descriptors` and `platform.module_type_support` are both
+   `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`.
+4. Otherwise enter `platform.module_descriptors` with the chosen
+   `factory_index`. Its answer re-reports `model`, which must equal the `model`
+   the descriptor at that index carried; if it does not, the continuity rule
+   above applies to the factory chain exactly as to the workspace one.
+5. For `platform.module_type_support`, relay a `module_type` **the platform
+   itself emitted in this run**: a value in the chosen descriptor's
+   `supported_module_types`, or, when that list was empty, the `module_type` of
+   a node in the chassis `platform.module_descriptors` just reported. Enter it
+   with the same observed `factory_index`.
+6. **No module type is taken from this page, from Cisco's documentation or from
+   a previous run.** A value chosen that way would make the answer evidence
    about a vocabulary item nobody observed on this target, which is the mirror
    `MJ-014` forbids.
-5. If the platform emitted no module type at all in this run — an empty
-   `supported_module_types` and a chassis with no module — record
-   `platform.module_type_support` as **not exercised**, with the reason.
-   Entering an invented number instead would turn a missing observation into a
-   fabricated one.
+7. If no `module_type` was emitted at all — the chosen descriptor listed none,
+   and the chassis reading yielded no node carrying one —
+   `platform.module_type_support` is `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`.
+   It stays that way unless a target-produced `module_type` subsequently exists
+   in this run.
 
-Every request stays inside the bounds the recipe declares. Substituting an
-observed address changes *which* subject is read, never how much is read.
+Every request stays inside the bounds the recipe declares. Relaying an observed
+input changes *which* subject is read, never how much is read, and choosing a
+descriptor happens inside the window already returned.
+
+## Qualification accounting
+
+**Every operation `runtime.capabilities` reports receives exactly one status**,
+appended to the transcript body at the point it is decided:
+
+```text
+EXECUTED                                 entered, and its envelope is in the transcript
+NOT_EXERCISED_PREREQUISITE_UNAVAILABLE   a relay input it needs was not published in this run
+```
+
+An operation that carries no relay input — every `runtime.*` operation,
+`platform.device_descriptors` and `network.device_inventory` — is always
+entered, and is always `EXECUTED`. A dependent operation is `EXECUTED` only when
+every relay input it carries was observed in this run; otherwise it is
+`NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`, recorded with the input that was
+missing and the observation that did not publish it.
+
+**A placeholder is never entered to satisfy coverage.** Coverage is the
+accounting being complete — one status per operation — and not every statement
+having been entered. A request carrying a value nobody observed would produce an
+envelope that looks like evidence and is about nothing.
+
+**`NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` is incomplete target evidence.** It is
+not a failure of that operation, not a finding about the platform, and never a
+reason to fabricate an input. It says this run did not reach that operation, and
+why.
+
+When `platform.device_descriptors` publishes no `factory_index`:
+
+```text
+platform.device_descriptors     EXECUTED
+platform.module_descriptors     NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
+platform.module_type_support    NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
+```
+
+When a `factory_index` is published and no `module_type` is emitted:
+
+```text
+platform.module_type_support    NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
+```
+
+When `network.device_inventory` publishes no `workspace_index` for `Switch0`:
+
+```text
+network.device_inventory        EXECUTED
+network.device_identity         NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
+network.device_ports            NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
+```
+
+The accounting is complete when every operation `runtime.capabilities` reported
+has exactly one line. An operation with no line is a gap in the run's record,
+not a status.
 
 ## The first observation, before any statement is entered
 
@@ -192,33 +306,40 @@ evidence about this one.
 Not the two root calls — **the whole existing qualification**, exactly as the
 recipe lists it: `typeof mcpDispatchV6`, identify, capabilities, each of the
 five refusal classes, a stop and a start with identify again, and then every
-operation `runtime.capabilities` reports, once each.
+operation `runtime.capabilities` reports, each accounted for as above.
 
 Record every envelope verbatim, and beside each one whatever Packet Tracer
-printed while that statement ran — verbatim, with where it appeared, and
-"nothing" when it printed nothing.
+printed while that statement ran — verbatim, with where it appeared, and `none`
+when it printed nothing.
 
-### The raw transcript — one file, and it is the evidence
+### The raw transcript — one per execution, and it is the evidence
 
-**This run produces a single raw evidence file**, written as the run happens
-and committed with it:
+**Each execution of the run produces its own raw evidence file**, written as the
+run happens and committed with it:
 
 ```text
-docs/qa/muejeje-pts-live-transcript-<artifact_sha256>.md
+docs/qa/muejeje-pts-live-transcript-<artifact_sha256>-<run_id>.md
 ```
 
-**It is named by the artifact, not by the recipe.** A recipe id identifies the
-bytes a build *should* produce; the transcript is evidence about the bytes that
-were actually loaded, and only the artifact hash names those. Two saves from
-one recipe id are two artifacts, and a transcript that could belong to either
-attributes to neither.
+**Artifact identity and run identity are different, and the name carries
+both.** The artifact SHA-256 names the bytes that were loaded; a recipe id names
+only the bytes a build *should* produce, so it cannot stand in. The `run_id`
+names this execution: the same artifact run twice is two runs, and the second
+must never overwrite, extend or be merged into the first. Neither the recipe id
+nor the artifact hash alone identifies an execution.
 
-#### The run header, and it is immutable
+**`run_id` is created before qualification begins**: the UTC time the run
+starts, written `YYYYMMDDTHHMMSSZ`, and recorded in the header. If a transcript
+with that name already exists, the `run_id` is wrong — take a new one. Another
+run's file is never opened for writing.
 
-The file **opens** with the identity of the run, written once, before the first
-statement, and never edited afterwards:
+#### The pre-run header, and it is immutable
+
+The file **opens** with facts that exist before the first qualification
+statement is entered, written once and never edited afterwards:
 
 ```text
+run_id                    created before qualification begins
 candidate source SHA      the commit the artifact was packaged from
 source tree               that commit's tree
 build recipe id           report.build_recipe_id, read from the audit
@@ -229,18 +350,33 @@ PacketTracer.exe SHA-256  the pinned binary hash, as measured
 privilege selection       read back from the module's General tab
 Script Engine listing     as Packet Tracer showed it, in its order
 workspace precondition    the fixture, as the operator built it
-observed device inventory  the network.device_inventory envelope, verbatim
 ```
 
-The last line is what ties every workspace address in the run to something the
-target said. Without it a `workspace_index` in a later statement is a number
-with no provenance, and the chain it addresses cannot be read back.
+**Nothing a qualification statement observes belongs in the header.** A header
+that needed an answer would have to be written after the run it is meant to
+precede, and could then no longer be immutable. Every field above is known
+before `typeof mcpDispatchV6` is entered.
 
-For **every** qualification statement, that file records four things:
+#### The body, and it is append-only
+
+After the header, the transcript is **chronological and append-only for the
+whole run**: each statement and its answer are added as they happen, each
+accounting status as it is decided, and nothing already written is edited,
+reordered or removed.
+
+**The `network.device_inventory` observation lives in the body**, at the point
+it was taken, like every other answer. It is the provenance anchor for every
+later workspace address: a statement that relays a `workspace_index` names the
+inventory observation it was read out of, by `operation_rid`. Without that
+anchor a `workspace_index` in a later statement is a number with no provenance,
+and the chain it addresses cannot be read back.
+
+For **every** statement entered, the body records five things:
 
 | Field | What goes in it |
 | --- | --- |
 | statement / RID | the exact text entered, and the `operation_rid` it carries |
+| relay input | each observed relay input the statement carries, with the `operation_rid` of the observation it was read out of — or the word `none` |
 | returned value | the exact JSON **string** or scalar that came back, character for character |
 | Packet Tracer output | exactly what Packet Tracer printed while it ran, or the word `none` |
 | module start | which module start — which evaluation — the statement belongs to |
@@ -268,8 +404,9 @@ IPC.network()           reached by every network.* reading
 ```
 
 **If they progress beyond the previous privilege denial, continue through all
-the platform and network operations in the same run.** The run does not stop at
-the roots; the roots are only where its interpretation begins.
+the platform and network operations in the same run**, each accounted for as
+above. The run does not stop at the roots; the roots are only where its
+interpretation begins.
 
 ## How to read the result
 
@@ -279,7 +416,8 @@ the roots; the roots are only where its interpretation begins.
 | a descendant answers | a fact about that `Interface.member`, on the fixture it was asked over, characterized individually |
 | a descendant then fails | a fact about that `Interface.member`, characterized individually. It does **not** invalidate the root result |
 | a root answers over an empty workspace | the root result, and **nothing** about any member below it — the run did not reach them |
-| a descendant re-reports a different device | `WORKSPACE_ATTRIBUTION_UNSTABLE`: the workspace moved between observations, so **no** descendant of that root is qualified |
+| a dependent operation's relay input was not published | `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`: incomplete target evidence for that operation — neither its failure nor a platform finding |
+| a descendant re-reports a different device | `WORKSPACE_ATTRIBUTION_UNSTABLE`: the cross-reading chain is **not** qualified, and each call's own answer still stands in the reading that made it |
 | a root is still denied | a **contradiction** between the recorded binary evidence and the artifact's behaviour |
 
 **Root privilege qualification and descendant API qualification are separate
@@ -302,8 +440,10 @@ if the members beneath it had.
 selected mid-run to see what happens. Instead:
 
 1. record the diagnostic verbatim in the transcript, for each denied call;
-2. finish the rest of the qualification list anyway — a denied reading is still
-   a reading, and each statement is entered exactly once;
+2. finish the rest of the qualification anyway — a denied reading is still a
+   reading — and account for every operation: one whose relay input the denied
+   reading could not publish is `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` and is
+   not entered with a placeholder, and none is entered twice;
 3. record the contradiction in
    [the privilege map](muejeje-pts-privilege-map.md), beside the binary
    evidence it contradicts;
@@ -320,11 +460,14 @@ other token is needed by anything. It cannot promote `M2_CORE_READY` or
 `M3_CORE_READY` on a root call alone — those need platform readings that
 *answer*, and `M3` needs scope that is not written. It cannot baseline the
 target API from a denial, or from a member the fixture never caused to be
-called. It cannot establish anything about a position: an address that answered
-in this run is where the platform handed a subject over *in this run*, and
-nothing here carries it into the next one. It cannot make the binary map reproducible: `BINARY_MAP_REPRODUCIBILITY`
-stays `PENDING` whatever this run returns, because a run tests the conclusion
-and never recovers the addresses it was read at.
+called. It cannot establish anything about a position: a factory or workspace
+address that answered in this run is where the platform handed a subject over
+*in this run*, and nothing here carries it into the next one. It cannot turn
+`NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` into anything but incomplete evidence
+for that operation. It cannot make the binary map reproducible:
+`BINARY_MAP_REPRODUCIBILITY` stays `PENDING` whatever this run returns, because a
+run tests the conclusion and never recovers the functions and offsets it was
+read at.
 
 ### Two subjects, and a verdict about one is not a verdict about the other
 

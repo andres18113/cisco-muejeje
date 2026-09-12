@@ -1199,8 +1199,12 @@ reference — including that it names no serialized token, which is the mapping
 the validator refuses to assume.
 `tests/muejeje/test_live_runbook.py` holds the next manual run to what would
 make it non-vacuous: the two-device disposable workspace, the members that
-fixture makes reachable, the refusal to qualify a descendant on an empty
-workspace, and the single unnormalized transcript.
+fixture makes reachable, and the refusal to qualify a descendant on an empty
+workspace. `tests/muejeje/test_live_evidence.py` holds where its relay inputs
+come from and what an unstable attribution does and does not invalidate;
+`tests/muejeje/test_live_transcript.py` its per-execution transcript, pre-run
+header and append-only body; and `tests/muejeje/test_live_accounting.py` the
+status every admitted operation receives.
 `tests/muejeje/test_manifest.py` asserts `BUILD_INPUT_INVALID` with no recipe id
 for every refused entry.
 **Status.** `ENFORCED` for the rule and its evidence; `BASELINED` for the
@@ -1421,15 +1425,18 @@ out of that run's own transcript (MJ-011, MJ-015).
 more implementation**: its own declared run, changing exactly one thing — the
 privilege set, from `[]` to the one token evidenced for both root calls
 (MJ-032) — with Packet Tracer's diagnostics recorded beside every envelope.
-Three conditions make it capable of establishing anything: a **disposable
+Four conditions make it capable of establishing anything: a **disposable
 workspace holding two devices**, so a `network.*` root that answers actually
 exercises the members beneath it instead of qualifying them on an empty
-workspace; **every address read out of the reading that reported it**, since a
-`workspace_index` is a position in one observation and never an identity, so a
-predicted one would record our assumption as the target's answer; and a
-**single raw transcript**, named by the artifact's own SHA-256 and preserved
-unnormalized, so the field-level evidence the previous run could not supply
-exists this time. All three are declared in
+workspace; **every observed relay input read out of the reading that published
+it** — a `workspace_index` is a position in one observation and never an
+identity, so a predicted one would record our assumption as the target's
+answer; **complete qualification accounting**, so a dependent operation whose
+input was never published is recorded as
+`NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` instead of entered with a placeholder;
+and a **raw transcript per execution**, named by the artifact's own SHA-256 and
+the run's own id and preserved unnormalized, so the field-level evidence the
+previous run could not supply exists this time. All four are declared in
 [the minimum-privilege LIVE runbook](../qa/muejeje-pts-privilege-live-runbook.md).
 None of them is marked `CORE_READY`, or complete, on the strength of a call
 that was denied, of a requirement read out of a binary, or of a root that

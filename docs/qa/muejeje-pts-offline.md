@@ -383,7 +383,7 @@ and a start, the observed rejection classes, and the privilege denial
 diagnostics — each of which the operator observed and reported. It does not
 establish that any envelope carried the fields V6 specifies, because no
 envelope was preserved to check. The next official run fixes that by requiring
-one raw transcript
+one raw transcript per execution
 ([the minimum-privilege LIVE runbook](muejeje-pts-privilege-live-runbook.md)).
 
 | Record | Value |
@@ -772,10 +772,12 @@ read back from the module, the workspace the instance held, the Script Engine
 listing as Packet Tracer showed it, and every response envelope with whatever
 Packet Tracer printed beside it — including whichever `resolution` and
 `unavailable_reason` each platform reading came back with. From the next run
-onwards those envelopes go into **one raw transcript file, unnormalized**, and
-this page interprets that file rather than standing in for it; a summary is
+onwards those envelopes go into **one raw transcript per execution**, named by
+the artifact SHA-256 and the run's own `run_id`, append-only and unnormalized,
+and this page interprets that file rather than standing in for it; a summary is
 what a run establishes only as far as the transcript behind it goes, which is
-why the two runs above establish no result shape. The target gates change only as far as that
+why the two runs above establish no result shape. The target gates change only
+as far as that
 evidence goes: `OFFICIAL_PACKAGING_PROVED` and `V6_KERNEL_VERIFIED` from the
 saved artifact loading and its kernel answering, which the `d37ba37` run did;
 `TARGET_API_BASELINED` and `CAPABILITY_RESOLUTION_VERIFIED` only from platform
@@ -850,10 +852,12 @@ CURRENT_CANDIDATE_PACKAGED                = PENDING
 CURRENT_CANDIDATE_V6_LIVE_VERIFIED        = PENDING
 
 OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT       = NOT_CAPTURED
-NEXT_LIVE_RUN_RAW_TRANSCRIPT              = REQUIRED
-NEXT_LIVE_RUN_TRANSCRIPT_IDENTITY         = ARTIFACT_SHA256
+NEXT_LIVE_RUN_RAW_TRANSCRIPT              = REQUIRED_PER_EXECUTION
+NEXT_LIVE_RUN_TRANSCRIPT_IDENTITY         = ARTIFACT_SHA256_AND_RUN_ID
+NEXT_LIVE_RUN_TRANSCRIPT_HEADER           = PRE_RUN_FACTS_ONLY
 NEXT_LIVE_RUN_WORKSPACE_FIXTURE           = REQUIRED_TWO_DEVICES
-NEXT_LIVE_RUN_ADDRESSES                   = OBSERVED_NOT_PREDICTED
+NEXT_LIVE_RUN_RELAY_INPUTS                = OBSERVED_NOT_PREDICTED
+NEXT_LIVE_RUN_ACCOUNTING                  = EXECUTED_OR_NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
 ```
 
 `ENGINE_ORDER = CARRIED_BY_FILE_NAMES` was the previous line's packaging
@@ -886,14 +890,29 @@ no artifact declaring that privilege has been run, so nothing yet says the
 target lets either call through.
 
 `OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED` is why that run is read
-narrowly. The four `NEXT_LIVE_RUN_*` states are the conditions the next run
-carries so that it can establish what this one could not: one unnormalized
-transcript, named by the **artifact** SHA-256 rather than by a recipe id,
-because evidence is about the bytes that ran; a workspace with something in it
-for an answering `IPC.network()` to actually walk; and every address read out
-of the reading that reported it, never predicted here. A position is where the
-platform handed a subject over in one reading, and this record makes no claim
-about where anything sits.
+narrowly. The six `NEXT_LIVE_RUN_*` states are the conditions the next run
+carries so that it can establish what this one could not.
+
+- **One unnormalized, append-only transcript per execution**, named by the
+  artifact SHA-256 and by the run's own `run_id`: the artifact hash because
+  evidence is about the bytes that ran, and the `run_id` because a second
+  execution of the same artifact must never overwrite the first.
+- **A header holding only facts that exist before the first statement**, so it
+  can be written first and never edited. The `network.device_inventory`
+  envelope is an observation in the body, where it anchors every later
+  workspace address.
+- **A workspace with something in it** for an answering `IPC.network()` to
+  actually walk.
+- **Every observed relay input read out of the reading that published it** —
+  the factory and workspace addresses, and the opaque `module_type` value —
+  never predicted here.
+- **Every admitted operation accounted for** as `EXECUTED` or
+  `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`, so a dependent operation whose
+  input was never published is recorded as unreached rather than entered with
+  a placeholder.
+
+A position is where the platform handed a subject over in one reading, and this
+record makes no claim about where anything sits.
 
 `CURRENT_CANDIDATE_PACKAGED` and `CURRENT_CANDIDATE_V6_LIVE_VERIFIED` are
 `PENDING` for the same reason every candidate-specific state is: they are

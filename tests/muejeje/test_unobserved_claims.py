@@ -119,6 +119,25 @@ RETIRED_CLAIMS = (
     (r"live-transcript-<build_recipe_id>",
      "the raw transcript is named by the artifact SHA-256 it is evidence "
      "about; a recipe id names intended bytes, not the ones that ran"),
+
+    # The LIVE procedure's own withdrawn rules: coverage by entering every
+    # statement, one transcript per artifact rather than per execution, a header
+    # that needed an answer, and an attribution finding that erased answers.
+    (r"(?:reported|reports),\s+once\s+each"
+     r"|is\s+still\s+entered\s+once"
+     r"|statement\s+is\s+entered\s+exactly\s+once",
+     "every operation is accounted for, EXECUTED or "
+     "NOT_EXERCISED_PREREQUISITE_UNAVAILABLE; no placeholder is entered to "
+     "satisfy coverage"),
+    (r"placeholder\s+entered\s+unchanged",
+     "a placeholder is never entered"),
+    (r"live-transcript-<artifact_sha256>\.md",
+     "a transcript names an execution: the artifact SHA-256 and a run id"),
+    (r"observed\s+device\s+inventory\s+the\s+network\.device_inventory",
+     "the inventory is a body observation, never a pre-run header field"),
+    (r"qualify\s+no\s+descendant\s+member",
+     "an unstable attribution invalidates cross-reading continuity, not the "
+     "answers each call gave"),
 )
 
 # Sources that describe the runtime in prose, the way a document does. A

@@ -170,6 +170,8 @@ artifact and is never embedded in it (`MJ-017`).
 | source commit and tree | `report.source` |
 | `build_recipe_id` | `report.build_recipe_id` |
 | artifact SHA-256 | the command above |
+| artifact size | measured the same way, in bytes |
+| run id | created before the first qualification statement, one per execution |
 | Packet Tracer build | `9.0.1.0858`, and its `PacketTracer.exe` hash |
 | observed responses | the read-only exercise below |
 | Script Engine listing | step 4, as Packet Tracer showed it |
@@ -186,13 +188,17 @@ Modules..."* — start it, and drive only, in this order:
 3. one request per refusal class, from the table below;
 4. an explicit **stop** of the module and a **start**, each recorded by the
    operator as it happens, then `runtime.identify` again;
-5. every other operation `runtime.capabilities` reported, once each.
+5. every other operation `runtime.capabilities` reported, each accounted for
+   exactly once: `EXECUTED`, or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` when a
+   relay input it needs was not published in this run.
 
 Driving the list the runtime reports, rather than a list copied into this
 document, is what keeps this procedure current when an operation is added
 (`MJ-008`). The calls below cover every operation admitted today, and a gate
 drives each one through the kernel and holds the set complete — an earlier
-revision omitted one, and nothing noticed.
+revision omitted one, and nothing noticed. A written statement is not an
+instruction to enter it regardless: the gate holds what is *written*, and which
+statements a run enters depends on which relay inputs that run observed.
 
 The module creates, opens and modifies nothing, and neither does this
 procedure: no device, link or configuration is touched, and no transport, bridge
@@ -281,22 +287,25 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-identify-restart","op":"runtime.iden
 
 **Then every other admitted operation.**
 
-**Three of these take an address, and every address is a placeholder.**
-`factory_index`, `module_type` and `workspace_index` are written below only so
-each statement is a complete, admissible request — a gate drives every one of
-them through the kernel, and it cannot drive a blank. **Each is replaced,
-before the statement is entered, by a value the preceding reading actually
-reported**: a `factory_index` and a `module_type` the platform published in
-`platform.device_descriptors` or `platform.module_descriptors`, and a
-`workspace_index` that `network.device_inventory` reported for the device the
-run means to read. A workspace position is where the platform handed a device
-over in one reading and never an identity, so entering the number below
-unchanged would record an answer about a position nobody observed. The
-substitution rules, and what to do when the two disagree, are in
+**Three of these carry an observed relay input, and every relay input below is
+a placeholder.** Two are addresses in named domains — a `factory_index` in the
+factory enumeration and a `workspace_index` in one workspace reading — and one,
+`module_type`, is an opaque value the platform produced, relayed and never
+interpreted. They are written below only so each statement is a complete,
+admissible request: a gate drives every one of them through the kernel, and it
+cannot drive a blank. **A placeholder is never entered.** A dependent statement
+is entered only with the value the preceding reading actually published in this
+run — a `factory_index` and a `module_type` from `platform.device_descriptors`
+or `platform.module_descriptors`, a `workspace_index` that
+`network.device_inventory` reported for the device the run means to read — and
+one whose input was not published is not entered at all: it is accounted for as
+`NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`. Which descriptor to choose, what to do
+when a reading publishes nothing, and what a mismatch does and does not
+invalidate are in
 [the minimum-privilege LIVE runbook](muejeje-pts-privilege-live-runbook.md).
 
-The order below is therefore load-bearing: the reading that publishes an
-address is driven before the statements that send it back.
+The order below is therefore load-bearing: the reading that publishes a relay
+input is driven before the statements that send it back.
 
 ```javascript
 mcpDispatchV6('{"v":6,"operation_rid":"qual-descriptors","op":"platform.device_descriptors","args":{"factory_offset":0,"limit":4}}')
@@ -332,8 +341,10 @@ different session is a different observation (`MJ-002`).
 **The last two must re-report the device they were meant to reach.** They read
 `name` and `model` off the same hand-over they read everything else from, so
 an identity that does not match the one the inventory published at that
-position says the workspace moved between observations — record it, and
-qualify nothing below that root.
+position says the workspace moved between observations. Record
+`WORKSPACE_ATTRIBUTION_UNSTABLE`: the cross-reading chain through that address
+is not qualified, and each call's own answer still stands as an observation in
+the reading that made it.
 
 ### What Packet Tracer prints beside an answer
 
@@ -351,8 +362,11 @@ IPC Call ERROR: IPC - ExApp or Script Module does not have the necessary privile
 and the same with `"network"` for every `network.*` reading.
 
 **If a root call is denied for privilege again, record the diagnostic and keep
-going through the rest of the list.** Every statement above is still entered
-once, because a denied reading is still a reading, and none is entered twice.
+going through the rest of the list.** Every operation is still accounted for,
+because a denied reading is still a reading: one that carries no relay input is
+entered, and one whose input the denied reading could not publish is
+`NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` rather than entered with a placeholder.
+None is entered twice.
 Do not select another privilege and ask again: a module with a wider set is a
 different recipe, so its answers would belong to an artifact this run did not
 package. A root still denied while carrying `GET_NETWORK_INFO` is a
@@ -361,7 +375,9 @@ is recorded and investigated, never answered by adding privileges
 (`MJ-032`, and [the privilege map](muejeje-pts-privilege-map.md)).
 
 **If a root call now succeeds, continue through every operation below it in the
-same run.** A deeper call that then fails is a fact about that
+same run.** Each dependent one is entered with the relay input that root's
+reading published, and accounted for otherwise. A deeper call that then fails
+is a fact about that
 `Interface.member`, not about the root privilege: record which member was
 reached, and keep the root result and the descendant result apart.
 
@@ -398,12 +414,15 @@ what tells one evaluation from another. The operator's own record of when the
 module was stopped and started is what does, and it is written down beside the
 envelopes rather than derived from them.
 
-Record every envelope verbatim, into the run's own raw transcript file — one
-file, written as the run happens, preserved without normalizing or rewriting
-what came back, and interpreted by the QA record afterwards rather than replaced
-by it. The `d37ba37` run kept a summary instead, which is why it establishes
-packaging, execution, lifecycle and the denial diagnostics and no result shape
-at all. **The kernel's live state belongs to an artifact, not to the sources**: a green Node run establishes what our
+Record every envelope verbatim, into this execution's own raw transcript — one
+file per run, named by the artifact SHA-256 and the run's own `run_id`, opened
+with a header of facts that exist before the first statement, append-only while
+the run happens, preserved without normalizing or rewriting what came back, and
+interpreted by the QA record afterwards rather than replaced by it. The
+`d37ba37` run kept a summary instead, which is why it establishes packaging,
+execution, lifecycle and the denial diagnostics and no result shape at all.
+
+**The kernel's live state belongs to an artifact, not to the sources**: a green Node run establishes what our
 JavaScript does and nothing about Packet Tracer's engine, which is a different
 implementation (`MJ-015`). It was established once, for the artifact the
 `d37ba37` run saved — `V6_KERNEL_VERIFIED = PASS` — and each new recipe id

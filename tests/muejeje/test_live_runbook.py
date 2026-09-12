@@ -16,10 +16,11 @@ qualified nothing beneath it.
 Both of those are now preconditions of the next run, and these gates hold the
 document to them.
 
-How the run must *obtain and preserve* its evidence — addresses read out of a
-reading instead of predicted here, and one transcript named by the artifact it
-is about — is `test_live_evidence`, split out when this module reached its line
-budget. Declaring a run and capturing it are different work (MJ-018, MJ-020).
+How the run must *obtain and preserve* its evidence is split the same way, one
+module per concern: `test_live_evidence` for where its relay inputs come from
+and what an unstable attribution invalidates, `test_live_transcript` for what
+survives the run, and `test_live_accounting` for the status every operation
+receives. Declaring a run and capturing it are different work (MJ-018, MJ-020).
 """
 
 from __future__ import annotations

@@ -147,7 +147,7 @@ def test_every_qualification_call_is_one_the_kernel_admits():
 
 
 def test_the_qualification_calls_ask_every_admitted_operation():
-    """The run exists to record every operation's first target answer."""
+    """Every operation has a written statement, so each can be accounted for."""
     asked = {json.loads(call)["op"] for call in _admitted_calls()}
 
     assert asked == admitted_operations()
