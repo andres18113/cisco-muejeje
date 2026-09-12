@@ -1272,7 +1272,7 @@ missing gate named. What it is never reported as is `DONE`.
 ```text
 M0B = NOT_COMPLETE
 M0C = NOT_COMPLETE
-M1_CORE_READY = NO
+M1_CORE_READY = YES
 M2_CORE_READY = NO
 M3_CORE_READY = NO
 ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
@@ -1287,14 +1287,16 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 - **M0C** is not complete: it still includes batch and auth-boundary semantics.
   MJ-027 is the contract the first batch operation must satisfy, and no batch
   operation exists; the auth boundary is in the same position under MJ-026.
-- **M1** is not `CORE_READY`: the V6 kernel is verified under Node, and its
-  source has run inside Packet Tracer only in an exploratory module whose file
-  names were not its recipe's, so its Packet-Tracer-dependent claims have no
-  evidence from a governed artifact (MJ-015).
+- **M1** is `CORE_READY`: the governed artifact at `d37ba37` was packaged from
+  its declared recipe, loaded and started on `9.0.1.0858`, and answered from its
+  own engine — `mcpDispatchV6` present, identify and capabilities, all five
+  refusal classes, and identify again across a stop and a start.
+  `OFFICIAL_PACKAGING_PROVED` and `V6_KERNEL_VERIFIED` are both `PASS` on that
+  evidence, and on nothing wider: the same run's platform calls were all denied
+  (MJ-015).
 - **M2** is not `CORE_READY`: every platform capability is `PENDING_TARGET`.
-  With `privileges: []` the exploratory run had `IPC.hardwareFactory()` denied,
-  and which privilege it needs is unevidenced; no governed `.pts` has been built
-  from these sources, and `OFFICIAL_PACKAGING_PROVED` is still `PENDING_GUI`.
+  The official run carried `privileges: []` and had `IPC.hardwareFactory()`
+  denied, and which privilege it needs is unevidenced.
 - **M3** is not `CORE_READY`: its read-only topology scope is incomplete. The
   workspace inventory, one device's identity and one device's ports are
   implemented; the workspace's links are not. Every documented route to a link
@@ -1307,9 +1309,9 @@ ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
   evidence of what a Script Module is handed. Every workspace capability is
   also `PENDING_TARGET`, its root call `IPC.network()` denied the same way
   (MJ-015, MJ-031).
-- **The zero-change cutover** is `NOT_ACHIEVED` (MJ-034): no governed artifact
-  is packaged or release-qualified, and no compatibility facade exists outside
-  the V6 core.
+- **The zero-change cutover** is `NOT_ACHIEVED` (MJ-034): one artifact is
+  packaged and kernel-qualified, no version is release-qualified, and no
+  compatibility facade exists outside the V6 core.
 
 **The next task for M0B, M2 and M3 is controlled privilege qualification, not
 more implementation**: its own declared run, changing exactly one thing — a
@@ -1352,10 +1354,9 @@ compatible without the core being compromised.
 it does not define it. A CP LIVE SHA may be recorded as integration evidence,
 never as a version, prerequisite or watermark.
 
-**This is not claimed to be achieved.** No governed artifact has been packaged
-— the one module built from these sources was exploratory — no compatibility
-facade exists, and no
-consumer has been cut over. The requirement states the target and the shape of
+**This is not claimed to be achieved.** One governed artifact has been packaged
+and kernel-qualified (`d37ba37`); no version is release-qualified, no
+compatibility facade exists, and no consumer has been cut over. The requirement states the target and the shape of
 an acceptable solution; it records no progress toward it, and its state is
 `ZERO_CHANGE_CUTOVER = NOT_ACHIEVED`, recorded beside the milestone states
 under MJ-033.
