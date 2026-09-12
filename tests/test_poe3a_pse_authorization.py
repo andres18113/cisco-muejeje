@@ -575,3 +575,38 @@ def test_the_post_false_power_recapture_uses_its_own_label(monkeypatch):
     tail = source.split(marker, 1)[1].split(")", 1)[0]
     assert '"PSU_BEFORE"' not in tail
     assert "PSU_AFTER_NATIVE_FALSE" in tail
+
+
+
+def test_every_capture_label_the_runner_uses_is_in_the_closed_vocabulary():
+    """A label the runner emits but the model rejects fails mid-run.
+
+    PoE3BCapture closes the capture vocabulary, and the raw evidence file is
+    named after the label. A label the runner passes that the model refuses
+    would raise only once that capture is taken - in the fallback branch, that
+    is after addModuleAt has already been dispatched.
+    """
+
+    import re
+    import typing
+    from pathlib import Path
+
+    from src.packet_tracer_mcp.domain.enterprise.models.poe_capacity import (
+        PoE3BCapture,
+    )
+
+    source = (
+        Path(__file__).resolve().parents[1] / "tools/poe3a_pse_live.py"
+    ).read_text(encoding="utf-8")
+    used = set(re.findall(r'capture_inline_status\(\s*"([A-Z0-9_]+)"', source))
+    allowed = set(typing.get_args(
+        PoE3BCapture.model_fields["label"].annotation,
+    ))
+
+    assert used, "no capture labels were found in the runner"
+    assert "PSU_BEFORE" in used
+    assert used <= allowed, "runner labels outside the closed vocabulary: " + str(
+        sorted(used - allowed)
+    )
+    # Distinct labels keep distinct raw files; a collision would overwrite.
+    assert len({label.lower() + ".txt" for label in used}) == len(used)

@@ -14,7 +14,8 @@ class PoE3BCapture(PoE2Capture):
     """Closed capture vocabulary for capacity plus its causal PSU boundary."""
 
     label: Literal[
-        "PSU_BEFORE", "PSU_AFTER", "AUTO_1", "NEVER", "AUTO_2", "RESTORE",
+        "PSU_BEFORE", "PSU_AFTER_NATIVE_FALSE", "PSU_AFTER",
+        "AUTO_1", "NEVER", "AUTO_2", "RESTORE",
     ]
 
 
