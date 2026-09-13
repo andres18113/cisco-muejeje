@@ -305,24 +305,38 @@ not a Packet Tracer limit (`MJ-029`):
 
 | Bound | Spent by | When it runs out |
 | --- | --- | --- |
-| `MAX_MODULE_POSITIONS` = 512 | every `getModuleAt` call one reading makes, a null and a module alike | a node's positions are reserved before any is asked; a node that does not fit asks none, and says `children_truncated` while the reading says `module_positions_truncated` |
+| `MAX_MODULE_POSITIONS` = 511 | every `getModuleAt` call one reading makes, a null and a module alike | a node's positions are reserved before any is asked; a node that does not fit asks none, and says `children_truncated` while the reading says `module_positions_truncated` |
 | `MAX_MODULE_NODES` = 512 | each node this reading keeps — queued, walked and published — never a null, and never a module dropped with a refused child set | judged once a node's positions have answered; a child set that does not fit is refused whole, `children_truncated` and `nodes_truncated` |
 | `MAX_MODULE_DEPTH` = 12 | depth, unchanged | refused before any position is asked, `children_truncated` and `depth_truncated` |
 | `MAX_SLOTS` = 64 | slot types, the other enumeration, unchanged | `slot_types_truncated` |
 
-**Separate units, and the same worst case as before.** Until this correction the
-node ceiling reserved these calls itself, so one reading asked at most
-`MAX_MODULE_NODES` of them; the position budget stays within that, and a gate
-holds the two in that order. The survey's 1551 positions were one sweep of all
-172 descriptors at once, not one reading of one of them, and size no per-request
-bound: a descriptor that needs more positions than this would be evidence about
-that descriptor, to weigh on its own.
+**Separate units, and exactly the worst case as before — hence 511, not 512.**
+Until the budgets were separated, a node's positions were reserved from
+`MAX_MODULE_NODES` against a queue that already held the root, and a `null` there
+ended the reading, so every call that let the walk continue pushed one entry:
+`1 + calls <= 512`. A reading that completed therefore asked **at most 511**
+`getModuleAt` calls, and a reading refused at a `null` asked one more and
+reported nothing. The position budget is that number, so the worst case is
+unchanged rather than approximately unchanged: **511 before, 511 now.** A gate
+holds `MAX_MODULE_POSITIONS + 1 <= MAX_MODULE_NODES`, the `+ 1` being the root.
+The survey's 1551 positions were one sweep of all 172 descriptors at once, not
+one reading of one of them, and size no per-request bound: a descriptor that
+needs more positions than this would be evidence about that descriptor, to weigh
+on its own.
+
+**Which ceiling a reading can reach.** With the budgets one apart, the position
+budget always runs out first: at every node check `1 + positions asked` is at
+most `MAX_MODULE_NODES`, so `nodes_truncated` cannot appear at these two values,
+and the widest child set a reading can keep is 511 modules beside the root —
+exactly `MAX_MODULE_NODES` nodes. The node ceiling stays declared and enforced in
+the walker, dominated rather than removed, and `nodes_truncated` stays in the
+result shape as the field it always was.
 
 **What each budget can and cannot say.** A position nobody asked is never in
-`null_module_positions`. A node refused on the node budget did ask its positions
-first, so Packet Tracer had already handed those modules over and this reading
-keeps none of them: `MAX_MODULE_NODES` bounds what a reading retains, never what
-the platform built on its own side to answer the calls it did make.
+`null_module_positions`. `MAX_MODULE_NODES` bounds what a reading retains, never
+what the platform built on its own side to answer the calls it did make: a module
+handed over into a child set that is then refused cost a position here and no
+node.
 
 **The result grew and nothing else moved.** `module_positions_truncated` joins
 `nodes_truncated` and `depth_truncated`, and every node gains
@@ -340,15 +354,20 @@ walk and relay-closure gates were run against the unchanged engine:
 Against the changed engine, with the stage-scope, compatibility and architecture
 gates beside them: `176 passed`.
 
-**And the bound was corrected before anything was packaged.** `MAX_MODULE_POSITIONS`
-was first set to `2048`, sized against the survey total, which widened the
-`getModuleAt` calls one reading could make past the `512` the node ceiling had
-reserved for them. The correction was written as RED first: against the `c0b654a`
-engine the position and walk gates ran `2 failed, 32 passed` — the declared bounds
-in the wrong order, and the widest reading asking `2048` calls where at most `512`
-had been asked before — and `33 passed` against the corrected bound. No other
-semantics moved with it: `null` versus `undefined`, `null_module_positions`, the
-truncation marks, the failure taxonomy and the V6 shape are as `c0b654a` left them.
+**And the bound was corrected twice before anything was packaged, both times as
+RED first.** `MAX_MODULE_POSITIONS` was first set to `2048`, sized against the
+survey total, which widened the calls one reading could make well past what the
+node ceiling had reserved for them: against the `c0b654a` engine the position and
+walk gates ran `2 failed, 32 passed` — the declared bounds in the wrong order,
+and the widest reading asking `2048` calls — and `33 passed` at `512`. `512` was
+then still one too many, because the old ceiling had to hold the root as well as
+the calls, which makes the old worst case `511`: against the `653d79b` engine the
+same gates ran `3 failed, 30 passed` — `512 + 1 <= 512`, a child set of 512
+modules kept rather than refused, and the node ceiling reached where the position
+budget should have stopped the walk — and `33 passed` at `511`. No other
+semantics moved with either: `null` versus `undefined`, `null_module_positions`,
+the truncation marks, the failure taxonomy and the V6 shape are as `c0b654a` left
+them.
 
 ## Recorded offline results
 

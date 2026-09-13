@@ -116,23 +116,36 @@ def test_more_nodes_than_the_bound_reads_are_marked_truncated():
 
 def test_the_position_budget_stays_within_the_one_that_reserved_these_calls():
     """Two ceilings on one walk, and separating the units is not a licence to
-    ask Packet Tracer for more. A node's positions used to be reserved from
-    `MAX_MODULE_NODES`, so that is the worst case `MAX_MODULE_POSITIONS` may
-    not widen. The `9.0.1.0858` survey's 1551 positions were one sweep of all
-    172 descriptors, not one reading of one of them, and size nothing here: a
+    ask Packet Tracer for more.
+
+    **Where the `+ 1` comes from.** Before the budgets were separated, a node's
+    positions were reserved from `MAX_MODULE_NODES` against a queue that already
+    held the root, and a `null` ended the reading, so every call that let the
+    walk continue pushed one entry: `1 + calls <= MAX_MODULE_NODES`. A reading
+    that completed therefore asked at most `MAX_MODULE_NODES - 1` positions, and
+    that — not the bound itself — is the worst case this budget may not widen.
+
+    The `9.0.1.0858` survey's 1551 positions were one sweep of all 172
+    descriptors, not one reading of one of them, and size nothing here: a
     descriptor needing more is that evidence's own case to make (MJ-029).
     """
     assert (
-        declared_platform_bound("MAX_MODULE_POSITIONS")
+        declared_platform_bound("MAX_MODULE_POSITIONS") + 1
         <= declared_platform_bound("MAX_MODULE_NODES")
     )
 
 
 @requires_node
-def test_a_child_set_that_would_cross_the_node_ceiling_is_refused_whole():
-    """Sized from the node bound itself, and the mark says which ran out: these
-    positions were all asked, so it is the nodes they would have cost — never
-    the calls — that the reading could not afford.
+def test_a_child_set_the_size_of_the_node_ceiling_is_refused_on_the_positions():
+    """Which ceiling stops a walk this wide, now that one contains the other.
+
+    A child set sized at `MAX_MODULE_NODES` costs that many `getModuleAt` calls
+    before a single node could be kept, and the position budget is one short of
+    it, so the walk is refused up front and the node ceiling is never consulted.
+    `nodes_truncated` stays false here — and at these two values it stays false
+    everywhere, because `1 + positions asked <= MAX_MODULE_NODES` holds at every
+    node check. The node ceiling remains declared and enforced in the walker; it
+    is simply no longer the one a reading can reach.
     """
     count = declared_platform_bound("MAX_MODULE_NODES")
     wide = ", ".join(
@@ -146,8 +159,8 @@ def test_a_child_set_that_would_cross_the_node_ceiling_is_refused_whole():
     )
     result = _observed(models)
 
-    assert result["nodes_truncated"] is True
-    assert result["module_positions_truncated"] is False
+    assert result["module_positions_truncated"] is True
+    assert result["nodes_truncated"] is False
     assert result["nodes"] == [result["nodes"][0]]
     assert result["nodes"][0]["children_truncated"] is True
     assert result["nodes"][0]["module_count"] == count

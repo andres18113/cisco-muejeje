@@ -89,9 +89,9 @@ answer: each node publishes `null_module_positions`, the positions it asked that
 answered `null` and never a name for what that means, and the walk goes on past
 them. The boundary hands a `null` over as one for every member and refuses
 `undefined` or a primitive in an object's place; the walk is bounded by the
-positions it asks as well as by the nodes it keeps — neither budget past the
-`512` the node ceiling reserved before they were separated — and says
-`module_positions_truncated` when the first runs out. No operation, no admitted
+positions it asks as well as by the nodes it keeps — at most `511` calls, the
+same worst case the node ceiling allowed when it reserved them beside the root —
+and says `module_positions_truncated` when the first runs out. No operation, no admitted
 member and no failure code changed. No capability, transport, link operation,
 mutation or M4 work is in this artifact.
 

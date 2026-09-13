@@ -196,11 +196,8 @@ def test_a_primitive_where_a_module_is_documented_cannot_be_attributed(primitive
 @requires_node
 def test_nulls_spend_positions_and_never_the_node_budget():
     """A whole position budget of nulls on one node: every one asked, one node
-    read, and no more calls than the node budget reserved before.
-    """
+    read, nothing truncated — a null names no descriptor this walk could keep."""
     count = declared_platform_bound("MAX_MODULE_POSITIONS")
-    nodes = declared_platform_bound("MAX_MODULE_NODES")
-    assert 1 + count > nodes, "sized so a null charged as a node would truncate"
     observed = _read(_chassis(_entries(*["null"] * count)))
     result = observed["result"]
 
@@ -209,28 +206,31 @@ def test_nulls_spend_positions_and_never_the_node_budget():
         False, False,
     )
     assert result["nodes"][0]["null_module_positions"] == list(range(count))
-    assert observed["asked"] == count <= nodes, "the widest reading, still bounded"
+    assert observed["asked"] == count
 
 
 @requires_node
-def test_modules_spend_both_budgets_and_a_node_costs_one_only_if_it_is_kept():
-    """One module short of the ceiling fits; at it, the set is refused whole —
-    after every one of its positions was asked and every module handed over. The
-    node budget counts what this reading keeps, not what Packet Tracer built to
-    answer the calls it did make.
+def test_a_module_spends_a_position_and_a_node_and_the_root_holds_the_last_one():
+    """The widest child set the budgets allow is a whole position budget of
+    modules, and it fills the node budget exactly: the root already holds the
+    unit the walk began with, so `MAX_MODULE_POSITIONS` modules beside it are
+    `MAX_MODULE_NODES` nodes. One more position is refused before any is asked,
+    on the position budget — which by construction runs out first.
     """
+    positions = declared_platform_bound("MAX_MODULE_POSITIONS")
     nodes = declared_platform_bound("MAX_MODULE_NODES")
-    assert nodes <= declared_platform_bound("MAX_MODULE_POSITIONS"), "the nodes run out first"
-    fits = _read(_chassis(_entries(*[CARD] * (nodes - 1))))["result"]
-    crosses = _read(_chassis(_entries(*[CARD] * nodes)))
+    fits = _read(_chassis(_entries(*[CARD] * positions)))
+    crosses = _read(_chassis(_entries(*[CARD] * (positions + 1))))
     result = crosses["result"]
     root = result["nodes"][0]
 
-    assert (fits["nodes_truncated"], len(fits["nodes"])) == (False, nodes)
+    assert fits["result"]["resolution"] == "OBSERVED"
+    assert (fits["result"]["nodes_truncated"], fits["asked"]) == (False, positions)
+    assert len(fits["result"]["nodes"]) == 1 + positions == nodes
     assert result["nodes"] == [root]
-    assert (result["nodes_truncated"], result["module_positions_truncated"]) == (True, False)
+    assert (result["nodes_truncated"], result["module_positions_truncated"]) == (False, True)
     assert (root["children_truncated"], root["null_module_positions"]) == (True, [])
-    assert crosses["asked"] == nodes, "every position was asked before the refusal"
+    assert crosses["asked"] == 0, "refused before Packet Tracer was asked anything"
 
 
 @requires_node
