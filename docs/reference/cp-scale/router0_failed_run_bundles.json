@@ -200,6 +200,34 @@
       },
       "successful_closure": false,
       "evidence_authority": "FAILED_RUN_ONLY"
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260913T130936194331Z-64f1b6dbe117",
+      "executed_sha": "64f1b6dbe117b7a0c83b891738d7a73c97fb4795",
+      "requested_target_field": "router0-branch",
+      "failed_stage": "floor1",
+      "classification": "FAILED",
+      "failure": "CanonicalLiveFailure: Voice at 'floor1' did not close: Voice foundations are not VERIFIED: cfg/access/095ffb7a49ce4ab3, cfg/access/1f0cff4ea15db60c, cfg/access/2bb48884400576b9, cfg/access/3bf7781ae7fdb0be, cfg/access/3ec5577a585d893a, cfg/access/42ca95c83fa1cc83, cfg/access/4321d19af92bfef9, cfg/access/500e4e1c89b21696, cfg/access/5131cb2ff0d93615, cfg/access/63b0f844dd376d5d, cfg/access/707115b955f1cad1, cfg/access/70922de7cd9e3f10, cfg/access/755fb40c18b7059c, cfg/access/b8cd5195f0c93121, cfg/access/c5e6e66a9cfac5b2, cfg/access/d06512ce3a977808, cfg/access/d187747081f3521a, cfg/access/d2e955641db1c205, cfg/access/d6f2c5e296f95a77, cfg/access/dc929f511ed2787a, cfg/access/e7fe94b32f8aad92, cfg/dhcp/63b868771842901f",
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260913T130936194331Z-64f1b6dbe117-failure-precleanup.json",
+          "sha256": "2d0b7f4e208f95515f1fd887629098a5de1bea0639c195e3365f6aaa0b473ae5"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260913T130936194331Z-64f1b6dbe117-cleanup.json",
+          "sha256": "39fd510ed0f4cb2610cc4fb353924684972d00bf9f78b2987dcbcac883682d8c"
+        }
+      ],
+      "cleanup": {
+        "verified": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "realtime_verified": true
+      },
+      "successful_closure": false,
+      "evidence_authority": "FAILED_RUN_ONLY"
     }
   ]
 }
