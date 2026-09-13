@@ -1017,7 +1017,7 @@ def test_trunk_round_does_not_commit_partial_success_before_late_failure():
             )
             forwarding = (
                 "none"
-                if self.calls == 1
+                if self.calls <= 2
                 else vlans
             )
             return _authoritative_trunk_result(

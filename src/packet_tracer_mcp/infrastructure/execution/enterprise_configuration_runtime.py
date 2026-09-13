@@ -937,7 +937,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         learning_extension_observation_active = False
         learning_extension_expectation_ids: frozenset[str] = frozenset()
 
-        def inspect() -> dict[str, object]:
+        def inspect(
+            expectation_ids: frozenset[str] | None = None,
+        ) -> dict[str, object]:
             nonlocal sample_round
             sample_round += 1
             round_latest: dict[str, dict[str, object]] = {}
@@ -945,6 +947,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
             round_correlated: dict[str, dict[str, object]] = {}
             try:
                 for device_name in sorted(grouped):
+                    device_expectations = [
+                        expectation
+                        for expectation in grouped[device_name]
+                        if (
+                            expectation_ids is None
+                            or expectation.id in expectation_ids
+                        )
+                    ]
+                    if not device_expectations:
+                        continue
                     show = self._ios.execute(
                         device_name,
                         OperationalQueryId.SHOW_INTERFACES_TRUNK,
@@ -962,7 +974,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         if authoritative else []
                     )
                     changed: list[str] = []
-                    for expectation in grouped[device_name]:
+                    for expectation in device_expectations:
                         expected_interface = str(
                             expectation.expected.get("interface") or ""
                         )
@@ -995,7 +1007,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         not self._trunk_observation_verified(
                             round_latest[item.id],
                         )
-                        for item in grouped[device_name]
+                        for item in device_expectations
                     )
                     refresh_boundary = bool(
                         learning_extension_observation_active
@@ -1221,7 +1233,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             if learning_boundary_stp:
                 learning_boundary_refresh_performed = True
                 try:
-                    refresh = inspect()
+                    refresh = inspect(learning_boundary_expectation_ids)
                     learning_boundary_refresh_error = str(
                         refresh.get("failure_reason") or "",
                     )
@@ -1255,7 +1267,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             try:
                 extension_convergence = (
                     self._pvst_learning_extension.grant(
-                        inspect,
+                        lambda: inspect(learning_extension_expectation_ids),
                         required_simulation_progress_ms=(
                             learning_extension_target
                         ),

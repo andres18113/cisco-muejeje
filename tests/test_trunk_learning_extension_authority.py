@@ -279,3 +279,116 @@ def test_lrn_cohort_progressing_to_fwd_keeps_its_earned_observation_window() -> 
     assert details["learning_boundary_stp"]["instances"][0]["ports"][0][
         "state"
     ] == "FWD"
+
+
+def test_boundary_refresh_cannot_revoke_verified_trunk_outside_its_cohort() -> None:
+    """A scoped refresh may resolve its pending trunk, not reread old devices.
+
+    Floor2 LIVE ``...T134138442128Z-814d25880d87`` ended its ordinary window
+    with both Switch4 trunks VERIFIED and one different trunk pending. The
+    boundary refresh resolved that one trunk, but an unrelated Switch4 read
+    landed exactly on a buffer rollover and replaced both earned rows with
+    UNOBSERVABLE. The refresh is authorized only for the frozen pending cohort.
+    """
+
+    old = _expectation("old", "GigabitEthernet0/1").model_copy(update={
+        "device_id": "old",
+        "device_name": "A-OLD",
+    })
+    new = _expectation("new", "GigabitEthernet0/2").model_copy(update={
+        "device_id": "new",
+        "device_name": "B-NEW",
+    })
+
+    def result(device_name: str, output: str) -> IosCommandResult:
+        return IosCommandResult(
+            device_name,
+            OperationalQueryId.SHOW_INTERFACES_TRUNK,
+            True,
+            output=output,
+            fresh_output_observed=True,
+            output_complete=True,
+            observed_device_name=device_name,
+            device_identity_provenance="confirmed_unique",
+        )
+
+    class BoundaryRefreshIos:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+            self.by_device = {"A-OLD": 0, "B-NEW": 0}
+
+        def execute(
+            self,
+            device_name: str,
+            _query_id: OperationalQueryId,
+            **_kwargs: object,
+        ) -> IosCommandResult:
+            self.calls.append(device_name)
+            self.by_device[device_name] += 1
+            if device_name == "A-OLD":
+                if self.by_device[device_name] == 1:
+                    return result(
+                        device_name,
+                        _trunk_output(old_present=True, new_forwarding=True),
+                    )
+                return IosCommandResult(
+                    device_name,
+                    OperationalQueryId.SHOW_INTERFACES_TRUNK,
+                    False,
+                    failure_reason=(
+                        "No fresh current-command output window was observed."
+                    ),
+                    window_strategy="rolled_unattributable",
+                    observed_device_name=device_name,
+                    device_identity_provenance="confirmed_unique",
+                )
+            return result(
+                device_name,
+                _trunk_output(
+                    old_present=False,
+                    new_forwarding=self.by_device[device_name] > 1,
+                ),
+            )
+
+    def stp(device_name: str) -> dict[str, object]:
+        observation = _stp_observation({
+            "GigabitEthernet0/1": "FWD",
+            "GigabitEthernet0/2": (
+                "LRN" if device_name == "B-NEW" else "FWD"
+            ),
+        })
+        observation["device_name"] = device_name
+        return observation
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=stp,
+    )
+    ios = BoundaryRefreshIos()
+    runtime._ios = ios
+
+    results = runtime.verify([old, new])
+    diagnostic = {
+        "calls": ios.calls,
+        "results": [
+            {
+                "status": item.status.value,
+                "details": item.convergence.details,
+            }
+            for item in results
+            if item.convergence is not None
+        ],
+    }
+
+    assert [item.status for item in results] == [
+        ActionExecutionStatus.VERIFIED,
+        ActionExecutionStatus.VERIFIED,
+    ], diagnostic
+    assert ios.calls == ["A-OLD", "B-NEW", "B-NEW"]
+    details = results[0].convergence.details
+    assert details["learning_boundary_expectation_ids"] == [new.id]
+    assert details["learning_boundary_refresh_complete"] is True
