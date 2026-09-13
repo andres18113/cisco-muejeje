@@ -80,9 +80,9 @@ RETIRED_CLAIMS = (
     # false once a call descriptor was recorded for both root calls. Present
     # tense on purpose: a statement scoped to the `[]` artifact or run stays.
     (r"module\s+(?:still\s+)?requests\s+no\s+privilege",
-     "the governed manifest declares exactly GET_NETWORK_INFO (MJ-025)"),
+     "the manifest declares all eleven serialized tokens (MJ-032)"),
     (r"module\s+requests\s+none\b",
-     "the module requests one token, and which one is recorded (MJ-032)"),
+     "the module requests the whole vocabulary, and it is recorded (MJ-032)"),
     (r"nothing\s+evidences\s+which\s+privilege"
      r"|no\s+evidence\s+(?:says|names)\s+which\s+privilege"
      r"|nothing\s+it\s+calls\s+has\s+an\s+evidenced\s+privilege",
@@ -91,7 +91,8 @@ RETIRED_CLAIMS = (
      "the requirement is recorded; whether it works is unmeasured (MJ-032)"),
     (r"[Tt]he\s+empty\s+set\s+is\s+justified"
      r"|[Nn]o\s+privilege\s+is\s+evidenced",
-     "the justified set is what the recorded descriptors compose to (MJ-032)"),
+     "the declared set is the vocabulary FULL_TRUSTED_MODULE covers, and the "
+     "recorded descriptors are the evidenced minimum beside it (MJ-032)"),
 
     # One word for three evidence strengths is how supplied, unreproducible
     # evidence reads as a measurement made here.
@@ -138,6 +139,24 @@ RETIRED_CLAIMS = (
     (r"qualify\s+no\s+descendant\s+member",
      "an unstable attribution invalidates cross-reading continuity, not the "
      "answers each call gave"),
+
+    # A correspondence nobody measured: the recipe's table relating each
+    # privilege checkbox's label to a serialized token. Nothing evidences a row.
+    (r"\|\s*Get Network Info\s*\|\s*`GET_NETWORK_INFO`"
+     r"|\|\s*Change Network Info\s*\|\s*`CHANGE_NETWORK_INFO`"
+     r"|\|\s*Miscellaneous UI\s*\|\s*`MISC_GUI`"
+     r"|\|\s*User Preferences\s*\|\s*`CHANGE_PREFERENCES`",
+     "no measured mapping relates a dialog label to a serialized token; eleven "
+     "checkboxes and eleven declared tokens are two counted facts (MJ-032)"),
+)
+
+# The two facts that replaced it, so deleting a mapping cannot delete the step.
+INDEPENDENT_PRIVILEGE_FACTS = (
+    "the privilege dialog exposes 11 checkboxes",
+    "no checkbox is left clear",
+    "declares the 11 serialized tokens of SERIALIZED_BY_INDEX minus",
+    "that is a count, not a correspondence",
+    "No per-row mapping is needed here, and none is claimed.",
 )
 
 # Sources that describe the runtime in prose, the way a document does. A
@@ -180,6 +199,19 @@ def test_nothing_that_describes_the_runtime_repeats_a_withdrawn_claim(logical: s
         if found is not None
     ]
     assert not offenders, offenders
+
+
+def test_the_privilege_ui_and_the_manifest_are_recorded_as_two_facts():
+    """Deleting an unevidenced claim must not delete the step it sat in.
+
+    Eleven checkboxes with none left clear, and eleven declared tokens: said,
+    and never joined into which is which. Asserted beside the pattern that
+    refuses the join, so neither half can be lost while the other is kept.
+    """
+    recipe = re.sub(r"\s+", " ", _document("docs/qa/muejeje-pts-packaging-recipe.md"))
+
+    missing = [fact for fact in INDEPENDENT_PRIVILEGE_FACTS if fact not in recipe]
+    assert not missing, missing
 
 
 def test_the_withdrawn_claim_gate_reads_the_kernel_sources_too():

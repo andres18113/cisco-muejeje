@@ -597,7 +597,7 @@ validated rather than merely present:
 | `startup` | `on_startup` | the module must be able to answer `runtime.identify` without a human opening anything first. It is safe to start unconditionally precisely because it initiates nothing: no transport, no polling, no platform call |
 | `custom_interface_order` | `[muejeje_pts/interface/index.html]` | one static page, the only interface file that ships |
 | `engine_script_order` | core → protocol → admission → platform reading → boundary and adapters → operations (alphabetical) → dispatch → lifecycle, `010_core.js` to `220_lifecycle.js` | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019); it lists engine files by name, so every name carries its place as a unique three-digit prefix |
-| `privileges` | all eleven serialized tokens, in the canonical order, under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`. Muejeje is a private local tool packaged as a **trusted Script Module**, so the set is the pinned binary’s whole vocabulary minus `none`, derived from it and never typed. **No token is declared as required.** The call evidence is a separate fact that still holds — index 1 (`GET_NETWORK_INFO`) for the two root calls, index 2 (`CHANGE_NETWORK_INFO`) for two **read** members, `DeviceFactory.getAvailableDeviceCount()` and `Device.getName()` — and both were then confirmed live, by `718db50` and `6233d86` respectively. What the audit still refuses is a name outside that vocabulary: an IpcAPI symbol, `none`, or an invented token (`MJ-032`) |
+| `privileges` | all eleven serialized tokens, in the canonical order, under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`. Muejeje is a private local tool packaged as a **trusted Script Module**, so the set is the pinned binary’s whole vocabulary minus `none`, derived from it and never typed. **No token is declared as required.** The call evidence is a separate fact that still holds — index 1 (`GET_NETWORK_INFO`) for the two root calls, index 2 (`CHANGE_NETWORK_INFO`) for two **read** members, `DeviceFactory.getAvailableDeviceCount()` and `Device.getName()` — and both were then confirmed live, by `718db50` and `6233d86` respectively. What the audit refuses is a name outside that vocabulary — an IpcAPI symbol, `none`, or an invented token — **and any declaration that is not exactly those eleven in that order**: a subset of real tokens earns no recipe id either (`MJ-032`) |
 
 An option is **unresolved** when it is `null` — nobody has decided, which is not
 a defect — and **invalid** when it carries a value the platform could not
@@ -1010,13 +1010,15 @@ code — clamping it would read a *different* window, or a different model, and
 report the result as an observation about Packet Tracer.
 
 **A capability stays pending until the target answers, and a target reading is
-attributed only by what the target printed.** This module declares exactly one
-privilege, `GET_NETWORK_INFO` (MJ-025, MJ-032). That is what the recorded
-target-binary evidence says both root calls require, and it is not a reading of
-the target: no artifact declaring it has been run, so every platform and
-workspace capability stays `PENDING_TARGET` exactly as before.
+attributed only by what the target printed.** This module declares all eleven
+serialized privilege tokens under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`
+(MJ-025, MJ-032) — a deployment decision, and not a reading of the target. Three
+readings *have* answered on the target, on the `6233d86` run, and that run was
+not a canonical qualification, so every platform and workspace capability stays
+`PENDING_TARGET`: a capability is resolved by a run that satisfied the
+procedure, never by one that departed from it.
 
-Two runs on `9.0.1.0858` — the official one at `d37ba37` and an earlier
+Two of the runs on `9.0.1.0858` — the official one at `d37ba37` and an earlier
 exploratory one — observed instead what a Script Module carrying **no**
 privilege gets: `IPC.hardwareFactory()` and `IPC.network()` were denied, every
 `platform.*` and `network.*` reading came back `PLATFORM_CALL_FAILED`, and for
@@ -1106,15 +1108,46 @@ capability that reaches the platform — `platform.device_descriptors`,
 `platform.module_descriptors`, `platform.module_type_support`,
 `network.device_inventory`, `network.device_identity` and
 `network.device_ports`. Their `OBSERVED`
-branches have only ever been driven against a stub, and both target runs — the
-official one at `d37ba37` and the earlier exploratory one — were denied at each
-capability's root call (MJ-015).
+branches have been driven against a stub, and on the target only by the
+`6233d86` run — `platform.device_descriptors`, `platform.module_type_support`
+and `network.device_inventory` answered `OBSERVED` there — which was not a
+canonical qualification, so no capability resolves off it. The `d37ba37` and
+exploratory runs were denied at each capability's root call, and the `718db50`
+run reached the roots and was denied the members beneath them (MJ-015).
 
-### MJ-032 — A declared privilege must be a serialized token an evidenced call requires
-**Requirement.** `build_options.privileges` may be empty, or may hold only
-**serialized privilege tokens** that a call this module makes is evidenced to
-require. An empty list needs no evidence: asking for nothing cannot ask for the
-wrong thing (MJ-025).
+### MJ-032 — A declared privilege must be a serialized token, and the declaration must be the policy's whole set
+**Requirement.** Two rules, because they answer two questions, and the build
+audit applies both:
+
+1. **Vocabulary.** Every name in `build_options.privileges` must be a
+   **serialized privilege token** the pinned binary carries. An IpcAPI symbol,
+   `none`, and an invented name are each refused, each with its own reason.
+2. **Declaration.** The list must be exactly the set the `PRIVILEGE_POLICY` in
+   force fixes, in canonical order. Under `FULL_TRUSTED_MODULE` that is
+   `list(DECLARED_PRIVILEGES)` — all eleven tokens, `sorted` — and **nothing
+   else**: not `[]`, not one token, not the evidenced minimum, not any other
+   proper subset, and not the whole set in another order.
+
+**Both rules are the build audit's, not a validator's opinion.** A manifest
+that breaks either is `BUILD_INPUT_INVALID`: no `PACKAGING_MANUAL_AVAILABLE`,
+no `build_recipe_id`, and a blocker naming the fault.
+
+**Why rule 2 exists.** Rule 1 alone was the whole gate, and it could not see the
+defect it was supposed to prevent: every name in `["GET_NETWORK_INFO"]` is a
+real token, so a committed manifest declaring one privilege — or none — passed
+the audit and earned a recipe id while `PRIVILEGE_POLICY` said eleven. A
+governed identity for a build the policy forbids is the drift the policy exists
+to prevent, and a policy no gate enforces is a comment.
+
+**Why order is part of it.** The recipe id is taken over the manifest as
+written, so the same eleven tokens in another order are a second identity for
+one selection. Two runs' evidence would then attach to two ids describing the
+same module, which is exactly the confusion a recipe id exists to remove.
+
+**Why the vocabulary is asked first.** Every list that fails rule 1 also fails
+rule 2, so asking rule 2 first would report an IpcAPI symbol as a set of the
+wrong size and lose the namespace fault — the one this requirement was written
+for.
 
 **Why a wrong name is worse than a missing one.** Cisco is explicit that *"the
 security privileges indicate which IPC calls this Script Module can make. Calls
@@ -1217,15 +1250,24 @@ the binary's SHA-256, in `docs/qa/muejeje-pts-privilege-map.md`; reproducibility
 that was not supplied is marked `PENDING` there rather than invented.
 **Rationale.** This is `AGENTS.md` rule 6 — never guess a PT API signature —
 applied to the one field whose wrong value is invisible until the target runs.
-The shape rules run before the evidence rule, so a typo is still reported as a
-typo rather than sending a reader to look for a privilege catalogue.
-**Verification.** `tests/muejeje/test_privileges.py` drives the rule in every
-direction: empty accepted, the evidenced token accepted, an invented token
-refused and named while the evidenced one is not, an IpcAPI symbol refused as
-the wrong namespace, a real-but-unrequired token refused, the admissible set
-derived from the call descriptors rather than written down, and the shape rules
-reported first. It also holds the privilege set to being part of the recipe
-id, so a different set is a different artifact.
+The shape rules run before both, so a typo is still reported as a typo rather
+than sending a reader to look for a privilege catalogue; and the vocabulary
+runs before the declaration, so a name in the wrong namespace is still reported
+as a namespace fault rather than as a set of the wrong size.
+**Verification.** `tests/muejeje/test_privileges.py` drives the vocabulary rule
+in every direction: each real token in the vocabulary, an invented token refused
+and named while a real one beside it is not, `none` refused as the binary's own
+name for no privilege, an IpcAPI symbol refused as the wrong namespace, and the
+shape rules reported before either. It also holds the privilege set to being
+part of the recipe id, so a different set is a different artifact.
+`tests/muejeje/test_privilege_declaration.py` is the declaration half, and its
+end-to-end gates are what make rule 2 the build audit's: a clean committed
+synthetic checkout whose manifest declares `[]`, one token, the evidenced
+minimum, a ten-of-eleven subset or the whole set reordered must come back
+`BUILD_INPUT_INVALID`, with `PACKAGING_MANUAL_UNAVAILABLE`, no
+`build_recipe_id`, and a blocker naming the policy. The same checkout with the
+canonical eleven reaches `PACKAGING_MANUAL_AVAILABLE` with a recipe id, so what
+the refusal is about can only be the privilege list.
 `tests/muejeje/test_privilege_evidence.py` is the evidence half: the binary map
 pinned to the manifest's builder hash, the QA record carrying the same map and
 call descriptors, reproducibility marked `PENDING` rather than invented, the
@@ -1480,11 +1522,18 @@ out of that run's own transcript (MJ-011, MJ-015).
   packaged and kernel-qualified, no version is release-qualified, and no
   compatibility facade exists outside the V6 core.
 
-**The next task for M0B, M2 and M3 is the minimum-privilege qualification, not
-more implementation**: its own declared run, changing exactly one thing — the
-privilege set, from `[]` to the one token evidenced for both root calls
-(MJ-032) — with Packet Tracer's diagnostics recorded beside every envelope.
-Four conditions make it capable of establishing anything: a **disposable
+**The next task for M0B, M2 and M3 is the full-trust canonical qualification,
+not more implementation**: its own declared run, of a candidate whose privilege
+set is the whole vocabulary under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`
+(MJ-032), with Packet Tracer's diagnostics recorded beside every envelope. **It
+is not a privilege experiment.** The privilege line is as far as evidence takes
+it — `[]` denied both roots at `d37ba37`, `GET_NETWORK_INFO` reached both roots
+at `718db50`, `CHANGE_NETWORK_INFO` reached the two members beneath them at
+`6233d86` — and the full set is a deployment decision rather than a reading of
+any of it. What the run has to produce is a canonical qualification none of
+those three was, and the `Interface.member` that `platform.module_descriptors`
+stops at. **The candidate carrying that declaration has not been packaged or
+run.** Four conditions make it capable of establishing anything: a **disposable
 workspace holding two devices**, so a `network.*` root that answers actually
 exercises the members beneath it instead of qualifying them on an empty
 workspace; **every observed relay input read out of the reading that published
@@ -1494,9 +1543,10 @@ answer; **complete qualification accounting**, so a dependent operation whose
 input was never published is recorded as
 `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` instead of entered with a placeholder;
 and a **raw transcript per execution**, named by the artifact's own SHA-256 and
-the run's own id and preserved unnormalized, so the field-level evidence the
-previous run could not supply exists this time. All four are declared in
-[the minimum-privilege LIVE runbook](../qa/muejeje-pts-privilege-live-runbook.md).
+the run's own id and preserved unnormalized, so the field-level evidence **no
+run has yet supplied** exists this time — `d37ba37` and `718db50` captured none
+and `6233d86` captured a prefix. All four are declared in
+[the full-trust LIVE runbook](../qa/muejeje-pts-privilege-live-runbook.md).
 None of them is marked `CORE_READY`, or complete, on the strength of a call
 that was denied, of a requirement read out of a binary, or of a root that
 answered over an empty workspace.

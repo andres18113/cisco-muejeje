@@ -259,8 +259,7 @@ def test_the_recipe_declares_the_full_privilege_set_and_has_it_read_back():
     """The one field this line changed, held to the manifest that declares it.
 
     The check reverses under `FULL_TRUSTED_MODULE`: what stops a run is a box
-    left clear. The dialog's labels and the manifest's tokens are two
-    namespaces, and eleven boxes selected are not eleven capabilities exposed.
+    left clear. Eleven boxes selected are not eleven capabilities exposed.
     """
     collapsed = _collapsed_recipe()
     declared = repo_manifest()["build_options"]["privileges"]
@@ -270,14 +269,6 @@ def test_the_recipe_declares_the_full_privilege_set_and_has_it_read_back():
     assert "all eleven, leaving no box clear" in collapsed
     assert "Then read the selection back and record it" in collapsed
     assert "Every privilege must be selected." in collapsed
-    for token in declared:
-        assert f"| `{token}` |" in collapsed, token
-    for label in ("Application", "Activity", "File Operations", "Multiuser",
-                  "Change User Interface", "IPC", "Get Network Info",
-                  "Change Network Info", "Simulation", "User Preferences",
-                  "Miscellaneous UI"):
-        assert f"| {label} |" in collapsed, label
-    assert "Nothing here claims the two lists are a measured mapping" in collapsed
     assert "Full Packet Tracer privileges is not all Muejeje capabilities." in collapsed
     assert "which is the V6 whitelist" in collapsed
 

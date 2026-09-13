@@ -242,13 +242,19 @@ def test_an_unset_option_is_unresolved_rather_than_invalid(tmp_path: Path):
 
 
 def test_an_empty_privilege_set_is_a_decision_not_an_omission(tmp_path: Path):
-    """`privileges: []` is resolved: a module may ask for nothing (MJ-025).
+    """`privileges: []` is resolved, and under this policy it is also wrong.
 
-    This repository no longer declares it — the policy is `FULL_TRUSTED_MODULE`
-    and the declared set is all eleven serialized tokens — but an empty list
-    stays a *resolved* value rather
-    than an unset one, because "asks for nothing" and "nobody has decided" are
-    different facts and the audit must keep reporting them differently.
+    Two axes, and they stay two. *Resolved* is whether anybody decided, and an
+    empty list is a decision — so it never appears in
+    `unresolved_build_options`, and `recipe_complete` stays true. *Valid* is
+    whether the decision is one the policy admits, and under
+    `FULL_TRUSTED_MODULE` it is not: the manifest declares all eleven tokens or
+    it declares nothing this repository will build (MJ-025, MJ-032).
+
+    Collapsing them would make "we have not chosen a privilege set" and "this
+    privilege set is not the policy's" read the same, which is the confusion
+    MJ-016 split the two blockers apart to prevent. What the declaration rule
+    itself refuses is `test_privilege_declaration`.
     """
     root, manifest_path = make_repo(tmp_path)
     manifest = manifest_document()
@@ -259,4 +265,11 @@ def test_an_empty_privilege_set_is_a_decision_not_an_omission(tmp_path: Path):
 
     assert report["packaging_state"]["unresolved_build_options"] == []
     assert report["packaging_state"]["recipe_complete"] is True
-    assert not any("privileges" in blocker for blocker in report["blockers"])
+    assert not any(
+        "unresolved build option: privileges" in blocker
+        for blocker in report["blockers"]
+    ), "an empty list is a decision, not a missing one"
+    assert any(
+        "invalid build option privileges" in blocker
+        for blocker in report["blockers"]
+    ), report["blockers"]

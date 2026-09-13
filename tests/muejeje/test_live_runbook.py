@@ -60,27 +60,28 @@ ZERO_CHANGE_CUTOVER      = NOT_ACHIEVED"""
 
 # The three artifacts the run has to keep apart: the one whose verdicts exist,
 # the one that produced target evidence without satisfying the procedure, and
-# the one being built. Written as the block the runbook must carry.
-#
-# `6233d86` is its own row on purpose: its workspace fixture was corrected during
-# execution, so it is not a canonical qualification — and it still observed both
-# index-2 members answering, which the next run inherits rather than
-# re-establishes. Folding it into either neighbour would lose one of the two.
+# the one being built. `6233d86` is its own row because it observed both index-2
+# members answering *and* had its fixture corrected mid-run. Each block carries
+# its own `RAW_TRANSCRIPT`, the fact most easily read upwards later: no run has
+# produced a complete one, and the requirement may not stand in for one.
 ARTIFACT_SPLIT = """LAST_QUALIFIED_ARTIFACT (718db50)
   PACKAGING                    = PASS
   V6_KERNEL                    = PASS
   GET_NETWORK_INFO_ROOT_ACCESS = PASS
+  RAW_TRANSCRIPT               = NOT_CAPTURED
 
 TARGET_EVIDENCE_ONLY (6233d86)
   FIXTURE_CORRECTED_DURING_RUN = YES
   CANONICAL_QUALIFICATION      = NO
   CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
+  RAW_TRANSCRIPT               = PARTIAL
 
 CURRENT_NEW_CANDIDATE
   PACKAGED                     = PENDING
   V6_LIVE                      = PENDING
   FULL_TRUSTED_SET_LIVE        = PENDING
-  MODULE_DESCRIPTORS_STAGE     = PENDING"""
+  MODULE_DESCRIPTORS_STAGE     = PENDING
+  RAW_TRANSCRIPT               = REQUIRED_COMPLETE"""
 
 # The disposable fixture the run is taken over. Two devices, because one that
 # answers is what makes the members below the root actually run; no cable and
@@ -111,7 +112,6 @@ EXERCISED_MEMBERS = (
     "Device.getPortAt",
     "Port.getName",
 )
-
 
 
 def runbook_body() -> str:

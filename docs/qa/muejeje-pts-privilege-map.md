@@ -323,6 +323,24 @@ still refuses, each with its own reason: an IpcAPI symbol such as
 absence of a privilege, never established to be storable); and any name the
 pinned binary does not carry.
 
+### And the build audit now enforces the policy itself
+
+The vocabulary gate answers **is this a real token?** It cannot answer **is this
+the declaration the policy requires?**, and for a while nothing did: every name
+in `["GET_NETWORK_INFO"]` is real, so a committed manifest declaring one
+privilege — or none — passed the audit and earned a `build_recipe_id` while this
+page said eleven. The audit now asks both, in that order:
+
+```text
+vocabulary    every name is a serialized token the pinned binary carries
+declaration   the list is exactly the 11 above, in that canonical order
+```
+
+Anything else is `BUILD_INPUT_INVALID`: no `PACKAGING_MANUAL_AVAILABLE`, no
+recipe id, and a blocker naming the policy. Order is part of it because the
+recipe id is taken over the manifest as written, so the same eleven tokens
+reordered would be a second identity for one selection (`MJ-032`).
+
 ## The facts are not one fact
 
 They are recorded separately because each can be true while another is wrong,

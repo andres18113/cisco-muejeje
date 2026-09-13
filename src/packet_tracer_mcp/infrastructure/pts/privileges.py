@@ -27,6 +27,24 @@ derived from call evidence. `PRIVILEGE_POLICY` says which rule is in force, and
 `DECLARED_PRIVILEGES` is derived from the observed vocabulary rather than typed,
 so the two cannot drift.
 
+## Two validations, because they answer two questions
+
+`vocabulary_error` answers **is this name a serialized privilege token?** — a
+question about one name at a time, and the only thing that can tell an IpcAPI
+symbol from an invented token from the binary's own name for no privilege.
+
+`declaration_error` answers **is this the set a Muejeje manifest may declare?**
+— a question about the whole list, and under `FULL_TRUSTED_MODULE` there is one
+admissible answer: `list(DECLARED_PRIVILEGES)`, in canonical order.
+
+They were one function, and the surviving one was the weaker: every name in
+`["GET_NETWORK_INFO"]` is a real token, so a committed manifest declaring one
+privilege — or none — passed the build audit and earned a `build_recipe_id`
+while the policy said eleven. A governed identity over a selection the policy
+forbids is exactly the drift `PRIVILEGE_POLICY` exists to prevent, so the two
+questions are now asked separately and both must pass
+(`tests/muejeje/test_privilege_declaration.py`).
+
 **These privileges are not "required", and nothing here says they are.** What is
 true is narrower and has to stay written that way:
 
@@ -178,18 +196,25 @@ EVIDENCED_MINIMUM_PRIVILEGES = tuple(sorted({
     SERIALIZED_BY_INDEX[index] for index in CALL_PRIVILEGE_INDEX.values()
 }))
 
+# The vocabulary: every serialized token the pinned binary carries that is a
+# privilege. This is what `vocabulary_error` answers against, and it is a fact
+# about the binary — true whatever policy is in force.
+SERIALIZED_PRIVILEGE_TOKENS = tuple(sorted(
+    set(SERIALIZED_BY_INDEX) - {NON_PRIVILEGE_TOKEN}
+))
+
 # The policy in force, and the set it produces.
 #
 # `FULL_TRUSTED_MODULE` is a decision about how this module is deployed — a
 # private, local, trusted tool — and not a reading of any evidence, so it is
 # written here as the one word that names it. The set is derived from the
-# observed vocabulary minus the non-privilege, never from `CALL_PRIVILEGE_INDEX`
-# and never typed out, and is ordered by `sorted`, which is the manifest's
-# canonical order for this field.
+# vocabulary above, never from `CALL_PRIVILEGE_INDEX` and never typed out, and
+# is ordered by `sorted`, which is the manifest's canonical order for this
+# field. It is a second constant because it answers the second question: under
+# another policy the same vocabulary would produce a different declaration, and
+# a single name for both would make the difference unsayable.
 PRIVILEGE_POLICY = "FULL_TRUSTED_MODULE"
-DECLARED_PRIVILEGES = tuple(sorted(
-    set(SERIALIZED_BY_INDEX) - {NON_PRIVILEGE_TOKEN}
-))
+DECLARED_PRIVILEGES = tuple(SERIALIZED_PRIVILEGE_TOKENS)
 
 # Identifiers Cisco's installed IpcAPI reference leaks through its event
 # declarations. They are **documentation symbols**, kept so the gate can refuse
@@ -199,21 +224,24 @@ DECLARED_PRIVILEGES = tuple(sorted(
 IPC_API_SYMBOLS = ("PrivActivityWizard", "PrivApplication", "PrivGetNetwork")
 
 
-def policy_error(names: Iterable[Any]) -> str | None:
-    """Why this set of tokens may not be declared, or `None` when it may.
+def vocabulary_error(names: Iterable[Any]) -> str | None:
+    """Why one of these names is not a serialized privilege token, or `None`.
+
+    Question A, and it is about *names*: an empty list names nothing wrong, and
+    a list of one real token is answered here as a real token. Whether such a
+    list may be *declared* is `declaration_error`.
 
     Shape is somebody else's job: `manifest` checks that the value is a bounded,
     duplicate-free list of non-empty strings before asking this, so a typo is
     reported as a typo rather than as a missing privilege catalogue.
 
-    Under `FULL_TRUSTED_MODULE` the admissible set is `DECLARED_PRIVILEGES`, so
-    what is refused is a name the policy does not cover — and each way of being
-    wrong keeps its own reason, because they send a reader to three different
-    places: an API symbol means the wrong namespace, `none` means the binary's
-    name for no privilege rather than a privilege, and anything else means the
-    pinned binary carries no such token at all.
+    Each way of being outside the vocabulary keeps its own reason, because they
+    send a reader to three different places: an API symbol means the wrong
+    namespace, `none` means the binary's name for no privilege rather than a
+    privilege, and anything else means the pinned binary carries no such token
+    at all.
     """
-    unknown = sorted(set(names) - set(DECLARED_PRIVILEGES))
+    unknown = sorted(set(names) - set(SERIALIZED_PRIVILEGE_TOKENS))
     if not unknown:
         return None
     symbols = [name for name in unknown if name in IPC_API_SYMBOLS]
@@ -232,4 +260,39 @@ def policy_error(names: Iterable[Any]) -> str | None:
     return (
         "must name a serialized privilege token the target binary carries; "
         f"this repository has no evidence for {', '.join(unknown)}"
+    )
+
+
+def declaration_error(names: Iterable[Any]) -> str | None:
+    """Why this list is not the declaration the policy requires, or `None`.
+
+    Question B. Under `FULL_TRUSTED_MODULE` there is exactly one admissible
+    declaration — `list(DECLARED_PRIVILEGES)` — and canonical order is part of
+    it: the recipe id is taken over the manifest as written, so a reordered list
+    is a different identity for the same selection, and the two would be
+    indistinguishable in a run's record.
+
+    A subset and a reordering are different faults and keep different reasons.
+    Reporting "this omits ACTIVITY_WIZARD" about a list that carries all eleven
+    would send a reader looking for a token that is right there.
+    """
+    declared = list(DECLARED_PRIVILEGES)
+    values = list(names)
+    if values == declared:
+        return None
+    if sorted(values) == sorted(declared):
+        return (
+            f"must declare the {len(declared)} tokens in the canonical sorted "
+            f"order {PRIVILEGE_POLICY} fixes; this declaration carries the "
+            "whole set in another order"
+        )
+    missing = [name for name in declared if name not in set(values)]
+    detail = (
+        f"omits {', '.join(missing)}" if missing
+        else f"is {', '.join(values) or 'empty'}"
+    )
+    return (
+        f"must declare the whole privilege vocabulary under {PRIVILEGE_POLICY}: "
+        f"all {len(declared)} serialized tokens, in canonical order. This "
+        f"declaration carries {len(values)} and {detail}"
     )

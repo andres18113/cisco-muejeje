@@ -32,7 +32,7 @@ its results are read under.
 | workspace | the two-device fixture below | **the same two-device fixture, required before qualification** |
 | observed relay inputs | read out of the reading that published them | **read out of the reading that published them** |
 | qualification accounting | every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` | **every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`** |
-| raw evidence | one append-only transcript per execution | **one append-only transcript per execution, named by artifact SHA-256 and run id** |
+| raw evidence | **none: `OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT = NOT_CAPTURED`.** What stands for that run is the operator's reported observations | **one append-only transcript per execution, named by artifact SHA-256 and run id** |
 | everything else | — | unchanged except where governed source and recipe evolution requires |
 
 The right-hand column is **read from the audit, never typed from here**: a
@@ -45,12 +45,30 @@ inputs, the accounting and the transcript are what make the run capable of
 establishing anything, and none of them changes what is packaged. Everything
 else differs only where the governed source and the recipe force it.
 
+**No run has yet produced a complete raw transcript, and the table above says
+so rather than reading the requirement back as a result.** `d37ba37` captured
+none; `718db50` captured none, though the requirement was already in force;
+`6233d86` captured its header, the load and start, and one statement, and
+stopped — `PARTIAL`, recorded in the transcript's own post-run note. Everything
+those runs establish beyond that prefix is operator-reported target evidence,
+and [the offline audit](muejeje-pts-offline.md) records it as such. A
+requirement is not evidence that it was met, and no run's evidence level is
+raised afterwards to match what the procedure asked for.
+
 **The declared inputs differ from the `718db50` artifact's in governed places,
 and saying otherwise would be wrong.** The manifest declares all eleven tokens;
-the privilege model — a declared tooling input, and therefore part of the recipe
-id — carries the policy and the vocabulary it is derived from; the interface page
-and the README state what the module now requests; and the engine files carry one
-behavioural addition, below.
+the privilege model and the manifest schema — both declared tooling inputs, and
+therefore part of the recipe id — carry the policy, the vocabulary it is derived
+from, and the rule that **refuses any declaration but that exact set in that
+exact order**; the interface page and the README state what the module now
+requests; and the engine files carry one behavioural addition, below.
+
+**A manifest declaring less than the policy no longer builds.** The audit asks
+the vocabulary question and the declaration question separately, and a subset of
+real tokens — `[]`, one token, the evidenced minimum — is now
+`BUILD_INPUT_INVALID` with no recipe id, where before it earned one. So the
+selection this run is taken under cannot silently be narrower than the policy
+it is packaged from (`MJ-032`).
 
 **One executable change, and it adds no reach.** An unavailable platform reading
 now also reports the `Interface.member` it stopped at, and the argument that call
@@ -522,17 +540,20 @@ LAST_QUALIFIED_ARTIFACT (718db50)
   PACKAGING                    = PASS
   V6_KERNEL                    = PASS
   GET_NETWORK_INFO_ROOT_ACCESS = PASS
+  RAW_TRANSCRIPT               = NOT_CAPTURED
 
 TARGET_EVIDENCE_ONLY (6233d86)
   FIXTURE_CORRECTED_DURING_RUN = YES
   CANONICAL_QUALIFICATION      = NO
   CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
+  RAW_TRANSCRIPT               = PARTIAL
 
 CURRENT_NEW_CANDIDATE
   PACKAGED                     = PENDING
   V6_LIVE                      = PENDING
   FULL_TRUSTED_SET_LIVE        = PENDING
   MODULE_DESCRIPTORS_STAGE     = PENDING
+  RAW_TRANSCRIPT               = REQUIRED_COMPLETE
 ```
 
 `M1_CORE_READY = YES` is the milestone state the **previous** governed artifact

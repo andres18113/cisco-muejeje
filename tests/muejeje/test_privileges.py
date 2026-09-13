@@ -26,6 +26,13 @@ Tracer never stores, and fails where nothing here can watch.
 must never be read as making. What Muejeje exposes is the V6 whitelist, and
 `test_privilege_scope` holds it frozen against exactly this change.
 
+**Vocabulary and declaration are two questions**, and this module holds the
+first: whether a name is a serialized token the pinned binary carries. Whether a
+*list* of such names is the declaration `FULL_TRUSTED_MODULE` requires — all
+eleven, in canonical order, so a subset of real tokens never earns a recipe id —
+is `test_privilege_declaration`, added when review found the manifest gate
+admitting every subset the policy forbids (MJ-032).
+
 That the evidence was *measured* — the binary map pinned to one
 `PacketTracer.exe`, the QA record carrying the same map, the IpcAPI symbols
 re-read from Cisco's installed bytes — is `test_privilege_evidence`, split out
@@ -152,21 +159,25 @@ def test_the_evidenced_minimum_is_still_recorded_as_its_own_fact():
 
 
 # ---------------------------------------------------------------------------
-# 2. What the policy admits.
+# 2. What the vocabulary contains.
+#
+# Whether a list of real tokens is a declaration a manifest may carry is a
+# different question, asked separately and gated in `test_privilege_declaration`.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("token", FULL_TRUSTED_SET)
-def test_every_token_the_policy_covers_is_accepted_on_its_own(token: str):
-    assert schema()._privileges_error([token]) is None
+def test_every_token_the_policy_covers_is_in_the_vocabulary(token: str):
+    assert privileges().vocabulary_error([token]) is None
 
 
-def test_the_whole_declared_set_is_accepted():
-    assert schema()._privileges_error(FULL_TRUSTED_SET) is None
+def test_an_empty_privilege_list_names_no_wrong_token():
+    """Asking for nothing cannot ask for the wrong *name*.
 
-
-def test_an_empty_privilege_list_still_needs_no_policy():
-    """Asking for nothing cannot ask for the wrong thing (MJ-025)."""
-    assert schema()._privileges_error([]) is None
+    It can still be the wrong *declaration*, and under `FULL_TRUSTED_MODULE`
+    it is — which is the second question, and the one the manifest also asks.
+    """
+    assert privileges().vocabulary_error([]) is None
+    assert schema()._privileges_error([]) is not None
 
 
 # ---------------------------------------------------------------------------

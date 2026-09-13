@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...shared.utils import resolve_within
-from .privileges import policy_error
+from .privileges import declaration_error, vocabulary_error
 
 SCHEMA_VERSION = 2
 MAX_MANIFEST_BYTES = 256 * 1024
@@ -193,18 +193,22 @@ def _startup_error(value: Any) -> str | None:
 
 
 def _privileges_error(value: Any) -> str | None:
-    """A bounded list of serialized privilege tokens the policy admits, or none.
+    """The declaration the privilege policy requires, and nothing else.
 
-    The shape rules run first, so a typo is reported as a typo rather than as
-    a missing privilege catalogue. Which names are admissible, under which
-    policy, and why a given one is not, is `privileges`: only the faulty names
-    are reported back, since a reason listing the valid ones alongside them
-    would read as if all of them were at fault.
+    Three rules, asked in the order that keeps each fault reportable as itself.
+    The shape rules run first, so a typo is reported as a typo rather than as a
+    missing privilege catalogue. The *vocabulary* runs next, so a name outside
+    the serialized namespace — an IpcAPI symbol, `none`, an invented token —
+    keeps its own reason: every such list is also not the required declaration,
+    and asking the wider rule first would report the namespace fault as a set of
+    the wrong size. The *declaration* rule runs last and is what makes the
+    policy binding: under `FULL_TRUSTED_MODULE` a subset of real tokens is still
+    not a manifest this repository may build (`privileges`, MJ-032).
     """
     reason = _string_list_error(value)
     if reason is not None:
         return reason
-    return policy_error(value)
+    return vocabulary_error(value) or declaration_error(value)
 
 
 _OPTION_VALIDATORS = {

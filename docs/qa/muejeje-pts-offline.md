@@ -183,6 +183,7 @@ review rather than a hypothetical:
 | Duplicate reference path | rejected rather than hashed twice |
 | Malformed builder metadata | reported as an invalid input, not ignored |
 | Stale adjacent bytecode | a `build_state` cache compiled from a forged classifier, recording the current source's size and mtime, makes ordinary imports issue `PACKAGING_MANUAL_AVAILABLE` and a recipe id; the entry point reports what the current source decides, leaves the cache in place, and compiles into its own directory outside every checkout on each invocation. Code it did not compile — loaded before isolation, or from bytecode with no source — is refused |
+| Partial privilege declaration | a clean committed manifest declaring `[]`, one token, the evidenced minimum or any other proper subset — every name a real serialized token — reached `PACKAGING_MANUAL_AVAILABLE` with a `build_recipe_id`, because the gate validated the vocabulary and nothing validated the policy. The two questions are now asked separately: vocabulary first, so a namespace fault keeps its own reason, then the declaration, which admits only `list(DECLARED_PRIVILEGES)` in canonical order. Anything else is `BUILD_INPUT_INVALID` with no recipe id, and the whole eleven in another order is refused as an order |
 
 ## Where an unavailable reading stopped
 
@@ -439,17 +440,20 @@ LAST_QUALIFIED_ARTIFACT (718db50)
   PACKAGING                    = PASS
   V6_KERNEL                    = PASS
   GET_NETWORK_INFO_ROOT_ACCESS = PASS
+  RAW_TRANSCRIPT               = NOT_CAPTURED
 
 TARGET_EVIDENCE_ONLY (6233d86)
   FIXTURE_CORRECTED_DURING_RUN = YES
   CANONICAL_QUALIFICATION      = NO
   CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
+  RAW_TRANSCRIPT               = PARTIAL
 
 CURRENT_NEW_CANDIDATE
   PACKAGED                     = PENDING
   V6_LIVE                      = PENDING
   FULL_TRUSTED_SET_LIVE        = PENDING
   MODULE_DESCRIPTORS_STAGE     = PENDING
+  RAW_TRANSCRIPT               = REQUIRED_COMPLETE
 ```
 
 `M1_CORE_READY = YES` is the milestone state the governed artifacts
@@ -499,9 +503,11 @@ establishes official packaging, kernel execution, the lifecycle across a stop
 and a start, the observed rejection classes, and the privilege denial
 diagnostics — each of which the operator observed and reported. It does not
 establish that any envelope carried the fields V6 specifies, because no
-envelope was preserved to check. The next official run fixes that by requiring
+envelope was preserved to check. Every run since has been required to preserve
 one raw transcript per execution
-([the minimum-privilege LIVE runbook](muejeje-pts-privilege-live-runbook.md)).
+([the full-trust LIVE runbook](muejeje-pts-privilege-live-runbook.md)), and
+none has yet done so completely: `718db50` captured none and `6233d86`
+captured a prefix. The requirement stands; it has not yet been met.
 
 | Record | Value |
 | --- | --- |
@@ -550,9 +556,12 @@ what attributed the cause, for those two calls, in that run (`MJ-022`,
 **Its manifest configuration is superseded.** `privileges: []` was the right
 declaration while no identifier was evidenced for either call. Target-binary
 evidence then established that both roots require privilege index 1,
-`GET_NETWORK_INFO`, and the `718db50` run below carried and verified it. That
-manifest, in turn, is now superseded by the two-token one, for the reason the
-`718db50` run recorded: the members beneath the roots need index 2.
+`GET_NETWORK_INFO`, and the `718db50` run below carried and verified it; the
+two-token manifest followed, for the reason that run recorded — the members
+beneath the roots need index 2 — and the `6233d86` run carried it. The manifest
+now declares all eleven under `FULL_TRUSTED_MODULE`, which is a policy rather
+than the next step of that sequence, and the audit refuses every one of the
+earlier declarations outright.
 
 ### The official LIVE run at `718db50` — the `GET_NETWORK_INFO` artifact
 
@@ -570,6 +579,22 @@ session that wrote this record. The privilege selection was
 | privileges | `["GET_NETWORK_INFO"]` — selected, read back, and not changed |
 | entry point | the module's Debug Dialog |
 | run id | `20260913T001112Z` |
+| raw transcript | **not captured** — this record preserves the operator-reported observations |
+
+```text
+OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT = NOT_CAPTURED
+```
+
+**The transcript requirement was already in force for this run, and no
+transcript exists.** The `d37ba37` record declared that the next official run
+would preserve one raw transcript per execution; this was that run, and no such
+file was written or committed. What it establishes is therefore bounded exactly
+as the `d37ba37` run's was: which statement was entered, whether it came back
+`ok` or unavailable, and what Packet Tracer printed beside it. **No envelope of
+this run was preserved, so it establishes no result shape**, and nothing here
+is reconstructed from memory to close the gap (`MJ-011`, `AGENTS.md` rule 6).
+The evidence level of a run that has happened is never raised afterwards to
+match what the procedure asked of it.
 
 **What it established.** The saved artifact loaded and started; its kernel
 answered — `typeof mcpDispatchV6` `function`, `runtime.identify` and
@@ -600,8 +625,9 @@ not carry. Because those first members were denied,
 `platform.device_descriptors` published no `factory_index` and
 `network.device_inventory` published no device name, so the dependent V6
 operations were `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` in this run and are
-**not** marked executed. The run's accounting is exactly what the transcript
-recorded, and this summary does not inflate it.
+**not** marked executed. That accounting is what the operator reported, and
+this summary does not inflate it — there is no transcript behind it to check it
+against, which is itself part of what this run establishes and does not.
 
 **Its manifest configuration is superseded.** Its `["GET_NETWORK_INFO"]` was
 right while only the roots were evidenced. The two member denials, and the
@@ -626,14 +652,20 @@ Performed by hand on Packet Tracer `9.0.1.0858`, carrying
 | privileges | `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]` — selected, read back, not changed |
 | run id | `20260913T025441Z` |
 
-**Why it qualifies nothing.** Its workspace fixture was corrected during
-execution, so the run did not follow the declared procedure, and a run that
-departed from the procedure cannot be the procedure's result. It is recorded as
-**target evidence** and moves no qualification gate. `WORKSPACE_FIXTURE_STABLE =
-NO` for this run, and its transcript preserves the header and the first statement
-only: `RUN_6233D86_RAW_TRANSCRIPT = PARTIAL`. The observations below are what the
-operator reported, and nothing is reconstructed from memory (`MJ-011`,
-`AGENTS.md` rule 6).
+**Why it qualifies nothing.** Its workspace fixture was **not satisfied when the
+run started** and was corrected during execution, so the run did not follow the
+declared procedure, and a run that departed from the procedure cannot be the
+procedure's result. It is recorded as **target evidence** and moves no
+qualification gate. `WORKSPACE_FIXTURE_STABLE = NO` for this run.
+
+Its transcript preserves the header, the artifact load and start, and the first
+statement, and stops there: `RUN_6233D86_RAW_TRANSCRIPT = PARTIAL`. The
+transcript's own **post-run evidence note** records that — appended after the
+run, editing nothing above it — so the immutable header's
+`workspace_precondition` is read as the fixture the run *declared* rather than
+as one it met. Everything below is what the operator reported afterwards, is
+**target evidence and not raw transcript**, and nothing is reconstructed from
+memory (`MJ-011`, `AGENTS.md` rule 6).
 
 **What it observed.**
 
@@ -815,7 +847,7 @@ platform was, which is why no other milestone moved with it.
 
 | State | What is still missing |
 | --- | --- |
-| `M0B` | IPC privilege qualification first, then credential and transport API qualification. The governed artifact carrying no privilege was denied both root IPC calls; the privilege each needs is now evidenced from the binary but not yet verified on the target, so no API reached through them is baselined. No transport exists, so `MJ-026`'s terms are baselined rather than exercised |
+| `M0B` | a canonical qualification first, then credential and transport API qualification. The privilege question is answered as far as evidence answers it — `[]` denied both roots at `d37ba37`, `GET_NETWORK_INFO` reached them at `718db50`, `CHANGE_NETWORK_INFO` reached the two members beneath them at `6233d86` — but no run that satisfied the procedure has reached them, so no API is baselined. No transport exists, so `MJ-026`'s terms are baselined rather than exercised |
 | `M0C` | batch and auth-boundary semantics. `MJ-027` is the contract the first batch operation must satisfy and no batch operation exists; the auth boundary is in the same position |
 | `M2_CORE_READY` | target evidence. The root is reachable and two of three platform readings answered on the `6233d86` run, which was not a canonical qualification; `platform.module_descriptors` came back unattributable there and the member it stopped at is what the next run reports |
 | `M3_CORE_READY` | complete intended scope and target evidence. The workspace inventory, one device's identity and one device's ports are implemented; the workspace's links are not (see below). `network.device_inventory` answered on the `6233d86` run; every workspace capability stays `PENDING_TARGET` until a canonical qualification reaches it |
@@ -828,13 +860,19 @@ not what it then does. `M0C` waits on work that has not been written; `M2` and
 `M3` wait on platform readings that answer, and `M3` on unfinished scope as
 well; the cutover waits on all of it.
 
-**The next task for `M0B`, `M2` and `M3` is the minimum-privilege
-qualification, not more implementation.** Its recipe is declared: exactly one
-privilege, `GET_NETWORK_INFO`, evidenced from the pinned binary for both root
-calls, with Packet Tracer's diagnostics recorded beside every envelope. The
-half that was missing — which identifier either call needs — is now recorded in
-[the privilege map](muejeje-pts-privilege-map.md); the half that remains is
-what the target does with it.
+**The next task for `M0B`, `M2` and `M3` is the full-trust canonical
+qualification, not more implementation.** The privilege question the earlier
+runs were about is answered as far as evidence can answer it: `[]` was denied
+both roots at `d37ba37`, `GET_NETWORK_INFO` reached both roots at `718db50`,
+and `CHANGE_NETWORK_INFO` reached the two members beneath them at `6233d86`.
+The manifest now declares all eleven serialized tokens under
+`PRIVILEGE_POLICY = FULL_TRUSTED_MODULE` — a deployment decision, not a reading
+of that evidence ([the privilege map](muejeje-pts-privilege-map.md), fact 4) —
+and **the candidate carrying it has not been packaged or run**. What that run
+must establish is not a privilege result: it is a canonical qualification with a
+stable fixture and a complete raw transcript, and the `Interface.member` that
+`platform.module_descriptors` stops at
+([the full-trust LIVE runbook](muejeje-pts-privilege-live-runbook.md)).
 
 **Where M3 stands.** `network.device_ports` is implemented and tested. The
 contract question the previous revision of this record left open — re-report the
@@ -1026,34 +1064,42 @@ What was checked, and what each check found:
   turns "unproven" into an unfalsifiable claim.
 
 So the remaining action is **one manual procedure**, already written down in
-full: [the packaging recipe](muejeje-pts-packaging-recipe.md). It was followed
-once, at `d37ba37`, and that run is recorded above; it is followed again for
-each new recipe id, which is what a changed privilege set produces.
+full: [the packaging recipe](muejeje-pts-packaging-recipe.md). It has been
+followed three times — at `d37ba37`, `718db50` and `6233d86`, each recorded
+above — and it is followed again for each new recipe id, which is what a
+changed privilege set produces. The current `FULL_TRUSTED_MODULE` candidate has
+no run of its own yet.
 
 Each run records: source commit and tree, the recipe id, the externally
 measured artifact SHA-256, the Packet Tracer build, the privilege selection
 read back from the module, the workspace the instance held, the Script Engine
 listing as Packet Tracer showed it, and every response envelope with whatever
 Packet Tracer printed beside it — including whichever `resolution` and
-`unavailable_reason` each platform reading came back with. From the next run
-onwards those envelopes go into **one raw transcript per execution**, named by
-the artifact SHA-256 and the run's own `run_id`, append-only and unnormalized,
-and this page interprets that file rather than standing in for it; a summary is
-what a run establishes only as far as the transcript behind it goes, which is
-why the two runs above establish no result shape. The target gates change only
+`unavailable_reason` each platform reading came back with. Since the `d37ba37`
+record those envelopes have been required to go into **one raw transcript per
+execution**, named by the artifact SHA-256 and the run's own `run_id`,
+append-only and unnormalized, and this page interprets that file rather than
+standing in for it; a summary is what a run establishes only as far as the
+transcript behind it goes, which is why **none of the three runs above
+establishes a result shape** — `d37ba37` and `718db50` captured no transcript
+and `6233d86` captured a prefix. The target gates change only
 as far as that
 evidence goes: `OFFICIAL_PACKAGING_PROVED` and `V6_KERNEL_VERIFIED` from the
-saved artifact loading and its kernel answering, which the `d37ba37` run did;
-`TARGET_API_BASELINED` and `CAPABILITY_RESOLUTION_VERIFIED` only from platform
-readings that answered, and none has. Never from a clean offline report, never
+saved artifact loading and its kernel answering, which the `d37ba37` and
+`718db50` runs did; `TARGET_API_BASELINED` and `CAPABILITY_RESOLUTION_VERIFIED`
+only from platform readings that answered **in a canonical qualification**.
+Three answered on the `6233d86` run and that run was not one, so neither gate
+has moved. Never from a clean offline report, never
 from the operations that make no platform call, never from a call Packet Tracer
 denied, and never from a requirement read out of the binary.
 
-**The `.pts` of record is the `d37ba37` artifact**, SHA-256
-`6951c066ec158d57855dfd739619482cd05f40e007f5c28fb5fcc66e58a12146`, 48185
-bytes. `dist/` is git-ignored machine-local output, so no `.pts` is tracked in
-the checkout and none is expected to be. **No artifact exists for the current
-manifest**, whose privilege set differs and whose recipe id therefore differs.
+**The last qualified artifact is the `718db50` one**, SHA-256
+`11073b67603fe795657f4c38aee1039063a6e87c299e618bc63ffafdd17857a8`, 48698
+bytes: the most recent artifact that was packaged, loaded and driven through the
+whole kernel qualification. `dist/` is git-ignored machine-local output, so no
+`.pts` is tracked in the checkout and none is expected to be. **No artifact
+exists for the current manifest**, whose privilege set is all eleven tokens and
+whose recipe id therefore differs from every artifact above.
 
 `Cisco Packet Tracer 9.0.1\extensions\` holds **no Muejeje entry** — and it is
 not empty, which is what an earlier revision of this file recorded. It carries
@@ -1069,19 +1115,21 @@ directory, which is what the recipe prescribes.
 
 This page's *offline* half is **validator** qualification only: it establishes
 nothing about a candidate `.pts`, its content, or its runtime behaviour. What
-is established about an artifact comes from the two LIVE runs recorded above —
-the official one at `d37ba37` and the earlier exploratory one — each performed
-by hand, outside the sessions that wrote this record, and each preserving the
-operator-reported observations rather than raw envelopes. **This session
-performed no LIVE run**; it corrected what this repository asserts about the
-privilege evidence and declared what the next run must capture, both of which
-are offline work.
+is established about an artifact comes from the LIVE runs recorded above — the
+official ones at `d37ba37` and `718db50`, the target-evidence run at `6233d86`,
+and the earlier exploratory one at `ed3a0b0` — each performed by hand, outside
+the sessions that wrote this record, and none of them preserving a complete set
+of raw envelopes. **This session performed no LIVE run**; it made the build
+audit enforce `FULL_TRUSTED_MODULE`, corrected what this repository asserts
+about each run's evidence level, and declared what the next run must capture —
+all of which is offline work.
 
-The platform surface's executions inside Packet Tracer are those three runs':
-denied at its root call in the first two, and in the `6233d86` run reaching past
-the roots, with three readings `OBSERVED` and `platform.module_descriptors`
-unattributable. Everywhere else it has run under Node — against no platform
-object, and against a stub — and neither is a Packet Tracer reading.
+The platform surface's executions inside Packet Tracer are those three official
+runs': denied at its root call at `d37ba37`; reaching the root at `718db50` and
+denied at the member beneath it; and at `6233d86` reaching past both, with three
+readings `OBSERVED` and `platform.module_descriptors` unattributable. Everywhere
+else it has run under Node — against no platform object, and against a stub —
+and neither is a Packet Tracer reading.
 
 ```text
 KERNEL_BOUNDARIES              = HARDENED
@@ -1128,6 +1176,9 @@ SUFFICIENT_FOR_FULL_M2_M3_CHAIN            = NOT_PROVEN
 
 OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT       = NOT_CAPTURED
 OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT       = NOT_CAPTURED
+RUN_6233D86_RAW_TRANSCRIPT                = PARTIAL
+RUN_6233D86_WORKSPACE_FIXTURE_STABLE      = NO
+RUN_6233D86_CANONICAL_QUALIFICATION       = NO
 NEXT_LIVE_RUN_RAW_TRANSCRIPT              = REQUIRED_PER_EXECUTION
 NEXT_LIVE_RUN_TRANSCRIPT_IDENTITY         = ARTIFACT_SHA256_AND_RUN_ID
 NEXT_LIVE_RUN_TRANSCRIPT_HEADER           = PRE_RUN_FACTS_ONLY
@@ -1144,9 +1195,11 @@ refuses any other.
 `EMPTY_PRIVILEGES_ROOT_IPC = TARGET_OBSERVED_DENIED` records the diagnostics
 for `IPC.hardwareFactory()` and `IPC.network()` in the `d37ba37` `[]` run.
 `GET_NETWORK_INFO_ROOT_IPC = TARGET_OBSERVED_REACHABLE` records that the
-`718db50` run, carrying that token, reached both — and
-`CHANGE_NETWORK_INFO_MEMBERS = TARGET_OBSERVED_DENIED` that Packet Tracer then
+`718db50` run, carrying that token, reached both — and that Packet Tracer then
 denied the two members beneath them, `getAvailableDeviceCount` and `getName`.
+`CHANGE_NETWORK_INFO_MEMBERS = TARGET_OBSERVED_ANSWERED` records what happened
+next: the `6233d86` run carried that second token, and both of those members
+answered. The state is about **those two members and no others**.
 
 `GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS` is a reading of the pinned
 `PacketTracer.exe` rather than of a run: both root calls require privilege
@@ -1163,20 +1216,29 @@ apart from their existence. The root map was supplied from outside this
 repository and the member requirements are a Ghidra reading; nothing here opens
 the binary and recovers a row by running it. Recorded evidence and reproducible
 evidence are different states, and this record does not let the first be read as
-the second. The governed manifest declares the tokens those readings name,
-because the next run selects exactly them and therefore tests them instead of
-inheriting them.
+the second. **The governed manifest no longer declares the tokens those readings
+name.** It declares all eleven, under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`,
+which is a deployment decision rather than a reading of the descriptors; what
+those readings compose to is `EVIDENCED_MINIMUM_PRIVILEGES`, kept beside the
+policy as what a least-privilege selection would be and as what a denial on the
+target is read against.
 
 `GET_NETWORK_INFO_LIVE_VERIFIED = PASS` because the `718db50` run reached both
-roots with the token selected. `CHANGE_NETWORK_INFO_LIVE_VERIFIED = PENDING` is
-the half a binary cannot answer: no artifact declaring that token has been run,
-so nothing yet says the target lets the two members through.
+roots with the token selected. `CHANGE_NETWORK_INFO_LIVE_VERIFIED = PASS`
+because the `6233d86` run carried that token and the two members it is
+evidenced for both answered — **for those two members and no others**, and on a
+run that was target evidence rather than a canonical qualification.
+`FULL_TRUSTED_SET_LIVE_VERIFIED = PENDING` is the half neither run touched: no
+artifact carrying the whole eleven-token declaration has been packaged or run,
+so nothing says what the target does with the nine tokens no run has selected.
 
-`OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED` and
-`OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT = NOT_CAPTURED` are why both runs are read
-narrowly: each preserved the operator-reported observations, and no raw
-envelopes reached this record. The six `NEXT_LIVE_RUN_*` states are the
-conditions the next run carries so that it can establish what these could not.
+`OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED`,
+`OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT = NOT_CAPTURED` and
+`RUN_6233D86_RAW_TRANSCRIPT = PARTIAL` are why all three runs are read narrowly:
+the first two preserved only the operator-reported observations, the third a
+header and one statement, and no complete set of raw envelopes reached this
+record. The six `NEXT_LIVE_RUN_*` states are the conditions the next run
+carries so that it can establish what these could not.
 
 - **One unnormalized, append-only transcript per execution**, named by the
   artifact SHA-256 and by the run's own `run_id`: the artifact hash because

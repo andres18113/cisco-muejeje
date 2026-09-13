@@ -203,9 +203,12 @@ all eleven serialized tokens, under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`.
 Muejeje is a private, local tool run by its owner, packaged as a **trusted Script
 Module**, so the declared set is the pinned binary's whole vocabulary minus
 `none` — derived from it, never typed out. It is a deployment decision, and **no
-token is declared as required**. What the audit still refuses is a name outside
-that vocabulary: an IpcAPI symbol such as `PrivGetNetwork`, the non-privilege
-`none`, or an invented token (`MJ-032`).
+token is declared as required**. The audit refuses a name outside that
+vocabulary — an IpcAPI symbol such as `PrivGetNetwork`, the non-privilege
+`none`, or an invented token — **and any declaration that is not exactly those
+eleven in that order**: a subset of real tokens is `BUILD_INPUT_INVALID` and
+earns no recipe id, so a manifest cannot quietly package a narrower selection
+than the policy it claims (`MJ-032`).
 
 > Muejeje runs as a
 > trusted local Script Module with the full Packet Tracer privilege set.

@@ -121,28 +121,24 @@ the GUI.
    *"The security privileges indicate which IPC calls this Script Module can
    make. Calls to unselected privileges will be denied"*.
 
-   The dialog shows UI labels, and the manifest stores serialized tokens. They
-   are two namespaces and this is the only place they meet, so the mapping is
-   written out rather than left to be matched by eye:
+   **No per-row mapping is needed here, and none is claimed.** The dialog shows
+   UI labels and the manifest stores serialized tokens; nothing measured says
+   which label carries which token, and `FULL_TRUSTED_MODULE` does not need the
+   question answered, because the instruction is not "select these eleven" but
+   "leave none clear". Two independent facts, recorded as two:
 
-   | Label in the dialog | Serialized token |
-   | --- | --- |
-   | Application | `APPLICATION` |
-   | Activity | `ACTIVITY_WIZARD` |
-   | File Operations | `FILE` |
-   | Change User Interface | `CHANGE_GUI` |
-   | Multiuser | `MULTIUSER` |
-   | IPC | `IPC` |
-   | Get Network Info | `GET_NETWORK_INFO` |
-   | Change Network Info | `CHANGE_NETWORK_INFO` |
-   | Simulation | `SIMULATION_MODE` |
-   | User Preferences | `CHANGE_PREFERENCES` |
-   | Miscellaneous UI | `MISC_GUI` |
+   ```text
+   UI         the privilege dialog exposes 11 checkboxes. FULL_TRUSTED_MODULE
+              selects every one of them; no checkbox is left clear.
+   MANIFEST   build_options.privileges declares the 11 serialized tokens of
+              SERIALIZED_BY_INDEX minus `none`, in canonical order.
+   ```
 
-   The labels are read off the dialog and recorded as what the operator saw; the
-   tokens are what the manifest declares. Nothing here claims the two lists are
-   a measured mapping — only that eleven boxes are to be selected, and that
-   eleven tokens are declared.
+   Both are eleven, and that is a count, not a correspondence. A row-by-row
+   table would look like the missing evidence rather than replace it — the same
+   resemblance-is-not-evidence failure `MJ-032` refuses for `PrivGetNetwork` and
+   `GET_NETWORK_INFO` — so it is not written here, and the operator matches no
+   label to any token to follow this step.
 
    **Then read the selection back and record it**, before importing anything.
    Every privilege must be selected. If the module shows any privilege clear,
@@ -232,14 +228,16 @@ taken over, and that workspace decides what the run can establish**: on an empty
 one an answering `network.*` root reaches no member below it, so nothing beneath
 it is observed. The next declared run requires a specific two-device fixture for
 exactly that reason —
-[the minimum-privilege LIVE runbook](muejeje-pts-privilege-live-runbook.md). Every admitted operation is
+[the full-trust LIVE runbook](muejeje-pts-privilege-live-runbook.md). Every admitted operation is
 read-only. The `runtime.*` ones make no platform call at all; the `platform.*`
 ones make documented getter calls on the hardware *factory*, which describes
 what models exist and instantiates nothing; the `network.*` ones make
 documented getter calls on the *workspace* the running instance holds, and
 change nothing on it. A governed artifact carrying no privilege was denied the
-root call of both on this build, in the official LIVE run; what an artifact
-carrying `GET_NETWORK_INFO` gets back is what this run records.
+root call of both on this build, at `d37ba37`; one carrying `GET_NETWORK_INFO`
+reached both roots at `718db50`; one carrying `CHANGE_NETWORK_INFO` as well
+reached the two members beneath them at `6233d86`. What an artifact carrying
+the full set gets back is what the next run records.
 
 ### Where the statements are entered
 
@@ -325,7 +323,7 @@ one whose input was not published is not entered at all: it is accounted for as
 `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`. Which descriptor to choose, what to do
 when a reading publishes nothing, and what a mismatch does and does not
 invalidate are in
-[the minimum-privilege LIVE runbook](muejeje-pts-privilege-live-runbook.md).
+[the full-trust LIVE runbook](muejeje-pts-privilege-live-runbook.md).
 
 The order below is therefore load-bearing: the reading that publishes a relay
 input is driven before the statements that send it back.
@@ -409,7 +407,7 @@ and **every outcome is a result worth recording verbatim**:
 
 | `result.resolution` | `unavailable_reason` | What it establishes |
 | --- | --- | --- |
-| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It says nothing about *why* — the runtime cannot see that, and does not guess — so it is not a privilege reading by itself: only a diagnostic recorded beside it attributes a cause, and only for that call. The exploratory and the official `privileges: []` runs both did, for `IPC.hardwareFactory()` and `IPC.network()`; whether `GET_NETWORK_INFO` lifts that is what this run measures, and which member a *deeper* failure reached is recorded separately (`MJ-031`, `MJ-032`) |
+| `UNAVAILABLE` | `PLATFORM_CALL_FAILED` | the member was called and the call did not return. It says nothing about *why* — the runtime cannot see that, and does not guess — so it is not a privilege reading by itself: only a diagnostic recorded beside it attributes a cause, and only for that call. The exploratory and the official `privileges: []` runs both did, for `IPC.hardwareFactory()` and `IPC.network()`; `GET_NETWORK_INFO` lifted it at both roots in the `718db50` run and `CHANGE_NETWORK_INFO` lifted it at the two members beneath them in the `6233d86` run, so under `FULL_TRUSTED_MODULE` a further denial is a fact about the call rather than about the selection, and which member a *deeper* failure reached is recorded separately (`MJ-031`, `MJ-032`) |
 | `UNAVAILABLE` | `PLATFORM_ABSENT` | there was no `ipc` object in the Script Engine at all. That would be a fact about the engine, not about privileges, and it needs recording as such |
 | `UNAVAILABLE` | `PLATFORM_MEMBER_ABSENT` | the object was there and did not offer the member. Nothing was called, so this is a fact about the interface rather than about permission — record which member |
 | `UNAVAILABLE` | `PLATFORM_ANSWER_UNUSABLE` | Packet Tracer answered and the answer could not be attributed. Record the whole envelope: this is the interesting failure |
